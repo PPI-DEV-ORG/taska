@@ -35,6 +35,16 @@ export default function RootLayout() {
     if (Platform.OS === "web" && typeof document !== "undefined") {
       document.documentElement.classList.add("dark");
       document.title = "Taska - Mini ERP";
+      try {
+        let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
+        if (!link) {
+          link = document.createElement("link");
+          link.rel = "shortcut icon";
+          document.head.appendChild(link);
+        }
+        link.type = "image/png";
+        link.href = "/favicon.png";
+      } catch {}
     }
   }, []);
 

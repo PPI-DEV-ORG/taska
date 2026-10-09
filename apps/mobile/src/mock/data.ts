@@ -53,16 +53,16 @@ export const WAREHOUSES = rows(
 );
 
 export const CUSTOMERS = rows(
-  ["id", "nama", "kota", "kontak", "telepon", "status"],
+  ["id", "nama", "kota", "kontak", "email", "telepon", "catatan", "status"],
   [
-    ["C-01", "PT Nusantara Jaya", "Jakarta", "Bambang Hartono", "0812-3456-7801", "Aktif"],
-    ["C-02", "CV Karya Mandiri", "Bekasi", "Lina Susanti", "0813-2200-1145", "Aktif"],
-    ["C-03", "PT Bumi Sentosa", "Surabaya", "Hadi Gunawan", "0857-7788-9012", "Aktif"],
-    ["C-04", "PT Sinar Medan Teknik", "Medan", "Rudi Siregar", "0821-6000-3321", "Aktif"],
-    ["C-05", "RS Harapan Sehat", "Jakarta", "dr. Maya Putri", "0811-9988-2210", "Aktif"],
-    ["C-06", "Hotel Grand Mahkota", "Surabaya", "Tommy Wibowo", "0878-1200-4455", "Aktif"],
-    ["C-07", "Sekolah Global Cendekia", "Bekasi", "Ibu Ratna", "0856-3300-7781", "Aktif"],
-    ["C-08", "PT Logistik Prima", "Jakarta", "Yusuf Ramadhan", "0819-4410-9902", "Aktif"],
+    ["C-01", "PT Nusantara Jaya", "Jakarta", "Bambang Hartono", "bambang@nusantarajaya.co.id", "0812-3456-7801", "Customer korporat utama untuk CCTV & sistem jaringan", "Aktif"],
+    ["C-02", "CV Karya Mandiri", "Bekasi", "Lina Susanti", "lina@karyamandiri.com", "0813-2200-1145", "Kebutuhan rutin maintenance dan switch LAN", "Aktif"],
+    ["C-03", "PT Bumi Sentosa", "Surabaya", "Hadi Gunawan", "hadi@bumisentosa.id", "0857-7788-9012", "Proyek smart office & server mini", "Aktif"],
+    ["C-04", "PT Sinar Medan Teknik", "Medan", "Rudi Siregar", "rudi@sinarmedan.com", "0821-6000-3321", "Pengiriman via ekspedisi laut / kargo", "Aktif"],
+    ["C-05", "RS Harapan Sehat", "Jakarta", "dr. Maya Putri", "maya.putri@rsharapansehat.org", "0811-9988-2210", "SOP instalasi steril dan nurse call", "Aktif"],
+    ["C-06", "Hotel Grand Mahkota", "Surabaya", "Tommy Wibowo", "tommy@grandmahkota.com", "0878-1200-4455", "Sistem door lock kartu RFID Mifare", "Aktif"],
+    ["C-07", "Sekolah Global Cendekia", "Bekasi", "Ibu Ratna", "ratna@cendekia.sch.id", "0856-3300-7781", "WiFi kampus & fingerprint presensi guru", "Aktif"],
+    ["C-08", "PT Logistik Prima", "Jakarta", "Yusuf Ramadhan", "yusuf@logistikprima.co.id", "0819-4410-9902", "CCTV gudang 24 jam & sistem gate portal", "Aktif"],
   ],
 );
 
@@ -108,16 +108,18 @@ export const LEADS = rows(
 );
 
 export const QUOTATIONS = rows(
-  ["id", "nomor", "lead", "customer", "nilai", "status", "versi", "berlaku", "pemilik", "dibuat"],
+  ["id", "nomor", "lead", "customer", "nilai", "total", "ppn", "disc", "totalAfterDisc", "status", "versi", "berlaku", "pemilik", "dibuat", "fileUploaded"],
   [
-    ["Q-001", "PNW/2026/10/001", "CCTV & NVR Gedung A", "PT Nusantara Jaya", 185000000, "Menunggu persetujuan", 2, d(14), "Dewi Lestari", d(-2)],
-    ["Q-002", "PNW/2026/10/002", "Jaringan WiFi Kampus", "Sekolah Global Cendekia", 96500000, "Draft", 1, d(21), "Dewi Lestari", d(-1)],
-    ["Q-003", "PNW/2026/09/014", "Access Control Hotel", "Hotel Grand Mahkota", 142000000, "Disetujui", 3, d(5), "Hendra Wijaya", d(-30)],
-    ["Q-004", "PNW/2026/09/011", "Nurse Call Rumah Sakit", "RS Harapan Sehat", 275000000, "Terkirim", 1, d(3), "Dewi Lestari", d(-14)],
-    ["Q-005", "PNW/2026/08/020", "CCTV Pabrik Medan", "PT Sinar Medan Teknik", 118000000, "Kedaluwarsa", 1, d(-12), "Dewi Lestari", d(-45)],
-    ["Q-006", "PNW/2026/10/003", "Intercom Apartemen", "PT Bumi Sentosa", 164000000, "Revisi", 2, d(10), "Dewi Lestari", d(-6)],
-    ["Q-007", "PNW/2026/09/016", "Maintenance Jaringan Tahunan", "CV Karya Mandiri", 36000000, "Disetujui", 1, d(-3), "Dewi Lestari", d(-25)],
-    ["Q-008", "PNW/2026/09/018", "Fingerprint Sekolah", "Sekolah Global Cendekia", 28500000, "Ditolak", 1, d(-8), "Dewi Lestari", d(-28)],
+    ["Q-001", "PNW/2026/10/001", "CCTV & NVR Gedung A", "PT Nusantara Jaya", 185000000, 185000000, 20350000, 5000000, 200350000, "Menunggu persetujuan", 2, d(14), "Dewi Lestari", d(-2), true],
+    ["Q-002", "PNW/2026/10/002", "Jaringan WiFi Kampus", "Sekolah Global Cendekia", 96500000, 96500000, 10615000, 0, 107115000, "Draft", 1, d(21), "Dewi Lestari", d(-1), true],
+    ["Q-003", "PNW/2026/09/014", "Access Control Hotel", "Hotel Grand Mahkota", 142000000, 142000000, 15620000, 0, 157620000, "Disetujui", 3, d(5), "Hendra Wijaya", d(-30), true],
+    ["Q-004", "PNW/2026/09/011", "Nurse Call Rumah Sakit", "RS Harapan Sehat", 275000000, 275000000, 30250000, 10000000, 295250000, "Terkirim", 1, d(3), "Dewi Lestari", d(-14), true],
+    ["Q-005", "PNW/2026/08/020", "CCTV Pabrik Medan", "PT Sinar Medan Teknik", 118000000, 118000000, 12980000, 0, 130980000, "Kedaluwarsa", 1, d(-12), "Dewi Lestari", d(-45), true],
+    ["Q-006", "PNW/2026/10/003", "Intercom Apartemen", "PT Bumi Sentosa", 164000000, 164000000, 18040000, 4000000, 178040000, "Revisi", 2, d(10), "Dewi Lestari", d(-6), true],
+    ["Q-007", "PNW/2026/09/016", "Maintenance Jaringan Tahunan", "CV Karya Mandiri", 36000000, 36000000, 3960000, 0, 39960000, "Disetujui", 1, d(-3), "Dewi Lestari", d(-25), true],
+    ["Q-008", "PNW/2026/09/018", "Fingerprint Sekolah", "Sekolah Global Cendekia", 28500000, 28500000, 3135000, 0, 31635000, "Ditolak", 1, d(-8), "Dewi Lestari", d(-28), true],
+    ["Q-009", "PNW/2026/10/004", "Server Rack Mini Data Center", "PT Bumi Sentosa", 320000000, 320000000, 35200000, 0, 355200000, "Not Yet", 1, d(14), "Dewi Lestari", d(0), false],
+    ["Q-010", "PNW/2026/10/005", "Videotron Lobby", "PT Nusantara Jaya", 210000000, 210000000, 23100000, 0, 233100000, "Not Yet", 1, d(14), "Dewi Lestari", d(0), false],
   ],
 );
 

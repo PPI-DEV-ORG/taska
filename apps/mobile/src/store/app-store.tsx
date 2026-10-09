@@ -47,6 +47,7 @@ type Ctx = {
   addRow: (module: string, row: Record<string, any>) => Row;
   patchRow: (module: string, id: string, patch: Record<string, any>) => void;
   setStatus: (module: string, id: string, status: string, note?: string) => void;
+  createQuotationFromLead: (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }) => Row;
   history: (module: string, id: string) => HistoryItem[];
   approvals: ApprovalState[];
   decide: (id: string, decision: "Disetujui" | "Ditolak", reason?: string) => void;
@@ -147,6 +148,76 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setData((d) => ({ ...d, [module]: (d[module] ?? []).map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
   }, []);
 
+  const createQuotationFromLead = React.useCallback(
+    (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }): Row => {
+      // Periksa apakah sudah ada penawaran untuk lead ini
+      const existing = (data.quotations ?? []).find(
+        (q) => (q.leadId && q.leadId === lead.id) || (q.lead && q.lead.toLowerCase() === lead.nama.toLowerCase())
+      );
+      if (existing) {
+        if (extra) {
+          const patch = {
+            ...(extra.items ? { items: extra.items } : {}),
+            ...(extra.fileUploaded !== undefined ? { fileUploaded: extra.fileUploaded, fileName: `${existing.nomor.replace(/\//g, "-")}-template.csv` } : {}),
+            ...(extra.status ? { status: extra.status } : {}),
+          };
+          setData((d) => ({
+            ...d,
+            quotations: (d.quotations ?? []).map((q) => (q.id === existing.id ? { ...q, ...patch } : q)),
+            leads: (d.leads ?? []).map((l) => (l.id === lead.id ? { ...l, penawaranFile: `${existing.nomor.replace(/\//g, "-")}-template.csv`, penawaranId: existing.id } : l)),
+          }));
+          return { ...existing, ...patch };
+        }
+        return existing;
+      }
+
+      const qCount = (data.quotations?.length ?? 0) + 1;
+      const now = new Date();
+      const yr = now.getFullYear();
+      const mo = String(now.getMonth() + 1).padStart(2, "0");
+      const seqStr = String(qCount).padStart(3, "0");
+      const nomor = `PNW/${yr}/${mo}/${seqStr}`;
+      const berlakuDate = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+
+      const itemsTotal = extra?.items ? extra.items.reduce((acc: number, curr: any) => acc + curr.qty * curr.harga, 0) : Number(lead.nilai) || 0;
+      const nilaiTotal = itemsTotal;
+      const ppn = Math.round(nilaiTotal * 0.11);
+      const disc = 0;
+      const totalAfterDisc = nilaiTotal + ppn - disc;
+
+      const newQ: Row = {
+        id: `Q-${String(Math.floor(Math.random() * 900) + 100)}`,
+        nomor,
+        lead: lead.nama,
+        leadId: lead.id,
+        customer: lead.perusahaan,
+        nilai: nilaiTotal,
+        total: nilaiTotal,
+        ppn,
+        disc,
+        totalAfterDisc,
+        status: extra?.status || (extra?.fileUploaded ? "Done" : "Not Yet"),
+        versi: 1,
+        berlaku: berlakuDate,
+        pemilik: lead.pemilik || user?.name || "Dewi Lestari",
+        dibuat: now.toISOString().slice(0, 10),
+        fileUploaded: extra?.fileUploaded ?? false,
+        fileName: extra?.fileUploaded ? `${nomor.replace(/\//g, "-")}-template.csv` : undefined,
+        items: extra?.items,
+      };
+
+      setData((d) => ({
+        ...d,
+        quotations: [newQ, ...(d.quotations ?? [])],
+        leads: (d.leads ?? []).map((l) => (l.id === lead.id ? { ...l, penawaranFile: newQ.fileName, penawaranId: newQ.id } : l)),
+      }));
+      pushHistory("quotations", newQ.id, `Dibuat otomatis dari lead: ${lead.nama}`);
+      audit("Membuat draf penawaran resmi", "Penawaran", newQ.id);
+      return newQ;
+    },
+    [data.quotations, user, pushHistory, audit]
+  );
+
   const setStatus = React.useCallback(
     (module: string, id: string, status: string, note?: string) => {
       const def = MODULES[module];
@@ -165,8 +236,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pushHistory(module, id, `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`);
       audit(`Mengubah status ke ${status}`, def?.singular ?? module, id);
       toast(`Status diubah ke ${status}`);
+
+      // Jika lead masuk ke tahap Qualification, otomatis buatkan row penawaran jika belum ada
+      if (module === "leads" && (status === "Qualification" || status === "Proposal")) {
+        const leadRow = data.leads?.find((l) => l.id === id);
+        if (leadRow) {
+          setTimeout(() => {
+            createQuotationFromLead({ ...leadRow, status });
+          }, 50);
+        }
+      }
     },
-    [audit, pushHistory, toast],
+    [audit, pushHistory, toast, data.leads, createQuotationFromLead],
   );
 
   const history = React.useCallback(
@@ -217,10 +298,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value = React.useMemo<Ctx>(
     () => ({
-      user, login, logout, data, addRow, patchRow, setStatus, history, approvals, decide,
+      user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, history, approvals, decide,
       notifs: myNotifs, unread, markRead, markAllRead, toast, offline, setOffline,
     }),
-    [user, login, logout, data, addRow, patchRow, setStatus, history, approvals, decide, myNotifs, unread, markRead, markAllRead, toast, offline],
+    [user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, history, approvals, decide, myNotifs, unread, markRead, markAllRead, toast, offline],
   );
 
   return (

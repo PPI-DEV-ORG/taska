@@ -118,6 +118,84 @@ export function SearchableSelect({
   );
 }
 
+export function MultiSelect({
+  values = [], onChange, options, placeholder = "Pilih", error,
+}: { values?: string[]; onChange: (v: string[]) => void; options: string[]; placeholder?: string; error?: boolean }) {
+  const [open, setOpen] = React.useState(false);
+  const [q, setQ] = React.useState("");
+  const list = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
+
+  function toggle(o: string) {
+    if (values.includes(o)) {
+      onChange(values.filter((x) => x !== o));
+    } else {
+      onChange([...values, o]);
+    }
+  }
+
+  const displayText = values.length === 0
+    ? placeholder
+    : values.length <= 2
+    ? values.join(", ")
+    : `${values.length} staf dipilih (${values.slice(0, 2).join(", ")}...)`;
+
+  return (
+    <>
+      <Pressable
+        onPress={() => { setQ(""); setOpen(true); }}
+        className={cn("bg-input border-border min-h-[44px] flex-row items-center justify-between rounded-lg border px-3 py-2", error && "border-danger")}
+      >
+        <Text className={cn("text-base md:text-sm flex-1 mr-2", values.length === 0 && "text-muted-foreground")} numberOfLines={2}>
+          {displayText}
+        </Text>
+        <ChevronDown size={16} color={colors.muted} />
+      </Pressable>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{placeholder}</DialogTitle>
+          </DialogHeader>
+          {options.length > 5 ? (
+            <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-lg border px-3">
+              <Search size={16} color={colors.muted} />
+              <Input
+                value={q}
+                onChangeText={setQ}
+                placeholder="Cari karyawan / staf..."
+                className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
+              />
+            </View>
+          ) : null}
+          <ScrollView style={{ maxHeight: 320 }} contentContainerClassName="gap-1">
+            {list.map((o) => {
+              const selected = values.includes(o);
+              return (
+                <Pressable
+                  key={o}
+                  onPress={() => toggle(o)}
+                  className={cn(
+                    "hover:bg-panel active:bg-panel min-h-[42px] flex-row items-center justify-between rounded-lg px-3 py-2 transition-colors",
+                    selected && "bg-primary/10"
+                  )}
+                >
+                  <Text className={cn("flex-1 text-sm", selected ? "font-semibold text-primary" : "text-foreground")}>{o}</Text>
+                  {selected ? <Check size={16} color={colors.primary} /> : null}
+                </Pressable>
+              );
+            })}
+            {list.length === 0 ? <Text className="text-muted-foreground px-3 py-4 text-sm">Tidak ditemukan.</Text> : null}
+          </ScrollView>
+          <DialogFooter>
+            <Button size="sm" onPress={() => setOpen(false)} className="w-full">
+              <Text>Selesai ({values.length} Dipilih)</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: boolean; onOpenChange: (v: boolean) => void }) {
   const { addRow, toast } = useApp();
   const [prevOpen, setPrevOpen] = React.useState(open);
@@ -178,6 +256,14 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
               <FormField key={f.key} label={f.label} required={f.required} error={errs[f.key]}>
                 {f.type === "select" ? (
                   <SearchableSelect value={vals[f.key]} onChange={(v) => setVals((s) => ({ ...s, [f.key]: v }))} options={f.options ?? []} placeholder={`Pilih ${f.label.toLowerCase()}`} error={!!errs[f.key]} />
+                ) : f.type === "multiselect" ? (
+                  <MultiSelect
+                    values={vals[f.key]?.split(", ").filter(Boolean) ?? []}
+                    onChange={(selectedArr) => setVals((s) => ({ ...s, [f.key]: selectedArr.join(", ") }))}
+                    options={f.options ?? []}
+                    placeholder={`Pilih ${f.label.toLowerCase()}`}
+                    error={!!errs[f.key]}
+                  />
                 ) : f.type === "textarea" ? (
                   <Textarea value={vals[f.key] ?? ""} onChangeText={(v) => setVals((s) => ({ ...s, [f.key]: v }))} placeholder={f.placeholder} />
                 ) : (

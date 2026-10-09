@@ -66,6 +66,15 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     return scoped
       .filter((r) => (!status || r[def.statusKey] === status))
       .filter((r) => !s || def.search.some((k) => String(r[k] ?? "").toLowerCase().includes(s)))
+      .map((r) => {
+        if (def.key === "quotations") {
+          return {
+            ...r,
+            fileStatus: r.fileUploaded ? "Sudah Diupload" : "Belum Ada File",
+          };
+        }
+        return r;
+      })
       .sort((a, b) => (sortKey(a) < sortKey(b) ? 1 : -1));
   }, [def, data, user, q, status]);
 

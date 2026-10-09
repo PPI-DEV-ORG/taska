@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, Plus, FileText } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Chip, PageHeader } from "@/components/taska/basics";
@@ -27,7 +27,7 @@ function ViewToggle({ view, onView }: { view: string; onView: (v: string) => voi
 
 export default function LeadsScreen() {
   const router = useRouter();
-  const { data, setStatus, user } = useApp();
+  const { data, setStatus, user, createQuotationFromLead, toast } = useApp();
   const [view, setView] = React.useState("papan");
   const [q, setQ] = React.useState("");
   const [form, setForm] = React.useState(false);
@@ -86,6 +86,43 @@ export default function LeadsScreen() {
                       </View>
                       <Text className="text-muted-foreground text-[13px]">{l.pemilik} · {tanggal(l.closing)}</Text>
                     </Pressable>
+
+                    {["Qualification", "Proposal", "Negotiation", "Won"].includes(stage) ? (
+                      (() => {
+                        const qRow = (data.quotations ?? []).find(
+                          (q) => (q.leadId && q.leadId === l.id) || (q.lead && q.lead.toLowerCase() === l.nama.toLowerCase())
+                        );
+                        return (
+                          <View className="border-border/60 border-t pt-2 gap-1.5">
+                            <Pressable
+                              onPress={() => {
+                                if (qRow) {
+                                  router.push(`/quotations/${qRow.id}` as any);
+                                } else {
+                                  const newQ = createQuotationFromLead(l);
+                                  toast("Draf penawaran otomatis dibuat!");
+                                  router.push(`/quotations/${newQ.id}` as any);
+                                }
+                              }}
+                              className="bg-primary/10 border-primary/25 active:bg-primary/20 flex-row items-center justify-between rounded-md border px-2.5 py-1.5"
+                            >
+                              <View className="flex-row items-center gap-1.5 flex-1 mr-1">
+                                <FileText size={13} color={colors.primary} />
+                                <Text className="text-primary text-[11px] font-semibold" numberOfLines={1}>
+                                  {qRow ? qRow.nomor : "Buat Penawaran"}
+                                </Text>
+                              </View>
+                              <View className="bg-primary/20 rounded px-1.5 py-0.5">
+                                <Text className="text-[10px] font-bold text-primary">
+                                  {qRow ? qRow.status : "Auto"}
+                                </Text>
+                              </View>
+                            </Pressable>
+                          </View>
+                        );
+                      })()
+                    ) : null}
+
                     <View className="border-border flex-row items-center justify-between border-t pt-2">
                       <Pressable disabled={si === 0} onPress={() => move(l, -1)} hitSlop={8} className="size-9 items-center justify-center rounded-md" style={{ opacity: si === 0 ? 0.3 : 1 }}>
                         <ChevronLeft size={18} color={colors.textSecondary} />

@@ -10,7 +10,7 @@ import { EmptyState, InfoGrid, PageHeader, Panel, Timeline } from "@/components/
 import { ApprovalBar, ConfirmDialog } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { ModuleExtras } from "@/screens/module-extras";
+import { ModuleExtras, downloadQuotationTemplate } from "@/screens/module-extras";
 import { useApp } from "@/store/app-store";
 import { CAN_APPROVE, MODULES, type ModuleAction } from "@/mock/modules";
 import { LOST_REASONS } from "@/mock/data";
@@ -45,8 +45,26 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (a.to && row) router.push(a.to(row) as any);
   }
 
-  const [primary, ...secondary] = def.actions ?? [];
+  const isLead = moduleKey === "leads";
+  const canOfferLead = ["Qualification", "Proposal", "Negotiation"].includes(String(row.status));
+  const filteredActions = (def.actions ?? []).filter((a) => {
+    if (isLead && a.label === "Download template penawaran") {
+      return canOfferLead;
+    }
+    return true;
+  });
+
+  const [primary, ...secondary] = filteredActions;
   const isLost = pending === "Lost";
+
+  function handlePrimaryAction(a: ModuleAction) {
+    if (isLead && a.label === "Download template penawaran") {
+      downloadQuotationTemplate({ customer: row?.perusahaan, lead: row?.nama });
+      toast(a.toast || "Template penawaran berhasil diunduh");
+      return;
+    }
+    run(a);
+  }
 
   return (
     <>
@@ -64,9 +82,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
               </Button>
             ) : null}
             {secondary.map((a) => (
-              <Button key={a.label} variant="outline" onPress={() => run(a)}><Text>{a.label}</Text></Button>
+              <Button key={a.label} variant="outline" onPress={() => handlePrimaryAction(a)}><Text>{a.label}</Text></Button>
             ))}
-            {primary ? <Button onPress={() => run(primary)}><Text>{primary.label}</Text></Button> : null}
+            {primary ? <Button onPress={() => handlePrimaryAction(primary)}><Text>{primary.label}</Text></Button> : null}
           </>
         }
       />
