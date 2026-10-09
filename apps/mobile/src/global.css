@@ -33,3 +33,33 @@
     --chart-5: 255 90% 76%;
   }
 }
+
+/* Custom Scrollbar Styling (Dark Background & Orange Thumb) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #EB5E28 #191817;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #191817;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #EB5E28;
+  border-radius: 9999px;
+  border: 2px solid #191817;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #FF7A45;
+}
+
+::-webkit-scrollbar-corner {
+  background: #191817;
+}

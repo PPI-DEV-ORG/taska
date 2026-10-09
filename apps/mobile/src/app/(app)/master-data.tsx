@@ -37,66 +37,6 @@ export default function MasterDataScreen() {
   const [selectedCategory, setSelectedCategory] = React.useState<MasterKey | null>(null);
 
   // Jika sedang melihat detail salah satu master data
-  if (selectedCategory === "customer") {
-    return (
-      <View className="gap-5">
-        <PageHeader
-          back
-          title="Master Customer"
-          subtitle={`${data.customers.length} data customer terdaftar`}
-          action={
-            <Button variant="outline" size="sm" onPress={() => setSelectedCategory(null)}>
-              <ArrowLeft size={15} color={colors.text} />
-              <Text className="text-xs">Kembali ke Menu</Text>
-            </Button>
-          }
-        />
-        <DataTable
-          columns={[
-            { key: "nama", label: "Perusahaan / Nama", primary: true, flex: 1.6 },
-            { key: "kontak", label: "PIC", flex: 1.2 },
-            { key: "telepon", label: "Nomor Telepon", flex: 1.2 },
-            { key: "kota", label: "Kota", flex: 1 },
-            { key: "status", label: "Status", fmt: "status", flex: 1 },
-          ]}
-          rows={data.customers}
-          pageSize={8}
-          onRowPress={() => router.push("/customers")}
-        />
-      </View>
-    );
-  }
-
-  if (selectedCategory === "supplier") {
-    return (
-      <View className="gap-5">
-        <PageHeader
-          back
-          title="Master Supplier"
-          subtitle={`${data.suppliers.length} rekanan pemasok`}
-          action={
-            <Button variant="outline" size="sm" onPress={() => setSelectedCategory(null)}>
-              <ArrowLeft size={15} color={colors.text} />
-              <Text className="text-xs">Kembali ke Menu</Text>
-            </Button>
-          }
-        />
-        <DataTable
-          columns={[
-            { key: "nama", label: "Nama Supplier", primary: true, flex: 1.6 },
-            { key: "kontak", label: "PIC Kontak", flex: 1.2 },
-            { key: "payment", label: "Payment Terms", flex: 1.2 },
-            { key: "kota", label: "Kota", flex: 1 },
-            { key: "status", label: "Status", fmt: "status", flex: 1 },
-          ]}
-          rows={data.suppliers}
-          pageSize={8}
-          onRowPress={() => router.push("/suppliers")}
-        />
-      </View>
-    );
-  }
-
   if (selectedCategory === "barang") {
     return (
       <View className="gap-5">
@@ -202,6 +142,7 @@ export default function MasterDataScreen() {
       count: `${data.customers.length} Klien`,
       icon: Building2,
       tag: "Dikelola Sales",
+      onPress: () => router.push("/customers"),
     },
     {
       id: "supplier" as MasterKey,
@@ -210,6 +151,7 @@ export default function MasterDataScreen() {
       count: `${data.suppliers.length} Supplier`,
       icon: Truck,
       tag: "Dikelola Procurement",
+      onPress: () => router.push("/suppliers"),
     },
     {
       id: "barang" as MasterKey,
@@ -218,6 +160,7 @@ export default function MasterDataScreen() {
       count: `${PRODUCTS.length} Barang`,
       icon: Boxes,
       tag: "Dikelola Gudang",
+      onPress: () => setSelectedCategory("barang"),
     },
     {
       id: "gudang" as MasterKey,
@@ -226,6 +169,7 @@ export default function MasterDataScreen() {
       count: `${WAREHOUSES.length} Gudang`,
       icon: Warehouse,
       tag: "Dikelola Admin",
+      onPress: () => setSelectedCategory("gudang"),
     },
     {
       id: "sumber-lead" as MasterKey,
@@ -234,6 +178,7 @@ export default function MasterDataScreen() {
       count: `${LEAD_SOURCES.length} Kanal`,
       icon: Radio,
       tag: "Dikelola Sales",
+      onPress: () => setSelectedCategory("sumber-lead"),
     },
   ];
 
@@ -250,7 +195,7 @@ export default function MasterDataScreen() {
           return (
             <Pressable
               key={card.id}
-              onPress={() => setSelectedCategory(card.id)}
+              onPress={card.onPress}
               className="bg-card hover:bg-panel border-border/80 active:bg-panel flex-col justify-between rounded-2xl border p-5 transition-colors shadow-sm min-h-[160px] gap-4"
             >
               <View className="flex-row items-start justify-between gap-3">

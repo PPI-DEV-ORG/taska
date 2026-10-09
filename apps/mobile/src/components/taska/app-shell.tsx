@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Image, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { usePathname, useRouter } from "expo-router";
 import {
@@ -32,9 +32,11 @@ function useNav() {
 function Brand({ compact }: { compact?: boolean }) {
   return (
     <View className="flex-row items-center gap-3">
-      <View className="bg-panel border-border/80 size-9 items-center justify-center rounded-xl border shadow-sm">
-        <Text className="text-primary text-base font-black">T</Text>
-      </View>
+      <Image
+        source={require("../../../assets/taska-logo.png")}
+        style={{ width: 36, height: 36 }}
+        resizeMode="contain"
+      />
       {compact ? null : (
         <View className="flex-1">
           <Text className="text-base font-bold tracking-tight text-foreground">Taska</Text>

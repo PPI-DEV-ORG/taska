@@ -44,90 +44,164 @@ export default function StockOpnameScreen() {
     router.replace("/stock");
   }
 
+  const totalItems = PRODUCTS.length;
+  let itemsCounted = 0;
+  let itemsMatch = 0;
+  let itemsDiff = 0;
+
+  PRODUCTS.forEach((p) => {
+    const systemQty = (STOCK_QTY[p.id] || [0, 0, 0])[wIdx] || 0;
+    const physQtyStr = counts[p.id];
+    if (physQtyStr !== undefined) {
+      itemsCounted++;
+      const physQty = Number(physQtyStr) || 0;
+      if (physQty === systemQty) itemsMatch++;
+      else itemsDiff++;
+    } else {
+      itemsMatch++;
+    }
+  });
+
   return (
-    <View className="max-w-3xl self-center w-full gap-5">
+    <View className="w-full gap-5">
       <PageHeader
         back
         title="Stok Opname"
         subtitle="Perhitungan fisik stok gudang dan pengajuan penyesuaian selisih"
+        action={
+          <View className="flex-row gap-2">
+            {WAREHOUSES.map((w) => (
+              <Chip
+                key={w.id}
+                label={w.nama}
+                active={selectedWarehouse === w.nama}
+                onPress={() => setSelectedWarehouse(w.nama)}
+              />
+            ))}
+          </View>
+        }
       />
 
-      <View className="flex-row gap-2">
-        {WAREHOUSES.map((w) => (
-          <Chip
-            key={w.id}
-            label={w.nama}
-            active={selectedWarehouse === w.nama}
-            onPress={() => setSelectedWarehouse(w.nama)}
-          />
-        ))}
-      </View>
-
-      <Panel
-        title={`Perhitungan Fisik: ${selectedWarehouse}`}
-        subtitle="Masukkan hasil hitungan fisik riil di gudang. Selisih akan dikalkulasi otomatis."
-      >
-        <View className="gap-3">
-          {PRODUCTS.slice(0, 8).map((p) => {
-            const systemQty = (STOCK_QTY[p.id] || [0, 0, 0])[wIdx] || 0;
-            const physQtyStr = counts[p.id] ?? String(systemQty);
-            const physQty = Number(physQtyStr) || 0;
-            const diff = physQty - systemQty;
-
-            return (
-              <View key={p.id} className="border-border border-b py-3 last:border-b-0">
-                <View className="flex-row items-center justify-between gap-3">
-                  <View className="flex-1">
-                    <Text className="text-sm font-semibold">{p.nama}</Text>
-                    <Text className="text-muted-foreground text-xs">SKU: {p.sku} · Sistem: {systemQty} {p.satuan}</Text>
-                  </View>
-                  <View className="flex-row items-center gap-3">
-                    <View className="w-24">
-                      <Input
-                        value={physQtyStr}
-                        onChangeText={(v) => handleCountChange(p.id, v.replace(/\D/g, ""))}
-                        keyboardType="numeric"
-                        className="h-10 text-center font-bold"
-                      />
-                    </View>
-                    <View className="w-20 items-end">
-                      {diff === 0 ? (
-                        <Text className="text-success text-sm font-semibold">Cocok (0)</Text>
-                      ) : diff < 0 ? (
-                        <Text className="text-danger text-sm font-semibold">{diff} {p.satuan}</Text>
-                      ) : (
-                        <Text className="text-info text-sm font-semibold">+{diff} {p.satuan}</Text>
-                      )}
-                    </View>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
+      {/* Summary KPI Cards */}
+      <View className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <View className="bg-card border-border/80 rounded-2xl border p-4 shadow-sm">
+          <Text className="text-muted-foreground text-xs font-medium">Gudang Terpilih</Text>
+          <Text className="text-foreground text-lg md:text-xl font-bold mt-1" numberOfLines={1}>
+            {selectedWarehouse}
+          </Text>
+          <Text className="text-muted-foreground text-[11px] mt-0.5">Petugas: {user?.name || "Eko Saputra"}</Text>
         </View>
-      </Panel>
 
-      <Panel title="Alasan Selisih & Catatan Opname">
-        <FormField label="Penjelasan Selisih Fisik" required hint="Wajib menyertakan alasan untuk persetujuan Finance dan Bos">
-          <Textarea
-            value={reason}
-            onChangeText={setReason}
-            placeholder="Jelaskan temuan penyebab perbedaan stok fisik dengan sistem"
-          />
-        </FormField>
-      </Panel>
+        <View className="bg-card border-border/80 rounded-2xl border p-4 shadow-sm">
+          <Text className="text-muted-foreground text-xs font-medium">Total Produk</Text>
+          <Text className="text-foreground text-lg md:text-xl font-bold mt-1">
+            {totalItems} <Text className="text-xs font-normal text-muted-foreground">SKU</Text>
+          </Text>
+          <Text className="text-muted-foreground text-[11px] mt-0.5">Terdaftar di gudang</Text>
+        </View>
 
-      <View className="bg-warning/15 flex-row items-center gap-2 rounded-xl p-3">
-        <AlertTriangle size={18} color={colors.warning} />
-        <Text className="text-warning text-xs flex-1">
-          Penyesuaian stok opname wajib disetujui bersama oleh Finance dan Bos sebelum saldo sistem dimutasi.
-        </Text>
+        <View className="bg-card border-border/80 rounded-2xl border p-4 shadow-sm">
+          <Text className="text-muted-foreground text-xs font-medium">Stok Cocok</Text>
+          <Text className="text-success text-lg md:text-xl font-bold mt-1">
+            {itemsMatch} <Text className="text-xs font-normal text-muted-foreground">SKU</Text>
+          </Text>
+          <Text className="text-success/80 text-[11px] mt-0.5">Fisik sesuai sistem</Text>
+        </View>
+
+        <View className="bg-card border-border/80 rounded-2xl border p-4 shadow-sm">
+          <Text className="text-muted-foreground text-xs font-medium">Ada Selisih</Text>
+          <Text className="text-danger text-lg md:text-xl font-bold mt-1">
+            {itemsDiff} <Text className="text-xs font-normal text-muted-foreground">SKU</Text>
+          </Text>
+          <Text className="text-danger/80 text-[11px] mt-0.5">Memerlukan penyesuaian</Text>
+        </View>
       </View>
 
-      <Button size="lg" onPress={submitOpname}>
-        <Check size={18} color={colors.background} />
-        <Text>Ajukan Penyesuaian Opname</Text>
-      </Button>
+      {/* Main Grid: Left side table/list of products, Right side notes & submit */}
+      <View className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Kolom Kiri: Tabel Perhitungan Fisik */}
+        <View className="lg:col-span-8 w-full">
+          <Panel
+            title={`Perhitungan Fisik: ${selectedWarehouse}`}
+            subtitle="Masukkan hasil hitungan fisik riil di gudang. Selisih akan dikalkulasi otomatis."
+          >
+            <View className="gap-2">
+              {PRODUCTS.map((p) => {
+                const systemQty = (STOCK_QTY[p.id] || [0, 0, 0])[wIdx] || 0;
+                const physQtyStr = counts[p.id] ?? String(systemQty);
+                const physQty = Number(physQtyStr) || 0;
+                const diff = physQty - systemQty;
+
+                return (
+                  <View
+                    key={p.id}
+                    className="border-border/60 flex-row items-center justify-between border-b py-3 last:border-b-0 hover:bg-panel/40 px-2 rounded-lg transition-colors gap-3"
+                  >
+                    <View className="flex-1 min-w-0">
+                      <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                        {p.nama}
+                      </Text>
+                      <Text className="text-muted-foreground text-xs mt-0.5" numberOfLines={1}>
+                        SKU: {p.sku} · Kategori: {p.kategori} · Sistem: {systemQty} {p.satuan}
+                      </Text>
+                    </View>
+
+                    <View className="flex-row items-center gap-3 shrink-0">
+                      <View className="w-24">
+                        <Input
+                          value={physQtyStr}
+                          onChangeText={(v) => handleCountChange(p.id, v.replace(/\D/g, ""))}
+                          keyboardType="numeric"
+                          className="h-10 text-center font-bold"
+                        />
+                      </View>
+                      <View className="w-24 items-end">
+                        {diff === 0 ? (
+                          <Text className="text-success text-xs sm:text-sm font-semibold">Cocok (0)</Text>
+                        ) : diff < 0 ? (
+                          <Text className="text-danger text-xs sm:text-sm font-semibold">{diff} {p.satuan}</Text>
+                        ) : (
+                          <Text className="text-info text-xs sm:text-sm font-semibold">+{diff} {p.satuan}</Text>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </Panel>
+        </View>
+
+        {/* Kolom Kanan: Catatan & Tombol Pengajuan */}
+        <View className="lg:col-span-4 w-full gap-4 lg:sticky lg:top-4">
+          <Panel title="Alasan Selisih & Catatan Opname">
+            <FormField
+              label="Penjelasan Selisih Fisik"
+              required
+              hint="Wajib menyertakan alasan untuk persetujuan Finance dan Bos"
+            >
+              <Textarea
+                value={reason}
+                onChangeText={setReason}
+                placeholder="Jelaskan temuan penyebab perbedaan stok fisik dengan sistem"
+                numberOfLines={4}
+              />
+            </FormField>
+          </Panel>
+
+          <View className="bg-warning/15 border border-warning/30 flex-row items-start gap-3 rounded-xl p-4">
+            <AlertTriangle size={20} color={colors.warning} className="shrink-0 mt-0.5" />
+            <Text className="text-warning text-xs leading-relaxed flex-1">
+              Penyesuaian stok opname wajib disetujui bersama oleh Finance dan Bos sebelum saldo sistem dimutasi.
+            </Text>
+          </View>
+
+          <Button size="lg" onPress={submitOpname} className="w-full">
+            <Check size={18} color={colors.background} />
+            <Text>Ajukan Penyesuaian Opname</Text>
+          </Button>
+        </View>
+      </View>
     </View>
   );
 }

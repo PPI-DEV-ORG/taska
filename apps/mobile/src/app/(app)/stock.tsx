@@ -251,7 +251,7 @@ export default function StockScreen() {
 
       {/* Modal Transfer */}
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl md:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Transfer Antar Gudang</DialogTitle>
           </DialogHeader>
@@ -298,7 +298,7 @@ export default function StockScreen() {
 
       {/* Modal Unit Pengganti */}
       <Dialog open={replacementOpen} onOpenChange={setReplacementOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl md:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Penggantian Unit Rusak</DialogTitle>
           </DialogHeader>
@@ -341,7 +341,7 @@ export default function StockScreen() {
 
       {/* Modal Scan */}
       <Dialog open={scanModalOpen} onOpenChange={setScanModalOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl md:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Scan Barcode & Validasi SN</DialogTitle>
           </DialogHeader>

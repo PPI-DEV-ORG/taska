@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Image, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Button } from "@/components/ui/button";
@@ -21,9 +21,11 @@ export default function LoginScreen() {
       <ScrollView contentContainerClassName="flex-grow items-center justify-center p-4 py-10">
         <View className="w-full max-w-[460px] gap-6">
           <View className="items-center gap-3">
-            <View className="bg-primary size-14 items-center justify-center rounded-2xl">
-              <Text className="text-primary-foreground text-2xl font-bold">T</Text>
-            </View>
+            <Image
+              source={require("../../assets/taska-logo.png")}
+              style={{ width: 64, height: 64 }}
+              resizeMode="contain"
+            />
             <Text className="text-3xl font-semibold tracking-tight">Taska</Text>
             <Text className="text-text-secondary text-center text-sm">Satu tempat untuk lead, project, barang, dan pengeluaran kantor.</Text>
           </View>

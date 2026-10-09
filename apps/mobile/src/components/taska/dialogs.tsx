@@ -19,18 +19,33 @@ export function ConfirmDialog({
   open: boolean; onOpenChange: (v: boolean) => void; title: string; description: string; confirmLabel?: string;
   destructive?: boolean; onConfirm: (reason?: string) => void; reasonLabel?: string; reasonOptions?: string[];
 }) {
+  const [prevOpen, setPrevOpen] = React.useState(open);
   const [reason, setReason] = React.useState("");
   const [err, setErr] = React.useState("");
-  React.useEffect(() => {
-    if (open) { setReason(""); setErr(""); }
-  }, [open]);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setReason("");
+      setErr("");
+    }
+  }
+
+  function handleOpenChange(v: boolean) {
+    if (!v) {
+      setReason("");
+      setErr("");
+    }
+    onOpenChange(v);
+  }
+
   function go() {
     if (reasonLabel && !reason.trim()) { setErr(`${reasonLabel} wajib diisi.`); return; }
-    onOpenChange(false);
+    handleOpenChange(false);
     onConfirm(reason.trim() || undefined);
   }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -75,7 +90,12 @@ export function SearchableSelect({
           {options.length > 6 ? (
             <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-lg border px-3">
               <Search size={16} color={colors.muted} />
-              <Input value={q} onChangeText={setQ} placeholder="Cari" className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none" />
+              <Input
+                value={q}
+                onChangeText={setQ}
+                placeholder="Cari"
+                className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
+              />
             </View>
           ) : null}
           <ScrollView style={{ maxHeight: 320 }}>
@@ -99,11 +119,26 @@ export function SearchableSelect({
 
 export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: boolean; onOpenChange: (v: boolean) => void }) {
   const { addRow, toast } = useApp();
+  const [prevOpen, setPrevOpen] = React.useState(open);
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
-  React.useEffect(() => {
-    if (open) { setVals({}); setErrs({}); }
-  }, [open]);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setVals({});
+      setErrs({});
+    }
+  }
+
+  function handleOpenChange(v: boolean) {
+    if (!v) {
+      setVals({});
+      setErrs({});
+    }
+    onOpenChange(v);
+  }
+
   const fields = def.createFields ?? [];
   function submit() {
     const e: Record<string, string> = {};
@@ -118,14 +153,14 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
       row.total = nilai + row.ppn;
     }
     addRow(def.key, row);
-    onOpenChange(false);
+    handleOpenChange(false);
     toast(`${def.singular} disimpan`);
   }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-xl md:max-w-2xl lg:max-w-3xl">
         <DialogHeader><DialogTitle>{def.createLabel ?? `Tambah ${def.singular}`}</DialogTitle></DialogHeader>
-        <ScrollView style={{ maxHeight: 420 }} contentContainerClassName="gap-4 pb-1">
+        <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-4 pb-1">
           {fields.map((f) => (
             <FormField key={f.key} label={f.label} required={f.required} error={errs[f.key]}>
               {f.type === "select" ? (
