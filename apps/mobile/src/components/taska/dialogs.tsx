@@ -11,6 +11,7 @@ import { useApp } from "@/store/app-store";
 import { colors, BOS_THRESHOLD } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { FileUploader } from "@/components/taska/file-uploader";
 import type { ModuleDef } from "@/mock/modules";
 
 export function ConfirmDialog({
@@ -161,24 +162,37 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
       <DialogContent className="sm:max-w-xl md:max-w-2xl lg:max-w-3xl">
         <DialogHeader><DialogTitle>{def.createLabel ?? `Tambah ${def.singular}`}</DialogTitle></DialogHeader>
         <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-4 pb-1">
-          {fields.map((f) => (
-            <FormField key={f.key} label={f.label} required={f.required} error={errs[f.key]}>
-              {f.type === "select" ? (
-                <SearchableSelect value={vals[f.key]} onChange={(v) => setVals((s) => ({ ...s, [f.key]: v }))} options={f.options ?? []} placeholder={`Pilih ${f.label.toLowerCase()}`} error={!!errs[f.key]} />
-              ) : f.type === "textarea" ? (
-                <Textarea value={vals[f.key] ?? ""} onChangeText={(v) => setVals((s) => ({ ...s, [f.key]: v }))} placeholder={f.placeholder} />
-              ) : (
-                <Input
-                  value={vals[f.key] ?? ""}
-                  onChangeText={(v) => setVals((s) => ({ ...s, [f.key]: v }))}
-                  placeholder={f.type === "date" ? "2026-10-31" : f.placeholder}
-                  keyboardType={f.type === "number" ? "numeric" : "default"}
-                  secureTextEntry={f.type === "password"}
-                  className={cn("h-11 sm:h-11", errs[f.key] && "border-danger")}
+          {fields.map((f) => {
+            if (f.type === "file") {
+              return (
+                <FileUploader
+                  key={f.key}
+                  label={f.label}
+                  kind="dokumen"
+                  required={f.required}
+                  onChange={(count) => setVals((s) => ({ ...s, [f.key]: `${count} file terlampir` }))}
                 />
-              )}
-            </FormField>
-          ))}
+              );
+            }
+            return (
+              <FormField key={f.key} label={f.label} required={f.required} error={errs[f.key]}>
+                {f.type === "select" ? (
+                  <SearchableSelect value={vals[f.key]} onChange={(v) => setVals((s) => ({ ...s, [f.key]: v }))} options={f.options ?? []} placeholder={`Pilih ${f.label.toLowerCase()}`} error={!!errs[f.key]} />
+                ) : f.type === "textarea" ? (
+                  <Textarea value={vals[f.key] ?? ""} onChangeText={(v) => setVals((s) => ({ ...s, [f.key]: v }))} placeholder={f.placeholder} />
+                ) : (
+                  <Input
+                    value={vals[f.key] ?? ""}
+                    onChangeText={(v) => setVals((s) => ({ ...s, [f.key]: v }))}
+                    placeholder={f.type === "date" ? "2026-10-31" : f.placeholder}
+                    keyboardType={f.type === "number" ? "numeric" : "default"}
+                    secureTextEntry={f.type === "password"}
+                    className={cn("h-11 sm:h-11", errs[f.key] && "border-danger")}
+                  />
+                )}
+              </FormField>
+            );
+          })}
         </ScrollView>
         <DialogFooter>
           <Button variant="outline" onPress={() => onOpenChange(false)}><Text>Batal</Text></Button>

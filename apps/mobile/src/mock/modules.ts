@@ -32,7 +32,7 @@ export type Field = { label: string; key: string; fmt?: Fmt };
 export type CreateField = {
   key: string;
   label: string;
-  type: "text" | "number" | "select" | "date" | "textarea" | "password";
+  type: "text" | "number" | "select" | "date" | "textarea" | "password" | "file";
   options?: string[];
   required?: boolean;
   placeholder?: string;
@@ -95,6 +95,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "perusahaan", label: "Perusahaan", type: "select", required: true, options: ["PT Nusantara Jaya", "CV Karya Mandiri", "PT Bumi Sentosa", "PT Sinar Medan Teknik", "RS Harapan Sehat", "Hotel Grand Mahkota", "Sekolah Global Cendekia", "PT Logistik Prima"] },
       { key: "sumber", label: "Sumber", type: "select", required: true, options: ["Sosial media", "Website", "Cold call", "Referral", "Event", "Distributor", "Lainnya"] },
       { key: "nilai", label: "Nilai perkiraan (Rp)", type: "number" },
+      { key: "dokumen", label: "Upload dokumen pendukung / brief (Opsional)", type: "file", required: false },
     ],
     defaults: { status: "Prospecting", peluang: 20, sepi: 0, tipe: "End user", kontak: "-", closing: "2026-11-30", pemilik: "Dewi Lestari" },
     actions: [
@@ -132,6 +133,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "customer", label: "Customer", type: "select", required: true, options: ["PT Nusantara Jaya", "CV Karya Mandiri", "PT Bumi Sentosa", "RS Harapan Sehat", "Hotel Grand Mahkota"] },
       { key: "nilai", label: "Nilai (Rp)", type: "number", required: true },
       { key: "berlaku", label: "Berlaku sampai", type: "date", required: true },
+      { key: "dokumen", label: "Upload dokumen penawaran (PDF/Excel)", type: "file", required: false },
     ],
     defaults: { status: "Draft", versi: 1, lead: "-", pemilik: "Dewi Lestari", dibuat: "2026-10-08" },
     actions: [{ label: "Kirim ke customer", toast: "Penawaran ditandai terkirim", status: "Terkirim" }],

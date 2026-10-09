@@ -34,6 +34,7 @@ export default function RootLayout() {
     }
     if (Platform.OS === "web" && typeof document !== "undefined") {
       document.documentElement.classList.add("dark");
+      document.title = "Taska - Mini ERP";
     }
   }, []);
 
