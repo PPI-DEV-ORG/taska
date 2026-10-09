@@ -1,6 +1,7 @@
 import * as React from "react";
 import {
   APPROVALS, AUDIT_LOG, CUSTOMERS, DAMAGE_REPORTS, DELIVERY_NOTES, EXPENSES, INVOICES, LEADS, LEAD_SOURCES,
+  LOST_REASONS, EXPENSE_CATEGORIES, COST_CENTERS,
   NOTIFS, OPNAME, PO_CLIENT, PRODUCTS, PROJECTS, PURCHASE_REQUESTS, QUOTATIONS, RECEIVING,
   ROLE_LABEL, SUPPLIERS, SUPPLIER_POS, SURVEYS, TASKS, USERS, WAREHOUSES,
   type Approval, type Notif, type Role, type Row, type User,
@@ -30,10 +31,15 @@ export type DB = {
   products: Row[];
   productCategories: Row[];
   leadSources: Row[];
+  lostReasons: Row[];
+  expenseCategories: Row[];
+  costCenters: Row[];
+  followups: Row[];
+  issueReports: Row[];
   opname: Row[];
   users: Row[];
   "audit-log": Row[];
-  [k: string]: Row[];
+  [k: string]: Row[] | any;
 };
 export type HistoryItem = { id: string; who: string; what: string; when: string };
 
@@ -49,6 +55,7 @@ type Ctx = {
   setStatus: (module: string, id: string, status: string, note?: string) => void;
   createQuotationFromLead: (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }) => Row;
   history: (module: string, id: string) => HistoryItem[];
+  pushHistory: (module: string, id: string, what: string) => void;
   approvals: ApprovalState[];
   decide: (id: string, decision: "Disetujui" | "Ditolak", reason?: string) => void;
   notifs: Notif[];
@@ -80,6 +87,17 @@ const initialDB = (): DB => ({
   customers: CUSTOMERS, suppliers: SUPPLIERS, warehouses: WAREHOUSES, products: PRODUCTS,
   productCategories: DEFAULT_PRODUCT_CATEGORIES,
   leadSources: LEAD_SOURCES.map((ls, idx) => ({ id: `LS-${idx + 1}`, nama: ls, status: "Aktif" })),
+  lostReasons: LOST_REASONS.map((lr, idx) => ({ id: `LR-${idx + 1}`, nama: lr, status: "Aktif" })),
+  expenseCategories: EXPENSE_CATEGORIES.map((ec, idx) => ({ id: `EC-${idx + 1}`, nama: ec, status: "Aktif" })),
+  costCenters: COST_CENTERS.map((cc, idx) => ({ id: `CC-${idx + 1}`, nama: cc, status: "Aktif" })),
+  followups: [
+    { id: "FU-01", leadId: "L-001", tanggal: "2026-10-08", metode: "Telepon", catatan: "Membahas ruang lingkup dan jadwal survey", tanggalBerikutnya: "2026-10-12", status: "Selesai", dibuat: "Dewi Lestari" },
+    { id: "FU-02", leadId: "L-001", tanggal: "2026-10-06", metode: "WhatsApp", catatan: "Mengirim contoh portfolio penawaran sebelumnya", tanggalBerikutnya: "2026-10-08", status: "Selesai", dibuat: "Dewi Lestari" },
+    { id: "FU-03", leadId: "L-002", tanggal: "2026-10-07", metode: "Email", catatan: "Perkenalan dan permintaan denah gedung sekolah", tanggalBerikutnya: "2026-10-14", status: "Terjadwal", dibuat: "Dewi Lestari" },
+  ],
+  issueReports: [
+    { id: "IR-01", receivingId: "RC-002", poNo: "SP-001", item: "Adaptor 12v 2a", jenis: "Rusak", qty: 2, deskripsi: "2 unit adaptor pecah saat unboxing kontainer", pelapor: "Eko Saputra", tanggal: "2026-10-08", status: "Menunggu Solusi" },
+  ],
   opname: OPNAME,
   users: USERS.map((u) => ({ ...u, roleLabel: ROLE_LABEL[u.role] })),
   "audit-log": AUDIT_LOG,
@@ -145,7 +163,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const patchRow = React.useCallback((module: string, id: string, patch: Record<string, any>) => {
-    setData((d) => ({ ...d, [module]: (d[module] ?? []).map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+    setData((d) => ({ ...d, [module]: (d[module] ?? []).map((r: { id: string; }) => (r.id === id ? { ...r, ...patch } : r)) }));
   }, []);
 
   const createQuotationFromLead = React.useCallback(
@@ -224,7 +242,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const key = def?.statusKey || "status";
       setData((d) => ({
         ...d,
-        [module]: (d[module] ?? []).map((r) => {
+        [module]: (d[module] ?? []).map((r: { [x: string]: any; id: any; total?: any; }) => {
           if (r.id !== id) return r;
           const next: Row = { ...r, [key]: status };
           if (module === "leads" && status === "Lost") next.alasanLost = note ?? "";
@@ -253,7 +271,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const history = React.useCallback(
     (module: string, id: string): HistoryItem[] => {
       const custom = hist[`${module}:${id}`] ?? [];
-      const row = data[module]?.find((r) => r.id === id);
+      const row = data[module]?.find((r: { id: string; }) => r.id === id);
       const owner = row?.pemilik ?? row?.pembuat ?? row?.pemohon ?? row?.pelapor ?? row?.pm ?? "Sistem";
       return [
         ...custom,
@@ -298,10 +316,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value = React.useMemo<Ctx>(
     () => ({
-      user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, history, approvals, decide,
+      user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, history, pushHistory, approvals, decide,
       notifs: myNotifs, unread, markRead, markAllRead, toast, offline, setOffline,
     }),
-    [user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, history, approvals, decide, myNotifs, unread, markRead, markAllRead, toast, offline],
+    [user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead, toast, offline],
   );
 
   return (

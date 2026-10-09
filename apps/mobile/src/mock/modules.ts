@@ -64,7 +64,7 @@ export type ModuleDef = {
   confirmStatuses?: string[];
 };
 
-const ALL: Role[] = ["bos", "sales", "pm", "teknisi", "procurement", "finance", "gudang", "se"];
+const ALL: Role[] = ["admin", "bos", "sales", "pm", "teknisi", "procurement", "finance", "gudang", "se"];
 
 export const MODULES: Record<string, ModuleDef> = {
   leads: {
@@ -578,7 +578,8 @@ const N = {
 } satisfies Record<string, NavItem>;
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
-  bos: [N.dashboard, N.approvals, N.leads, N.projects, N.invoices, N.stock, N.reports, N.master, N.users, N.archive, N.audit],
+  admin: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.projects, N.invoices, N.stock, N.reports, N.archive, N.audit],
+  bos: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.projects, N.invoices, N.stock, N.reports, N.archive, N.audit],
   sales: [N.dashboard, N.leads, N.quotations, N.surveys, N.customers, N.master],
   pm: [N.dashboard, N.projects, N.surveys, N.requests, N.delivery, N.expenses],
   teknisi: [N.dashboard, N.surveys, N.myProjects, N.delivery, N.expenses],

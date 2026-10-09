@@ -21,7 +21,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const router = useRouter();
   const { data, user, setStatus, history, approvals, decide, toast } = useApp();
   const def = MODULES[moduleKey];
-  const row = data[moduleKey]?.find((r) => r.id === id);
+  const row = data[moduleKey]?.find((r: { id: string }) => r.id === id);
   const [menu, setMenu] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
 

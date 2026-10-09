@@ -21,12 +21,12 @@ const CREATE: Record<string, Role[]> = {
   "damage-reports": ["gudang"],
   customers: ["sales"],
   suppliers: ["procurement"],
-  users: ["bos"], // Admin terpisah di masa depan, saat ini bos hanya akun & audit log bila diperlukan
+  users: ["bos", "admin"],
 };
 
 export function canCreate(def: ModuleDef, role: Role) {
-  // PRD Aturan: Bos hanya melihat dan menyetujui, tanpa tombol buat, ubah, atau hapus
-  if (role === "bos" && def.key !== "users") return false;
+  // PRD Aturan: Bos / Admin hanya melihat dan menyetujui, tanpa tombol buat, ubah, atau hapus
+  if ((role === "bos" || role === "admin") && def.key !== "users") return false;
   return (def.createRoles ?? CREATE[def.key] ?? []).includes(role) && !!(def.newHref || def.createFields);
 }
 
@@ -41,9 +41,9 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
     case "surveys":
       return ["teknisi", "se"].includes(u.role) ? rows.filter((r) => mine(r.tim)) : rows;
     case "delivery-notes":
-      return ["bos", "finance", "gudang"].includes(u.role) ? rows : rows.filter((r) => r.pembuat === u.name);
+      return ["bos", "admin", "finance", "gudang"].includes(u.role) ? rows : rows.filter((r) => r.pembuat === u.name);
     case "expenses":
-      return ["bos", "finance"].includes(u.role) ? rows : rows.filter((r) => r.pelapor === u.name);
+      return ["bos", "admin", "finance"].includes(u.role) ? rows : rows.filter((r) => r.pelapor === u.name);
     default:
       return rows;
   }

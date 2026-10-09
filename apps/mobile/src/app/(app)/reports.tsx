@@ -41,10 +41,90 @@ const REPORT_CARDS = [
 ];
 
 export default function ReportsScreen() {
-  const { toast } = useApp();
+  const { data, toast } = useApp();
+
+  function generateCsv(title: string): string {
+    const headerPrefix = `LAPORAN RESMI TASKA ERP - ${title.toUpperCase()}\nTanggal Ekspor: ${new Date().toISOString().slice(0, 10)}\n\n`;
+
+    if (title.includes("Pipeline") || title.includes("Penjualan")) {
+      const rows = (data.leads || []).map((l: any) =>
+        `"${l.id}","${l.nama}","${l.perusahaan}","${l.sumber}","${l.nilai}","${l.peluang}%","${l.closing}","${l.pemilik}","${l.status}","${l.alasanLost || "-"}"`
+      );
+      return headerPrefix + "ID,Nama Proyek,Perusahaan,Sumber,Nilai (Rp),Peluang,Est Closing,PIC Sales,Status,Alasan Lost\n" + rows.join("\n");
+    }
+
+    if (title.includes("Piutang") || title.includes("Invoice")) {
+      const rows = (data.invoices || []).map((inv: any) =>
+        `"${inv.nomor}","${inv.customer}","${inv.jenis}","${inv.total}","${inv.terbayar}","${inv.total - inv.terbayar}","${inv.jatuhTempo}","${inv.status}"`
+      );
+      return headerPrefix + "Nomor Invoice,Customer,Jenis Termin,Total Tagihan,Sudah Dibayar,Sisa Piutang,Jatuh Tempo,Status\n" + rows.join("\n");
+    }
+
+    if (title.includes("Stok") || title.includes("Gudang")) {
+      const rows = (data.products || []).map((p: any) =>
+        `"${p.sku}","${p.nama}","${p.kategori}","${p.satuan}","${p.hargaBeli}","${p.garansi}","${p.berSN ? "Ya" : "Tidak"}"`
+      );
+      return headerPrefix + "SKU,Nama Produk,Kategori,Satuan,Harga Beli (Rp),Masa Garansi,Serial Number (SN)\n" + rows.join("\n");
+    }
+
+    if (title.includes("Pengeluaran") || title.includes("Reimbursement")) {
+      const rows = (data.expenses || []).map((e: any) =>
+        `"${e.id}","${e.tanggal}","${e.pelapor}","${e.kategori}","${e.nominal}","${e.project}","${e.alasan}","${e.status}"`
+      );
+      return headerPrefix + "ID,Tanggal,Pelapor,Kategori,Nominal (Rp),Project Terkait,Keperluan,Status\n" + rows.join("\n");
+    }
+
+    if (title.includes("Survey")) {
+      const rows = (data.surveys || []).map((s: any) =>
+        `"${s.id}","${s.lead}","${s.customer}","${s.lokasi}","${s.jadwal}","${s.tim}","${s.biaya}","${s.status}"`
+      );
+      return headerPrefix + "ID,Lead / Proyek,Customer,Lokasi,Jadwal,Tim Teknisi,Biaya Lapangan,Status\n" + rows.join("\n");
+    }
+
+    // Realisasi Project
+    const rows = (data.projects || []).map((pr: any) =>
+      `"${pr.id}","${pr.nama}","${pr.customer}","${pr.pm}","${pr.progres}%","${pr.status}","${pr.pembayaran}","${pr.barang}"`
+    );
+    return headerPrefix + "ID,Nama Proyek,Customer,PM,Progres,Status Proyek,Pembayaran,Status Barang\n" + rows.join("\n");
+  }
 
   function download(title: string, format: string) {
-    toast(`Mengunduh ${title} dalam format ${format}`);
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      toast(`Mengunduh ${title} dalam format ${format}`);
+      return;
+    }
+
+    const safeName = title.toLowerCase().replace(/[^a-z0-9]/g, "-");
+
+    if (format.startsWith("Excel")) {
+      const csvData = generateCsv(title);
+      const blob = new Blob(["\uFEFF" + csvData], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${safeName}-${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast(`Laporan ${title} berhasil diunduh (.csv)`);
+    } else if (format === "PDF") {
+      window.print();
+    } else {
+      // Word (.doc format via HTML Blob)
+      const csvData = generateCsv(title);
+      const htmlContent = `<html><head><meta charset="utf-8"><title>${title}</title></head><body><h2>PT GHINA MULTI PRIMA / TASKA ERP</h2><h3>${title}</h3><pre>${csvData}</pre></body></html>`;
+      const blob = new Blob(["\uFEFF" + htmlContent], { type: "application/msword" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${safeName}-${new Date().toISOString().slice(0, 10)}.doc`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast(`Laporan ${title} berhasil diunduh (.doc)`);
+    }
   }
 
   return (

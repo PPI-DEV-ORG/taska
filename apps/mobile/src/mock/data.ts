@@ -1,6 +1,7 @@
 import { daysFromNow as d, hoursAgo } from "@/lib/format";
 
 export type Role =
+  | "admin"
   | "bos"
   | "sales"
   | "pm"
@@ -11,6 +12,7 @@ export type Role =
   | "se";
 
 export const ROLE_LABEL: Record<Role, string> = {
+  admin: "Admin / Bos",
   bos: "Admin / Bos",
   sales: "Sales",
   pm: "Project Manager",
@@ -83,6 +85,25 @@ export const LOST_REASONS = [
   "Sales atau PM lupa",
   "Harga tidak cocok",
   "Dibatalkan client",
+  "Kalah spesifikasi kompetitor",
+  "Lainnya",
+];
+export const EXPENSE_CATEGORIES = [
+  "Makan & Minum",
+  "Bensin & Tol",
+  "Transportasi & Taksi",
+  "Akomodasi & Penginapan",
+  "Perlengkapan Lapangan",
+  "Material / Beli Langsung",
+  "Parkir & Operasional",
+  "Lainnya",
+];
+export const COST_CENTERS = [
+  "CC-PROJECT (Beban Project Klien)",
+  "CC-SALES (Beban Pemasaran & Penjualan)",
+  "CC-OPS (Operasional Kantor & IT)",
+  "CC-GUDANG (Logistik & Inventori)",
+  "CC-MGMT (Manajemen & Legal)",
 ];
 export const LEAD_STAGES = ["Prospecting", "Qualification", "Proposal", "Negotiation", "Won", "Lost"];
 
