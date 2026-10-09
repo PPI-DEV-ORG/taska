@@ -65,7 +65,7 @@ export default function MasterDataScreen() {
 
   function handleSaveKategori() {
     if (!kategoriNama.trim()) {
-      toast("Nama kategori wajib diisi", "destructive");
+      toast("Nama kategori wajib diisi", "danger");
       return;
     }
     addRow("productCategories", {
@@ -83,7 +83,7 @@ export default function MasterDataScreen() {
 
   function handleSaveBarang() {
     if (!barangNama.trim() || !barangSku.trim()) {
-      toast("Nama barang dan SKU wajib diisi", "destructive");
+      toast("Nama barang dan SKU wajib diisi", "danger");
       return;
     }
     let satuanDisplay = barangSatuan;
@@ -112,7 +112,7 @@ export default function MasterDataScreen() {
 
   function handleSaveGudang() {
     if (!gudangNama.trim() || !gudangKota.trim()) {
-      toast("Nama gudang dan kota wajib diisi", "destructive");
+      toast("Nama gudang dan kota wajib diisi", "danger");
       return;
     }
     addRow("warehouses", {
@@ -130,7 +130,7 @@ export default function MasterDataScreen() {
 
   function handleSaveLeadSource() {
     if (!leadSourceNama.trim()) {
-      toast("Nama kanal sumber lead wajib diisi", "destructive");
+      toast("Nama kanal sumber lead wajib diisi", "danger");
       return;
     }
     addRow("leadSources", {
