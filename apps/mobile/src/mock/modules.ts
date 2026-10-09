@@ -32,7 +32,7 @@ export type Field = { label: string; key: string; fmt?: Fmt };
 export type CreateField = {
   key: string;
   label: string;
-  type: "text" | "number" | "select" | "date" | "textarea";
+  type: "text" | "number" | "select" | "date" | "textarea" | "password";
   options?: string[];
   required?: boolean;
   placeholder?: string;
@@ -452,7 +452,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "telepon", label: "Telepon", type: "text" },
     ],
     defaults: { status: "Aktif" },
-    createRoles: ["bos"],
+    createRoles: ["sales"],
     emptyText: "Belum ada customer.",
   },
   suppliers: {
@@ -474,6 +474,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "payment", label: "Pembayaran", type: "select", options: ["Tunai", "Net 14", "Net 30"] },
     ],
     defaults: { status: "Aktif" },
+    createRoles: ["procurement"],
     emptyText: "Belum ada supplier.",
   },
   users: {
@@ -493,8 +494,9 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["name", "email", "roleLabel"],
     createLabel: "Tambah pengguna",
     createFields: [
-      { key: "name", label: "Nama lengkap", type: "text", required: true },
-      { key: "email", label: "Email", type: "text", required: true },
+      { key: "name", label: "Nama lengkap", type: "text", required: true, placeholder: "Contoh: Budi Santoso" },
+      { key: "email", label: "Email", type: "text", required: true, placeholder: "nama@taska.co.id" },
+      { key: "password", label: "Kata sandi", type: "password", required: true, placeholder: "Masukkan kata sandi akun" },
       { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Admin / Bos", "Sales", "Project Manager", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
     ],
     defaults: { status: "Aktif", gudang: "-" },
@@ -551,12 +553,12 @@ const N = {
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   bos: [N.dashboard, N.approvals, N.leads, N.projects, N.invoices, N.stock, N.reports, N.master, N.users, N.archive, N.audit],
-  sales: [N.dashboard, N.leads, N.quotations, N.surveys, N.customers],
+  sales: [N.dashboard, N.leads, N.quotations, N.surveys, N.customers, N.master],
   pm: [N.dashboard, N.projects, N.surveys, N.requests, N.delivery, N.expenses],
   teknisi: [N.dashboard, N.surveys, N.myProjects, N.delivery, N.expenses],
-  procurement: [N.dashboard, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView],
+  procurement: [N.dashboard, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.master],
   finance: [N.dashboard, N.approvals, N.invoices, N.quotations, N.poClient, N.expenses, N.opname],
-  gudang: [N.dashboard, N.stock, N.receiving, N.delivery, N.opname, N.damage],
+  gudang: [N.dashboard, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.master],
   se: [N.dashboard, N.myProjects, N.tasks, N.surveys, N.delivery, N.expenses],
 };
 

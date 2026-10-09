@@ -173,6 +173,7 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
                   onChangeText={(v) => setVals((s) => ({ ...s, [f.key]: v }))}
                   placeholder={f.type === "date" ? "2026-10-31" : f.placeholder}
                   keyboardType={f.type === "number" ? "numeric" : "default"}
+                  secureTextEntry={f.type === "password"}
                   className={cn("h-11 sm:h-11", errs[f.key] && "border-danger")}
                 />
               )}

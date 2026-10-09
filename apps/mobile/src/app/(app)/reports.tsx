@@ -48,17 +48,17 @@ export default function ReportsScreen() {
   }
 
   return (
-    <View className="gap-5">
+    <View className="gap-5 w-full pb-8">
       <PageHeader
         title="Laporan Eksekutif & Operasional"
         subtitle="Unduh rekapitulasi data lengkap dalam format Excel, PDF, atau Word"
       />
 
-      <View className="flex-row flex-wrap gap-4">
+      <View className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
         {REPORT_CARDS.map((rc) => (
           <View
             key={rc.title}
-            className="bg-card border-border flex-1 min-w-[320px] rounded-xl border p-5 justify-between gap-4"
+            className="bg-card border-border rounded-xl border p-5 justify-between gap-4 w-full"
           >
             <View className="gap-1.5">
               <Text className="text-base font-semibold">{rc.title}</Text>

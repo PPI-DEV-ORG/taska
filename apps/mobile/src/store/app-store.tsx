@@ -1,6 +1,6 @@
 import * as React from "react";
 import {
-  APPROVALS, AUDIT_LOG, CUSTOMERS, DAMAGE_REPORTS, DELIVERY_NOTES, EXPENSES, INVOICES, LEADS,
+  APPROVALS, AUDIT_LOG, CUSTOMERS, DAMAGE_REPORTS, DELIVERY_NOTES, EXPENSES, INVOICES, LEADS, LEAD_SOURCES,
   NOTIFS, OPNAME, PO_CLIENT, PRODUCTS, PROJECTS, PURCHASE_REQUESTS, QUOTATIONS, RECEIVING,
   ROLE_LABEL, SUPPLIERS, SUPPLIER_POS, SURVEYS, TASKS, USERS, WAREHOUSES,
   type Approval, type Notif, type Role, type Row, type User,
@@ -28,6 +28,8 @@ export type DB = {
   suppliers: Row[];
   warehouses: Row[];
   products: Row[];
+  productCategories: Row[];
+  leadSources: Row[];
   opname: Row[];
   users: Row[];
   "audit-log": Row[];
@@ -59,11 +61,25 @@ type Ctx = {
 
 const AppContext = React.createContext<Ctx | null>(null);
 
+const DEFAULT_PRODUCT_CATEGORIES = [
+  { id: "CAT-01", nama: "IP Camera", deskripsi: "Kamera pengawas CCTV berbasis IP network", prefix: "CAM", status: "Aktif" },
+  { id: "CAT-02", nama: "NVR", deskripsi: "Network Video Recorder perekam rekaman kamera", prefix: "NVR", status: "Aktif" },
+  { id: "CAT-03", nama: "Access Control", deskripsi: "Perangkat akses pintu, fingerprint & kartu RFID", prefix: "ACC", status: "Aktif" },
+  { id: "CAT-04", nama: "Switch", deskripsi: "Switch PoE & Network Managed Distribution", prefix: "SW", status: "Aktif" },
+  { id: "CAT-05", nama: "Server", deskripsi: "Server rackmount & workstation monitoring", prefix: "SRV", status: "Aktif" },
+  { id: "CAT-06", nama: "UPS", deskripsi: "Uninterruptible Power Supply backup daya", prefix: "UPS", status: "Aktif" },
+  { id: "CAT-07", nama: "Kabel", deskripsi: "Kabel UTP LAN Cat6, FO & Patch Cord", prefix: "CBL", status: "Aktif" },
+  { id: "CAT-08", nama: "Aksesoris", deskripsi: "Bracket, RJ45, modular jack & perlengkapan instalasi", prefix: "ACC", status: "Aktif" },
+];
+
 const initialDB = (): DB => ({
   leads: LEADS, quotations: QUOTATIONS, surveys: SURVEYS, "po-client": PO_CLIENT, invoices: INVOICES,
   projects: PROJECTS, tasks: TASKS, "purchase-requests": PURCHASE_REQUESTS, "supplier-pos": SUPPLIER_POS,
   receiving: RECEIVING, "delivery-notes": DELIVERY_NOTES, expenses: EXPENSES, "damage-reports": DAMAGE_REPORTS,
-  customers: CUSTOMERS, suppliers: SUPPLIERS, warehouses: WAREHOUSES, products: PRODUCTS, opname: OPNAME,
+  customers: CUSTOMERS, suppliers: SUPPLIERS, warehouses: WAREHOUSES, products: PRODUCTS,
+  productCategories: DEFAULT_PRODUCT_CATEGORIES,
+  leadSources: LEAD_SOURCES.map((ls, idx) => ({ id: `LS-${idx + 1}`, nama: ls, status: "Aktif" })),
+  opname: OPNAME,
   users: USERS.map((u) => ({ ...u, roleLabel: ROLE_LABEL[u.role] })),
   "audit-log": AUDIT_LOG,
 });
