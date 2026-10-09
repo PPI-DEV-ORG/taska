@@ -1,8 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable } from "@nestjs/common";
 
 @Injectable()
 export class AppService {
-  getHello(): string {
-    return 'Hello World!';
+  health() {
+    return {
+      name: "Taska Mini ERP API",
+      status: "ok",
+      version: "0.1.0",
+      time: new Date().toISOString(),
+    };
   }
 }

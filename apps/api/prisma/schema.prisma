@@ -1,0 +1,1311 @@
+// Taska — Mini ERP Operasional · Skema fase 1 (PRD)
+// Dokumen: apps/api/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+enum Role {
+  ADMIN
+  BOS
+  SALES
+  PM
+  TEKNISI
+  PROCUREMENT
+  FINANCE
+  GUDANG
+  SE
+}
+
+enum ActiveStatus {
+  AKTIF
+  NONAKTIF
+}
+
+enum LeadStage {
+  PROSPECTING
+  QUALIFICATION
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum ClientType {
+  PARTNER
+  END_USER
+}
+
+enum FollowUpMethod {
+  EMAIL
+  TELEPON
+  WA
+  LAINNYA
+}
+
+enum FollowUpStatus {
+  TERJADWAL
+  SELESAI
+}
+
+enum SurveyStatus {
+  DIMINTA
+  DIJADWALKAN
+  BERJALAN
+  SELESAI
+  BATAL
+}
+
+enum QuotationStatus {
+  NOT_YET
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SENT
+  NEGOTIATION
+  REVISION
+  EXPIRED
+}
+
+enum InvoiceOutStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  PAID
+  OVERDUE
+  BATAL
+}
+
+enum InvoiceInStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  OVERDUE
+  BATAL
+}
+
+enum InvoiceType {
+  DP
+  TERMIN
+  PELUNASAN
+}
+
+enum PaymentMethod {
+  TRANSFER
+  TUNAI
+  QRIS
+  LAINNYA
+}
+
+enum ProjectType {
+  CUSTOMER
+  PRODUCT_RD
+  INTERNAL
+  MAINTENANCE
+  SUPPORT
+  OTHER
+}
+
+enum ProjectStatus {
+  DIRENCANAKAN
+  BERJALAN
+  DITUNDA
+  TERLAMBAT
+  SELESAI
+}
+
+enum PaymentStatus {
+  BELUM_LUNAS
+  LUNAS
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+}
+
+enum Priority {
+  RENDAH
+  SEDANG
+  TINGGI
+  URGENT
+}
+
+enum CostType {
+  PROJECT
+  STOK
+  INTERNAL
+  LAINNYA
+}
+
+enum ItemCondition {
+  BARU
+  SECOND
+}
+
+enum PrStatus {
+  DIAJUKAN
+  CEK_STOK
+  DISETUJUI
+  DITOLAK
+  PO_DIBUAT
+  DIKIRIM
+  DITERIMA
+  DIBATALKAN
+}
+
+enum PoStatus {
+  MENUNGGU_PERSETUJUAN
+  DISETUJUI
+  DITOLAK
+  DIBATALKAN
+}
+
+enum ShipmentStatus {
+  DI_SUPPLIER
+  DIKIRIM
+  SAMPAI
+}
+
+enum ReceivingStatus {
+  MENUNGGU
+  DITERIMA_SEBAGIAN
+  DITERIMA
+  DITOLAK
+}
+
+enum MovementType {
+  IN
+  OUT
+  TRANSFER
+}
+
+enum MovementCategory {
+  PENERIMAAN_SUPPLIER
+  KELUAR_PROJECT
+  KELUAR_SURAT_JALAN
+  TRANSFER
+  RETUR_PROJECT
+  BARANG_TERPAKAI
+  PENGGANTIAN
+  PENYESUAIAN_OPNAME
+  LAINNYA
+}
+
+enum SerialStatus {
+  DI_GUDANG
+  RESERVED
+  DIKIRIM
+  TERPASANG
+  RETUR
+  DIGANTI
+  RUSAK
+}
+
+enum DeliveryStatus {
+  PENDING
+  DIKIRIM
+  DITERIMA
+  DIBATALKAN
+}
+
+enum ExpenseStatus {
+  DILAPORKAN
+  DISETUJUI
+  DITOLAK
+  DIBAYAR
+}
+
+enum ApprovalStatus {
+  MENUNGGU
+  DISETUJUI
+  DITOLAK
+}
+
+enum ApprovalKind {
+  PENAWARAN
+  PERMINTAAN_SURVEY
+  PURCHASE_REQUEST
+  SUPPLIER_PO
+  INVOICE_IN
+  PENERIMAAN
+  SURAT_JALAN
+  PENGELUARAN
+  OPNAME
+}
+
+enum OpnameStatus {
+  DRAFT
+  MENUNGGU_PERSETUJUAN
+  DISETUJUI
+  DITOLAK
+}
+
+enum DamageStatus {
+  DILAPORKAN
+  DIPROSES
+  SELESAI
+}
+
+enum IssueType {
+  RUSAK
+  SALAH_BARANG
+  KURANG
+}
+
+enum FileKind {
+  FOTO
+  DOKUMEN
+  VIDEO
+  LAINNYA
+}
+
+enum RequirementStatus {
+  DIBUTUHKAN
+  DIRESERVE
+  DIMINTA
+  DIPESAN
+  DITERIMA
+  DIBATALKAN
+}
+
+enum NotifKind {
+  APPROVAL
+  STOK
+  PENGIRIMAN
+  LEAD
+  TUGAS
+  SURAT
+  LAINNYA
+}
+
+// ─────────────────────────────── Fondasi ───────────────────────────────
+
+model User {
+  id           Int          @id @default(autoincrement())
+  email        String       @unique
+  passwordHash String
+  name         String
+  phone        String?
+  position     String?
+  department   String?
+  role         Role
+  status       ActiveStatus @default(AKTIF)
+  warehouseId  Int?
+  warehouse    Warehouse?   @relation(fields: [warehouseId], references: [id])
+  lastLoginAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  refreshTokens  RefreshToken[]
+  files          File[]              @relation("FileUploader")
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  ownedLeads     Lead[]              @relation("LeadOwner")
+  followUps      FollowUp[]
+  surveysReq     Survey[]            @relation("SurveyRequester")
+  surveysApprove Survey[]            @relation("SurveyApprover")
+  surveyMembers  SurveyMember[]
+  quotations     Quotation[]         @relation("QuotationOwner")
+  quoteVersions  QuotationVersion[]
+  projects       Project[]           @relation("ProjectPic")
+  projectMembers ProjectMember[]
+  tasks          Task[]              @relation("TaskAssignee")
+  expenses       Expense[]           @relation("ExpenseReporter")
+  createdDN      DeliveryNote[]      @relation("DNCreator")
+  movements      StockMovement[]
+  serialHist     SerialUnitHistory[]
+  opnames        StockOpname[]
+  receivings     Receiving[]
+  purchases      PurchaseRequest[]   @relation("PRRequester")
+  supplierPOs    SupplierPO[]        @relation("POCreator")
+  approvalsReq   Approval[]        @relation("ApprovalRequester")
+  damageReports  DamageReport[]
+  issueReports   IssueReport[]
+  auditAsActor   AuditLog[]          @relation("AuditActor")
+  settings       SystemSetting[]
+
+  @@index([role, status])
+  @@index([warehouseId])
+}
+
+model RefreshToken {
+  id        Int       @id @default(autoincrement())
+  tokenHash String    @unique
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model File {
+  id           Int      @id @default(autoincrement())
+  path         String
+  originalName String
+  mimeType     String
+  size         Int
+  kind         FileKind @default(LAINNYA)
+  refType      String?
+  refId        String?
+  uploadedById Int?
+  uploader     User?    @relation("FileUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([refType, refId])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int?
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+  actorName  String
+  action     String
+  entityType String
+  entityId   String
+  detail     String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id])
+  userId     Int?
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id         Int       @id @default(autoincrement())
+  userId     Int?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole Role?
+  kind       NotifKind @default(LAINNYA)
+  text       String
+  href       String
+  read       Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, read])
+  @@index([targetRole, read])
+  @@index([createdAt])
+}
+
+model DocumentNumber {
+  id      Int    @id @default(autoincrement())
+  docType String
+  period  String
+  seq     Int    @default(0)
+
+  @@unique([docType, period])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedById Int?
+  updatedAt   DateTime @updatedAt
+
+  updater User? @relation(fields: [updatedById], references: [id])
+}
+
+model Approval {
+  id            Int            @id @default(autoincrement())
+  kind          ApprovalKind
+  entityId      Int
+  title         String
+  amount        Decimal        @default(0) @db.Decimal(18, 2)
+  requestedById Int
+  requested_by  User           @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  status        ApprovalStatus @default(MENUNGGU)
+  reason        String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  steps ApprovalStep[]
+
+  @@unique([kind, entityId])
+  @@index([status])
+}
+
+model ApprovalStep {
+  id           Int            @id @default(autoincrement())
+  approvalId   Int
+  approval     Approval       @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  approverRole Role
+  status       ApprovalStatus @default(MENUNGGU)
+  decidedById  Int?
+  decidedAt    DateTime?
+  reason       String?
+
+  @@unique([approvalId, approverRole])
+  @@index([approverRole, status])
+}
+
+// ─────────────────────────────── Master data ───────────────────────────────
+
+model Customer {
+  id        Int          @id @default(autoincrement())
+  name      String
+  company   String?
+  pic       String
+  email     String?
+  phone     String?
+  address   String?
+  city      String?
+  notes     String?
+  status    ActiveStatus @default(AKTIF)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  leads      Lead[]
+  projects   Project[]
+  quotations Quotation[]
+  clientPOs  ClientPO[]
+  invoices   InvoiceOut[]
+
+  @@index([name])
+  @@index([status])
+}
+
+model Supplier {
+  id           Int          @id @default(autoincrement())
+  name         String
+  pic          String?
+  email        String?
+  phone        String?
+  city         String?
+  paymentTerms String?
+  notes        String?
+  status       ActiveStatus @default(AKTIF)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  purchaseRequests PurchaseRequest[]
+  supplierPOs      SupplierPO[]
+  invoiceIns       InvoiceIn[]
+
+  @@index([name])
+}
+
+model ProductCategory {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  description String?
+  prefix      String?
+  status      ActiveStatus @default(AKTIF)
+
+  products Product[]
+}
+
+model Product {
+  id             Int              @id @default(autoincrement())
+  sku            String           @unique
+  name           String
+  type           String?
+  categoryId     Int?
+  category       ProductCategory? @relation(fields: [categoryId], references: [id])
+  unit           String
+  hasSerial      Boolean          @default(false)
+  minStock       Int              @default(0)
+  warrantyMonths Int?
+  purchasePrice  Decimal          @default(0) @db.Decimal(18, 2)
+  status         ActiveStatus     @default(AKTIF)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  balances       StockBalance[]
+  movements      StockMovement[]
+  serials        SerialUnit[]
+  reservations   StockReservation[]
+  prItems        PurchaseRequestItem[]
+  poItems        SupplierPOItem[]
+  receivingItems ReceivingItem[]
+  opnameDetails  StockOpnameDetail[]
+  requirements   ProjectRequirement[]
+  damageReports  DamageReport[]
+  issueReports   IssueReport[]
+
+  @@index([name])
+  @@index([categoryId])
+}
+
+model Warehouse {
+  id        Int          @id @default(autoincrement())
+  name      String
+  city      String?
+  status    ActiveStatus @default(AKTIF)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users         User[]
+  balances      StockBalance[]
+  fromMovements StockMovement[] @relation("MoveFrom")
+  toMovements   StockMovement[] @relation("MoveTo")
+  serials       SerialUnit[]
+  receivings    Receiving[]
+  opnames       StockOpname[]
+
+  @@index([name])
+}
+
+model LeadSource {
+  id     Int          @id @default(autoincrement())
+  name   String       @unique
+  status ActiveStatus @default(AKTIF)
+  leads  Lead[]
+}
+
+model LostReason {
+  id     Int          @id @default(autoincrement())
+  name   String       @unique
+  status ActiveStatus @default(AKTIF)
+  leads  Lead[]
+}
+
+model ExpenseCategory {
+  id       Int          @id @default(autoincrement())
+  name     String       @unique
+  status   ActiveStatus @default(AKTIF)
+  expenses Expense[]
+}
+
+model CostCenter {
+  id       Int          @id @default(autoincrement())
+  name     String       @unique
+  status   ActiveStatus @default(AKTIF)
+  expenses Expense[]
+}
+
+// ─────────────────────────────── Sales CRM ───────────────────────────────
+
+model Lead {
+  id             Int         @id @default(autoincrement())
+  name           String
+  customerId     Int?
+  customer       Customer?   @relation(fields: [customerId], references: [id])
+  sourceId       Int?
+  source         LeadSource? @relation(fields: [sourceId], references: [id])
+  clientType     ClientType  @default(END_USER)
+  need           String?
+  contactName    String?
+  estimatedValue Decimal?    @db.Decimal(18, 2)
+  probability    Int         @default(20)
+  targetClosing  DateTime?   @db.Date
+  owner_id       Int
+  owner          User        @relation("LeadOwner", fields: [owner_id], references: [id])
+  stage          LeadStage   @default(PROSPECTING)
+  lostReasonId   Int?
+  lostReason     LostReason? @relation(fields: [lostReasonId], references: [id])
+  lostNote       String?
+  needsSurvey    Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  followUps  FollowUp[]
+  surveys    Survey[]
+  quotations Quotation[]
+
+  @@index([stage])
+  @@index([owner_id])
+  @@index([customerId])
+  @@index([targetClosing])
+}
+
+model FollowUp {
+  id          Int            @id @default(autoincrement())
+  leadId      Int?
+  lead        Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  quotationId Int?
+  date        DateTime       @db.Date
+  method      FollowUpMethod
+  notes       String
+  nextDate    DateTime?      @db.Date
+  status      FollowUpStatus @default(SELESAI)
+  createdById Int?
+  creator     User?          @relation(fields: [createdById], references: [id])
+  createdAt   DateTime       @default(now())
+  quotation   Quotation?     @relation(fields: [quotationId], references: [id])
+
+  @@index([leadId])
+  @@index([quotationId])
+  @@index([date])
+}
+
+model Survey {
+  id             Int          @id @default(autoincrement())
+  leadId         Int
+  lead           Lead         @relation(fields: [leadId], references: [id])
+  location       String
+  need           String?
+  notes          String?
+  scheduleAt     DateTime?
+  status         SurveyStatus @default(DIMINTA)
+  cost           Decimal      @default(0) @db.Decimal(18, 2)
+  requestedById  Int
+  requester      User         @relation("SurveyRequester", fields: [requestedById], references: [id])
+  approvedById   Int?
+  approver       User?        @relation("SurveyApprover", fields: [approvedById], references: [id])
+  approvedAt     DateTime?
+  rejectedReason String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  members  SurveyMember[]
+  expenses Expense[]
+
+  @@index([status])
+  @@index([scheduleAt])
+  @@index([leadId])
+}
+
+model SurveyMember {
+  id       Int    @id @default(autoincrement())
+  surveyId Int
+  survey   Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  userId   Int
+  user     User   @relation(fields: [userId], references: [id])
+
+  @@unique([surveyId, userId])
+}
+
+// ─────────────────────────────── Penawaran ───────────────────────────────
+
+model Quotation {
+  id             Int             @id @default(autoincrement())
+  number         String          @unique
+  leadId         Int
+  lead           Lead            @relation(fields: [leadId], references: [id])
+  customerId     Int?
+  customer       Customer?       @relation(fields: [customerId], references: [id])
+  ownerId        Int
+  owner          User            @relation("QuotationOwner", fields: [ownerId], references: [id])
+  status         QuotationStatus @default(NOT_YET)
+  validUntil     DateTime?       @db.Date
+  currentVersion Int             @default(0)
+  total          Decimal         @default(0) @db.Decimal(18, 2)
+  ppn            Decimal         @default(0) @db.Decimal(18, 2)
+  discount       Decimal         @default(0) @db.Decimal(18, 2)
+  grandTotal     Decimal         @default(0) @db.Decimal(18, 2)
+  sentAt         DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  versions  QuotationVersion[]
+  clientPOs ClientPO[]
+  followUps FollowUp[]
+  projects  Project[]
+
+  @@index([status])
+  @@index([leadId])
+  @@index([ownerId])
+}
+
+model QuotationVersion {
+  id          Int       @id @default(autoincrement())
+  quotationId Int
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  version     Int
+  fileId      Int?
+  total       Decimal   @default(0) @db.Decimal(18, 2)
+  ppn         Decimal   @default(0) @db.Decimal(18, 2)
+  discount    Decimal   @default(0) @db.Decimal(18, 2)
+  grandTotal  Decimal   @default(0) @db.Decimal(18, 2)
+  note        String?
+  createdById Int?
+  creator     User?     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@unique([quotationId, version])
+}
+
+// ─────────────────────────────── Finance ───────────────────────────────
+
+model ClientPO {
+  id          Int        @id @default(autoincrement())
+  number      String     @unique
+  customerId  Int
+  customer    Customer   @relation(fields: [customerId], references: [id])
+  quotationId Int?
+  quotation   Quotation? @relation(fields: [quotationId], references: [id])
+  amount      Decimal    @db.Decimal(18, 2)
+  date        DateTime   @db.Date
+  fileId      Int?
+  notes       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  invoices InvoiceOut[]
+
+  @@index([customerId])
+  @@index([date])
+}
+
+model InvoiceOut {
+  id          Int              @id @default(autoincrement())
+  number      String           @unique
+  clientPoId  Int?
+  clientPo    ClientPO?        @relation(fields: [clientPoId], references: [id])
+  projectId   Int?
+  project     Project?         @relation(fields: [projectId], references: [id])
+  customerId  Int
+  customer    Customer         @relation(fields: [customerId], references: [id])
+  description String?
+  type        InvoiceType      @default(TERMIN)
+  amount      Decimal          @db.Decimal(18, 2)
+  ppn         Decimal          @default(0) @db.Decimal(18, 2)
+  total       Decimal          @db.Decimal(18, 2)
+  paidAmount  Decimal          @default(0) @db.Decimal(18, 2)
+  date        DateTime         @db.Date
+  dueDate     DateTime         @db.Date
+  status      InvoiceOutStatus @default(DRAFT)
+  fileId      Int?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  payments Payment[]
+
+  @@index([status])
+  @@index([dueDate])
+  @@index([customerId])
+  @@index([projectId])
+}
+
+model InvoiceIn {
+  id             Int             @id @default(autoincrement())
+  number         String?
+  supplierId     Int
+  supplier       Supplier        @relation(fields: [supplierId], references: [id])
+  supplierPoId   Int?
+  supplierPo     SupplierPO?     @relation(fields: [supplierPoId], references: [id])
+  amount         Decimal         @db.Decimal(18, 2)
+  ppn            Decimal         @default(0) @db.Decimal(18, 2)
+  total          Decimal         @db.Decimal(18, 2)
+  paidAmount     Decimal         @default(0) @db.Decimal(18, 2)
+  dueDate        DateTime        @db.Date
+  status         InvoiceInStatus @default(UNPAID)
+  fileId         Int?
+  transferFileId Int?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  payments Payment[]
+
+  @@index([status])
+  @@index([dueDate])
+  @@index([supplierId])
+}
+
+model Payment {
+  id           Int           @id @default(autoincrement())
+  invoiceOutId Int?
+  invoiceOut   InvoiceOut?   @relation(fields: [invoiceOutId], references: [id])
+  invoiceInId  Int?
+  invoiceIn    InvoiceIn?    @relation(fields: [invoiceInId], references: [id])
+  amount       Decimal       @db.Decimal(18, 2)
+  date         DateTime      @db.Date
+  method       PaymentMethod @default(TRANSFER)
+  reference    String?
+  fileId       Int?
+  createdById  Int?
+  createdAt    DateTime      @default(now())
+
+  @@index([invoiceOutId])
+  @@index([invoiceInId])
+}
+
+model Expense {
+  id             Int              @id @default(autoincrement())
+  date           DateTime         @db.Date
+  reporterId     Int
+  reporter       User             @relation("ExpenseReporter", fields: [reporterId], references: [id])
+  categoryId     Int?
+  category       ExpenseCategory? @relation(fields: [categoryId], references: [id])
+  amount         Decimal          @db.Decimal(18, 2)
+  description    String
+  status         ExpenseStatus    @default(DILAPORKAN)
+  projectId      Int?
+  project        Project?         @relation(fields: [projectId], references: [id])
+  surveyId       Int?
+  survey         Survey?          @relation(fields: [surveyId], references: [id])
+  deliveryNoteId Int?
+  deliveryNote   DeliveryNote?    @relation(fields: [deliveryNoteId], references: [id])
+  costCenterId   Int?
+  costCenter     CostCenter?      @relation(fields: [costCenterId], references: [id])
+  receiptFileId  Int?
+  paidFileId     Int?
+  paidAt         DateTime?
+  rejectReason   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([status])
+  @@index([reporterId])
+  @@index([date])
+  @@index([projectId])
+  @@index([deliveryNoteId])
+}
+
+// ─────────────────────────────── Project ───────────────────────────────
+
+model Project {
+  id            Int           @id @default(autoincrement())
+  name          String
+  type          ProjectType   @default(CUSTOMER)
+  customerId    Int?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  picId         Int
+  pic           User          @relation("ProjectPic", fields: [picId], references: [id])
+  quotationId   Int?
+  quotation     Quotation?    @relation(fields: [quotationId], references: [id])
+  startDate     DateTime      @db.Date
+  endDate       DateTime?     @db.Date
+  status        ProjectStatus @default(BERJALAN)
+  progress      Int           @default(0)
+  paymentStatus PaymentStatus @default(BELUM_LUNAS)
+  prdFileId     Int?
+  notes         String?
+  completedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  members          ProjectMember[]
+  tasks            Task[]
+  requirements     ProjectRequirement[]
+  reservations     StockReservation[]
+  movements        StockMovement[]
+  invoices         InvoiceOut[]
+  expenses         Expense[]
+  dnLocations      DeliveryNoteLocation[]
+  purchaseRequests PurchaseRequest[]
+  serialUnits      SerialUnit[]
+  supplierPOs      SupplierPO[]
+  receivings       Receiving[]
+
+  @@index([status])
+  @@index([picId])
+  @@index([customerId])
+}
+
+model ProjectMember {
+  id        Int     @id @default(autoincrement())
+  projectId Int
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+}
+
+model Task {
+  id            Int        @id @default(autoincrement())
+  projectId     Int
+  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId      Int?
+  parent        Task?      @relation("TaskTree", fields: [parentId], references: [id])
+  children      Task[]     @relation("TaskTree")
+  name          String
+  assigneeId    Int?
+  assignee      User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  dueDate       DateTime?  @db.Date
+  priority      Priority   @default(SEDANG)
+  status        TaskStatus @default(TODO)
+  progress      Int        @default(0)
+  needsPurchase Boolean    @default(false)
+  bahpFileId    Int?
+  bastFileId    Int?
+  doFileId      Int?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  requirements     ProjectRequirement[]
+  purchaseRequests PurchaseRequest[]
+
+  @@index([projectId])
+  @@index([assigneeId])
+  @@index([status])
+}
+
+model ProjectRequirement {
+  id          Int               @id @default(autoincrement())
+  projectId   Int
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId      Int?
+  task        Task?             @relation(fields: [taskId], references: [id])
+  productId   Int
+  product     Product           @relation(fields: [productId], references: [id])
+  qty         Int
+  reservedQty Int               @default(0)
+  status      RequirementStatus @default(DIBUTUHKAN)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([projectId])
+  @@index([productId])
+}
+
+// ─────────────────────────────── Procurement ───────────────────────────────
+
+model PurchaseRequest {
+  id             Int           @id @default(autoincrement())
+  number         String        @unique
+  date           DateTime      @db.Date
+  requesterId    Int
+  requester      User          @relation("PRRequester", fields: [requesterId], references: [id])
+  costType       CostType
+  projectId      Int?
+  project        Project?      @relation(fields: [projectId], references: [id])
+  taskId         Int?
+  task           Task?         @relation(fields: [taskId], references: [id])
+  supplierId     Int?
+  supplier       Supplier?     @relation(fields: [supplierId], references: [id])
+  condition      ItemCondition @default(BARU)
+  estimatedCost  Decimal       @default(0) @db.Decimal(18, 2)
+  purpose        String
+  otherNote      String?
+  evidenceFileId Int?
+  status         PrStatus      @default(DIAJUKAN)
+  rejectReason   String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  items       PurchaseRequestItem[]
+  supplierPOs SupplierPO[]
+
+  @@index([status])
+  @@index([projectId])
+  @@index([date])
+}
+
+model PurchaseRequestItem {
+  id        Int             @id @default(autoincrement())
+  requestId Int
+  request   PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product         @relation(fields: [productId], references: [id])
+  qty       Int
+  unitCost  Decimal         @default(0) @db.Decimal(18, 2)
+
+  @@index([requestId])
+}
+
+model SupplierPO {
+  id             Int              @id @default(autoincrement())
+  number         String           @unique
+  supplierId     Int
+  supplier       Supplier         @relation(fields: [supplierId], references: [id])
+  requestId      Int?
+  request        PurchaseRequest? @relation(fields: [requestId], references: [id])
+  projectId      Int?
+  project        Project?         @relation(fields: [projectId], references: [id])
+  date           DateTime         @db.Date
+  eta            DateTime?        @db.Date
+  paymentTerms   String?
+  total          Decimal          @db.Decimal(18, 2)
+  status         PoStatus         @default(MENUNGGU_PERSETUJUAN)
+  shipmentStatus ShipmentStatus   @default(DI_SUPPLIER)
+  fileId         Int?
+  doFileId       Int?
+  createdById    Int?
+  creator        User?            @relation("POCreator", fields: [createdById], references: [id])
+  arrivedAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  items      SupplierPOItem[]
+  receivings Receiving[]
+  invoiceIns InvoiceIn[]
+
+  @@index([status])
+  @@index([shipmentStatus])
+  @@index([supplierId])
+}
+
+model SupplierPOItem {
+  id          Int        @id @default(autoincrement())
+  poId        Int
+  po          SupplierPO @relation(fields: [poId], references: [id], onDelete: Cascade)
+  productId   Int
+  product     Product    @relation(fields: [productId], references: [id])
+  qty         Int
+  price       Decimal    @db.Decimal(18, 2)
+  receivedQty Int        @default(0)
+
+  @@index([poId])
+}
+
+model Receiving {
+  id            Int             @id @default(autoincrement())
+  number        String          @unique
+  supplierPoId  Int
+  supplierPo    SupplierPO      @relation(fields: [supplierPoId], references: [id])
+  warehouseId   Int?
+  warehouse     Warehouse?      @relation(fields: [warehouseId], references: [id])
+  projectId     Int?
+  project       Project?        @relation(fields: [projectId], references: [id])
+  date          DateTime        @db.Date
+  receiverId    Int
+  receiver      User            @relation(fields: [receiverId], references: [id])
+  status        ReceivingStatus @default(MENUNGGU)
+  conditionNote String?
+  receiptFileId Int?
+  photoFileId   Int?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  items        ReceivingItem[]
+  issueReports IssueReport[]
+
+  @@index([status])
+  @@index([supplierPoId])
+  @@index([warehouseId])
+}
+
+model ReceivingItem {
+  id          Int       @id @default(autoincrement())
+  receivingId Int
+  receiving   Receiving @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id])
+  qtyOrdered  Int
+  qtyReceived Int       @default(0)
+  serials     String?
+  note        String?
+
+  @@index([receivingId])
+}
+
+model IssueReport {
+  id          Int          @id @default(autoincrement())
+  receivingId Int?
+  receiving   Receiving?   @relation(fields: [receivingId], references: [id])
+  poNumber    String?
+  productId   Int?
+  product     Product?     @relation(fields: [productId], references: [id])
+  type        IssueType
+  qty         Int          @default(1)
+  description String
+  fileId      Int?
+  reporterId  Int
+  reporter    User         @relation(fields: [reporterId], references: [id])
+  status      DamageStatus @default(DILAPORKAN)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status])
+  @@index([receivingId])
+}
+
+// ─────────────────────────────── Gudang ───────────────────────────────
+
+model StockBalance {
+  id          Int       @id @default(autoincrement())
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id])
+  warehouseId Int
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  qty         Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([productId, warehouseId])
+  @@index([warehouseId])
+}
+
+model StockMovement {
+  id              Int              @id @default(autoincrement())
+  date            DateTime         @db.Date
+  type            MovementType
+  category        MovementCategory
+  productId       Int
+  product         Product          @relation(fields: [productId], references: [id])
+  fromWarehouseId Int?
+  fromWarehouse   Warehouse?       @relation("MoveFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouseId   Int?
+  toWarehouse     Warehouse?       @relation("MoveTo", fields: [toWarehouseId], references: [id])
+  qty             Int
+  serialUnitId    Int?
+  serialUnit      SerialUnit?      @relation(fields: [serialUnitId], references: [id])
+  projectId       Int?
+  project         Project?         @relation(fields: [projectId], references: [id])
+  deliveryNoteId  Int?
+  deliveryNote    DeliveryNote?    @relation(fields: [deliveryNoteId], references: [id])
+  receivingId     Int?
+  reason          String?
+  createdById     Int?
+  creator         User?            @relation(fields: [createdById], references: [id])
+  createdAt       DateTime         @default(now())
+
+  @@index([productId])
+  @@index([date])
+  @@index([type])
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
+  @@index([deliveryNoteId])
+}
+
+model SerialUnit {
+  id             Int          @id @default(autoincrement())
+  sn             String       @unique
+  productId      Int
+  product        Product      @relation(fields: [productId], references: [id])
+  status         SerialStatus @default(DI_GUDANG)
+  warehouseId    Int?
+  warehouse      Warehouse?   @relation(fields: [warehouseId], references: [id])
+  projectId      Int?
+  project        Project?     @relation(fields: [projectId], references: [id])
+  warrantyEndsAt DateTime?    @db.Date
+  replacedFromId Int?
+  replacedFrom   SerialUnit?  @relation("SerialReplacement", fields: [replacedFromId], references: [id])
+  replacedBy     SerialUnit[] @relation("SerialReplacement")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  history       SerialUnitHistory[]
+  movements     StockMovement[]
+  reservations  StockReservation[]
+  damageReports DamageReport[]
+
+  @@index([status])
+  @@index([warehouseId])
+  @@index([productId])
+}
+
+model SerialUnitHistory {
+  id           Int          @id @default(autoincrement())
+  serialUnitId Int
+  serialUnit   SerialUnit   @relation(fields: [serialUnitId], references: [id], onDelete: Cascade)
+  status       SerialStatus
+  warehouseId  Int?
+  projectId    Int?
+  note         String?
+  changedById  Int?
+  changer      User?        @relation(fields: [changedById], references: [id])
+  createdAt    DateTime     @default(now())
+
+  @@index([serialUnitId])
+}
+
+model StockReservation {
+  id            Int         @id @default(autoincrement())
+  projectId     Int
+  project       Project     @relation(fields: [projectId], references: [id])
+  productId     Int?
+  product       Product?    @relation(fields: [productId], references: [id])
+  serialUnitId  Int?
+  serialUnit    SerialUnit? @relation(fields: [serialUnitId], references: [id])
+  qty           Int         @default(1)
+  requirementId Int?
+  releasedAt    DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([projectId])
+  @@index([productId])
+  @@index([releasedAt])
+}
+
+model StockOpname {
+  id          Int          @id @default(autoincrement())
+  warehouseId Int
+  warehouse   Warehouse    @relation(fields: [warehouseId], references: [id])
+  date        DateTime     @db.Date
+  conductorId Int
+  conductor   User         @relation(fields: [conductorId], references: [id])
+  status      OpnameStatus @default(DRAFT)
+  reason      String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  details StockOpnameDetail[]
+
+  @@index([status])
+  @@index([warehouseId])
+}
+
+model StockOpnameDetail {
+  id         Int         @id @default(autoincrement())
+  opnameId   Int
+  opname     StockOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+  productId  Int
+  product    Product     @relation(fields: [productId], references: [id])
+  systemQty  Int
+  countedQty Int
+  diff       Int
+  note       String?
+
+  @@index([opnameId])
+}
+
+model DamageReport {
+  id           Int          @id @default(autoincrement())
+  date         DateTime     @db.Date
+  productId    Int
+  product      Product      @relation(fields: [productId], references: [id])
+  serialUnitId Int?
+  serialUnit   SerialUnit?  @relation(fields: [serialUnitId], references: [id])
+  type         IssueType
+  qty          Int          @default(1)
+  description  String
+  fileId       Int?
+  reporterId   Int
+  reporter     User         @relation(fields: [reporterId], references: [id])
+  status       DamageStatus @default(DILAPORKAN)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([status])
+}
+
+// ─────────────────────────────── Surat jalan ───────────────────────────────
+
+model DeliveryNote {
+  id           Int            @id @default(autoincrement())
+  number       String         @unique
+  creatorId    Int
+  creator      User           @relation("DNCreator", fields: [creatorId], references: [id])
+  withGoods    Boolean        @default(false)
+  date         DateTime       @db.Date
+  status       DeliveryStatus @default(PENDING)
+  receiveById  Int?
+  receivedAt   DateTime?
+  scanFileId   Int?
+  reportText   String?
+  reportFileId Int?
+  reportAt     DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  locations DeliveryNoteLocation[]
+  movements StockMovement[]
+  expenses  Expense[]
+
+  @@index([status])
+  @@index([creatorId])
+  @@index([date])
+}
+
+model DeliveryNoteLocation {
+  id             Int          @id @default(autoincrement())
+  deliveryNoteId Int
+  deliveryNote   DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+  destination    String
+  reason         String
+  projectId      Int?
+  project        Project?     @relation(fields: [projectId], references: [id])
+
+  @@index([deliveryNoteId])
+}
+
+// ─────────────────────────────── (relasi terakhir) ───────────────────────────────
