@@ -38,6 +38,7 @@ export default function LeadsScreen() {
   const s = q.trim().toLowerCase();
   const leads = data.leads.filter((l) => !s || `${l.nama} ${l.perusahaan}`.toLowerCase().includes(s));
   const canAdd = ["sales", "pm"].includes(user!.role);
+  const canMove = !["bos", "admin"].includes(user!.role);
 
   function move(l: Row, dir: -1 | 1) {
     const i = LEAD_STAGES.indexOf(l.status as typeof LEAD_STAGES[number]) + dir;
@@ -123,15 +124,17 @@ export default function LeadsScreen() {
                       })()
                     ) : null}
 
-                    <View className="border-border flex-row items-center justify-between border-t pt-2">
-                      <Pressable disabled={si === 0} onPress={() => move(l, -1)} hitSlop={8} className="size-9 items-center justify-center rounded-md" style={{ opacity: si === 0 ? 0.3 : 1 }}>
-                        <ChevronLeft size={18} color={colors.textSecondary} />
-                      </Pressable>
-                      <Text className="text-muted-foreground text-[12px]">Pindahkan</Text>
-                      <Pressable disabled={si === LEAD_STAGES.length - 1} onPress={() => move(l, 1)} hitSlop={8} className="size-9 items-center justify-center rounded-md" style={{ opacity: si === LEAD_STAGES.length - 1 ? 0.3 : 1 }}>
-                        <ChevronRight size={18} color={colors.textSecondary} />
-                      </Pressable>
-                    </View>
+                    {canMove ? (
+                      <View className="border-border flex-row items-center justify-between border-t pt-2">
+                        <Pressable disabled={si === 0} onPress={() => move(l, -1)} hitSlop={8} className="size-9 items-center justify-center rounded-md" style={{ opacity: si === 0 ? 0.3 : 1 }}>
+                          <ChevronLeft size={18} color={colors.textSecondary} />
+                        </Pressable>
+                        <Text className="text-muted-foreground text-[12px]">Pindahkan</Text>
+                        <Pressable disabled={si === LEAD_STAGES.length - 1} onPress={() => move(l, 1)} hitSlop={8} className="size-9 items-center justify-center rounded-md" style={{ opacity: si === LEAD_STAGES.length - 1 ? 0.3 : 1 }}>
+                          <ChevronRight size={18} color={colors.textSecondary} />
+                        </Pressable>
+                      </View>
+                    ) : null}
                   </View>
                 ))}
               </View>

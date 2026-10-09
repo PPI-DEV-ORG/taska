@@ -104,7 +104,17 @@ const initialDB = (): DB => ({
 });
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = React.useState<User | null>(null);
+  const [user, setUser] = React.useState<User | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("taska_role") as Role | null;
+        if (saved) {
+          return USERS.find((u) => u.role === saved) ?? USERS[0] ?? null;
+        }
+      } catch {}
+    }
+    return null;
+  });
   const [data, setData] = React.useState<DB>(initialDB);
   const [hist, setHist] = React.useState<Record<string, HistoryItem[]>>({});
   const [approvals, setApprovals] = React.useState<ApprovalState[]>(APPROVALS);
@@ -120,9 +130,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = React.useCallback((role: Role) => {
-    setUser(USERS.find((u) => u.role === role) ?? USERS[0] ?? null);
+    const found = USERS.find((u) => u.role === role) ?? USERS[0] ?? null;
+    setUser(found);
+    if (typeof window !== "undefined") {
+      try {
+        if (found) localStorage.setItem("taska_role", found.role);
+      } catch {}
+    }
   }, []);
-  const logout = React.useCallback(() => setUser(null), []);
+  const logout = React.useCallback(() => {
+    setUser(null);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("taska_role");
+      } catch {}
+    }
+  }, []);
 
   const audit = React.useCallback(
     (aksi: string, jenis: string, refId: string) => {

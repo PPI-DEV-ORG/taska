@@ -597,10 +597,12 @@ function LeadExtras({ row }: { row: Row }) {
           title="Alasan Lost"
           subtitle="Analisis penyebab kegagalan peluang untuk evaluasi sales."
           right={
-            <Button size="sm" variant="outline" onPress={() => setLostReasonOpen(true)}>
-              <Edit3 size={13} color={colors.text} />
-              <Text className="text-xs">Ubah Alasan</Text>
-            </Button>
+            !["bos", "admin"].includes(user?.role || "") ? (
+              <Button size="sm" variant="outline" onPress={() => setLostReasonOpen(true)}>
+                <Edit3 size={13} color={colors.text} />
+                <Text className="text-xs">Ubah Alasan</Text>
+              </Button>
+            ) : undefined
           }
         >
           <Text className="text-danger font-medium text-sm">{row.alasanLost || "Belum ada alasan tercatat"}</Text>

@@ -75,7 +75,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         status={status || undefined}
         action={
           <>
-            {def.statuses.length > 1 ? (
+            {def.statuses.length > 1 && !(isLead && (user?.role === "bos" || user?.role === "admin")) ? (
               <Button variant="outline" onPress={() => setMenu(true)}>
                 <Text>Ubah status</Text>
                 <ChevronDown size={16} color={colors.text} />
