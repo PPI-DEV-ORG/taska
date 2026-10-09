@@ -53,11 +53,13 @@ function DialogOverlay({
         <NativeOnlyAnimatedView
           entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
           exiting={FadeOut.duration(150).reduceMotion(ReduceMotion.System)}
+          className="w-full items-center justify-center"
           as="Pressable"
         >
           <NativeOnlyAnimatedView
             entering={FadeIn.delay(50).reduceMotion(ReduceMotion.System)}
             exiting={FadeOut.duration(150).reduceMotion(ReduceMotion.System)}
+            className="w-full items-center justify-center"
           >
             <>{children}</>
           </NativeOnlyAnimatedView>
@@ -80,12 +82,15 @@ function DialogContent({
       <DialogOverlay>
         <DialogPrimitive.Content
           className={cn(
-            "bg-background border-border z-50 mx-auto flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg",
+            "bg-background border-border z-50 mx-auto flex w-[92vw] max-w-[calc(100%-2rem)] flex-col gap-4 rounded-2xl border p-5 sm:p-6 shadow-2xl shadow-black/40 sm:w-[560px] md:w-[680px] lg:w-[760px] sm:max-w-[760px]",
             Platform.select({
               web: "animate-in fade-in-0 zoom-in-95 duration-200",
             }),
             className,
           )}
+          style={Platform.select({
+            web: { width: "clamp(340px, 90vw, 760px)" } as any,
+          })}
           {...props}
         >
           <>{children}</>
