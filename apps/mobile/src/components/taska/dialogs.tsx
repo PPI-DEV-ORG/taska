@@ -11,8 +11,15 @@ import { useApp } from "@/store/app-store";
 import { colors, BOS_THRESHOLD } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import type { CreateField, ModuleDef } from "@/mock/modules";
+
+/** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
+function formatThousands(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  return Number(digits).toLocaleString("id-ID");
+}
 
 export function ConfirmDialog({
   open, onOpenChange, title, description, confirmLabel = "Ya, lanjutkan", destructive, onConfirm, reasonLabel, reasonOptions,
@@ -196,11 +203,35 @@ export function MultiSelect({
   );
 }
 
+function FileField({
+  fieldKey, label, required, onCount, handleRef,
+}: {
+  fieldKey: string;
+  label: string;
+  required?: boolean;
+  onCount: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  handleRef?: (h: FileUploaderHandle | null) => void;
+}) {
+  // stable per-field callback so FileUploader's useEffect doesn't re-fire
+  // every parent render (would loop setVals → render → new fn)
+  const handleCount = React.useCallback(
+    (count: number) => {
+      onCount((s) => ({ ...s, [fieldKey]: `${count} file terlampir` }));
+    },
+    [fieldKey, onCount],
+  );
+  return (
+    <FileUploader label={label} kind="dokumen" required={required} onChange={handleCount} handleRef={handleRef} />
+  );
+}
+
 export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: boolean; onOpenChange: (v: boolean) => void }) {
   const { addRow, data } = useApp();
   const [prevOpen, setPrevOpen] = React.useState(open);
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
+  const fileHandles = React.useRef<(FileUploaderHandle | null)[]>([]);
+  const fileHandleAt = (i: number) => (h: FileUploaderHandle | null) => { fileHandles.current[i] = h; };
 
   if (open !== prevOpen) {
     setPrevOpen(open);
@@ -214,6 +245,7 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
     if (!v) {
       setVals({});
       setErrs({});
+      fileHandles.current = [];
     }
     onOpenChange(v);
   }
@@ -277,7 +309,7 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
   }
 
   const fields = def.createFields ?? [];
-  function submit() {
+  async function submit() {
     const e: Record<string, string> = {};
     fields.forEach((f) => { if (f.required && !vals[f.key]?.trim()) e[f.key] = "Wajib diisi."; });
     setErrs(e);
@@ -289,25 +321,27 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
       row.ppn = Math.round(nilai * 0.11);
       row.total = nilai + row.ppn;
     }
+    // upload file staged sebelum submit, supaya tidak numpuk di storage
+    await Promise.all(fileHandles.current.map((h) => h?.flush() ?? Promise.resolve(null)));
     row = resolveSelectIds(def.key, row);
-    void addRow(def.key, row).then((saved) => {
-      if (saved) handleOpenChange(false);
-    });
+    const saved = await addRow(def.key, row);
+    if (saved) handleOpenChange(false);
   }
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-xl md:max-w-2xl lg:max-w-3xl">
         <DialogHeader><DialogTitle>{def.createLabel ?? `Tambah ${def.singular}`}</DialogTitle></DialogHeader>
         <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-4 pb-1">
-          {fields.map((f) => {
+          {fields.map((f, i) => {
             if (f.type === "file") {
               return (
-                <FileUploader
+                <FileField
                   key={f.key}
+                  fieldKey={f.key}
                   label={f.label}
-                  kind="dokumen"
                   required={f.required}
-                  onChange={(count) => setVals((s) => ({ ...s, [f.key]: `${count} file terlampir` }))}
+                  onCount={setVals}
+                  handleRef={fileHandleAt(i)}
                 />
               );
             }
@@ -328,7 +362,12 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
                 ) : (
                   <Input
                     value={vals[f.key] ?? ""}
-                    onChangeText={(v) => setVals((s) => ({ ...s, [f.key]: v }))}
+                    onChangeText={(v) =>
+                      setVals((s) => ({
+                        ...s,
+                        [f.key]: f.type === "number" ? formatThousands(v) : v,
+                      }))
+                    }
                     placeholder={f.type === "date" ? "2026-10-31" : f.placeholder}
                     keyboardType={f.type === "number" ? "numeric" : "default"}
                     secureTextEntry={f.type === "password"}

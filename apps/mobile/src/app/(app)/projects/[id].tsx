@@ -135,7 +135,7 @@ export default function ProjectDetailScreen() {
               Handover dilakukan setelah invoice lunas. Sistem mencatat dokumen serah terima (BAST/BAHP) tanpa memblokir penutupan project bila ada kesepakatan internal.
             </Text>
             <View className="mt-4">
-              <FileUploader label="Dokumen BAST / BAHP Akhir" kind="dokumen" />
+              <FileUploader label="Dokumen BAST / BAHP Akhir" kind="dokumen" autoFlush />
             </View>
           </Panel>
         </View>
@@ -267,10 +267,10 @@ export default function ProjectDetailScreen() {
         <View className="gap-4">
           <Panel title="File & Lampiran Dokumen Project">
             <View className="gap-4">
-              <FileUploader label="Dokumen PRD & Spesifikasi Teknis" kind="dokumen" />
-              <FileUploader label="Berita Acara Hasil Pekerjaan (BAHP)" kind="dokumen" />
-              <FileUploader label="Berita Acara Serah Terima (BAST)" kind="dokumen" />
-              <FileUploader label="Delivery Order (DO) / Surat Jalan Bertandatangan" kind="foto" />
+              <FileUploader label="Dokumen PRD & Spesifikasi Teknis" kind="dokumen" autoFlush />
+              <FileUploader label="Berita Acara Hasil Pekerjaan (BAHP)" kind="dokumen" autoFlush />
+              <FileUploader label="Berita Acara Serah Terima (BAST)" kind="dokumen" autoFlush />
+              <FileUploader label="Delivery Order (DO) / Surat Jalan Bertandatangan" kind="foto" autoFlush />
             </View>
           </Panel>
         </View>

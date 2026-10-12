@@ -1,5 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import { apiOrigin, getAccess } from "@/services/api";
+import { apiOrigin, getAccess, hydrateTokens } from "@/services/api";
 
 export type WsDataChange = {
   module: string;
@@ -21,7 +21,8 @@ type Handlers = {
 let socket: Socket | null = null;
 
 /** Koneksi WS realtime ke backend (path /api/ws, auth via JWT). */
-export function connectSocket(handlers: Handlers): () => void {
+export async function connectSocket(handlers: Handlers): Promise<() => void> {
+  await hydrateTokens();
   const token = getAccess();
   if (!token) return () => {};
 

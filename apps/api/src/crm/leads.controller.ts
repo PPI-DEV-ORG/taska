@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { IsInt } from "class-validator";
 import { LeadsService } from "./leads.service.js";
 import { CrmListQuery, LeadDto } from "./dto.js";
@@ -42,5 +42,11 @@ export class LeadsController {
   @Require("leads", "U")
   reassign(@Param("id", ParseIntPipe) id: number, @Body() dto: ReassignDto, @CurrentUser() user: RequestUser) {
     return this.service.reassign(id, dto.ownerId, user);
+  }
+
+  @Delete(":id")
+  @Require("leads", "U")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
   }
 }

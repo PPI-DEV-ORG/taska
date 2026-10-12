@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
@@ -49,5 +49,30 @@ export class CustomersService {
   async update(id: number, dto: CustomerDto) {
     await this.get(id);
     return this.prisma.main.customer.update({ where: { id }, data: dto });
+  }
+
+  async remove(id: number) {
+    await this.get(id);
+    const [leads, quotations, projects, clientPOs, invoices] = await Promise.all([
+      this.prisma.main.lead.count({ where: { customerId: id } }),
+      this.prisma.main.quotation.count({ where: { customerId: id } }),
+      this.prisma.main.project.count({ where: { customerId: id } }),
+      this.prisma.main.clientPO.count({ where: { customerId: id } }),
+      this.prisma.main.invoiceOut.count({ where: { customerId: id } }),
+    ]);
+    const used = [
+      { label: "lead", count: leads },
+      { label: "penawaran", count: quotations },
+      { label: "project", count: projects },
+      { label: "PO client", count: clientPOs },
+      { label: "invoice", count: invoices },
+    ].filter((b) => b.count > 0);
+    if (used.length) {
+      throw new ConflictException(
+        `Customer masih dipakai oleh ${used.map((b) => `${b.count} ${b.label}`).join(", ")}`,
+      );
+    }
+    await this.prisma.main.customer.delete({ where: { id } });
+    return { id, deleted: true };
   }
 }

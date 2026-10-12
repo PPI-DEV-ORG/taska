@@ -123,6 +123,7 @@ export default function NewExpenseScreen() {
           label="Foto Nota Pembayaran"
           kind="foto"
           required
+          autoFlush
           onChange={setPhotoCount}
         />
       </Panel>

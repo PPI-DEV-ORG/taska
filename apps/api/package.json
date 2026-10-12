@@ -15,7 +15,6 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:archive:init": "prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script > prisma/archive/init.sql && mysql -h ${DB_HOST:-127.0.0.1} -P ${DB_PORT:-3306} -u ${DB_USER:-samtek_user} -p${DB_PASSWORD:-samtek123} taska_archive < prisma/archive/init.sql",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

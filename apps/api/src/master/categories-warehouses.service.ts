@@ -39,6 +39,17 @@ export class CategoriesService {
     }
     return this.prisma.main.productCategory.update({ where: { id }, data: dto });
   }
+
+  async remove(id: number) {
+    const row = await this.prisma.main.productCategory.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Kategori tidak ditemukan");
+    const products = await this.prisma.main.product.count({ where: { categoryId: id } });
+    if (products > 0) {
+      throw new ConflictException(`Kategori masih dipakai oleh ${products} barang`);
+    }
+    await this.prisma.main.productCategory.delete({ where: { id } });
+    return { id, deleted: true };
+  }
 }
 
 @Injectable()
@@ -88,5 +99,28 @@ export class WarehousesService {
       if (dup) throw new ConflictException("Nama gudang sudah ada");
     }
     return this.prisma.main.warehouse.update({ where: { id }, data: dto });
+  }
+
+  async remove(id: number) {
+    await this.get(id);
+    const [users, balances, movements] = await Promise.all([
+      this.prisma.main.user.count({ where: { warehouseId: id } }),
+      this.prisma.main.stockBalance.count({ where: { warehouseId: id, qty: { gt: 0 } } }),
+      this.prisma.main.stockMovement.count({
+        where: { OR: [{ fromWarehouseId: id }, { toWarehouseId: id }] },
+      }),
+    ]);
+    const used = [
+      { label: "pengguna", count: users },
+      { label: "saldo stok", count: balances },
+      { label: "riwayat mutasi", count: movements },
+    ].filter((b) => b.count > 0);
+    if (used.length) {
+      throw new ConflictException(
+        `Gudang masih dipakai oleh ${used.map((b) => `${b.count} ${b.label}`).join(", ")}`,
+      );
+    }
+    await this.prisma.main.warehouse.delete({ where: { id } });
+    return { id, deleted: true };
   }
 }

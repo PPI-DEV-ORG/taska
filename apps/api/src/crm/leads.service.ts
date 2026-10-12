@@ -211,4 +211,36 @@ export class LeadsService {
     this.notifications.dataChange("leads", "update", lead.id);
     return lead;
   }
+
+  async remove(id: number, user: RequestUser) {
+    const lead = await this.prisma.main.lead.findUnique({
+      where: { id },
+      include: { quotations: { select: { id: true } } },
+    });
+    if (!lead) throw new NotFoundException("Lead tidak ditemukan");
+    if (lead.owner_id !== user.id && !["ADMIN", "BOS", "PM"].includes(user.role)) {
+      throw new ForbiddenException("Hanya pemilik lead atau Admin yang boleh menghapusnya");
+    }
+
+    const quotationIds = lead.quotations.map((q) => q.id);
+    if (quotationIds.length) {
+      await this.prisma.main.invoiceOut.deleteMany({
+        where: { clientPo: { quotationId: { in: quotationIds } } },
+      });
+      await this.prisma.main.clientPO.deleteMany({ where: { quotationId: { in: quotationIds } } });
+      await this.prisma.main.project.deleteMany({ where: { quotationId: { in: quotationIds } } });
+      await this.prisma.main.quotation.deleteMany({ where: { id: { in: quotationIds } } });
+    }
+    await this.prisma.main.lead.delete({ where: { id } });
+
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_LEAD",
+      entityType: "lead",
+      entityId: id,
+      detail: `${lead.name} dihapus permanen`,
+    });
+    this.notifications.dataChange("leads", "delete", id);
+    return { id, deleted: true };
+  }
 }

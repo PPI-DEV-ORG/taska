@@ -42,6 +42,12 @@ export class ProjectsController {
     return this.service.update(id, dto, user);
   }
 
+  @Delete(":id")
+  @Require("projects", "U")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
+  }
+
   @Post(":id/status")
   @Require("projects", "U")
   setStatus(@Param("id", ParseIntPipe) id: number, @Body() dto: ProjectStatusDto, @CurrentUser() user: RequestUser) {

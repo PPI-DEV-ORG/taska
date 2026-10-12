@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
@@ -46,5 +46,26 @@ export class SuppliersService {
   async update(id: number, dto: SupplierDto) {
     await this.get(id);
     return this.prisma.main.supplier.update({ where: { id }, data: dto });
+  }
+
+  async remove(id: number) {
+    await this.get(id);
+    const [requests, pos, invoices] = await Promise.all([
+      this.prisma.main.purchaseRequest.count({ where: { supplierId: id } }),
+      this.prisma.main.supplierPO.count({ where: { supplierId: id } }),
+      this.prisma.main.invoiceIn.count({ where: { supplierId: id } }),
+    ]);
+    const used = [
+      { label: "request pembelian", count: requests },
+      { label: "PO supplier", count: pos },
+      { label: "invoice masuk", count: invoices },
+    ].filter((b) => b.count > 0);
+    if (used.length) {
+      throw new ConflictException(
+        `Supplier masih dipakai oleh ${used.map((b) => `${b.count} ${b.label}`).join(", ")}`,
+      );
+    }
+    await this.prisma.main.supplier.delete({ where: { id } });
+    return { id, deleted: true };
   }
 }

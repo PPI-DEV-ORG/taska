@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { IsOptional, IsString } from "class-validator";
 import { UsersService } from "./users.service.js";
 import { CreateUserDto, UpdateUserDto } from "./dto/user.dto.js";
@@ -45,5 +45,11 @@ export class UsersController {
   @Require("users", "U")
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateUserDto) {
     return this.users.update(id, dto);
+  }
+
+  @Delete(":id")
+  @Require("users", "U")
+  remove(@Param("id", ParseIntPipe) id: number) {
+    return this.users.remove(id);
   }
 }

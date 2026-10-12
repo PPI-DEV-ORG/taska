@@ -9,13 +9,14 @@ import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { SearchableSelect } from "@/components/taska/dialogs";
 import { ScanInput, type Scan } from "@/components/taska/scan-input";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 
 export default function NewDeliveryNoteScreen() {
   const router = useRouter();
   const { data, user, addRow, toast } = useApp();
+  const fileHandle = React.useRef<FileUploaderHandle | null>(null);
 
   const [tujuan, setTujuan] = React.useState("");
   const [alasan, setAlasan] = React.useState("");
@@ -24,7 +25,7 @@ export default function NewDeliveryNoteScreen() {
   const [goodsDesc, setGoodsDesc] = React.useState("");
   const [scannedItems, setScannedItems] = React.useState<Scan[]>([]);
 
-  function submit() {
+  async function submit() {
     if (!tujuan.trim()) {
       toast("Tujuan wajib diisi", "danger");
       return;
@@ -46,6 +47,7 @@ export default function NewDeliveryNoteScreen() {
       persetujuan: "Menunggu persetujuan",
     };
 
+    await fileHandle.current?.flush();
     addRow("delivery-notes", row);
     toast("Surat jalan berhasil dibuat dan menunggu persetujuan Finance");
     router.replace("/delivery-notes");
@@ -134,6 +136,7 @@ export default function NewDeliveryNoteScreen() {
         <FileUploader
           label="Upload Dokumen Pendukung (Opsional)"
           kind="semua"
+          handleRef={(h) => { fileHandle.current = h; }}
         />
       </Panel>
 

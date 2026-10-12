@@ -14,6 +14,7 @@ const SELECT = {
   role: true,
   status: true,
   warehouseId: true,
+  warehouse: { select: { id: true, name: true } },
   lastLoginAt: true,
   createdAt: true,
 } as const;
@@ -86,5 +87,37 @@ export class UsersService {
       },
       select: SELECT,
     });
+  }
+
+  async remove(id: number) {
+    const user = await this.prisma.main.user.findUnique({ where: { id }, select: { id: true, email: true } });
+    if (!user) throw new NotFoundException("Pengguna tidak ditemukan");
+
+    const [leads, projects, tasks, expenses, supplierPOs, requests, createdDN] = await Promise.all([
+      this.prisma.main.lead.count({ where: { owner_id: id } }),
+      this.prisma.main.project.count({ where: { picId: id } }),
+      this.prisma.main.task.count({ where: { assigneeId: id } }),
+      this.prisma.main.expense.count({ where: { reporterId: id } }),
+      this.prisma.main.supplierPO.count({ where: { createdById: id } }),
+      this.prisma.main.purchaseRequest.count({ where: { requesterId: id } }),
+      this.prisma.main.deliveryNote.count({ where: { creatorId: id } }),
+    ]);
+    const used = [
+      { label: "lead sebagai owner", count: leads },
+      { label: "project sebagai PIC", count: projects },
+      { label: "tugas sebagai penanggung jawab", count: tasks },
+      { label: "pengeluaran sebagai pelapor", count: expenses },
+      { label: "PO supplier sebagai pembuat", count: supplierPOs },
+      { label: "request pembelian sebagai pemohon", count: requests },
+      { label: "surat jalan sebagai pembuat", count: createdDN },
+    ].filter((b) => b.count > 0);
+    if (used.length) {
+      throw new ConflictException(
+        `Pengguna masih terlibat dalam data aktif: ${used.map((b) => `${b.count} ${b.label}`).join(", ")}`,
+      );
+    }
+
+    await this.prisma.main.user.delete({ where: { id } });
+    return { id, deleted: true };
   }
 }

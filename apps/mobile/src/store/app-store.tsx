@@ -2,12 +2,12 @@ import * as React from "react";
 import { ROLE_LABEL, type Notif, type Row, type User } from "@/mock/data";
 import { MODULES } from "@/mock/modules";
 import { ToastHost, type ToastItem } from "@/components/taska/toast";
-import { api, getAccess, setTokens, clearTokens } from "@/services/api";
+import { api, getAccess, setTokens, clearTokens, hydrateTokens } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
 import { ensureNotifPermission, showSystemNotification } from "@/services/notify";
 import {
   PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow,
-  apiUserToRow, buildCreateBody, buildStatusBody, statusEnumFor,
+  apiUserToRow,   buildCreateBody, buildStatusBody, statusEnumFor, forPatch,
   type ApiUser, type ApprovalRow, type Page,
 } from "@/services/adapters";
 
@@ -53,6 +53,7 @@ type Ctx = {
   logout: () => void;
   data: DB;
   addRow: (module: string, row: Record<string, any>) => Promise<Row | null>;
+  deleteRow: (module: string, id: string) => Promise<boolean>;
   patchRow: (module: string, id: string, patch: Record<string, any>) => Promise<void>;
   setStatus: (module: string, id: string, status: string, note?: string) => Promise<void>;
   createQuotationFromLead: (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }) => Promise<Row | null>;
@@ -68,6 +69,7 @@ type Ctx = {
   offline: boolean;
   setOffline: (v: boolean) => void;
   reload: () => Promise<void>;
+  hydrated: boolean;
 };
 
 const AppContext = React.createContext<Ctx | null>(null);
@@ -123,6 +125,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [notifs, setNotifs] = React.useState<Notif[]>([]);
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
   const [offline, setOffline] = React.useState(false);
+  const [hydrated, setHydrated] = React.useState(false);
   const seq = React.useRef(100);
 
   const toast = React.useCallback((msg: string, tone: ToastItem["tone"] = "success") => {
@@ -181,7 +184,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await api<{ accessToken: string; refreshToken: string; user: ApiUser }>(
         "POST", "/auth/login", { email, password }, { auth: false },
       );
-      setTokens(res.accessToken, res.refreshToken);
+      await setTokens(res.accessToken, res.refreshToken);
       const u = apiUserToRow(res.user);
       u.roleLabel = ROLE_LABEL[u.role] ?? u.role;
       setUser(u);
@@ -193,7 +196,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = React.useCallback(() => {
-    clearTokens();
+    void clearTokens();
     setUser(null);
     setData(emptyDB());
     setApprovals([]);
@@ -222,7 +225,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let alive = true;
     (async () => {
-      if (!getAccess()) return;
+      await hydrateTokens();
+      if (!getAccess()) {
+        if (alive) setHydrated(true);
+        return;
+      }
       try {
         const me = await api<ApiUser>("GET", "/auth/me");
         if (!alive) return;
@@ -231,7 +238,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setUser(u);
         await loadAll();
       } catch {
-        clearTokens();
+        void clearTokens();
+      } finally {
+        if (alive) setHydrated(true);
       }
     })();
     return () => { alive = false; };
@@ -297,14 +306,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toast(n.text, "info");
     };
 
-    const disconnect = connectSocket({
+    let disconnect: (() => void) | null = null;
+    void connectSocket({
       onDataChange: (c) => { void handleDataChange(c); },
       onNotification: (n) => { void handleNotification(n); },
+    }).then((d) => {
+      if (mounted) disconnect = d;
+      else d();
     });
 
     return () => {
       mounted = false;
-      disconnect();
+      disconnect?.();
     };
   }, [user, refreshApprovals, toast]);
 
@@ -349,12 +362,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [pushHistory, toast],
   );
 
+  const deleteRow = React.useCallback(
+    async (module: string, id: string): Promise<boolean> => {
+      const path = PATHS[module];
+      if (!path) return false;
+      try {
+        await api("DELETE", `${path}/${id}`);
+        setData((d) => ({ ...d, [module]: (d[module] ?? []).filter((r: Row) => r.id !== id) }));
+        pushHistory(module, id, "Menghapus data");
+        toast(`${MODULES[module]?.singular ?? "Data"} dihapus`);
+        return true;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal menghapus", "danger");
+        return false;
+      }
+    },
+    [pushHistory, toast],
+  );
+
   const patchRow = React.useCallback(
     async (module: string, id: string, patch: Record<string, any>) => {
       const path = PATHS[module];
       if (!path) return;
       try {
-        const body = buildCreateBody(module, { ...patch });
+        const body = forPatch(module, buildCreateBody(module, { ...patch }));
         delete body.id;
         await api("PATCH", `${path}/${id}`, body);
         await refreshModule(module);
@@ -532,12 +563,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const value = React.useMemo<Ctx>(
     () => ({
       user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead,
+      deleteRow,
       history, pushHistory, approvals, decide, notifs: myNotifs, unread, markRead, markAllRead,
-      toast, offline, setOffline, reload,
+      toast, offline, setOffline, reload, hydrated,
     }),
-    [user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead,
+    [user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
-     toast, offline, reload],
+     toast, offline, reload, hydrated],
   );
 
   return (

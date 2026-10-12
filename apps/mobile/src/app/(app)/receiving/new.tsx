@@ -9,7 +9,7 @@ import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { SearchableSelect } from "@/components/taska/dialogs";
 import { ScanInput, type Scan } from "@/components/taska/scan-input";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 
@@ -21,10 +21,11 @@ export default function NewReceivingScreen() {
   const [qtyReceived, setQtyReceived] = React.useState("4");
   const [notes, setNotes] = React.useState("");
   const [scannedUnits, setScannedUnits] = React.useState<Scan[]>([]);
+  const fileHandle = React.useRef<FileUploaderHandle | null>(null);
 
   const po = data["supplier-pos"].find((p) => p.nomor === selectedPo) || data["supplier-pos"][0];
 
-  function submit() {
+  async function submit() {
     if (!po) return;
     const row = {
       nomor: `TB/2026/10/${Math.floor(Math.random() * 800) + 100}`,
@@ -37,6 +38,7 @@ export default function NewReceivingScreen() {
       catatan: notes,
     };
 
+    await fileHandle.current?.flush();
     addRow("receiving", row);
     toast("Penerimaan barang dicatat di Gudang");
     router.replace("/receiving");
@@ -100,6 +102,7 @@ export default function NewReceivingScreen() {
         <FileUploader
           label="Foto Kondisi Barang & Tanda Terima"
           kind="foto"
+          handleRef={(h) => { fileHandle.current = h; }}
         />
       </Panel>
 

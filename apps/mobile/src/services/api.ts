@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+
 const FALLBACK_BASE = "http://localhost:3000/api";
 
 export function apiBase(): string {
@@ -15,39 +17,79 @@ export function apiOrigin(): string {
   return b.endsWith("/api") ? b.slice(0, -4) : b;
 }
 
-function storage(): Storage | null {
-  if (typeof window === "undefined" || !window.localStorage) return null;
-  return window.localStorage;
-}
-
 const KEY_ACCESS = "taska_access";
 const KEY_REFRESH = "taska_refresh";
 const LEGACY_ROLE = "taska_role";
 
+// ─── token storage ───
+// native: expo-secure-store (persisten, aman). web: localStorage.
+// akses sinkron dibaca dari memori yang sudah di-hydrate sekali di startup.
+
+function isWeb(): boolean {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+const memory = new Map<string, string>();
+let hydrated = false;
+let hydratePromise: Promise<void> | null = null;
+
+export function hydrateTokens(): Promise<void> {
+  if (hydrated) return Promise.resolve();
+  if (!hydratePromise) {
+    hydratePromise = (async () => {
+      if (isWeb()) {
+        for (const k of [KEY_ACCESS, KEY_REFRESH]) {
+          const v = window.localStorage.getItem(k);
+          if (v != null) memory.set(k, v);
+        }
+      } else {
+        for (const k of [KEY_ACCESS, KEY_REFRESH]) {
+          const v = await SecureStore.getItemAsync(k);
+          if (v != null) memory.set(k, v);
+        }
+      }
+      hydrated = true;
+    })();
+  }
+  return hydratePromise;
+}
+
 export function getAccess(): string | null {
-  return storage()?.getItem(KEY_ACCESS) ?? null;
+  return memory.get(KEY_ACCESS) ?? null;
 }
 export function getRefresh(): string | null {
-  return storage()?.getItem(KEY_REFRESH) ?? null;
+  return memory.get(KEY_REFRESH) ?? null;
 }
-export function setTokens(access?: string | null, refresh?: string | null) {
-  const s = storage();
-  if (!s) return;
-  if (access) s.setItem(KEY_ACCESS, access);
-  else s.removeItem(KEY_ACCESS);
-  if (refresh) s.setItem(KEY_REFRESH, refresh);
-  else s.removeItem(KEY_REFRESH);
-  // legacy key dipakai app-store untuk deteksi "sudah login" di web
-  if (access) s.setItem(LEGACY_ROLE, "1");
-  else s.removeItem(LEGACY_ROLE);
+
+export async function setTokens(access?: string | null, refresh?: string | null): Promise<void> {
+  await hydrateTokens();
+  const next: [string, string | null][] = [
+    [KEY_ACCESS, access ?? null],
+    [KEY_REFRESH, refresh ?? null],
+    // legacy key dipakai app-store untuk deteksi "sudah login" di web
+    [LEGACY_ROLE, access ? "1" : null],
+  ];
+  for (const [k, v] of next) {
+    if (v != null) memory.set(k, v);
+    else memory.delete(k);
+    if (isWeb()) {
+      if (v != null) window.localStorage.setItem(k, v);
+      else window.localStorage.removeItem(k);
+    } else if (k !== LEGACY_ROLE) {
+      if (v != null) await SecureStore.setItemAsync(k, v);
+      else await SecureStore.deleteItemAsync(k);
+    }
+  }
 }
-export function clearTokens() {
-  setTokens(null, null);
+
+export async function clearTokens(): Promise<void> {
+  await setTokens(null, null);
 }
 
 export type ApiError = Error & { status?: number; body?: any };
 
 async function tryRefresh(): Promise<boolean> {
+  await hydrateTokens();
   const r = getRefresh();
   if (!r) return false;
   try {
@@ -77,6 +119,7 @@ async function once<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (auth) {
+    await hydrateTokens();
     const a = getAccess();
     if (a) headers.Authorization = `Bearer ${a}`;
   }

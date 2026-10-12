@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ProductsService } from "./products.service.js";
 import { ListQuery, ProductDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
@@ -36,5 +36,11 @@ export class ProductsController {
   @Require("products", "U")
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: ProductDto, @CurrentUser() user: RequestUser) {
     return this.service.update(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Require("products", "U")
+  remove(@Param("id", ParseIntPipe) id: number) {
+    return this.service.remove(id);
   }
 }

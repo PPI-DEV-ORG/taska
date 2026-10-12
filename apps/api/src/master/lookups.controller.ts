@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { IsOptional, IsString, MinLength } from "class-validator";
 import { LookupsService, type LookupModel } from "./lookups.service.js";
 import { ListQuery } from "./dto.js";
@@ -40,6 +40,12 @@ function makeLookupController(path: string, model: LookupModel, moduleKey: Modul
     @Require(moduleKey, "U")
     update(@Param("id", ParseIntPipe) id: number, @Body() dto: NameDto) {
       return this.service.update(model, id, dto.name);
+    }
+
+    @Delete(":id")
+    @Require(moduleKey, "U")
+    remove(@Param("id", ParseIntPipe) id: number) {
+      return this.service.remove(model, id);
     }
   }
   return LookupController;

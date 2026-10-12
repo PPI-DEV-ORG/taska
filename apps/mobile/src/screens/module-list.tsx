@@ -1,11 +1,11 @@
 import * as React from "react";
 import { useRouter } from "expo-router";
-import { Plus } from "lucide-react-native";
+import { ChevronRight, Plus, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { EmptyState, PageHeader } from "@/components/taska/basics";
 import { DataTable, FilterBar } from "@/components/taska/data-table";
-import { FormDialog } from "@/components/taska/dialogs";
+import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
 import type { ModuleDef } from "@/mock/modules";
 import type { Role, Row, User } from "@/mock/data";
@@ -28,6 +28,36 @@ export function canCreate(def: ModuleDef, role: Role) {
   // PRD Aturan: Bos / Admin hanya melihat dan menyetujui, tanpa tombol buat, ubah, atau hapus
   if ((role === "bos" || role === "admin") && def.key !== "users") return false;
   return (def.createRoles ?? CREATE[def.key] ?? []).includes(role) && !!(def.newHref || def.createFields);
+}
+
+const DELETE: Record<string, Role[]> = {
+  leads: ["sales", "pm", "admin"],
+  projects: ["pm", "admin"],
+  customers: ["sales", "admin"],
+  suppliers: ["procurement", "admin"],
+  users: ["bos", "admin"],
+  surveys: ["sales", "pm", "admin"],
+  quotations: ["sales", "pm", "finance", "admin"],
+  "po-client": ["finance", "admin"],
+  invoices: ["finance", "admin"],
+  "purchase-requests": ["pm", "procurement", "finance", "gudang", "admin"],
+  "supplier-pos": ["procurement", "finance", "admin"],
+  receiving: ["gudang", "admin"],
+  "delivery-notes": ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin"],
+  expenses: ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin"],
+  "damage-reports": ["gudang", "admin"],
+};
+
+function canDelete(def: ModuleDef, role: Role) {
+  return (DELETE[def.key] ?? []).includes(role);
+}
+
+function rowLabel(def: ModuleDef, row: Row): string {
+  try {
+    return def.titleOf(row) || row.name || row.nama || row.nomor || row.id;
+  } catch {
+    return String(row.name ?? row.nama ?? row.nomor ?? row.id);
+  }
 }
 
 /** Batasi data yang dilihat per role (aturan lihat data di prompt bagian 6). */
@@ -55,10 +85,11 @@ function sortKey(r: Row): string {
 
 export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?: string; headerExtra?: React.ReactNode }) {
   const router = useRouter();
-  const { user, data } = useApp();
+  const { user, data, deleteRow } = useApp();
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [open, setOpen] = React.useState(false);
+  const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
 
   const rows = React.useMemo(() => {
     const scoped = scopeRows(def, data[def.key] ?? [], user!);
@@ -79,6 +110,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   }, [def, data, user, q, status]);
 
   const allowed = canCreate(def, user!.role);
+  const deleteAllowed = canDelete(def, user!.role);
   const action = allowed ? (
     <Button onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}>
       <Plus size={16} color={colors.background} />
@@ -107,9 +139,48 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           onAction={() => { if (q || status) { setQ(""); setStatus(""); } else if (def.newHref) router.push(def.newHref as any); else setOpen(true); }}
         />
       ) : (
-        <DataTable columns={def.columns} rows={rows} onRowPress={(r) => router.push(`/${def.key}/${r.id}` as any)} />
+        <DataTable
+          columns={def.columns}
+          rows={rows}
+          onRowPress={(r) => router.push(`/${def.key}/${r.id}` as any)}
+          actionsWidth={deleteAllowed ? 104 : 64}
+          renderActions={deleteAllowed ? (r) => (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-lg hover:bg-panel"
+                onPress={() => router.push(`/${def.key}/${r.id}` as any)}
+              >
+                <ChevronRight size={16} color={colors.muted} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-lg hover:bg-danger/10"
+                onPress={() => setDeleteTarget(r)}
+              >
+                <Trash2 size={15} color={colors.danger} />
+              </Button>
+            </>
+          ) : undefined}
+        />
       )}
       {def.createFields ? <FormDialog def={def} open={open} onOpenChange={setOpen} /> : null}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(v) => !v && setDeleteTarget(null)}
+        title={`Hapus ${def.singular.toLowerCase()} ini?`}
+        description={`Data "${deleteTarget ? rowLabel(def, deleteTarget) : ""}" akan dihapus setelah kamu mengonfirmasi. Tindakan ini mengikuti aturan hapus dari server.`}
+        confirmLabel="Ya, hapus"
+        destructive
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          void deleteRow(def.key, deleteTarget.id).then((ok) => {
+            if (ok) setDeleteTarget(null);
+          });
+        }}
+      />
     </>
   );
 }

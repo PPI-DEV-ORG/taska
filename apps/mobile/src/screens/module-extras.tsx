@@ -947,6 +947,7 @@ function QuotationExtras({ row }: { row: Row }) {
           <FileUploader
             label="Pilih atau Tarik File Excel/PDF"
             kind="dokumen"
+            autoFlush
             onChange={(count) => {
               if (count > 0) {
                 patchRow("quotations", row.id, {
@@ -1050,7 +1051,7 @@ function QuotationExtras({ row }: { row: Row }) {
               <Text className="text-[11px] text-muted-foreground">Preview PPN 11%: {rupiah(revPpn)}</Text>
               <Text className="text-xs font-semibold text-primary">Preview Total Akhir v{nextVersionNum}: {rupiah(revAfterDisc)}</Text>
             </View>
-            <FileUploader label="Upload File Revisi Baru (PDF / Excel)" kind="dokumen" />
+            <FileUploader label="Upload File Revisi Baru (PDF / Excel)" kind="dokumen" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setRevisiOpen(false)}>
@@ -1154,7 +1155,7 @@ function SurveyExtras({ row }: { row: Row }) {
               </View>
             ))}
           </View>
-          <FileUploader label="Upload Tambahan Foto Lapangan" kind="foto" />
+          <FileUploader label="Upload Tambahan Foto Lapangan" kind="foto" autoFlush />
         </View>
       </Panel>
 
@@ -1491,7 +1492,7 @@ function ReceivingExtras({ row }: { row: Row }) {
               />
             </View>
 
-            <FileUploader label="Upload Foto Bukti Kerusakan / Serial Number" kind="foto" />
+            <FileUploader label="Upload Foto Bukti Kerusakan / Serial Number" kind="foto" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setIssueOpen(false)}>
@@ -1629,7 +1630,7 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
                 numberOfLines={2}
               />
             </View>
-            <FileUploader label="Upload Foto Bukti Serah Terima / TTD Surat Jalan" kind="foto" />
+            <FileUploader label="Upload Foto Bukti Serah Terima / TTD Surat Jalan" kind="foto" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setHandoverOpen(false)}>

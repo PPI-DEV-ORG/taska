@@ -25,6 +25,9 @@ export class CreateUserDto {
   @IsIn(Object.values(Role))
   role!: Role;
 
+  @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
+  status?: "AKTIF" | "NONAKTIF";
+
   @IsOptional() @IsInt()
   warehouseId?: number;
 }

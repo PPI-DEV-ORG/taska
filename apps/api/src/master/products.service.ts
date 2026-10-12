@@ -101,4 +101,28 @@ export class ProductsService {
     }
     return this.prisma.main.product.update({ where: { id }, data: dto, include: INCLUDE });
   }
+
+  async remove(id: number) {
+    const row = await this.prisma.main.product.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Barang tidak ditemukan");
+    const [balances, serials, requirements, movements] = await Promise.all([
+      this.prisma.main.stockBalance.count({ where: { productId: id, qty: { gt: 0 } } }),
+      this.prisma.main.serialUnit.count({ where: { productId: id } }),
+      this.prisma.main.projectRequirement.count({ where: { productId: id } }),
+      this.prisma.main.stockMovement.count({ where: { productId: id } }),
+    ]);
+    const used = [
+      { label: "saldo stok", count: balances },
+      { label: "unit serial", count: serials },
+      { label: "kebutuhan project", count: requirements },
+      { label: "riwayat mutasi stok", count: movements },
+    ].filter((b) => b.count > 0);
+    if (used.length) {
+      throw new ConflictException(
+        `Barang masih dipakai oleh ${used.map((b) => `${b.count} ${b.label}`).join(", ")}`,
+      );
+    }
+    await this.prisma.main.product.delete({ where: { id } });
+    return { id, deleted: true };
+  }
 }

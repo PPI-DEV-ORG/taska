@@ -9,7 +9,7 @@ import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { Stepper } from "@/components/taska/stepper";
 import { SearchableSelect } from "@/components/taska/dialogs";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import type { Row } from "@/mock/data";
@@ -39,6 +39,7 @@ export default function NewPurchaseRequestScreen() {
 
   const [step, setStep] = React.useState(0);
   const [busy, setBusy] = React.useState(false);
+  const fileHandle = React.useRef<FileUploaderHandle | null>(null);
 
   const [costType, setCostType] = React.useState("Project");
   const [projectId, setProjectId] = React.useState(projects[0]?.nama || "");
@@ -74,6 +75,7 @@ export default function NewPurchaseRequestScreen() {
 
     setBusy(true);
     try {
+      await fileHandle.current?.flush();
       await api("POST", "/requests", body);
       toast("Request barang berhasil diajukan");
       router.replace("/purchase-requests");
@@ -221,6 +223,7 @@ export default function NewPurchaseRequestScreen() {
             <FileUploader
               label="Lampirkan Bukti Permintaan (Chat WA / Email / BOQ)"
               kind="foto"
+              handleRef={(h) => { fileHandle.current = h; }}
             />
 
             <View className="mt-4 flex-row justify-between">

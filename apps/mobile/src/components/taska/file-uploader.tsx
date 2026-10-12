@@ -10,6 +10,16 @@ import { uploadFile } from "@/services/api";
 
 export type UploadKind = "foto" | "dokumen" | "video" | "semua";
 
+// staged = file dipilih tapi belum diunggah ke server; di-flush saat Simpan.
+export type StagedFile = {
+  id: number; // id sementara (lokal) untuk key & remove
+  name: string;
+  size: string;
+  uri?: string;
+  blob?: Blob;
+  kind: "foto" | "dokumen" | "video";
+};
+
 const LIMIT: Record<UploadKind, string> = {
   foto: "Foto png, jpg, jpeg maksimal 5 MB",
   dokumen: "Dokumen pdf, docx, xlsx maksimal 15 MB",
@@ -33,37 +43,91 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-type PickedFile = { uri?: string; name?: string; type?: string; size?: number };
+export type FileUploaderHandle = {
+  /** Unggah semua file yang masih staged ke server. Kembalikan fileId terakhir (atau null). */
+  flush: () => Promise<number | null>;
+  hasStaged: () => boolean;
+};
+
+type Props = {
+  label: string;
+  kind?: UploadKind;
+  required?: boolean;
+  onChange?: (n: number) => void;
+  multiple?: boolean;
+  handleRef?: (h: FileUploaderHandle | null) => void;
+  /** true = unggah langsung saat dipilih (konsumen tanpa tombol Simpan). default: staged sampai flush(). */
+  autoFlush?: boolean;
+};
 
 export function FileUploader({
-  label, kind = "semua", required, onChange, multiple = false,
-}: { label: string; kind?: UploadKind; required?: boolean; onChange?: (n: number) => void; multiple?: boolean }) {
+  label, kind = "semua", required, onChange, multiple = false, handleRef, autoFlush = false,
+}: Props) {
   const { toast, offline } = useApp();
-  const [files, setFiles] = React.useState<{ id: number; name: string; size: string; uri?: string }[]>([]);
+  const [staged, setStaged] = React.useState<StagedFile[]>([]);
   const [busy, setBusy] = React.useState(false);
   const web = Platform.OS === "web";
-  const [prevFiles, setPrevFiles] = React.useState(files);
+  const prevLenRef = React.useRef(0);
 
-  if (files !== prevFiles) {
-    setPrevFiles(files);
-    onChange?.(files.length);
+  const target = toUploadKind(kind);
+
+  async function flushOne(f: StagedFile): Promise<number | null> {
+    const payload = f.blob ?? (f.uri ? { uri: f.uri, name: f.name, type: "application/octet-stream" } : null);
+    return uploadFile(payload, f.kind);
   }
 
-  function pushLocal(f: PickedFile) {
-    setFiles((prev) => [...prev, {
-      id: Date.now() + prev.length,
+  // notify parent of staged count after commit (never during render — parent setState
+  // would fire while this child is rendering and React throws).
+  React.useEffect(() => {
+    onChange?.(staged.length);
+  }, [staged.length, onChange]);
+
+  function stage(f: { name?: string; uri?: string; blob?: Blob; size?: number }) {
+    const entry: StagedFile = {
+      id: Date.now() + prevLenRef.current,
       name: f.name || "file",
       size: f.size ? fmtSize(f.size) : "",
       uri: f.uri,
-    }]);
+      blob: f.blob,
+      kind: target,
+    };
+    setStaged((prev) => {
+      prevLenRef.current = prev.length + 1;
+      return [...prev, entry];
+    });
+    if (autoFlush) void flushOne(entry);
   }
 
   function remove(id: number) {
-    setFiles((prev) => prev.filter((f) => f.id !== id));
+    setStaged((prev) => prev.filter((f) => f.id !== id));
   }
 
-  async function pickAndUpload() {
-    const target = toUploadKind(kind);
+  /** Unggah file staged ke server. Kembalikan fileId terakhir yang diunggah. */
+  const flush = React.useCallback(async (): Promise<number | null> => {
+    if (!staged.length) return null;
+    setBusy(true);
+    try {
+      let lastId: number | null = null;
+      for (const f of staged) {
+        const id = await flushOne(f);
+        if (id != null) lastId = id;
+      }
+      return lastId;
+    } finally {
+      setBusy(false);
+    }
+  }, [staged]);
+
+  React.useEffect(() => {
+    if (!handleRef) return;
+    handleRef({
+      flush,
+      hasStaged: () => staged.length > 0,
+    });
+    return () => { handleRef(null); };
+  }, [handleRef, flush, staged.length]);
+
+  async function pickAndStage() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       toast("Izin akses galeri diperlukan untuk memilih file", "danger");
@@ -82,37 +146,20 @@ export function FileUploader({
     setBusy(true);
     try {
       for (const asset of result.assets) {
-        const file: PickedFile = {
+        stage({
           uri: asset.uri,
           name: asset.fileName ?? asset.uri.split("/").pop() ?? "upload",
-          type: asset.mimeType,
           size: asset.fileSize,
-        };
-        if (offline) {
-          toast("File disimpan di perangkat, dikirim saat tersambung", "info");
-          pushLocal(file);
-          continue;
-        }
-        const id = await uploadFile(file, target);
-        if (id != null) {
-          setFiles((prev) => [...prev, {
-            id,
-            name: file.name || `file-${id}`,
-            size: file.size ? fmtSize(file.size) : "",
-            uri: file.uri,
-          }]);
-        }
+        });
       }
-      toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File diunggah");
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal mengunggah file", "danger");
+      toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
     } finally {
       setBusy(false);
     }
   }
 
   function add() {
-    void pickAndUpload();
+    void pickAndStage();
   }
 
   const webInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -120,33 +167,21 @@ export function FileUploader({
     ev.preventDefault();
     const list = ev.dataTransfer?.files;
     if (!list?.length) return;
-    uploadWebFiles(Array.from(list));
+    stageWebFiles(Array.from(list));
   }
 
   function handleWebInput(ev: React.ChangeEvent<HTMLInputElement>) {
     const list = ev.target.files;
     if (!list?.length) return;
-    uploadWebFiles(Array.from(list));
+    stageWebFiles(Array.from(list));
     ev.target.value = "";
   }
 
-  function uploadWebFiles(list: File[]) {
-    setBusy(true);
-    void (async () => {
-      try {
-        for (const f of list) {
-          const id = await uploadFile(f, toUploadKind(kind));
-          if (id != null) {
-            setFiles((prev) => [...prev, { id, name: f.name, size: fmtSize(f.size) }]);
-          }
-        }
-        toast("File diunggah");
-      } catch (e: any) {
-        toast(e?.message ?? "Gagal mengunggah file", "danger");
-      } finally {
-        setBusy(false);
-      }
-    })();
+  function stageWebFiles(list: File[]) {
+    for (const f of list) {
+      stage({ name: f.name, blob: f, size: f.size });
+    }
+    toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
   }
 
   return (
@@ -183,7 +218,7 @@ export function FileUploader({
           <View className="flex-row flex-wrap justify-center gap-2">
             <Button variant="outline" onPress={add} disabled={busy}>
               <Camera size={16} color={colors.text} />
-              <Text>{busy ? "Mengunggah..." : "Ambil foto / pilih file"}</Text>
+              <Text>{busy ? "Memproses..." : "Ambil foto / pilih file"}</Text>
             </Button>
             <Button variant="outline" onPress={add} disabled={busy}>
               <Paperclip size={16} color={colors.text} />
@@ -193,7 +228,7 @@ export function FileUploader({
           <Text className="text-muted-foreground text-center text-[13px]">{LIMIT[kind]}</Text>
         </Pressable>
       )}
-      {files.map((f) => (
+      {staged.map((f) => (
         <View key={f.id} className="bg-card border-border flex-row items-center gap-3 rounded-lg border p-3">
           <View className="bg-panel size-10 items-center justify-center rounded-md"><FileText size={18} color={colors.textSecondary} /></View>
           <View className="flex-1">

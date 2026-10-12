@@ -109,7 +109,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           <Panel title="File dan bukti">
             <View className="gap-4">
               {def.docs.map((d) => (
-                <FileUploader key={d} label={d} kind={/foto|nota|video/i.test(d) ? "foto" : "semua"} />
+                <FileUploader key={d} label={d} kind={/foto|nota|video/i.test(d) ? "foto" : "semua"} autoFlush />
               ))}
             </View>
           </Panel>

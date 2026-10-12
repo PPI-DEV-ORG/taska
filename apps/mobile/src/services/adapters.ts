@@ -120,8 +120,29 @@ const ROLE_UI: Record<string, Role> = {
 const ROLE_FROM_UI: Record<string, string> = {};
 for (const [k, v] of Object.entries(ROLE_UI)) ROLE_FROM_UI[v] = k;
 
+// Form users mengirim label Indonesia (roleLabel) → enum backend.
+// "Admin / Bos" dipetakan ke BOS (akses penuh, sesuai makna label gabungan).
+const ROLE_FROM_LABEL: Record<string, string> = {
+  "Admin / Bos": "BOS",
+  Sales: "SALES",
+  "Project Manager": "PM",
+  Teknisi: "TEKNISI",
+  Procurement: "PROCUREMENT",
+  Finance: "FINANCE",
+  Gudang: "GUDANG",
+  "Software Engineer": "SE",
+};
+
 export function roleFromUi(role: string): string {
-  return ROLE_FROM_UI[role] ?? "SALES";
+  return ROLE_FROM_LABEL[role] ?? ROLE_FROM_UI[role] ?? "SALES";
+}
+
+// Label role untuk ditampilkan (detail/daftar), dihitung dari enum backend.
+export function roleLabelOf(role: string | undefined): string {
+  const ui = roleToUi(role);
+  const entry = Object.entries(ROLE_FROM_LABEL).find(([, v]) => v === (role ?? "").toUpperCase());
+  if (entry) return entry[0];
+  return ui.charAt(0).toUpperCase() + ui.slice(1);
 }
 export function roleToUi(role: string | undefined): Role {
   return (role && ROLE_UI[role]) || "sales";
@@ -134,7 +155,7 @@ export function apiUserToRow(u: ApiUser): User {
     name: u.name,
     email: u.email,
     role,
-    roleLabel: "",
+    roleLabel: roleLabelOf(u.role),
     status: toLabel("users", u.status),
     gudang: u.warehouseId != null ? String(u.warehouseId) : "-",
     phone: u.phone ?? "",
@@ -405,7 +426,7 @@ export function adaptRow(module: string, raw: any): Row {
       };
     case "users": {
       const row = apiUserToRow(raw);
-      row.roleLabel = "";
+      row.gudang = nameOf(raw.warehouse) || (raw.warehouseId != null ? String(raw.warehouseId) : "-");
       return row;
     }
     case "audit-log":
@@ -626,16 +647,48 @@ export function buildCreateBody(module: string, row: Record<string, any>): Recor
   }
 }
 
+/** Kolom yang boleh dikirim saat PATCH — hindari 400 forbidNonWhitelisted
+ *  karena field create-only (status AKTIF, progress 0, stage, dll) ikut terkirim. */
+const PATCH_FIELDS: Record<string, readonly string[]> = {
+  users: ["name", "email", "password", "phone", "position", "department", "role", "status", "warehouseId"],
+  customers: ["name", "company", "pic", "email", "phone", "address", "city", "notes", "status"],
+  suppliers: ["name", "pic", "email", "phone", "city", "paymentTerms", "notes", "status"],
+  products: ["sku", "name", "type", "categoryId", "unit", "hasSerial", "minStock", "warrantyMonths", "purchasePrice", "status"],
+  productCategories: ["name", "description", "prefix", "status"],
+  warehouses: ["name", "city", "status"],
+  leadSources: ["name", "status"],
+  lostReasons: ["name", "status"],
+  expenseCategories: ["name", "status"],
+  costCenters: ["name", "status"],
+  leads: ["name", "customerId", "sourceId", "clientType", "need", "contactName", "estimatedValue", "probability", "targetClosing", "ownerId", "needsSurvey", "stage", "lostReasonId", "lostNote"],
+  surveys: ["leadId", "location", "need", "notes", "scheduleAt", "cost"],
+  quotations: ["leadId", "customerId", "validUntil", "discount", "ppn", "total", "notes", "status"],
+  projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "notes", "memberIds"],
+  tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
+  "po-client": ["number", "customerId", "quotationId", "amount", "date", "fileId", "notes"],
+  invoices: ["number", "clientPoId", "projectId", "customerId", "description", "type", "amount", "ppn", "total", "date", "dueDate", "status", "fileId"],
+  expenses: ["date", "categoryId", "amount", "description", "projectId", "surveyId", "deliveryNoteId", "costCenterId", "receiptFileId", "paidFileId"],
+  "supplier-pos": ["number", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "fileId", "doFileId", "items"],
+  "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
+};
+
+/** Hapus field yang tidak dikenal DTO update agar tidak 400. */
+export function forPatch(module: string, body: Record<string, any>): Record<string, any> {
+  const allow = PATCH_FIELDS[module];
+  if (!allow) return body;
+  const out: Record<string, any> = {};
+  for (const k of allow) if (body[k] !== undefined) out[k] = body[k];
+  return out;
+}
+
+/** Modul yang DTO status-nya memakai `reason`, bukan `note`. */
+const STATUS_REASON_MODULES = new Set(["expenses", "purchase-requests", "delivery-notes", "opname", "damage-reports"]);
+
 /** Mutasi status: UI label → body untuk endpoint status. */
 export function buildStatusBody(module: string, uiStatus: string, note?: string): Record<string, any> {
-  const map = module === "supplier-pos" ? "supplier-pos" : module;
-  const enumVal = toEnum(map, uiStatus);
-  switch (module) {
-    case "invoices":
-      return { status: enumVal, note };
-    default:
-      return { status: enumVal, note };
-  }
+  const enumVal = toEnum(module, uiStatus);
+  const field = STATUS_REASON_MODULES.has(module) ? "reason" : "note";
+  return note !== undefined ? { status: enumVal, [field]: note } : { status: enumVal };
 }
 
 export function statusEnumFor(module: string, uiStatus: string): string {

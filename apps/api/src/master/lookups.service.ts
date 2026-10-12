@@ -53,4 +53,30 @@ export class LookupsService {
     }
     return this.delegate(model).update({ where: { id }, data: { name } });
   }
+
+  async remove(model: LookupModel, id: number) {
+    const row = await this.delegate(model).findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Data tidak ditemukan");
+
+    const blockers: { label: string; count: number }[] = [];
+    if (model === "leadSource") {
+      blockers.push({ label: "lead", count: await this.prisma.main.lead.count({ where: { sourceId: id } }) });
+    }
+    if (model === "lostReason") {
+      blockers.push({ label: "lead", count: await this.prisma.main.lead.count({ where: { lostReasonId: id } }) });
+    }
+    if (model === "expenseCategory") {
+      blockers.push({ label: "pengeluaran", count: await this.prisma.main.expense.count({ where: { categoryId: id } }) });
+    }
+    if (model === "costCenter") {
+      blockers.push({ label: "pengeluaran", count: await this.prisma.main.expense.count({ where: { costCenterId: id } }) });
+    }
+    const used = blockers.filter((b) => b.count > 0);
+    if (used.length) {
+      throw new ConflictException(`Data masih dipakai oleh ${used.map((b) => `${b.count} ${b.label}`).join(", ")}`);
+    }
+
+    await this.delegate(model).delete({ where: { id } });
+    return { id, deleted: true };
+  }
 }

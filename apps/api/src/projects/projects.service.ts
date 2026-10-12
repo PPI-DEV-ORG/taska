@@ -296,6 +296,39 @@ export class ProjectsService {
     return updated;
   }
 
+  async remove(id: number, user: RequestUser) {
+    const project = await this.prisma.main.project.findUnique({ where: { id } });
+    if (!project) throw new NotFoundException("Project tidak ditemukan");
+    await this.access(project, user, true);
+
+    const [invoices, expenses, requests] = await Promise.all([
+      this.prisma.main.invoiceOut.count({ where: { projectId: id } }),
+      this.prisma.main.expense.count({ where: { projectId: id } }),
+      this.prisma.main.purchaseRequest.count({ where: { projectId: id } }),
+    ]);
+    const used = [
+      { label: "invoice", count: invoices },
+      { label: "pengeluaran", count: expenses },
+      { label: "request pembelian", count: requests },
+    ].filter((b) => b.count > 0);
+    if (used.length) {
+      throw new BadRequestException(
+        `Project masih memiliki ${used.map((b) => `${b.count} ${b.label}`).join(", ")}`,
+      );
+    }
+
+    await this.prisma.main.project.delete({ where: { id } });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_PROJECT",
+      entityType: "project",
+      entityId: id,
+      detail: `${project.name} dihapus permanen`,
+    });
+    this.notifications.dataChange("projects", "delete", id);
+    return { id, deleted: true };
+  }
+
   /** PRD #2 (status manual) + #1 (penutupan wajib file bukti). */
   async setStatus(id: number, dto: ProjectStatusDto, user: RequestUser) {
     const project = await this.prisma.main.project.findUnique({ where: { id } });

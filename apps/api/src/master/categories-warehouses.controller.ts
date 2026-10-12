@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { CategoriesService, WarehousesService } from "./categories-warehouses.service.js";
 import { ListQuery, ProductCategoryDto, WarehouseDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
@@ -23,6 +23,12 @@ export class ProductCategoriesController {
   @Require("productCategories", "U")
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: ProductCategoryDto) {
     return this.service.update(id, dto);
+  }
+
+  @Delete(":id")
+  @Require("productCategories", "U")
+  remove(@Param("id", ParseIntPipe) id: number) {
+    return this.service.remove(id);
   }
 }
 
@@ -58,5 +64,11 @@ export class WarehousesController {
   @Require("warehouses", "U")
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: WarehouseDto) {
     return this.service.update(id, dto);
+  }
+
+  @Delete(":id")
+  @Require("warehouses", "U")
+  remove(@Param("id", ParseIntPipe) id: number) {
+    return this.service.remove(id);
   }
 }

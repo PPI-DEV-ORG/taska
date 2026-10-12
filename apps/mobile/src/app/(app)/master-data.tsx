@@ -20,6 +20,7 @@ import {
   Receipt,
   PieChart,
   CheckCircle2,
+  Trash2,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +28,7 @@ import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { ConfirmDialog, SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { DataTable } from "@/components/taska/data-table";
@@ -46,10 +47,18 @@ type MasterKey =
   | "cost-center"
   | "pengaturan-sistem";
 
+type DeleteTarget = {
+  module: string;
+  id: string;
+  label: string;
+  singular: string;
+};
+
 export default function MasterDataScreen() {
   const router = useRouter();
-  const { data, user, addRow, toast } = useApp();
+  const { data, user, addRow, deleteRow, toast } = useApp();
   const [selectedCategory, setSelectedCategory] = React.useState<MasterKey | null>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null);
 
   // Modal State untuk Kategori Produk (Gudang)
   const [kategoriOpen, setKategoriOpen] = React.useState(false);
@@ -226,6 +235,44 @@ export default function MasterDataScreen() {
     setImportCount(null);
   }
 
+  function deleteActions(module: string, singular: string, canDelete: boolean) {
+    if (!canDelete) return undefined;
+    const render = (row: any) => (
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-8 rounded-lg hover:bg-danger/10"
+        onPress={() => setDeleteTarget({
+          module,
+          id: String(row.id),
+          label: String(row.nama ?? row.name ?? row.sku ?? row.nomor ?? row.id),
+          singular,
+        })}
+      >
+        <Trash2 size={15} color={colors.danger} />
+      </Button>
+    );
+    render.displayName = `Delete${module}`;
+    return render;
+  }
+
+  const deleteConfirm = (
+    <ConfirmDialog
+      open={!!deleteTarget}
+      onOpenChange={(v) => !v && setDeleteTarget(null)}
+      title={`Hapus ${deleteTarget?.singular ?? "data"} ini?`}
+      description={`Data "${deleteTarget?.label ?? ""}" akan dihapus setelah kamu mengonfirmasi. Server tetap memvalidasi apakah data ini boleh dihapus.`}
+      confirmLabel="Ya, hapus"
+      destructive
+      onConfirm={() => {
+        if (!deleteTarget) return;
+        void deleteRow(deleteTarget.module, deleteTarget.id).then((ok) => {
+          if (ok) setDeleteTarget(null);
+        });
+      }}
+    />
+  );
+
   // Jika sedang melihat detail salah satu master data
   if (selectedCategory === "barang") {
     return (
@@ -266,6 +313,8 @@ export default function MasterDataScreen() {
             tipeSN: p.berSN ? "Serial Number" : "Non-SN",
           }))}
           pageSize={8}
+          actionsWidth={canAddBarang ? 72 : 64}
+          renderActions={deleteActions("products", "barang", canAddBarang)}
         />
 
         {/* Modal Tambah Barang (Gudang) */}
@@ -348,6 +397,7 @@ export default function MasterDataScreen() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {deleteConfirm}
       </View>
     );
   }
@@ -383,6 +433,8 @@ export default function MasterDataScreen() {
           ]}
           rows={data.productCategories || []}
           pageSize={8}
+          actionsWidth={canAddKategori ? 72 : 64}
+          renderActions={deleteActions("productCategories", "kategori produk", canAddKategori)}
         />
 
         {/* Modal Tambah Kategori (Gudang) */}
@@ -425,6 +477,7 @@ export default function MasterDataScreen() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {deleteConfirm}
       </View>
     );
   }
@@ -460,6 +513,8 @@ export default function MasterDataScreen() {
           ]}
           rows={data.warehouses || []}
           pageSize={8}
+          actionsWidth={canAddGudang ? 72 : 64}
+          renderActions={deleteActions("warehouses", "gudang", canAddGudang)}
         />
 
         {/* Modal Tambah Gudang (Procurement) */}
@@ -501,6 +556,7 @@ export default function MasterDataScreen() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {deleteConfirm}
       </View>
     );
   }
@@ -534,6 +590,8 @@ export default function MasterDataScreen() {
           ]}
           rows={data.leadSources || []}
           pageSize={8}
+          actionsWidth={canAddLeadSource ? 72 : 64}
+          renderActions={deleteActions("leadSources", "sumber lead", canAddLeadSource)}
         />
 
         {/* Modal Tambah Sumber Lead (Sales) */}
@@ -561,6 +619,7 @@ export default function MasterDataScreen() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {deleteConfirm}
       </View>
     );
   }
@@ -594,6 +653,8 @@ export default function MasterDataScreen() {
           ]}
           rows={data.lostReasons || []}
           pageSize={8}
+          actionsWidth={canAddLostReason ? 72 : 64}
+          renderActions={deleteActions("lostReasons", "alasan Lost", canAddLostReason)}
         />
 
         <Dialog open={lostReasonOpen} onOpenChange={setLostReasonOpen}>
@@ -620,6 +681,7 @@ export default function MasterDataScreen() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {deleteConfirm}
       </View>
     );
   }
@@ -653,6 +715,8 @@ export default function MasterDataScreen() {
           ]}
           rows={data.expenseCategories || []}
           pageSize={8}
+          actionsWidth={canAddExpenseCat ? 72 : 64}
+          renderActions={deleteActions("expenseCategories", "kategori pengeluaran", canAddExpenseCat)}
         />
 
         <Dialog open={expenseCatOpen} onOpenChange={setExpenseCatOpen}>
@@ -679,6 +743,7 @@ export default function MasterDataScreen() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {deleteConfirm}
       </View>
     );
   }
@@ -712,6 +777,8 @@ export default function MasterDataScreen() {
           ]}
           rows={data.costCenters || []}
           pageSize={8}
+          actionsWidth={canAddCostCenter ? 72 : 64}
+          renderActions={deleteActions("costCenters", "cost center", canAddCostCenter)}
         />
 
         <Dialog open={costCenterOpen} onOpenChange={setCostCenterOpen}>
@@ -745,6 +812,7 @@ export default function MasterDataScreen() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {deleteConfirm}
       </View>
     );
   }
@@ -1051,6 +1119,7 @@ export default function MasterDataScreen() {
             <FileUploader
               label="Unggah Berkas Excel (.xlsx) atau CSV"
               kind="dokumen"
+              autoFlush
               onChange={(count) => {
                 setImportCount(count * 5); // Simulasi 5 baris per file
               }}
