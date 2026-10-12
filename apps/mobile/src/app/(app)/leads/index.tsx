@@ -10,8 +10,8 @@ import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { ModuleList } from "@/screens/module-list";
 import { useApp } from "@/store/app-store";
 import { MODULES } from "@/mock/modules";
-import { LEAD_STAGES, LOST_REASONS, type Row } from "@/mock/data";
-import { chartSeries, colors } from "@/tokens";
+import type { Row } from "@/mock/data";
+import { LEAD_STAGES, chartSeries, colors } from "@/tokens";
 import { rupiahShort, tanggal } from "@/lib/format";
 
 const def = MODULES.leads!;
@@ -28,6 +28,7 @@ function ViewToggle({ view, onView }: { view: string; onView: (v: string) => voi
 export default function LeadsScreen() {
   const router = useRouter();
   const { data, setStatus, user, createQuotationFromLead, toast } = useApp();
+  const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
   const [view, setView] = React.useState("papan");
   const [q, setQ] = React.useState("");
   const [form, setForm] = React.useState(false);
@@ -100,9 +101,10 @@ export default function LeadsScreen() {
                                 if (qRow) {
                                   router.push(`/quotations/${qRow.id}` as any);
                                 } else {
-                                  const newQ = createQuotationFromLead(l);
                                   toast("Draf penawaran otomatis dibuat!");
-                                  router.push(`/quotations/${newQ.id}` as any);
+                                  void createQuotationFromLead(l).then((newQ) => {
+                                    if (newQ) router.push(`/quotations/${newQ.id}` as any);
+                                  });
                                 }
                               }}
                               className="bg-primary/10 border-primary/25 active:bg-primary/20 flex-row items-center justify-between rounded-md border px-2.5 py-1.5"
@@ -151,7 +153,7 @@ export default function LeadsScreen() {
         confirmLabel="Ya, tandai Lost"
         destructive
         reasonLabel="Alasan Lost"
-        reasonOptions={LOST_REASONS}
+        reasonOptions={lostReasons}
         onConfirm={(r) => lost && setStatus("leads", lost.id, "Lost", r)}
       />
     </>

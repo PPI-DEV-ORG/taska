@@ -198,6 +198,7 @@ export class ProjectsService {
         href: `/projects/${project.id}`,
       });
     }
+    this.notifications.dataChange("projects", "create", project.id);
     return project;
   }
 
@@ -337,6 +338,7 @@ export class ProjectsService {
         href: `/projects/${id}`,
       });
     }
+    this.notifications.dataChange("projects", "status", id);
     return { ...updated, ...(warning ? { warning } : {}) };
   }
 
@@ -369,6 +371,7 @@ export class ProjectsService {
       text: `Project dipindahkan ke Anda: ${project.name}`,
       href: `/projects/${id}`,
     });
+    this.notifications.dataChange("projects", "update", updated.id);
     return updated;
   }
 

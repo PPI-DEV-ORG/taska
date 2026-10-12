@@ -1,57 +1,51 @@
 import * as React from "react";
 import { View, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { AlertTriangle, Check, CheckCircle2 } from "lucide-react-native";
+import { AlertTriangle, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, Chip, FormField } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/store/app-store";
-import { PRODUCTS, WAREHOUSES, STOCK_QTY } from "@/mock/data";
+import { api } from "@/services/api";
+import type { Row } from "@/mock/data";
 import { colors } from "@/tokens";
 
 export default function StockOpnameScreen() {
   const router = useRouter();
-  const { data, user, addRow, toast } = useApp();
+  const { data, user, toast } = useApp();
 
-  const [selectedWarehouse, setSelectedWarehouse] = React.useState(WAREHOUSES[1]?.nama ?? WAREHOUSES[0]?.nama ?? ""); // default Gudang Bekasi
-  const [counts, setCounts] = React.useState<Record<string, string>>({
-    "PR-01": "5", // Sistem 6 -> selisih -1
-    "PR-02": "4", // Sistem 4 -> selisih 0
-    "PR-07": "4", // Sistem 6 -> selisih -2
-  });
-  const [reason, setReason] = React.useState("Barang rusak di rak bawah & selisih pencatatan mutasi transfer");
+  const products: Row[] = data.products ?? [];
+  const warehouses: Row[] = data.warehouses ?? [];
+  const stockSummary: any[] = data.stockSummary ?? [];
 
-  const wIdx = WAREHOUSES.findIndex((w) => w.nama === selectedWarehouse);
+  const [selectedWarehouseId, setSelectedWarehouseId] = React.useState<string>(
+    warehouses[1]?.id ?? warehouses[0]?.id ?? ""
+  );
+  const [counts, setCounts] = React.useState<Record<string, string>>({});
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
+
+  function systemQtyOf(productId: string): number {
+    const row = stockSummary.find(
+      (s: any) => String(s.productId) === productId && String(s.warehouseId) === selectedWarehouseId
+    );
+    return Number(row?.saldo ?? 0);
+  }
 
   function handleCountChange(pid: string, val: string) {
     setCounts((prev) => ({ ...prev, [pid]: val }));
   }
 
-  function submitOpname() {
-    addRow("opname", {
-      nomor: `OP/2026/10/${Math.floor(Math.random() * 800) + 100}`,
-      tanggal: "2026-10-08",
-      gudang: selectedWarehouse,
-      petugas: user?.name || "Eko Saputra",
-      selisih: -3,
-      status: "Menunggu persetujuan",
-      alasan: reason,
-    });
-    toast("Hasil opname diajukan untuk persetujuan Finance dan Bos");
-    router.replace("/stock");
-  }
-
-  const totalItems = PRODUCTS.length;
   let itemsCounted = 0;
   let itemsMatch = 0;
   let itemsDiff = 0;
-
-  PRODUCTS.forEach((p) => {
-    const systemQty = (STOCK_QTY[p.id] || [0, 0, 0])[wIdx] || 0;
-    const physQtyStr = counts[p.id];
+  products.forEach((p) => {
+    const systemQty = systemQtyOf(String(p.id));
+    const physQtyStr = counts[String(p.id)];
     if (physQtyStr !== undefined) {
       itemsCounted++;
       const physQty = Number(physQtyStr) || 0;
@@ -62,6 +56,46 @@ export default function StockOpnameScreen() {
     }
   });
 
+  async function submitOpname() {
+    if (!selectedWarehouseId) {
+      toast("Pilih gudang terlebih dahulu", "danger");
+      return;
+    }
+    if (!reason.trim()) {
+      toast("Alasan selisih wajib diisi", "danger");
+      return;
+    }
+    const details = products
+      .map((p) => {
+        const pid = String(p.id);
+        const physStr = counts[pid];
+        if (physStr === undefined) return null;
+        return { productId: Number(pid), countedQty: Number(physStr) || 0 };
+      })
+      .filter(Boolean) as { productId: number; countedQty: number }[];
+
+    if (details.length === 0) {
+      toast("Isi minimal satu hasil hitungan fisik", "danger");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await api("POST", "/opnames", {
+        warehouseId: Number(selectedWarehouseId),
+        date: new Date().toISOString().slice(0, 10),
+        reason: reason.trim(),
+        details,
+      });
+      toast("Hasil opname diajukan untuk persetujuan Finance dan Bos");
+      router.replace("/stock");
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengajukan opname", "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <View className="w-full gap-5">
       <PageHeader
@@ -70,32 +104,31 @@ export default function StockOpnameScreen() {
         subtitle="Perhitungan fisik stok gudang dan pengajuan penyesuaian selisih"
         action={
           <View className="flex-row gap-2">
-            {WAREHOUSES.map((w) => (
+            {warehouses.map((w) => (
               <Chip
                 key={w.id}
-                label={w.nama}
-                active={selectedWarehouse === w.nama}
-                onPress={() => setSelectedWarehouse(w.nama)}
+                label={String(w.nama)}
+                active={selectedWarehouseId === w.id}
+                onPress={() => setSelectedWarehouseId(String(w.id))}
               />
             ))}
           </View>
         }
       />
 
-      {/* Summary KPI Cards */}
       <View className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <View className="bg-card border-border/80 rounded-2xl border p-4 shadow-sm">
           <Text className="text-muted-foreground text-xs font-medium">Gudang Terpilih</Text>
           <Text className="text-foreground text-lg md:text-xl font-bold mt-1" numberOfLines={1}>
-            {selectedWarehouse}
+            {selectedWarehouse ? String(selectedWarehouse.nama) : "-"}
           </Text>
-          <Text className="text-muted-foreground text-[11px] mt-0.5">Petugas: {user?.name || "Eko Saputra"}</Text>
+          <Text className="text-muted-foreground text-[11px] mt-0.5">Petugas: {user?.name ?? "-"}</Text>
         </View>
 
         <View className="bg-card border-border/80 rounded-2xl border p-4 shadow-sm">
           <Text className="text-muted-foreground text-xs font-medium">Total Produk</Text>
           <Text className="text-foreground text-lg md:text-xl font-bold mt-1">
-            {totalItems} <Text className="text-xs font-normal text-muted-foreground">SKU</Text>
+            {products.length} <Text className="text-xs font-normal text-muted-foreground">SKU</Text>
           </Text>
           <Text className="text-muted-foreground text-[11px] mt-0.5">Terdaftar di gudang</Text>
         </View>
@@ -117,32 +150,32 @@ export default function StockOpnameScreen() {
         </View>
       </View>
 
-      {/* Main Grid: Left side table/list of products, Right side notes & submit */}
       <View className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Kolom Kiri: Tabel Perhitungan Fisik */}
         <View className="lg:col-span-8 w-full">
           <Panel
-            title={`Perhitungan Fisik: ${selectedWarehouse}`}
+            title={`Perhitungan Fisik: ${selectedWarehouse ? String(selectedWarehouse.nama) : "-"}`}
             subtitle="Masukkan hasil hitungan fisik riil di gudang. Selisih akan dikalkulasi otomatis."
           >
             <View className="gap-2">
-              {PRODUCTS.map((p) => {
-                const systemQty = (STOCK_QTY[p.id] || [0, 0, 0])[wIdx] || 0;
-                const physQtyStr = counts[p.id] ?? String(systemQty);
+              {products.map((p) => {
+                const pid = String(p.id);
+                const systemQty = systemQtyOf(pid);
+                const physQtyStr = counts[pid] ?? String(systemQty);
                 const physQty = Number(physQtyStr) || 0;
                 const diff = physQty - systemQty;
+                const satuan = String(p.satuan ?? "");
 
                 return (
                   <View
-                    key={p.id}
+                    key={pid}
                     className="border-border/60 flex-row items-center justify-between border-b py-3 last:border-b-0 hover:bg-panel/40 px-2 rounded-lg transition-colors gap-3"
                   >
                     <View className="flex-1 min-w-0">
                       <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                        {p.nama}
+                        {String(p.nama)}
                       </Text>
                       <Text className="text-muted-foreground text-xs mt-0.5" numberOfLines={1}>
-                        SKU: {p.sku} · Kategori: {p.kategori} · Sistem: {systemQty} {p.satuan}
+                        SKU: {String(p.sku)} · Kategori: {String(p.kategori ?? "-")} · Sistem: {systemQty} {satuan}
                       </Text>
                     </View>
 
@@ -150,7 +183,7 @@ export default function StockOpnameScreen() {
                       <View className="w-24">
                         <Input
                           value={physQtyStr}
-                          onChangeText={(v) => handleCountChange(p.id, v.replace(/\D/g, ""))}
+                          onChangeText={(v) => handleCountChange(pid, v.replace(/\D/g, ""))}
                           keyboardType="numeric"
                           className="h-10 text-center font-bold"
                         />
@@ -159,20 +192,22 @@ export default function StockOpnameScreen() {
                         {diff === 0 ? (
                           <Text className="text-success text-xs sm:text-sm font-semibold">Cocok (0)</Text>
                         ) : diff < 0 ? (
-                          <Text className="text-danger text-xs sm:text-sm font-semibold">{diff} {p.satuan}</Text>
+                          <Text className="text-danger text-xs sm:text-sm font-semibold">{diff} {satuan}</Text>
                         ) : (
-                          <Text className="text-info text-xs sm:text-sm font-semibold">+{diff} {p.satuan}</Text>
+                          <Text className="text-info text-xs sm:text-sm font-semibold">+{diff} {satuan}</Text>
                         )}
                       </View>
                     </View>
                   </View>
                 );
               })}
+              {products.length === 0 ? (
+                <Text className="text-muted-foreground text-sm py-6 text-center">Belum ada produk master.</Text>
+              ) : null}
             </View>
           </Panel>
         </View>
 
-        {/* Kolom Kanan: Catatan & Tombol Pengajuan */}
         <View className="lg:col-span-4 w-full gap-4 lg:sticky lg:top-4">
           <Panel title="Alasan Selisih & Catatan Opname">
             <FormField
@@ -196,9 +231,9 @@ export default function StockOpnameScreen() {
             </Text>
           </View>
 
-          <Button size="lg" onPress={submitOpname} className="w-full">
+          <Button size="lg" onPress={submitOpname} disabled={busy} className="w-full">
             <Check size={18} color={colors.background} />
-            <Text>Ajukan Penyesuaian Opname</Text>
+            <Text>{busy ? "Mengajukan..." : "Ajukan Penyesuaian Opname"}</Text>
           </Button>
         </View>
       </View>

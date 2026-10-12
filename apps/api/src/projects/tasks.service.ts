@@ -142,6 +142,8 @@ export class TasksService {
       });
     }
     await this.projects.recomputeProgress(projectId);
+    this.notifications.dataChange("tasks", "create", task.id);
+    this.notifications.dataChange("projects", "update", projectId);
     return task;
   }
 
@@ -194,6 +196,8 @@ export class TasksService {
       });
     }
     await this.projects.recomputeProgress(updated.projectId);
+    this.notifications.dataChange("tasks", "update", updated.id);
+    this.notifications.dataChange("projects", "update", updated.projectId);
     return updated;
   }
 
@@ -226,6 +230,8 @@ export class TasksService {
       });
     }
     await this.projects.recomputeProgress(task.projectId);
+    this.notifications.dataChange("tasks", "status", updated.id);
+    this.notifications.dataChange("projects", "update", task.projectId);
     return updated;
   }
 
@@ -257,6 +263,7 @@ export class TasksService {
         href: `/projects/${task.projectId}/tasks/${id}`,
       });
     }
+    this.notifications.dataChange("tasks", "update", updated.id);
     return updated;
   }
 

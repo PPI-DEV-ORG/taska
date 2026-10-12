@@ -288,6 +288,7 @@ export class ApprovalsService {
     }
 
     await this.fire(approval.kind, approval.entityId, status);
+    this.notifications.dataChange("approvals", "status", approvalId);
     return { id: approvalId, status };
   }
 }

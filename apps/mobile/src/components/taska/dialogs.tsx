@@ -12,7 +12,7 @@ import { colors, BOS_THRESHOLD } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { FileUploader } from "@/components/taska/file-uploader";
-import type { ModuleDef } from "@/mock/modules";
+import type { CreateField, ModuleDef } from "@/mock/modules";
 
 export function ConfirmDialog({
   open, onOpenChange, title, description, confirmLabel = "Ya, lanjutkan", destructive, onConfirm, reasonLabel, reasonOptions,
@@ -197,7 +197,7 @@ export function MultiSelect({
 }
 
 export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { addRow, toast } = useApp();
+  const { addRow, data } = useApp();
   const [prevOpen, setPrevOpen] = React.useState(open);
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
@@ -218,22 +218,81 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
     onOpenChange(v);
   }
 
+  function dynamicOptions(f: CreateField): string[] | undefined {
+    if (!["select", "multiselect"].includes(f.type)) return f.options;
+    switch (f.key) {
+      case "perusahaan":
+      case "customer":
+        return (data.customers ?? []).map((r) => String(r.nama));
+      case "supplier":
+        return (data.suppliers ?? []).map((r) => String(r.nama));
+      default:
+        return f.options;
+    }
+  }
+
+  function findById(rows: any[], nama?: string): any | undefined {
+    return rows.find((r) => String(r.nama) === nama);
+  }
+
+  function resolveSelectIds(module: string, row: Record<string, any>): Record<string, any> {
+    const out = { ...row };
+    const nameToId = (rows: any[], nama: any): number | undefined => {
+      const r = findById(rows, String(nama ?? ""));
+      return r ? Number(r.id) : undefined;
+    };
+
+    switch (module) {
+      case "leads":
+        if (row.perusahaan != null) out.customerId = nameToId(data.customers ?? [], row.perusahaan);
+        break;
+      case "surveys":
+      case "po-client":
+      case "invoices":
+        if (row.customer != null) out.customerId = nameToId(data.customers ?? [], row.customer);
+        if (module === "surveys" && row.tim != null) {
+          const names = String(row.tim)
+            .split(",")
+            .map((s) => (s.split("(")[0] ?? "").trim())
+            .filter(Boolean);
+          out.memberIds = (data.users ?? [])
+            .filter((u) => names.includes(String(u.name)))
+            .map((u) => Number(u.id));
+        }
+        break;
+      case "projects":
+        if (row.customer != null && row.customer !== "-")
+          out.customerId = nameToId(data.customers ?? [], row.customer);
+        break;
+      case "supplier-pos":
+        if (row.supplier != null) out.supplierId = nameToId(data.suppliers ?? [], row.supplier);
+        break;
+      case "damage-reports":
+        if (row.produk != null) out.productId = nameToId(data.products ?? [], row.produk);
+        break;
+      default:
+        break;
+    }
+    return out;
+  }
+
   const fields = def.createFields ?? [];
   function submit() {
     const e: Record<string, string> = {};
     fields.forEach((f) => { if (f.required && !vals[f.key]?.trim()) e[f.key] = "Wajib diisi."; });
     setErrs(e);
     if (Object.keys(e).length) return;
-    const row: Record<string, any> = {};
+    let row: Record<string, any> = {};
     fields.forEach((f) => { row[f.key] = f.type === "number" ? Number(String(vals[f.key] ?? "0").replace(/\D/g, "")) : vals[f.key] ?? ""; });
     if (def.key === "invoices") {
       const nilai = row.nilai || 0;
       row.ppn = Math.round(nilai * 0.11);
       row.total = nilai + row.ppn;
     }
-    addRow(def.key, row);
-    handleOpenChange(false);
-    toast(`${def.singular} disimpan`);
+    row = resolveSelectIds(def.key, row);
+    void addRow(def.key, row).then((saved) => {
+      if (saved) handleOpenChange(false);
+    });
   }
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -255,12 +314,12 @@ export function FormDialog({ def, open, onOpenChange }: { def: ModuleDef; open: 
             return (
               <FormField key={f.key} label={f.label} required={f.required} error={errs[f.key]}>
                 {f.type === "select" ? (
-                  <SearchableSelect value={vals[f.key]} onChange={(v) => setVals((s) => ({ ...s, [f.key]: v }))} options={f.options ?? []} placeholder={`Pilih ${f.label.toLowerCase()}`} error={!!errs[f.key]} />
+                  <SearchableSelect value={vals[f.key]} onChange={(v) => setVals((s) => ({ ...s, [f.key]: v }))} options={dynamicOptions(f) ?? []} placeholder={`Pilih ${f.label.toLowerCase()}`} error={!!errs[f.key]} />
                 ) : f.type === "multiselect" ? (
                   <MultiSelect
                     values={vals[f.key]?.split(", ").filter(Boolean) ?? []}
                     onChange={(selectedArr) => setVals((s) => ({ ...s, [f.key]: selectedArr.join(", ") }))}
-                    options={f.options ?? []}
+                    options={dynamicOptions(f) ?? []}
                     placeholder={`Pilih ${f.label.toLowerCase()}`}
                     error={!!errs[f.key]}
                   />

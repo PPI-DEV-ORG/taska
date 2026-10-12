@@ -107,6 +107,7 @@ export class LeadsService {
         href: `/leads/${lead.id}`,
       });
     }
+    this.notifications.dataChange("leads", "create", lead.id);
     return lead;
   }
 
@@ -163,6 +164,7 @@ export class LeadsService {
         href: `/leads/${id}`,
       });
     }
+    this.notifications.dataChange("leads", "update", lead.id);
     return lead;
   }
 
@@ -206,6 +208,7 @@ export class LeadsService {
       text: `Lead dipindahkan ke Anda: ${lead.name}`,
       href: `/leads/${id}`,
     });
+    this.notifications.dataChange("leads", "update", lead.id);
     return lead;
   }
 }

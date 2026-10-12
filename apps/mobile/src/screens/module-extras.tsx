@@ -39,7 +39,7 @@ import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
-import { type Row, LOST_REASONS, USERS, PRODUCTS } from "@/mock/data";
+import { type Row } from "@/mock/data";
 
 const PRICE_ROLES = ["procurement", "finance", "pm", "bos"];
 
@@ -454,6 +454,7 @@ function LeadExtras({ row }: { row: Row }) {
     (q) => (q.leadId && q.leadId === row.id) || (q.lead && q.lead.toLowerCase() === row.nama.toLowerCase())
   );
   const isQualify = ["Qualification", "Proposal", "Negotiation", "Won"].includes(row.status);
+  const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
 
   // Follow-up state
   const [fuOpen, setFuOpen] = React.useState(false);
@@ -473,9 +474,11 @@ function LeadExtras({ row }: { row: Row }) {
 
   // Edit Lost Reason state
   const [lostReasonOpen, setLostReasonOpen] = React.useState(false);
-  const [selectedLostReason, setSelectedLostReason] = React.useState(row.alasanLost || LOST_REASONS[0]);
+  const [selectedLostReason, setSelectedLostReason] = React.useState(row.alasanLost || lostReasons[0]);
 
-  const salesUsers = USERS.filter((u) => ["sales", "pm", "bos", "admin"].includes(u.role));
+  const salesUsers: Row[] = (data.users ?? []).filter((u: Row) =>
+    ["sales", "pm", "bos", "admin"].includes(String(u.role)),
+  );
 
   function handleAddFollowup() {
     if (!fuNote.trim()) {
@@ -768,7 +771,7 @@ function LeadExtras({ row }: { row: Row }) {
             <DialogTitle>Ubah Alasan Lost</DialogTitle>
           </DialogHeader>
           <View className="gap-2 py-2">
-            {LOST_REASONS.map((r) => (
+            {lostReasons.map((r) => (
               <Pressable
                 key={r}
                 onPress={() => setSelectedLostReason(r)}
@@ -1643,9 +1646,10 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
 }
 
 function ProjectExtras({ row }: { row: Row }) {
-  const { toast } = useApp();
+  const { toast, data } = useApp();
+  const products: Row[] = data.products ?? [];
   const [reserveOpen, setReserveOpen] = React.useState(false);
-  const [selectedProduct, setSelectedProduct] = React.useState(PRODUCTS[0]?.nama || "Access Controller 4 Pintu");
+  const [selectedProduct, setSelectedProduct] = React.useState(products[0]?.nama || "");
   const [reserveQty, setReserveQty] = React.useState("2");
   const [bastOpen, setBastOpen] = React.useState(false);
 
@@ -1719,7 +1723,7 @@ function ProjectExtras({ row }: { row: Row }) {
             <View className="gap-1">
               <Text className="text-xs text-muted-foreground font-medium">Pilih Perangkat / Material</Text>
               <ScrollView style={{ maxHeight: 180 }} className="border border-border rounded-lg p-1">
-                {PRODUCTS.slice(0, 10).map((p) => (
+                {products.slice(0, 10).map((p) => (
                   <Pressable
                     key={p.id}
                     onPress={() => setSelectedProduct(p.nama)}

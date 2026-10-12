@@ -215,6 +215,7 @@ export class ReceivingsService {
       href: `/receivings/${receiving.id}`,
       confirmRoles: [user.role as Role],
     });
+    this.notifications.dataChange("receiving", "create", receiving.id);
     return receiving;
   }
 
@@ -355,6 +356,7 @@ export class ReceivingsService {
           text: `Semua barang PO ${po.number} sudah diterima — nyatakan siap ke PM`,
           href: `/procurement/po/${po.id}`,
         });
+        this.notifications.dataChange("supplier-pos", "status", po.id);
       }
     }
 
@@ -372,6 +374,8 @@ export class ReceivingsService {
       text: `Penerimaan ${receiving.number} disetujui dan stok sudah tercatat`,
       href: `/receivings/${id}`,
     });
+    this.notifications.dataChange("receiving", "status", id);
+    this.notifications.dataChange("stock", "update");
   }
 
   async reportIssue(id: number, dto: IssueDto, user: RequestUser) {
@@ -410,6 +414,7 @@ export class ReceivingsService {
       text: `Barang bermasalah (${dto.type}): ${dto.description}`,
       href: `/receivings/${receiving.id}`,
     });
+    this.notifications.dataChange("issue-reports", "create", issue.id);
     return issue;
   }
 

@@ -98,6 +98,7 @@ export class DeliveryService {
         href: `/delivery-notes/${row.id}`,
       });
     }
+    this.notifications.dataChange("delivery-notes", "create", row.id);
     return row;
   }
 
@@ -262,6 +263,7 @@ export class DeliveryService {
         href: `/delivery-notes/${id}`,
       });
     }
+    this.notifications.dataChange("delivery-notes", "status", updated.id);
     return updated;
   }
 
@@ -305,6 +307,7 @@ export class DeliveryService {
       text: `Laporan hasil surat jalan ${row.number} oleh ${user.name}`,
       href: `/delivery-notes/${id}`,
     });
+    this.notifications.dataChange("delivery-notes", "update", updated.id);
     return updated;
   }
 

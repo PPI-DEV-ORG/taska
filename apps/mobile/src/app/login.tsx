@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Image, Pressable, ScrollView, View } from "react-native";
+import { Image, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Button } from "@/components/ui/button";
@@ -7,14 +7,29 @@ import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { FormField } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
-import { ROLE_LABEL, USERS, type Role } from "@/mock/data";
-import { cn } from "@/lib/utils";
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login } = useApp();
-  const [role, setRole] = React.useState<Role>("bos");
-  const user = USERS.find((u) => u.role === role)!;
+  const { login, toast } = useApp();
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  async function onSubmit() {
+    if (!email.trim() || !password) {
+      toast("Email dan kata sandi wajib diisi", "danger");
+      return;
+    }
+    setBusy(true);
+    try {
+      await login(email.trim(), password);
+      router.replace("/dashboard");
+    } catch (e: any) {
+      toast(e?.message ?? "Login gagal. Periksa email dan kata sandi.", "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <SafeAreaView className="bg-background flex-1">
@@ -31,30 +46,32 @@ export default function LoginScreen() {
           </View>
 
           <View className="bg-card border-border gap-4 rounded-xl border p-5">
-            <FormField label="Email"><Input value={user.email} editable={false} className="h-11 sm:h-11" /></FormField>
-            <FormField label="Kata sandi"><Input value="demo-taska" secureTextEntry editable={false} className="h-11 sm:h-11" /></FormField>
+            <FormField label="Email" required>
+              <Input
+                value={email}
+                onChangeText={setEmail}
+                placeholder="nama@taska.co.id"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                className="h-11 sm:h-11"
+              />
+            </FormField>
+            <FormField label="Kata sandi" required>
+              <Input
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                placeholder="Masukkan kata sandi"
+                className="h-11 sm:h-11"
+              />
+            </FormField>
 
-            <View className="gap-2">
-              <Text className="text-sm font-medium">Masuk sebagai (hanya untuk demo)</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {USERS.map((u) => (
-                  <Pressable
-                    key={u.id}
-                    onPress={() => setRole(u.role)}
-                    className={cn("min-h-[52px] w-[48.5%] justify-center rounded-lg border px-3 py-2", role === u.role ? "border-primary bg-primary/15" : "border-border bg-panel/40")}
-                  >
-                    <Text className={cn("text-sm font-medium", role === u.role && "text-primary")}>{ROLE_LABEL[u.role]}</Text>
-                    <Text className="text-muted-foreground text-[13px]" numberOfLines={1}>{u.name}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            <Button size="lg" onPress={() => { login(role); router.replace("/dashboard"); }}>
-              <Text>Masuk</Text>
+            <Button size="lg" disabled={busy} onPress={onSubmit}>
+              <Text>{busy ? "Masuk..." : "Masuk"}</Text>
             </Button>
           </View>
-          <Text className="text-muted-foreground text-center text-[13px]">Prototype tampilan. Data hanya tiruan dan tersimpan di memori.</Text>
+          <Text className="text-muted-foreground text-center text-[13px]">Masuk dengan akun yang diberikan admin.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

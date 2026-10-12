@@ -144,6 +144,7 @@ export class SurveysService {
       });
     }
 
+    this.notifications.dataChange("surveys", "create", survey.id);
     return survey;
   }
 
@@ -213,6 +214,7 @@ export class SurveysService {
         href: `/surveys/${id}`,
       });
     }
+    this.notifications.dataChange("surveys", payload.status ? "status" : "update", updated.id);
     return updated;
   }
 
@@ -234,6 +236,7 @@ export class SurveysService {
       text: `Permintaan survey ${survey.lead.name}: ${status.toLowerCase()} → ${next}`,
       href: `/surveys/${entityId}`,
     });
+    this.notifications.dataChange("surveys", "status", entityId);
   }
 
   /** Lampiran bukti (foto/dokumen laporan). */

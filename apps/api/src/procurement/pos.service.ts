@@ -192,6 +192,7 @@ export class PosService {
       requestedBy: user,
       href: `/procurement/po/${row.id}`,
     });
+    this.notifications.dataChange("supplier-pos", "create", row.id);
     return row;
   }
 
@@ -234,6 +235,7 @@ export class PosService {
         href: `/procurement/po/${id}`,
       });
     }
+    this.notifications.dataChange("supplier-pos", "status", updated.id);
     return updated;
   }
 
@@ -264,6 +266,7 @@ export class PosService {
         href: `/procurement/po/${id}`,
       });
     }
+    this.notifications.dataChange("supplier-pos", "status", id);
     return { id, ready: true, notified: targets.length };
   }
 
@@ -282,6 +285,7 @@ export class PosService {
       entityId: id,
       detail: `${row.number}${reason ? ` — ${reason}` : ""}`,
     });
+    this.notifications.dataChange("supplier-pos", "status", updated.id);
     return updated;
   }
 }

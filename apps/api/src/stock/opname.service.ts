@@ -59,6 +59,8 @@ export class OpnameService {
       text: `Penyesuaian opname #${opname.id} telah disetujui dan diterapkan`,
       href: `/stock/opnames/${opname.id}`,
     });
+    this.notifications.dataChange("opname", "status", entityId);
+    this.notifications.dataChange("stock", "update");
   }
 
   async create(dto: OpnameCreateDto, user: RequestUser) {
@@ -105,6 +107,7 @@ export class OpnameService {
       }
       return { ...opname, details: rows };
     });
+    this.notifications.dataChange("opname", "create", created.id);
     return created;
   }
 
@@ -135,6 +138,7 @@ export class OpnameService {
       requestedBy: user,
       href: `/stock/opnames/${id}`,
     });
+    this.notifications.dataChange("opname", "status", updated.id);
     return updated;
   }
 

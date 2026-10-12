@@ -1,15 +1,15 @@
 import * as React from "react";
-import {
-  APPROVALS, AUDIT_LOG, CUSTOMERS, DAMAGE_REPORTS, DELIVERY_NOTES, EXPENSES, INVOICES, LEADS, LEAD_SOURCES,
-  LOST_REASONS, EXPENSE_CATEGORIES, COST_CENTERS,
-  NOTIFS, OPNAME, PO_CLIENT, PRODUCTS, PROJECTS, PURCHASE_REQUESTS, QUOTATIONS, RECEIVING,
-  ROLE_LABEL, SUPPLIERS, SUPPLIER_POS, SURVEYS, TASKS, USERS, WAREHOUSES,
-  type Approval, type Notif, type Role, type Row, type User,
-} from "@/mock/data";
+import { ROLE_LABEL, type Notif, type Row, type User } from "@/mock/data";
 import { MODULES } from "@/mock/modules";
-import { BOS_THRESHOLD } from "@/tokens";
-import { hoursAgo } from "@/lib/format";
 import { ToastHost, type ToastItem } from "@/components/taska/toast";
+import { api, getAccess, setTokens, clearTokens } from "@/services/api";
+import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
+import { ensureNotifPermission, showSystemNotification } from "@/services/notify";
+import {
+  PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow,
+  apiUserToRow, buildCreateBody, buildStatusBody, statusEnumFor,
+  type ApiUser, type ApprovalRow, type Page,
+} from "@/services/adapters";
 
 export type DB = {
   leads: Row[];
@@ -39,86 +39,88 @@ export type DB = {
   opname: Row[];
   users: Row[];
   "audit-log": Row[];
+  serials: Row[];
+  movements: Row[];
+  reservations: Row[];
   [k: string]: Row[] | any;
 };
-export type HistoryItem = { id: string; who: string; what: string; when: string };
 
-type ApprovalState = Approval & { financeOk?: boolean };
+export type HistoryItem = { id: string; who: string; what: string; when: string };
 
 type Ctx = {
   user: User | null;
-  login: (role: Role) => void;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   data: DB;
-  addRow: (module: string, row: Record<string, any>) => Row;
-  patchRow: (module: string, id: string, patch: Record<string, any>) => void;
-  setStatus: (module: string, id: string, status: string, note?: string) => void;
-  createQuotationFromLead: (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }) => Row;
+  addRow: (module: string, row: Record<string, any>) => Promise<Row | null>;
+  patchRow: (module: string, id: string, patch: Record<string, any>) => Promise<void>;
+  setStatus: (module: string, id: string, status: string, note?: string) => Promise<void>;
+  createQuotationFromLead: (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }) => Promise<Row | null>;
   history: (module: string, id: string) => HistoryItem[];
   pushHistory: (module: string, id: string, what: string) => void;
-  approvals: ApprovalState[];
-  decide: (id: string, decision: "Disetujui" | "Ditolak", reason?: string) => void;
+  approvals: ApprovalRow[];
+  decide: (id: string, decision: "Disetujui" | "Ditolak", reason?: string) => Promise<void>;
   notifs: Notif[];
   unread: number;
-  markRead: (id: string) => void;
-  markAllRead: () => void;
+  markRead: (id: string) => Promise<void>;
+  markAllRead: () => Promise<void>;
   toast: (msg: string, tone?: ToastItem["tone"]) => void;
   offline: boolean;
   setOffline: (v: boolean) => void;
+  reload: () => Promise<void>;
 };
 
 const AppContext = React.createContext<Ctx | null>(null);
 
-const DEFAULT_PRODUCT_CATEGORIES = [
-  { id: "CAT-01", nama: "IP Camera", deskripsi: "Kamera pengawas CCTV berbasis IP network", prefix: "CAM", status: "Aktif" },
-  { id: "CAT-02", nama: "NVR", deskripsi: "Network Video Recorder perekam rekaman kamera", prefix: "NVR", status: "Aktif" },
-  { id: "CAT-03", nama: "Access Control", deskripsi: "Perangkat akses pintu, fingerprint & kartu RFID", prefix: "ACC", status: "Aktif" },
-  { id: "CAT-04", nama: "Switch", deskripsi: "Switch PoE & Network Managed Distribution", prefix: "SW", status: "Aktif" },
-  { id: "CAT-05", nama: "Server", deskripsi: "Server rackmount & workstation monitoring", prefix: "SRV", status: "Aktif" },
-  { id: "CAT-06", nama: "UPS", deskripsi: "Uninterruptible Power Supply backup daya", prefix: "UPS", status: "Aktif" },
-  { id: "CAT-07", nama: "Kabel", deskripsi: "Kabel UTP LAN Cat6, FO & Patch Cord", prefix: "CBL", status: "Aktif" },
-  { id: "CAT-08", nama: "Aksesoris", deskripsi: "Bracket, RJ45, modular jack & perlengkapan instalasi", prefix: "ACC", status: "Aktif" },
-];
-
-const initialDB = (): DB => ({
-  leads: LEADS, quotations: QUOTATIONS, surveys: SURVEYS, "po-client": PO_CLIENT, invoices: INVOICES,
-  projects: PROJECTS, tasks: TASKS, "purchase-requests": PURCHASE_REQUESTS, "supplier-pos": SUPPLIER_POS,
-  receiving: RECEIVING, "delivery-notes": DELIVERY_NOTES, expenses: EXPENSES, "damage-reports": DAMAGE_REPORTS,
-  customers: CUSTOMERS, suppliers: SUPPLIERS, warehouses: WAREHOUSES, products: PRODUCTS,
-  productCategories: DEFAULT_PRODUCT_CATEGORIES,
-  leadSources: LEAD_SOURCES.map((ls, idx) => ({ id: `LS-${idx + 1}`, nama: ls, status: "Aktif" })),
-  lostReasons: LOST_REASONS.map((lr, idx) => ({ id: `LR-${idx + 1}`, nama: lr, status: "Aktif" })),
-  expenseCategories: EXPENSE_CATEGORIES.map((ec, idx) => ({ id: `EC-${idx + 1}`, nama: ec, status: "Aktif" })),
-  costCenters: COST_CENTERS.map((cc, idx) => ({ id: `CC-${idx + 1}`, nama: cc, status: "Aktif" })),
-  followups: [
-    { id: "FU-01", leadId: "L-001", tanggal: "2026-10-08", metode: "Telepon", catatan: "Membahas ruang lingkup dan jadwal survey", tanggalBerikutnya: "2026-10-12", status: "Selesai", dibuat: "Dewi Lestari" },
-    { id: "FU-02", leadId: "L-001", tanggal: "2026-10-06", metode: "WhatsApp", catatan: "Mengirim contoh portfolio penawaran sebelumnya", tanggalBerikutnya: "2026-10-08", status: "Selesai", dibuat: "Dewi Lestari" },
-    { id: "FU-03", leadId: "L-002", tanggal: "2026-10-07", metode: "Email", catatan: "Perkenalan dan permintaan denah gedung sekolah", tanggalBerikutnya: "2026-10-14", status: "Terjadwal", dibuat: "Dewi Lestari" },
-  ],
-  issueReports: [
-    { id: "IR-01", receivingId: "RC-002", poNo: "SP-001", item: "Adaptor 12v 2a", jenis: "Rusak", qty: 2, deskripsi: "2 unit adaptor pecah saat unboxing kontainer", pelapor: "Eko Saputra", tanggal: "2026-10-08", status: "Menunggu Solusi" },
-  ],
-  opname: OPNAME,
-  users: USERS.map((u) => ({ ...u, roleLabel: ROLE_LABEL[u.role] })),
-  "audit-log": AUDIT_LOG,
+const emptyDB = (): DB => ({
+  leads: [], quotations: [], surveys: [], "po-client": [], invoices: [],
+  projects: [], tasks: [], "purchase-requests": [], "supplier-pos": [],
+  receiving: [], "delivery-notes": [], expenses: [], "damage-reports": [],
+  customers: [], suppliers: [], warehouses: [], products: [],
+  productCategories: [], leadSources: [], lostReasons: [], expenseCategories: [], costCenters: [],
+  followups: [], issueReports: [], opname: [], users: [], "audit-log": [],
+  serials: [], movements: [], reservations: [],
 });
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = React.useState<User | null>(() => {
-    if (typeof window !== "undefined") {
+/** Modul yang diambil dari backend saat load. Beberapa dibuat lazily (tasks, stock) karena mahal. */
+const EAGER_MODULES = [
+  "leads", "quotations", "surveys", "po-client", "invoices", "projects",
+  "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses",
+  "damage-reports", "customers", "suppliers", "warehouses", "products",
+  "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
+  "opname", "users", "audit-log",
+] as const;
+
+async function fetchList(module: string): Promise<Row[]> {
+  const path = PATHS[module];
+  if (!path) return [];
+  try {
+    const res = await api<Page<any>>("GET", `${path}?limit=200`);
+    return adaptRows(module, res.items);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchTasks(projects: Row[]): Promise<Row[]> {
+  const out: Row[] = [];
+  await Promise.all(
+    projects.map(async (p) => {
       try {
-        const saved = localStorage.getItem("taska_role") as Role | null;
-        if (saved) {
-          return USERS.find((u) => u.role === saved) ?? USERS[0] ?? null;
-        }
+        const res = await api<Page<any>>("GET", `/projects/${p.id}/tasks?limit=200`);
+        out.push(...adaptRows("tasks", res.items));
       } catch {}
-    }
-    return null;
-  });
-  const [data, setData] = React.useState<DB>(initialDB);
+    }),
+  );
+  return out;
+}
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = React.useState<User | null>(null);
+  const [data, setData] = React.useState<DB>(emptyDB);
   const [hist, setHist] = React.useState<Record<string, HistoryItem[]>>({});
-  const [approvals, setApprovals] = React.useState<ApprovalState[]>(APPROVALS);
-  const [notifs, setNotifs] = React.useState<Notif[]>(NOTIFS);
+  const [approvals, setApprovals] = React.useState<ApprovalRow[]>([]);
+  const [notifs, setNotifs] = React.useState<Notif[]>([]);
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
   const [offline, setOffline] = React.useState(false);
   const seq = React.useRef(100);
@@ -129,36 +131,182 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
 
-  const login = React.useCallback((role: Role) => {
-    const found = USERS.find((u) => u.role === role) ?? USERS[0] ?? null;
-    setUser(found);
-    if (typeof window !== "undefined") {
-      try {
-        if (found) localStorage.setItem("taska_role", found.role);
-      } catch {}
-    }
-  }, []);
-  const logout = React.useCallback(() => {
-    setUser(null);
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.removeItem("taska_role");
-      } catch {}
-    }
+  const loadAll = React.useCallback(async () => {
+    const [pairs, taskRows, appr, notifRes, stockRes] = await Promise.all([
+      Promise.all(EAGER_MODULES.map(async (m) => [m, await fetchList(m)] as const)),
+      (async () => {
+        try {
+          const projectsRes = await api<Page<any>>("GET", "/projects?limit=200");
+          return await fetchTasks(adaptRows("projects", projectsRes.items));
+        } catch {
+          return [] as Row[];
+        }
+      })(),
+      (async () => {
+        try {
+          const r = await api<{ items: any[] }>("GET", "/approvals/pending");
+          return adaptApprovalList(r.items);
+        } catch {
+          return [] as ApprovalRow[];
+        }
+      })(),
+      (async () => {
+        try {
+          return await api<Page<any>>("GET", "/notifications?limit=50");
+        } catch {
+          return null;
+        }
+      })(),
+      (async () => {
+        try {
+          return await api<Page<any>>("GET", "/stock/summary?limit=500");
+        } catch {
+          return null;
+        }
+      })(),
+    ]);
+
+    const next = emptyDB();
+    for (const [m, rows] of pairs) (next as any)[m] = rows;
+    next.tasks = taskRows;
+    next.stockSummary = stockRes?.items ?? [];
+    setData(next);
+    setApprovals(appr);
+    setNotifs(adaptNotifList(notifRes?.items));
+    return next;
   }, []);
 
-  const audit = React.useCallback(
-    (aksi: string, jenis: string, refId: string) => {
-      setData((d) => ({
-        ...d,
-        "audit-log": [
-          { id: `AL-${++seq.current}`, waktu: new Date().toISOString(), pengguna: user?.name ?? "-", aksi, jenis, refId },
-          ...(d["audit-log"] ?? []),
-        ],
-      }));
+  const login = React.useCallback(
+    async (email: string, password: string) => {
+      const res = await api<{ accessToken: string; refreshToken: string; user: ApiUser }>(
+        "POST", "/auth/login", { email, password }, { auth: false },
+      );
+      setTokens(res.accessToken, res.refreshToken);
+      const u = apiUserToRow(res.user);
+      u.roleLabel = ROLE_LABEL[u.role] ?? u.role;
+      setUser(u);
+      await loadAll();
+      // minta izin notifikasi saat masih dalam gestur tap login (iOS perlu gesture)
+      void ensureNotifPermission();
     },
-    [user],
+    [loadAll],
   );
+
+  const logout = React.useCallback(() => {
+    clearTokens();
+    setUser(null);
+    setData(emptyDB());
+    setApprovals([]);
+    setNotifs([]);
+  }, []);
+
+  const reload = React.useCallback(async () => {
+    await loadAll();
+  }, [loadAll]);
+
+  const refreshNotifs = React.useCallback(async () => {
+    try {
+      const r = await api<Page<any>>("GET", "/notifications?limit=50");
+      setNotifs(adaptNotifList(r.items));
+    } catch {}
+  }, []);
+
+  const refreshApprovals = React.useCallback(async () => {
+    try {
+      const r = await api<{ items: any[] }>("GET", "/approvals/pending");
+      setApprovals(adaptApprovalList(r.items));
+    } catch {}
+  }, []);
+
+  // restore session on mount
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!getAccess()) return;
+      try {
+        const me = await api<ApiUser>("GET", "/auth/me");
+        if (!alive) return;
+        const u = apiUserToRow(me);
+        u.roleLabel = ROLE_LABEL[u.role] ?? u.role;
+        setUser(u);
+        await loadAll();
+      } catch {
+        clearTokens();
+      }
+    })();
+    return () => { alive = false; };
+  }, [loadAll]);
+
+  // poll notifications when logged in (fallback when socket.io unavailable)
+  React.useEffect(() => {
+    if (!user) return;
+    const id = setInterval(() => { void refreshNotifs(); }, 30000);
+    return () => clearInterval(id);
+  }, [user, refreshNotifs]);
+
+  // realtime: data-change → refresh tabel; notification → notif + OS/browser notif
+  const refreshModuleRef = React.useRef<((m: string) => Promise<Row[]>) | null>(null);
+
+  React.useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+
+    const refreshStockSummary = async () => {
+      try {
+        const res = await api<Page<any>>("GET", "/stock/summary?limit=500");
+        if (mounted) setData((d) => ({ ...d, stockSummary: res.items ?? [] }));
+      } catch {}
+    };
+
+    const handleDataChange = async (c: WsDataChange) => {
+      if (!c?.module) return;
+      // refresh modul eager; tasks & stockSummary perlu fetch khusus
+      const eager = (EAGER_MODULES as readonly string[]).includes(c.module);
+      if (eager) {
+        await refreshModuleRef.current?.(c.module);
+      } else if (c.module === "tasks") {
+        const projects = await fetchList("projects");
+        const taskRows = await fetchTasks(projects);
+        if (mounted) setData((d) => ({ ...d, tasks: taskRows }));
+      } else if (["stock", "movements", "serials", "reservations", "products"].includes(c.module)) {
+        await refreshStockSummary();
+        if (c.module === "products") await refreshModuleRef.current?.("products");
+      } else if (c.module === "approvals") {
+        await refreshApprovals();
+      }
+    };
+
+    const handleNotification = async (n: WsNotification) => {
+      if (!mounted) return;
+      // kind backend = enum NotifKind (APPROVAL|STOK|PENGIRIMAN|LEAD|TUGAS|SURAT|LAINNYA)
+      const WS_KIND: Record<string, Notif["jenis"]> = {
+        APPROVAL: "approval", STOK: "stok", PENGIRIMAN: "pengiriman",
+        LEAD: "lead", TUGAS: "tugas", SURAT: "surat", LAINNYA: "approval",
+      };
+      const notif: Notif = {
+        id: n.id != null ? String(n.id) : `ws-${Date.now()}`,
+        jenis: WS_KIND[n.kind] ?? "approval",
+        teks: n.text ?? "",
+        waktu: new Date().toISOString(),
+        baca: false,
+        href: n.href ?? "",
+        roles: "all",
+      };
+      setNotifs((l) => [notif, ...l].slice(0, 100));
+      void showSystemNotification({ notif });
+      toast(n.text, "info");
+    };
+
+    const disconnect = connectSocket({
+      onDataChange: (c) => { void handleDataChange(c); },
+      onNotification: (n) => { void handleNotification(n); },
+    });
+
+    return () => {
+      mounted = false;
+      disconnect();
+    };
+  }, [user, refreshApprovals, toast]);
 
   const pushHistory = React.useCallback(
     (module: string, id: string, what: string) => {
@@ -171,178 +319,225 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [user],
   );
 
-  const addRow = React.useCallback(
-    (module: string, row: Record<string, any>): Row => {
-      const def = MODULES[module];
-      const id = `${def?.idPrefix ?? "X"}-${String(Math.floor(Math.random() * 900) + 100)}`;
-      const full: Row = { ...(def?.defaults ?? {}), tanggal: "2026-10-08", ...row, id };
-      if (module === "users") full.role = row.roleLabel;
-      setData((d) => ({ ...d, [module]: [full, ...(d[module] ?? [])] }));
-      pushHistory(module, id, "Membuat data baru");
-      audit(`Membuat ${def?.singular?.toLowerCase() ?? "data"}`, def?.singular ?? module, id);
-      return full;
-    },
-    [audit, pushHistory],
-  );
-
-  const patchRow = React.useCallback((module: string, id: string, patch: Record<string, any>) => {
-    setData((d) => ({ ...d, [module]: (d[module] ?? []).map((r: { id: string; }) => (r.id === id ? { ...r, ...patch } : r)) }));
+  const refreshModule = React.useCallback(async (module: string) => {
+    const rows = await fetchList(module);
+    setData((d) => ({ ...d, [module]: rows }));
+    return rows;
   }, []);
 
+  React.useEffect(() => {
+    refreshModuleRef.current = refreshModule;
+  }, [refreshModule]);
+
+  const addRow = React.useCallback(
+    async (module: string, row: Record<string, any>): Promise<Row | null> => {
+      const path = PATHS[module];
+      if (!path) return null;
+      try {
+        const body = buildCreateBody(module, row);
+        const created = await api<any>("POST", path, body);
+        const adapted = adaptRow(module, created);
+        setData((d) => ({ ...d, [module]: [adapted, ...(d[module] ?? [])] }));
+        pushHistory(module, adapted.id, "Membuat data baru");
+        toast(`${MODULES[module]?.singular ?? "Data"} disimpan`);
+        return adapted;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal menyimpan", "danger");
+        return null;
+      }
+    },
+    [pushHistory, toast],
+  );
+
+  const patchRow = React.useCallback(
+    async (module: string, id: string, patch: Record<string, any>) => {
+      const path = PATHS[module];
+      if (!path) return;
+      try {
+        const body = buildCreateBody(module, { ...patch });
+        delete body.id;
+        await api("PATCH", `${path}/${id}`, body);
+        await refreshModule(module);
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal mengubah", "danger");
+      }
+    },
+    [refreshModule, toast],
+  );
+
   const createQuotationFromLead = React.useCallback(
-    (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }): Row => {
-      // Periksa apakah sudah ada penawaran untuk lead ini
-      const existing = (data.quotations ?? []).find(
-        (q) => (q.leadId && q.leadId === lead.id) || (q.lead && q.lead.toLowerCase() === lead.nama.toLowerCase())
-      );
-      if (existing) {
-        if (extra) {
-          const patch = {
-            ...(extra.items ? { items: extra.items } : {}),
-            ...(extra.fileUploaded !== undefined ? { fileUploaded: extra.fileUploaded, fileName: `${existing.nomor.replace(/\//g, "-")}-template.csv` } : {}),
-            ...(extra.status ? { status: extra.status } : {}),
-          };
-          setData((d) => ({
-            ...d,
-            quotations: (d.quotations ?? []).map((q) => (q.id === existing.id ? { ...q, ...patch } : q)),
-            leads: (d.leads ?? []).map((l) => (l.id === lead.id ? { ...l, penawaranFile: `${existing.nomor.replace(/\//g, "-")}-template.csv`, penawaranId: existing.id } : l)),
-          }));
-          return { ...existing, ...patch };
-        }
+    async (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }): Promise<Row | null> => {
+      const existing = (data.quotations ?? []).find((q) => q.leadId === lead.id);
+      if (existing && !extra) return existing;
+      if (existing && extra) {
+        try {
+          await api("PATCH", `/quotations/${existing.id}`, {
+            total: extra.items ? extra.items.reduce((a: number, c: any) => a + c.qty * c.harga, 0) : undefined,
+          });
+          await refreshModule("quotations");
+        } catch {}
         return existing;
       }
-
-      const qCount = (data.quotations?.length ?? 0) + 1;
-      const now = new Date();
-      const yr = now.getFullYear();
-      const mo = String(now.getMonth() + 1).padStart(2, "0");
-      const seqStr = String(qCount).padStart(3, "0");
-      const nomor = `PNW/${yr}/${mo}/${seqStr}`;
-      const berlakuDate = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-
-      const itemsTotal = extra?.items ? extra.items.reduce((acc: number, curr: any) => acc + curr.qty * curr.harga, 0) : Number(lead.nilai) || 0;
-      const nilaiTotal = itemsTotal;
-      const ppn = Math.round(nilaiTotal * 0.11);
-      const disc = 0;
-      const totalAfterDisc = nilaiTotal + ppn - disc;
-
-      const newQ: Row = {
-        id: `Q-${String(Math.floor(Math.random() * 900) + 100)}`,
-        nomor,
-        lead: lead.nama,
-        leadId: lead.id,
-        customer: lead.perusahaan,
-        nilai: nilaiTotal,
-        total: nilaiTotal,
-        ppn,
-        disc,
-        totalAfterDisc,
-        status: extra?.status || (extra?.fileUploaded ? "Done" : "Not Yet"),
-        versi: 1,
-        berlaku: berlakuDate,
-        pemilik: lead.pemilik || user?.name || "Dewi Lestari",
-        dibuat: now.toISOString().slice(0, 10),
-        fileUploaded: extra?.fileUploaded ?? false,
-        fileName: extra?.fileUploaded ? `${nomor.replace(/\//g, "-")}-template.csv` : undefined,
-        items: extra?.items,
-      };
-
-      setData((d) => ({
-        ...d,
-        quotations: [newQ, ...(d.quotations ?? [])],
-        leads: (d.leads ?? []).map((l) => (l.id === lead.id ? { ...l, penawaranFile: newQ.fileName, penawaranId: newQ.id } : l)),
-      }));
-      pushHistory("quotations", newQ.id, `Dibuat otomatis dari lead: ${lead.nama}`);
-      audit("Membuat draf penawaran resmi", "Penawaran", newQ.id);
-      return newQ;
+      try {
+        const created = await api<any>("POST", "/quotations", {
+          leadId: Number(lead.id),
+          customerId: lead.customerId != null ? Number(lead.customerId) : undefined,
+          total: Number(lead.nilai) || 0,
+        });
+        const adapted = adaptRow("quotations", created);
+        setData((d) => ({ ...d, quotations: [adapted, ...(d.quotations ?? [])] }));
+        pushHistory("quotations", adapted.id, `Dibuat otomatis dari lead: ${lead.nama}`);
+        return adapted;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal membuat penawaran", "danger");
+        return null;
+      }
     },
-    [data.quotations, user, pushHistory, audit]
+    [data.quotations, refreshModule, pushHistory, toast],
   );
 
   const setStatus = React.useCallback(
-    (module: string, id: string, status: string, note?: string) => {
+    async (module: string, id: string, status: string, note?: string) => {
       const def = MODULES[module];
       const key = def?.statusKey || "status";
-      setData((d) => ({
-        ...d,
-        [module]: (d[module] ?? []).map((r: { [x: string]: any; id: any; total?: any; }) => {
-          if (r.id !== id) return r;
-          const next: Row = { ...r, [key]: status };
-          if (module === "leads" && status === "Lost") next.alasanLost = note ?? "";
-          if (module === "leads" && status === "Won") next.peluang = 100;
-          if (module === "invoices" && status === "Lunas") next.terbayar = r.total;
-          return next;
-        }),
-      }));
-      pushHistory(module, id, `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`);
-      audit(`Mengubah status ke ${status}`, def?.singular ?? module, id);
-      toast(`Status diubah ke ${status}`);
 
-      // Jika lead masuk ke tahap Qualification, otomatis buatkan row penawaran jika belum ada
-      if (module === "leads" && (status === "Qualification" || status === "Proposal")) {
-        const leadRow = data.leads?.find((l) => l.id === id);
-        if (leadRow) {
-          setTimeout(() => {
-            createQuotationFromLead({ ...leadRow, status });
-          }, 50);
+      // invoice Lunas → catat pembayaran sisa
+      if (module === "invoices" && status === "Lunas") {
+        const inv = (data.invoices ?? []).find((r) => r.id === id);
+        if (inv) {
+          const sisa = Math.round(Number(inv.total) - Number(inv.terbayar));
+          if (sisa > 0) {
+            try {
+              await api("POST", `/invoices/${id}/payments`, {
+                amount: sisa,
+                date: new Date().toISOString().slice(0, 10),
+                method: "TRANSFER",
+              });
+            } catch (e: any) {
+              toast(e?.message ?? "Gagal mencatat pembayaran", "danger");
+              return;
+            }
+          }
+        }
+      } else if (module === "leads") {
+        const body: Record<string, any> = { stage: statusEnumFor("leads", status) };
+        if (status === "Won") body.probability = 100;
+        if (status === "Lost") {
+          body.lostNote = note ?? "";
+          const lr = (data.lostReasons ?? []).find((r) => r.nama === note);
+          if (lr) body.lostReasonId = Number(lr.id);
+        }
+        try {
+          await api("PATCH", `/leads/${id}`, body);
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengubah status", "danger");
+          return;
+        }
+      } else if (module === "surveys") {
+        try {
+          await api("PATCH", `/surveys/${id}`, { status: statusEnumFor("surveys", status), notes: note });
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengubah status", "danger");
+          return;
+        }
+      } else if (module === "supplier-pos") {
+        // status pengiriman
+        const ship = statusEnumFor("supplier-pos", status);
+        try {
+          await api("POST", `/supplier-pos/${id}/shipment`, { shipmentStatus: ship });
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengubah pengiriman", "danger");
+          return;
+        }
+      } else if (module === "opname") {
+        try {
+          await api("POST", `/opnames/${id}/submit`, { reason: note });
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengajukan opname", "danger");
+          return;
+        }
+      } else if (module === "receiving") {
+        toast("Status penerimaan dihitung otomatis dari item", "info");
+        return;
+      } else {
+        const path = PATHS[module];
+        if (!path) return;
+        try {
+          await api("POST", `${path}/${id}/status`, buildStatusBody(module, status, note));
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengubah status", "danger");
+          return;
         }
       }
+
+      // optimistik
+      setData((d) => ({
+        ...d,
+        [module]: (d[module] ?? []).map((r: any) => (r.id === id ? { ...r, [key]: status } : r)),
+      }));
+      pushHistory(module, id, `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`);
+      toast(`Status diubah ke ${status}`);
+
+      if (module === "leads" && (status === "Qualification" || status === "Proposal")) {
+        const leadRow = (data.leads ?? []).find((l) => l.id === id);
+        if (leadRow) setTimeout(() => { void createQuotationFromLead({ ...leadRow, status }); }, 50);
+      }
+
+      await refreshModule(module);
     },
-    [audit, pushHistory, toast, data.leads, createQuotationFromLead],
+    [data, pushHistory, toast, refreshModule, createQuotationFromLead],
   );
 
   const history = React.useCallback(
     (module: string, id: string): HistoryItem[] => {
       const custom = hist[`${module}:${id}`] ?? [];
-      const row = data[module]?.find((r: { id: string; }) => r.id === id);
+      const row = (data[module] as Row[] | undefined)?.find((r: any) => r.id === id);
       const owner = row?.pemilik ?? row?.pembuat ?? row?.pemohon ?? row?.pelapor ?? row?.pm ?? "Sistem";
       return [
         ...custom,
-        { id: "d1", who: owner, what: "Membuat data", when: hoursAgo(96) },
-        { id: "d2", who: "Sistem", what: "Data tersambung ke dokumen terkait", when: hoursAgo(95) },
+        { id: "d1", who: owner, what: "Membuat data", when: row?.createdAt ?? new Date().toISOString() },
       ];
     },
     [hist, data],
   );
 
   const decide = React.useCallback(
-    (id: string, decision: "Disetujui" | "Ditolak", reason?: string) => {
-      const a = approvals.find((x) => x.id === id);
-      if (!a || !user) return;
-      const needsBos = a.nilai > BOS_THRESHOLD && user.role !== "bos";
-      if (decision === "Disetujui" && needsBos) {
-        setApprovals((l) => l.map((x) => (x.id === id ? { ...x, financeOk: true } : x)));
-        pushHistory(a.module, a.refId, "Disetujui Finance, menunggu persetujuan Bos");
-        toast("Disetujui. Menunggu persetujuan Bos karena nilainya besar");
-        return;
+    async (id: string, decision: "Disetujui" | "Ditolak", reason?: string) => {
+      try {
+        await api("POST", `/approvals/${id}/decide`, {
+          approve: decision === "Disetujui",
+          reason,
+        });
+        setApprovals((l) => l.map((x) => (x.id === id ? { ...x, status: decision } : x)));
+        toast(decision === "Disetujui" ? "Dokumen disetujui" : "Dokumen ditolak", decision === "Disetujui" ? "success" : "danger");
+        await reload();
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal memutuskan", "danger");
       }
-      setApprovals((l) => l.map((x) => (x.id === id ? { ...x, status: decision, alasan: reason } : x)));
-      const field = a.module === "supplier-pos" || a.module === "delivery-notes" ? "persetujuan" : "status";
-      const patch: Record<string, any> = { [field]: decision };
-      if (a.module === "supplier-pos" && decision === "Disetujui") patch.status = "Disetujui";
-      if (a.module === "quotations") patch.status = decision;
-      if (data[a.module]) patchRow(a.module, a.refId, patch);
-      pushHistory(a.module, a.refId, `${decision === "Disetujui" ? "Menyetujui" : "Menolak"} dokumen${reason ? `: ${reason}` : ""}`);
-      audit(`${decision === "Disetujui" ? "Menyetujui" : "Menolak"} ${a.jenis.toLowerCase()}`, a.jenis, a.refId);
-      toast(decision === "Disetujui" ? "Dokumen disetujui" : "Dokumen ditolak", decision === "Disetujui" ? "success" : "danger");
     },
-    [approvals, user, data, patchRow, pushHistory, audit, toast],
+    [toast, reload],
   );
 
-  const myNotifs = React.useMemo(
-    () => notifs.filter((n) => n.roles === "all" || (user && n.roles.includes(user.role))),
-    [notifs, user],
-  );
+  const myNotifs = notifs;
   const unread = myNotifs.filter((n) => !n.baca).length;
-  const markRead = React.useCallback((id: string) => setNotifs((l) => l.map((n) => (n.id === id ? { ...n, baca: true } : n))), []);
-  const markAllRead = React.useCallback(() => setNotifs((l) => l.map((n) => ({ ...n, baca: true }))), []);
+  const markRead = React.useCallback(async (id: string) => {
+    setNotifs((l) => l.map((n) => (n.id === id ? { ...n, baca: true } : n)));
+    try { await api("POST", "/notifications/read", { ids: [Number(id)] }); } catch {}
+  }, []);
+  const markAllRead = React.useCallback(async () => {
+    setNotifs((l) => l.map((n) => ({ ...n, baca: true })));
+    try { await api("POST", "/notifications/read-all"); } catch {}
+  }, []);
 
   const value = React.useMemo<Ctx>(
     () => ({
-      user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, history, pushHistory, approvals, decide,
-      notifs: myNotifs, unread, markRead, markAllRead, toast, offline, setOffline,
+      user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead,
+      history, pushHistory, approvals, decide, notifs: myNotifs, unread, markRead, markAllRead,
+      toast, offline, setOffline, reload,
     }),
-    [user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead, toast, offline],
+    [user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead,
+     history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
+     toast, offline, reload],
   );
 
   return (

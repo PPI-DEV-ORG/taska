@@ -7,7 +7,16 @@ import {
 } from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
 
-export type WsNotification = { kind: string; text: string; href: string };
+/** Notifikasi realtime — `id` = row persisted agar FE bisa tandai dibaca. */
+export type WsNotification = { id: number; kind: string; text: string; href: string };
+
+/** Perubahan data realtime — dipakai frontend untuk refresh tabel. */
+export type WsDataChange = {
+  module: string;
+  action: "create" | "update" | "status" | "delete";
+  id?: string | number;
+  at?: string;
+};
 
 @WebSocketGateway({
   cors: { origin: true, credentials: true },
@@ -48,5 +57,11 @@ export class NotificationsGateway implements OnGatewayConnection {
 
   pushMany(userIds: number[], payload: WsNotification): void {
     for (const id of userIds) this.push(id, payload);
+  }
+
+  /** Broadcast perubahan data ke semua client yang terhubung (semua role). */
+  dataChange(module: WsDataChange["module"], action: WsDataChange["action"], id?: string | number): void {
+    const payload: WsDataChange = { module, action, id, at: new Date().toISOString() };
+    this.server?.emit("data-change", payload);
   }
 }

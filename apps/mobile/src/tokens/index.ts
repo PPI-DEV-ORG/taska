@@ -39,5 +39,7 @@ export const toneColor: Record<Tone, string> = {
 /** Dokumen di atas nilai ini wajib juga disetujui Bos (pengaturan sistem). */
 export const BOS_THRESHOLD = 10_000_000;
 
+export const LEAD_STAGES = ["Prospecting", "Qualification", "Proposal", "Negotiation", "Won", "Lost"] as const;
+
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 export const radius = { card: 12, control: 8 };

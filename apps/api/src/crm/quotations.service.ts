@@ -187,6 +187,7 @@ export class QuotationsService {
       entityId: id,
       detail: row.number,
     });
+    this.notifications.dataChange("quotations", "status", updated.id);
     return updated;
   }
 
@@ -208,6 +209,7 @@ export class QuotationsService {
       entityId: id,
       detail: row.number,
     });
+    this.notifications.dataChange("quotations", "status", updated.id);
     return updated;
   }
 
@@ -230,6 +232,7 @@ export class QuotationsService {
       entityId: id,
       detail: `${row.number}: ${row.status} → ${status}`,
     });
+    this.notifications.dataChange("quotations", "status", updated.id);
     return updated;
   }
 

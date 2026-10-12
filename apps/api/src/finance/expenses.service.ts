@@ -249,6 +249,7 @@ export class ExpensesService {
       text: `Pengeluaran #${id}: ${dto.status}${dto.reason ? ` — ${dto.reason}` : ""}`,
       href: `/expenses/${id}`,
     });
+    this.notifications.dataChange("expenses", "status", updated.id);
     return updated;
   }
 
@@ -266,6 +267,7 @@ export class ExpensesService {
       text: `Pengeluaran #${entityId}: ${next.toLowerCase()}`,
       href: `/expenses/${entityId}`,
     });
+    this.notifications.dataChange("expenses", "status", entityId);
   }
 
   /** Ringkasan untuk Finance: per project / per orang / per bulan. */

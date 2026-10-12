@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView } from "react-native";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,8 @@ import { Stepper } from "@/components/taska/stepper";
 import { SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
-import { PRODUCTS, STOCK_QTY } from "@/mock/data";
+import { api } from "@/services/api";
+import type { Row } from "@/mock/data";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 
@@ -21,46 +22,66 @@ const STEPS = [
   "Ringkasan & Konfirmasi",
 ];
 
+const COST_TYPE_MAP: Record<string, string> = {
+  Project: "PROJECT",
+  Stok: "STOK",
+  Internal: "INTERNAL",
+  Lainnya: "LAINNYA",
+};
+
 export default function NewPurchaseRequestScreen() {
   const router = useRouter();
-  const { data, addRow, toast } = useApp();
+  const { data, toast } = useApp();
+
+  const products: Row[] = data.products ?? [];
+  const projects: Row[] = data.projects ?? [];
+  const stockSummary: any[] = data.stockSummary ?? [];
 
   const [step, setStep] = React.useState(0);
+  const [busy, setBusy] = React.useState(false);
 
-  // Step 1
   const [costType, setCostType] = React.useState("Project");
-  const [projectId, setProjectId] = React.useState(data.projects[0]?.nama || "");
+  const [projectId, setProjectId] = React.useState(projects[0]?.nama || "");
   const [otherDesc, setOtherDesc] = React.useState("");
 
-  // Step 2
-  const defaultProd = PRODUCTS[0]!;
-  const [selectedProduct, setSelectedProduct] = React.useState(defaultProd.nama);
+  const defaultProd = products[0];
+  const [selectedProduct, setSelectedProduct] = React.useState(defaultProd?.nama || "");
   const [qty, setQty] = React.useState("1");
   const [tujuan, setTujuan] = React.useState("");
 
-  const currentProd = PRODUCTS.find((p) => p.nama === selectedProduct) ?? defaultProd;
-  const stockList = STOCK_QTY[currentProd.id];
-  const stockAvailable = stockList
-    ? (stockList[0] ?? 0) + (stockList[1] ?? 0) + (stockList[2] ?? 0)
+  const currentProd = products.find((p) => p.nama === selectedProduct) ?? defaultProd;
+  const stockAvailable = currentProd
+    ? stockSummary
+        .filter((s: any) => String(s.productId) === String(currentProd.id))
+        .reduce((a: number, s: any) => a + Number(s.saldo ?? 0), 0)
     : 0;
 
-  const estimatedTotal = (Number(qty) || 1) * currentProd.hargaBeli;
+  const estimatedTotal = (Number(qty) || 1) * Number(currentProd?.hargaBeli ?? 0);
 
-  function submit() {
-    const row = {
-      nomor: `RB/2026/10/${Math.floor(Math.random() * 800) + 100}`,
-      project: costType === "Project" ? projectId : "-",
-      jenisBiaya: costType === "Lainnya" ? `Lainnya (${otherDesc})` : costType,
-      pemohon: "Budi Santoso",
-      item: `${currentProd.nama} x ${qty} ${currentProd.satuan}`,
-      estimasi: estimatedTotal,
-      status: "Diajukan",
-      tujuan: tujuan || "Kebutuhan operasional lapangan",
+  async function submit() {
+    if (!currentProd) {
+      toast("Pilih barang terlebih dahulu", "danger");
+      return;
+    }
+    const projectRow = projects.find((p) => p.nama === projectId);
+    const body: Record<string, any> = {
+      costType: COST_TYPE_MAP[costType] ?? "PROJECT",
+      purpose: tujuan || "Kebutuhan operasional lapangan",
+      otherNote: costType === "Lainnya" ? otherDesc : undefined,
+      items: [{ productId: Number(currentProd.id), qty: Number(qty) || 1, unitCost: Number(currentProd.hargaBeli ?? 0) }],
     };
+    if (costType === "Project" && projectRow) body.projectId = Number(projectRow.id);
 
-    addRow("purchase-requests", row);
-    toast("Request barang berhasil diajukan");
-    router.replace("/purchase-requests");
+    setBusy(true);
+    try {
+      await api("POST", "/requests", body);
+      toast("Request barang berhasil diajukan");
+      router.replace("/purchase-requests");
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengajukan request", "danger");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -90,7 +111,7 @@ export default function NewPurchaseRequestScreen() {
                 <SearchableSelect
                   value={projectId}
                   onChange={setProjectId}
-                  options={data.projects.map((p) => p.nama)}
+                  options={projects.map((p) => String(p.nama))}
                   placeholder="Pilih project terkait"
                 />
               </FormField>
@@ -123,7 +144,7 @@ export default function NewPurchaseRequestScreen() {
               <SearchableSelect
                 value={selectedProduct}
                 onChange={setSelectedProduct}
-                options={PRODUCTS.map((p) => p.nama)}
+                options={products.map((p) => String(p.nama))}
                 placeholder="Pilih barang"
               />
             </FormField>
@@ -131,10 +152,10 @@ export default function NewPurchaseRequestScreen() {
             <View className="bg-panel/40 border-border rounded-xl border p-3">
               <Text className="text-text-secondary text-xs">Informasi Ketersediaan:</Text>
               <Text className="text-sm font-semibold mt-1">
-                Stok tersedia saat ini: <Text className="text-primary">{stockAvailable} {currentProd.satuan}</Text>
+                Stok tersedia saat ini: <Text className="text-primary">{stockAvailable} {String(currentProd?.satuan ?? "")}</Text>
               </Text>
               <Text className="text-muted-foreground text-xs mt-0.5">
-                Estimasi harga beli: {rupiah(currentProd.hargaBeli)} / {currentProd.satuan}
+                Estimasi harga beli: {rupiah(Number(currentProd?.hargaBeli ?? 0))} / {String(currentProd?.satuan ?? "")}
               </Text>
             </View>
 
@@ -185,11 +206,11 @@ export default function NewPurchaseRequestScreen() {
               ) : null}
               <View className="flex-row justify-between">
                 <Text className="text-muted-foreground text-sm">Barang:</Text>
-                <Text className="text-sm font-semibold">{currentProd.nama}</Text>
+                <Text className="text-sm font-semibold">{String(currentProd?.nama ?? "-")}</Text>
               </View>
               <View className="flex-row justify-between">
                 <Text className="text-muted-foreground text-sm">Jumlah:</Text>
-                <Text className="text-sm font-semibold">{qty} {currentProd.satuan}</Text>
+                <Text className="text-sm font-semibold">{qty} {String(currentProd?.satuan ?? "")}</Text>
               </View>
               <View className="flex-row justify-between">
                 <Text className="text-muted-foreground text-sm">Perkiraan Biaya:</Text>
@@ -207,9 +228,9 @@ export default function NewPurchaseRequestScreen() {
                 <ArrowLeft size={16} color={colors.text} />
                 <Text>Kembali</Text>
               </Button>
-              <Button onPress={submit}>
+              <Button onPress={submit} disabled={busy}>
                 <Check size={16} color={colors.background} />
-                <Text>Ajukan Request Barang</Text>
+                <Text>{busy ? "Mengajukan..." : "Ajukan Request Barang"}</Text>
               </Button>
             </View>
           </View>

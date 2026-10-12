@@ -13,7 +13,6 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { ModuleExtras, downloadQuotationTemplate } from "@/screens/module-extras";
 import { useApp } from "@/store/app-store";
 import { CAN_APPROVE, MODULES, type ModuleAction } from "@/mock/modules";
-import { LOST_REASONS } from "@/mock/data";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +21,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const { data, user, setStatus, history, approvals, decide, toast } = useApp();
   const def = MODULES[moduleKey];
   const row = data[moduleKey]?.find((r: { id: string }) => r.id === id);
+  const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
 
@@ -142,7 +142,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         confirmLabel="Ya, ubah"
         destructive
         reasonLabel={isLost ? "Alasan Lost" : undefined}
-        reasonOptions={isLost ? LOST_REASONS : undefined}
+        reasonOptions={isLost ? lostReasons : undefined}
         onConfirm={(r) => pending && setStatus(moduleKey, id, pending, r)}
       />
     </>

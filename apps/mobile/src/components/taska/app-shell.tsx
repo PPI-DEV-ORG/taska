@@ -13,7 +13,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/store/app-store";
 import { NAV_BY_ROLE, type NavItem } from "@/mock/modules";
-import { ROLE_LABEL, SERIALS } from "@/mock/data";
+import { ROLE_LABEL } from "@/mock/data";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { colors } from "@/tokens";
 import { kelompokHari, waktuRelatif } from "@/lib/format";
@@ -186,7 +186,7 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
     data.quotations.forEach((r) => r.nomor.toLowerCase().includes(s) && out.push({ id: r.id, type: "Penawaran", title: r.nomor, href: `/quotations/${r.id}` }));
     data.invoices.forEach((r) => r.nomor.toLowerCase().includes(s) && out.push({ id: r.id, type: "Invoice", title: r.nomor, href: `/invoices/${r.id}` }));
     data["delivery-notes"].forEach((r) => r.nomor.toLowerCase().includes(s) && out.push({ id: r.id, type: "Surat jalan", title: r.nomor, href: `/delivery-notes/${r.id}` }));
-    SERIALS.forEach((r) => r.sn.toLowerCase().includes(s) && out.push({ id: r.id, type: "SN", title: `${r.sn} · ${r.produk}`, href: "/stock" }));
+    (data.serials ?? []).forEach((r) => String(r.sn).toLowerCase().includes(s) && out.push({ id: r.id, type: "SN", title: `${r.sn} · ${r.produk}`, href: "/stock" }));
     return out.slice(0, 8);
   }, [q, data]);
   return (

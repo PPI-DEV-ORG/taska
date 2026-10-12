@@ -35,19 +35,33 @@ export class NotificationsService {
     }
     if (!users.size) return 0;
 
-    const payload = {
-      kind: input.kind ?? ("LAINNYA" as NotifKind),
-      text: input.text,
-      href: input.href,
-    };
+    const kind = input.kind ?? ("LAINNYA" as NotifKind);
 
-    await this.prisma.main.notification.createMany({
-      data: [...users].map((userId) => ({ userId, ...payload })),
-    });
+    const rows = await this.prisma.main.$transaction(
+      [...users].map((userId) =>
+        this.prisma.main.notification.create({
+          data: { userId, kind, text: input.text, href: input.href },
+          select: { id: true },
+        }),
+      ),
+    );
 
-    for (const userId of users) this.gateway.push(userId, payload);
+    let i = 0;
+    for (const userId of users) {
+      const id = rows[i++]?.id;
+      if (id == null) continue;
+      this.gateway.push(userId, { id, kind, text: input.text, href: input.href });
+    }
     this.logger.debug(`notifikasi dikirim ke ${users.size} pengguna`);
     return users.size;
+  }
+
+  /**
+   * Broadcast perubahan data realtime ke semua client.
+   * Dipanggil dari service setelah create/update/status/delete agar tabel di FE ikut ter-update.
+   */
+  dataChange(module: string, action: "create" | "update" | "status" | "delete", id?: number | string): void {
+    this.gateway.dataChange(module, action, id);
   }
 
   async list(userId: number, opts: { page: number; limit: number; unread?: boolean }) {
