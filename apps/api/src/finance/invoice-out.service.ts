@@ -203,6 +203,13 @@ export class InvoiceOutService {
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     if (row.status === "BATAL") throw new BadRequestException("Invoice dibatalkan");
     if (!dto.fileId) throw new BadRequestException("Bukti pembayaran wajib diunggah");
+    const paymentsBefore = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
+    const paidBefore = paymentsBefore.reduce((s, p) => s + Number(p.amount), 0);
+    if (paidBefore + Number(dto.amount) > Number(row.total)) {
+      throw new BadRequestException(
+        `Total bayar melebihi tagihan invoice (sisa Rp${Number(row.total) - paidBefore})`,
+      );
+    }
 
     await this.prisma.main.payment.create({
       data: {

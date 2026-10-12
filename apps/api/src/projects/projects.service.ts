@@ -421,11 +421,18 @@ export class ProjectsService {
     const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user);
-    return this.prisma.main.projectRequirement.findMany({
+    const rows = await this.prisma.main.projectRequirement.findMany({
       where: { projectId },
       include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
       orderBy: { id: "asc" },
     });
+    const withAvailability = await Promise.all(
+      rows.map(async (r) => ({
+        ...r,
+        availableQty: await this.availableQty(r.productId, projectId),
+      })),
+    );
+    return { items: withAvailability, total: withAvailability.length };
   }
 
   /** Ketersediaan = saldo gudang − reserve aktif proyek lain. */

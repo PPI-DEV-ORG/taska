@@ -21,6 +21,7 @@ export class OpnameService {
   }
 
   private async onApproval(entityId: number, status: "MENUNGGU" | "DISETUJUI" | "DITOLAK") {
+    if (status === "MENUNGGU") return;
     const opname = await this.prisma.main.stockOpname.findUnique({
       where: { id: entityId },
       include: { details: true },

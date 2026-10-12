@@ -175,6 +175,13 @@ export class InvoiceInService {
     if (!approval || approval.status !== "DISETUJUI") {
       throw new BadRequestException("Invoice supplier harus disetujui Finance/Bos sebelum dibayar");
     }
+    const paymentsBefore = await this.prisma.main.payment.findMany({ where: { invoiceInId: id } });
+    const paidBefore = paymentsBefore.reduce((s, p) => s + Number(p.amount), 0);
+    if (paidBefore + Number(dto.amount) > Number(row.total)) {
+      throw new BadRequestException(
+        `Total bayar melebihi tagihan invoice supplier (sisa Rp${Number(row.total) - paidBefore})`,
+      );
+    }
 
     await this.prisma.main.payment.create({
       data: {

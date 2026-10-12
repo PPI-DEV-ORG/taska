@@ -72,6 +72,7 @@ export class LeadsService {
   }
 
   async create(dto: LeadDto, user: RequestUser) {
+    if (!dto.name) throw new BadRequestException("Nama lead wajib diisi");
     const { ownerId, stage, ...rest } = dto;
     const targetStage = stage ?? "PROSPECTING";
     if (targetStage === "LOST" && !dto.lostReasonId) {
@@ -81,6 +82,7 @@ export class LeadsService {
     const lead = await this.prisma.main.lead.create({
       data: {
         ...rest,
+        name: dto.name,
         stage: targetStage,
         owner_id: ownerId ?? user.id,
         targetClosing: dto.targetClosing ? new Date(dto.targetClosing) : undefined,

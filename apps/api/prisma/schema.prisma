@@ -366,7 +366,23 @@ model File {
   uploader     User?    @relation("FileUploader", fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())
 
+  docPhotos DocumentationPhoto[]
+
   @@index([refType, refId])
+}
+
+/// Foto dokumentasi berfoto (survey, instalasi/project, surat jalan) + caption.
+model DocumentationPhoto {
+  id         Int      @id @default(autoincrement())
+  entityType String
+  entityId   Int
+  fileId     Int
+  file       File     @relation(fields: [fileId], references: [id])
+  caption    String?
+  createdAt  DateTime @default(now())
+
+  @@unique([entityType, entityId, fileId])
+  @@index([entityType, entityId])
 }
 
 model AuditLog {

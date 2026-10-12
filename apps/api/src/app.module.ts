@@ -21,6 +21,8 @@ import { StockModule } from "./stock/stock.module.js";
 import { DeliveryModule } from "./delivery/delivery.module.js";
 import { DashboardModule } from "./dashboard/dashboard.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
+import { ImportsModule } from "./imports/imports.module.js";
+import { DocumentationModule } from "./documentation/documentation.module.js";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard.js";
 import { PermissionsGuard } from "./common/guards/permissions.guard.js";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor.js";
@@ -48,6 +50,8 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
     DeliveryModule,
     DashboardModule,
     ReportsModule,
+    ImportsModule,
+    DocumentationModule,
   ],
   controllers: [AppController],
   providers: [

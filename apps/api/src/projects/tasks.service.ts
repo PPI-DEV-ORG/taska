@@ -231,8 +231,8 @@ export class TasksService {
 
   /** PRD #17: Admin memindahkan task ke orang lain. */
   async reassign(id: number, dto: AssignDto, user: RequestUser) {
-    if (!["ADMIN", "BOS"].includes(user.role)) {
-      throw new ForbiddenException("Hanya Admin atau Bos yang boleh memindahkan task");
+    if (!["ADMIN", "BOS", "PM"].includes(user.role)) {
+      throw new ForbiddenException("Hanya Admin, Bos, atau PM yang boleh memindahkan task");
     }
     const task = await this.prisma.main.task.findUnique({ where: { id } });
     if (!task) throw new NotFoundException("Task tidak ditemukan");

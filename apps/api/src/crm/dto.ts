@@ -38,8 +38,8 @@ export class CrmListQuery extends PageQuery {
 }
 
 export class LeadDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString() @MinLength(1)
+  name?: string;
 
   @IsOptional() @IsInt()
   customerId?: number;

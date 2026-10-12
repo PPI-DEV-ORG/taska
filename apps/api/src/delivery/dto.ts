@@ -6,7 +6,6 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  Min,
   MinLength,
   ValidateNested,
 } from "class-validator";
@@ -58,7 +57,7 @@ export class DeliveryCreateDto {
 }
 
 export class GoodsDto {
-  @IsArray() @IsString({ each: true }) @Min(1, { each: true })
+  @IsArray() @IsString({ each: true }) @MinLength(1, { each: true })
   serials: string[];
 }
 
