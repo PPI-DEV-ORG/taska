@@ -610,3 +610,246 @@ export async function parseQuotationXlsx(buffer: Buffer): Promise<{
   };
 }
 
+export async function buildQuotationPdf(params: {
+  quoteNo: string;
+  date?: Date | string | null;
+  city?: string;
+  customerName?: string;
+  leadName?: string;
+  subject?: string;
+  intro?: string;
+  items?: QuotationItemData[];
+  total?: number;
+  ppn?: number;
+  discount?: number;
+  grandTotal?: number;
+  notes?: string[];
+  signerName?: string;
+}): Promise<Buffer> {
+  const { renderPdf } = await import("../common/pdf.js");
+
+  const rawItems = Array.isArray(params.items) ? params.items : [];
+  const effectiveItems: QuotationItemData[] =
+    rawItems.length > 0
+      ? rawItems
+      : [
+          {
+            id: "1",
+            item: params.leadName ? `Pengadaan & Instalasi ${params.leadName}` : "Pekerjaan",
+            qty: 1,
+            satuan: "Lot",
+            harga: Number(params.total) || 0,
+          },
+        ];
+
+  let calcSum = 0;
+  const tableBody: any[] = [
+    [
+      { text: "No.", bold: true, alignment: "center", fillColor: "#00ffff", fontSize: 9 },
+      { text: "Item / Jasa", bold: true, alignment: "center", fillColor: "#00ffff", fontSize: 9 },
+      { text: "QTY", bold: true, alignment: "center", fillColor: "#00ffff", fontSize: 9 },
+      { text: "Satuan", bold: true, alignment: "center", fillColor: "#00ffff", fontSize: 9 },
+      { text: "Harga", bold: true, alignment: "center", fillColor: "#00ffff", fontSize: 9 },
+      { text: "Total", bold: true, alignment: "center", fillColor: "#00ffff", fontSize: 9 },
+    ],
+  ];
+
+  effectiveItems.forEach((it, idx) => {
+    const qty = Number(it.qty) || 1;
+    const harga = Number(it.harga) || 0;
+    const lineTotal = qty * harga;
+    calcSum += lineTotal;
+
+    tableBody.push([
+      { text: String(idx + 1), alignment: "center", fontSize: 9 },
+      { text: it.item || "-", fontSize: 9 },
+      { text: String(qty), alignment: "center", fontSize: 9 },
+      { text: it.satuan || "Unit", alignment: "center", fontSize: 9 },
+      { text: `Rp ${harga.toLocaleString("id-ID")}`, alignment: "right", fontSize: 9 },
+      { text: `Rp ${lineTotal.toLocaleString("id-ID")}`, alignment: "right", fontSize: 9 },
+    ]);
+  });
+
+  const finalTotal = rawItems.length > 0 ? calcSum : Number(params.total ?? calcSum) || 0;
+  const finalPpn =
+    params.ppn !== undefined && params.ppn > 0 ? Number(params.ppn) : Math.round(finalTotal * 0.11);
+  const finalDisc = Number(params.discount ?? 0) || 0;
+  const finalGrandTotal = Math.max(0, finalTotal + finalPpn - finalDisc);
+
+  tableBody.push([
+    { text: "", colSpan: 4, border: [false, true, false, false] },
+    {},
+    {},
+    {},
+    { text: "TOTAL", bold: true, alignment: "right", fontSize: 9 },
+    { text: `Rp ${finalTotal.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
+  ]);
+
+  tableBody.push([
+    { text: "", colSpan: 4, border: [false, false, false, false] },
+    {},
+    {},
+    {},
+    { text: "PPN (11%)", bold: true, alignment: "right", fontSize: 9 },
+    { text: `Rp ${finalPpn.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
+  ]);
+
+  if (finalDisc > 0) {
+    tableBody.push([
+      { text: "", colSpan: 4, border: [false, false, false, false] },
+      {},
+      {},
+      {},
+      { text: "DISC", bold: true, alignment: "right", fontSize: 9 },
+      { text: `Rp ${finalDisc.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
+    ]);
+  }
+
+  tableBody.push([
+    { text: "", colSpan: 4, border: [false, false, false, false] },
+    {},
+    {},
+    {},
+    { text: "GRAND TOTAL", bold: true, alignment: "right", fontSize: 9 },
+    { text: `Rp ${finalGrandTotal.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
+  ]);
+
+  const city = params.city?.trim() || "Bekasi";
+  const dateStr = `${city}, ${formatTanggalIndo(params.date)}`;
+  const leadTitle = params.leadName?.trim() || "Pekerjaan";
+  const subjectText =
+    params.subject?.trim() || `Penawaran Pengadaan Barang & Jasa Instalasi (${leadTitle})`;
+  const introText =
+    params.intro?.trim() ||
+    `Sesuai permintaan Bapak / Ibu sebelumnya, berikut penawaran dari kami terkait pengadaan Barang & Jasa Instalasi :`;
+  const notesList =
+    Array.isArray(params.notes) && params.notes.length > 0 ? params.notes : DEFAULT_QUOTATION_NOTES;
+
+  const docDefinition = {
+    pageSize: "A4",
+    pageMargins: [35, 30, 35, 30],
+    content: [
+      // KOP SURAT
+      {
+        table: {
+          widths: ["*"],
+          body: [
+            [
+              {
+                text: "KOP SURAT",
+                fontSize: 14,
+                bold: true,
+                alignment: "center",
+                margin: [0, 12, 0, 12],
+                color: "#111827",
+              },
+            ],
+          ],
+        },
+        layout: {
+          hLineWidth: () => 1,
+          vLineWidth: () => 1,
+          hLineColor: () => "#9ca3af",
+          vLineColor: () => "#9ca3af",
+        },
+        margin: [0, 0, 0, 10],
+      },
+      // Tanggal Kanan
+      {
+        text: dateStr,
+        fontSize: 10,
+        bold: true,
+        alignment: "right",
+        margin: [0, 0, 0, 6],
+      },
+      // Kepada Yth
+      {
+        text: [
+          { text: "Kepada Yth.\n", bold: true, fontSize: 10 },
+          { text: `${params.customerName || "Nama Customer"}\n`, bold: true, fontSize: 10 },
+          { text: "Di Tempat\n\n", bold: true, fontSize: 10 },
+        ],
+        margin: [0, 0, 0, 2],
+      },
+      // Subject & Quote No
+      {
+        text: [
+          { text: `Subject : ${subjectText}\n`, bold: true, fontSize: 10 },
+          { text: `Quote No. : ${params.quoteNo}\n\n`, bold: true, fontSize: 10 },
+        ],
+        margin: [0, 0, 0, 2],
+      },
+      // Pembuka
+      {
+        text: [
+          { text: "Dengan hormat,\n", fontSize: 10 },
+          { text: `${introText}\n\n`, fontSize: 10 },
+        ],
+        margin: [0, 0, 0, 4],
+      },
+      // Tabel Items
+      {
+        table: {
+          headerRows: 1,
+          widths: [24, "*", 30, 45, 75, 75],
+          body: tableBody,
+        },
+        layout: {
+          hLineWidth: (i: number, node: any) =>
+            i === 0 || i === 1 || i === node.table.body.length ? 1 : 0.5,
+          vLineWidth: () => 0.5,
+          hLineColor: () => "#000000",
+          vLineColor: () => "#000000",
+        },
+        margin: [0, 0, 0, 10],
+      },
+      // Notes
+      {
+        text: "Notes:",
+        fontSize: 10,
+        bold: true,
+        margin: [0, 4, 0, 2],
+      },
+      {
+        ol: notesList.map((n) => ({ text: n, fontSize: 9 })),
+        margin: [0, 0, 0, 8],
+      },
+      // Kontak
+      {
+        text: [
+          { text: "Untuk pertanyaan lebih lanjut bisa hubungi kami melalui :\n", fontSize: 9 },
+          { text: "Telp    : 021 2284 3608\n", fontSize: 9 },
+          { text: "WA      : 0859 5959 8852 / 0821 2345 9144\n", fontSize: 9 },
+          { text: "Email  : cs@ghinamultiprima.co.id\n", fontSize: 9, color: "#1d4ed8" },
+          { text: "www.ghinamultiprima.co.id\n\n", fontSize: 9, bold: true, color: "#1d4ed8" },
+        ],
+        margin: [0, 0, 0, 4],
+      },
+      // Penutup & TTD
+      {
+        text: "Sekian surat penawaran ini kami buat dengan harapan agar Bapak/Ibu bisa bekerjasama dengan perusahaan kami. Kami tunggu tanggapan dan kabar baik.",
+        fontSize: 9,
+        margin: [0, 0, 0, 10],
+      },
+      {
+        columns: [
+          {
+            width: 150,
+            stack: [
+              { text: "TTD,\n\n\n\n", fontSize: 9 },
+              {
+                text: params.signerName || "Nama Sales",
+                fontSize: 10,
+                bold: true,
+                decoration: "underline",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  return renderPdf(docDefinition);
+}
+

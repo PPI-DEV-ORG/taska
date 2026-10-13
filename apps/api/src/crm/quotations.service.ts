@@ -17,6 +17,7 @@ import type { ApprovalStatus } from "../generated/prisma/client.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { QuotationDto, VersionDto } from "./dto.js";
 import {
+  buildQuotationPdf,
   buildQuotationXlsx,
   DEFAULT_QUOTATION_NOTES,
   parseQuotationXlsx,
@@ -535,6 +536,40 @@ export class QuotationsService {
     return { buffer, filename };
   }
 
+  /** Download file PDF penawaran resmi yang identik dengan format Excel. */
+  async exportPdf(id: number): Promise<{ buffer: Buffer; filename: string }> {
+    const row = await this.prisma.main.quotation.findUnique({
+      where: { id },
+      include: {
+        lead: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true } },
+      },
+    });
+    if (!row) throw new NotFoundException("Penawaran tidak ditemukan");
+
+    const meta = (await this.getMetaMap([id])).get(id);
+    const buffer = await buildQuotationPdf({
+      quoteNo: row.number,
+      date: row.createdAt,
+      city: meta?.city || "Bekasi",
+      customerName: row.customer?.name || "-",
+      leadName: row.lead?.name || "-",
+      subject: meta?.subject,
+      intro: meta?.intro,
+      items: meta?.items ?? [],
+      total: Number(row.total),
+      ppn: Number(row.ppn),
+      discount: Number(row.discount),
+      grandTotal: Number(row.grandTotal),
+      notes: meta?.notes ?? DEFAULT_QUOTATION_NOTES,
+      signerName: meta?.signerName || row.owner?.name || "Sales",
+    });
+
+    const filename = `Penawaran-${row.number.replace(/\//g, "-")}.pdf`;
+    return { buffer, filename };
+  }
+
   /** Download template Excel (.xlsx) dari Lead / parameter sebelum atau saat penawaran dibuat. */
   async exportTemplateExcel(query: {
     leadId?: number;
@@ -585,6 +620,59 @@ export class QuotationsService {
     return {
       buffer,
       filename: `Template-Penawaran-${suggestedNo.replace(/\//g, "-")}.xlsx`,
+    };
+  }
+
+  /** Download template PDF dari Lead / parameter sebelum atau saat penawaran dibuat. */
+  async exportTemplatePdf(query: {
+    leadId?: number;
+    customer?: string;
+    lead?: string;
+    nomor?: string;
+    signer?: string;
+  }): Promise<{ buffer: Buffer; filename: string }> {
+    if (query.leadId) {
+      const existing = await this.prisma.main.quotation.findFirst({
+        where: { leadId: Number(query.leadId) },
+      });
+      if (existing) {
+        return this.exportPdf(existing.id);
+      }
+      const leadRow = await this.prisma.main.lead.findUnique({
+        where: { id: Number(query.leadId) },
+        include: {
+          customer: { select: { name: true } },
+          owner: { select: { name: true } },
+        },
+      });
+      if (leadRow) {
+        const suggestedNo = await this.docnum.suggest("penawaran");
+        const buffer = await buildQuotationPdf({
+          quoteNo: query.nomor || suggestedNo,
+          date: new Date(),
+          city: "Bekasi",
+          customerName: leadRow.customer?.name || query.customer || "-",
+          leadName: leadRow.name,
+          total: Number(leadRow.estimatedValue) || 0,
+          signerName: leadRow.owner?.name || query.signer || "Sales",
+        });
+        const safeName = leadRow.name.replace(/[^a-zA-Z0-9_-]/g, "-");
+        return { buffer, filename: `Template-Penawaran-${safeName}.pdf` };
+      }
+    }
+
+    const suggestedNo = query.nomor || (await this.docnum.suggest("penawaran"));
+    const buffer = await buildQuotationPdf({
+      quoteNo: suggestedNo,
+      date: new Date(),
+      city: "Bekasi",
+      customerName: query.customer || "-",
+      leadName: query.lead || "Pekerjaan",
+      signerName: query.signer || "Sales",
+    });
+    return {
+      buffer,
+      filename: `Template-Penawaran-${suggestedNo.replace(/\//g, "-")}.pdf`,
     };
   }
 

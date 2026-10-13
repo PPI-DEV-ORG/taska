@@ -70,6 +70,29 @@ export class QuotationsController {
   }
 
   @Public()
+  @Get("template-pdf")
+  async downloadTemplatePdf(
+    @Query("leadId") leadId: string | undefined,
+    @Query("customer") customer: string | undefined,
+    @Query("lead") lead: string | undefined,
+    @Query("nomor") nomor: string | undefined,
+    @Query("signer") signer: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.service.exportTemplatePdf({
+      leadId: leadId ? Number(leadId) : undefined,
+      customer,
+      lead,
+      nomor,
+      signer,
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.end(buffer);
+  }
+
+  @Public()
   @Get(":id/excel")
   async downloadExcel(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
     const { buffer, filename } = await this.service.exportExcel(id);
@@ -77,6 +100,16 @@ export class QuotationsController {
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.end(buffer);
+  }
+
+  @Public()
+  @Get(":id/pdf")
+  async downloadPdf(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
+    const { buffer, filename } = await this.service.exportPdf(id);
+    res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Length", buffer.length);
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
     res.end(buffer);
