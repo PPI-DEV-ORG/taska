@@ -7,5 +7,6 @@ import { UploadModule } from "../upload/upload.module.js";
   imports: [UploadModule],
   providers: [DocumentationService],
   controllers: [DocumentationController],
+  exports: [DocumentationService],
 })
 export class DocumentationModule {}

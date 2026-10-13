@@ -23,6 +23,7 @@ import { DashboardModule } from "./dashboard/dashboard.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
 import { ImportsModule } from "./imports/imports.module.js";
 import { DocumentationModule } from "./documentation/documentation.module.js";
+import { WhatsappModule } from "./whatsapp/whatsapp.module.js";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard.js";
 import { PermissionsGuard } from "./common/guards/permissions.guard.js";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor.js";
@@ -52,6 +53,7 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
     ReportsModule,
     ImportsModule,
     DocumentationModule,
+    WhatsappModule,
   ],
   controllers: [AppController],
   providers: [

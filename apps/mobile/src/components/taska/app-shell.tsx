@@ -6,9 +6,10 @@ import * as ImagePicker from "expo-image-picker";
 import {
   Bell, Boxes, Camera, CheckSquare, CheckCheck, Ellipsis, FileSignature, KeyRound, ListChecks, LogOut, Menu, Moon, PanelLeftClose,
   Sun, Target, Truck, WifiOff,
-  Search,
+  Search, MessageSquare,
 } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { WhatsappDialog } from "@/components/taska/whatsapp-dialog";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -573,11 +574,23 @@ function MoreDialog({ open, onOpenChange, onNotif }: { open: boolean; onOpenChan
   );
 }
 
-function Topbar({ onMenu, onNotif, onAccount }: { onMenu?: () => void; onNotif: () => void; onAccount: () => void }) {
+function Topbar({
+  onMenu,
+  onNotif,
+  onAccount,
+  onWhatsapp,
+}: {
+  onMenu?: () => void;
+  onNotif: () => void;
+  onAccount: () => void;
+  onWhatsapp?: () => void;
+}) {
   const { isMobile } = useBreakpoint();
   const { items, active } = useNav();
   const { unread, user, theme, toggleTheme } = useApp();
   const current = items.find(active)?.label ?? "Taska";
+  const canManageWa = ["super_admin", "bos"].includes(user?.role || "");
+
   return (
     <View className="bg-card/40 border-border/70 border-b" style={{ zIndex: 20 }}>
       <SafeAreaView edges={isMobile ? ["top"] : []}>
@@ -594,6 +607,17 @@ function Topbar({ onMenu, onNotif, onAccount }: { onMenu?: () => void; onNotif: 
           </Text>
 
           <View className="flex-1" />
+
+          {/* WA Bot Connection Icon for Super Admin & Bos */}
+          {canManageWa && onWhatsapp ? (
+            <Pressable
+              onPress={onWhatsapp}
+              accessibilityLabel="Koneksi WhatsApp Bot"
+              className="size-10 items-center justify-center rounded-xl hover:bg-panel"
+            >
+              <MessageSquare size={18} color="#22c55e" />
+            </Pressable>
+          ) : null}
 
           <Pressable
             onPress={toggleTheme}
@@ -640,6 +664,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [more, setMore] = React.useState(false);
   const [notif, setNotif] = React.useState(false);
   const [account, setAccount] = React.useState(false);
+  const [whatsapp, setWhatsapp] = React.useState(false);
   const compact = bp === "tablet" && !expanded;
 
   React.useEffect(() => {
@@ -658,7 +683,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <View className="bg-background flex-1 flex-row">
       {!isMobile ? <Sidebar compact={compact} onToggle={bp === "tablet" ? () => setExpanded(false) : undefined} /> : null}
       <View className="flex-1">
-        <Topbar onMenu={bp === "tablet" ? () => setExpanded((v) => !v) : undefined} onNotif={() => setNotif(true)} onAccount={() => setAccount(true)} />
+        <Topbar
+          onMenu={bp === "tablet" ? () => setExpanded((v) => !v) : undefined}
+          onNotif={() => setNotif(true)}
+          onAccount={() => setAccount(true)}
+          onWhatsapp={() => setWhatsapp(true)}
+        />
         {offline || pendingSyncCount > 0 ? (
           <View className="bg-warning/15 border-warning/30 border-b flex-row items-center justify-between gap-2 px-4 py-2">
             <View className="flex-row items-center gap-2 flex-1">
@@ -689,6 +719,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <MoreDialog open={more} onOpenChange={setMore} onNotif={() => setNotif(true)} />
       <NotifDialog open={notif} onOpenChange={setNotif} />
       <AccountDialog open={account} onOpenChange={setAccount} />
+      <WhatsappDialog open={whatsapp} onOpenChange={setWhatsapp} />
     </View>
   );
 }

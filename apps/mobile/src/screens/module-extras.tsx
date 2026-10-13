@@ -265,6 +265,31 @@ export function downloadQuotationTemplate(info?: {
   }
 }
 
+export function downloadQuotationPdf(info?: {
+  quotationId?: string | number;
+  leadId?: string | number;
+  customer?: string;
+  lead?: string;
+  nomor?: string;
+  signer?: string;
+}) {
+  const url = info?.quotationId
+    ? `${apiBase()}/quotations/${info.quotationId}/pdf?t=${Date.now()}`
+    : `${apiBase()}/quotations/template-pdf${queryString({
+        leadId: info?.leadId,
+        customer: info?.customer,
+        lead: info?.lead,
+        nomor: info?.nomor,
+        signer: info?.signer,
+      })}`;
+
+  if (typeof window !== "undefined") {
+    window.open(url, "_blank");
+  } else {
+    Linking.openURL(url).catch(() => {});
+  }
+}
+
 export function QuotationPreviewModal({
   open,
   onOpenChange,
@@ -425,13 +450,17 @@ export function QuotationPreviewModal({
             <Button
               variant="outline"
               onPress={() => {
-                if (typeof window !== "undefined") {
-                  window.print?.();
-                }
+                downloadQuotationPdf({
+                  quotationId: row.id,
+                  customer: row.customer || row.perusahaan,
+                  lead: row.lead || row.nama,
+                  nomor: row.nomor,
+                  signer: row.pemilik,
+                });
               }}
             >
-              <Printer size={15} color={colors.text} />
-              <Text>Cetak / Simpan PDF</Text>
+              <FileDown size={15} color={colors.text} />
+              <Text>Download PDF Resmi</Text>
             </Button>
             <Button
               onPress={() => {
@@ -558,6 +587,22 @@ export function QuotationTemplateGenerator({
               <Button variant="outline" size="sm" onPress={() => setPreviewOpen(true)}>
                 <Eye size={14} color={colors.text} />
                 <Text className="text-xs">Preview Surat</Text>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => {
+                  downloadQuotationPdf({
+                    quotationId: row.id,
+                    customer: row.customer,
+                    lead: row.lead,
+                    nomor: row.nomor,
+                    signer: row.pemilik,
+                  });
+                }}
+              >
+                <FileDown size={14} color={colors.text} />
+                <Text className="text-xs">Download PDF</Text>
               </Button>
               <Button
                 size="sm"
