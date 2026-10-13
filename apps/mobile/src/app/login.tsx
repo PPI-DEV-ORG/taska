@@ -1,16 +1,18 @@
 import * as React from "react";
-import { Image, ScrollView, View } from "react-native";
+import { Image, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { Moon, Sun } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { FormField } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
+import { colors } from "@/tokens";
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, toast } = useApp();
+  const { login, toast, theme, toggleTheme } = useApp();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -33,7 +35,19 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView className="bg-background flex-1">
-      <ScrollView contentContainerClassName="flex-grow items-center justify-center p-4 py-10">
+      <View className="flex-row justify-end px-4 pt-3">
+        <Pressable
+          onPress={toggleTheme}
+          accessibilityLabel={theme === "dark" ? "Ganti ke Light Mode" : "Ganti ke Dark Mode"}
+          className="bg-card border-border flex-row items-center gap-2 rounded-xl border px-3 py-2"
+        >
+          {theme === "dark" ? <Sun size={16} color={colors.primary} /> : <Moon size={16} color={colors.primary} />}
+          <Text className="text-xs font-semibold text-foreground">
+            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          </Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerClassName="flex-grow items-center justify-center p-4 py-6">
         <View className="w-full max-w-[460px] gap-6">
           <View className="items-center gap-3">
             <Image

@@ -4,8 +4,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { usePathname, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import {
-  Bell, Boxes, Camera, CheckSquare, CheckCheck, Ellipsis, FileSignature, KeyRound, ListChecks, LogOut, Menu, PanelLeftClose,
-  Target, Truck, WifiOff,
+  Bell, Boxes, Camera, CheckSquare, CheckCheck, Ellipsis, FileSignature, KeyRound, ListChecks, LogOut, Menu, Moon, PanelLeftClose,
+  Sun, Target, Truck, WifiOff,
   Search,
 } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -542,6 +542,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
 function MoreDialog({ open, onOpenChange, onNotif }: { open: boolean; onOpenChange: (v: boolean) => void; onNotif: () => void }) {
   const router = useRouter();
   const { items, active } = useNav();
+  const { theme, toggleTheme } = useApp();
   const rest = items.slice(4);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -561,6 +562,10 @@ function MoreDialog({ open, onOpenChange, onNotif }: { open: boolean; onOpenChan
           <Pressable onPress={() => { onOpenChange(false); onNotif(); }} className="min-h-[48px] flex-row items-center gap-3 rounded-lg px-2">
             <Bell size={20} color={colors.textSecondary} /><Text className="text-base">Notifikasi</Text>
           </Pressable>
+          <Pressable onPress={toggleTheme} className="min-h-[48px] flex-row items-center gap-3 rounded-lg px-2">
+            {theme === "dark" ? <Sun size={20} color={colors.primary} /> : <Moon size={20} color={colors.primary} />}
+            <Text className="text-base">{theme === "dark" ? "Mode Terang (Light)" : "Mode Gelap (Dark)"}</Text>
+          </Pressable>
         </ScrollView>
       </DialogContent>
     </Dialog>
@@ -570,7 +575,7 @@ function MoreDialog({ open, onOpenChange, onNotif }: { open: boolean; onOpenChan
 function Topbar({ onMenu, onNotif, onAccount }: { onMenu?: () => void; onNotif: () => void; onAccount: () => void }) {
   const { isMobile } = useBreakpoint();
   const { items, active } = useNav();
-  const { unread, user } = useApp();
+  const { unread, user, theme, toggleTheme } = useApp();
   const current = items.find(active)?.label ?? "Taska";
   return (
     <View className="bg-card/40 border-border/70 border-b" style={{ zIndex: 20 }}>
@@ -588,6 +593,18 @@ function Topbar({ onMenu, onNotif, onAccount }: { onMenu?: () => void; onNotif: 
           </Text>
 
           <View className="flex-1" />
+
+          <Pressable
+            onPress={toggleTheme}
+            accessibilityLabel={theme === "dark" ? "Ganti ke Light Mode" : "Ganti ke Dark Mode"}
+            className="size-10 items-center justify-center rounded-xl hover:bg-panel"
+          >
+            {theme === "dark" ? (
+              <Sun size={18} color={colors.textSecondary} />
+            ) : (
+              <Moon size={18} color={colors.textSecondary} />
+            )}
+          </Pressable>
 
           <Pressable onPress={onNotif} className="size-10 items-center justify-center rounded-xl hover:bg-panel relative">
             <Bell size={18} color={colors.textSecondary} />

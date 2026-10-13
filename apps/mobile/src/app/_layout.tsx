@@ -11,7 +11,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { configureReanimatedLogger, ReanimatedLogLevel } from "react-native-reanimated";
 
 import { NAV_THEME } from "@/lib/theme";
-import { AppProvider } from "@/store/app-store";
+import { AppProvider, useApp } from "@/store/app-store";
 
 try {
   configureReanimatedLogger({
@@ -25,15 +25,11 @@ LogBox.ignoreLogs([
   "[Reanimated] Writing to `value`",
 ]);
 
-export default function RootLayout() {
+function NavigationShell() {
+  const { theme } = useApp();
+
   React.useEffect(() => {
-    if (Platform.OS !== "web" || typeof window !== "undefined") {
-      try {
-        colorScheme.set("dark");
-      } catch {}
-    }
     if (Platform.OS === "web" && typeof document !== "undefined") {
-      document.documentElement.classList.add("dark");
       document.title = "Taska - Mini ERP";
       try {
         let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
@@ -49,14 +45,26 @@ export default function RootLayout() {
   }, []);
 
   return (
+    <ThemeProvider value={theme === "light" ? NAV_THEME.light : NAV_THEME.dark}>
+      <StatusBar style={theme === "light" ? "dark" : "light"} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: theme === "light" ? "#F8F7F4" : "#191817" },
+        }}
+      />
+      <PortalHost />
+    </ThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={NAV_THEME.dark}>
-        <AppProvider>
-          <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#191817" } }} />
-          <PortalHost />
-        </AppProvider>
-      </ThemeProvider>
+      <AppProvider>
+        <NavigationShell />
+      </AppProvider>
     </GestureHandlerRootView>
   );
 }
+

@@ -1,9 +1,12 @@
 import * as React from "react";
+import { Platform } from "react-native";
+import { colorScheme } from "nativewind";
 import { MODULES, ROLE_LABEL, type Notif, type Row, type User } from "@/constants/modules";
 import { ToastHost, type ToastItem } from "@/components/taska/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
 import { ensureNotifPermission, showSystemNotification } from "@/services/notify";
+import { setThemePalette } from "@/tokens";
 import {
   PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow,
   apiUserToRow, buildCreateBody, buildPatchBody, buildStatusBody, statusEnumFor,
@@ -70,6 +73,8 @@ type Ctx = {
   setOffline: (v: boolean) => void;
   reload: () => Promise<void>;
   hydrated: boolean;
+  theme: "dark" | "light";
+  toggleTheme: () => void;
 };
 
 const AppContext = React.createContext<Ctx | null>(null);
@@ -117,7 +122,38 @@ async function fetchTasks(projects: Row[]): Promise<Row[]> {
   return out;
 }
 
+function readInitialTheme(): "dark" | "light" {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    try {
+      const saved = window.localStorage.getItem("taska.theme");
+      if (saved === "light" || saved === "dark") return saved;
+    } catch {}
+  }
+  return "dark";
+}
+
+function applyDomTheme(mode: "dark" | "light") {
+  setThemePalette(mode);
+  if (Platform.OS !== "web" || typeof window !== "undefined") {
+    try {
+      colorScheme.set(mode);
+    } catch {}
+  }
+  if (Platform.OS === "web" && typeof document !== "undefined") {
+    document.documentElement.classList.toggle("dark", mode === "dark");
+    document.documentElement.classList.toggle("light", mode === "light");
+    try {
+      window.localStorage.setItem("taska.theme", mode);
+    } catch {}
+  }
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = React.useState<"dark" | "light">(() => {
+    const initial = readInitialTheme();
+    setThemePalette(initial);
+    return initial;
+  });
   const [user, setUser] = React.useState<User | null>(null);
   const [data, setData] = React.useState<DB>(emptyDB);
   const [hist, setHist] = React.useState<Record<string, HistoryItem[]>>({});
@@ -127,6 +163,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [offline, setOffline] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
   const seq = React.useRef(100);
+
+  React.useEffect(() => {
+    applyDomTheme(theme);
+  }, [theme]);
+
+  const toggleTheme = React.useCallback(() => {
+    setThemeState((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      applyDomTheme(next);
+      return next;
+    });
+  }, []);
 
   const toast = React.useCallback((msg: string, tone: ToastItem["tone"] = "success") => {
     const id = ++seq.current;
@@ -706,11 +754,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
       deleteRow,
       history, pushHistory, approvals, decide, notifs: myNotifs, unread, markRead, markAllRead,
-      toast, offline, setOffline, reload, hydrated,
+      toast, offline, setOffline, reload, hydrated, theme, toggleTheme,
     }),
     [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
-     toast, offline, reload, hydrated],
+     toast, offline, reload, hydrated, theme, toggleTheme],
   );
 
   return (
