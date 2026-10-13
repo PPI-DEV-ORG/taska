@@ -5,7 +5,7 @@ import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { ProductDto } from "./dto.js";
 
-const PRICE_ROLES = new Set(["PROCUREMENT", "FINANCE", "PM", "BOS", "ADMIN"]);
+const PRICE_ROLES = new Set(["PROCUREMENT", "FINANCE", "PM", "BOS", "ADMIN", "SUPER_ADMIN"]);
 const INCLUDE = { category: { select: { id: true, name: true } } } as const;
 
 type Row = Awaited<ReturnType<PrismaService["main"]["product"]["findFirst"]>> & {

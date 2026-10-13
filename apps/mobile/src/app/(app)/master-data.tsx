@@ -30,7 +30,7 @@ import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { ConfirmDialog, SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, getAccess } from "@/services/api";
+import { api, apiBase, getAccess, uploadMasterImport, type MasterImportType } from "@/services/api";
 import { DataTable } from "@/components/taska/data-table";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
@@ -108,7 +108,22 @@ export default function MasterDataScreen() {
   // Modal State untuk Import Excel
   const [importOpen, setImportOpen] = React.useState(false);
   const [importTarget, setImportTarget] = React.useState("Customer (Data Klien & PIC)");
-  const [importCount, setImportCount] = React.useState<number | null>(null);
+  const [importFile, setImportFile] = React.useState<{ name: string; blob?: Blob; uri?: string } | null>(null);
+  const [importBusy, setImportBusy] = React.useState(false);
+  const [importResult, setImportResult] = React.useState<{
+    total: number;
+    imported: number;
+    failed: Array<{ row: number; error: string; data: Record<string, any> }>;
+  } | null>(null);
+
+  function resolveImportType(target: string): MasterImportType {
+    if (target.includes("Customer")) return "customer";
+    if (target.includes("Supplier")) return "supplier";
+    if (target.includes("Gudang")) return "warehouse";
+    if (target.includes("Serial Number (Per Unit)")) return "serial";
+    if (target.includes("Saldo")) return "stock";
+    return "product";
+  }
 
   React.useEffect(() => {
     void (async () => {
@@ -124,14 +139,15 @@ export default function MasterDataScreen() {
     })();
   }, []);
 
-  const canAddKategori = user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
-  const canAddBarang = user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
-  const canAddGudang = user?.role === "procurement" || user?.role === "bos" || user?.role === "admin";
-  const canAddLeadSource = user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
-  const canAddLostReason = user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
-  const canAddExpenseCat = user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
-  const canAddCostCenter = user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
-  const canEditSettings = user?.role === "bos" || user?.role === "admin";
+  const isSuper = user?.role === "super_admin";
+  const canAddKategori = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
+  const canAddBarang = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
+  const canAddGudang = isSuper || user?.role === "procurement" || user?.role === "bos" || user?.role === "admin";
+  const canAddLeadSource = isSuper || user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
+  const canAddLostReason = isSuper || user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
+  const canAddExpenseCat = isSuper || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
+  const canAddCostCenter = isSuper || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
+  const canEditSettings = isSuper || user?.role === "bos" || user?.role === "admin";
 
   function handleSaveKategori() {
     if (!kategoriNama.trim()) {
@@ -260,14 +276,29 @@ export default function MasterDataScreen() {
   }
 
   async function handleExecuteImport() {
-    if (!importCount) {
-      toast("Silakan unggah berkas template CSV/Excel terlebih dahulu", "danger");
+    if (!importFile) {
+      toast("Silakan pilih berkas template Excel (.xlsx) terlebih dahulu", "danger");
       return;
     }
-    await reload();
-    toast(`Berhasil mengimpor ${importCount} baris data ke master ${importTarget}!`);
-    setImportOpen(false);
-    setImportCount(null);
+    const typeKey = resolveImportType(importTarget);
+    setImportBusy(true);
+    try {
+      const res = await uploadMasterImport(typeKey, importFile);
+      setImportResult(res);
+      await reload();
+      if (res.failed.length === 0) {
+        toast(`Berhasil mengimpor ${res.imported} dari ${res.total} baris ke master ${importTarget}!`);
+      } else {
+        toast(
+          `Import selesai: ${res.imported} berhasil, ${res.failed.length} baris gagal validasi.`,
+          res.imported > 0 ? "info" : "danger",
+        );
+      }
+    } catch (e: any) {
+      toast(e?.message || "Gagal mengimpor berkas Excel", "danger");
+    } finally {
+      setImportBusy(false);
+    }
   }
 
   function deleteActions(module: string, singular: string, canDelete: boolean) {
@@ -1051,7 +1082,7 @@ export default function MasterDataScreen() {
   ];
 
   const visibleCards = ALL_MASTER_CARDS.filter((card) =>
-    user ? card.roles.includes(user.role) : false
+    user ? user.role === "super_admin" || card.roles.includes(user.role) : false
   );
 
   return (
@@ -1108,10 +1139,19 @@ export default function MasterDataScreen() {
       </View>
 
       {/* Modal Import Data Excel / CSV (PRD Fase 1) */}
-      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+      <Dialog
+        open={importOpen}
+        onOpenChange={(open) => {
+          setImportOpen(open);
+          if (!open) {
+            setImportFile(null);
+            setImportResult(null);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-xl md:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Import Data via Template Excel / CSV</DialogTitle>
+            <DialogTitle>Import Data via Template Excel (.xlsx)</DialogTitle>
           </DialogHeader>
           <View className="gap-4">
             <Text className="text-xs text-muted-foreground leading-relaxed">
@@ -1121,13 +1161,17 @@ export default function MasterDataScreen() {
             <FormField label="Pilih Target Master Data" required>
               <SearchableSelect
                 value={importTarget}
-                onChange={(v) => setImportTarget(v)}
+                onChange={(v) => {
+                  setImportTarget(v);
+                  setImportResult(null);
+                }}
                 options={[
                   "Customer (Data Klien & PIC)",
                   "Supplier (Vendor Penyedia)",
                   "Produk & SKU Barang",
                   "Gudang & Lokasi Inventori",
-                  "Saldo Stok Awal & Serial Number",
+                  "Saldo Stok Awal per Gudang",
+                  "Serial Number (Per Unit)",
                 ]}
                 placeholder="Pilih target master data"
               />
@@ -1140,15 +1184,7 @@ export default function MasterDataScreen() {
                   variant="outline"
                   size="sm"
                   onPress={async () => {
-                    const typeKey = importTarget.includes("Customer")
-                      ? "customers"
-                      : importTarget.includes("Supplier")
-                        ? "suppliers"
-                        : importTarget.includes("Gudang")
-                          ? "warehouses"
-                          : importTarget.includes("Saldo")
-                            ? "stock"
-                            : "products";
+                    const typeKey = resolveImportType(importTarget);
                     if (typeof window !== "undefined" && typeof document !== "undefined") {
                       try {
                         const token = getAccess();
@@ -1169,19 +1205,7 @@ export default function MasterDataScreen() {
                           return;
                         }
                       } catch {}
-                      const csvHeader =
-                        typeKey === "customers"
-                          ? "nama,perusahaan,kontak,email,telepon,alamat,catatan\nPT Contoh Mitra,PT Contoh Mitra,Budi,budi@contoh.com,08123456789,Jakarta,Klien VIP"
-                          : typeKey === "suppliers"
-                          ? "nama,kontak,telepon,paymentTerms\nPT Hikvision,Sales Support,021-555666,Net 30"
-                          : "sku,nama,kategori,satuan,berSN,garansi\nCAM-010,Dome Camera 4MP,IP Camera,unit,true,2 tahun";
-                      const link = document.createElement("a");
-                      link.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csvHeader);
-                      link.download = `template-import-${typeKey}.csv`;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      toast("Template file berhasil diunduh");
+                      toast("Gagal mengunduh template dari server", "danger");
                     }
                   }}
                   className="flex-row items-center gap-1.5"
@@ -1196,29 +1220,60 @@ export default function MasterDataScreen() {
             </View>
 
             <FileUploader
-              label="Unggah Berkas Excel (.xlsx) atau CSV"
+              label="Unggah Berkas Excel (.xlsx)"
               kind="dokumen"
-              autoFlush
+              onFilePicked={(file) => {
+                setImportFile(file);
+                setImportResult(null);
+              }}
               onChange={(count) => {
-                setImportCount(count * 5); // Simulasi 5 baris per file
+                if (count === 0) {
+                  setImportFile(null);
+                  setImportResult(null);
+                }
               }}
             />
 
-            {importCount ? (
-              <View className="bg-success/15 border-success/30 rounded-lg border p-3 flex-row items-center gap-2">
-                <CheckCircle2 size={16} color={colors.success} />
-                <Text className="text-success text-xs font-semibold">
-                  Validasi selesai: {importCount} baris siap diimpor ke sistem (0 baris gagal).
-                </Text>
+            {importResult ? (
+              <View className="gap-2">
+                <View
+                  className={`${
+                    importResult.failed.length === 0
+                      ? "bg-success/15 border-success/30"
+                      : "bg-warning/15 border-warning/30"
+                  } rounded-lg border p-3 flex-row items-center gap-2`}
+                >
+                  <CheckCircle2
+                    size={16}
+                    color={importResult.failed.length === 0 ? colors.success : colors.warning}
+                  />
+                  <Text
+                    className={`${
+                      importResult.failed.length === 0 ? "text-success" : "text-warning"
+                    } text-xs font-semibold flex-1`}
+                  >
+                    Hasil Import: {importResult.imported} dari {importResult.total} baris berhasil disimpan (
+                    {importResult.failed.length} baris gagal).
+                  </Text>
+                </View>
+                {importResult.failed.length > 0 ? (
+                  <ScrollView style={{ maxHeight: 140 }} className="bg-panel border-border rounded-lg border p-2.5">
+                    {importResult.failed.map((f, idx) => (
+                      <Text key={`${f.row}-${idx}`} className="text-[11px] text-danger py-0.5">
+                        • Baris {f.row}: {f.error}
+                      </Text>
+                    ))}
+                  </ScrollView>
+                ) : null}
               </View>
             ) : null}
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setImportOpen(false)}>
-              <Text>Batal</Text>
+              <Text>{importResult ? "Tutup" : "Batal"}</Text>
             </Button>
-            <Button onPress={handleExecuteImport} disabled={!importCount}>
-              <Text>Eksekusi Import Data</Text>
+            <Button onPress={handleExecuteImport} disabled={!importFile || importBusy}>
+              <Text>{importBusy ? "Memproses..." : "Eksekusi Import Data"}</Text>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1226,3 +1281,4 @@ export default function MasterDataScreen() {
     </View>
   );
 }
+

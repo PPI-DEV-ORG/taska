@@ -1,12 +1,22 @@
 import { Platform } from "react-native";
-import * as Notifications from "expo-notifications";
 import type { Notif } from "@/constants/modules";
+import { normalizeNotifHref } from "@/services/adapters";
 
 const CHANNEL_ID = "taska-realtime";
 const TITLE = "Taska Mini ERP";
 
 let permission: NotificationPermission | null = null;
 let nativeReady = false;
+let nativeModPromise: Promise<typeof import("expo-notifications") | null> | null = null;
+
+/** Muat expo-notifications hanya di iOS/Android agar Web tidak memicu warning auto-registration push token. */
+async function getNativeNotifications(): Promise<typeof import("expo-notifications") | null> {
+  if (Platform.OS !== "ios" && Platform.OS !== "android") return null;
+  if (!nativeModPromise) {
+    nativeModPromise = import("expo-notifications").catch(() => null);
+  }
+  return nativeModPromise;
+}
 
 /** Label judul native per kategori notifikasi. */
 const JENIS_LABEL: Record<Notif["jenis"], string> = {
@@ -18,18 +28,22 @@ const JENIS_LABEL: Record<Notif["jenis"], string> = {
   surat: "Surat jalan",
 };
 
-/** Pasang handler agar notifikasi tampil saat app foreground (wajib di SDK 57). */
-function ensureNativeHandler(): void {
-  if (nativeReady || Platform.OS !== "ios" && Platform.OS !== "android") return;
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldPlaySound: false,
-      shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
-  });
-  nativeReady = true;
+/** Pasang handler agar notifikasi tampil saat app foreground di iOS/Android. */
+async function ensureNativeHandler(): Promise<typeof import("expo-notifications") | null> {
+  const Notifications = await getNativeNotifications();
+  if (!Notifications) return null;
+  if (!nativeReady) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+    nativeReady = true;
+  }
+  return Notifications;
 }
 
 /** Minta izin notifikasi OS/browser (web + native). */
@@ -52,8 +66,8 @@ export async function ensureNotifPermission(): Promise<boolean> {
     return permission === "granted";
   }
 
-  if (Platform.OS !== "ios" && Platform.OS !== "android") return false;
-  ensureNativeHandler();
+  const Notifications = await ensureNativeHandler();
+  if (!Notifications) return false;
   try {
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
@@ -74,6 +88,20 @@ export async function ensureNotifPermission(): Promise<boolean> {
   }
 }
 
+/** Pasang listener saat user mengetuk banner notifikasi di iOS/Android untuk navigasi ke halaman terkait. */
+export async function subscribeNotificationTap(onNavigate: (href: string) => void): Promise<() => void> {
+  if (Platform.OS !== "ios" && Platform.OS !== "android") return () => {};
+  const Notifications = await ensureNativeHandler();
+  if (!Notifications) return () => {};
+  const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const rawHref = response?.notification?.request?.content?.data?.href;
+    if (typeof rawHref === "string" && rawHref.trim()) {
+      onNavigate(normalizeNotifHref(rawHref));
+    }
+  });
+  return () => sub.remove();
+}
+
 /** Tampilkan notifikasi OS/browser (web: Notification API; native: expo-notifications). */
 export async function showSystemNotification(opts: {
   title?: string;
@@ -84,7 +112,7 @@ export async function showSystemNotification(opts: {
 }): Promise<void> {
   const title = opts.title ?? (opts.notif ? JENIS_LABEL[opts.notif.jenis] : TITLE);
   const body = opts.body ?? opts.notif?.teks ?? "";
-  const href = opts.href ?? opts.notif?.href ?? "";
+  const href = normalizeNotifHref(opts.href ?? opts.notif?.href ?? "");
 
   if (Platform.OS === "web") {
     if (typeof Notification === "undefined") return;
@@ -107,16 +135,26 @@ export async function showSystemNotification(opts: {
     return;
   }
 
-  if (Platform.OS !== "ios" && Platform.OS !== "android") return;
-  ensureNativeHandler();
+  const Notifications = await ensureNativeHandler();
+  if (!Notifications) return;
   const ok = await ensureNotifPermission();
   if (!ok) return;
   try {
     await Notifications.scheduleNotificationAsync({
       content: { title, body, data: { href } },
-      trigger: Platform.OS === "android" ? { channelId: CHANNEL_ID } : null,
+      trigger:
+        Platform.OS === "android"
+          ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: CHANNEL_ID }
+          : null,
     });
   } catch {
-    // abaikan (permission bisa berubah di tengah jalan)
+    // Fallback jika versi SDK menerima trigger: null langsung
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: { title, body, data: { href } },
+        trigger: null,
+      });
+    } catch {}
   }
 }
+

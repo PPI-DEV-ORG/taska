@@ -27,7 +27,7 @@ function beep(ok: boolean) {
 export function ScanInput({
   onResult, existing = [],
 }: { onResult?: (scans: Scan[]) => void; existing?: string[] }) {
-  const { offline } = useApp();
+  const { data } = useApp();
   const [value, setValue] = React.useState("");
   const [scans, setScans] = React.useState<Scan[]>([]);
   const ref = React.useRef<TextInput>(null);
@@ -36,9 +36,22 @@ export function ScanInput({
     const sn = (raw ?? value).trim().toUpperCase();
     if (!sn) return;
     let res: Scan;
-    if (!/^[A-Z0-9-]{6,}$/.test(sn)) res = { sn, ok: false, msg: "Format SN tidak dikenali" };
-    else if (scans.some((s) => s.sn === sn) || existing.includes(sn)) res = { sn, ok: false, msg: "SN sudah tercatat, tidak boleh dua kali" };
-    else res = { sn, ok: true, msg: "SN valid" };
+    if (!/^[A-Z0-9-]{4,}$/.test(sn)) {
+      res = { sn, ok: false, msg: "Format SN tidak valid (minimal 4 karakter)" };
+    } else if (scans.some((s) => s.sn === sn) || existing.includes(sn)) {
+      res = { sn, ok: false, msg: "SN sudah tercatat, tidak boleh duplikat" };
+    } else {
+      const found = (data.serials || []).find((s: any) => String(s.sn).toUpperCase() === sn);
+      if (found) {
+        res = {
+          sn,
+          ok: true,
+          msg: `${found.produk || "Barang"} (${found.gudang || "Gudang"}) — Status: ${found.status || "Tersedia"}`,
+        };
+      } else {
+        res = { sn, ok: true, msg: "SN valid & siap disimpan" };
+      }
+    }
     beep(res.ok);
     const next = [res, ...scans];
     setScans(next);
@@ -46,23 +59,13 @@ export function ScanInput({
     setValue("");
     ref.current?.focus();
   }
-  function simulate() {
-    submit(`SN${2700 + Math.floor(Math.random() * 900)}X${Math.floor(Math.random() * 90 + 10)}`);
-  }
+
   function remove(sn: string) {
     const next = scans.filter((s) => s.sn !== sn);
     setScans(next);
     onResult?.(next);
   }
 
-  if (offline) {
-    return (
-      <View className="bg-warning/15 flex-row items-center gap-2 rounded-lg p-3">
-        <WifiOff size={16} color={colors.warning} />
-        <Text className="text-warning flex-1 text-sm">Perlu koneksi. Scan SN divalidasi server.</Text>
-      </View>
-    );
-  }
   return (
     <View className="gap-3">
       <View className="flex-row gap-2">
@@ -74,7 +77,7 @@ export function ScanInput({
             value={value}
             onChangeText={setValue}
             onSubmitEditing={() => submit()}
-            placeholder="Scan atau ketik SN, lalu Enter"
+            placeholder="Scan barcode fisik atau ketik nomor seri..."
             placeholderTextColor={colors.muted}
             autoCapitalize="characters"
             autoCorrect={false}
@@ -83,7 +86,14 @@ export function ScanInput({
             style={{ flex: 1, color: colors.text, fontSize: 15, outlineStyle: "none" } as any}
           />
         </View>
-        <Button variant="outline" className="h-12" onPress={simulate}><Text>Contoh scan</Text></Button>
+        <Button
+          size="default"
+          className="h-12 px-4"
+          disabled={!value.trim()}
+          onPress={() => submit()}
+        >
+          <Text>Scan / Tambah</Text>
+        </Button>
       </View>
       {scans.length ? (
         <View className="gap-2">

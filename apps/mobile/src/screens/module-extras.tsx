@@ -37,12 +37,188 @@ import { ScanInput } from "@/components/taska/scan-input";
 import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, queryString, uploadQuotationExcel } from "@/services/api";
+import {
+  api,
+  apiBase,
+  queryString,
+  uploadFile,
+  uploadQuotationExcel,
+  downloadDocumentationPdf,
+} from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 
-const PRICE_ROLES = ["procurement", "finance", "pm", "bos"];
+const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
+
+type DocPhotoItem = {
+  id: number;
+  fileId: number;
+  caption?: string | null;
+  url: string;
+  originalName: string;
+};
+
+function DocumentationPhotosPanel({
+  kind,
+  entityId,
+  title,
+  subtitle,
+}: {
+  kind: "survey" | "project" | "delivery-note";
+  entityId: string | number;
+  title: string;
+  subtitle: string;
+}) {
+  const { toast } = useApp();
+  const [photos, setPhotos] = React.useState<DocPhotoItem[]>([]);
+  const [caption, setCaption] = React.useState("");
+  const [pdfBusy, setPdfBusy] = React.useState(false);
+
+  const loadPhotos = React.useCallback(async () => {
+    try {
+      const res = await api<{ items: DocPhotoItem[] }>(
+        "GET",
+        `/documentation/photos?kind=${kind}&entityId=${entityId}`,
+      );
+      if (Array.isArray(res?.items)) {
+        setPhotos(res.items);
+      }
+    } catch {}
+  }, [kind, entityId]);
+
+  React.useEffect(() => {
+    let active = true;
+    api<{ items: DocPhotoItem[] }>(
+      "GET",
+      `/documentation/photos?kind=${kind}&entityId=${entityId}`,
+    )
+      .then((res) => {
+        if (active && Array.isArray(res?.items)) {
+          setPhotos(res.items);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [kind, entityId]);
+
+  async function handleAttachPhoto(file: { name: string; blob?: Blob; uri?: string }) {
+    try {
+      const payload =
+        file.blob ?? (file.uri ? { uri: file.uri, name: file.name, type: "image/jpeg" } : null);
+      const fileId = await uploadFile(payload, "foto");
+      if (!fileId) {
+        toast("Gagal mengunggah foto ke server", "danger");
+        return;
+      }
+      await api("POST", `/documentation/photos?kind=${kind}`, {
+        entityId: Number(entityId),
+        fileId,
+        caption: caption.trim() || file.name,
+      });
+      setCaption("");
+      await loadPhotos();
+      toast("Foto dokumentasi berhasil dilampirkan");
+    } catch (e: any) {
+      toast(e?.message || "Gagal melampirkan foto dokumentasi", "danger");
+    }
+  }
+
+  async function handleRemovePhoto(id: number) {
+    try {
+      await api("DELETE", `/documentation/photos/${id}`);
+      await loadPhotos();
+      toast("Foto dokumentasi dihapus");
+    } catch (e: any) {
+      toast(e?.message || "Gagal menghapus foto", "danger");
+    }
+  }
+
+  async function handleDownloadPdf() {
+    setPdfBusy(true);
+    try {
+      const ok = await downloadDocumentationPdf(kind, entityId);
+      if (ok) {
+        toast("PDF kompilasi dokumentasi berhasil diunduh");
+      } else {
+        toast("Gagal mengunduh PDF kompilasi", "danger");
+      }
+    } catch (e: any) {
+      toast(e?.message || "Gagal mengunduh PDF kompilasi", "danger");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
+  return (
+    <Panel
+      title={title}
+      subtitle={subtitle}
+      right={
+        <Button
+          size="sm"
+          variant="outline"
+          onPress={handleDownloadPdf}
+          disabled={pdfBusy}
+          className="flex-row items-center gap-1.5"
+        >
+          <FileDown size={14} color={colors.text} />
+          <Text className="text-xs">{pdfBusy ? "Membuat PDF..." : "Unduh PDF Kompilasi"}</Text>
+        </Button>
+      }
+    >
+      <View className="gap-3">
+        {photos.length === 0 ? (
+          <Text className="text-xs text-muted-foreground py-1">
+            Belum ada foto dokumentasi terlampir pada dokumen ini.
+          </Text>
+        ) : (
+          <View className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {photos.map((p, idx) => (
+              <View
+                key={p.id}
+                className="bg-panel border-border/80 rounded-xl border p-3 justify-between min-h-[90px]"
+              >
+                <View className="flex-row items-center justify-between gap-1.5">
+                  <View className="flex-row items-center gap-1.5 flex-1">
+                    <CheckCircle2 size={14} color={colors.primary} />
+                    <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
+                      Foto {idx + 1}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => handleRemovePhoto(p.id)} hitSlop={8}>
+                    <Trash2 size={13} color={colors.danger} />
+                  </Pressable>
+                </View>
+                <Text className="text-[11px] text-foreground font-medium mt-1" numberOfLines={2}>
+                  {p.caption || p.originalName}
+                </Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5" numberOfLines={1}>
+                  {p.originalName}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View className="gap-2 pt-1">
+          <Input
+            value={caption}
+            onChangeText={setCaption}
+            placeholder="Keterangan foto (opsional, misal: Kondisi Plafon / Ruang Server)"
+          />
+          <FileUploader
+            label="Upload Foto Dokumentasi Lapangan (PNG / JPG)"
+            kind="foto"
+            onFilePicked={handleAttachPhoto}
+          />
+        </View>
+      </View>
+    </Panel>
+  );
+}
 
 function Line({ left, right, sub }: { left: string; right?: React.ReactNode; sub?: string }) {
   return (
@@ -648,7 +824,7 @@ function LeadExtras({ row }: { row: Row }) {
   const [selectedLostReason, setSelectedLostReason] = React.useState(row.alasanLost || lostReasons[0]);
 
   const salesUsers: Row[] = (data.users ?? []).filter((u: Row) =>
-    ["sales", "pm", "bos", "admin"].includes(String(u.role)),
+    ["super_admin", "sales", "pm", "bos", "admin"].includes(String(u.role)),
   );
 
   async function handleAddFollowup() {
@@ -800,7 +976,7 @@ function LeadExtras({ row }: { row: Row }) {
         title="PIC & Kepemilikan Lead"
         subtitle="Setiap lead memiliki PIC Sales yang bertanggung jawab mengawal pipeline."
         right={
-          (user?.role === "bos" || user?.role === "admin" || user?.role === "sales") ? (
+          (user?.role === "super_admin" || user?.role === "bos" || user?.role === "admin" || user?.role === "sales") ? (
             <Button size="sm" variant="outline" onPress={() => setReassignOpen(true)}>
               <UserCheck size={14} color={colors.text} />
               <Text className="text-xs">Alihkan PIC</Text>
@@ -1397,12 +1573,6 @@ function SurveyExtras({ row }: { row: Row }) {
 
   const [reportOpen, setReportOpen] = React.useState(false);
 
-  const photos = [
-    "Kondisi Plafon & Jalur Kabel Utama",
-    "Ruang Server & Panel Distribusi Listrik",
-    "Titik Pasang Kamera Outdoor Area Parkir",
-  ];
-
   function handleSaveTechNotes() {
     setTechNotes(inputTechNotes);
     patchRow("surveys", row.id, { catatanTeknis: inputTechNotes });
@@ -1432,7 +1602,12 @@ function SurveyExtras({ row }: { row: Row }) {
     toast(`Biaya survey ${rupiah(nom)} dicatat ke modul Pengeluaran`);
   }
 
-  function handlePrintSurveyReport() {
+  async function handlePrintSurveyReport() {
+    const ok = await downloadDocumentationPdf("survey", row.id);
+    if (ok) {
+      toast("PDF Laporan Survey berhasil diunduh");
+      return;
+    }
     if (typeof window !== "undefined") {
       window.print();
     }
@@ -1453,25 +1628,12 @@ function SurveyExtras({ row }: { row: Row }) {
         <Text className="text-sm leading-relaxed text-foreground">{techNotes}</Text>
       </Panel>
 
-      <Panel
+      <DocumentationPhotosPanel
+        kind="survey"
+        entityId={row.id}
         title="Dokumentasi Foto Lapangan"
-        subtitle="Bukti kondisi fisik lokasi survey untuk tim project & sales."
-      >
-        <View className="gap-3">
-          <View className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {photos.map((p, idx) => (
-              <View key={p} className="bg-panel border-border/80 rounded-xl border p-3 justify-between min-h-[90px]">
-                <View className="flex-row items-center gap-1.5">
-                  <CheckCircle2 size={14} color={colors.primary} />
-                  <Text className="text-xs font-semibold text-foreground">Foto {idx + 1}</Text>
-                </View>
-                <Text className="text-[11px] text-muted-foreground mt-1">{p}</Text>
-              </View>
-            ))}
-          </View>
-          <FileUploader label="Upload Tambahan Foto Lapangan" kind="foto" autoFlush />
-        </View>
-      </Panel>
+        subtitle="Bukti kondisi fisik lokasi survey untuk tim project & sales (terkompilasi otomatis ke PDF)."
+      />
 
       <Panel
         title="Biaya Operasional Survey"
@@ -1497,7 +1659,7 @@ function SurveyExtras({ row }: { row: Row }) {
           </Text>
           <Button size="sm" variant="outline" onPress={() => setReportOpen(true)} className="flex-row items-center gap-1.5">
             <Printer size={14} color={colors.text} />
-            <Text className="text-xs">Preview & Cetak PDF</Text>
+            <Text className="text-xs">Preview & Unduh PDF</Text>
           </Button>
         </View>
       </Panel>
@@ -1603,15 +1765,6 @@ function SurveyExtras({ row }: { row: Row }) {
               <Text className="text-xs leading-relaxed text-muted-foreground">{techNotes}</Text>
             </View>
 
-            <View className="border-border border rounded-xl p-3 gap-2">
-              <Text className="text-xs font-semibold text-foreground">Dokumentasi Terlampir</Text>
-              <View className="gap-1">
-                {photos.map((p, idx) => (
-                  <Text key={p} className="text-xs text-muted-foreground">• Foto {idx + 1}: {p}</Text>
-                ))}
-              </View>
-            </View>
-
             <View className="border-border border rounded-xl p-3 flex-row items-center justify-between">
               <Text className="text-xs font-semibold">Total Biaya Operasional Survey:</Text>
               <Text className="text-sm font-bold text-primary">{rupiah(row.biaya || 0)}</Text>
@@ -1623,7 +1776,7 @@ function SurveyExtras({ row }: { row: Row }) {
             </Button>
             <Button onPress={handlePrintSurveyReport} className="flex-row items-center gap-1.5">
               <Printer size={14} color={colors.background} />
-              <Text>Cetak / Simpan PDF</Text>
+              <Text>Unduh / Cetak PDF</Text>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1850,16 +2003,39 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
     toast("Tanda terima lapangan berhasil dicatat. Status surat jalan kini 'Diterima'");
   }
 
+  const hasGoods = row.withGoods !== undefined ? Boolean(row.withGoods) : (row.barang && row.barang !== "-");
+
   return (
     <>
-      <Panel title="Barang yang Dibawa">
-        {row.barang === "-" ? (
+      <Panel
+        title="Barang yang Dibawa"
+        subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN" : "Surat jalan penugasan tanpa barang"}
+        right={
+          (user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang") && !isDelivered ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => {
+                const next = !hasGoods;
+                patchRow("delivery-notes", row.id, {
+                  withGoods: next,
+                  barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
+                });
+                toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
+              }}
+            >
+              <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
+            </Button>
+          ) : undefined
+        }
+      >
+        {!hasGoods ? (
           <Text className="text-muted-foreground text-sm">Surat jalan ini untuk penugasan tanpa barang.</Text>
         ) : (
           <>
-            <Line left={row.barang} sub="Barang ber-SN wajib di-scan sebelum berangkat" />
-            {user!.role === "gudang" || user!.role === "bos" ? (
-              <View className="mt-3"><ScanInput /></View>
+            <Line left={row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional"} sub="Barang ber-SN wajib di-scan sebelum berangkat" />
+            {user!.role === "super_admin" || user!.role === "gudang" || user!.role === "bos" ? (
+              <View className="mt-3"><ScanInput existing={Array.isArray(row.snList) ? row.snList : []} /></View>
             ) : null}
           </>
         )}
@@ -1869,7 +2045,7 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
         title="Laporan Hasil Kunjungan & Serah Terima Lapangan"
         subtitle="Dokumentasi penerimaan barang di lokasi klien beserta tanda tangan atau foto bukti."
         right={
-          !isDelivered && (user!.role === "teknisi" || user!.role === "pm" || user!.role === "bos") ? (
+          !isDelivered && (user!.role === "super_admin" || user!.role === "teknisi" || user!.role === "pm" || user!.role === "bos") ? (
             <Button size="sm" onPress={() => setHandoverOpen(true)} className="flex-row items-center gap-1">
               <CheckCircle2 size={14} color={colors.background} />
               <Text className="text-xs">Catat Tanda Terima</Text>
@@ -1903,6 +2079,13 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
           </View>
         )}
       </Panel>
+
+      <DocumentationPhotosPanel
+        kind="delivery-note"
+        entityId={row.id}
+        title="Foto Bukti Serah Terima & Dokumentasi Surat Jalan"
+        subtitle="Lampirkan foto penerimaan barang di lokasi tujuan dan unduh PDF kompilasi resmi."
+      />
 
       {/* Modal Catat Tanda Terima Lapangan */}
       <Dialog open={handoverOpen} onOpenChange={setHandoverOpen}>
@@ -2035,7 +2218,12 @@ function ProjectExtras({ row }: { row: Row }) {
     }
   }
 
-  function handlePrintBast() {
+  async function handlePrintBast() {
+    const ok = await downloadDocumentationPdf("project", row.id);
+    if (ok) {
+      toast("PDF Laporan Dokumentasi Project berhasil diunduh");
+      return;
+    }
     if (typeof window !== "undefined") {
       window.print();
     }
@@ -2068,6 +2256,13 @@ function ProjectExtras({ row }: { row: Row }) {
           )}
         </View>
       </Panel>
+
+      <DocumentationPhotosPanel
+        kind="project"
+        entityId={row.id}
+        title="Dokumentasi Foto Instalasi & Progress Project"
+        subtitle="Galeri foto pemasangan perangkat di lapangan yang terkompilasi ke laporan PDF."
+      />
 
       <Panel
         title="Berita Acara Serah Terima (BAST)"
@@ -2233,7 +2428,7 @@ function InvoiceExtras({ row }: { row: Row }) {
       <Panel
         title="Ringkasan Pembayaran Invoice"
         right={
-          (user?.role === "finance" || user?.role === "bos" || user?.role === "admin") && sisa > 0 ? (
+          (user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin") && sisa > 0 ? (
             <Button variant="outline" size="sm" onPress={openPayModal}>
               <Plus size={14} color={colors.text} />
               <Text className="text-xs">Catat Pembayaran</Text>
@@ -2384,7 +2579,7 @@ function SupplierPoExtras({ row }: { row: Row }) {
             <Text className={i <= cur ? "text-sm font-medium" : "text-muted-foreground text-sm"}>{s}</Text>
           </View>
         ))}
-        {(user!.role === "procurement" || user!.role === "bos" || user!.role === "admin") && cur < 2 && steps[cur + 1] ? (
+        {(user!.role === "super_admin" || user!.role === "procurement" || user!.role === "bos" || user!.role === "admin") && cur < 2 && steps[cur + 1] ? (
           <Button
             className="mt-2 self-start"
             variant="outline"
@@ -2427,7 +2622,7 @@ function SupplierPoExtras({ row }: { row: Row }) {
                   left={`${inv.nomor} · Jatuh tempo ${inv.jatuhTempo}`}
                   sub={`Dibayar: ${rupiah(inv.terbayar || 0)} dari ${rupiah(inv.total || 0)} (${inv.status})`}
                   right={
-                    !lunas && (user?.role === "finance" || user?.role === "bos" || user?.role === "admin") ? (
+                    !lunas && (user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin") ? (
                       <Button size="sm" variant="outline" onPress={() => handlePaySupplierInvoice(inv)}>
                         <Text className="text-xs">Lunasi</Text>
                       </Button>

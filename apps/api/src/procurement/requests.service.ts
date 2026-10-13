@@ -43,7 +43,7 @@ export class RequestsService {
   }
 
   private scope(user: RequestUser) {
-    if (["ADMIN", "BOS", "FINANCE", "PROCUREMENT"].includes(user.role)) return {};
+    if (["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "PROCUREMENT"].includes(user.role)) return {};
     if (user.role === "PM") {
       return {
         OR: [

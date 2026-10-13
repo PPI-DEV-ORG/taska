@@ -112,11 +112,11 @@ export default function NewDeliveryNoteScreen() {
         subtitle="Surat jalan boleh dengan barang atau tanpa barang"
         right={
           <Button
-            variant={hasGoods ? "default" : "outline"}
+            variant={hasGoods ? "outline" : "default"}
             size="sm"
             onPress={() => setHasGoods(!hasGoods)}
           >
-            <Text>{hasGoods ? "Membawa Barang" : "Tanpa Barang"}</Text>
+            <Text>{hasGoods ? "Tanpa Barang" : "Membawa Barang"}</Text>
           </Button>
         }
       >

@@ -67,14 +67,17 @@ function grant(actions: string): Action[] {
 
 type Table = Partial<Record<ModuleKey, string>>;
 
-/** Matriks peran PRD: 9 role x modul x L/C/U/A. */
+/** Matriks peran PRD: role x modul x L/C/U/A. */
 export const PERMISSIONS: Record<string, Table> = {
+  SUPER_ADMIN: Object.fromEntries(Object.keys(ALL).map((k) => [k, "LCUA"])) as Table,
+
   ADMIN: Object.fromEntries(Object.keys(ALL).map((k) => [k, "LCUA"])) as Table,
 
   BOS: Object.fromEntries(Object.keys(ALL).map((k) => [k, "LCUA"])) as Table,
 
   SALES: {
     dashboard: "L",
+    users: "L",
     customers: "LCU",
     products: "L",
     productCategories: "L",
@@ -93,6 +96,7 @@ export const PERMISSIONS: Record<string, Table> = {
 
   PM: {
     dashboard: "L",
+    users: "L",
     customers: "L",
     suppliers: "L",
     products: "L",
@@ -120,6 +124,7 @@ export const PERMISSIONS: Record<string, Table> = {
 
   TEKNISI: {
     dashboard: "L",
+    users: "L",
     products: "L",
     warehouses: "L",
     expenseCategories: "L",
@@ -136,6 +141,7 @@ export const PERMISSIONS: Record<string, Table> = {
 
   PROCUREMENT: {
     dashboard: "L",
+    users: "L",
     suppliers: "LCU",
     products: "LCU",
     productCategories: "L",
@@ -155,6 +161,7 @@ export const PERMISSIONS: Record<string, Table> = {
 
   FINANCE: {
     dashboard: "L",
+    users: "L",
     customers: "LCU",
     suppliers: "L",
     products: "L",
@@ -179,6 +186,7 @@ export const PERMISSIONS: Record<string, Table> = {
 
   GUDANG: {
     dashboard: "L",
+    users: "L",
     suppliers: "L",
     products: "LCU",
     productCategories: "LCU",
@@ -198,6 +206,7 @@ export const PERMISSIONS: Record<string, Table> = {
 
   SE: {
     dashboard: "L",
+    users: "L",
     products: "L",
     expenseCategories: "L",
     costCenters: "L",
@@ -212,6 +221,7 @@ export const PERMISSIONS: Record<string, Table> = {
 };
 
 export function can(role: string, module: ModuleKey, action: Action): boolean {
+  if (role === "SUPER_ADMIN") return true;
   const table = PERMISSIONS[role];
   if (!table) return false;
   const actions = table[module];

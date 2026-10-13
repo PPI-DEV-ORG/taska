@@ -130,6 +130,7 @@ function ProjectOverviewCard({
 
 function QuickActionsCard({ role }: { role: string }) {
   const router = useRouter();
+  const isSuper = role === "super_admin";
   return (
     <Panel
       title="Quick Actions"
@@ -137,7 +138,7 @@ function QuickActionsCard({ role }: { role: string }) {
       icon={Command}
     >
       <View className="flex-row flex-wrap gap-3 py-1 w-full">
-        {role === "bos" || role === "sales" ? (
+        {isSuper || role === "bos" || role === "sales" ? (
           <QuickActionButton
             label="Buat Lead Baru"
             icon={Plus}
@@ -146,7 +147,7 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/leads")}
           />
         ) : null}
-        {role === "bos" || role === "pm" || role === "teknisi" ? (
+        {isSuper || role === "bos" || role === "pm" || role === "teknisi" ? (
           <QuickActionButton
             label="Request Barang"
             icon={ShoppingCart}
@@ -155,7 +156,7 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/purchase-requests/new" as any)}
           />
         ) : null}
-        {role === "gudang" || role === "teknisi" ? (
+        {isSuper || role === "gudang" || role === "teknisi" ? (
           <QuickActionButton
             label="Scan Serial Number"
             icon={ScanLine}
@@ -164,7 +165,7 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/stock")}
           />
         ) : null}
-        {role === "bos" || role === "finance" ? (
+        {isSuper || role === "bos" || role === "finance" ? (
           <QuickActionButton
             label="Buat Invoice"
             icon={FileText}
@@ -173,7 +174,7 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/invoices")}
           />
         ) : null}
-        {role === "teknisi" || role === "gudang" || role === "pm" ? (
+        {isSuper || role === "teknisi" || role === "gudang" || role === "pm" ? (
           <QuickActionButton
             label="Buat Surat Jalan"
             icon={Truck}
@@ -182,7 +183,7 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/delivery-notes/new" as any)}
           />
         ) : null}
-        {role === "finance" || role === "bos" ? (
+        {isSuper || role === "finance" || role === "bos" ? (
           <QuickActionButton
             label="Approval Center"
             icon={ClipboardCheck}
@@ -191,7 +192,7 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/approvals")}
           />
         ) : null}
-        {role === "sales" ? (
+        {isSuper || role === "sales" ? (
           <>
             <QuickActionButton
               label="Buat Penawaran"
@@ -209,7 +210,7 @@ function QuickActionsCard({ role }: { role: string }) {
             />
           </>
         ) : null}
-        {role === "bos" || role === "admin" || role === "gudang" || role === "procurement" ? (
+        {isSuper || role === "bos" || role === "admin" || role === "gudang" || role === "procurement" ? (
           <QuickActionButton
             label="Lihat Stok Gudang"
             icon={Boxes}
@@ -232,8 +233,8 @@ export default function DashboardScreen() {
 
   const role = user.role;
 
-  // 1. ADMIN / BOS
-  if (role === "bos") {
+  // 1. SUPER ADMIN / ADMIN / BOS
+  if (role === "super_admin" || role === "admin" || role === "bos") {
     const pipelineVal = data.leads
       .filter((l) => l.status !== "Lost" && l.status !== "Won")
       .reduce((acc, l) => acc + (l.nilai || 0), 0);

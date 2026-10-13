@@ -13,6 +13,7 @@ datasource db {
 // ─────────────────────────────── Enums ───────────────────────────────
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   BOS
   SALES

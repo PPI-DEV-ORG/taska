@@ -65,7 +65,7 @@ export class FollowUpsService {
   async update(id: number, dto: FollowUpDto, user: RequestUser) {
     const row = await this.prisma.main.followUp.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Follow-up tidak ditemukan");
-    if (row.createdById && row.createdById !== user.id && user.role !== "ADMIN") {
+    if (row.createdById && row.createdById !== user.id && !["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
       throw new ForbiddenException("Hanya pencatat follow-up yang boleh mengubahnya");
     }
     const updated = await this.prisma.main.followUp.update({

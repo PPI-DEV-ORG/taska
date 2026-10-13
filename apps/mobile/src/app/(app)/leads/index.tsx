@@ -44,9 +44,9 @@ export default function LeadsScreen() {
 
   const s = q.trim().toLowerCase();
   const leads = data.leads.filter((l) => !s || `${l.nama} ${l.perusahaan}`.toLowerCase().includes(s));
-  const canAdd = ["sales", "pm"].includes(user!.role);
+  const canAdd = ["super_admin", "sales", "pm"].includes(user!.role);
   const canMove = !["bos", "admin"].includes(user!.role);
-  const canDelete = ["sales", "pm", "admin"].includes(user!.role);
+  const canDelete = ["super_admin", "sales", "pm", "admin"].includes(user!.role);
 
   function move(l: Row, dir: -1 | 1) {
     const i = LEAD_STAGES.indexOf(l.status as typeof LEAD_STAGES[number]) + dir;

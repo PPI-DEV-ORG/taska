@@ -9,8 +9,8 @@ import type { RequestUser } from "../common/decorators/current-user.decorator.js
 import type { Project } from "../generated/prisma/client.js";
 import { AssignDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto } from "./dto.js";
 
-const MANAGER_ROLES = ["PM", "ADMIN", "BOS"];
-const MEMBER_ROLES = ["PM", "SE", "TEKNISI"];
+const MANAGER_ROLES = ["PM", "ADMIN", "BOS", "SUPER_ADMIN"];
+const MEMBER_ROLES = ["PM", "SE", "TEKNISI", "SUPER_ADMIN"];
 
 @Injectable()
 export class ProjectsService {
@@ -61,7 +61,7 @@ export class ProjectsService {
   }
 
   async list(q: ProjectListQuery, user: RequestUser) {
-    const scope = ["ADMIN", "BOS"].includes(user.role)
+    const scope = ["SUPER_ADMIN", "ADMIN", "BOS"].includes(user.role)
       ? {}
       : user.role === "PM"
         ? { OR: [{ picId: user.id }, { members: { some: { userId: user.id } } }] }
@@ -365,14 +365,14 @@ export class ProjectsService {
 
   /** PRD #17: Admin memindahkan project ke orang lain. */
   async reassign(id: number, dto: AssignDto, user: RequestUser) {
-    if (!["ADMIN", "BOS"].includes(user.role)) {
+    if (!["SUPER_ADMIN", "ADMIN", "BOS"].includes(user.role)) {
       throw new ForbiddenException("Hanya Admin atau Bos yang boleh memindahkan project");
     }
     const project = await this.prisma.main.project.findUnique({ where: { id } });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     const target = await this.prisma.main.user.findUnique({ where: { id: dto.userId } });
     if (!target) throw new NotFoundException("Tujuan pemindahan tidak ditemukan");
-    if (!["PM", "ADMIN"].includes(target.role)) throw new BadRequestException("PIC project harus berrole PM atau Admin");
+    if (!["PM", "ADMIN", "SUPER_ADMIN"].includes(target.role)) throw new BadRequestException("PIC project harus berrole PM atau Admin");
 
     const updated = await this.prisma.main.project.update({
       where: { id },

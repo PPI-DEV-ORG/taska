@@ -36,7 +36,7 @@ export class SurveysService {
 
   async list(q: PageQuery & { status?: string; leadId?: number }, user: RequestUser) {
     const scope =
-      ["BOS", "ADMIN", "PM"].includes(user.role)
+      ["SUPER_ADMIN", "BOS", "ADMIN", "PM"].includes(user.role)
         ? {}
         : ["TEKNISI", "SE"].includes(user.role)
           ? { members: { some: { userId: user.id } } }
@@ -86,7 +86,7 @@ export class SurveysService {
   }
 
   async create(dto: SurveyDto, user: RequestUser) {
-    if (!["SALES", "PM", "ADMIN", "BOS", "TEKNISI", "SE"].includes(user.role)) {
+    if (!["SUPER_ADMIN", "SALES", "PM", "ADMIN", "BOS", "TEKNISI", "SE"].includes(user.role)) {
       throw new ForbiddenException("Peran Anda tidak boleh membuat permintaan survey");
     }
     const lead = dto.leadId
@@ -164,7 +164,7 @@ export class SurveysService {
     if (!survey) throw new NotFoundException("Survey tidak ditemukan");
 
     const isMember = survey.members.some((m) => m.userId === user.id);
-    const allowed = ["ADMIN", "PM", "BOS", "SALES", "TEKNISI", "SE"].includes(user.role) || isMember || survey.requestedById === user.id;
+    const allowed = ["SUPER_ADMIN", "ADMIN", "PM", "BOS", "SALES", "TEKNISI", "SE"].includes(user.role) || isMember || survey.requestedById === user.id;
     if (!allowed) throw new ForbiddenException("Anda tidak berkepentingan dengan survey ini");
 
     const payload = dto as Partial<SurveyDto> & Partial<SurveyStatusDto> & { memberIds?: number[] };

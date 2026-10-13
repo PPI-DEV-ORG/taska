@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, uploadFile } from "@/services/api";
+import { subscribeNotificationTap } from "@/services/notify";
 import { NAV_BY_ROLE, ROLE_LABEL, type NavItem } from "@/constants/modules";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { colors } from "@/tokens";
@@ -632,7 +633,8 @@ function Topbar({ onMenu, onNotif, onAccount }: { onMenu?: () => void; onNotif: 
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { offline } = useApp();
+  const router = useRouter();
+  const { offline, pendingSyncCount, syncOfflineQueue } = useApp();
   const { bp, isMobile } = useBreakpoint();
   const [expanded, setExpanded] = React.useState(false);
   const [more, setMore] = React.useState(false);
@@ -640,15 +642,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = React.useState(false);
   const compact = bp === "tablet" && !expanded;
 
+  React.useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    void subscribeNotificationTap((href) => {
+      router.push(href as any);
+    }).then((fn) => {
+      cleanup = fn;
+    });
+    return () => {
+      cleanup?.();
+    };
+  }, [router]);
+
   return (
     <View className="bg-background flex-1 flex-row">
       {!isMobile ? <Sidebar compact={compact} onToggle={bp === "tablet" ? () => setExpanded(false) : undefined} /> : null}
       <View className="flex-1">
         <Topbar onMenu={bp === "tablet" ? () => setExpanded((v) => !v) : undefined} onNotif={() => setNotif(true)} onAccount={() => setAccount(true)} />
-        {offline ? (
-          <View className="bg-warning/15 flex-row items-center gap-2 px-4 py-2">
-            <WifiOff size={16} color={colors.warning} />
-            <Text className="text-warning flex-1 text-[13px]">Tidak ada koneksi. Catatan dan laporan akan dikirim saat tersambung</Text>
+        {offline || pendingSyncCount > 0 ? (
+          <View className="bg-warning/15 border-warning/30 border-b flex-row items-center justify-between gap-2 px-4 py-2">
+            <View className="flex-row items-center gap-2 flex-1">
+              <WifiOff size={16} color={colors.warning} />
+              <Text className="text-warning flex-1 text-[13px]">
+                {offline
+                  ? `API sedang offline. Data yang Anda input (${pendingSyncCount} antrean) disimpan di browser & otomatis dikirim saat API online.`
+                  : `Menyinkronkan ${pendingSyncCount} data antrean ke server...`}
+              </Text>
+            </View>
+            {pendingSyncCount > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={() => void syncOfflineQueue()}
+                className="h-7 px-2.5"
+              >
+                <Text className="text-xs">Kirim Sekarang</Text>
+              </Button>
+            ) : null}
           </View>
         ) : null}
         <ScrollView className="flex-1" contentContainerClassName="w-full p-4 pb-12 md:p-6 lg:px-8 lg:py-6">

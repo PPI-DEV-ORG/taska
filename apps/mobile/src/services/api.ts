@@ -89,7 +89,22 @@ export async function clearTokens(): Promise<void> {
   await setTokens(null, null);
 }
 
-export type ApiError = Error & { status?: number; body?: any };
+export type ApiError = Error & { status?: number; body?: any; isNetworkError?: boolean };
+
+export function isNetworkError(err: any): boolean {
+  if (!err) return false;
+  if (err.isNetworkError === true) return true;
+  if (typeof err.status === "number") return false;
+  if (err instanceof TypeError) return true;
+  const msg = String(err.message ?? "").toLowerCase();
+  return (
+    msg.includes("failed to fetch") ||
+    msg.includes("network request failed") ||
+    msg.includes("networkerror") ||
+    msg.includes("load failed") ||
+    msg.includes("fetch failed")
+  );
+}
 
 async function tryRefresh(): Promise<boolean> {
   await hydrateTokens();
@@ -133,7 +148,14 @@ async function once<T>(
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
   }
-  const res = await fetch(`${apiBase()}${path}`, { method, headers, body: payload });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}${path}`, { method, headers, body: payload });
+  } catch (e: any) {
+    const netErr: ApiError = new Error(e?.message || "Tidak dapat terhubung ke server (API Offline)");
+    netErr.isNetworkError = true;
+    throw netErr;
+  }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   let data: any = undefined;
@@ -229,4 +251,56 @@ export async function uploadQuotationExcel(
   }
   return api<any>("POST", `/quotations/${quotationId}/upload-excel`, undefined, { form });
 }
+
+export type MasterImportType = "customer" | "supplier" | "product" | "warehouse" | "stock" | "serial";
+
+/** Upload file Excel/CSV ke /imports?type=... dan kembalikan hasil validasi per baris. */
+export async function uploadMasterImport(
+  type: MasterImportType,
+  file: { uri?: string; name?: string; blob?: Blob },
+): Promise<{
+  type: MasterImportType;
+  total: number;
+  imported: number;
+  failed: Array<{ row: number; error: string; data: Record<string, any> }>;
+}> {
+  const form = new FormData();
+  if (file.blob) {
+    form.append("file", file.blob, file.name || `import-${type}.xlsx`);
+  } else if (file.uri) {
+    form.append("file", {
+      uri: file.uri,
+      name: file.name || `import-${type}.xlsx`,
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    } as any);
+  } else {
+    throw new Error("File tidak valid");
+  }
+  return api("POST", `/imports?type=${type}`, undefined, { form });
+}
+
+/** Unduh PDF kompilasi dokumentasi (survey, project, delivery-note) dari server. */
+export async function downloadDocumentationPdf(
+  kind: "survey" | "project" | "delivery-note",
+  entityId: string | number,
+): Promise<boolean> {
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
+  await hydrateTokens();
+  const token = getAccess();
+  const res = await fetch(`${apiBase()}/documentation/${kind}/${entityId}/pdf`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return false;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `dokumentasi-${kind}-${entityId}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return true;
+}
+
 

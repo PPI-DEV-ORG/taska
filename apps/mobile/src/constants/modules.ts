@@ -26,6 +26,7 @@ import {
 } from "lucide-react-native";
 
 export type Role =
+  | "super_admin"
   | "admin"
   | "bos"
   | "sales"
@@ -37,6 +38,7 @@ export type Role =
   | "se";
 
 export const ROLE_LABEL: Record<Role, string> = {
+  super_admin: "Super Admin",
   admin: "Admin / Bos",
   bos: "Admin / Bos",
   sales: "Sales",
@@ -111,7 +113,7 @@ export type ModuleDef = {
   confirmStatuses?: string[];
 };
 
-const ALL: Role[] = ["admin", "bos", "sales", "pm", "teknisi", "procurement", "finance", "gudang", "se"];
+const ALL: Role[] = ["super_admin", "admin", "bos", "sales", "pm", "teknisi", "procurement", "finance", "gudang", "se"];
 
 export const MODULES: Record<string, ModuleDef> = {
   leads: {
@@ -636,7 +638,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "name", label: "Nama lengkap", type: "text", required: true, placeholder: "Masukkan nama lengkap" },
       { key: "email", label: "Email", type: "text", required: true, placeholder: "nama@taska.co.id" },
       { key: "password", label: "Kata sandi", type: "password", required: true, placeholder: "Masukkan kata sandi akun" },
-      { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Admin / Bos", "Sales", "Project Manager", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
+      { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Super Admin", "Admin / Bos", "Sales", "Project Manager", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
       { key: "phone", label: "Nomor telepon", type: "text", placeholder: "0812-xxxx-xxxx" },
       { key: "position", label: "Jabatan", type: "text", placeholder: "Contoh: Senior Engineer" },
       { key: "gudang", label: "Gudang ditugaskan (Opsional)", type: "select", options: ["-"] },
@@ -694,6 +696,12 @@ const N = {
 } satisfies Record<string, NavItem>;
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
+  super_admin: [
+    N.dashboard, N.approvals, N.leads, N.quotations, N.surveys, N.customers,
+    N.projects, N.tasks, N.requests, N.supplierPos, N.shipments, N.receiving,
+    N.stock, N.opname, N.delivery, N.poClient, N.invoices, N.expenses,
+    N.damage, N.reports, N.master, N.users, N.archive, N.audit,
+  ],
   admin: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.projects, N.invoices, N.stock, N.reports, N.archive, N.audit],
   bos: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.projects, N.invoices, N.stock, N.reports, N.archive, N.audit],
   sales: [N.dashboard, N.leads, N.quotations, N.surveys, N.customers, N.master],
@@ -705,5 +713,5 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   se: [N.dashboard, N.myProjects, N.tasks, N.surveys, N.delivery, N.expenses],
 };
 
-export const CAN_APPROVE: Role[] = ["bos", "finance"];
+export const CAN_APPROVE: Role[] = ["super_admin", "bos", "finance"];
 

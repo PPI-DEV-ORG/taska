@@ -1,5 +1,6 @@
 import { Injectable, OnApplicationShutdown, OnModuleInit } from "@nestjs/common";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import * as bcrypt from "bcryptjs";
 import { PrismaClient } from "../generated/prisma/client.js";
 
 function makeClient(urlEnv: string): PrismaClient {
@@ -11,6 +12,8 @@ function makeClient(urlEnv: string): PrismaClient {
   }
   return new PrismaClient({ adapter: new PrismaMariaDb(u.toString()) });
 }
+
+const ROLE_ENUM_SQL = "ENUM('SUPER_ADMIN','ADMIN','BOS','SALES','PM','TEKNISI','PROCUREMENT','FINANCE','GUDANG','SE')";
 
 /**
  * Dua instance Prisma dengan klien yang sama:
@@ -27,8 +30,34 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
     this.archive = makeClient("ARCHIVE_DATABASE_URL");
   }
 
+  private async ensureRoleEnums(db: PrismaClient) {
+    try {
+      await db.$executeRawUnsafe(`ALTER TABLE \`User\` MODIFY COLUMN \`role\` ${ROLE_ENUM_SQL} NOT NULL`);
+      await db.$executeRawUnsafe(`ALTER TABLE \`Notification\` MODIFY COLUMN \`targetRole\` ${ROLE_ENUM_SQL} NULL`);
+      await db.$executeRawUnsafe(`ALTER TABLE \`ApprovalStep\` MODIFY COLUMN \`approverRole\` ${ROLE_ENUM_SQL} NOT NULL`);
+    } catch {}
+  }
+
   async onModuleInit() {
     await Promise.all([this.main.$connect(), this.archive.$connect()]);
+    await Promise.allSettled([this.ensureRoleEnums(this.main), this.ensureRoleEnums(this.archive)]);
+    try {
+      const existing = await this.main.user.findUnique({ where: { email: "superadmin@taska.co.id" } });
+      if (!existing) {
+        const passwordHash = await bcrypt.hash("taska123", 10);
+        await this.main.user.create({
+          data: {
+            email: "superadmin@taska.co.id",
+            name: "Super Admin",
+            role: "SUPER_ADMIN",
+            position: "Super Administrator",
+            department: "IT / Direksi",
+            phone: "0811-0000-0000",
+            passwordHash,
+          },
+        });
+      }
+    } catch {}
   }
 
   async onApplicationShutdown() {

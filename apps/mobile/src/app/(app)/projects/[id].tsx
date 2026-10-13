@@ -132,7 +132,7 @@ export default function ProjectDetailScreen() {
               <Trash2 size={14} color={colors.danger} />
               <Text className="text-danger">Hapus</Text>
             </Button>
-            {project.status !== "Selesai" && (user?.role === "pm" || user?.role === "bos" || user?.role === "admin") ? (
+            {project.status !== "Selesai" && (user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "admin") ? (
               <Button size="sm" onPress={markCompleted}>
                 <Text>Selesaikan Project</Text>
               </Button>
