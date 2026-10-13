@@ -61,3 +61,35 @@ export function daysFromNow(offset: number): string {
 export function hoursAgo(h: number): string {
   return new Date(NOW.getTime() - h * 3600_000).toISOString();
 }
+
+/** Bersihkan nomor HP menjadi format standar internasional 628xxx (tanpa +, tanpa spasi) */
+export function cleanPhone(raw?: string | null): string {
+  if (!raw) return "";
+  let digits = String(raw).replace(/\D/g, "");
+  if (digits.startsWith("0")) {
+    digits = "62" + digits.slice(1);
+  } else if (digits.startsWith("8")) {
+    digits = "62" + digits;
+  }
+  return digits;
+}
+
+/** Format tampilan nomor telepon: +62 812-3456-7890 */
+export function formatPhone(raw?: string | null): string {
+  const p = cleanPhone(raw);
+  if (!p) return raw ? String(raw) : "-";
+  if (p.startsWith("62") && p.length >= 10) {
+    const rest = p.slice(2);
+    const p1 = rest.slice(0, 3);
+    const p2 = rest.slice(3, 7);
+    const p3 = rest.slice(7);
+    return `+62 ${p1}-${p2}${p3 ? `-${p3}` : ""}`;
+  }
+  return `+${p}`;
+}
+
+/** Buat link WhatsApp langsung: https://wa.me/628xxx */
+export function waLink(raw?: string | null): string {
+  const p = cleanPhone(raw);
+  return p ? `https://wa.me/${p}` : "";
+}

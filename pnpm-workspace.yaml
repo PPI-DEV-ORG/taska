@@ -3,6 +3,8 @@ packages:
   - "packages/*"
 allowBuilds:
   "@prisma/engines": true
+  '@whiskeysockets/baileys': true
   esbuild: true
   prisma: true
+  protobufjs: true
   unrs-resolver: true

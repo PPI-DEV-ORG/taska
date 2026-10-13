@@ -75,7 +75,7 @@ export type Notif = {
   roles: Role[] | "all";
 };
 
-export type Fmt = "rupiah" | "date" | "status" | "pct" | "text" | "number";
+export type Fmt = "rupiah" | "date" | "status" | "pct" | "text" | "number" | "phone" | "email";
 export type Col = { key: string; label: string; fmt?: Fmt; primary?: boolean; mobile?: boolean; flex?: number; width?: number | string };
 export type Field = { label: string; key: string; fmt?: Fmt };
 export type CreateField = {

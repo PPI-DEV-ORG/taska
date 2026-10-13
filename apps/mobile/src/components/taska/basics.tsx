@@ -1,13 +1,13 @@
 import * as React from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, View, Linking } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Inbox, RefreshCw, type LucideIcon } from "lucide-react-native";
+import { ArrowLeft, Inbox, RefreshCw, MessageSquare, Mail, type LucideIcon } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
 import { cn } from "@/lib/utils";
-import { number, rupiah, tanggal, waktuRelatif } from "@/lib/format";
+import { number, rupiah, tanggal, waktuRelatif, formatPhone, waLink } from "@/lib/format";
 import { colors, toneColor, type Tone } from "@/tokens";
 import type { Fmt } from "@/constants/modules";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
@@ -204,13 +204,59 @@ export function EmptyState({
 }
 
 export function Cell({ fmt, value }: { fmt?: Fmt; value: any }) {
+  if (value === undefined || value === null || value === "") {
+    return <Text className="text-sm text-muted-foreground">-</Text>;
+  }
+
+  const str = String(value);
+
+  // Auto-deteksi jika field email (mengandung @ dan .)
+  if (fmt === "email" || (!fmt && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str))) {
+    return (
+      <Pressable
+        onPress={() => Linking.openURL(`mailto:${str}`).catch(() => {})}
+        className="flex-row items-center gap-1.5 self-start py-0.5"
+      >
+        <Mail size={13} color="#2563eb" />
+        <Text className="text-sm text-blue-600 dark:text-blue-400 underline" numberOfLines={1}>
+          {str}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  // Auto-deteksi jika field telepon/WA (format 'phone' atau pola angka nomor HP)
+  const isPhoneNumber =
+    fmt === "phone" ||
+    (!fmt &&
+      /^(\+?62|08|8)[0-9\-\s]{8,15}$/.test(str.trim()) &&
+      !isNaN(Number(str.replace(/[\s\-\+]/g, ""))));
+
+  if (isPhoneNumber) {
+    const formatted = formatPhone(str);
+    const link = waLink(str);
+    return (
+      <Pressable
+        onPress={() => {
+          if (link) Linking.openURL(link).catch(() => {});
+        }}
+        className="flex-row items-center gap-1.5 self-start py-0.5"
+      >
+        <MessageSquare size={13} color="#16a34a" />
+        <Text className="text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:underline" numberOfLines={1}>
+          {formatted}
+        </Text>
+      </Pressable>
+    );
+  }
+
   switch (fmt) {
-    case "rupiah": return <Text className="text-sm" numberOfLines={1}>{rupiah(value)}</Text>;
+    case "rupiah": return <Text className="text-sm font-medium" numberOfLines={1}>{rupiah(value)}</Text>;
     case "date": return <Text className="text-sm" numberOfLines={1}>{tanggal(value)}</Text>;
     case "pct": return <Text className="text-sm" numberOfLines={1}>{value}%</Text>;
     case "number": return <Text className="text-sm" numberOfLines={1}>{number(Number(value))}</Text>;
-    case "status": return value ? <StatusBadge status={String(value)} /> : <Text className="text-sm">-</Text>;
-    default: return <Text className="text-sm" numberOfLines={1} ellipsizeMode="tail">{value === undefined || value === "" ? "-" : String(value)}</Text>;
+    case "status": return <StatusBadge status={str} />;
+    default: return <Text className="text-sm" numberOfLines={1} ellipsizeMode="tail">{str}</Text>;
   }
 }
 
