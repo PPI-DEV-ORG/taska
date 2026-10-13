@@ -8,12 +8,12 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        panel: "#2D2B28",
+        panel: "hsl(var(--panel))",
         success: "#4CC38A",
         warning: "#F2B63C",
         danger: "#EF5350",
         info: "#4DA3FF",
-        "text-secondary": "#B5AFA3",
+        "text-secondary": "hsl(var(--text-secondary))",
         "primary-hover": "#FF7A45",
         "primary-pressed": "#D14E1C",
         border: "hsl(var(--border))",

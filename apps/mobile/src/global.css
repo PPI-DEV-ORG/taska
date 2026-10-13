@@ -2,9 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Taska: mode gelap saja. Nilai HSL dari token di Prompt Prototype UI. */
 @layer base {
-  :root,
+  :root {
+    --background: 40 23% 97%;
+    --foreground: 30 10% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 30 10% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 10% 10%;
+    --panel: 38 17% 93%;
+    --text-secondary: 34 6% 34%;
+    --primary: 17 83% 54%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 38 17% 93%;
+    --secondary-foreground: 30 10% 10%;
+    --muted: 38 17% 93%;
+    --muted-foreground: 35 6% 45%;
+    --accent: 38 17% 93%;
+    --accent-foreground: 30 10% 10%;
+    --destructive: 1 83% 63%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 38 14% 85%;
+    --input: 38 17% 93%;
+    --ring: 17 83% 54%;
+    --radius: 0.625rem;
+    --chart-1: 17 83% 54%;
+    --chart-2: 210 100% 65%;
+    --chart-3: 151 50% 53%;
+    --chart-4: 40 88% 59%;
+    --chart-5: 255 90% 76%;
+  }
+
+  .dark,
   .dark:root {
     --background: 30 4% 9%;
     --foreground: 42 28% 93%;
@@ -12,8 +41,10 @@
     --card-foreground: 42 28% 93%;
     --popover: 40 4% 13%;
     --popover-foreground: 42 28% 93%;
+    --panel: 36 6% 17%;
+    --text-secondary: 40 11% 67%;
     --primary: 17 83% 54%;
-    --primary-foreground: 30 4% 9%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 36 6% 17%;
     --secondary-foreground: 42 28% 93%;
     --muted: 36 6% 17%;
@@ -21,7 +52,7 @@
     --accent: 36 6% 17%;
     --accent-foreground: 42 28% 93%;
     --destructive: 1 83% 63%;
-    --destructive-foreground: 30 4% 9%;
+    --destructive-foreground: 0 0% 100%;
     --border: 40 5% 22%;
     --input: 36 6% 17%;
     --ring: 17 83% 54%;
@@ -34,10 +65,10 @@
   }
 }
 
-/* Custom Scrollbar Styling (Dark Background & Orange Thumb) */
+/* Custom Scrollbar Styling (Adapts to Light/Dark & Orange Thumb) */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #EB5E28 #191817;
+  scrollbar-color: #EB5E28 hsl(var(--background));
 }
 
 ::-webkit-scrollbar {
@@ -46,14 +77,14 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #191817;
+  background: hsl(var(--background));
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #EB5E28;
   border-radius: 9999px;
-  border: 2px solid #191817;
+  border: 2px solid hsl(var(--background));
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -61,5 +92,6 @@
 }
 
 ::-webkit-scrollbar-corner {
-  background: #191817;
+  background: hsl(var(--background));
 }
+
