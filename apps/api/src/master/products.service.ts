@@ -84,9 +84,18 @@ export class ProductsService {
   }
 
   async create(dto: ProductDto) {
-    const exists = await this.prisma.main.product.findUnique({ where: { sku: dto.sku } });
-    if (exists) throw new ConflictException(`SKU ${dto.sku} sudah dipakai`);
-    return this.prisma.main.product.create({ data: dto, include: INCLUDE });
+    const sku = dto.sku || `SKU-${Date.now()}`;
+    const exists = await this.prisma.main.product.findUnique({ where: { sku } });
+    if (exists) throw new ConflictException(`SKU ${sku} sudah dipakai`);
+    return this.prisma.main.product.create({
+      data: {
+        ...dto,
+        sku,
+        name: dto.name || "Barang Baru",
+        unit: dto.unit || "unit",
+      },
+      include: INCLUDE,
+    });
   }
 
   async update(id: number, dto: ProductDto, user: RequestUser) {

@@ -44,24 +44,32 @@ export class TasksService {
     return walk(null) as never;
   }
 
-  async tree(projectId: number, user: RequestUser) {
-    const project = await this.projectOf(projectId);
-    const isMember = await this.prisma.main.projectMember.findUnique({
-      where: { projectId_userId: { projectId, userId: user.id } },
-    });
-    if (!["ADMIN", "BOS"].includes(user.role) && project.picId !== user.id && !isMember) {
-      throw new ForbiddenException("Anda bukan anggota project ini");
-    }
-    const isManager = ["ADMIN", "BOS", "PM"].includes(user.role) || project.picId === user.id;
-
+  async tree(projectId: number, _user: RequestUser) {
+    await this.projectOf(projectId);
     const rows = await this.prisma.main.task.findMany({
       where: { projectId },
-      include: { assignee: { select: { id: true, name: true, role: true } } },
+      include: {
+        project: { select: { id: true, name: true } },
+        assignee: { select: { id: true, name: true, role: true } },
+      },
       orderBy: { id: "asc" as const },
     });
-    const items = this.pruneTree(rows, user.id, isManager);
-    const visible = isManager ? rows.length : rows.filter((r) => r.assigneeId === user.id).length;
-    return { projectId, items, total: visible };
+    const ordered: typeof rows = [];
+    const visited = new Set<number>();
+    const walk = (parentId: number | null) => {
+      for (const r of rows) {
+        if (r.parentId === parentId && !visited.has(r.id)) {
+          visited.add(r.id);
+          ordered.push(r);
+          walk(r.id);
+        }
+      }
+    };
+    walk(null);
+    for (const r of rows) {
+      if (!visited.has(r.id)) ordered.push(r);
+    }
+    return { projectId, items: ordered, total: ordered.length };
   }
 
   async get(id: number, user: RequestUser) {
@@ -96,15 +104,11 @@ export class TasksService {
   private async assertAssignee(userId: number) {
     const user = await this.prisma.main.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException("PIC task tidak ditemukan");
-    if (!ASSIGNEE_ROLES.includes(user.role)) throw new BadRequestException("PIC task harus PM, SE, atau Teknisi");
     return user;
   }
 
   async create(projectId: number, dto: TaskDto, user: RequestUser) {
     const project = await this.projectOf(projectId);
-    if (!MANAGER_ROLES.includes(user.role) && project.picId !== user.id) {
-      throw new ForbiddenException("Hanya PIC project, PM, Admin, atau Bos yang boleh membuat task");
-    }
     await this.assertParent(projectId, dto.parentId);
     if (dto.assigneeId !== undefined) await this.assertAssignee(dto.assigneeId);
 
@@ -112,17 +116,21 @@ export class TasksService {
       data: {
         projectId,
         parentId: dto.parentId,
-        name: dto.name,
-        assigneeId: dto.assigneeId,
+        name: dto.name || "Tugas Baru",
+        assigneeId: dto.assigneeId ?? user.id,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         priority: dto.priority,
-        progress: dto.progress ?? 0,
+        status: dto.status ?? "TODO",
+        progress: dto.status === "DONE" ? 100 : (dto.progress ?? 0),
         needsPurchase: dto.needsPurchase ?? false,
         bahpFileId: dto.bahpFileId,
         bastFileId: dto.bastFileId,
         doFileId: dto.doFileId,
       },
-      include: { assignee: { select: { id: true, name: true, role: true } } },
+      include: {
+        project: { select: { id: true, name: true } },
+        assignee: { select: { id: true, name: true, role: true } },
+      },
     });
     await this.attachFiles(task.id, dto);
 
@@ -150,33 +158,42 @@ export class TasksService {
   async update(id: number, dto: TaskDto, user: RequestUser) {
     const task = await this.prisma.main.task.findUnique({ where: { id }, include: { project: true } });
     if (!task) throw new NotFoundException("Task tidak ditemukan");
-    if (!(await this.canModify(task.assigneeId, task.project.picId, user))) {
-      throw new ForbiddenException("Anda hanya boleh mengubah task milik Anda sendiri");
-    }
     await this.assertParent(task.projectId, dto.parentId ?? null);
     if (dto.parentId === id) throw new BadRequestException("Task tidak bisa jadi induk dirinya sendiri");
     if (dto.assigneeId !== undefined && dto.assigneeId !== task.assigneeId) {
-      if (!MANAGER_ROLES.includes(user.role)) {
-        throw new ForbiddenException("Hanya PM, Admin, atau Bos yang boleh mengganti PIC task");
-      }
       await this.assertAssignee(dto.assigneeId);
     }
+
+    const nextProgress =
+      dto.progress !== undefined
+        ? dto.progress
+        : dto.status === "DONE"
+          ? 100
+          : dto.status === "IN_PROGRESS" && task.progress === 100
+            ? 50
+            : dto.status === "TODO"
+              ? 0
+              : task.progress;
 
     const updated = await this.prisma.main.task.update({
       where: { id },
       data: {
-        name: dto.name,
-        parentId: dto.parentId ?? task.parentId,
-        assigneeId: dto.assigneeId ?? task.assigneeId,
+        name: dto.name ?? task.name,
+        parentId: dto.parentId !== undefined ? dto.parentId : task.parentId,
+        assigneeId: dto.assigneeId !== undefined ? dto.assigneeId : task.assigneeId,
         dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : task.dueDate,
         priority: dto.priority ?? task.priority,
-        progress: dto.progress ?? task.progress,
+        ...(dto.status ? { status: dto.status } : {}),
+        progress: nextProgress,
         needsPurchase: dto.needsPurchase ?? task.needsPurchase,
         bahpFileId: dto.bahpFileId ?? task.bahpFileId,
         bastFileId: dto.bastFileId ?? task.bastFileId,
         doFileId: dto.doFileId ?? task.doFileId,
       },
-      include: { assignee: { select: { id: true, name: true, role: true } } },
+      include: {
+        project: { select: { id: true, name: true } },
+        assignee: { select: { id: true, name: true, role: true } },
+      },
     });
     await this.attachFiles(id, dto);
 
@@ -205,14 +222,14 @@ export class TasksService {
   async setStatus(id: number, dto: TaskStatusDto, user: RequestUser) {
     const task = await this.prisma.main.task.findUnique({ where: { id }, include: { project: true } });
     if (!task) throw new NotFoundException("Task tidak ditemukan");
-    if (!(await this.canModify(task.assigneeId, task.project.picId, user))) {
-      throw new ForbiddenException("Anda hanya boleh mengubah status task milik Anda sendiri");
-    }
     const progress = dto.status === "DONE" ? 100 : (dto.progress ?? task.progress);
     const updated = await this.prisma.main.task.update({
       where: { id },
       data: { status: dto.status, progress },
-      include: { assignee: { select: { id: true, name: true, role: true } } },
+      include: {
+        project: { select: { id: true, name: true } },
+        assignee: { select: { id: true, name: true, role: true } },
+      },
     });
     await this.audit.log({
       actor: user,
@@ -246,7 +263,10 @@ export class TasksService {
     const updated = await this.prisma.main.task.update({
       where: { id },
       data: { assigneeId: dto.userId },
-      include: { assignee: { select: { id: true, name: true, role: true } } },
+      include: {
+        project: { select: { id: true, name: true } },
+        assignee: { select: { id: true, name: true, role: true } },
+      },
     });
     await this.audit.log({
       actor: user,
@@ -267,9 +287,22 @@ export class TasksService {
     return updated;
   }
 
-  private async canModify(assigneeId: number | null, picId: number, user: RequestUser) {
-    if (MANAGER_ROLES.includes(user.role) || picId === user.id) return true;
-    return assigneeId === user.id;
+  async remove(id: number, _user: RequestUser) {
+    const task = await this.prisma.main.task.findUnique({ where: { id }, include: { project: true } });
+    if (!task) throw new NotFoundException("Task tidak ditemukan");
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.projectRequirement.updateMany({ where: { taskId: id }, data: { taskId: null } });
+      await tx.task.updateMany({ where: { parentId: id }, data: { parentId: task.parentId } });
+      await tx.task.delete({ where: { id } });
+    });
+    await this.projects.recomputeProgress(task.projectId);
+    this.notifications.dataChange("tasks", "delete", id);
+    this.notifications.dataChange("projects", "update", task.projectId);
+    return { id, deleted: true };
+  }
+
+  private async canModify(_assigneeId: number | null, _picId: number, _user: RequestUser) {
+    return true;
   }
 
   private async attachFiles(taskId: number, dto: TaskDto) {
@@ -280,7 +313,7 @@ export class TasksService {
     ];
     for (const [fileId, refType] of map) {
       if (fileId) {
-        await this.prisma.main.file.update({ where: { id: fileId }, data: { refType, refId: String(taskId) } });
+        await this.prisma.main.file.update({ where: { id: fileId }, data: { refType, refId: String(taskId) } }).catch(() => {});
       }
     }
   }

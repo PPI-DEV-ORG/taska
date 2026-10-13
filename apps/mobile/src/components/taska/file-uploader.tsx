@@ -29,7 +29,8 @@ const LIMIT: Record<UploadKind, string> = {
 
 const ACCEPT: Record<Exclude<UploadKind, "semua">, string> = {
   foto: "image/png,image/jpeg,image/webp",
-  dokumen: "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip",
+  dokumen:
+    ".xlsx,.xls,.pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip",
   video: "video/mp4,video/x-matroska",
 };
 
@@ -54,6 +55,7 @@ type Props = {
   kind?: UploadKind;
   required?: boolean;
   onChange?: (n: number) => void;
+  onFilePicked?: (file: { name: string; blob?: Blob; uri?: string }) => void | Promise<void>;
   multiple?: boolean;
   handleRef?: (h: FileUploaderHandle | null) => void;
   /** true = unggah langsung saat dipilih (konsumen tanpa tombol Simpan). default: staged sampai flush(). */
@@ -61,7 +63,7 @@ type Props = {
 };
 
 export function FileUploader({
-  label, kind = "semua", required, onChange, multiple = false, handleRef, autoFlush = false,
+  label, kind = "semua", required, onChange, onFilePicked, multiple = false, handleRef, autoFlush = false,
 }: Props) {
   const { toast, offline } = useApp();
   const [staged, setStaged] = React.useState<StagedFile[]>([]);
@@ -95,7 +97,11 @@ export function FileUploader({
       prevLenRef.current = prev.length + 1;
       return [...prev, entry];
     });
-    if (autoFlush) void flushOne(entry);
+    if (onFilePicked) {
+      void onFilePicked({ name: entry.name, blob: entry.blob, uri: entry.uri });
+    } else if (autoFlush) {
+      void flushOne(entry);
+    }
   }
 
   function remove(id: number) {

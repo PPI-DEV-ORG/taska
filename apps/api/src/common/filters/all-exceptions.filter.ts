@@ -1,5 +1,5 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { Prisma } from "../../generated/prisma/client.js";
 
 @Catch()
@@ -7,11 +7,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost) {
-    const res = host.switchToHttp().getResponse<Response>();
+    const ctx = host.switchToHttp();
+    const req = ctx.getRequest<Request>();
+    const res = ctx.getResponse<Response>();
+    const route = `${req.method} ${req.originalUrl}`;
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
+      const detail = typeof body === "string" ? body : JSON.stringify(body);
+      if (status >= 500) {
+        this.logger.error(`[${status}] ${route} — ${detail}`, exception.stack);
+      } else {
+        this.logger.warn(`[${status}] ${route} — ${detail}`);
+      }
       return res.status(status).json(typeof body === "string" ? { statusCode: status, message: body } : body);
     }
 
@@ -23,15 +32,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
         P2007: { status: 409, message: "Operasi database gagal" },
       };
       const mapped = map[exception.code] ?? { status: 400, message: `Database error ${exception.code}` };
+      this.logger.error(
+        `[Prisma ${exception.code}] ${route} — ${exception.message} meta=${JSON.stringify(exception.meta ?? {})}`,
+      );
       return res.status(mapped.status).json({ statusCode: mapped.status, message: mapped.message, code: exception.code });
     }
 
     const message = exception instanceof Error ? exception.message : "Terjadi kesalahan";
-    if (!(exception instanceof Error) || !["TypeError", "RangeError"].includes(exception.name)) {
-      this.logger.error(message, exception instanceof Error ? exception.stack : "");
-    } else {
-      this.logger.error(message);
-    }
+    this.logger.error(`[500] ${route} — ${message}`, exception instanceof Error ? exception.stack : "");
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: "Terjadi kesalahan pada server",

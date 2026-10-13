@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put } from "@nestjs/common";
 import { TasksService } from "./tasks.service.js";
 import { AssignDto, TaskDto, TaskStatusDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
@@ -41,6 +41,12 @@ export class TasksController {
     return this.service.update(id, dto, user);
   }
 
+  @Patch(":id")
+  @Require("tasks", "U")
+  patch(@Param("id", ParseIntPipe) id: number, @Body() dto: TaskDto, @CurrentUser() user: RequestUser) {
+    return this.service.update(id, dto, user);
+  }
+
   @Post(":id/status")
   @Require("tasks", "U")
   setStatus(@Param("id", ParseIntPipe) id: number, @Body() dto: TaskStatusDto, @CurrentUser() user: RequestUser) {
@@ -51,5 +57,11 @@ export class TasksController {
   @Require("tasks", "U")
   reassign(@Param("id", ParseIntPipe) id: number, @Body() dto: AssignDto, @CurrentUser() user: RequestUser) {
     return this.service.reassign(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Require("tasks", "U")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
   }
 }

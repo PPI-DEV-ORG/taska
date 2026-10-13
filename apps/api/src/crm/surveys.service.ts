@@ -86,36 +86,44 @@ export class SurveysService {
   }
 
   async create(dto: SurveyDto, user: RequestUser) {
-    if (!["SALES", "PM", "ADMIN"].includes(user.role)) {
+    if (!["SALES", "PM", "ADMIN", "BOS", "TEKNISI", "SE"].includes(user.role)) {
       throw new ForbiddenException("Peran Anda tidak boleh membuat permintaan survey");
     }
-    const lead = await this.assertLeadExists(dto.leadId);
-    const isSales = user.role === "SALES";
+    const lead = dto.leadId
+      ? await this.assertLeadExists(dto.leadId)
+      : await this.prisma.main.lead.findFirst({ orderBy: { id: "desc" } });
+    if (!lead) throw new NotFoundException("Lead tidak ditemukan");
 
-    const memberIds = (dto.memberIds ?? []).filter((id) => id !== user.id);
-    if (memberIds.length) {
+    const isSales = user.role === "SALES";
+    const location = dto.location || "-";
+
+    const requestedMemberIds = (dto.memberIds ?? []).filter((id) => id !== user.id);
+    let memberIds: number[] = [];
+    if (requestedMemberIds.length) {
       const members = await this.prisma.main.user.findMany({
-        where: { id: { in: memberIds }, status: "AKTIF", role: { in: MEMBER_ROLES as never } },
+        where: { id: { in: requestedMemberIds }, status: "AKTIF" },
         select: { id: true },
       });
-      if (members.length !== memberIds.length) {
-        throw new BadRequestException("Anggota tim survey harus berstatus aktif dan berperan PM/Teknisi/SE");
-      }
+      memberIds = members.map((m) => m.id);
     }
 
     const survey = await this.prisma.main.survey.create({
       data: {
-        leadId: dto.leadId,
-        location: dto.location,
+        leadId: lead.id,
+        location,
         need: dto.need,
         notes: dto.notes,
         scheduleAt: dto.scheduleAt ? new Date(dto.scheduleAt) : undefined,
         cost: dto.cost ?? 0,
-        status: isSales ? "DIMINTA" : dto.scheduleAt ? "DIJADWALKAN" : "BERJALAN",
+        status: dto.status ?? (isSales ? "DIMINTA" : dto.scheduleAt ? "DIJADWALKAN" : "BERJALAN"),
         requestedById: user.id,
         members: { create: [{ userId: user.id }, ...memberIds.map((userId) => ({ userId }))] },
       },
-      include: { members: { include: { user: { select: { id: true, name: true, role: true } } } } },
+      include: {
+        lead: { select: { id: true, name: true, customer: { select: { name: true } } } },
+        requester: { select: { id: true, name: true, role: true } },
+        members: { include: { user: { select: { id: true, name: true, role: true } } } },
+      },
     });
 
     await this.audit.log({
@@ -123,23 +131,23 @@ export class SurveysService {
       action: "BUAT_SURVEY",
       entityType: "survey",
       entityId: survey.id,
-      detail: `${lead.name} — ${dto.location}`,
+      detail: `${lead.name} — ${location}`,
     });
 
     if (isSales) {
       await this.approvals.request({
         kind: "PERMINTAAN_SURVEY",
         entityId: survey.id,
-        title: `Permintaan survey: ${lead.name} (${dto.location})`,
+        title: `Permintaan survey: ${lead.name} (${location})`,
         amount: 0,
         requestedBy: user,
         href: `/surveys/${survey.id}`,
       });
-    } else {
+    } else if (memberIds.length) {
       await this.notifications.notify({
         userIds: memberIds,
         kind: "LEAD",
-        text: `Anda ditugaskan ke survey: ${lead.name} — ${dto.location}`,
+        text: `Anda ditugaskan ke survey: ${lead.name} — ${location}`,
         href: `/surveys/${survey.id}`,
       });
     }
@@ -156,34 +164,35 @@ export class SurveysService {
     if (!survey) throw new NotFoundException("Survey tidak ditemukan");
 
     const isMember = survey.members.some((m) => m.userId === user.id);
-    const allowed = ["ADMIN", "PM", "BOS"].includes(user.role) || isMember;
+    const allowed = ["ADMIN", "PM", "BOS", "SALES", "TEKNISI", "SE"].includes(user.role) || isMember || survey.requestedById === user.id;
     if (!allowed) throw new ForbiddenException("Anda tidak berkepentingan dengan survey ini");
 
     const payload = dto as Partial<SurveyDto> & Partial<SurveyStatusDto> & { memberIds?: number[] };
 
-    if (payload.memberIds && ["ADMIN", "PM"].includes(user.role)) {
+    if (payload.memberIds) {
       const valid = await this.prisma.main.user.findMany({
-        where: { id: { in: payload.memberIds }, status: "AKTIF", role: { in: MEMBER_ROLES as never } },
+        where: { id: { in: payload.memberIds }, status: "AKTIF" },
         select: { id: true },
       });
-      if (valid.length !== payload.memberIds.length) {
-        throw new BadRequestException("Anggota tim survey tidak valid");
+      const validIds = valid.map((u) => u.id);
+      if (validIds.length) {
+        await this.prisma.main.surveyMember.deleteMany({ where: { surveyId: id } });
+        await this.prisma.main.surveyMember.createMany({
+          data: validIds.map((userId) => ({ surveyId: id, userId })),
+        });
+        await this.notifications.notify({
+          userIds: validIds,
+          kind: "LEAD",
+          text: `Anda ditugaskan ke survey #${id}`,
+          href: `/surveys/${id}`,
+        });
       }
-      await this.prisma.main.surveyMember.deleteMany({ where: { surveyId: id } });
-      await this.prisma.main.surveyMember.createMany({
-        data: payload.memberIds.map((userId) => ({ surveyId: id, userId })),
-      });
-      await this.notifications.notify({
-        userIds: payload.memberIds,
-        kind: "LEAD",
-        text: `Anda ditugaskan ke survey #${id}`,
-        href: `/surveys/${id}`,
-      });
     }
 
     const updated = await this.prisma.main.survey.update({
       where: { id },
       data: {
+        ...(payload.leadId ? { leadId: payload.leadId } : {}),
         ...(payload.location ? { location: payload.location } : {}),
         ...(payload.need !== undefined ? { need: payload.need } : {}),
         ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
@@ -257,5 +266,24 @@ export class SurveysService {
       detail: file.originalName,
     });
     return { ok: true, fileId };
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const survey = await this.prisma.main.survey.findUnique({ where: { id } });
+    if (!survey) throw new NotFoundException("Survey tidak ditemukan");
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.approval.deleteMany({ where: { kind: "PERMINTAAN_SURVEY", entityId: id } });
+      await tx.surveyMember.deleteMany({ where: { surveyId: id } });
+      await tx.survey.delete({ where: { id } });
+    });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_SURVEY",
+      entityType: "survey",
+      entityId: id,
+      detail: `Survey #${id} dihapus`,
+    });
+    this.notifications.dataChange("surveys", "delete", id);
+    return { id, deleted: true };
   }
 }

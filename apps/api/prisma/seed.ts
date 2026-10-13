@@ -4,7 +4,11 @@ import bcrypt from "bcryptjs";
 
 function adapter(url: string | undefined) {
   if (!url) throw new Error("DATABASE_URL tidak di-set");
-  return new PrismaMariaDb(url);
+  const u = new URL(url);
+  if (!u.searchParams.has("allowPublicKeyRetrieval")) {
+    u.searchParams.set("allowPublicKeyRetrieval", "true");
+  }
+  return new PrismaMariaDb(u.toString());
 }
 
 async function main() {
@@ -25,32 +29,20 @@ async function main() {
     },
   });
 
-  const settings: Array<{ key: string; value: string; description: string }> = [
-    { key: "ambang.persetujuan", value: "10000000", description: "Ambang persetujuan lapis kedua (Rp)" },
-    { key: "ppn.persen", value: "11", description: "PPN (%)" },
-    { key: "nomor.penawaran", value: "PNW/YYYY/MM/NNN", description: "Format nomor penawaran" },
-    { key: "nomor.clientPO", value: "POC/YYYY/MM/NNN", description: "Format nomor Client PO" },
-    { key: "nomor.permintaan", value: "PNJ/YYYY/MM/NNN", description: "Format nomor permintaan pengadaan" },
-    { key: "nomor.pesanan", value: "POD/YYYY/MM/NNN", description: "Format nomor pesanan pembelian" },
-    { key: "nomor.suratJalan", value: "SJN/YYYY/MM/NNN", description: "Format nomor surat jalan" },
-    { key: "nomor.penerimaan", value: "RCP/YYYY/MM/NNN", description: "Format nomor penerimaan" },
-    { key: "nomor.pelanggan", value: "INV/YYYY/MM/NNN", description: "Format nomor invoice pelanggan" },
-    { key: "nomor.supplier", value: "RNC/YYYY/MM/NNN", description: "Format nomor invoice supplier" },
-    { key: "nomor.proyek", value: "PRJ/YYYY/NNN", description: "Format nomor proyek" },
-    { key: "upload.maksimal.foto", value: "5242880", description: "Batas foto (5 MB)" },
-    { key: "upload.maksimal.dokumen", value: "15728640", description: "Batas dokumen (15 MB)" },
-    { key: "upload.maksimal.video", value: "26214400", description: "Batas video (25 MB)" },
-  ];
+  const admin = await prisma.user.upsert({
+    where: { email: "admin@taska.co.id" },
+    update: { passwordHash },
+    create: {
+      email: "admin@taska.co.id",
+      passwordHash,
+      name: "Admin",
+      position: "Administrator",
+      role: "ADMIN",
+      status: "AKTIF",
+    },
+  });
 
-  for (const s of settings) {
-    await prisma.systemSetting.upsert({
-      where: { key: s.key },
-      update: { value: s.value, description: s.description },
-      create: { key: s.key, value: s.value, description: s.description, updatedById: bos.id },
-    });
-  }
-
-  console.log(`Seed OK: ${bos.email} (id=${bos.id}) + ${settings.length} system setting`);
+  console.log(`Seed OK: ${bos.email} (BOS, id=${bos.id}), ${admin.email} (ADMIN, id=${admin.id})`);
   await prisma.$disconnect();
 }
 
@@ -58,3 +50,4 @@ main().catch(async (e) => {
   console.error(e);
   process.exit(1);
 });
+

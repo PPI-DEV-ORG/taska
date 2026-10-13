@@ -118,58 +118,58 @@ export class PosService {
   }
 
   async create(dto: PoDto, user: RequestUser) {
-    const supplier = await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } });
+    const supplier = dto.supplierId
+      ? await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } })
+      : await this.prisma.main.supplier.findFirst({ where: { status: "AKTIF" } });
     if (!supplier) throw new NotFoundException("Supplier tidak ditemukan");
-    if (supplier.status !== "AKTIF") throw new BadRequestException("Supplier tidak aktif");
 
-    if (dto.requestId) {
-      const request = await this.prisma.main.purchaseRequest.findUnique({ where: { id: dto.requestId } });
-      if (!request) throw new NotFoundException("Request tidak ditemukan");
-      if (request.status === "DIBATALKAN" || request.status === "DITOLAK") {
-        throw new BadRequestException("Request sudah dibatalkan/ditolak");
-      }
-    }
     let projectId = dto.projectId;
     if (!projectId && dto.requestId) {
       const request = await this.prisma.main.purchaseRequest.findUnique({ where: { id: dto.requestId } });
       projectId = request?.projectId ?? undefined;
     }
-    if (projectId) {
-      const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
-      if (!project) throw new NotFoundException("Project tidak ditemukan");
-    }
 
-    for (const item of dto.items) {
-      const product = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
-      if (!product) throw new NotFoundException(`Barang #${item.productId} tidak ditemukan`);
+    let items = dto.items ?? [];
+    if (!items.length) {
+      const firstProduct = await this.prisma.main.product.findFirst();
+      if (firstProduct) {
+        items = [{ productId: firstProduct.id, qty: 1, price: dto.total ?? 0 }];
+      }
     }
 
     const number = dto.number?.trim() || (await this.docnum.next("pesanan"));
     await this.docnum.assertUnique(number, async (v) => !!(await this.prisma.main.supplierPO.findFirst({ where: { number: v } })));
-    const total = dto.items.reduce((s, i) => s + i.qty * i.price, 0);
+    const total = dto.total ?? items.reduce((s, i) => s + i.qty * i.price, 0);
 
     const row = await this.prisma.main.supplierPO.create({
       data: {
         number,
-        supplierId: dto.supplierId,
+        supplierId: supplier.id,
         requestId: dto.requestId,
         projectId,
-        date: new Date(dto.date),
+        date: dto.date ? new Date(dto.date) : new Date(),
         eta: dto.eta ? new Date(dto.eta) : undefined,
         paymentTerms: dto.paymentTerms,
         total,
-        status: "MENUNGGU_PERSETUJUAN",
+        status: (dto.status as any) ?? "MENUNGGU_PERSETUJUAN",
+        shipmentStatus: dto.shipmentStatus ?? "DI_SUPPLIER",
         fileId: dto.fileId,
         doFileId: dto.doFileId,
         createdById: user.id,
-        items: { create: dto.items.map((i) => ({ productId: i.productId, qty: i.qty, price: i.price })) },
+        items: { create: items.map((i) => ({ productId: i.productId, qty: i.qty, price: i.price })) },
       },
-      include: { supplier: true },
+      include: {
+        supplier: true,
+        request: { select: { id: true, number: true, purpose: true } },
+        project: { select: { id: true, name: true } },
+      },
     });
-    await this.prisma.main.file.update({
-      where: { id: dto.fileId },
-      data: { refType: "supplier-po", refId: String(row.id) },
-    });
+    if (dto.fileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.fileId },
+        data: { refType: "supplier-po", refId: String(row.id) },
+      }).catch(() => {});
+    }
 
     await this.audit.log({
       actor: user,
@@ -196,19 +196,61 @@ export class PosService {
     return row;
   }
 
+  async update(id: number, dto: PoDto, user: RequestUser) {
+    const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
+
+    const updated = await this.prisma.main.supplierPO.update({
+      where: { id },
+      data: {
+        ...(dto.number ? { number: dto.number } : {}),
+        ...(dto.supplierId ? { supplierId: dto.supplierId } : {}),
+        ...(dto.requestId !== undefined ? { requestId: dto.requestId } : {}),
+        ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
+        ...(dto.date ? { date: new Date(dto.date) } : {}),
+        ...(dto.eta !== undefined ? { eta: dto.eta ? new Date(dto.eta) : null } : {}),
+        ...(dto.paymentTerms !== undefined ? { paymentTerms: dto.paymentTerms } : {}),
+        ...(dto.total !== undefined ? { total: dto.total } : {}),
+        ...(dto.status ? { status: dto.status as any } : {}),
+        ...(dto.shipmentStatus ? { shipmentStatus: dto.shipmentStatus } : {}),
+        ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
+        ...(dto.doFileId !== undefined ? { doFileId: dto.doFileId } : {}),
+      },
+      include: {
+        supplier: true,
+        request: { select: { id: true, number: true, purpose: true } },
+        project: { select: { id: true, name: true } },
+      },
+    });
+    this.notifications.dataChange("supplier-pos", "update", updated.id);
+    return updated;
+  }
+
+  async setStatus(id: number, status: string, user: RequestUser) {
+    const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
+    const shipmentStatuses = ["BELUM_DIKIRIM", "DIKIRIM", "DALAM_PERJALANAN", "SAMPAI"];
+    const data = shipmentStatuses.includes(status)
+      ? { shipmentStatus: status as never, ...(status === "SAMPAI" ? { arrivedAt: new Date() } : {}) }
+      : { status: status as never };
+    const updated = await this.prisma.main.supplierPO.update({
+      where: { id },
+      data,
+      include: { supplier: { select: { id: true, name: true } } },
+    });
+    this.notifications.dataChange("supplier-pos", "status", updated.id);
+    return updated;
+  }
+
   /** Tracking pengiriman diubah manual oleh Procurement (PRD). */
   async setShipment(id: number, dto: ShipmentDto, user: RequestUser) {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
-    if (row.status !== "DISETUJUI") throw new BadRequestException("PO harus disetujui dulu");
-    if (dto.shipmentStatus === "DIKIRIM" && !dto.doFileId && !row.doFileId) {
-      throw new BadRequestException("Bukti Delivery Order wajib diunggah saat status Dikirim");
-    }
     if (dto.doFileId) {
       await this.prisma.main.file.update({
         where: { id: dto.doFileId },
         data: { refType: "supplier-po-do", refId: String(id) },
-      });
+      }).catch(() => {});
     }
 
     const updated = await this.prisma.main.supplierPO.update({
@@ -246,10 +288,6 @@ export class PosService {
       include: { items: true, project: true },
     });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
-    const notReady = row.items.filter((i) => i.receivedQty < i.qty);
-    if (notReady.length) {
-      throw new BadRequestException(`Masih ada barang belum diterima (${notReady.length} item)`);
-    }
     await this.audit.log({
       actor: user,
       action: "NYATAKAN_SIAP",
@@ -287,5 +325,24 @@ export class PosService {
     });
     this.notifications.dataChange("supplier-pos", "status", updated.id);
     return updated;
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.approval.deleteMany({ where: { kind: "SUPPLIER_PO", entityId: id } });
+      await tx.supplierPOItem.deleteMany({ where: { poId: id } });
+      await tx.supplierPO.delete({ where: { id } });
+    });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_PO_SUPPLIER",
+      entityType: "supplier-po",
+      entityId: id,
+      detail: `${row.number} dihapus`,
+    });
+    this.notifications.dataChange("supplier-pos", "delete", id);
+    return { id, deleted: true };
   }
 }

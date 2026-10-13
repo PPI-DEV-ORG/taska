@@ -20,14 +20,14 @@ export class ListQuery extends PageQuery {
 }
 
 export class CustomerDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString()
+  name?: string;
 
   @IsOptional() @IsString()
   company?: string;
 
-  @IsString() @MinLength(1)
-  pic!: string;
+  @IsOptional() @IsString()
+  pic?: string;
 
   @IsOptional() @IsString()
   email?: string;
@@ -49,8 +49,8 @@ export class CustomerDto {
 }
 
 export class SupplierDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString()
+  name?: string;
 
   @IsOptional() @IsString()
   pic?: string;
@@ -75,11 +75,11 @@ export class SupplierDto {
 }
 
 export class ProductDto {
-  @IsString() @MinLength(1)
-  sku!: string;
+  @IsOptional() @IsString()
+  sku?: string;
 
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString()
+  name?: string;
 
   @IsOptional() @IsString()
   type?: string;
@@ -87,8 +87,8 @@ export class ProductDto {
   @IsOptional() @IsInt()
   categoryId?: number;
 
-  @IsString() @MinLength(1)
-  unit!: string;
+  @IsOptional() @IsString()
+  unit?: string;
 
   @IsOptional() @IsBoolean()
   hasSerial?: boolean;
@@ -107,8 +107,8 @@ export class ProductDto {
 }
 
 export class ProductCategoryDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString()
+  name?: string;
 
   @IsOptional() @IsString()
   description?: string;
@@ -121,8 +121,8 @@ export class ProductCategoryDto {
 }
 
 export class WarehouseDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString()
+  name?: string;
 
   @IsOptional() @IsString()
   city?: string;
@@ -132,8 +132,8 @@ export class WarehouseDto {
 }
 
 export class NamedDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString()
+  name?: string;
 
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";

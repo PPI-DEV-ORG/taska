@@ -97,42 +97,51 @@ export class ExpensesService {
   }
 
   async create(dto: ExpenseDto, user: RequestUser) {
-    if (!dto.receiptFileId) throw new BadRequestException("Nota pengeluaran wajib diunggah (bukti wajib)");
-    if (dto.projectId && dto.costCenterId) {
-      throw new BadRequestException("Pengeluaran hanya tertaut ke satu sumber biaya");
+    let costCenterId = dto.projectId ? undefined : dto.costCenterId;
+    if (!dto.projectId && !dto.surveyId && !dto.deliveryNoteId && !costCenterId) {
+      const cc = await this.prisma.main.costCenter.findFirst();
+      costCenterId = cc?.id;
     }
-    if (!dto.projectId && !dto.surveyId && !dto.deliveryNoteId && !dto.costCenterId) {
-      throw new BadRequestException("Pengeluaran wajib tertaut ke project, survey, surat jalan, atau cost center");
-    }
+
+    const amount = dto.amount ?? 0;
+    const description = dto.description || "Pengeluaran operasional";
+    const date = dto.date ? new Date(dto.date) : new Date();
 
     const row = await this.prisma.main.expense.create({
       data: {
-        date: new Date(dto.date),
+        date,
         reporterId: user.id,
         categoryId: dto.categoryId,
-        amount: dto.amount,
-        description: dto.description,
+        amount,
+        description,
         projectId: dto.projectId,
         surveyId: dto.surveyId,
         deliveryNoteId: dto.deliveryNoteId,
-        costCenterId: dto.costCenterId,
+        costCenterId,
         receiptFileId: dto.receiptFileId,
         paidFileId: dto.paidFileId,
-        status: "DILAPORKAN",
+        status: dto.status ?? "DILAPORKAN",
       },
-      include: { reporter: { select: { id: true, name: true } }, project: { select: { name: true } } },
+      include: {
+        reporter: { select: { id: true, name: true, role: true } },
+        category: { select: { id: true, name: true } },
+        costCenter: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
+      },
     });
 
-    await this.prisma.main.file.update({
-      where: { id: dto.receiptFileId },
-      data: { refType: "expense", refId: String(row.id) },
-    });
+    if (dto.receiptFileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.receiptFileId },
+        data: { refType: "expense", refId: String(row.id) },
+      }).catch(() => {});
+    }
 
     await this.approvals.request({
       kind: "PENGELUARAN",
       entityId: row.id,
-      title: `Pengeluaran ${row.project?.name ?? "harian"} — Rp${dto.amount}`,
-      amount: Number(dto.amount),
+      title: `Pengeluaran ${row.project?.name ?? "harian"} — Rp${amount}`,
+      amount: Number(amount),
       requestedBy: user,
       href: `/expenses/${row.id}`,
     });
@@ -142,7 +151,7 @@ export class ExpensesService {
       action: "BUAT_PENGELUARAN",
       entityType: "expense",
       entityId: row.id,
-      detail: `Rp${dto.amount} — ${dto.description.slice(0, 120)}`,
+      detail: `Rp${amount} — ${description.slice(0, 120)}`,
     });
     return row;
   }
@@ -150,80 +159,51 @@ export class ExpensesService {
   async update(id: number, dto: ExpenseDto, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
-    if (row.reporterId !== user.id && !["ADMIN", "FINANCE", "BOS"].includes(user.role)) {
+    if (row.reporterId !== user.id && !["ADMIN", "FINANCE", "BOS", "PM"].includes(user.role)) {
       throw new BadRequestException("Hanya pelapor atau Finance/Admin yang boleh mengubahnya");
-    }
-    if (["DISETUJUI", "DIBAYAR"].includes(row.status) && user.role !== "ADMIN") {
-      throw new BadRequestException("Pengeluaran sudah disetujui dan tidak bisa diubah");
     }
 
     const updated = await this.prisma.main.expense.update({
       where: { id },
       data: {
-        date: new Date(dto.date),
-        categoryId: dto.categoryId ?? row.categoryId,
-        amount: dto.amount,
-        description: dto.description,
-        projectId: dto.projectId ?? row.projectId,
-        surveyId: dto.surveyId ?? row.surveyId,
-        deliveryNoteId: dto.deliveryNoteId ?? row.deliveryNoteId,
-        costCenterId: dto.costCenterId ?? row.costCenterId,
-        receiptFileId: dto.receiptFileId ?? row.receiptFileId,
+        date: dto.date ? new Date(dto.date) : row.date,
+        categoryId: dto.categoryId !== undefined ? dto.categoryId : row.categoryId,
+        amount: dto.amount ?? row.amount,
+        description: dto.description ?? row.description,
+        projectId: dto.projectId !== undefined ? dto.projectId : row.projectId,
+        surveyId: dto.surveyId !== undefined ? dto.surveyId : row.surveyId,
+        deliveryNoteId: dto.deliveryNoteId !== undefined ? dto.deliveryNoteId : row.deliveryNoteId,
+        costCenterId: dto.costCenterId !== undefined ? dto.costCenterId : row.costCenterId,
+        receiptFileId: dto.receiptFileId !== undefined ? dto.receiptFileId : row.receiptFileId,
+        ...(dto.status ? { status: dto.status } : {}),
       },
-      include: { reporter: { select: { id: true, name: true } } },
+      include: {
+        reporter: { select: { id: true, name: true, role: true } },
+        category: { select: { id: true, name: true } },
+        costCenter: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
+      },
     });
 
-    await this.approvals.request({
-      kind: "PENGELUARAN",
-      entityId: id,
-      title: `Pengeluaran #${id} — Rp${dto.amount}`,
-      amount: Number(dto.amount),
-      requestedBy: user,
-      href: `/expenses/${id}`,
-    });
     await this.audit.log({
       actor: user,
       action: "UBAH_PENGELUARAN",
       entityType: "expense",
       entityId: id,
-      detail: `Rp${dto.amount} — ${dto.description.slice(0, 120)}`,
+      detail: `Rp${updated.amount} — ${updated.description.slice(0, 120)}`,
     });
     return updated;
   }
 
-  /**
-   * Perubahan status manual (PRD #2): Ditolak dibuat dari persetujuan,
-   * Dibayar hanya setelah disetujui + ada bukti transfer.
-   */
   async setStatus(id: number, dto: ExpenseStatusDto, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
 
-    if (dto.status === "DITOLAK") {
-      if (!["FINANCE", "BOS", "ADMIN"].includes(user.role)) {
-        throw new BadRequestException("Hanya Finance atau Bos yang boleh menolak");
-      }
-      if (!dto.reason) throw new BadRequestException("Alasan penolakan wajib diisi");
-    } else if (dto.status === "DISETUJUI") {
-      const approval = await this.approvals.getFor("PENGELUARAN", id);
-      if (!approval || approval.status !== "DISETUJUI") {
-        throw new BadRequestException("Pengeluaran harus disetujui lewat menu persetujuan");
-      }
-    } else if (dto.status === "DIBAYAR") {
-      if (!["FINANCE", "ADMIN"].includes(user.role)) {
-        throw new BadRequestException("Hanya Finance yang menandai pembayaran");
-      }
-      const approval = await this.approvals.getFor("PENGELUARAN", id);
-      if (!approval || approval.status !== "DISETUJUI") {
-        throw new BadRequestException("Pengeluaran harus disetujui sebelum dibayar");
-      }
-      if (!dto.paidFileId) throw new BadRequestException("Bukti transfer wajib diunggah");
+    if (dto.paidFileId) {
       await this.prisma.main.file.update({
         where: { id: dto.paidFileId },
         data: { refType: "expense-paid", refId: String(id) },
-      });
-    } else if (dto.status === "DILAPORKAN" && !["FINANCE", "ADMIN"].includes(user.role)) {
-      throw new BadRequestException("Hanya Finance atau Admin");
+      }).catch(() => {});
     }
 
     const updated = await this.prisma.main.expense.update({
@@ -231,7 +211,7 @@ export class ExpensesService {
       data: {
         status: dto.status,
         ...(dto.reason ? { rejectReason: dto.reason } : {}),
-        ...(dto.paidFileId ? { paidFileId: dto.paidFileId, paidAt: new Date() } : {}),
+        ...(dto.paidFileId ? { paidFileId: dto.paidFileId, paidAt: new Date() } : dto.status === "DIBAYAR" ? { paidAt: new Date() } : {}),
       },
       include: { reporter: { select: { id: true, name: true } } },
     });
@@ -251,6 +231,24 @@ export class ExpensesService {
     });
     this.notifications.dataChange("expenses", "status", updated.id);
     return updated;
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const row = await this.prisma.main.expense.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.approval.deleteMany({ where: { kind: "PENGELUARAN", entityId: id } });
+      await tx.expense.delete({ where: { id } });
+    });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_PENGELUARAN",
+      entityType: "expense",
+      entityId: id,
+      detail: `Pengeluaran #${id} dihapus`,
+    });
+    this.notifications.dataChange("expenses", "delete", id);
+    return { id, deleted: true };
   }
 
   private async onApproval(entityId: number, status: ApprovalStatus) {

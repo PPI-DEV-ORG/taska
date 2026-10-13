@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView, Pressable } from "react-native";
+import { View, ScrollView, Pressable, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import {
   AlertTriangle,
@@ -34,12 +34,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Panel, Cell, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { ScanInput } from "@/components/taska/scan-input";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
+import { api, apiBase, queryString, uploadQuotationExcel } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
-import { type Row } from "@/mock/data";
+import { type Row } from "@/constants/modules";
 
 const PRICE_ROLES = ["procurement", "finance", "pm", "bos"];
 
@@ -63,40 +64,28 @@ export type QuotationItem = {
   harga: number;
 };
 
-export function downloadQuotationTemplate(info?: { customer?: string; lead?: string; nomor?: string }) {
-  if (typeof window !== "undefined" && typeof document !== "undefined") {
-    try {
-      const csvContent =
-        "data:text/csv;charset=utf-8," +
-        encodeURIComponent(
-          [
-            "KOP SURAT PERUSAHAAN - PT GHINA MULTI PRIMA / TASKA SYSTEM",
-            `Kepada Yth: ${info?.customer || "Nama Pelanggan / Perusahaan"}`,
-            `Tanggal: ${new Date().toISOString().slice(0, 10)}`,
-            `Quote No: ${info?.nomor || "PNW/2026/10/001"}`,
-            `Subject: Penawaran Pengadaan Barang & Jasa Instalasi (${info?.lead || "Pekerjaan"})`,
-            "",
-            "No,Item / Jasa,QTY,Satuan,Harga Satuan,Total",
-            '1,"HDD 1TB Surveillance",1,Unit,1050000,1050000',
-            '2,"Adaptor XVR/DVR 12v 2a",1,Unit,450000,450000',
-            '3,"Jasa Pergantian HDD XVR & Setup Kamera",1,Lot,1500000,1500000',
-            "TOTAL,,,,,3000000",
-            "PPN (11%),,,,,330000",
-            "GRAND TOTAL,,,,,3330000",
-            "",
-            "Notes:",
-            "1. Penawaran ini berlaku 1 bulan",
-            "2. Penambahan material/jasa dikenakan harga sesuai nilai jual material/jasa tersebut",
-            "3. Garansi perangkat 1 Tahun Harddisk dan PSU 6 Bulan Instalasi 3 Bulan",
-          ].join("\n")
-        );
-      const link = document.createElement("a");
-      link.setAttribute("href", csvContent);
-      link.setAttribute("download", `template-penawaran-${(info?.lead || "lead").toLowerCase().replace(/[^a-z0-9]/g, "-")}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch {}
+export function downloadQuotationTemplate(info?: {
+  quotationId?: string | number;
+  leadId?: string | number;
+  customer?: string;
+  lead?: string;
+  nomor?: string;
+  signer?: string;
+}) {
+  const url = info?.quotationId
+    ? `${apiBase()}/quotations/${info.quotationId}/excel?t=${Date.now()}`
+    : `${apiBase()}/quotations/template-excel${queryString({
+        leadId: info?.leadId,
+        customer: info?.customer,
+        lead: info?.lead,
+        nomor: info?.nomor,
+        signer: info?.signer,
+      })}`;
+
+  if (typeof window !== "undefined") {
+    window.open(url, "_blank");
+  } else {
+    Linking.openURL(url).catch(() => {});
   }
 }
 
@@ -108,6 +97,8 @@ export function QuotationPreviewModal({
   calcPpn,
   discNum,
   itemsTotal,
+  subject,
+  notesList,
   onSave,
 }: {
   open: boolean;
@@ -117,102 +108,135 @@ export function QuotationPreviewModal({
   calcPpn: number;
   discNum: number;
   itemsTotal: number;
+  subject?: string;
+  notesList?: string[];
   onSave?: () => void;
 }) {
+  const activeNotes =
+    notesList && notesList.length > 0
+      ? notesList
+      : [
+          "Penawaran ini berlaku 1 bulan",
+          "Penambahan material/jasa dikenakan harga sesuai nilai jual material/jasa tersebut",
+          "Garansi perangkat 1 Tahun Harddisk dan PSU 6 Bulan Instalasi 3 Bulan",
+        ];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl md:max-w-4xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>Surat Penawaran Resmi (Template Taska)</DialogTitle>
+          <DialogTitle>Preview File Penawaran Excel (Format Resmi)</DialogTitle>
         </DialogHeader>
-        <ScrollView style={{ maxHeight: 600 }} contentContainerClassName="gap-4 p-3 bg-white rounded-xl text-black">
-          {/* Kop Surat */}
-          <View className="border-b-2 border-black pb-3 items-center">
-            <Text className="text-base font-bold text-black tracking-widest uppercase">KOP SURAT PERUSAHAAN</Text>
-            <Text className="text-xs text-black">PT GHINA MULTI PRIMA / TASKA SYSTEM</Text>
-            <Text className="text-[10px] text-zinc-600">Telp: 021 2284 3608 · WA: 0859 5959 8852 / 0821 2345 9144</Text>
-            <Text className="text-[10px] text-zinc-600">Email: cs@ghinamultiprima.co.id · www.ghinamultiprima.co.id</Text>
+        <ScrollView style={{ maxHeight: 580 }} contentContainerClassName="gap-3 p-4 bg-white rounded-xl text-black border border-zinc-300">
+          {/* KOP SURAT Box */}
+          <View className="border border-black py-4 items-center justify-center bg-white">
+            <Text className="text-base font-bold text-black tracking-widest uppercase">KOP SURAT</Text>
           </View>
 
-          {/* Tanggal & Tujuan */}
-          <View className="flex-row justify-between">
-            <View className="gap-0.5">
-              <Text className="text-xs text-black font-semibold">Kepada Yth.</Text>
-              <Text className="text-sm text-black font-bold">{row.customer || row.perusahaan || "Yayasan BM 400"}</Text>
-              <Text className="text-xs text-black font-semibold">Di Tempat</Text>
-            </View>
-            <View className="items-end">
-              <Text className="text-xs text-black font-semibold">Bekasi, {tanggal(row.dibuat || new Date().toISOString())}</Text>
-            </View>
+          {/* Tanggal Kanan */}
+          <View className="items-end pt-1">
+            <Text className="text-xs text-black font-bold">
+              {row.city || "Bekasi"}, {tanggal(row.dibuat || new Date().toISOString())}
+            </Text>
+          </View>
+
+          {/* Tujuan */}
+          <View className="gap-0.5">
+            <Text className="text-xs text-black font-bold">Kepada Yth.</Text>
+            <Text className="text-xs text-black font-bold">{row.customer || row.perusahaan || "Nama Customer"}</Text>
+            <Text className="text-xs text-black font-bold">Di Tempat</Text>
           </View>
 
           {/* Subject & Quote No */}
-          <View className="gap-1 bg-zinc-50 p-2.5 rounded border border-zinc-200">
-            <Text className="text-xs text-black font-semibold">Subject : Penawaran Pengadaan Barang & Jasa Instalasi ({row.lead || row.nama || "Sistem CCTV / Jaringan"})</Text>
-            <Text className="text-xs text-black font-semibold">Quote No. : {row.nomor || "0249/GM/IX/2026"}</Text>
+          <View className="gap-0.5 pt-1">
+            <Text className="text-xs text-black font-bold">
+              Subject : {subject || row.subject || `Penawaran Pengadaan Barang & Jasa Instalasi (${row.lead || row.nama || "-"})`}
+            </Text>
+            <Text className="text-xs text-black font-bold">Quote No. : {row.nomor || "-"}</Text>
           </View>
 
-          <Text className="text-xs text-black leading-relaxed">
+          <Text className="text-xs text-black leading-relaxed pt-1">
             Dengan hormat,{"\n"}
-            Sesuai permintaan Bapak / Ibu sebelumnya, berikut penawaran dari kami terkait pengadaan Barang & Jasa Instalasi:
+            {row.intro || "Sesuai permintaan Bapak / Ibu sebelumnya, berikut penawaran dari kami terkait pengadaan Barang & Jasa Instalasi :"}
           </Text>
 
-          {/* Tabel Item Mirip Excel Warna Cyan/Biru */}
-          <View className="border border-black overflow-hidden rounded">
-            <View className="flex-row bg-[#00bcd4] border-b border-black py-2 px-2">
+          {/* Tabel Item Excel Warna Cyan #00FFFF */}
+          <View className="border border-black overflow-hidden">
+            <View className="flex-row bg-[#00ffff] border-b border-black py-2 px-2">
               <Text className="w-8 text-[11px] font-bold text-black text-center">No.</Text>
-              <Text className="flex-1 text-[11px] font-bold text-black">Item / Jasa</Text>
+              <Text className="flex-1 text-[11px] font-bold text-black text-center">Item / Jasa</Text>
               <Text className="w-12 text-[11px] font-bold text-black text-center">QTY</Text>
               <Text className="w-16 text-[11px] font-bold text-black text-center">Satuan</Text>
-              <Text className="w-24 text-[11px] font-bold text-black text-right">Harga</Text>
-              <Text className="w-24 text-[11px] font-bold text-black text-right">Total</Text>
+              <Text className="w-24 text-[11px] font-bold text-black text-center">Harga</Text>
+              <Text className="w-24 text-[11px] font-bold text-black text-center">Total</Text>
             </View>
 
-            {items.map((it, idx) => (
-              <View key={it.id} className="flex-row border-b border-zinc-300 py-1.5 px-2 bg-white">
+            {(items.length > 0
+              ? items
+              : [{ id: "1", item: row.lead || "Pengadaan Barang & Jasa Instalasi", qty: 1, satuan: "Lot", harga: itemsTotal }]
+            ).map((it, idx) => (
+              <View key={it.id || idx} className="flex-row border-b border-black py-1.5 px-2 bg-white">
                 <Text className="w-8 text-[11px] text-black text-center">{idx + 1}</Text>
-                <Text className="flex-1 text-[11px] text-black font-medium">{it.item}</Text>
+                <Text className="flex-1 text-[11px] text-black">{it.item}</Text>
                 <Text className="w-12 text-[11px] text-black text-center">{it.qty}</Text>
                 <Text className="w-16 text-[11px] text-black text-center">{it.satuan}</Text>
                 <Text className="w-24 text-[11px] text-black text-right">{rupiah(it.harga)}</Text>
-                <Text className="w-24 text-[11px] text-black text-right font-medium">{rupiah(it.qty * it.harga)}</Text>
+                <Text className="w-24 text-[11px] text-black text-right">{rupiah(it.qty * it.harga)}</Text>
               </View>
             ))}
 
             {/* Total rows */}
-            <View className="flex-row border-b border-black bg-zinc-50 py-1.5 px-2">
-              <Text className="flex-1 text-[11px] font-bold text-black text-right pr-4">TOTAL</Text>
+            <View className="flex-row border-b border-black bg-white py-1.5 px-2">
+              <Text className="flex-1 text-[11px] font-bold text-black text-center">TOTAL</Text>
               <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(itemsTotal)}</Text>
             </View>
-            <View className="flex-row border-b border-black bg-zinc-50 py-1.5 px-2">
-              <Text className="flex-1 text-[11px] font-bold text-black text-right pr-4">PPN (11%)</Text>
+            <View className="flex-row border-b border-black bg-white py-1.5 px-2">
+              <Text className="flex-1 text-[11px] font-bold text-black text-center">PPN (11%)</Text>
               <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(calcPpn)}</Text>
             </View>
-            <View className="flex-row bg-zinc-100 py-2 px-2">
-              <Text className="flex-1 text-xs font-bold text-black text-right pr-4">GRAND TOTAL</Text>
-              <Text className="w-24 text-xs font-bold text-black text-right">{rupiah(itemsTotal + calcPpn - discNum)}</Text>
+            {discNum > 0 ? (
+              <View className="flex-row border-b border-black bg-white py-1.5 px-2">
+                <Text className="flex-1 text-[11px] font-bold text-black text-center">DISC</Text>
+                <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(discNum)}</Text>
+              </View>
+            ) : null}
+            <View className="flex-row bg-white py-2 px-2">
+              <Text className="flex-1 text-xs font-bold text-black text-center">GRAND TOTAL</Text>
+              <Text className="w-24 text-xs font-bold text-black text-right">
+                {rupiah(Math.max(0, itemsTotal + calcPpn - discNum))}
+              </Text>
             </View>
           </View>
 
           {/* Notes */}
-          <View className="gap-1 pt-1">
+          <View className="gap-0.5 pt-1">
             <Text className="text-xs font-bold text-black">Notes:</Text>
-            <Text className="text-[11px] text-black">1. Penawaran ini berlaku 1 bulan (s/d {tanggal(row.berlaku || new Date().toISOString())})</Text>
-            <Text className="text-[11px] text-black">2. Penambahan material/jasa dikenakan harga sesuai nilai jual material/jasa tersebut</Text>
-            <Text className="text-[11px] text-black">3. Garansi perangkat 1 Tahun, Harddisk dan PSU 6 Bulan, Instalasi 3 Bulan</Text>
+            {activeNotes.map((n, idx) => (
+              <Text key={idx} className="text-[11px] text-black">
+                {idx + 1}. {n.replace(/^\d+\.\s*/, "")}
+              </Text>
+            ))}
+          </View>
+
+          {/* Contact Block */}
+          <View className="gap-0.5 pt-2">
+            <Text className="text-[11px] text-black">Untuk pertanyaan lebih lanjut bisa hubungi kami melalui :</Text>
+            <Text className="text-[11px] text-black">Telp    : 021 2284 3608</Text>
+            <Text className="text-[11px] text-black">WA      : 0859 5959 8852 / 0821 2345 9144</Text>
+            <Text className="text-[11px] text-black">Email  : cs@ghinamultiprima.co.id</Text>
+            <Text className="text-[11px] font-bold text-blue-700 underline">www.ghinamultiprima.co.id</Text>
           </View>
 
           {/* Penutup & TTD */}
-          <View className="gap-4 pt-2">
+          <View className="gap-3 pt-2">
             <Text className="text-[11px] text-black leading-relaxed">
               Sekian surat penawaran ini kami buat dengan harapan agar Bapak/Ibu bisa bekerjasama dengan perusahaan kami. Kami tunggu tanggapan dan kabar baik.
             </Text>
 
-            <View className="items-start gap-1 pt-4">
+            <View className="items-start gap-1 pt-2">
               <Text className="text-[11px] text-black">TTD,</Text>
-              <View className="h-10" />
-              <Text className="text-xs font-bold text-black underline">{row.pemilik || "Iqbal / Dewi Lestari"}</Text>
-              <Text className="text-[10px] text-zinc-600">Sales Representative</Text>
+              <View className="h-8" />
+              <Text className="text-xs font-bold text-black underline">{row.pemilik || "Nama Sales"}</Text>
             </View>
           </View>
         </ScrollView>
@@ -233,49 +257,24 @@ export function QuotationPreviewModal({
               <Printer size={15} color={colors.text} />
               <Text>Cetak / Simpan PDF</Text>
             </Button>
-            {onSave ? (
-              <Button
-                onPress={() => {
-                  // Otomatis download file Excel / CSV berbasis template
-                  if (typeof window !== "undefined" && typeof document !== "undefined") {
-                    try {
-                      const csvContent =
-                        "data:text/csv;charset=utf-8," +
-                        encodeURIComponent(
-                          [
-                            "KOP SURAT PERUSAHAAN - PT GHINA MULTI PRIMA / TASKA SYSTEM",
-                            `Kepada Yth: ${row.customer || row.perusahaan || "Pelanggan"}`,
-                            `Tanggal: ${row.dibuat || new Date().toISOString().slice(0, 10)}`,
-                            `Quote No: ${row.nomor || "PNW/2026/10/001"}`,
-                            `Subject: Penawaran Pengadaan Barang & Jasa Instalasi (${row.lead || row.nama || "Sistem"})`,
-                            "",
-                            "No,Item / Jasa,QTY,Satuan,Harga Satuan,Total",
-                            ...items.map((it, idx) => `${idx + 1},"${it.item}",${it.qty},${it.satuan},${it.harga},${it.qty * it.harga}`),
-                            `TOTAL,,,,,"${itemsTotal}"`,
-                            `PPN (11%),,,,,"${calcPpn}"`,
-                            `GRAND TOTAL,,,,,"${itemsTotal + calcPpn - discNum}"`,
-                            "",
-                            "Notes:",
-                            "1. Penawaran ini berlaku 1 bulan",
-                            "2. Penambahan material/jasa dikenakan harga sesuai nilai jual material/jasa tersebut",
-                            "3. Garansi perangkat 1 Tahun Harddisk dan PSU 6 Bulan Instalasi 3 Bulan",
-                          ].join("\n")
-                        );
-                      const link = document.createElement("a");
-                      link.setAttribute("href", csvContent);
-                      link.setAttribute("download", `${(row.nomor || "penawaran").replace(/\//g, "-")}-template.csv`);
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    } catch {}
-                  }
+            <Button
+              onPress={() => {
+                if (onSave) {
                   onSave();
-                }}
-              >
-                <FileDown size={15} color={colors.background} />
-                <Text>Generate & Download Penawaran</Text>
-              </Button>
-            ) : null}
+                } else {
+                  downloadQuotationTemplate({
+                    quotationId: row.id,
+                    customer: row.customer || row.perusahaan,
+                    lead: row.lead || row.nama,
+                    nomor: row.nomor,
+                    signer: row.pemilik,
+                  });
+                }
+              }}
+            >
+              <FileDown size={15} color={colors.background} />
+              <Text>Simpan & Download Excel (.xlsx)</Text>
+            </Button>
           </View>
         </DialogFooter>
       </DialogContent>
@@ -296,19 +295,29 @@ export function QuotationTemplateGenerator({
   calcPpn: number;
   calcTotalAfterDisc: number;
   discNum: number;
-  onUpdateItems: (items: QuotationItem[], newTotal: number) => void;
+  onUpdateItems: (
+    items: QuotationItem[],
+    newTotal: number,
+    meta?: { subject?: string; notesList?: string[] },
+    shouldDownload?: boolean,
+  ) => Promise<void> | void;
 }) {
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [editItemsOpen, setEditItemsOpen] = React.useState(false);
 
-  // Default items sesuai template
-  const defaultItems: QuotationItem[] = [
-    { id: "1", item: "HDD 1TB Surveillance", qty: 1, satuan: "Unit", harga: Math.round((totNum || 3000000) * 0.35) },
-    { id: "2", item: "Adaptor XVR/DVR 12v 2a", qty: 1, satuan: "Unit", harga: Math.round((totNum || 3000000) * 0.15) },
-    { id: "3", item: "Jasa Pergantian HDD XVR & Setup Kamera", qty: 1, satuan: "Lot", harga: Math.round((totNum || 3000000) * 0.5) },
-  ];
-
-  const [items, setItems] = React.useState<QuotationItem[]>(row.items && row.items.length ? row.items : defaultItems);
+  const [items, setItems] = React.useState<QuotationItem[]>(row.items && row.items.length ? row.items : []);
+  const [subject, setSubject] = React.useState<string>(
+    row.subject || `Penawaran Pengadaan Barang & Jasa Instalasi (${row.lead || "-"})`,
+  );
+  const [notesText, setNotesText] = React.useState<string>(
+    Array.isArray(row.notesList) && row.notesList.length > 0
+      ? row.notesList.join("\n")
+      : [
+          "Penawaran ini berlaku 1 bulan",
+          "Penambahan material/jasa dikenakan harga sesuai nilai jual material/jasa tersebut",
+          "Garansi perangkat 1 Tahun Harddisk dan PSU 6 Bulan Instalasi 3 Bulan",
+        ].join("\n"),
+  );
 
   // New item inputs
   const [newItemName, setNewItemName] = React.useState("");
@@ -316,71 +325,140 @@ export function QuotationTemplateGenerator({
   const [newItemSatuan, setNewItemSatuan] = React.useState("Unit");
   const [newItemHarga, setNewItemHarga] = React.useState("");
 
-  const itemsTotal = items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0);
+  const itemsTotal = items.length > 0 ? items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0) : totNum;
+  const activePpn = Math.round(itemsTotal * 0.11);
+  const parsedNotes = notesText
+    .split("\n")
+    .map((s) => s.trim().replace(/^\d+\.\s*/, ""))
+    .filter(Boolean);
 
   function addItem() {
     if (!newItemName.trim()) return;
     const q = Number(newItemQty) || 1;
     const h = Number(newItemHarga.replace(/\D/g, "")) || 0;
-    const updated = [...items, { id: String(Date.now()), item: newItemName.trim(), qty: q, satuan: newItemSatuan.trim() || "Unit", harga: h }];
+    const updated = [
+      ...items,
+      { id: String(Date.now()), item: newItemName.trim(), qty: q, satuan: newItemSatuan.trim() || "Unit", harga: h },
+    ];
     setItems(updated);
     setNewItemName("");
     setNewItemQty("1");
     setNewItemHarga("");
   }
 
+  function updateItemField(id: string, patch: Partial<QuotationItem>) {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+  }
+
   function removeItem(id: string) {
     setItems(items.filter((it) => it.id !== id));
   }
 
-  function handleSaveItems() {
+  async function handleSaveItems(shouldDownload = false) {
     const total = items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0);
-    onUpdateItems(items, total);
+    await onUpdateItems(items, total, { subject, notesList: parsedNotes }, shouldDownload);
     setEditItemsOpen(false);
   }
 
   return (
     <>
       <Panel
-        title="Generate Penawaran dari Sistem (Template Resmi)"
-        subtitle="Sistem meng-generate surat penawaran otomatis berdasarkan template Excel resmi Taska."
+        title="Rincian Item & Generator Excel Penawaran (.xlsx)"
+        subtitle="Edit item/jasa di sistem (atau upload Excel di atas). Saat didownload, file Excel (.xlsx) akan persis seperti contoh dan ter-link otomatis ke Lead."
       >
         <View className="gap-3">
-          <View className="flex-row items-center justify-between">
+          <View className="flex-row flex-wrap items-center justify-between gap-2">
             <View>
               <Text className="text-xs text-muted-foreground">Jumlah Item / Jasa Terdaftar</Text>
-              <Text className="text-sm font-semibold">{items.length} Baris Item</Text>
+              <Text className="text-sm font-semibold">
+                {items.length} Baris Item · Total Item: {rupiah(itemsTotal)}
+              </Text>
             </View>
-            <View className="flex-row gap-2">
+            <View className="flex-row flex-wrap gap-2">
               <Button variant="outline" size="sm" onPress={() => setEditItemsOpen(true)}>
                 <Edit3 size={14} color={colors.text} />
-                <Text className="text-xs">Kelola Item / Jasa</Text>
+                <Text className="text-xs">Edit Item / Jasa</Text>
               </Button>
-              <Button size="sm" onPress={() => setPreviewOpen(true)}>
-                <Eye size={14} color={colors.background} />
-                <Text className="text-xs">Lihat Template & Cetak</Text>
+              <Button variant="outline" size="sm" onPress={() => setPreviewOpen(true)}>
+                <Eye size={14} color={colors.text} />
+                <Text className="text-xs">Preview Surat</Text>
+              </Button>
+              <Button
+                size="sm"
+                onPress={() => {
+                  downloadQuotationTemplate({
+                    quotationId: row.id,
+                    customer: row.customer,
+                    lead: row.lead,
+                    nomor: row.nomor,
+                    signer: row.pemilik,
+                  });
+                }}
+              >
+                <FileDown size={14} color={colors.background} />
+                <Text className="text-xs">Download Excel (.xlsx)</Text>
               </Button>
             </View>
           </View>
+
+          {/* Tabel ringkas item yang ada sekarang */}
+          {items.length > 0 ? (
+            <View className="border-border/80 rounded-xl border overflow-hidden mt-1">
+              <View className="bg-panel border-border/80 flex-row border-b py-2 px-3">
+                <Text className="w-8 text-[11px] font-bold">No</Text>
+                <Text className="flex-1 text-[11px] font-bold">Item / Jasa</Text>
+                <Text className="w-16 text-[11px] font-bold text-center">QTY</Text>
+                <Text className="w-24 text-[11px] font-bold text-right">Harga</Text>
+                <Text className="w-28 text-[11px] font-bold text-right">Total</Text>
+              </View>
+              {items.map((it, idx) => (
+                <View key={it.id || idx} className="border-border/50 flex-row items-center border-b py-2 px-3">
+                  <Text className="w-8 text-xs text-muted-foreground">{idx + 1}</Text>
+                  <Text className="flex-1 text-xs font-medium">{it.item}</Text>
+                  <Text className="w-16 text-xs text-center">
+                    {it.qty} {it.satuan}
+                  </Text>
+                  <Text className="w-24 text-xs text-right">{rupiah(it.harga)}</Text>
+                  <Text className="w-28 text-xs font-semibold text-primary text-right">{rupiah(it.qty * it.harga)}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View className="bg-panel/60 border-border/60 rounded-xl border p-3">
+              <Text className="text-xs text-muted-foreground">
+                Belum ada rincian item per baris. Klik <b>Edit Item / Jasa</b> untuk mengisi item di aplikasi, atau klik{" "}
+                <b>Download Excel (.xlsx)</b> untuk mengisi manual di Excel lalu upload kembali.
+              </Text>
+            </View>
+          )}
         </View>
       </Panel>
 
       {/* Modal Kelola Item Penawaran */}
       <Dialog open={editItemsOpen} onOpenChange={setEditItemsOpen}>
-        <DialogContent className="sm:max-w-xl md:max-w-2xl">
+        <DialogContent className="sm:max-w-xl md:max-w-3xl max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle>Kelola Item & Jasa Penawaran</DialogTitle>
+            <DialogTitle>Kelola Item, Subject & Notes Penawaran</DialogTitle>
           </DialogHeader>
-          <View className="gap-4">
-            <Text className="text-xs text-muted-foreground">
-              Masukkan rincian barang/jasa sesuai kebutuhan lead. Total akan dihitung otomatis ke kalkulasi penawaran.
-            </Text>
+          <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-4 pr-1">
+            <View className="gap-1.5">
+              <Text className="text-xs font-semibold">Subject Surat Penawaran</Text>
+              <Input
+                value={subject}
+                onChangeText={setSubject}
+                placeholder="Penawaran Pengadaan Barang & Jasa Instalasi"
+              />
+            </View>
 
             <View className="bg-panel border-border/80 rounded-xl border p-3 gap-2">
-              <Text className="text-xs font-semibold">Tambah Baris Baru</Text>
+              <Text className="text-xs font-semibold">Tambah Baris Item / Jasa Baru</Text>
               <View className="flex-row flex-wrap gap-2">
                 <View className="flex-1 min-w-[180px]">
-                  <Input value={newItemName} onChangeText={setNewItemName} placeholder="Nama item / jasa (misal: HDD 1TB)" />
+                  <Input
+                    value={newItemName}
+                    onChangeText={setNewItemName}
+                    placeholder="Nama item / jasa (misal: HDD 1TB Surveillance)"
+                  />
                 </View>
                 <View className="w-16">
                   <Input value={newItemQty} onChangeText={setNewItemQty} keyboardType="numeric" placeholder="Qty" />
@@ -389,7 +467,12 @@ export function QuotationTemplateGenerator({
                   <Input value={newItemSatuan} onChangeText={setNewItemSatuan} placeholder="Unit/Lot" />
                 </View>
                 <View className="flex-1 min-w-[140px]">
-                  <Input value={newItemHarga} onChangeText={setNewItemHarga} keyboardType="numeric" placeholder="Harga Satuan (Rp)" />
+                  <Input
+                    value={newItemHarga}
+                    onChangeText={setNewItemHarga}
+                    keyboardType="numeric"
+                    placeholder="Harga Satuan (Rp)"
+                  />
                 </View>
                 <Button size="sm" onPress={addItem} className="self-end">
                   <Plus size={15} color={colors.background} />
@@ -398,32 +481,96 @@ export function QuotationTemplateGenerator({
               </View>
             </View>
 
-            <ScrollView style={{ maxHeight: 240 }} contentContainerClassName="gap-2">
+            <View className="gap-2">
+              <Text className="text-xs font-semibold">Daftar Item ({items.length} Baris)</Text>
               {items.map((it, idx) => (
-                <View key={it.id} className="bg-card border-border/60 flex-row items-center justify-between rounded-lg border p-2.5">
-                  <View className="flex-1 mr-2">
-                    <Text className="text-xs font-semibold">{idx + 1}. {it.item}</Text>
-                    <Text className="text-[11px] text-muted-foreground">{it.qty} {it.satuan} × {rupiah(it.harga)}</Text>
+                <View
+                  key={it.id || idx}
+                  className="bg-card border-border/60 flex-row flex-wrap items-center gap-2 rounded-lg border p-2.5"
+                >
+                  <Text className="w-5 text-xs font-semibold">{idx + 1}.</Text>
+                  <View className="flex-1 min-w-[150px]">
+                    <Input
+                      value={it.item}
+                      onChangeText={(v) => updateItemField(it.id, { item: v })}
+                      placeholder="Nama Item"
+                    />
                   </View>
-                  <Text className="text-xs font-semibold text-primary mr-3">{rupiah(it.qty * it.harga)}</Text>
+                  <View className="w-16">
+                    <Input
+                      value={String(it.qty)}
+                      onChangeText={(v) => updateItemField(it.id, { qty: Number(v.replace(/\D/g, "")) || 0 })}
+                      keyboardType="numeric"
+                      placeholder="Qty"
+                    />
+                  </View>
+                  <View className="w-20">
+                    <Input
+                      value={it.satuan}
+                      onChangeText={(v) => updateItemField(it.id, { satuan: v })}
+                      placeholder="Satuan"
+                    />
+                  </View>
+                  <View className="w-28">
+                    <Input
+                      value={String(it.harga)}
+                      onChangeText={(v) => updateItemField(it.id, { harga: Number(v.replace(/\D/g, "")) || 0 })}
+                      keyboardType="numeric"
+                      placeholder="Harga"
+                    />
+                  </View>
+                  <Text className="w-24 text-xs font-semibold text-primary text-right">
+                    {rupiah(it.qty * it.harga)}
+                  </Text>
                   <Button variant="ghost" size="sm" onPress={() => removeItem(it.id)}>
                     <Trash2 size={14} color={colors.danger} />
                   </Button>
                 </View>
               ))}
-            </ScrollView>
-
-            <View className="bg-panel border-border/50 flex-row items-center justify-between rounded-lg border p-3">
-              <Text className="text-xs font-semibold">Total Item & Jasa:</Text>
-              <Text className="text-sm font-bold text-primary">{rupiah(itemsTotal)}</Text>
             </View>
-          </View>
-          <DialogFooter>
+
+            <View className="gap-1.5">
+              <Text className="text-xs font-semibold">Notes (1 baris = 1 poin catatan di Excel)</Text>
+              <Textarea
+                value={notesText}
+                onChangeText={setNotesText}
+                placeholder="1. Penawaran ini berlaku 1 bulan..."
+              />
+            </View>
+
+            <View className="bg-panel border-border/50 gap-1 rounded-lg border p-3">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs text-muted-foreground">SUBTOTAL ITEM:</Text>
+                <Text className="text-xs font-semibold">{rupiah(itemsTotal)}</Text>
+              </View>
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs text-muted-foreground">PPN (11%):</Text>
+                <Text className="text-xs font-semibold">{rupiah(activePpn)}</Text>
+              </View>
+              {discNum > 0 ? (
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-xs text-muted-foreground">DISC:</Text>
+                  <Text className="text-xs font-semibold text-danger">- {rupiah(discNum)}</Text>
+                </View>
+              ) : null}
+              <View className="flex-row items-center justify-between pt-1 border-t border-border/50">
+                <Text className="text-xs font-bold">GRAND TOTAL:</Text>
+                <Text className="text-sm font-bold text-primary">
+                  {rupiah(Math.max(0, itemsTotal + activePpn - discNum))}
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+          <DialogFooter className="flex-row flex-wrap gap-2">
             <Button variant="outline" onPress={() => setEditItemsOpen(false)}>
               <Text>Batal</Text>
             </Button>
-            <Button onPress={handleSaveItems}>
-              <Text>Simpan ke Penawaran</Text>
+            <Button variant="outline" onPress={() => handleSaveItems(false)}>
+              <Text>Simpan Data</Text>
+            </Button>
+            <Button onPress={() => handleSaveItems(true)}>
+              <FileDown size={15} color={colors.background} />
+              <Text>Simpan & Download Excel (.xlsx)</Text>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -435,11 +582,13 @@ export function QuotationTemplateGenerator({
         onOpenChange={setPreviewOpen}
         row={row}
         items={items}
-        calcPpn={calcPpn}
+        calcPpn={activePpn}
         discNum={discNum}
         itemsTotal={itemsTotal}
-        onSave={() => {
-          onUpdateItems(items, itemsTotal);
+        subject={subject}
+        notesList={parsedNotes}
+        onSave={async () => {
+          await onUpdateItems(items, itemsTotal, { subject, notesList: parsedNotes }, true);
           setPreviewOpen(false);
         }}
       />
@@ -449,9 +598,9 @@ export function QuotationTemplateGenerator({
 
 function LeadExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { toast, data, patchRow, pushHistory, user } = useApp();
+  const { toast, data, addRow, patchRow, pushHistory, user, reload } = useApp();
   const quotation = (data.quotations ?? []).find(
-    (q) => (q.leadId && q.leadId === row.id) || (q.lead && q.lead.toLowerCase() === row.nama.toLowerCase())
+    (q) => (q.leadId && String(q.leadId) === String(row.id)) || (q.lead && q.lead.toLowerCase() === row.nama.toLowerCase())
   );
   const isQualify = ["Qualification", "Proposal", "Negotiation", "Won"].includes(row.status);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
@@ -459,17 +608,39 @@ function LeadExtras({ row }: { row: Row }) {
   // Follow-up state
   const [fuOpen, setFuOpen] = React.useState(false);
   const [fuMethod, setFuMethod] = React.useState<"Telepon" | "WhatsApp" | "Meeting" | "Email" | "Survey">("Telepon");
+  const [fuDate, setFuDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [fuNote, setFuNote] = React.useState("");
   const [fuNextAction, setFuNextAction] = React.useState("");
-  const [localFollowups, setLocalFollowups] = React.useState<{ id: string; method: string; note: string; date: string; next?: string }[]>([
-    { id: "fu-1", method: "Telepon", note: "Membahas ruang lingkup dan jadwal survey", date: `${row.sepi} hari lalu` },
-    { id: "fu-2", method: "WhatsApp", note: "Mengirim contoh penawaran dan spesifikasi perangkat", date: `${row.sepi + 4} hari lalu` },
-    { id: "fu-3", method: "Email", note: "Perkenalan awal dan permintaan data teknis lokasi", date: `${row.sepi + 9} hari lalu` },
-  ]);
+  const [fuStatus, setFuStatus] = React.useState<"SELESAI" | "JADWAL">("SELESAI");
+
+  const apiFollowups = React.useMemo(() => {
+    const fromStore = (data.followups ?? [])
+      .filter((f: Row) => String(f.leadId) === String(row.id))
+      .map((f: Row) => ({
+        id: String(f.id),
+        method: String(f.metode || f.method || "Telepon"),
+        note: String(f.catatan || f.notes || "-"),
+        date: String(f.tanggal || f.date || ""),
+        next: f.berikutnya || f.nextAction ? String(f.berikutnya || f.nextAction) : undefined,
+        status: String(f.status || "SELESAI"),
+      }));
+    if (fromStore.length > 0) return fromStore;
+    if (Array.isArray(row._followUps) && row._followUps.length > 0) {
+      return row._followUps.map((f: any) => ({
+        id: String(f.id),
+        method: String(f.method || "Telepon"),
+        note: String(f.notes || "-"),
+        date: String(f.date || ""),
+        next: f.nextAction ? String(f.nextAction) : undefined,
+        status: String(f.status || "SELESAI"),
+      }));
+    }
+    return [];
+  }, [data.followups, row.id, row._followUps]);
 
   // Reassign Sales state
   const [reassignOpen, setReassignOpen] = React.useState(false);
-  const [newOwner, setNewOwner] = React.useState(row.pemilik || "Dewi Lestari");
+  const [newOwner, setNewOwner] = React.useState(row.pemilik || "");
   const [reassignReason, setReassignReason] = React.useState("");
 
   // Edit Lost Reason state
@@ -480,25 +651,26 @@ function LeadExtras({ row }: { row: Row }) {
     ["sales", "pm", "bos", "admin"].includes(String(u.role)),
   );
 
-  function handleAddFollowup() {
+  async function handleAddFollowup() {
     if (!fuNote.trim()) {
       toast("Catatan follow-up tidak boleh kosong", "danger");
       return;
     }
-    const newEntry = {
-      id: `fu-${Date.now()}`,
+    const created = await addRow("followups", {
+      leadId: row.id,
+      date: fuDate || new Date().toISOString().slice(0, 10),
       method: fuMethod,
-      note: fuNote.trim(),
-      date: "Baru saja",
-      next: fuNextAction.trim() || undefined,
-    };
-    setLocalFollowups([newEntry, ...localFollowups]);
-    patchRow("leads", row.id, { sepi: 0 });
-    pushHistory("leads", row.id, `Follow-up (${fuMethod}): ${fuNote.trim()}${fuNextAction ? ` | Next: ${fuNextAction.trim()}` : ""}`);
-    toast("Tindak lanjut berhasil dicatat. Masa sepi di-reset ke 0 hari.");
-    setFuNote("");
-    setFuNextAction("");
-    setFuOpen(false);
+      notes: fuNote.trim(),
+      nextDate: fuNextAction || undefined,
+      status: fuStatus,
+    });
+    if (created) {
+      patchRow("leads", row.id, { sepi: 0 });
+      pushHistory("leads", row.id, `Follow-up (${fuMethod}): ${fuNote.trim()}${fuNextAction ? ` | Next: ${fuNextAction}` : ""}`);
+      setFuNote("");
+      setFuNextAction("");
+      setFuOpen(false);
+    }
   }
 
   function handleReassign() {
@@ -522,21 +694,27 @@ function LeadExtras({ row }: { row: Row }) {
       {isQualify ? (
         <Panel
           title="Penawaran untuk Lead Ini"
-          subtitle="Saat lead masuk tahap Qualification, penawaran otomatis disiapkan dengan nomor ter-generate."
+          subtitle="Saat lead masuk tahap Qualification, penawaran otomatis disiapkan dengan nomor ter-generate & ter-link ke Lead."
         >
           {quotation ? (
             <View className="gap-3">
               <Line left="Nomor Penawaran" right={<Text className="text-primary font-bold">{quotation.nomor}</Text>} />
-              <Line left="Total Nilai" right={<Text className="font-semibold">{rupiah(quotation.totalAfterDisc || quotation.nilai || 0)}</Text>} />
+              <Line left="TOTAL (Sebelum PPN)" right={<Text className="font-semibold">{rupiah(quotation.total || quotation.nilai || 0)}</Text>} />
+              <Line left="PPN (11%)" right={<Text className="font-semibold">{rupiah(quotation.ppn ?? Math.round((quotation.total || quotation.nilai || 0) * 0.11))}</Text>} />
+              <Line left="DISC" right={<Text className="text-danger font-semibold">- {rupiah(quotation.disc || 0)}</Text>} />
+              <Line
+                left="TOTAL AFTER DISC (Grand Total)"
+                right={<Text className="text-primary font-bold">{rupiah(quotation.totalAfterDisc || quotation.nilai || 0)}</Text>}
+              />
               <Line left="Status Penawaran" right={<StatusBadge status={quotation.status || "Not Yet"} />} />
               <Line
-                left="File Dokumen"
+                left="File Excel Penawaran"
                 right={
                   quotation.fileUploaded ? (
                     <View className="flex-row items-center gap-1.5">
                       <CheckCircle2 size={14} color={colors.primary} />
                       <Text className="text-xs text-primary font-semibold">
-                        {quotation.fileName || `${(quotation.nomor || "penawaran").replace(/\//g, "-")}-template.csv`}
+                        {quotation.fileName || `Penawaran-${(quotation.nomor || "penawaran").replace(/\//g, "-")}.xlsx`}
                       </Text>
                     </View>
                   ) : (
@@ -544,14 +722,49 @@ function LeadExtras({ row }: { row: Row }) {
                   )
                 }
               />
-              <View className="flex-row items-center gap-2 mt-1">
+
+              <FileUploader
+                label="Upload File Excel Penawaran (.xlsx) — Sistem Otomatis Membaca Tabel & Nilai"
+                kind="dokumen"
+                autoFlush
+                onFilePicked={async (file) => {
+                  try {
+                    await uploadQuotationExcel(quotation.id, file);
+                    await reload();
+                    toast("File Excel penawaran berhasil dibaca & disinkronkan ke Lead!");
+                  } catch (e: any) {
+                    toast(e?.message || "Gagal membaca file Excel", "danger");
+                  }
+                }}
+              />
+
+              <View className="flex-row flex-wrap items-center gap-2 mt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onPress={() => {
+                    downloadQuotationTemplate({
+                      quotationId: quotation.id,
+                      leadId: row.id,
+                      customer: row.perusahaan,
+                      lead: row.nama,
+                      nomor: quotation.nomor,
+                      signer: row.pemilik,
+                    });
+                    toast("File Excel penawaran (.xlsx) sedang diunduh");
+                  }}
+                  className="flex-row items-center gap-1.5"
+                >
+                  <FileDown size={15} color={colors.text} />
+                  <Text className="text-xs">Download Excel (.xlsx)</Text>
+                </Button>
                 <Button
                   size="sm"
                   onPress={() => router.push(`/quotations/${quotation.id}` as any)}
                   className="flex-row items-center gap-1.5"
                 >
                   <FileText size={15} color={colors.background} />
-                  <Text className="text-xs">Buka Penawaran ({quotation.nomor})</Text>
+                  <Text className="text-xs">Buka & Kelola Penawaran ({quotation.nomor})</Text>
                   <ArrowRight size={14} color={colors.background} />
                 </Button>
               </View>
@@ -559,19 +772,24 @@ function LeadExtras({ row }: { row: Row }) {
           ) : (
             <View className="gap-3">
               <Text className="text-xs text-muted-foreground leading-relaxed">
-                Lead sudah masuk tahap kualifikasi. Silakan unduh template penawaran untuk diisi secara manual, lalu upload hasilnya di modul Penawaran.
+                Lead sudah masuk tahap kualifikasi. Silakan unduh template Excel penawaran (.xlsx) untuk diisi secara manual, atau buka modul Penawaran.
               </Text>
               <Button
                 size="sm"
                 variant="outline"
                 onPress={() => {
-                  downloadQuotationTemplate({ customer: row.perusahaan, lead: row.nama });
-                  toast("Template penawaran berhasil diunduh");
+                  downloadQuotationTemplate({
+                    leadId: row.id,
+                    customer: row.perusahaan,
+                    lead: row.nama,
+                    signer: row.pemilik,
+                  });
+                  toast("Template Excel penawaran (.xlsx) sedang diunduh");
                 }}
                 className="self-start flex-row items-center gap-1.5"
               >
                 <FileDown size={15} color={colors.text} />
-                <Text className="text-xs">Download Template Penawaran</Text>
+                <Text className="text-xs">Download Template Excel (.xlsx)</Text>
               </Button>
             </View>
           )}
@@ -632,30 +850,33 @@ function LeadExtras({ row }: { row: Row }) {
         }
       >
         <View className="gap-2">
-          {localFollowups.map((item) => (
-            <View key={item.id} className="border-border border-b py-2.5 last:border-b-0">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-2">
-                  <View className="bg-primary/10 rounded-md p-1">
-                    {item.method === "Telepon" ? <Phone size={13} color={colors.primary} /> : null}
-                    {item.method === "WhatsApp" ? <MessageSquare size={13} color={colors.primary} /> : null}
-                    {item.method === "Meeting" ? <UserCheck size={13} color={colors.primary} /> : null}
-                    {item.method === "Email" ? <Mail size={13} color={colors.primary} /> : null}
-                    {item.method === "Survey" ? <Calendar size={13} color={colors.primary} /> : null}
+          {apiFollowups.length === 0 ? (
+            <Text className="text-muted-foreground text-xs py-2">Belum ada riwayat follow-up tercatat.</Text>
+          ) : (
+            apiFollowups.map((item) => (
+              <View key={item.id} className="border-border border-b py-2.5 last:border-b-0">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-2">
+                    <View className="bg-primary/10 rounded-md p-1">
+                      {item.method === "Telepon" ? <Phone size={13} color={colors.primary} /> : null}
+                      {item.method === "WhatsApp" ? <MessageSquare size={13} color={colors.primary} /> : null}
+                      {item.method === "Email" ? <Mail size={13} color={colors.primary} /> : null}
+                      {!["Telepon", "WhatsApp", "Email"].includes(item.method) ? <Calendar size={13} color={colors.primary} /> : null}
+                    </View>
+                    <Text className="text-xs font-semibold text-foreground">{item.method}</Text>
                   </View>
-                  <Text className="text-xs font-semibold text-foreground">{item.method}</Text>
+                  <Text className="text-[11px] text-muted-foreground">{item.date}</Text>
                 </View>
-                <Text className="text-[11px] text-muted-foreground">{item.date}</Text>
+                <Text className="text-xs text-foreground mt-1 leading-relaxed">{item.note}</Text>
+                {item.next ? (
+                  <View className="bg-panel/60 border-border/60 mt-1.5 flex-row items-center gap-1.5 rounded p-1.5 border">
+                    <Calendar size={12} color={colors.info} />
+                    <Text className="text-[11px] text-info">Jadwal follow-up berikutnya: {item.next}</Text>
+                  </View>
+                ) : null}
               </View>
-              <Text className="text-xs text-foreground mt-1 leading-relaxed">{item.note}</Text>
-              {item.next ? (
-                <View className="bg-panel/60 border-border/60 mt-1.5 flex-row items-center gap-1.5 rounded p-1.5 border">
-                  <Calendar size={12} color={colors.info} />
-                  <Text className="text-[11px] text-info">Rencana aksi berikutnya: {item.next}</Text>
-                </View>
-              ) : null}
-            </View>
-          ))}
+            ))
+          )}
         </View>
       </Panel>
 
@@ -666,6 +887,11 @@ function LeadExtras({ row }: { row: Row }) {
             <DialogTitle>Catat Tindak Lanjut (Follow-up)</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
+            <View className="gap-1.5">
+              <Text className="text-xs text-muted-foreground font-medium">Tanggal Komunikasi</Text>
+              <DatePicker value={fuDate} onChange={setFuDate} placeholder="Pilih tanggal follow-up" />
+            </View>
+
             <View className="gap-1.5">
               <Text className="text-xs text-muted-foreground font-medium">Metode Komunikasi</Text>
               <View className="flex-row flex-wrap gap-1.5">
@@ -694,12 +920,25 @@ function LeadExtras({ row }: { row: Row }) {
             </View>
 
             <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Rencana Aksi Berikutnya (Next Action)</Text>
-              <Input
-                value={fuNextAction}
-                onChangeText={setFuNextAction}
-                placeholder="Contoh: Kirim revisi penawaran hari Jumat jam 14:00"
-              />
+              <Text className="text-xs text-muted-foreground font-medium">Tanggal Follow-up Berikutnya (Opsional)</Text>
+              <DatePicker value={fuNextAction} onChange={setFuNextAction} placeholder="Pilih tanggal jadwal berikutnya" />
+            </View>
+
+            <View className="gap-1.5">
+              <Text className="text-xs text-muted-foreground font-medium">Status Follow-up</Text>
+              <View className="flex-row gap-2">
+                {(["SELESAI", "JADWAL"] as const).map((st) => (
+                  <Button
+                    key={st}
+                    size="sm"
+                    variant={fuStatus === st ? "default" : "outline"}
+                    onPress={() => setFuStatus(st)}
+                    className="h-8 px-3"
+                  >
+                    <Text className="text-xs">{st === "SELESAI" ? "Selesai Dilakukan" : "Terjadwal"}</Text>
+                  </Button>
+                ))}
+              </View>
             </View>
           </View>
           <DialogFooter>
@@ -799,8 +1038,22 @@ function LeadExtras({ row }: { row: Row }) {
 }
 
 function QuotationExtras({ row }: { row: Row }) {
-  const { patchRow, toast } = useApp();
+  const { patchRow, toast, reload } = useApp();
   const versions = Array.from({ length: row.versi }, (_, i) => row.versi - i);
+  const apiVersions: { id: string; v: number; total: number; ppn: number; disc: number; totalAfterDisc: number; date: string; reason: string; file: string }[] =
+    Array.isArray(row._versions) && row._versions.length > 0
+      ? row._versions
+      : versions.map((v, i) => ({
+          id: `v-${v}`,
+          v,
+          total: row.total || row.nilai || 0,
+          ppn: row.ppn || 0,
+          disc: row.disc || 0,
+          totalAfterDisc: (row.totalAfterDisc || row.nilai || 0) * (1 - i * 0.02),
+          date: row.dibuat || "",
+          reason: `Versi ${v}`,
+          file: `Penawaran-${row.nomor.replace(/\//g, "-")}-v${v}.xlsx`,
+        }));
   const [editFinancials, setEditFinancials] = React.useState(false);
   const [inputTotal, setInputTotal] = React.useState(String(row.total || row.nilai || "0"));
   const [inputDisc, setInputDisc] = React.useState(String(row.disc || "0"));
@@ -817,46 +1070,64 @@ function QuotationExtras({ row }: { row: Row }) {
   const revPpn = Math.round(revTotNum * 0.11);
   const revAfterDisc = Math.max(0, revTotNum + revPpn - revDiscNum);
 
-  function handleCreateRevision() {
-    patchRow("quotations", row.id, {
-      versi: nextVersionNum,
-      total: revTotNum,
-      nilai: revTotNum,
-      disc: revDiscNum,
-      ppn: revPpn,
-      totalAfterDisc: revAfterDisc,
-      status: "Revisi",
-      fileName: `${row.nomor.replace(/\//g, "-")}-v${nextVersionNum}.pdf`,
-      fileUploaded: true,
-    });
+  async function handleCreateRevision() {
+    try {
+      await api("POST", `/quotations/${row.id}/versions`, {
+        total: revTotNum,
+        ppn: revPpn,
+        discount: revDiscNum,
+        grandTotal: revAfterDisc,
+        note: revisiReason.trim() || `Revisi v${nextVersionNum}`,
+      });
+      await reload();
+    } catch {
+      patchRow("quotations", row.id, {
+        versi: nextVersionNum,
+        total: revTotNum,
+        nilai: revTotNum,
+        disc: revDiscNum,
+        ppn: revPpn,
+        totalAfterDisc: revAfterDisc,
+        status: "Revisi",
+        fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}-v${nextVersionNum}.xlsx`,
+        fileUploaded: true,
+      });
+    }
     setInputTotal(String(revTotNum));
     setInputDisc(String(revDiscNum));
     setRevisiOpen(false);
     toast(`Versi ${nextVersionNum} penawaran berhasil dibuat & berstatus Revisi`);
   }
 
-  const totNum = Number(inputTotal.replace(/\D/g, "")) || 0;
-  const discNum = Number(inputDisc.replace(/\D/g, "")) || 0;
+  const totNum = editFinancials
+    ? Number(inputTotal.replace(/\D/g, "")) || 0
+    : Number(row.total || row.nilai || 0);
+  const discNum = editFinancials
+    ? Number(inputDisc.replace(/\D/g, "")) || 0
+    : Number(row.disc || 0);
   const calcPpn = Math.round(totNum * 0.11);
   const calcTotalAfterDisc = Math.max(0, totNum + calcPpn - discNum);
 
-  function handleSaveFinancials() {
-    patchRow("quotations", row.id, {
+  async function handleSaveFinancials() {
+    await patchRow("quotations", row.id, {
       total: totNum,
       nilai: totNum,
       ppn: calcPpn,
       disc: discNum,
       totalAfterDisc: calcTotalAfterDisc,
+      fileUploaded: true,
+      fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}.xlsx`,
+      status: row.status === "Not Yet" ? "Done" : row.status,
     });
     setEditFinancials(false);
-    toast("Nilai penawaran berhasil diperbarui");
+    toast("Nilai penawaran & file Excel (.xlsx) berhasil diperbarui");
   }
 
   return (
     <>
       <Panel
         title="Rincian Nilai & Kalkulasi Penawaran"
-        subtitle="Nomor penawaran dibuat otomatis oleh sistem. Sales menginput nilai & diskon dari draft Excel."
+        subtitle="Nomor penawaran dibuat otomatis saat Lead masuk Qualification dan ter-link langsung ke Lead."
       >
         <View className="gap-3">
           <Line left="Nomor Penawaran (Auto-Generated)" right={<Text className="text-primary font-bold">{row.nomor}</Text>} />
@@ -875,24 +1146,33 @@ function QuotationExtras({ row }: { row: Row }) {
             <View className="bg-warning/10 border-warning/30 flex-row items-center gap-2 rounded-xl border p-3 mt-1">
               <AlertTriangle size={16} color={colors.warning} />
               <Text className="text-warning text-xs flex-1">
-                Status masih <b>Not Yet</b>. Silakan upload file Excel/PDF penawaran dan sesuaikan nilai di bawah agar status menjadi <b>Done</b>.
+                Status masih <b>Not Yet</b>. Anda bisa <b>Edit Item / Jasa di aplikasi</b> atau <b>Upload File Excel (.xlsx)</b> hasil editan manual agar sistem otomatis membaca nilainya dan mengubah status menjadi <b>Done</b>.
               </Text>
             </View>
           )}
 
           {!editFinancials ? (
-            <Button variant="outline" size="sm" onPress={() => setEditFinancials(true)} className="mt-2 self-start">
-              <Text className="text-xs">Ubah Nilai & Diskon</Text>
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => {
+                setInputTotal(String(row.total || row.nilai || "0"));
+                setInputDisc(String(row.disc || "0"));
+                setEditFinancials(true);
+              }}
+              className="mt-2 self-start"
+            >
+              <Text className="text-xs">Ubah Nilai & Diskon Manual</Text>
             </Button>
           ) : (
             <View className="bg-panel border-border/80 gap-3 rounded-xl border p-4 mt-2">
-              <Text className="text-sm font-semibold text-foreground">Edit Nilai Penawaran</Text>
+              <Text className="text-sm font-semibold text-foreground">Edit Nilai & Diskon Penawaran</Text>
               <View className="gap-1">
-                <Text className="text-xs text-muted-foreground">TOTAL Nilai (Rp)</Text>
+                <Text className="text-xs text-muted-foreground">TOTAL Nilai Sebelum PPN (Rp)</Text>
                 <Input
                   value={inputTotal}
                   onChangeText={setInputTotal}
-                  placeholder="Contoh: 185000000"
+                  placeholder="Contoh: 3000000"
                   keyboardType="numeric"
                 />
               </View>
@@ -901,7 +1181,7 @@ function QuotationExtras({ row }: { row: Row }) {
                 <Input
                   value={inputDisc}
                   onChangeText={setInputDisc}
-                  placeholder="Contoh: 5000000"
+                  placeholder="Contoh: 0"
                   keyboardType="numeric"
                 />
               </View>
@@ -923,8 +1203,8 @@ function QuotationExtras({ row }: { row: Row }) {
       </Panel>
 
       <Panel
-        title="Upload File Penawaran (Excel / PDF)"
-        subtitle="Upload dokumen penawaran hasil olahan manual Excel dari sales."
+        title="File Excel Penawaran — Download & Smart Upload (.xlsx)"
+        subtitle="Cara 1: Download file Excel (.xlsx) sesuai contoh, edit manual di Excel, lalu upload kembali — sistem otomatis membaca tabel item, TOTAL, PPN, DISC & GRAND TOTAL."
       >
         <View className="gap-3">
           <Line
@@ -933,7 +1213,7 @@ function QuotationExtras({ row }: { row: Row }) {
               row.fileUploaded ? (
                 <View className="flex-row items-center gap-1.5">
                   <CheckCircle2 size={15} color={colors.primary} />
-                  <Text className="text-xs font-semibold text-primary">File Terupload</Text>
+                  <Text className="text-xs font-semibold text-primary">File Terupload & Ter-link ke Lead</Text>
                 </View>
               ) : (
                 <Text className="text-xs text-muted-foreground font-medium">Belum Ada File</Text>
@@ -944,18 +1224,37 @@ function QuotationExtras({ row }: { row: Row }) {
             <Line left="Nama File Terakhir" right={<Text className="text-xs text-foreground font-mono">{row.fileName}</Text>} />
           ) : null}
 
+          <View className="flex-row flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => {
+                downloadQuotationTemplate({
+                  quotationId: row.id,
+                  customer: row.customer,
+                  lead: row.lead,
+                  nomor: row.nomor,
+                  signer: row.pemilik,
+                });
+                toast("File Excel penawaran (.xlsx) sedang diunduh");
+              }}
+            >
+              <FileDown size={15} color={colors.text} />
+              <Text className="text-xs">Download File Excel (.xlsx) Saat Ini</Text>
+            </Button>
+          </View>
+
           <FileUploader
-            label="Pilih atau Tarik File Excel/PDF"
+            label="Pilih atau Tarik File Excel (.xlsx) Penawaran — Sistem Otomatis Baca Isi Tabel & Total"
             kind="dokumen"
             autoFlush
-            onChange={(count) => {
-              if (count > 0) {
-                patchRow("quotations", row.id, {
-                  fileUploaded: true,
-                  fileName: `${row.nomor.replace(/\//g, "-")}-penawaran.xlsx`,
-                  status: row.status === "Not Yet" ? "Done" : row.status,
-                });
-                toast("File penawaran berhasil diupload. Status kini 'Done'");
+            onFilePicked={async (file) => {
+              try {
+                await uploadQuotationExcel(row.id, file);
+                await reload();
+                toast("File Excel berhasil dibaca! Tabel item, TOTAL, PPN, DISC & status otomatis diperbarui.");
+              } catch (e: any) {
+                toast(e?.message || "Gagal memproses file Excel", "danger");
               }
             }}
           />
@@ -963,26 +1262,41 @@ function QuotationExtras({ row }: { row: Row }) {
       </Panel>
 
       <QuotationTemplateGenerator
+        key={`${row.id}-${row.versi}-${row.total}-${row.disc}-${(row.items ?? []).length}`}
         row={row}
         totNum={totNum}
         calcPpn={calcPpn}
         calcTotalAfterDisc={calcTotalAfterDisc}
         discNum={discNum}
-        onUpdateItems={(items, newTotal) => {
+        onUpdateItems={async (items, newTotal, meta, shouldDownload) => {
           const newPpn = Math.round(newTotal * 0.11);
           const newAfterDisc = Math.max(0, newTotal + newPpn - discNum);
-          patchRow("quotations", row.id, {
+          await patchRow("quotations", row.id, {
             items,
+            subject: meta?.subject,
+            notesList: meta?.notesList,
             total: newTotal,
             nilai: newTotal,
             ppn: newPpn,
+            disc: discNum,
             totalAfterDisc: newAfterDisc,
             fileUploaded: true,
-            fileName: `${row.nomor.replace(/\//g, "-")}-auto-generated.pdf`,
+            fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}.xlsx`,
             status: row.status === "Not Yet" ? "Done" : row.status,
           });
           setInputTotal(String(newTotal));
-          toast("Template penawaran berhasil di-generate & disimpan!");
+          if (shouldDownload) {
+            downloadQuotationTemplate({
+              quotationId: row.id,
+              customer: row.customer,
+              lead: row.lead,
+              nomor: row.nomor,
+              signer: row.pemilik,
+            });
+            toast("Data penawaran disimpan & file Excel (.xlsx) diunduh!");
+          } else {
+            toast("Rincian item & penawaran berhasil disimpan!");
+          }
         }}
       />
 
@@ -996,14 +1310,14 @@ function QuotationExtras({ row }: { row: Row }) {
           </Button>
         }
       >
-        {versions.map((v, i) => (
+        {apiVersions.map((ver, i) => (
           <Line
-            key={v}
-            left={`Versi ${v}`}
-            sub={`${row.nomor.replace(/\//g, "-")}-v${v}.pdf`}
+            key={ver.id || ver.v}
+            left={`Versi ${ver.v}${ver.reason ? ` — ${ver.reason}` : ""}`}
+            sub={`${ver.file || `${row.nomor.replace(/\//g, "-")}-v${ver.v}.pdf`}${ver.date ? ` · ${ver.date}` : ""}`}
             right={
               <View className="items-end gap-1">
-                <Text className="text-sm font-medium">{rupiah(row.nilai * (1 + i * 0.04))}</Text>
+                <Text className="text-sm font-medium">{rupiah(ver.totalAfterDisc || ver.total)}</Text>
                 {i === 0 ? <StatusBadge status={row.status || "Disetujui"} /> : null}
               </View>
             }
@@ -1382,7 +1696,7 @@ function ReceivingExtras({ row }: { row: Row }) {
       produk: issueItem,
       jenis: issueType,
       po: row.po,
-      pelapor: row.penerima || "Eko Saputra",
+      pelapor: row.penerima || "-",
       status: "Dilaporkan",
       keterangan: `${issueNotes.trim()} (${issueSolusi})`,
     });
@@ -1647,24 +1961,78 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
 }
 
 function ProjectExtras({ row }: { row: Row }) {
-  const { toast, data } = useApp();
+  const { toast, data, reload } = useApp();
   const products: Row[] = data.products ?? [];
   const [reserveOpen, setReserveOpen] = React.useState(false);
-  const [selectedProduct, setSelectedProduct] = React.useState(products[0]?.nama || "");
+  const [selectedProduct, setSelectedProduct] = React.useState("");
   const [reserveQty, setReserveQty] = React.useState("2");
   const [bastOpen, setBastOpen] = React.useState(false);
+  const [requirements, setRequirements] = React.useState<
+    { id: string; produk: string; neededQty: number; reservedQty: number; shortageQty: number; status: string }[]
+  >([]);
 
-  const [materials, setMaterials] = React.useState<{ id: string; produk: string; qty: number; status: string }[]>([
-    { id: "mat-1", produk: "Access Controller 4 Pintu", qty: 2, status: "Tersedia & Di-reserve" },
-    { id: "mat-2", produk: "Reader Fingerprint", qty: 4, status: "Tersedia & Di-reserve" },
-    { id: "mat-3", produk: "Kabel LAN UTP Cat6 (per meter)", qty: 300, status: "Tersedia di Gudang Jakarta" },
-  ]);
+  const activeSelectedProduct = selectedProduct || String(products[0]?.nama ?? "");
 
-  function handleAddReservation() {
+  const mapRequirements = React.useCallback((res: any[]) => {
+    return res.map((r: any) => ({
+      id: String(r.id),
+      produk: r.product?.name ?? "Barang",
+      neededQty: Number(r.neededQty ?? 0),
+      reservedQty: Number(r.reservedQty ?? 0),
+      shortageQty: Number(r.shortageQty ?? 0),
+      status:
+        Number(r.shortageQty ?? 0) > 0
+          ? `Reserved ${r.reservedQty} · Kurang ${r.shortageQty} (Masuk PR Procurement)`
+          : `Tersedia & Di-reserve (${r.reservedQty})`,
+    }));
+  }, []);
+
+  const loadRequirements = React.useCallback(async () => {
+    try {
+      const res = await api<any[]>("GET", `/projects/${row.id}/requirements`);
+      if (Array.isArray(res)) {
+        setRequirements(mapRequirements(res));
+      }
+    } catch {}
+  }, [row.id, mapRequirements]);
+
+  React.useEffect(() => {
+    let active = true;
+    api<any[]>("GET", `/projects/${row.id}/requirements`)
+      .then((res) => {
+        if (active && Array.isArray(res)) {
+          setRequirements(mapRequirements(res));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [row.id, mapRequirements]);
+
+  async function handleAddReservation() {
     const q = Number(reserveQty) || 1;
-    setMaterials([...materials, { id: `mat-${Date.now()}`, produk: selectedProduct, qty: q, status: "Tersedia & Di-reserve" }]);
-    setReserveOpen(false);
-    toast(`Reservasi ${q} unit ${selectedProduct} berhasil dicatat`);
+    const prod = products.find((p) => p.nama === activeSelectedProduct) ?? products[0];
+    if (!prod) {
+      toast("Pilih perangkat terlebih dahulu", "danger");
+      return;
+    }
+    try {
+      const res = await api<any>("POST", `/projects/${row.id}/requirements`, {
+        items: [{ productId: Number(prod.id), neededQty: q }],
+      });
+      await loadRequirements();
+      await reload();
+      setReserveOpen(false);
+      const createdPr = res?.purchaseRequestCreated;
+      toast(
+        createdPr
+          ? `Kebutuhan dicatat: stok tersedia di-reserve & kekurangan otomatis masuk Request Procurement`
+          : `Reservasi ${q} unit ${prod.nama} berhasil dicatat`,
+      );
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal menyimpan kebutuhan barang", "danger");
+    }
   }
 
   function handlePrintBast() {
@@ -1677,23 +2045,27 @@ function ProjectExtras({ row }: { row: Row }) {
     <>
       <Panel
         title="Kebutuhan & Reservasi Material Gudang"
-        subtitle="Alokasi stok gudang untuk kebutuhan project agar tidak terpakai oleh pekerjaan lain."
+        subtitle="Sistem otomatis mengecek stok, me-reserve yang tersedia, dan membuat Request ke Procurement jika kurang."
         right={
           <Button size="sm" variant="outline" onPress={() => setReserveOpen(true)} className="flex-row items-center gap-1">
             <Plus size={14} color={colors.text} />
-            <Text className="text-xs">Alokasikan Material</Text>
+            <Text className="text-xs">Tambah Kebutuhan Barang</Text>
           </Button>
         }
       >
         <View className="gap-2">
-          {materials.map((m) => (
-            <Line
-              key={m.id}
-              left={m.produk}
-              sub={`Status: ${m.status}`}
-              right={<Text className="font-semibold text-sm">{m.qty} unit</Text>}
-            />
-          ))}
+          {requirements.length === 0 ? (
+            <Text className="text-muted-foreground text-xs py-2">Belum ada daftar kebutuhan barang untuk project ini.</Text>
+          ) : (
+            requirements.map((m) => (
+              <Line
+                key={m.id}
+                left={m.produk}
+                sub={m.status}
+                right={<Text className="font-semibold text-sm">{m.neededQty} unit</Text>}
+              />
+            ))
+          )}
         </View>
       </Panel>
 
@@ -1718,22 +2090,22 @@ function ProjectExtras({ row }: { row: Row }) {
       <Dialog open={reserveOpen} onOpenChange={setReserveOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Alokasi / Reserve Material Gudang</DialogTitle>
+            <DialogTitle>Tambah Kebutuhan Material Project</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
             <View className="gap-1">
               <Text className="text-xs text-muted-foreground font-medium">Pilih Perangkat / Material</Text>
               <ScrollView style={{ maxHeight: 180 }} className="border border-border rounded-lg p-1">
-                {products.slice(0, 10).map((p) => (
+                {products.map((p) => (
                   <Pressable
                     key={p.id}
                     onPress={() => setSelectedProduct(p.nama)}
                     className={`p-2 rounded flex-row items-center justify-between ${
-                      selectedProduct === p.nama ? "bg-primary/10" : ""
+                      activeSelectedProduct === p.nama ? "bg-primary/10" : ""
                     }`}
                   >
                     <Text className="text-xs font-medium">{p.nama}</Text>
-                    {selectedProduct === p.nama ? <Check size={14} color={colors.primary} /> : null}
+                    {activeSelectedProduct === p.nama ? <Check size={14} color={colors.primary} /> : null}
                   </Pressable>
                 ))}
               </ScrollView>
@@ -1749,7 +2121,7 @@ function ProjectExtras({ row }: { row: Row }) {
               <Text>Batal</Text>
             </Button>
             <Button onPress={handleAddReservation}>
-              <Text>Simpan Reservasi</Text>
+              <Text>Cek Stok & Simpan</Text>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1782,9 +2154,9 @@ function ProjectExtras({ row }: { row: Row }) {
             </View>
 
             <View className="border-border border rounded-xl p-3 gap-2">
-              <Text className="text-xs font-semibold">Rincian Material Terpasang:</Text>
-              {materials.map((m, idx) => (
-                <Text key={m.id} className="text-xs text-muted-foreground">{idx + 1}. {m.produk} — {m.qty} unit</Text>
+              <Text className="text-xs font-semibold">Rincian Material Project:</Text>
+              {requirements.map((m, idx) => (
+                <Text key={m.id} className="text-xs text-muted-foreground">{idx + 1}. {m.produk} — {m.neededQty} unit</Text>
               ))}
             </View>
 
@@ -1818,8 +2190,294 @@ function ProjectExtras({ row }: { row: Row }) {
   );
 }
 
+function InvoiceExtras({ row }: { row: Row }) {
+  const { user, toast, reload } = useApp();
+  const sisa = Math.max(0, Number(row.total || 0) - Number(row.terbayar || 0));
+  const [payOpen, setPayOpen] = React.useState(false);
+  const [payAmount, setPayAmount] = React.useState(String(sisa || row.total || 0));
+  const [payDate, setPayDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [payMethod, setPayMethod] = React.useState<"TRANSFER" | "TUNAI" | "QRIS" | "LAINNYA">("TRANSFER");
+  const [payRef, setPayRef] = React.useState("");
+  const payments: { id: string; amount: number; date: string; method: string; reference: string }[] =
+    Array.isArray(row._payments) ? row._payments : [];
+
+  function openPayModal() {
+    setPayAmount(String(Math.max(0, Number(row.total || 0) - Number(row.terbayar || 0))));
+    setPayOpen(true);
+  }
+
+  async function handleSavePayment() {
+    const amt = Number(String(payAmount).replace(/\D/g, "")) || 0;
+    if (amt <= 0) {
+      toast("Nominal pembayaran harus lebih dari 0", "danger");
+      return;
+    }
+    try {
+      await api("POST", `/invoices/${row.id}/payments`, {
+        amount: amt,
+        date: payDate || new Date().toISOString().slice(0, 10),
+        method: payMethod,
+        reference: payRef.trim() || undefined,
+      });
+      toast(`Pembayaran ${rupiah(amt)} berhasil dicatat`);
+      setPayOpen(false);
+      setPayRef("");
+      await reload();
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mencatat pembayaran", "danger");
+    }
+  }
+
+  return (
+    <>
+      <Panel
+        title="Ringkasan Pembayaran Invoice"
+        right={
+          (user?.role === "finance" || user?.role === "bos" || user?.role === "admin") && sisa > 0 ? (
+            <Button variant="outline" size="sm" onPress={openPayModal}>
+              <Plus size={14} color={colors.text} />
+              <Text className="text-xs">Catat Pembayaran</Text>
+            </Button>
+          ) : undefined
+        }
+      >
+        <Line left="Nilai Sebelum PPN" right={<Text className="text-sm font-medium">{rupiah(row.nilai || 0)}</Text>} />
+        <Line left="PPN (11%)" right={<Text className="text-sm font-medium">{rupiah(row.ppn || 0)}</Text>} />
+        <Line left="Total Tagihan" right={<Text className="text-sm font-bold">{rupiah(row.total || 0)}</Text>} />
+        <Line left="Sudah Dibayar" right={<Text className="text-success text-sm font-medium">{rupiah(row.terbayar || 0)}</Text>} />
+        <Line left="Sisa Tagihan" right={<Text className="text-sm font-semibold">{rupiah(sisa)}</Text>} />
+      </Panel>
+      <Panel title="Riwayat Pembayaran Masuk">
+        {payments.length > 0 ? (
+          payments.map((p) => (
+            <Line
+              key={p.id}
+              left={`${p.method} · ${p.date}`}
+              sub={p.reference && p.reference !== "-" ? `Ref: ${p.reference}` : "Pembayaran terverifikasi"}
+              right={<Text className="text-sm font-semibold text-success">{rupiah(p.amount)}</Text>}
+            />
+          ))
+        ) : row.terbayar > 0 ? (
+          <Line left="Transfer bank" sub="Bukti transfer tercatat" right={<Text className="text-sm">{rupiah(row.terbayar)}</Text>} />
+        ) : (
+          <Text className="text-muted-foreground text-sm">Belum ada pembayaran tercatat.</Text>
+        )}
+      </Panel>
+
+      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Catat Pembayaran Invoice ({row.nomor})</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <FormField label="Nominal Pembayaran (Rp)" required>
+              <Input value={payAmount} onChangeText={setPayAmount} keyboardType="numeric" />
+            </FormField>
+            <FormField label="Tanggal Pembayaran" required>
+              <DatePicker value={payDate} onChange={setPayDate} placeholder="Pilih tanggal bayar" />
+            </FormField>
+            <FormField label="Metode Pembayaran" required>
+              <View className="flex-row flex-wrap gap-1.5">
+                {(["TRANSFER", "TUNAI", "QRIS", "LAINNYA"] as const).map((m) => (
+                  <Button
+                    key={m}
+                    size="sm"
+                    variant={payMethod === m ? "default" : "outline"}
+                    onPress={() => setPayMethod(m)}
+                    className="h-8 px-2.5"
+                  >
+                    <Text className="text-xs">{m}</Text>
+                  </Button>
+                ))}
+              </View>
+            </FormField>
+            <FormField label="Nomor Referensi / Rekening">
+              <Input value={payRef} onChangeText={setPayRef} placeholder="Contoh: TRF-BCA-992811" />
+            </FormField>
+            <FileUploader label="Upload Bukti Pembayaran (JPG / PDF)" kind="semua" autoFlush />
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setPayOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleSavePayment}>
+              <Text>Simpan Pembayaran</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function SupplierPoExtras({ row }: { row: Row }) {
+  const { user, patchRow, setStatus, addRow, toast, data, reload } = useApp();
+  const steps = ["Di Supplier", "Dikirim", "Sampai"];
+  const cur = steps.indexOf(row.pengiriman);
+  const showPrice = PRICE_ROLES.includes(user!.role);
+
+  const supplierInvoices: Row[] = (data.invoiceIn ?? []).filter(
+    (inv: Row) => String(inv.supplierPoId) === String(row.id) || inv.po === row.nomor
+  );
+
+  const [invOpen, setInvOpen] = React.useState(false);
+  const [invNumber, setInvNumber] = React.useState(`INV-SUP-${row.nomor || row.id}`);
+  const [invAmount, setInvAmount] = React.useState(String(row.total || 0));
+  const [invDate, setInvDate] = React.useState(() => new Date().toISOString().slice(0, 10));
+  const [invDue, setInvDue] = React.useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  });
+
+  function go(s: string) {
+    patchRow("supplier-pos", row.id, { pengiriman: s, status: s });
+    setStatus("supplier-pos", row.id, s);
+  }
+
+  async function handleCreateInvoiceIn() {
+    const amt = Number(String(invAmount).replace(/\D/g, "")) || 0;
+    const ppn = Math.round(amt * 0.11);
+    const created = await addRow("invoiceIn", {
+      nomor: invNumber,
+      supplierId: row.supplierId,
+      supplier: row.supplier,
+      supplierPoId: row.id,
+      nilai: amt,
+      ppn,
+      total: amt + ppn,
+      tanggal: invDate,
+      jatuhTempo: invDue,
+    });
+    if (created) {
+      setInvOpen(false);
+      await reload();
+    }
+  }
+
+  async function handlePaySupplierInvoice(inv: Row) {
+    const sisa = Math.max(0, Number(inv.total || 0) - Number(inv.terbayar || 0));
+    if (sisa <= 0) {
+      toast("Invoice supplier ini sudah lunas", "info");
+      return;
+    }
+    try {
+      await api("POST", `/invoice-in/${inv.id}/payments`, {
+        amount: sisa,
+        date: new Date().toISOString().slice(0, 10),
+        method: "TRANSFER",
+        reference: `PAY-${inv.nomor}`,
+      });
+      toast(`Pembayaran ke supplier sebesar ${rupiah(sisa)} berhasil dicatat`);
+      await reload();
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mencatat pembayaran supplier", "danger");
+    }
+  }
+
+  return (
+    <>
+      <Panel title="Pengiriman dari supplier" subtitle="Status diubah manual oleh Procurement dengan bukti DO">
+        {steps.map((s, i) => (
+          <View key={s} className="flex-row items-center gap-3 py-2">
+            {i <= cur ? <CheckCircle2 size={20} color={colors.success} /> : <Circle size={20} color={colors.border} />}
+            <Text className={i <= cur ? "text-sm font-medium" : "text-muted-foreground text-sm"}>{s}</Text>
+          </View>
+        ))}
+        {(user!.role === "procurement" || user!.role === "bos" || user!.role === "admin") && cur < 2 && steps[cur + 1] ? (
+          <Button
+            className="mt-2 self-start"
+            variant="outline"
+            onPress={() => {
+              const nextStep = steps[cur + 1];
+              if (nextStep) go(nextStep);
+            }}
+          >
+            <Text>Tandai {steps[cur + 1]}</Text>
+          </Button>
+        ) : null}
+      </Panel>
+      <Panel title="Barang di PO ini">
+        {String(row.item).split(", ").map((it) => (
+          <Line key={it} left={it} right={showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : undefined} />
+        ))}
+        {showPrice ? <Line left="Total harga beli" right={<Text className="text-sm font-semibold">{rupiah(row.total)}</Text>} /> : null}
+        <Text className="text-muted-foreground mt-2 text-[13px]">Penerimaan sebagian diperbolehkan di Gudang.</Text>
+      </Panel>
+
+      {showPrice ? (
+        <Panel
+          title="Invoice Masuk & Pembayaran ke Supplier"
+          subtitle="Tagihan dari supplier atas PO ini beserta status pelunasan oleh Finance."
+          right={
+            <Button size="sm" variant="outline" onPress={() => setInvOpen(true)} className="flex-row items-center gap-1">
+              <Plus size={14} color={colors.text} />
+              <Text className="text-xs">Catat Invoice Masuk</Text>
+            </Button>
+          }
+        >
+          {supplierInvoices.length === 0 ? (
+            <Text className="text-muted-foreground text-xs py-1">Belum ada tagihan (Invoice Masuk) dari supplier untuk PO ini.</Text>
+          ) : (
+            supplierInvoices.map((inv) => {
+              const lunas = Number(inv.terbayar || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0;
+              return (
+                <Line
+                  key={inv.id}
+                  left={`${inv.nomor} · Jatuh tempo ${inv.jatuhTempo}`}
+                  sub={`Dibayar: ${rupiah(inv.terbayar || 0)} dari ${rupiah(inv.total || 0)} (${inv.status})`}
+                  right={
+                    !lunas && (user?.role === "finance" || user?.role === "bos" || user?.role === "admin") ? (
+                      <Button size="sm" variant="outline" onPress={() => handlePaySupplierInvoice(inv)}>
+                        <Text className="text-xs">Lunasi</Text>
+                      </Button>
+                    ) : (
+                      <StatusBadge status={lunas ? "Lunas" : inv.status} />
+                    )
+                  }
+                />
+              );
+            })
+          )}
+        </Panel>
+      ) : null}
+
+      <Dialog open={invOpen} onOpenChange={setInvOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Catat Invoice Masuk Supplier</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <FormField label="Nomor Invoice Supplier" required>
+              <Input value={invNumber} onChangeText={setInvNumber} />
+            </FormField>
+            <FormField label="Nilai DPP Sebelum PPN (Rp)" required>
+              <Input value={invAmount} onChangeText={setInvAmount} keyboardType="numeric" />
+            </FormField>
+            <FormField label="Tanggal Invoice" required>
+              <DatePicker value={invDate} onChange={setInvDate} />
+            </FormField>
+            <FormField label="Jatuh Tempo" required>
+              <DatePicker value={invDue} onChange={setInvDue} />
+            </FormField>
+            <FileUploader label="Upload File Invoice dari Supplier" kind="dokumen" autoFlush />
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setInvOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleCreateInvoiceIn}>
+              <Text>Simpan Invoice Masuk</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export function ModuleExtras({ moduleKey, row }: { moduleKey: string; row: Row }) {
-  const { user, patchRow, setStatus, toast, data } = useApp();
+  const { user, data } = useApp();
 
   if (moduleKey === "leads") {
     return <LeadExtras row={row} />;
@@ -1857,71 +2515,11 @@ export function ModuleExtras({ moduleKey, row }: { moduleKey: string; row: Row }
   }
 
   if (moduleKey === "invoices") {
-    const sisa = row.total - row.terbayar;
-    function pay() {
-      const amount = Math.min(sisa, Math.round(row.total * 0.3));
-      if (amount <= 0) { toast("Invoice sudah lunas", "info"); return; }
-      const terbayar = row.terbayar + amount;
-      patchRow("invoices", row.id, { terbayar, status: terbayar >= row.total ? "Lunas" : "Dibayar sebagian" });
-      toast(`Pembayaran ${rupiah(amount)} dicatat`);
-    }
-    return (
-      <>
-        <Panel title="Ringkasan pembayaran" right={user!.role === "finance" || user!.role === "bos" ? <Button variant="outline" size="sm" onPress={pay}><Text>Catat pembayaran</Text></Button> : undefined}>
-          <Line left="Total tagihan" right={<Text className="text-sm font-medium">{rupiah(row.total)}</Text>} />
-          <Line left="Sudah dibayar" right={<Text className="text-success text-sm font-medium">{rupiah(row.terbayar)}</Text>} />
-          <Line left="Sisa" right={<Text className="text-sm font-medium">{rupiah(sisa)}</Text>} />
-        </Panel>
-        <Panel title="Pembayaran masuk">
-          {row.terbayar > 0 ? (
-            <Line left="Transfer bank" sub="Bukti: bukti-transfer.jpg" right={<Text className="text-sm">{rupiah(row.terbayar)}</Text>} />
-          ) : (
-            <Text className="text-muted-foreground text-sm">Belum ada pembayaran.</Text>
-          )}
-        </Panel>
-      </>
-    );
+    return <InvoiceExtras row={row} />;
   }
 
   if (moduleKey === "supplier-pos") {
-    const steps = ["Di Supplier", "Dikirim", "Sampai"];
-    const cur = steps.indexOf(row.pengiriman);
-    const showPrice = PRICE_ROLES.includes(user!.role);
-    function go(s: string) {
-      patchRow("supplier-pos", row.id, { pengiriman: s, status: s });
-      setStatus("supplier-pos", row.id, s);
-    }
-    return (
-      <>
-        <Panel title="Pengiriman dari supplier" subtitle="Status diubah manual oleh Procurement dengan bukti DO">
-          {steps.map((s, i) => (
-            <View key={s} className="flex-row items-center gap-3 py-2">
-              {i <= cur ? <CheckCircle2 size={20} color={colors.success} /> : <Circle size={20} color={colors.border} />}
-              <Text className={i <= cur ? "text-sm font-medium" : "text-muted-foreground text-sm"}>{s}</Text>
-            </View>
-          ))}
-          {(user!.role === "procurement" || user!.role === "bos") && cur < 2 && steps[cur + 1] ? (
-            <Button
-              className="mt-2 self-start"
-              variant="outline"
-              onPress={() => {
-                const nextStep = steps[cur + 1];
-                if (nextStep) go(nextStep);
-              }}
-            >
-              <Text>Tandai {steps[cur + 1]}</Text>
-            </Button>
-          ) : null}
-        </Panel>
-        <Panel title="Barang di PO ini">
-          {String(row.item).split(", ").map((it) => (
-            <Line key={it} left={it} right={showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : undefined} />
-          ))}
-          {showPrice ? <Line left="Total harga beli" right={<Text className="text-sm font-semibold">{rupiah(row.total)}</Text>} /> : null}
-          <Text className="text-muted-foreground mt-2 text-[13px]">Penerimaan sebagian diperbolehkan di Gudang.</Text>
-        </Panel>
-      </>
-    );
+    return <SupplierPoExtras row={row} />;
   }
 
   if (moduleKey === "delivery-notes") {

@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
   StreamableFile,
@@ -19,11 +21,11 @@ import {
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { renderPdf } from "../common/pdf.js";
-import { IsString, MinLength } from "class-validator";
+import { IsOptional, IsString } from "class-validator";
 
 class CancelDto {
-  @IsString() @MinLength(3)
-  reason: string;
+  @IsOptional() @IsString()
+  reason?: string;
 }
 
 @Controller("delivery-notes")
@@ -110,6 +112,16 @@ export class DeliveryController {
     return this.service.create(dto, user);
   }
 
+  @Patch(":id")
+  @Require("delivery", "U")
+  update(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: DeliveryCreateDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.update(id, dto, user);
+  }
+
   @Post(":id/goods")
   @Require("delivery", "U")
   prepareGoods(
@@ -137,7 +149,7 @@ export class DeliveryController {
     @Body() dto: CancelDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.service.cancel(id, dto.reason, user);
+    return this.service.cancel(id, dto.reason ?? "Dibatalkan", user);
   }
 
   @Post(":id/report")
@@ -148,5 +160,11 @@ export class DeliveryController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.report(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Require("delivery", "A")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
   }
 }

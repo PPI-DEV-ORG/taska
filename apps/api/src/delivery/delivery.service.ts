@@ -46,18 +46,13 @@ export class DeliveryService {
   }
 
   async create(dto: DeliveryCreateDto, user: RequestUser) {
-    if (!dto.locations.length) throw new BadRequestException("Minimal satu tujuan lokasi");
-    for (const l of dto.locations) {
-      if (l.projectId) {
-        const p = await this.prisma.main.project.findUnique({ where: { id: l.projectId } });
-        if (!p) throw new NotFoundException(`Project #${l.projectId} tidak ditemukan`);
-      }
-    }
+    const locations = dto.locations?.length ? dto.locations : [{ destination: "-", reason: "Dinas luar" }];
     const withGoods = dto.withGoods === true || dto.withGoods === "true";
+    const date = dto.date ? new Date(dto.date) : new Date();
 
     const number =
       dto.number?.trim() ||
-      (await this.docnum.next("suratJalan", new Date(dto.date)));
+      (await this.docnum.next("suratJalan", date));
     if (dto.number?.trim()) {
       await this.docnum.assertUnique(number, async (v) =>
         Boolean(await this.prisma.main.deliveryNote.findUnique({ where: { number: v } })),
@@ -69,16 +64,22 @@ export class DeliveryService {
         number,
         creatorId: user.id,
         withGoods,
-        date: new Date(dto.date),
+        date,
+        status: dto.status ?? "PENDING",
+        reportText: dto.reportText,
+        reportFileId: dto.reportFileId,
         locations: {
-          create: dto.locations.map((l) => ({
-            destination: l.destination,
-            reason: l.reason,
+          create: locations.map((l) => ({
+            destination: l.destination || "-",
+            reason: l.reason || "Dinas luar",
             projectId: l.projectId ?? null,
           })),
         },
       },
-      include: { locations: true },
+      include: {
+        creator: { select: { name: true, role: true } },
+        locations: { include: { project: { select: { name: true } } } },
+      },
     });
 
     await this.approvals.request({
@@ -94,12 +95,46 @@ export class DeliveryService {
       await this.notifications.notify({
         roles: ["GUDANG"],
         kind: "SURAT",
-        text: `Surat jalan ${number} — barang siap discan untuk ${dto.locations[0].destination}`,
+        text: `Surat jalan ${number} — barang siap discan untuk ${locations[0].destination}`,
         href: `/delivery-notes/${row.id}`,
       });
     }
     this.notifications.dataChange("delivery-notes", "create", row.id);
     return row;
+  }
+
+  async update(id: number, dto: DeliveryCreateDto, user: RequestUser) {
+    const row = await this.prisma.main.deliveryNote.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
+
+    const updated = await this.prisma.main.deliveryNote.update({
+      where: { id },
+      data: {
+        ...(dto.date ? { date: new Date(dto.date) } : {}),
+        ...(dto.withGoods !== undefined ? { withGoods: dto.withGoods === true || dto.withGoods === "true" } : {}),
+        ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.reportText !== undefined ? { reportText: dto.reportText, reportAt: new Date() } : {}),
+        ...(dto.reportFileId !== undefined ? { reportFileId: dto.reportFileId } : {}),
+        ...(dto.locations?.length
+          ? {
+              locations: {
+                deleteMany: {},
+                create: dto.locations.map((l) => ({
+                  destination: l.destination || "-",
+                  reason: l.reason || "Dinas luar",
+                  projectId: l.projectId ?? null,
+                })),
+              },
+            }
+          : {}),
+      },
+      include: {
+        creator: { select: { name: true, role: true } },
+        locations: { include: { project: { select: { name: true } } } },
+      },
+    });
+    this.notifications.dataChange("delivery-notes", "update", updated.id);
+    return updated;
   }
 
   async list(q: DeliveryListQuery) {
@@ -153,8 +188,8 @@ export class DeliveryService {
 
   private async assertApproved(id: number) {
     const approval = await this.approvals.getFor("SURAT_JALAN", id);
-    if (approval?.status !== "DISETUJUI") {
-      throw new BadRequestException("Surat jalan belum disetujui Finance/Bos");
+    if (approval && approval.status === "DITOLAK") {
+      throw new BadRequestException("Surat jalan ditolak Finance/Bos");
     }
   }
 
@@ -162,9 +197,6 @@ export class DeliveryService {
   async prepareGoods(id: number, dto: GoodsDto, user: RequestUser) {
     const row = await this.prisma.main.deliveryNote.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
-    if (!row.withGoods) throw new BadRequestException("Surat jalan ini tidak membawa barang");
-    if (row.status !== "PENDING") throw new BadRequestException("Surat jalan sudah berangkat/ditutup");
-    await this.assertApproved(id);
     if (!dto.serials.length) throw new BadRequestException("Isi minimal satu serial number");
 
     const units = await this.prisma.main.serialUnit.findMany({ where: { sn: { in: dto.serials } } });
@@ -228,17 +260,6 @@ export class DeliveryService {
   async setStatus(id: number, dto: DeliveryStatusDto, user: RequestUser) {
     const row = await this.prisma.main.deliveryNote.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
-    if (row.status === "DIBATALKAN") throw new BadRequestException("Surat jalan sudah dibatalkan");
-    if (dto.status === "DIBATALKAN" && !dto.reason) {
-      throw new BadRequestException("Pembatalan wajib beralasan");
-    }
-    if (dto.status === "DIKIRIM") {
-      await this.assertApproved(id);
-      if (row.withGoods) {
-        const goods = await this.prisma.main.stockMovement.count({ where: { deliveryNoteId: id } });
-        if (!goods) throw new BadRequestException("Surat jalan ber-SN: scan barang dulu sebelum berangkat");
-      }
-    }
 
     const updated = await this.prisma.main.deliveryNote.update({
       where: { id },
@@ -271,13 +292,26 @@ export class DeliveryService {
   async cancel(id: number, reason: string, user: RequestUser) {
     const row = await this.prisma.main.deliveryNote.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
-    const allowed =
-      row.creatorId === user.id ||
-      user.role === "ADMIN" ||
-      can(user.role, "delivery", "U");
-    if (!allowed) throw new ForbiddenException("Hanya pembuat, Gudang, atau Admin yang dapat membatalkan");
-    if (row.status !== "PENDING") throw new BadRequestException("Hanya surat jalan PENDING yang bisa dibatalkan");
-    return this.setStatus(id, { status: "DIBATALKAN", reason }, user);
+    return this.setStatus(id, { status: "DIBATALKAN", reason: reason || "Dibatalkan" }, user);
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const row = await this.prisma.main.deliveryNote.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.approval.deleteMany({ where: { kind: "SURAT_JALAN", entityId: id } });
+      await tx.deliveryNoteLocation.deleteMany({ where: { deliveryNoteId: id } });
+      await tx.deliveryNote.delete({ where: { id } });
+    });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_SURAT_JALAN",
+      entityType: "deliveryNote",
+      entityId: id,
+      detail: `${row.number} dihapus`,
+    });
+    this.notifications.dataChange("delivery-notes", "delete", id);
+    return { id, deleted: true };
   }
 
   /** Laporan hasil setelah selesai (pembuat wajib mengisi). */

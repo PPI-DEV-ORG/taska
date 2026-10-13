@@ -54,6 +54,8 @@ export default function LoginScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
+                returnKeyType="go"
+                onSubmitEditing={onSubmit}
                 className="h-11 sm:h-11"
               />
             </FormField>
@@ -63,6 +65,8 @@ export default function LoginScreen() {
                 onChangeText={setPassword}
                 secureTextEntry
                 placeholder="Masukkan kata sandi"
+                returnKeyType="go"
+                onSubmitEditing={onSubmit}
                 className="h-11 sm:h-11"
               />
             </FormField>

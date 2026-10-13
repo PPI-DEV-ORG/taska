@@ -1,7 +1,7 @@
-import { Body, Controller, Get, HttpCode, Ip, Post, Req, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Ip, Patch, Post, Req, UnauthorizedException } from "@nestjs/common";
 import type { Request } from "express";
 import { AuthService } from "./auth.service.js";
-import { LoginDto, RefreshDto } from "./dto/auth.dto.js";
+import { ChangePasswordDto, LoginDto, RefreshDto, UpdateProfileDto } from "./dto/auth.dto.js";
 import { Public } from "../common/decorators/public.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
@@ -33,5 +33,18 @@ export class AuthController {
   me(@CurrentUser() user: RequestUser) {
     if (!user) throw new UnauthorizedException();
     return this.auth.me(user);
+  }
+
+  @Patch("me")
+  updateMe(@CurrentUser() user: RequestUser, @Body() dto: UpdateProfileDto) {
+    if (!user) throw new UnauthorizedException();
+    return this.auth.updateMe(user, dto);
+  }
+
+  @Post("change-password")
+  @HttpCode(200)
+  changePassword(@CurrentUser() user: RequestUser, @Body() dto: ChangePasswordDto) {
+    if (!user) throw new UnauthorizedException();
+    return this.auth.changePassword(user, dto.oldPassword, dto.newPassword);
   }
 }

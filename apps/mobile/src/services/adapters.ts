@@ -1,4 +1,5 @@
-import type { Row, User, Role } from "@/mock/data";
+import type { Row, User, Role } from "@/constants/modules";
+import { apiBase } from "@/services/api";
 
 export type ApiUser = {
   id: number;
@@ -10,6 +11,7 @@ export type ApiUser = {
   role: string;
   status: string;
   warehouseId?: number | null;
+  avatarFileId?: number | null;
   lastLoginAt?: string | null;
 };
 
@@ -22,6 +24,7 @@ export const PATHS: Record<string, string> = {
   "po-client": "/client-po",
   invoices: "/invoices",
   projects: "/projects",
+  tasks: "/tasks",
   "purchase-requests": "/requests",
   "supplier-pos": "/supplier-pos",
   receiving: "/receivings",
@@ -40,6 +43,11 @@ export const PATHS: Record<string, string> = {
   lostReasons: "/lost-reasons",
   expenseCategories: "/expense-categories",
   costCenters: "/cost-centers",
+  serials: "/serials",
+  movements: "/movements",
+  reservations: "/reservations",
+  followups: "/follow-ups",
+  invoiceIn: "/invoice-in",
 };
 
 // ─── status label maps (backend enum → UI label) ───
@@ -49,7 +57,7 @@ const MAPS: Record<string, Record<string, string>> = {
     NEGOTIATION: "Negotiation", WON: "Won", LOST: "Lost",
   },
   quotations: {
-    NOT_YET: "Not Yet", DRAFT: "Draft", PENDING_APPROVAL: "Menunggu persetujuan",
+    NOT_YET: "Not Yet", DONE: "Done", DRAFT: "Draft", PENDING_APPROVAL: "Menunggu persetujuan",
     APPROVED: "Disetujui", REJECTED: "Ditolak", SENT: "Terkirim",
     NEGOTIATION: "Negosiasi", REVISION: "Revisi", EXPIRED: "Kedaluwarsa",
   },
@@ -67,7 +75,7 @@ const MAPS: Record<string, Record<string, string>> = {
   },
   "supplier-pos": {
     MENUNGGU_PERSETUJUAN: "Menunggu persetujuan", DISETUJUI: "Disetujui", DITOLAK: "Ditolak", DIBATALKAN: "Dibatalkan",
-    DI_SUPPLIER: "Di Supplier", DIKIRIM: "Dikirim", SAMPAI: "Sampai",
+    BELUM_DIKIRIM: "Di Supplier", DI_SUPPLIER: "Di Supplier", DALAM_PERJALANAN: "Dalam Perjalanan", DIKIRIM: "Dikirim", SAMPAI: "Sampai",
   },
   receiving: { MENUNGGU: "Menunggu penerimaan", DITERIMA_SEBAGIAN: "Diterima sebagian", DITERIMA: "Diterima", DITOLAK: "Ditolak" },
   "delivery-notes": { PENDING: "Pending", DIKIRIM: "Dikirim", DITERIMA: "Diterima", DIBATALKAN: "Dibatalkan" },
@@ -88,7 +96,9 @@ const MAPS: Record<string, Record<string, string>> = {
     MAINTENANCE: "Maintenance", SUPPORT: "Support", OTHER: "Lainnya",
   },
   paymentStatus: { BELUM_LUNAS: "Belum lunas", LUNAS: "Lunas" },
-  damageType: { RUSAK: "Rusak", SALAH_BARANG: "Salah barang", KURANG: "Kurang" },
+  damageType: {
+    RUSAK: "Rusak", SALAH_BARANG: "Salah barang", KURANG: "Kurang",
+  },
   followupMethod: { EMAIL: "Email", TELEPON: "Telepon", WA: "WhatsApp", LAINNYA: "Lainnya" },
   movementCategory: {
     PENERIMAAN_SUPPLIER: "Penerimaan supplier", KELUAR_PROJECT: "Keluar ke project",
@@ -103,6 +113,18 @@ for (const [k, m] of Object.entries(MAPS)) {
   REVERSE[k] = {};
   for (const [enumVal, label] of Object.entries(m)) REVERSE[k][label] = enumVal;
 }
+REVERSE.quotations = {
+  ...REVERSE.quotations,
+  Done: "DRAFT",
+  Revisi: "NEGOTIATION",
+};
+REVERSE.damageType = {
+  ...REVERSE.damageType,
+  "Rusak Fisik": "RUSAK",
+  "Cacat Fungsi": "RUSAK",
+  "Salah Tipe": "SALAH_BARANG",
+  "Kurang Kuantitas": "KURANG",
+};
 
 export function toLabel(map: string, v: string | null | undefined): string {
   if (v == null) return "-";
@@ -162,6 +184,8 @@ export function apiUserToRow(u: ApiUser): User {
     position: u.position ?? "",
     department: u.department ?? "",
     warehouseId: u.warehouseId ?? null,
+    avatarFileId: u.avatarFileId ?? null,
+    avatarUrl: u.avatarFileId ? `${apiBase()}/files/${u.avatarFileId}` : "",
     lastLoginAt: u.lastLoginAt ?? null,
   } as User;
 }
@@ -175,7 +199,11 @@ const idOf = (x: any): string | null => (x?.id != null ? String(x.id) : null);
 export function adaptRow(module: string, raw: any): Row {
   const base: Row = { id: String(raw.id) };
   switch (module) {
-    case "leads":
+    case "leads": {
+      const latestFu = raw.followUps?.[0]?.date ?? raw.updatedAt ?? raw.createdAt;
+      const sepiDays = latestFu
+        ? Math.max(0, Math.floor((Date.now() - new Date(latestFu).getTime()) / 86_400_000))
+        : 0;
       return {
         ...base,
         nama: raw.name ?? "",
@@ -186,7 +214,7 @@ export function adaptRow(module: string, raw: any): Row {
         closing: d(raw.targetClosing),
         pemilik: nameOf(raw.owner),
         status: toLabel("leads", raw.stage),
-        sepi: 0,
+        sepi: sepiDays,
         tipe: toLabel("clientType", raw.clientType),
         kontak: raw.contactName ?? "",
         alasanLost: raw.lostNote ?? nameOf(raw.lostReason),
@@ -199,8 +227,27 @@ export function adaptRow(module: string, raw: any): Row {
         penawaranId: raw.quotations?.[0]?.id != null ? String(raw.quotations[0].id) : null,
         penawaranFile: raw.quotations?.[0]?.number ?? null,
         createdAt: raw.createdAt,
+        _followUps: (raw.followUps ?? []).map((f: any) => ({
+          id: String(f.id),
+          date: d(f.date),
+          method: toLabel("followupMethod", f.method),
+          notes: f.notes ?? "",
+          nextAction: d(f.nextDate),
+          status: f.status ?? "SELESAI",
+        })),
       };
-    case "quotations":
+    }
+    case "quotations": {
+      const hasFile =
+        Boolean(raw.latestFileId) ||
+        (Array.isArray(raw.items) && raw.items.length > 0) ||
+        n(raw._count?.versions) > 0 ||
+        (raw.versions?.length ?? 0) > 0 ||
+        n(raw.total) > 0;
+      const defaultXlsxName = raw.number
+        ? `Penawaran-${String(raw.number).replace(/\//g, "-")}.xlsx`
+        : "Penawaran.xlsx";
+      const fName = raw.latestFileName || (hasFile ? defaultXlsxName : "");
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -208,16 +255,39 @@ export function adaptRow(module: string, raw: any): Row {
         leadId: idOf(raw.lead),
         customer: nameOf(raw.customer) ?? "",
         customerId: idOf(raw.customer),
-        nilai: n(raw.total), total: n(raw.total), ppn: n(raw.ppn), disc: n(raw.discount),
+        nilai: n(raw.total),
+        total: n(raw.total),
+        ppn: n(raw.ppn),
+        disc: n(raw.discount),
         totalAfterDisc: n(raw.grandTotal),
         status: toLabel("quotations", raw.status),
         versi: n(raw.currentVersion) || 1,
         berlaku: d(raw.validUntil),
         pemilik: nameOf(raw.owner),
         dibuat: d(raw.createdAt),
-        fileUploaded: n(raw._count?.versions) > 0,
+        items: Array.isArray(raw.items) ? raw.items : [],
+        subject: raw.subject ?? "",
+        intro: raw.intro ?? "",
+        notesList: Array.isArray(raw.notesList) ? raw.notesList : [],
+        city: raw.city ?? "Bekasi",
+        latestFileId: raw.latestFileId ?? raw.versions?.[0]?.fileId ?? null,
+        fileName: fName,
+        fileStatus: hasFile ? fName : "Belum diupload",
+        fileUploaded: hasFile,
         stage: raw.lead?.stage ?? null,
+        _versions: (raw.versions ?? []).map((v: any) => ({
+          id: String(v.id),
+          v: n(v.version),
+          total: n(v.total),
+          ppn: n(v.ppn),
+          disc: n(v.discount),
+          totalAfterDisc: n(v.grandTotal),
+          date: d(v.createdAt),
+          reason: v.note || `Revisi v${v.version}`,
+          file: v.fileId ? `Penawaran-${String(raw.number || "").replace(/\//g, "-")}-v${v.version}.xlsx` : "-",
+        })),
       };
+    }
     case "surveys":
       return {
         ...base,
@@ -260,6 +330,14 @@ export function adaptRow(module: string, raw: any): Row {
         tanggal: d(raw.date),
         projectId: idOf(raw.project),
         project: nameOf(raw.project) ?? "",
+        _payments: (raw.payments ?? []).map((p: any) => ({
+          id: String(p.id),
+          amount: n(p.amount),
+          date: d(p.date),
+          method: p.method ?? "TRANSFER",
+          reference: p.reference ?? "-",
+          fileId: p.fileId ?? null,
+        })),
       };
     case "projects":
       return {
@@ -270,7 +348,7 @@ export function adaptRow(module: string, raw: any): Row {
         customer: nameOf(raw.customer) ?? "-",
         pm: nameOf(raw.pic) ?? "",
         pmId: raw.pic?.id != null ? String(raw.pic.id) : null,
-        tim: "",
+        tim: (raw.members ?? []).map((m: any) => nameOf(m.user)).filter(Boolean).join(", ") || "-",
         progres: n(raw.progress),
         pembayaran: toLabel("paymentStatus", raw.paymentStatus),
         status: toLabel("projects", raw.status),
@@ -308,7 +386,7 @@ export function adaptRow(module: string, raw: any): Row {
         pemohonId: raw.requester?.id != null ? String(raw.requester.id) : null,
         item: (raw.items ?? [])
           .map((i: any) => `${nameOf(i.product)} x ${n(i.qty)}${i.product?.unit ? ` ${i.product.unit}` : ""}`)
-          .join(", "),
+          .join(", ") || raw.purpose || "-",
         estimasi: n(raw.estimatedCost),
         status: toLabel("purchase-requests", raw.status),
         tujuan: raw.purpose ?? "",
@@ -332,7 +410,7 @@ export function adaptRow(module: string, raw: any): Row {
             : toLabel("supplier-pos", raw.shipmentStatus),
         item: (raw.items ?? [])
           .map((i: any) => `${nameOf(i.product)} x ${n(i.qty)}`)
-          .join(", "),
+          .join(", ") || "-",
         requestId: idOf(raw.request),
         projectId: idOf(raw.project),
         shipmentStatus: raw.shipmentStatus,
@@ -348,7 +426,7 @@ export function adaptRow(module: string, raw: any): Row {
         tanggal: d(raw.date),
         penerima: nameOf(raw.receiver) ?? "",
         status: toLabel("receiving", raw.status),
-        item: "",
+        item: (raw.items ?? []).map((i: any) => `${nameOf(i.product)} x ${n(i.qtyGood)}`).join(", ") || raw.conditionNote || "-",
         warehouseId: idOf(raw.warehouse),
         warehouse: nameOf(raw.warehouse) ?? "",
         projectId: idOf(raw.project),
@@ -366,7 +444,7 @@ export function adaptRow(module: string, raw: any): Row {
         project: nameOf(loc?.project) ?? "-",
         projectId: idOf(loc?.project),
         pembuat: nameOf(raw.creator) ?? "",
-        barang: "",
+        barang: (raw.items ?? []).map((i: any) => `${nameOf(i.product)} x ${n(i.qty)}`).join(", ") || (raw.withGoods ? (raw.reportText || "Membawa barang") : "-"),
         status: toLabel("delivery-notes", raw.status),
         persetujuan: raw.status === "PENDING" ? "Menunggu persetujuan" : "Disetujui",
         withGoods: !!raw.withGoods,
@@ -472,6 +550,99 @@ export function adaptRow(module: string, raw: any): Row {
     case "expenseCategories":
     case "costCenters":
       return { ...base, nama: raw.name ?? "", status: toLabel("users", raw.status ?? "AKTIF") };
+    case "serials":
+      return {
+        ...base,
+        sn: raw.sn ?? "",
+        sku: raw.product?.sku ?? "",
+        produk: nameOf(raw.product) ?? "",
+        productId: idOf(raw.product),
+        gudang: nameOf(raw.warehouse) ?? "-",
+        warehouseId: idOf(raw.warehouse),
+        project: nameOf(raw.project) ?? "-",
+        projectId: idOf(raw.project),
+        status: toLabel("serials", raw.status),
+        garansiMulai: d(raw.warrantyStart),
+        garansiBerakhir: d(raw.warrantyEnd),
+        digantiDengan: raw.replacedBy?.sn ?? raw.replacedTo ?? "",
+      };
+    case "movements": {
+      const tLabel = toLabel("movements", raw.type);
+      const gudangLabel =
+        raw.type === "TRANSFER"
+          ? `${nameOf(raw.fromWarehouse) || "-"} → ${nameOf(raw.toWarehouse) || "-"}`
+          : nameOf(raw.toWarehouse) || nameOf(raw.fromWarehouse) || "-";
+      return {
+        ...base,
+        waktu: raw.date ? String(raw.date).replace("T", " ").slice(0, 16) : d(raw.createdAt),
+        jenis: tLabel,
+        kategori: toLabel("movementCategory", raw.category),
+        produk: nameOf(raw.product) ?? "",
+        productId: idOf(raw.product),
+        qty: n(raw.qty),
+        gudang: gudangLabel,
+        project: nameOf(raw.project) ?? "-",
+        projectId: idOf(raw.project),
+        sn: raw.snList ?? "-",
+        catatan: raw.note ?? "-",
+        oleh: nameOf(raw.creator) ?? "-",
+      };
+    }
+    case "reservations":
+      return {
+        ...base,
+        project: nameOf(raw.project) ?? "-",
+        projectId: idOf(raw.project),
+        produk: nameOf(raw.product) ?? "-",
+        productId: idOf(raw.product),
+        sku: raw.product?.sku ?? "",
+        sn: raw.serialUnit?.sn ?? "-",
+        serialUnitId: idOf(raw.serialUnit),
+        qty: n(raw.qty),
+        status: raw.releasedAt ? "Dirilis" : "Aktif",
+        tanggal: d(raw.createdAt),
+      };
+    case "followups":
+      return {
+        ...base,
+        leadId: raw.leadId != null ? String(raw.leadId) : idOf(raw.lead),
+        lead: nameOf(raw.lead) ?? "",
+        quotationId: raw.quotationId != null ? String(raw.quotationId) : null,
+        tanggal: d(raw.date),
+        date: d(raw.date),
+        metode: toLabel("followupMethod", raw.method),
+        method: toLabel("followupMethod", raw.method),
+        catatan: raw.notes ?? "",
+        notes: raw.notes ?? "",
+        berikutnya: d(raw.nextDate),
+        nextAction: d(raw.nextDate),
+        status: raw.status ?? "SELESAI",
+        pencatat: nameOf(raw.creator) ?? "",
+      };
+    case "invoiceIn":
+      return {
+        ...base,
+        nomor: raw.number ?? "",
+        supplier: nameOf(raw.supplier) ?? "",
+        supplierId: idOf(raw.supplier),
+        po: raw.supplierPo?.number ?? "-",
+        supplierPoId: idOf(raw.supplierPo),
+        nilai: n(raw.amount),
+        ppn: n(raw.ppn),
+        total: n(raw.total),
+        terbayar: n(raw.paidAmount),
+        tanggal: d(raw.date),
+        jatuhTempo: d(raw.dueDate),
+        status: raw.status ?? "UNPAID",
+        _payments: (raw.payments ?? []).map((p: any) => ({
+          id: String(p.id),
+          amount: n(p.amount),
+          date: d(p.date),
+          method: p.method ?? "TRANSFER",
+          reference: p.reference ?? "-",
+          fileId: p.fileId ?? null,
+        })),
+      };
     default:
       return { ...base, ...raw };
   }
@@ -553,95 +724,314 @@ export function adaptNotifList(list: any[] | undefined): NotifRow[] {
   return (list ?? []).map(adaptNotif);
 }
 
+function findId(list: any[] | undefined, val: any): number | undefined {
+  if (val == null || val === "" || val === "-") return undefined;
+  const sVal = String(val).trim();
+  if (!sVal) return undefined;
+  if (Array.isArray(list)) {
+    const cleanVal = (sVal.split("(")[0] ?? sVal).trim().toLowerCase();
+    const match = list.find((r) => {
+      const candidates = [r.nama, r.name, r.nomor, r.number, r.sku].filter(Boolean);
+      return candidates.some((c) => {
+        const sc = String(c).trim().toLowerCase();
+        return sc === sVal.toLowerCase() || sc === cleanVal;
+      });
+    });
+    if (match?.id != null) return Number(match.id);
+  }
+  const numVal = Number(sVal);
+  if (!Number.isNaN(numVal) && numVal > 0 && /^\d+$/.test(sVal)) return numVal;
+  return undefined;
+}
+
+function resolveMemberIds(row: Record<string, any>, db?: Record<string, any>): number[] | undefined {
+  if (Array.isArray(row.memberIds)) return row.memberIds.map(Number).filter((x) => !Number.isNaN(x) && x > 0);
+  if (row.tim) {
+    const names = String(row.tim)
+      .split(",")
+      .map((s) => (s.split("(")[0] ?? "").trim().toLowerCase())
+      .filter(Boolean);
+    const ids = (db?.users ?? [])
+      .filter((u: any) => names.includes(String(u.name ?? u.nama ?? "").trim().toLowerCase()))
+      .map((u: any) => Number(u.id))
+      .filter((x: number) => !Number.isNaN(x) && x > 0);
+    return ids.length ? ids : undefined;
+  }
+  return undefined;
+}
+
 // ─── create DTO builders (UI row → backend body) ───
-export function buildCreateBody(module: string, row: Record<string, any>): Record<string, any> {
+export function buildCreateBody(module: string, row: Record<string, any>, db?: Record<string, any>): Record<string, any> {
   const num = (v: any) => Number(String(v ?? 0).replace(/[^\d.-]/g, "")) || 0;
+  const today = new Date().toISOString().slice(0, 10);
   switch (module) {
     case "leads":
       return {
-        name: row.nama ?? row.name,
-        customerId: row.customerId != null ? Number(row.customerId) : undefined,
-        sourceId: row.sourceId != null ? Number(row.sourceId) : undefined,
-        clientType: row.tipe ? toEnum("clientType", row.tipe) : undefined,
-        estimatedValue: num(row.nilai),
-        probability: num(row.peluang) || 20,
-        targetClosing: row.closing || undefined,
-        contactName: row.kontak || undefined,
-        ownerId: row.ownerId != null ? Number(row.ownerId) : undefined,
-        stage: "PROSPECTING",
+        name: row.nama ?? row.name ?? "Lead Baru",
+        customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.perusahaan ?? row.customer),
+        sourceId: row.sourceId != null && row.sourceId !== "" ? Number(row.sourceId) : findId(db?.leadSources, row.sumber),
+        clientType: row.tipe ? (toEnum("clientType", row.tipe) || "END_USER") : "END_USER",
+        estimatedValue: num(row.nilai ?? row.estimatedValue),
+        probability: num(row.peluang ?? row.probability) || 20,
+        targetClosing: row.closing || row.targetClosing || undefined,
+        contactName: row.kontak && row.kontak !== "-" ? row.kontak : undefined,
+        need: row.need || row.catatan || undefined,
+        ownerId: row.ownerId != null && row.ownerId !== "" ? Number(row.ownerId) : findId(db?.users, row.pemilik),
+        stage: row.status ? (toEnum("leads", row.status) || "PROSPECTING") : "PROSPECTING",
       };
+    case "quotations": {
+      const tot = num(row.total ?? row.nilai);
+      const ppn = row.ppn != null ? num(row.ppn) : Math.round(tot * 0.11);
+      const disc = num(row.disc ?? row.discount);
+      const grand = num(row.totalAfterDisc ?? row.grandTotal) || Math.max(0, tot + ppn - disc);
+      return {
+        leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : findId(db?.leads, row.lead),
+        customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.customer ?? row.perusahaan),
+        total: tot,
+        ppn,
+        discount: disc,
+        grandTotal: grand,
+        validUntil: row.berlaku || row.validUntil || undefined,
+        fileId: row.fileId ? Number(row.fileId) : undefined,
+        notes: row.notes ?? row.catatan ?? undefined,
+        status: row.status ? (toEnum("quotations", row.status) || "DRAFT") : "DRAFT",
+      };
+    }
+    case "surveys": {
+      const leadId =
+        row.leadId != null && row.leadId !== ""
+          ? Number(row.leadId)
+          : findId(db?.leads, row.lead) ?? (db?.leads?.[0]?.id != null ? Number(db.leads[0].id) : undefined);
+      return {
+        leadId,
+        location: row.lokasi || row.location || "-",
+        scheduleAt: row.jadwal || row.scheduleAt || today,
+        need: row.need || row.lead || undefined,
+        notes: row.catatanTeknis || row.catatan || row.notes || undefined,
+        cost: row.biaya != null ? num(row.biaya) : undefined,
+        memberIds: resolveMemberIds(row, db),
+      };
+    }
     case "customers":
-      return { name: row.nama, city: row.kota, pic: row.kontak, email: row.email || undefined, phone: row.telepon || undefined, notes: row.catatan || undefined, status: "AKTIF" };
+      return {
+        name: row.nama ?? row.name,
+        city: row.kota ?? row.city ?? undefined,
+        pic: row.kontak ?? row.pic ?? "-",
+        email: row.email && row.email !== "-" ? row.email : undefined,
+        phone: row.telepon || row.phone || undefined,
+        notes: row.catatan && row.catatan !== "-" ? row.catatan : undefined,
+        status: "AKTIF",
+      };
     case "suppliers":
-      return { name: row.nama, city: row.kota, pic: row.kontak || undefined, email: row.email || undefined, phone: row.telepon || undefined, paymentTerms: row.payment || undefined, notes: row.catatan || undefined, status: "AKTIF" };
+      return {
+        name: row.nama ?? row.name,
+        city: row.kota ?? row.city ?? undefined,
+        pic: row.kontak || row.pic || undefined,
+        email: row.email || undefined,
+        phone: row.telepon || row.phone || undefined,
+        paymentTerms: row.payment || row.paymentTerms || undefined,
+        notes: row.catatan || row.notes || undefined,
+        status: "AKTIF",
+      };
     case "users":
-      return { name: row.name ?? row.nama, email: row.email, password: row.password, role: roleFromUi(row.role ?? row.roleLabel), status: "AKTIF" };
+      return {
+        name: row.name ?? row.nama,
+        email: row.email,
+        password: row.password || "taska123",
+        role: roleFromUi(row.role ?? row.roleLabel),
+        phone: row.phone || row.telepon || undefined,
+        position: row.position || row.jabatan || undefined,
+        department: row.department || row.divisi || undefined,
+        warehouseId: row.warehouseId != null && row.warehouseId !== "" ? Number(row.warehouseId) : findId(db?.warehouses, row.gudang),
+        status: "AKTIF",
+      };
     case "projects":
       return {
         name: row.nama ?? row.name,
-        type: row.jenis ? toEnum("projectType", row.jenis) : "CUSTOMER",
-        customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : undefined,
-        startDate: new Date().toISOString().slice(0, 10),
-        endDate: row.selesai || undefined,
+        type: row.jenis ? (toEnum("projectType", row.jenis) || "CUSTOMER") : "CUSTOMER",
+        customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.customer),
+        startDate: row.mulai || row.startDate || today,
+        endDate: row.selesai || row.endDate || undefined,
         status: "BERJALAN",
-        progress: 0,
-        picId: row.pmId != null ? Number(row.pmId) : undefined,
-        memberIds: row.memberIds ?? undefined,
+        progress: num(row.progres ?? row.progress),
+        picId: row.pmId != null && row.pmId !== "" ? Number(row.pmId) : findId(db?.users, row.pm),
+        prdFileId: row.prdFileId ?? (row.fileId ? Number(row.fileId) : undefined),
+        memberIds: resolveMemberIds(row, db),
+      };
+    case "tasks":
+      return {
+        name: row.nama ?? row.name ?? "Tugas Baru",
+        parentId: row.parentId != null && row.parentId !== "" ? Number(row.parentId) : undefined,
+        assigneeId: row.assigneeId != null && row.assigneeId !== "" ? Number(row.assigneeId) : findId(db?.users, row.pic),
+        dueDate: row.tenggat || row.dueDate || undefined,
+        priority: row.priority || undefined,
+        status: row.status ? (toEnum("tasks", row.status) || row.status.replace(" ", "_")) : "TODO",
+        progress: num(row.progres ?? row.progress),
+        needsPurchase: !!(row.perluBarang ?? row.needsPurchase),
       };
     case "po-client":
       return {
-        number: row.nomor || undefined,
-        customerId: Number(row.customerId),
-        amount: num(row.nilai),
-        date: row.tanggal,
-        quotationId: row.quotationId != null ? Number(row.quotationId) : undefined,
+        number: row.nomor || row.number || undefined,
+        customerId:
+          row.customerId != null && row.customerId !== ""
+            ? Number(row.customerId)
+            : findId(db?.customers, row.customer) ?? (db?.customers?.[0]?.id != null ? Number(db.customers[0].id) : undefined),
+        amount: num(row.nilai ?? row.amount),
+        date: row.tanggal || row.date || today,
+        quotationId: row.quotationId != null && row.quotationId !== "" ? Number(row.quotationId) : findId(db?.quotations, row.penawaran),
+        fileId: row.fileId ? Number(row.fileId) : undefined,
+        notes: row.catatan || row.notes || undefined,
       };
-    case "invoices":
+    case "invoices": {
+      const amt = num(row.nilai ?? row.amount);
+      const ppn = row.ppn != null ? num(row.ppn) : Math.round(amt * 0.11);
+      const tot = num(row.total) || amt + ppn;
       return {
-        number: row.nomor || undefined,
-        customerId: Number(row.customerId),
-        clientPoId: row.clientPoId != null ? Number(row.clientPoId) : undefined,
-        type: row.jenis ? toEnum("invoiceType", row.jenis) : "TERMIN",
-        amount: num(row.nilai),
-        ppn: num(row.ppn),
-        total: num(row.total),
-        date: row.tanggal || new Date().toISOString().slice(0, 10),
-        dueDate: row.jatuhTempo,
+        number: row.nomor || row.number || undefined,
+        customerId:
+          row.customerId != null && row.customerId !== ""
+            ? Number(row.customerId)
+            : findId(db?.customers, row.customer) ?? (db?.customers?.[0]?.id != null ? Number(db.customers[0].id) : undefined),
+        clientPoId: row.clientPoId != null && row.clientPoId !== "" ? Number(row.clientPoId) : findId(db?.["po-client"], row.po),
+        projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
+        type: row.jenis ? (toEnum("invoiceType", row.jenis) || "TERMIN") : "TERMIN",
+        amount: amt,
+        ppn,
+        total: tot,
+        date: row.tanggal || row.date || today,
+        dueDate: row.jatuhTempo || row.dueDate || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+        fileId: row.fileId ? Number(row.fileId) : undefined,
         status: "DRAFT",
+      };
+    }
+    case "purchase-requests":
+      return {
+        date: row.tanggal || row.date || today,
+        costType: row.costType || (row.jenisBiaya ? toEnum("costType", row.jenisBiaya) : "STOK"),
+        projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
+        supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
+        purpose: row.purpose || row.tujuan || row.item || "Kebutuhan operasional",
+        otherNote: row.otherNote || row.catatan || undefined,
+        evidenceFileId: row.evidenceFileId ?? (row.fileId ? Number(row.fileId) : undefined),
+        items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
+      };
+    case "supplier-pos":
+      return {
+        number: row.nomor || row.number || undefined,
+        supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
+        requestId: row.requestId != null && row.requestId !== "" ? Number(row.requestId) : findId(db?.["purchase-requests"], row.request),
+        projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
+        date: row.tanggal || row.date || today,
+        eta: row.eta || undefined,
+        paymentTerms: row.payment || row.paymentTerms || undefined,
+        total: num(row.total),
+        fileId: row.fileId ? Number(row.fileId) : undefined,
+        items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
+      };
+    case "receiving":
+      return {
+        supplierPoId: row.supplierPoId != null && row.supplierPoId !== "" ? Number(row.supplierPoId) : findId(db?.["supplier-pos"], row.po),
+        warehouseId: row.warehouseId != null && row.warehouseId !== "" ? Number(row.warehouseId) : findId(db?.warehouses, row.gudang ?? row.warehouse),
+        date: row.tanggal || row.date || today,
+        conditionNote: row.conditionNote || row.catatan || row.item || undefined,
+        receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
+        items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
+      };
+    case "delivery-notes":
+      return {
+        number: row.nomor || row.number || undefined,
+        date: row.tanggal || row.date || today,
+        withGoods: row.withGoods ?? !!(row.barang && row.barang !== "-"),
+        locations:
+          Array.isArray(row.locations) && row.locations.length
+            ? row.locations
+            : [
+                {
+                  destination: row.tujuan || "-",
+                  reason: row.alasan || "Dinas luar",
+                  projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
+                },
+              ],
+        reportText: row.reportText || (row.barang && row.barang !== "-" ? String(row.barang) : undefined),
       };
     case "expenses":
       return {
-        date: row.tanggal,
-        categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : undefined,
-        amount: num(row.nominal),
-        description: row.alasan,
-        projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : undefined,
-        costCenterId: row.costCenterId != null && row.costCenterId !== "" ? Number(row.costCenterId) : undefined,
+        date: row.tanggal || row.date || today,
+        categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : findId(db?.expenseCategories, row.kategori),
+        amount: num(row.nominal ?? row.amount),
+        description: row.alasan || row.description || "Pengeluaran operasional",
+        projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
+        costCenterId: row.costCenterId != null && row.costCenterId !== "" ? Number(row.costCenterId) : findId(db?.costCenters, row.costCenter),
+        receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
       };
     case "damage-reports":
       return {
-        date: row.tanggal || new Date().toISOString().slice(0, 10),
-        productId: Number(row.productId),
-        type: toEnum("damageType", row.jenis),
+        date: row.tanggal || row.date || today,
+        productId: row.productId != null && row.productId !== "" ? Number(row.productId) : findId(db?.products, row.produk),
+        type: toEnum("damageType", row.jenis) || "RUSAK",
         qty: num(row.qty) || 1,
-        description: row.keterangan,
+        description: row.keterangan || row.description || "-",
+        fileId: row.fileId ? Number(row.fileId) : undefined,
       };
     case "productCategories":
-      return { name: row.nama, description: row.deskripsi || undefined, prefix: row.prefix || undefined, status: "AKTIF" };
+      return { name: row.nama ?? row.name, description: row.deskripsi || row.description || undefined, prefix: row.prefix || undefined, status: "AKTIF" };
     case "warehouses":
-      return { name: row.nama, city: row.kota || undefined, status: "AKTIF" };
+      return { name: row.nama ?? row.name, city: row.kota || row.city || undefined, status: "AKTIF" };
     case "products":
       return {
-        sku: row.sku, name: row.nama, unit: row.satuan,
-        categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : undefined,
-        hasSerial: !!row.berSN, minStock: num(row.min), warrantyMonths: row.garansi ? parseInt(String(row.garansi), 10) || undefined : undefined,
-        purchasePrice: num(row.hargaBeli), status: "AKTIF",
+        sku: row.sku,
+        name: row.nama ?? row.name,
+        unit: row.satuan ?? row.unit,
+        categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : findId(db?.productCategories, row.kategori),
+        hasSerial: row.berSN != null ? !!row.berSN : !!row.hasSerial,
+        minStock: num(row.min ?? row.minStock),
+        warrantyMonths: row.garansi ? parseInt(String(row.garansi), 10) || undefined : undefined,
+        purchasePrice: num(row.hargaBeli ?? row.purchasePrice),
+        status: "AKTIF",
       };
     case "leadSources":
     case "lostReasons":
     case "expenseCategories":
     case "costCenters":
-      return { name: row.nama, status: "AKTIF" };
+      return { name: row.nama ?? row.name, status: "AKTIF" };
+    case "followups": {
+      const mRaw = String(row.method ?? row.metode ?? "WA").toUpperCase();
+      const method =
+        mRaw.includes("WA") || mRaw.includes("WHATSAPP")
+          ? "WA"
+          : mRaw.includes("TEL") || mRaw.includes("CALL")
+            ? "TELEPON"
+            : mRaw.includes("EMAIL")
+              ? "EMAIL"
+              : "LAINNYA";
+      const nextD = row.nextDate ?? row.nextAction ?? row.berikutnya;
+      const validNext = nextD && /^\d{4}-\d{2}-\d{2}/.test(String(nextD)) ? String(nextD).slice(0, 10) : undefined;
+      return {
+        leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : undefined,
+        quotationId: row.quotationId != null && row.quotationId !== "" ? Number(row.quotationId) : undefined,
+        date: row.date || row.tanggal || today,
+        method,
+        notes: row.notes || row.catatan || "-",
+        nextDate: validNext,
+        status: row.status || "SELESAI",
+      };
+    }
+    case "invoiceIn": {
+      const amt = num(row.nilai ?? row.amount);
+      const ppn = row.ppn != null ? num(row.ppn) : Math.round(amt * 0.11);
+      const tot = num(row.total) || amt + ppn;
+      return {
+        number: row.nomor || row.number || `INV-SUP-${Date.now().toString().slice(-5)}`,
+        supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
+        supplierPoId: row.supplierPoId != null && row.supplierPoId !== "" ? Number(row.supplierPoId) : findId(db?.["supplier-pos"], row.po),
+        amount: amt,
+        ppn,
+        total: tot,
+        date: row.tanggal || row.date || today,
+        dueDate: row.jatuhTempo || row.dueDate || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+        fileId: row.fileId ? Number(row.fileId) : undefined,
+      };
+    }
     default:
       return row;
   }
@@ -661,15 +1051,34 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   expenseCategories: ["name", "status"],
   costCenters: ["name", "status"],
   leads: ["name", "customerId", "sourceId", "clientType", "need", "contactName", "estimatedValue", "probability", "targetClosing", "ownerId", "needsSurvey", "stage", "lostReasonId", "lostNote"],
-  surveys: ["leadId", "location", "need", "notes", "scheduleAt", "cost"],
-  quotations: ["leadId", "customerId", "validUntil", "discount", "ppn", "total", "notes", "status"],
+  surveys: ["leadId", "location", "need", "notes", "scheduleAt", "cost", "status", "memberIds"],
+  quotations: [
+    "leadId",
+    "customerId",
+    "validUntil",
+    "discount",
+    "ppn",
+    "total",
+    "grandTotal",
+    "notes",
+    "status",
+    "fileId",
+    "items",
+    "subject",
+    "intro",
+    "notesList",
+    "city",
+  ],
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "notes", "memberIds"],
-  tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
+  tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
   "po-client": ["number", "customerId", "quotationId", "amount", "date", "fileId", "notes"],
   invoices: ["number", "clientPoId", "projectId", "customerId", "description", "type", "amount", "ppn", "total", "date", "dueDate", "status", "fileId"],
   expenses: ["date", "categoryId", "amount", "description", "projectId", "surveyId", "deliveryNoteId", "costCenterId", "receiptFileId", "paidFileId"],
-  "supplier-pos": ["number", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "fileId", "doFileId", "items"],
+  "supplier-pos": ["number", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "doFileId", "items"],
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
+  receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "items"],
+  "delivery-notes": ["number", "date", "withGoods", "locations", "items", "signedFileId", "reportFileId", "reportText"],
+  "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "fileId"],
 };
 
 /** Hapus field yang tidak dikenal DTO update agar tidak 400. */
@@ -679,6 +1088,121 @@ export function forPatch(module: string, body: Record<string, any>): Record<stri
   const out: Record<string, any> = {};
   for (const k of allow) if (body[k] !== undefined) out[k] = body[k];
   return out;
+}
+
+/** Konversi partial patch UI → partial DTO backend tanpa menyuntikkan default create. */
+export function buildPatchBody(module: string, patch: Record<string, any>, db?: Record<string, any>): Record<string, any> {
+  const num = (v: any) => Number(String(v ?? 0).replace(/[^\d.-]/g, "")) || 0;
+  const out: Record<string, any> = {};
+
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined) out[k] = v;
+  }
+
+  if (patch.nama !== undefined) out.name = patch.nama;
+  if (patch.kota !== undefined) out.city = patch.kota;
+  if (patch.kontak !== undefined) {
+    if (module === "leads") out.contactName = patch.kontak;
+    else out.pic = patch.kontak;
+  }
+  if (patch.telepon !== undefined) out.phone = patch.telepon;
+  if (patch.catatan !== undefined) {
+    if (module === "receiving") out.conditionNote = patch.catatan;
+    else if (module === "purchase-requests") out.otherNote = patch.catatan;
+    else out.notes = patch.catatan;
+  }
+  if (patch.catatanTeknis !== undefined) out.notes = patch.catatanTeknis;
+  if (patch.deskripsi !== undefined) out.description = patch.deskripsi;
+  if (patch.keterangan !== undefined) out.description = patch.keterangan;
+  if (patch.alasan !== undefined && module === "expenses") out.description = patch.alasan;
+  if (patch.tujuan !== undefined && module === "purchase-requests") out.purpose = patch.tujuan;
+  if (patch.nomor !== undefined) out.number = patch.nomor;
+  if (patch.tanggal !== undefined) out.date = patch.tanggal;
+  if (patch.jadwal !== undefined) out.scheduleAt = patch.jadwal;
+  if (patch.lokasi !== undefined) out.location = patch.lokasi;
+  if (patch.biaya !== undefined) out.cost = num(patch.biaya);
+  if (patch.nominal !== undefined) out.amount = num(patch.nominal);
+  if (patch.satuan !== undefined) out.unit = patch.satuan;
+  if (patch.berSN !== undefined) out.hasSerial = !!patch.berSN;
+  if (patch.min !== undefined) out.minStock = num(patch.min);
+  if (patch.hargaBeli !== undefined) out.purchasePrice = num(patch.hargaBeli);
+  if (patch.garansi !== undefined) out.warrantyMonths = parseInt(String(patch.garansi), 10) || undefined;
+  if (patch.payment !== undefined) out.paymentTerms = patch.payment;
+
+  if (module === "leads") {
+    if (patch.perusahaan !== undefined) out.customerId = findId(db?.customers, patch.perusahaan);
+    if (patch.sumber !== undefined) out.sourceId = findId(db?.leadSources, patch.sumber);
+    if (patch.pemilik !== undefined) out.ownerId = findId(db?.users, patch.pemilik);
+    if (patch.nilai !== undefined) out.estimatedValue = num(patch.nilai);
+    if (patch.peluang !== undefined) out.probability = num(patch.peluang);
+    if (patch.closing !== undefined) out.targetClosing = patch.closing;
+    if (patch.tipe !== undefined) out.clientType = toEnum("clientType", patch.tipe);
+    if (patch.status !== undefined) out.stage = toEnum("leads", patch.status);
+    if (patch.alasanLost !== undefined) {
+      out.lostNote = patch.alasanLost;
+      const lrId = findId(db?.lostReasons, patch.alasanLost);
+      if (lrId) out.lostReasonId = lrId;
+    }
+  } else if (module === "quotations") {
+    if (patch.nilai !== undefined && patch.total === undefined) out.total = num(patch.nilai);
+    if (patch.total !== undefined) out.total = num(patch.total);
+    if (patch.disc !== undefined) out.discount = num(patch.disc);
+    if (patch.ppn !== undefined) out.ppn = num(patch.ppn);
+    if (patch.totalAfterDisc !== undefined) out.grandTotal = num(patch.totalAfterDisc);
+    if (patch.berlaku !== undefined) out.validUntil = patch.berlaku;
+    if (patch.status !== undefined) out.status = toEnum("quotations", patch.status) || patch.status;
+  } else if (module === "surveys") {
+    if (patch.status !== undefined) out.status = toEnum("surveys", patch.status) || patch.status;
+    if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);
+  } else if (module === "projects") {
+    if (patch.jenis !== undefined) out.type = toEnum("projectType", patch.jenis);
+    if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.pm !== undefined) out.picId = findId(db?.users, patch.pm);
+    if (patch.mulai !== undefined) out.startDate = patch.mulai;
+    if (patch.selesai !== undefined) out.endDate = patch.selesai;
+    if (patch.progres !== undefined) out.progress = num(patch.progres);
+    if (patch.status !== undefined) out.status = toEnum("projects", patch.status) || patch.status;
+  } else if (module === "tasks") {
+    if (patch.pic !== undefined) out.assigneeId = findId(db?.users, patch.pic);
+    if (patch.tenggat !== undefined) out.dueDate = patch.tenggat;
+    if (patch.progres !== undefined) out.progress = num(patch.progres);
+    if (patch.perluBarang !== undefined) out.needsPurchase = !!patch.perluBarang;
+    if (patch.status !== undefined) out.status = toEnum("tasks", patch.status) || String(patch.status).replace(" ", "_");
+  } else if (module === "po-client") {
+    if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.nilai !== undefined) out.amount = num(patch.nilai);
+  } else if (module === "invoices") {
+    if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.nilai !== undefined) out.amount = num(patch.nilai);
+    if (patch.jatuhTempo !== undefined) out.dueDate = patch.jatuhTempo;
+    if (patch.jenis !== undefined) out.type = toEnum("invoiceType", patch.jenis);
+    if (patch.status !== undefined) out.status = toEnum("invoices", patch.status) || patch.status;
+  } else if (module === "delivery-notes") {
+    if (patch.penerimaNama || patch.catatanSerahTerima) {
+      out.reportText = [
+        patch.penerimaNama ? `Penerima: ${patch.penerimaNama}` : "",
+        patch.penerimaJabatan ? `(${patch.penerimaJabatan})` : "",
+        patch.catatanSerahTerima ? `- ${patch.catatanSerahTerima}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+  } else if (module === "users") {
+    if (patch.roleLabel !== undefined || patch.role !== undefined) {
+      out.role = roleFromUi(patch.role ?? patch.roleLabel);
+    }
+    if (patch.gudang !== undefined) out.warehouseId = findId(db?.warehouses, patch.gudang);
+    if (patch.status !== undefined) out.status = toEnum("users", patch.status) || patch.status;
+  } else if (
+    ["customers", "suppliers", "products", "productCategories", "warehouses", "leadSources", "lostReasons", "expenseCategories", "costCenters"].includes(module)
+  ) {
+    if (patch.status !== undefined) out.status = toEnum("users", patch.status) || patch.status;
+    if (module === "products" && patch.kategori !== undefined) {
+      out.categoryId = findId(db?.productCategories, patch.kategori);
+    }
+  }
+
+  return forPatch(module, out);
 }
 
 /** Modul yang DTO status-nya memakai `reason`, bukan `note`. */

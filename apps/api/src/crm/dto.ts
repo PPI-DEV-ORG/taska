@@ -105,11 +105,11 @@ export class FollowUpDto {
 }
 
 export class SurveyDto {
-  @IsInt()
-  leadId!: number;
+  @IsOptional() @IsInt()
+  leadId?: number;
 
-  @IsString() @MinLength(1)
-  location!: string;
+  @IsOptional() @IsString()
+  location?: string;
 
   @IsOptional() @IsString()
   need?: string;
@@ -125,6 +125,9 @@ export class SurveyDto {
 
   @IsOptional() @IsNumber() @Min(0)
   cost?: number;
+
+  @IsOptional() @IsIn(["DIMINTA", "DIJADWALKAN", "BERJALAN", "SELESAI", "BATAL"])
+  status?: "DIMINTA" | "DIJADWALKAN" | "BERJALAN" | "SELESAI" | "BATAL";
 }
 
 export class SurveyStatusDto {
@@ -162,11 +165,35 @@ export class QuotationDto {
 
   @IsOptional() @IsInt()
   fileId?: number;
+
+  @IsOptional() @IsInt()
+  currentVersion?: number;
+
+  @IsOptional() @IsString()
+  status?: string;
+
+  @IsOptional() @IsString()
+  notes?: string;
+
+  @IsOptional() @IsArray()
+  items?: Array<{ id?: string; item: string; qty: number; satuan: string; harga: number }>;
+
+  @IsOptional() @IsString()
+  subject?: string;
+
+  @IsOptional() @IsString()
+  intro?: string;
+
+  @IsOptional() @IsArray()
+  notesList?: string[];
+
+  @IsOptional() @IsString()
+  city?: string;
 }
 
 export class VersionDto {
-  @IsInt()
-  fileId!: number;
+  @IsOptional() @IsInt()
+  fileId?: number;
 
   @IsOptional() @IsNumber() @Min(0)
   total?: number;

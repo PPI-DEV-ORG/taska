@@ -15,8 +15,7 @@ import { FilterBar } from "@/components/taska/data-table";
 import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { ModuleList } from "@/screens/module-list";
 import { useApp } from "@/store/app-store";
-import { MODULES } from "@/mock/modules";
-import type { Row } from "@/mock/data";
+import { MODULES, type Row } from "@/constants/modules";
 import { LEAD_STAGES, chartSeries, colors } from "@/tokens";
 import { rupiahShort, tanggal } from "@/lib/format";
 

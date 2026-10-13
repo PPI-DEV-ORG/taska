@@ -40,8 +40,8 @@ export class ProjectListQuery extends PageQuery {
 }
 
 export class ProjectDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString() @MinLength(1)
+  name?: string;
 
   @IsOptional() @IsIn(PROJECT_TYPES)
   type?: (typeof PROJECT_TYPES)[number];
@@ -55,8 +55,8 @@ export class ProjectDto {
   @IsOptional() @IsInt()
   quotationId?: number;
 
-  @IsDateString()
-  startDate!: string;
+  @IsOptional() @IsDateString()
+  startDate?: string;
 
   @IsOptional() @IsDateString()
   endDate?: string;
@@ -107,8 +107,8 @@ export class RequirementDto {
 }
 
 export class TaskDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString() @MinLength(1)
+  name?: string;
 
   @IsOptional() @IsInt()
   parentId?: number;
@@ -121,6 +121,9 @@ export class TaskDto {
 
   @IsOptional() @IsIn(PRIORITY)
   priority?: (typeof PRIORITY)[number];
+
+  @IsOptional() @IsIn(TASK_STATUS)
+  status?: (typeof TASK_STATUS)[number];
 
   @IsOptional() @IsInt() @Min(0) @Max(100)
   progress?: number;

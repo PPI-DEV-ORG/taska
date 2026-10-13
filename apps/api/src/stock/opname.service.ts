@@ -81,7 +81,7 @@ export class OpnameService {
       const opname = await tx.stockOpname.create({
         data: {
           warehouseId: dto.warehouseId,
-          date: new Date(dto.date),
+          date: dto.date ? new Date(dto.date) : new Date(),
           conductorId,
           reason: dto.reason ?? null,
         },

@@ -64,34 +64,38 @@ export class ClientPoService {
   async create(dto: ClientPoDto, user: RequestUser) {
     const number = dto.number?.trim() || (await this.docnum.next("clientPO"));
     await this.docnum.assertUnique(number, async (v) => !!(await this.prisma.main.clientPO.findFirst({ where: { number: v } })));
-    if (!dto.fileId) throw new BadRequestException("File PO client wajib diunggah (bukti wajib)");
 
-    const customer = await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } });
+    const customer = dto.customerId
+      ? await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } })
+      : await this.prisma.main.customer.findFirst();
     if (!customer) throw new NotFoundException("Customer tidak ditemukan");
+
+    const amount = dto.amount ?? 0;
+    const date = dto.date ? new Date(dto.date) : new Date();
 
     const row = await this.prisma.main.clientPO.create({
       data: {
         number,
-        customerId: dto.customerId,
+        customerId: customer.id,
         quotationId: dto.quotationId,
-        amount: dto.amount,
-        date: new Date(dto.date),
+        amount,
+        date,
         notes: dto.notes,
       },
-      include: { customer: true },
+      include: { customer: true, quotation: { select: { id: true, number: true } } },
     });
     if (dto.fileId) {
       await this.prisma.main.file.update({
         where: { id: dto.fileId },
         data: { refType: "clientPo", refId: String(row.id) },
-      });
+      }).catch(() => {});
     }
     await this.audit.log({
       actor: user,
       action: "BUAT_PO_CLIENT",
       entityType: "client-po",
       entityId: row.id,
-      detail: `${number} Rp${dto.amount} — ${customer.name}`,
+      detail: `${number} Rp${amount} — ${customer.name}`,
     });
     return row;
   }
@@ -105,19 +109,19 @@ export class ClientPoService {
       where: { id },
       data: {
         ...(dto.number ? { number: dto.number } : {}),
-        customerId: dto.customerId,
-        quotationId: dto.quotationId ?? row.quotationId,
-        amount: dto.amount,
-        date: new Date(dto.date),
-        notes: dto.notes ?? row.notes,
+        customerId: dto.customerId ?? row.customerId,
+        quotationId: dto.quotationId !== undefined ? dto.quotationId : row.quotationId,
+        amount: dto.amount ?? row.amount,
+        date: dto.date ? new Date(dto.date) : row.date,
+        notes: dto.notes !== undefined ? dto.notes : row.notes,
       },
-      include: { customer: true },
+      include: { customer: true, quotation: { select: { id: true, number: true } } },
     });
     if (dto.fileId) {
       await this.prisma.main.file.update({
         where: { id: dto.fileId },
         data: { refType: "clientPo", refId: String(id) },
-      });
+      }).catch(() => {});
     }
     await this.audit.log({
       actor: user,
@@ -127,6 +131,19 @@ export class ClientPoService {
       detail: `${updated.number} Rp${updated.amount}`,
     });
     return updated;
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const row = await this.get(id);
+    await this.prisma.main.clientPO.delete({ where: { id } });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_PO_CLIENT",
+      entityType: "client-po",
+      entityId: id,
+      detail: `${row.number} dihapus`,
+    });
+    return { id, deleted: true };
   }
 
   suggestNumber() {

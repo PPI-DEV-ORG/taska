@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { MovementsService } from "./movements.service.js";
 import { SerialsService } from "./serials.service.js";
 import { OpnameService } from "./opname.service.js";
@@ -171,9 +171,21 @@ export class DamagesController {
     return this.service.create(dto, user);
   }
 
+  @Patch(":id")
+  @Require("stock", "U")
+  update(@Param("id", ParseIntPipe) id: number, @Body() dto: DamageCreateDto) {
+    return this.service.update(id, dto);
+  }
+
   @Post(":id/status")
   @Require("stock", "U")
   setStatus(@Param("id", ParseIntPipe) id: number, @Body() dto: DamageStatusDto) {
     return this.service.setStatus(id, dto.status);
+  }
+
+  @Delete(":id")
+  @Require("stock", "U")
+  remove(@Param("id", ParseIntPipe) id: number) {
+    return this.service.remove(id);
   }
 }

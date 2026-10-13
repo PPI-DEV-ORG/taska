@@ -40,7 +40,12 @@ export class SuppliersService {
   }
 
   create(dto: SupplierDto) {
-    return this.prisma.main.supplier.create({ data: dto });
+    return this.prisma.main.supplier.create({
+      data: {
+        ...dto,
+        name: dto.name || "Supplier Baru",
+      },
+    });
   }
 
   async update(id: number, dto: SupplierDto) {

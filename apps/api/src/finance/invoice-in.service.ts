@@ -65,6 +65,7 @@ export class InvoiceInService {
         include: {
           supplier: { select: { id: true, name: true } },
           supplierPo: { select: { id: true, number: true } },
+          payments: { orderBy: { date: "desc" } },
           _count: { select: { payments: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["dueDate", "createdAt"], "dueDate"),
@@ -187,23 +188,25 @@ export class InvoiceInService {
       data: {
         invoiceInId: id,
         amount: dto.amount,
-        date: new Date(dto.date),
+        date: dto.date ? new Date(dto.date) : new Date(),
         method: dto.method ?? "TRANSFER",
         reference: dto.reference,
         fileId: dto.fileId,
         createdById: user.id,
       },
     });
-    await this.prisma.main.file.update({
-      where: { id: dto.fileId },
-      data: { refType: "payment", refId: `in-${id}` },
-    });
+    if (dto.fileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.fileId },
+        data: { refType: "payment", refId: `in-${id}` },
+      }).catch(() => {});
+    }
 
     const payments = await this.prisma.main.payment.findMany({ where: { invoiceInId: id } });
     const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
     const updated = await this.prisma.main.invoiceIn.update({
       where: { id },
-      data: { paidAmount: paid, transferFileId: dto.fileId },
+      data: { paidAmount: paid, ...(dto.fileId ? { transferFileId: dto.fileId } : {}) },
       include: { supplier: true, payments: { orderBy: { date: "desc" } } },
     });
 

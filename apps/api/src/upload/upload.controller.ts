@@ -14,6 +14,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { UploadService, type UploadKind } from "./upload.service.js";
+import { Public } from "../common/decorators/public.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
 const KINDS: UploadKind[] = ["foto", "dokumen", "video"];
@@ -38,6 +39,7 @@ export class UploadController {
     return this.service.saveNamed(file.buffer, kind, name, user);
   }
 
+  @Public()
   @Get(":id")
   async download(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
     const file = await this.service.read(id);

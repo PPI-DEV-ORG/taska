@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { IsInt } from "class-validator";
 import { SurveysService } from "./surveys.service.js";
 import { CrmListQuery, SurveyDto, SurveyStatusDto } from "./dto.js";
@@ -36,7 +36,17 @@ export class SurveysController {
   @Require("surveys", "U")
   update(
     @Param("id", ParseIntPipe) id: number,
-    @Body() dto: SurveyDto | SurveyStatusDto,
+    @Body() dto: SurveyDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.update(id, dto, user);
+  }
+
+  @Post(":id/status")
+  @Require("surveys", "U")
+  setStatus(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: SurveyStatusDto,
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.update(id, dto, user);
@@ -52,5 +62,11 @@ export class SurveysController {
   @Require("surveys", "C")
   attach(@Param("id", ParseIntPipe) id: number, @Body() dto: AttachDto, @CurrentUser() user: RequestUser) {
     return this.service.attachFile(id, dto.fileId, user);
+  }
+
+  @Delete(":id")
+  @Require("surveys", "A")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
   }
 }

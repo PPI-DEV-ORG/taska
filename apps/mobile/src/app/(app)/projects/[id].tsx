@@ -8,18 +8,22 @@ import {
   ChevronRight,
   FileText,
   Plus,
+  Pencil,
   ShoppingCart,
+  Trash2,
   Upload,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, Chip, EmptyState, InfoGrid, Timeline } from "@/components/taska/basics";
+import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
+import { api } from "@/services/api";
+import { MODULES, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
-import type { Row } from "@/mock/data";
 
 const TABS = [
   "Ringkasan",
@@ -36,11 +40,37 @@ type TabKey = typeof TABS[number];
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { data, user, setStatus, patchRow, history, toast } = useApp();
+  const { data, user, addRow, setStatus, patchRow, deleteRow, history, toast, reload } = useApp();
 
   const [activeTab, setActiveTab] = React.useState<TabKey>("Ringkasan");
+  const [taskModalOpen, setTaskModalOpen] = React.useState(false);
+  const [reqModalOpen, setReqModalOpen] = React.useState(false);
+  const [editProjectOpen, setEditProjectOpen] = React.useState(false);
+  const [deleteProjectOpen, setDeleteProjectOpen] = React.useState(false);
+  const [requirements, setRequirements] = React.useState<any[]>([]);
 
   const project = data.projects.find((p) => p.id === id);
+
+  const loadRequirements = React.useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await api<any[]>("GET", `/projects/${id}/requirements`);
+      if (Array.isArray(res)) setRequirements(res);
+    } catch {}
+  }, [id]);
+
+  React.useEffect(() => {
+    if (!id) return;
+    let active = true;
+    api<any[]>("GET", `/projects/${id}/requirements`)
+      .then((res) => {
+        if (active && Array.isArray(res)) setRequirements(res);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [id]);
 
   if (!project) {
     return (
@@ -53,10 +83,12 @@ export default function ProjectDetailScreen() {
     );
   }
 
-  const tasks = data.tasks.filter((t) => t.project === project.id);
-  const reservations = (data as any).reservations?.filter?.(
-    (r: any) => r.project === project.nama
-  ) || [];
+  const tasks = data.tasks.filter(
+    (t) =>
+      String(t.projectId) === String(project.id) ||
+      t.project === project.id ||
+      t.project === project.nama
+  );
   const expenses = data.expenses.filter((e) => e.project === project.nama);
   const deliveryNotes = data["delivery-notes"].filter(
     (dn) => dn.project === project.nama
@@ -83,15 +115,24 @@ export default function ProjectDetailScreen() {
         title={project.nama}
         subtitle={`${project.jenis} · Customer: ${project.customer}`}
         status={project.status}
+        onRefresh={loadRequirements}
         action={
-          <View className="flex-row items-center gap-2">
+          <View className="flex-row flex-wrap items-center gap-2">
             {!isLunas ? (
               <View className="bg-warning/15 flex-row items-center gap-1.5 rounded-full px-3 py-1">
                 <AlertTriangle size={14} color={colors.warning} />
                 <Text className="text-warning text-xs font-medium">Belum lunas (Handover dicatat)</Text>
               </View>
             ) : null}
-            {project.status !== "Selesai" && (user?.role === "pm" || user?.role === "bos") ? (
+            <Button size="sm" variant="outline" onPress={() => setEditProjectOpen(true)}>
+              <Pencil size={14} color={colors.text} />
+              <Text>Ubah</Text>
+            </Button>
+            <Button size="sm" variant="outline" onPress={() => setDeleteProjectOpen(true)}>
+              <Trash2 size={14} color={colors.danger} />
+              <Text className="text-danger">Hapus</Text>
+            </Button>
+            {project.status !== "Selesai" && (user?.role === "pm" || user?.role === "bos" || user?.role === "admin") ? (
               <Button size="sm" onPress={markCompleted}>
                 <Text>Selesaikan Project</Text>
               </Button>
@@ -148,10 +189,16 @@ export default function ProjectDetailScreen() {
             title="Daftar Tugas Bertingkat"
             subtitle="Tugas induk dan sub-tugas project"
             right={
-              <Button size="sm" variant="outline" onPress={() => router.push("/purchase-requests/new" as any)}>
-                <ShoppingCart size={14} color={colors.text} />
-                <Text className="text-xs">Request Barang</Text>
-              </Button>
+              <View className="flex-row gap-2">
+                <Button size="sm" onPress={() => setTaskModalOpen(true)}>
+                  <Plus size={14} color={colors.background} />
+                  <Text className="text-xs">Tambah Tugas</Text>
+                </Button>
+                <Button size="sm" variant="outline" onPress={() => router.push("/purchase-requests/new" as any)}>
+                  <ShoppingCart size={14} color={colors.text} />
+                  <Text className="text-xs">Request Barang</Text>
+                </Button>
+              </View>
             }
           >
             {tasks.length === 0 ? (
@@ -181,6 +228,14 @@ export default function ProjectDetailScreen() {
                       >
                         <Text className="text-xs">{t.status === "DONE" ? "Buka lagi" : "Selesai"}</Text>
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onPress={() => void deleteRow("tasks", t.id)}
+                      >
+                        <Trash2 size={14} color={colors.danger} />
+                      </Button>
                     </View>
                   </View>
                 </View>
@@ -190,42 +245,161 @@ export default function ProjectDetailScreen() {
         </View>
       )}
 
+      <FormDialog
+        open={taskModalOpen}
+        onOpenChange={setTaskModalOpen}
+        title="Tambah Tugas Project"
+        fields={[
+          { key: "nama", label: "Nama Tugas", type: "text", required: true, placeholder: "Contoh: Penarikan kabel lantai 2" },
+          {
+            key: "parentTask",
+            label: "Sub-tugas dari (Opsional)",
+            type: "select",
+            options: ["(Tugas Utama)", ...tasks.filter((t) => !t.parent).map((t) => String(t.nama))],
+          },
+          { key: "pic", label: "PIC Tugas", type: "select", required: true, placeholder: "Pilih PIC" },
+          { key: "tenggat", label: "Tenggat Waktu", type: "date" },
+          { key: "perluBarang", label: "Perlu Pembelian Barang?", type: "select", options: ["Tidak", "Ya"] },
+        ]}
+        submitLabel="Simpan Tugas"
+        onSubmit={(v) => {
+          const parentRow =
+            v.parentTask && v.parentTask !== "(Tugas Utama)"
+              ? tasks.find((t) => t.nama === v.parentTask)
+              : undefined;
+          addRow("tasks", {
+            projectId: project.id,
+            project: project.nama,
+            parentId: parentRow?.id,
+            nama: v.nama,
+            pic: v.pic,
+            tenggat: v.tenggat || new Date().toISOString().slice(0, 10),
+            perluBarang: v.perluBarang === "Ya",
+            status: "TODO",
+          });
+        }}
+      />
+
+      <FormDialog
+        open={reqModalOpen}
+        onOpenChange={setReqModalOpen}
+        title="Tambah Kebutuhan Barang Project"
+        fields={[
+          {
+            key: "produk",
+            label: "Pilih Barang / Perangkat",
+            type: "select",
+            required: true,
+            options: (data.products ?? []).map((p) => String(p.nama)),
+          },
+          { key: "qty", label: "Jumlah yang Dibutuhkan", type: "number", required: true, placeholder: "Contoh: 4" },
+        ]}
+        submitLabel="Cek Stok & Simpan"
+        onSubmit={async (v) => {
+          const prod = (data.products ?? []).find((p) => p.nama === v.produk);
+          if (!prod) return;
+          try {
+            const res = await api<any>("POST", `/projects/${project.id}/requirements`, {
+              items: [{ productId: Number(prod.id), neededQty: Number(v.qty) || 1 }],
+            });
+            await loadRequirements();
+            await reload();
+            toast(
+              res?.purchaseRequestCreated
+                ? "Stok tersedia di-reserve & kekurangan otomatis dibuatkan Request ke Procurement"
+                : "Kebutuhan barang dicatat & stok di-reserve",
+            );
+          } catch (e: any) {
+            toast(e?.message ?? "Gagal menyimpan kebutuhan barang", "danger");
+          }
+        }}
+      />
+
+      <FormDialog
+        open={editProjectOpen}
+        onOpenChange={setEditProjectOpen}
+        def={MODULES.projects}
+        title="Ubah Project"
+        fields={MODULES.projects?.createFields || []}
+        initialRow={project}
+        mode="edit"
+        submitLabel="Simpan Perubahan"
+        onSubmit={(patch) => patchRow("projects", project.id, patch)}
+      />
+
+      <ConfirmDialog
+        open={deleteProjectOpen}
+        onOpenChange={setDeleteProjectOpen}
+        title="Hapus project ini?"
+        description="Project yang dihapus tidak dapat dikembalikan."
+        confirmLabel="Ya, hapus"
+        destructive
+        onConfirm={() => {
+          void deleteRow("projects", project.id).then((ok) => {
+            if (ok) router.replace("/projects");
+          });
+        }}
+      />
+
       {/* Tab 3: Kebutuhan Barang & Reservasi */}
       {activeTab === "Barang" && (
         <View className="gap-4">
           <Panel
             title="Kebutuhan Barang Project"
-            subtitle="Sistem otomatis mengecek stok dan menahan (reserve) yang tersedia"
+            subtitle="Sistem otomatis mengecek stok, menahan (reserve) yang tersedia, dan mengajukan kekurangan ke Procurement"
             right={
-              <Button size="sm" onPress={() => router.push("/purchase-requests/new" as any)}>
-                <Plus size={14} color={colors.background} />
-                <Text>Ajukan Request</Text>
-              </Button>
+              <View className="flex-row gap-2">
+                <Button size="sm" onPress={() => setReqModalOpen(true)}>
+                  <Plus size={14} color={colors.background} />
+                  <Text className="text-xs">Isi Kebutuhan Barang</Text>
+                </Button>
+                <Button size="sm" variant="outline" onPress={() => router.push("/purchase-requests/new" as any)}>
+                  <Text className="text-xs">Request Manual</Text>
+                </Button>
+              </View>
             }
           >
-            <View className="border-border border-b py-2.5">
-              <View className="flex-row justify-between">
-                <Text className="text-sm font-medium">Reader Fingerprint</Text>
-                <Text className="text-sm font-semibold">Dibutuhkan: 6 pcs</Text>
-              </View>
-              <Text className="text-text-secondary text-xs">Tersedia di gudang: 2 pcs (Otomatis di-reserve) · Kekurangan: 4 pcs (Diajukan ke PO)</Text>
-            </View>
-
-            <View className="border-border border-b py-2.5">
-              <View className="flex-row justify-between">
-                <Text className="text-sm font-medium">Access Controller 4 Pintu</Text>
-                <Text className="text-sm font-semibold">Dibutuhkan: 2 pcs</Text>
-              </View>
-              <Text className="text-success text-xs">Tersedia di gudang: 2 pcs (Stok aman, siap pasang)</Text>
-            </View>
-
-            <View className="py-2.5">
-              <View className="flex-row justify-between">
-                <Text className="text-sm font-medium">Kabel LAN UTP Cat6</Text>
-                <Text className="text-sm font-semibold">Dibutuhkan: 500 meter</Text>
-              </View>
-              <Text className="text-success text-xs">Tersedia di Gudang Jakarta: 1.850 meter</Text>
-            </View>
+            {requirements.length === 0 ? (
+              <Text className="text-muted-foreground py-4 text-center text-sm">
+                Belum ada kebutuhan barang untuk project ini. Klik &quot;Isi Kebutuhan Barang&quot; untuk menambahkan.
+              </Text>
+            ) : (
+              requirements.map((r: any) => (
+                <View key={r.id} className="border-border flex-row items-center justify-between border-b py-3 last:border-b-0">
+                  <View className="flex-1 pr-3">
+                    <View className="flex-row justify-between">
+                      <Text className="text-sm font-medium">{r.product?.name ?? "Barang"}</Text>
+                      <Text className="text-sm font-semibold">
+                        Dibutuhkan: {r.neededQty} {r.product?.unit ?? "unit"}
+                      </Text>
+                    </View>
+                    <Text className={Number(r.shortageQty) > 0 ? "text-warning text-xs mt-0.5" : "text-success text-xs mt-0.5"}>
+                      Tersedia & Di-reserve: {r.reservedQty} {r.product?.unit ?? "unit"}
+                      {Number(r.shortageQty) > 0
+                        ? ` · Kekurangan: ${r.shortageQty} ${r.product?.unit ?? "unit"} (Otomatis masuk Request Procurement)`
+                        : " (Stok aman, siap pasang)"}
+                    </Text>
+                  </View>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onPress={async () => {
+                      try {
+                        await api("DELETE", `/projects/${project.id}/requirements/${r.id}`);
+                        await loadRequirements();
+                        await reload();
+                        toast("Kebutuhan barang dihapus & reservasi dilepas");
+                      } catch (e: any) {
+                        toast(e?.message ?? "Gagal menghapus", "danger");
+                      }
+                    }}
+                  >
+                    <Trash2 size={14} color={colors.danger} />
+                  </Button>
+                </View>
+              ))
+            )}
           </Panel>
         </View>
       )}

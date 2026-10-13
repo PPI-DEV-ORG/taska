@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ExpensesService } from "./expenses.service.js";
 import { ExpenseDto, ExpenseStatusDto, FinanceListQuery } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
@@ -50,5 +50,11 @@ export class ExpensesController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.setStatus(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Require("expenses", "A")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
   }
 }

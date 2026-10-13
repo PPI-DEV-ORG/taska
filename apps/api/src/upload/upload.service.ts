@@ -16,6 +16,9 @@ const CONTENT_TYPE: Record<string, string> = {
   webp: "image/webp",
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls: "application/vnd.ms-excel",
+  csv: "text/csv",
   doc: "application/msword",
   zip: "application/zip",
   mp4: "video/mp4",
@@ -43,7 +46,13 @@ export class UploadService {
     refId?: string,
   ) {
     const max = await this.settings.getNumber(`upload.maksimal.${kind}`);
-    const ext = validateUpload(buffer, kind, max);
+    let ext = validateUpload(buffer, kind, max);
+    if (originalName) {
+      const lower = originalName.toLowerCase();
+      if (lower.endsWith(".xlsx")) ext = "xlsx";
+      else if (lower.endsWith(".xls")) ext = "xls";
+      else if (lower.endsWith(".csv")) ext = "csv";
+    }
 
     const now = new Date();
     const period = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -90,6 +99,48 @@ export class UploadService {
     refId?: string,
   ) {
     return this.store(buffer, kind, originalName, user, refType, refId);
+  }
+
+  /** Simpan buffer dokumen langsung (misal Excel penawaran otomatis/upload). */
+  async saveBufferDirect(
+    buffer: Buffer,
+    originalName: string,
+    ext: keyof typeof CONTENT_TYPE,
+    userId?: number,
+    refType?: string,
+    refId?: string,
+  ) {
+    const now = new Date();
+    const period = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const safeName = originalName.replace(/[^\w.\- ()]/g, "_").slice(0, 120);
+    const rel = `${period}/${randomUUID()}__${safeName}`;
+    const abs = join(this.root, rel);
+
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, buffer);
+
+    const row = await this.prisma.main.file.create({
+      data: {
+        path: rel,
+        originalName: safeName,
+        mimeType: CONTENT_TYPE[ext] ?? "application/octet-stream",
+        size: buffer.length,
+        kind: "DOKUMEN",
+        refType: refType ?? null,
+        refId: refId ?? null,
+        uploadedById: userId ?? null,
+      },
+    });
+
+    return {
+      id: row.id,
+      url: `/api/files/${row.id}`,
+      originalName: row.originalName,
+      size: row.size,
+      mimeType: row.mimeType,
+      ext,
+      createdAt: row.createdAt,
+    };
   }
 
   async read(id: number) {

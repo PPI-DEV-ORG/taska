@@ -1,14 +1,15 @@
 import * as React from "react";
 import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Inbox, type LucideIcon } from "lucide-react-native";
+import { ArrowLeft, Inbox, RefreshCw, type LucideIcon } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { useApp } from "@/store/app-store";
 import { cn } from "@/lib/utils";
 import { number, rupiah, tanggal, waktuRelatif } from "@/lib/format";
 import { colors, toneColor, type Tone } from "@/tokens";
-import type { Fmt } from "@/mock/modules";
+import type { Fmt } from "@/constants/modules";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 
 export function Panel({
@@ -40,11 +41,39 @@ export function Panel({
 }
 
 export function PageHeader({
-  title, subtitle, action, back, status, children,
+  title,
+  subtitle,
+  action,
+  back,
+  status,
+  children,
+  showRefresh = true,
+  onRefresh,
 }: {
-  title: string; subtitle?: string; action?: React.ReactNode; back?: boolean; status?: string; children?: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  back?: boolean;
+  status?: string;
+  children?: React.ReactNode;
+  showRefresh?: boolean;
+  onRefresh?: () => void | Promise<void>;
 }) {
   const router = useRouter();
+  const { reload, toast } = useApp();
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([reload(), onRefresh ? onRefresh() : Promise.resolve()]);
+      toast("Data diperbarui");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <View className="mb-6 gap-2">
       {back ? (
@@ -59,7 +88,15 @@ export function PageHeader({
           {subtitle ? <Text className="text-text-secondary text-sm">{subtitle}</Text> : null}
           {status ? <View className="mt-1"><StatusBadge status={status} /></View> : null}
         </View>
-        {action ? <View className="flex-row flex-wrap items-center gap-2">{action}</View> : null}
+        <View className="flex-row flex-wrap items-center gap-2">
+          {showRefresh ? (
+            <Button variant="outline" size="sm" disabled={refreshing} onPress={handleRefresh}>
+              <RefreshCw size={15} color={colors.text} />
+              <Text>{refreshing ? "Memuat..." : "Refresh"}</Text>
+            </Button>
+          ) : null}
+          {action}
+        </View>
       </View>
       {children}
     </View>

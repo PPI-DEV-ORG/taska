@@ -1,11 +1,12 @@
 import * as React from "react";
 import { View, ScrollView } from "react-native";
-import { Archive, Search } from "lucide-react-native";
+import { Search } from "lucide-react-native";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Panel, Chip, EmptyState } from "@/components/taska/basics";
+import { PageHeader, Chip } from "@/components/taska/basics";
 import { DataTable } from "@/components/taska/data-table";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { api } from "@/services/api";
+import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 
 const ARCHIVE_CATEGORIES = [
@@ -13,29 +14,63 @@ const ARCHIVE_CATEGORIES = [
   "Penawaran",
   "Invoice",
   "Project",
-  "Stok",
+  "Mutasi Stok",
   "Surat Jalan",
   "Pengeluaran",
 ] as const;
-
-const ARCHIVE_SAMPLE = [
-  { id: "ARC-01", tahun: "2024", cat: "Project", title: "CCTV Gedung Arsip Nasional 2024", ref: "P-2024-009", status: "Selesai" },
-  { id: "ARC-02", tahun: "2023", cat: "Invoice", title: "INV/2023/11/044 - Pelunasan DP", ref: "Rp 140.000.000", status: "Lunas" },
-  { id: "ARC-03", tahun: "2024", cat: "Surat Jalan", title: "SJ/2024/05/110 - Pengiriman NVR Surabaya", ref: "Eko Saputra", status: "Diterima" },
-  { id: "ARC-04", tahun: "2023", cat: "Leads", title: "Tender Server RSUD Bekasi", ref: "CV Karya Mandiri", status: "Won" },
-  { id: "ARC-05", tahun: "2023", cat: "Pengeluaran", title: "Bensin & Tol Survey Semarang 2023", ref: "Rp 850.000", status: "Dibayar" },
-];
 
 export default function ArchiveScreen() {
   const [activeCat, setActiveCat] = React.useState<string>("Semua");
   const [selectedYear, setSelectedYear] = React.useState("Semua");
   const [query, setQuery] = React.useState("");
+  const [apiRows, setApiRows] = React.useState<any[]>([]);
 
-  const filtered = ARCHIVE_SAMPLE.filter(
+  const fetchArchive = React.useCallback(async () => {
+    try {
+      const res = await api<{ items: any[] }>("GET", "/reports/archive");
+      if (Array.isArray(res?.items)) {
+        setApiRows(
+          res.items.map((r) => ({
+            id: r.id,
+            tahun: r.year,
+            cat: r.category,
+            title: r.title,
+            ref: r.value > 0 ? rupiah(r.value) : r.client,
+            status: r.status,
+          })),
+        );
+      }
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    let active = true;
+    api<{ items: any[] }>("GET", "/reports/archive")
+      .then((res) => {
+        if (active && Array.isArray(res?.items)) {
+          setApiRows(
+            res.items.map((r) => ({
+              id: r.id,
+              tahun: r.year,
+              cat: r.category,
+              title: r.title,
+              ref: r.value > 0 ? rupiah(r.value) : r.client,
+              status: r.status,
+            })),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filtered = apiRows.filter(
     (item) =>
       (activeCat === "Semua" || item.cat === activeCat) &&
       (selectedYear === "Semua" || item.tahun === selectedYear) &&
-      (!query || item.title.toLowerCase().includes(query.toLowerCase()))
+      (!query || item.title.toLowerCase().includes(query.toLowerCase()) || String(item.ref).toLowerCase().includes(query.toLowerCase()))
   );
 
   return (
@@ -43,6 +78,7 @@ export default function ArchiveScreen() {
       <PageHeader
         title="Arsip Data Lama (Archive)"
         subtitle="Data berumur lebih dari 2 tahun yang dipindahkan secara aman (Read-Only)"
+        onRefresh={fetchArchive}
       />
 
       <View className="gap-3">

@@ -12,7 +12,7 @@ import { SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
-import type { Row } from "@/mock/data";
+import type { Row } from "@/constants/modules";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 
@@ -31,7 +31,7 @@ const COST_TYPE_MAP: Record<string, string> = {
 
 export default function NewPurchaseRequestScreen() {
   const router = useRouter();
-  const { data, toast } = useApp();
+  const { data, user, addRow, toast } = useApp();
 
   const products: Row[] = data.products ?? [];
   const projects: Row[] = data.projects ?? [];
@@ -64,20 +64,23 @@ export default function NewPurchaseRequestScreen() {
       toast("Pilih barang terlebih dahulu", "danger");
       return;
     }
-    const projectRow = projects.find((p) => p.nama === projectId);
-    const body: Record<string, any> = {
-      costType: COST_TYPE_MAP[costType] ?? "PROJECT",
-      purpose: tujuan || "Kebutuhan operasional lapangan",
-      otherNote: costType === "Lainnya" ? otherDesc : undefined,
-      items: [{ productId: Number(currentProd.id), qty: Number(qty) || 1, unitCost: Number(currentProd.hargaBeli ?? 0) }],
-    };
-    if (costType === "Project" && projectRow) body.projectId = Number(projectRow.id);
-
     setBusy(true);
     try {
-      await fileHandle.current?.flush();
-      await api("POST", "/requests", body);
-      toast("Request barang berhasil diajukan");
+      const uploaded = await fileHandle.current?.flush();
+      const fileId = uploaded?.[0]?.id;
+      addRow("purchase-requests", {
+        nomor: `PR/${new Date().getFullYear()}/${Math.floor(Math.random() * 900) + 100}`,
+        pemohon: user?.name || "Karyawan",
+        project: costType === "Project" ? projectId : "-",
+        costType,
+        otherNote: costType === "Lainnya" ? otherDesc : undefined,
+        purpose: tujuan || "Kebutuhan operasional lapangan",
+        item: `${currentProd.nama} (${Number(qty) || 1} ${currentProd.satuan || "unit"})`,
+        items: [{ productId: Number(currentProd.id), qty: Number(qty) || 1, unitCost: Number(currentProd.hargaBeli ?? 0) }],
+        estimasi: estimatedTotal,
+        fileId,
+        status: "Diajukan",
+      });
       router.replace("/purchase-requests");
     } catch (e: any) {
       toast(e?.message ?? "Gagal mengajukan request", "danger");

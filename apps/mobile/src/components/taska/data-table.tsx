@@ -10,8 +10,7 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
-import type { Col } from "@/mock/modules";
-import type { Row } from "@/mock/data";
+import type { Col, Row } from "@/constants/modules";
 
 const DEFAULT_PAGE_SIZE = 8;
 

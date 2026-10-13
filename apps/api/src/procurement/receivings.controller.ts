@@ -1,14 +1,19 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ReceivingsService } from "./receivings.service.js";
 import { IssueDto, ReceivingDto, ReceivingListQuery } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { PageQuery } from "../common/dto/page-query.js";
-import { IsIn, IsOptional } from "class-validator";
+import { IsIn, IsOptional, IsString } from "class-validator";
 
 class IssueListQuery extends PageQuery {
   @IsOptional() @IsIn(["DILAPORKAN", "DIPROSES", "SELESAI"])
   status?: "DILAPORKAN" | "DIPROSES" | "SELESAI";
+}
+
+class ReceivingStatusDto {
+  @IsString()
+  status!: string;
 }
 
 @Controller("receivings")
@@ -39,6 +44,22 @@ export class ReceivingsController {
     return this.service.create(dto, user);
   }
 
+  @Patch(":id")
+  @Require("receiving", "U")
+  update(@Param("id", ParseIntPipe) id: number, @Body() dto: ReceivingDto, @CurrentUser() user: RequestUser) {
+    return this.service.update(id, dto, user);
+  }
+
+  @Post(":id/status")
+  @Require("receiving", "U")
+  setStatus(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: ReceivingStatusDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.setStatus(id, dto.status, user);
+  }
+
   @Post(":id/issues")
   @Require("receiving", "C")
   reportIssue(
@@ -47,6 +68,12 @@ export class ReceivingsController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.reportIssue(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Require("receiving", "A")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
   }
 }
 

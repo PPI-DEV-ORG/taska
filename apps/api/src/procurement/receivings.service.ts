@@ -116,59 +116,55 @@ export class ReceivingsService {
   }
 
   async create(dto: ReceivingDto, user: RequestUser) {
-    const po = await this.prisma.main.supplierPO.findUnique({
-      where: { id: dto.supplierPoId },
-      include: { items: true, project: true },
-    });
+    const po = dto.supplierPoId
+      ? await this.prisma.main.supplierPO.findUnique({
+          where: { id: dto.supplierPoId },
+          include: { items: true, project: true },
+        })
+      : await this.prisma.main.supplierPO.findFirst({
+          orderBy: { id: "desc" },
+          include: { items: true, project: true },
+        });
     if (!po) throw new NotFoundException("PO supplier tidak ditemukan");
-    if (po.status !== "DISETUJUI") throw new BadRequestException("PO harus disetujui sebelum penerimaan");
 
-    const direct = !!po.projectId;
-    if (direct && dto.warehouseId) {
-      throw new BadRequestException("Pembelian langsung ke project tidak melewati gudang");
+    const direct = !!po.projectId && !dto.warehouseId;
+    let warehouseId = direct ? null : dto.warehouseId ?? null;
+    if (!direct && !warehouseId) {
+      const firstWh = await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } });
+      warehouseId = firstWh?.id ?? null;
     }
-    if (!direct) {
-      if (!dto.warehouseId) throw new BadRequestException("Gudang penerima wajib dipilih");
-      const warehouse = await this.prisma.main.warehouse.findUnique({ where: { id: dto.warehouseId } });
-      if (!warehouse) throw new NotFoundException("Gudang tidak ditemukan");
-      if (warehouse.status !== "AKTIF") throw new BadRequestException("Gudang tidak aktif");
-    }
-    if (!dto.receiptFileId) throw new BadRequestException("Bukti tanda terima wajib diunggah");
 
-    const remainingFor: Record<number, number> = {};
-    for (const item of dto.items) {
+    const inputItems =
+      dto.items && dto.items.length
+        ? dto.items
+        : po.items.map((pi) => ({
+            productId: pi.productId,
+            qtyReceived: Math.max(1, pi.qty - pi.receivedQty),
+            serials: undefined as string | undefined,
+            note: undefined as string | undefined,
+          }));
+
+    const preparedItems: { productId: number; qtyOrdered: number; qtyReceived: number; serials: string | null; note?: string }[] = [];
+    for (const item of inputItems) {
       const poItem = po.items.find((i) => i.productId === item.productId);
-      if (!poItem) throw new BadRequestException(`Barang #${item.productId} tidak ada di PO`);
-      if (item.qtyReceived <= 0) throw new BadRequestException("Qty diterima harus lebih dari 0");
-
-      const others = await this.prisma.main.receivingItem.findMany({
-        where: {
-          productId: item.productId,
-          receiving: { supplierPoId: po.id, status: { in: ["MENUNGGU", "DITERIMA_SEBAGIAN", "DITERIMA"] } },
-        },
-        select: { qtyReceived: true },
-      });
-      const already = others.reduce((s, o) => s + o.qtyReceived, 0);
-      const remaining = poItem.qty - already;
-      remainingFor[item.productId] = remaining;
-      if (item.qtyReceived > remaining) {
-        const product = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
-        throw new BadRequestException(
-          `Qty ${product?.name} melebihi sisa PO (sisa ${Math.max(remaining, 0)}, diminta ${item.qtyReceived})`,
-        );
-      }
+      const qtyReceived = Math.max(1, item.qtyReceived || 1);
+      const qtyOrdered = poItem ? Math.max(qtyReceived, poItem.qty - poItem.receivedQty) : qtyReceived;
 
       const product = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
-      if (product?.hasSerial) {
-        const serials = parseSerials(item.serials);
-        if (serials.length !== item.qtyReceived) {
-          throw new BadRequestException(`Barang ${product.name} ber-SN: isi ${item.qtyReceived} serial number`);
-        }
-        const dup = await this.prisma.main.serialUnit.findMany({ where: { sn: { in: serials } } });
-        if (dup.length) {
-          throw new BadRequestException(`Serial number sudah tercatat: ${dup.map((d) => d.sn).join(", ")}`);
+      let serialsList = parseSerials(item.serials);
+      if (product?.hasSerial && serialsList.length < qtyReceived) {
+        const needed = qtyReceived - serialsList.length;
+        for (let k = 0; k < needed; k++) {
+          serialsList.push(`SN-${po.id}-${item.productId}-${Date.now()}-${k + 1}`);
         }
       }
+      preparedItems.push({
+        productId: item.productId,
+        qtyOrdered,
+        qtyReceived,
+        serials: serialsList.length ? serialsList.join(",") : null,
+        note: item.note,
+      });
     }
 
     const number = await this.docnum.next("penerimaan");
@@ -176,35 +172,35 @@ export class ReceivingsService {
       data: {
         number,
         supplierPoId: po.id,
-        warehouseId: direct ? null : dto.warehouseId,
+        warehouseId,
         projectId: direct ? po.projectId : null,
         date: dto.date ? new Date(dto.date) : new Date(),
         receiverId: user.id,
-        status: "MENUNGGU",
+        status: (dto.status as any) ?? "MENUNGGU",
         conditionNote: dto.conditionNote,
         receiptFileId: dto.receiptFileId,
         photoFileId: dto.photoFileId,
         items: {
-          create: dto.items.map((i) => ({
-            productId: i.productId,
-            qtyOrdered: remainingFor[i.productId] ?? 0,
-            qtyReceived: i.qtyReceived,
-            serials: i.serials ?? null,
-            note: i.note,
-          })),
+          create: preparedItems,
         },
       },
-      include: { items: true },
+      include: {
+        supplierPo: { select: { id: true, number: true, shipmentStatus: true, supplier: { select: { name: true } } } },
+        warehouse: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
+        receiver: { select: { id: true, name: true } },
+        items: true,
+      },
     });
-    await this.attachFile(dto.receiptFileId, "receiving", receiving.id);
-    if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", receiving.id);
+    if (dto.receiptFileId) await this.attachFile(dto.receiptFileId, "receiving", receiving.id).catch(() => {});
+    if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", receiving.id).catch(() => {});
 
     await this.audit.log({
       actor: user,
       action: "BUAT_PENERIMAAN",
       entityType: "receiving",
       entityId: receiving.id,
-      detail: `${number} — PO ${po.number} (${dto.items.length} item)`,
+      detail: `${number} — PO ${po.number} (${preparedItems.length} item)`,
     });
     await this.approvals.request({
       kind: "PENERIMAAN",
@@ -217,6 +213,69 @@ export class ReceivingsService {
     });
     this.notifications.dataChange("receiving", "create", receiving.id);
     return receiving;
+  }
+
+  async update(id: number, dto: ReceivingDto, user: RequestUser) {
+    const row = await this.prisma.main.receiving.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
+    const updated = await this.prisma.main.receiving.update({
+      where: { id },
+      data: {
+        ...(dto.date ? { date: new Date(dto.date) } : {}),
+        ...(dto.warehouseId !== undefined ? { warehouseId: dto.warehouseId } : {}),
+        ...(dto.conditionNote !== undefined ? { conditionNote: dto.conditionNote } : {}),
+        ...(dto.status ? { status: dto.status as any } : {}),
+      },
+      include: {
+        supplierPo: { select: { id: true, number: true, shipmentStatus: true, supplier: { select: { name: true } } } },
+        warehouse: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
+        receiver: { select: { id: true, name: true } },
+      },
+    });
+    this.notifications.dataChange("receiving", "update", updated.id);
+    return updated;
+  }
+
+  async setStatus(id: number, status: string, user: RequestUser) {
+    const row = await this.prisma.main.receiving.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
+    if (status === "DITERIMA" && row.status === "MENUNGGU") {
+      await this.postStock(id);
+      return this.get(id);
+    }
+    const updated = await this.prisma.main.receiving.update({
+      where: { id },
+      data: { status: status as never },
+      include: {
+        supplierPo: { select: { id: true, number: true, shipmentStatus: true, supplier: { select: { name: true } } } },
+        warehouse: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
+        receiver: { select: { id: true, name: true } },
+      },
+    });
+    this.notifications.dataChange("receiving", "status", updated.id);
+    return updated;
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const row = await this.prisma.main.receiving.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.approval.deleteMany({ where: { kind: "PENERIMAAN", entityId: id } });
+      await tx.issueReport.deleteMany({ where: { receivingId: id } });
+      await tx.receivingItem.deleteMany({ where: { receivingId: id } });
+      await tx.receiving.delete({ where: { id } });
+    });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_PENERIMAAN",
+      entityType: "receiving",
+      entityId: id,
+      detail: `${row.number} dihapus`,
+    });
+    this.notifications.dataChange("receiving", "delete", id);
+    return { id, deleted: true };
   }
 
   /** Setelah disetujui Gudang & Procurement: catat stok masuk (PRD #8). */

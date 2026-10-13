@@ -25,9 +25,10 @@ export class CategoriesService {
   }
 
   async create(dto: ProductCategoryDto) {
-    const dup = await this.prisma.main.productCategory.findUnique({ where: { name: dto.name } });
+    const name = dto.name || `Kategori-${Date.now()}`;
+    const dup = await this.prisma.main.productCategory.findUnique({ where: { name } });
     if (dup) throw new ConflictException("Nama kategori sudah ada");
-    return this.prisma.main.productCategory.create({ data: dto });
+    return this.prisma.main.productCategory.create({ data: { ...dto, name } });
   }
 
   async update(id: number, dto: ProductCategoryDto) {
@@ -87,9 +88,10 @@ export class WarehousesService {
   }
 
   async create(dto: WarehouseDto) {
-    const dup = await this.prisma.main.warehouse.findFirst({ where: { name: dto.name } });
+    const name = dto.name || `Gudang-${Date.now()}`;
+    const dup = await this.prisma.main.warehouse.findFirst({ where: { name } });
     if (dup) throw new ConflictException("Nama gudang sudah ada");
-    return this.prisma.main.warehouse.create({ data: dto });
+    return this.prisma.main.warehouse.create({ data: { ...dto, name } });
   }
 
   async update(id: number, dto: WarehouseDto) {

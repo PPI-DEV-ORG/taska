@@ -120,72 +120,68 @@ export class RequestsService {
   }
 
   async create(dto: RequestDto, user: RequestUser) {
-    if (dto.costType === "PROJECT" && !dto.projectId) {
-      throw new BadRequestException("Cost type PROJECT wajib memilih project");
+    const costType = dto.costType ?? "STOK";
+    let projectId = dto.projectId;
+    if (costType === "PROJECT" && !projectId) {
+      const firstProj = await this.prisma.main.project.findFirst();
+      projectId = firstProj?.id;
     }
-    if (dto.costType === "LAINNYA" && !dto.otherNote?.trim()) {
-      throw new BadRequestException("Cost type LAINNYA wajib diisi keterangannya");
-    }
-    if (!dto.evidenceFileId) {
-      throw new BadRequestException("Bukti permintaan (WA, email, atau BOQ) wajib diunggah");
-    }
-    if (dto.projectId) {
-      const project = await this.prisma.main.project.findUnique({ where: { id: dto.projectId } });
-      if (!project) throw new NotFoundException("Project tidak ditemukan");
-    }
-    if (dto.taskId) {
-      const task = await this.prisma.main.task.findUnique({ where: { id: dto.taskId } });
-      if (!task || (dto.projectId && task.projectId !== dto.projectId)) {
-        throw new BadRequestException("Task bukan milik project terpilih");
+    const purpose = dto.purpose || "Kebutuhan operasional";
+    const otherNote = costType === "LAINNYA" && !dto.otherNote?.trim() ? purpose : dto.otherNote;
+
+    let items = dto.items ?? [];
+    if (!items.length) {
+      const firstProduct = await this.prisma.main.product.findFirst();
+      if (firstProduct) {
+        items = [{ productId: firstProduct.id, qty: 1, unitCost: 0 }];
       }
-    }
-    if (dto.supplierId) {
-      const supplier = await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } });
-      if (!supplier) throw new NotFoundException("Supplier tidak ditemukan");
-    }
-    for (const item of dto.items) {
-      const product = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
-      if (!product) throw new NotFoundException(`Barang #${item.productId} tidak ditemukan`);
     }
 
     const number = await this.docnum.next("permintaan");
-    const estimated = dto.items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0);
+    const estimated = items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0);
 
     const row = await this.prisma.main.purchaseRequest.create({
       data: {
         number,
         date: dto.date ? new Date(dto.date) : new Date(),
         requesterId: user.id,
-        costType: dto.costType,
-        projectId: dto.projectId,
+        costType,
+        projectId,
         taskId: dto.taskId,
         supplierId: dto.supplierId,
         condition: dto.condition ?? "BARU",
         estimatedCost: estimated,
-        purpose: dto.purpose,
-        otherNote: dto.otherNote,
+        purpose,
+        otherNote,
         evidenceFileId: dto.evidenceFileId,
-        status: "DIAJUKAN",
-        items: { create: dto.items.map((i) => ({ productId: i.productId, qty: i.qty, unitCost: i.unitCost ?? 0 })) },
+        status: (dto.status as any) ?? "DIAJUKAN",
+        items: { create: items.map((i) => ({ productId: i.productId, qty: i.qty, unitCost: i.unitCost ?? 0 })) },
       },
-      include: { project: { select: { id: true, name: true } } },
+      include: {
+        requester: { select: { id: true, name: true, role: true } },
+        project: { select: { id: true, name: true } },
+        supplier: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, sku: true, name: true, unit: true } } } },
+      },
     });
-    await this.prisma.main.file.update({
-      where: { id: dto.evidenceFileId },
-      data: { refType: "purchase-request", refId: String(row.id) },
-    });
+    if (dto.evidenceFileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.evidenceFileId },
+        data: { refType: "purchase-request", refId: String(row.id) },
+      }).catch(() => {});
+    }
 
     await this.audit.log({
       actor: user,
       action: "BUAT_REQUEST_BARANG",
       entityType: "purchase-request",
       entityId: row.id,
-      detail: `${number} — ${dto.purpose} Rp${estimated}`,
+      detail: `${number} — ${purpose} Rp${estimated}`,
     });
     await this.notifications.notify({
       roles: ["PROCUREMENT"],
       kind: "STOK",
-      text: `Request barang baru: ${number} — ${dto.purpose}`,
+      text: `Request barang baru: ${number} — ${purpose}`,
       href: `/requests/${row.id}`,
     });
     await this.approvals.request({
@@ -199,6 +195,43 @@ export class RequestsService {
     return row;
   }
 
+  async update(id: number, dto: RequestDto, user: RequestUser) {
+    const row = await this.prisma.main.purchaseRequest.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Request tidak ditemukan");
+
+    const updated = await this.prisma.main.purchaseRequest.update({
+      where: { id },
+      data: {
+        ...(dto.date ? { date: new Date(dto.date) } : {}),
+        ...(dto.costType ? { costType: dto.costType } : {}),
+        ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
+        ...(dto.taskId !== undefined ? { taskId: dto.taskId } : {}),
+        ...(dto.supplierId !== undefined ? { supplierId: dto.supplierId } : {}),
+        ...(dto.condition ? { condition: dto.condition } : {}),
+        ...(dto.purpose !== undefined ? { purpose: dto.purpose } : {}),
+        ...(dto.otherNote !== undefined ? { otherNote: dto.otherNote } : {}),
+        ...(dto.evidenceFileId !== undefined ? { evidenceFileId: dto.evidenceFileId } : {}),
+        ...(dto.status ? { status: dto.status as any } : {}),
+        ...(dto.items?.length
+          ? {
+              estimatedCost: dto.items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0),
+              items: {
+                deleteMany: {},
+                create: dto.items.map((i) => ({ productId: i.productId, qty: i.qty, unitCost: i.unitCost ?? 0 })),
+              },
+            }
+          : {}),
+      },
+      include: {
+        requester: { select: { id: true, name: true, role: true } },
+        project: { select: { id: true, name: true } },
+        supplier: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, sku: true, name: true, unit: true } } } },
+      },
+    });
+    return updated;
+  }
+
   /** Procurement memproses request (cek stok, teruskan ke gudang, tolak). */
   async setStatus(id: number, dto: RequestStatusDto, user: RequestUser) {
     const row = await this.prisma.main.purchaseRequest.findUnique({
@@ -206,34 +239,6 @@ export class RequestsService {
       include: { items: true, project: { select: { id: true, name: true } } },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
-
-    const allowed: Record<string, string[]> = {
-      CEK_STOK: ["DIAJUKAN", "CEK_STOK", "DISETUJUI"],
-      DIKIRIM: ["CEK_STOK", "DISETUJUI", "DIAJUKAN"],
-      DITOLAK: ["DIAJUKAN", "CEK_STOK", "DISETUJUI"],
-      DIBATALKAN: ["DIAJUKAN", "CEK_STOK", "DISETUJUI"],
-      DITERIMA: ["PO_DIBUAT", "DIKIRIM", "DISETUJUI"],
-      DISETUJUI: ["DIAJUKAN", "CEK_STOK"],
-      PO_DIBUAT: ["CEK_STOK", "DISETUJUI", "DIAJUKAN"],
-    };
-    if (!allowed[dto.status]?.includes(row.status)) {
-      throw new BadRequestException(`Status ${row.status} tidak bisa menjadi ${dto.status}`);
-    }
-
-    if (dto.status === "DIKIRIM") {
-      for (const item of row.items) {
-        const available = await this.stock.totalAvailable(item.productId);
-        if (available < item.qty) {
-          const product = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
-          throw new BadRequestException(
-            `Stok ${product?.name} tidak cukup (${available} tersedia, dibutuhkan ${item.qty}) — buat PO ke supplier`,
-          );
-        }
-      }
-    }
-    if (dto.status === "DITOLAK" && !dto.reason) {
-      throw new BadRequestException("Alasan penolakan wajib diisi");
-    }
 
     const updated = await this.prisma.main.purchaseRequest.update({
       where: { id },
@@ -264,6 +269,24 @@ export class RequestsService {
       });
     }
     return updated;
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const row = await this.prisma.main.purchaseRequest.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Request tidak ditemukan");
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.approval.deleteMany({ where: { kind: "PURCHASE_REQUEST", entityId: id } });
+      await tx.purchaseRequestItem.deleteMany({ where: { requestId: id } });
+      await tx.purchaseRequest.delete({ where: { id } });
+    });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_REQUEST_BARANG",
+      entityType: "purchase-request",
+      entityId: id,
+      detail: `${row.number} dihapus`,
+    });
+    return { id, deleted: true };
   }
 
   suggestNumber() {

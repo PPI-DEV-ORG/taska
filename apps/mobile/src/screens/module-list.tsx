@@ -7,8 +7,7 @@ import { EmptyState, PageHeader } from "@/components/taska/basics";
 import { DataTable, FilterBar } from "@/components/taska/data-table";
 import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
-import type { ModuleDef } from "@/mock/modules";
-import type { Role, Row, User } from "@/mock/data";
+import type { ModuleDef, Role, Row, User } from "@/constants/modules";
 import { colors } from "@/tokens";
 
 const CREATE: Record<string, Role[]> = {

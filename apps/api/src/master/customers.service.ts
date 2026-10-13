@@ -43,7 +43,13 @@ export class CustomersService {
   }
 
   create(dto: CustomerDto) {
-    return this.prisma.main.customer.create({ data: dto });
+    return this.prisma.main.customer.create({
+      data: {
+        ...dto,
+        name: dto.name || "Customer Baru",
+        pic: dto.pic || "-",
+      },
+    });
   }
 
   async update(id: number, dto: CustomerDto) {

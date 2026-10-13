@@ -6,8 +6,8 @@ import { Require } from "../common/decorators/require-permission.decorator.js";
 import type { ModuleKey } from "../rbac/permissions.js";
 
 class NameDto {
-  @IsString() @MinLength(1)
-  name!: string;
+  @IsOptional() @IsString()
+  name?: string;
 
   @IsOptional() @IsString()
   status?: string;
@@ -33,13 +33,13 @@ function makeLookupController(path: string, model: LookupModel, moduleKey: Modul
     @Post()
     @Require(moduleKey, "C")
     create(@Body() dto: NameDto) {
-      return this.service.create(model, dto.name);
+      return this.service.create(model, dto.name || `Item-${Date.now()}`, dto.status);
     }
 
     @Patch(":id")
     @Require(moduleKey, "U")
     update(@Param("id", ParseIntPipe) id: number, @Body() dto: NameDto) {
-      return this.service.update(model, id, dto.name);
+      return this.service.update(model, id, dto.name, dto.status);
     }
 
     @Delete(":id")

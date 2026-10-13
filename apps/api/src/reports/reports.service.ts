@@ -315,4 +315,114 @@ export class ReportsService {
       ]),
     };
   }
+
+  async archiveList(q: { q?: string; year?: string; category?: string }) {
+    const db = this.prisma.archive;
+    const [leads, quotations, invoices, projects, movements, deliveryNotes, expenses] = await Promise.all([
+      db.lead.findMany({ include: { customer: { select: { name: true } } }, take: 100, orderBy: { createdAt: "desc" } }).catch(() => []),
+      db.quotation.findMany({ include: { customer: { select: { name: true } }, lead: { select: { name: true } } }, take: 100, orderBy: { createdAt: "desc" } }).catch(() => []),
+      db.invoiceOut.findMany({ include: { customer: { select: { name: true } } }, take: 100, orderBy: { date: "desc" } }).catch(() => []),
+      db.project.findMany({ include: { customer: { select: { name: true } } }, take: 100, orderBy: { createdAt: "desc" } }).catch(() => []),
+      db.stockMovement.findMany({ include: { product: { select: { name: true } }, fromWarehouse: { select: { name: true } }, toWarehouse: { select: { name: true } } }, take: 100, orderBy: { date: "desc" } }).catch(() => []),
+      db.deliveryNote.findMany({ include: { locations: { include: { project: { select: { name: true } } } }, creator: { select: { name: true } } }, take: 100, orderBy: { date: "desc" } }).catch(() => []),
+      db.expense.findMany({ include: { reporter: { select: { name: true } } }, take: 100, orderBy: { date: "desc" } }).catch(() => []),
+    ]);
+
+    const items = [
+      ...leads.map((l) => ({
+        id: `LD-ARCH-${l.id}`,
+        category: "Leads",
+        year: String(new Date(l.createdAt).getFullYear()),
+        title: l.name,
+        client: l.customer?.name || l.contactName || "-",
+        value: Number(l.estimatedValue) || 0,
+        status: l.stage,
+        archivedAt: new Date(l.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(l.createdAt).toISOString().slice(0, 10),
+      })),
+      ...quotations.map((qt) => ({
+        id: qt.number || `QUO-ARCH-${qt.id}`,
+        category: "Penawaran",
+        year: String(new Date(qt.createdAt).getFullYear()),
+        title: `Penawaran ${qt.lead?.name || qt.number}`,
+        client: qt.customer?.name || qt.lead?.name || "-",
+        value: Number(qt.grandTotal) || 0,
+        status: qt.status,
+        archivedAt: new Date(qt.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(qt.createdAt).toISOString().slice(0, 10),
+      })),
+      ...invoices.map((inv) => ({
+        id: inv.number || `INV-ARCH-${inv.id}`,
+        category: "Invoice",
+        year: String(new Date(inv.date).getFullYear()),
+        title: inv.description || inv.number,
+        client: inv.customer?.name || "-",
+        value: Number(inv.total) || 0,
+        status: inv.status,
+        archivedAt: new Date(inv.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(inv.date).toISOString().slice(0, 10),
+      })),
+      ...projects.map((p) => ({
+        id: `PRJ-ARCH-${p.id}`,
+        category: "Project",
+        year: String(new Date(p.createdAt).getFullYear()),
+        title: p.name,
+        client: p.customer?.name || "-",
+        value: 0,
+        status: p.status,
+        archivedAt: new Date(p.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(p.createdAt).toISOString().slice(0, 10),
+      })),
+      ...movements.map((m) => ({
+        id: `MOV-ARCH-${m.id}`,
+        category: "Mutasi Stok",
+        year: String(new Date(m.date).getFullYear()),
+        title: `${m.type} - ${m.product?.name || "Barang"} (${m.qty})`,
+        client: m.toWarehouse?.name || m.fromWarehouse?.name || "-",
+        value: 0,
+        status: m.type,
+        archivedAt: new Date(m.date).toISOString().slice(0, 10),
+        originalDate: new Date(m.date).toISOString().slice(0, 10),
+      })),
+      ...deliveryNotes.map((dn) => ({
+        id: dn.number || `SJ-ARCH-${dn.id}`,
+        category: "Surat Jalan",
+        year: String(new Date(dn.date).getFullYear()),
+        title: `Surat Jalan ${dn.locations?.[0]?.destination || dn.number}`,
+        client: dn.locations?.[0]?.project?.name || dn.locations?.[0]?.destination || dn.creator?.name || "-",
+        value: 0,
+        status: dn.status,
+        archivedAt: new Date(dn.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(dn.date).toISOString().slice(0, 10),
+      })),
+      ...expenses.map((ex) => ({
+        id: `EXP-ARCH-${ex.id}`,
+        category: "Pengeluaran",
+        year: String(new Date(ex.date).getFullYear()),
+        title: ex.description,
+        client: ex.reporter?.name || "-",
+        value: Number(ex.amount) || 0,
+        status: ex.status,
+        archivedAt: new Date(ex.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(ex.date).toISOString().slice(0, 10),
+      })),
+    ];
+
+    return {
+      items: items.filter((item) => {
+        if (q.year && q.year !== "Semua" && item.year !== q.year) return false;
+        if (q.category && q.category !== "Semua" && item.category !== q.category) return false;
+        if (q.q) {
+          const search = q.q.toLowerCase();
+          return (
+            item.title.toLowerCase().includes(search) ||
+            item.client.toLowerCase().includes(search) ||
+            item.id.toLowerCase().includes(search)
+          );
+        }
+        return true;
+      }),
+    };
+  }
 }
+

@@ -9,7 +9,7 @@ import { PageHeader, Panel, Chip, FormField } from "@/components/taska/basics";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
-import type { Row } from "@/mock/data";
+import type { Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 
 export default function StockOpnameScreen() {

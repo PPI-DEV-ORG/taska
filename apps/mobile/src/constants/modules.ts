@@ -24,7 +24,54 @@ import {
   Wallet,
   FileSignature,
 } from "lucide-react-native";
-import type { Role, Row } from "@/mock/data";
+
+export type Role =
+  | "admin"
+  | "bos"
+  | "sales"
+  | "pm"
+  | "teknisi"
+  | "procurement"
+  | "finance"
+  | "gudang"
+  | "se";
+
+export const ROLE_LABEL: Record<Role, string> = {
+  admin: "Admin / Bos",
+  bos: "Admin / Bos",
+  sales: "Sales",
+  pm: "Project Manager",
+  teknisi: "Teknisi",
+  procurement: "Procurement",
+  finance: "Finance",
+  gudang: "Gudang",
+  se: "Software Engineer",
+};
+
+export type Row = Record<string, any> & { id: string };
+
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  roleLabel: string;
+  gudang: string;
+  status: string;
+  phone?: string;
+  position?: string;
+  avatarUrl?: string;
+};
+
+export type Notif = {
+  id: string;
+  jenis: "approval" | "stok" | "pengiriman" | "lead" | "tugas" | "surat";
+  teks: string;
+  waktu: string;
+  baca: boolean;
+  href: string;
+  roles: Role[] | "all";
+};
 
 export type Fmt = "rupiah" | "date" | "status" | "pct" | "text" | "number";
 export type Col = { key: string; label: string; fmt?: Fmt; primary?: boolean; mobile?: boolean; flex?: number; width?: number | string };
@@ -92,12 +139,17 @@ export const MODULES: Record<string, ModuleDef> = {
     createLabel: "Tambah lead",
     createFields: [
       { key: "nama", label: "Nama lead", type: "text", required: true, placeholder: "Contoh: CCTV Gudang Baru" },
-      { key: "perusahaan", label: "Perusahaan", type: "select", required: true, options: ["PT Nusantara Jaya", "CV Karya Mandiri", "PT Bumi Sentosa", "PT Sinar Medan Teknik", "RS Harapan Sehat", "Hotel Grand Mahkota", "Sekolah Global Cendekia", "PT Logistik Prima"] },
-      { key: "sumber", label: "Sumber", type: "select", required: true, options: ["Sosial media", "Website", "Cold call", "Referral", "Event", "Distributor", "Lainnya"] },
+      { key: "perusahaan", label: "Perusahaan", type: "select", required: true, options: [] },
+      { key: "sumber", label: "Sumber", type: "select", required: true, options: [] },
+      { key: "tipe", label: "Tipe client", type: "select", options: ["End user", "Partner"] },
+      { key: "kontak", label: "Nama kontak PIC", type: "text", placeholder: "Masukkan nama PIC" },
       { key: "nilai", label: "Nilai perkiraan (Rp)", type: "number" },
+      { key: "peluang", label: "Peluang (%)", type: "number", placeholder: "20" },
+      { key: "closing", label: "Target closing", type: "date" },
+      { key: "need", label: "Catatan kebutuhan", type: "textarea", placeholder: "Ringkasan kebutuhan teknis klien" },
       { key: "dokumen", label: "Upload dokumen pendukung / brief (Opsional)", type: "file", required: false },
     ],
-    defaults: { status: "Prospecting", peluang: 20, sepi: 0, tipe: "End user", kontak: "-", closing: "2026-11-30", pemilik: "Dewi Lestari" },
+    defaults: { status: "Prospecting", peluang: 20, sepi: 0, tipe: "End user", kontak: "-" },
     actions: [
       { label: "Download template penawaran", toast: "Template penawaran berhasil diunduh" },
       { label: "Minta survey", toast: "Permintaan survey dikirim ke PM" },
@@ -137,7 +189,16 @@ export const MODULES: Record<string, ModuleDef> = {
     statuses: ["Not Yet", "Done", "Menunggu persetujuan", "Disetujui", "Terkirim", "Revisi", "Ditolak", "Kedaluwarsa"],
     titleOf: (r) => r.nomor, subtitleOf: (r) => `${r.customer} · ${r.lead}`,
     search: ["nomor", "customer", "lead"],
-    defaults: { status: "Not Yet", versi: 1, lead: "-", pemilik: "Dewi Lestari", dibuat: "2026-10-08", total: 0, ppn: 0, disc: 0, totalAfterDisc: 0, fileUploaded: false },
+    createLabel: "Buat penawaran",
+    createFields: [
+      { key: "lead", label: "Lead sumber", type: "select", options: [] },
+      { key: "customer", label: "Customer", type: "select", required: true, options: [] },
+      { key: "nilai", label: "Total nilai sebelum PPN (Rp)", type: "number", required: true },
+      { key: "disc", label: "Diskon (Rp)", type: "number" },
+      { key: "berlaku", label: "Berlaku sampai", type: "date" },
+      { key: "dokumen", label: "File penawaran (Excel / PDF)", type: "file" },
+    ],
+    defaults: { status: "Not Yet", versi: 1, lead: "-", total: 0, ppn: 0, disc: 0, totalAfterDisc: 0, fileUploaded: false },
     actions: [{ label: "Kirim ke customer", toast: "Penawaran ditandai terkirim", status: "Terkirim" }],
     docs: ["File penawaran Excel / PDF"],
     emptyText: "Belum ada penawaran. Penawaran otomatis dibuat saat lead masuk tahap Qualification.",
@@ -164,26 +225,19 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["lead", "customer", "lokasi"],
     createLabel: "Minta survey",
     createFields: [
-      { key: "lead", label: "Kebutuhan / nama lead", type: "text", required: true },
-      { key: "customer", label: "Customer", type: "select", required: true, options: ["PT Nusantara Jaya", "CV Karya Mandiri", "PT Bumi Sentosa", "RS Harapan Sehat", "Hotel Grand Mahkota", "Sekolah Global Cendekia", "PT Logistik Prima"] },
-      { key: "lokasi", label: "Lokasi", type: "text", required: true },
+      { key: "lead", label: "Lead terkait", type: "select", required: true, options: [] },
+      { key: "customer", label: "Customer", type: "select", required: true, options: [] },
+      { key: "lokasi", label: "Lokasi", type: "text", required: true, placeholder: "Alamat atau titik lokasi survey" },
       { key: "jadwal", label: "Tanggal survey", type: "date", required: true },
       {
         key: "tim",
         label: "Tim survey (Pilih Karyawan / Staf)",
         type: "multiselect",
         required: true,
-        options: [
-          "Budi Santoso (PM)",
-          "Agus Prasetyo (Teknisi)",
-          "Andi Kurniawan (SE)",
-          "Dewi Lestari (Sales)",
-          "Hendra Wijaya (Bos)",
-          "Eko Saputra (Gudang)",
-          "Rina Marlina (Procurement)",
-          "Siti Rahayu (Finance)",
-        ],
+        options: [],
       },
+      { key: "biaya", label: "Estimasi biaya survey (Rp)", type: "number" },
+      { key: "need", label: "Catatan kebutuhan survey", type: "textarea", placeholder: "Hal yang perlu dicek di lokasi" },
     ],
     defaults: { status: "Diminta", biaya: 0 },
     actions: [{ label: "Laporkan biaya survey", toast: "Biaya survey dikirim ke Finance" }],
@@ -210,10 +264,13 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["nomor", "customer", "penawaran"],
     createLabel: "Catat PO client",
     createFields: [
-      { key: "nomor", label: "Nomor PO", type: "text", required: true },
-      { key: "customer", label: "Customer", type: "select", required: true, options: ["PT Nusantara Jaya", "CV Karya Mandiri", "PT Bumi Sentosa", "RS Harapan Sehat", "Hotel Grand Mahkota"] },
+      { key: "nomor", label: "Nomor PO (Kosongkan untuk otomatis)", type: "text", placeholder: "Contoh: PO-C/2026/10/001" },
+      { key: "customer", label: "Customer", type: "select", required: true, options: [] },
+      { key: "penawaran", label: "Penawaran asal (Opsional)", type: "select", options: ["-"] },
       { key: "nilai", label: "Nilai PO (Rp)", type: "number", required: true },
       { key: "tanggal", label: "Tanggal PO", type: "date", required: true },
+      { key: "catatan", label: "Catatan PO", type: "textarea", placeholder: "Ketentuan termin atau ruang lingkup" },
+      { key: "dokumen", label: "File PO dari client (Opsional)", type: "file" },
     ],
     defaults: { status: "Diterima", penawaran: "-", totalInvoice: 0 },
     docs: ["File PO dari client"],
@@ -242,13 +299,17 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["nomor", "customer", "po"],
     createLabel: "Catat invoice",
     createFields: [
-      { key: "nomor", label: "Nomor invoice", type: "text", required: true },
-      { key: "customer", label: "Customer", type: "select", required: true, options: ["PT Nusantara Jaya", "CV Karya Mandiri", "PT Bumi Sentosa", "RS Harapan Sehat", "Hotel Grand Mahkota"] },
+      { key: "nomor", label: "Nomor invoice (Kosongkan untuk otomatis)", type: "text", placeholder: "Contoh: INV/2026/10/001" },
+      { key: "customer", label: "Customer", type: "select", required: true, options: [] },
+      { key: "po", label: "PO client terkait (Opsional)", type: "select", options: ["-"] },
+      { key: "project", label: "Project terkait (Opsional)", type: "select", options: ["-"] },
       { key: "jenis", label: "Jenis", type: "select", required: true, options: ["DP", "Termin", "Pelunasan"] },
       { key: "nilai", label: "Nilai sebelum PPN (Rp)", type: "number", required: true },
+      { key: "tanggal", label: "Tanggal terbit", type: "date" },
       { key: "jatuhTempo", label: "Jatuh tempo", type: "date", required: true },
+      { key: "dokumen", label: "File invoice (Opsional)", type: "file" },
     ],
-    defaults: { status: "Belum dikirim", terbayar: 0, po: "-", tanggal: "2026-10-08" },
+    defaults: { status: "Belum dikirim", terbayar: 0, po: "-" },
     actions: [{ label: "Catat pembayaran", toast: "Pembayaran dicatat" }],
     docs: ["File invoice", "Bukti pembayaran"],
     emptyText: "Belum ada invoice. Upload invoice yang dibuat di luar aplikasi.",
@@ -269,12 +330,16 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["nama", "customer", "jenis"],
     createLabel: "Buat project",
     createFields: [
-      { key: "nama", label: "Nama project", type: "text", required: true },
+      { key: "nama", label: "Nama project", type: "text", required: true, placeholder: "Contoh: Instalasi CCTV Gudang" },
       { key: "jenis", label: "Jenis", type: "select", required: true, options: ["Customer", "Product/R&D", "Internal", "Maintenance", "Support", "Lainnya"] },
-      { key: "customer", label: "Customer", type: "select", options: ["-", "PT Nusantara Jaya", "CV Karya Mandiri", "PT Bumi Sentosa", "RS Harapan Sehat", "Hotel Grand Mahkota"] },
+      { key: "customer", label: "Customer", type: "select", options: ["-"] },
+      { key: "pm", label: "Project Manager (PIC)", type: "select", options: [] },
+      { key: "tim", label: "Tim pelaksana", type: "multiselect", options: [] },
+      { key: "mulai", label: "Tanggal mulai", type: "date" },
       { key: "selesai", label: "Target selesai", type: "date", required: true },
+      { key: "dokumen", label: "Dokumen PRD / SPK (Opsional)", type: "file" },
     ],
-    defaults: { status: "Berjalan", progres: 0, pembayaran: "Belum lunas", pm: "Budi Santoso", tim: "-", mulai: "2026-10-08", barang: "Diminta" },
+    defaults: { status: "Berjalan", progres: 0, pembayaran: "Belum lunas", tim: "-", barang: "Diminta" },
     emptyText: "Belum ada project yang kamu pegang.",
     confirmStatuses: ["Ditunda"],
   },
@@ -300,6 +365,12 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["nomor", "project", "item", "pemohon"],
     createLabel: "Buat request",
     newHref: "/purchase-requests/new",
+    createFields: [
+      { key: "jenisBiaya", label: "Jenis biaya", type: "select", required: true, options: ["Project", "Stok", "Internal", "Lainnya"] },
+      { key: "project", label: "Project terkait", type: "select", options: ["-"] },
+      { key: "tanggal", label: "Tanggal", type: "date" },
+      { key: "tujuan", label: "Tujuan / kebutuhan", type: "textarea", required: true },
+    ],
     createRoles: ["pm", "procurement", "finance", "gudang", "bos"],
     actions: [
       { label: "Teruskan ke Gudang", toast: "Stok tersedia, request diteruskan ke Gudang tanpa PO" },
@@ -330,13 +401,16 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["nomor", "supplier", "item"],
     createLabel: "Buat PO supplier",
     createFields: [
-      { key: "nomor", label: "Nomor PO", type: "text", required: true },
-      { key: "supplier", label: "Supplier", type: "select", required: true, options: ["PT Hikvision Distribusi Indonesia", "CV Kabel Nusantara", "PT Ubiquiti Mitra Network", "UD Sinar Teknik Surabaya"] },
-      { key: "item", label: "Barang", type: "text", required: true },
+      { key: "nomor", label: "Nomor PO (Kosongkan untuk otomatis)", type: "text", placeholder: "Contoh: PO-S/2026/10/001" },
+      { key: "supplier", label: "Supplier", type: "select", required: true, options: [] },
+      { key: "item", label: "Barang", type: "select", required: true, options: [] },
       { key: "total", label: "Total (Rp)", type: "number", required: true },
+      { key: "tanggal", label: "Tanggal PO", type: "date" },
       { key: "eta", label: "Perkiraan tiba", type: "date", required: true },
+      { key: "payment", label: "Syarat pembayaran", type: "select", options: ["Tunai", "Net 14", "Net 30"] },
+      { key: "dokumen", label: "File PO (Opsional)", type: "file" },
     ],
-    defaults: { status: "Menunggu persetujuan", persetujuan: "Menunggu persetujuan", pengiriman: "Di Supplier", tanggal: "2026-10-08" },
+    defaults: { status: "Menunggu persetujuan", persetujuan: "Menunggu persetujuan", pengiriman: "Di Supplier" },
     createRoles: ["procurement", "finance", "bos"],
     docs: ["File PO", "Bukti Delivery Order (DO)"],
     emptyText: "Belum ada PO supplier.",
@@ -362,6 +436,12 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["nomor", "po", "supplier", "item"],
     createLabel: "Terima barang",
     newHref: "/receiving/new",
+    createFields: [
+      { key: "po", label: "PO supplier", type: "select", options: [] },
+      { key: "warehouse", label: "Gudang penerima", type: "select", options: [] },
+      { key: "tanggal", label: "Tanggal penerimaan", type: "date", required: true },
+      { key: "conditionNote", label: "Catatan kondisi fisik", type: "textarea" },
+    ],
     createRoles: ["gudang", "bos"],
     docs: ["Foto kondisi barang", "Tanda terima"],
     emptyText: "Belum ada penerimaan barang.",
@@ -388,6 +468,13 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["nomor", "tujuan", "alasan", "pembuat"],
     createLabel: "Buat surat jalan",
     newHref: "/delivery-notes/new",
+    createFields: [
+      { key: "tujuan", label: "Lokasi tujuan", type: "text", required: true },
+      { key: "alasan", label: "Alasan / keperluan", type: "textarea", required: true },
+      { key: "project", label: "Project terkait", type: "select", options: ["-"] },
+      { key: "tanggal", label: "Tanggal", type: "date", required: true },
+      { key: "barang", label: "Barang yang dibawa", type: "text", placeholder: "Kosongkan atau '-' jika tanpa barang" },
+    ],
     createRoles: ALL,
     actions: [{ label: "Upload laporan hasil", toast: "Laporan hasil disimpan" }],
     docs: ["Scan surat bertanda tangan", "Laporan hasil dan dokumentasi"],
@@ -415,6 +502,13 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["alasan", "pelapor", "kategori", "project"],
     createLabel: "Catat pengeluaran",
     newHref: "/expenses/new",
+    createFields: [
+      { key: "nominal", label: "Nominal pengeluaran (Rp)", type: "number", required: true },
+      { key: "kategori", label: "Kategori pengeluaran", type: "select", required: true, options: [] },
+      { key: "project", label: "Project terkait", type: "select", options: ["-"] },
+      { key: "tanggal", label: "Tanggal pengeluaran", type: "date", required: true },
+      { key: "alasan", label: "Alasan / keperluan", type: "textarea", required: true },
+    ],
     createRoles: ALL,
     docs: ["Foto nota", "Bukti transfer reimbursement"],
     emptyText: "Belum ada pengeluaran. Catat pengeluaran kerja kamu di sini.",
@@ -439,12 +533,15 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["produk", "po", "keterangan"],
     createLabel: "Laporkan kerusakan",
     createFields: [
-      { key: "produk", label: "Barang", type: "text", required: true },
+      { key: "produk", label: "Barang", type: "select", required: true, options: [] },
       { key: "jenis", label: "Jenis masalah", type: "select", required: true, options: ["Rusak", "Salah barang", "Kurang"] },
-      { key: "po", label: "Nomor PO", type: "text" },
+      { key: "qty", label: "Jumlah bermasalah (Qty)", type: "number", placeholder: "1" },
+      { key: "tanggal", label: "Tanggal kejadian", type: "date" },
+      { key: "po", label: "Nomor PO / Serial Number", type: "text" },
       { key: "keterangan", label: "Keterangan", type: "textarea", required: true },
+      { key: "dokumen", label: "Foto barang bermasalah (Opsional)", type: "file" },
     ],
-    defaults: { status: "Dilaporkan", pelapor: "Eko Saputra", tanggal: "2026-10-08" },
+    defaults: { status: "Dilaporkan" },
     docs: ["Foto barang bermasalah"],
     emptyText: "Belum ada laporan kerusakan. Semoga tetap kosong.",
   },
@@ -486,18 +583,30 @@ export const MODULES: Record<string, ModuleDef> = {
     columns: [
       { key: "nama", label: "Nama", primary: true, flex: 2 },
       { key: "kota", label: "Kota" },
+      { key: "kontak", label: "Kontak PIC" },
       { key: "payment", label: "Pembayaran" },
       { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
-    fields: [{ label: "Kota", key: "kota" }, { label: "Pembayaran", key: "payment" }],
+    fields: [
+      { label: "Kota", key: "kota" },
+      { label: "Kontak PIC", key: "kontak" },
+      { label: "Email", key: "email" },
+      { label: "Telepon", key: "telepon" },
+      { label: "Pembayaran", key: "payment" },
+      { label: "Catatan", key: "catatan" },
+    ],
     statusKey: "status", statuses: ["Aktif", "Nonaktif"],
     titleOf: (r) => r.nama, subtitleOf: (r) => r.kota,
-    search: ["nama", "kota"],
+    search: ["nama", "kota", "kontak"],
     createLabel: "Tambah supplier",
     createFields: [
       { key: "nama", label: "Nama supplier", type: "text", required: true },
       { key: "kota", label: "Kota", type: "text", required: true },
-      { key: "payment", label: "Pembayaran", type: "select", options: ["Tunai", "Net 14", "Net 30"] },
+      { key: "kontak", label: "Nama kontak PIC", type: "text", placeholder: "Contoh: Sales Support" },
+      { key: "telepon", label: "Nomor telepon / WhatsApp", type: "text", placeholder: "021-xxxx / 0812-xxxx" },
+      { key: "email", label: "Email supplier", type: "text", placeholder: "sales@supplier.co.id" },
+      { key: "payment", label: "Syarat pembayaran", type: "select", options: ["Tunai", "Net 14", "Net 30"] },
+      { key: "catatan", label: "Catatan supplier", type: "textarea" },
     ],
     defaults: { status: "Aktif" },
     createRoles: ["procurement"],
@@ -513,17 +622,24 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
-      { label: "Email", key: "email" }, { label: "Role", key: "roleLabel" }, { label: "Gudang ditugaskan", key: "gudang" },
+      { label: "Email", key: "email" },
+      { label: "Telepon", key: "phone" },
+      { label: "Jabatan", key: "position" },
+      { label: "Role", key: "roleLabel" },
+      { label: "Gudang ditugaskan", key: "gudang" },
     ],
     statusKey: "status", statuses: ["Aktif", "Nonaktif"],
     titleOf: (r) => r.name, subtitleOf: (r) => r.email,
     search: ["name", "email", "roleLabel"],
     createLabel: "Tambah pengguna",
     createFields: [
-      { key: "name", label: "Nama lengkap", type: "text", required: true, placeholder: "Contoh: Budi Santoso" },
+      { key: "name", label: "Nama lengkap", type: "text", required: true, placeholder: "Masukkan nama lengkap" },
       { key: "email", label: "Email", type: "text", required: true, placeholder: "nama@taska.co.id" },
       { key: "password", label: "Kata sandi", type: "password", required: true, placeholder: "Masukkan kata sandi akun" },
       { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Admin / Bos", "Sales", "Project Manager", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
+      { key: "phone", label: "Nomor telepon", type: "text", placeholder: "0812-xxxx-xxxx" },
+      { key: "position", label: "Jabatan", type: "text", placeholder: "Contoh: Senior Engineer" },
+      { key: "gudang", label: "Gudang ditugaskan (Opsional)", type: "select", options: ["-"] },
     ],
     defaults: { status: "Aktif", gudang: "-" },
     actions: [{ label: "Alihkan tugas", toast: "Lead, project, dan tugas dialihkan ke orang lain" }],
@@ -590,3 +706,4 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
 };
 
 export const CAN_APPROVE: Role[] = ["bos", "finance"];
+

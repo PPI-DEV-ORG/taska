@@ -123,13 +123,13 @@ export class OpnameCreateDto {
   @Type(() => Number) @IsInt()
   warehouseId: number;
 
-  @IsDateString()
-  date: string;
+  @IsOptional() @IsDateString()
+  date?: string;
 
   @IsOptional() @Type(() => Number) @IsInt()
   conductorId?: number;
 
-  @IsOptional() @IsString() @MinLength(3)
+  @IsOptional() @IsString()
   reason?: string;
 
   @IsArray() @ValidateNested({ each: true }) @Type(() => OpnameDetailDto)
@@ -137,7 +137,7 @@ export class OpnameCreateDto {
 }
 
 export class OpnameSubmitDto {
-  @IsOptional() @IsString() @MinLength(3)
+  @IsOptional() @IsString()
   reason?: string;
 }
 
@@ -170,23 +170,26 @@ export class DamageCreateDto {
   @IsOptional() @IsDateString()
   date?: string;
 
-  @Type(() => Number) @IsInt()
-  productId: number;
+  @IsOptional() @Type(() => Number) @IsInt()
+  productId?: number;
 
   @IsOptional() @Type(() => Number) @IsInt()
   serialUnitId?: number;
 
-  @IsIn(["RUSAK", "SALAH_BARANG", "KURANG"])
-  type: "RUSAK" | "SALAH_BARANG" | "KURANG";
+  @IsOptional() @IsIn(["RUSAK", "SALAH_BARANG", "KURANG"])
+  type?: "RUSAK" | "SALAH_BARANG" | "KURANG";
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
   qty?: number;
 
-  @IsString() @MinLength(3)
-  description: string;
+  @IsOptional() @IsString()
+  description?: string;
 
   @IsOptional() @Type(() => Number) @IsInt()
   fileId?: number;
+
+  @IsOptional() @IsIn(["DILAPORKAN", "DIPROSES", "SELESAI"])
+  status?: "DILAPORKAN" | "DIPROSES" | "SELESAI";
 }
 
 export class DamageListQuery extends PageQuery {
@@ -200,4 +203,7 @@ export class DamageListQuery extends PageQuery {
 export class DamageStatusDto {
   @IsIn(["DILAPORKAN", "DIPROSES", "SELESAI"])
   status: "DILAPORKAN" | "DIPROSES" | "SELESAI";
+
+  @IsOptional() @IsString()
+  reason?: string;
 }

@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
-import type { Notif } from "@/mock/data";
+import type { Notif } from "@/constants/modules";
 
 const CHANNEL_ID = "taska-realtime";
 const TITLE = "Taska Mini ERP";

@@ -1,13 +1,12 @@
 import * as React from "react";
-import { ROLE_LABEL, type Notif, type Row, type User } from "@/mock/data";
-import { MODULES } from "@/mock/modules";
+import { MODULES, ROLE_LABEL, type Notif, type Row, type User } from "@/constants/modules";
 import { ToastHost, type ToastItem } from "@/components/taska/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
 import { ensureNotifPermission, showSystemNotification } from "@/services/notify";
 import {
   PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow,
-  apiUserToRow,   buildCreateBody, buildStatusBody, statusEnumFor, forPatch,
+  apiUserToRow, buildCreateBody, buildPatchBody, buildStatusBody, statusEnumFor,
   type ApiUser, type ApprovalRow, type Page,
 } from "@/services/adapters";
 
@@ -51,6 +50,7 @@ type Ctx = {
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  updateProfile: (patch: { name?: string; phone?: string; avatarFileId?: number; avatarUrl?: string }) => Promise<void>;
   data: DB;
   addRow: (module: string, row: Record<string, any>) => Promise<Row | null>;
   deleteRow: (module: string, id: string) => Promise<boolean>;
@@ -81,7 +81,7 @@ const emptyDB = (): DB => ({
   customers: [], suppliers: [], warehouses: [], products: [],
   productCategories: [], leadSources: [], lostReasons: [], expenseCategories: [], costCenters: [],
   followups: [], issueReports: [], opname: [], users: [], "audit-log": [],
-  serials: [], movements: [], reservations: [],
+  serials: [], movements: [], reservations: [], invoiceIn: [],
 });
 
 /** Modul yang diambil dari backend saat load. Beberapa dibuat lazily (tasks, stock) karena mahal. */
@@ -90,7 +90,7 @@ const EAGER_MODULES = [
   "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses",
   "damage-reports", "customers", "suppliers", "warehouses", "products",
   "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
-  "opname", "users", "audit-log",
+  "opname", "users", "audit-log", "serials", "movements", "reservations", "followups", "invoiceIn",
 ] as const;
 
 async function fetchList(module: string): Promise<Row[]> {
@@ -202,6 +202,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setApprovals([]);
     setNotifs([]);
   }, []);
+
+  const updateProfile = React.useCallback(
+    async (patch: { name?: string; phone?: string; avatarFileId?: number; avatarUrl?: string }) => {
+      try {
+        const updated = await api<ApiUser>("PATCH", "/auth/me", {
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+          ...(patch.avatarFileId !== undefined ? { avatarFileId: patch.avatarFileId } : {}),
+        });
+        const u = apiUserToRow(updated);
+        u.roleLabel = ROLE_LABEL[u.role] ?? u.role;
+        if (patch.avatarUrl && !u.avatarUrl) u.avatarUrl = patch.avatarUrl;
+        setUser(u);
+        toast("Profil berhasil diperbarui");
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal memperbarui profil", "danger");
+      }
+    },
+    [toast],
+  );
 
   const reload = React.useCallback(async () => {
     await loadAll();
@@ -333,6 +353,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshModule = React.useCallback(async (module: string) => {
+    if (module === "tasks") {
+      const projects = await fetchList("projects");
+      const taskRows = await fetchTasks(projects);
+      setData((d) => ({ ...d, projects, tasks: taskRows }));
+      return taskRows;
+    }
     const rows = await fetchList(module);
     setData((d) => ({ ...d, [module]: rows }));
     return rows;
@@ -342,24 +368,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshModuleRef.current = refreshModule;
   }, [refreshModule]);
 
+  const offlineQueueRef = React.useRef<{ kind: "add" | "patch"; module: string; id?: string; payload: Record<string, any> }[]>([]);
+
   const addRow = React.useCallback(
     async (module: string, row: Record<string, any>): Promise<Row | null> => {
-      const path = PATHS[module];
+      let path = PATHS[module];
+      if (module === "tasks") {
+        const pid = row.projectId ?? data.projects.find((p) => p.nama === row.project)?.id ?? data.projects[0]?.id;
+        if (!pid) {
+          toast("Project belum dipilih untuk tugas ini", "danger");
+          return null;
+        }
+        path = `/projects/${pid}/tasks`;
+      }
       if (!path) return null;
+      if (offline) {
+        const tempId = `offline-${Date.now()}`;
+        const localRow: Row = { id: tempId, ...row };
+        offlineQueueRef.current.push({ kind: "add", module, payload: row });
+        setData((d) => ({ ...d, [module]: [localRow, ...(d[module] ?? [])] }));
+        toast(`${MODULES[module]?.singular ?? "Data"} disimpan ke antrean offline`, "info");
+        return localRow;
+      }
       try {
-        const body = buildCreateBody(module, row);
+        const body = buildCreateBody(module, row, data);
         const created = await api<any>("POST", path, body);
         const adapted = adaptRow(module, created);
         setData((d) => ({ ...d, [module]: [adapted, ...(d[module] ?? [])] }));
         pushHistory(module, adapted.id, "Membuat data baru");
         toast(`${MODULES[module]?.singular ?? "Data"} disimpan`);
+        void refreshModule(module);
+        if (module === "leads") void refreshModule("quotations");
+        if (module === "followups") void refreshModule("leads");
         return adapted;
       } catch (e: any) {
         toast(e?.message ?? "Gagal menyimpan", "danger");
         return null;
       }
     },
-    [pushHistory, toast],
+    [data, offline, pushHistory, refreshModule, toast],
   );
 
   const deleteRow = React.useCallback(
@@ -371,30 +418,79 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setData((d) => ({ ...d, [module]: (d[module] ?? []).filter((r: Row) => r.id !== id) }));
         pushHistory(module, id, "Menghapus data");
         toast(`${MODULES[module]?.singular ?? "Data"} dihapus`);
+        if (module === "tasks") void refreshModule("projects");
         return true;
       } catch (e: any) {
         toast(e?.message ?? "Gagal menghapus", "danger");
         return false;
       }
     },
-    [pushHistory, toast],
+    [pushHistory, refreshModule, toast],
   );
 
   const patchRow = React.useCallback(
     async (module: string, id: string, patch: Record<string, any>) => {
       const path = PATHS[module];
       if (!path) return;
+      // Optimistic local update so UI-only or immediate fields reflect right away
+      setData((d) => ({
+        ...d,
+        [module]: (d[module] ?? []).map((r: Row) => (r.id === id ? { ...r, ...patch } : r)),
+      }));
+      if (offline) {
+        offlineQueueRef.current.push({ kind: "patch", module, id, payload: patch });
+        toast("Perubahan disimpan ke antrean offline", "info");
+        return;
+      }
       try {
-        const body = forPatch(module, buildCreateBody(module, { ...patch }));
+        const body = buildPatchBody(module, patch, data);
         delete body.id;
-        await api("PATCH", `${path}/${id}`, body);
-        await refreshModule(module);
+        if (Object.keys(body).length > 0) {
+          await api("PATCH", `${path}/${id}`, body);
+          await refreshModule(module);
+        }
       } catch (e: any) {
         toast(e?.message ?? "Gagal mengubah", "danger");
       }
     },
-    [refreshModule, toast],
+    [data, offline, refreshModule, toast],
   );
+
+  // Sinkronkan antrean offline saat kembali online
+  React.useEffect(() => {
+    if (offline || offlineQueueRef.current.length === 0) return;
+    const queue = [...offlineQueueRef.current];
+    offlineQueueRef.current = [];
+    void (async () => {
+      let synced = 0;
+      for (const item of queue) {
+        try {
+          let path = PATHS[item.module];
+          if (item.module === "tasks") {
+            const pid = item.payload.projectId ?? data.projects[0]?.id;
+            if (pid) path = `/projects/${pid}/tasks`;
+          }
+          if (!path) continue;
+          if (item.kind === "add") {
+            const body = buildCreateBody(item.module, item.payload, data);
+            await api("POST", path, body);
+            synced++;
+          } else if (item.kind === "patch" && item.id) {
+            const body = buildPatchBody(item.module, item.payload, data);
+            delete body.id;
+            if (Object.keys(body).length > 0) {
+              await api("PATCH", `${path}/${item.id}`, body);
+              synced++;
+            }
+          }
+        } catch {}
+      }
+      if (synced > 0) {
+        toast(`${synced} data offline berhasil disinkronkan ke server`);
+        await loadAll();
+      }
+    })();
+  }, [offline, data, loadAll, toast]);
 
   const createQuotationFromLead = React.useCallback(
     async (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }): Promise<Row | null> => {
@@ -410,15 +506,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return existing;
       }
       try {
-        const created = await api<any>("POST", "/quotations", {
-          leadId: Number(lead.id),
-          customerId: lead.customerId != null ? Number(lead.customerId) : undefined,
-          total: Number(lead.nilai) || 0,
-        });
+        const created = await api<any>("POST", "/quotations", { leadId: Number(lead.id) });
         const adapted = adaptRow("quotations", created);
-        setData((d) => ({ ...d, quotations: [adapted, ...(d.quotations ?? [])] }));
+        const rows = await refreshModule("quotations");
+        const latest = rows.find((q) => q.id === adapted.id) ?? adapted;
+        if (!rows.some((q) => q.id === adapted.id)) {
+          setData((d) => ({ ...d, quotations: [adapted, ...(d.quotations ?? [])] }));
+        }
         pushHistory("quotations", adapted.id, `Dibuat otomatis dari lead: ${lead.nama}`);
-        return adapted;
+        return latest;
       } catch (e: any) {
         toast(e?.message ?? "Gagal membuat penawaran", "danger");
         return null;
@@ -431,6 +527,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (module: string, id: string, status: string, note?: string) => {
       const def = MODULES[module];
       const key = def?.statusKey || "status";
+      const MASTER_MODULES = [
+        "users", "customers", "suppliers", "warehouses", "products",
+        "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
+      ];
 
       // invoice Lunas → catat pembayaran sisa
       if (module === "invoices" && status === "Lunas") {
@@ -446,6 +546,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               });
             } catch (e: any) {
               toast(e?.message ?? "Gagal mencatat pembayaran", "danger");
+              return;
+            }
+          } else {
+            try {
+              await api("POST", `/invoices/${id}/status`, { status: "PAID", note });
+            } catch (e: any) {
+              toast(e?.message ?? "Gagal mengubah status", "danger");
               return;
             }
           }
@@ -464,6 +571,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           toast(e?.message ?? "Gagal mengubah status", "danger");
           return;
         }
+      } else if (module === "quotations") {
+        try {
+          if (status === "Terkirim") {
+            await api("POST", `/quotations/${id}/send`, {});
+          } else if (status === "Menunggu persetujuan") {
+            await api("POST", `/quotations/${id}/submit`, {});
+          } else {
+            await api("PATCH", `/quotations/${id}`, { status: statusEnumFor("quotations", status), notes: note });
+          }
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengubah status penawaran", "danger");
+          return;
+        }
       } else if (module === "surveys") {
         try {
           await api("PATCH", `/surveys/${id}`, { status: statusEnumFor("surveys", status), notes: note });
@@ -472,12 +592,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return;
         }
       } else if (module === "supplier-pos") {
-        // status pengiriman
-        const ship = statusEnumFor("supplier-pos", status);
+        const enumVal = statusEnumFor("supplier-pos", status);
         try {
-          await api("POST", `/supplier-pos/${id}/shipment`, { shipmentStatus: ship });
+          if (["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"].includes(enumVal)) {
+            await api("POST", `/supplier-pos/${id}/status`, { status: enumVal, note });
+          } else {
+            await api("POST", `/supplier-pos/${id}/shipment`, { shipmentStatus: enumVal });
+          }
         } catch (e: any) {
-          toast(e?.message ?? "Gagal mengubah pengiriman", "danger");
+          toast(e?.message ?? "Gagal mengubah status PO", "danger");
           return;
         }
       } else if (module === "opname") {
@@ -488,8 +611,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return;
         }
       } else if (module === "receiving") {
-        toast("Status penerimaan dihitung otomatis dari item", "info");
-        return;
+        try {
+          await api("POST", `/receivings/${id}/status`, { status: statusEnumFor("receiving", status), note });
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengubah status penerimaan", "danger");
+          return;
+        }
+      } else if (module === "po-client") {
+        // PO client hanya memiliki status tampilan di UI
+      } else if (MASTER_MODULES.includes(module)) {
+        const path = PATHS[module];
+        if (!path) return;
+        try {
+          await api("PATCH", `${path}/${id}`, { status: statusEnumFor("users", status) });
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengubah status", "danger");
+          return;
+        }
       } else {
         const path = PATHS[module];
         if (!path) return;
@@ -515,6 +653,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       await refreshModule(module);
+      if (module === "leads" && (status === "Qualification" || status === "Proposal")) {
+        await refreshModule("quotations");
+      }
     },
     [data, pushHistory, toast, refreshModule, createQuotationFromLead],
   );
@@ -562,12 +703,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value = React.useMemo<Ctx>(
     () => ({
-      user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead,
+      user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
       deleteRow,
       history, pushHistory, approvals, decide, notifs: myNotifs, unread, markRead, markAllRead,
       toast, offline, setOffline, reload, hydrated,
     }),
-    [user, login, logout, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
+    [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
      toast, offline, reload, hydrated],
   );

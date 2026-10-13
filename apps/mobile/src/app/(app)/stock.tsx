@@ -13,7 +13,7 @@ import { ScanInput } from "@/components/taska/scan-input";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
-import type { Row } from "@/mock/data";
+import type { Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 
 const TABS = [
@@ -36,23 +36,28 @@ export default function StockScreen() {
   const stockSummary: any[] = data.stockSummary ?? [];
 
   const [activeTab, setActiveTab] = React.useState<typeof TABS[number]>("Per Barang");
-  const [selectedWarehouse, setSelectedWarehouse] = React.useState(warehouses[0]?.nama ?? "");
+  const [selectedWarehouse, setSelectedWarehouse] = React.useState("");
   const [snQuery, setSnQuery] = React.useState("");
 
   const [transferOpen, setTransferOpen] = React.useState(false);
   const [replacementOpen, setReplacementOpen] = React.useState(false);
   const [scanModalOpen, setScanModalOpen] = React.useState(false);
 
-  const [transferProd, setTransferProd] = React.useState(products[0]?.nama ?? "");
-  const [transferFrom, setTransferFrom] = React.useState(warehouses[0]?.nama ?? "");
-  const [transferTo, setTransferTo] = React.useState(warehouses[1]?.nama ?? warehouses[0]?.nama ?? "");
+  const [transferProd, setTransferProd] = React.useState("");
+  const [transferFrom, setTransferFrom] = React.useState("");
+  const [transferTo, setTransferTo] = React.useState("");
   const [transferQty, setTransferQty] = React.useState("5");
 
   const [oldSn, setOldSn] = React.useState("");
   const [newSn, setNewSn] = React.useState("");
   const [replaceReason, setReplaceReason] = React.useState("");
 
-  const selectedWarehouseRow = warehouses.find((w) => w.nama === selectedWarehouse);
+  const activeWarehouse = selectedWarehouse || String(warehouses[0]?.nama ?? "");
+  const activeTransferProd = transferProd || String(products[0]?.nama ?? "");
+  const activeTransferFrom = transferFrom || String(warehouses[0]?.nama ?? "");
+  const activeTransferTo = transferTo || String(warehouses[1]?.nama ?? warehouses[0]?.nama ?? "");
+
+  const selectedWarehouseRow = warehouses.find((w) => w.nama === activeWarehouse) ?? warehouses[0];
 
   function saldoOfProduct(productId: string): number {
     return stockSummary
@@ -60,17 +65,16 @@ export default function StockScreen() {
       .reduce((a: number, s: any) => a + Number(s.saldo ?? 0), 0);
   }
 
-  function saldoOfProductWarehouse(productId: string, warehouseId: string): number {
-    const row = stockSummary.find(
+  function summaryOfProductWarehouse(productId: string, warehouseId: string) {
+    return stockSummary.find(
       (s: any) => String(s.productId) === productId && String(s.warehouseId) === warehouseId
     );
-    return Number(row?.saldo ?? 0);
   }
 
   async function handleTransfer() {
-    const prod = products.find((p) => p.nama === transferProd);
-    const from = warehouses.find((w) => w.nama === transferFrom);
-    const to = warehouses.find((w) => w.nama === transferTo);
+    const prod = products.find((p) => p.nama === activeTransferProd);
+    const from = warehouses.find((w) => w.nama === activeTransferFrom);
+    const to = warehouses.find((w) => w.nama === activeTransferTo);
     if (!prod || !from || !to) {
       toast("Lengkapi barang, gudang asal, dan tujuan", "danger");
       return;
@@ -83,7 +87,7 @@ export default function StockScreen() {
         qty: Number(transferQty) || 1,
       });
       setTransferOpen(false);
-      toast(`Transfer ${transferQty} unit dari ${transferFrom} ke ${transferTo} diproses`);
+      toast(`Transfer ${transferQty} unit dari ${activeTransferFrom} ke ${activeTransferTo} diproses`);
       await reload();
     } catch (e: any) {
       toast(e?.message ?? "Gagal transfer", "danger");
@@ -110,6 +114,7 @@ export default function StockScreen() {
       setOldSn("");
       setNewSn("");
       setReplaceReason("");
+      await reload();
     } catch (e: any) {
       toast(e?.message ?? "Gagal mengganti unit", "danger");
     }
@@ -180,12 +185,12 @@ export default function StockScreen() {
 
       {activeTab === "Per Gudang" && (
         <View className="gap-4">
-          <View className="flex-row gap-2">
+          <View className="flex-row flex-wrap gap-2">
             {warehouses.map((w) => (
               <Chip
                 key={w.id}
                 label={String(w.nama)}
-                active={selectedWarehouse === w.nama}
+                active={(selectedWarehouse || warehouses[0]?.nama) === w.nama}
                 onPress={() => setSelectedWarehouse(String(w.nama))}
               />
             ))}
@@ -195,16 +200,26 @@ export default function StockScreen() {
             columns={[
               { key: "nama", label: "Nama Barang", primary: true, flex: 1.8 },
               { key: "sku", label: "SKU", flex: 1 },
-              { key: "kategori", label: "Kategori", flex: 1 },
-              { key: "gudang", label: "Gudang", flex: 1.2 },
-              { key: "saldo", label: "Saldo Akhir", flex: 1.2 },
+              { key: "masukDisplay", label: "Masuk", flex: 0.9 },
+              { key: "keluarDisplay", label: "Keluar", flex: 0.9 },
+              { key: "transferInDisplay", label: "Transfer Masuk", flex: 1.1 },
+              { key: "transferOutDisplay", label: "Transfer Keluar", flex: 1.1 },
+              { key: "saldo", label: "Saldo Akhir", flex: 1.1 },
+              { key: "statusStok", label: "Status", fmt: "status", flex: 1 },
             ]}
             rows={products.map((p) => {
-              const qty = saldoOfProductWarehouse(String(p.id), String(selectedWarehouseRow?.id ?? ""));
+              const sRow = summaryOfProductWarehouse(String(p.id), String(selectedWarehouseRow?.id ?? ""));
+              const qty = Number(sRow?.saldo ?? 0);
+              const total = saldoOfProduct(String(p.id));
               return {
                 ...p,
-                gudang: selectedWarehouse,
+                gudang: selectedWarehouseRow?.nama ?? selectedWarehouse,
+                masukDisplay: `${sRow?.masuk ?? 0}`,
+                keluarDisplay: `${sRow?.keluar ?? 0}`,
+                transferInDisplay: `${sRow?.transferMasuk ?? 0}`,
+                transferOutDisplay: `${sRow?.transferKeluar ?? 0}`,
                 saldo: `${qty} ${p.satuan ?? ""}`,
+                statusStok: total < Number(p.min ?? 0) ? "Stok Menipis" : "Tersedia",
               };
             })}
             pageSize={8}
@@ -230,10 +245,13 @@ export default function StockScreen() {
               { key: "produk", label: "Produk", flex: 1.6 },
               { key: "gudang", label: "Lokasi Gudang", flex: 1.2 },
               { key: "project", label: "Alokasi Project", flex: 1.4 },
-              { key: "garansi", label: "Masa Garansi", fmt: "date", flex: 1.2 },
+              { key: "garansiDisplay", label: "Masa Garansi", flex: 1.2 },
               { key: "status", label: "Status Unit", fmt: "status", flex: 1 },
             ]}
-            rows={filteredSerials}
+            rows={filteredSerials.map((s) => ({
+              ...s,
+              garansiDisplay: s.garansiBerakhir || s.garansiMulai || "-",
+            }))}
             pageSize={8}
           />
         </View>
@@ -243,11 +261,11 @@ export default function StockScreen() {
         <DataTable
           columns={[
             { key: "produk", label: "Nama Barang", primary: true, flex: 1.8 },
-            { key: "kategori", label: "Kategori", flex: 1 },
+            { key: "kategori", label: "Kategori Mutasi", flex: 1.3 },
             { key: "gudang", label: "Gudang", flex: 1.2 },
-            { key: "project", label: "Project", flex: 1.4 },
-            { key: "qtyDisplay", label: "Jumlah", flex: 1 },
-            { key: "tanggal", label: "Tanggal Mutasi", fmt: "date", flex: 1.2 },
+            { key: "project", label: "Project", flex: 1.3 },
+            { key: "qtyDisplay", label: "Jumlah", flex: 0.9 },
+            { key: "waktu", label: "Tanggal Mutasi", flex: 1.2 },
             { key: "jenis", label: "Jenis Mutasi", fmt: "status", flex: 1 },
           ]}
           rows={movements.map((m) => ({
@@ -263,13 +281,14 @@ export default function StockScreen() {
           columns={[
             { key: "produk", label: "Nama Barang", primary: true, flex: 1.8 },
             { key: "project", label: "Project Pemesan", flex: 1.6 },
-            { key: "qtyDisplay", label: "Jumlah Ditahan", flex: 1.2 },
+            { key: "sn", label: "Serial Number", flex: 1.2 },
+            { key: "qtyDisplay", label: "Jumlah Ditahan", flex: 1.1 },
             { key: "status", label: "Status Alokasi", fmt: "status", flex: 1 },
           ]}
           rows={reservations.map((r) => ({
             ...r,
             qtyDisplay: `${r.qty ?? 0} unit`,
-            status: "Reserved",
+            status: r.status === "Dirilis" ? "Selesai" : "Reserved",
           }))}
           pageSize={8}
         />
@@ -283,21 +302,21 @@ export default function StockScreen() {
           <View className="gap-4">
             <FormField label="Pilih Barang" required>
               <SearchableSelect
-                value={transferProd}
+                value={activeTransferProd}
                 onChange={setTransferProd}
                 options={products.map((p) => String(p.nama))}
               />
             </FormField>
             <FormField label="Gudang Asal" required>
               <SearchableSelect
-                value={transferFrom}
+                value={activeTransferFrom}
                 onChange={setTransferFrom}
                 options={warehouses.map((w) => String(w.nama))}
               />
             </FormField>
             <FormField label="Gudang Tujuan" required>
               <SearchableSelect
-                value={transferTo}
+                value={activeTransferTo}
                 onChange={setTransferTo}
                 options={warehouses.map((w) => String(w.nama))}
               />

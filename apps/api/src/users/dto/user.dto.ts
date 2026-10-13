@@ -5,9 +5,8 @@ export class CreateUserDto {
   @IsEmail()
   email!: string;
 
-  @IsString()
-  @MinLength(6)
-  password!: string;
+  @IsOptional() @IsString()
+  password?: string;
 
   @IsString()
   @MinLength(1)
@@ -22,8 +21,8 @@ export class CreateUserDto {
   @IsOptional() @IsString()
   department?: string;
 
-  @IsIn(Object.values(Role))
-  role!: Role;
+  @IsOptional() @IsIn(Object.values(Role))
+  role?: Role;
 
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";
@@ -33,6 +32,9 @@ export class CreateUserDto {
 }
 
 export class UpdateUserDto {
+  @IsOptional() @IsEmail()
+  email?: string;
+
   @IsOptional() @IsString() @MinLength(1)
   name?: string;
 
@@ -54,6 +56,6 @@ export class UpdateUserDto {
   @IsOptional() @IsInt()
   warehouseId?: number | null;
 
-  @IsOptional() @IsString() @MinLength(6)
+  @IsOptional() @IsString()
   password?: string;
 }

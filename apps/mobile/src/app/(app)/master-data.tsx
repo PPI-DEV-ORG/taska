@@ -27,10 +27,10 @@ import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
 import { ConfirmDialog, SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
+import { api, apiBase, getAccess } from "@/services/api";
 import { DataTable } from "@/components/taska/data-table";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
@@ -56,7 +56,7 @@ type DeleteTarget = {
 
 export default function MasterDataScreen() {
   const router = useRouter();
-  const { data, user, addRow, deleteRow, toast } = useApp();
+  const { data, user, addRow, deleteRow, toast, reload } = useApp();
   const [selectedCategory, setSelectedCategory] = React.useState<MasterKey | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null);
 
@@ -73,6 +73,8 @@ export default function MasterDataScreen() {
   const [barangKategori, setBarangKategori] = React.useState("IP Camera");
   const [barangSatuan, setBarangSatuan] = React.useState("unit");
   const [barangIsiUnit, setBarangIsiUnit] = React.useState("");
+  const [barangHargaBeli, setBarangHargaBeli] = React.useState("");
+  const [barangMinStok, setBarangMinStok] = React.useState("5");
   const [barangGaransi, setBarangGaransi] = React.useState("2 tahun");
   const [barangSN, setBarangSN] = React.useState("Ya (Serial Number)");
 
@@ -105,8 +107,22 @@ export default function MasterDataScreen() {
 
   // Modal State untuk Import Excel
   const [importOpen, setImportOpen] = React.useState(false);
-  const [importTarget, setImportTarget] = React.useState("customer");
+  const [importTarget, setImportTarget] = React.useState("Customer (Data Klien & PIC)");
   const [importCount, setImportCount] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api<any[]>("GET", "/settings");
+        if (Array.isArray(res)) {
+          const thr = res.find((s) => s.key === "ambang.persetujuan");
+          const ppn = res.find((s) => s.key === "ppn.persen");
+          if (thr?.value) setThresholdInput(String(thr.value));
+          if (ppn?.value) setPpnInput(String(ppn.value));
+        }
+      } catch {}
+    })();
+  }, []);
 
   const canAddKategori = user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
   const canAddBarang = user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
@@ -154,6 +170,8 @@ export default function MasterDataScreen() {
       satuan: satuanDisplay,
       isiPerUnit: barangIsiUnit ? Number(barangIsiUnit) : undefined,
       satuanDasar: barangSatuan,
+      hargaBeli: Number(barangHargaBeli.replace(/\D/g, "")) || 0,
+      min: Number(barangMinStok) || 0,
       garansi: barangGaransi,
       berSN: barangSN.includes("Ya"),
     });
@@ -161,6 +179,8 @@ export default function MasterDataScreen() {
     setBarangNama("");
     setBarangSku("");
     setBarangIsiUnit("");
+    setBarangHargaBeli("");
+    setBarangMinStok("5");
     toast("Master barang berhasil ditambahkan");
   }
 
@@ -221,15 +241,30 @@ export default function MasterDataScreen() {
     toast("Cost center berhasil ditambahkan");
   }
 
-  function handleSaveSettings() {
-    toast("Pengaturan sistem & ambang batas persetujuan berhasil diperbarui!");
+  async function handleSaveSettings() {
+    try {
+      await Promise.all([
+        api("PUT", "/settings/ambang.persetujuan", {
+          value: String(Number(String(thresholdInput).replace(/\D/g, "")) || 10000000),
+          description: "Ambang nilai persetujuan Bos (Rp)",
+        }),
+        api("PUT", "/settings/ppn.persen", {
+          value: String(Number(String(ppnInput).replace(/\D/g, "")) || 11),
+          description: "Persentase PPN standar",
+        }),
+      ]);
+      toast("Pengaturan sistem & ambang batas persetujuan berhasil disimpan ke server!");
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal menyimpan pengaturan", "danger");
+    }
   }
 
-  function handleExecuteImport() {
+  async function handleExecuteImport() {
     if (!importCount) {
       toast("Silakan unggah berkas template CSV/Excel terlebih dahulu", "danger");
       return;
     }
+    await reload();
     toast(`Berhasil mengimpor ${importCount} baris data ke master ${importTarget}!`);
     setImportOpen(false);
     setImportCount(null);
@@ -372,6 +407,22 @@ export default function MasterDataScreen() {
                   />
                 </FormField>
               ) : null}
+              <FormField label="Estimasi Harga Beli (Rp)">
+                <Input
+                  value={barangHargaBeli}
+                  onChangeText={(v) => setBarangHargaBeli(v.replace(/\D/g, ""))}
+                  keyboardType="numeric"
+                  placeholder="Contoh: 1200000"
+                />
+              </FormField>
+              <FormField label="Stok Minimum Peringatan">
+                <Input
+                  value={barangMinStok}
+                  onChangeText={setBarangMinStok}
+                  keyboardType="numeric"
+                  placeholder="Contoh: 5"
+                />
+              </FormField>
               <FormField label="Garansi Unit" required>
                 <SearchableSelect
                   value={barangGaransi}
@@ -1088,17 +1139,45 @@ export default function MasterDataScreen() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onPress={() => {
+                  onPress={async () => {
+                    const typeKey = importTarget.includes("Customer")
+                      ? "customers"
+                      : importTarget.includes("Supplier")
+                        ? "suppliers"
+                        : importTarget.includes("Gudang")
+                          ? "warehouses"
+                          : importTarget.includes("Saldo")
+                            ? "stock"
+                            : "products";
                     if (typeof window !== "undefined" && typeof document !== "undefined") {
+                      try {
+                        const token = getAccess();
+                        const res = await fetch(`${apiBase()}/imports/template?type=${typeKey}`, {
+                          headers: token ? { Authorization: `Bearer ${token}` } : {},
+                        });
+                        if (res.ok) {
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement("a");
+                          link.href = url;
+                          link.download = `template-import-${typeKey}.xlsx`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          URL.revokeObjectURL(url);
+                          toast("Template Excel resmi berhasil diunduh");
+                          return;
+                        }
+                      } catch {}
                       const csvHeader =
-                        importTarget.includes("Customer")
+                        typeKey === "customers"
                           ? "nama,perusahaan,kontak,email,telepon,alamat,catatan\nPT Contoh Mitra,PT Contoh Mitra,Budi,budi@contoh.com,08123456789,Jakarta,Klien VIP"
-                          : importTarget.includes("Supplier")
+                          : typeKey === "suppliers"
                           ? "nama,kontak,telepon,paymentTerms\nPT Hikvision,Sales Support,021-555666,Net 30"
                           : "sku,nama,kategori,satuan,berSN,garansi\nCAM-010,Dome Camera 4MP,IP Camera,unit,true,2 tahun";
                       const link = document.createElement("a");
                       link.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csvHeader);
-                      link.download = `template-import-${importTarget.toLowerCase().slice(0, 8)}.csv`;
+                      link.download = `template-import-${typeKey}.csv`;
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);

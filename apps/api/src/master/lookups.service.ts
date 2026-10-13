@@ -38,20 +38,28 @@ export class LookupsService {
     });
   }
 
-  async create(model: LookupModel, name: string) {
+  async create(model: LookupModel, name: string, status?: string) {
     const dup = await this.delegate(model).findFirst({ where: { name } });
     if (dup) throw new ConflictException(`Nama "${name}" sudah ada`);
-    return this.delegate(model).create({ data: { name } });
+    return this.delegate(model).create({
+      data: { name, ...(status ? { status } : {}) },
+    });
   }
 
-  async update(model: LookupModel, id: number, name: string) {
+  async update(model: LookupModel, id: number, name?: string, status?: string) {
     const row = await this.delegate(model).findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Data tidak ditemukan");
     if (name && name !== row.name) {
       const dup = await this.delegate(model).findFirst({ where: { name } });
       if (dup) throw new ConflictException(`Nama "${name}" sudah ada`);
     }
-    return this.delegate(model).update({ where: { id }, data: { name } });
+    return this.delegate(model).update({
+      where: { id },
+      data: {
+        ...(name ? { name } : {}),
+        ...(status ? { status } : {}),
+      },
+    });
   }
 
   async remove(model: LookupModel, id: number) {

@@ -8,9 +8,10 @@ import { SurveysController } from "./surveys.controller.js";
 import { QuotationsService } from "./quotations.service.js";
 import { QuotationsController } from "./quotations.controller.js";
 import { ApprovalsModule } from "../approvals/approvals.module.js";
+import { UploadModule } from "../upload/upload.module.js";
 
 @Module({
-  imports: [ApprovalsModule],
+  imports: [ApprovalsModule, UploadModule],
   providers: [LeadsService, FollowUpsService, SurveysService, QuotationsService],
   controllers: [LeadsController, FollowUpsController, SurveysController, QuotationsController],
   exports: [LeadsService, QuotationsService],

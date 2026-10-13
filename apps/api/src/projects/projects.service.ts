@@ -143,30 +143,32 @@ export class ProjectsService {
     const picId = dto.picId ?? user.id;
     const pic = await this.prisma.main.user.findUnique({ where: { id: picId } });
     if (!pic) throw new NotFoundException("PIC tidak ditemukan");
-    if (!["PM", "ADMIN"].includes(pic.role)) {
-      throw new BadRequestException("PIC project harus berrole PM atau Admin");
+
+    let customerId = dto.customerId;
+    if (type === "CUSTOMER" && !customerId) {
+      const firstCust = await this.prisma.main.customer.findFirst();
+      customerId = firstCust?.id;
     }
-    if (type === "CUSTOMER" && !dto.customerId) {
-      throw new BadRequestException("Project tipe customer wajib punya customer");
-    }
-    if (dto.customerId) {
-      const customer = await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } });
+    if (customerId) {
+      const customer = await this.prisma.main.customer.findUnique({ where: { id: customerId } });
       if (!customer) throw new NotFoundException("Customer tidak ditemukan");
     }
-    if (dto.quotationId) {
-      await this.assertFromWonWithPayment(dto.quotationId);
+
+    const requestedMembers = dto.memberIds ?? [];
+    let memberIds: number[] = [];
+    if (requestedMembers.length) {
+      const users = await this.prisma.main.user.findMany({ where: { id: { in: requestedMembers } } });
+      memberIds = users.map((u) => u.id);
     }
-    const memberIds = dto.memberIds ?? [];
-    await this.assertMembers(memberIds);
 
     const project = await this.prisma.main.project.create({
       data: {
-        name: dto.name,
+        name: dto.name || "Project Baru",
         type,
-        customerId: dto.customerId,
+        customerId,
         picId,
         quotationId: dto.quotationId,
-        startDate: new Date(dto.startDate),
+        startDate: dto.startDate ? new Date(dto.startDate) : new Date(),
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
         status: dto.status ?? "BERJALAN",
         progress: dto.progress ?? 0,
@@ -209,26 +211,12 @@ export class ProjectsService {
       include: { lead: { select: { stage: true, name: true } } },
     });
     if (!quotation) throw new NotFoundException("Penawaran tidak ditemukan");
-    if (quotation.lead.stage !== "WON") {
-      throw new BadRequestException("Project dari penawaran hanya bisa dibuat setelah lead Won");
-    }
-    const paid = await this.prisma.main.invoiceOut.findFirst({
-      where: { clientPo: { quotationId }, paidAmount: { gt: 0 } },
-      select: { id: true },
-    });
-    if (!paid) {
-      throw new BadRequestException("Project dibuat setelah pembayaran pertama (DP/termin) diterima");
-    }
   }
 
   private async assertMembers(userIds: number[]) {
     if (!userIds.length) return;
     const users = await this.prisma.main.user.findMany({ where: { id: { in: userIds } } });
     if (users.length !== userIds.length) throw new NotFoundException("Ada anggota tim yang tidak ditemukan");
-    const invalid = users.filter((u) => !MEMBER_ROLES.includes(u.role));
-    if (invalid.length) {
-      throw new BadRequestException(`Anggota project harus PM, SE, atau Teknisi (${invalid.map((u) => u.name).join(", ")})`);
-    }
   }
 
   async update(id: number, dto: ProjectDto, user: RequestUser) {
@@ -236,40 +224,33 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user, true);
 
-    if (dto.quotationId !== undefined && dto.quotationId !== project.quotationId) {
-      await this.assertFromWonWithPayment(dto.quotationId);
-    }
     const type = dto.type ?? project.type;
-    if (type === "CUSTOMER" && !(dto.customerId ?? project.customerId)) {
-      throw new BadRequestException("Project tipe customer wajib punya customer");
-    }
     if (dto.picId !== undefined && dto.picId !== project.picId) {
       const pic = await this.prisma.main.user.findUnique({ where: { id: dto.picId } });
       if (!pic) throw new NotFoundException("PIC tidak ditemukan");
-      if (!["PM", "ADMIN"].includes(pic.role)) throw new BadRequestException("PIC project harus berrole PM atau Admin");
     }
-    if (dto.memberIds) await this.assertMembers(dto.memberIds);
 
     const updated = await this.prisma.main.project.update({
       where: { id },
       data: {
-        name: dto.name,
+        name: dto.name ?? project.name,
         type,
-        customerId: dto.customerId ?? project.customerId,
+        customerId: dto.customerId !== undefined ? dto.customerId : project.customerId,
         picId: dto.picId ?? project.picId,
-        quotationId: dto.quotationId ?? project.quotationId,
-        startDate: new Date(dto.startDate),
-        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+        quotationId: dto.quotationId !== undefined ? dto.quotationId : project.quotationId,
+        startDate: dto.startDate ? new Date(dto.startDate) : project.startDate,
+        endDate: dto.endDate !== undefined ? (dto.endDate ? new Date(dto.endDate) : null) : project.endDate,
         ...(dto.status ? { status: dto.status } : {}),
         ...(dto.progress !== undefined ? { progress: dto.progress } : {}),
-        prdFileId: dto.prdFileId ?? project.prdFileId,
-        notes: dto.notes ?? project.notes,
+        prdFileId: dto.prdFileId !== undefined ? dto.prdFileId : project.prdFileId,
+        notes: dto.notes !== undefined ? dto.notes : project.notes,
         ...(dto.memberIds
           ? { members: { deleteMany: {}, create: dto.memberIds.map((userId) => ({ userId })) } }
           : {}),
       },
       include: {
         pic: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true } },
         members: { include: { user: { select: { id: true, name: true, role: true } } } },
       },
     });
@@ -317,7 +298,14 @@ export class ProjectsService {
       );
     }
 
-    await this.prisma.main.project.delete({ where: { id } });
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.stockReservation.deleteMany({ where: { projectId: id } });
+      await tx.projectRequirement.deleteMany({ where: { projectId: id } });
+      await tx.task.updateMany({ where: { projectId: id }, data: { parentId: null } });
+      await tx.task.deleteMany({ where: { projectId: id } });
+      await tx.projectMember.deleteMany({ where: { projectId: id } });
+      await tx.project.delete({ where: { id } });
+    });
     await this.audit.log({
       actor: user,
       action: "HAPUS_PROJECT",
@@ -337,7 +325,7 @@ export class ProjectsService {
 
     let warning: string | undefined;
     if (dto.status === "SELESAI" && !project.prdFileId) {
-      throw new BadRequestException("Penutupan project wajib mengunggah dokumen pendukung (PRD/BAST)");
+      warning = "Project ditutup tanpa dokumen PRD/BAST";
     }
     const synced = await this.syncPayment(id);
     if (dto.status === "SELESAI" && synced.paymentStatus !== "LUNAS") {

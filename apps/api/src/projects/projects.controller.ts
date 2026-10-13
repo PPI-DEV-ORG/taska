@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -39,6 +40,12 @@ export class ProjectsController {
   @Put(":id")
   @Require("projects", "U")
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: ProjectDto, @CurrentUser() user: RequestUser) {
+    return this.service.update(id, dto, user);
+  }
+
+  @Patch(":id")
+  @Require("projects", "U")
+  patch(@Param("id", ParseIntPipe) id: number, @Body() dto: ProjectDto, @CurrentUser() user: RequestUser) {
     return this.service.update(id, dto, user);
   }
 

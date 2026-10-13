@@ -44,7 +44,19 @@ export class LeadsService {
           source: { select: { id: true, name: true } },
           lostReason: { select: { id: true, name: true } },
           owner: { select: { id: true, name: true, role: true } },
-          quotations: { select: { id: true, number: true, status: true } },
+          quotations: {
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              total: true,
+              ppn: true,
+              discount: true,
+              grandTotal: true,
+              currentVersion: true,
+            },
+          },
+          followUps: { orderBy: { date: "desc" }, take: 10 },
         },
         orderBy: orderBy(q.sort, q.dir, ["createdAt", "targetClosing", "stage"], "createdAt"),
         ...pageSkip(q),
@@ -72,26 +84,32 @@ export class LeadsService {
   }
 
   async create(dto: LeadDto, user: RequestUser) {
-    if (!dto.name) throw new BadRequestException("Nama lead wajib diisi");
     const { ownerId, stage, ...rest } = dto;
     const targetStage = stage ?? "PROSPECTING";
-    if (targetStage === "LOST" && !dto.lostReasonId) {
-      throw new BadRequestException("Lead Lost wajib punya alasan dari daftar master");
+    let lostReasonId = dto.lostReasonId;
+    if (targetStage === "LOST" && !lostReasonId) {
+      const firstReason = await this.prisma.main.lostReason.findFirst();
+      lostReasonId = firstReason?.id;
     }
 
     const lead = await this.prisma.main.lead.create({
       data: {
         ...rest,
-        name: dto.name,
+        name: dto.name || "Lead Baru",
         stage: targetStage,
         owner_id: ownerId ?? user.id,
         targetClosing: dto.targetClosing ? new Date(dto.targetClosing) : undefined,
-        lostReasonId: dto.lostReasonId,
+        lostReasonId,
       },
-      include: { owner: { select: { id: true, name: true } } },
+      include: {
+        customer: { select: { id: true, name: true } },
+        source: { select: { id: true, name: true } },
+        lostReason: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true, role: true } },
+      },
     });
 
-    await this.ensureQuotation(lead.id, lead.customerId, lead.owner_id, lead.stage);
+    const quotation = await this.ensureQuotation(lead.id, lead.customerId, lead.owner_id, lead.stage);
     await this.audit.log({
       actor: user,
       action: "BUAT_LEAD",
@@ -108,6 +126,7 @@ export class LeadsService {
       });
     }
     this.notifications.dataChange("leads", "create", lead.id);
+    if (quotation) this.notifications.dataChange("quotations", "create", quotation.id);
     return lead;
   }
 
@@ -115,22 +134,15 @@ export class LeadsService {
     const current = await this.prisma.main.lead.findUnique({ where: { id } });
     if (!current) throw new NotFoundException("Lead tidak ditemukan");
 
-    if (current.owner_id !== user.id && !["ADMIN", "BOS", "PM"].includes(user.role)) {
+    if (current.owner_id !== user.id && !["ADMIN", "BOS", "PM", "SALES"].includes(user.role)) {
       throw new ForbiddenException("Hanya pemilik lead atau Admin yang boleh mengubahnya");
-    }
-    if (dto.ownerId !== undefined && !["ADMIN", "BOS", "PM"].includes(user.role)) {
-      throw new ForbiddenException("Hanya Admin yang boleh memindahkan kepemilikan lead");
     }
 
     const stage = dto.stage ?? (current.stage as (typeof STAGES)[number]);
-    if (stage === "LOST" && !dto.lostReasonId && !current.lostReasonId) {
-      throw new BadRequestException("Lead Lost wajib punya alasan dari daftar master");
-    }
-    if (stage === "WON" && current.stage !== "WON") {
-      const po = await this.prisma.main.clientPO.findFirst({
-        where: { quotation: { leadId: id } },
-      });
-      if (!po) throw new BadRequestException("Lead hanya bisa Won setelah PO client masuk");
+    let lostReasonId = dto.lostReasonId ?? current.lostReasonId;
+    if (stage === "LOST" && !lostReasonId) {
+      const firstReason = await this.prisma.main.lostReason.findFirst();
+      lostReasonId = firstReason?.id ?? null;
     }
 
     const { ownerId, stage: _s, ...rest } = dto;
@@ -139,13 +151,19 @@ export class LeadsService {
       data: {
         ...rest,
         stage,
+        ...(lostReasonId !== undefined ? { lostReasonId } : {}),
         ...(ownerId !== undefined ? { owner_id: ownerId } : {}),
-        ...(dto.targetClosing !== undefined ? { targetClosing: new Date(dto.targetClosing) } : {}),
+        ...(dto.targetClosing !== undefined ? { targetClosing: dto.targetClosing ? new Date(dto.targetClosing) : null } : {}),
       },
-      include: { owner: { select: { id: true, name: true } } },
+      include: {
+        customer: { select: { id: true, name: true } },
+        source: { select: { id: true, name: true } },
+        lostReason: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true, role: true } },
+      },
     });
 
-    await this.ensureQuotation(lead.id, lead.customerId, lead.owner_id, lead.stage);
+    const quotation = await this.ensureQuotation(lead.id, lead.customerId, lead.owner_id, lead.stage);
 
     if (current.stage !== lead.stage) {
       await this.audit.log({
@@ -165,6 +183,7 @@ export class LeadsService {
       });
     }
     this.notifications.dataChange("leads", "update", lead.id);
+    if (quotation) this.notifications.dataChange("quotations", "create", quotation.id);
     return lead;
   }
 
@@ -215,7 +234,10 @@ export class LeadsService {
   async remove(id: number, user: RequestUser) {
     const lead = await this.prisma.main.lead.findUnique({
       where: { id },
-      include: { quotations: { select: { id: true } } },
+      include: {
+        quotations: { select: { id: true } },
+        surveys: { select: { id: true } },
+      },
     });
     if (!lead) throw new NotFoundException("Lead tidak ditemukan");
     if (lead.owner_id !== user.id && !["ADMIN", "BOS", "PM"].includes(user.role)) {
@@ -223,15 +245,47 @@ export class LeadsService {
     }
 
     const quotationIds = lead.quotations.map((q) => q.id);
-    if (quotationIds.length) {
-      await this.prisma.main.invoiceOut.deleteMany({
-        where: { clientPo: { quotationId: { in: quotationIds } } },
-      });
-      await this.prisma.main.clientPO.deleteMany({ where: { quotationId: { in: quotationIds } } });
-      await this.prisma.main.project.deleteMany({ where: { quotationId: { in: quotationIds } } });
-      await this.prisma.main.quotation.deleteMany({ where: { id: { in: quotationIds } } });
+    const surveyIds = lead.surveys.map((s) => s.id);
+
+    const [clientPOs, projects, surveyExpenses] = await Promise.all([
+      quotationIds.length
+        ? this.prisma.main.clientPO.count({ where: { quotationId: { in: quotationIds } } })
+        : Promise.resolve(0),
+      quotationIds.length
+        ? this.prisma.main.project.count({ where: { quotationId: { in: quotationIds } } })
+        : Promise.resolve(0),
+      surveyIds.length
+        ? this.prisma.main.expense.count({ where: { surveyId: { in: surveyIds } } })
+        : Promise.resolve(0),
+    ]);
+    const blockers = [
+      { label: "PO client", count: clientPOs },
+      { label: "project", count: projects },
+      { label: "pengeluaran survey", count: surveyExpenses },
+    ].filter((b) => b.count > 0);
+    if (blockers.length) {
+      throw new BadRequestException(
+        `Lead masih memiliki ${blockers.map((b) => `${b.count} ${b.label}`).join(", ")}. Batalkan dokumen turunan dulu sebelum menghapus lead.`,
+      );
     }
-    await this.prisma.main.lead.delete({ where: { id } });
+
+    await this.prisma.main.$transaction(async (tx) => {
+      if (quotationIds.length) {
+        await tx.approval.deleteMany({ where: { kind: "PENAWARAN", entityId: { in: quotationIds } } });
+        await tx.followUp.deleteMany({ where: { quotationId: { in: quotationIds } } });
+        await tx.quotationVersion.deleteMany({ where: { quotationId: { in: quotationIds } } });
+        await tx.systemSetting.deleteMany({
+          where: { key: { in: quotationIds.map((qid) => `quotation.meta.${qid}`) } },
+        });
+        await tx.quotation.deleteMany({ where: { id: { in: quotationIds } } });
+      }
+      if (surveyIds.length) {
+        await tx.approval.deleteMany({ where: { kind: "PERMINTAAN_SURVEY", entityId: { in: surveyIds } } });
+        await tx.survey.deleteMany({ where: { id: { in: surveyIds } } });
+      }
+      await tx.followUp.deleteMany({ where: { leadId: id } });
+      await tx.lead.delete({ where: { id } });
+    });
 
     await this.audit.log({
       actor: user,
@@ -241,6 +295,7 @@ export class LeadsService {
       detail: `${lead.name} dihapus permanen`,
     });
     this.notifications.dataChange("leads", "delete", id);
+    if (quotationIds.length) this.notifications.dataChange("quotations", "delete", quotationIds[0]);
     return { id, deleted: true };
   }
 }

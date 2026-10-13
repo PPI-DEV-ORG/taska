@@ -111,7 +111,11 @@ export class AuthService {
     });
 
     const { passwordHash: _ignored, ...safe } = user;
-    return { ...tokens, user: { ...safe, lastLoginAt: new Date() } };
+    const avatar = await this.prisma.main.file.findFirst({
+      where: { refType: "user-avatar", refId: String(user.id) },
+      orderBy: { id: "desc" },
+    });
+    return { ...tokens, user: { ...safe, avatarFileId: avatar?.id ?? null, lastLoginAt: new Date() } };
   }
 
   async refresh(rawToken: string, _meta: { ip?: string; userAgent?: string }) {
@@ -151,23 +155,65 @@ export class AuthService {
   }
 
   async me(user: RequestUser) {
-    const row = await this.prisma.main.user.findUnique({
-      where: { id: user.id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        position: true,
-        department: true,
-        role: true,
-        status: true,
-        warehouseId: true,
-        lastLoginAt: true,
-      },
-    });
+    const [row, avatar] = await Promise.all([
+      this.prisma.main.user.findUnique({
+        where: { id: user.id },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          position: true,
+          department: true,
+          role: true,
+          status: true,
+          warehouseId: true,
+          lastLoginAt: true,
+        },
+      }),
+      this.prisma.main.file.findFirst({
+        where: { refType: "user-avatar", refId: String(user.id) },
+        orderBy: { id: "desc" },
+      }),
+    ]);
     if (!row) throw new UnauthorizedException();
-    return row;
+    return { ...row, avatarFileId: avatar?.id ?? null };
+  }
+
+  async updateMe(user: RequestUser, dto: { name?: string; phone?: string; avatarFileId?: number }) {
+    if (dto.name?.trim() || dto.phone !== undefined) {
+      await this.prisma.main.user.update({
+        where: { id: user.id },
+        data: {
+          ...(dto.name?.trim() ? { name: dto.name.trim() } : {}),
+          ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
+        },
+      });
+    }
+    if (dto.avatarFileId) {
+      await this.prisma.main.file
+        .update({
+          where: { id: dto.avatarFileId },
+          data: { refType: "user-avatar", refId: String(user.id) },
+        })
+        .catch(() => {});
+    }
+    return this.me(user);
+  }
+
+  async changePassword(user: RequestUser, oldPassword: string, newPassword: string) {
+    const row = await this.prisma.main.user.findUnique({ where: { id: user.id } });
+    if (!row) throw new UnauthorizedException("Pengguna tidak ditemukan");
+    const valid = await bcrypt.compare(oldPassword, row.passwordHash);
+    if (!valid) {
+      throw new HttpException("Password lama tidak sesuai", HttpStatus.BAD_REQUEST);
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.main.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+    return { ok: true };
   }
 
   /** Bersihkan entri rate limit (untuk test). */

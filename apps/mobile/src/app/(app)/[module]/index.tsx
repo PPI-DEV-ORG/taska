@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { EmptyState } from "@/components/taska/basics";
 import { ModuleList } from "@/screens/module-list";
-import { MODULES } from "@/mock/modules";
+import { MODULES } from "@/constants/modules";
 import { useApp } from "@/store/app-store";
 
 export default function ModuleIndex() {

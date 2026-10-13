@@ -42,6 +42,12 @@ export class ReportsController {
     return { reports: REPORT_TYPES };
   }
 
+  @Get("archive")
+  @Require("reports", "L")
+  archive(@Query("q") q?: string, @Query("year") year?: string, @Query("category") category?: string) {
+    return this.service.archiveList({ q, year, category });
+  }
+
   @Get(":type/export")
   @Require("reports", "L")
   async export(

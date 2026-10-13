@@ -206,3 +206,24 @@ export async function uploadFile(
   const res = await api<{ id: number }>("POST", `/files?kind=${kind}`, undefined, { form });
   return res?.id ?? null;
 }
+
+/** Upload file Excel/PDF penawaran ke /quotations/:id/upload-excel dan parse otomatis. */
+export async function uploadQuotationExcel(
+  quotationId: string | number,
+  file: { uri?: string; name?: string; blob?: Blob },
+): Promise<any> {
+  const form = new FormData();
+  if (file.blob) {
+    form.append("file", file.blob, file.name || "penawaran.xlsx");
+  } else if (file.uri) {
+    form.append("file", {
+      uri: file.uri,
+      name: file.name || "penawaran.xlsx",
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    } as any);
+  } else {
+    throw new Error("File tidak valid");
+  }
+  return api<any>("POST", `/quotations/${quotationId}/upload-excel`, undefined, { form });
+}
+

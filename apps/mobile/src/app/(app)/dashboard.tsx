@@ -15,6 +15,7 @@ import {
   FolderKanban,
   PackageCheck,
   Plus,
+  RefreshCw,
   ScanLine,
   Send,
   ShoppingCart,
@@ -37,20 +38,40 @@ import {
 import { BarChart, HBarChart, Funnel, ChartCard } from "@/components/taska/charts";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
-import { ROLE_LABEL } from "@/mock/data";
+import { ROLE_LABEL } from "@/constants/modules";
 import { rupiah, rupiahShort, tanggal } from "@/lib/format";
 import { colors } from "@/tokens";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 
 function DashboardGreeting({ name, roleTitle }: { name: string; roleTitle: string }) {
+  const { reload, toast } = useApp();
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await reload();
+      toast("Data diperbarui");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
-    <View className="mb-2">
-      <Text className="text-2xl md:text-3xl lg:text-4xl font-extrabold tracking-tight text-foreground">
-        Welcome back, {name}.
-      </Text>
-      <Text className="text-muted-foreground text-sm md:text-base mt-1">
-        Here&apos;s what happening with your projects today ({roleTitle}).
-      </Text>
+    <View className="mb-2 flex-row flex-wrap items-center justify-between gap-3">
+      <View className="flex-1 min-w-[200px]">
+        <Text className="text-2xl md:text-3xl lg:text-4xl font-extrabold tracking-tight text-foreground">
+          Welcome back, {name}.
+        </Text>
+        <Text className="text-muted-foreground text-sm md:text-base mt-1">
+          Here&apos;s what happening with your projects today ({roleTitle}).
+        </Text>
+      </View>
+      <Button variant="outline" size="sm" disabled={refreshing} onPress={handleRefresh}>
+        <RefreshCw size={15} color={colors.text} />
+        <Text>{refreshing ? "Memuat..." : "Refresh"}</Text>
+      </Button>
     </View>
   );
 }
@@ -170,13 +191,33 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/approvals")}
           />
         ) : null}
-        <QuickActionButton
-          label="Lihat Stok Gudang"
-          icon={Boxes}
-          shortcut="⌘G"
-          className="flex-1 min-w-[170px]"
-          onPress={() => router.push("/stock")}
-        />
+        {role === "sales" ? (
+          <>
+            <QuickActionButton
+              label="Buat Penawaran"
+              icon={FileText}
+              shortcut="⌘Q"
+              className="flex-1 min-w-[170px]"
+              onPress={() => router.push("/quotations/new" as any)}
+            />
+            <QuickActionButton
+              label="Ajukan Survey"
+              icon={Calendar}
+              shortcut="⌘S"
+              className="flex-1 min-w-[170px]"
+              onPress={() => router.push("/surveys")}
+            />
+          </>
+        ) : null}
+        {role === "bos" || role === "admin" || role === "gudang" || role === "procurement" ? (
+          <QuickActionButton
+            label="Lihat Stok Gudang"
+            icon={Boxes}
+            shortcut="⌘G"
+            className="flex-1 min-w-[170px]"
+            onPress={() => router.push("/stock")}
+          />
+        ) : null}
       </View>
     </Panel>
   );

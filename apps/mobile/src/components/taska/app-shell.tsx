@@ -1,19 +1,20 @@
 import * as React from "react";
-import { Image, Pressable, ScrollView, View } from "react-native";
+import { Image, Platform, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { usePathname, useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import {
-  Bell, Boxes, CheckSquare, CheckCheck, Ellipsis, FileSignature, ListChecks, LogOut, Menu, PanelLeftClose, Palette, Search,
-  Target, Truck, WifiOff, X,
+  Bell, Boxes, Camera, CheckSquare, CheckCheck, Ellipsis, FileSignature, KeyRound, ListChecks, LogOut, Menu, PanelLeftClose, Search,
+  Target, Truck, WifiOff,
 } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
-import { NAV_BY_ROLE, type NavItem } from "@/mock/modules";
-import { ROLE_LABEL } from "@/mock/data";
+import { api, apiBase, uploadFile } from "@/services/api";
+import { NAV_BY_ROLE, ROLE_LABEL, type NavItem } from "@/constants/modules";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { colors } from "@/tokens";
 import { kelompokHari, waktuRelatif } from "@/lib/format";
@@ -124,8 +125,12 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
             </Pressable>
           ) : (
             <View className="flex-row items-center gap-3">
-              <View className="bg-panel border border-border/80 size-9 items-center justify-center rounded-xl">
-                <Text className="text-sm font-bold text-foreground">{user!.name[0]}</Text>
+              <View className="bg-panel border border-border/80 size-9 items-center justify-center rounded-xl overflow-hidden">
+                {user!.avatarUrl ? (
+                  <Image source={{ uri: user!.avatarUrl }} style={{ width: 36, height: 36 }} resizeMode="cover" />
+                ) : (
+                  <Text className="text-sm font-bold text-foreground">{user!.name[0]}</Text>
+                )}
               </View>
               <View className="flex-1">
                 <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>{user!.name}</Text>
@@ -265,30 +270,271 @@ function NotifDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: 
 }
 
 function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const router = useRouter();
-  const { user, logout, offline, setOffline } = useApp();
+  const { user, logout, updateProfile, toast } = useApp();
+  const [prevOpen, setPrevOpen] = React.useState(open);
+  const [name, setName] = React.useState(user?.name ?? "");
+  const [phone, setPhone] = React.useState(user?.phone ?? "");
+  const [avatarUrl, setAvatarUrl] = React.useState<string>(user?.avatarUrl ?? "");
+  const [avatarFileId, setAvatarFileId] = React.useState<number | undefined>(undefined);
+  const [busy, setBusy] = React.useState(false);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open && user) {
+      setName(user.name ?? "");
+      setPhone(user.phone ?? "");
+      setAvatarUrl(user.avatarUrl ?? "");
+      setAvatarFileId(undefined);
+    }
+  }
+
+  async function pickPhoto() {
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/png,image/jpeg,image/webp";
+      input.onchange = async () => {
+        const f = input.files?.[0];
+        if (!f) return;
+        const localUrl = URL.createObjectURL(f);
+        setAvatarUrl(localUrl);
+        try {
+          setBusy(true);
+          const uploadedId = await uploadFile(f, "foto");
+          if (uploadedId != null) {
+            setAvatarFileId(uploadedId);
+            setAvatarUrl(`${apiBase()}/files/${uploadedId}`);
+          }
+        } catch (e: any) {
+          toast(e?.message ?? "Gagal mengunggah foto profil", "danger");
+        } finally {
+          setBusy(false);
+        }
+      };
+      input.click();
+      return;
+    }
+
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    const asset = res.assets?.[0];
+    if (!asset) return;
+    setAvatarUrl(asset.uri);
+    try {
+      setBusy(true);
+      const uploadedId = await uploadFile(
+        { uri: asset.uri, name: asset.fileName ?? "avatar.jpg", type: asset.mimeType ?? "image/jpeg" },
+        "foto",
+      );
+      if (uploadedId != null) {
+        setAvatarFileId(uploadedId);
+        setAvatarUrl(`${apiBase()}/files/${uploadedId}`);
+      }
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengunggah foto profil", "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const [pwdOpen, setPwdOpen] = React.useState(false);
+  const [oldPassword, setOldPassword] = React.useState("");
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [pwdBusy, setPwdBusy] = React.useState(false);
+
+  async function handleSave() {
+    if (!name.trim()) {
+      toast("Nama lengkap wajib diisi", "danger");
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateProfile({
+        name: name.trim(),
+        phone: phone.trim(),
+        avatarFileId,
+        avatarUrl,
+      });
+      onOpenChange(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openPwdModal() {
+    setOldPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPwdOpen(true);
+  }
+
+  async function handleChangePassword() {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      toast("Semua field password wajib diisi", "danger");
+      return;
+    }
+    if (newPassword.length < 4) {
+      toast("Password baru minimal 4 karakter", "danger");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast("Konfirmasi password baru tidak cocok", "danger");
+      return;
+    }
+    setPwdBusy(true);
+    try {
+      await api("POST", "/auth/change-password", {
+        oldPassword,
+        newPassword,
+      });
+      toast("Password berhasil diubah");
+      setPwdOpen(false);
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengubah password", "danger");
+    } finally {
+      setPwdBusy(false);
+    }
+  }
+
+  if (!user) return null;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader><DialogTitle>Akun</DialogTitle></DialogHeader>
-        <View className="flex-row items-center gap-3">
-          <View className="bg-panel size-12 items-center justify-center rounded-full"><Text className="text-lg font-semibold">{user!.name[0]}</Text></View>
-          <View>
-            <Text className="text-base font-semibold">{user!.name}</Text>
-            <Text className="text-text-secondary text-sm">{ROLE_LABEL[user!.role]}</Text>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Profil Saya</DialogTitle>
+          </DialogHeader>
+
+          <View className="items-center gap-3 py-2">
+            <Pressable onPress={pickPhoto} className="relative">
+              <View className="bg-panel border-border size-20 items-center justify-center rounded-full border overflow-hidden">
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={{ width: 80, height: 80 }} resizeMode="cover" />
+                ) : (
+                  <Text className="text-2xl font-bold text-foreground">{(name || user.name)[0]?.toUpperCase()}</Text>
+                )}
+              </View>
+              <View className="bg-primary border-background absolute bottom-0 right-0 size-7 items-center justify-center rounded-full border-2">
+                <Camera size={13} color={colors.background} />
+              </View>
+            </Pressable>
+            <Pressable onPress={pickPhoto}>
+              <Text className="text-primary text-xs font-semibold">Ganti Foto Profil</Text>
+            </Pressable>
           </View>
-        </View>
-        <View className="border-border flex-row items-center justify-between rounded-lg border p-3">
-          <View className="flex-1 pr-3">
-            <Text className="text-sm font-medium">Simulasi tanpa koneksi</Text>
-            <Text className="text-muted-foreground text-[13px]">Hanya untuk demo mode offline</Text>
+
+          <View className="gap-3">
+            <FormField label="Nama Lengkap" required>
+              <Input
+                value={name}
+                onChangeText={setName}
+                placeholder="Nama lengkap"
+                returnKeyType="done"
+                onSubmitEditing={handleSave}
+              />
+            </FormField>
+
+            <FormField label="Nomor Telepon">
+              <Input
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Contoh: 0812-3456-7890"
+                keyboardType="phone-pad"
+              />
+            </FormField>
+
+            <View className="bg-panel/60 border-border rounded-lg border p-3 gap-1.5">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-muted-foreground text-xs">Email</Text>
+                <Text className="text-foreground text-xs font-medium">{user.email}</Text>
+              </View>
+              <View className="flex-row items-center justify-between">
+                <Text className="text-muted-foreground text-xs">Role / Divisi</Text>
+                <Text className="text-foreground text-xs font-semibold">{ROLE_LABEL[user.role]}</Text>
+              </View>
+            </View>
+
+            <Button variant="outline" onPress={openPwdModal}>
+              <KeyRound size={15} color={colors.text} />
+              <Text>Ganti Password</Text>
+            </Button>
           </View>
-          <Switch checked={offline} onCheckedChange={setOffline} />
-        </View>
-        <Button variant="outline" onPress={() => { onOpenChange(false); router.push("/styleguide" as any); }}><Palette size={16} color={colors.text} /><Text>Panduan gaya</Text></Button>
-        <Button variant="outline" onPress={() => { onOpenChange(false); logout(); }}><LogOut size={16} color={colors.text} /><Text>Keluar</Text></Button>
-      </DialogContent>
-    </Dialog>
+
+          <View className="flex-row items-center justify-between gap-2 pt-2">
+            <Button
+              variant="outline"
+              onPress={() => {
+                onOpenChange(false);
+                logout();
+              }}
+            >
+              <LogOut size={16} color={colors.danger} />
+              <Text className="text-danger">Keluar</Text>
+            </Button>
+            <View className="flex-row gap-2">
+              <Button variant="outline" onPress={() => onOpenChange(false)}>
+                <Text>Batal</Text>
+              </Button>
+              <Button disabled={busy} onPress={handleSave}>
+                <Text>{busy ? "Menyimpan..." : "Simpan Profil"}</Text>
+              </Button>
+            </View>
+          </View>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pwdOpen} onOpenChange={setPwdOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ganti Password</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-1">
+            <FormField label="Password Lama" required>
+              <Input
+                value={oldPassword}
+                onChangeText={setOldPassword}
+                secureTextEntry
+                placeholder="Masukkan password lama"
+                returnKeyType="next"
+              />
+            </FormField>
+            <FormField label="Password Baru" required>
+              <Input
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry
+                placeholder="Masukkan password baru"
+                returnKeyType="next"
+              />
+            </FormField>
+            <FormField label="Konfirmasi Password Baru" required>
+              <Input
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+                placeholder="Ulangi password baru"
+                returnKeyType="done"
+                onSubmitEditing={handleChangePassword}
+              />
+            </FormField>
+          </View>
+          <View className="flex-row justify-end gap-2 pt-2">
+            <Button variant="outline" onPress={() => setPwdOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button disabled={pwdBusy} onPress={handleChangePassword}>
+              <Text>{pwdBusy ? "Menyimpan..." : "Simpan Password"}</Text>
+            </Button>
+          </View>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -353,9 +599,13 @@ function Topbar({ onMenu, onNotif, onAccount }: { onMenu?: () => void; onNotif: 
 
           <Pressable
             onPress={onAccount}
-            className="bg-panel border border-border/80 size-9 items-center justify-center rounded-xl shadow-sm hover:border-primary/50"
+            className="bg-panel border border-border/80 size-9 items-center justify-center rounded-xl shadow-sm hover:border-primary/50 overflow-hidden"
           >
-            <Text className="text-sm font-bold text-foreground">{user!.name[0]}</Text>
+            {user!.avatarUrl ? (
+              <Image source={{ uri: user!.avatarUrl }} style={{ width: 36, height: 36 }} resizeMode="cover" />
+            ) : (
+              <Text className="text-sm font-bold text-foreground">{user!.name[0]}</Text>
+            )}
           </Pressable>
         </View>
       </SafeAreaView>

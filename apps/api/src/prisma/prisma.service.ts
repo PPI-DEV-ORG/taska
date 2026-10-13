@@ -3,9 +3,13 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "../generated/prisma/client.js";
 
 function makeClient(urlEnv: string): PrismaClient {
-  const url = process.env[urlEnv];
-  if (!url) throw new Error(`${urlEnv} tidak di-set`);
-  return new PrismaClient({ adapter: new PrismaMariaDb(url) });
+  const raw = process.env[urlEnv];
+  if (!raw) throw new Error(`${urlEnv} tidak di-set`);
+  const u = new URL(raw);
+  if (!u.searchParams.has("allowPublicKeyRetrieval")) {
+    u.searchParams.set("allowPublicKeyRetrieval", "true");
+  }
+  return new PrismaClient({ adapter: new PrismaMariaDb(u.toString()) });
 }
 
 /**

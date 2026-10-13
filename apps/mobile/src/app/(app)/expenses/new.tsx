@@ -7,13 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { BOS_THRESHOLD, colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 
-const KATEGORI_LIST = [
+const DEFAULT_KATEGORI_LIST = [
   "Bensin",
   "Makan & Lembur",
   "Transport & Taksi",
@@ -26,9 +26,16 @@ const KATEGORI_LIST = [
 export default function NewExpenseScreen() {
   const router = useRouter();
   const { data, user, addRow, toast } = useApp();
+  const fileHandle = React.useRef<FileUploaderHandle | null>(null);
 
+  const kategoriOptions = React.useMemo(() => {
+    const dynamic = (data.expenseCategories ?? []).map((c: any) => String(c.nama)).filter(Boolean);
+    return dynamic.length > 0 ? dynamic : DEFAULT_KATEGORI_LIST;
+  }, [data.expenseCategories]);
+
+  const [tanggalNota, setTanggalNota] = React.useState(new Date().toISOString().slice(0, 10));
   const [nominal, setNominal] = React.useState("");
-  const [kategori, setKategori] = React.useState(KATEGORI_LIST[0]);
+  const [kategori, setKategori] = React.useState(kategoriOptions[0] || "Bensin");
   const [selectedProject, setSelectedProject] = React.useState("-");
   const [alasan, setAlasan] = React.useState("");
   const [photoCount, setPhotoCount] = React.useState(0);
@@ -36,7 +43,7 @@ export default function NewExpenseScreen() {
   const numNominal = Number(nominal.replace(/\D/g, "")) || 0;
   const isBig = numNominal > BOS_THRESHOLD;
 
-  function submit() {
+  async function submit() {
     if (numNominal <= 0) {
       toast("Nominal pengeluaran harus lebih dari 0", "danger");
       return;
@@ -46,19 +53,22 @@ export default function NewExpenseScreen() {
       return;
     }
 
+    const uploaded = await fileHandle.current?.flush();
+    const fileId = uploaded?.[0]?.id;
+
     const row = {
-      tanggal: "2026-10-08",
+      tanggal: tanggalNota,
       pelapor: user?.name || "Karyawan",
       kategori,
       nominal: numNominal,
       project: selectedProject,
       alasan,
       status: "Dilaporkan",
-      nota: photoCount > 0 ? "nota.jpg" : "-",
+      nota: photoCount > 0 || fileId ? "nota.jpg" : "-",
+      fileId,
     };
 
     addRow("expenses", row);
-    toast("Pengeluaran dilaporkan ke Finance untuk reimbursement");
     router.replace("/expenses");
   }
 
@@ -72,6 +82,14 @@ export default function NewExpenseScreen() {
 
       <Panel title="Detail Pengeluaran">
         <View className="gap-4">
+          <FormField label="Tanggal Pengeluaran" required>
+            <DatePicker
+              value={tanggalNota}
+              onChange={setTanggalNota}
+              placeholder="Pilih tanggal pengeluaran"
+            />
+          </FormField>
+
           <FormField label="Nominal Pengeluaran (Rp)" required>
             <Input
               value={nominal ? rupiah(numNominal) : ""}
@@ -94,7 +112,7 @@ export default function NewExpenseScreen() {
             <SearchableSelect
               value={kategori}
               onChange={setKategori}
-              options={KATEGORI_LIST}
+              options={kategoriOptions}
               placeholder="Pilih kategori"
             />
           </FormField>
@@ -122,8 +140,7 @@ export default function NewExpenseScreen() {
         <FileUploader
           label="Foto Nota Pembayaran"
           kind="foto"
-          required
-          autoFlush
+          handleRef={(h) => { fileHandle.current = h; }}
           onChange={setPhotoCount}
         />
       </Panel>

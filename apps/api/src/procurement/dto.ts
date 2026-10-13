@@ -49,8 +49,8 @@ export class RequestDto {
   @IsOptional() @IsDateString()
   date?: string;
 
-  @IsIn(["PROJECT", "STOK", "INTERNAL", "LAINNYA"])
-  costType!: "PROJECT" | "STOK" | "INTERNAL" | "LAINNYA";
+  @IsOptional() @IsIn(["PROJECT", "STOK", "INTERNAL", "LAINNYA"])
+  costType?: "PROJECT" | "STOK" | "INTERNAL" | "LAINNYA";
 
   @IsOptional() @IsInt()
   projectId?: number;
@@ -64,8 +64,8 @@ export class RequestDto {
   @IsOptional() @IsIn(["BARU", "SECOND"])
   condition?: "BARU" | "SECOND";
 
-  @IsString() @MinLength(1)
-  purpose!: string;
+  @IsOptional() @IsString()
+  purpose?: string;
 
   @IsOptional() @IsString()
   otherNote?: string;
@@ -73,9 +73,12 @@ export class RequestDto {
   @IsOptional() @IsInt()
   evidenceFileId?: number;
 
-  @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true })
+  @IsOptional() @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  status?: string;
+
+  @IsOptional() @IsArray() @ValidateNested({ each: true })
   @Type(() => RequestItemDto)
-  items!: RequestItemDto[];
+  items?: RequestItemDto[];
 }
 
 export class RequestStatusDto {
@@ -124,8 +127,8 @@ export class PoDto {
   @IsOptional() @IsString()
   number?: string;
 
-  @IsInt()
-  supplierId!: number;
+  @IsOptional() @IsInt()
+  supplierId?: number;
 
   @IsOptional() @IsInt()
   requestId?: number;
@@ -133,8 +136,8 @@ export class PoDto {
   @IsOptional() @IsInt()
   projectId?: number;
 
-  @IsDateString()
-  date!: string;
+  @IsOptional() @IsDateString()
+  date?: string;
 
   @IsOptional() @IsDateString()
   eta?: string;
@@ -142,15 +145,24 @@ export class PoDto {
   @IsOptional() @IsString()
   paymentTerms?: string;
 
-  @IsInt()
-  fileId!: number;
+  @IsOptional() @IsNumber() @Min(0)
+  total?: number;
+
+  @IsOptional() @IsString()
+  status?: string;
+
+  @IsOptional() @IsIn(["DI_SUPPLIER", "DIKIRIM", "SAMPAI"])
+  shipmentStatus?: "DI_SUPPLIER" | "DIKIRIM" | "SAMPAI";
+
+  @IsOptional() @IsInt()
+  fileId?: number;
 
   @IsOptional() @IsInt()
   doFileId?: number;
 
-  @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true })
+  @IsOptional() @IsArray() @ValidateNested({ each: true })
   @Type(() => PoItemDto)
-  items!: PoItemDto[];
+  items?: PoItemDto[];
 }
 
 export class ShipmentDto {
@@ -193,8 +205,8 @@ export class ReceivingDto {
   @IsOptional() @IsString()
   number?: string;
 
-  @IsInt()
-  supplierPoId!: number;
+  @IsOptional() @IsInt()
+  supplierPoId?: number;
 
   @IsOptional() @IsInt()
   warehouseId?: number;
@@ -211,9 +223,12 @@ export class ReceivingDto {
   @IsOptional() @IsInt()
   photoFileId?: number;
 
-  @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true })
+  @IsOptional() @IsString()
+  status?: string;
+
+  @IsOptional() @IsArray() @ValidateNested({ each: true })
   @Type(() => ReceivingItemDto)
-  items!: ReceivingItemDto[];
+  items?: ReceivingItemDto[];
 }
 
 export class IssueDto {

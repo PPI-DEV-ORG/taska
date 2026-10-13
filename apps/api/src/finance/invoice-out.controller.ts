@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query } from "@nestjs/common";
 import { IsIn } from "class-validator";
 import { InvoiceOutService } from "./invoice-out.service.js";
 import { FinanceListQuery, InvoiceOutDto, PaymentDto } from "./dto.js";
@@ -6,8 +6,8 @@ import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
 class StatusOnlyDto {
-  @IsIn(["DRAFT", "SENT", "BATAL"])
-  status!: "DRAFT" | "SENT" | "BATAL";
+  @IsIn(["DRAFT", "SENT", "PARTIAL", "PAID", "OVERDUE", "BATAL"])
+  status!: "DRAFT" | "SENT" | "PARTIAL" | "PAID" | "OVERDUE" | "BATAL";
 }
 
 @Controller("invoices")
@@ -44,6 +44,12 @@ export class InvoiceOutController {
     return this.service.update(id, dto, user);
   }
 
+  @Patch(":id")
+  @Require("financeOut", "U")
+  patch(@Param("id", ParseIntPipe) id: number, @Body() dto: InvoiceOutDto, @CurrentUser() user: RequestUser) {
+    return this.service.update(id, dto, user);
+  }
+
   @Post(":id/status")
   @Require("financeOut", "U")
   setStatus(@Param("id", ParseIntPipe) id: number, @Body() dto: StatusOnlyDto, @CurrentUser() user: RequestUser) {
@@ -54,5 +60,11 @@ export class InvoiceOutController {
   @Require("financeOut", "C")
   pay(@Param("id", ParseIntPipe) id: number, @Body() dto: PaymentDto, @CurrentUser() user: RequestUser) {
     return this.service.addPayment(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Require("financeOut", "A")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
   }
 }

@@ -29,10 +29,10 @@ export class DeliveryListQuery extends PageQuery {
 }
 
 export class LocationDto {
-  @IsString() @MinLength(3)
+  @IsString() @MinLength(1)
   destination: string;
 
-  @IsString() @MinLength(3)
+  @IsString() @MinLength(1)
   reason: string;
 
   @IsOptional() @Type(() => Number) @IsInt()
@@ -40,20 +40,29 @@ export class LocationDto {
 }
 
 export class DeliveryCreateDto {
-  @IsDateString()
-  date: string;
+  @IsOptional() @IsDateString()
+  date?: string;
 
   @IsOptional() @IsIn(["true", "false", true, false])
   withGoods?: boolean | "true" | "false";
 
-  @IsOptional() @IsString() @MinLength(2)
+  @IsOptional() @IsString()
   number?: string;
 
   @IsOptional() @Type(() => Number) @IsInt()
   warehouseId?: number;
 
-  @IsArray() @ValidateNested({ each: true }) @Type(() => LocationDto)
-  locations: LocationDto[];
+  @IsOptional() @IsIn(["PENDING", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  status?: "PENDING" | "DIKIRIM" | "DITERIMA" | "DIBATALKAN";
+
+  @IsOptional() @IsString()
+  reportText?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  reportFileId?: number;
+
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LocationDto)
+  locations?: LocationDto[];
 }
 
 export class GoodsDto {
@@ -62,15 +71,15 @@ export class GoodsDto {
 }
 
 export class DeliveryStatusDto {
-  @IsIn(["DIKIRIM", "DITERIMA", "DIBATALKAN"])
-  status: "DIKIRIM" | "DITERIMA" | "DIBATALKAN";
+  @IsIn(["PENDING", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  status: "PENDING" | "DIKIRIM" | "DITERIMA" | "DIBATALKAN";
 
-  @IsOptional() @IsString() @MinLength(3)
+  @IsOptional() @IsString()
   reason?: string;
 }
 
 export class DeliveryReportDto {
-  @IsString() @MinLength(3)
+  @IsString() @MinLength(1)
   reportText: string;
 
   @IsOptional() @Type(() => Number) @IsInt()

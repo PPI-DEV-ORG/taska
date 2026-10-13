@@ -8,10 +8,9 @@ import { Chip, EmptyState, PageHeader } from "@/components/taska/basics";
 import { ApprovalBar } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
 import { DataTable, FilterBar } from "@/components/taska/data-table";
-import { CAN_APPROVE } from "@/mock/modules";
+import { CAN_APPROVE, type Col } from "@/constants/modules";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
-import type { Col } from "@/mock/modules";
 
 const APPROVAL_COLUMNS: Col[] = [
   { key: "judul", label: "Dokumen / Pengajuan", primary: true, flex: 1.8 },

@@ -47,17 +47,17 @@ export class ClientPoDto {
   @IsOptional() @IsString()
   number?: string;
 
-  @IsInt()
-  customerId!: number;
+  @IsOptional() @IsInt()
+  customerId?: number;
 
   @IsOptional() @IsInt()
   quotationId?: number;
 
-  @IsNumber() @Min(0)
-  amount!: number;
+  @IsOptional() @IsNumber() @Min(0)
+  amount?: number;
 
-  @IsDateString()
-  date!: string;
+  @IsOptional() @IsDateString()
+  date?: string;
 
   @IsOptional() @IsInt()
   fileId?: number;
@@ -76,8 +76,8 @@ export class InvoiceOutDto {
   @IsOptional() @IsInt()
   projectId?: number;
 
-  @IsInt()
-  customerId!: number;
+  @IsOptional() @IsInt()
+  customerId?: number;
 
   @IsOptional() @IsString()
   description?: string;
@@ -85,23 +85,26 @@ export class InvoiceOutDto {
   @IsOptional() @IsIn(["DP", "TERMIN", "PELUNASAN"])
   type?: "DP" | "TERMIN" | "PELUNASAN";
 
-  @IsNumber() @Min(0)
-  amount!: number;
+  @IsOptional() @IsNumber() @Min(0)
+  amount?: number;
 
   @IsOptional() @IsNumber() @Min(0)
   ppn?: number;
 
-  @IsNumber() @Min(0)
-  total!: number;
+  @IsOptional() @IsNumber() @Min(0)
+  total?: number;
 
-  @IsDateString()
-  date!: string;
+  @IsOptional() @IsNumber() @Min(0)
+  paidAmount?: number;
 
-  @IsDateString()
-  dueDate!: string;
+  @IsOptional() @IsDateString()
+  date?: string;
 
-  @IsOptional() @IsIn(["DRAFT", "SENT", "BATAL"])
-  status?: "DRAFT" | "SENT" | "BATAL";
+  @IsOptional() @IsDateString()
+  dueDate?: string;
+
+  @IsOptional() @IsIn(["DRAFT", "SENT", "PARTIAL", "PAID", "OVERDUE", "BATAL"])
+  status?: "DRAFT" | "SENT" | "PARTIAL" | "PAID" | "OVERDUE" | "BATAL";
 
   @IsOptional() @IsInt()
   fileId?: number;
@@ -140,8 +143,8 @@ export class PaymentDto {
   @IsNumber() @Min(1)
   amount!: number;
 
-  @IsDateString()
-  date!: string;
+  @IsOptional() @IsDateString()
+  date?: string;
 
   @IsOptional() @IsIn(["TRANSFER", "TUNAI", "QRIS", "LAINNYA"])
   method?: "TRANSFER" | "TUNAI" | "QRIS" | "LAINNYA";
@@ -154,17 +157,17 @@ export class PaymentDto {
 }
 
 export class ExpenseDto {
-  @IsDateString()
-  date!: string;
+  @IsOptional() @IsDateString()
+  date?: string;
 
   @IsOptional() @IsInt()
   categoryId?: number;
 
-  @IsNumber() @Min(1)
-  amount!: number;
+  @IsOptional() @IsNumber() @Min(0)
+  amount?: number;
 
-  @IsString() @MinLength(1)
-  description!: string;
+  @IsOptional() @IsString()
+  description?: string;
 
   @IsOptional() @IsInt()
   projectId?: number;
@@ -183,6 +186,9 @@ export class ExpenseDto {
 
   @IsOptional() @IsInt()
   paidFileId?: number;
+
+  @IsOptional() @IsIn(["DILAPORKAN", "DISETUJUI", "DITOLAK", "DIBAYAR"])
+  status?: "DILAPORKAN" | "DISETUJUI" | "DITOLAK" | "DIBAYAR";
 }
 
 export class ExpenseStatusDto {

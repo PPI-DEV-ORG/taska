@@ -96,6 +96,7 @@ export class InvoiceOutService {
           customer: { select: { id: true, name: true } },
           clientPo: { select: { id: true, number: true, amount: true } },
           project: { select: { id: true, name: true } },
+          payments: { orderBy: { date: "desc" } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "dueDate", "createdAt"], "dueDate"),
         ...pageSkip(q),
@@ -124,38 +125,48 @@ export class InvoiceOutService {
     const number = dto.number?.trim() || (await this.docnum.next("invoiceOut"));
     const dup = await this.prisma.main.invoiceOut.findFirst({ where: { number } });
     if (dup) throw new BadRequestException(`Nomor ${number} sudah dipakai`);
-    if (!dto.fileId) throw new BadRequestException("File invoice wajib diunggah (bukti wajib)");
 
-    const customer = await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } });
+    const customer = dto.customerId
+      ? await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } })
+      : await this.prisma.main.customer.findFirst();
     if (!customer) throw new NotFoundException("Customer tidak ditemukan");
+
+    const amount = dto.amount ?? 0;
+    const ppn = dto.ppn ?? 0;
+    const total = dto.total ?? amount + ppn;
+    const date = dto.date ? new Date(dto.date) : new Date();
+    const dueDate = dto.dueDate ? new Date(dto.dueDate) : new Date(Date.now() + 30 * 86400000);
 
     const row = await this.prisma.main.invoiceOut.create({
       data: {
         number,
         clientPoId: dto.clientPoId,
         projectId: dto.projectId,
-        customerId: dto.customerId,
+        customerId: customer.id,
         description: dto.description,
         type: dto.type ?? "TERMIN",
-        amount: dto.amount,
-        ppn: dto.ppn ?? 0,
-        total: dto.total,
-        date: new Date(dto.date),
-        dueDate: new Date(dto.dueDate),
+        amount,
+        ppn,
+        total,
+        paidAmount: dto.paidAmount ?? (dto.status === "PAID" ? total : 0),
+        date,
+        dueDate,
         status: dto.status ?? "DRAFT",
       },
-      include: { customer: true },
+      include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
     });
-    await this.prisma.main.file.update({
-      where: { id: dto.fileId },
-      data: { refType: "invoiceOut", refId: String(row.id) },
-    });
+    if (dto.fileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.fileId },
+        data: { refType: "invoiceOut", refId: String(row.id) },
+      }).catch(() => {});
+    }
     await this.audit.log({
       actor: user,
       action: "BUAT_INVOICE_KELUAR",
       entityType: "invoice-out",
       entityId: row.id,
-      detail: `${number} total Rp${dto.total} — ${customer.name}`,
+      detail: `${number} total Rp${total} — ${customer.name}`,
     });
     return this.sync(row);
   }
@@ -164,29 +175,34 @@ export class InvoiceOutService {
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
 
+    const amount = dto.amount ?? Number(row.amount);
+    const ppn = dto.ppn ?? Number(row.ppn);
+    const total = dto.total ?? (dto.amount !== undefined || dto.ppn !== undefined ? amount + ppn : Number(row.total));
+
     const updated = await this.prisma.main.invoiceOut.update({
       where: { id },
       data: {
         ...(dto.number ? { number: dto.number } : {}),
-        clientPoId: dto.clientPoId ?? row.clientPoId,
-        projectId: dto.projectId ?? row.projectId,
-        customerId: dto.customerId,
-        description: dto.description ?? row.description,
+        clientPoId: dto.clientPoId !== undefined ? dto.clientPoId : row.clientPoId,
+        projectId: dto.projectId !== undefined ? dto.projectId : row.projectId,
+        customerId: dto.customerId ?? row.customerId,
+        description: dto.description !== undefined ? dto.description : row.description,
         type: dto.type ?? row.type,
-        amount: dto.amount,
-        ppn: dto.ppn ?? row.ppn,
-        total: dto.total,
-        date: new Date(dto.date),
-        dueDate: new Date(dto.dueDate),
+        amount,
+        ppn,
+        total,
+        ...(dto.paidAmount !== undefined ? { paidAmount: dto.paidAmount } : dto.status === "PAID" ? { paidAmount: total } : {}),
+        date: dto.date ? new Date(dto.date) : row.date,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : row.dueDate,
         ...(dto.status ? { status: dto.status } : {}),
       },
-      include: { customer: true },
+      include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
     });
     if (dto.fileId) {
       await this.prisma.main.file.update({
         where: { id: dto.fileId },
         data: { refType: "invoiceOut", refId: String(id) },
-      });
+      }).catch(() => {});
     }
     await this.audit.log({
       actor: user,
@@ -202,10 +218,9 @@ export class InvoiceOutService {
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     if (row.status === "BATAL") throw new BadRequestException("Invoice dibatalkan");
-    if (!dto.fileId) throw new BadRequestException("Bukti pembayaran wajib diunggah");
     const paymentsBefore = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
     const paidBefore = paymentsBefore.reduce((s, p) => s + Number(p.amount), 0);
-    if (paidBefore + Number(dto.amount) > Number(row.total)) {
+    if (paidBefore + Number(dto.amount) > Number(row.total) && Number(row.total) > 0) {
       throw new BadRequestException(
         `Total bayar melebihi tagihan invoice (sisa Rp${Number(row.total) - paidBefore})`,
       );
@@ -215,17 +230,19 @@ export class InvoiceOutService {
       data: {
         invoiceOutId: id,
         amount: dto.amount,
-        date: new Date(dto.date),
+        date: dto.date ? new Date(dto.date) : new Date(),
         method: dto.method ?? "TRANSFER",
         reference: dto.reference,
         fileId: dto.fileId,
         createdById: user.id,
       },
     });
-    await this.prisma.main.file.update({
-      where: { id: dto.fileId },
-      data: { refType: "payment", refId: String(id) },
-    });
+    if (dto.fileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.fileId },
+        data: { refType: "payment", refId: String(id) },
+      }).catch(() => {});
+    }
 
     const payments = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
     const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -246,18 +263,20 @@ export class InvoiceOutService {
   }
 
   async setStatus(id: number, status: string, user: RequestUser) {
-    if (!["DRAFT", "SENT", "BATAL"].includes(status)) {
+    if (!["DRAFT", "SENT", "PARTIAL", "PAID", "OVERDUE", "BATAL"].includes(status)) {
       throw new BadRequestException(`Status tidak dikenal: ${status}`);
     }
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
-    if (status === "BATAL" || status === "SENT") {
-      const file = await this.prisma.main.file.findFirst({
-        where: { refType: "invoiceOut", refId: String(id) },
-      });
-      if (!file) throw new BadRequestException("File invoice wajib ada sebelum status berubah");
-    }
-    const updated = await this.prisma.main.invoiceOut.update({ where: { id }, data: { status: status as never } });
+    const updated = await this.prisma.main.invoiceOut.update({
+      where: { id },
+      data: {
+        status: status as never,
+        ...(status === "PAID" ? { paidAmount: row.total } : {}),
+        ...(status === "SENT" && Number(row.paidAmount) >= Number(row.total) ? { paidAmount: 0 } : {}),
+      },
+      include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
+    });
     await this.audit.log({
       actor: user,
       action: "UBAH_STATUS_INVOICE",
@@ -266,6 +285,23 @@ export class InvoiceOutService {
       detail: `${row.number}: ${row.status} → ${status}`,
     });
     return this.sync(updated);
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Invoice tidak ditemukan");
+    await this.prisma.main.$transaction(async (tx) => {
+      await tx.payment.deleteMany({ where: { invoiceOutId: id } });
+      await tx.invoiceOut.delete({ where: { id } });
+    });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_INVOICE_KELUAR",
+      entityType: "invoice-out",
+      entityId: id,
+      detail: `${row.number} dihapus`,
+    });
+    return { id, deleted: true };
   }
 
   suggestNumber() {

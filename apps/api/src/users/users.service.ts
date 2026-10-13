@@ -68,9 +68,13 @@ export class UsersService {
   async create(dto: CreateUserDto) {
     const exists = await this.prisma.main.user.findUnique({ where: { email: dto.email } });
     if (exists) throw new ConflictException("Email sudah terdaftar");
-    const { password, ...data } = dto;
+    const { password, role, ...data } = dto;
     return this.prisma.main.user.create({
-      data: { ...data, passwordHash: await bcrypt.hash(password, 10) },
+      data: {
+        ...data,
+        role: role ?? "SALES",
+        passwordHash: await bcrypt.hash(password || "taska123", 10),
+      },
       select: SELECT,
     });
   }

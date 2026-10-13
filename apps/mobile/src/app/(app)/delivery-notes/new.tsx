@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
 import { ScanInput, type Scan } from "@/components/taska/scan-input";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
@@ -18,6 +18,7 @@ export default function NewDeliveryNoteScreen() {
   const { data, user, addRow, toast } = useApp();
   const fileHandle = React.useRef<FileUploaderHandle | null>(null);
 
+  const [tanggalSj, setTanggalSj] = React.useState(new Date().toISOString().slice(0, 10));
   const [tujuan, setTujuan] = React.useState("");
   const [alasan, setAlasan] = React.useState("");
   const [selectedProject, setSelectedProject] = React.useState("-");
@@ -35,9 +36,12 @@ export default function NewDeliveryNoteScreen() {
       return;
     }
 
+    const uploaded = await fileHandle.current?.flush();
+    const fileId = uploaded?.[0]?.id;
+
     const row = {
-      nomor: `SJ/2026/10/${Math.floor(Math.random() * 800) + 100}`,
-      tanggal: "2026-10-08",
+      nomor: `SJ/${new Date().getFullYear()}/${Math.floor(Math.random() * 800) + 100}`,
+      tanggal: tanggalSj,
       tujuan,
       alasan,
       project: selectedProject,
@@ -45,11 +49,10 @@ export default function NewDeliveryNoteScreen() {
       barang: hasGoods ? (goodsDesc || `${scannedItems.length} unit SN`) : "-",
       status: "Pending",
       persetujuan: "Menunggu persetujuan",
+      fileId,
     };
 
-    await fileHandle.current?.flush();
     addRow("delivery-notes", row);
-    toast("Surat jalan berhasil dibuat dan menunggu persetujuan Finance");
     router.replace("/delivery-notes");
   }
 
@@ -70,6 +73,14 @@ export default function NewDeliveryNoteScreen() {
 
       <Panel title="Detail Tujuan & Alasan Tugas">
         <View className="gap-4">
+          <FormField label="Tanggal Surat Jalan" required>
+            <DatePicker
+              value={tanggalSj}
+              onChange={setTanggalSj}
+              placeholder="Pilih tanggal"
+            />
+          </FormField>
+
           <FormField label="Lokasi Tujuan (Bisa lebih dari 1 lokasi)" required>
             <Input
               value={tujuan}
