@@ -1,0 +1,428 @@
+import { BadRequestException, Injectable } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service.js";
+import { ApprovalsService } from "../approvals/approvals.service.js";
+import { MovementsService } from "../stock/movements.service.js";
+import type { ReportData } from "./exporters.js";
+
+export type ReportQuery = {
+  page?: string;
+  limit?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+  status?: string;
+  stage?: string;
+  warehouseId?: string;
+  due?: string;
+};
+
+export const REPORT_TYPES = [
+  "leads",
+  "followups",
+  "projects",
+  "delivery-notes",
+  "stock",
+  "expenses",
+  "approvals",
+] as const;
+export type ReportType = (typeof REPORT_TYPES)[number];
+
+const MAX_ROWS = 5000;
+
+@Injectable()
+export class ReportsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly approvals: ApprovalsService,
+    private readonly movements: MovementsService,
+  ) {}
+
+  async build(type: string, q: ReportQuery): Promise<ReportData> {
+    switch (type) {
+      case "leads":
+        return this.leads(q);
+      case "followups":
+        return this.followups(q);
+      case "projects":
+        return this.projects(q);
+      case "delivery-notes":
+        return this.deliveryNotes(q);
+      case "stock":
+        return this.stock(q);
+      case "expenses":
+        return this.expenses(q);
+      case "approvals":
+        return this.approvalsReport(q);
+      default:
+        throw new BadRequestException(
+          `Laporan tidak dikenal. Pilihan: ${REPORT_TYPES.join(", ")}`,
+        );
+    }
+  }
+
+  private dateRange(q: ReportQuery, field = "createdAt") {
+    if (!q.from && !q.to) return {};
+    return {
+      [field]: {
+        ...(q.from ? { gte: new Date(q.from) } : {}),
+        ...(q.to ? { lte: new Date(q.to) } : {}),
+      },
+    };
+  }
+
+  private async leads(q: ReportQuery): Promise<ReportData> {
+    const rows = await this.prisma.main.lead.findMany({
+      where: {
+        ...(q.stage ? { stage: q.stage as never } : {}),
+        ...(q.q ? { name: { contains: q.q } } : {}),
+        ...this.dateRange(q),
+      },
+      include: { owner: { select: { name: true } }, lostReason: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: MAX_ROWS,
+    });
+    const stageCount = await this.prisma.main.lead.groupBy({ by: ["stage"], _count: true });
+    const summary = stageCount.map((s) => `${s.stage}: ${s._count}`).join(" | ");
+    return {
+      title: "Laporan Lead per Stage",
+      columns: ["Nama", "Stage", "Pemilik", "Nilai Estimasi", "Target Closing", "Alasan Lost", "Dibuat"],
+      note: summary,
+      rows: rows.map((r) => [
+        r.name,
+        r.stage,
+        r.owner.name,
+        r.estimatedValue ? Number(r.estimatedValue) : null,
+        r.targetClosing ? new Date(r.targetClosing).toLocaleDateString("id-ID") : "",
+        r.lostReason?.name ?? "",
+        new Date(r.createdAt).toLocaleDateString("id-ID"),
+      ]),
+    };
+  }
+
+  private async followups(q: ReportQuery): Promise<ReportData> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 86400000);
+    const where = {
+      ...(q.due === "overdue" ? { nextDate: { lt: today }, status: "TERJADWAL" as const } : {}),
+      ...(q.due === "today" ? { nextDate: { gte: today, lt: tomorrow } } : {}),
+      ...(q.q ? { notes: { contains: q.q } } : {}),
+      ...this.dateRange(q),
+    };
+    const rows = await this.prisma.main.followUp.findMany({
+      where,
+      include: {
+        lead: { select: { name: true } },
+        creator: { select: { name: true } },
+      },
+      orderBy: { nextDate: "asc" },
+      take: MAX_ROWS,
+    });
+    const dueCount = await this.prisma.main.followUp.count({
+      where: { status: "TERJADWAL", nextDate: { lt: tomorrow } },
+    });
+    return {
+      title: "Laporan Follow-up",
+      columns: ["Tanggal", "Jatuh Tempo", "Metode", "Lead", "Catatan", "Status", "Pembuat"],
+      note: `Follow-up terjadwal belum selesai (≤ hari ini): ${dueCount}`,
+      rows: rows.map((r) => [
+        new Date(r.date).toLocaleDateString("id-ID"),
+        r.nextDate ? new Date(r.nextDate).toLocaleDateString("id-ID") : "",
+        r.method,
+        r.lead?.name ?? "",
+        r.notes,
+        r.status,
+        r.creator?.name ?? "",
+      ]),
+    };
+  }
+
+  private async projects(q: ReportQuery): Promise<ReportData> {
+    const rows = await this.prisma.main.project.findMany({
+      where: {
+        ...(q.status ? { status: q.status as never } : {}),
+        ...(q.q ? { name: { contains: q.q } } : {}),
+        ...this.dateRange(q),
+      },
+      include: {
+        pic: { select: { name: true } },
+        customer: { select: { name: true } },
+        quotation: { select: { number: true, total: true } },
+      },
+      orderBy: { startDate: "desc" },
+      take: MAX_ROWS,
+    });
+    const counts = await this.prisma.main.project.groupBy({ by: ["status"], _count: true });
+    return {
+      title: "Laporan Project",
+      columns: ["Nama", "Customer", "PIC", "Status", "Pembayaran", "Mulai", "Selesai", "Nilai"],
+      note: counts.map((c) => `${c.status}: ${c._count}`).join(" | "),
+      rows: rows.map((r) => [
+        r.name,
+        r.customer?.name ?? "",
+        r.pic.name,
+        r.status,
+        r.paymentStatus,
+        new Date(r.startDate).toLocaleDateString("id-ID"),
+        r.endDate ? new Date(r.endDate).toLocaleDateString("id-ID") : "",
+        r.quotation ? `${r.quotation.number} — Rp${Number(r.quotation.total).toLocaleString("id-ID")}` : "",
+      ]),
+    };
+  }
+
+  private async deliveryNotes(q: ReportQuery): Promise<ReportData> {
+    const rows = await this.prisma.main.deliveryNote.findMany({
+      where: {
+        ...(q.status ? { status: q.status as never } : {}),
+        ...(q.q ? { number: { contains: q.q } } : {}),
+        ...this.dateRange(q, "date"),
+      },
+      include: {
+        creator: { select: { name: true } },
+        locations: { orderBy: { id: "asc" } },
+      },
+      orderBy: { date: "desc" },
+      take: MAX_ROWS,
+    });
+    const counts = await this.prisma.main.deliveryNote.groupBy({ by: ["status"], _count: true });
+    const items: ReportData["rows"] = [];
+    for (const r of rows) {
+      const approval = await this.approvals.getFor("SURAT_JALAN", r.id);
+      items.push([
+        r.number,
+        new Date(r.date).toLocaleDateString("id-ID"),
+        r.creator.name,
+        r.withGoods ? "Ya" : "Tidak",
+        r.status,
+        approval?.status ?? "-",
+        r.locations.map((l) => l.destination).join("; "),
+        "",
+      ]);
+    }
+    return {
+      title: "Laporan Surat Jalan Terbit",
+      columns: ["Nomor", "Tanggal", "Pembuat", "Bawa Barang", "Status", "Persetujuan", "Tujuan", "Penerima"],
+      note: counts.map((c) => `${c.status}: ${c._count}`).join(" | "),
+      rows: items,
+    };
+  }
+
+  private async stock(q: ReportQuery): Promise<ReportData> {
+    const summary = await this.movements.summary({
+      page: 1,
+      limit: MAX_ROWS,
+      dir: "desc",
+      ...(q.warehouseId ? { warehouseId: Number(q.warehouseId) } : {}),
+      ...(q.q ? { q: q.q } : {}),
+    });
+    const low = summary.items.filter((r) => r.lowStock).length;
+    const warehouses = await this.prisma.main.warehouse.findMany({ select: { id: true, name: true } });
+    const whName = new Map(warehouses.map((w) => [w.id, w.name]));
+    return {
+      title: "Laporan Stok per SKU per Gudang",
+      columns: [
+        "SKU",
+        "Produk",
+        "Gudang",
+        "Masuk",
+        "Keluar",
+        "Transfer Masuk",
+        "Transfer Keluar",
+        "Saldo",
+        "Min. Stok",
+        "Stok Menipis",
+      ],
+      note: `Produk di bawah stok minimum: ${low}`,
+      rows: summary.items.map((r) => [
+        r.sku,
+        r.name,
+        whName.get(r.warehouseId) ?? r.warehouseId,
+        r.masuk,
+        r.keluar,
+        r.transferMasuk,
+        r.transferKeluar,
+        r.saldo,
+        r.minStock,
+        r.lowStock ? "YA" : "",
+      ]),
+    };
+  }
+
+  private async expenses(q: ReportQuery): Promise<ReportData> {
+    const rows = await this.prisma.main.expense.findMany({
+      where: {
+        ...(q.status ? { status: q.status as never } : {}),
+        ...(q.q ? { description: { contains: q.q } } : {}),
+        ...this.dateRange(q, "date"),
+      },
+      include: {
+        reporter: { select: { name: true } },
+        category: { select: { name: true } },
+        project: { select: { name: true } },
+        costCenter: { select: { name: true } },
+      },
+      orderBy: { date: "desc" },
+      take: MAX_ROWS,
+    });
+    const counts = await this.prisma.main.expense.groupBy({ by: ["status"], _count: true });
+    const total = rows.reduce((s, r) => s + Number(r.amount), 0);
+    return {
+      title: "Laporan Pengeluaran",
+      columns: ["Tanggal", "Pelapor", "Kategori", "Deskripsi", "Jumlah", "Status", "Project", "Cost Center"],
+      note: `${counts.map((c) => `${c.status}: ${c._count}`).join(" | ")} | Total terpilih: Rp${total.toLocaleString("id-ID")}`,
+      rows: rows.map((r) => [
+        new Date(r.date).toLocaleDateString("id-ID"),
+        r.reporter.name,
+        r.category?.name ?? "",
+        r.description,
+        Number(r.amount),
+        r.status,
+        r.project?.name ?? "",
+        r.costCenter?.name ?? "",
+      ]),
+    };
+  }
+
+  private async approvalsReport(q: ReportQuery): Promise<ReportData> {
+    const rows = await this.prisma.main.approval.findMany({
+      where: {
+        ...(q.status ? { status: q.status as never } : {}),
+        ...(q.q ? { title: { contains: q.q } } : {}),
+        ...this.dateRange(q),
+      },
+      include: {
+        requested_by: { select: { name: true, role: true } },
+        steps: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: MAX_ROWS,
+    });
+    return {
+      title: "Laporan Dokumen Menunggu Persetujuan",
+      columns: ["Judul", "Jenis", "Nilai", "Status", "Pengaju", "Tgl Pengajuan", "Menunggu Peran"],
+      note: `Total: ${rows.length}`,
+      rows: rows.map((r) => [
+        r.title,
+        r.kind,
+        Number(r.amount),
+        r.status,
+        `${r.requested_by.name} (${r.requested_by.role})`,
+        new Date(r.createdAt).toLocaleDateString("id-ID"),
+        r.steps
+          .filter((s) => s.status === "MENUNGGU")
+          .map((s) => s.approverRole)
+          .join(", "),
+      ]),
+    };
+  }
+
+  async archiveList(q: { q?: string; year?: string; category?: string }) {
+    const db = this.prisma.archive;
+    const [leads, quotations, invoices, projects, movements, deliveryNotes, expenses] = await Promise.all([
+      db.lead.findMany({ include: { customer: { select: { name: true } } }, take: 100, orderBy: { createdAt: "desc" } }).catch(() => []),
+      db.quotation.findMany({ include: { customer: { select: { name: true } }, lead: { select: { name: true } } }, take: 100, orderBy: { createdAt: "desc" } }).catch(() => []),
+      db.invoiceOut.findMany({ include: { customer: { select: { name: true } } }, take: 100, orderBy: { date: "desc" } }).catch(() => []),
+      db.project.findMany({ include: { customer: { select: { name: true } } }, take: 100, orderBy: { createdAt: "desc" } }).catch(() => []),
+      db.stockMovement.findMany({ include: { product: { select: { name: true } }, fromWarehouse: { select: { name: true } }, toWarehouse: { select: { name: true } } }, take: 100, orderBy: { date: "desc" } }).catch(() => []),
+      db.deliveryNote.findMany({ include: { locations: { include: { project: { select: { name: true } } } }, creator: { select: { name: true } } }, take: 100, orderBy: { date: "desc" } }).catch(() => []),
+      db.expense.findMany({ include: { reporter: { select: { name: true } } }, take: 100, orderBy: { date: "desc" } }).catch(() => []),
+    ]);
+
+    const items = [
+      ...leads.map((l) => ({
+        id: `LD-ARCH-${l.id}`,
+        category: "Leads",
+        year: String(new Date(l.createdAt).getFullYear()),
+        title: l.name,
+        client: l.customer?.name || l.contactName || "-",
+        value: Number(l.estimatedValue) || 0,
+        status: l.stage,
+        archivedAt: new Date(l.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(l.createdAt).toISOString().slice(0, 10),
+      })),
+      ...quotations.map((qt) => ({
+        id: qt.number || `QUO-ARCH-${qt.id}`,
+        category: "Penawaran",
+        year: String(new Date(qt.createdAt).getFullYear()),
+        title: `Penawaran ${qt.lead?.name || qt.number}`,
+        client: qt.customer?.name || qt.lead?.name || "-",
+        value: Number(qt.grandTotal) || 0,
+        status: qt.status,
+        archivedAt: new Date(qt.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(qt.createdAt).toISOString().slice(0, 10),
+      })),
+      ...invoices.map((inv) => ({
+        id: inv.number || `INV-ARCH-${inv.id}`,
+        category: "Invoice",
+        year: String(new Date(inv.date).getFullYear()),
+        title: inv.description || inv.number,
+        client: inv.customer?.name || "-",
+        value: Number(inv.total) || 0,
+        status: inv.status,
+        archivedAt: new Date(inv.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(inv.date).toISOString().slice(0, 10),
+      })),
+      ...projects.map((p) => ({
+        id: `PRJ-ARCH-${p.id}`,
+        category: "Project",
+        year: String(new Date(p.createdAt).getFullYear()),
+        title: p.name,
+        client: p.customer?.name || "-",
+        value: 0,
+        status: p.status,
+        archivedAt: new Date(p.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(p.createdAt).toISOString().slice(0, 10),
+      })),
+      ...movements.map((m) => ({
+        id: `MOV-ARCH-${m.id}`,
+        category: "Mutasi Stok",
+        year: String(new Date(m.date).getFullYear()),
+        title: `${m.type} - ${m.product?.name || "Barang"} (${m.qty})`,
+        client: m.toWarehouse?.name || m.fromWarehouse?.name || "-",
+        value: 0,
+        status: m.type,
+        archivedAt: new Date(m.date).toISOString().slice(0, 10),
+        originalDate: new Date(m.date).toISOString().slice(0, 10),
+      })),
+      ...deliveryNotes.map((dn) => ({
+        id: dn.number || `SJ-ARCH-${dn.id}`,
+        category: "Surat Jalan",
+        year: String(new Date(dn.date).getFullYear()),
+        title: `Surat Jalan ${dn.locations?.[0]?.destination || dn.number}`,
+        client: dn.locations?.[0]?.project?.name || dn.locations?.[0]?.destination || dn.creator?.name || "-",
+        value: 0,
+        status: dn.status,
+        archivedAt: new Date(dn.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(dn.date).toISOString().slice(0, 10),
+      })),
+      ...expenses.map((ex) => ({
+        id: `EXP-ARCH-${ex.id}`,
+        category: "Pengeluaran",
+        year: String(new Date(ex.date).getFullYear()),
+        title: ex.description,
+        client: ex.reporter?.name || "-",
+        value: Number(ex.amount) || 0,
+        status: ex.status,
+        archivedAt: new Date(ex.updatedAt).toISOString().slice(0, 10),
+        originalDate: new Date(ex.date).toISOString().slice(0, 10),
+      })),
+    ];
+
+    return {
+      items: items.filter((item) => {
+        if (q.year && q.year !== "Semua" && item.year !== q.year) return false;
+        if (q.category && q.category !== "Semua" && item.category !== q.category) return false;
+        if (q.q) {
+          const search = q.q.toLowerCase();
+          return (
+            item.title.toLowerCase().includes(search) ||
+            item.client.toLowerCase().includes(search) ||
+            item.id.toLowerCase().includes(search)
+          );
+        }
+        return true;
+      }),
+    };
+  }
+}
+
