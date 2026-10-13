@@ -53,8 +53,7 @@ export default function NewExpenseScreen() {
       return;
     }
 
-    const uploaded = await fileHandle.current?.flush();
-    const fileId = uploaded?.[0]?.id;
+    const fileId = (await fileHandle.current?.flush()) ?? undefined;
 
     const row = {
       tanggal: tanggalNota,

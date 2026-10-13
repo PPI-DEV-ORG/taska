@@ -66,8 +66,7 @@ export default function NewPurchaseRequestScreen() {
     }
     setBusy(true);
     try {
-      const uploaded = await fileHandle.current?.flush();
-      const fileId = uploaded?.[0]?.id;
+      const fileId = (await fileHandle.current?.flush()) ?? undefined;
       addRow("purchase-requests", {
         nomor: `PR/${new Date().getFullYear()}/${Math.floor(Math.random() * 900) + 100}`,
         pemohon: user?.name || "Karyawan",

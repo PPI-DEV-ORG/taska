@@ -34,7 +34,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const status = def.statusKey ? String(row[def.statusKey] ?? "") : "";
   const approval = approvals.find((a) => a.module === moduleKey && a.refId === id && a.status === "Menunggu");
   const canDecide = !!approval && CAN_APPROVE.includes(user!.role);
-  const editableFields = def.createFields?.length ? def.createFields : def.fields.map((f) => ({ key: f.key, label: f.label, type: f.fmt === "rp" || f.fmt === "num" ? "number" as const : f.fmt === "date" ? "date" as const : "text" as const }));
+  const editableFields = def.createFields?.length ? def.createFields : def.fields.map((f) => ({ key: f.key, label: f.label, type: f.fmt === "rupiah" || f.fmt === "number" ? "number" as const : f.fmt === "date" ? "date" as const : "text" as const }));
 
   function pick(s: string) {
     setMenu(false);

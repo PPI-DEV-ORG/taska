@@ -4,8 +4,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { usePathname, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import {
-  Bell, Boxes, Camera, CheckSquare, CheckCheck, Ellipsis, FileSignature, KeyRound, ListChecks, LogOut, Menu, PanelLeftClose, Search,
+  Bell, Boxes, Camera, CheckSquare, CheckCheck, Ellipsis, FileSignature, KeyRound, ListChecks, LogOut, Menu, PanelLeftClose,
   Target, Truck, WifiOff,
+  Search,
 } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";

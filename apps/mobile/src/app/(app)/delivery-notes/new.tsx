@@ -36,8 +36,7 @@ export default function NewDeliveryNoteScreen() {
       return;
     }
 
-    const uploaded = await fileHandle.current?.flush();
-    const fileId = uploaded?.[0]?.id;
+    const fileId = (await fileHandle.current?.flush()) ?? undefined;
 
     const row = {
       nomor: `SJ/${new Date().getFullYear()}/${Math.floor(Math.random() * 800) + 100}`,

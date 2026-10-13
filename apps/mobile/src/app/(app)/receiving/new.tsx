@@ -32,8 +32,7 @@ export default function NewReceivingScreen() {
       toast("Pilih PO Supplier terlebih dahulu", "danger");
       return;
     }
-    const uploaded = await fileHandle.current?.flush();
-    const fileId = uploaded?.[0]?.id;
+    const fileId = (await fileHandle.current?.flush()) ?? undefined;
     const row = {
       nomor: `TB/${new Date().getFullYear()}/${Math.floor(Math.random() * 800) + 100}`,
       po: selectedPo,
@@ -41,7 +40,7 @@ export default function NewReceivingScreen() {
       supplier: po.supplier,
       item: `${po.item || "Barang PO"} (${qtyReceived} unit diterima)`,
       qty: Number(qtyReceived) || 1,
-      serials: scannedUnits.map((s) => s.code),
+      serials: scannedUnits.map((s) => s.sn),
       tanggal: tanggalTerima,
       penerima: user?.name || "Eko Saputra",
       status: "Diterima",
