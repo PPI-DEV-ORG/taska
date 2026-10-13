@@ -40,6 +40,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const message = exception instanceof Error ? exception.message : "Terjadi kesalahan";
     this.logger.error(`[500] ${route} — ${message}`, exception instanceof Error ? exception.stack : "");
+
+    if (res.headersSent) {
+      return;
+    }
+
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: "Terjadi kesalahan pada server",

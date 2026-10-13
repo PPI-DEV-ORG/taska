@@ -66,7 +66,7 @@ export class QuotationsController {
     );
     res.setHeader("Content-Length", buffer.length);
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
-    return res.send(buffer);
+    res.end(buffer);
   }
 
   @Public()
@@ -79,7 +79,7 @@ export class QuotationsController {
     );
     res.setHeader("Content-Length", buffer.length);
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
-    return res.send(buffer);
+    res.end(buffer);
   }
 
   @Get(":id")

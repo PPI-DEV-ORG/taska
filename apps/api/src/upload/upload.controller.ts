@@ -46,7 +46,7 @@ export class UploadController {
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Length", file.size);
     res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(file.name)}"`);
-    return res.send(file.buffer);
+    res.end(file.buffer);
   }
 
   @Get(":id/meta")
