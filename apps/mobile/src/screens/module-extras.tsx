@@ -49,7 +49,7 @@ import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 
-const PRICE_ROLES = ["procurement", "finance", "pm", "bos"];
+const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
 
 type DocPhotoItem = {
   id: number;
@@ -824,7 +824,7 @@ function LeadExtras({ row }: { row: Row }) {
   const [selectedLostReason, setSelectedLostReason] = React.useState(row.alasanLost || lostReasons[0]);
 
   const salesUsers: Row[] = (data.users ?? []).filter((u: Row) =>
-    ["sales", "pm", "bos", "admin"].includes(String(u.role)),
+    ["super_admin", "sales", "pm", "bos", "admin"].includes(String(u.role)),
   );
 
   async function handleAddFollowup() {
@@ -976,7 +976,7 @@ function LeadExtras({ row }: { row: Row }) {
         title="PIC & Kepemilikan Lead"
         subtitle="Setiap lead memiliki PIC Sales yang bertanggung jawab mengawal pipeline."
         right={
-          (user?.role === "bos" || user?.role === "admin" || user?.role === "sales") ? (
+          (user?.role === "super_admin" || user?.role === "bos" || user?.role === "admin" || user?.role === "sales") ? (
             <Button size="sm" variant="outline" onPress={() => setReassignOpen(true)}>
               <UserCheck size={14} color={colors.text} />
               <Text className="text-xs">Alihkan PIC</Text>
@@ -2003,16 +2003,39 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
     toast("Tanda terima lapangan berhasil dicatat. Status surat jalan kini 'Diterima'");
   }
 
+  const hasGoods = row.withGoods !== undefined ? Boolean(row.withGoods) : (row.barang && row.barang !== "-");
+
   return (
     <>
-      <Panel title="Barang yang Dibawa">
-        {row.barang === "-" ? (
+      <Panel
+        title="Barang yang Dibawa"
+        subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN" : "Surat jalan penugasan tanpa barang"}
+        right={
+          (user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang") && !isDelivered ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => {
+                const next = !hasGoods;
+                patchRow("delivery-notes", row.id, {
+                  withGoods: next,
+                  barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
+                });
+                toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
+              }}
+            >
+              <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
+            </Button>
+          ) : undefined
+        }
+      >
+        {!hasGoods ? (
           <Text className="text-muted-foreground text-sm">Surat jalan ini untuk penugasan tanpa barang.</Text>
         ) : (
           <>
-            <Line left={row.barang} sub="Barang ber-SN wajib di-scan sebelum berangkat" />
-            {user!.role === "gudang" || user!.role === "bos" ? (
-              <View className="mt-3"><ScanInput /></View>
+            <Line left={row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional"} sub="Barang ber-SN wajib di-scan sebelum berangkat" />
+            {user!.role === "super_admin" || user!.role === "gudang" || user!.role === "bos" ? (
+              <View className="mt-3"><ScanInput existing={Array.isArray(row.snList) ? row.snList : []} /></View>
             ) : null}
           </>
         )}
@@ -2022,7 +2045,7 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
         title="Laporan Hasil Kunjungan & Serah Terima Lapangan"
         subtitle="Dokumentasi penerimaan barang di lokasi klien beserta tanda tangan atau foto bukti."
         right={
-          !isDelivered && (user!.role === "teknisi" || user!.role === "pm" || user!.role === "bos") ? (
+          !isDelivered && (user!.role === "super_admin" || user!.role === "teknisi" || user!.role === "pm" || user!.role === "bos") ? (
             <Button size="sm" onPress={() => setHandoverOpen(true)} className="flex-row items-center gap-1">
               <CheckCircle2 size={14} color={colors.background} />
               <Text className="text-xs">Catat Tanda Terima</Text>
@@ -2405,7 +2428,7 @@ function InvoiceExtras({ row }: { row: Row }) {
       <Panel
         title="Ringkasan Pembayaran Invoice"
         right={
-          (user?.role === "finance" || user?.role === "bos" || user?.role === "admin") && sisa > 0 ? (
+          (user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin") && sisa > 0 ? (
             <Button variant="outline" size="sm" onPress={openPayModal}>
               <Plus size={14} color={colors.text} />
               <Text className="text-xs">Catat Pembayaran</Text>
@@ -2556,7 +2579,7 @@ function SupplierPoExtras({ row }: { row: Row }) {
             <Text className={i <= cur ? "text-sm font-medium" : "text-muted-foreground text-sm"}>{s}</Text>
           </View>
         ))}
-        {(user!.role === "procurement" || user!.role === "bos" || user!.role === "admin") && cur < 2 && steps[cur + 1] ? (
+        {(user!.role === "super_admin" || user!.role === "procurement" || user!.role === "bos" || user!.role === "admin") && cur < 2 && steps[cur + 1] ? (
           <Button
             className="mt-2 self-start"
             variant="outline"
@@ -2599,7 +2622,7 @@ function SupplierPoExtras({ row }: { row: Row }) {
                   left={`${inv.nomor} · Jatuh tempo ${inv.jatuhTempo}`}
                   sub={`Dibayar: ${rupiah(inv.terbayar || 0)} dari ${rupiah(inv.total || 0)} (${inv.status})`}
                   right={
-                    !lunas && (user?.role === "finance" || user?.role === "bos" || user?.role === "admin") ? (
+                    !lunas && (user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin") ? (
                       <Button size="sm" variant="outline" onPress={() => handlePaySupplierInvoice(inv)}>
                         <Text className="text-xs">Lunasi</Text>
                       </Button>

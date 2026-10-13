@@ -11,6 +11,7 @@ import { useApp } from "@/store/app-store";
 import { colors, BOS_THRESHOLD } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { api } from "@/services/api";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import type { CreateField, ModuleDef, Row } from "@/constants/modules";
 
@@ -453,8 +454,19 @@ export function FormDialog({
   const [prevOpen, setPrevOpen] = React.useState(open);
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
+  const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
   const fileHandles = React.useRef<(FileUploaderHandle | null)[]>([]);
   const fileHandleAt = (i: number) => (h: FileUploaderHandle | null) => { fileHandles.current[i] = h; };
+
+  React.useEffect(() => {
+    if (open && (!data.users || data.users.length === 0)) {
+      api<any[]>("GET", "/users/options")
+        .then((res) => {
+          if (Array.isArray(res) && res.length) setFallbackUsers(res);
+        })
+        .catch(() => {});
+    }
+  }, [open, data.users]);
 
   const fields = customFields ?? def?.createFields ?? [];
 
@@ -532,15 +544,25 @@ export function FormDialog({
           return nonEmpty((data.expenseCategories ?? []).map((r) => String(r.nama)).filter(Boolean), f.options);
         }
         return nonEmpty((data.productCategories ?? []).map((r) => String(r.nama)).filter(Boolean), f.options);
-      case "tim":
+      case "tim": {
+        const userList = (data.users && data.users.length > 0) ? data.users : fallbackUsers;
         return nonEmpty(
-          (data.users ?? []).map((u) => `${u.name}${u.roleLabel ? ` (${u.roleLabel})` : ""}`).filter(Boolean),
+          userList
+            .map((u: any) => {
+              const nm = u.name || u.nama;
+              const rl = u.roleLabel || u.peran || (u.role ? (u.role.charAt(0).toUpperCase() + u.role.slice(1).toLowerCase()) : "");
+              return nm ? `${nm}${rl ? ` (${rl})` : ""}` : "";
+            })
+            .filter(Boolean),
           f.options
         );
+      }
       case "pm":
       case "pemilik":
-      case "pic":
-        return nonEmpty((data.users ?? []).map((u) => String(u.name)).filter(Boolean), f.options);
+      case "pic": {
+        const userList = (data.users && data.users.length > 0) ? data.users : fallbackUsers;
+        return nonEmpty(userList.map((u: any) => String(u.name || u.nama || "")).filter(Boolean), f.options);
+      }
       default:
         return f.options;
     }

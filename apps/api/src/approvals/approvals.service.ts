@@ -205,12 +205,12 @@ export class ApprovalsService {
 
     const items: unknown[] = [];
     for (const r of rows) {
-      if (r.requestedById === user.id) continue;
+      if (user.role !== "SUPER_ADMIN" && r.requestedById === user.id) continue;
       const status = await this.evaluate(r);
       if (status !== "MENUNGGU") continue;
       const pendingSteps = r.steps.filter((s) => s.status === "MENUNGGU");
       const relevant =
-        user.role === "ADMIN"
+        user.role === "SUPER_ADMIN" || user.role === "ADMIN"
           ? pendingSteps
           : pendingSteps.filter((s) => s.approverRole === (user.role as Role));
       if (!relevant.length) continue;
@@ -227,14 +227,14 @@ export class ApprovalsService {
     if (!approval) throw new NotFoundException("Dokumen tidak ditemukan");
 
     if (approval.status !== "MENUNGGU") throw new ConflictException("Dokumen sudah diputuskan");
-    if (approval.requestedById === user.id) {
+    if (user.role !== "SUPER_ADMIN" && approval.requestedById === user.id) {
       throw new ForbiddenException("Pembuat dokumen tidak boleh menyetujui dokumennya sendiri");
     }
 
     const pending = approval.steps.filter((s) => s.status === "MENUNGGU");
     let step =
       pending.find((s) => s.approverRole === (user.role as Role)) ??
-      (user.role === "ADMIN" ? pending[0] : undefined);
+      (user.role === "SUPER_ADMIN" || user.role === "ADMIN" ? pending[0] : undefined);
     if (!step) throw new ForbiddenException(`Peran ${user.role} bukan penyetuju dokumen ini`);
 
     await this.prisma.main.approvalStep.update({

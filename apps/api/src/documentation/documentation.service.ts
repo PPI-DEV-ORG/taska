@@ -146,7 +146,7 @@ export class DocumentationService {
     if (!row) throw new NotFoundException("Foto dokumentasi tidak ditemukan");
     const kind = row.entityType as DocKind;
     const isUploader = row.file.uploadedById === user.id;
-    if (!isUploader && !["ADMIN", "BOS"].includes(user.role)) {
+    if (!isUploader && !["SUPER_ADMIN", "ADMIN", "BOS"].includes(user.role)) {
       this.assert(kind, user, "U");
     }
     await this.prisma.main.documentationPhoto.delete({ where: { id } });

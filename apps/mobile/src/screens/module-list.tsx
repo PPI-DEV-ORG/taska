@@ -24,6 +24,7 @@ const CREATE: Record<string, Role[]> = {
 };
 
 export function canCreate(def: ModuleDef, role: Role) {
+  if (role === "super_admin") return !!(def.newHref || def.createFields);
   // PRD Aturan: Bos / Admin hanya melihat dan menyetujui, tanpa tombol buat, ubah, atau hapus
   if ((role === "bos" || role === "admin") && def.key !== "users") return false;
   return (def.createRoles ?? CREATE[def.key] ?? []).includes(role) && !!(def.newHref || def.createFields);
@@ -48,6 +49,7 @@ const DELETE: Record<string, Role[]> = {
 };
 
 function canDelete(def: ModuleDef, role: Role) {
+  if (role === "super_admin") return true;
   return (DELETE[def.key] ?? []).includes(role);
 }
 
@@ -61,6 +63,7 @@ function rowLabel(def: ModuleDef, row: Row): string {
 
 /** Batasi data yang dilihat per role (aturan lihat data di prompt bagian 6). */
 export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
+  if (u.role === "super_admin") return rows;
   const mine = (v: unknown) => String(v ?? "").includes(u.name);
   switch (def.key) {
     case "quotations":

@@ -136,6 +136,7 @@ export function toEnum(map: string, label: string | null | undefined): string {
 }
 
 const ROLE_UI: Record<string, Role> = {
+  SUPER_ADMIN: "super_admin",
   ADMIN: "admin", BOS: "bos", SALES: "sales", PM: "pm", TEKNISI: "teknisi",
   PROCUREMENT: "procurement", FINANCE: "finance", GUDANG: "gudang", SE: "se",
 };
@@ -145,7 +146,10 @@ for (const [k, v] of Object.entries(ROLE_UI)) ROLE_FROM_UI[v] = k;
 // Form users mengirim label Indonesia (roleLabel) → enum backend.
 // "Admin / Bos" dipetakan ke BOS (akses penuh, sesuai makna label gabungan).
 const ROLE_FROM_LABEL: Record<string, string> = {
+  "Super Admin": "SUPER_ADMIN",
   "Admin / Bos": "BOS",
+  Admin: "ADMIN",
+  Bos: "BOS",
   Sales: "SALES",
   "Project Manager": "PM",
   Teknisi: "TEKNISI",
@@ -172,13 +176,16 @@ export function roleToUi(role: string | undefined): Role {
 
 export function apiUserToRow(u: ApiUser): User {
   const role = roleToUi(u.role);
+  const roleLabel = roleLabelOf(u.role);
   return {
     id: String(u.id),
     name: u.name,
-    email: u.email,
+    nama: u.name,
+    email: u.email ?? "",
     role,
-    roleLabel: roleLabelOf(u.role),
-    status: toLabel("users", u.status),
+    roleLabel,
+    peran: roleLabel,
+    status: u.status ? toLabel("users", u.status) : "Aktif",
     gudang: u.warehouseId != null ? String(u.warehouseId) : "-",
     phone: u.phone ?? "",
     position: u.position ?? "",

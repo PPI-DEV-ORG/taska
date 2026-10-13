@@ -6,8 +6,8 @@ import type { RequestUser } from "../common/decorators/current-user.decorator.js
 import { ProjectsService } from "./projects.service.js";
 import { AssignDto, TaskDto, TaskStatusDto } from "./dto.js";
 
-const MANAGER_ROLES = ["PM", "ADMIN", "BOS"];
-const ASSIGNEE_ROLES = ["PM", "SE", "TEKNISI"];
+const MANAGER_ROLES = ["PM", "ADMIN", "BOS", "SUPER_ADMIN"];
+const ASSIGNEE_ROLES = ["PM", "SE", "TEKNISI", "SUPER_ADMIN"];
 
 @Injectable()
 export class TasksService {
@@ -85,7 +85,7 @@ export class TasksService {
     });
     if (!task) throw new NotFoundException("Task tidak ditemukan");
     if (
-      !["ADMIN", "BOS", "PM"].includes(user.role) &&
+      !["SUPER_ADMIN", "ADMIN", "BOS", "PM"].includes(user.role) &&
       task.assigneeId !== user.id &&
       task.project.picId !== user.id
     ) {
@@ -254,7 +254,7 @@ export class TasksService {
 
   /** PRD #17: Admin memindahkan task ke orang lain. */
   async reassign(id: number, dto: AssignDto, user: RequestUser) {
-    if (!["ADMIN", "BOS", "PM"].includes(user.role)) {
+    if (!["SUPER_ADMIN", "ADMIN", "BOS", "PM"].includes(user.role)) {
       throw new ForbiddenException("Hanya Admin, Bos, atau PM yang boleh memindahkan task");
     }
     const task = await this.prisma.main.task.findUnique({ where: { id } });

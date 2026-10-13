@@ -320,6 +320,7 @@ export class DeliveryService {
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
     const allowed =
       row.creatorId === user.id ||
+      user.role === "SUPER_ADMIN" ||
       user.role === "ADMIN" ||
       can(user.role, "delivery", "U");
     if (!allowed) throw new ForbiddenException("Hanya pembuat, Gudang, atau Admin yang dapat mengisi laporan");

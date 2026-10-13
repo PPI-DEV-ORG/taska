@@ -140,10 +140,16 @@ async function fetchList(module: string): Promise<Row[]> {
   if (!path) return [];
   try {
     const res = await api<Page<any>>("GET", `${path}?limit=200`);
-    return adaptRows(module, res.items);
-  } catch {
-    return [];
+    const rows = adaptRows(module, res.items);
+    if (rows.length > 0 || module !== "users") return rows;
+  } catch {}
+  if (module === "users") {
+    try {
+      const opts = await api<any[]>("GET", "/users/options");
+      return adaptRows("users", Array.isArray(opts) ? opts : []);
+    } catch {}
   }
+  return [];
 }
 
 async function fetchTasks(projects: Row[]): Promise<Row[]> {

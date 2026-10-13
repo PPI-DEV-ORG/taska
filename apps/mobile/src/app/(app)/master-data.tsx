@@ -139,14 +139,15 @@ export default function MasterDataScreen() {
     })();
   }, []);
 
-  const canAddKategori = user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
-  const canAddBarang = user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
-  const canAddGudang = user?.role === "procurement" || user?.role === "bos" || user?.role === "admin";
-  const canAddLeadSource = user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
-  const canAddLostReason = user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
-  const canAddExpenseCat = user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
-  const canAddCostCenter = user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
-  const canEditSettings = user?.role === "bos" || user?.role === "admin";
+  const isSuper = user?.role === "super_admin";
+  const canAddKategori = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
+  const canAddBarang = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
+  const canAddGudang = isSuper || user?.role === "procurement" || user?.role === "bos" || user?.role === "admin";
+  const canAddLeadSource = isSuper || user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
+  const canAddLostReason = isSuper || user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
+  const canAddExpenseCat = isSuper || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
+  const canAddCostCenter = isSuper || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
+  const canEditSettings = isSuper || user?.role === "bos" || user?.role === "admin";
 
   function handleSaveKategori() {
     if (!kategoriNama.trim()) {
@@ -1081,7 +1082,7 @@ export default function MasterDataScreen() {
   ];
 
   const visibleCards = ALL_MASTER_CARDS.filter((card) =>
-    user ? card.roles.includes(user.role) : false
+    user ? user.role === "super_admin" || card.roles.includes(user.role) : false
   );
 
   return (

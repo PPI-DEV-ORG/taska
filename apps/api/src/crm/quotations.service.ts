@@ -706,7 +706,7 @@ export class QuotationsService {
       include: { lead: true },
     });
     if (!row) throw new NotFoundException("Penawaran tidak ditemukan");
-    if (["ADMIN", "BOS", "PM", "FINANCE", "SALES"].includes(user.role) || row.ownerId === user.id) return row;
+    if (["SUPER_ADMIN", "ADMIN", "BOS", "PM", "FINANCE", "SALES"].includes(user.role) || row.ownerId === user.id) return row;
     throw new ForbiddenException("Hanya pemilik penawaran, PM, atau Admin yang boleh mengubahnya");
   }
 

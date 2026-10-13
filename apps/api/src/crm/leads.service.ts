@@ -134,7 +134,7 @@ export class LeadsService {
     const current = await this.prisma.main.lead.findUnique({ where: { id } });
     if (!current) throw new NotFoundException("Lead tidak ditemukan");
 
-    if (current.owner_id !== user.id && !["ADMIN", "BOS", "PM", "SALES"].includes(user.role)) {
+    if (current.owner_id !== user.id && !["SUPER_ADMIN", "ADMIN", "BOS", "PM", "SALES"].includes(user.role)) {
       throw new ForbiddenException("Hanya pemilik lead atau Admin yang boleh mengubahnya");
     }
 
@@ -204,7 +204,7 @@ export class LeadsService {
 
   /** Reassign oleh Admin (PRD #17). */
   async reassign(id: number, ownerId: number, user: RequestUser) {
-    if (!["ADMIN", "BOS"].includes(user.role)) {
+    if (!["SUPER_ADMIN", "ADMIN", "BOS"].includes(user.role)) {
       throw new ForbiddenException("Hanya Admin atau Bos yang boleh memindahkan kepemilikan");
     }
     const target = await this.prisma.main.user.findUnique({ where: { id: ownerId } });
@@ -240,7 +240,7 @@ export class LeadsService {
       },
     });
     if (!lead) throw new NotFoundException("Lead tidak ditemukan");
-    if (lead.owner_id !== user.id && !["ADMIN", "BOS", "PM"].includes(user.role)) {
+    if (lead.owner_id !== user.id && !["SUPER_ADMIN", "ADMIN", "BOS", "PM"].includes(user.role)) {
       throw new ForbiddenException("Hanya pemilik lead atau Admin yang boleh menghapusnya");
     }
 

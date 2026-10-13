@@ -42,7 +42,20 @@ async function main() {
     },
   });
 
-  console.log(`Seed OK: ${bos.email} (BOS, id=${bos.id}), ${admin.email} (ADMIN, id=${admin.id})`);
+  const superAdmin = await prisma.user.upsert({
+    where: { email: "superadmin@taska.co.id" },
+    update: { passwordHash },
+    create: {
+      email: "superadmin@taska.co.id",
+      passwordHash,
+      name: "Super Admin",
+      position: "Super Administrator",
+      role: "SUPER_ADMIN",
+      status: "AKTIF",
+    },
+  });
+
+  console.log(`Seed OK: ${superAdmin.email} (SUPER_ADMIN, id=${superAdmin.id}), ${bos.email} (BOS, id=${bos.id}), ${admin.email} (ADMIN, id=${admin.id})`);
   await prisma.$disconnect();
 }
 
