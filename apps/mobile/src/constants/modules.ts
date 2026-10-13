@@ -618,9 +618,10 @@ export const MODULES: Record<string, ModuleDef> = {
     key: "users", title: "Pengguna dan role", singular: "Pengguna", icon: UserCog, idPrefix: "U",
     columns: [
       { key: "name", label: "Nama", primary: true, flex: 1.5 },
-      { key: "email", label: "Email", flex: 2 },
+      { key: "email", label: "Email", flex: 1.8 },
+      { key: "phone", label: "Nomor Telepon", flex: 1.5 },
       { key: "roleLabel", label: "Role" },
-      { key: "gudang", label: "Gudang", flex: 1.5 },
+      { key: "gudang", label: "Gudang", flex: 1.2 },
       { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
