@@ -1,13 +1,16 @@
 import * as SecureStore from "expo-secure-store";
 
-const FALLBACK_BASE = "http://localhost:3000/api";
+const FALLBACK_BASE = "http://localhost:3030/api";
 
 export function apiBase(): string {
-  const fromEnv =
-    (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
-    (typeof globalThis !== "undefined" && (globalThis as any).process?.env?.EXPO_PUBLIC_API_URL) ||
-    "";
-  const base = (fromEnv || FALLBACK_BASE).replace(/\/+$/, "");
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL || "";
+  let base = (fromEnv || FALLBACK_BASE).replace(/\/+$/, "");
+  if (typeof window !== "undefined" && window.location?.hostname) {
+    const host = window.location.hostname;
+    if (host !== "localhost" && host !== "127.0.0.1") {
+      base = base.replace("://localhost", `://${host}`).replace("://127.0.0.1", `://${host}`);
+    }
+  }
   return base;
 }
 
