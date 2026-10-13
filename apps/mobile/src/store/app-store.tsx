@@ -3,12 +3,12 @@ import { Platform } from "react-native";
 import { colorScheme } from "nativewind";
 import { MODULES, ROLE_LABEL, type Notif, type Row, type User } from "@/constants/modules";
 import { ToastHost, type ToastItem } from "@/components/taska/toast";
-import { api, getAccess, setTokens, clearTokens, hydrateTokens } from "@/services/api";
+import { api, getAccess, setTokens, clearTokens, hydrateTokens, isNetworkError } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
 import { ensureNotifPermission, showSystemNotification } from "@/services/notify";
 import { setThemePalette } from "@/tokens";
 import {
-  PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow,
+  PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow, normalizeNotifHref,
   apiUserToRow, buildCreateBody, buildPatchBody, buildStatusBody, statusEnumFor,
   type ApiUser, type ApprovalRow, type Page,
 } from "@/services/adapters";
@@ -49,6 +49,41 @@ export type DB = {
 
 export type HistoryItem = { id: string; who: string; what: string; when: string };
 
+export type OfflineQueueItem = {
+  qid: string;
+  kind: "add" | "patch" | "status";
+  module: string;
+  id?: string;
+  tempId?: string;
+  payload: Record<string, any>;
+  status?: string;
+  note?: string;
+  createdAt: string;
+};
+
+const STORAGE_QUEUE_KEY = "taska.offline.queue.v1";
+const STORAGE_CACHE_DB_KEY = "taska.offline.db.v1";
+const STORAGE_CACHE_USER_KEY = "taska.offline.user.v1";
+
+function readStorageJson<T>(key: string, fallback: T): T {
+  if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) return JSON.parse(raw) as T;
+    } catch {}
+  }
+  return fallback;
+}
+
+function writeStorageJson(key: string, val: unknown) {
+  if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
+    try {
+      if (val === null || val === undefined) window.localStorage.removeItem(key);
+      else window.localStorage.setItem(key, JSON.stringify(val));
+    } catch {}
+  }
+}
+
 type Ctx = {
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
@@ -71,6 +106,8 @@ type Ctx = {
   toast: (msg: string, tone?: ToastItem["tone"]) => void;
   offline: boolean;
   setOffline: (v: boolean) => void;
+  pendingSyncCount: number;
+  syncOfflineQueue: () => Promise<void>;
   reload: () => Promise<void>;
   hydrated: boolean;
   theme: "dark" | "light";
@@ -148,21 +185,63 @@ function applyDomTheme(mode: "dark" | "light") {
   }
 }
 
+/** Terapkan antrean item `add` yang belum terkirim di atas state DB agar tetap muncul meski halaman di-refresh. */
+function overlayPendingAdds(base: DB, queue: OfflineQueueItem[]): DB {
+  if (!queue.length) return base;
+  const copy: DB = { ...base };
+  for (const item of queue) {
+    if (item.kind === "add" && item.tempId) {
+      const existing: Row[] = Array.isArray(copy[item.module]) ? copy[item.module] : [];
+      if (!existing.some((r) => r.id === item.tempId)) {
+        copy[item.module] = [{ id: item.tempId, _offlinePending: true, ...item.payload }, ...existing];
+      }
+    } else if (item.kind === "patch" && item.id) {
+      const existing: Row[] = Array.isArray(copy[item.module]) ? copy[item.module] : [];
+      copy[item.module] = existing.map((r) => (r.id === item.id ? { ...r, ...item.payload } : r));
+    } else if (item.kind === "status" && item.id && item.status) {
+      const key = MODULES[item.module]?.statusKey || "status";
+      const existing: Row[] = Array.isArray(copy[item.module]) ? copy[item.module] : [];
+      copy[item.module] = existing.map((r) => (r.id === item.id ? { ...r, [key]: item.status } : r));
+    }
+  }
+  return copy;
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<"dark" | "light">(() => {
     const initial = readInitialTheme();
     setThemePalette(initial);
     return initial;
   });
-  const [user, setUser] = React.useState<User | null>(null);
-  const [data, setData] = React.useState<DB>(emptyDB);
+  const [user, setUser] = React.useState<User | null>(() => readStorageJson<User | null>(STORAGE_CACHE_USER_KEY, null));
+  const [data, setData] = React.useState<DB>(() => {
+    const cached = readStorageJson<DB | null>(STORAGE_CACHE_DB_KEY, null);
+    const q = readStorageJson<OfflineQueueItem[]>(STORAGE_QUEUE_KEY, []);
+    return overlayPendingAdds(cached ?? emptyDB(), q);
+  });
   const [hist, setHist] = React.useState<Record<string, HistoryItem[]>>({});
   const [approvals, setApprovals] = React.useState<ApprovalRow[]>([]);
   const [notifs, setNotifs] = React.useState<Notif[]>([]);
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
-  const [offline, setOffline] = React.useState(false);
+  const [offline, setOffline] = React.useState<boolean>(() => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+    return false;
+  });
+  const [pendingQueue, setPendingQueue] = React.useState<OfflineQueueItem[]>(() =>
+    readStorageJson<OfflineQueueItem[]>(STORAGE_QUEUE_KEY, []),
+  );
   const [hydrated, setHydrated] = React.useState(false);
   const seq = React.useRef(100);
+  const syncingRef = React.useRef(false);
+
+  const offlineQueueRef = React.useRef<OfflineQueueItem[]>(pendingQueue);
+
+  const updateOfflineQueue = React.useCallback((updater: (prev: OfflineQueueItem[]) => OfflineQueueItem[]) => {
+    const next = updater(offlineQueueRef.current);
+    offlineQueueRef.current = next;
+    setPendingQueue(next);
+    writeStorageJson(STORAGE_QUEUE_KEY, next);
+  }, []);
 
   React.useEffect(() => {
     applyDomTheme(theme);
@@ -221,10 +300,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     for (const [m, rows] of pairs) (next as any)[m] = rows;
     next.tasks = taskRows;
     next.stockSummary = stockRes?.items ?? [];
-    setData(next);
+    writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+    const withOffline = overlayPendingAdds(next, offlineQueueRef.current);
+    setData(withOffline);
     setApprovals(appr);
     setNotifs(adaptNotifList(notifRes?.items));
-    return next;
+    return withOffline;
   }, []);
 
   const login = React.useCallback(
@@ -236,6 +317,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const u = apiUserToRow(res.user);
       u.roleLabel = ROLE_LABEL[u.role] ?? u.role;
       setUser(u);
+      writeStorageJson(STORAGE_CACHE_USER_KEY, u);
+      setOffline(false);
       await loadAll();
       // minta izin notifikasi saat masih dalam gestur tap login (iOS perlu gesture)
       void ensureNotifPermission();
@@ -245,6 +328,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const logout = React.useCallback(() => {
     void clearTokens();
+    writeStorageJson(STORAGE_CACHE_USER_KEY, null);
     setUser(null);
     setData(emptyDB());
     setApprovals([]);
@@ -263,6 +347,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         u.roleLabel = ROLE_LABEL[u.role] ?? u.role;
         if (patch.avatarUrl && !u.avatarUrl) u.avatarUrl = patch.avatarUrl;
         setUser(u);
+        writeStorageJson(STORAGE_CACHE_USER_KEY, u);
         toast("Profil berhasil diperbarui");
       } catch (e: any) {
         toast(e?.message ?? "Gagal memperbarui profil", "danger");
@@ -304,9 +389,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const u = apiUserToRow(me);
         u.roleLabel = ROLE_LABEL[u.role] ?? u.role;
         setUser(u);
+        writeStorageJson(STORAGE_CACHE_USER_KEY, u);
+        setOffline(false);
         await loadAll();
-      } catch {
-        void clearTokens();
+        void ensureNotifPermission();
+      } catch (err: any) {
+        if (isNetworkError(err)) {
+          // Server sedang mati/down, pertahankan sesi lokal & aktifkan mode offline
+          if (alive) {
+            setOffline(true);
+            const cachedUser = readStorageJson<User | null>(STORAGE_CACHE_USER_KEY, null);
+            if (cachedUser) setUser(cachedUser);
+          }
+        } else {
+          void clearTokens();
+          writeStorageJson(STORAGE_CACHE_USER_KEY, null);
+        }
       } finally {
         if (alive) setHydrated(true);
       }
@@ -314,12 +412,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => { alive = false; };
   }, [loadAll]);
 
-  // poll notifications when logged in (fallback when socket.io unavailable)
+  // Browser online/offline event listener + auto-ping API ketika offline atau ada antrean
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onBrowserOffline = () => setOffline(true);
+    const onBrowserOnline = () => {
+      void (async () => {
+        try {
+          await api("GET", "/auth/me");
+          setOffline(false);
+        } catch {}
+      })();
+    };
+    window.addEventListener("offline", onBrowserOffline);
+    window.addEventListener("online", onBrowserOnline);
+    return () => {
+      window.removeEventListener("offline", onBrowserOffline);
+      window.removeEventListener("online", onBrowserOnline);
+    };
+  }, []);
+
+  // Poll health API setiap 6 detik saat offline atau saat ada antrean yang belum terkirim
   React.useEffect(() => {
     if (!user) return;
+    if (!offline && pendingQueue.length === 0) return;
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          await api("GET", "/auth/me");
+          setOffline(false);
+        } catch (err: any) {
+          if (isNetworkError(err)) {
+            setOffline(true);
+          }
+        }
+      })();
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [user, offline, pendingQueue.length]);
+
+  // poll notifications when logged in (fallback when socket.io unavailable)
+  React.useEffect(() => {
+    if (!user || offline) return;
     const id = setInterval(() => { void refreshNotifs(); }, 30000);
     return () => clearInterval(id);
-  }, [user, refreshNotifs]);
+  }, [user, offline, refreshNotifs]);
 
   // realtime: data-change → refresh tabel; notification → notif + OS/browser notif
   const refreshModuleRef = React.useRef<((m: string) => Promise<Row[]>) | null>(null);
@@ -337,7 +474,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const handleDataChange = async (c: WsDataChange) => {
       if (!c?.module) return;
-      // refresh modul eager; tasks & stockSummary perlu fetch khusus
       const eager = (EAGER_MODULES as readonly string[]).includes(c.module);
       if (eager) {
         await refreshModuleRef.current?.(c.module);
@@ -355,21 +491,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const handleNotification = async (n: WsNotification) => {
       if (!mounted) return;
-      // kind backend = enum NotifKind (APPROVAL|STOK|PENGIRIMAN|LEAD|TUGAS|SURAT|LAINNYA)
       const WS_KIND: Record<string, Notif["jenis"]> = {
         APPROVAL: "approval", STOK: "stok", PENGIRIMAN: "pengiriman",
         LEAD: "lead", TUGAS: "tugas", SURAT: "surat", LAINNYA: "approval",
       };
+      const notifId = n.id != null ? String(n.id) : `ws-${Date.now()}`;
       const notif: Notif = {
-        id: n.id != null ? String(n.id) : `ws-${Date.now()}`,
+        id: notifId,
         jenis: WS_KIND[n.kind] ?? "approval",
         teks: n.text ?? "",
         waktu: new Date().toISOString(),
         baca: false,
-        href: n.href ?? "",
+        href: normalizeNotifHref(n.href),
         roles: "all",
       };
-      setNotifs((l) => [notif, ...l].slice(0, 100));
+      setNotifs((l) => [notif, ...l.filter((x) => x.id !== notifId)].slice(0, 100));
       void showSystemNotification({ notif });
       toast(n.text, "info");
     };
@@ -404,11 +540,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (module === "tasks") {
       const projects = await fetchList("projects");
       const taskRows = await fetchTasks(projects);
-      setData((d) => ({ ...d, projects, tasks: taskRows }));
+      setData((d) => {
+        const next = overlayPendingAdds({ ...d, projects, tasks: taskRows }, offlineQueueRef.current);
+        writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+        return next;
+      });
       return taskRows;
     }
     const rows = await fetchList(module);
-    setData((d) => ({ ...d, [module]: rows }));
+    setData((d) => {
+      const next = overlayPendingAdds({ ...d, [module]: rows }, offlineQueueRef.current);
+      writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+      return next;
+    });
     return rows;
   }, []);
 
@@ -416,7 +560,92 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshModuleRef.current = refreshModule;
   }, [refreshModule]);
 
-  const offlineQueueRef = React.useRef<{ kind: "add" | "patch"; module: string; id?: string; payload: Record<string, any> }[]>([]);
+  const enqueueOfflineAdd = React.useCallback(
+    (module: string, row: Record<string, any>): Row => {
+      const tempId = `offline-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const localRow: Row = { id: tempId, _offlinePending: true, ...row };
+      updateOfflineQueue((prev) => [
+        ...prev,
+        {
+          qid: tempId,
+          kind: "add",
+          module,
+          tempId,
+          payload: row,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      setData((d) => {
+        const next = { ...d, [module]: [localRow, ...(d[module] ?? [])] };
+        writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+        return next;
+      });
+      toast(
+        `Server sedang offline. ${MODULES[module]?.singular ?? "Data"} disimpan di browser & otomatis dikirim saat online.`,
+        "info",
+      );
+      return localRow;
+    },
+    [toast, updateOfflineQueue],
+  );
+
+  const enqueueOfflinePatch = React.useCallback(
+    (module: string, id: string, patch: Record<string, any>) => {
+      updateOfflineQueue((prev) => {
+        // Jika baris yang di-patch masih berada di antrean add offline, gabungkan langsung ke payload add
+        const addIdx = prev.findIndex((x) => x.kind === "add" && x.tempId === id && x.module === module);
+        if (addIdx >= 0) {
+          const copy = [...prev];
+          const target = copy[addIdx]!;
+          copy[addIdx] = { ...target, payload: { ...target.payload, ...patch } };
+          return copy;
+        }
+        return [
+          ...prev,
+          {
+            qid: `patch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            kind: "patch",
+            module,
+            id,
+            payload: patch,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      });
+      toast("Server sedang offline. Perubahan disimpan di browser & otomatis dikirim saat online.", "info");
+    },
+    [toast, updateOfflineQueue],
+  );
+
+  const enqueueOfflineStatus = React.useCallback(
+    (module: string, id: string, status: string, note?: string) => {
+      const def = MODULES[module];
+      const key = def?.statusKey || "status";
+      setData((d) => {
+        const next = {
+          ...d,
+          [module]: (d[module] ?? []).map((r: any) => (r.id === id ? { ...r, [key]: status } : r)),
+        };
+        writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+        return next;
+      });
+      updateOfflineQueue((prev) => [
+        ...prev,
+        {
+          qid: `status-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          kind: "status",
+          module,
+          id,
+          payload: {},
+          status,
+          note,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      toast(`Server sedang offline. Perubahan status '${status}' disimpan di browser & dikirim saat online.`, "info");
+    },
+    [toast, updateOfflineQueue],
+  );
 
   const addRow = React.useCallback(
     async (module: string, row: Record<string, any>): Promise<Row | null> => {
@@ -431,18 +660,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       if (!path) return null;
       if (offline) {
-        const tempId = `offline-${Date.now()}`;
-        const localRow: Row = { id: tempId, ...row };
-        offlineQueueRef.current.push({ kind: "add", module, payload: row });
-        setData((d) => ({ ...d, [module]: [localRow, ...(d[module] ?? [])] }));
-        toast(`${MODULES[module]?.singular ?? "Data"} disimpan ke antrean offline`, "info");
-        return localRow;
+        return enqueueOfflineAdd(module, row);
       }
       try {
         const body = buildCreateBody(module, row, data);
         const created = await api<any>("POST", path, body);
         const adapted = adaptRow(module, created);
-        setData((d) => ({ ...d, [module]: [adapted, ...(d[module] ?? [])] }));
+        setData((d) => {
+          const next = { ...d, [module]: [adapted, ...(d[module] ?? [])] };
+          writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+          return next;
+        });
         pushHistory(module, adapted.id, "Membuat data baru");
         toast(`${MODULES[module]?.singular ?? "Data"} disimpan`);
         void refreshModule(module);
@@ -450,15 +678,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (module === "followups") void refreshModule("leads");
         return adapted;
       } catch (e: any) {
+        if (isNetworkError(e)) {
+          setOffline(true);
+          return enqueueOfflineAdd(module, row);
+        }
         toast(e?.message ?? "Gagal menyimpan", "danger");
         return null;
       }
     },
-    [data, offline, pushHistory, refreshModule, toast],
+    [data, offline, enqueueOfflineAdd, pushHistory, refreshModule, toast],
   );
 
   const deleteRow = React.useCallback(
     async (module: string, id: string): Promise<boolean> => {
+      // Jika item adalah item lokal yang belum terkirim ke server, hapus langsung dari antrean
+      if (String(id).startsWith("offline-")) {
+        updateOfflineQueue((prev) => prev.filter((x) => x.tempId !== id && x.id !== id));
+        setData((d) => ({ ...d, [module]: (d[module] ?? []).filter((r: Row) => r.id !== id) }));
+        toast("Data antrean offline dihapus");
+        return true;
+      }
       const path = PATHS[module];
       if (!path) return false;
       try {
@@ -469,11 +708,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (module === "tasks") void refreshModule("projects");
         return true;
       } catch (e: any) {
+        if (isNetworkError(e)) setOffline(true);
         toast(e?.message ?? "Gagal menghapus", "danger");
         return false;
       }
     },
-    [pushHistory, refreshModule, toast],
+    [pushHistory, refreshModule, toast, updateOfflineQueue],
   );
 
   const patchRow = React.useCallback(
@@ -481,13 +721,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const path = PATHS[module];
       if (!path) return;
       // Optimistic local update so UI-only or immediate fields reflect right away
-      setData((d) => ({
-        ...d,
-        [module]: (d[module] ?? []).map((r: Row) => (r.id === id ? { ...r, ...patch } : r)),
-      }));
-      if (offline) {
-        offlineQueueRef.current.push({ kind: "patch", module, id, payload: patch });
-        toast("Perubahan disimpan ke antrean offline", "info");
+      setData((d) => {
+        const next = {
+          ...d,
+          [module]: (d[module] ?? []).map((r: Row) => (r.id === id ? { ...r, ...patch } : r)),
+        };
+        writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+        return next;
+      });
+      if (offline || String(id).startsWith("offline-")) {
+        enqueueOfflinePatch(module, id, patch);
         return;
       }
       try {
@@ -498,47 +741,150 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           await refreshModule(module);
         }
       } catch (e: any) {
+        if (isNetworkError(e)) {
+          setOffline(true);
+          enqueueOfflinePatch(module, id, patch);
+          return;
+        }
         toast(e?.message ?? "Gagal mengubah", "danger");
       }
     },
-    [data, offline, refreshModule, toast],
+    [data, offline, enqueueOfflinePatch, refreshModule, toast],
   );
 
-  // Sinkronkan antrean offline saat kembali online
-  React.useEffect(() => {
-    if (offline || offlineQueueRef.current.length === 0) return;
-    const queue = [...offlineQueueRef.current];
-    offlineQueueRef.current = [];
-    void (async () => {
+  const executeRemoteStatus = React.useCallback(
+    async (module: string, id: string, status: string, note?: string) => {
+      const MASTER_MODULES = [
+        "users", "customers", "suppliers", "warehouses", "products",
+        "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
+      ];
+
+      if (module === "invoices" && status === "Lunas") {
+        const inv = (data.invoices ?? []).find((r) => r.id === id);
+        if (inv) {
+          const sisa = Math.round(Number(inv.total) - Number(inv.terbayar));
+          if (sisa > 0) {
+            await api("POST", `/invoices/${id}/payments`, {
+              amount: sisa,
+              date: new Date().toISOString().slice(0, 10),
+              method: "TRANSFER",
+            });
+          } else {
+            await api("POST", `/invoices/${id}/status`, { status: "PAID", note });
+          }
+        }
+      } else if (module === "leads") {
+        const body: Record<string, any> = { stage: statusEnumFor("leads", status) };
+        if (status === "Won") body.probability = 100;
+        if (status === "Lost") {
+          body.lostNote = note ?? "";
+          const lr = (data.lostReasons ?? []).find((r) => r.nama === note);
+          if (lr) body.lostReasonId = Number(lr.id);
+        }
+        await api("PATCH", `/leads/${id}`, body);
+      } else if (module === "quotations") {
+        if (status === "Terkirim") {
+          await api("POST", `/quotations/${id}/send`, {});
+        } else if (status === "Menunggu persetujuan") {
+          await api("POST", `/quotations/${id}/submit`, {});
+        } else {
+          await api("PATCH", `/quotations/${id}`, { status: statusEnumFor("quotations", status), notes: note });
+        }
+      } else if (module === "surveys") {
+        await api("PATCH", `/surveys/${id}`, { status: statusEnumFor("surveys", status), notes: note });
+      } else if (module === "supplier-pos") {
+        const enumVal = statusEnumFor("supplier-pos", status);
+        if (["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"].includes(enumVal)) {
+          await api("POST", `/supplier-pos/${id}/status`, { status: enumVal, note });
+        } else {
+          await api("POST", `/supplier-pos/${id}/shipment`, { shipmentStatus: enumVal });
+        }
+      } else if (module === "opname") {
+        await api("POST", `/opnames/${id}/submit`, { reason: note });
+      } else if (module === "receiving") {
+        await api("POST", `/receivings/${id}/status`, { status: statusEnumFor("receiving", status), note });
+      } else if (module === "po-client") {
+        // PO client hanya memiliki status tampilan di UI
+      } else if (MASTER_MODULES.includes(module)) {
+        const path = PATHS[module];
+        if (path) {
+          await api("PATCH", `${path}/${id}`, { status: statusEnumFor("users", status) });
+        }
+      } else {
+        const path = PATHS[module];
+        if (path) {
+          await api("POST", `${path}/${id}/status`, buildStatusBody(module, status, note));
+        }
+      }
+    },
+    [data.invoices, data.lostReasons],
+  );
+
+  // Fungsi sinkronisasi antrean offline ke server saat API online kembali
+  const syncOfflineQueue = React.useCallback(async () => {
+    if (syncingRef.current || offlineQueueRef.current.length === 0) return;
+    syncingRef.current = true;
+    try {
+      const queue = [...offlineQueueRef.current];
+      const remaining: OfflineQueueItem[] = [];
       let synced = 0;
-      for (const item of queue) {
+
+      for (let i = 0; i < queue.length; i++) {
+        const item = queue[i]!;
         try {
           let path = PATHS[item.module];
           if (item.module === "tasks") {
-            const pid = item.payload.projectId ?? data.projects[0]?.id;
+            const pid =
+              item.payload.projectId ??
+              data.projects.find((p) => p.nama === item.payload.project)?.id ??
+              data.projects[0]?.id;
             if (pid) path = `/projects/${pid}/tasks`;
           }
-          if (!path) continue;
-          if (item.kind === "add") {
+          if (!path && item.kind !== "status") continue;
+
+          if (item.kind === "add" && path) {
             const body = buildCreateBody(item.module, item.payload, data);
             await api("POST", path, body);
             synced++;
-          } else if (item.kind === "patch" && item.id) {
+          } else if (item.kind === "patch" && item.id && path) {
             const body = buildPatchBody(item.module, item.payload, data);
             delete body.id;
             if (Object.keys(body).length > 0) {
               await api("PATCH", `${path}/${item.id}`, body);
-              synced++;
             }
+            synced++;
+          } else if (item.kind === "status" && item.id && item.status) {
+            await executeRemoteStatus(item.module, item.id, item.status, item.note);
+            synced++;
           }
-        } catch {}
+        } catch (err: any) {
+          if (isNetworkError(err)) {
+            // API mati lagi di tengah pengiriman — simpan sisa antrean untuk percobaan berikutnya
+            setOffline(true);
+            remaining.push(...queue.slice(i));
+            break;
+          }
+          // Jika ditolak validasi server (400/422), lewati item agar tidak menyumbat antrean & beri tahu user
+          toast(`Gagal sinkron 1 item (${item.module}): ${err?.message || "Data tidak valid"}`, "danger");
+        }
       }
+
+      updateOfflineQueue(() => remaining);
       if (synced > 0) {
-        toast(`${synced} data offline berhasil disinkronkan ke server`);
+        toast(`${synced} data dari antrean browser berhasil dikirim ke server!`);
         await loadAll();
       }
-    })();
-  }, [offline, data, loadAll, toast]);
+    } finally {
+      syncingRef.current = false;
+    }
+  }, [data, executeRemoteStatus, loadAll, toast, updateOfflineQueue]);
+
+  // Sinkronkan antrean offline otomatis saat status berubah menjadi online
+  React.useEffect(() => {
+    if (!offline && pendingQueue.length > 0 && user) {
+      void syncOfflineQueue();
+    }
+  }, [offline, pendingQueue.length, user, syncOfflineQueue]);
 
   const createQuotationFromLead = React.useCallback(
     async (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }): Promise<Row | null> => {
@@ -564,6 +910,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pushHistory("quotations", adapted.id, `Dibuat otomatis dari lead: ${lead.nama}`);
         return latest;
       } catch (e: any) {
+        if (isNetworkError(e)) {
+          setOffline(true);
+          return null;
+        }
         toast(e?.message ?? "Gagal membuat penawaran", "danger");
         return null;
       }
@@ -575,116 +925,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (module: string, id: string, status: string, note?: string) => {
       const def = MODULES[module];
       const key = def?.statusKey || "status";
-      const MASTER_MODULES = [
-        "users", "customers", "suppliers", "warehouses", "products",
-        "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
-      ];
 
-      // invoice Lunas → catat pembayaran sisa
-      if (module === "invoices" && status === "Lunas") {
-        const inv = (data.invoices ?? []).find((r) => r.id === id);
-        if (inv) {
-          const sisa = Math.round(Number(inv.total) - Number(inv.terbayar));
-          if (sisa > 0) {
-            try {
-              await api("POST", `/invoices/${id}/payments`, {
-                amount: sisa,
-                date: new Date().toISOString().slice(0, 10),
-                method: "TRANSFER",
-              });
-            } catch (e: any) {
-              toast(e?.message ?? "Gagal mencatat pembayaran", "danger");
-              return;
-            }
-          } else {
-            try {
-              await api("POST", `/invoices/${id}/status`, { status: "PAID", note });
-            } catch (e: any) {
-              toast(e?.message ?? "Gagal mengubah status", "danger");
-              return;
-            }
-          }
-        }
-      } else if (module === "leads") {
-        const body: Record<string, any> = { stage: statusEnumFor("leads", status) };
-        if (status === "Won") body.probability = 100;
-        if (status === "Lost") {
-          body.lostNote = note ?? "";
-          const lr = (data.lostReasons ?? []).find((r) => r.nama === note);
-          if (lr) body.lostReasonId = Number(lr.id);
-        }
-        try {
-          await api("PATCH", `/leads/${id}`, body);
-        } catch (e: any) {
-          toast(e?.message ?? "Gagal mengubah status", "danger");
+      if (offline || String(id).startsWith("offline-")) {
+        enqueueOfflineStatus(module, id, status, note);
+        return;
+      }
+
+      try {
+        await executeRemoteStatus(module, id, status, note);
+      } catch (e: any) {
+        if (isNetworkError(e)) {
+          setOffline(true);
+          enqueueOfflineStatus(module, id, status, note);
           return;
         }
-      } else if (module === "quotations") {
-        try {
-          if (status === "Terkirim") {
-            await api("POST", `/quotations/${id}/send`, {});
-          } else if (status === "Menunggu persetujuan") {
-            await api("POST", `/quotations/${id}/submit`, {});
-          } else {
-            await api("PATCH", `/quotations/${id}`, { status: statusEnumFor("quotations", status), notes: note });
-          }
-        } catch (e: any) {
-          toast(e?.message ?? "Gagal mengubah status penawaran", "danger");
-          return;
-        }
-      } else if (module === "surveys") {
-        try {
-          await api("PATCH", `/surveys/${id}`, { status: statusEnumFor("surveys", status), notes: note });
-        } catch (e: any) {
-          toast(e?.message ?? "Gagal mengubah status", "danger");
-          return;
-        }
-      } else if (module === "supplier-pos") {
-        const enumVal = statusEnumFor("supplier-pos", status);
-        try {
-          if (["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"].includes(enumVal)) {
-            await api("POST", `/supplier-pos/${id}/status`, { status: enumVal, note });
-          } else {
-            await api("POST", `/supplier-pos/${id}/shipment`, { shipmentStatus: enumVal });
-          }
-        } catch (e: any) {
-          toast(e?.message ?? "Gagal mengubah status PO", "danger");
-          return;
-        }
-      } else if (module === "opname") {
-        try {
-          await api("POST", `/opnames/${id}/submit`, { reason: note });
-        } catch (e: any) {
-          toast(e?.message ?? "Gagal mengajukan opname", "danger");
-          return;
-        }
-      } else if (module === "receiving") {
-        try {
-          await api("POST", `/receivings/${id}/status`, { status: statusEnumFor("receiving", status), note });
-        } catch (e: any) {
-          toast(e?.message ?? "Gagal mengubah status penerimaan", "danger");
-          return;
-        }
-      } else if (module === "po-client") {
-        // PO client hanya memiliki status tampilan di UI
-      } else if (MASTER_MODULES.includes(module)) {
-        const path = PATHS[module];
-        if (!path) return;
-        try {
-          await api("PATCH", `${path}/${id}`, { status: statusEnumFor("users", status) });
-        } catch (e: any) {
-          toast(e?.message ?? "Gagal mengubah status", "danger");
-          return;
-        }
-      } else {
-        const path = PATHS[module];
-        if (!path) return;
-        try {
-          await api("POST", `${path}/${id}/status`, buildStatusBody(module, status, note));
-        } catch (e: any) {
-          toast(e?.message ?? "Gagal mengubah status", "danger");
-          return;
-        }
+        toast(e?.message ?? "Gagal mengubah status", "danger");
+        return;
       }
 
       // optimistik
@@ -705,7 +961,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await refreshModule("quotations");
       }
     },
-    [data, pushHistory, toast, refreshModule, createQuotationFromLead],
+    [data.leads, offline, enqueueOfflineStatus, executeRemoteStatus, pushHistory, toast, refreshModule, createQuotationFromLead],
   );
 
   const history = React.useCallback(
@@ -732,6 +988,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toast(decision === "Disetujui" ? "Dokumen disetujui" : "Dokumen ditolak", decision === "Disetujui" ? "success" : "danger");
         await reload();
       } catch (e: any) {
+        if (isNetworkError(e)) setOffline(true);
         toast(e?.message ?? "Gagal memutuskan", "danger");
       }
     },
@@ -754,11 +1011,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
       deleteRow,
       history, pushHistory, approvals, decide, notifs: myNotifs, unread, markRead, markAllRead,
-      toast, offline, setOffline, reload, hydrated, theme, toggleTheme,
+      toast, offline, setOffline,
+      pendingSyncCount: pendingQueue.length,
+      syncOfflineQueue,
+      reload, hydrated, theme, toggleTheme,
     }),
     [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
-     toast, offline, reload, hydrated, theme, toggleTheme],
+     toast, offline, pendingQueue.length, syncOfflineQueue, reload, hydrated, theme, toggleTheme],
   );
 
   return (
@@ -774,3 +1034,4 @@ export function useApp(): Ctx {
   if (!c) throw new Error("useApp harus di dalam AppProvider");
   return c;
 }
+
