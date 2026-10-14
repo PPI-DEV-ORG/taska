@@ -79,6 +79,9 @@ export class LeadDto {
 
   @IsOptional() @IsString()
   lostNote?: string;
+
+  @IsOptional() @IsInt()
+  fileId?: number;
 }
 
 export class FollowUpDto {
@@ -94,8 +97,31 @@ export class FollowUpDto {
   @IsIn(["EMAIL", "TELEPON", "WA", "LAINNYA"])
   method!: "EMAIL" | "TELEPON" | "WA" | "LAINNYA";
 
-  @IsString() @MinLength(1)
+  @IsString()
   notes!: string;
+
+  @IsOptional() @IsDateString()
+  nextDate?: string;
+
+  @IsOptional() @IsIn(["TERJADWAL", "SELESAI"])
+  status?: "TERJADWAL" | "SELESAI";
+}
+
+export class UpdateFollowUpDto {
+  @IsOptional() @IsInt()
+  leadId?: number;
+
+  @IsOptional() @IsInt()
+  quotationId?: number;
+
+  @IsOptional() @IsDateString()
+  date?: string;
+
+  @IsOptional() @IsIn(["EMAIL", "TELEPON", "WA", "LAINNYA"])
+  method?: "EMAIL" | "TELEPON" | "WA" | "LAINNYA";
+
+  @IsOptional() @IsString()
+  notes?: string;
 
   @IsOptional() @IsDateString()
   nextDate?: string;

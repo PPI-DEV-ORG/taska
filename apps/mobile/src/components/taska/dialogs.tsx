@@ -338,11 +338,14 @@ export function MultiSelect({
   const [q, setQ] = React.useState("");
   const list = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
 
+  const norm = (s?: string) => (s ? (s.split("(")[0] ?? "").trim().toLowerCase() : "");
+  const isSelected = (o: string) => (values ?? []).some((v) => norm(v) === norm(o) || (v ?? "").trim() === o.trim());
+
   function toggle(o: string) {
-    if (values.includes(o)) {
-      onChange(values.filter((x) => x !== o));
+    if (isSelected(o)) {
+      onChange((values ?? []).filter((x) => norm(x) !== norm(o) && (x ?? "").trim() !== o.trim()));
     } else {
-      onChange([...values, o]);
+      onChange([...(values ?? []), o]);
     }
   }
 
@@ -381,7 +384,7 @@ export function MultiSelect({
           ) : null}
           <ScrollView style={{ maxHeight: 320 }} contentContainerClassName="gap-1">
             {list.map((o) => {
-              const selected = values.includes(o);
+              const selected = isSelected(o);
               return (
                 <Pressable
                   key={o}
@@ -606,6 +609,24 @@ export function FormDialog({
       row.ppn = Math.round(nilai * 0.11);
       row.total = nilai + row.ppn;
     }
+    if (def?.key === "quotations") {
+      const tot = Number(row.nilai || row.total || 0);
+      const disc = Number(row.disc || 0);
+      const net = Math.max(0, tot - disc);
+      const tipe = String(row.tipePpn || "Exclude");
+      if (tipe.toLowerCase().includes("no") || tipe.toLowerCase().includes("tanpa")) {
+        row.ppn = 0;
+        row.totalAfterDisc = net;
+      } else if (tipe.toLowerCase().includes("include")) {
+        row.ppn = Math.round(net - (net / 1.11));
+        row.totalAfterDisc = net;
+      } else {
+        row.ppn = Math.round(net * 0.11);
+        row.totalAfterDisc = net + row.ppn;
+      }
+      row.total = tot;
+      row.grandTotal = row.totalAfterDisc;
+    }
     const uploadedIds = await Promise.all(fileHandles.current.map((h) => h?.flush() ?? Promise.resolve(null)));
     const firstFileId = uploadedIds.find((id) => id != null);
     if (firstFileId != null) {
@@ -650,6 +671,87 @@ export function FormDialog({
                 />
               );
             }
+            if (def?.key === "quotations" && f.key === "nilai") {
+              const currentTipe = vals.tipePpn || "Exclude PPN (11%)";
+              const rawNilai = Number((vals.nilai || "").replace(/\D/g, "")) || 0;
+              const rawDisc = Number((vals.disc || "").replace(/\D/g, "")) || 0;
+              const netVal = Math.max(0, rawNilai - rawDisc);
+              const previewPpn = currentTipe.includes("Exclude") ? Math.round(netVal * 0.11) : 0;
+              const previewGrand = currentTipe.includes("Exclude") ? netVal + previewPpn : netVal;
+
+              return (
+                <View key={f.key} className="gap-2">
+                  <FormField
+                    label={f.label}
+                    required={f.required}
+                    error={errs[f.key]}
+                  >
+                    <Input
+                      value={vals[f.key] ?? ""}
+                      onChangeText={(v) =>
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: formatThousands(v),
+                        }))
+                      }
+                      placeholder={f.placeholder || "Contoh: 10.000.000"}
+                      keyboardType="numeric"
+                      className={cn("h-11 sm:h-11", errs[f.key] && "border-danger")}
+                    />
+                  </FormField>
+
+                  {/* Switch Include / Exclude PPN / No PPN */}
+                  <View className="bg-panel border-border/80 rounded-xl border p-3 gap-2">
+                    <Text className="text-xs font-semibold text-foreground">
+                      Switch Ketentuan PPN:
+                    </Text>
+                    <View className="flex-row gap-1.5">
+                      {[
+                        { id: "Exclude PPN (11%)", label: "Exclude PPN (11%)" },
+                        { id: "Include PPN (Sudah termasuk)", label: "Include PPN" },
+                        { id: "No PPN (Tanpa PPN)", label: "No PPN" },
+                      ].map((opt) => {
+                        const active = currentTipe === opt.id || (opt.id.startsWith("Exclude") && !vals.tipePpn);
+                        return (
+                          <Button
+                            key={opt.id}
+                            size="sm"
+                            variant={active ? "default" : "outline"}
+                            onPress={() => setVals((s) => ({ ...s, tipePpn: opt.id }))}
+                            className="flex-1 h-8 px-2"
+                          >
+                            <Text className="text-xs">{opt.label}</Text>
+                          </Button>
+                        );
+                      })}
+                    </View>
+                    {rawNilai > 0 ? (
+                      <View className="bg-card border-border/60 rounded-lg border p-2 gap-0.5 mt-0.5">
+                        <View className="flex-row justify-between">
+                          <Text className="text-[11px] text-muted-foreground">DPP / Net Setelah Diskon:</Text>
+                          <Text className="text-[11px] font-medium text-foreground">{rupiah(netVal)}</Text>
+                        </View>
+                        <View className="flex-row justify-between">
+                          <Text className="text-[11px] text-muted-foreground">PPN:</Text>
+                          <Text className="text-[11px] font-medium text-foreground">
+                            {currentTipe.includes("Include")
+                              ? "Sudah Termasuk dalam Harga"
+                              : currentTipe.includes("No")
+                              ? "Tanpa PPN (Rp 0)"
+                              : rupiah(previewPpn)}
+                          </Text>
+                        </View>
+                        <View className="flex-row justify-between border-t border-border/50 pt-1 mt-0.5">
+                          <Text className="text-xs font-bold text-foreground">Estimasi Total Akhir:</Text>
+                          <Text className="text-xs font-bold text-primary">{rupiah(previewGrand)}</Text>
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            }
+
             return (
               <FormField
                 key={f.key}

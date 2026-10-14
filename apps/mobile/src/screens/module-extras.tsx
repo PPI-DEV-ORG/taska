@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView, Pressable, Linking } from "react-native";
+import { View, ScrollView, Pressable, Linking, Image } from "react-native";
 import { useRouter } from "expo-router";
 import {
   AlertTriangle,
@@ -180,42 +180,62 @@ function DocumentationPhotosPanel({
             Belum ada foto dokumentasi terlampir pada dokumen ini.
           </Text>
         ) : (
-          <View className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <View className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {photos.map((p, idx) => (
               <View
                 key={p.id}
-                className="bg-panel border-border/80 rounded-xl border p-3 justify-between min-h-[90px]"
+                className="bg-panel border-border/80 rounded-xl border p-3 flex-col justify-between gap-2"
               >
                 <View className="flex-row items-center justify-between gap-1.5">
                   <View className="flex-row items-center gap-1.5 flex-1">
                     <CheckCircle2 size={14} color={colors.primary} />
                     <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
-                      Foto {idx + 1}
+                      Foto #{idx + 1}
                     </Text>
                   </View>
                   <Pressable onPress={() => handleRemovePhoto(p.id)} hitSlop={8}>
                     <Trash2 size={13} color={colors.danger} />
                   </Pressable>
                 </View>
-                <Text className="text-[11px] text-foreground font-medium mt-1" numberOfLines={2}>
-                  {p.caption || p.originalName}
-                </Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5" numberOfLines={1}>
-                  {p.originalName}
-                </Text>
+
+                {p.url ? (
+                  <View className="h-28 w-full bg-muted/30 rounded-lg overflow-hidden border border-border/40 items-center justify-center">
+                    <Image
+                      source={{ uri: p.url.startsWith("http") ? p.url : `${apiBase()}${p.url}` }}
+                      style={{ width: "100%", height: "100%" }}
+                      resizeMode="cover"
+                    />
+                  </View>
+                ) : null}
+
+                <View className="gap-0.5">
+                  <Text className="text-[10px] text-muted-foreground uppercase font-semibold">Deskripsi / Keterangan:</Text>
+                  <Text className="text-xs font-medium text-foreground leading-snug">
+                    {p.caption || p.originalName}
+                  </Text>
+                  <Text className="text-[10px] text-muted-foreground font-mono mt-0.5" numberOfLines={1}>
+                    File: {p.originalName}
+                  </Text>
+                </View>
               </View>
             ))}
           </View>
         )}
 
-        <View className="gap-2 pt-1">
-          <Input
-            value={caption}
-            onChangeText={setCaption}
-            placeholder="Keterangan foto (opsional, misal: Kondisi Plafon / Ruang Server)"
-          />
+        <View className="bg-panel/60 border-border/60 rounded-xl border p-3.5 gap-2.5 pt-3">
+          <Text className="text-xs font-bold text-foreground">
+            Unggah Dokumentasi (1 Foto & 1 Keterangan Deskripsi)
+          </Text>
+          <View className="gap-1">
+            <Text className="text-[11px] text-muted-foreground">Keterangan / Deskripsi Foto Lapangan</Text>
+            <Input
+              value={caption}
+              onChangeText={setCaption}
+              placeholder="Contoh: Kondisi fisik plafon / Jalur kabel server..."
+            />
+          </View>
           <FileUploader
-            label="Upload Foto Dokumentasi Lapangan (PNG / JPG)"
+            label="Pilih Foto Dokumentasi Lapangan (PNG / JPG)"
             kind="foto"
             onFilePicked={handleAttachPhoto}
           />
@@ -410,20 +430,22 @@ export function QuotationPreviewModal({
               <Text className="flex-1 text-[11px] font-bold text-black text-center">TOTAL</Text>
               <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(itemsTotal)}</Text>
             </View>
-            <View className="flex-row border-b border-black bg-white py-1.5 px-2">
-              <Text className="flex-1 text-[11px] font-bold text-black text-center">PPN (11%)</Text>
-              <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(calcPpn)}</Text>
-            </View>
             {discNum > 0 ? (
               <View className="flex-row border-b border-black bg-white py-1.5 px-2">
                 <Text className="flex-1 text-[11px] font-bold text-black text-center">DISC</Text>
-                <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(discNum)}</Text>
+                <Text className="w-24 text-[11px] font-bold text-red-600 text-right">- {rupiah(discNum)}</Text>
+              </View>
+            ) : null}
+            {calcPpn > 0 ? (
+              <View className="flex-row border-b border-black bg-white py-1.5 px-2">
+                <Text className="flex-1 text-[11px] font-bold text-black text-center">PPN (11%)</Text>
+                <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(calcPpn)}</Text>
               </View>
             ) : null}
             <View className="flex-row bg-white py-2 px-2">
               <Text className="flex-1 text-xs font-bold text-black text-center">GRAND TOTAL</Text>
               <Text className="w-24 text-xs font-bold text-black text-right">
-                {rupiah(Math.max(0, itemsTotal + calcPpn - discNum))}
+                {rupiah(Math.max(0, itemsTotal - discNum + calcPpn))}
               </Text>
             </View>
           </View>
@@ -574,7 +596,11 @@ export function QuotationTemplateGenerator({
   const [newItemHarga, setNewItemHarga] = React.useState("");
 
   const itemsTotal = items.length > 0 ? items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0) : totNum;
-  const activePpn = Math.round(itemsTotal * 0.11);
+  const isIncludePpn = row.tipePpn === "Include PPN (Sudah termasuk)" || row.ppnMode === "include";
+  const isNoPpn = row.tipePpn === "No PPN (Tanpa PPN)" || row.ppnMode === "none" || (row.ppn === 0 && (row.disc > 0 || (row.total || 0) > 0));
+  const netBeforeTax = Math.max(0, itemsTotal - discNum);
+  const activePpn = isNoPpn || isIncludePpn ? 0 : Math.round(netBeforeTax * 0.11);
+  const activeGrandTotal = isNoPpn || isIncludePpn ? netBeforeTax : netBeforeTax + activePpn;
   const parsedNotes = notesText
     .split("\n")
     .map((s) => s.trim().replace(/^\d+\.\s*/, ""))
@@ -889,20 +915,24 @@ export function QuotationTemplateGenerator({
                 <Text className="text-xs text-muted-foreground">SUBTOTAL ITEM:</Text>
                 <Text className="text-xs font-semibold">{rupiah(itemsTotal)}</Text>
               </View>
-              <View className="flex-row items-center justify-between">
-                <Text className="text-xs text-muted-foreground">PPN (11%):</Text>
-                <Text className="text-xs font-semibold">{rupiah(activePpn)}</Text>
-              </View>
               {discNum > 0 ? (
                 <View className="flex-row items-center justify-between">
                   <Text className="text-xs text-muted-foreground">DISC:</Text>
                   <Text className="text-xs font-semibold text-danger">- {rupiah(discNum)}</Text>
                 </View>
               ) : null}
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs text-muted-foreground">
+                  {isIncludePpn ? "PPN (Sudah Termasuk):" : isNoPpn ? "PPN (Tanpa PPN):" : "PPN (11%):"}
+                </Text>
+                <Text className="text-xs font-semibold">
+                  {isIncludePpn ? "Included" : isNoPpn ? "Rp 0" : rupiah(activePpn)}
+                </Text>
+              </View>
               <View className="flex-row items-center justify-between pt-1 border-t border-border/50">
                 <Text className="text-xs font-bold">GRAND TOTAL:</Text>
                 <Text className="text-sm font-bold text-primary">
-                  {rupiah(Math.max(0, itemsTotal + activePpn - discNum))}
+                  {rupiah(activeGrandTotal)}
                 </Text>
               </View>
             </View>
@@ -978,6 +1008,8 @@ function LeadExtras({ row }: { row: Row }) {
   const [fuNote, setFuNote] = React.useState("");
   const [fuNextAction, setFuNextAction] = React.useState("");
   const [fuStatus, setFuStatus] = React.useState<"SELESAI" | "JADWAL">("SELESAI");
+  const [selectedFu, setSelectedFu] = React.useState<any>(null);
+  const [editFuStatus, setEditFuStatus] = React.useState<"SELESAI" | "TERJADWAL">("SELESAI");
 
   const apiFollowups = React.useMemo(() => {
     const fromStore = (data.followups ?? [])
@@ -1065,9 +1097,20 @@ function LeadExtras({ row }: { row: Row }) {
           {quotation ? (
             <View className="gap-3">
               <Line left="Nomor Penawaran" right={<Text className="text-primary font-bold">{quotation.nomor}</Text>} />
-              <Line left="TOTAL (Sebelum PPN)" right={<Text className="font-semibold">{rupiah(quotation.total || quotation.nilai || 0)}</Text>} />
-              <Line left="PPN (11%)" right={<Text className="font-semibold">{rupiah(quotation.ppn ?? Math.round((quotation.total || quotation.nilai || 0) * 0.11))}</Text>} />
-              <Line left="DISC" right={<Text className="text-danger font-semibold">- {rupiah(quotation.disc || 0)}</Text>} />
+              <Line left="TOTAL (Sebelum PPN & Disc)" right={<Text className="font-semibold">{rupiah(quotation.total || quotation.nilai || 0)}</Text>} />
+              <Line left="DISC (Diskon)" right={<Text className="text-danger font-semibold">- {rupiah(quotation.disc || 0)}</Text>} />
+              <Line
+                left={quotation.tipePpn?.includes("Include") ? "PPN (Sudah Termasuk)" : quotation.tipePpn?.includes("No") ? "PPN (Tanpa PPN)" : "PPN (11%)"}
+                right={
+                  <Text className="font-semibold">
+                    {quotation.tipePpn?.includes("Include")
+                      ? "Included"
+                      : quotation.tipePpn?.includes("No")
+                      ? "Rp 0"
+                      : rupiah(quotation.ppn ?? Math.round(Math.max(0, (quotation.total || quotation.nilai || 0) - (quotation.disc || 0)) * 0.11))}
+                  </Text>
+                }
+              />
               <Line
                 left="TOTAL AFTER DISC (Grand Total)"
                 right={<Text className="text-primary font-bold">{rupiah(quotation.totalAfterDisc || quotation.nilai || 0)}</Text>}
@@ -1220,7 +1263,14 @@ function LeadExtras({ row }: { row: Row }) {
             <Text className="text-muted-foreground text-xs py-2">Belum ada riwayat follow-up tercatat.</Text>
           ) : (
             apiFollowups.map((item) => (
-              <View key={item.id} className="border-border border-b py-2.5 last:border-b-0">
+              <Pressable
+                key={item.id}
+                onPress={() => {
+                  setSelectedFu(item);
+                  setEditFuStatus(item.status === "TERJADWAL" ? "TERJADWAL" : "SELESAI");
+                }}
+                className="border-border border-b py-2.5 last:border-b-0 hover:bg-muted/30 active:opacity-75 transition-colors cursor-pointer"
+              >
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-2">
                     <View className="bg-primary/10 rounded-md p-1">
@@ -1230,17 +1280,22 @@ function LeadExtras({ row }: { row: Row }) {
                       {!["Telepon", "WhatsApp", "Email"].includes(item.method) ? <Calendar size={13} color={colors.primary} /> : null}
                     </View>
                     <Text className="text-xs font-semibold text-foreground">{item.method}</Text>
+                    <StatusBadge status={item.status} />
                   </View>
-                  <Text className="text-[11px] text-muted-foreground">{item.date}</Text>
+                  <View className="flex-row items-center gap-1.5">
+                    <Text className="text-[11px] text-muted-foreground">{item.date}</Text>
+                    <ArrowRight size={12} color={colors.textSecondary} />
+                  </View>
                 </View>
-                <Text className="text-xs text-foreground mt-1 leading-relaxed">{item.note}</Text>
+                <Text className="text-xs text-foreground mt-1 leading-relaxed" numberOfLines={2}>{item.note}</Text>
                 {item.next ? (
                   <View className="bg-panel/60 border-border/60 mt-1.5 flex-row items-center gap-1.5 rounded p-1.5 border">
                     <Calendar size={12} color={colors.info} />
                     <Text className="text-[11px] text-info">Jadwal follow-up berikutnya: {item.next}</Text>
                   </View>
                 ) : null}
-              </View>
+                <Text className="text-[10px] text-primary/70 mt-1 font-medium">Klik untuk lihat isi pembahasan & ubah status</Text>
+              </Pressable>
             ))
           )}
         </View>
@@ -1313,6 +1368,87 @@ function LeadExtras({ row }: { row: Row }) {
             </Button>
             <Button onPress={handleAddFollowup}>
               <Text>Simpan Follow-up</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Detail & Ubah Status Follow-up */}
+      <Dialog open={!!selectedFu} onOpenChange={(open) => { if (!open) setSelectedFu(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Detail Tindak Lanjut (Follow-up)</DialogTitle>
+          </DialogHeader>
+          {selectedFu ? (
+            <View className="gap-3 py-2">
+              <View className="flex-row items-center justify-between border-border border-b pb-2">
+                <View className="flex-row items-center gap-2">
+                  <Text className="text-xs font-semibold text-muted-foreground">Metode:</Text>
+                  <Text className="text-xs font-bold text-foreground">{selectedFu.method}</Text>
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                  <Text className="text-xs font-semibold text-muted-foreground">Tanggal:</Text>
+                  <Text className="text-xs font-bold text-foreground">{selectedFu.date}</Text>
+                </View>
+              </View>
+
+              <View className="gap-1.5">
+                <Text className="text-xs font-semibold text-muted-foreground">Isi Pembahasan Terakhir</Text>
+                <View className="bg-panel border-border/70 rounded-lg border p-3">
+                  <Text className="text-xs text-foreground leading-relaxed">
+                    {selectedFu.note || "-"}
+                  </Text>
+                </View>
+              </View>
+
+              {selectedFu.next ? (
+                <View className="bg-panel/60 border-border/60 flex-row items-center gap-2 rounded-lg p-2.5 border">
+                  <Calendar size={14} color={colors.info} />
+                  <View>
+                    <Text className="text-[10px] text-muted-foreground uppercase font-semibold">Jadwal Tindak Lanjut Berikutnya</Text>
+                    <Text className="text-xs font-medium text-info">{selectedFu.next}</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              <View className="gap-1.5 pt-1">
+                <Text className="text-xs font-semibold text-muted-foreground">Status Follow-up</Text>
+                <View className="flex-row gap-2">
+                  {(["SELESAI", "TERJADWAL"] as const).map((st) => (
+                    <Button
+                      key={st}
+                      size="sm"
+                      variant={editFuStatus === st ? "default" : "outline"}
+                      onPress={() => setEditFuStatus(st)}
+                      className="flex-1 h-9"
+                    >
+                      <Text className="text-xs font-medium">{st === "SELESAI" ? "Selesai (Done)" : "Terjadwal"}</Text>
+                    </Button>
+                  ))}
+                </View>
+              </View>
+            </View>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setSelectedFu(null)}>
+              <Text>Tutup</Text>
+            </Button>
+            <Button
+              onPress={async () => {
+                if (!selectedFu) return;
+                try {
+                  await patchRow("followups", String(selectedFu.id), { status: editFuStatus });
+                  await api("PATCH", `/follow-ups/${selectedFu.id}`, { status: editFuStatus }).catch(() => {});
+                  pushHistory("leads", row.id, `Status follow-up (${selectedFu.method}) diubah menjadi ${editFuStatus}`);
+                  toast("Status follow-up berhasil diperbarui");
+                } catch {
+                  toast("Gagal memperbarui status follow-up", "danger");
+                } finally {
+                  setSelectedFu(null);
+                }
+              }}
+            >
+              <Text>Simpan Status</Text>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1423,18 +1559,27 @@ function QuotationExtras({ row }: { row: Row }) {
   const [editFinancials, setEditFinancials] = React.useState(false);
   const [inputTotal, setInputTotal] = React.useState(String(row.total || row.nilai || "0"));
   const [inputDisc, setInputDisc] = React.useState(String(row.disc || "0"));
+  const [ppnMode, setPpnMode] = React.useState<"exclude" | "include" | "none">(
+    row.tipePpn === "Include PPN (Sudah termasuk)" || row.ppnMode === "include"
+      ? "include"
+      : row.tipePpn === "No PPN (Tanpa PPN)" || row.ppnMode === "none" || (row.ppn === 0 && (row.disc > 0 || (row.total || 0) > 0))
+      ? "none"
+      : "exclude"
+  );
 
   // Revisi state
   const [revisiOpen, setRevisiOpen] = React.useState(false);
   const [revisiTotal, setRevisiTotal] = React.useState(String(row.total || row.nilai || "0"));
   const [revisiDisc, setRevisiDisc] = React.useState(String(row.disc || "0"));
   const [revisiReason, setRevisiReason] = React.useState("");
+  const [revisiPpnMode, setRevisiPpnMode] = React.useState<"exclude" | "include" | "none">(ppnMode);
 
   const nextVersionNum = (row.versi || 1) + 1;
   const revTotNum = Number(revisiTotal.replace(/\D/g, "")) || 0;
   const revDiscNum = Number(revisiDisc.replace(/\D/g, "")) || 0;
-  const revPpn = Math.round(revTotNum * 0.11);
-  const revAfterDisc = Math.max(0, revTotNum + revPpn - revDiscNum);
+  const revNet = Math.max(0, revTotNum - revDiscNum);
+  const revPpn = revisiPpnMode === "exclude" ? Math.round(revNet * 0.11) : 0;
+  const revAfterDisc = revisiPpnMode === "exclude" ? revNet + revPpn : revNet;
 
   async function handleCreateRevision() {
     try {
@@ -1454,6 +1599,8 @@ function QuotationExtras({ row }: { row: Row }) {
         disc: revDiscNum,
         ppn: revPpn,
         totalAfterDisc: revAfterDisc,
+        ppnMode: revisiPpnMode,
+        tipePpn: revisiPpnMode === "exclude" ? "Exclude PPN (11%)" : revisiPpnMode === "include" ? "Include PPN (Sudah termasuk)" : "No PPN (Tanpa PPN)",
         status: "Revisi",
         fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}-v${nextVersionNum}.xlsx`,
         fileUploaded: true,
@@ -1461,6 +1608,7 @@ function QuotationExtras({ row }: { row: Row }) {
     }
     setInputTotal(String(revTotNum));
     setInputDisc(String(revDiscNum));
+    setPpnMode(revisiPpnMode);
     setRevisiOpen(false);
     toast(`Versi ${nextVersionNum} penawaran berhasil dibuat & berstatus Revisi`);
   }
@@ -1471,8 +1619,9 @@ function QuotationExtras({ row }: { row: Row }) {
   const discNum = editFinancials
     ? Number(inputDisc.replace(/\D/g, "")) || 0
     : Number(row.disc || 0);
-  const calcPpn = Math.round(totNum * 0.11);
-  const calcTotalAfterDisc = Math.max(0, totNum + calcPpn - discNum);
+  const netBeforeTax = Math.max(0, totNum - discNum);
+  const calcPpn = ppnMode === "exclude" ? Math.round(netBeforeTax * 0.11) : 0;
+  const calcTotalAfterDisc = ppnMode === "exclude" ? netBeforeTax + calcPpn : netBeforeTax;
 
   async function handleSaveFinancials() {
     await patchRow("quotations", row.id, {
@@ -1481,6 +1630,8 @@ function QuotationExtras({ row }: { row: Row }) {
       ppn: calcPpn,
       disc: discNum,
       totalAfterDisc: calcTotalAfterDisc,
+      ppnMode,
+      tipePpn: ppnMode === "exclude" ? "Exclude PPN (11%)" : ppnMode === "include" ? "Include PPN (Sudah termasuk)" : "No PPN (Tanpa PPN)",
       fileUploaded: true,
       fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}.xlsx`,
       status: row.status === "Not Yet" ? "Done" : row.status,
@@ -1500,8 +1651,19 @@ function QuotationExtras({ row }: { row: Row }) {
           <Line left="Lead Sumber" right={<Text className="font-semibold">{row.lead}</Text>} />
           <Line left="Customer" right={<Text className="text-text-secondary">{row.customer}</Text>} />
           <Line left="TOTAL (Sebelum PPN & Disc)" right={<Text className="font-semibold">{rupiah(row.total || row.nilai || 0)}</Text>} />
-          <Line left="PPN (11%)" right={<Text className="font-semibold">{rupiah(row.ppn ?? Math.round((row.total || row.nilai || 0) * 0.11))}</Text>} />
           <Line left="DISC (Diskon)" right={<Text className="text-danger font-semibold">- {rupiah(row.disc || 0)}</Text>} />
+          <Line
+            left={ppnMode === "include" ? "PPN (Sudah Termasuk)" : ppnMode === "none" ? "PPN (Tanpa PPN)" : "PPN (11%)"}
+            right={
+              <Text className="font-semibold">
+                {ppnMode === "include"
+                  ? "Included"
+                  : ppnMode === "none"
+                  ? "Rp 0"
+                  : rupiah(row.ppn ?? Math.round(Math.max(0, (row.total || row.nilai || 0) - (row.disc || 0)) * 0.11))}
+              </Text>
+            }
+          />
           <Line
             left="TOTAL AFTER DISC (Total Akhir)"
             right={<Text className="text-primary text-base font-bold">{rupiah(row.totalAfterDisc || row.total || row.nilai || 0)}</Text>}
@@ -1551,8 +1713,30 @@ function QuotationExtras({ row }: { row: Row }) {
                   keyboardType="numeric"
                 />
               </View>
+              <View className="gap-1">
+                <Text className="text-xs text-muted-foreground">Tipe / Skema PPN</Text>
+                <View className="flex-row gap-1.5">
+                  {[
+                    { id: "exclude", label: "Exclude PPN (11%)" },
+                    { id: "include", label: "Include PPN" },
+                    { id: "none", label: "No PPN" },
+                  ].map((opt) => (
+                    <Button
+                      key={opt.id}
+                      size="sm"
+                      variant={ppnMode === opt.id ? "default" : "outline"}
+                      onPress={() => setPpnMode(opt.id as any)}
+                      className="h-8 px-2.5"
+                    >
+                      <Text className="text-xs">{opt.label}</Text>
+                    </Button>
+                  ))}
+                </View>
+              </View>
               <View className="bg-card border-border/50 gap-1 rounded-lg border p-2.5">
-                <Text className="text-[11px] text-muted-foreground">Preview PPN (11%): {rupiah(calcPpn)}</Text>
+                <Text className="text-[11px] text-muted-foreground">
+                  {ppnMode === "include" ? "PPN: Sudah Termasuk dalam Nilai" : ppnMode === "none" ? "PPN: Tanpa PPN (Rp 0)" : `Preview PPN (11%): ${rupiah(calcPpn)}`}
+                </Text>
                 <Text className="text-xs font-semibold text-primary">Preview TOTAL AFTER DISC: {rupiah(calcTotalAfterDisc)}</Text>
               </View>
               <View className="flex-row gap-2 pt-1">
@@ -1635,8 +1819,9 @@ function QuotationExtras({ row }: { row: Row }) {
         calcTotalAfterDisc={calcTotalAfterDisc}
         discNum={discNum}
         onUpdateItems={async (items, newTotal, meta, shouldDownload) => {
-          const newPpn = Math.round(newTotal * 0.11);
-          const newAfterDisc = Math.max(0, newTotal + newPpn - discNum);
+          const net = Math.max(0, newTotal - discNum);
+          const newPpn = ppnMode === "exclude" ? Math.round(net * 0.11) : 0;
+          const newAfterDisc = ppnMode === "exclude" ? net + newPpn : net;
           await patchRow("quotations", row.id, {
             items,
             subject: meta?.subject,
@@ -1652,6 +1837,8 @@ function QuotationExtras({ row }: { row: Row }) {
             ppn: newPpn,
             disc: discNum,
             totalAfterDisc: newAfterDisc,
+            ppnMode,
+            tipePpn: ppnMode === "exclude" ? "Exclude PPN (11%)" : ppnMode === "include" ? "Include PPN (Sudah termasuk)" : "No PPN (Tanpa PPN)",
             fileUploaded: true,
             fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}.xlsx`,
             status: row.status === "Not Yet" ? "Done" : row.status,
@@ -1733,8 +1920,30 @@ function QuotationExtras({ row }: { row: Row }) {
                 keyboardType="numeric"
               />
             </View>
+            <View className="gap-1">
+              <Text className="text-xs text-muted-foreground">Tipe / Skema PPN Revisi</Text>
+              <View className="flex-row gap-1.5">
+                {[
+                  { id: "exclude", label: "Exclude PPN (11%)" },
+                  { id: "include", label: "Include PPN" },
+                  { id: "none", label: "No PPN" },
+                ].map((opt) => (
+                  <Button
+                    key={opt.id}
+                    size="sm"
+                    variant={revisiPpnMode === opt.id ? "default" : "outline"}
+                    onPress={() => setRevisiPpnMode(opt.id as any)}
+                    className="h-8 px-2.5"
+                  >
+                    <Text className="text-xs">{opt.label}</Text>
+                  </Button>
+                ))}
+              </View>
+            </View>
             <View className="bg-panel border-border/60 rounded-lg border p-2.5">
-              <Text className="text-[11px] text-muted-foreground">Preview PPN 11%: {rupiah(revPpn)}</Text>
+              <Text className="text-[11px] text-muted-foreground">
+                {revisiPpnMode === "include" ? "PPN: Sudah Termasuk dalam Nilai" : revisiPpnMode === "none" ? "PPN: Tanpa PPN (Rp 0)" : `Preview PPN (11%): ${rupiah(revPpn)}`}
+              </Text>
               <Text className="text-xs font-semibold text-primary">Preview Total Akhir v{nextVersionNum}: {rupiah(revAfterDisc)}</Text>
             </View>
             <FileUploader label="Upload File Revisi Baru (PDF / Excel)" kind="dokumen" category="penawaran" autoFlush />
@@ -1754,13 +1963,11 @@ function QuotationExtras({ row }: { row: Row }) {
 }
 
 function SurveyExtras({ row }: { row: Row }) {
-  const { addRow, patchRow, toast } = useApp();
+  const { addRow, patchRow, toast, data } = useApp();
   const [techNoteOpen, setTechNoteOpen] = React.useState(false);
-  const [techNotes, setTechNotes] = React.useState(
-    row.catatanTeknis ||
-      "Pengecekan teknis: Plafon gypsum 4m, jarak tarikan kabel dari ruang server ke titik terjauh ±45 meter. Stop kontak siap di 2 titik. Diperlukan tangga lipat 6 meter dan pipa conduit pelindung."
-  );
+  const [techNotes, setTechNotes] = React.useState(row.catatanTeknis || "");
   const [inputTechNotes, setInputTechNotes] = React.useState(techNotes);
+  const [selectedExp, setSelectedExp] = React.useState<Row | null>(null);
 
   const [expenseOpen, setExpenseOpen] = React.useState(false);
   const [expNominal, setExpNominal] = React.useState("");
@@ -1768,6 +1975,12 @@ function SurveyExtras({ row }: { row: Row }) {
   const [expKet, setExpKet] = React.useState("");
 
   const [reportOpen, setReportOpen] = React.useState(false);
+
+  const surveyExpenses = (data.expenses ?? []).filter((e: Row) => {
+    if (e.surveyId && String(e.surveyId) === String(row.id)) return true;
+    if (e.alasan && String(e.alasan).toLowerCase().includes(`survey ${String(row.lead || "").toLowerCase()}`)) return true;
+    return false;
+  });
 
   function handleSaveTechNotes() {
     setTechNotes(inputTechNotes);
@@ -1783,6 +1996,7 @@ function SurveyExtras({ row }: { row: Row }) {
       return;
     }
     addRow("expenses", {
+      surveyId: row.id,
       project: row.lead || row.customer || "Survey Lapangan",
       alasan: `Survey ${row.lead}: ${expKet.trim() || expKategori}`,
       nominal: nom,
@@ -1821,7 +2035,13 @@ function SurveyExtras({ row }: { row: Row }) {
           </Button>
         }
       >
-        <Text className="text-sm leading-relaxed text-foreground">{techNotes}</Text>
+        {techNotes.trim() ? (
+          <Text className="text-sm leading-relaxed text-foreground">{techNotes}</Text>
+        ) : (
+          <Text className="text-xs text-muted-foreground italic py-1">
+            Belum ada catatan teknis lapangan. Klik &quot;Ubah Catatan&quot; untuk menambahkan kondisi teknis (plafon, instalasi kabel, akses, kendala, dll).
+          </Text>
+        )}
       </Panel>
 
       <DocumentationPhotosPanel
@@ -1843,6 +2063,39 @@ function SurveyExtras({ row }: { row: Row }) {
       >
         <Line left="Total Biaya Terpakai" right={<Text className="font-bold text-primary">{rupiah(row.biaya || 0)}</Text>} />
         <Line left="Tim Pelaksana" right={<Text className="text-text-secondary">{row.tim || "-"}</Text>} />
+
+        <View className="gap-2 pt-2 border-t border-border mt-1">
+          <Text className="text-xs font-semibold text-foreground">
+            Rincian Biaya Survey ({surveyExpenses.length} pengeluaran)
+          </Text>
+          {surveyExpenses.length === 0 ? (
+            <Text className="text-xs text-muted-foreground py-1">Belum ada rincian biaya tercatat.</Text>
+          ) : (
+            surveyExpenses.map((exp: Row, idx: number) => (
+              <Pressable
+                key={exp.id || idx}
+                onPress={() => setSelectedExp(exp)}
+                className="bg-panel border-border/70 rounded-xl border p-2.5 flex-row items-center justify-between hover:bg-muted/30 active:opacity-75 transition-colors cursor-pointer"
+              >
+                <View className="flex-1 pr-2">
+                  <View className="flex-row items-center gap-1.5">
+                    <StatusBadge status={exp.kategori || "Biaya"} />
+                    <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
+                      {exp.alasan || exp.kategori}
+                    </Text>
+                  </View>
+                  <Text className="text-[11px] text-muted-foreground mt-0.5">
+                    Oleh: {exp.pelapor || "Teknisi"} · {exp.tanggal || exp.dibuat || "-"}
+                  </Text>
+                </View>
+                <View className="items-end gap-1">
+                  <Text className="text-xs font-bold text-primary">{rupiah(exp.nominal || 0)}</Text>
+                  <Text className="text-[10px] text-primary underline">Lihat Detail</Text>
+                </View>
+              </Pressable>
+            ))
+          )}
+        </View>
       </Panel>
 
       <Panel
@@ -1932,6 +2185,30 @@ function SurveyExtras({ row }: { row: Row }) {
             </Button>
             <Button onPress={handleAddExpense}>
               <Text>Simpan Biaya</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Detail Biaya Survey */}
+      <Dialog open={!!selectedExp} onOpenChange={(open) => { if (!open) setSelectedExp(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Detail Biaya Operasional Survey</DialogTitle>
+          </DialogHeader>
+          {selectedExp ? (
+            <View className="gap-2 py-2">
+              <Line left="Kategori Biaya" right={<StatusBadge status={selectedExp.kategori || "Biaya"} />} />
+              <Line left="Nominal" right={<Text className="text-base font-bold text-primary">{rupiah(selectedExp.nominal || 0)}</Text>} />
+              <Line left="Keterangan / Alasan" right={<Text className="text-xs font-medium max-w-[220px] text-right">{selectedExp.alasan || "-"}</Text>} />
+              <Line left="Pelapor" right={<Text className="text-xs font-semibold">{selectedExp.pelapor || "-"}</Text>} />
+              <Line left="Tanggal Dicatat" right={<Text className="text-xs text-muted-foreground">{selectedExp.tanggal || selectedExp.dibuat || "-"}</Text>} />
+              <Line left="Status Pengeluaran" right={<StatusBadge status={selectedExp.status || "Dilaporkan"} />} />
+            </View>
+          ) : null}
+          <DialogFooter>
+            <Button onPress={() => setSelectedExp(null)}>
+              <Text>Tutup</Text>
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { FollowUpsService } from "./follow-ups.service.js";
-import { CrmListQuery, FollowUpDto } from "./dto.js";
+import { CrmListQuery, FollowUpDto, UpdateFollowUpDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
@@ -22,7 +22,7 @@ export class FollowUpsController {
 
   @Patch(":id")
   @Require("leads", "U")
-  update(@Param("id", ParseIntPipe) id: number, @Body() dto: FollowUpDto, @CurrentUser() user: RequestUser) {
+  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateFollowUpDto, @CurrentUser() user: RequestUser) {
     return this.service.update(id, dto, user);
   }
 }

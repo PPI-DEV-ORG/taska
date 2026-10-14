@@ -240,10 +240,14 @@ export async function buildQuotationXlsx(params: {
 
   const lastItemRow = firstItemRow + effectiveItems.length - 1;
   const finalTotal = rawItems.length > 0 ? calcSum : Number(params.total ?? calcSum) || 0;
-  const finalPpn =
-    params.ppn !== undefined && params.ppn > 0 ? Number(params.ppn) : Math.round(finalTotal * 0.11);
   const finalDisc = Number(params.discount ?? 0) || 0;
-  const finalGrandTotal = Math.max(0, finalTotal + finalPpn - finalDisc);
+  const netBeforeTax = Math.max(0, finalTotal - finalDisc);
+  const finalPpn =
+    params.ppn !== undefined ? Number(params.ppn) : Math.round(netBeforeTax * 0.11);
+  const finalGrandTotal =
+    params.grandTotal !== undefined && Number(params.grandTotal) > 0
+      ? Number(params.grandTotal)
+      : netBeforeTax + finalPpn;
 
   // 8. Summary Rows (TOTAL, PPN (11%), optional DISC, GRAND TOTAL)
   let currRow = lastItemRow + 1;
@@ -307,7 +311,7 @@ export async function buildQuotationXlsx(params: {
   const valGrand = ws.getCell(grandRowIdx, 6);
   valGrand.value = {
     formula: discRowIdx
-      ? `F${totalRowIdx}+F${ppnRowIdx}-F${discRowIdx}`
+      ? `F${totalRowIdx}-F${discRowIdx}+F${ppnRowIdx}`
       : `F${totalRowIdx}+F${ppnRowIdx}`,
     result: finalGrandTotal,
   };
@@ -556,27 +560,55 @@ export async function parseQuotationXlsx(buffer: Buffer): Promise<{
         continue;
       }
 
-      // Check summary rows in labelColText or itemText
-      const summaryLabel = (labelColText || itemText || aText).toUpperCase().trim();
+      // Collect all text in row to reliably detect summary labels
+      const rowTexts: string[] = [];
+      for (let c = 1; c <= 12; c++) {
+        const txt = readCellText(row.getCell(c));
+        if (txt) rowTexts.push(txt);
+      }
+      const joinedRow = rowTexts.join(" ").toUpperCase().trim();
+
+      const findSummaryNum = (): number => {
+        let v = readCellNumber(row.getCell(colTotal));
+        if (v > 0) return v;
+        for (let c = Math.max(colTotal, 10); c >= 1; c--) {
+          const val = readCellNumber(row.getCell(c));
+          if (val > 0) return val;
+        }
+        return 0;
+      };
+
       if (
-        summaryLabel === "GRAND TOTAL" ||
-        summaryLabel.includes("TOTAL AFTER DISC") ||
-        summaryLabel.includes("TOTAL AKHIR") ||
-        summaryLabel.includes("GRAND TOTAL")
+        joinedRow.includes("GRAND TOTAL") ||
+        joinedRow.includes("TOTAL AFTER DISC") ||
+        joinedRow.includes("TOTAL SETELAH DISKON") ||
+        joinedRow.includes("TOTAL AKHIR")
       ) {
-        if (totalVal > 0) parsedGrandTotal = totalVal;
+        const val = findSummaryNum();
+        if (val > 0) parsedGrandTotal = val;
         continue;
       }
-      if (summaryLabel === "TOTAL" || summaryLabel === "SUB TOTAL" || summaryLabel === "SUBTOTAL") {
-        if (totalVal > 0) parsedTotal = totalVal;
+      if (joinedRow.includes("PPN") || joinedRow.includes("VAT") || joinedRow.includes("PAJAK")) {
+        const val = findSummaryNum();
+        parsedPpn = val;
         continue;
       }
-      if (summaryLabel.includes("PPN")) {
-        if (totalVal >= 0) parsedPpn = totalVal;
+      if (
+        joinedRow.includes("DISC") ||
+        joinedRow.includes("DISKON") ||
+        joinedRow.includes("POTONGAN")
+      ) {
+        const val = findSummaryNum();
+        parsedDisc = val;
         continue;
       }
-      if (summaryLabel === "DISC" || summaryLabel.includes("DISKON") || summaryLabel.includes("POTONGAN")) {
-        if (totalVal >= 0) parsedDisc = totalVal;
+      if (
+        joinedRow.includes("SUBTOTAL") ||
+        joinedRow.includes("SUB TOTAL") ||
+        /\bTOTAL\b/.test(joinedRow)
+      ) {
+        const val = findSummaryNum();
+        if (val > 0) parsedTotal = val;
         continue;
       }
 
@@ -600,13 +632,27 @@ export async function parseQuotationXlsx(buffer: Buffer): Promise<{
   }
 
   const itemsSum = items.reduce((acc, it) => acc + it.qty * it.harga, 0);
-  const total = itemsSum > 0 ? itemsSum : parsedTotal ?? 0;
+  const total = (parsedTotal !== undefined && parsedTotal > 0) ? parsedTotal : itemsSum;
   const discount = parsedDisc ?? 0;
-  const ppn = parsedPpn !== undefined ? parsedPpn : Math.round(total * 0.11);
-  const grandTotal =
-    parsedGrandTotal !== undefined && parsedGrandTotal > 0 && itemsSum === 0
-      ? parsedGrandTotal
-      : Math.max(0, total + ppn - discount);
+  const netBeforeTax = Math.max(0, total - discount);
+
+  let ppn = 0;
+  let grandTotal = 0;
+
+  if (parsedGrandTotal !== undefined && parsedGrandTotal > 0) {
+    grandTotal = parsedGrandTotal;
+    if (parsedPpn !== undefined) {
+      ppn = parsedPpn;
+    } else {
+      ppn = grandTotal > netBeforeTax ? grandTotal - netBeforeTax : 0;
+    }
+  } else if (parsedPpn !== undefined && parsedPpn > 0) {
+    ppn = parsedPpn;
+    grandTotal = netBeforeTax + ppn;
+  } else {
+    ppn = 0;
+    grandTotal = netBeforeTax;
+  }
 
   return {
     items,

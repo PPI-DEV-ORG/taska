@@ -258,6 +258,22 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
     };
   }
 
+  if (moduleKey === "leads") {
+    const file = (row as any).file ?? (row as any).files?.[0];
+    const fileId = (row as any).fileId ?? file?.id ?? null;
+    return {
+      label: docLabel,
+      fieldKey: "fileId",
+      kind: "semua",
+      fileId,
+      fileName: file?.originalName ?? (fileId ? `dokumen-lead-${row.id}` : null),
+      mimeType: file?.mimeType,
+      fileSize: file?.size,
+      isImage: file?.mimeType ? file.mimeType.startsWith("image/") : false,
+      emptyHint: "Belum ada dokumen pendukung atau brief yang dilampirkan",
+    };
+  }
+
   // Fallback
   const fallbackFileId = (row as any).fileId ?? null;
   const isImg = /foto|nota|gambar|kondisi|bukti/i.test(labelLower);
