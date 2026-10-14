@@ -22,11 +22,11 @@ export class AuditService {
       await this.prisma.main.auditLog.create({
         data: {
           actorId: input.actor?.id ?? null,
-          actorName: input.actor?.name ?? "sistem",
-          action: input.action,
-          entityType: input.entityType,
-          entityId: String(input.entityId),
-          detail: input.detail,
+          actorName: (input.actor?.name ?? "sistem").slice(0, 191),
+          action: (input.action ?? "").slice(0, 191),
+          entityType: (input.entityType ?? "").slice(0, 191),
+          entityId: String(input.entityId ?? "").slice(0, 191),
+          detail: input.detail ? String(input.detail).slice(0, 191) : null,
         },
       });
     } catch (e) {

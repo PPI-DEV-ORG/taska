@@ -44,3 +44,8 @@ Prompt Prototype UI — Taska (2).md*.tsbuildinfo
 backups/
 *.sql.gz
 *.tar.gz
+
+# Uploads
+uploads/
+**/uploads/
+

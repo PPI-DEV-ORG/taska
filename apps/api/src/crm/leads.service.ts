@@ -63,28 +63,51 @@ export class LeadsService {
       }),
       this.prisma.main.lead.count({ where }),
     ]);
-    return paginate(items, total, q);
+    const leadIds = items.map((l) => String(l.id));
+    const files = leadIds.length
+      ? await this.prisma.main.file.findMany({
+          where: { refType: "lead", refId: { in: leadIds } },
+          select: { id: true, refId: true, originalName: true, mimeType: true, size: true, kind: true, createdAt: true },
+          orderBy: { id: "desc" },
+        })
+      : [];
+    const fileMap = new Map<string, (typeof files)[0]>();
+    for (const f of files) {
+      if (f.refId && !fileMap.has(f.refId)) fileMap.set(f.refId, f);
+    }
+    const itemsWithFiles = items.map((l) => {
+      const f = fileMap.get(String(l.id));
+      return { ...l, fileId: f?.id ?? null, file: f ?? null, files: f ? [f] : [] };
+    });
+    return paginate(itemsWithFiles, total, q);
   }
 
   async get(id: number) {
-    const lead = await this.prisma.main.lead.findUnique({
-      where: { id },
-      include: {
-        customer: true,
-        source: true,
-        lostReason: true,
-        owner: { select: { id: true, name: true, role: true } },
-        followUps: { orderBy: { date: "desc" }, include: { creator: { select: { id: true, name: true } } } },
-        surveys: { orderBy: { id: "desc" } },
-        quotations: { orderBy: { id: "desc" } },
-      },
-    });
+    const [lead, files] = await Promise.all([
+      this.prisma.main.lead.findUnique({
+        where: { id },
+        include: {
+          customer: true,
+          source: true,
+          lostReason: true,
+          owner: { select: { id: true, name: true, role: true } },
+          followUps: { orderBy: { date: "desc" }, include: { creator: { select: { id: true, name: true } } } },
+          surveys: { orderBy: { id: "desc" } },
+          quotations: { orderBy: { id: "desc" } },
+        },
+      }),
+      this.prisma.main.file.findMany({
+        where: { refType: "lead", refId: String(id) },
+        select: { id: true, originalName: true, mimeType: true, size: true, kind: true, createdAt: true },
+        orderBy: { id: "desc" },
+      }),
+    ]);
     if (!lead) throw new NotFoundException("Lead tidak ditemukan");
-    return lead;
+    return { ...lead, files, fileId: files[0]?.id ?? null, file: files[0] ?? null };
   }
 
   async create(dto: LeadDto, user: RequestUser) {
-    const { ownerId, stage, ...rest } = dto;
+    const { ownerId, stage, fileId, ...rest } = dto;
     const targetStage = stage ?? "PROSPECTING";
     let lostReasonId = dto.lostReasonId;
     if (targetStage === "LOST" && !lostReasonId) {
@@ -109,6 +132,17 @@ export class LeadsService {
       },
     });
 
+    let attachedFile: any = null;
+    if (fileId) {
+      attachedFile = await this.prisma.main.file
+        .update({
+          where: { id: fileId },
+          data: { refType: "lead", refId: String(lead.id) },
+          select: { id: true, originalName: true, mimeType: true, size: true, kind: true, createdAt: true },
+        })
+        .catch(() => null);
+    }
+
     const quotation = await this.ensureQuotation(lead.id, lead.customerId, lead.owner_id, lead.stage);
     await this.audit.log({
       actor: user,
@@ -127,7 +161,12 @@ export class LeadsService {
     }
     this.notifications.dataChange("leads", "create", lead.id);
     if (quotation) this.notifications.dataChange("quotations", "create", quotation.id);
-    return lead;
+    return {
+      ...lead,
+      fileId: attachedFile?.id ?? fileId ?? null,
+      file: attachedFile,
+      files: attachedFile ? [attachedFile] : [],
+    };
   }
 
   async update(id: number, dto: LeadDto, user: RequestUser) {
@@ -145,7 +184,7 @@ export class LeadsService {
       lostReasonId = firstReason?.id ?? null;
     }
 
-    const { ownerId, stage: _s, ...rest } = dto;
+    const { ownerId, stage: _s, fileId, ...rest } = dto;
     const lead = await this.prisma.main.lead.update({
       where: { id },
       data: {
@@ -162,6 +201,17 @@ export class LeadsService {
         owner: { select: { id: true, name: true, role: true } },
       },
     });
+
+    let attachedFile: any = null;
+    if (fileId) {
+      attachedFile = await this.prisma.main.file
+        .update({
+          where: { id: fileId },
+          data: { refType: "lead", refId: String(id) },
+          select: { id: true, originalName: true, mimeType: true, size: true, kind: true, createdAt: true },
+        })
+        .catch(() => null);
+    }
 
     const quotation = await this.ensureQuotation(lead.id, lead.customerId, lead.owner_id, lead.stage);
 
@@ -184,7 +234,11 @@ export class LeadsService {
     }
     this.notifications.dataChange("leads", "update", lead.id);
     if (quotation) this.notifications.dataChange("quotations", "create", quotation.id);
-    return lead;
+    return {
+      ...lead,
+      fileId: attachedFile?.id ?? fileId ?? null,
+      file: attachedFile,
+    };
   }
 
   /** Baris penawaran dibuat otomatis saat lead masuk Qualification (PRD). */

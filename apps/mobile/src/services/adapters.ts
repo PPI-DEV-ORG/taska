@@ -246,6 +246,9 @@ export function adaptRow(module: string, raw: any): Row {
         penawaranId: raw.quotations?.[0]?.id != null ? String(raw.quotations[0].id) : null,
         penawaranFile: raw.quotations?.[0]?.number ?? null,
         createdAt: raw.createdAt,
+        fileId: raw.fileId ?? raw.file?.id ?? raw.files?.[0]?.id ?? null,
+        file: raw.file ?? raw.files?.[0] ?? null,
+        files: raw.files ?? (raw.file ? [raw.file] : []),
         _followUps: (raw.followUps ?? []).map((f: any) => ({
           id: String(f.id),
           date: d(f.date),
@@ -840,6 +843,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         need: row.need || row.catatan || undefined,
         ownerId: row.ownerId != null && row.ownerId !== "" ? Number(row.ownerId) : findId(db?.users, row.pemilik),
         stage: row.status ? (toEnum("leads", row.status) || "PROSPECTING") : "PROSPECTING",
+        fileId: row.fileId != null && row.fileId !== "" ? Number(row.fileId) : undefined,
       };
     case "quotations": {
       const tot = num(row.total ?? row.nilai);
@@ -1129,7 +1133,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   lostReasons: ["name", "status"],
   expenseCategories: ["name", "status"],
   costCenters: ["name", "status"],
-  leads: ["name", "customerId", "sourceId", "clientType", "need", "contactName", "estimatedValue", "probability", "targetClosing", "ownerId", "needsSurvey", "stage", "lostReasonId", "lostNote"],
+  leads: ["name", "customerId", "sourceId", "clientType", "need", "contactName", "estimatedValue", "probability", "targetClosing", "ownerId", "needsSurvey", "stage", "lostReasonId", "lostNote", "fileId"],
   surveys: ["leadId", "location", "need", "notes", "scheduleAt", "cost", "status", "memberIds"],
   quotations: [
     "leadId",

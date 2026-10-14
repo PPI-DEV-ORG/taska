@@ -79,6 +79,9 @@ export class LeadDto {
 
   @IsOptional() @IsString()
   lostNote?: string;
+
+  @IsOptional() @IsInt()
+  fileId?: number;
 }
 
 export class FollowUpDto {
