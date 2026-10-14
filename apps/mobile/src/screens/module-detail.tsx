@@ -317,6 +317,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         ) : canDecide ? (
           <ApprovalBar
             amount={approval!.nilai}
+            amountLabel={moduleKey === "opname" ? `${approval!.nilai} SKU selisih` : undefined}
             financeOk={(approval as any).financeOk}
             onApprove={() => decide(approval!.id, "Disetujui")}
             onReject={(r) => decide(approval!.id, "Ditolak", r)}

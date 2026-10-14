@@ -82,7 +82,10 @@ export class QuotationsService {
           intro: parsed.intro,
           notes: Array.isArray(parsed.notes) ? parsed.notes : DEFAULT_QUOTATION_NOTES,
           city: parsed.city,
+          kopText: parsed.kopText,
+          customerAddress: parsed.customerAddress,
           signerName: parsed.signerName,
+          signerTitle: parsed.signerTitle,
           latestFileId: parsed.latestFileId ?? null,
           latestFileName: parsed.latestFileName ?? null,
         });
@@ -143,6 +146,10 @@ export class QuotationsService {
       intro: meta?.intro ?? "",
       notesList: meta?.notes ?? DEFAULT_QUOTATION_NOTES,
       city: meta?.city ?? "Bekasi",
+      kopText: meta?.kopText ?? "",
+      customerAddress: meta?.customerAddress ?? "",
+      signerName: meta?.signerName ?? "",
+      signerTitle: meta?.signerTitle ?? "",
       latestFileId: meta?.latestFileId ?? null,
       latestFileName: meta?.latestFileName ?? null,
     };
@@ -214,6 +221,10 @@ export class QuotationsService {
         intro: meta?.intro,
         notes: meta?.notes,
         city: meta?.city,
+        kopText: meta?.kopText,
+        customerAddress: meta?.customerAddress,
+        signerName: meta?.signerName,
+        signerTitle: meta?.signerTitle,
         latestFileId: meta?.latestFileId ?? latestFile?.id ?? null,
         latestFileName: meta?.latestFileName ?? latestFile?.originalName ?? null,
       }),
@@ -273,14 +284,31 @@ export class QuotationsService {
       },
     });
 
-    if (items.length > 0 || total > 0 || dto?.subject || dto?.notesList) {
-      await this.generateAndAttachExcel(row.id, {
-        items,
-        subject: dto?.subject,
-        intro: dto?.intro,
-        notes: dto?.notesList,
-        city: dto?.city,
-      }, user);
+    if (
+      items.length > 0 ||
+      total > 0 ||
+      dto?.subject ||
+      dto?.notesList ||
+      dto?.kopText ||
+      dto?.customerAddress ||
+      dto?.signerName ||
+      dto?.signerTitle
+    ) {
+      await this.generateAndAttachExcel(
+        row.id,
+        {
+          items,
+          subject: dto?.subject,
+          intro: dto?.intro,
+          notes: dto?.notesList,
+          city: dto?.city,
+          kopText: dto?.kopText,
+          customerAddress: dto?.customerAddress,
+          signerName: dto?.signerName,
+          signerTitle: dto?.signerTitle,
+        },
+        user,
+      );
     } else if (dto?.fileId) {
       await this.attachFile(row.id, dto.fileId);
     }
@@ -386,6 +414,10 @@ export class QuotationsService {
           ...(dto.intro !== undefined ? { intro: dto.intro } : {}),
           ...(dto.notesList !== undefined ? { notes: dto.notesList } : {}),
           ...(dto.city !== undefined ? { city: dto.city } : {}),
+          ...(dto.kopText !== undefined ? { kopText: dto.kopText } : {}),
+          ...(dto.customerAddress !== undefined ? { customerAddress: dto.customerAddress } : {}),
+          ...(dto.signerName !== undefined ? { signerName: dto.signerName } : {}),
+          ...(dto.signerTitle !== undefined ? { signerTitle: dto.signerTitle } : {}),
           ...(f ? { latestFileId: f.id, latestFileName: f.originalName } : {}),
         },
         user.id,
@@ -396,7 +428,12 @@ export class QuotationsService {
       dto.discount !== undefined ||
       dto.subject !== undefined ||
       dto.intro !== undefined ||
-      dto.notesList !== undefined
+      dto.notesList !== undefined ||
+      dto.kopText !== undefined ||
+      dto.customerAddress !== undefined ||
+      dto.city !== undefined ||
+      dto.signerName !== undefined ||
+      dto.signerTitle !== undefined
     ) {
       await this.generateAndAttachExcel(
         id,
@@ -406,6 +443,10 @@ export class QuotationsService {
           intro: dto.intro ?? existingMeta?.intro,
           notes: dto.notesList ?? existingMeta?.notes,
           city: dto.city ?? existingMeta?.city,
+          kopText: dto.kopText ?? existingMeta?.kopText,
+          customerAddress: dto.customerAddress ?? existingMeta?.customerAddress,
+          signerName: dto.signerName ?? existingMeta?.signerName,
+          signerTitle: dto.signerTitle ?? existingMeta?.signerTitle,
         },
         user,
       );
@@ -433,7 +474,7 @@ export class QuotationsService {
       where: { id },
       include: {
         lead: { select: { id: true, name: true } },
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true, address: true } },
         owner: { select: { id: true, name: true } },
       },
     });
@@ -445,7 +486,9 @@ export class QuotationsService {
       date: row.createdAt,
       city: mergedMeta.city || "Bekasi",
       customerName: row.customer?.name || "-",
+      customerAddress: mergedMeta.customerAddress || row.customer?.address || "Di Tempat",
       leadName: row.lead?.name || "-",
+      kopText: mergedMeta.kopText,
       subject: mergedMeta.subject,
       intro: mergedMeta.intro,
       items: mergedMeta.items,
@@ -455,6 +498,7 @@ export class QuotationsService {
       grandTotal: Number(row.grandTotal),
       notes: mergedMeta.notes,
       signerName: mergedMeta.signerName || row.owner?.name || "Sales",
+      signerTitle: mergedMeta.signerTitle,
     });
 
     const filename = `Penawaran-${row.number.replace(/\//g, "-")}.xlsx`;
@@ -508,7 +552,7 @@ export class QuotationsService {
       where: { id },
       include: {
         lead: { select: { id: true, name: true } },
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true, address: true } },
         owner: { select: { id: true, name: true } },
       },
     });
@@ -520,7 +564,9 @@ export class QuotationsService {
       date: row.createdAt,
       city: meta?.city || "Bekasi",
       customerName: row.customer?.name || "-",
+      customerAddress: meta?.customerAddress || row.customer?.address || "Di Tempat",
       leadName: row.lead?.name || "-",
+      kopText: meta?.kopText,
       subject: meta?.subject,
       intro: meta?.intro,
       items: meta?.items ?? [],
@@ -530,6 +576,7 @@ export class QuotationsService {
       grandTotal: Number(row.grandTotal),
       notes: meta?.notes ?? DEFAULT_QUOTATION_NOTES,
       signerName: meta?.signerName || row.owner?.name || "Sales",
+      signerTitle: meta?.signerTitle,
     });
 
     const filename = `Penawaran-${row.number.replace(/\//g, "-")}.xlsx`;
@@ -542,7 +589,7 @@ export class QuotationsService {
       where: { id },
       include: {
         lead: { select: { id: true, name: true } },
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true, address: true } },
         owner: { select: { id: true, name: true } },
       },
     });
@@ -554,7 +601,9 @@ export class QuotationsService {
       date: row.createdAt,
       city: meta?.city || "Bekasi",
       customerName: row.customer?.name || "-",
+      customerAddress: meta?.customerAddress || row.customer?.address || "Di Tempat",
       leadName: row.lead?.name || "-",
+      kopText: meta?.kopText,
       subject: meta?.subject,
       intro: meta?.intro,
       items: meta?.items ?? [],
@@ -564,6 +613,7 @@ export class QuotationsService {
       grandTotal: Number(row.grandTotal),
       notes: meta?.notes ?? DEFAULT_QUOTATION_NOTES,
       signerName: meta?.signerName || row.owner?.name || "Sales",
+      signerTitle: meta?.signerTitle,
     });
 
     const filename = `Penawaran-${row.number.replace(/\//g, "-")}.pdf`;
