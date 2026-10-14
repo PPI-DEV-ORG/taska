@@ -16,7 +16,7 @@ import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-u
 import type { CreateField, ModuleDef, Row } from "@/constants/modules";
 
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
-function formatThousands(raw: string): string {
+export function formatThousands(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   if (!digits) return "";
   return Number(digits).toLocaleString("id-ID");
@@ -429,6 +429,71 @@ function FileField({
   );
 }
 
+export function getDynamicOptions(
+  f: CreateField,
+  data: any,
+  moduleKey?: string,
+  fallbackUsers: any[] = []
+): string[] | undefined {
+  if (!["select", "multiselect"].includes(f.type)) return f.options;
+  const nonEmpty = (arr: string[], fallback?: string[]) => (arr.length > 0 ? Array.from(new Set(arr)) : fallback);
+  switch (f.key) {
+    case "perusahaan":
+    case "customer": {
+      const custs = (data.customers ?? []).map((r: any) => String(r.nama)).filter(Boolean);
+      if (moduleKey === "projects") return nonEmpty(["-", ...custs], f.options);
+      return nonEmpty(custs, f.options);
+    }
+    case "sumber":
+      return nonEmpty((data.leadSources ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+    case "supplier":
+      return nonEmpty((data.suppliers ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+    case "lead":
+      return nonEmpty((data.leads ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+    case "produk":
+    case "item":
+      return nonEmpty((data.products ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+    case "penawaran":
+      return nonEmpty(["-", ...(data.quotations ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
+    case "po":
+      if (moduleKey === "invoices") {
+        return nonEmpty(["-", ...(data["po-client"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
+      }
+      return nonEmpty(["-", ...(data["supplier-pos"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
+    case "project":
+      return nonEmpty(["-", ...(data.projects ?? []).map((r: any) => String(r.nama)).filter(Boolean)], f.options);
+    case "gudang":
+    case "warehouse":
+      return nonEmpty(["-", ...(data.warehouses ?? []).map((r: any) => String(r.nama)).filter(Boolean)], f.options);
+    case "kategori":
+      if (moduleKey === "expenses") {
+        return nonEmpty((data.expenseCategories ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+      }
+      return nonEmpty((data.productCategories ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+    case "tim": {
+      const userList = (data.users && data.users.length > 0) ? data.users : fallbackUsers;
+      return nonEmpty(
+        userList
+          .map((u: any) => {
+            const nm = u.name || u.nama;
+            const rl = u.roleLabel || u.peran || (u.role ? (u.role.charAt(0).toUpperCase() + u.role.slice(1).toLowerCase()) : "");
+            return nm ? `${nm}${rl ? ` (${rl})` : ""}` : "";
+          })
+          .filter(Boolean),
+        f.options
+      );
+    }
+    case "pm":
+    case "pemilik":
+    case "pic": {
+      const userList = (data.users && data.users.length > 0) ? data.users : fallbackUsers;
+      return nonEmpty(userList.map((u: any) => String(u.name || u.nama || "")).filter(Boolean), f.options);
+    }
+    default:
+      return f.options;
+  }
+}
+
 export function FormDialog({
   def,
   open,
@@ -509,63 +574,7 @@ export function FormDialog({
   }
 
   function dynamicOptions(f: CreateField): string[] | undefined {
-    if (!["select", "multiselect"].includes(f.type)) return f.options;
-    const nonEmpty = (arr: string[], fallback?: string[]) => (arr.length > 0 ? Array.from(new Set(arr)) : fallback);
-    switch (f.key) {
-      case "perusahaan":
-      case "customer": {
-        const custs = (data.customers ?? []).map((r) => String(r.nama)).filter(Boolean);
-        if (def?.key === "projects") return nonEmpty(["-", ...custs], f.options);
-        return nonEmpty(custs, f.options);
-      }
-      case "sumber":
-        return nonEmpty((data.leadSources ?? []).map((r) => String(r.nama)).filter(Boolean), f.options);
-      case "supplier":
-        return nonEmpty((data.suppliers ?? []).map((r) => String(r.nama)).filter(Boolean), f.options);
-      case "lead":
-        return nonEmpty((data.leads ?? []).map((r) => String(r.nama)).filter(Boolean), f.options);
-      case "produk":
-      case "item":
-        return nonEmpty((data.products ?? []).map((r) => String(r.nama)).filter(Boolean), f.options);
-      case "penawaran":
-        return nonEmpty(["-", ...(data.quotations ?? []).map((r) => String(r.nomor)).filter(Boolean)], f.options);
-      case "po":
-        if (def?.key === "invoices") {
-          return nonEmpty(["-", ...(data["po-client"] ?? []).map((r) => String(r.nomor)).filter(Boolean)], f.options);
-        }
-        return nonEmpty(["-", ...(data["supplier-pos"] ?? []).map((r) => String(r.nomor)).filter(Boolean)], f.options);
-      case "project":
-        return nonEmpty(["-", ...(data.projects ?? []).map((r) => String(r.nama)).filter(Boolean)], f.options);
-      case "gudang":
-      case "warehouse":
-        return nonEmpty(["-", ...(data.warehouses ?? []).map((r) => String(r.nama)).filter(Boolean)], f.options);
-      case "kategori":
-        if (def?.key === "expenses") {
-          return nonEmpty((data.expenseCategories ?? []).map((r) => String(r.nama)).filter(Boolean), f.options);
-        }
-        return nonEmpty((data.productCategories ?? []).map((r) => String(r.nama)).filter(Boolean), f.options);
-      case "tim": {
-        const userList = (data.users && data.users.length > 0) ? data.users : fallbackUsers;
-        return nonEmpty(
-          userList
-            .map((u: any) => {
-              const nm = u.name || u.nama;
-              const rl = u.roleLabel || u.peran || (u.role ? (u.role.charAt(0).toUpperCase() + u.role.slice(1).toLowerCase()) : "");
-              return nm ? `${nm}${rl ? ` (${rl})` : ""}` : "";
-            })
-            .filter(Boolean),
-          f.options
-        );
-      }
-      case "pm":
-      case "pemilik":
-      case "pic": {
-        const userList = (data.users && data.users.length > 0) ? data.users : fallbackUsers;
-        return nonEmpty(userList.map((u: any) => String(u.name || u.nama || "")).filter(Boolean), f.options);
-      }
-      default:
-        return f.options;
-    }
+    return getDynamicOptions(f, data, def?.key, fallbackUsers);
   }
 
   async function submit() {

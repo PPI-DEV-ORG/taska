@@ -93,7 +93,7 @@ type Ctx = {
   addRow: (module: string, row: Record<string, any>) => Promise<Row | null>;
   deleteRow: (module: string, id: string) => Promise<boolean>;
   patchRow: (module: string, id: string, patch: Record<string, any>) => Promise<void>;
-  setStatus: (module: string, id: string, status: string, note?: string) => Promise<void>;
+  setStatus: (module: string, id: string, status: string, note?: string, extra?: Record<string, any>) => Promise<void>;
   createQuotationFromLead: (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }) => Promise<Row | null>;
   history: (module: string, id: string) => HistoryItem[];
   pushHistory: (module: string, id: string, what: string) => void;
@@ -759,7 +759,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const executeRemoteStatus = React.useCallback(
-    async (module: string, id: string, status: string, note?: string) => {
+    async (module: string, id: string, status: string, note?: string, extra?: Record<string, any>) => {
       const MASTER_MODULES = [
         "users", "customers", "suppliers", "warehouses", "products",
         "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
@@ -819,7 +819,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } else {
         const path = PATHS[module];
         if (path) {
-          await api("POST", `${path}/${id}/status`, buildStatusBody(module, status, note));
+          await api("POST", `${path}/${id}/status`, buildStatusBody(module, status, note, extra));
         }
       }
     },
@@ -928,7 +928,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setStatus = React.useCallback(
-    async (module: string, id: string, status: string, note?: string) => {
+    async (module: string, id: string, status: string, note?: string, extra?: Record<string, any>) => {
       const def = MODULES[module];
       const key = def?.statusKey || "status";
 
@@ -938,7 +938,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        await executeRemoteStatus(module, id, status, note);
+        await executeRemoteStatus(module, id, status, note, extra);
       } catch (e: any) {
         if (isNetworkError(e)) {
           setOffline(true);
@@ -952,7 +952,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // optimistik
       setData((d) => ({
         ...d,
-        [module]: (d[module] ?? []).map((r: any) => (r.id === id ? { ...r, [key]: status } : r)),
+        [module]: (d[module] ?? []).map((r: any) => (r.id === id ? { ...r, [key]: status, ...(extra ?? {}) } : r)),
       }));
       pushHistory(module, id, `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`);
       toast(`Status diubah ke ${status}`);

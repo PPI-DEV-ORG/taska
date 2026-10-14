@@ -321,6 +321,7 @@ export function adaptRow(module: string, raw: any): Row {
         totalInvoice: n(raw.invoices?.reduce?.((a: number, b: any) => a + n(b.total), 0) ?? 0),
         tanggal: d(raw.date),
         status: toLabel("po-client", "DITERIMA"),
+        fileId: raw.fileId ?? null,
       };
     case "invoices":
       return {
@@ -337,6 +338,7 @@ export function adaptRow(module: string, raw: any): Row {
         tanggal: d(raw.date),
         projectId: idOf(raw.project),
         project: nameOf(raw.project) ?? "",
+        fileId: raw.fileId ?? null,
         _payments: (raw.payments ?? []).map((p: any) => ({
           id: String(p.id),
           amount: n(p.amount),
@@ -398,6 +400,7 @@ export function adaptRow(module: string, raw: any): Row {
         status: toLabel("purchase-requests", raw.status),
         tujuan: raw.purpose ?? "",
         supplierId: idOf(raw.supplier),
+        fileId: raw.evidenceFileId ?? (raw.fileId ?? null),
       };
     case "supplier-pos":
       return {
@@ -422,6 +425,8 @@ export function adaptRow(module: string, raw: any): Row {
         projectId: idOf(raw.project),
         shipmentStatus: raw.shipmentStatus,
         poStatus: raw.status,
+        fileId: raw.fileId ?? null,
+        doFileId: raw.doFileId ?? null,
       };
     case "receiving":
       return {
@@ -439,6 +444,7 @@ export function adaptRow(module: string, raw: any): Row {
         projectId: idOf(raw.project),
         conditionNote: raw.conditionNote ?? "",
         _items: raw.items ?? [],
+        fileId: raw.receiptFileId ?? (raw.fileId ?? null),
       };
     case "delivery-notes": {
       const loc = raw.locations?.[0];
@@ -457,6 +463,10 @@ export function adaptRow(module: string, raw: any): Row {
         withGoods: !!raw.withGoods,
         reportText: raw.reportText ?? "",
         _locations: raw.locations ?? [],
+        fileId: raw.scanFileId ?? raw.signedFileId ?? (raw.reportFileId ?? null),
+        scanFileId: raw.scanFileId ?? raw.signedFileId ?? null,
+        signedFileId: raw.scanFileId ?? raw.signedFileId ?? null,
+        reportFileId: raw.reportFileId ?? null,
       };
     }
     case "expenses":
@@ -472,6 +482,11 @@ export function adaptRow(module: string, raw: any): Row {
         alasan: raw.description ?? "",
         status: toLabel("expenses", raw.status),
         costCenterId: idOf(raw.costCenter),
+        receiptFileId: raw.receiptFileId ?? (raw.receiptFile?.id ?? (raw.fileId ?? null)),
+        receiptFile: raw.receiptFile ?? null,
+        paidFileId: raw.paidFileId ?? (raw.paidFile?.id ?? null),
+        paidFile: raw.paidFile ?? null,
+        fileId: raw.receiptFileId ?? (raw.receiptFile?.id ?? (raw.fileId ?? null)),
       };
     case "damage-reports":
       return {
@@ -485,6 +500,7 @@ export function adaptRow(module: string, raw: any): Row {
         status: toLabel("damage-reports", raw.status),
         keterangan: raw.description ?? "",
         qty: n(raw.qty),
+        fileId: raw.fileId ?? null,
       };
     case "customers":
       return {
@@ -981,6 +997,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
                 },
               ],
         reportText: row.reportText || (row.barang && row.barang !== "-" ? String(row.barang) : undefined),
+        scanFileId: row.scanFileId ?? (row.fileId ? Number(row.fileId) : undefined),
+        reportFileId: row.reportFileId ? Number(row.reportFileId) : undefined,
       };
     case "expenses":
       return {
@@ -1105,7 +1123,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   "supplier-pos": ["number", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "doFileId", "items"],
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "items"],
-  "delivery-notes": ["number", "date", "withGoods", "locations", "items", "signedFileId", "reportFileId", "reportText"],
+  "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "fileId"],
 };
 
@@ -1156,6 +1174,25 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.hargaBeli !== undefined) out.purchasePrice = num(patch.hargaBeli);
   if (patch.garansi !== undefined) out.warrantyMonths = parseInt(String(patch.garansi), 10) || undefined;
   if (patch.payment !== undefined) out.paymentTerms = patch.payment;
+
+  if (patch.fileId !== undefined) {
+    if (module === "expenses") out.receiptFileId = patch.fileId ? Number(patch.fileId) : null;
+    else if (module === "purchase-requests") out.evidenceFileId = patch.fileId ? Number(patch.fileId) : null;
+    else if (module === "receiving") out.receiptFileId = patch.fileId ? Number(patch.fileId) : null;
+    else if (module === "delivery-notes") out.signedFileId = patch.fileId ? Number(patch.fileId) : null;
+    else out.fileId = patch.fileId ? Number(patch.fileId) : null;
+  }
+  if (patch.receiptFileId !== undefined) out.receiptFileId = patch.receiptFileId ? Number(patch.receiptFileId) : null;
+  if (patch.paidFileId !== undefined) out.paidFileId = patch.paidFileId ? Number(patch.paidFileId) : null;
+  if (patch.evidenceFileId !== undefined) out.evidenceFileId = patch.evidenceFileId ? Number(patch.evidenceFileId) : null;
+  if (patch.signedFileId !== undefined) out.signedFileId = patch.signedFileId ? Number(patch.signedFileId) : null;
+  if (patch.reportFileId !== undefined) out.reportFileId = patch.reportFileId ? Number(patch.reportFileId) : null;
+
+  if (module === "expenses") {
+    if (patch.kategori !== undefined) out.categoryId = findId(db?.expenseCategories, patch.kategori);
+    if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
+    if (patch.costCenter !== undefined) out.costCenterId = findId(db?.costCenters, patch.costCenter);
+  }
 
   if (module === "leads") {
     if (patch.perusahaan !== undefined) out.customerId = findId(db?.customers, patch.perusahaan);
@@ -1237,10 +1274,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
 const STATUS_REASON_MODULES = new Set(["expenses", "purchase-requests", "delivery-notes", "opname", "damage-reports"]);
 
 /** Mutasi status: UI label → body untuk endpoint status. */
-export function buildStatusBody(module: string, uiStatus: string, note?: string): Record<string, any> {
+export function buildStatusBody(module: string, uiStatus: string, note?: string, extra?: Record<string, any>): Record<string, any> {
   const enumVal = toEnum(module, uiStatus);
   const field = STATUS_REASON_MODULES.has(module) ? "reason" : "note";
-  return note !== undefined ? { status: enumVal, [field]: note } : { status: enumVal };
+  const base = note !== undefined ? { status: enumVal, [field]: note } : { status: enumVal };
+  return extra ? { ...base, ...extra } : base;
 }
 
 export function statusEnumFor(module: string, uiStatus: string): string {

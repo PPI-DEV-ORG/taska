@@ -65,6 +65,7 @@ export default function NewExpenseScreen() {
       status: "Dilaporkan",
       nota: photoCount > 0 || fileId ? "nota.jpg" : "-",
       fileId,
+      receiptFileId: fileId ? Number(fileId) : undefined,
     };
 
     addRow("expenses", row);

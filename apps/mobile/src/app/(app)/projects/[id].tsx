@@ -18,7 +18,7 @@ import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, Chip, EmptyState, InfoGrid, Timeline } from "@/components/taska/basics";
 import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { DocumentViewerList, DocumentViewerItem, resolveModuleDocs } from "@/components/taska/document-viewer";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { MODULES, type Row } from "@/constants/modules";
@@ -176,7 +176,9 @@ export default function ProjectDetailScreen() {
               Handover dilakukan setelah invoice lunas. Sistem mencatat dokumen serah terima (BAST/BAHP) tanpa memblokir penutupan project bila ada kesepakatan internal.
             </Text>
             <View className="mt-4">
-              <FileUploader label="Dokumen BAST / BAHP Akhir" kind="dokumen" autoFlush />
+              <DocumentViewerItem
+                item={resolveModuleDocs("projects", "Berita Acara Serah Terima (BAST)", project)}
+              />
             </View>
           </Panel>
         </View>
@@ -440,12 +442,25 @@ export default function ProjectDetailScreen() {
       {activeTab === "Dokumen" && (
         <View className="gap-4">
           <Panel title="File & Lampiran Dokumen Project">
-            <View className="gap-4">
-              <FileUploader label="Dokumen PRD & Spesifikasi Teknis" kind="dokumen" autoFlush />
-              <FileUploader label="Berita Acara Hasil Pekerjaan (BAHP)" kind="dokumen" autoFlush />
-              <FileUploader label="Berita Acara Serah Terima (BAST)" kind="dokumen" autoFlush />
-              <FileUploader label="Delivery Order (DO) / Surat Jalan Bertandatangan" kind="foto" autoFlush />
-            </View>
+            <DocumentViewerList
+              moduleKey="projects"
+              docs={[
+                "Dokumen PRD & Spesifikasi Teknis",
+                "Berita Acara Hasil Pekerjaan (BAHP)",
+                "Berita Acara Serah Terima (BAST)",
+                "Delivery Order (DO) / Surat Jalan Bertandatangan",
+              ]}
+              row={project}
+              onUploadFile={async (fieldKey, fileId, item) => {
+                try {
+                  await patchRow("projects", project.id, { [fieldKey]: fileId });
+                  toast(`${item.label} berhasil diperbarui`);
+                  await reload();
+                } catch (err: any) {
+                  toast(err?.message || "Gagal memperbarui file", "danger");
+                }
+              }}
+            />
           </Panel>
         </View>
       )}

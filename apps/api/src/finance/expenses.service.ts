@@ -76,7 +76,30 @@ export class ExpensesService {
       }),
       this.prisma.main.expense.count({ where }),
     ]);
-    return paginate(items, total, q);
+
+    // Ambil metadata file untuk receiptFileId dan paidFileId
+    const fileIds = Array.from(
+      new Set(
+        items
+          .flatMap((it) => [it.receiptFileId, it.paidFileId])
+          .filter((id): id is number => typeof id === "number" && id > 0),
+      ),
+    );
+    const files = fileIds.length
+      ? await this.prisma.main.file.findMany({
+          where: { id: { in: fileIds } },
+          select: { id: true, originalName: true, mimeType: true, size: true },
+        })
+      : [];
+    const fileMap = new Map(files.map((f) => [f.id, f]));
+
+    const enriched = items.map((it) => ({
+      ...it,
+      receiptFile: it.receiptFileId ? fileMap.get(it.receiptFileId) ?? null : null,
+      paidFile: it.paidFileId ? fileMap.get(it.paidFileId) ?? null : null,
+    }));
+
+    return paginate(enriched, total, q);
   }
 
   async get(id: number) {
@@ -92,8 +115,22 @@ export class ExpensesService {
       },
     });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
-    const approval = await this.approvals.getFor("PENGELUARAN", id);
-    return { ...row, approval };
+    const [approval, receiptFile, paidFile] = await Promise.all([
+      this.approvals.getFor("PENGELUARAN", id),
+      row.receiptFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: row.receiptFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : null,
+      row.paidFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: row.paidFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : null,
+    ]);
+    return { ...row, approval, receiptFile, paidFile };
   }
 
   async create(dto: ExpenseDto, user: RequestUser) {
@@ -153,14 +190,34 @@ export class ExpensesService {
       entityId: row.id,
       detail: `Rp${amount} — ${description.slice(0, 120)}`,
     });
-    return row;
+    const receiptFile = dto.receiptFileId
+      ? await this.prisma.main.file.findUnique({
+          where: { id: dto.receiptFileId },
+          select: { id: true, originalName: true, mimeType: true, size: true },
+        })
+      : null;
+    return { ...row, receiptFile, paidFile: null };
   }
 
   async update(id: number, dto: ExpenseDto, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
-    if (row.reporterId !== user.id && !["SUPER_ADMIN", "ADMIN", "FINANCE", "BOS", "PM"].includes(user.role)) {
-      throw new BadRequestException("Hanya pelapor atau Finance/Admin yang boleh mengubahnya");
+    const canEditExpense = ["SUPER_ADMIN", "FINANCE", "BOS"].includes(user.role);
+    if (!canEditExpense) {
+      throw new BadRequestException("Hanya Finance dan Super Admin yang memiliki hak untuk mengubah data pengeluaran");
+    }
+
+    if (dto.receiptFileId && dto.receiptFileId !== row.receiptFileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.receiptFileId },
+        data: { refType: "expense", refId: String(id) },
+      }).catch(() => {});
+    }
+    if (dto.paidFileId && dto.paidFileId !== row.paidFileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.paidFileId },
+        data: { refType: "expense-paid", refId: String(id) },
+      }).catch(() => {});
     }
 
     const updated = await this.prisma.main.expense.update({
@@ -175,6 +232,7 @@ export class ExpensesService {
         deliveryNoteId: dto.deliveryNoteId !== undefined ? dto.deliveryNoteId : row.deliveryNoteId,
         costCenterId: dto.costCenterId !== undefined ? dto.costCenterId : row.costCenterId,
         receiptFileId: dto.receiptFileId !== undefined ? dto.receiptFileId : row.receiptFileId,
+        paidFileId: dto.paidFileId !== undefined ? dto.paidFileId : row.paidFileId,
         ...(dto.status ? { status: dto.status } : {}),
       },
       include: {
@@ -192,7 +250,21 @@ export class ExpensesService {
       entityId: id,
       detail: `Rp${updated.amount} — ${updated.description.slice(0, 120)}`,
     });
-    return updated;
+    const [receiptFile, paidFile] = await Promise.all([
+      updated.receiptFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: updated.receiptFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : null,
+      updated.paidFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: updated.paidFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : null,
+    ]);
+    return { ...updated, receiptFile, paidFile };
   }
 
   async setStatus(id: number, dto: ExpenseStatusDto, user: RequestUser) {
@@ -229,8 +301,31 @@ export class ExpensesService {
       text: `Pengeluaran #${id}: ${dto.status}${dto.reason ? ` — ${dto.reason}` : ""}`,
       href: `/expenses/${id}`,
     });
+    const pendingAppr = await this.approvals.getFor("PENGELUARAN", id);
+    if (pendingAppr && pendingAppr.status === "MENUNGGU") {
+      if (dto.status === "DISETUJUI" || dto.status === "DIBAYAR") {
+        await this.approvals.decide(pendingAppr.id, user, true, dto.reason).catch(() => {});
+      } else if (dto.status === "DITOLAK") {
+        await this.approvals.decide(pendingAppr.id, user, false, dto.reason).catch(() => {});
+      }
+    }
+
     this.notifications.dataChange("expenses", "status", updated.id);
-    return updated;
+    const [receiptFile, paidFile] = await Promise.all([
+      updated.receiptFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: updated.receiptFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : null,
+      updated.paidFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: updated.paidFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : null,
+    ]);
+    return { ...updated, receiptFile, paidFile };
   }
 
   async remove(id: number, user: RequestUser) {

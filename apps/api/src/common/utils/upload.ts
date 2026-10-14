@@ -15,7 +15,7 @@ const SIGNATURES: Array<{ ext: string; kind: "foto" | "dokumen" | "video" | "lai
 
 const ALLOWED: Record<"foto" | "dokumen" | "video", string[]> = {
   foto: ["png", "jpg", "webp"],
-  dokumen: ["pdf", "docx", "zip", "ole"],
+  dokumen: ["pdf", "docx", "zip", "ole", "png", "jpg", "webp"],
   video: ["mp4", "mkv"],
 };
 
