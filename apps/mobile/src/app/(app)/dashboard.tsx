@@ -208,6 +208,15 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/approvals")}
           />
         ) : null}
+        {role === "bos" || role === "admin" ? (
+          <QuickActionButton
+            label="Lihat Penawaran"
+            icon={FileText}
+            shortcut="⌘Q"
+            className="flex-1 min-w-[170px]"
+            onPress={() => router.push("/quotations")}
+          />
+        ) : null}
         {isSuper || role === "sales" ? (
           <>
             <QuickActionButton

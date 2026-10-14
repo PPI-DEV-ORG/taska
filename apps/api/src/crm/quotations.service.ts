@@ -108,20 +108,47 @@ export class QuotationsService {
       items: patch.items !== undefined ? patch.items : current.items,
       notes: patch.notes !== undefined && patch.notes.length > 0 ? patch.notes : current.notes,
     };
+    const isDefaultNotes =
+      Array.isArray(merged.notes) &&
+      merged.notes.length === DEFAULT_QUOTATION_NOTES.length &&
+      merged.notes.every((n, i) => n === DEFAULT_QUOTATION_NOTES[i]);
+
+    const toStore: Record<string, any> = { ...merged };
+    if (isDefaultNotes) {
+      delete toStore.notes;
+    }
     const key = this.metaKey(id);
-    await this.prisma.main.systemSetting.upsert({
-      where: { key },
-      update: {
-        value: JSON.stringify(merged),
-        ...(userId ? { updatedById: userId } : {}),
-      },
-      create: {
-        key,
-        value: JSON.stringify(merged),
-        description: `Metadata item & template penawaran #${id}`,
-        ...(userId ? { updatedById: userId } : {}),
-      },
-    });
+    const jsonVal = JSON.stringify(toStore);
+    try {
+      await this.prisma.main.systemSetting.upsert({
+        where: { key },
+        update: {
+          value: jsonVal,
+          ...(userId ? { updatedById: userId } : {}),
+        },
+        create: {
+          key,
+          value: jsonVal,
+          description: `Metadata item & template penawaran #${id}`,
+          ...(userId ? { updatedById: userId } : {}),
+        },
+      });
+    } catch (err: any) {
+      await this.prisma.main.$executeRawUnsafe("ALTER TABLE `SystemSetting` MODIFY COLUMN `value` LONGTEXT NOT NULL").catch(() => {});
+      await this.prisma.main.systemSetting.upsert({
+        where: { key },
+        update: {
+          value: jsonVal,
+          ...(userId ? { updatedById: userId } : {}),
+        },
+        create: {
+          key,
+          value: jsonVal,
+          description: `Metadata item & template penawaran #${id}`,
+          ...(userId ? { updatedById: userId } : {}),
+        },
+      });
+    }
     return merged;
   }
 

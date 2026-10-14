@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, normalize, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -75,7 +76,15 @@ export class UploadService {
     private readonly settings: SettingsService,
     config: ConfigService,
   ) {
-    this.root = resolve(config.get<string>("UPLOAD_DIR") ?? "./uploads");
+    const raw = config.get<string>("UPLOAD_DIR") ?? "./uploads";
+    if (raw.startsWith("/app") && !existsSync("/app")) {
+      const fallback = existsSync(resolve(process.cwd(), "uploads"))
+        ? resolve(process.cwd(), "uploads")
+        : resolve(process.cwd(), "apps/api/uploads");
+      this.root = fallback;
+    } else {
+      this.root = resolve(raw);
+    }
   }
 
   private async store(
@@ -100,9 +109,15 @@ export class UploadService {
       ? originalName.replace(/[^\w.\- ()]/g, "_").slice(0, 120)
       : `upload.${ext}`;
     const rel = `${folder}/${Date.now()}-${randomUUID().slice(0, 8)}__${safeName}`;
-    const abs = join(this.root, rel);
+    let abs = join(this.root, rel);
 
-    await mkdir(dirname(abs), { recursive: true });
+    try {
+      await mkdir(dirname(abs), { recursive: true });
+    } catch {
+      const localRoot = resolve(process.cwd().includes("apps/api") ? "./uploads" : "./apps/api/uploads");
+      abs = join(localRoot, rel);
+      await mkdir(dirname(abs), { recursive: true });
+    }
     await writeFile(abs, buffer);
 
     const row = await this.prisma.main.file.create({
@@ -153,9 +168,15 @@ export class UploadService {
     const folder = resolveUploadFolder(refType, originalName, ext, "dokumen");
     const safeName = originalName.replace(/[^\w.\- ()]/g, "_").slice(0, 120);
     const rel = `${folder}/${Date.now()}-${randomUUID().slice(0, 8)}__${safeName}`;
-    const abs = join(this.root, rel);
+    let abs = join(this.root, rel);
 
-    await mkdir(dirname(abs), { recursive: true });
+    try {
+      await mkdir(dirname(abs), { recursive: true });
+    } catch {
+      const localRoot = resolve(process.cwd().includes("apps/api") ? "./uploads" : "./apps/api/uploads");
+      abs = join(localRoot, rel);
+      await mkdir(dirname(abs), { recursive: true });
+    }
     await writeFile(abs, buffer);
 
     const row = await this.prisma.main.file.create({
@@ -186,12 +207,16 @@ export class UploadService {
     const row = await this.prisma.main.file.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("File tidak ditemukan");
 
-    const abs = normalize(join(this.root, row.path));
-    if (!abs.startsWith(this.root)) throw new BadRequestException("Path tidak valid");
+    let abs = normalize(join(this.root, row.path));
     try {
       await stat(abs);
     } catch {
-      throw new NotFoundException("Berkas tidak ada di penyimpanan");
+      const alt = resolve(process.cwd().includes("apps/api") ? "./uploads" : "./apps/api/uploads", row.path);
+      if (existsSync(alt)) {
+        abs = alt;
+      } else {
+        throw new NotFoundException("Berkas tidak ada di penyimpanan");
+      }
     }
 
     return {

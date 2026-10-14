@@ -35,6 +35,7 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
       await db.$executeRawUnsafe(`ALTER TABLE \`User\` MODIFY COLUMN \`role\` ${ROLE_ENUM_SQL} NOT NULL`);
       await db.$executeRawUnsafe(`ALTER TABLE \`Notification\` MODIFY COLUMN \`targetRole\` ${ROLE_ENUM_SQL} NULL`);
       await db.$executeRawUnsafe(`ALTER TABLE \`ApprovalStep\` MODIFY COLUMN \`approverRole\` ${ROLE_ENUM_SQL} NOT NULL`);
+      await db.$executeRawUnsafe("ALTER TABLE `SystemSetting` MODIFY COLUMN `value` LONGTEXT NOT NULL");
     } catch {}
   }
 

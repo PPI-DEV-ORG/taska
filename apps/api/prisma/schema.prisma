@@ -431,7 +431,7 @@ model DocumentNumber {
 
 model SystemSetting {
   key         String   @id
-  value       String
+  value       String   @db.LongText
   description String?
   updatedById Int?
   updatedAt   DateTime @updatedAt

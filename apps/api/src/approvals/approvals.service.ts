@@ -181,7 +181,7 @@ export class ApprovalsService {
     const [rows, total] = await Promise.all([
       this.prisma.main.approval.findMany({
         where,
-        include: { steps: true, requestedBy: { select: { id: true, name: true } } },
+        include: { steps: true, requested_by: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
         skip: (opts.page - 1) * opts.limit,
         take: opts.limit,
@@ -189,7 +189,11 @@ export class ApprovalsService {
       this.prisma.main.approval.count({ where }),
     ]);
     const items = await Promise.all(
-      rows.map(async (r) => ({ ...r, status: await this.evaluate(r) })),
+      rows.map(async (r) => ({
+        ...r,
+        requestedBy: (r as any).requested_by,
+        status: await this.evaluate(r),
+      })),
     );
     return { items, total, page: opts.page, limit: opts.limit };
   }
@@ -198,7 +202,7 @@ export class ApprovalsService {
   async pendingFor(user: RequestUser) {
     const rows = await this.prisma.main.approval.findMany({
       where: { status: "MENUNGGU" },
-      include: { steps: true, requestedBy: { select: { id: true, name: true } } },
+      include: { steps: true, requested_by: { select: { id: true, name: true } } },
       orderBy: { createdAt: "asc" },
       take: 300,
     });
@@ -214,7 +218,12 @@ export class ApprovalsService {
           ? pendingSteps
           : pendingSteps.filter((s) => s.approverRole === (user.role as Role));
       if (!relevant.length) continue;
-      items.push({ ...r, status, pendingRoles: relevant.map((s) => s.approverRole) });
+      items.push({
+        ...r,
+        requestedBy: (r as any).requested_by,
+        status,
+        pendingRoles: relevant.map((s) => s.approverRole),
+      });
     }
     return { items, total: items.length };
   }
