@@ -50,6 +50,7 @@ import {
 } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
+import { buildEfakturCsv } from "@/lib/efaktur";
 import { type Row } from "@/constants/modules";
 
 const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
@@ -2634,7 +2635,7 @@ function ProjectExtras({ row }: { row: Row }) {
 }
 
 function InvoiceExtras({ row }: { row: Row }) {
-  const { user, toast, reload } = useApp();
+  const { user, toast, reload, data } = useApp();
   const sisa = Math.max(0, Number(row.total || 0) - Number(row.terbayar || 0));
   const [payOpen, setPayOpen] = React.useState(false);
   const [payAmount, setPayAmount] = React.useState(String(sisa || row.total || 0));
@@ -2682,15 +2683,21 @@ function InvoiceExtras({ row }: { row: Row }) {
       toast("Mengunduh CSV E-Faktur DJP");
       return;
     }
-    const token = getAccess();
-    const url = `${apiBase()}/invoices/efaktur/export?invoiceId=${row.id}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `efaktur-${String(row.nomor || "inv").replace(/[^a-zA-Z0-9_-]/g, "_")}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast(`CSV E-Faktur DJP untuk ${row.nomor} berhasil diunduh`);
+    try {
+      const csvContent = buildEfakturCsv([row], data.customers ?? []);
+      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `efaktur-${String(row.nomor || "inv").replace(/[^a-zA-Z0-9_-]/g, "_")}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast(`CSV E-Faktur DJP untuk ${row.nomor} berhasil diunduh`);
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengunduh CSV E-Faktur", "danger");
+    }
   }
 
   return (
