@@ -36,7 +36,12 @@ export default function NewDeliveryNoteScreen() {
       return;
     }
 
-    const fileId = (await fileHandle.current?.flush()) ?? undefined;
+    let fileId: number | undefined;
+    try {
+      fileId = (await fileHandle.current?.flush()) ?? undefined;
+    } catch {
+      return;
+    }
 
     const row = {
       nomor: `SJ/${new Date().getFullYear()}/${Math.floor(Math.random() * 800) + 100}`,
@@ -49,6 +54,7 @@ export default function NewDeliveryNoteScreen() {
       status: "Pending",
       persetujuan: "Menunggu persetujuan",
       fileId,
+      scanFileId: fileId ? Number(fileId) : undefined,
     };
 
     addRow("delivery-notes", row);

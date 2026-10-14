@@ -71,7 +71,7 @@ export class UploadService {
         originalName: safeName,
         mimeType: CONTENT_TYPE[ext] ?? "application/octet-stream",
         size: buffer.length,
-        kind: kind === "foto" ? "FOTO" : kind === "video" ? "VIDEO" : "DOKUMEN",
+        kind: ["png", "jpg", "webp"].includes(ext) ? "FOTO" : kind === "video" ? "VIDEO" : "DOKUMEN",
         refType: refType ?? null,
         refId: refId ?? null,
         uploadedById: user.id,

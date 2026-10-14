@@ -61,6 +61,12 @@ export class DeliveryCreateDto {
   @IsOptional() @Type(() => Number) @IsInt()
   reportFileId?: number;
 
+  @IsOptional() @Type(() => Number) @IsInt()
+  scanFileId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  fileId?: number;
+
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LocationDto)
   locations?: LocationDto[];
 }

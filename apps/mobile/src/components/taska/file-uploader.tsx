@@ -56,6 +56,7 @@ type Props = {
   required?: boolean;
   onChange?: (n: number) => void;
   onFilePicked?: (file: { name: string; blob?: Blob; uri?: string }) => void | Promise<void>;
+  onUploaded?: (fileId: number, file: StagedFile) => void | Promise<void>;
   multiple?: boolean;
   handleRef?: (h: FileUploaderHandle | null) => void;
   /** true = unggah langsung saat dipilih (konsumen tanpa tombol Simpan). default: staged sampai flush(). */
@@ -63,7 +64,7 @@ type Props = {
 };
 
 export function FileUploader({
-  label, kind = "semua", required, onChange, onFilePicked, multiple = false, handleRef, autoFlush = false,
+  label, kind = "semua", required, onChange, onFilePicked, onUploaded, multiple = false, handleRef, autoFlush = false,
 }: Props) {
   const { toast, offline } = useApp();
   const [staged, setStaged] = React.useState<StagedFile[]>([]);
@@ -74,8 +75,13 @@ export function FileUploader({
   const target = toUploadKind(kind);
 
   async function flushOne(f: StagedFile): Promise<number | null> {
-    const payload = f.blob ?? (f.uri ? { uri: f.uri, name: f.name, type: "application/octet-stream" } : null);
-    return uploadFile(payload, f.kind);
+    try {
+      const payload = f.blob ?? (f.uri ? { uri: f.uri, name: f.name, type: "application/octet-stream" } : null);
+      return await uploadFile(payload, f.kind);
+    } catch (e: any) {
+      toast(e?.message || "Gagal mengunggah file", "danger");
+      throw e;
+    }
   }
 
   // notify parent of staged count after commit (never during render — parent setState
@@ -85,13 +91,19 @@ export function FileUploader({
   }, [staged.length, onChange]);
 
   function stage(f: { name?: string; uri?: string; blob?: Blob; size?: number }) {
+    const fileName = f.name || "file";
+    const ext = (fileName.split(".").pop() || "").toLowerCase();
+    const isImg = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext) || f.blob?.type?.startsWith("image/");
+    const isVid = ["mp4", "mkv", "mov"].includes(ext) || f.blob?.type?.startsWith("video/");
+    const detectedKind: "foto" | "dokumen" | "video" = isImg ? "foto" : isVid ? "video" : target;
+
     const entry: StagedFile = {
       id: Date.now() + prevLenRef.current,
-      name: f.name || "file",
+      name: fileName,
       size: f.size ? fmtSize(f.size) : "",
       uri: f.uri,
       blob: f.blob,
-      kind: target,
+      kind: detectedKind,
     };
     setStaged((prev) => {
       prevLenRef.current = prev.length + 1;
@@ -99,8 +111,16 @@ export function FileUploader({
     });
     if (onFilePicked) {
       void onFilePicked({ name: entry.name, blob: entry.blob, uri: entry.uri });
-    } else if (autoFlush) {
-      void flushOne(entry);
+    }
+    if (autoFlush) {
+      setBusy(true);
+      void flushOne(entry)
+        .then((fileId) => {
+          if (fileId != null) onUploaded?.(fileId, entry);
+        })
+        .finally(() => {
+          setBusy(false);
+        });
     }
   }
 
@@ -158,7 +178,9 @@ export function FileUploader({
           size: asset.fileSize,
         });
       }
-      toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
+      if (!autoFlush) {
+        toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
+      }
     } finally {
       setBusy(false);
     }
@@ -187,7 +209,9 @@ export function FileUploader({
     for (const f of list) {
       stage({ name: f.name, blob: f, size: f.size });
     }
-    toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
+    if (!autoFlush) {
+      toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
+    }
   }
 
   return (

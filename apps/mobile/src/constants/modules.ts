@@ -510,6 +510,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "project", label: "Project terkait", type: "select", options: ["-"] },
       { key: "tanggal", label: "Tanggal pengeluaran", type: "date", required: true },
       { key: "alasan", label: "Alasan / keperluan", type: "textarea", required: true },
+      { key: "fileId", label: "Foto Nota Pembayaran", type: "file" },
     ],
     createRoles: ALL,
     docs: ["Foto nota", "Bukti transfer reimbursement"],

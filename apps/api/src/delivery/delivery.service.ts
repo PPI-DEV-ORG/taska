@@ -59,6 +59,7 @@ export class DeliveryService {
       );
     }
 
+    const scanFileId = dto.scanFileId ?? dto.fileId;
     const row = await this.prisma.main.deliveryNote.create({
       data: {
         number,
@@ -68,6 +69,7 @@ export class DeliveryService {
         status: dto.status ?? "PENDING",
         reportText: dto.reportText,
         reportFileId: dto.reportFileId,
+        scanFileId,
         locations: {
           create: locations.map((l) => ({
             destination: l.destination || "-",
@@ -81,6 +83,13 @@ export class DeliveryService {
         locations: { include: { project: { select: { name: true } } } },
       },
     });
+
+    if (scanFileId) {
+      await this.prisma.main.file.update({
+        where: { id: scanFileId },
+        data: { refType: "delivery-note", refId: String(row.id) },
+      }).catch(() => {});
+    }
 
     await this.approvals.request({
       kind: "SURAT_JALAN",
@@ -115,6 +124,7 @@ export class DeliveryService {
         ...(dto.status ? { status: dto.status } : {}),
         ...(dto.reportText !== undefined ? { reportText: dto.reportText, reportAt: new Date() } : {}),
         ...(dto.reportFileId !== undefined ? { reportFileId: dto.reportFileId } : {}),
+        ...(dto.scanFileId !== undefined || dto.fileId !== undefined ? { scanFileId: dto.scanFileId ?? dto.fileId } : {}),
         ...(dto.locations?.length
           ? {
               locations: {
