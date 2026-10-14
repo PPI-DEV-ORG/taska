@@ -8,6 +8,8 @@ import { useApp } from "@/store/app-store";
 import { apiBase, getAccess } from "@/services/api";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
+import { buildEfakturCsv } from "@/lib/efaktur";
+import { generatePdfTable } from "@/lib/simple-pdf";
 
 export default function ReportsScreen() {
   const { data, approvals, user, toast } = useApp();
@@ -247,10 +249,73 @@ export default function ReportsScreen() {
       URL.revokeObjectURL(url);
       toast(`Laporan ${title} berhasil diunduh (.csv)`);
     } else if (format === "pdf") {
-      window.print();
+      const csvData = generateCsv(title);
+      const lines = csvData.trim().split("\n").filter((l) => l.trim().length > 0);
+      let foundHeader = false;
+      let cols: string[] = [];
+      const parsedRows: string[][] = [];
+      for (const line of lines) {
+        if (!foundHeader && (line.includes(",") || line.includes("ID,"))) {
+          foundHeader = true;
+          cols = line.split(",").map((c) => c.replace(/^"|"$/g, "").trim());
+        } else if (foundHeader) {
+          const r = line.split(",").map((c) => c.replace(/^"|"$/g, "").trim());
+          parsedRows.push(r);
+        }
+      }
+      const pdfBytes = generatePdfTable({
+        title,
+        columns: cols,
+        rows: parsedRows,
+      });
+      const blob = new Blob([pdfBytes as any], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast(`Laporan ${title} berhasil diunduh (.pdf)`);
     } else {
       const csvData = generateCsv(title);
-      const htmlContent = `<html><head><meta charset="utf-8"><title>${title}</title></head><body><h2>PT GHINA MULTI PRIMA / TASKA ERP</h2><h3>${title}</h3><pre>${csvData}</pre></body></html>`;
+      const lines = csvData.trim().split("\n").filter((l) => l.trim().length > 0);
+      let tableRows = "";
+      let foundHeader = false;
+      for (const line of lines) {
+        if (!foundHeader && (line.includes(",") || line.includes("ID,"))) {
+          foundHeader = true;
+          const cols = line.split(",").map((c) => c.replace(/^"|"$/g, "").trim());
+          tableRows += "<tr>" + cols.map((c) => `<th>${c}</th>`).join("") + "</tr>";
+        } else if (foundHeader) {
+          const cols = line.split(",").map((c) => c.replace(/^"|"$/g, "").trim());
+          tableRows += "<tr>" + cols.map((c) => `<td>${c}</td>`).join("") + "</tr>";
+        }
+      }
+
+      const htmlContent = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><meta charset='utf-8'><title>${title}</title>
+        <style>
+          body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1e293b; padding: 20px; }
+          h2 { font-size: 16pt; color: #0f172a; margin-bottom: 2px; }
+          h3 { font-size: 13pt; color: #2563eb; margin-top: 0; margin-bottom: 12px; }
+          p.meta { font-size: 9.5pt; color: #64748b; margin-bottom: 16px; }
+          table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+          th, td { border: 1px solid #cbd5e1; padding: 7px 10px; text-align: left; font-size: 10pt; }
+          th { background-color: #f1f5f9; font-weight: bold; color: #0f172a; }
+          tr:nth-child(even) { background-color: #f8fafc; }
+        </style>
+        </head>
+        <body>
+          <h2>PT GHINA MULTI PRIMA / TASKA ERP</h2>
+          <h3>${title}</h3>
+          <p class="meta">Tanggal Ekspor: ${new Date().toISOString().slice(0, 10)}</p>
+          <table>${tableRows}</table>
+        </body>
+        </html>
+      `;
       const blob = new Blob(["\uFEFF" + htmlContent], { type: "application/msword" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -273,15 +338,21 @@ export default function ReportsScreen() {
       toast("Mengunduh CSV E-Faktur DJP");
       return;
     }
-    const token = getAccess();
-    const url = `${apiBase()}/invoices/efaktur/export${token ? `?token=${encodeURIComponent(token)}` : ""}`;
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `efaktur-pajak-keluaran-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast("File CSV E-Faktur DJP berhasil diunduh!");
+    try {
+      const csvContent = buildEfakturCsv(data.invoices ?? [], data.customers ?? []);
+      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `efaktur-pajak-keluaran-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast("File CSV E-Faktur DJP berhasil diunduh!");
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengekspor E-Faktur", "danger");
+    }
   }
 
   return (
