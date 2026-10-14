@@ -127,6 +127,7 @@ export default function NewReceivingScreen() {
         <FileUploader
           label="Foto Kondisi Barang & Tanda Terima"
           kind="foto"
+          category="penerimaan"
           handleRef={(h) => { fileHandle.current = h; }}
         />
       </Panel>

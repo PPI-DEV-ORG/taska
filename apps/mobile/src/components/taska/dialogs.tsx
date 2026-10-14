@@ -410,11 +410,12 @@ export function MultiSelect({
 }
 
 function FileField({
-  fieldKey, label, kind, required, onCount, handleRef,
+  fieldKey, label, kind, category, required, onCount, handleRef,
 }: {
   fieldKey: string;
   label: string;
   kind?: "foto" | "dokumen" | "video" | "semua";
+  category?: string;
   required?: boolean;
   onCount: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   handleRef?: (h: FileUploaderHandle | null) => void;
@@ -427,7 +428,14 @@ function FileField({
   );
   const effectiveKind = kind ?? (/foto|gambar|image|nota/i.test(label) ? "foto" : "dokumen");
   return (
-    <FileUploader label={label} kind={effectiveKind} required={required} onChange={handleCount} handleRef={handleRef} />
+    <FileUploader
+      label={label}
+      kind={effectiveKind}
+      category={category}
+      required={required}
+      onChange={handleCount}
+      handleRef={handleRef}
+    />
   );
 }
 
@@ -635,6 +643,7 @@ export function FormDialog({
                   fieldKey={f.key}
                   label={f.label}
                   kind={f.kind}
+                  category={f.category}
                   required={f.required}
                   onCount={setVals}
                   handleRef={fileHandleAt(i)}

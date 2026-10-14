@@ -215,6 +215,7 @@ export function queryString(params?: Record<string, unknown>): string {
 export async function uploadFile(
   file: { uri?: string; name?: string; type?: string } | Blob | File | null | undefined,
   kind: "foto" | "dokumen" | "video" = "dokumen",
+  category?: string,
 ): Promise<number | null> {
   if (!file) return null;
   const form = new FormData();
@@ -231,7 +232,9 @@ export async function uploadFile(
       type: f.type || "application/octet-stream",
     } as any);
   }
-  const res = await api<{ id: number }>("POST", `/files?kind=${kind}`, undefined, { form });
+  const query = new URLSearchParams({ kind });
+  if (category) query.set("category", category);
+  const res = await api<{ id: number }>("POST", `/files?${query.toString()}`, undefined, { form });
   return res?.id ?? null;
 }
 

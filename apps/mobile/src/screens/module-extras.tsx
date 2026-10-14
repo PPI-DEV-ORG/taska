@@ -108,7 +108,8 @@ function DocumentationPhotosPanel({
     try {
       const payload =
         file.blob ?? (file.uri ? { uri: file.uri, name: file.name, type: "image/jpeg" } : null);
-      const fileId = await uploadFile(payload, "foto");
+      const category = kind === "delivery-note" ? "surat-jalan" : kind === "survey" ? "survey" : "dokumentasi-proyek";
+      const fileId = await uploadFile(payload, "foto", category);
       if (!fileId) {
         toast("Gagal mengunggah foto ke server", "danger");
         return;
@@ -1586,7 +1587,7 @@ function QuotationExtras({ row }: { row: Row }) {
               <Text className="text-[11px] text-muted-foreground">Preview PPN 11%: {rupiah(revPpn)}</Text>
               <Text className="text-xs font-semibold text-primary">Preview Total Akhir v{nextVersionNum}: {rupiah(revAfterDisc)}</Text>
             </View>
-            <FileUploader label="Upload File Revisi Baru (PDF / Excel)" kind="dokumen" autoFlush />
+            <FileUploader label="Upload File Revisi Baru (PDF / Excel)" kind="dokumen" category="penawaran" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setRevisiOpen(false)}>
@@ -2004,7 +2005,7 @@ function ReceivingExtras({ row }: { row: Row }) {
               />
             </View>
 
-            <FileUploader label="Upload Foto Bukti Kerusakan / Serial Number" kind="foto" autoFlush />
+            <FileUploader label="Upload Foto Bukti Kerusakan / Serial Number" kind="foto" category="laporan-kerusakan" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setIssueOpen(false)}>
@@ -2172,7 +2173,7 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
                 numberOfLines={2}
               />
             </View>
-            <FileUploader label="Upload Foto Bukti Serah Terima / TTD Surat Jalan" kind="foto" autoFlush />
+            <FileUploader label="Upload Foto Bukti Serah Terima / TTD Surat Jalan" kind="foto" category="surat-jalan" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setHandoverOpen(false)}>
@@ -2534,7 +2535,7 @@ function InvoiceExtras({ row }: { row: Row }) {
             <FormField label="Nomor Referensi / Rekening">
               <Input value={payRef} onChangeText={setPayRef} placeholder="Contoh: TRF-BCA-992811" />
             </FormField>
-            <FileUploader label="Upload Bukti Pembayaran (JPG / PDF)" kind="semua" autoFlush />
+            <FileUploader label="Upload Bukti Pembayaran (JPG / PDF)" kind="semua" category="foto-struk" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setPayOpen(false)}>
@@ -2700,7 +2701,7 @@ function SupplierPoExtras({ row }: { row: Row }) {
             <FormField label="Jatuh Tempo" required>
               <DatePicker value={invDue} onChange={setInvDue} />
             </FormField>
-            <FileUploader label="Upload File Invoice dari Supplier" kind="dokumen" autoFlush />
+            <FileUploader label="Upload File Invoice dari Supplier" kind="dokumen" category="invoice" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setInvOpen(false)}>

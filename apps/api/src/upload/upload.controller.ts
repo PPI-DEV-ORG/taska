@@ -30,13 +30,17 @@ export class UploadController {
   uploadFile(
     @UploadedFile() file: Uploaded | undefined,
     @Query("kind") kindRaw: string | undefined,
+    @Query("category") categoryRaw: string | undefined,
+    @Query("folder") folderRaw: string | undefined,
     @Headers("x-file-name") fileName: string | undefined,
+    @Headers("x-file-category") fileCategory: string | undefined,
     @CurrentUser() user: RequestUser,
   ) {
     if (!file?.buffer?.length) throw new BadRequestException("File wajib diunggah (field: file)");
     const kind = (KINDS as string[]).includes(kindRaw ?? "") ? (kindRaw as UploadKind) : "dokumen";
     const name = fileName ?? file.originalname;
-    return this.service.saveNamed(file.buffer, kind, name, user);
+    const category = categoryRaw ?? folderRaw ?? fileCategory;
+    return this.service.saveNamed(file.buffer, kind, name, user, category);
   }
 
   @Public()

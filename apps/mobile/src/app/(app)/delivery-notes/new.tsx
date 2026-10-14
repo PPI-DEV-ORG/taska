@@ -235,6 +235,7 @@ export default function NewDeliveryNoteScreen() {
         <FileUploader
           label="Upload Dokumen Pendukung (Opsional)"
           kind="semua"
+          category="surat-jalan"
           handleRef={(h) => { fileHandle.current = h; }}
         />
       </Panel>

@@ -325,6 +325,7 @@ export default function NewPurchaseRequestScreen() {
             <FileUploader
               label="Lampirkan Bukti Permintaan (Chat WA / Email / BOQ)"
               kind="foto"
+              category="request-barang"
               handleRef={(h) => { fileHandle.current = h; }}
             />
 

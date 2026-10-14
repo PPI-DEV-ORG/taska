@@ -303,7 +303,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
         setAvatarUrl(localUrl);
         try {
           setBusy(true);
-          const uploadedId = await uploadFile(f, "foto");
+          const uploadedId = await uploadFile(f, "foto", "foto-profil");
           if (uploadedId != null) {
             setAvatarFileId(uploadedId);
             setAvatarUrl(`${apiBase()}/files/${uploadedId}`);
@@ -332,6 +332,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
       const uploadedId = await uploadFile(
         { uri: asset.uri, name: asset.fileName ?? "avatar.jpg", type: asset.mimeType ?? "image/jpeg" },
         "foto",
+        "foto-profil",
       );
       if (uploadedId != null) {
         setAvatarFileId(uploadedId);

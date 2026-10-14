@@ -86,6 +86,7 @@ export type CreateField = {
   required?: boolean;
   placeholder?: string;
   kind?: "foto" | "dokumen" | "video" | "semua";
+  category?: string;
 };
 export type ModuleAction = { label: string; toast: string; to?: (r: Row) => string; status?: string };
 
@@ -511,7 +512,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "project", label: "Project terkait", type: "select", options: ["-"] },
       { key: "tanggal", label: "Tanggal pengeluaran", type: "date", required: true },
       { key: "alasan", label: "Alasan / keperluan", type: "textarea", required: true },
-      { key: "fileId", label: "Foto Nota Pembayaran", type: "file", kind: "foto" },
+      { key: "fileId", label: "Foto Nota Pembayaran", type: "file", kind: "foto", category: "foto-struk" },
     ],
     createRoles: ALL,
     docs: ["Foto nota", "Bukti transfer reimbursement"],
@@ -543,7 +544,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "tanggal", label: "Tanggal kejadian", type: "date" },
       { key: "po", label: "Nomor PO / Serial Number", type: "text" },
       { key: "keterangan", label: "Keterangan", type: "textarea", required: true },
-      { key: "dokumen", label: "Foto barang bermasalah (Opsional)", type: "file", kind: "foto" },
+      { key: "dokumen", label: "Foto barang bermasalah (Opsional)", type: "file", kind: "foto", category: "laporan-kerusakan" },
     ],
     defaults: { status: "Dilaporkan" },
     docs: ["Foto barang bermasalah"],

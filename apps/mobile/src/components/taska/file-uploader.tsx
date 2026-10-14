@@ -53,6 +53,7 @@ export type FileUploaderHandle = {
 type Props = {
   label: string;
   kind?: UploadKind;
+  category?: string;
   required?: boolean;
   onChange?: (n: number) => void;
   onFilePicked?: (file: { name: string; blob?: Blob; uri?: string }) => void | Promise<void>;
@@ -64,7 +65,7 @@ type Props = {
 };
 
 export function FileUploader({
-  label, kind = "semua", required, onChange, onFilePicked, onUploaded, multiple = false, handleRef, autoFlush = false,
+  label, kind = "semua", category, required, onChange, onFilePicked, onUploaded, multiple = false, handleRef, autoFlush = false,
 }: Props) {
   const { toast, offline } = useApp();
   const [staged, setStaged] = React.useState<StagedFile[]>([]);
@@ -77,7 +78,7 @@ export function FileUploader({
   async function flushOne(f: StagedFile): Promise<number | null> {
     try {
       const payload = f.blob ?? (f.uri ? { uri: f.uri, name: f.name, type: "application/octet-stream" } : null);
-      return await uploadFile(payload, f.kind);
+      return await uploadFile(payload, f.kind, category);
     } catch (e: any) {
       toast(e?.message || "Gagal mengunggah file", "danger");
       throw e;

@@ -140,6 +140,7 @@ export default function NewExpenseScreen() {
         <FileUploader
           label="Foto Nota Pembayaran"
           kind="foto"
+          category="foto-struk"
           handleRef={(h) => { fileHandle.current = h; }}
           onChange={setPhotoCount}
         />
