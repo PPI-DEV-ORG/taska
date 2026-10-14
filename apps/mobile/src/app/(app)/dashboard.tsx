@@ -43,6 +43,22 @@ import { rupiah, rupiahShort, tanggal } from "@/lib/format";
 import { colors } from "@/tokens";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+function getLastMonths(count = 4) {
+  const cur = new Date();
+  const out: { year: number; month: number; label: string }[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(cur.getFullYear(), cur.getMonth() - i, 1);
+    out.push({
+      year: d.getFullYear(),
+      month: d.getMonth(),
+      label: MONTH_LABELS[d.getMonth()] ?? "",
+    });
+  }
+  return out;
+}
+
 function DashboardGreeting({ name, roleTitle }: { name: string; roleTitle: string }) {
   const { reload, toast } = useApp();
   const [refreshing, setRefreshing] = React.useState(false);
@@ -228,6 +244,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { user, data, approvals, decide } = useApp();
   const { isMobile } = useBreakpoint();
+  const [now] = React.useState(() => Date.now());
 
   if (!user) return null;
 
@@ -252,12 +269,29 @@ export default function DashboardScreen() {
       { label: "Won", value: data.leads.filter((l) => l.status === "Won").length },
     ];
 
-    const revenueBars = [
-      { label: "Jul", values: [180, 160] },
-      { label: "Agu", values: [240, 210] },
-      { label: "Sep", values: [310, 280] },
-      { label: "Okt", values: [270, 190] },
-    ];
+    const last4Months = getLastMonths(4);
+    const revenueBars = last4Months.map(({ year, month, label }) => {
+      let billed = 0;
+      let paid = 0;
+      (data.invoices ?? []).forEach((inv) => {
+        const dStr = inv.tanggal || inv.jatuhTempo;
+        if (!dStr) return;
+        const id = new Date(dStr);
+        if (!isNaN(id.getTime()) && id.getFullYear() === year && id.getMonth() === month) {
+          billed += Number(inv.total) || 0;
+          paid += Number(inv.terbayar) || 0;
+        }
+      });
+      const bJt = billed / 1_000_000;
+      const pJt = paid / 1_000_000;
+      return {
+        label,
+        values: [
+          bJt >= 10 ? Math.round(bJt) : Math.round(bJt * 10) / 10,
+          pJt >= 10 ? Math.round(pJt) : Math.round(pJt * 10) / 10,
+        ],
+      };
+    });
 
     const riskyProjects = data.projects.filter(
       (p) => p.status === "Terlambat" || p.pembayaran === "Belum lunas"
@@ -422,20 +456,59 @@ export default function DashboardScreen() {
     const idleLeads = data.leads.filter((l) => l.sepi > 7 && l.status !== "Lost" && l.status !== "Won");
     const expiringQuotes = data.quotations.filter((q) => q.status === "Terkirim");
 
-    const sources = [
-      { label: "Referral", value: 4 },
-      { label: "Sosial media", value: 3 },
-      { label: "Website", value: 2 },
-      { label: "Event", value: 2 },
-      { label: "Distributor", value: 2 },
-      { label: "Cold call", value: 2 },
-    ];
+    const sourceCounts: Record<string, number> = {};
+    (data.leads ?? []).forEach((l) => {
+      const src = String(l.sumber || "").trim();
+      if (src && src !== "-") {
+        sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+      }
+    });
 
-    const lostReasons = [
-      { label: "Belum ada follow-up", value: 1, color: colors.danger },
-      { label: "Client tidak ada kabar", value: 1, color: colors.danger },
-      { label: "Harga tidak cocok", value: 0, color: colors.warning },
-    ];
+    const sources = Object.keys(sourceCounts).length > 0
+      ? Object.keys(sourceCounts)
+          .sort((a, b) => (sourceCounts[b] || 0) - (sourceCounts[a] || 0))
+          .slice(0, 6)
+          .map((label) => ({
+            label,
+            value: sourceCounts[label] || 0,
+          }))
+      : ((data.leadSources?.length
+          ? data.leadSources.map((s: any) => s.nama).filter(Boolean).slice(0, 6)
+          : ["Referral", "Sosial media", "Website", "Event", "Distributor", "Cold call"]
+        ) as string[]
+        ).map((label: string) => ({
+          label,
+          value: 0,
+        }));
+
+    const lostCounts: Record<string, number> = {};
+    (data.leads ?? []).forEach((l) => {
+      if (l.status === "Lost" || l.alasanLost) {
+        const reason = String(l.alasanLost || "").trim();
+        if (reason && reason !== "-") {
+          lostCounts[reason] = (lostCounts[reason] || 0) + 1;
+        }
+      }
+    });
+
+    const lostReasons = Object.keys(lostCounts).length > 0
+      ? Object.keys(lostCounts)
+          .sort((a, b) => (lostCounts[b] || 0) - (lostCounts[a] || 0))
+          .slice(0, 5)
+          .map((label, idx) => ({
+            label,
+            value: lostCounts[label] || 0,
+            color: idx === 0 ? colors.danger : idx === 1 ? colors.warning : colors.info,
+          }))
+      : ((data.lostReasons?.length
+          ? data.lostReasons.map((r: any) => r.nama).filter(Boolean).slice(0, 3)
+          : ["Belum ada follow-up", "Client tidak ada kabar", "Harga tidak cocok"]
+        ) as string[]
+        ).map((label: string, idx: number) => ({
+          label,
+          value: 0,
+          color: idx === 0 ? colors.danger : colors.warning,
+        }));
 
     return (
       <View className="gap-6">
@@ -598,24 +671,31 @@ export default function DashboardScreen() {
               icon={AlertTriangle}
             >
               <View className="gap-3">
-                <View className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
-                  <Text className="text-sm font-bold text-foreground">Lead Won Siap Jadi Project</Text>
-                  <Text className="text-muted-foreground text-xs">
-                    Access Control Hotel Grand Mahkota sudah bayar DP dan siap dialokasikan tim lapangan.
-                  </Text>
-                  <Button size="sm" className="mt-1 h-8" onPress={() => router.push("/projects")}>
-                    <Text className="text-xs">Buka & Setup Project</Text>
-                  </Button>
-                </View>
-                <View className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
-                  <Text className="text-sm font-bold text-foreground">Kekurangan Material Lapangan</Text>
-                  <Text className="text-muted-foreground text-xs">
-                    Kekurangan 6x Reader Fingerprint di Project Hotel. Ajukan request sekarang.
-                  </Text>
-                  <Button variant="outline" size="sm" className="mt-1 h-8" onPress={() => router.push("/purchase-requests/new" as any)}>
-                    <Text className="text-xs">Buat Request Barang</Text>
-                  </Button>
-                </View>
+                {data.leads.filter((l) => l.status === "Won").slice(0, 1).map((l) => (
+                  <View key={l.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
+                    <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Lead Won Siap Project: {l.nama}</Text>
+                    <Text className="text-muted-foreground text-xs" numberOfLines={2}>
+                      {l.perusahaan} · Potensi: {rupiah(l.nilai)}. Siap dialokasikan tim lapangan.
+                    </Text>
+                    <Button size="sm" className="mt-1 h-8" onPress={() => router.push("/projects")}>
+                      <Text className="text-xs">Buka & Setup Project</Text>
+                    </Button>
+                  </View>
+                ))}
+                {data["purchase-requests"].filter((r) => r.status === "Diajukan" || r.status === "Cek stok").slice(0, 1).map((r) => (
+                  <View key={r.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
+                    <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Permintaan Material: {r.nomor || r.item || "Request"}</Text>
+                    <Text className="text-muted-foreground text-xs" numberOfLines={2}>
+                      {r.project ? `Project: ${r.project} · ` : ""}{r.item || r.tujuan || "Material dibutuhkan"}.
+                    </Text>
+                    <Button variant="outline" size="sm" className="mt-1 h-8" onPress={() => router.push("/purchase-requests")}>
+                      <Text className="text-xs">Periksa Request Barang</Text>
+                    </Button>
+                  </View>
+                ))}
+                {data.leads.filter((l) => l.status === "Won").length === 0 && data["purchase-requests"].filter((r) => r.status === "Diajukan" || r.status === "Cek stok").length === 0 ? (
+                  <Text className="text-muted-foreground py-6 text-center text-xs">Tidak ada kebutuhan mendesak project saat ini.</Text>
+                ) : null}
               </View>
             </Panel>
           </View>
@@ -659,9 +739,10 @@ export default function DashboardScreen() {
           />
           <KpiCard
             label="Material Ready"
-            value="3 Unit"
+            value={`${data.receiving.filter((r) => r.status === "Diterima").length} Batch`}
             hint="Siap pasang"
             icon={Boxes}
+            onPress={() => router.push("/receiving")}
           />
         </KpiRow>
 
@@ -741,12 +822,22 @@ export default function DashboardScreen() {
     const onShipping = data["supplier-pos"].filter((p) => p.pengiriman === "Dikirim").length;
     const waitReceiving = data.receiving.filter((r) => r.status === "Menunggu penerimaan").length;
 
-    const purchasesByMonth = [
-      { label: "Jul", values: [45] },
-      { label: "Agu", values: [88] },
-      { label: "Sep", values: [62] },
-      { label: "Okt", values: [145] },
-    ];
+    const last12Months = getLastMonths(12);
+    const purchasesByMonth = last12Months.map(({ year, month, label }) => {
+      const sum = (data["supplier-pos"] ?? []).reduce((acc, p) => {
+        if (p.status === "Ditolak" || p.status === "Dibatalkan") return acc;
+        const dStr = p.tanggal || p.eta;
+        if (!dStr) return acc;
+        const pd = new Date(dStr);
+        if (!isNaN(pd.getTime()) && pd.getFullYear() === year && pd.getMonth() === month) {
+          return acc + (Number(p.total) || 0);
+        }
+        return acc;
+      }, 0);
+      const j = sum / 1_000_000;
+      const val = j >= 10 ? Math.round(j) : Math.round(j * 10) / 10;
+      return { label, values: [val] };
+    });
 
     return (
       <View className="gap-6">
@@ -799,24 +890,32 @@ export default function DashboardScreen() {
               icon={PackageCheck}
             >
               <View className="gap-3">
-                <View className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
-                  <Text className="text-sm font-bold text-foreground">Cek Stok: Reader Fingerprint</Text>
-                  <Text className="text-muted-foreground text-xs">
-                    RB/2026/10/011 diajukan untuk 6 unit. Cek ketersediaan di Gudang Bekasi sebelum PO baru.
-                  </Text>
-                  <Button size="sm" className="mt-1 h-8" onPress={() => router.push("/stock")}>
-                    <Text className="text-xs">Cek Ketersediaan Stok</Text>
-                  </Button>
-                </View>
-                <View className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
-                  <Text className="text-sm font-bold text-foreground">PO Supplier Terlambat</Text>
-                  <Text className="text-muted-foreground text-xs">
-                    PO/2026/09/031 (PT Hikvision) terlambat 3 hari dari estimasi tiba di Gudang Jakarta.
-                  </Text>
-                  <Button variant="outline" size="sm" className="mt-1 h-8" onPress={() => router.push("/supplier-pos/SP-003" as any)}>
-                    <Text className="text-xs">Update Status Pengiriman</Text>
-                  </Button>
-                </View>
+                {data["purchase-requests"].filter((r) => r.status === "Cek stok" || r.status === "Diajukan").slice(0, 1).map((r) => (
+                  <View key={r.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
+                    <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Cek Stok: {r.nomor || r.item || "Purchase Request"}</Text>
+                    <Text className="text-muted-foreground text-xs" numberOfLines={2}>
+                      {r.item || r.tujuan || "Material diajukan"}. Cek ketersediaan stok sebelum PO baru.
+                    </Text>
+                    <Button size="sm" className="mt-1 h-8" onPress={() => router.push("/stock")}>
+                      <Text className="text-xs">Cek Ketersediaan Stok</Text>
+                    </Button>
+                  </View>
+                ))}
+                {data["supplier-pos"].filter((p) => p.status !== "Sampai" && p.eta && new Date(p.eta).getTime() < now).slice(0, 1).map((p) => (
+                  <View key={p.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
+                    <Text className="text-sm font-bold text-foreground" numberOfLines={1}>PO Supplier Terlambat: {p.nomor}</Text>
+                    <Text className="text-muted-foreground text-xs" numberOfLines={2}>
+                      {p.supplier ? `${p.supplier} · ` : ""}Estimasi tiba {p.eta ? tanggal(p.eta) : "-"}.
+                    </Text>
+                    <Button variant="outline" size="sm" className="mt-1 h-8" onPress={() => router.push(`/supplier-pos/${p.id}` as any)}>
+                      <Text className="text-xs">Update Status Pengiriman</Text>
+                    </Button>
+                  </View>
+                ))}
+                {data["purchase-requests"].filter((r) => r.status === "Cek stok" || r.status === "Diajukan").length === 0 &&
+                data["supplier-pos"].filter((p) => p.status !== "Sampai" && p.eta && new Date(p.eta).getTime() < now).length === 0 ? (
+                  <Text className="text-muted-foreground py-6 text-center text-xs">Tidak ada peringatan pengadaan saat ini.</Text>
+                ) : null}
               </View>
             </Panel>
           </View>
@@ -844,18 +943,92 @@ export default function DashboardScreen() {
       .reduce((acc, i) => acc + (i.total - i.terbayar), 0);
     const pendingReimb = data.expenses.filter((e) => e.status === "Disetujui").length;
 
+    const nowTime = new Date().getTime();
+    let aging0_30 = 0;
+    let aging31_60 = 0;
+    let aging60Plus = 0;
+
+    (data.invoices ?? []).forEach((inv) => {
+      if (inv.status === "Lunas") return;
+      const sisa = Math.max(0, (Number(inv.total) || 0) - (Number(inv.terbayar) || 0));
+      if (sisa <= 0) return;
+
+      const dateStr = inv.jatuhTempo || inv.tanggal;
+      const dueTime = dateStr ? new Date(dateStr).getTime() : nowTime;
+      const diffDays = Math.floor((nowTime - dueTime) / 86_400_000);
+
+      if (diffDays <= 30) {
+        aging0_30 += sisa;
+      } else if (diffDays <= 60) {
+        aging31_60 += sisa;
+      } else {
+        aging60Plus += sisa;
+      }
+    });
+
+    const toJuta = (val: number) => {
+      const j = val / 1_000_000;
+      return j >= 10 ? Math.round(j) : Math.round(j * 10) / 10;
+    };
+
     const agingData = [
-      { label: "0–30 hari", value: 180, color: colors.success },
-      { label: "31–60 hari", value: 120, color: colors.warning },
-      { label: "60+ hari", value: 227, color: colors.danger },
+      { label: "0–30 hari", value: toJuta(aging0_30), color: colors.success },
+      { label: "31–60 hari", value: toJuta(aging31_60), color: colors.warning },
+      { label: "60+ hari", value: toJuta(aging60Plus), color: colors.danger },
     ];
 
-    const expCategories = [
-      { label: "Transport & Bensin", value: 45 },
-      { label: "Perlengkapan", value: 85 },
-      { label: "Makan & Lembur", value: 20 },
-      { label: "Penginapan", value: 30 },
-    ];
+    const nowDate = new Date();
+    const curYear = nowDate.getFullYear();
+    const curMonth = nowDate.getMonth();
+
+    const activeExpenses = (data.expenses ?? []).filter((e) => e.status !== "Ditolak");
+    const thisMonthExpenses = activeExpenses.filter((e) => {
+      if (!e.tanggal) return false;
+      const d = new Date(e.tanggal);
+      return !isNaN(d.getTime()) && d.getFullYear() === curYear && d.getMonth() === curMonth;
+    });
+    const expList = thisMonthExpenses.length > 0 ? thisMonthExpenses : activeExpenses;
+
+    const catSums: Record<string, number> = {};
+    let totalExp = 0;
+    expList.forEach((e) => {
+      const cat = String(e.kategori || "Lainnya").trim();
+      const amt = Number(e.nominal) || 0;
+      if (amt > 0) {
+        catSums[cat] = (catSums[cat] || 0) + amt;
+        totalExp += amt;
+      }
+    });
+
+    const expCategories = Object.keys(catSums).length > 0
+      ? Object.keys(catSums)
+          .sort((a, b) => (catSums[b] || 0) - (catSums[a] || 0))
+          .slice(0, 5)
+          .map((cat) => {
+            const amt = catSums[cat] || 0;
+            const pct = totalExp > 0 ? Math.round((amt / totalExp) * 100) : 0;
+            return {
+              label: cat,
+              value: pct,
+              amount: amt,
+              text: `${rupiah(amt)} (${pct}%)`,
+            };
+          })
+      : ((data.expenseCategories?.length
+          ? data.expenseCategories.map((c: any) => c.nama).filter(Boolean).slice(0, 4)
+          : [
+              "Transport & Bensin",
+              "Perlengkapan",
+              "Makan & Lembur",
+              "Penginapan",
+            ]
+        ) as string[]
+        ).map((label: string) => ({
+          label,
+          value: 0,
+          amount: 0,
+          text: "Rp 0 (0%)",
+        }));
 
     return (
       <View className="gap-6">
@@ -935,8 +1108,8 @@ export default function DashboardScreen() {
           <ChartCard title="Umur Piutang (Aging)" subtitle="Berdasarkan hari jatuh tempo (juta Rp)">
             <HBarChart data={agingData} format={(n) => `${n} jt`} />
           </ChartCard>
-          <ChartCard title="Pengeluaran per Kategori" subtitle="Persentase biaya bulan ini">
-            <HBarChart data={expCategories} format={(n) => `${n}%`} />
+          <ChartCard title="Pengeluaran per Kategori" subtitle="Nominal & persentase biaya bulan ini">
+            <HBarChart data={expCategories} format={(n, d) => d?.text ?? `${n}%`} />
           </ChartCard>
         </View>
       </View>
@@ -946,9 +1119,13 @@ export default function DashboardScreen() {
   // 7. GUDANG
   if (role === "gudang") {
     const waitReceive = data.receiving.filter((r) => r.status !== "Diterima").length;
-    const lowStock = 2;
-    const todaySJ = data["delivery-notes"].filter((sj) => sj.status === "Pending").length;
-    const opnameDiff = 3;
+    const lowStock = (data.products ?? []).filter((p) => {
+      const cur = Number(p.stok ?? p.stock ?? 0);
+      const min = Number(p.minStock ?? p.min ?? 5);
+      return cur <= min;
+    }).length;
+    const todaySJ = data["delivery-notes"].filter((sj) => sj.status === "Pending" || sj.status === "Menunggu persetujuan").length;
+    const opnameDiff = (data.opname ?? []).filter((o) => o.status !== "Selesai" && Number(o.selisih ?? 0) !== 0).length;
 
     return (
       <View className="gap-6">
@@ -980,7 +1157,7 @@ export default function DashboardScreen() {
           />
           <KpiCard
             label="Opname Discrepancy"
-            value={`-${opnameDiff}`}
+            value={opnameDiff > 0 ? `-${opnameDiff}` : "0"}
             hint="Selisih fisik vs sistem"
             tone="warning"
             icon={Boxes}
@@ -1003,24 +1180,32 @@ export default function DashboardScreen() {
               icon={PackageCheck}
             >
               <View className="gap-3">
-                <View className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
-                  <Text className="text-sm font-bold text-foreground">Kiriman Tiba: Switch PoE</Text>
-                  <Text className="text-muted-foreground text-xs">
-                    TB/2026/10/004 dari Hikvision tiba di Gudang Jakarta. Siap scan barcode SN.
-                  </Text>
-                  <Button size="sm" className="mt-1 h-8" onPress={() => router.push("/receiving/new" as any)}>
-                    <Text className="text-xs">Terima & Scan Unit</Text>
-                  </Button>
-                </View>
-                <View className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
-                  <Text className="text-sm font-bold text-foreground">Surat Jalan Keluar Pending</Text>
-                  <Text className="text-muted-foreground text-xs">
-                    SJ/2026/10/031 pending: Teknisi membawa 4x Reader Fingerprint ke lokasi.
-                  </Text>
-                  <Button variant="outline" size="sm" className="mt-1 h-8" onPress={() => router.push("/delivery-notes/SJ-001" as any)}>
-                    <Text className="text-xs">Scan Keluar Barang</Text>
-                  </Button>
-                </View>
+                {data.receiving.filter((r) => r.status !== "Diterima").slice(0, 1).map((r) => (
+                  <View key={r.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
+                    <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Penerimaan: {r.nomor || r.supplier || "Inbound"}</Text>
+                    <Text className="text-muted-foreground text-xs" numberOfLines={2}>
+                      {r.supplier ? `Dari ${r.supplier} · ` : ""}{r.item || "Barang tiba di gudang"}.
+                    </Text>
+                    <Button size="sm" className="mt-1 h-8" onPress={() => router.push(`/receiving/${r.id}` as any)}>
+                      <Text className="text-xs">Terima & Scan Unit</Text>
+                    </Button>
+                  </View>
+                ))}
+                {data["delivery-notes"].filter((sj) => sj.status === "Pending" || sj.status === "Menunggu persetujuan").slice(0, 1).map((sj) => (
+                  <View key={sj.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
+                    <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Surat Jalan: {sj.nomor}</Text>
+                    <Text className="text-muted-foreground text-xs" numberOfLines={2}>
+                      {sj.tujuan ? `Tujuan ${sj.tujuan} · ` : ""}{sj.barang || "Pengiriman barang"}.
+                    </Text>
+                    <Button variant="outline" size="sm" className="mt-1 h-8" onPress={() => router.push(`/delivery-notes/${sj.id}` as any)}>
+                      <Text className="text-xs">Scan Keluar Barang</Text>
+                    </Button>
+                  </View>
+                ))}
+                {data.receiving.filter((r) => r.status !== "Diterima").length === 0 &&
+                data["delivery-notes"].filter((sj) => sj.status === "Pending" || sj.status === "Menunggu persetujuan").length === 0 ? (
+                  <Text className="text-muted-foreground py-6 text-center text-xs">Tidak ada antrean logistik gudang saat ini.</Text>
+                ) : null}
               </View>
             </Panel>
           </View>
@@ -1065,10 +1250,11 @@ export default function DashboardScreen() {
             onPress={() => router.push("/tasks")}
           />
           <KpiCard
-            label="PRD Documents"
-            value="2 Specs"
-            hint="Spesifikasi teknis siap"
+            label="Completed Tasks"
+            value={String(data.tasks.filter((t) => t.pic === user.name && t.status === "DONE").length)}
+            hint="Tugas telah selesai"
             icon={FileText}
+            onPress={() => router.push("/tasks")}
           />
         </KpiRow>
 

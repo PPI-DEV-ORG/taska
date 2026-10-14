@@ -295,7 +295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })(),
       (async () => {
         try {
-          return await api<Page<any>>("GET", "/stock/summary?limit=500");
+          return await api<Page<any>>("GET", "/stock/summary?limit=200");
         } catch {
           return null;
         }
@@ -473,7 +473,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const refreshStockSummary = async () => {
       try {
-        const res = await api<Page<any>>("GET", "/stock/summary?limit=500");
+        const res = await api<Page<any>>("GET", "/stock/summary?limit=200");
         if (mounted) setData((d) => ({ ...d, stockSummary: res.items ?? [] }));
       } catch {}
     };

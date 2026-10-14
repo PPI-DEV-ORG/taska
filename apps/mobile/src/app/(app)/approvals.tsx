@@ -16,7 +16,7 @@ const APPROVAL_COLUMNS: Col[] = [
   { key: "judul", label: "Dokumen / Pengajuan", primary: true, flex: 1.8 },
   { key: "jenis", label: "Jenis", flex: 1 },
   { key: "pengaju", label: "Pengaju", flex: 1.2 },
-  { key: "nilai", label: "Nilai (Rp)", fmt: "rupiah", flex: 1.2 },
+  { key: "displayNilai", label: "Nilai / Jumlah", flex: 1.2 },
   { key: "waktuTunggu", label: "Waktu Tunggu", flex: 1 },
   { key: "status", label: "Status", fmt: "status", flex: 1 },
 ];
@@ -34,6 +34,7 @@ export default function ApprovalsScreen() {
     .filter((a) => !s || `${a.judul} ${a.pengaju} ${a.jenis}`.toLowerCase().includes(s))
     .map((a) => ({
       ...a,
+      displayNilai: a.module === "opname" ? `${a.nilai} SKU selisih` : rupiah(a.nilai),
       waktuTunggu: a.jam >= 24 ? `${Math.round(a.jam / 24)} hari` : `${a.jam} jam`,
     }));
 
@@ -57,7 +58,7 @@ export default function ApprovalsScreen() {
           columns={APPROVAL_COLUMNS}
           rows={list}
           pageSize={8}
-          onRowPress={(r) => router.push((r.module === "opname" ? "/opname" : `/${r.module}/${r.refId}`) as any)}
+          onRowPress={(r) => router.push(`/${r.module}/${r.refId}` as any)}
           renderActions={(r) => (
             <View className="flex-row items-center gap-1.5">
               {can ? (
@@ -83,7 +84,7 @@ export default function ApprovalsScreen() {
                   size="sm"
                   variant="ghost"
                   className="h-7 px-2"
-                  onPress={() => router.push((r.module === "opname" ? "/opname" : `/${r.module}/${r.refId}`) as any)}
+                  onPress={() => router.push(`/${r.module}/${r.refId}` as any)}
                 >
                   <Text className="text-primary text-[11px]">Buka</Text>
                 </Button>

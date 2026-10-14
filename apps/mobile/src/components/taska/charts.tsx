@@ -38,7 +38,7 @@ export function BarChart({
           <View key={d.label} className="flex-1 flex-row items-end justify-center gap-1" style={{ height: "100%" }}>
             {d.values.map((v, i) => (
               <View key={i} className="flex-1 items-center justify-end" style={{ maxWidth: 28, height: "100%" }}>
-                {data.length <= 7 && series.length === 1 ? <Text className="text-muted-foreground mb-0.5 text-[11px]">{format(v)}</Text> : null}
+                {data.length <= 12 && series.length === 1 ? <Text className="text-muted-foreground mb-0.5 text-[10px]" numberOfLines={1}>{format(v)}</Text> : null}
                 <View style={{ height: Math.max(3, (v / max) * (height - 40)), width: "100%", backgroundColor: series[i]?.color ?? chartSeries[i], borderTopLeftRadius: 4, borderTopRightRadius: 4 }} />
               </View>
             ))}
@@ -58,7 +58,7 @@ export function BarChart({
 /** Batang horizontal untuk distribusi (sumber lead, alasan Lost, kategori). */
 export function HBarChart({
   data, format = (n) => String(n),
-}: { data: { label: string; value: number; color?: string }[]; format?: (n: number) => string }) {
+}: { data: { label: string; value: number; color?: string; text?: string; [k: string]: any }[]; format?: (n: number, item?: any) => string }) {
   const max = Math.max(1, ...data.map((d) => d.value));
   return (
     <View className="gap-3">
@@ -66,7 +66,7 @@ export function HBarChart({
         <View key={d.label} className="gap-1">
           <View className="flex-row justify-between gap-2">
             <Text className="flex-1 text-sm" numberOfLines={1}>{d.label}</Text>
-            <Text className="text-text-secondary text-sm">{format(d.value)}</Text>
+            <Text className="text-text-secondary text-sm">{d.text ?? format(d.value, d)}</Text>
           </View>
           <View className="bg-panel h-2 overflow-hidden rounded-full">
             <View style={{ width: `${(d.value / max) * 100}%`, backgroundColor: d.color ?? chartSeries[i % chartSeries.length], height: "100%", borderRadius: 999 }} />

@@ -1,14 +1,14 @@
 import * as React from "react";
-import { View } from "react-native";
+import { View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Check, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { Stepper } from "@/components/taska/stepper";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect, MultiSelect } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
@@ -45,38 +45,60 @@ export default function NewPurchaseRequestScreen() {
   const [projectId, setProjectId] = React.useState(projects[0]?.nama || "");
   const [otherDesc, setOtherDesc] = React.useState("");
 
-  const defaultProd = products[0];
-  const [selectedProduct, setSelectedProduct] = React.useState(defaultProd?.nama || "");
-  const [qty, setQty] = React.useState("1");
+  const [selectedNames, setSelectedNames] = React.useState<string[]>(
+    products[0]?.nama ? [String(products[0].nama)] : []
+  );
+  const [itemQuantities, setItemQuantities] = React.useState<Record<string, string>>({});
   const [tujuan, setTujuan] = React.useState("");
 
-  const currentProd = products.find((p) => p.nama === selectedProduct) ?? defaultProd;
-  const stockAvailable = currentProd
-    ? stockSummary
-        .filter((s: any) => String(s.productId) === String(currentProd.id))
-        .reduce((a: number, s: any) => a + Number(s.saldo ?? 0), 0)
-    : 0;
+  const selectedItems = selectedNames.map((name) => {
+    const prod = products.find((p) => p.nama === name);
+    const stockAvailable = prod
+      ? stockSummary
+          .filter((s: any) => String(s.productId) === String(prod.id))
+          .reduce((a: number, s: any) => a + Number(s.saldo ?? 0), 0)
+      : 0;
+    const q = Number(itemQuantities[name]) || 1;
+    const unitPrice = Number(prod?.hargaBeli ?? 0);
+    return {
+      productId: prod?.id ? Number(prod.id) : undefined,
+      nama: name,
+      satuan: String(prod?.satuan || "unit"),
+      hargaBeli: unitPrice,
+      qty: q,
+      stock: stockAvailable,
+      subtotal: q * unitPrice,
+    };
+  });
 
-  const estimatedTotal = (Number(qty) || 1) * Number(currentProd?.hargaBeli ?? 0);
+  const totalEstimatedCost = selectedItems.reduce((acc, it) => acc + it.subtotal, 0);
 
   async function submit() {
-    if (!currentProd) {
-      toast("Pilih barang terlebih dahulu", "danger");
+    if (selectedItems.length === 0) {
+      toast("Pilih minimal satu barang terlebih dahulu", "danger");
       return;
     }
     setBusy(true);
     try {
       const fileId = (await fileHandle.current?.flush()) ?? undefined;
+      const itemsPayload = selectedItems.map((it) => ({
+        productId: it.productId,
+        qty: it.qty,
+        unitCost: it.hargaBeli,
+      }));
+      const itemDesc = selectedItems
+        .map((it) => `${it.nama} x ${it.qty}${it.satuan ? ` ${it.satuan}` : ""}`)
+        .join(", ");
+
       addRow("purchase-requests", {
-        nomor: `PR/${new Date().getFullYear()}/${Math.floor(Math.random() * 900) + 100}`,
         pemohon: user?.name || "Karyawan",
         project: costType === "Project" ? projectId : "-",
         costType,
         otherNote: costType === "Lainnya" ? otherDesc : undefined,
         purpose: tujuan || "Kebutuhan operasional lapangan",
-        item: `${currentProd.nama} (${Number(qty) || 1} ${currentProd.satuan || "unit"})`,
-        items: [{ productId: Number(currentProd.id), qty: Number(qty) || 1, unitCost: Number(currentProd.hargaBeli ?? 0) }],
-        estimasi: estimatedTotal,
+        item: itemDesc,
+        items: itemsPayload,
+        estimasi: totalEstimatedCost,
         fileId,
         status: "Diajukan",
       });
@@ -144,33 +166,98 @@ export default function NewPurchaseRequestScreen() {
       {step === 1 && (
         <Panel title="Langkah 2: Pilih Barang & Qty">
           <View className="gap-4">
-            <FormField label="Pilih Barang Master" required>
-              <SearchableSelect
-                value={selectedProduct}
-                onChange={setSelectedProduct}
+            <FormField
+              label="Pilih Barang Master"
+              required
+              hint="Bisa pilih beberapa barang sekaligus dari daftar master"
+            >
+              <MultiSelect
+                values={selectedNames}
+                onChange={(newNames) => {
+                  setSelectedNames(newNames);
+                  setItemQuantities((prev) => {
+                    const next = { ...prev };
+                    newNames.forEach((n) => {
+                      if (!next[n]) next[n] = "1";
+                    });
+                    return next;
+                  });
+                }}
                 options={products.map((p) => String(p.nama))}
-                placeholder="Pilih barang"
+                placeholder="Pilih barang..."
               />
             </FormField>
 
-            <View className="bg-panel/40 border-border rounded-xl border p-3">
-              <Text className="text-text-secondary text-xs">Informasi Ketersediaan:</Text>
-              <Text className="text-sm font-semibold mt-1">
-                Stok tersedia saat ini: <Text className="text-primary">{stockAvailable} {String(currentProd?.satuan ?? "")}</Text>
-              </Text>
-              <Text className="text-muted-foreground text-xs mt-0.5">
-                Estimasi harga beli: {rupiah(Number(currentProd?.hargaBeli ?? 0))} / {String(currentProd?.satuan ?? "")}
-              </Text>
-            </View>
+            {selectedItems.length > 0 ? (
+              <View className="gap-3 pt-1">
+                <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Daftar Barang & Jumlah ({selectedItems.length} item)
+                </Text>
 
-            <FormField label="Jumlah yang Dibutuhkan" required>
-              <Input
-                value={qty}
-                onChangeText={setQty}
-                keyboardType="numeric"
-                placeholder="Contoh: 5"
-              />
-            </FormField>
+                {selectedItems.map((item) => (
+                  <View
+                    key={item.nama}
+                    className="bg-card border-border/70 rounded-xl border p-3.5 gap-2.5"
+                  >
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm font-bold text-foreground flex-1 pr-2" numberOfLines={1}>
+                        {item.nama}
+                      </Text>
+                      <Pressable
+                        onPress={() => setSelectedNames((prev) => prev.filter((n) => n !== item.nama))}
+                        hitSlop={8}
+                        className="size-7 items-center justify-center rounded-lg hover:bg-danger/10 active:bg-danger/10"
+                      >
+                        <Trash2 size={15} color={colors.danger} />
+                      </Pressable>
+                    </View>
+
+                    <View className="bg-panel/40 border-border/60 rounded-lg border p-2 flex-row flex-wrap justify-between gap-1">
+                      <Text className="text-xs text-muted-foreground">
+                        Stok gudang: <Text className="font-semibold text-foreground">{item.stock} {item.satuan}</Text>
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        Estimasi harga: <Text className="font-semibold text-foreground">{rupiah(item.hargaBeli)} / {item.satuan}</Text>
+                      </Text>
+                    </View>
+
+                    <View className="flex-row items-center justify-between pt-1">
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-xs text-muted-foreground">Jumlah (Qty):</Text>
+                        <Input
+                          value={itemQuantities[item.nama] ?? "1"}
+                          onChangeText={(v) =>
+                            setItemQuantities((prev) => ({
+                              ...prev,
+                              [item.nama]: v.replace(/\D/g, "") || "1",
+                            }))
+                          }
+                          keyboardType="numeric"
+                          className="w-20 h-9 text-center text-sm font-semibold"
+                        />
+                        <Text className="text-xs text-muted-foreground">{item.satuan}</Text>
+                      </View>
+
+                      <View className="items-end">
+                        <Text className="text-[11px] text-muted-foreground">Subtotal</Text>
+                        <Text className="text-sm font-bold text-primary">
+                          {rupiah(item.subtotal)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+
+                {/* Total Kalkulasi Card */}
+                <View className="bg-primary/10 border-primary/30 rounded-xl border p-3.5 flex-row justify-between items-center mt-1">
+                  <View>
+                    <Text className="text-xs font-semibold text-primary">Total Estimasi Kebutuhan</Text>
+                    <Text className="text-xs text-muted-foreground">{selectedItems.length} macam barang</Text>
+                  </View>
+                  <Text className="text-lg font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
+                </View>
+              </View>
+            ) : null}
 
             <FormField label="Tujuan / Catatan Kebutuhan">
               <Input
@@ -185,7 +272,15 @@ export default function NewPurchaseRequestScreen() {
                 <ArrowLeft size={16} color={colors.text} />
                 <Text>Kembali</Text>
               </Button>
-              <Button onPress={() => setStep(2)}>
+              <Button
+                onPress={() => {
+                  if (selectedItems.length === 0) {
+                    toast("Pilih minimal satu barang terlebih dahulu", "danger");
+                    return;
+                  }
+                  setStep(2);
+                }}
+              >
                 <Text>Lanjut: Ringkasan</Text>
                 <ArrowRight size={16} color={colors.background} />
               </Button>
@@ -197,7 +292,7 @@ export default function NewPurchaseRequestScreen() {
       {step === 2 && (
         <Panel title="Langkah 3: Ringkasan & Lampiran Bukti">
           <View className="gap-4">
-            <View className="bg-panel/40 border-border rounded-xl border p-4 gap-2">
+            <View className="bg-panel/40 border-border rounded-xl border p-4 gap-2.5">
               <View className="flex-row justify-between">
                 <Text className="text-muted-foreground text-sm">Jenis Biaya:</Text>
                 <Text className="text-sm font-semibold">{costType}</Text>
@@ -208,17 +303,22 @@ export default function NewPurchaseRequestScreen() {
                   <Text className="text-sm font-semibold">{projectId}</Text>
                 </View>
               ) : null}
-              <View className="flex-row justify-between">
-                <Text className="text-muted-foreground text-sm">Barang:</Text>
-                <Text className="text-sm font-semibold">{String(currentProd?.nama ?? "-")}</Text>
+
+              <View className="border-t border-border/60 my-1 pt-2 gap-1.5">
+                <Text className="text-xs font-semibold text-muted-foreground uppercase">Rincian Barang ({selectedItems.length} item):</Text>
+                {selectedItems.map((item) => (
+                  <View key={item.nama} className="flex-row justify-between text-sm py-0.5">
+                    <Text className="text-sm text-foreground flex-1 pr-2" numberOfLines={1}>
+                      {item.nama} <Text className="text-muted-foreground">({item.qty} {item.satuan})</Text>
+                    </Text>
+                    <Text className="text-sm font-medium">{rupiah(item.subtotal)}</Text>
+                  </View>
+                ))}
               </View>
-              <View className="flex-row justify-between">
-                <Text className="text-muted-foreground text-sm">Jumlah:</Text>
-                <Text className="text-sm font-semibold">{qty} {String(currentProd?.satuan ?? "")}</Text>
-              </View>
-              <View className="flex-row justify-between">
-                <Text className="text-muted-foreground text-sm">Perkiraan Biaya:</Text>
-                <Text className="text-sm font-semibold text-primary">{rupiah(estimatedTotal)}</Text>
+
+              <View className="border-t border-border/60 pt-2 flex-row justify-between items-center">
+                <Text className="text-sm font-bold text-foreground">Total Perkiraan Biaya:</Text>
+                <Text className="text-base font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
               </View>
             </View>
 

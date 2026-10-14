@@ -28,10 +28,10 @@ const LIMIT: Record<UploadKind, string> = {
 };
 
 const ACCEPT: Record<Exclude<UploadKind, "semua">, string> = {
-  foto: "image/png,image/jpeg,image/webp",
+  foto: "image/*,image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp,.heic,.heif",
   dokumen:
     ".xlsx,.xls,.pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip",
-  video: "video/mp4,video/x-matroska",
+  video: "video/*,video/mp4,video/x-matroska",
 };
 
 function toUploadKind(kind: UploadKind): "foto" | "dokumen" | "video" {

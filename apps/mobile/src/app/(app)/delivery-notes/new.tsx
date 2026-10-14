@@ -1,17 +1,17 @@
 import * as React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { Check, Info } from "lucide-react-native";
+import { Check, Info, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
-import { ScanInput, type Scan } from "@/components/taska/scan-input";
+import { DatePicker, SearchableSelect, MultiSelect } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
+import { Pressable } from "react-native";
 
 export default function NewDeliveryNoteScreen() {
   const router = useRouter();
@@ -23,8 +23,8 @@ export default function NewDeliveryNoteScreen() {
   const [alasan, setAlasan] = React.useState("");
   const [selectedProject, setSelectedProject] = React.useState("-");
   const [hasGoods, setHasGoods] = React.useState(false);
-  const [goodsDesc, setGoodsDesc] = React.useState("");
-  const [scannedItems, setScannedItems] = React.useState<Scan[]>([]);
+  const [selectedProductNames, setSelectedProductNames] = React.useState<string[]>([]);
+  const [itemQuantities, setItemQuantities] = React.useState<Record<string, string>>({});
 
   async function submit() {
     if (!tujuan.trim()) {
@@ -35,6 +35,10 @@ export default function NewDeliveryNoteScreen() {
       toast("Alasan dinas/keluar kantor wajib diisi", "danger");
       return;
     }
+    if (hasGoods && selectedProductNames.length === 0) {
+      toast("Pilih minimal satu barang yang dibawa", "danger");
+      return;
+    }
 
     let fileId: number | undefined;
     try {
@@ -43,6 +47,22 @@ export default function NewDeliveryNoteScreen() {
       return;
     }
 
+    const itemsSummary = selectedProductNames
+      .map((name) => {
+        const prod = data.products.find((p) => p.nama === name);
+        const q = Number(itemQuantities[name]) || 1;
+        return `${name} x ${q}${prod?.satuan ? ` ${prod.satuan}` : ""}`;
+      })
+      .join(", ");
+
+    const itemsList = selectedProductNames.map((name) => {
+      const prod = data.products.find((p) => p.nama === name);
+      return {
+        productId: prod?.id ? Number(prod.id) : undefined,
+        qty: Number(itemQuantities[name]) || 1,
+      };
+    });
+
     const row = {
       nomor: `SJ/${new Date().getFullYear()}/${Math.floor(Math.random() * 800) + 100}`,
       tanggal: tanggalSj,
@@ -50,7 +70,10 @@ export default function NewDeliveryNoteScreen() {
       alasan,
       project: selectedProject,
       pembuat: user?.name || "Karyawan",
-      barang: hasGoods ? (goodsDesc || `${scannedItems.length} unit SN`) : "-",
+      barang: hasGoods ? itemsSummary : "-",
+      withGoods: hasGoods,
+      reportText: hasGoods ? itemsSummary : undefined,
+      items: hasGoods ? itemsList : undefined,
       status: "Pending",
       persetujuan: "Menunggu persetujuan",
       fileId,
@@ -128,18 +151,78 @@ export default function NewDeliveryNoteScreen() {
       >
         {hasGoods ? (
           <View className="gap-4">
-            <FormField label="Keterangan Barang yang Dibawa">
-              <Input
-                value={goodsDesc}
-                onChangeText={setGoodsDesc}
-                placeholder="Contoh: 4 pcs Reader Fingerprint, 1 box Kabel LAN"
+            <FormField
+              label="Pilih Barang yang Dibawa"
+              required
+              hint="Bisa pilih beberapa barang dari daftar master"
+            >
+              <MultiSelect
+                values={selectedProductNames}
+                onChange={(newNames) => {
+                  setSelectedProductNames(newNames);
+                  setItemQuantities((prev) => {
+                    const next = { ...prev };
+                    newNames.forEach((name) => {
+                      if (!next[name]) next[name] = "1";
+                    });
+                    return next;
+                  });
+                }}
+                options={data.products.map((p) => String(p.nama))}
+                placeholder="Pilih barang yang dibawa..."
               />
             </FormField>
 
-            <View className="gap-2">
-              <Text className="text-sm font-medium">Scan SN Unit Barang (Wajib di-scan Gudang sebelum keluar)</Text>
-              <ScanInput onResult={setScannedItems} />
-            </View>
+            {selectedProductNames.length > 0 ? (
+              <View className="gap-2.5 pt-1">
+                <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Daftar Barang & Jumlah ({selectedProductNames.length} item)
+                </Text>
+                {selectedProductNames.map((name) => {
+                  const prod = data.products.find((p) => p.nama === name);
+                  const qtyVal = itemQuantities[name] ?? "1";
+                  return (
+                    <View
+                      key={name}
+                      className="bg-card border-border/70 rounded-xl border p-3 flex-row items-center justify-between gap-3"
+                    >
+                      <View className="flex-1">
+                        <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                          {name}
+                        </Text>
+                        <Text className="text-xs text-muted-foreground mt-0.5">
+                          Satuan: {String(prod?.satuan || "unit")}
+                        </Text>
+                      </View>
+
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-xs text-muted-foreground">Qty:</Text>
+                        <Input
+                          value={qtyVal}
+                          onChangeText={(v) =>
+                            setItemQuantities((prev) => ({
+                              ...prev,
+                              [name]: v.replace(/\D/g, "") || "1",
+                            }))
+                          }
+                          keyboardType="numeric"
+                          className="w-16 h-9 text-center text-sm font-semibold"
+                        />
+                        <Pressable
+                          onPress={() => {
+                            setSelectedProductNames((prev) => prev.filter((n) => n !== name));
+                          }}
+                          hitSlop={8}
+                          className="size-8 items-center justify-center rounded-lg hover:bg-danger/10 active:bg-danger/10"
+                        >
+                          <Trash2 size={16} color={colors.danger} />
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
           </View>
         ) : (
           <Text className="text-muted-foreground text-sm">

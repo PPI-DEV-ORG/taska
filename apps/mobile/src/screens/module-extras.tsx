@@ -2790,5 +2790,52 @@ export function ModuleExtras({ moduleKey, row }: { moduleKey: string; row: Row }
     );
   }
 
+  if (moduleKey === "opname") {
+    const details = row._details ?? [];
+    return (
+      <Panel title={`Rincian Hitungan Fisik (${details.length} Produk)`} subtitle="Perbandingan stok sistem vs hitungan riil di gudang">
+        {details.length === 0 ? (
+          <Text className="text-muted-foreground text-sm py-2">Belum ada rincian produk.</Text>
+        ) : (
+          <View className="gap-2">
+            {details.map((d: any, idx: number) => {
+              const productName = d.product?.name ?? `Produk #${d.productId}`;
+              const sku = d.product?.sku ? `SKU: ${d.product.sku} · ` : "";
+              const unit = d.product?.unit ? ` ${d.product.unit}` : "";
+              const diff = Number(d.diff ?? 0);
+              return (
+                <View
+                  key={d.id ?? idx}
+                  className="border-border/60 flex-row items-center justify-between border-b py-3 last:border-b-0"
+                >
+                  <View className="flex-1 min-w-0 pr-3">
+                    <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                      {productName}
+                    </Text>
+                    <Text className="text-muted-foreground text-xs mt-0.5">
+                      {sku}Sistem: {d.systemQty}{unit} · Fisik: {d.countedQty}{unit}
+                    </Text>
+                    {d.note ? (
+                      <Text className="text-muted-foreground text-[11px] italic mt-0.5">Catatan: {d.note}</Text>
+                    ) : null}
+                  </View>
+                  <View className="items-end shrink-0">
+                    {diff === 0 ? (
+                      <Text className="text-success text-xs font-semibold">Cocok (0)</Text>
+                    ) : diff < 0 ? (
+                      <Text className="text-danger text-xs font-semibold">{diff}{unit}</Text>
+                    ) : (
+                      <Text className="text-info text-xs font-semibold">+{diff}{unit}</Text>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </Panel>
+    );
+  }
+
   return null;
 }
