@@ -109,19 +109,41 @@ export class QuotationsService {
       notes: patch.notes !== undefined && patch.notes.length > 0 ? patch.notes : current.notes,
     };
     const key = this.metaKey(id);
-    await this.prisma.main.systemSetting.upsert({
-      where: { key },
-      update: {
-        value: JSON.stringify(merged),
-        ...(userId ? { updatedById: userId } : {}),
-      },
-      create: {
-        key,
-        value: JSON.stringify(merged),
-        description: `Metadata item & template penawaran #${id}`,
-        ...(userId ? { updatedById: userId } : {}),
-      },
-    });
+    const jsonVal = JSON.stringify(merged);
+    try {
+      await this.prisma.main.systemSetting.upsert({
+        where: { key },
+        update: {
+          value: jsonVal,
+          ...(userId ? { updatedById: userId } : {}),
+        },
+        create: {
+          key,
+          value: jsonVal,
+          description: `Metadata item & template penawaran #${id}`,
+          ...(userId ? { updatedById: userId } : {}),
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === "P2000" || String(err?.message || "").includes("Data too long")) {
+        await this.prisma.main.$executeRawUnsafe("ALTER TABLE `SystemSetting` MODIFY COLUMN `value` LONGTEXT NOT NULL").catch(() => {});
+        await this.prisma.main.systemSetting.upsert({
+          where: { key },
+          update: {
+            value: jsonVal,
+            ...(userId ? { updatedById: userId } : {}),
+          },
+          create: {
+            key,
+            value: jsonVal,
+            description: `Metadata item & template penawaran #${id}`,
+            ...(userId ? { updatedById: userId } : {}),
+          },
+        });
+      } else {
+        throw err;
+      }
+    }
     return merged;
   }
 
