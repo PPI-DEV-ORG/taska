@@ -350,7 +350,7 @@ export function MultiSelect({
     ? placeholder
     : values.length <= 2
     ? values.join(", ")
-    : `${values.length} staf dipilih (${values.slice(0, 2).join(", ")}...)`;
+    : `${values.length} dipilih (${values.slice(0, 2).join(", ")}...)`;
 
   return (
     <>
@@ -374,7 +374,7 @@ export function MultiSelect({
               <Input
                 value={q}
                 onChangeText={setQ}
-                placeholder="Cari karyawan / staf..."
+                placeholder={`Cari ${placeholder.replace(/^Pilih\s*/i, "").toLowerCase()}...`}
                 className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
               />
             </View>
@@ -410,10 +410,11 @@ export function MultiSelect({
 }
 
 function FileField({
-  fieldKey, label, required, onCount, handleRef,
+  fieldKey, label, kind, required, onCount, handleRef,
 }: {
   fieldKey: string;
   label: string;
+  kind?: "foto" | "dokumen" | "video" | "semua";
   required?: boolean;
   onCount: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   handleRef?: (h: FileUploaderHandle | null) => void;
@@ -424,8 +425,9 @@ function FileField({
     },
     [fieldKey, onCount],
   );
+  const effectiveKind = kind ?? (/foto|gambar|image|nota/i.test(label) ? "foto" : "dokumen");
   return (
-    <FileUploader label={label} kind="dokumen" required={required} onChange={handleCount} handleRef={handleRef} />
+    <FileUploader label={label} kind={effectiveKind} required={required} onChange={handleCount} handleRef={handleRef} />
   );
 }
 
@@ -632,6 +634,7 @@ export function FormDialog({
                   key={f.key}
                   fieldKey={f.key}
                   label={f.label}
+                  kind={f.kind}
                   required={f.required}
                   onCount={setVals}
                   handleRef={fileHandleAt(i)}

@@ -181,7 +181,7 @@ export class ApprovalsService {
     const [rows, total] = await Promise.all([
       this.prisma.main.approval.findMany({
         where,
-        include: { steps: true },
+        include: { steps: true, requestedBy: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
         skip: (opts.page - 1) * opts.limit,
         take: opts.limit,
@@ -198,7 +198,7 @@ export class ApprovalsService {
   async pendingFor(user: RequestUser) {
     const rows = await this.prisma.main.approval.findMany({
       where: { status: "MENUNGGU" },
-      include: { steps: true },
+      include: { steps: true, requestedBy: { select: { id: true, name: true } } },
       orderBy: { createdAt: "asc" },
       take: 300,
     });

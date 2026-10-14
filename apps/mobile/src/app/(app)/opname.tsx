@@ -81,12 +81,17 @@ export default function StockOpnameScreen() {
 
     setBusy(true);
     try {
-      await api("POST", "/opnames", {
+      const created = await api<{ id: number }>("POST", "/opnames", {
         warehouseId: Number(selectedWarehouseId),
         date: new Date().toISOString().slice(0, 10),
         reason: reason.trim(),
         details,
       });
+      if (created?.id) {
+        await api("POST", `/opnames/${created.id}/submit`, {
+          reason: reason.trim(),
+        });
+      }
       toast("Hasil opname diajukan untuk persetujuan Finance dan Bos");
       router.replace("/stock");
     } catch (e: any) {

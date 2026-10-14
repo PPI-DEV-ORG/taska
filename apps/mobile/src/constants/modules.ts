@@ -85,6 +85,7 @@ export type CreateField = {
   options?: string[];
   required?: boolean;
   placeholder?: string;
+  kind?: "foto" | "dokumen" | "video" | "semua";
 };
 export type ModuleAction = { label: string; toast: string; to?: (r: Row) => string; status?: string };
 
@@ -510,7 +511,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "project", label: "Project terkait", type: "select", options: ["-"] },
       { key: "tanggal", label: "Tanggal pengeluaran", type: "date", required: true },
       { key: "alasan", label: "Alasan / keperluan", type: "textarea", required: true },
-      { key: "fileId", label: "Foto Nota Pembayaran", type: "file" },
+      { key: "fileId", label: "Foto Nota Pembayaran", type: "file", kind: "foto" },
     ],
     createRoles: ALL,
     docs: ["Foto nota", "Bukti transfer reimbursement"],
@@ -542,7 +543,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "tanggal", label: "Tanggal kejadian", type: "date" },
       { key: "po", label: "Nomor PO / Serial Number", type: "text" },
       { key: "keterangan", label: "Keterangan", type: "textarea", required: true },
-      { key: "dokumen", label: "Foto barang bermasalah (Opsional)", type: "file" },
+      { key: "dokumen", label: "Foto barang bermasalah (Opsional)", type: "file", kind: "foto" },
     ],
     defaults: { status: "Dilaporkan" },
     docs: ["Foto barang bermasalah"],
@@ -649,6 +650,29 @@ export const MODULES: Record<string, ModuleDef> = {
     actions: [{ label: "Alihkan tugas", toast: "Lead, project, dan tugas dialihkan ke orang lain" }],
     emptyText: "Belum ada pengguna.",
     confirmStatuses: ["Nonaktif"],
+  },
+  opname: {
+    key: "opname", title: "Stok Opname", singular: "Opname", icon: ClipboardCheck, idPrefix: "OP",
+    columns: [
+      { key: "gudang", label: "Gudang", primary: true, flex: 1.5 },
+      { key: "tanggal", label: "Tanggal", fmt: "date" },
+      { key: "petugas", label: "Petugas", flex: 1.2 },
+      { key: "selisih", label: "Total Selisih" },
+      { key: "status", label: "Status", fmt: "status", mobile: true },
+    ],
+    fields: [
+      { label: "Gudang", key: "gudang" },
+      { label: "Tanggal", key: "tanggal", fmt: "date" },
+      { label: "Petugas Pelaksana", key: "petugas" },
+      { label: "Penjelasan Selisih & Alasan", key: "alasan" },
+      { label: "Total Selisih Fisik", key: "selisih" },
+    ],
+    statusKey: "status",
+    statuses: ["Draft", "Menunggu persetujuan", "Disetujui", "Ditolak"],
+    titleOf: (r) => `Opname #${r.id} — ${r.gudang}`,
+    subtitleOf: (r) => `${r.petugas} · ${r.tanggal}`,
+    search: ["gudang", "petugas", "alasan"],
+    emptyText: "Belum ada riwayat stok opname.",
   },
   "audit-log": {
     key: "audit-log", title: "Audit log", singular: "Log", icon: ScrollText, idPrefix: "AL",
