@@ -498,6 +498,7 @@ export function adaptRow(module: string, raw: any): Row {
         nominal: n(raw.amount),
         project: nameOf(raw.project) ?? "-",
         projectId: idOf(raw.project),
+        surveyId: raw.surveyId != null ? String(raw.surveyId) : null,
         alasan: raw.description ?? "",
         status: toLabel("expenses", raw.status),
         costCenterId: idOf(raw.costCenter),
@@ -847,9 +848,21 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       };
     case "quotations": {
       const tot = num(row.total ?? row.nilai);
-      const ppn = row.ppn != null ? num(row.ppn) : Math.round(tot * 0.11);
       const disc = num(row.disc ?? row.discount);
-      const grand = num(row.totalAfterDisc ?? row.grandTotal) || Math.max(0, tot + ppn - disc);
+      const net = Math.max(0, tot - disc);
+      const tipe = String(row.tipePpn || "");
+      let ppn: number;
+      let grand: number;
+      if (tipe.toLowerCase().includes("no") || tipe.toLowerCase().includes("tanpa")) {
+        ppn = 0;
+        grand = net;
+      } else if (tipe.toLowerCase().includes("include")) {
+        ppn = Math.round(net - (net / 1.11));
+        grand = net;
+      } else {
+        ppn = row.ppn != null ? num(row.ppn) : Math.round(net * 0.11);
+        grand = num(row.totalAfterDisc ?? row.grandTotal) || (net + ppn);
+      }
       return {
         leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : findId(db?.leads, row.lead),
         customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.customer ?? row.perusahaan),
@@ -1044,6 +1057,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         amount: num(row.nominal ?? row.amount),
         description: row.alasan || row.description || "Pengeluaran operasional",
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
+        surveyId: row.surveyId != null && row.surveyId !== "" ? Number(row.surveyId) : undefined,
         costCenterId: row.costCenterId != null && row.costCenterId !== "" ? Number(row.costCenterId) : findId(db?.costCenters, row.costCenter),
         receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
       };
@@ -1166,6 +1180,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "fileId"],
+  followups: ["method", "notes", "date", "nextDate", "status"],
 };
 
 /** Hapus field yang tidak dikenal DTO update agar tidak 400. */

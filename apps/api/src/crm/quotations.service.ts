@@ -258,8 +258,9 @@ export class QuotationsService {
     const itemsSum = items.reduce((s, it) => s + it.qty * it.harga, 0);
     const total = itemsSum > 0 ? itemsSum : (dto?.total ?? dto?.grandTotal ?? 0);
     const discount = dto?.discount ?? 0;
-    const ppn = dto?.ppn !== undefined ? dto.ppn : Math.round(total * 0.11);
-    const grandTotal = dto?.grandTotal !== undefined && itemsSum === 0 ? dto.grandTotal : Math.max(0, total + ppn - discount);
+    const netBeforeTax = Math.max(0, total - discount);
+    const ppn = dto?.ppn !== undefined ? dto.ppn : Math.round(netBeforeTax * 0.11);
+    const grandTotal = dto?.grandTotal !== undefined && itemsSum === 0 ? dto.grandTotal : netBeforeTax + ppn;
     const mappedStatus =
       normalizeQuotationStatus(dto?.status) ?? (grandTotal > 0 || items.length > 0 ? "DRAFT" : "NOT_YET");
 
@@ -352,14 +353,15 @@ export class QuotationsService {
           ? dto.total
           : Number(row.total);
     const discount = dto.discount !== undefined ? dto.discount : Number(row.discount);
+    const netBeforeTax = Math.max(0, total - discount);
     const ppn =
-      dto.ppn !== undefined && items === undefined
+      dto.ppn !== undefined
         ? dto.ppn
-        : Math.round(total * 0.11);
+        : Math.round(netBeforeTax * 0.11);
     const grandTotal =
       dto.grandTotal !== undefined && items === undefined && dto.total === undefined && dto.discount === undefined
         ? dto.grandTotal
-        : Math.max(0, total + ppn - discount);
+        : netBeforeTax + ppn;
 
     const mappedStatus = normalizeQuotationStatus(dto.status);
     const nextVersion =
@@ -767,12 +769,15 @@ export class QuotationsService {
       parsed && parsed.total > 0 ? parsed.total : Number(row.total);
     const discount =
       parsed && parsed.discount >= 0 ? parsed.discount : Number(row.discount);
+    const netBeforeTax = Math.max(0, total - discount);
     const ppn =
-      parsed && parsed.total > 0 ? parsed.ppn : Math.round(total * 0.11);
+      parsed && parsed.ppn !== undefined
+        ? parsed.ppn
+        : Math.round(netBeforeTax * 0.11);
     const grandTotal =
       parsed && parsed.grandTotal > 0
         ? parsed.grandTotal
-        : Math.max(0, total + ppn - discount);
+        : netBeforeTax + ppn;
 
     const nextVer = (row.currentVersion || 0) + 1;
 
