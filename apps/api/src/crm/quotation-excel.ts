@@ -267,21 +267,6 @@ export async function buildQuotationXlsx(params: {
   valTotal.alignment = { horizontal: "right", vertical: "middle" };
   valTotal.border = thinBorder;
 
-  // PPN (11%)
-  const ppnRowIdx = currRow++;
-  const lblPpn = ws.getCell(ppnRowIdx, 5);
-  lblPpn.value = "PPN (11%)";
-  lblPpn.font = { name: "Calibri", size: 10, bold: true };
-  lblPpn.alignment = { horizontal: "right", vertical: "middle" };
-  lblPpn.border = thinBorder;
-
-  const valPpn = ws.getCell(ppnRowIdx, 6);
-  valPpn.value = { formula: `F${totalRowIdx}*0.11`, result: finalPpn };
-  valPpn.font = { name: "Calibri", size: 10, bold: true };
-  valPpn.numFmt = "#,##0.00";
-  valPpn.alignment = { horizontal: "right", vertical: "middle" };
-  valPpn.border = thinBorder;
-
   // DISC (jika ada diskon > 0)
   let discRowIdx: number | null = null;
   if (finalDisc > 0) {
@@ -299,6 +284,26 @@ export async function buildQuotationXlsx(params: {
     valDisc.alignment = { horizontal: "right", vertical: "middle" };
     valDisc.border = thinBorder;
   }
+
+  // PPN (11%)
+  const ppnRowIdx = currRow++;
+  const lblPpn = ws.getCell(ppnRowIdx, 5);
+  lblPpn.value = finalPpn > 0 ? "PPN (11%)" : "PPN";
+  lblPpn.font = { name: "Calibri", size: 10, bold: true };
+  lblPpn.alignment = { horizontal: "right", vertical: "middle" };
+  lblPpn.border = thinBorder;
+
+  const valPpn = ws.getCell(ppnRowIdx, 6);
+  if (finalPpn > 0) {
+    const formulaStr = discRowIdx ? `(F${totalRowIdx}-F${discRowIdx})*0.11` : `F${totalRowIdx}*0.11`;
+    valPpn.value = { formula: formulaStr, result: finalPpn };
+  } else {
+    valPpn.value = 0;
+  }
+  valPpn.font = { name: "Calibri", size: 10, bold: true };
+  valPpn.numFmt = "#,##0.00";
+  valPpn.alignment = { horizontal: "right", vertical: "middle" };
+  valPpn.border = thinBorder;
 
   // GRAND TOTAL
   const grandRowIdx = currRow++;
@@ -746,15 +751,6 @@ export async function buildQuotationPdf(params: {
     { text: `Rp ${finalTotal.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
   ]);
 
-  tableBody.push([
-    { text: "", colSpan: 4, border: [false, false, false, false] },
-    {},
-    {},
-    {},
-    { text: "PPN (11%)", bold: true, alignment: "right", fontSize: 9 },
-    { text: `Rp ${finalPpn.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
-  ]);
-
   if (finalDisc > 0) {
     tableBody.push([
       { text: "", colSpan: 4, border: [false, false, false, false] },
@@ -765,6 +761,15 @@ export async function buildQuotationPdf(params: {
       { text: `Rp ${finalDisc.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
     ]);
   }
+
+  tableBody.push([
+    { text: "", colSpan: 4, border: [false, false, false, false] },
+    {},
+    {},
+    {},
+    { text: finalPpn > 0 ? "PPN (11%)" : "PPN", bold: true, alignment: "right", fontSize: 9 },
+    { text: `Rp ${finalPpn.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
+  ]);
 
   tableBody.push([
     { text: "", colSpan: 4, border: [false, false, false, false] },
