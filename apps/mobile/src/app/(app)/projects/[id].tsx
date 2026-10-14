@@ -12,6 +12,7 @@ import {
   ShoppingCart,
   Trash2,
   Upload,
+  FileSpreadsheet,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -89,10 +90,67 @@ export default function ProjectDetailScreen() {
       t.project === project.id ||
       t.project === project.nama
   );
-  const expenses = data.expenses.filter((e) => e.project === project.nama);
-  const deliveryNotes = data["delivery-notes"].filter(
-    (dn) => dn.project === project.nama
+  const expenses = data.expenses.filter(
+    (e) => e.project === project.nama || String(e.projectId) === String(project.id)
   );
+  const deliveryNotes = data["delivery-notes"].filter(
+    (dn) => dn.project === project.nama || String(dn.projectId) === String(project.id)
+  );
+
+  const canViewFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
+
+  const projectInvoices = (data.invoices ?? []).filter(
+    (i: any) =>
+      (String(i.projectId) === String(project.id) || i.project === project.nama) &&
+      i.status !== "Batal" &&
+      i.status !== "BATAL"
+  );
+  const revenue = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
+
+  const projectPos = (data["supplier-pos"] ?? []).filter(
+    (po: any) =>
+      (String(po.projectId) === String(project.id) || po.project === project.nama) &&
+      po.status !== "Ditolak" &&
+      po.status !== "DIBATALKAN"
+  );
+  const poCost = projectPos.reduce((sum: number, po: any) => sum + Number(po.total || 0), 0);
+
+  const projectExpenses = (data.expenses ?? []).filter(
+    (e: any) =>
+      (String(e.projectId) === String(project.id) || e.project === project.nama) &&
+      e.status !== "Ditolak"
+  );
+  const expenseCost = projectExpenses.reduce((sum: number, e: any) => sum + Number(e.nominal || 0), 0);
+  const totalCost = poCost + expenseCost;
+  const netProfit = revenue - totalCost;
+  const marginPct = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(1) : "0.0";
+
+  function downloadProjectPnl() {
+    if (!canViewFinancials) {
+      toast("Akses ditolak: Hanya untuk Finance, Bos, dan Super Admin", "danger");
+      return;
+    }
+    const header = `LAPORAN UNTUNG-RUGI (P&L) PROYEK\nNama Proyek: ${project?.nama}\nCustomer: ${project?.customer}\nTanggal Cetak: ${new Date().toISOString().slice(0, 10)}\n\n`;
+    const summary = [
+      `KOMPONEN KEUANGAN,NOMINAL (RP),KETERANGAN`,
+      `Pendapatan DPP Invoice,${revenue},"${projectInvoices.length} invoice tercatat"`,
+      
+      `Biaya PO Supplier (Material),${poCost},"${projectPos.length} purchase order"`,
+      `Biaya Operasional & Reimburse,${expenseCost},"${projectExpenses.length} transaksi"`,
+      `Total Biaya & Beban,${totalCost},""`,
+      `Laba Bersih Proyek,${netProfit},"Margin ${marginPct}%"`,
+    ].join("\n");
+    const blob = new Blob(["\uFEFF" + header + summary], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `pnl-${project?.nama.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast("Laporan Untung-Rugi (P&L) proyek berhasil diunduh");
+  }
 
   const isLunas = project.pembayaran === "Lunas";
 
@@ -123,6 +181,12 @@ export default function ProjectDetailScreen() {
                 <AlertTriangle size={14} color={colors.warning} />
                 <Text className="text-warning text-xs font-medium">Belum lunas (Handover dicatat)</Text>
               </View>
+            ) : null}
+            {canViewFinancials ? (
+              <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="flex-row items-center gap-1.5">
+                <FileSpreadsheet size={14} color={colors.success} />
+                <Text>Laporan Untung-Rugi (P&L)</Text>
+              </Button>
             ) : null}
             <Button size="sm" variant="outline" onPress={() => setEditProjectOpen(true)}>
               <Pencil size={14} color={colors.text} />
@@ -181,6 +245,56 @@ export default function ProjectDetailScreen() {
               />
             </View>
           </Panel>
+
+          {canViewFinancials ? (
+            <Panel
+              title="Analisa Untung-Rugi (P&L Project)"
+              subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan invoice dan pengeluaran beban riil."
+              right={
+                <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="flex-row items-center gap-1.5">
+                  <FileSpreadsheet size={13} color={colors.success} />
+                  <Text className="text-xs">Download CSV P&L</Text>
+                </Button>
+              }
+            >
+              <View className="divide-y divide-border/60">
+                <View className="flex-row items-center justify-between py-2">
+                  <View>
+                    <Text className="text-sm">Pendapatan Proyek (DPP Invoice)</Text>
+                    <Text className="text-xs text-muted-foreground">{projectInvoices.length} invoice tercatat</Text>
+                  </View>
+                  <Text className="text-sm font-semibold">{rupiah(revenue)}</Text>
+                </View>
+                <View className="flex-row items-center justify-between py-2">
+                  <View>
+                    <Text className="text-sm">Biaya PO Supplier (Material)</Text>
+                    <Text className="text-xs text-muted-foreground">{projectPos.length} purchase order</Text>
+                  </View>
+                  <Text className="text-sm font-semibold text-danger">{rupiah(poCost)}</Text>
+                </View>
+                <View className="flex-row items-center justify-between py-2">
+                  <View>
+                    <Text className="text-sm">Biaya Operasional & Reimburse</Text>
+                    <Text className="text-xs text-muted-foreground">{projectExpenses.length} transaksi operasional</Text>
+                  </View>
+                  <Text className="text-sm font-semibold text-danger">{rupiah(expenseCost)}</Text>
+                </View>
+                <View className="flex-row items-center justify-between py-2">
+                  <Text className="text-sm font-medium">Total Beban & Biaya</Text>
+                  <Text className="text-sm font-bold text-danger">{rupiah(totalCost)}</Text>
+                </View>
+                <View className="flex-row items-center justify-between py-2.5 bg-panel/50 px-2 rounded-lg mt-1">
+                  <View>
+                    <Text className="text-sm font-bold">Laba Bersih Proyek (Net Profit)</Text>
+                    <Text className="text-xs text-muted-foreground">Margin Keuntungan: {marginPct}%</Text>
+                  </View>
+                  <Text className={`text-base font-bold ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
+                    {rupiah(netProfit)}
+                  </Text>
+                </View>
+              </View>
+            </Panel>
+          ) : null}
         </View>
       )}
 
@@ -468,6 +582,37 @@ export default function ProjectDetailScreen() {
       {/* Tab 6: Biaya & Pengeluaran Lapangan */}
       {activeTab === "Biaya" && (
         <View className="gap-4">
+          {canViewFinancials ? (
+            <Panel
+              title="Ringkasan Margin Laba-Rugi Project"
+              right={
+                <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="flex-row items-center gap-1.5">
+                  <FileSpreadsheet size={13} color={colors.success} />
+                  <Text className="text-xs">Download CSV P&L</Text>
+                </Button>
+              }
+            >
+              <View className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <View className="p-3 bg-panel/60 border border-border/80 rounded-lg">
+                  <Text className="text-xs text-muted-foreground">Pendapatan DPP</Text>
+                  <Text className="text-sm font-semibold text-foreground mt-0.5">{rupiah(revenue)}</Text>
+                </View>
+                <View className="p-3 bg-panel/60 border border-border/80 rounded-lg">
+                  <Text className="text-xs text-muted-foreground">Biaya PO Supplier</Text>
+                  <Text className="text-sm font-semibold text-danger mt-0.5">{rupiah(poCost)}</Text>
+                </View>
+                <View className="p-3 bg-panel/60 border border-border/80 rounded-lg">
+                  <Text className="text-xs text-muted-foreground">Operasional/Biaya</Text>
+                  <Text className="text-sm font-semibold text-danger mt-0.5">{rupiah(expenseCost)}</Text>
+                </View>
+                <View className="p-3 bg-panel/60 border border-border/80 rounded-lg">
+                  <Text className="text-xs text-muted-foreground">Laba Bersih ({marginPct}%)</Text>
+                  <Text className={`text-sm font-bold mt-0.5 ${netProfit >= 0 ? "text-success" : "text-danger"}`}>{rupiah(netProfit)}</Text>
+                </View>
+              </View>
+            </Panel>
+          ) : null}
+
           <Panel
             title="Pengeluaran Lapangan Project"
             subtitle="Bensin, makan, transport, perlengkapan teknisi"

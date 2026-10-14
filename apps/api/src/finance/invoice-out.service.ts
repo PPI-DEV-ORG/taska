@@ -307,4 +307,111 @@ export class InvoiceOutService {
   suggestNumber() {
     return this.docnum.suggest("invoiceOut");
   }
+
+  /**
+   * Ekspor Faktur Pajak Keluaran ke format CSV baku aplikasi e-Faktur Direktorat Jenderal Pajak (DJP).
+   * Format sesuai petunjuk teknis DJP:
+   * Record FK (Faktur Keluaran) & Record OF (Objek Faktur)
+   */
+  async exportEfakturCsv(query: {
+    from?: string;
+    to?: string;
+    month?: number;
+    year?: number;
+    customerId?: number;
+    invoiceId?: number;
+    nsfpStart?: string;
+  }): Promise<{ csv: string; filename: string }> {
+    const where: any = {
+      status: { not: "BATAL" },
+      ...(query.invoiceId ? { id: Number(query.invoiceId) } : {}),
+      ...(query.customerId ? { customerId: Number(query.customerId) } : {}),
+      ...(query.from || query.to
+        ? {
+            date: {
+              ...(query.from ? { gte: new Date(query.from) } : {}),
+              ...(query.to ? { lte: new Date(query.to) } : {}),
+            },
+          }
+        : {}),
+    };
+
+    const invoices = await this.prisma.main.invoiceOut.findMany({
+      where,
+      include: {
+        customer: true,
+      },
+      orderBy: { date: "asc" },
+    });
+
+    const header = [
+      "FK,KD_JENIS_TRANSAKSI,FG_PENGGANTI,NOMOR_FAKTUR,MASA_PAJAK,TAHUN_PAJAK,TANGGAL_FAKTUR,NPWP,NAMA,ALAMAT_LENGKAP,JUMLAH_DPP,JUMLAH_PPN,JUMLAH_PPNBM,ID_KETERANGAN_TAMBAHAN,FG_UANG_MUKA,UANG_MUKA_DPP,UANG_MUKA_PPN,UANG_MUKA_PPNBM,REFERENSI,KODE_DOKUMEN_PENDUKUNG",
+      "LT_NPWP,NAMA,ALAMAT_LENGKAP,NOMOR_TELEPON",
+      "OF,KODE_OBJEK,NAMA,HARGA_SATUAN,JUMLAH_BARANG,HARGA_TOTAL,DISKON,DPP,PPN,TARIF_PPNBM,PPNBM",
+    ];
+
+    const lines: string[] = [header[0], header[2]];
+
+    let currentNsfpNum = 1;
+    let nsfpPrefix = "";
+    if (query.nsfpStart) {
+      const match = query.nsfpStart.match(/^(.*?)(\d{8})$/);
+      if (match) {
+        nsfpPrefix = match[1];
+        currentNsfpNum = parseInt(match[2], 10);
+      }
+    }
+
+    for (let i = 0; i < invoices.length; i++) {
+      const inv = invoices[i];
+      const d = new Date(inv.date);
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = String(d.getFullYear());
+      const tanggalFaktur = `${day}/${month}/${year}`;
+      const masaPajak = String(d.getMonth() + 1);
+
+      let noFaktur = "";
+      if (nsfpPrefix) {
+        noFaktur = `${nsfpPrefix}${String(currentNsfpNum++).padStart(8, "0")}`;
+      } else {
+        noFaktur = `010000${year.slice(-2)}${String(i + 1).padStart(8, "0")}`;
+      }
+
+      let npwp = "0000000000000000";
+      const notes = inv.customer?.notes || "";
+      const npwpMatch = notes.match(/npwp\s*[:=]?\s*([0-9.\-]+)/i);
+      if (npwpMatch) {
+        const cleaned = npwpMatch[1].replace(/\D/g, "");
+        if (cleaned.length >= 15) {
+          npwp = cleaned.slice(0, 16);
+        }
+      }
+
+      const nama = (inv.customer?.name || "Customer").replace(/"/g, '""');
+      const alamat = (inv.customer?.address || inv.customer?.city || "Indonesia").replace(/"/g, '""');
+      const dpp = Math.round(Number(inv.amount));
+      const ppn = Math.round(Number(inv.ppn) || dpp * 0.11);
+      const isDp = inv.type === "DP";
+      const referensi = inv.number.replace(/"/g, '""');
+
+      // FK row
+      lines.push(
+        `"FK","01","0","${noFaktur}","${masaPajak}","${year}","${tanggalFaktur}","${npwp}","${nama}","${alamat}",${dpp},${ppn},0,"",${isDp ? 1 : 0},0,0,0,"${referensi}",""`,
+      );
+
+      // OF row
+      const itemDesc = (inv.description || "Pengadaan Barang & Jasa").replace(/"/g, '""');
+      lines.push(
+        `"OF","000000","${itemDesc}",${dpp},1,${dpp},0,${dpp},${ppn},0,0`,
+      );
+    }
+
+    const periodStr =
+      query.year && query.month
+        ? `${query.year}-${String(query.month).padStart(2, "0")}`
+        : new Date().toISOString().slice(0, 10);
+    const filename = `efaktur-pajak-keluaran-${periodStr}.csv`;
+    return { csv: lines.join("\r\n"), filename };
+  }
 }

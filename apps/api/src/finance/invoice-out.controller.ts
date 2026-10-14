@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Delete, ForbiddenException, Get, Param, ParseIntPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
+import type { Response } from "express";
 import { IsIn } from "class-validator";
 import { InvoiceOutService } from "./invoice-out.service.js";
 import { FinanceListQuery, InvoiceOutDto, PaymentDto } from "./dto.js";
@@ -24,6 +25,36 @@ export class InvoiceOutController {
   @Require("financeOut", "L")
   suggestNumber() {
     return this.service.suggestNumber();
+  }
+
+  @Get("efaktur/export")
+  @Require("financeOut", "L")
+  async exportEfaktur(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("month") month?: string,
+    @Query("year") year?: string,
+    @Query("customerId") customerId?: string,
+    @Query("invoiceId") invoiceId?: string,
+    @Query("nsfpStart") nsfpStart?: string,
+    @CurrentUser() user?: RequestUser,
+    @Res() res?: Response,
+  ) {
+    if (user && !["super_admin", "bos", "finance"].includes(user.role)) {
+      throw new ForbiddenException("Ekspor E-Faktur DJP hanya dapat diakses oleh Finance, Bos, dan Super Admin");
+    }
+    const { csv, filename } = await this.service.exportEfakturCsv({
+      from,
+      to,
+      month: month ? parseInt(month, 10) : undefined,
+      year: year ? parseInt(year, 10) : undefined,
+      customerId: customerId ? parseInt(customerId, 10) : undefined,
+      invoiceId: invoiceId ? parseInt(invoiceId, 10) : undefined,
+      nsfpStart,
+    });
+    res?.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res?.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res?.end(csv);
   }
 
   @Get(":id")

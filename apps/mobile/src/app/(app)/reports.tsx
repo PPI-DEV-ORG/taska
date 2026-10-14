@@ -10,7 +10,8 @@ import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 
 export default function ReportsScreen() {
-  const { data, approvals, toast } = useApp();
+  const { data, approvals, user, toast } = useApp();
+  const canAccessFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
 
   const reportCards = React.useMemo(() => {
     const leadsCount = (data.leads ?? []).length;
@@ -29,7 +30,45 @@ export default function ReportsScreen() {
       0,
     );
 
-    return [
+    const totalRev = (data.invoices ?? [])
+      .filter((i: any) => i.status !== "Batal" && i.status !== "BATAL")
+      .reduce((a: number, i: any) => a + Number(i.nilai || i.amount || 0), 0);
+    const totalPoCost = (data["supplier-pos"] ?? [])
+      .filter((po: any) => po.status !== "DIBATALKAN" && po.status !== "Ditolak")
+      .reduce((a: number, po: any) => a + Number(po.total || 0), 0);
+    const totalExp = (data.expenses ?? [])
+      .filter((e: any) => e.status !== "Ditolak")
+      .reduce((a: number, e: any) => a + Number(e.nominal || 0), 0);
+    const totalNetProfit = totalRev - (totalPoCost + totalExp);
+    const pnlMargin = totalRev > 0 ? ((totalNetProfit / totalRev) * 100).toFixed(1) + "%" : "0%";
+
+    const cards: Array<{
+      type: string;
+      title: string;
+      desc: string;
+      stat: string;
+      isEfaktur?: boolean;
+    }> = [];
+
+    if (canAccessFinancials) {
+      cards.push(
+        {
+          type: "profit-loss",
+          title: "Laporan Untung-Rugi (P&L) Project & Overall",
+          desc: "Kalkulasi laba-rugi project: pendapatan invoice, biaya PO supplier, biaya operasional, laba bersih, dan profit margin.",
+          stat: `${projCount} Proyek · Laba Bersih: ${rupiah(totalNetProfit)} (${pnlMargin})`,
+        },
+        {
+          type: "efaktur",
+          title: "Export CSV E-Faktur DJP (Pajak Keluaran)",
+          desc: "Ekspor data faktur pajak keluaran dari invoice klien sesuai format CSV resmi aplikasi e-Faktur Direktorat Jenderal Pajak (DJP).",
+          stat: `${invCount} Invoice Siap Ekspor Pajak`,
+          isEfaktur: true,
+        },
+      );
+    }
+
+    cards.push(
       {
         type: "leads",
         title: "Laporan Leads & Pipeline Penjualan",
@@ -73,16 +112,39 @@ export default function ReportsScreen() {
         stat: `${apprCount} Dokumen Menunggu Keputusan`,
       },
       {
-        type: "leads",
+        type: "invoices",
         title: "Laporan Piutang & Invoice Keluar",
         desc: "Daftar invoice keluar per customer, analisa umur piutang (aging), dan status termin.",
         stat: `${invCount} Invoice · ${rupiah(unpaidVal)} Belum Lunas`,
       },
-    ];
-  }, [data, approvals]);
+    );
+
+    return cards;
+  }, [data, approvals, canAccessFinancials]);
 
   function generateCsv(title: string): string {
     const headerPrefix = `LAPORAN RESMI TASKA ERP - ${title.toUpperCase()}\nTanggal Ekspor: ${new Date().toISOString().slice(0, 10)}\n\n`;
+
+    if (title.includes("Untung-Rugi") || title.includes("P&L")) {
+      const rows = (data.projects || []).map((pr: any) => {
+        const prInvoices = (data.invoices || []).filter(
+          (i: any) => String(i.projectId) === String(pr.id) && i.status !== "Batal"
+        );
+        const rev = prInvoices.reduce((a: number, i: any) => a + Number(i.nilai || i.amount || 0), 0);
+        const prPos = (data["supplier-pos"] || []).filter(
+          (po: any) => String(po.projectId) === String(pr.id) && po.status !== "Ditolak" && po.status !== "DIBATALKAN"
+        );
+        const poCost = prPos.reduce((a: number, po: any) => a + Number(po.total || 0), 0);
+        const prExp = (data.expenses || []).filter(
+          (e: any) => String(e.projectId) === String(pr.id) && e.status !== "Ditolak"
+        );
+        const expCost = prExp.reduce((a: number, e: any) => a + Number(e.nominal || 0), 0);
+        const net = rev - (poCost + expCost);
+        const m = rev > 0 ? ((net / rev) * 100).toFixed(1) + "%" : "0%";
+        return `"${pr.id}","${pr.nama}","${pr.customer}","${pr.pm}","${pr.status}","${rev}","${poCost}","${expCost}","${net}","${m}"`;
+      });
+      return headerPrefix + "ID,Nama Proyek,Customer,PIC PM,Status,Pendapatan Invoice (Rp),Biaya PO Supplier (Rp),Biaya Operasional (Rp),Laba Bersih (Rp),Margin (%)\n" + rows.join("\n");
+    }
 
     if (title.includes("Pipeline") || title.includes("Leads")) {
       const rows = (data.leads || []).map((l: any) =>
@@ -140,6 +202,10 @@ export default function ReportsScreen() {
   }
 
   async function download(type: string, title: string, format: "xlsx" | "pdf" | "docx") {
+    if (type === "profit-loss" && !canAccessFinancials) {
+      toast("Akses ditolak: Laporan P&L hanya untuk Finance, Bos, dan Super Admin", "danger");
+      return;
+    }
     if (typeof window === "undefined" || typeof document === "undefined") {
       toast(`Mengunduh ${title} (${format.toUpperCase()})`);
       return;
@@ -198,6 +264,26 @@ export default function ReportsScreen() {
     }
   }
 
+  function downloadEfaktur() {
+    if (!canAccessFinancials) {
+      toast("Akses ditolak: Ekspor E-Faktur hanya untuk Finance, Bos, dan Super Admin", "danger");
+      return;
+    }
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      toast("Mengunduh CSV E-Faktur DJP");
+      return;
+    }
+    const token = getAccess();
+    const url = `${apiBase()}/invoices/efaktur/export${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `efaktur-pajak-keluaran-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast("File CSV E-Faktur DJP berhasil diunduh!");
+  }
+
   return (
     <View className="gap-5 w-full pb-8">
       <PageHeader
@@ -219,35 +305,48 @@ export default function ReportsScreen() {
               </View>
             </View>
 
-            <View className="border-border border-t pt-3 flex-row gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onPress={() => download(rc.type, rc.title, "xlsx")}
-              >
-                <FileSpreadsheet size={14} color={colors.success} />
-                <Text className="text-xs">Excel</Text>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onPress={() => download(rc.type, rc.title, "pdf")}
-              >
-                <FileText size={14} color={colors.danger} />
-                <Text className="text-xs">PDF</Text>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onPress={() => download(rc.type, rc.title, "docx")}
-              >
-                <FileText size={14} color={colors.info} />
-                <Text className="text-xs">Word</Text>
-              </Button>
-            </View>
+            {rc.isEfaktur ? (
+              <View className="border-border border-t pt-3 flex-row gap-2">
+                <Button
+                  size="sm"
+                  className="flex-1 flex-row items-center justify-center gap-2"
+                  onPress={downloadEfaktur}
+                >
+                  <FileSpreadsheet size={15} color={colors.background} />
+                  <Text className="text-xs font-semibold">Download CSV E-Faktur DJP</Text>
+                </Button>
+              </View>
+            ) : (
+              <View className="border-border border-t pt-3 flex-row gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onPress={() => download(rc.type, rc.title, "xlsx")}
+                >
+                  <FileSpreadsheet size={14} color={colors.success} />
+                  <Text className="text-xs">Excel</Text>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onPress={() => download(rc.type, rc.title, "pdf")}
+                >
+                  <FileText size={14} color={colors.danger} />
+                  <Text className="text-xs">PDF</Text>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onPress={() => download(rc.type, rc.title, "docx")}
+                >
+                  <FileText size={14} color={colors.info} />
+                  <Text className="text-xs">Word</Text>
+                </Button>
+              </View>
+            )}
           </View>
         ))}
       </View>

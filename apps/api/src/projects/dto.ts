@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
@@ -43,7 +43,20 @@ export class ProjectDto {
   @IsOptional() @IsString() @MinLength(1)
   name?: string;
 
-  @IsOptional() @IsIn(PROJECT_TYPES)
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase();
+      if ((PROJECT_TYPES as readonly string[]).includes(v)) return v;
+      if (["INSTALASI", "CUSTOMER", "PROYEK"].includes(v)) return "CUSTOMER";
+      if (["MAINTENANCE", "PEMELIHARAAN"].includes(v)) return "MAINTENANCE";
+      if (["SUPPORT", "DUKUNGAN"].includes(v)) return "SUPPORT";
+      if (["INTERNAL"].includes(v)) return "INTERNAL";
+      return "CUSTOMER";
+    }
+    return value;
+  })
+  @IsIn(PROJECT_TYPES)
   type?: (typeof PROJECT_TYPES)[number];
 
   @IsOptional() @IsInt()
