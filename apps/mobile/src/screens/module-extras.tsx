@@ -108,7 +108,8 @@ function DocumentationPhotosPanel({
     try {
       const payload =
         file.blob ?? (file.uri ? { uri: file.uri, name: file.name, type: "image/jpeg" } : null);
-      const fileId = await uploadFile(payload, "foto");
+      const category = kind === "delivery-note" ? "surat-jalan" : kind === "survey" ? "survey" : "dokumentasi-proyek";
+      const fileId = await uploadFile(payload, "foto", category);
       if (!fileId) {
         toast("Gagal mengunggah foto ke server", "danger");
         return;
@@ -299,7 +300,13 @@ export function QuotationPreviewModal({
   discNum,
   itemsTotal,
   subject,
+  intro,
   notesList,
+  city,
+  kopText,
+  customerAddress,
+  signerName,
+  signerTitle,
   onSave,
 }: {
   open: boolean;
@@ -310,7 +317,13 @@ export function QuotationPreviewModal({
   discNum: number;
   itemsTotal: number;
   subject?: string;
+  intro?: string;
   notesList?: string[];
+  city?: string;
+  kopText?: string;
+  customerAddress?: string;
+  signerName?: string;
+  signerTitle?: string;
   onSave?: () => void;
 }) {
   const activeNotes =
@@ -326,18 +339,20 @@ export function QuotationPreviewModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl md:max-w-4xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>Preview File Penawaran Excel (Format Resmi)</DialogTitle>
+          <DialogTitle>Preview File Penawaran (Format Resmi Excel & PDF)</DialogTitle>
         </DialogHeader>
         <ScrollView style={{ maxHeight: 580 }} contentContainerClassName="gap-3 p-4 bg-white rounded-xl text-black border border-zinc-300">
           {/* KOP SURAT Box */}
-          <View className="border border-black py-4 items-center justify-center bg-white">
-            <Text className="text-base font-bold text-black tracking-widest uppercase">KOP SURAT</Text>
+          <View className="border border-black py-3 px-3 items-center justify-center bg-white min-h-[50px]">
+            <Text className="text-sm font-bold text-black tracking-wide uppercase text-center leading-snug">
+              {kopText || row.kopText || "KOP SURAT"}
+            </Text>
           </View>
 
           {/* Tanggal Kanan */}
           <View className="items-end pt-1">
             <Text className="text-xs text-black font-bold">
-              {row.city || "Bekasi"}, {tanggal(row.dibuat || new Date().toISOString())}
+              {city || row.city || "Bekasi"}, {tanggal(row.dibuat || new Date().toISOString())}
             </Text>
           </View>
 
@@ -345,7 +360,7 @@ export function QuotationPreviewModal({
           <View className="gap-0.5">
             <Text className="text-xs text-black font-bold">Kepada Yth.</Text>
             <Text className="text-xs text-black font-bold">{row.customer || row.perusahaan || "Nama Customer"}</Text>
-            <Text className="text-xs text-black font-bold">Di Tempat</Text>
+            <Text className="text-xs text-black font-bold">{customerAddress || row.customerAddress || "Di Tempat"}</Text>
           </View>
 
           {/* Subject & Quote No */}
@@ -358,7 +373,7 @@ export function QuotationPreviewModal({
 
           <Text className="text-xs text-black leading-relaxed pt-1">
             Dengan hormat,{"\n"}
-            {row.intro || "Sesuai permintaan Bapak / Ibu sebelumnya, berikut penawaran dari kami terkait pengadaan Barang & Jasa Instalasi :"}
+            {intro || row.intro || "Sesuai permintaan Bapak / Ibu sebelumnya, berikut penawaran dari kami terkait pengadaan Barang & Jasa Instalasi :"}
           </Text>
 
           {/* Tabel Item Excel Warna Cyan #00FFFF */}
@@ -434,10 +449,17 @@ export function QuotationPreviewModal({
               Sekian surat penawaran ini kami buat dengan harapan agar Bapak/Ibu bisa bekerjasama dengan perusahaan kami. Kami tunggu tanggapan dan kabar baik.
             </Text>
 
-            <View className="items-start gap-1 pt-2">
+            <View className="items-start gap-0.5 pt-2">
               <Text className="text-[11px] text-black">TTD,</Text>
               <View className="h-8" />
-              <Text className="text-xs font-bold text-black underline">{row.pemilik || "Nama Sales"}</Text>
+              <Text className="text-xs font-bold text-black underline">
+                {signerName || row.signerName || row.pemilik || "Nama Sales"}
+              </Text>
+              {(signerTitle || row.signerTitle) ? (
+                <Text className="text-[11px] text-black font-medium">
+                  {signerTitle || row.signerTitle}
+                </Text>
+              ) : null}
             </View>
           </View>
         </ScrollView>
@@ -503,7 +525,16 @@ export function QuotationTemplateGenerator({
   onUpdateItems: (
     items: QuotationItem[],
     newTotal: number,
-    meta?: { subject?: string; notesList?: string[] },
+    meta?: {
+      subject?: string;
+      intro?: string;
+      notesList?: string[];
+      city?: string;
+      kopText?: string;
+      customerAddress?: string;
+      signerName?: string;
+      signerTitle?: string;
+    },
     shouldDownload?: boolean,
   ) => Promise<void> | void;
 }) {
@@ -511,9 +542,17 @@ export function QuotationTemplateGenerator({
   const [editItemsOpen, setEditItemsOpen] = React.useState(false);
 
   const [items, setItems] = React.useState<QuotationItem[]>(row.items && row.items.length ? row.items : []);
+  const [kopText, setKopText] = React.useState<string>(row.kopText || "");
+  const [city, setCity] = React.useState<string>(row.city || "Bekasi");
+  const [customerAddress, setCustomerAddress] = React.useState<string>(row.customerAddress || "");
   const [subject, setSubject] = React.useState<string>(
     row.subject || `Penawaran Pengadaan Barang & Jasa Instalasi (${row.lead || "-"})`,
   );
+  const [intro, setIntro] = React.useState<string>(
+    row.intro || "Sesuai permintaan Bapak / Ibu sebelumnya, berikut penawaran dari kami terkait pengadaan Barang & Jasa Instalasi :",
+  );
+  const [signerName, setSignerName] = React.useState<string>(row.signerName || row.pemilik || "");
+  const [signerTitle, setSignerTitle] = React.useState<string>(row.signerTitle || "Sales Engineer");
   const [notesText, setNotesText] = React.useState<string>(
     Array.isArray(row.notesList) && row.notesList.length > 0
       ? row.notesList.join("\n")
@@ -561,15 +600,29 @@ export function QuotationTemplateGenerator({
 
   async function handleSaveItems(shouldDownload = false) {
     const total = items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0);
-    await onUpdateItems(items, total, { subject, notesList: parsedNotes }, shouldDownload);
+    await onUpdateItems(
+      items,
+      total,
+      {
+        subject,
+        intro,
+        notesList: parsedNotes,
+        city,
+        kopText,
+        customerAddress,
+        signerName,
+        signerTitle,
+      },
+      shouldDownload,
+    );
     setEditItemsOpen(false);
   }
 
   return (
     <>
       <Panel
-        title="Rincian Item & Generator Excel Penawaran (.xlsx)"
-        subtitle="Edit item/jasa di sistem (atau upload Excel di atas). Saat didownload, file Excel (.xlsx) akan persis seperti contoh dan ter-link otomatis ke Lead."
+        title="Rincian Item & Generator Template Penawaran (.xlsx / .pdf)"
+        subtitle="Sales dapat mengubah seluruh isi template penawaran (kop surat, tujuan, kota, notes, item, dan penandatangan). File Excel & PDF akan otomatis tersinkronisasi."
       >
         <View className="gap-3">
           <View className="flex-row flex-wrap items-center justify-between gap-2">
@@ -582,7 +635,7 @@ export function QuotationTemplateGenerator({
             <View className="flex-row flex-wrap gap-2">
               <Button variant="outline" size="sm" onPress={() => setEditItemsOpen(true)}>
                 <Edit3 size={14} color={colors.text} />
-                <Text className="text-xs">Edit Item / Jasa</Text>
+                <Text className="text-xs">Edit Template & Item</Text>
               </Button>
               <Button variant="outline" size="sm" onPress={() => setPreviewOpen(true)}>
                 <Eye size={14} color={colors.text} />
@@ -597,7 +650,7 @@ export function QuotationTemplateGenerator({
                     customer: row.customer,
                     lead: row.lead,
                     nomor: row.nomor,
-                    signer: row.pemilik,
+                    signer: signerName || row.pemilik,
                   });
                 }}
               >
@@ -612,7 +665,7 @@ export function QuotationTemplateGenerator({
                     customer: row.customer,
                     lead: row.lead,
                     nomor: row.nomor,
-                    signer: row.pemilik,
+                    signer: signerName || row.pemilik,
                   });
                 }}
               >
@@ -647,118 +700,186 @@ export function QuotationTemplateGenerator({
           ) : (
             <View className="bg-panel/60 border-border/60 rounded-xl border p-3">
               <Text className="text-xs text-muted-foreground">
-                Belum ada rincian item per baris. Klik <b>Edit Item / Jasa</b> untuk mengisi item di aplikasi, atau klik{" "}
-                <b>Download Excel (.xlsx)</b> untuk mengisi manual di Excel lalu upload kembali.
+                Belum ada rincian item per baris. Klik <b>Edit Template & Item</b> untuk mengubah kop surat, tujuan, item, dan ketentuan penawaran di aplikasi.
               </Text>
             </View>
           )}
         </View>
       </Panel>
 
-      {/* Modal Kelola Item Penawaran */}
+      {/* Modal Kelola Template & Item Penawaran */}
       <Dialog open={editItemsOpen} onOpenChange={setEditItemsOpen}>
-        <DialogContent className="sm:max-w-xl md:max-w-3xl max-h-[90vh]">
+        <DialogContent className="sm:max-w-xl md:max-w-3xl max-h-[92vh]">
           <DialogHeader>
-            <DialogTitle>Kelola Item, Subject & Notes Penawaran</DialogTitle>
+            <DialogTitle>Ubah Seluruh Template & Isi Penawaran</DialogTitle>
           </DialogHeader>
-          <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-4 pr-1">
-            <View className="gap-1.5">
-              <Text className="text-xs font-semibold">Subject Surat Penawaran</Text>
-              <Input
-                value={subject}
-                onChangeText={setSubject}
-                placeholder="Penawaran Pengadaan Barang & Jasa Instalasi"
-              />
-            </View>
-
-            <View className="bg-panel border-border/80 rounded-xl border p-3 gap-2">
-              <Text className="text-xs font-semibold">Tambah Baris Item / Jasa Baru</Text>
-              <View className="flex-row flex-wrap gap-2">
-                <View className="flex-1 min-w-[180px]">
+          <ScrollView style={{ maxHeight: 540 }} contentContainerClassName="gap-4 pr-1">
+            {/* 1. KOP SURAT & LOKASI */}
+            <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-3">
+              <Text className="text-xs font-bold text-primary uppercase tracking-wide">1. Kop Surat & Lokasi</Text>
+              <View className="gap-1.5">
+                <Text className="text-xs font-semibold">Teks Kop Surat (Perusahaan / Alamat / Header)</Text>
+                <Textarea
+                  value={kopText}
+                  onChangeText={setKopText}
+                  placeholder="Contoh: PT GHINA MULTI PRIMA | CCTV & IT Solutions | Telp: 021-22843608 (Kosongkan jika memakai header default)"
+                />
+              </View>
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <Text className="text-xs font-semibold">Kota Dokumen</Text>
+                  <Input value={city} onChangeText={setCity} placeholder="Bekasi" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-xs font-semibold">Tujuan / Alamat Customer</Text>
                   <Input
-                    value={newItemName}
-                    onChangeText={setNewItemName}
-                    placeholder="Nama item / jasa (misal: HDD 1TB Surveillance)"
+                    value={customerAddress}
+                    onChangeText={setCustomerAddress}
+                    placeholder="Di Tempat (atau alamat customer)"
                   />
                 </View>
-                <View className="w-16">
-                  <Input value={newItemQty} onChangeText={setNewItemQty} keyboardType="numeric" placeholder="Qty" />
-                </View>
-                <View className="w-20">
-                  <Input value={newItemSatuan} onChangeText={setNewItemSatuan} placeholder="Unit/Lot" />
-                </View>
-                <View className="flex-1 min-w-[140px]">
-                  <Input
-                    value={newItemHarga}
-                    onChangeText={setNewItemHarga}
-                    keyboardType="numeric"
-                    placeholder="Harga Satuan (Rp)"
-                  />
-                </View>
-                <Button size="sm" onPress={addItem} className="self-end">
-                  <Plus size={15} color={colors.background} />
-                  <Text className="text-xs">Tambah</Text>
-                </Button>
               </View>
             </View>
 
-            <View className="gap-2">
-              <Text className="text-xs font-semibold">Daftar Item ({items.length} Baris)</Text>
-              {items.map((it, idx) => (
-                <View
-                  key={it.id || idx}
-                  className="bg-card border-border/60 flex-row flex-wrap items-center gap-2 rounded-lg border p-2.5"
-                >
-                  <Text className="w-5 text-xs font-semibold">{idx + 1}.</Text>
-                  <View className="flex-1 min-w-[150px]">
+            {/* 2. SUBJECT & PEMBUKA */}
+            <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-3">
+              <Text className="text-xs font-bold text-primary uppercase tracking-wide">2. Perihal & Kalimat Pembuka</Text>
+              <View className="gap-1.5">
+                <Text className="text-xs font-semibold">Subject / Perihal Surat</Text>
+                <Input
+                  value={subject}
+                  onChangeText={setSubject}
+                  placeholder="Penawaran Pengadaan Barang & Jasa Instalasi"
+                />
+              </View>
+              <View className="gap-1.5">
+                <Text className="text-xs font-semibold">Kalimat Pembuka (Intro)</Text>
+                <Textarea
+                  value={intro}
+                  onChangeText={setIntro}
+                  placeholder="Sesuai permintaan Bapak / Ibu sebelumnya, berikut penawaran dari kami terkait pengadaan Barang & Jasa Instalasi :"
+                />
+              </View>
+            </View>
+
+            {/* 3. ITEM & JASA */}
+            <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-3">
+              <Text className="text-xs font-bold text-primary uppercase tracking-wide">3. Rincian Item / Jasa</Text>
+              <View className="bg-card border-border/80 rounded-xl border p-3 gap-2">
+                <Text className="text-xs font-semibold">Tambah Baris Item / Jasa Baru</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  <View className="flex-1 min-w-[180px]">
                     <Input
-                      value={it.item}
-                      onChangeText={(v) => updateItemField(it.id, { item: v })}
-                      placeholder="Nama Item"
+                      value={newItemName}
+                      onChangeText={setNewItemName}
+                      placeholder="Nama item / jasa (misal: HDD 1TB Surveillance)"
                     />
                   </View>
                   <View className="w-16">
-                    <Input
-                      value={String(it.qty)}
-                      onChangeText={(v) => updateItemField(it.id, { qty: Number(v.replace(/\D/g, "")) || 0 })}
-                      keyboardType="numeric"
-                      placeholder="Qty"
-                    />
+                    <Input value={newItemQty} onChangeText={setNewItemQty} keyboardType="numeric" placeholder="Qty" />
                   </View>
                   <View className="w-20">
-                    <Input
-                      value={it.satuan}
-                      onChangeText={(v) => updateItemField(it.id, { satuan: v })}
-                      placeholder="Satuan"
-                    />
+                    <Input value={newItemSatuan} onChangeText={setNewItemSatuan} placeholder="Unit/Lot" />
                   </View>
-                  <View className="w-28">
+                  <View className="flex-1 min-w-[140px]">
                     <Input
-                      value={String(it.harga)}
-                      onChangeText={(v) => updateItemField(it.id, { harga: Number(v.replace(/\D/g, "")) || 0 })}
+                      value={newItemHarga}
+                      onChangeText={setNewItemHarga}
                       keyboardType="numeric"
-                      placeholder="Harga"
+                      placeholder="Harga Satuan (Rp)"
                     />
                   </View>
-                  <Text className="w-24 text-xs font-semibold text-primary text-right">
-                    {rupiah(it.qty * it.harga)}
-                  </Text>
-                  <Button variant="ghost" size="sm" onPress={() => removeItem(it.id)}>
-                    <Trash2 size={14} color={colors.danger} />
+                  <Button size="sm" onPress={addItem} className="self-end">
+                    <Plus size={15} color={colors.background} />
+                    <Text className="text-xs">Tambah</Text>
                   </Button>
                 </View>
-              ))}
+              </View>
+
+              <View className="gap-2">
+                <Text className="text-xs font-semibold">Daftar Item ({items.length} Baris)</Text>
+                {items.map((it, idx) => (
+                  <View
+                    key={it.id || idx}
+                    className="bg-card border-border/60 flex-row flex-wrap items-center gap-2 rounded-lg border p-2.5"
+                  >
+                    <Text className="w-5 text-xs font-semibold">{idx + 1}.</Text>
+                    <View className="flex-1 min-w-[150px]">
+                      <Input
+                        value={it.item}
+                        onChangeText={(v) => updateItemField(it.id, { item: v })}
+                        placeholder="Nama Item"
+                      />
+                    </View>
+                    <View className="w-16">
+                      <Input
+                        value={String(it.qty)}
+                        onChangeText={(v) => updateItemField(it.id, { qty: Number(v.replace(/\D/g, "")) || 0 })}
+                        keyboardType="numeric"
+                        placeholder="Qty"
+                      />
+                    </View>
+                    <View className="w-20">
+                      <Input
+                        value={it.satuan}
+                        onChangeText={(v) => updateItemField(it.id, { satuan: v })}
+                        placeholder="Satuan"
+                      />
+                    </View>
+                    <View className="w-28">
+                      <Input
+                        value={String(it.harga)}
+                        onChangeText={(v) => updateItemField(it.id, { harga: Number(v.replace(/\D/g, "")) || 0 })}
+                        keyboardType="numeric"
+                        placeholder="Harga"
+                      />
+                    </View>
+                    <Text className="w-24 text-xs font-semibold text-primary text-right">
+                      {rupiah(it.qty * it.harga)}
+                    </Text>
+                    <Button variant="ghost" size="sm" onPress={() => removeItem(it.id)}>
+                      <Trash2 size={14} color={colors.danger} />
+                    </Button>
+                  </View>
+                ))}
+              </View>
             </View>
 
-            <View className="gap-1.5">
-              <Text className="text-xs font-semibold">Notes (1 baris = 1 poin catatan di Excel)</Text>
+            {/* 4. NOTES & SYARAT KETENTUAN */}
+            <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-2">
+              <Text className="text-xs font-bold text-primary uppercase tracking-wide">4. Notes / Syarat & Ketentuan</Text>
+              <Text className="text-[11px] text-muted-foreground">Tuliskan tiap poin per baris baru (1 baris = 1 poin nomor otomatis di surat penawaran).</Text>
               <Textarea
                 value={notesText}
                 onChangeText={setNotesText}
-                placeholder="1. Penawaran ini berlaku 1 bulan..."
+                placeholder="Penawaran ini berlaku 1 bulan&#10;Penambahan material/jasa dikenakan harga sesuai nilai jual...&#10;Garansi perangkat 1 Tahun..."
               />
             </View>
 
+            {/* 5. TTD & PENANDATANGAN */}
+            <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-2.5">
+              <Text className="text-xs font-bold text-primary uppercase tracking-wide">5. Penandatangan (TTD)</Text>
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <Text className="text-xs font-semibold">Nama Penandatangan (Sales / PIC)</Text>
+                  <Input
+                    value={signerName}
+                    onChangeText={setSignerName}
+                    placeholder="Nama Sales"
+                  />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-xs font-semibold">Jabatan / Gelar</Text>
+                  <Input
+                    value={signerTitle}
+                    onChangeText={setSignerTitle}
+                    placeholder="Sales Engineer / Account Manager"
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* KALKULASI */}
             <View className="bg-panel border-border/50 gap-1 rounded-lg border p-3">
               <View className="flex-row items-center justify-between">
                 <Text className="text-xs text-muted-foreground">SUBTOTAL ITEM:</Text>
@@ -787,7 +908,7 @@ export function QuotationTemplateGenerator({
               <Text>Batal</Text>
             </Button>
             <Button variant="outline" onPress={() => handleSaveItems(false)}>
-              <Text>Simpan Data</Text>
+              <Text>Simpan Template & Data</Text>
             </Button>
             <Button onPress={() => handleSaveItems(true)}>
               <FileDown size={15} color={colors.background} />
@@ -807,9 +928,29 @@ export function QuotationTemplateGenerator({
         discNum={discNum}
         itemsTotal={itemsTotal}
         subject={subject}
+        intro={intro}
         notesList={parsedNotes}
+        city={city}
+        kopText={kopText}
+        customerAddress={customerAddress}
+        signerName={signerName}
+        signerTitle={signerTitle}
         onSave={async () => {
-          await onUpdateItems(items, itemsTotal, { subject, notesList: parsedNotes }, true);
+          await onUpdateItems(
+            items,
+            itemsTotal,
+            {
+              subject,
+              intro,
+              notesList: parsedNotes,
+              city,
+              kopText,
+              customerAddress,
+              signerName,
+              signerTitle,
+            },
+            true,
+          );
           setPreviewOpen(false);
         }}
       />
@@ -1495,7 +1636,13 @@ function QuotationExtras({ row }: { row: Row }) {
           await patchRow("quotations", row.id, {
             items,
             subject: meta?.subject,
+            intro: meta?.intro,
             notesList: meta?.notesList,
+            city: meta?.city,
+            kopText: meta?.kopText,
+            customerAddress: meta?.customerAddress,
+            signerName: meta?.signerName,
+            signerTitle: meta?.signerTitle,
             total: newTotal,
             nilai: newTotal,
             ppn: newPpn,
@@ -1512,11 +1659,11 @@ function QuotationExtras({ row }: { row: Row }) {
               customer: row.customer,
               lead: row.lead,
               nomor: row.nomor,
-              signer: row.pemilik,
+              signer: meta?.signerName || row.pemilik,
             });
-            toast("Data penawaran disimpan & file Excel (.xlsx) diunduh!");
+            toast("Template penawaran disimpan & file Excel (.xlsx) diunduh!");
           } else {
-            toast("Rincian item & penawaran berhasil disimpan!");
+            toast("Template & item penawaran berhasil disimpan!");
           }
         }}
       />
@@ -1586,7 +1733,7 @@ function QuotationExtras({ row }: { row: Row }) {
               <Text className="text-[11px] text-muted-foreground">Preview PPN 11%: {rupiah(revPpn)}</Text>
               <Text className="text-xs font-semibold text-primary">Preview Total Akhir v{nextVersionNum}: {rupiah(revAfterDisc)}</Text>
             </View>
-            <FileUploader label="Upload File Revisi Baru (PDF / Excel)" kind="dokumen" autoFlush />
+            <FileUploader label="Upload File Revisi Baru (PDF / Excel)" kind="dokumen" category="penawaran" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setRevisiOpen(false)}>
@@ -2004,7 +2151,7 @@ function ReceivingExtras({ row }: { row: Row }) {
               />
             </View>
 
-            <FileUploader label="Upload Foto Bukti Kerusakan / Serial Number" kind="foto" autoFlush />
+            <FileUploader label="Upload Foto Bukti Kerusakan / Serial Number" kind="foto" category="laporan-kerusakan" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setIssueOpen(false)}>
@@ -2172,7 +2319,7 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
                 numberOfLines={2}
               />
             </View>
-            <FileUploader label="Upload Foto Bukti Serah Terima / TTD Surat Jalan" kind="foto" autoFlush />
+            <FileUploader label="Upload Foto Bukti Serah Terima / TTD Surat Jalan" kind="foto" category="surat-jalan" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setHandoverOpen(false)}>
@@ -2534,7 +2681,7 @@ function InvoiceExtras({ row }: { row: Row }) {
             <FormField label="Nomor Referensi / Rekening">
               <Input value={payRef} onChangeText={setPayRef} placeholder="Contoh: TRF-BCA-992811" />
             </FormField>
-            <FileUploader label="Upload Bukti Pembayaran (JPG / PDF)" kind="semua" autoFlush />
+            <FileUploader label="Upload Bukti Pembayaran (JPG / PDF)" kind="semua" category="foto-struk" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setPayOpen(false)}>
@@ -2700,7 +2847,7 @@ function SupplierPoExtras({ row }: { row: Row }) {
             <FormField label="Jatuh Tempo" required>
               <DatePicker value={invDue} onChange={setInvDue} />
             </FormField>
-            <FileUploader label="Upload File Invoice dari Supplier" kind="dokumen" autoFlush />
+            <FileUploader label="Upload File Invoice dari Supplier" kind="dokumen" category="invoice" autoFlush />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setInvOpen(false)}>

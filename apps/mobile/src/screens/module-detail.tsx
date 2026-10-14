@@ -317,6 +317,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         ) : canDecide ? (
           <ApprovalBar
             amount={approval!.nilai}
+            amountLabel={moduleKey === "opname" ? `${approval!.nilai} SKU selisih` : undefined}
             financeOk={(approval as any).financeOk}
             onApprove={() => decide(approval!.id, "Disetujui")}
             onReject={(r) => decide(approval!.id, "Ditolak", r)}
@@ -538,6 +539,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
               <FileUploader
                 label="Upload Bukti Transfer Bank / E-Wallet (JPG, PNG, PDF)"
                 kind="semua"
+                category="foto-struk"
                 handleRef={(h) => { expenseFileHandle.current = h; }}
               />
             </FormField>

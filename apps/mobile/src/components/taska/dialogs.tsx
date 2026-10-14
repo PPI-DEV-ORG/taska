@@ -410,11 +410,12 @@ export function MultiSelect({
 }
 
 function FileField({
-  fieldKey, label, kind, required, onCount, handleRef,
+  fieldKey, label, kind, category, required, onCount, handleRef,
 }: {
   fieldKey: string;
   label: string;
   kind?: "foto" | "dokumen" | "video" | "semua";
+  category?: string;
   required?: boolean;
   onCount: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   handleRef?: (h: FileUploaderHandle | null) => void;
@@ -427,7 +428,14 @@ function FileField({
   );
   const effectiveKind = kind ?? (/foto|gambar|image|nota/i.test(label) ? "foto" : "dokumen");
   return (
-    <FileUploader label={label} kind={effectiveKind} required={required} onChange={handleCount} handleRef={handleRef} />
+    <FileUploader
+      label={label}
+      kind={effectiveKind}
+      category={category}
+      required={required}
+      onChange={handleCount}
+      handleRef={handleRef}
+    />
   );
 }
 
@@ -635,6 +643,7 @@ export function FormDialog({
                   fieldKey={f.key}
                   label={f.label}
                   kind={f.kind}
+                  category={f.category}
                   required={f.required}
                   onCount={setVals}
                   handleRef={fileHandleAt(i)}
@@ -696,14 +705,15 @@ export function FormDialog({
 }
 
 export function ApprovalBar({
-  amount, financeOk, onApprove, onReject, compact,
-}: { amount: number; financeOk?: boolean; onApprove: () => void; onReject: (reason?: string) => void; compact?: boolean }) {
+  amount, amountLabel, financeOk, onApprove, onReject, compact,
+}: { amount: number; amountLabel?: string; financeOk?: boolean; onApprove: () => void; onReject: (reason?: string) => void; compact?: boolean }) {
   const [rej, setRej] = React.useState(false);
   const big = amount > BOS_THRESHOLD;
+  const labelText = amountLabel !== undefined ? amountLabel : (amount > 0 ? rupiah(amount) : null);
   return (
     <View className={cn("flex-row flex-wrap items-center justify-between gap-3", !compact && "bg-card border-border rounded-xl border p-4")}>
       <View className="gap-1">
-        {amount > 0 ? <Text className="text-base font-semibold">{rupiah(amount)}</Text> : null}
+        {labelText ? <Text className="text-base font-semibold">{labelText}</Text> : null}
         {big ? (
           <Text className="text-warning text-[13px]">{financeOk ? "Finance sudah setuju. Menunggu Bos" : "Perlu persetujuan Bos"}</Text>
         ) : null}

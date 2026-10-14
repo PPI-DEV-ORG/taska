@@ -277,6 +277,10 @@ export function adaptRow(module: string, raw: any): Row {
         intro: raw.intro ?? "",
         notesList: Array.isArray(raw.notesList) ? raw.notesList : [],
         city: raw.city ?? "Bekasi",
+        kopText: raw.kopText ?? "",
+        customerAddress: raw.customerAddress ?? (raw.customer?.address ?? ""),
+        signerName: raw.signerName ?? "",
+        signerTitle: raw.signerTitle ?? "",
         latestFileId: raw.latestFileId ?? raw.versions?.[0]?.fileId ?? null,
         fileName: fName,
         fileStatus: hasFile ? fName : "Belum diupload",
@@ -540,21 +544,23 @@ export function adaptRow(module: string, raw: any): Row {
         refId: raw.entityId != null ? String(raw.entityId) : "",
         detail: raw.detail ?? "",
       };
-    case "opname":
+    case "opname": {
+      const diffSum = (raw.details ?? []).reduce(
+        (a: number, x: any) => a + (n(x.countedQty) - n(x.systemQty ?? x.expectedQty ?? 0)),
+        0,
+      );
       return {
         ...base,
         tanggal: d(raw.date),
         gudang: nameOf(raw.warehouse) ?? "",
         warehouseId: idOf(raw.warehouse),
         petugas: nameOf(raw.conductor) ?? "",
-        selisih: (raw.details ?? []).reduce(
-          (a: number, x: any) => a + (n(x.countedQty) - n(x.systemQty ?? x.expectedQty ?? 0)),
-          0,
-        ),
+        selisih: diffSum === 0 ? "0 SKU (Cocok)" : `${diffSum > 0 ? "+" : ""}${diffSum} SKU`,
         status: toLabel("opname", raw.status),
         alasan: raw.reason ?? "",
         _details: raw.details ?? [],
       };
+    }
     case "warehouses":
       return { ...base, nama: raw.name ?? "", kota: raw.city ?? "", staf: "-", status: toLabel("users", raw.status) };
     case "products":
@@ -1114,6 +1120,10 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "intro",
     "notesList",
     "city",
+    "kopText",
+    "customerAddress",
+    "signerName",
+    "signerTitle",
   ],
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "notes", "memberIds"],
   tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
@@ -1216,6 +1226,15 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.totalAfterDisc !== undefined) out.grandTotal = num(patch.totalAfterDisc);
     if (patch.berlaku !== undefined) out.validUntil = patch.berlaku;
     if (patch.status !== undefined) out.status = toEnum("quotations", patch.status) || patch.status;
+    if (patch.items !== undefined) out.items = patch.items;
+    if (patch.subject !== undefined) out.subject = patch.subject;
+    if (patch.intro !== undefined) out.intro = patch.intro;
+    if (patch.notesList !== undefined) out.notesList = patch.notesList;
+    if (patch.city !== undefined) out.city = patch.city;
+    if (patch.kopText !== undefined) out.kopText = patch.kopText;
+    if (patch.customerAddress !== undefined) out.customerAddress = patch.customerAddress;
+    if (patch.signerName !== undefined) out.signerName = patch.signerName;
+    if (patch.signerTitle !== undefined) out.signerTitle = patch.signerTitle;
   } else if (module === "surveys") {
     if (patch.status !== undefined) out.status = toEnum("surveys", patch.status) || patch.status;
     if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);

@@ -189,6 +189,18 @@ export class QuotationDto {
 
   @IsOptional() @IsString()
   city?: string;
+
+  @IsOptional() @IsString()
+  kopText?: string;
+
+  @IsOptional() @IsString()
+  customerAddress?: string;
+
+  @IsOptional() @IsString()
+  signerName?: string;
+
+  @IsOptional() @IsString()
+  signerTitle?: string;
 }
 
 export class VersionDto {

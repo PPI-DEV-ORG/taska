@@ -14,7 +14,10 @@ export type QuotationMeta = {
   intro?: string;
   notes?: string[];
   city?: string;
+  kopText?: string;
+  customerAddress?: string;
   signerName?: string;
+  signerTitle?: string;
   latestFileId?: number | null;
   latestFileName?: string | null;
 };
@@ -54,7 +57,9 @@ export async function buildQuotationXlsx(params: {
   date?: Date | string | null;
   city?: string;
   customerName?: string;
+  customerAddress?: string;
   leadName?: string;
+  kopText?: string;
   subject?: string;
   intro?: string;
   items?: QuotationItemData[];
@@ -64,6 +69,7 @@ export async function buildQuotationXlsx(params: {
   grandTotal?: number;
   notes?: string[];
   signerName?: string;
+  signerTitle?: string;
 }): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Penawaran", {
@@ -91,9 +97,9 @@ export async function buildQuotationXlsx(params: {
   // 1. KOP SURAT (Rows 1-4, Merged A1:F4)
   ws.mergeCells("A1:F4");
   const kopCell = ws.getCell("A1");
-  kopCell.value = "KOP SURAT";
-  kopCell.font = { name: "Calibri", size: 11 };
-  kopCell.alignment = { horizontal: "center", vertical: "middle" };
+  kopCell.value = params.kopText?.trim() || "KOP SURAT";
+  kopCell.font = { name: "Calibri", size: 11, bold: true };
+  kopCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
   for (let r = 1; r <= 4; r++) {
     for (let c = 1; c <= 6; c++) {
       ws.getCell(r, c).border = {
@@ -123,7 +129,7 @@ export async function buildQuotationXlsx(params: {
   c8.font = serifFont;
 
   const c9 = ws.getCell("B9");
-  c9.value = "Di Tempat";
+  c9.value = params.customerAddress?.trim() || "Di Tempat";
   c9.font = serifBold;
 
   // 4. Subject & Quote No (Rows 11-12)
@@ -380,6 +386,12 @@ export async function buildQuotationXlsx(params: {
   cSigner.value = params.signerName?.trim() || "Sales";
   cSigner.font = serifFont;
 
+  if (params.signerTitle?.trim()) {
+    const cTitle = ws.getCell(currRow++, 1);
+    cTitle.value = params.signerTitle.trim();
+    cTitle.font = serifFont;
+  }
+
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }
@@ -615,7 +627,9 @@ export async function buildQuotationPdf(params: {
   date?: Date | string | null;
   city?: string;
   customerName?: string;
+  customerAddress?: string;
   leadName?: string;
+  kopText?: string;
   subject?: string;
   intro?: string;
   items?: QuotationItemData[];
@@ -625,6 +639,7 @@ export async function buildQuotationPdf(params: {
   grandTotal?: number;
   notes?: string[];
   signerName?: string;
+  signerTitle?: string;
 }): Promise<Buffer> {
   const { renderPdf } = await import("../common/pdf.js");
 
@@ -736,11 +751,11 @@ export async function buildQuotationPdf(params: {
           body: [
             [
               {
-                text: "KOP SURAT",
-                fontSize: 14,
+                text: params.kopText?.trim() || "KOP SURAT",
+                fontSize: params.kopText ? 10 : 14,
                 bold: true,
                 alignment: "center",
-                margin: [0, 12, 0, 12],
+                margin: [0, 8, 0, 8],
                 color: "#111827",
               },
             ],
@@ -767,7 +782,7 @@ export async function buildQuotationPdf(params: {
         text: [
           { text: "Kepada Yth.\n", bold: true, fontSize: 10 },
           { text: `${params.customerName || "Nama Customer"}\n`, bold: true, fontSize: 10 },
-          { text: "Di Tempat\n\n", bold: true, fontSize: 10 },
+          { text: `${params.customerAddress?.trim() || "Di Tempat"}\n\n`, bold: true, fontSize: 10 },
         ],
         margin: [0, 0, 0, 2],
       },
@@ -843,6 +858,9 @@ export async function buildQuotationPdf(params: {
                 bold: true,
                 decoration: "underline",
               },
+              ...(params.signerTitle?.trim()
+                ? [{ text: params.signerTitle.trim(), fontSize: 9, margin: [0, 2, 0, 0] }]
+                : []),
             ],
           },
         ],

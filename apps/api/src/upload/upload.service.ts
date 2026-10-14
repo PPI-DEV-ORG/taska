@@ -25,6 +25,47 @@ const CONTENT_TYPE: Record<string, string> = {
   mkv: "video/x-matroska",
 };
 
+export function resolveUploadFolder(
+  categoryOrRefType?: string,
+  originalName?: string,
+  ext?: string,
+  kind?: string,
+): string {
+  const c = (categoryOrRefType || "").toLowerCase().trim();
+  const name = (originalName || "").toLowerCase().trim();
+
+  // 1. Kategori eksplisit & refType
+  if (c === "foto-profil" || c.includes("profil") || c.includes("avatar") || c.includes("profile")) return "foto-profil";
+  if (c === "foto-struk" || c.includes("struk") || c.includes("expense") || c.includes("reimburse") || c.includes("nota") || c.includes("biaya")) return "foto-struk";
+  if (c === "penawaran" || c.includes("penawaran") || c.includes("quotation")) return "penawaran";
+  if (c === "opname" || c.includes("opname")) return "opname";
+  if (c === "surat-jalan" || c.includes("surat-jalan") || c.includes("delivery-note") || c.includes("delivery")) return "surat-jalan";
+  if (c === "laporan-kerusakan" || c.includes("kerusakan") || c.includes("damage")) return "laporan-kerusakan";
+  if (c === "request-barang" || c.includes("request") || c.includes("permintaan") || c.includes("purchase-request")) return "request-barang";
+  if (c === "po-supplier" || c.includes("po-supplier") || c.includes("supplier-po")) return "po-supplier";
+  if (c === "penerimaan" || c.includes("penerimaan") || c.includes("receiving")) return "penerimaan";
+  if (c === "survey" || c.includes("survey")) return "survey";
+  if (c.includes("proyek") || c.includes("project") || c.includes("dokumentasi")) return "dokumentasi-proyek";
+  if (c.includes("invoice") || c.includes("tagihan")) return "invoice";
+  if (c.includes("whatsapp")) return "whatsapp";
+
+  // 2. Deteksi dari nama file asli
+  if (name.includes("profil") || name.includes("avatar")) return "foto-profil";
+  if (name.includes("nota") || name.includes("struk") || name.includes("kwitansi") || name.includes("reimburse")) return "foto-struk";
+  if (name.includes("penawaran") || name.includes("quotation")) return "penawaran";
+  if (name.includes("opname")) return "opname";
+  if (name.includes("surat_jalan") || name.includes("surat-jalan") || name.startsWith("sj")) return "surat-jalan";
+  if (name.includes("rusak") || name.includes("damage")) return "laporan-kerusakan";
+  if (name.includes("request") || name.includes("boq")) return "request-barang";
+  if (name.includes("po-s") || name.includes("supplier")) return "po-supplier";
+  if (name.includes("surat") || name.includes("do-")) return "penerimaan";
+
+  // 3. Fallback berdasarkan jenis file
+  if (["png", "jpg", "jpeg", "webp"].includes(ext ?? "") || kind === "foto") return "foto-dokumen";
+  if (["mp4", "mkv"].includes(ext ?? "") || kind === "video") return "video";
+  return "dokumen";
+}
+
 @Injectable()
 export class UploadService {
   private readonly root: string;
@@ -54,12 +95,11 @@ export class UploadService {
       else if (lower.endsWith(".csv")) ext = "csv";
     }
 
-    const now = new Date();
-    const period = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const folder = resolveUploadFolder(refType, originalName, ext, kind);
     const safeName = originalName
       ? originalName.replace(/[^\w.\- ()]/g, "_").slice(0, 120)
       : `upload.${ext}`;
-    const rel = `${period}/${randomUUID()}__${safeName}`;
+    const rel = `${folder}/${Date.now()}-${randomUUID().slice(0, 8)}__${safeName}`;
     const abs = join(this.root, rel);
 
     await mkdir(dirname(abs), { recursive: true });
@@ -110,10 +150,9 @@ export class UploadService {
     refType?: string,
     refId?: string,
   ) {
-    const now = new Date();
-    const period = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const folder = resolveUploadFolder(refType, originalName, ext, "dokumen");
     const safeName = originalName.replace(/[^\w.\- ()]/g, "_").slice(0, 120);
-    const rel = `${period}/${randomUUID()}__${safeName}`;
+    const rel = `${folder}/${Date.now()}-${randomUUID().slice(0, 8)}__${safeName}`;
     const abs = join(this.root, rel);
 
     await mkdir(dirname(abs), { recursive: true });
