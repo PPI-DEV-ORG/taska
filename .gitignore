@@ -39,3 +39,8 @@ yarn-error.log*
 
 PRD.md
 Prompt Prototype UI — Taska (2).md*.tsbuildinfo
+
+# Backups
+backups/
+*.sql.gz
+*.tar.gz

@@ -25,6 +25,8 @@ import {
   Layers,
   UploadCloud,
   FileCheck2,
+  FileSpreadsheet,
+  TrendingUp,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -40,6 +42,7 @@ import { useApp } from "@/store/app-store";
 import {
   api,
   apiBase,
+  getAccess,
   queryString,
   uploadFile,
   uploadQuotationExcel,
@@ -2336,7 +2339,7 @@ function DeliveryNotesExtras({ row }: { row: Row }) {
 }
 
 function ProjectExtras({ row }: { row: Row }) {
-  const { toast, data, reload } = useApp();
+  const { toast, data, reload, user } = useApp();
   const products: Row[] = data.products ?? [];
   const [reserveOpen, setReserveOpen] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState("");
@@ -2347,6 +2350,23 @@ function ProjectExtras({ row }: { row: Row }) {
   >([]);
 
   const activeSelectedProduct = selectedProduct || String(products[0]?.nama ?? "");
+
+  const canViewFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
+  const projectInvoices = (data.invoices || []).filter(
+    (i: any) => String(i.projectId) === String(row.id) && i.status !== "Batal"
+  );
+  const revenue = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
+  const projectPos = (data["supplier-pos"] || []).filter(
+    (po: any) => String(po.projectId) === String(row.id) && po.status !== "Ditolak" && po.status !== "DIBATALKAN"
+  );
+  const poCost = projectPos.reduce((sum: number, po: any) => sum + Number(po.total || 0), 0);
+  const projectExpenses = (data.expenses || []).filter(
+    (e: any) => String(e.projectId) === String(row.id) && e.status !== "Ditolak"
+  );
+  const expenseCost = projectExpenses.reduce((sum: number, e: any) => sum + Number(e.nominal || 0), 0);
+  const totalCost = poCost + expenseCost;
+  const netProfit = revenue - totalCost;
+  const marginPct = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(1) : "0.0";
 
   const mapRequirements = React.useCallback((res: any[]) => {
     return res.map((r: any) => ({
@@ -2472,6 +2492,42 @@ function ProjectExtras({ row }: { row: Row }) {
           Setelah seluruh item pekerjaan diuji coba dan disetujui klien, cetak draf BAST resmi untuk ditandatangani kedua belah pihak.
         </Text>
       </Panel>
+
+      {canViewFinancials ? (
+        <Panel
+          title="Analisa Untung-Rugi (P&L Project)"
+          subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan dan pengeluaran beban riil."
+        >
+          <Line
+            left="Pendapatan Proyek (DPP Invoice)"
+            sub={`${projectInvoices.length} invoice terbit`}
+            right={<Text className="font-semibold text-sm">{rupiah(revenue)}</Text>}
+          />
+          <Line
+            left="Biaya Pengadaan Material (PO Supplier)"
+            sub={`${projectPos.length} purchase order supplier`}
+            right={<Text className="font-semibold text-sm text-danger">{rupiah(poCost)}</Text>}
+          />
+          <Line
+            left="Biaya Operasional & Reimburse"
+            sub={`${projectExpenses.length} transaksi operasional`}
+            right={<Text className="font-semibold text-sm text-danger">{rupiah(expenseCost)}</Text>}
+          />
+          <Line
+            left="Total Beban & Biaya (HPP + Operasional)"
+            right={<Text className="font-bold text-sm text-danger">{rupiah(totalCost)}</Text>}
+          />
+          <Line
+            left="Laba Bersih Proyek (Net Profit)"
+            sub={`Margin: ${marginPct}%`}
+            right={
+              <Text className={`font-bold text-base ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
+                {rupiah(netProfit)}
+              </Text>
+            }
+          />
+        </Panel>
+      ) : null}
 
       {/* Modal Alokasi Material */}
       <Dialog open={reserveOpen} onOpenChange={setReserveOpen}>
@@ -2615,17 +2671,47 @@ function InvoiceExtras({ row }: { row: Row }) {
     }
   }
 
+  const canExportEfaktur = ["super_admin", "bos", "finance"].includes(user?.role || "");
+
+  function handleDownloadEfaktur() {
+    if (!canExportEfaktur) {
+      toast("Akses ditolak: Ekspor E-Faktur hanya untuk Finance, Bos, dan Super Admin", "danger");
+      return;
+    }
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      toast("Mengunduh CSV E-Faktur DJP");
+      return;
+    }
+    const token = getAccess();
+    const url = `${apiBase()}/invoices/efaktur/export?invoiceId=${row.id}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `efaktur-${String(row.nomor || "inv").replace(/[^a-zA-Z0-9_-]/g, "_")}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast(`CSV E-Faktur DJP untuk ${row.nomor} berhasil diunduh`);
+  }
+
   return (
     <>
       <Panel
         title="Ringkasan Pembayaran Invoice"
         right={
-          (user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin") && sisa > 0 ? (
-            <Button variant="outline" size="sm" onPress={openPayModal}>
-              <Plus size={14} color={colors.text} />
-              <Text className="text-xs">Catat Pembayaran</Text>
-            </Button>
-          ) : undefined
+          <View className="flex-row items-center gap-1.5">
+            {canExportEfaktur ? (
+              <Button variant="outline" size="sm" onPress={handleDownloadEfaktur} className="flex-row items-center gap-1">
+                <FileSpreadsheet size={13} color={colors.success} />
+                <Text className="text-xs">CSV E-Faktur</Text>
+              </Button>
+            ) : null}
+            {(user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin") && sisa > 0 ? (
+              <Button variant="outline" size="sm" onPress={openPayModal} className="flex-row items-center gap-1">
+                <Plus size={13} color={colors.text} />
+                <Text className="text-xs">Catat Pembayaran</Text>
+              </Button>
+            ) : null}
+          </View>
         }
       >
         <Line left="Nilai Sebelum PPN" right={<Text className="text-sm font-medium">{rupiah(row.nilai || 0)}</Text>} />

@@ -20,6 +20,7 @@ export const REPORT_TYPES = [
   "leads",
   "followups",
   "projects",
+  "profit-loss",
   "delivery-notes",
   "stock",
   "expenses",
@@ -45,6 +46,8 @@ export class ReportsService {
         return this.followups(q);
       case "projects":
         return this.projects(q);
+      case "profit-loss":
+        return this.profitLoss(q);
       case "delivery-notes":
         return this.deliveryNotes(q);
       case "stock":
@@ -167,6 +170,92 @@ export class ReportsService {
         r.endDate ? new Date(r.endDate).toLocaleDateString("id-ID") : "",
         r.quotation ? `${r.quotation.number} — Rp${Number(r.quotation.total).toLocaleString("id-ID")}` : "",
       ]),
+    };
+  }
+
+  private async profitLoss(q: ReportQuery): Promise<ReportData> {
+    const rows = await this.prisma.main.project.findMany({
+      where: {
+        ...(q.status ? { status: q.status as never } : {}),
+        ...(q.q ? { name: { contains: q.q } } : {}),
+        ...this.dateRange(q, "startDate"),
+      },
+      include: {
+        customer: { select: { name: true } },
+        pic: { select: { name: true } },
+        invoices: {
+          select: { amount: true, ppn: true, total: true, paidAmount: true, status: true },
+        },
+        supplierPOs: {
+          select: { total: true, status: true },
+        },
+        expenses: {
+          select: { amount: true, status: true },
+        },
+      },
+      orderBy: { startDate: "desc" },
+      take: MAX_ROWS,
+    });
+
+    let grandRevenue = 0;
+    let grandPoCost = 0;
+    let grandExpCost = 0;
+    let grandNetProfit = 0;
+
+    const dataRows = rows.map((p) => {
+      const validInvoices = (p.invoices || []).filter((i) => i.status !== "BATAL");
+      const revenue = validInvoices.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
+
+      const validPos = (p.supplierPOs || []).filter(
+        (po) => po.status !== "DIBATALKAN" && po.status !== "DITOLAK",
+      );
+      const poCost = validPos.reduce((acc, po) => acc + (Number(po.total) || 0), 0);
+
+      const validExp = (p.expenses || []).filter((e) => e.status !== "DITOLAK");
+      const expCost = validExp.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+
+      const totalCost = poCost + expCost;
+      const netProfit = revenue - totalCost;
+      const marginPct = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(1) + "%" : "0.0%";
+
+      grandRevenue += revenue;
+      grandPoCost += poCost;
+      grandExpCost += expCost;
+      grandNetProfit += netProfit;
+
+      return [
+        p.name,
+        p.customer?.name ?? "-",
+        p.pic?.name ?? "-",
+        p.status,
+        `Rp ${revenue.toLocaleString("id-ID")}`,
+        `Rp ${poCost.toLocaleString("id-ID")}`,
+        `Rp ${expCost.toLocaleString("id-ID")}`,
+        `Rp ${netProfit.toLocaleString("id-ID")}`,
+        marginPct,
+      ];
+    });
+
+    const overallMargin =
+      grandRevenue > 0 ? ((grandNetProfit / grandRevenue) * 100).toFixed(1) + "%" : "0.0%";
+
+    const summary = `Total Pendapatan: Rp ${grandRevenue.toLocaleString("id-ID")} | Total Biaya PO: Rp ${grandPoCost.toLocaleString("id-ID")} | Total Biaya Operasional: Rp ${grandExpCost.toLocaleString("id-ID")} | Laba Bersih Keseluruhan: Rp ${grandNetProfit.toLocaleString("id-ID")} (Margin: ${overallMargin})`;
+
+    return {
+      title: "Laporan Untung-Rugi (P&L) per Project & Overall",
+      columns: [
+        "Nama Project",
+        "Customer",
+        "PIC",
+        "Status",
+        "Pendapatan (Revenue)",
+        "Biaya PO Supplier",
+        "Biaya Operasional",
+        "Laba Bersih",
+        "Margin (%)",
+      ],
+      note: summary,
+      rows: dataRows,
     };
   }
 

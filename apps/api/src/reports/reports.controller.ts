@@ -1,7 +1,8 @@
-import { Controller, Get, Param, Query, StreamableFile } from "@nestjs/common";
+import { Controller, ForbiddenException, Get, Param, Query, StreamableFile } from "@nestjs/common";
 import { ReportsService, REPORT_TYPES } from "./reports.service.js";
 import { exportMeta, toDocx, toPdf, toXlsx } from "./exporters.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
+import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { IsDateString, IsIn, IsOptional, IsString } from "class-validator";
 
 class ReportQueryDto {
@@ -38,8 +39,10 @@ export class ReportsController {
 
   @Get()
   @Require("reports", "L")
-  types() {
-    return { reports: REPORT_TYPES };
+  types(@CurrentUser() user?: RequestUser) {
+    const isFinancial = user && ["super_admin", "bos", "finance"].includes(user.role);
+    const available = isFinancial ? REPORT_TYPES : REPORT_TYPES.filter((t) => t !== "profit-loss");
+    return { reports: available };
   }
 
   @Get("archive")
@@ -53,7 +56,11 @@ export class ReportsController {
   async export(
     @Param("type") type: string,
     @Query() q: ExportQueryDto,
+    @CurrentUser() user?: RequestUser,
   ): Promise<StreamableFile> {
+    if (type === "profit-loss" && (!user || !["super_admin", "bos", "finance"].includes(user.role))) {
+      throw new ForbiddenException("Laporan Untung-Rugi hanya dapat diakses oleh Finance, Bos, dan Super Admin");
+    }
     const data = await this.service.build(type, q);
     const format = q.format ?? "xlsx";
     const meta = exportMeta(format, data.title);
@@ -67,7 +74,14 @@ export class ReportsController {
 
   @Get(":type")
   @Require("reports", "L")
-  data(@Param("type") type: string, @Query() q: ReportQueryDto) {
+  data(
+    @Param("type") type: string,
+    @Query() q: ReportQueryDto,
+    @CurrentUser() user?: RequestUser,
+  ) {
+    if (type === "profit-loss" && (!user || !["super_admin", "bos", "finance"].includes(user.role))) {
+      throw new ForbiddenException("Laporan Untung-Rugi hanya dapat diakses oleh Finance, Bos, dan Super Admin");
+    }
     return this.service.build(type, q);
   }
 }

@@ -735,7 +735,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   pm: [N.dashboard, N.projects, N.surveys, N.requests, N.delivery, N.expenses],
   teknisi: [N.dashboard, N.surveys, N.myProjects, N.delivery, N.expenses],
   procurement: [N.dashboard, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.master],
-  finance: [N.dashboard, N.approvals, N.invoices, N.quotations, N.poClient, N.expenses, N.opname],
+  finance: [N.dashboard, N.approvals, N.invoices, N.quotations, N.poClient, N.expenses, N.opname, N.reports],
   gudang: [N.dashboard, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.master],
   se: [N.dashboard, N.myProjects, N.tasks, N.surveys, N.delivery, N.expenses],
 };

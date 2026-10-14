@@ -209,13 +209,21 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         status: "Terjadwal",
       });
     } else if (a.label === "Jadikan project") {
+      const custName = row.perusahaan || row.customer || "Klien";
+      const projName = row.nama
+        ? row.nama.toLowerCase().startsWith("project")
+          ? row.nama
+          : `Project ${row.nama}`
+        : `Project ${custName}`;
       addRow("projects", {
-        nama: `Project ${row.customer}`,
-        customer: row.customer,
-        jenis: "Instalasi",
+        nama: projName,
+        customer: custName,
+        perusahaan: custName,
+        customerId: row.customerId,
+        jenis: "Customer",
         pm: data.users?.find((u: any) => u.role === "pm")?.nama || "Dimas Prasetyo",
         mulai: new Date().toISOString().slice(0, 10),
-        selesai: row.targetSelesai || new Date().toISOString().slice(0, 10),
+        selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
         status: "Berjalan",
       });
     } else if (a.label === "Buat PO supplier") {

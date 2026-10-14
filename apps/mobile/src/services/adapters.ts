@@ -125,6 +125,18 @@ REVERSE.damageType = {
   "Salah Tipe": "SALAH_BARANG",
   "Kurang Kuantitas": "KURANG",
 };
+REVERSE.projectType = {
+  ...REVERSE.projectType,
+  Instalasi: "CUSTOMER",
+  Customer: "CUSTOMER",
+  Proyek: "CUSTOMER",
+  "Product/R&D": "PRODUCT_RD",
+  Internal: "INTERNAL",
+  Maintenance: "MAINTENANCE",
+  Pemeliharaan: "MAINTENANCE",
+  Support: "SUPPORT",
+  Lainnya: "OTHER",
+};
 
 export function toLabel(map: string, v: string | null | undefined): string {
   if (v == null) return "-";
@@ -895,11 +907,25 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         warehouseId: row.warehouseId != null && row.warehouseId !== "" ? Number(row.warehouseId) : findId(db?.warehouses, row.gudang),
         status: "AKTIF",
       };
-    case "projects":
+    case "projects": {
+      const allowedTypes = ["CUSTOMER", "PRODUCT_RD", "INTERNAL", "MAINTENANCE", "SUPPORT", "OTHER"];
+      const rawType = row.jenis ?? row.type;
+      const mappedType = toEnum("projectType", rawType);
+      const safeType = allowedTypes.includes(mappedType) ? mappedType : "CUSTOMER";
+      const custId = row.customerId != null && row.customerId !== ""
+        ? Number(row.customerId)
+        : findId(db?.customers, row.customer ?? row.perusahaan);
+      const custObj = db?.customers?.find((c: any) => c.id === custId || c.nama === (row.customer ?? row.perusahaan));
+      const custName = custObj?.nama || row.customer || row.perusahaan || "Customer";
+      const rawProjName = row.nama ?? row.name;
+      const projName = rawProjName && !String(rawProjName).includes("undefined")
+        ? rawProjName
+        : `Project ${custName}`;
+
       return {
-        name: row.nama ?? row.name,
-        type: row.jenis ? (toEnum("projectType", row.jenis) || "CUSTOMER") : "CUSTOMER",
-        customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.customer),
+        name: projName,
+        type: safeType,
+        customerId: custId,
         startDate: row.mulai || row.startDate || today,
         endDate: row.selesai || row.endDate || undefined,
         status: "BERJALAN",
@@ -908,6 +934,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         prdFileId: row.prdFileId ?? (row.fileId ? Number(row.fileId) : undefined),
         memberIds: resolveMemberIds(row, db),
       };
+    }
     case "tasks":
       return {
         name: row.nama ?? row.name ?? "Tugas Baru",
