@@ -11,6 +11,9 @@ export function apiBase(): string {
       base = base.replace("://localhost", `://${host}`).replace("://127.0.0.1", `://${host}`);
     }
   }
+  if (!base.endsWith("/api")) {
+    base = `${base}/api`;
+  }
   return base;
 }
 
