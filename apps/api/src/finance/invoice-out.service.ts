@@ -54,6 +54,25 @@ export class InvoiceOutService {
     return {};
   }
 
+  private async syncProjectPayment(projectId: number | null | undefined) {
+    if (!projectId) return;
+    const invoices = await this.prisma.main.invoiceOut.findMany({
+      where: { projectId, status: { not: "BATAL" } },
+      select: { total: true, paidAmount: true, status: true },
+    });
+    const allPaid =
+      invoices.length > 0 &&
+      invoices.every(
+        (i) => (Number(i.paidAmount) >= Number(i.total) && Number(i.total) > 0) || i.status === "PAID",
+      );
+    await this.prisma.main.project
+      .update({
+        where: { id: projectId },
+        data: { paymentStatus: allPaid ? "LUNAS" : "BELUM_LUNAS" },
+      })
+      .catch(() => {});
+  }
+
   private where(
     q: PageQuery & { status?: string; customerId?: number; projectId?: number; clientPoId?: number; from?: string; to?: string },
   ) {
@@ -87,8 +106,47 @@ export class InvoiceOutService {
 
   async list(
     q: PageQuery & { status?: string; customerId?: number; projectId?: number; clientPoId?: number; from?: string; to?: string },
+    user?: RequestUser,
   ) {
-    const where = this.where(q);
+    let salesScope: any = {};
+    if (user && user.role === "SALES") {
+      const [auditLogs, salesLeads] = await Promise.all([
+        this.prisma.main.auditLog.findMany({
+          where: { actorId: user.id, entityType: "invoice-out", action: "BUAT_INVOICE_KELUAR" },
+          select: { entityId: true },
+        }),
+        this.prisma.main.lead.findMany({
+          where: { owner_id: user.id },
+          select: { id: true, customerId: true },
+        }),
+      ]);
+
+      const createdIds = auditLogs.map((a) => Number(a.entityId)).filter((n) => !isNaN(n));
+      const customerIds = salesLeads.map((l) => l.customerId).filter(Boolean) as number[];
+
+      salesScope = {
+        OR: [
+          ...(createdIds.length > 0 ? [{ id: { in: createdIds } }] : []),
+          { description: { contains: `[by:${user.id}]` } },
+          ...(customerIds.length > 0 ? [{ customerId: { in: customerIds } }] : []),
+          {
+            project: {
+              OR: [
+                { picId: user.id },
+                { members: { some: { userId: user.id } } },
+                { quotation: { lead: { owner_id: user.id } } },
+                ...(customerIds.length > 0 ? [{ customerId: { in: customerIds } }] : []),
+              ],
+            },
+          },
+        ],
+      };
+    }
+
+    const where = {
+      ...this.where(q),
+      ...salesScope,
+    };
     const [rows, total] = await Promise.all([
       this.prisma.main.invoiceOut.findMany({
         where,
@@ -137,13 +195,17 @@ export class InvoiceOutService {
     const date = dto.date ? new Date(dto.date) : new Date();
     const dueDate = dto.dueDate ? new Date(dto.dueDate) : new Date(Date.now() + 30 * 86400000);
 
+    const desc = dto.description?.trim();
+    const creatorTag = `[by:${user.id}]`;
+    const description = desc ? (desc.includes(creatorTag) ? desc : `${desc} ${creatorTag}`) : creatorTag;
+
     const row = await this.prisma.main.invoiceOut.create({
       data: {
         number,
         clientPoId: dto.clientPoId,
         projectId: dto.projectId,
         customerId: customer.id,
-        description: dto.description,
+        description,
         type: dto.type ?? "TERMIN",
         amount,
         ppn,
@@ -168,6 +230,7 @@ export class InvoiceOutService {
       entityId: row.id,
       detail: `${number} total Rp${total} — ${customer.name}`,
     });
+    await this.syncProjectPayment(row.projectId);
     return this.sync(row);
   }
 
@@ -211,6 +274,10 @@ export class InvoiceOutService {
       entityId: id,
       detail: `${updated.number} → ${dto.status ?? updated.status}`,
     });
+    await this.syncProjectPayment(updated.projectId);
+    if (row.projectId && row.projectId !== updated.projectId) {
+      await this.syncProjectPayment(row.projectId);
+    }
     return this.sync(updated);
   }
 
@@ -259,6 +326,7 @@ export class InvoiceOutService {
       entityId: id,
       detail: `Rp${dto.amount} (${row.number}) total bayar Rp${paid}`,
     });
+    await this.syncProjectPayment(row.projectId);
     return this.sync(updated);
   }
 
@@ -284,6 +352,7 @@ export class InvoiceOutService {
       entityId: id,
       detail: `${row.number}: ${row.status} → ${status}`,
     });
+    await this.syncProjectPayment(row.projectId);
     return this.sync(updated);
   }
 
@@ -301,6 +370,7 @@ export class InvoiceOutService {
       entityId: id,
       detail: `${row.number} dihapus`,
     });
+    await this.syncProjectPayment(row.projectId);
     return { id, deleted: true };
   }
 

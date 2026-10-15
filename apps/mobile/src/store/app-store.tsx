@@ -682,6 +682,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         void refreshModule(module);
         if (module === "leads") void refreshModule("quotations");
         if (module === "followups") void refreshModule("leads");
+        if (module === "invoices") void refreshModule("projects");
         return adapted;
       } catch (e: any) {
         if (isNetworkError(e)) {
@@ -775,9 +776,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               date: new Date().toISOString().slice(0, 10),
               method: "TRANSFER",
             });
-          } else {
-            await api("POST", `/invoices/${id}/status`, { status: "PAID", note });
           }
+          await api("POST", `/invoices/${id}/status`, { status: "PAID", note });
         }
       } else if (module === "leads") {
         const body: Record<string, any> = { stage: statusEnumFor("leads", status) };
@@ -952,7 +952,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // optimistik
       setData((d) => ({
         ...d,
-        [module]: (d[module] ?? []).map((r: any) => (r.id === id ? { ...r, [key]: status, ...(extra ?? {}) } : r)),
+        [module]: (d[module] ?? []).map((r: any) =>
+          r.id === id
+            ? {
+                ...r,
+                [key]: status,
+                ...(module === "invoices" && status === "Lunas" ? { terbayar: r.total } : {}),
+                ...(extra ?? {}),
+              }
+            : r
+        ),
+        ...(module === "invoices" && status === "Lunas"
+          ? {
+              projects: (d.projects ?? []).map((p: any) => {
+                const inv = (d.invoices ?? []).find((r) => r.id === id);
+                if (inv && (String(p.id) === String(inv.projectId) || p.nama === inv.project)) {
+                  return { ...p, pembayaran: "Lunas" };
+                }
+                return p;
+              }),
+            }
+          : {}),
       }));
       pushHistory(module, id, `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`);
       toast(`Status diubah ke ${status}`);
@@ -963,6 +983,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       await refreshModule(module);
+      if (module === "invoices") {
+        await refreshModule("projects");
+      }
       if (module === "leads" && (status === "Qualification" || status === "Proposal")) {
         await refreshModule("quotations");
       }

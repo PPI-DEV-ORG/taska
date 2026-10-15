@@ -446,14 +446,15 @@ export function getDynamicOptions(
   f: CreateField,
   data: any,
   moduleKey?: string,
-  fallbackUsers: any[] = []
+  fallbackUsers: any[] = [],
+  fallbackProjects: any[] = []
 ): string[] | undefined {
   if (!["select", "multiselect"].includes(f.type)) return f.options;
   const nonEmpty = (arr: string[], fallback?: string[]) => (arr.length > 0 ? Array.from(new Set(arr)) : fallback);
   switch (f.key) {
     case "perusahaan":
     case "customer": {
-      const custs = (data.customers ?? []).map((r: any) => String(r.nama)).filter(Boolean);
+      const custs = (data.customers ?? []).map((r: any) => String(r.nama || r.name || "")).filter(Boolean);
       if (moduleKey === "projects") return nonEmpty(["-", ...custs], f.options);
       return nonEmpty(custs, f.options);
     }
@@ -473,8 +474,13 @@ export function getDynamicOptions(
         return nonEmpty(["-", ...(data["po-client"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
       }
       return nonEmpty(["-", ...(data["supplier-pos"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
-    case "project":
-      return nonEmpty(["-", ...(data.projects ?? []).map((r: any) => String(r.nama)).filter(Boolean)], f.options);
+    case "project": {
+      const projList = (data.projects && data.projects.length > 0) ? data.projects : fallbackProjects;
+      return nonEmpty(
+        ["-", ...projList.map((r: any) => String(r.nama || r.name || "")).filter(Boolean)],
+        f.options
+      );
+    }
     case "survey":
       return nonEmpty(
         ["-", ...(data.surveys ?? []).map((s: any) => `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}`)],
@@ -538,6 +544,7 @@ export function FormDialog({
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
   const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
+  const [fallbackProjects, setFallbackProjects] = React.useState<any[]>([]);
   const fileHandles = React.useRef<(FileUploaderHandle | null)[]>([]);
   const fileHandleAt = (i: number) => (h: FileUploaderHandle | null) => { fileHandles.current[i] = h; };
 
@@ -549,7 +556,15 @@ export function FormDialog({
         })
         .catch(() => {});
     }
-  }, [open, data.users]);
+    if (open && (!data.projects || data.projects.length === 0)) {
+      api<any>("GET", "/projects?limit=200")
+        .then((res) => {
+          const items = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+          if (items.length) setFallbackProjects(items);
+        })
+        .catch(() => {});
+    }
+  }, [open, data.users, data.projects]);
 
   const fields = customFields ?? def?.createFields ?? [];
 
@@ -592,7 +607,7 @@ export function FormDialog({
   }
 
   function dynamicOptions(f: CreateField): string[] | undefined {
-    return getDynamicOptions(f, data, def?.key, fallbackUsers);
+    return getDynamicOptions(f, data, def?.key, fallbackUsers, fallbackProjects);
   }
 
   async function submit() {

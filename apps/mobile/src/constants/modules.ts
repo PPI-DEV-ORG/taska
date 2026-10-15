@@ -158,6 +158,7 @@ export const MODULES: Record<string, ModuleDef> = {
     actions: [
       { label: "Download template penawaran", toast: "Template penawaran berhasil diunduh" },
       { label: "Minta survey", toast: "Permintaan survey dikirim ke PM" },
+      { label: "Buat invoice", toast: "Invoice disiapkan untuk lead ini" },
       { label: "Jadikan project", toast: "Project baru dibuat dari lead ini", to: () => "/projects" },
     ],
     docs: ["Dokumen pendukung / brief"],
@@ -733,7 +734,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   ],
   admin: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.quotations, N.surveys, N.projects, N.invoices, N.stock, N.reports, N.archive, N.audit],
   bos: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.quotations, N.surveys, N.projects, N.invoices, N.stock, N.reports, N.archive, N.audit],
-  sales: [N.dashboard, N.leads, N.quotations, N.surveys, N.customers, N.master],
+  sales: [N.dashboard, N.leads, N.quotations, N.surveys, N.invoices, N.customers, N.master],
   pm: [N.dashboard, N.projects, N.surveys, N.requests, N.delivery, N.expenses],
   teknisi: [N.dashboard, N.surveys, N.myProjects, N.delivery, N.expenses],
   procurement: [N.dashboard, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.master],

@@ -24,6 +24,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { rupiah } from "@/lib/format";
 
+function getTodayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function get30DaysLaterIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().slice(0, 10);
+}
+
 export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string }) {
   const router = useRouter();
   const { data, user, addRow, patchRow, deleteRow, setStatus, history, approvals, decide, toast } = useApp();
@@ -248,12 +258,12 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     else setStatus(moduleKey, id, s);
   }
 
-  function run(a: ModuleAction) {
+  async function run(a: ModuleAction) {
     if (a.label === "Minta survey") {
       addRow("surveys", {
         lead: row.nama,
         lokasi: row.perusahaan || "Lokasi Klien",
-        jadwal: new Date().toISOString().slice(0, 10),
+        jadwal: getTodayIso(),
         se: data.users?.find((u: any) => u.role === "se")?.nama || "Andi Pratama",
         status: "Terjadwal",
       });
@@ -271,8 +281,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         customerId: row.customerId,
         jenis: "Customer",
         pm: data.users?.find((u: any) => u.role === "pm")?.nama || "Dimas Prasetyo",
-        mulai: new Date().toISOString().slice(0, 10),
-        selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
+        mulai: getTodayIso(),
+        selesai: row.targetSelesai || row.closing || getTodayIso(),
         status: "Berjalan",
       });
     } else if (a.label === "Buat PO supplier") {
@@ -283,8 +293,64 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         total: row.estimasi || 0,
         status: "Draft",
       });
+    } else if (a.label === "Buat invoice") {
+      const custName = row.perusahaan || row.customer || "Klien";
+      const q = (data.quotations ?? []).find(
+        (quot) => (quot.leadId && String(quot.leadId) === String(row.id)) || (quot.lead && quot.lead.toLowerCase() === row.nama?.toLowerCase())
+      );
+      const proj = (data.projects ?? []).find(
+        (p) =>
+          (q && p.quotationId && String(p.quotationId) === String(q.id)) ||
+          (row.customerId && p.customerId && String(p.customerId) === String(row.customerId)) ||
+          (p.customer && p.customer.trim().toLowerCase() === custName.trim().toLowerCase())
+      );
+      let pId = proj ? String(proj.id) : undefined;
+      let pName = proj ? proj.nama : undefined;
+      if (!pId) {
+        const createdProj = await addRow("projects", {
+          nama: `Project ${row.nama || custName}`,
+          customer: custName,
+          perusahaan: custName,
+          customerId: row.customerId,
+          jenis: "Customer",
+          pm: data.users?.find((u: any) => u.role === "pm")?.nama || "Dimas Prasetyo",
+          mulai: new Date().toISOString().slice(0, 10),
+          selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
+          status: "Berjalan",
+        });
+        if (createdProj) {
+          pId = String(createdProj.id);
+          pName = createdProj.nama;
+        }
+      }
+      const rawVal = q?.totalAfterDisc || q?.total || row.nilai || 0;
+      const nilai = typeof rawVal === "number" ? rawVal : Number(String(rawVal).replace(/\D/g, "")) || 0;
+      const ppn = Math.round(nilai * 0.11);
+      const total = nilai + ppn;
+      const todayIso = getTodayIso();
+      const [year, month] = todayIso.split("-");
+      const invNumber = `INV/${year}/${month}/${String(row.id).padStart(3, "0")}`;
+      const createdInv = await addRow("invoices", {
+        nomor: invNumber,
+        customer: custName,
+        customerId: row.customerId,
+        project: pName,
+        projectId: pId,
+        jenis: "Termin",
+        nilai,
+        ppn,
+        total,
+        tanggal: todayIso,
+        jatuhTempo: get30DaysLaterIso(),
+        status: "Belum dikirim",
+      });
+      if (createdInv) {
+        toast(`Invoice ${invNumber} berhasil dibuat & masuk daftar invoice!`);
+        router.push(`/invoices/${createdInv.id}` as any);
+      }
+      return;
     } else if (a.label === "Catat pembayaran") {
-      patchRow("invoices", id, { terbayar: row.nilai, status: "Lunas" });
+      void setStatus("invoices", id, "Lunas");
     }
     if (a.status) setStatus(moduleKey, id, a.status);
     else if (a.toast) toast(a.toast);

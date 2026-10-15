@@ -169,7 +169,7 @@ export function ProjectExtras({ row }: { row: Row }) {
         }
       >
         <Line left="Status Pekerjaan Fisik" right={<StatusBadge status={row.status || "Berjalan"} />} />
-        <Line left="Status Pembayaran Termin" right={<Text className="font-medium text-text-secondary">{row.pembayaran || "Belum lunas"}</Text>} />
+        <Line left="Status Pembayaran Termin" right={<StatusBadge status={row.pembayaran || "Belum lunas"} />} />
         <Text className="text-xs text-muted-foreground mt-2 leading-relaxed">
           Setelah seluruh item pekerjaan diuji coba dan disetujui klien, cetak draf BAST resmi untuk ditandatangani kedua belah pihak.
         </Text>
