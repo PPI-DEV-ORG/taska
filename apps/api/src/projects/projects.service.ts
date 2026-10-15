@@ -447,52 +447,45 @@ export class ProjectsService {
   // ── Kebutuhan barang (PRD: PM isi, sistem cek stok & auto-reserve) ──
 
   async listRequirements(projectId: number, user: RequestUser) {
-    const project = await this.prisma.main.project.findUnique({
-      where: { id: projectId },
-      include: {
-        purchaseRequests: {
-          include: { items: true },
-        },
-      },
-    });
+    const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user);
 
-    // Otomatis sinkronkan barang dari purchase request project ke projectRequirement bila belum tercatat
-    for (const pr of project.purchaseRequests) {
-      for (const item of pr.items) {
-        const existing = await this.prisma.main.projectRequirement.findFirst({
-          where: { projectId, productId: item.productId },
-        });
-        const isReserved = pr.status === "DIKIRIM" || pr.status === "DITERIMA";
-        if (!existing) {
-          await this.prisma.main.projectRequirement.create({
-            data: {
-              projectId,
-              taskId: pr.taskId ?? null,
-              productId: item.productId,
-              qty: item.qty,
-              reservedQty: isReserved ? item.qty : 0,
-              status: isReserved ? "DIRESERVE" : "DIBUTUHKAN",
-            },
-          });
-        } else if (isReserved && existing.reservedQty < item.qty) {
-          await this.prisma.main.projectRequirement.update({
-            where: { id: existing.id },
-            data: {
-              reservedQty: item.qty,
-              status: "DIRESERVE",
-            },
-          });
-        }
-      }
-    }
-
-    const rows = await this.prisma.main.projectRequirement.findMany({
+    let rows = await this.prisma.main.projectRequirement.findMany({
       where: { projectId },
       include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
       orderBy: { id: "asc" },
     });
+
+    // Bila requirements masih kosong, sinkronkan dari purchase request aktif
+    if (rows.length === 0) {
+      const activePrs = await this.prisma.main.purchaseRequest.findMany({
+        where: { projectId, status: { notIn: ["DITOLAK", "DIBATALKAN"] } },
+        include: { items: true },
+      });
+      if (activePrs.length > 0) {
+        for (const pr of activePrs) {
+          for (const item of pr.items) {
+            const isReserved = pr.status === "DIKIRIM" || pr.status === "DITERIMA";
+            await this.prisma.main.projectRequirement.create({
+              data: {
+                projectId,
+                taskId: pr.taskId ?? null,
+                productId: item.productId,
+                qty: item.qty,
+                reservedQty: isReserved ? item.qty : 0,
+                status: isReserved ? "DIRESERVE" : "DIBUTUHKAN",
+              },
+            }).catch(() => {});
+          }
+        }
+        rows = await this.prisma.main.projectRequirement.findMany({
+          where: { projectId },
+          include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
+          orderBy: { id: "asc" },
+        });
+      }
+    }
     const withAvailability = await Promise.all(
       rows.map(async (r) => {
         const avail = await this.availableQty(r.productId, projectId);

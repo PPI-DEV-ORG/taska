@@ -255,11 +255,17 @@ export class RequestsService {
 
     // Bila Gudang menyerahkan / mengirim barang (DIKIRIM): kurangi stok gudang
     if (dto.status === "DIKIRIM" && row.status !== "DIKIRIM" && row.status !== "DITERIMA") {
-      const defaultWarehouse = await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } });
+      const defaultWarehouse =
+        (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
+        (await this.prisma.main.warehouse.findFirst());
       for (const item of row.items) {
-        const balance = await this.prisma.main.stockBalance.findFirst({
-          where: { productId: item.productId, qty: { gte: item.qty } },
-        });
+        const balance =
+          (await this.prisma.main.stockBalance.findFirst({
+            where: { productId: item.productId, qty: { gte: item.qty } },
+          })) ??
+          (await this.prisma.main.stockBalance.findFirst({
+            where: { productId: item.productId, qty: { gt: 0 } },
+          }));
         const warehouseId = balance?.warehouseId ?? defaultWarehouse?.id;
         if (warehouseId) {
           try {

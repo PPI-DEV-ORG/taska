@@ -413,7 +413,7 @@ export function adaptRow(module: string, raw: any): Row {
         nomor: raw.number ?? "",
         tanggal: d(raw.date),
         project: nameOf(raw.project) ?? "-",
-        projectId: idOf(raw.project),
+        projectId: idOf(raw.project) ?? (raw.projectId != null ? String(raw.projectId) : null),
         jenisBiaya: toLabel("costType", raw.costType),
         pemohon: nameOf(raw.requester) ?? "",
         pemohonId: raw.requester?.id != null ? String(raw.requester.id) : null,
