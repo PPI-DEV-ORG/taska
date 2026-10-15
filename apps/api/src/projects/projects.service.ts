@@ -24,6 +24,7 @@ export class ProjectsService {
   private async access(project: Project, user: RequestUser, forWrite = false) {
     const allowed =
       MANAGER_ROLES.includes(user.role) ||
+      ["FINANCE", "SALES", "PROCUREMENT"].includes(user.role) ||
       project.picId === user.id ||
       (await this.prisma.main.projectMember.findUnique({
         where: { projectId_userId: { projectId: project.id, userId: user.id } },
@@ -40,7 +41,10 @@ export class ProjectsService {
       select: { total: true, paidAmount: true, status: true },
     });
     const allPaid =
-      invoices.length > 0 && invoices.every((i) => Number(i.paidAmount) >= Number(i.total) && Number(i.total) > 0);
+      invoices.length > 0 &&
+      invoices.every(
+        (i) => (Number(i.paidAmount) >= Number(i.total) && Number(i.total) > 0) || i.status === "PAID",
+      );
     const current = await this.prisma.main.project.findUniqueOrThrow({ where: { id: projectId } });
     if ((allPaid ? "LUNAS" : "BELUM_LUNAS") === current.paymentStatus) return current;
     return this.prisma.main.project.update({
@@ -61,11 +65,9 @@ export class ProjectsService {
   }
 
   async list(q: ProjectListQuery, user: RequestUser) {
-    const scope = ["SUPER_ADMIN", "ADMIN", "BOS"].includes(user.role)
+    const scope = ["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "SALES", "PROCUREMENT"].includes(user.role)
       ? {}
-      : user.role === "PM"
-        ? { OR: [{ picId: user.id }, { members: { some: { userId: user.id } } }] }
-        : { OR: [{ picId: user.id }, { members: { some: { userId: user.id } } }] };
+      : { OR: [{ picId: user.id }, { members: { some: { userId: user.id } } }] };
     const where = {
       ...scope,
       ...(q.status ? { status: q.status } : {}),

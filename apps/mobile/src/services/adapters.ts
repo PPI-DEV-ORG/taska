@@ -352,6 +352,7 @@ export function adaptRow(module: string, raw: any): Row {
         customer: nameOf(raw.customer) ?? "",
         customerId: idOf(raw.customer),
         jenis: toLabel("invoiceType", raw.type),
+        catatan: (raw.description || "").replace(/\[by:\d+\]/g, "").trim(),
         nilai: n(raw.amount), ppn: n(raw.ppn), total: n(raw.total), terbayar: n(raw.paidAmount),
         jatuhTempo: d(raw.dueDate),
         status: toLabel("invoices", raw.status),

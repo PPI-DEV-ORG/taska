@@ -88,6 +88,7 @@ export const PERMISSIONS: Record<string, Table> = {
     leads: "LCU",
     surveys: "LCU",
     quotations: "LCU",
+    financeOut: "LCU",
     projects: "LC",
     delivery: "LCU",
     expenses: "LCU",

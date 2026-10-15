@@ -17,8 +17,8 @@ export class InvoiceOutController {
 
   @Get()
   @Require("financeOut", "L")
-  list(@Query() q: FinanceListQuery) {
-    return this.service.list(q);
+  list(@Query() q: FinanceListQuery, @CurrentUser() user: RequestUser) {
+    return this.service.list(q, user);
   }
 
   @Get("suggest-number")

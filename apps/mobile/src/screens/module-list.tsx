@@ -15,7 +15,7 @@ const CREATE: Record<string, Role[]> = {
   quotations: ["sales", "pm"],
   surveys: ["sales", "pm"],
   "po-client": ["finance"],
-  invoices: ["finance"],
+  invoices: ["finance", "sales"],
   projects: ["pm"],
   "damage-reports": ["gudang"],
   customers: ["sales"],
