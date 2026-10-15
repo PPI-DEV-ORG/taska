@@ -327,6 +327,7 @@ export function adaptRow(module: string, raw: any): Row {
         biaya: n(raw.cost),
         need: raw.need ?? "",
         requester: nameOf(raw.requester) ?? "",
+        approval: raw.approval ? adaptApproval(raw.approval) : undefined,
       };
     case "po-client":
       return {
@@ -427,6 +428,7 @@ export function adaptRow(module: string, raw: any): Row {
         nomor: raw.number ?? "",
         supplier: nameOf(raw.supplier) ?? "",
         supplierId: idOf(raw.supplier),
+        pembuat: nameOf(raw.creator) ?? "",
         tanggal: d(raw.date),
         eta: d(raw.eta),
         total: n(raw.total),
@@ -499,6 +501,9 @@ export function adaptRow(module: string, raw: any): Row {
         project: nameOf(raw.project) ?? "-",
         projectId: idOf(raw.project),
         surveyId: raw.surveyId != null ? String(raw.surveyId) : null,
+        survey: raw.survey
+          ? `Survey #${raw.survey.id} - ${raw.survey.lead?.name || raw.survey.location || "Survey"}`
+          : "-",
         alasan: raw.description ?? "",
         status: toLabel("expenses", raw.status),
         costCenterId: idOf(raw.costCenter),
@@ -719,11 +724,22 @@ export type ApprovalRow = {
 export function adaptApproval(raw: any): ApprovalRow {
   const created = raw.createdAt ? new Date(raw.createdAt).getTime() : Date.now();
   const jam = Math.max(0, Math.round((Date.now() - created) / 3_600_000));
+  const pengaju =
+    raw.requestedBy?.name ||
+    raw.requested_by?.name ||
+    (typeof raw.requestedBy === "string" ? raw.requestedBy : "") ||
+    (typeof raw.requested_by === "string" ? raw.requested_by : "") ||
+    raw.pelapor ||
+    raw.pembuat ||
+    raw.reporter?.name ||
+    raw.creator?.name ||
+    raw.requester?.name ||
+    "";
   return {
     id: String(raw.id),
     jenis: KIND_LABEL[raw.kind] ?? raw.kind,
     judul: raw.title ?? "",
-    pengaju: raw.requestedBy?.name ?? "",
+    pengaju,
     nilai: n(raw.amount),
     jam,
     module: KIND_MODULE[raw.kind] ?? "",
@@ -1056,8 +1072,18 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : findId(db?.expenseCategories, row.kategori),
         amount: num(row.nominal ?? row.amount),
         description: row.alasan || row.description || "Pengeluaran operasional",
-        projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
-        surveyId: row.surveyId != null && row.surveyId !== "" ? Number(row.surveyId) : undefined,
+        projectId:
+          row.projectId != null && row.projectId !== "" && row.projectId !== "-"
+            ? Number(row.projectId)
+            : row.project && row.project !== "-"
+            ? findId(db?.projects, row.project)
+            : undefined,
+        surveyId:
+          row.surveyId != null && row.surveyId !== "" && row.surveyId !== "-"
+            ? Number(row.surveyId)
+            : row.survey && row.survey !== "-"
+            ? Number(String(row.survey).match(/#(\d+)/)?.[1] || findId(db?.surveys, row.survey)) || undefined
+            : undefined,
         costCenterId: row.costCenterId != null && row.costCenterId !== "" ? Number(row.costCenterId) : findId(db?.costCenters, row.costCenter),
         receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
       };
@@ -1247,6 +1273,13 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (module === "expenses") {
     if (patch.kategori !== undefined) out.categoryId = findId(db?.expenseCategories, patch.kategori);
     if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
+    if (patch.survey !== undefined) {
+      out.surveyId =
+        patch.survey === "-" || !patch.survey
+          ? null
+          : Number(String(patch.survey).match(/#(\d+)/)?.[1]) || null;
+    }
+    if (patch.surveyId !== undefined) out.surveyId = patch.surveyId ? Number(patch.surveyId) : null;
     if (patch.costCenter !== undefined) out.costCenterId = findId(db?.costCenters, patch.costCenter);
   }
 

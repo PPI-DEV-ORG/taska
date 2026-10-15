@@ -20,6 +20,22 @@ export class ExpensesService {
     this.approvals.onChange("PENGELUARAN", (entityId, status) => this.onApproval(entityId, status));
   }
 
+  private async syncSurveyCost(surveyId: number | null | undefined) {
+    if (!surveyId) return;
+    try {
+      const expenses = await this.prisma.main.expense.findMany({
+        where: { surveyId, status: { not: "DITOLAK" } },
+        select: { amount: true },
+      });
+      const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+      await this.prisma.main.survey.update({
+        where: { id: surveyId },
+        data: { cost: total },
+      });
+      this.notifications.dataChange("surveys", "update", surveyId);
+    } catch {}
+  }
+
   private async where(
     q: PageQuery & {
       status?: string;
@@ -32,7 +48,10 @@ export class ExpensesService {
     },
     user: RequestUser,
   ) {
-    const scope = ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(user.role) ? {} : { reporterId: user.id };
+    const scope =
+      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(user.role) || q.surveyId || q.projectId
+        ? {}
+        : { reporterId: user.id };
     return {
       ...scope,
       ...(q.status ? { status: q.status as never } : {}),
@@ -68,7 +87,7 @@ export class ExpensesService {
           category: { select: { id: true, name: true } },
           costCenter: { select: { id: true, name: true } },
           project: { select: { id: true, name: true } },
-          survey: { select: { id: true, location: true } },
+          survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
           deliveryNote: { select: { id: true, number: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
@@ -110,7 +129,7 @@ export class ExpensesService {
         category: true,
         costCenter: true,
         project: { select: { id: true, name: true } },
-        survey: { select: { id: true, location: true } },
+        survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
         deliveryNote: { select: { id: true, number: true } },
       },
     });
@@ -164,6 +183,7 @@ export class ExpensesService {
         category: { select: { id: true, name: true } },
         costCenter: { select: { id: true, name: true } },
         project: { select: { id: true, name: true } },
+        survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
       },
     });
 
@@ -172,6 +192,10 @@ export class ExpensesService {
         where: { id: dto.receiptFileId },
         data: { refType: "expense", refId: String(row.id) },
       }).catch(() => {});
+    }
+
+    if (dto.surveyId) {
+      await this.syncSurveyCost(dto.surveyId);
     }
 
     await this.approvals.request({
@@ -240,8 +264,16 @@ export class ExpensesService {
         category: { select: { id: true, name: true } },
         costCenter: { select: { id: true, name: true } },
         project: { select: { id: true, name: true } },
+        survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
       },
     });
+
+    if (updated.surveyId) {
+      await this.syncSurveyCost(updated.surveyId);
+    }
+    if (row.surveyId && row.surveyId !== updated.surveyId) {
+      await this.syncSurveyCost(row.surveyId);
+    }
 
     await this.audit.log({
       actor: user,
@@ -287,6 +319,10 @@ export class ExpensesService {
       },
       include: { reporter: { select: { id: true, name: true } } },
     });
+
+    if (row.surveyId) {
+      await this.syncSurveyCost(row.surveyId);
+    }
 
     await this.audit.log({
       actor: user,
@@ -335,6 +371,9 @@ export class ExpensesService {
       await tx.approval.deleteMany({ where: { kind: "PENGELUARAN", entityId: id } });
       await tx.expense.delete({ where: { id } });
     });
+    if (row.surveyId) {
+      await this.syncSurveyCost(row.surveyId);
+    }
     await this.audit.log({
       actor: user,
       action: "HAPUS_PENGELUARAN",
@@ -354,6 +393,9 @@ export class ExpensesService {
       where: { id: entityId },
       data: { status: next, ...(next === "DITOLAK" ? { rejectReason: "Ditolak lewat persetujuan" } : {}) },
     });
+    if (row.surveyId) {
+      await this.syncSurveyCost(row.surveyId);
+    }
     await this.notifications.notify({
       userIds: [row.reporterId],
       kind: "APPROVAL",

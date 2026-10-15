@@ -105,6 +105,7 @@ export class PosService {
       where: { id },
       include: {
         supplier: true,
+        creator: { select: { id: true, name: true } },
         request: { select: { id: true, number: true, purpose: true, status: true } },
         project: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },

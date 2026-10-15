@@ -35,10 +35,11 @@ export class SurveysService {
   }
 
   async list(q: PageQuery & { status?: string; leadId?: number }, user: RequestUser) {
+    const role = (user.role || "").toUpperCase();
     const scope =
-      ["SUPER_ADMIN", "BOS", "ADMIN", "PM"].includes(user.role)
+      ["SUPER_ADMIN", "BOS", "ADMIN", "PM", "FINANCE"].includes(role)
         ? {}
-        : ["TEKNISI", "SE"].includes(user.role)
+        : ["TEKNISI", "SE"].includes(role)
           ? { members: { some: { userId: user.id } } }
           : { requestedById: user.id };
 
@@ -81,7 +82,19 @@ export class SurveysService {
       where: { refType: "survey", refId: String(id) },
       select: { id: true, originalName: true, mimeType: true, size: true, kind: true, createdAt: true },
     });
-    const approval = await this.approvals.getFor("PERMINTAAN_SURVEY", id);
+    let approval = await this.approvals.getFor("PERMINTAAN_SURVEY", id);
+    if (!approval && survey.status === "DIMINTA") {
+      const requester = (survey as any).requester ?? { id: survey.requestedById, name: "Staf", role: "SALES" };
+      await this.approvals.request({
+        kind: "PERMINTAAN_SURVEY",
+        entityId: survey.id,
+        title: `Permintaan survey: ${survey.lead.name} (${survey.location})`,
+        amount: Number(survey.cost || 0),
+        requestedBy: requester as any,
+        href: `/surveys/${survey.id}`,
+      });
+      approval = await this.approvals.getFor("PERMINTAAN_SURVEY", id);
+    }
     return { ...survey, files, approval };
   }
 
@@ -97,11 +110,11 @@ export class SurveysService {
     const isSales = user.role === "SALES";
     const location = dto.location || "-";
 
-    const requestedMemberIds = (dto.memberIds ?? []).filter((id) => id !== user.id);
+    const rawMemberIds = Array.from(new Set(dto.memberIds ?? []));
     let memberIds: number[] = [];
-    if (requestedMemberIds.length) {
+    if (rawMemberIds.length) {
       const members = await this.prisma.main.user.findMany({
-        where: { id: { in: requestedMemberIds }, status: "AKTIF" },
+        where: { id: { in: rawMemberIds }, status: "AKTIF" },
         select: { id: true },
       });
       memberIds = members.map((m) => m.id);
@@ -117,7 +130,7 @@ export class SurveysService {
         cost: dto.cost ?? 0,
         status: dto.status ?? (isSales ? "DIMINTA" : dto.scheduleAt ? "DIJADWALKAN" : "BERJALAN"),
         requestedById: user.id,
-        members: { create: [{ userId: user.id }, ...memberIds.map((userId) => ({ userId }))] },
+        members: { create: memberIds.map((userId) => ({ userId })) },
       },
       include: {
         lead: { select: { id: true, name: true, customer: { select: { name: true } } } },
@@ -134,12 +147,12 @@ export class SurveysService {
       detail: `${lead.name} — ${location}`,
     });
 
-    if (isSales) {
+    if (survey.status === "DIMINTA") {
       await this.approvals.request({
         kind: "PERMINTAAN_SURVEY",
         entityId: survey.id,
         title: `Permintaan survey: ${lead.name} (${location})`,
-        amount: 0,
+        amount: Number(survey.cost || 0),
         requestedBy: user,
         href: `/surveys/${survey.id}`,
       });
@@ -164,7 +177,8 @@ export class SurveysService {
     if (!survey) throw new NotFoundException("Survey tidak ditemukan");
 
     const isMember = survey.members.some((m) => m.userId === user.id);
-    const allowed = ["SUPER_ADMIN", "ADMIN", "PM", "BOS", "SALES", "TEKNISI", "SE"].includes(user.role) || isMember || survey.requestedById === user.id;
+    const role = (user.role || "").toUpperCase();
+    const allowed = ["SUPER_ADMIN", "ADMIN", "PM", "BOS", "SALES", "TEKNISI", "SE", "FINANCE"].includes(role) || isMember || survey.requestedById === user.id;
     if (!allowed) throw new ForbiddenException("Anda tidak berkepentingan dengan survey ini");
 
     const payload = dto as Partial<SurveyDto> & Partial<SurveyStatusDto> & { memberIds?: number[] };
@@ -209,6 +223,14 @@ export class SurveysService {
     });
 
     if (payload.status && payload.status !== survey.status) {
+      if (survey.status === "DIMINTA" && (payload.status === "DIJADWALKAN" || payload.status === "BERJALAN" || payload.status === "BATAL")) {
+        const app = await this.approvals.getFor("PERMINTAAN_SURVEY", id);
+        if (app && app.status === "MENUNGGU") {
+          try {
+            await this.approvals.decide(app.id, user, payload.status !== "BATAL", payload.status === "BATAL" ? "Dibatalkan manual" : undefined);
+          } catch {}
+        }
+      }
       await this.audit.log({
         actor: user,
         action: "UBAH_STATUS_SURVEY",
