@@ -378,7 +378,7 @@ export const MODULES: Record<string, ModuleDef> = {
     ],
     createRoles: ["pm", "procurement", "finance", "gudang", "bos"],
     actions: [
-      { label: "Teruskan ke Gudang", toast: "Stok tersedia, request diteruskan ke Gudang tanpa PO" },
+      { label: "Teruskan ke Gudang", status: "Cek stok", toast: "Request diteruskan ke Gudang untuk cek ketersediaan stok" },
       { label: "Buat PO supplier", toast: "PO supplier dibuat, menunggu persetujuan", to: () => "/supplier-pos" },
     ],
     docs: ["Bukti permintaan (WA, email, atau BOQ)"],
@@ -736,11 +736,11 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   sales: [N.dashboard, N.leads, N.quotations, N.surveys, N.customers, N.master],
   pm: [N.dashboard, N.projects, N.surveys, N.requests, N.delivery, N.expenses],
   teknisi: [N.dashboard, N.surveys, N.myProjects, N.delivery, N.expenses],
-  procurement: [N.dashboard, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.master],
+  procurement: [N.dashboard, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.master],
   finance: [N.dashboard, N.approvals, N.surveys, N.invoices, N.quotations, N.poClient, N.expenses, N.opname, N.reports],
-  gudang: [N.dashboard, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.master],
+  gudang: [N.dashboard, N.approvals, N.requests, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.master],
   se: [N.dashboard, N.myProjects, N.tasks, N.surveys, N.delivery, N.expenses],
 };
 
-export const CAN_APPROVE: Role[] = ["super_admin", "bos", "finance"];
+export const CAN_APPROVE: Role[] = ["super_admin", "bos", "finance", "gudang", "procurement"];
 

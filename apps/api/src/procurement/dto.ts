@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   ArrayMinSize,
   IsArray,
@@ -49,7 +49,9 @@ export class RequestDto {
   @IsOptional() @IsDateString()
   date?: string;
 
-  @IsOptional() @IsIn(["PROJECT", "STOK", "INTERNAL", "LAINNYA"])
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim().toUpperCase() : value))
+  @IsIn(["PROJECT", "STOK", "INTERNAL", "LAINNYA"])
   costType?: "PROJECT" | "STOK" | "INTERNAL" | "LAINNYA";
 
   @IsOptional() @IsInt()

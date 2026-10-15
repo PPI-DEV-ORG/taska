@@ -18,7 +18,7 @@ import { CAN_APPROVE, MODULES, type ModuleAction, type Row, type CreateField } f
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
-import { PATHS, adaptRow } from "@/services/adapters";
+import { PATHS, adaptRow, toEnum } from "@/services/adapters";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,6 +30,11 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const def = MODULES[moduleKey];
   const rowFromStore = data[moduleKey]?.find((r: { id: string }) => r.id === id);
   const [remoteRow, setRemoteRow] = React.useState<Row | null>(null);
+
+  const [refreshIndex, setRefreshIndex] = React.useState(0);
+  const handleRefresh = React.useCallback(() => {
+    setRefreshIndex((i) => i + 1);
+  }, []);
 
   React.useEffect(() => {
     const path = PATHS[moduleKey];
@@ -45,9 +50,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     return () => {
       active = false;
     };
-  }, [moduleKey, id]);
+  }, [moduleKey, id, refreshIndex]);
 
-  const row = remoteRow ? { ...rowFromStore, ...remoteRow } : rowFromStore;
+  const row = remoteRow ? { ...remoteRow, ...rowFromStore } : rowFromStore;
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
@@ -292,6 +297,11 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (isLead && a.label === "Download template penawaran") {
       return canOfferLead;
     }
+    if (moduleKey === "purchase-requests" && a.label === "Teruskan ke Gudang") {
+      if (user?.role === "gudang") return false;
+      const st = String(row?.rawStatus || (row?.status ? toEnum("purchase-requests", row.status) : "") || "").toUpperCase();
+      if (st && st !== "DIAJUKAN") return false;
+    }
     return true;
   });
 
@@ -509,7 +519,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           </Panel>
         ) : null}
 
-        <ModuleExtras moduleKey={moduleKey} row={row} />
+        <ModuleExtras moduleKey={moduleKey} row={row} onRefresh={handleRefresh} />
 
         {def.docs?.length ? (
           <Panel title="File dan bukti">

@@ -43,7 +43,7 @@ export class RequestsService {
   }
 
   private scope(user: RequestUser) {
-    if (["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "PROCUREMENT"].includes(user.role)) return {};
+    if (["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "PROCUREMENT", "GUDANG"].includes(user.role)) return {};
     if (user.role === "PM") {
       return {
         OR: [
@@ -171,6 +171,19 @@ export class RequestsService {
       }).catch(() => {});
     }
 
+    if (projectId && items.length > 0) {
+      for (const item of items) {
+        const existingReq = await this.prisma.main.projectRequirement.findFirst({
+          where: { projectId, productId: item.productId },
+        });
+        if (!existingReq) {
+          await this.prisma.main.projectRequirement.create({
+            data: { projectId, productId: item.productId, qty: item.qty },
+          }).catch(() => {});
+        }
+      }
+    }
+
     await this.audit.log({
       actor: user,
       action: "BUAT_REQUEST_BARANG",
@@ -179,7 +192,7 @@ export class RequestsService {
       detail: `${number} — ${purpose} Rp${estimated}`,
     });
     await this.notifications.notify({
-      roles: ["PROCUREMENT"],
+      roles: ["PROCUREMENT", "GUDANG"],
       kind: "STOK",
       text: `Request barang baru: ${number} — ${purpose}`,
       href: `/requests/${row.id}`,
@@ -232,18 +245,76 @@ export class RequestsService {
     return updated;
   }
 
-  /** Procurement memproses request (cek stok, teruskan ke gudang, tolak). */
+  /** Gudang & Procurement memproses request (cek stok, serahkan barang, konfirmasi terima, tolak). */
   async setStatus(id: number, dto: RequestStatusDto, user: RequestUser) {
     const row = await this.prisma.main.purchaseRequest.findUnique({
       where: { id },
-      include: { items: true, project: { select: { id: true, name: true } } },
+      include: { items: true, project: { select: { id: true, name: true, picId: true } }, requester: true },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
+
+    // Bila Gudang menyerahkan / mengirim barang (DIKIRIM): kurangi stok gudang
+    if (dto.status === "DIKIRIM" && row.status !== "DIKIRIM" && row.status !== "DITERIMA") {
+      const defaultWarehouse =
+        (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
+        (await this.prisma.main.warehouse.findFirst());
+      for (const item of row.items) {
+        const balance =
+          (await this.prisma.main.stockBalance.findFirst({
+            where: { productId: item.productId, qty: { gte: item.qty } },
+          })) ??
+          (await this.prisma.main.stockBalance.findFirst({
+            where: { productId: item.productId, qty: { gt: 0 } },
+          }));
+        const warehouseId = balance?.warehouseId ?? defaultWarehouse?.id;
+        if (warehouseId) {
+          try {
+            await this.stock.applyMovement({
+              date: new Date(),
+              type: "OUT",
+              category: row.projectId ? "KELUAR_PROJECT" : "BARANG_TERPAKAI",
+              productId: item.productId,
+              fromWarehouseId: warehouseId,
+              qty: item.qty,
+              projectId: row.projectId ?? null,
+              reason: `Pengeluaran barang request ${row.number} oleh ${user.name}`,
+              createdById: user.id,
+            });
+          } catch (e) {
+            console.warn(`Gagal mencatat movement stok request ${row.number}:`, (e as Error).message);
+          }
+        }
+      }
+    }
+
+    if ((dto.status === "DIKIRIM" || dto.status === "DITERIMA") && row.projectId) {
+      for (const item of row.items) {
+        const existing = await this.prisma.main.projectRequirement.findFirst({
+          where: { projectId: row.projectId, productId: item.productId },
+        });
+        if (existing) {
+          await this.prisma.main.projectRequirement.update({
+            where: { id: existing.id },
+            data: { reservedQty: item.qty, status: "DIRESERVE" },
+          }).catch(() => {});
+        } else {
+          await this.prisma.main.projectRequirement.create({
+            data: {
+              projectId: row.projectId,
+              productId: item.productId,
+              qty: item.qty,
+              reservedQty: item.qty,
+              status: "DIRESERVE",
+            },
+          }).catch(() => {});
+        }
+      }
+    }
 
     const updated = await this.prisma.main.purchaseRequest.update({
       where: { id },
       data: { status: dto.status as never, rejectReason: dto.reason ?? row.rejectReason },
-      include: { project: { select: { id: true, name: true } } },
+      include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
     });
     await this.audit.log({
       actor: user,
@@ -252,22 +323,45 @@ export class RequestsService {
       entityId: id,
       detail: `${row.number}: ${row.status} → ${dto.status}${dto.reason ? ` — ${dto.reason}` : ""}`,
     });
+
     if (row.requesterId !== user.id) {
       await this.notifications.notify({
         userIds: [row.requesterId],
         kind: "STOK",
-        text: `Request ${row.number}: ${row.status} → ${dto.status}${dto.reason ? ` (${dto.reason})` : ""}`,
+        text: `Request ${row.number}: status menjadi ${dto.status}${dto.reason ? ` (${dto.reason})` : ""}`,
         href: `/requests/${id}`,
       });
     }
-    if (dto.status === "DIKIRIM" && row.project) {
+
+    if (dto.status === "DIKIRIM") {
+      const recipientIds = new Set<number>();
+      if (row.requesterId) recipientIds.add(row.requesterId);
+      if (row.project?.picId) recipientIds.add(row.project.picId);
+      recipientIds.delete(user.id);
+      if (recipientIds.size > 0) {
+        await this.notifications.notify({
+          userIds: Array.from(recipientIds),
+          kind: "STOK",
+          text: `Barang untuk request ${row.number} (${row.project?.name ?? row.purpose}) telah disiapkan & diserahkan oleh Gudang`,
+          href: `/requests/${id}`,
+        });
+      }
+    } else if (dto.status === "DITERIMA") {
+      await this.notifications.notify({
+        roles: ["GUDANG", "PROCUREMENT"],
+        kind: "STOK",
+        text: `Barang request ${row.number} telah diterima oleh pemohon (${row.requester?.name ?? "User"})`,
+        href: `/requests/${id}`,
+      });
+    } else if (dto.status === "CEK_STOK") {
       await this.notifications.notify({
         roles: ["GUDANG"],
         kind: "STOK",
-        text: `Siapkan barang untuk ${row.project.name}: ${row.number}`,
+        text: `Mohon cek ketersediaan stok untuk request ${row.number}`,
         href: `/requests/${id}`,
       });
     }
+
     return updated;
   }
 

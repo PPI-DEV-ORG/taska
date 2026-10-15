@@ -385,6 +385,10 @@ export function adaptRow(module: string, raw: any): Row {
         selesai: d(raw.endDate),
         barang: "-",
         quotationId: idOf(raw.quotation),
+        prdFileId: raw.prdFileId ?? null,
+        bahpFileId: raw.bahpFileId ?? null,
+        bastFileId: raw.bastFileId ?? null,
+        doFileId: raw.doFileId ?? null,
         _members: (raw.members ?? []).map((m: any) => ({ id: String(m.userId), name: nameOf(m.user), role: roleToUi(m.user?.role) })),
       };
     case "tasks":
@@ -409,7 +413,7 @@ export function adaptRow(module: string, raw: any): Row {
         nomor: raw.number ?? "",
         tanggal: d(raw.date),
         project: nameOf(raw.project) ?? "-",
-        projectId: idOf(raw.project),
+        projectId: idOf(raw.project) ?? (raw.projectId != null ? String(raw.projectId) : null),
         jenisBiaya: toLabel("costType", raw.costType),
         pemohon: nameOf(raw.requester) ?? "",
         pemohonId: raw.requester?.id != null ? String(raw.requester.id) : null,
@@ -417,10 +421,15 @@ export function adaptRow(module: string, raw: any): Row {
           .map((i: any) => `${nameOf(i.product)} x ${n(i.qty)}${i.product?.unit ? ` ${i.product.unit}` : ""}`)
           .join(", ") || raw.purpose || "-",
         estimasi: n(raw.estimatedCost),
+        rawStatus: raw.status,
         status: toLabel("purchase-requests", raw.status),
         tujuan: raw.purpose ?? "",
         supplierId: idOf(raw.supplier),
         fileId: raw.evidenceFileId ?? (raw.fileId ?? null),
+        rejectReason: raw.rejectReason,
+        items: Array.isArray(raw.items) ? raw.items : [],
+        stock: Array.isArray(raw.stock) ? raw.stock : [],
+        approval: raw.approval ? adaptApproval(raw.approval) : undefined,
       };
     case "supplier-pos":
       return {
@@ -1017,7 +1026,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     case "purchase-requests":
       return {
         date: row.tanggal || row.date || today,
-        costType: row.costType || (row.jenisBiaya ? toEnum("costType", row.jenisBiaya) : "STOK"),
+        costType: String(toEnum("costType", row.costType || row.jenisBiaya) || row.costType || row.jenisBiaya || "STOK").toUpperCase(),
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
         supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
         purpose: row.purpose || row.tujuan || row.item || "Kebutuhan operasional",
@@ -1196,7 +1205,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "signerName",
     "signerTitle",
   ],
-  projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "notes", "memberIds"],
+  projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "notes", "memberIds"],
   tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
   "po-client": ["number", "customerId", "quotationId", "amount", "date", "fileId", "notes"],
   invoices: ["number", "clientPoId", "projectId", "customerId", "description", "type", "amount", "ppn", "total", "date", "dueDate", "status", "fileId"],
@@ -1363,6 +1372,12 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (module === "products" && patch.kategori !== undefined) {
       out.categoryId = findId(db?.productCategories, patch.kategori);
     }
+  } else if (module === "purchase-requests") {
+    if (patch.jenisBiaya !== undefined || patch.costType !== undefined) {
+      out.costType = String(toEnum("costType", patch.costType || patch.jenisBiaya) || patch.costType || patch.jenisBiaya || "STOK").toUpperCase();
+    }
+    if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
+    if (patch.supplier !== undefined) out.supplierId = findId(db?.suppliers, patch.supplier);
   }
 
   return forPatch(module, out);
