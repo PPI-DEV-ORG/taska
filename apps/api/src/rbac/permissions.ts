@@ -222,8 +222,9 @@ export const PERMISSIONS: Record<string, Table> = {
 };
 
 export function can(role: string, module: ModuleKey, action: Action): boolean {
-  if (role === "SUPER_ADMIN") return true;
-  const table = PERMISSIONS[role];
+  const norm = (role || "").toUpperCase();
+  if (norm === "SUPER_ADMIN") return true;
+  const table = PERMISSIONS[norm] || PERMISSIONS[role];
   if (!table) return false;
   const actions = table[module];
   if (!actions) return false;
