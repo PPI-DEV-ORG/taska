@@ -894,6 +894,9 @@ model Project {
   progress      Int           @default(0)
   paymentStatus PaymentStatus @default(BELUM_LUNAS)
   prdFileId     Int?
+  bahpFileId    Int?
+  bastFileId    Int?
+  doFileId      Int?
   notes         String?
   completedAt   DateTime?
   createdAt     DateTime      @default(now())

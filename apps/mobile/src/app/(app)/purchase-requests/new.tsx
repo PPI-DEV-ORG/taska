@@ -93,7 +93,7 @@ export default function NewPurchaseRequestScreen() {
       addRow("purchase-requests", {
         pemohon: user?.name || "Karyawan",
         project: costType === "Project" ? projectId : "-",
-        costType,
+        costType: COST_TYPE_MAP[costType] || costType.toUpperCase(),
         otherNote: costType === "Lainnya" ? otherDesc : undefined,
         purpose: tujuan || "Kebutuhan operasional lapangan",
         item: itemDesc,

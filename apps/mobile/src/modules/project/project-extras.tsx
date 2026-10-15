@@ -46,35 +46,39 @@ export function ProjectExtras({ row }: { row: Row }) {
   const marginPct = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(1) : "0.0";
 
   const mapRequirements = React.useCallback((res: any[]) => {
-    return res.map((r: any) => ({
-      id: String(r.id),
-      produk: r.product?.name ?? "Barang",
-      neededQty: Number(r.neededQty ?? 0),
-      reservedQty: Number(r.reservedQty ?? 0),
-      shortageQty: Number(r.shortageQty ?? 0),
-      status:
-        Number(r.shortageQty ?? 0) > 0
-          ? `Reserved ${r.reservedQty} · Kurang ${r.shortageQty} (Masuk PR Procurement)`
-          : `Tersedia & Di-reserve (${r.reservedQty})`,
-    }));
+    return res.map((r: any) => {
+      const needed = Number(r.neededQty ?? r.qty ?? 0);
+      const reserved = Number(r.reservedQty ?? 0);
+      const shortage = Number(r.shortageQty ?? Math.max(0, needed - reserved));
+      return {
+        id: String(r.id),
+        produk: r.product?.name ?? "Barang",
+        neededQty: needed,
+        reservedQty: reserved,
+        shortageQty: shortage,
+        status:
+          shortage > 0
+            ? `Reserved ${reserved} · Kurang ${shortage} (Masuk PR Procurement)`
+            : `Tersedia & Di-reserve (${reserved})`,
+      };
+    });
   }, []);
 
   const loadRequirements = React.useCallback(async () => {
     try {
-      const res = await api<any[]>("GET", `/projects/${row.id}/requirements`);
-      if (Array.isArray(res)) {
-        setRequirements(mapRequirements(res));
-      }
+      const res = await api<any>("GET", `/projects/${row.id}/requirements`);
+      const list = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+      setRequirements(mapRequirements(list));
     } catch {}
   }, [row.id, mapRequirements]);
 
   React.useEffect(() => {
     let active = true;
-    api<any[]>("GET", `/projects/${row.id}/requirements`)
+    api<any>("GET", `/projects/${row.id}/requirements`)
       .then((res) => {
-        if (active && Array.isArray(res)) {
-          setRequirements(mapRequirements(res));
-        }
+        if (!active) return;
+        const list = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+        setRequirements(mapRequirements(list));
       })
       .catch(() => {});
     return () => {
@@ -91,7 +95,8 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
     try {
       const res = await api<any>("POST", `/projects/${row.id}/requirements`, {
-        items: [{ productId: Number(prod.id), neededQty: q }],
+        productId: Number(prod.id),
+        qty: Math.max(1, Math.round(q)),
       });
       await loadRequirements();
       await reload();

@@ -55,17 +55,20 @@ export default function ProjectDetailScreen() {
   const loadRequirements = React.useCallback(async () => {
     if (!id) return;
     try {
-      const res = await api<any[]>("GET", `/projects/${id}/requirements`);
-      if (Array.isArray(res)) setRequirements(res);
+      const res = await api<any>("GET", `/projects/${id}/requirements`);
+      const list = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+      setRequirements(list);
     } catch {}
   }, [id]);
 
   React.useEffect(() => {
     if (!id) return;
     let active = true;
-    api<any[]>("GET", `/projects/${id}/requirements`)
+    api<any>("GET", `/projects/${id}/requirements`)
       .then((res) => {
-        if (active && Array.isArray(res)) setRequirements(res);
+        if (!active) return;
+        const list = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+        setRequirements(list);
       })
       .catch(() => {});
     return () => {
@@ -95,6 +98,12 @@ export default function ProjectDetailScreen() {
   );
   const deliveryNotes = data["delivery-notes"].filter(
     (dn) => dn.project === project.nama || String(dn.projectId) === String(project.id)
+  );
+  const projectRequests = (data["purchase-requests"] ?? []).filter(
+    (pr: any) =>
+      String(pr.projectId) === String(project.id) ||
+      pr.project === project.nama ||
+      pr.project === project.id
   );
 
   const canViewFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
@@ -416,7 +425,8 @@ export default function ProjectDetailScreen() {
           if (!prod) return;
           try {
             const res = await api<any>("POST", `/projects/${project.id}/requirements`, {
-              items: [{ productId: Number(prod.id), neededQty: Number(v.qty) || 1 }],
+              productId: Number(prod.id),
+              qty: Math.max(1, Math.round(Number(v.qty) || 1)),
             });
             await loadRequirements();
             await reload();
@@ -486,7 +496,7 @@ export default function ProjectDetailScreen() {
                     <View className="flex-row justify-between">
                       <Text className="text-sm font-medium">{r.product?.name ?? "Barang"}</Text>
                       <Text className="text-sm font-semibold">
-                        Dibutuhkan: {r.neededQty} {r.product?.unit ?? "unit"}
+                        Dibutuhkan: {r.neededQty ?? r.qty} {r.product?.unit ?? "unit"}
                       </Text>
                     </View>
                     <Text className={Number(r.shortageQty) > 0 ? "text-warning text-xs mt-0.5" : "text-success text-xs mt-0.5"}>
@@ -514,6 +524,50 @@ export default function ProjectDetailScreen() {
                     <Trash2 size={14} color={colors.danger} />
                   </Button>
                 </View>
+              ))
+            )}
+          </Panel>
+
+          {/* Panel 2: Daftar Request Barang / Pengadaan Project */}
+          <Panel
+            title={`Request Barang Project (${projectRequests.length})`}
+            subtitle="Daftar pengajuan permintaan barang ke Gudang / Pengadaan terkait project ini"
+            right={
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={() => router.push({ pathname: "/purchase-requests/new", params: { projectId: project.id } } as any)}
+              >
+                <Plus size={14} color={colors.text} />
+                <Text className="text-xs">Buat Request</Text>
+              </Button>
+            }
+          >
+            {projectRequests.length === 0 ? (
+              <Text className="text-muted-foreground py-4 text-center text-sm">
+                Belum ada request barang yang diajukan untuk project ini.
+              </Text>
+            ) : (
+              projectRequests.map((pr: any) => (
+                <Pressable
+                  key={pr.id}
+                  onPress={() => router.push(`/purchase-requests/${pr.id}` as any)}
+                  className="border-border flex-row items-center justify-between border-b py-3 last:border-b-0"
+                >
+                  <View className="flex-1 pr-3">
+                    <View className="flex-row items-center gap-2">
+                      <Text className="text-sm font-semibold">{pr.nomor}</Text>
+                      <StatusBadge status={pr.status} />
+                    </View>
+                    <Text className="text-foreground text-xs mt-1" numberOfLines={1}>
+                      {pr.item || pr.tujuan || "Barang Operasional"}
+                    </Text>
+                    <Text className="text-muted-foreground text-[11px] mt-0.5">
+                      Pemohon: {pr.pemohon || "-"} · {pr.tanggal || "-"}
+                    </Text>
+                  </View>
+                  <ChevronRight size={16} color={colors.muted} />
+                </Pressable>
               ))
             )}
           </Panel>

@@ -15,6 +15,7 @@ import { DeliveryNotesExtras } from "@/modules/delivery-note/delivery-note-extra
 import { ProjectExtras } from "@/modules/project/project-extras";
 import { InvoiceExtras } from "@/modules/invoice/invoice-extras";
 import { SupplierPoExtras } from "@/modules/supplier-po/supplier-po-extras";
+import { PurchaseRequestExtras } from "@/modules/purchase-request/purchase-request-extras";
 
 // Re-export agar import lama dari "@/screens/module-extras" tetap valid.
 export { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
@@ -22,7 +23,15 @@ export { QuotationPreviewModal } from "@/modules/quotation/quotation-preview-mod
 export { QuotationTemplateGenerator } from "@/modules/quotation/quotation-template-generator";
 export type { QuotationItem } from "@/modules/quotation/types";
 
-export function ModuleExtras({ moduleKey, row }: { moduleKey: string; row: Row }) {
+export function ModuleExtras({
+  moduleKey,
+  row,
+  onRefresh,
+}: {
+  moduleKey: string;
+  row: Row;
+  onRefresh?: () => Promise<void> | void;
+}) {
   const { user, data } = useApp();
 
   if (moduleKey === "leads") {
@@ -66,6 +75,10 @@ export function ModuleExtras({ moduleKey, row }: { moduleKey: string; row: Row }
 
   if (moduleKey === "supplier-pos") {
     return <SupplierPoExtras row={row} />;
+  }
+
+  if (moduleKey === "purchase-requests") {
+    return <PurchaseRequestExtras row={row} onRefresh={onRefresh} />;
   }
 
   if (moduleKey === "delivery-notes") {

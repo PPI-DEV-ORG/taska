@@ -163,13 +163,13 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/leads")}
           />
         ) : null}
-        {isSuper || role === "bos" || role === "pm" || role === "teknisi" ? (
+        {isSuper || role === "bos" || role === "pm" || role === "teknisi" || role === "procurement" || role === "gudang" ? (
           <QuickActionButton
             label="Request Barang"
             icon={ShoppingCart}
             shortcut="⌘R"
             className="flex-1 min-w-[170px]"
-            onPress={() => router.push("/purchase-requests/new" as any)}
+            onPress={() => router.push(role === "gudang" ? ("/purchase-requests" as any) : ("/purchase-requests/new" as any))}
           />
         ) : null}
         {isSuper || role === "gudang" || role === "teknisi" ? (
@@ -199,7 +199,7 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/delivery-notes/new" as any)}
           />
         ) : null}
-        {isSuper || role === "finance" || role === "bos" ? (
+        {isSuper || role === "finance" || role === "bos" || role === "gudang" || role === "procurement" ? (
           <QuickActionButton
             label="Approval Center"
             icon={ClipboardCheck}
@@ -1128,13 +1128,15 @@ export default function DashboardScreen() {
   // 7. GUDANG
   if (role === "gudang") {
     const waitReceive = data.receiving.filter((r) => r.status !== "Diterima").length;
+    const pendingRequests = (data["purchase-requests"] ?? []).filter(
+      (r) => r.status === "Diajukan" || r.status === "Cek stok" || r.status === "Disetujui",
+    );
     const lowStock = (data.products ?? []).filter((p) => {
       const cur = Number(p.stok ?? p.stock ?? 0);
       const min = Number(p.minStock ?? p.min ?? 5);
       return cur <= min;
     }).length;
     const todaySJ = data["delivery-notes"].filter((sj) => sj.status === "Pending" || sj.status === "Menunggu persetujuan").length;
-    const opnameDiff = (data.opname ?? []).filter((o) => o.status !== "Selesai" && Number(o.selisih ?? 0) !== 0).length;
 
     return (
       <View className="gap-6">
@@ -1149,6 +1151,14 @@ export default function DashboardScreen() {
             onPress={() => router.push("/receiving")}
           />
           <KpiCard
+            label="Request Barang"
+            value={String(pendingRequests.length)}
+            hint="Permintaan barang tim"
+            tone="warning"
+            icon={ShoppingCart}
+            onPress={() => router.push("/purchase-requests")}
+          />
+          <KpiCard
             label="Low Stock Items"
             value={String(lowStock)}
             hint="Di bawah batas aman"
@@ -1160,17 +1170,8 @@ export default function DashboardScreen() {
             label="Outbound Delivery"
             value={String(todaySJ)}
             hint="Surat jalan keluar"
-            tone="warning"
             icon={Truck}
             onPress={() => router.push("/delivery-notes")}
-          />
-          <KpiCard
-            label="Opname Discrepancy"
-            value={opnameDiff > 0 ? `-${opnameDiff}` : "0"}
-            hint="Selisih fisik vs sistem"
-            tone="warning"
-            icon={Boxes}
-            onPress={() => router.push("/opname")}
           />
         </KpiRow>
 
@@ -1185,10 +1186,21 @@ export default function DashboardScreen() {
           <View className={isMobile ? "w-full" : "flex-1"}>
             <Panel
               title="Tindakan Gudang & Logistik"
-              subtitle="Penerimaan barang dan verifikasi Serial Number"
+              subtitle="Penerimaan barang, request barang, & surat jalan"
               icon={PackageCheck}
             >
               <View className="gap-3">
+                {pendingRequests.slice(0, 1).map((pr) => (
+                  <View key={pr.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
+                    <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Request Barang: {pr.nomor}</Text>
+                    <Text className="text-muted-foreground text-xs" numberOfLines={2}>
+                      {pr.pemohon ? `Oleh ${pr.pemohon} · ` : ""}{pr.item || pr.tujuan || "Permintaan barang"}.
+                    </Text>
+                    <Button size="sm" className="mt-1 h-8" onPress={() => router.push(`/purchase-requests/${pr.id}` as any)}>
+                      <Text className="text-xs">Cek Stok & Serahkan</Text>
+                    </Button>
+                  </View>
+                ))}
                 {data.receiving.filter((r) => r.status !== "Diterima").slice(0, 1).map((r) => (
                   <View key={r.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
                     <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Penerimaan: {r.nomor || r.supplier || "Inbound"}</Text>
@@ -1211,7 +1223,8 @@ export default function DashboardScreen() {
                     </Button>
                   </View>
                 ))}
-                {data.receiving.filter((r) => r.status !== "Diterima").length === 0 &&
+                {pendingRequests.length === 0 &&
+                data.receiving.filter((r) => r.status !== "Diterima").length === 0 &&
                 data["delivery-notes"].filter((sj) => sj.status === "Pending" || sj.status === "Menunggu persetujuan").length === 0 ? (
                   <Text className="text-muted-foreground py-6 text-center text-xs">Tidak ada antrean logistik gudang saat ini.</Text>
                 ) : null}

@@ -243,6 +243,9 @@ export class ProjectsService {
         ...(dto.status ? { status: dto.status } : {}),
         ...(dto.progress !== undefined ? { progress: dto.progress } : {}),
         prdFileId: dto.prdFileId !== undefined ? dto.prdFileId : project.prdFileId,
+        bahpFileId: dto.bahpFileId !== undefined ? dto.bahpFileId : project.bahpFileId,
+        bastFileId: dto.bastFileId !== undefined ? dto.bastFileId : project.bastFileId,
+        doFileId: dto.doFileId !== undefined ? dto.doFileId : project.doFileId,
         notes: dto.notes !== undefined ? dto.notes : project.notes,
         ...(dto.memberIds
           ? { members: { deleteMany: {}, create: dto.memberIds.map((userId) => ({ userId })) } }
@@ -254,7 +257,9 @@ export class ProjectsService {
         members: { include: { user: { select: { id: true, name: true, role: true } } } },
       },
     });
-    if (dto.prdFileId) await this.attachFile(dto.prdFileId, "project", id);
+    for (const fid of [dto.prdFileId, dto.bahpFileId, dto.bastFileId, dto.doFileId]) {
+      if (fid) await this.attachFile(fid, "project", id);
+    }
 
     await this.audit.log({
       actor: user,
@@ -442,19 +447,62 @@ export class ProjectsService {
   // ── Kebutuhan barang (PRD: PM isi, sistem cek stok & auto-reserve) ──
 
   async listRequirements(projectId: number, user: RequestUser) {
-    const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.main.project.findUnique({
+      where: { id: projectId },
+      include: {
+        purchaseRequests: {
+          include: { items: true },
+        },
+      },
+    });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user);
+
+    // Otomatis sinkronkan barang dari purchase request project ke projectRequirement bila belum tercatat
+    for (const pr of project.purchaseRequests) {
+      for (const item of pr.items) {
+        const existing = await this.prisma.main.projectRequirement.findFirst({
+          where: { projectId, productId: item.productId },
+        });
+        const isReserved = pr.status === "DIKIRIM" || pr.status === "DITERIMA";
+        if (!existing) {
+          await this.prisma.main.projectRequirement.create({
+            data: {
+              projectId,
+              taskId: pr.taskId ?? null,
+              productId: item.productId,
+              qty: item.qty,
+              reservedQty: isReserved ? item.qty : 0,
+              status: isReserved ? "DIRESERVE" : "DIBUTUHKAN",
+            },
+          });
+        } else if (isReserved && existing.reservedQty < item.qty) {
+          await this.prisma.main.projectRequirement.update({
+            where: { id: existing.id },
+            data: {
+              reservedQty: item.qty,
+              status: "DIRESERVE",
+            },
+          });
+        }
+      }
+    }
+
     const rows = await this.prisma.main.projectRequirement.findMany({
       where: { projectId },
       include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
       orderBy: { id: "asc" },
     });
     const withAvailability = await Promise.all(
-      rows.map(async (r) => ({
-        ...r,
-        availableQty: await this.availableQty(r.productId, projectId),
-      })),
+      rows.map(async (r) => {
+        const avail = await this.availableQty(r.productId, projectId);
+        return {
+          ...r,
+          neededQty: r.qty,
+          shortageQty: Math.max(0, r.qty - r.reservedQty),
+          availableQty: avail,
+        };
+      }),
     );
     return { items: withAvailability, total: withAvailability.length };
   }

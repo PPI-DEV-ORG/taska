@@ -83,6 +83,15 @@ export class ProjectDto {
   @IsOptional() @IsInt()
   prdFileId?: number;
 
+  @IsOptional() @IsInt()
+  bahpFileId?: number;
+
+  @IsOptional() @IsInt()
+  bastFileId?: number;
+
+  @IsOptional() @IsInt()
+  doFileId?: number;
+
   @IsOptional() @IsString()
   notes?: string;
 
