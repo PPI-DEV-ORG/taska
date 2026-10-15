@@ -48,8 +48,9 @@ export class ExpensesService {
     },
     user: RequestUser,
   ) {
+    const role = (user.role || "").toUpperCase();
     const scope =
-      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(user.role) || q.surveyId || q.projectId
+      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) || q.surveyId || q.projectId
         ? {}
         : { reporterId: user.id };
     return {
@@ -226,7 +227,8 @@ export class ExpensesService {
   async update(id: number, dto: ExpenseDto, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
-    const canEditExpense = ["SUPER_ADMIN", "FINANCE", "BOS"].includes(user.role);
+    const role = (user.role || "").toUpperCase();
+    const canEditExpense = ["SUPER_ADMIN", "FINANCE", "BOS"].includes(role);
     if (!canEditExpense) {
       throw new BadRequestException("Hanya Finance dan Super Admin yang memiliki hak untuk mengubah data pengeluaran");
     }
@@ -407,7 +409,8 @@ export class ExpensesService {
 
   /** Ringkasan untuk Finance: per project / per orang / per bulan. */
   async summary(user: RequestUser, from?: string, to?: string) {
-    const scope = ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(user.role) ? {} : { reporterId: user.id };
+    const role = (user.role || "").toUpperCase();
+    const scope = ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) ? {} : { reporterId: user.id };
     const rows = await this.prisma.main.expense.findMany({
       where: {
         ...scope,

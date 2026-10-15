@@ -56,6 +56,81 @@ async function main() {
   });
 
   console.log(`Seed OK: ${superAdmin.email} (SUPER_ADMIN, id=${superAdmin.id}), ${bos.email} (BOS, id=${bos.id}), ${admin.email} (ADMIN, id=${admin.id})`);
+
+  // ─── Sumber Lead (LeadSource) sesuai PRD ───
+  const leadSources = [
+    "Social Media",
+    "Website",
+    "Cold Call",
+    "Referral",
+    "Event",
+    "Distributor",
+    "Other",
+  ];
+  for (const name of leadSources) {
+    await prisma.leadSource.upsert({
+      where: { name },
+      update: {},
+      create: { name, status: "AKTIF" },
+    });
+  }
+  console.log(`Seed OK: ${leadSources.length} Sumber Lead`);
+
+  // ─── Alasan Gagal / Lost (LostReason) sesuai PRD ───
+  const lostReasons = [
+    "Belum ada follow-up",
+    "Client tidak ada kabar",
+    "Sales/PM lupa follow-up",
+    "Dibatalkan oleh client",
+    "Harga terlalu tinggi",
+    "Kalah spesifikasi",
+    "Budget dibatalkan",
+  ];
+  for (const name of lostReasons) {
+    await prisma.lostReason.upsert({
+      where: { name },
+      update: {},
+      create: { name, status: "AKTIF" },
+    });
+  }
+  console.log(`Seed OK: ${lostReasons.length} Alasan Gagal`);
+
+  // ─── Kategori Pengeluaran (ExpenseCategory) sesuai PRD ───
+  const expenseCategories = [
+    "Bensin",
+    "Makan",
+    "Transport",
+    "Akomodasi",
+    "Parkir & Tol",
+    "ATK & Operasional",
+    "Lainnya",
+  ];
+  for (const name of expenseCategories) {
+    await prisma.expenseCategory.upsert({
+      where: { name },
+      update: {},
+      create: { name, status: "AKTIF" },
+    });
+  }
+  console.log(`Seed OK: ${expenseCategories.length} Kategori Pengeluaran`);
+
+  // ─── Cost Center (CostCenter) sesuai PRD ───
+  const costCenters = [
+    "CC-001 - Operasional Umum",
+    "CC-002 - Sales & Marketing",
+    "CC-003 - Project & Survey",
+    "CC-004 - Gudang & Logistik",
+    "CC-005 - IT & R&D",
+  ];
+  for (const name of costCenters) {
+    await prisma.costCenter.upsert({
+      where: { name },
+      update: {},
+      create: { name, status: "AKTIF" },
+    });
+  }
+  console.log(`Seed OK: ${costCenters.length} Cost Center`);
+
   await prisma.$disconnect();
 }
 
