@@ -4,12 +4,10 @@ import { useRouter } from "expo-router";
 import { CircleCheck } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { Chip, EmptyState, PageHeader } from "@/components/taska/basics";
-import { ApprovalBar } from "@/components/taska/dialogs";
+import { EmptyState, PageHeader } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
 import { DataTable, FilterBar } from "@/components/taska/data-table";
-import { CAN_APPROVE, type Col } from "@/constants/modules";
-import { colors } from "@/tokens";
+import { CAN_APPROVE, Row, type Col } from "@/constants/modules";
 import { rupiah } from "@/lib/format";
 
 const APPROVAL_COLUMNS: Col[] = [
@@ -23,20 +21,38 @@ const APPROVAL_COLUMNS: Col[] = [
 
 export default function ApprovalsScreen() {
   const router = useRouter();
-  const { approvals, decide, user } = useApp();
+  const { approvals, decide, user, data } = useApp();
   const [q, setQ] = React.useState("");
   const [type, setType] = React.useState("");
   const pending = approvals.filter((a) => a.status === "Menunggu");
   const types = Array.from(new Set(pending.map((a) => a.jenis)));
   const s = q.trim().toLowerCase();
   const list = pending
+    .map((a) => {
+      let pengaju = a.pengaju;
+      if (!pengaju || pengaju === "-") {
+        const entity = (data[a.module] ?? []).find((r: Row) => String(r.id) === String(a.refId));
+        if (entity) {
+          pengaju =
+            entity.pelapor ||
+            entity.pembuat ||
+            entity.creator ||
+            entity.requester ||
+            entity.sales ||
+            entity.pj ||
+            entity.pm ||
+            "";
+        }
+      }
+      return {
+        ...a,
+        pengaju: pengaju || "-",
+        displayNilai: a.module === "opname" ? `${a.nilai} SKU selisih` : rupiah(a.nilai),
+        waktuTunggu: a.jam >= 24 ? `${Math.round(a.jam / 24)} hari` : `${a.jam} jam`,
+      };
+    })
     .filter((a) => !type || a.jenis === type)
-    .filter((a) => !s || `${a.judul} ${a.pengaju} ${a.jenis}`.toLowerCase().includes(s))
-    .map((a) => ({
-      ...a,
-      displayNilai: a.module === "opname" ? `${a.nilai} SKU selisih` : rupiah(a.nilai),
-      waktuTunggu: a.jam >= 24 ? `${Math.round(a.jam / 24)} hari` : `${a.jam} jam`,
-    }));
+    .filter((a) => !s || `${a.judul} ${a.pengaju} ${a.jenis}`.toLowerCase().includes(s));
 
   const can = CAN_APPROVE.includes(user!.role);
 

@@ -475,6 +475,11 @@ export function getDynamicOptions(
       return nonEmpty(["-", ...(data["supplier-pos"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
     case "project":
       return nonEmpty(["-", ...(data.projects ?? []).map((r: any) => String(r.nama)).filter(Boolean)], f.options);
+    case "survey":
+      return nonEmpty(
+        ["-", ...(data.surveys ?? []).map((s: any) => `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}`)],
+        f.options
+      );
     case "gudang":
     case "warehouse":
       return nonEmpty(["-", ...(data.warehouses ?? []).map((r: any) => String(r.nama)).filter(Boolean)], f.options);

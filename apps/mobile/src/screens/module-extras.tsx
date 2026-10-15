@@ -12,6 +12,7 @@ import {
   Plus,
   Trash2,
   Edit3,
+  Camera,
   Eye,
   Phone,
   MessageSquare,
@@ -36,8 +37,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Panel, Cell, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { ScanInput } from "@/components/taska/scan-input";
-import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { SearchableSelect, DatePicker, formatThousands } from "@/components/taska/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import {
   api,
@@ -198,15 +199,29 @@ function DocumentationPhotosPanel({
                   </Pressable>
                 </View>
 
-                {p.url ? (
-                  <View className="h-28 w-full bg-muted/30 rounded-lg overflow-hidden border border-border/40 items-center justify-center">
-                    <Image
-                      source={{ uri: p.url.startsWith("http") ? p.url : `${apiBase()}${p.url}` }}
-                      style={{ width: "100%", height: "100%" }}
-                      resizeMode="cover"
-                    />
-                  </View>
-                ) : null}
+                {(() => {
+                  const rawUrl = p.url || (p.fileId ? `/files/${p.fileId}` : "");
+                  const photoUrl = rawUrl.startsWith("http")
+                    ? rawUrl
+                    : rawUrl.startsWith("/api")
+                    ? `${apiBase()}${rawUrl.slice(4)}`
+                    : `${apiBase()}${rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`}`;
+
+                  if (!photoUrl) return null;
+
+                  return (
+                    <Pressable
+                      onPress={() => Linking.openURL(photoUrl).catch(() => {})}
+                      className="h-28 w-full bg-muted/30 rounded-lg overflow-hidden border border-border/40 items-center justify-center cursor-pointer active:opacity-75"
+                    >
+                      <Image
+                        source={{ uri: photoUrl }}
+                        style={{ width: "100%", height: "100%" }}
+                        resizeMode="cover"
+                      />
+                    </Pressable>
+                  );
+                })()}
 
                 <View className="gap-0.5">
                   <Text className="text-[10px] text-muted-foreground uppercase font-semibold">Deskripsi / Keterangan:</Text>
@@ -1963,7 +1978,7 @@ function QuotationExtras({ row }: { row: Row }) {
 }
 
 function SurveyExtras({ row }: { row: Row }) {
-  const { addRow, patchRow, toast, data } = useApp();
+  const { addRow, patchRow, toast, data, user } = useApp();
   const [techNoteOpen, setTechNoteOpen] = React.useState(false);
   const [techNotes, setTechNotes] = React.useState(row.catatanTeknis || "");
   const [inputTechNotes, setInputTechNotes] = React.useState(techNotes);
@@ -1972,15 +1987,26 @@ function SurveyExtras({ row }: { row: Row }) {
   const [expenseOpen, setExpenseOpen] = React.useState(false);
   const [expNominal, setExpNominal] = React.useState("");
   const [expKategori, setExpKategori] = React.useState("Bensin");
+  const [expTanggal, setExpTanggal] = React.useState("");
   const [expKet, setExpKet] = React.useState("");
+  const [expFileId, setExpFileId] = React.useState<number | null>(null);
+  const fileUploaderRef = React.useRef<FileUploaderHandle | null>(null);
 
   const [reportOpen, setReportOpen] = React.useState(false);
 
-  const surveyExpenses = (data.expenses ?? []).filter((e: Row) => {
-    if (e.surveyId && String(e.surveyId) === String(row.id)) return true;
-    if (e.alasan && String(e.alasan).toLowerCase().includes(`survey ${String(row.lead || "").toLowerCase()}`)) return true;
-    return false;
-  });
+  const surveyExpenses = React.useMemo(() => {
+    return (data.expenses ?? []).filter((e: Row) => {
+      if (e.surveyId && String(e.surveyId) === String(row.id)) return true;
+      if (e.survey && String(e.survey).includes(`#${row.id}`)) return true;
+      if (row.lead && e.alasan && String(e.alasan).toLowerCase().includes(`survey ${String(row.lead).toLowerCase()}`)) return true;
+      return false;
+    });
+  }, [data.expenses, row.id, row.lead]);
+
+  const totalBiayaTerpakai = React.useMemo(() => {
+    const sum = surveyExpenses.reduce((acc: number, e: Row) => acc + (Number(e.nominal) || 0), 0);
+    return sum > 0 ? sum : (Number(row.biaya) || 0);
+  }, [surveyExpenses, row.biaya]);
 
   function handleSaveTechNotes() {
     setTechNotes(inputTechNotes);
@@ -1989,26 +2015,43 @@ function SurveyExtras({ row }: { row: Row }) {
     toast("Catatan teknis lapangan berhasil disimpan");
   }
 
-  function handleAddExpense() {
+  async function handleAddExpense() {
     const nom = Number(expNominal.replace(/\D/g, "")) || 0;
     if (nom <= 0) {
       toast("Nominal pengeluaran tidak valid", "danger");
       return;
     }
-    addRow("expenses", {
-      surveyId: row.id,
-      project: row.lead || row.customer || "Survey Lapangan",
-      alasan: `Survey ${row.lead}: ${expKet.trim() || expKategori}`,
+    let uploadedId = expFileId;
+    if (!uploadedId && fileUploaderRef.current?.hasStaged()) {
+      try {
+        uploadedId = await fileUploaderRef.current.flush();
+      } catch {}
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const reporterName = user?.name || (String(row.tim || "Teknisi").split("+")[0]?.trim() || "Teknisi");
+
+    await addRow("expenses", {
+      surveyId: Number(row.id),
+      survey: `Survey #${row.id} - ${row.lead || row.customer || "Survey"}`,
+      project: row.lead || row.customer || "-",
       nominal: nom,
       kategori: expKategori,
-      pelapor: String(row.tim || "Teknisi").split("+")[0]?.trim() || "Teknisi",
+      tanggal: expTanggal || today,
+      alasan: expKet.trim() || `Survey ${row.lead || ""}: ${expKategori}`.trim(),
+      pelapor: reporterName,
+      fileId: uploadedId || null,
+      receiptFileId: uploadedId || null,
       status: "Dilaporkan",
     });
-    const curBiaya = Number(row.biaya) || 0;
-    patchRow("surveys", row.id, { biaya: curBiaya + nom });
+
+    const nextBiaya = totalBiayaTerpakai + nom;
+    patchRow("surveys", row.id, { biaya: nextBiaya });
+
     setExpenseOpen(false);
     setExpNominal("");
     setExpKet("");
+    setExpTanggal("");
+    setExpFileId(null);
     toast(`Biaya survey ${rupiah(nom)} dicatat ke modul Pengeluaran`);
   }
 
@@ -2061,7 +2104,7 @@ function SurveyExtras({ row }: { row: Row }) {
           </Button>
         }
       >
-        <Line left="Total Biaya Terpakai" right={<Text className="font-bold text-primary">{rupiah(row.biaya || 0)}</Text>} />
+        <Line left="Total Biaya Terpakai" right={<Text className="font-bold text-primary">{rupiah(totalBiayaTerpakai)}</Text>} />
         <Line left="Tim Pelaksana" right={<Text className="text-text-secondary">{row.tim || "-"}</Text>} />
 
         <View className="gap-2 pt-2 border-t border-border mt-1">
@@ -2071,29 +2114,40 @@ function SurveyExtras({ row }: { row: Row }) {
           {surveyExpenses.length === 0 ? (
             <Text className="text-xs text-muted-foreground py-1">Belum ada rincian biaya tercatat.</Text>
           ) : (
-            surveyExpenses.map((exp: Row, idx: number) => (
-              <Pressable
-                key={exp.id || idx}
-                onPress={() => setSelectedExp(exp)}
-                className="bg-panel border-border/70 rounded-xl border p-2.5 flex-row items-center justify-between hover:bg-muted/30 active:opacity-75 transition-colors cursor-pointer"
-              >
-                <View className="flex-1 pr-2">
-                  <View className="flex-row items-center gap-1.5">
-                    <StatusBadge status={exp.kategori || "Biaya"} />
-                    <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
-                      {exp.alasan || exp.kategori}
-                    </Text>
+            surveyExpenses.map((exp: Row, idx: number) => {
+              const hasReceipt = !!(exp.receiptFileId || exp.fileId || (exp.receiptFile as any)?.id);
+              return (
+                <Pressable
+                  key={exp.id || idx}
+                  onPress={() => setSelectedExp(exp)}
+                  className="bg-panel border-border/70 rounded-xl border p-2.5 flex-row items-center justify-between hover:bg-muted/30 active:opacity-75 transition-colors cursor-pointer"
+                >
+                  <View className="flex-1 pr-2">
+                    <View className="flex-row items-center gap-1.5">
+                      <StatusBadge status={exp.kategori || "Biaya"} />
+                      <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
+                        {exp.alasan || exp.kategori}
+                      </Text>
+                    </View>
+                    <View className="flex-row items-center gap-2 mt-0.5">
+                      <Text className="text-[11px] text-muted-foreground">
+                        Oleh: {exp.pelapor || "Teknisi"} · {exp.tanggal || exp.dibuat || "-"}
+                      </Text>
+                      {hasReceipt ? (
+                        <View className="flex-row items-center gap-0.5 bg-primary/10 px-1.5 py-0.5 rounded">
+                          <Camera size={10} color={colors.primary} />
+                          <Text className="text-[9px] text-primary font-medium">Ada Nota</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
-                  <Text className="text-[11px] text-muted-foreground mt-0.5">
-                    Oleh: {exp.pelapor || "Teknisi"} · {exp.tanggal || exp.dibuat || "-"}
-                  </Text>
-                </View>
-                <View className="items-end gap-1">
-                  <Text className="text-xs font-bold text-primary">{rupiah(exp.nominal || 0)}</Text>
-                  <Text className="text-[10px] text-primary underline">Lihat Detail</Text>
-                </View>
-              </Pressable>
-            ))
+                  <View className="items-end gap-1">
+                    <Text className="text-xs font-bold text-primary">{rupiah(exp.nominal || 0)}</Text>
+                    <Text className="text-[10px] text-primary underline">Lihat Detail</Text>
+                  </View>
+                </Pressable>
+              );
+            })
           )}
         </View>
       </Panel>
@@ -2140,45 +2194,65 @@ function SurveyExtras({ row }: { row: Row }) {
 
       {/* Modal Catat Biaya Survey */}
       <Dialog open={expenseOpen} onOpenChange={setExpenseOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>Catat Biaya Operasional Survey</DialogTitle>
           </DialogHeader>
-          <View className="gap-3 py-2">
-            <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Kategori Biaya</Text>
-              <View className="flex-row flex-wrap gap-1.5">
-                {(["Bensin", "Makan", "Parkir & tol", "Transport", "Perlengkapan"] as const).map((k) => (
-                  <Button
-                    key={k}
-                    size="sm"
-                    variant={expKategori === k ? "default" : "outline"}
-                    onPress={() => setExpKategori(k)}
-                    className="h-8 px-2.5"
-                  >
-                    <Text className="text-xs">{k}</Text>
-                  </Button>
-                ))}
+          <ScrollView className="py-2">
+            <View className="gap-3">
+              <View className="gap-1.5">
+                <Text className="text-xs text-muted-foreground font-medium">Kategori Biaya</Text>
+                <View className="flex-row flex-wrap gap-1.5">
+                  {(["Bensin", "Makan", "Parkir & tol", "Transport", "Perlengkapan", "Lainnya"] as const).map((k) => (
+                    <Button
+                      key={k}
+                      size="sm"
+                      variant={expKategori === k ? "default" : "outline"}
+                      onPress={() => setExpKategori(k)}
+                      className="h-8 px-2.5"
+                    >
+                      <Text className="text-xs">{k}</Text>
+                    </Button>
+                  ))}
+                </View>
+              </View>
+              <View className="gap-1">
+                <Text className="text-xs text-muted-foreground">Nominal (Rp)</Text>
+                <Input
+                  value={expNominal}
+                  onChangeText={(v) => setExpNominal(formatThousands(v))}
+                  placeholder="Contoh: 150.000"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View className="gap-1">
+                <Text className="text-xs text-muted-foreground">Tanggal Pengeluaran</Text>
+                <DatePicker
+                  value={expTanggal || new Date().toISOString().slice(0, 10)}
+                  onChange={setExpTanggal}
+                  placeholder="Pilih tanggal pengeluaran"
+                />
+              </View>
+              <View className="gap-1">
+                <Text className="text-xs text-muted-foreground">Keterangan / Keperluan</Text>
+                <Input
+                  value={expKet}
+                  onChangeText={setExpKet}
+                  placeholder="Contoh: Bensin motor survey lokasi PP"
+                />
+              </View>
+              <View className="gap-1 pt-1">
+                <Text className="text-xs text-muted-foreground font-medium">Foto Nota Pembayaran (Opsional)</Text>
+                <FileUploader
+                  label="Unggah Foto Struk / Nota / Bon"
+                  kind="foto"
+                  category="foto-struk"
+                  handleRef={(h) => { fileUploaderRef.current = h; }}
+                  onUploaded={(id) => setExpFileId(id)}
+                />
               </View>
             </View>
-            <View className="gap-1">
-              <Text className="text-xs text-muted-foreground">Nominal (Rp)</Text>
-              <Input
-                value={expNominal}
-                onChangeText={setExpNominal}
-                placeholder="Contoh: 150000"
-                keyboardType="numeric"
-              />
-            </View>
-            <View className="gap-1">
-              <Text className="text-xs text-muted-foreground">Keterangan / Alasan</Text>
-              <Input
-                value={expKet}
-                onChangeText={setExpKet}
-                placeholder="Contoh: Bensin motor survey ke Bekasi PP"
-              />
-            </View>
-          </View>
+          </ScrollView>
           <DialogFooter>
             <Button variant="outline" onPress={() => setExpenseOpen(false)}>
               <Text>Batal</Text>
@@ -2192,20 +2266,54 @@ function SurveyExtras({ row }: { row: Row }) {
 
       {/* Modal Detail Biaya Survey */}
       <Dialog open={!!selectedExp} onOpenChange={(open) => { if (!open) setSelectedExp(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>Detail Biaya Operasional Survey</DialogTitle>
           </DialogHeader>
-          {selectedExp ? (
-            <View className="gap-2 py-2">
-              <Line left="Kategori Biaya" right={<StatusBadge status={selectedExp.kategori || "Biaya"} />} />
-              <Line left="Nominal" right={<Text className="text-base font-bold text-primary">{rupiah(selectedExp.nominal || 0)}</Text>} />
-              <Line left="Keterangan / Alasan" right={<Text className="text-xs font-medium max-w-[220px] text-right">{selectedExp.alasan || "-"}</Text>} />
-              <Line left="Pelapor" right={<Text className="text-xs font-semibold">{selectedExp.pelapor || "-"}</Text>} />
-              <Line left="Tanggal Dicatat" right={<Text className="text-xs text-muted-foreground">{selectedExp.tanggal || selectedExp.dibuat || "-"}</Text>} />
-              <Line left="Status Pengeluaran" right={<StatusBadge status={selectedExp.status || "Dilaporkan"} />} />
-            </View>
-          ) : null}
+          {selectedExp ? (() => {
+            const fid = selectedExp.receiptFileId || selectedExp.fileId || (selectedExp.receiptFile as any)?.id;
+            const photoUrl = fid ? `${apiBase()}/files/${fid}` : null;
+
+            return (
+              <ScrollView className="py-2">
+                <View className="gap-2.5">
+                  <View className="gap-2 bg-panel/50 p-2.5 rounded-xl border border-border/70">
+                    <Line left="Kategori Biaya" right={<StatusBadge status={selectedExp.kategori || "Biaya"} />} />
+                    <Line left="Nominal" right={<Text className="text-base font-bold text-primary">{rupiah(selectedExp.nominal || 0)}</Text>} />
+                    <Line left="Keterangan / Alasan" right={<Text className="text-xs font-medium max-w-[220px] text-right">{selectedExp.alasan || "-"}</Text>} />
+                    <Line left="Pelapor" right={<Text className="text-xs font-semibold">{selectedExp.pelapor || "-"}</Text>} />
+                    <Line left="Tanggal Dicatat" right={<Text className="text-xs text-muted-foreground">{selectedExp.tanggal || selectedExp.dibuat || "-"}</Text>} />
+                    <Line left="Status Pengeluaran" right={<StatusBadge status={selectedExp.status || "Dilaporkan"} />} />
+                  </View>
+
+                  {photoUrl ? (
+                    <View className="gap-1.5 pt-1">
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-xs text-muted-foreground font-semibold">Bukti Nota / Struk Pembayaran</Text>
+                        <Pressable onPress={() => Linking.openURL(photoUrl).catch(() => {})}>
+                          <Text className="text-[11px] text-primary underline">Buka Ukuran Penuh</Text>
+                        </Pressable>
+                      </View>
+                      <Pressable
+                        onPress={() => Linking.openURL(photoUrl).catch(() => {})}
+                        className="h-48 w-full bg-muted/20 rounded-xl overflow-hidden border border-border/80 items-center justify-center cursor-pointer active:opacity-75"
+                      >
+                        <Image
+                          source={{ uri: photoUrl }}
+                          style={{ width: "100%", height: "100%" }}
+                          resizeMode="contain"
+                        />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Text className="text-xs text-muted-foreground italic py-1 text-center">
+                      Tidak ada lampiran foto nota pembayaran untuk pengeluaran ini.
+                    </Text>
+                  )}
+                </View>
+              </ScrollView>
+            );
+          })() : null}
           <DialogFooter>
             <Button onPress={() => setSelectedExp(null)}>
               <Text>Tutup</Text>

@@ -63,19 +63,22 @@ function rowLabel(def: ModuleDef, row: Row): string {
 
 /** Batasi data yang dilihat per role (aturan lihat data di prompt bagian 6). */
 export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
-  if (u.role === "super_admin") return rows;
+  const role = (u.role || "").toLowerCase();
+  if (role === "super_admin" || role === "finance" || role === "bos" || role === "admin") {
+    if (def.key === "surveys") return rows;
+  }
   const mine = (v: unknown) => String(v ?? "").includes(u.name);
   switch (def.key) {
     case "quotations":
-      return u.role === "sales" ? rows.filter((r) => r.pemilik === u.name) : rows;
+      return role === "sales" ? rows.filter((r) => r.pemilik === u.name) : rows;
     case "projects":
-      return ["pm", "teknisi", "se"].includes(u.role) ? rows.filter((r) => r.pm === u.name || mine(r.tim)) : rows;
+      return ["pm", "teknisi", "se"].includes(role) ? rows.filter((r) => r.pm === u.name || mine(r.tim)) : rows;
     case "surveys":
-      return ["teknisi", "se"].includes(u.role) ? rows.filter((r) => mine(r.tim)) : rows;
+      return ["teknisi", "se"].includes(role) ? rows.filter((r) => mine(r.tim)) : rows;
     case "delivery-notes":
-      return ["bos", "admin", "finance", "gudang"].includes(u.role) ? rows : rows.filter((r) => r.pembuat === u.name);
+      return ["bos", "admin", "finance", "gudang"].includes(role) ? rows : rows.filter((r) => r.pembuat === u.name);
     case "expenses":
-      return ["bos", "admin", "finance"].includes(u.role) ? rows : rows.filter((r) => r.pelapor === u.name);
+      return ["bos", "admin", "finance"].includes(role) ? rows : rows.filter((r) => r.pelapor === u.name);
     default:
       return rows;
   }

@@ -37,8 +37,18 @@ export default function NewExpenseScreen() {
   const [nominal, setNominal] = React.useState("");
   const [kategori, setKategori] = React.useState(kategoriOptions[0] || "Bensin");
   const [selectedProject, setSelectedProject] = React.useState("-");
+  const [selectedSurvey, setSelectedSurvey] = React.useState("-");
   const [alasan, setAlasan] = React.useState("");
   const [photoCount, setPhotoCount] = React.useState(0);
+
+  const surveyOptions = React.useMemo(() => {
+    return [
+      "-",
+      ...(data.surveys ?? []).map(
+        (s: any) => `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}`
+      ),
+    ];
+  }, [data.surveys]);
 
   const numNominal = Number(nominal.replace(/\D/g, "")) || 0;
   const isBig = numNominal > BOS_THRESHOLD;
@@ -61,6 +71,7 @@ export default function NewExpenseScreen() {
       kategori,
       nominal: numNominal,
       project: selectedProject,
+      survey: selectedSurvey,
       alasan,
       status: "Dilaporkan",
       nota: photoCount > 0 || fileId ? "nota.jpg" : "-",
@@ -123,6 +134,15 @@ export default function NewExpenseScreen() {
               onChange={setSelectedProject}
               options={["-", ...data.projects.map((p) => p.nama)]}
               placeholder="Pilih project jika ada"
+            />
+          </FormField>
+
+          <FormField label="Terkait Survey (Opsional)">
+            <SearchableSelect
+              value={selectedSurvey}
+              onChange={setSelectedSurvey}
+              options={surveyOptions}
+              placeholder="Pilih survey jika ada"
             />
           </FormField>
 

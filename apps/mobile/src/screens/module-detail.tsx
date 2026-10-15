@@ -110,7 +110,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   const isFinanceOrBos = ["finance", "bos", "super_admin"].includes(user?.role ?? "");
   const canEdit = moduleKey === "expenses" ? isFinanceOrBos : true;
-  const canDelete = moduleKey === "expenses" ? isFinanceOrBos : true;
+  const canDelete =
+    user?.role === "super_admin"
+      ? true
+      : moduleKey === "expenses"
+      ? isFinanceOrBos
+      : moduleKey === "surveys" && user?.role === "finance"
+      ? false
+      : true;
 
   const isDirty = React.useMemo(() => {
     if (!row || !canEdit) return false;
@@ -188,7 +195,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   }
 
   const status = def.statusKey ? String(row[def.statusKey] ?? "") : "";
-  const approval = approvals.find((a) => a.module === moduleKey && a.refId === id && a.status === "Menunggu");
+  const approval =
+    approvals.find((a) => a.module === moduleKey && a.refId === id && a.status === "Menunggu") ??
+    ((row as any)?.approval?.status === "Menunggu" ? (row as any).approval : undefined);
   const canDecide = !!approval && CAN_APPROVE.includes(user!.role);
   const isExpenseFinanceActionable = moduleKey === "expenses" && isFinanceOrBos && status !== "Ditolak" && status !== "Dibayar";
 
@@ -325,7 +334,13 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         ) : canDecide ? (
           <ApprovalBar
             amount={approval!.nilai}
-            amountLabel={moduleKey === "opname" ? `${approval!.nilai} SKU selisih` : undefined}
+            amountLabel={
+              moduleKey === "opname"
+                ? `${approval!.nilai} SKU selisih`
+                : moduleKey === "surveys"
+                ? "Persetujuan Permintaan Survey"
+                : undefined
+            }
             financeOk={(approval as any).financeOk}
             onApprove={() => decide(approval!.id, "Disetujui")}
             onReject={(r) => decide(approval!.id, "Ditolak", r)}

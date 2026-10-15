@@ -23,7 +23,7 @@ function plan(kind: ApprovalKind, needsBos: boolean): Group[] {
     case "OPNAME":
       return [{ roles: ["FINANCE"], mode: "all" }, { roles: ["BOS"], mode: "all" }];
     case "PERMINTAAN_SURVEY":
-      return [{ roles: ["PM", "BOS"], mode: "any" }];
+      return [{ roles: ["PM", "BOS", "FINANCE"], mode: "any" }];
     case "SURAT_JALAN":
       return [{ roles: ["FINANCE", "BOS"], mode: "any" }];
     default:
@@ -163,13 +163,77 @@ export class ApprovalsService {
     return approval;
   }
 
+  private async resolveRequester(kind: ApprovalKind, entityId: number): Promise<{ id: number; name: string } | null> {
+    try {
+      if (kind === "PENGELUARAN") {
+        const exp = await this.prisma.main.expense.findUnique({
+          where: { id: entityId },
+          include: { reporter: { select: { id: true, name: true } } },
+        });
+        if (exp?.reporter?.name) return exp.reporter;
+      } else if (kind === "SUPPLIER_PO") {
+        const po = await this.prisma.main.supplierPO.findUnique({
+          where: { id: entityId },
+          include: { creator: { select: { id: true, name: true } } },
+        });
+        if (po?.creator?.name) return po.creator;
+      } else if (kind === "PURCHASE_REQUEST") {
+        const pr = await this.prisma.main.purchaseRequest.findUnique({
+          where: { id: entityId },
+          include: { requester: { select: { id: true, name: true } } },
+        });
+        if (pr?.requester?.name) return pr.requester;
+      } else if (kind === "PERMINTAAN_SURVEY") {
+        const sv = await this.prisma.main.survey.findUnique({
+          where: { id: entityId },
+          include: { requester: { select: { id: true, name: true } } },
+        });
+        if (sv?.requester?.name) return sv.requester;
+      } else if (kind === "PENAWARAN") {
+        const q = await this.prisma.main.quotation.findUnique({
+          where: { id: entityId },
+          include: { owner: { select: { id: true, name: true } } },
+        });
+        if (q?.owner?.name) return q.owner;
+      } else if (kind === "OPNAME") {
+        const op = await this.prisma.main.stockOpname.findUnique({
+          where: { id: entityId },
+          include: { conductor: { select: { id: true, name: true } } },
+        });
+        if (op?.conductor?.name) return op.conductor;
+      } else if (kind === "SURAT_JALAN") {
+        const dn = await this.prisma.main.deliveryNote.findUnique({
+          where: { id: entityId },
+          include: { creator: { select: { id: true, name: true } } },
+        });
+        if (dn?.creator?.name) return dn.creator;
+      } else if (kind === "PENERIMAAN") {
+        const rc = await this.prisma.main.receiving.findUnique({
+          where: { id: entityId },
+          include: { receiver: { select: { id: true, name: true } } },
+        });
+        if (rc?.receiver?.name) return rc.receiver;
+      }
+    } catch {}
+    return null;
+  }
+
   async getFor(kind: ApprovalKind, entityId: number) {
     const approval = await this.prisma.main.approval.findUnique({
       where: { kind_entityId: { kind, entityId } },
-      include: { steps: { orderBy: { id: "asc" } } },
+      include: { steps: { orderBy: { id: "asc" } }, requested_by: { select: { id: true, name: true } } },
     });
     if (!approval) return null;
-    return { ...approval, status: await this.evaluate(approval) };
+    let requester = (approval as any).requested_by;
+    if (!requester || !requester.name) {
+      requester = await this.resolveRequester(kind, entityId);
+    }
+    return {
+      ...approval,
+      requestedBy: requester,
+      requested_by: requester,
+      status: await this.evaluate(approval),
+    };
   }
 
   async list(opts: { page: number; limit: number; status?: string; kind?: string; q?: string }) {
@@ -189,11 +253,18 @@ export class ApprovalsService {
       this.prisma.main.approval.count({ where }),
     ]);
     const items = await Promise.all(
-      rows.map(async (r) => ({
-        ...r,
-        requestedBy: (r as any).requested_by,
-        status: await this.evaluate(r),
-      })),
+      rows.map(async (r) => {
+        let requester = (r as any).requested_by;
+        if (!requester || !requester.name) {
+          requester = await this.resolveRequester(r.kind, r.entityId);
+        }
+        return {
+          ...r,
+          requestedBy: requester,
+          requested_by: requester,
+          status: await this.evaluate(r),
+        };
+      }),
     );
     return { items, total, page: opts.page, limit: opts.limit };
   }
@@ -216,11 +287,27 @@ export class ApprovalsService {
       const relevant =
         user.role === "SUPER_ADMIN" || user.role === "ADMIN"
           ? pendingSteps
-          : pendingSteps.filter((s) => s.approverRole === (user.role as Role));
+          : pendingSteps.filter(
+              (s) =>
+                s.approverRole === (user.role as Role) ||
+                (r.kind === "PERMINTAAN_SURVEY" &&
+                  (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")),
+            );
       if (!relevant.length) continue;
+      let requester = (r as any).requested_by;
+      if (!requester || !requester.name) {
+        requester = await this.resolveRequester(r.kind, r.entityId);
+        if (requester?.id && requester.id !== r.requestedById) {
+          this.prisma.main.approval.update({
+            where: { id: r.id },
+            data: { requestedById: requester.id },
+          }).catch(() => {});
+        }
+      }
       items.push({
         ...r,
-        requestedBy: (r as any).requested_by,
+        requestedBy: requester,
+        requested_by: requester,
         status,
         pendingRoles: relevant.map((s) => s.approverRole),
       });
@@ -244,6 +331,13 @@ export class ApprovalsService {
     let step =
       pending.find((s) => s.approverRole === (user.role as Role)) ??
       (user.role === "SUPER_ADMIN" || user.role === "ADMIN" ? pending[0] : undefined);
+    if (
+      !step &&
+      approval.kind === "PERMINTAAN_SURVEY" &&
+      (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")
+    ) {
+      step = pending[0];
+    }
     if (!step) throw new ForbiddenException(`Peran ${user.role} bukan penyetuju dokumen ini`);
 
     await this.prisma.main.approvalStep.update({
