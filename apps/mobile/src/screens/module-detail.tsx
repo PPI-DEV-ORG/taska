@@ -9,7 +9,10 @@ import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } fr
 import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands } from "@/components/taska/dialogs";
 import { DocumentViewerList, type ResolvedDocItem } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { ModuleExtras, downloadQuotationTemplate } from "@/screens/module-extras";
+import { ModuleExtras } from "@/screens/module-extras";
+import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
+import { QuotationPpnField } from "@/modules/quotation/quotation-ppn-field";
+import { calcQuotationFinancials, getInitialPpnMode, ppnModeToTipe, type PpnMode } from "@/modules/quotation/lib";
 import { useApp } from "@/store/app-store";
 import { CAN_APPROVE, MODULES, type ModuleAction, type Row, type CreateField } from "@/constants/modules";
 import { colors } from "@/tokens";
@@ -87,6 +90,23 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [saving, setSaving] = React.useState(false);
   const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
 
+  const initialQuotationPpnMode = React.useMemo<PpnMode>(() => getInitialPpnMode(row), [row]);
+
+  const quotationPpnMode: PpnMode = (edits.ppnMode as PpnMode) ?? initialQuotationPpnMode;
+
+  function setQuotationPpnMode(mode: PpnMode) {
+    setFieldValue("ppnMode", mode);
+  }
+
+  const quotationFinancials = React.useMemo(() => {
+    if (moduleKey !== "quotations" || !row) {
+      return { totNum: 0, discNum: 0, ppn: 0, totalAfterDisc: 0 };
+    }
+    const nilaiRaw = "nilai" in edits ? edits.nilai : (row.nilai || row.total || 0);
+    const discRaw = "disc" in edits ? edits.disc : (row.disc || 0);
+    return calcQuotationFinancials(nilaiRaw, discRaw, quotationPpnMode);
+  }, [moduleKey, edits, row, quotationPpnMode]);
+
   React.useEffect(() => {
     if (!data.users || data.users.length === 0) {
       api<any[]>("GET", "/users/options")
@@ -121,6 +141,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   const isDirty = React.useMemo(() => {
     if (!row || !canEdit) return false;
+    if (moduleKey === "quotations" && "ppnMode" in edits && edits.ppnMode !== initialQuotationPpnMode) return true;
     return editableFields.some((f) => {
       if (!(f.key in edits)) return false;
       if (f.type === "password") return Boolean(edits[f.key]?.trim());
@@ -128,7 +149,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       const original = getInitialFieldValue(f, row);
       return current !== original;
     });
-  }, [editableFields, edits, row, canEdit]);
+  }, [editableFields, edits, row, canEdit, moduleKey, initialQuotationPpnMode]);
 
   function handleReset() {
     setEdits({});
@@ -166,6 +187,20 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         patch[f.key] = raw ?? "";
       }
     });
+
+    if (moduleKey === "quotations") {
+      const { totNum, discNum, ppn, totalAfterDisc } = quotationFinancials;
+      patch.total = totNum;
+      patch.nilai = totNum;
+      patch.disc = discNum;
+      patch.ppn = ppn;
+      patch.totalAfterDisc = totalAfterDisc;
+      patch.ppnMode = quotationPpnMode;
+      patch.tipePpn = ppnModeToTipe(quotationPpnMode);
+      if (totalAfterDisc > 0 && row.status === "Not Yet") {
+        patch.status = "Done";
+      }
+    }
 
     if (moduleKey === "invoices") {
       const nilai = patch.nilai || 0;
@@ -385,66 +420,77 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
               {editableFields.map((f) => {
                 const isFullWidth = f.type === "textarea" || f.type === "multiselect";
                 return (
-                  <View
-                    key={f.key}
-                    className={cn("px-2 py-2", isFullWidth ? "w-full" : "w-full sm:w-1/2")}
-                  >
-                    <FormField label={f.label} required={f.required} error={errs[f.key]}>
-                      {f.type === "select" ? (
-                        <SearchableSelect
-                          value={getFieldValue(f)}
-                          onChange={(v) => setFieldValue(f.key, v)}
-                          options={getDynamicOptions(f, data, def.key, fallbackUsers) ?? []}
-                          placeholder={`Pilih ${f.label.toLowerCase()}`}
-                          error={!!errs[f.key]}
-                        />
-                      ) : f.type === "multiselect" ? (
-                        <MultiSelect
-                          values={(() => {
-                            const val = getFieldValue(f);
-                            return Array.isArray(val)
-                              ? val
-                              : val
-                              ? String(val).split(",").map((s) => s.trim()).filter(Boolean)
-                              : [];
-                          })()}
-                          onChange={(vals) => setFieldValue(f.key, vals)}
-                          options={getDynamicOptions(f, data, def.key, fallbackUsers) ?? []}
-                          placeholder={`Pilih ${f.label.toLowerCase()}`}
-                          error={!!errs[f.key]}
-                        />
-                      ) : f.type === "date" ? (
-                        <DatePicker
-                          value={getFieldValue(f)}
-                          onChange={(v) => setFieldValue(f.key, v)}
-                          placeholder="Pilih tanggal"
-                          error={!!errs[f.key]}
-                        />
-                      ) : f.type === "number" ? (
-                        <Input
-                          value={getFieldValue(f)}
-                          onChangeText={(v) => setFieldValue(f.key, formatThousands(v))}
-                          keyboardType="numeric"
-                          placeholder={`Masukkan ${f.label.toLowerCase()}`}
-                          className={cn(errs[f.key] && "border-danger")}
-                        />
-                      ) : f.type === "textarea" ? (
-                        <Textarea
-                          value={getFieldValue(f)}
-                          onChangeText={(v) => setFieldValue(f.key, v)}
-                          placeholder={`Tulis ${f.label.toLowerCase()}`}
-                          className={cn(errs[f.key] && "border-danger")}
-                        />
-                      ) : (
-                        <Input
-                          value={getFieldValue(f)}
-                          onChangeText={(v) => setFieldValue(f.key, v)}
-                          placeholder={`Masukkan ${f.label.toLowerCase()}`}
-                          className={cn(errs[f.key] && "border-danger")}
-                        />
-                      )}
-                    </FormField>
-                  </View>
+                  <React.Fragment key={f.key}>
+                    <View
+                      className={cn("px-2 py-2", isFullWidth ? "w-full" : "w-full sm:w-1/2")}
+                    >
+                      <FormField label={f.label} required={f.required} error={errs[f.key]}>
+                        {f.type === "select" ? (
+                          <SearchableSelect
+                            value={getFieldValue(f)}
+                            onChange={(v) => setFieldValue(f.key, v)}
+                            options={getDynamicOptions(f, data, def.key, fallbackUsers) ?? []}
+                            placeholder={`Pilih ${f.label.toLowerCase()}`}
+                            error={!!errs[f.key]}
+                          />
+                        ) : f.type === "multiselect" ? (
+                          <MultiSelect
+                            values={(() => {
+                              const val = getFieldValue(f);
+                              return Array.isArray(val)
+                                ? val
+                                : val
+                                ? String(val).split(",").map((s) => s.trim()).filter(Boolean)
+                                : [];
+                            })()}
+                            onChange={(vals) => setFieldValue(f.key, vals)}
+                            options={getDynamicOptions(f, data, def.key, fallbackUsers) ?? []}
+                            placeholder={`Pilih ${f.label.toLowerCase()}`}
+                            error={!!errs[f.key]}
+                          />
+                        ) : f.type === "date" ? (
+                          <DatePicker
+                            value={getFieldValue(f)}
+                            onChange={(v) => setFieldValue(f.key, v)}
+                            placeholder="Pilih tanggal"
+                            error={!!errs[f.key]}
+                          />
+                        ) : f.type === "number" ? (
+                          <Input
+                            value={getFieldValue(f)}
+                            onChangeText={(v) => setFieldValue(f.key, formatThousands(v))}
+                            keyboardType="numeric"
+                            placeholder={`Masukkan ${f.label.toLowerCase()}`}
+                            className={cn(errs[f.key] && "border-danger")}
+                          />
+                        ) : f.type === "textarea" ? (
+                          <Textarea
+                            value={getFieldValue(f)}
+                            onChangeText={(v) => setFieldValue(f.key, v)}
+                            placeholder={`Tulis ${f.label.toLowerCase()}`}
+                            className={cn(errs[f.key] && "border-danger")}
+                          />
+                        ) : (
+                          <Input
+                            value={getFieldValue(f)}
+                            onChangeText={(v) => setFieldValue(f.key, v)}
+                            placeholder={`Masukkan ${f.label.toLowerCase()}`}
+                            className={cn(errs[f.key] && "border-danger")}
+                          />
+                        )}
+                      </FormField>
+                    </View>
+
+                    {moduleKey === "quotations" &&
+                    (f.key === "disc" || (!editableFields.some((ef) => ef.key === "disc") && f.key === "nilai")) ? (
+                      <QuotationPpnField
+                        mode={quotationPpnMode}
+                        onChange={setQuotationPpnMode}
+                        ppn={quotationFinancials.ppn}
+                        totalAfterDisc={quotationFinancials.totalAfterDisc}
+                      />
+                    ) : null}
+                  </React.Fragment>
                 );
               })}
             </View>
