@@ -316,6 +316,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "dokumen", label: "File invoice (Opsional)", type: "file" },
     ],
     defaults: { status: "Belum dikirim", terbayar: 0, po: "-" },
+    createRoles: ["finance", "sales"],
     actions: [{ label: "Catat pembayaran", toast: "Pembayaran dicatat" }],
     docs: ["File invoice", "Bukti pembayaran"],
     emptyText: "Belum ada invoice. Upload invoice yang dibuat di luar aplikasi.",
