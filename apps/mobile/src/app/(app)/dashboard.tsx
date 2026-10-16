@@ -244,6 +244,24 @@ function QuickActionsCard({ role }: { role: string }) {
             onPress={() => router.push("/stock")}
           />
         ) : null}
+        {isSuper || role === "bos" || role === "admin" || role === "finance" ? (
+          <QuickActionButton
+            label="Neraca, P&L & Jurnal"
+            icon={TrendingUp}
+            shortcut="⌘K"
+            className="flex-1 min-w-[170px]"
+            onPress={() => router.push("/reports")}
+          />
+        ) : null}
+        {role === "sales" || role === "procurement" || role === "finance" ? (
+          <QuickActionButton
+            label="Catat Pengeluaran"
+            icon={Wallet}
+            shortcut="⌘E"
+            className="flex-1 min-w-[170px]"
+            onPress={() => router.push("/expenses/new" as any)}
+          />
+        ) : null}
       </View>
     </Panel>
   );
