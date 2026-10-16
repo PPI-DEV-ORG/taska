@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { Check, ChevronDown, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,8 @@ import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-u
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { rupiah } from "@/lib/format";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { Portal } from "@rn-primitives/portal";
 
 function getTodayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -37,6 +39,7 @@ function get30DaysLaterIso(): string {
 export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string }) {
   const router = useRouter();
   const { data, user, addRow, patchRow, deleteRow, setStatus, history, approvals, decide, toast } = useApp();
+  const { bp, isMobile } = useBreakpoint();
   const def = MODULES[moduleKey];
   const rowFromStore = data[moduleKey]?.find((r: { id: string }) => r.id === id);
   const [remoteRow, setRemoteRow] = React.useState<Row | null>(null);
@@ -165,6 +168,18 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       return current !== original;
     });
   }, [editableFields, edits, row, canEdit, moduleKey, initialQuotationPpnMode]);
+
+  const floatingStyle = React.useMemo<any>(() => {
+    const left = isMobile ? 0 : bp === "tablet" ? 76 : 256;
+    const bottom = isMobile ? 64 : 0;
+    return {
+      position: "absolute",
+      left,
+      right: 0,
+      bottom,
+      zIndex: 9999,
+    };
+  }, [isMobile, bp]);
 
   function handleReset() {
     setEdits({});
@@ -417,7 +432,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         }
       />
 
-      <View className="gap-4">
+      <View className={cn("gap-4", isDirty && "pb-24")}>
         {isExpenseFinanceActionable ? (
           <View className="bg-card border-border rounded-xl border p-4 gap-3">
             <View className="flex-row items-center justify-between flex-wrap gap-3">
@@ -463,22 +478,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
             <InfoGrid fields={def.fields} row={row} />
           </Panel>
         ) : editableFields.length > 0 || readOnlyFields.length > 0 ? (
-          <Panel
-            title="Informasi"
-            right={
-              isDirty ? (
-                <View className="flex-row items-center gap-2">
-                  <Button variant="outline" size="sm" onPress={handleReset} disabled={saving}>
-                    <Text className="text-xs">Batal</Text>
-                  </Button>
-                  <Button size="sm" onPress={handleSaveForm} disabled={saving}>
-                    <Check size={14} color={colors.background} className="mr-1" />
-                    <Text className="text-xs">{saving ? "Menyimpan..." : "Simpan Perubahan"}</Text>
-                  </Button>
-                </View>
-              ) : null
-            }
-          >
+          <Panel title="Informasi">
             {readOnlyFields.length > 0 ? (
               <View className="mb-4 p-3 bg-panel/40 rounded-xl border border-border/70 flex-row flex-wrap gap-y-3">
                 {readOnlyFields.map((f) => (
@@ -570,18 +570,6 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 );
               })}
             </View>
-
-            {isDirty ? (
-              <View className="flex-row items-center justify-end gap-2 pt-4 mt-2 border-t border-border">
-                <Button variant="outline" onPress={handleReset} disabled={saving}>
-                  <Text>Batal</Text>
-                </Button>
-                <Button onPress={handleSaveForm} disabled={saving}>
-                  <Check size={15} color={colors.background} className="mr-1.5" />
-                  <Text>{saving ? "Menyimpan..." : "Simpan Perubahan"}</Text>
-                </Button>
-              </View>
-            ) : null}
           </Panel>
         ) : null}
 
@@ -627,6 +615,42 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
         <Panel title="Riwayat"><Timeline items={history(moduleKey, id)} /></Panel>
       </View>
+
+      {isDirty ? (
+        <Portal name="module-detail-save-bar">
+          <View
+            style={floatingStyle as any}
+            className="bg-card border-t border-border px-6 py-3.5 flex-row items-center justify-between gap-4"
+          >
+            <View className="flex-1 pr-2">
+              <Text className="text-sm font-semibold text-foreground">Perubahan belum disimpan</Text>
+              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                Simpan perubahan atau batalkan untuk kembali.
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-2">
+              <Button
+                variant="outline"
+                onPress={handleReset}
+                disabled={saving}
+                className="h-10 px-4 rounded-xl"
+              >
+                <Text className="font-medium text-sm">Batal</Text>
+              </Button>
+              <Button
+                onPress={handleSaveForm}
+                disabled={saving}
+                className="h-10 px-5 rounded-xl bg-primary"
+              >
+                <Check size={16} color={colors.background} className="mr-1.5" />
+                <Text className="font-semibold text-sm text-primary-foreground">
+                  {saving ? "Menyimpan..." : "Simpan Perubahan"}
+                </Text>
+              </Button>
+            </View>
+          </View>
+        </Portal>
+      ) : null}
 
       <Dialog open={menu} onOpenChange={setMenu}>
         <DialogContent className="sm:max-w-sm">
