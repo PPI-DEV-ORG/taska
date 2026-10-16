@@ -33,6 +33,19 @@ class ExportQueryDto extends ReportQueryDto {
   format?: "xlsx" | "pdf" | "docx";
 }
 
+const FINANCIAL_REPORT_TYPES = new Set([
+  "profit-loss",
+  "income-statement",
+  "balance-sheet",
+  "cash-flow",
+  "general-journal",
+]);
+
+function canAccessFinancialReports(user?: RequestUser): boolean {
+  const r = (user?.role ?? "").toLowerCase();
+  return ["super_admin", "admin", "bos", "finance"].includes(r);
+}
+
 @Controller("reports")
 export class ReportsController {
   constructor(private readonly service: ReportsService) {}
@@ -40,8 +53,10 @@ export class ReportsController {
   @Get()
   @Require("reports", "L")
   types(@CurrentUser() user?: RequestUser) {
-    const isFinancial = user && ["super_admin", "bos", "finance"].includes(user.role);
-    const available = isFinancial ? REPORT_TYPES : REPORT_TYPES.filter((t) => t !== "profit-loss");
+    const isFinancial = canAccessFinancialReports(user);
+    const available = isFinancial
+      ? REPORT_TYPES
+      : REPORT_TYPES.filter((t) => !FINANCIAL_REPORT_TYPES.has(t));
     return { reports: available };
   }
 
@@ -58,8 +73,8 @@ export class ReportsController {
     @Query() q: ExportQueryDto,
     @CurrentUser() user?: RequestUser,
   ): Promise<StreamableFile> {
-    if (type === "profit-loss" && (!user || !["super_admin", "bos", "finance"].includes(user.role))) {
-      throw new ForbiddenException("Laporan Untung-Rugi hanya dapat diakses oleh Finance, Bos, dan Super Admin");
+    if (FINANCIAL_REPORT_TYPES.has(type) && !canAccessFinancialReports(user)) {
+      throw new ForbiddenException("Laporan Keuangan & Akuntansi hanya dapat diakses oleh Finance, Admin, Bos, dan Super Admin");
     }
     const data = await this.service.build(type, q);
     const format = q.format ?? "xlsx";
@@ -79,8 +94,8 @@ export class ReportsController {
     @Query() q: ReportQueryDto,
     @CurrentUser() user?: RequestUser,
   ) {
-    if (type === "profit-loss" && (!user || !["super_admin", "bos", "finance"].includes(user.role))) {
-      throw new ForbiddenException("Laporan Untung-Rugi hanya dapat diakses oleh Finance, Bos, dan Super Admin");
+    if (FINANCIAL_REPORT_TYPES.has(type) && !canAccessFinancialReports(user)) {
+      throw new ForbiddenException("Laporan Keuangan & Akuntansi hanya dapat diakses oleh Finance, Admin, Bos, dan Super Admin");
     }
     return this.service.build(type, q);
   }

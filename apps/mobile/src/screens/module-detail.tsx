@@ -147,12 +147,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   }
 
   const isFinanceOrBos = ["finance", "bos", "super_admin"].includes(user?.role ?? "");
-  const canEdit = moduleKey === "expenses" ? isFinanceOrBos : true;
+  const isReporter = !row?.reporterId || String(row?.reporterId) === String(user?.id) || row?.pelapor === user?.name;
+  const canEditExpense = isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar");
+  const canEdit = moduleKey === "expenses" ? canEditExpense : true;
   const canDelete =
     user?.role === "super_admin"
       ? true
       : moduleKey === "expenses"
-      ? isFinanceOrBos
+      ? isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar")
       : moduleKey === "surveys" && user?.role === "finance"
       ? false
       : true;
@@ -539,7 +541,16 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         ) : null}
 
         {!canEdit ? (
-          <Panel title="Informasi" subtitle="Data pengeluaran hanya dapat diubah oleh Finance atau Super Admin">
+          <Panel
+            title="Informasi"
+            subtitle={
+              moduleKey === "expenses"
+                ? row?.status === "Dibayar"
+                  ? "Pengeluaran sudah dibayar dan tidak dapat diubah"
+                  : "Data pengeluaran hanya dapat diubah oleh pelapor atau Finance"
+                : undefined
+            }
+          >
             <InfoGrid fields={def.fields} row={row} />
           </Panel>
         ) : editableFields.length > 0 || readOnlyFields.length > 0 ? (

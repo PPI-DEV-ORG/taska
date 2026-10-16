@@ -228,9 +228,12 @@ export class ExpensesService {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
     const role = (user.role || "").toUpperCase();
-    const canEditExpense = ["SUPER_ADMIN", "FINANCE", "BOS"].includes(role);
+    const isReporter = !row.reporterId || row.reporterId === user.id;
+    const canEditExpense =
+      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) ||
+      (["SALES", "PROCUREMENT", "PM", "TEKNISI", "SE"].includes(role) && isReporter && row.status !== "DIBAYAR");
     if (!canEditExpense) {
-      throw new BadRequestException("Hanya Finance dan Super Admin yang memiliki hak untuk mengubah data pengeluaran");
+      throw new BadRequestException("Hanya Finance atau pelapor pengeluaran yang memiliki hak untuk mengubah data pengeluaran ini");
     }
 
     if (dto.receiptFileId && dto.receiptFileId !== row.receiptFileId) {
