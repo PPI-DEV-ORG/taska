@@ -495,6 +495,30 @@ export default function StockScreen() {
                     </View>
                   </View>
                 )}
+
+                <View className="flex-row gap-2 pt-3 border-t border-border mt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onPress={() => {
+                      setSelectedDetail(null);
+                      router.push("/opname");
+                    }}
+                  >
+                    <Text className="text-xs">Sesuaikan Stok (Opname)</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onPress={() => {
+                      setSelectedDetail(null);
+                      router.push("/receiving/new" as any);
+                    }}
+                  >
+                    <Text className="text-xs">Terima Barang (PO)</Text>
+                  </Button>
+                </View>
               </View>
             );
           })()}
