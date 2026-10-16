@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { ConfirmDialog, SearchableSelect } from "@/components/taska/dialogs";
+import { ConfirmDialog, SearchableSelect, formatThousands } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, getAccess, uploadMasterImport, type MasterImportType } from "@/services/api";
@@ -440,10 +440,10 @@ export default function MasterDataScreen() {
               ) : null}
               <FormField label="Estimasi Harga Beli (Rp)">
                 <Input
-                  value={barangHargaBeli}
+                  value={barangHargaBeli ? formatThousands(barangHargaBeli) : ""}
                   onChangeText={(v) => setBarangHargaBeli(v.replace(/\D/g, ""))}
                   keyboardType="numeric"
-                  placeholder="Contoh: 1200000"
+                  placeholder="Contoh: 1.200.000"
                 />
               </FormField>
               <FormField label="Stok Minimum Peringatan">
