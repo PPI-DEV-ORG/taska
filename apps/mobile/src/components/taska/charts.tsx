@@ -25,30 +25,74 @@ function Legend({ series }: { series: Series[] }) {
 
 /** Batang vertikal, satu atau beberapa seri (maksimal 5). Grid redup, legenda di bawah. */
 export function BarChart({
-  data, series, format = (n) => String(n), height = 150,
+  data, series, format = (n) => String(n), height = 160,
 }: { data: { label: string; values: number[] }[]; series: Series[]; format?: (n: number) => string; height?: number }) {
   const max = Math.max(1, ...data.flatMap((d) => d.values));
+  const yTicks = [
+    { p: 1, label: format(max) },
+    { p: 0.5, label: format(Math.round(max * 0.5 * 10) / 10) },
+    { p: 0, label: "0" },
+  ];
+
   return (
     <View>
-      <View style={{ height }} className="relative flex-row items-end gap-2 pt-5">
-        {[0, 0.5, 1].map((p) => (
-          <View key={p} className="absolute left-0 right-0" style={{ bottom: p * (height - 20), height: 1, backgroundColor: colors.border }} />
-        ))}
-        {data.map((d) => (
-          <View key={d.label} className="flex-1 flex-row items-end justify-center gap-1" style={{ height: "100%" }}>
-            {d.values.map((v, i) => (
-              <View key={i} className="flex-1 items-center justify-end" style={{ maxWidth: 28, height: "100%" }}>
-                {data.length <= 12 && series.length === 1 ? <Text className="text-muted-foreground mb-0.5 text-[10px]" numberOfLines={1}>{format(v)}</Text> : null}
-                <View style={{ height: Math.max(3, (v / max) * (height - 40)), width: "100%", backgroundColor: series[i]?.color ?? chartSeries[i], borderTopLeftRadius: 4, borderTopRightRadius: 4 }} />
+      <View className="flex-row items-end">
+        {/* Y-axis labels */}
+        <View style={{ height }} className="w-12 relative justify-between pb-1 pr-2">
+          {yTicks.map((t) => (
+            <View
+              key={t.p}
+              className="absolute right-2"
+              style={{ bottom: t.p * (height - 30) }}
+            >
+              <Text className="text-[10px] text-muted-foreground text-right font-medium" numberOfLines={1}>
+                {t.label}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Chart bars & grid */}
+        <View className="flex-1">
+          <View style={{ height }} className="relative flex-row items-end gap-2 pt-6">
+            {[0, 0.5, 1].map((p) => (
+              <View
+                key={p}
+                className="absolute left-0 right-0"
+                style={{ bottom: p * (height - 30) + 6, height: 1, backgroundColor: colors.border }}
+              />
+            ))}
+            {data.map((d) => (
+              <View key={d.label} className="flex-1 flex-row items-end justify-center gap-1.5" style={{ height: "100%" }}>
+                {d.values.map((v, i) => (
+                  <View key={i} className="flex-1 items-center justify-end" style={{ maxWidth: 32, height: "100%" }}>
+                    {v > 0 ? (
+                      <Text className="text-foreground font-semibold mb-1 text-[10px] text-center" numberOfLines={1}>
+                        {format(v)}
+                      </Text>
+                    ) : null}
+                    <View
+                      style={{
+                        height: Math.max(3, (v / max) * (height - 48)),
+                        width: "100%",
+                        backgroundColor: series[i]?.color ?? chartSeries[i],
+                        borderTopLeftRadius: 4,
+                        borderTopRightRadius: 4,
+                      }}
+                    />
+                  </View>
+                ))}
               </View>
             ))}
           </View>
-        ))}
-      </View>
-      <View className="mt-1.5 flex-row gap-2">
-        {data.map((d) => (
-          <Text key={d.label} className="text-muted-foreground flex-1 text-center text-[12px]" numberOfLines={1}>{d.label}</Text>
-        ))}
+          <View className="mt-2 flex-row gap-2">
+            {data.map((d) => (
+              <Text key={d.label} className="text-muted-foreground flex-1 text-center text-[12px] font-medium" numberOfLines={1}>
+                {d.label}
+              </Text>
+            ))}
+          </View>
+        </View>
       </View>
       {series.length > 1 || data.length > 7 ? <Legend series={series} /> : null}
     </View>
