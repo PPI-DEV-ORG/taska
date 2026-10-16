@@ -255,6 +255,45 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     }
   }
 
+  const isLead = moduleKey === "leads";
+
+  const leadQuotation = React.useMemo(() => {
+    if (!isLead || !row) return null;
+    return (data.quotations ?? []).find(
+      (q: Row) => (q.leadId && String(q.leadId) === String(row.id)) || (q.lead && q.lead.toLowerCase() === row.nama?.toLowerCase())
+    );
+  }, [isLead, data.quotations, row]);
+
+  const leadProject = React.useMemo(() => {
+    if (!isLead || !row) return null;
+    const custName = (row.perusahaan || row.customer || "").trim().toLowerCase();
+    const leadName = (row.nama || "").trim().toLowerCase();
+    return (data.projects ?? []).find((p: Row) => {
+      if (p.leadId && String(p.leadId) === String(row.id)) return true;
+      if (leadQuotation && p.quotationId && String(p.quotationId) === String(leadQuotation.id)) return true;
+      if (row.customerId && p.customerId && String(p.customerId) === String(row.customerId)) return true;
+      if (custName && p.customer && p.customer.trim().toLowerCase() === custName) return true;
+      if (leadName && p.nama && p.nama.trim().toLowerCase().includes(leadName)) return true;
+      return false;
+    });
+  }, [isLead, data.projects, leadQuotation, row]);
+
+  const leadHasInvoice = React.useMemo(() => {
+    if (!isLead || !row) return false;
+    const custName = (row.perusahaan || row.customer || "").trim().toLowerCase();
+    const projId = leadProject ? String(leadProject.id) : null;
+    const projName = leadProject ? String(leadProject.nama).trim().toLowerCase() : null;
+
+    return (data.invoices ?? []).some((inv: Row) => {
+      if (inv.leadId && String(inv.leadId) === String(row.id)) return true;
+      if (row.customerId && inv.customerId && String(inv.customerId) === String(row.customerId)) return true;
+      if (projId && inv.projectId && String(inv.projectId) === projId) return true;
+      if (projName && inv.project && String(inv.project).trim().toLowerCase() === projName) return true;
+      if (custName && inv.customer && String(inv.customer).trim().toLowerCase() === custName) return true;
+      return false;
+    });
+  }, [isLead, data.invoices, leadProject, row]);
+
   if (!def || !row) {
     return <EmptyState title="Data tidak ditemukan" text="Dokumen ini mungkin sudah diarsipkan atau tautannya salah." actionLabel="Kembali ke daftar" onAction={() => router.replace(`/${moduleKey}` as any)} />;
   }
@@ -372,16 +411,42 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (a.to && row) router.push(a.to(row) as any);
   }
 
-  const isLead = moduleKey === "leads";
   const canOfferLead = ["Qualification", "Proposal", "Negotiation"].includes(String(row.status));
   const filteredActions = (def.actions ?? []).filter((a) => {
-    if (isLead && a.label === "Download template penawaran") {
-      return canOfferLead;
+    if (isLead) {
+      if (a.label === "Download template penawaran" && !canOfferLead) return false;
+      if (a.label === "Jadikan project" && (leadProject || row.status === "Won" || row.status === "Lost")) return false;
+      if (a.label === "Buat invoice" && (leadHasInvoice || row.status === "Lost")) return false;
     }
-    if (moduleKey === "purchase-requests" && a.label === "Teruskan ke Gudang") {
-      if (user?.role === "gudang") return false;
-      const st = String(row?.rawStatus || (row?.status ? toEnum("purchase-requests", row.status) : "") || "").toUpperCase();
-      if (st && st !== "DIAJUKAN") return false;
+    if (moduleKey === "invoices" && a.label === "Catat pembayaran") {
+      const isPaid = row.status === "Lunas" || String(row.rawStatus).toUpperCase() === "PAID" || (row.total > 0 && row.terbayar >= row.total);
+      if (isPaid || row.status === "Batal") return false;
+    }
+    if (moduleKey === "quotations" && a.label === "Kirim ke customer") {
+      const st = String(row.status ?? "");
+      if (["Terkirim", "Disetujui", "Ditolak", "Kedaluwarsa", "Not Yet"].includes(st)) return false;
+    }
+    if (moduleKey === "purchase-requests") {
+      if (a.label === "Teruskan ke Gudang") {
+        if (user?.role === "gudang") return false;
+        const st = String(row?.rawStatus || (row?.status ? toEnum("purchase-requests", row.status) : "") || "").toUpperCase();
+        if (st && st !== "DIAJUKAN") return false;
+      }
+      if (a.label === "Buat PO supplier") {
+        const hasSupplierPo = (data["supplier-pos"] ?? []).some(
+          (sp: Row) =>
+            (sp.requestId && String(sp.requestId) === String(row.id)) ||
+            (row.nomor && sp.request && String(sp.request).toLowerCase() === String(row.nomor).toLowerCase())
+        );
+        const st = String(row?.status ?? "");
+        const rawSt = String(row?.rawStatus ?? "").toUpperCase();
+        if (hasSupplierPo || ["PO dibuat", "Menunggu barang", "Selesai", "Ditolak", "Dibatalkan", "Stok tersedia"].includes(st) || ["PO_DIBUAT", "SELESAI", "DITOLAK", "DIBATALKAN"].includes(rawSt)) return false;
+      }
+    }
+    if (moduleKey === "surveys" && a.label === "Laporkan biaya survey") {
+      const st = String(row.status ?? "");
+      const biaya = Number(row.biaya || 0);
+      if (st === "Selesai" || st === "Dibatalkan" || biaya > 0) return false;
     }
     return true;
   });
