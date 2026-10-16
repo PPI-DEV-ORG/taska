@@ -79,7 +79,9 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
     case "delivery-notes":
       return ["super_admin", "bos", "admin", "finance", "gudang"].includes(role) ? rows : rows.filter((r) => r.pembuat === u.name);
     case "expenses":
-      return ["super_admin", "bos", "admin", "finance"].includes(role) ? rows : rows.filter((r) => r.pelapor === u.name);
+      return ["super_admin", "bos", "admin", "finance"].includes(role)
+        ? rows
+        : rows.filter((r) => r.pelapor === u.name || (r.reporterId && String(r.reporterId) === String(u.id)));
     default:
       return rows;
   }
