@@ -1,7 +1,17 @@
 import * as React from "react";
-import { View, ScrollView } from "react-native";
+import { View, ScrollView, Pressable } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeftRight, RefreshCw, ScanLine, Search } from "lucide-react-native";
+import {
+  ArrowLeftRight,
+  ArrowRight,
+  CircleAlert,
+  CircleCheck,
+  ExternalLink,
+  PackageCheck,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -10,7 +20,6 @@ import { DataTable } from "@/components/taska/data-table";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { SearchableSelect } from "@/components/taska/dialogs";
-import { ScanInput } from "@/components/taska/scan-input";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
@@ -39,11 +48,10 @@ export default function StockScreen() {
 
   const [activeTab, setActiveTab] = React.useState<typeof TABS[number]>("Per Barang");
   const [selectedWarehouse, setSelectedWarehouse] = React.useState("");
-  const [snQuery, setSnQuery] = React.useState("");
+  const [searchQuery, setSearchQuery] = React.useState("");
 
   const [transferOpen, setTransferOpen] = React.useState(false);
   const [replacementOpen, setReplacementOpen] = React.useState(false);
-  const [scanModalOpen, setScanModalOpen] = React.useState(false);
 
   const [transferProd, setTransferProd] = React.useState("");
   const [transferFrom, setTransferFrom] = React.useState("");
@@ -122,12 +130,57 @@ export default function StockScreen() {
     }
   }
 
-  const filteredSerials = serials.filter(
-    (s) =>
-      !snQuery ||
-      String(s.sn).toLowerCase().includes(snQuery.toLowerCase()) ||
-      String(s.produk).toLowerCase().includes(snQuery.toLowerCase())
-  );
+  const filteredProducts = React.useMemo(() => {
+    if (!searchQuery.trim()) return products;
+    const q = searchQuery.toLowerCase();
+    return products.filter(
+      (p) =>
+        String(p.nama ?? "").toLowerCase().includes(q) ||
+        String(p.sku ?? "").toLowerCase().includes(q) ||
+        String(p.kategori ?? "").toLowerCase().includes(q)
+    );
+  }, [products, searchQuery]);
+
+  const filteredSerials = React.useMemo(() => {
+    if (!searchQuery.trim()) return serials;
+    const q = searchQuery.toLowerCase();
+    return serials.filter(
+      (s) =>
+        String(s.sn ?? "").toLowerCase().includes(q) ||
+        String(s.produk ?? "").toLowerCase().includes(q) ||
+        String(s.gudang ?? "").toLowerCase().includes(q) ||
+        String(s.project ?? "").toLowerCase().includes(q)
+    );
+  }, [serials, searchQuery]);
+
+  const filteredMovements = React.useMemo(() => {
+    if (!searchQuery.trim()) return movements;
+    const q = searchQuery.toLowerCase();
+    return movements.filter(
+      (m) =>
+        String(m.produk ?? "").toLowerCase().includes(q) ||
+        String(m.kategori ?? "").toLowerCase().includes(q) ||
+        String(m.gudang ?? "").toLowerCase().includes(q) ||
+        String(m.project ?? "").toLowerCase().includes(q)
+    );
+  }, [movements, searchQuery]);
+
+  const filteredReservations = React.useMemo(() => {
+    if (!searchQuery.trim()) return reservations;
+    const q = searchQuery.toLowerCase();
+    return reservations.filter(
+      (r) =>
+        String(r.produk ?? "").toLowerCase().includes(q) ||
+        String(r.project ?? "").toLowerCase().includes(q) ||
+        String(r.sn ?? "").toLowerCase().includes(q)
+    );
+  }, [reservations, searchQuery]);
+
+  const matchedSerial = React.useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    const clean = searchQuery.trim().toUpperCase();
+    return serials.find((s) => String(s.sn).toUpperCase() === clean);
+  }, [serials, searchQuery]);
 
   const [selectedDetail, setSelectedDetail] = React.useState<{
     type: "product" | "warehouse_product" | "serial" | "movement" | "reservation";
@@ -135,16 +188,12 @@ export default function StockScreen() {
   } | null>(null);
 
   return (
-    <View className="gap-5">
+    <View className="gap-4">
       <PageHeader
         title="Stok dan Serial Number"
         subtitle="Manajemen persediaan multi-gudang, penelusuran SN, dan mutasi barang"
         action={
           <View className="flex-row flex-wrap gap-2">
-            <Button variant="outline" size="sm" onPress={() => setScanModalOpen(true)}>
-              <ScanLine size={16} color={colors.text} />
-              <Text>Scan SN</Text>
-            </Button>
             <Button variant="outline" size="sm" onPress={() => setTransferOpen(true)}>
               <ArrowLeftRight size={16} color={colors.text} />
               <Text>Transfer Gudang</Text>
@@ -159,6 +208,45 @@ export default function StockScreen() {
           </View>
         }
       />
+
+      {/* Universal Search Bar di Halaman Stok */}
+      <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-xl border px-3">
+        <Search size={16} color={colors.muted} />
+        <Input
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Cari nama barang, kode SKU, kategori, atau scan barcode / Serial Number (SN)..."
+          className="h-10 flex-1 border-0 bg-transparent px-0 shadow-none text-xs focus-visible:ring-0 focus-visible:ring-offset-0 focus:ring-0 focus:outline-none focus:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none web:outline-none"
+          style={{ outline: "none", outlineStyle: "none", boxShadow: "none" } as any}
+          returnKeyType="search"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {searchQuery ? (
+          <Pressable onPress={() => setSearchQuery("")} hitSlop={8} className="p-1">
+            <X size={15} color={colors.muted} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* Quick Match jika barcode/SN cocok */}
+      {matchedSerial && (
+        <Pressable
+          onPress={() => setSelectedDetail({ type: "serial", data: matchedSerial })}
+          className="bg-card border-primary/40 hover:bg-panel flex-row items-center justify-between p-3 rounded-xl border gap-2 shadow-sm"
+        >
+          <View className="flex-row items-center gap-2 flex-1">
+            <Search size={16} color={colors.primary} />
+            <Text className="text-xs font-medium text-foreground">
+              Unit SN Ditemukan: <Text className="font-mono font-bold text-primary">{matchedSerial.sn}</Text> — {matchedSerial.produk} ({matchedSerial.gudang})
+            </Text>
+          </View>
+          <View className="flex-row items-center gap-2">
+            <StatusBadge status={matchedSerial.status ?? "Tersedia"} />
+            <Text className="text-xs text-primary font-semibold">Buka Detail Unit →</Text>
+          </View>
+        </Pressable>
+      )}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
         {TABS.map((t) => (
@@ -176,7 +264,7 @@ export default function StockScreen() {
             { key: "minDisplay", label: "Batas Min", flex: 1 },
             { key: "statusStok", label: "Status", fmt: "status", flex: 1 },
           ]}
-          rows={products.map((p) => {
+          rows={filteredProducts.map((p) => {
             const total = saldoOfProduct(String(p.id));
             const satuan = String(p.satuan ?? "");
             return {
@@ -215,7 +303,7 @@ export default function StockScreen() {
               { key: "saldo", label: "Saldo Akhir", flex: 1.1 },
               { key: "statusStok", label: "Status", fmt: "status", flex: 1 },
             ]}
-            rows={products.map((p) => {
+            rows={filteredProducts.map((p) => {
               const sRow = summaryOfProductWarehouse(String(p.id), String(selectedWarehouseRow?.id ?? ""));
               const qty = Number(sRow?.saldo ?? 0);
               const total = saldoOfProduct(String(p.id));
@@ -237,34 +325,22 @@ export default function StockScreen() {
       )}
 
       {activeTab === "Per Serial Number" && (
-        <View className="gap-4">
-          <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-lg border px-3">
-            <Search size={16} color={colors.muted} />
-            <Input
-              value={snQuery}
-              onChangeText={setSnQuery}
-              placeholder="Cari Serial Number atau nama produk"
-              className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none text-xs"
-            />
-          </View>
-
-          <DataTable
-            columns={[
-              { key: "sn", label: "Serial Number", primary: true, flex: 1.5 },
-              { key: "produk", label: "Produk", flex: 1.6 },
-              { key: "gudang", label: "Lokasi Gudang", flex: 1.2 },
-              { key: "project", label: "Alokasi Project", flex: 1.4 },
-              { key: "garansiDisplay", label: "Masa Garansi", flex: 1.2 },
-              { key: "status", label: "Status Unit", fmt: "status", flex: 1 },
-            ]}
-            rows={filteredSerials.map((s) => ({
-              ...s,
-              garansiDisplay: s.garansiBerakhir || s.garansiMulai || "-",
-            }))}
-            pageSize={8}
-            onRowPress={(s) => setSelectedDetail({ type: "serial", data: s })}
-          />
-        </View>
+        <DataTable
+          columns={[
+            { key: "sn", label: "Serial Number", primary: true, flex: 1.5 },
+            { key: "produk", label: "Produk", flex: 1.6 },
+            { key: "gudang", label: "Lokasi Gudang", flex: 1.2 },
+            { key: "project", label: "Alokasi Project", flex: 1.4 },
+            { key: "garansiDisplay", label: "Masa Garansi", flex: 1.2 },
+            { key: "status", label: "Status Unit", fmt: "status", flex: 1 },
+          ]}
+          rows={filteredSerials.map((s) => ({
+            ...s,
+            garansiDisplay: s.garansiBerakhir || s.garansiMulai || "-",
+          }))}
+          pageSize={8}
+          onRowPress={(s) => setSelectedDetail({ type: "serial", data: s })}
+        />
       )}
 
       {activeTab === "Pergerakan Stok" && (
@@ -278,7 +354,7 @@ export default function StockScreen() {
             { key: "waktu", label: "Tanggal Mutasi", flex: 1.2 },
             { key: "jenis", label: "Jenis Mutasi", fmt: "status", flex: 1 },
           ]}
-          rows={movements.map((m) => ({
+          rows={filteredMovements.map((m) => ({
             ...m,
             qtyDisplay: `${m.qty ?? 0} unit`,
           }))}
@@ -296,7 +372,7 @@ export default function StockScreen() {
             { key: "qtyDisplay", label: "Jumlah Ditahan", flex: 1.1 },
             { key: "status", label: "Status Alokasi", fmt: "status", flex: 1 },
           ]}
-          rows={reservations.map((r) => ({
+          rows={filteredReservations.map((r) => ({
             ...r,
             qtyDisplay: `${r.qty ?? 0} unit`,
             status: r.status === "Dirilis" ? "Selesai" : "Reserved",
@@ -389,20 +465,6 @@ export default function StockScreen() {
             </Button>
             <Button onPress={handleReplacement}>
               <Text>Simpan Unit Pengganti</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={scanModalOpen} onOpenChange={setScanModalOpen}>
-        <DialogContent className="sm:max-w-xl md:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Scan Barcode & Validasi SN</DialogTitle>
-          </DialogHeader>
-          <ScanInput />
-          <DialogFooter>
-            <Button onPress={() => setScanModalOpen(false)}>
-              <Text>Selesai</Text>
             </Button>
           </DialogFooter>
         </DialogContent>

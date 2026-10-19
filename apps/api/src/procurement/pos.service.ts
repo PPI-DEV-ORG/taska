@@ -90,6 +90,7 @@ export class PosService {
           request: { select: { id: true, number: true, purpose: true } },
           project: { select: { id: true, name: true } },
           creator: { select: { id: true, name: true } },
+          items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
           _count: { select: { items: true, receivings: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
@@ -201,6 +202,18 @@ export class PosService {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
 
+    if (Array.isArray(dto.items) && dto.items.length > 0) {
+      await this.prisma.main.supplierPOItem.deleteMany({ where: { poId: id } });
+      await this.prisma.main.supplierPOItem.createMany({
+        data: dto.items.map((i) => ({
+          poId: id,
+          productId: i.productId,
+          qty: i.qty,
+          price: i.price,
+        })),
+      });
+    }
+
     const updated = await this.prisma.main.supplierPO.update({
       where: { id },
       data: {
@@ -221,6 +234,7 @@ export class PosService {
         supplier: true,
         request: { select: { id: true, number: true, purpose: true } },
         project: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
       },
     });
     this.notifications.dataChange("supplier-pos", "update", updated.id);

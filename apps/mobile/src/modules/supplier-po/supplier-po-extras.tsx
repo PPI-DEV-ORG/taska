@@ -37,6 +37,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
     d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
+  const [invFileId, setInvFileId] = React.useState<number | null>(null);
 
   function go(s: string) {
     patchRow("supplier-pos", row.id, { pengiriman: s, status: s });
@@ -51,14 +52,16 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       supplierId: row.supplierId,
       supplier: row.supplier,
       supplierPoId: row.id,
+      po: row.nomor,
       nilai: amt,
       ppn,
       total: amt + ppn,
-      tanggal: invDate,
       jatuhTempo: invDue,
+      fileId: invFileId ?? undefined,
     });
     if (created) {
       setInvOpen(false);
+      setInvFileId(null);
       await reload();
     }
   }
@@ -106,10 +109,41 @@ export function SupplierPoExtras({ row }: { row: Row }) {
         ) : null}
       </Panel>
       <Panel title="Barang di PO ini">
-        {String(row.item).split(", ").map((it) => (
-          <Line key={it} left={it} right={showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : undefined} />
-        ))}
-        {showPrice ? <Line left="Total harga beli" right={<Text className="text-sm font-semibold">{rupiah(row.total)}</Text>} /> : null}
+        {Array.isArray(row.items) && row.items.length > 0 ? (
+          row.items.map((it: any, idx: number) => {
+            const prodName = it.product?.name || it.productName || it.name || it.product?.sku || `Barang #${idx + 1}`;
+            const qtyText = `${it.qty || 1} ${it.product?.unit || it.unit || "Unit"}`;
+            const itemTotal = Number(it.price ? it.price * (it.qty || 1) : 0);
+            return (
+              <Line
+                key={it.id || idx}
+                left={`${prodName} (${qtyText})`}
+                right={
+                  showPrice ? (
+                    <Text className="text-sm font-semibold">
+                      {itemTotal > 0 ? rupiah(itemTotal) : <Text className="text-muted-foreground text-xs font-normal">Harga beli tampil</Text>}
+                    </Text>
+                  ) : undefined
+                }
+              />
+            );
+          })
+        ) : row.item && row.item !== "-" ? (
+          String(row.item)
+            .split(", ")
+            .map((it) => (
+              <Line
+                key={it}
+                left={it}
+                right={showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : undefined}
+              />
+            ))
+        ) : (
+          <Text className="text-muted-foreground text-xs py-1">Belum ada rincian barang di PO ini.</Text>
+        )}
+        {showPrice ? (
+          <Line left="Total harga beli" right={<Text className="text-sm font-bold text-primary">{rupiah(row.total)}</Text>} />
+        ) : null}
         <Text className="text-muted-foreground mt-2 text-[13px]">Penerimaan sebagian diperbolehkan di Gudang.</Text>
       </Panel>
 
@@ -168,7 +202,13 @@ export function SupplierPoExtras({ row }: { row: Row }) {
             <FormField label="Jatuh Tempo" required>
               <DatePicker value={invDue} onChange={setInvDue} />
             </FormField>
-            <FileUploader label="Upload File Invoice dari Supplier" kind="dokumen" category="invoice" autoFlush />
+            <FileUploader
+              label="Upload File Invoice dari Supplier"
+              kind="dokumen"
+              category="invoice"
+              autoFlush
+              onUploaded={(fileId) => setInvFileId(fileId)}
+            />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setInvOpen(false)}>

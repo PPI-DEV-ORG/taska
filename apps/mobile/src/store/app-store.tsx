@@ -789,12 +789,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         await api("PATCH", `/leads/${id}`, body);
       } else if (module === "quotations") {
-        if (status === "Terkirim") {
+        const enumVal = statusEnumFor("quotations", status);
+        if (status === "Terkirim" || enumVal === "SENT") {
           await api("POST", `/quotations/${id}/send`, {});
-        } else if (status === "Menunggu persetujuan") {
+        } else if (status === "Menunggu persetujuan" || enumVal === "PENDING_APPROVAL") {
           await api("POST", `/quotations/${id}/submit`, {});
         } else {
-          await api("PATCH", `/quotations/${id}`, { status: statusEnumFor("quotations", status), notes: note });
+          await api("POST", `/quotations/${id}/status`, { status: enumVal, note });
         }
       } else if (module === "surveys") {
         await api("PATCH", `/surveys/${id}`, { status: statusEnumFor("surveys", status), notes: note });
@@ -906,7 +907,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return existing;
       }
       try {
-        const created = await api<any>("POST", "/quotations", { leadId: Number(lead.id) });
+        const leadVal = Number(lead.nilai) || undefined;
+        const created = await api<any>("POST", "/quotations", {
+          leadId: Number(lead.id),
+          total: leadVal,
+          grandTotal: leadVal,
+        });
         const adapted = adaptRow("quotations", created);
         const rows = await refreshModule("quotations");
         const latest = rows.find((q) => q.id === adapted.id) ?? adapted;

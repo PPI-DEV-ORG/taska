@@ -96,7 +96,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   function getInitialFieldValue(f: CreateField, r: Row) {
     if (f.type === "password") return "";
-    const rawVal = r[f.key];
+    let rawVal = r[f.key];
+    if (moduleKey === "supplier-pos" && f.key === "item" && rawVal) {
+      rawVal = String(rawVal).replace(/\s*x\s*\d+.*$/, "").trim();
+    }
     if (rawVal != null && rawVal !== "-") {
       return f.type === "number" ? formatThousands(String(rawVal)) : String(rawVal);
     }
@@ -215,6 +218,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         patch[f.key] = Number(String(raw ?? "0").replace(/\D/g, ""));
       } else if (f.type === "multiselect") {
         patch[f.key] = Array.isArray(raw) ? raw.join(", ") : raw ?? "";
+      } else if (f.type === "date") {
+        const str = String(raw ?? "").trim();
+        patch[f.key] = str && str !== "-" ? str : undefined;
       } else {
         patch[f.key] = raw ?? "";
       }
@@ -342,18 +348,39 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         status: "Berjalan",
       });
     } else if (a.label === "Buat PO supplier") {
-      addRow("supplier-pos", {
-        supplier: data.suppliers?.[0]?.nama || "Supplier Utama",
+      const firstSuppId = data.suppliers?.[0]?.id ? String(data.suppliers[0].id) : undefined;
+      const targetSupplier = row.supplier || (data.suppliers?.[0]?.nama ?? "Supplier Utama");
+      const targetSupplierId = row.supplierId || firstSuppId;
+
+      const reqItems = Array.isArray(row.items) && row.items.length
+        ? row.items.map((i: any) => ({
+            productId: Number(i.productId || i.product?.id),
+            qty: Number(i.qty) || 1,
+            price: Number(i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
+          }))
+        : undefined;
+
+      const created = await addRow("supplier-pos", {
+        supplier: targetSupplier,
+        supplierId: targetSupplierId,
         request: row.nomor,
+        requestId: row.id,
+        projectId: row.projectId,
         item: row.item,
+        items: reqItems,
         total: row.estimasi || 0,
         status: "Draft",
       });
+      if (created) {
+        toast(`PO supplier untuk request ${row.nomor} berhasil dibuat!`);
+        router.push(`/supplier-pos/${created.id}` as any);
+      }
+      return;
     } else if (a.label === "Buat invoice") {
-      const custName = row.perusahaan || row.customer || "Klien";
-      const q = (data.quotations ?? []).find(
+      const q = moduleKey === "quotations" ? row : (data.quotations ?? []).find(
         (quot) => (quot.leadId && String(quot.leadId) === String(row.id)) || (quot.lead && quot.lead.toLowerCase() === row.nama?.toLowerCase())
       );
+      const custName = row.customer || row.perusahaan || q?.customer || "Klien";
       const proj = (data.projects ?? []).find(
         (p) =>
           (q && p.quotationId && String(p.quotationId) === String(q.id)) ||
@@ -364,14 +391,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       let pName = proj ? proj.nama : undefined;
       if (!pId) {
         const createdProj = await addRow("projects", {
-          nama: `Project ${row.nama || custName}`,
+          nama: `Project ${q?.nomor || row.nama || custName}`,
           customer: custName,
           perusahaan: custName,
-          customerId: row.customerId,
+          customerId: row.customerId || q?.customerId,
+          quotationId: q?.id,
           jenis: "Customer",
           pm: data.users?.find((u: any) => u.role === "pm")?.nama || "Dimas Prasetyo",
           mulai: new Date().toISOString().slice(0, 10),
-          selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
+          selesai: row.targetSelesai || row.closing || row.berlaku || new Date().toISOString().slice(0, 10),
           status: "Berjalan",
         });
         if (createdProj) {
@@ -379,7 +407,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           pName = createdProj.nama;
         }
       }
-      const rawVal = q?.totalAfterDisc || q?.total || row.nilai || 0;
+      const rawVal = q?.totalAfterDisc || q?.total || row.totalAfterDisc || row.total || row.nilai || 0;
       const nilai = typeof rawVal === "number" ? rawVal : Number(String(rawVal).replace(/\D/g, "")) || 0;
       const ppn = Math.round(nilai * 0.11);
       const total = nilai + ppn;
@@ -389,9 +417,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       const createdInv = await addRow("invoices", {
         nomor: invNumber,
         customer: custName,
-        customerId: row.customerId,
+        customerId: row.customerId || q?.customerId,
         project: pName,
         projectId: pId,
+        quotationId: q?.id,
         jenis: "Termin",
         nilai,
         ppn,
@@ -418,7 +447,6 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (isLead) {
       if (a.label === "Download template penawaran" && !canOfferLead) return false;
       if (a.label === "Jadikan project" && (leadProject || row.status === "Won" || row.status === "Lost")) return false;
-      if (a.label === "Buat invoice" && (leadHasInvoice || row.status === "Lost")) return false;
     }
     if (moduleKey === "invoices" && a.label === "Catat pembayaran") {
       const isPaid = row.status === "Lunas" || String(row.rawStatus).toUpperCase() === "PAID" || (row.total > 0 && row.terbayar >= row.total);
@@ -427,6 +455,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (moduleKey === "quotations" && a.label === "Kirim ke customer") {
       const st = String(row.status ?? "");
       if (["Terkirim", "Disetujui", "Ditolak", "Kedaluwarsa", "Not Yet"].includes(st)) return false;
+    }
+    if (moduleKey === "quotations" && a.label === "Buat invoice") {
+      const qHasInvoice = (data.invoices ?? []).some(
+        (inv: Row) =>
+          (inv.quotationId && String(inv.quotationId) === String(row.id)) ||
+          (inv.nomorPenawaran && inv.nomorPenawaran === row.nomor)
+      );
+      if (qHasInvoice || row.status === "Ditolak" || row.status === "Kedaluwarsa") return false;
     }
     if (moduleKey === "purchase-requests") {
       if (a.label === "Teruskan ke Gudang") {
@@ -652,7 +688,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         <ModuleExtras moduleKey={moduleKey} row={row} onRefresh={handleRefresh} />
 
         {def.docs?.length ? (
-          <Panel title="File dan bukti">
+          <Panel title="File & Bukti Pendukung">
             <DocumentViewerList
               moduleKey={moduleKey}
               docs={def.docs}

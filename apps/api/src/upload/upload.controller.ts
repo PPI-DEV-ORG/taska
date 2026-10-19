@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -32,6 +33,8 @@ export class UploadController {
     @Query("kind") kindRaw: string | undefined,
     @Query("category") categoryRaw: string | undefined,
     @Query("folder") folderRaw: string | undefined,
+    @Query("refType") refTypeRaw: string | undefined,
+    @Query("refId") refIdRaw: string | undefined,
     @Headers("x-file-name") fileName: string | undefined,
     @Headers("x-file-category") fileCategory: string | undefined,
     @CurrentUser() user: RequestUser,
@@ -40,7 +43,9 @@ export class UploadController {
     const kind = (KINDS as string[]).includes(kindRaw ?? "") ? (kindRaw as UploadKind) : "dokumen";
     const name = fileName ?? file.originalname;
     const category = categoryRaw ?? folderRaw ?? fileCategory;
-    return this.service.saveNamed(file.buffer, kind, name, user, category);
+    const refType = refTypeRaw ?? category;
+    const refId = refIdRaw;
+    return this.service.saveNamed(file.buffer, kind, name, user, refType, refId);
   }
 
   @Public()
@@ -56,5 +61,10 @@ export class UploadController {
   @Get(":id/meta")
   meta(@Param("id", ParseIntPipe) id: number) {
     return this.service.meta(id);
+  }
+
+  @Delete(":id")
+  remove(@Param("id", ParseIntPipe) id: number) {
+    return this.service.remove(id);
   }
 }

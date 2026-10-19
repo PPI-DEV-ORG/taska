@@ -11,6 +11,7 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateIf,
 } from "class-validator";
 import { PageQuery } from "../common/dto/page-query.js";
 
@@ -174,7 +175,9 @@ export class QuotationDto {
   @IsOptional() @IsInt()
   customerId?: number;
 
-  @IsOptional() @IsDateString()
+  @IsOptional()
+  @ValidateIf((o) => o.validUntil != null && o.validUntil !== "")
+  @IsDateString()
   validUntil?: string;
 
   @IsOptional() @IsNumber() @Min(0)

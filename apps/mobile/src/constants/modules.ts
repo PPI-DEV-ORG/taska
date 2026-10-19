@@ -158,7 +158,6 @@ export const MODULES: Record<string, ModuleDef> = {
     actions: [
       { label: "Download template penawaran", toast: "Template penawaran berhasil diunduh" },
       { label: "Minta survey", toast: "Permintaan survey dikirim ke PM" },
-      { label: "Buat invoice", toast: "Invoice disiapkan untuk lead ini" },
       { label: "Jadikan project", toast: "Project baru dibuat dari lead ini", to: () => "/projects" },
     ],
     docs: ["Dokumen pendukung / brief"],
@@ -205,8 +204,11 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "dokumen", label: "File penawaran (Excel / PDF)", type: "file" },
     ],
     defaults: { status: "Not Yet", versi: 1, lead: "-", total: 0, ppn: 0, disc: 0, totalAfterDisc: 0, fileUploaded: false, tipePpn: "Exclude PPN (11%)" },
-    actions: [{ label: "Kirim ke customer", toast: "Penawaran ditandai terkirim", status: "Terkirim" }],
-    docs: ["File penawaran Excel / PDF"],
+    actions: [
+      { label: "Kirim ke customer", toast: "Penawaran ditandai terkirim", status: "Terkirim" },
+      { label: "Buat invoice", toast: "Invoice disiapkan untuk penawaran ini" },
+    ],
+    docs: [],
     emptyText: "Belum ada penawaran. Penawaran otomatis dibuat saat lead masuk tahap Qualification.",
     confirmStatuses: ["Ditolak"],
   },

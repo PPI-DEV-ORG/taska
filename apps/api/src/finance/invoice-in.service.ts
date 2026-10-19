@@ -90,8 +90,6 @@ export class InvoiceInService {
   async create(dto: InvoiceInDto, user: RequestUser) {
     const supplier = await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } });
     if (!supplier) throw new NotFoundException("Supplier tidak ditemukan");
-    if (!dto.fileId) throw new BadRequestException("File invoice supplier wajib diunggah (bukti wajib)");
-
     const number = dto.number?.trim() || null;
     if (number) {
       const dup = await this.prisma.main.invoiceIn.findFirst({ where: { number } });
@@ -108,13 +106,16 @@ export class InvoiceInService {
         total: dto.total,
         dueDate: new Date(dto.dueDate),
         status: "UNPAID",
+        fileId: dto.fileId,
       },
       include: { supplier: true },
     });
-    await this.prisma.main.file.update({
-      where: { id: dto.fileId },
-      data: { refType: "invoiceIn", refId: String(row.id) },
-    });
+    if (dto.fileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.fileId },
+        data: { refType: "invoiceIn", refId: String(row.id) },
+      }).catch(() => {});
+    }
 
     await this.approvals.request({
       kind: "INVOICE_IN",

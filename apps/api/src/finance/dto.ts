@@ -132,6 +132,12 @@ export class InvoiceInDto {
   @IsDateString()
   dueDate!: string;
 
+  @IsOptional()
+  date?: string;
+
+  @IsOptional()
+  data?: any;
+
   @IsOptional() @IsInt()
   fileId?: number;
 

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, normalize, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service.js";
@@ -243,5 +243,16 @@ export class UploadService {
     });
     if (!row) throw new NotFoundException("File tidak ditemukan");
     return { ...row, url: `/api/files/${row.id}` };
+  }
+
+  async remove(id: number) {
+    const row = await this.prisma.main.file.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("File tidak ditemukan");
+    try {
+      const abs = normalize(join(this.root, row.path));
+      if (existsSync(abs)) await unlink(abs);
+    } catch {}
+    await this.prisma.main.file.delete({ where: { id } });
+    return { ok: true };
   }
 }
