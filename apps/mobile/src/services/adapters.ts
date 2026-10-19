@@ -689,21 +689,35 @@ export function adaptRow(module: string, raw: any): Row {
         status: raw.status ?? "SELESAI",
         pencatat: nameOf(raw.creator) ?? "",
       };
-    case "invoiceIn":
+    case "invoiceIn": {
+      const suppName = nameOf(raw.supplier) ?? "";
+      const statusMap: Record<string, string> = {
+        PAID: "Lunas",
+        PARTIAL: "Dibayar sebagian",
+        OVERDUE: "Terlambat",
+        BATAL: "Batal",
+        UNPAID: "Belum lunas",
+      };
       return {
         ...base,
         nomor: raw.number ?? "",
-        supplier: nameOf(raw.supplier) ?? "",
+        customer: suppName ? `${suppName} (Supplier)` : "Supplier",
+        supplier: suppName,
         supplierId: idOf(raw.supplier),
         po: raw.supplierPo?.number ?? "-",
         supplierPoId: idOf(raw.supplierPo),
+        jenis: "Tagihan Supplier",
+        direction: "in",
         nilai: n(raw.amount),
         ppn: n(raw.ppn),
         total: n(raw.total),
         terbayar: n(raw.paidAmount),
-        tanggal: d(raw.date),
+        tanggal: d(raw.date || raw.createdAt),
         jatuhTempo: d(raw.dueDate),
-        status: raw.status ?? "UNPAID",
+        status: statusMap[raw.status] ?? raw.status ?? "Belum lunas",
+        fileId: raw.fileId ?? raw.file?.id ?? null,
+        file: raw.file ?? null,
+        transferFileId: raw.transferFileId ?? null,
         _payments: (raw.payments ?? []).map((p: any) => ({
           id: String(p.id),
           amount: n(p.amount),
@@ -713,6 +727,7 @@ export function adaptRow(module: string, raw: any): Row {
           fileId: p.fileId ?? null,
         })),
       };
+    }
     default:
       return { ...base, ...raw };
   }

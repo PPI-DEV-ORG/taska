@@ -16,6 +16,11 @@ import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 
+import {
+  SupplierInvoiceDetailDialog,
+  SupplierInvoicePayDialog,
+} from "@/modules/supplier-po/supplier-invoice-dialogs";
+
 const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
 
 export function SupplierPoExtras({ row }: { row: Row }) {
@@ -38,6 +43,9 @@ export function SupplierPoExtras({ row }: { row: Row }) {
     return d.toISOString().slice(0, 10);
   });
   const [invFileId, setInvFileId] = React.useState<number | null>(null);
+
+  const [selectedDetailInv, setSelectedDetailInv] = React.useState<Row | null>(null);
+  const [payTargetInv, setPayTargetInv] = React.useState<Row | null>(null);
 
   function go(s: string) {
     patchRow("supplier-pos", row.id, { pengiriman: s, status: s });
@@ -66,25 +74,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
     }
   }
 
-  async function handlePaySupplierInvoice(inv: Row) {
-    const sisa = Math.max(0, Number(inv.total || 0) - Number(inv.terbayar || 0));
-    if (sisa <= 0) {
-      toast("Invoice supplier ini sudah lunas", "info");
-      return;
-    }
-    try {
-      await api("POST", `/invoice-in/${inv.id}/payments`, {
-        amount: sisa,
-        date: new Date().toISOString().slice(0, 10),
-        method: "TRANSFER",
-        reference: `PAY-${inv.nomor}`,
-      });
-      toast(`Pembayaran ke supplier sebesar ${rupiah(sisa)} berhasil dicatat`);
-      await reload();
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal mencatat pembayaran supplier", "danger");
-    }
-  }
+  const canPay = user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
 
   return (
     <>
@@ -166,16 +156,21 @@ export function SupplierPoExtras({ row }: { row: Row }) {
               return (
                 <Line
                   key={inv.id}
-                  left={`${inv.nomor} · Jatuh tempo ${inv.jatuhTempo}`}
+                  left={`${inv.nomor} · Jatuh tempo ${inv.jatuhTempo || "-"}`}
                   sub={`Dibayar: ${rupiah(inv.terbayar || 0)} dari ${rupiah(inv.total || 0)} (${inv.status})`}
                   right={
-                    !lunas && (user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin") ? (
-                      <Button size="sm" variant="outline" onPress={() => handlePaySupplierInvoice(inv)}>
-                        <Text className="text-xs">Lunasi</Text>
+                    <View className="flex-row items-center gap-1.5">
+                      <Button size="sm" variant="outline" className="h-7 px-2" onPress={() => setSelectedDetailInv(inv)}>
+                        <Text className="text-xs">Detail</Text>
                       </Button>
-                    ) : (
-                      <StatusBadge status={lunas ? "Lunas" : inv.status} />
-                    )
+                      {!lunas && canPay ? (
+                        <Button size="sm" className="h-7 px-2 bg-primary" onPress={() => setPayTargetInv(inv)}>
+                          <Text className="text-xs text-primary-foreground font-medium">Lunasi</Text>
+                        </Button>
+                      ) : (
+                        <StatusBadge status={lunas ? "Lunas" : inv.status} />
+                      )}
+                    </View>
                   }
                 />
               );
@@ -220,6 +215,23 @@ export function SupplierPoExtras({ row }: { row: Row }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SupplierInvoiceDetailDialog
+        open={!!selectedDetailInv}
+        onOpenChange={(v) => !v && setSelectedDetailInv(null)}
+        invoice={selectedDetailInv}
+        canPay={canPay}
+        onPayPress={(inv) => setPayTargetInv(inv)}
+      />
+
+      <SupplierInvoicePayDialog
+        open={!!payTargetInv}
+        onOpenChange={(v) => !v && setPayTargetInv(null)}
+        invoice={payTargetInv}
+        onSuccess={() => {
+          setSelectedDetailInv(null);
+        }}
+      />
     </>
   );
 }

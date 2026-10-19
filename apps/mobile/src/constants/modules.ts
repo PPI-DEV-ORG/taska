@@ -302,7 +302,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Tanggal", key: "tanggal", fmt: "date" }, { label: "Jatuh tempo", key: "jatuhTempo", fmt: "date" },
     ],
     statusKey: "status",
-    statuses: ["Belum dikirim", "Terkirim", "Dibayar sebagian", "Lunas", "Terlambat"],
+    statuses: ["Belum lunas", "Belum dikirim", "Terkirim", "Dibayar sebagian", "Lunas", "Terlambat"],
     titleOf: (r) => r.nomor, subtitleOf: (r) => `${r.customer} · ${r.jenis}`,
     search: ["nomor", "customer", "po"],
     createLabel: "Catat invoice",
