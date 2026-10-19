@@ -60,6 +60,7 @@ export async function buildQuotationXlsx(params: {
   customerAddress?: string;
   leadName?: string;
   kopText?: string;
+  kopLogoUrl?: string;
   subject?: string;
   intro?: string;
   items?: QuotationItemData[];
@@ -67,6 +68,8 @@ export async function buildQuotationXlsx(params: {
   ppn?: number;
   discount?: number;
   grandTotal?: number;
+  dpLabel?: string;
+  dpAmount?: number;
   notes?: string[];
   signerName?: string;
   signerTitle?: string;
@@ -325,6 +328,23 @@ export async function buildQuotationXlsx(params: {
   valGrand.alignment = { horizontal: "right", vertical: "middle" };
   valGrand.border = thinBorder;
 
+  // DP / Termin Row (jika ada skema DP atau Termin)
+  if (params.dpLabel && params.dpAmount !== undefined) {
+    const dpRowIdx = currRow++;
+    const lblDp = ws.getCell(dpRowIdx, 5);
+    lblDp.value = params.dpLabel.endsWith(":") ? params.dpLabel : `${params.dpLabel}    :`;
+    lblDp.font = { name: "Calibri", size: 10, bold: true };
+    lblDp.alignment = { horizontal: "right", vertical: "middle" };
+    lblDp.border = thinBorder;
+
+    const valDp = ws.getCell(dpRowIdx, 6);
+    valDp.value = Number(params.dpAmount);
+    valDp.font = { name: "Calibri", size: 10, bold: true };
+    valDp.numFmt = "#,##0.00";
+    valDp.alignment = { horizontal: "right", vertical: "middle" };
+    valDp.border = thinBorder;
+  }
+
   // 9. Notes Section
   const notesRowIdx = currRow++;
   const cNotes = ws.getCell(notesRowIdx, 1);
@@ -335,14 +355,28 @@ export async function buildQuotationXlsx(params: {
     Array.isArray(params.notes) && params.notes.length > 0 ? params.notes : DEFAULT_QUOTATION_NOTES;
   notesList.forEach((nText, idx) => {
     const r = currRow++;
-    const cNum = ws.getCell(r, 1);
-    cNum.value = idx + 1;
-    cNum.font = serifFont;
-    cNum.alignment = { horizontal: "center" };
+    const isBankInfo = /^(pembayaran|bank|no\.\s*rek|nama|alamat|bekasi)/i.test(nText.trim());
+    if (!isBankInfo) {
+      const cNum = ws.getCell(r, 1);
+      cNum.value = idx + 1;
+      cNum.font = serifFont;
+      cNum.alignment = { horizontal: "center" };
+    }
 
-    const cTxt = ws.getCell(r, 2);
-    cTxt.value = nText;
-    cTxt.font = serifFont;
+    if (isBankInfo && nText.includes(" : ")) {
+      const parts = nText.split(" : ");
+      const cLabel = ws.getCell(r, 2);
+      cLabel.value = parts[0].trim();
+      cLabel.font = serifFont;
+
+      const cVal = ws.getCell(r, 3);
+      cVal.value = `: ${parts.slice(1).join(" : ").trim()}`;
+      cVal.font = serifFont;
+    } else {
+      const cTxt = ws.getCell(r, 2);
+      cTxt.value = nText;
+      cTxt.font = serifFont;
+    }
   });
 
   // Blank row
@@ -681,6 +715,7 @@ export async function buildQuotationPdf(params: {
   customerAddress?: string;
   leadName?: string;
   kopText?: string;
+  kopLogoUrl?: string;
   subject?: string;
   intro?: string;
   items?: QuotationItemData[];
@@ -688,6 +723,8 @@ export async function buildQuotationPdf(params: {
   ppn?: number;
   discount?: number;
   grandTotal?: number;
+  dpLabel?: string;
+  dpAmount?: number;
   notes?: string[];
   signerName?: string;
   signerTitle?: string;
@@ -779,6 +816,18 @@ export async function buildQuotationPdf(params: {
     { text: "GRAND TOTAL", bold: true, alignment: "right", fontSize: 9 },
     { text: `Rp ${finalGrandTotal.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
   ]);
+
+  if (params.dpLabel && params.dpAmount !== undefined) {
+    const formattedDpLabel = params.dpLabel.endsWith(":") ? params.dpLabel : `${params.dpLabel}    :`;
+    tableBody.push([
+      { text: "", colSpan: 4, border: [false, false, false, false] },
+      {},
+      {},
+      {},
+      { text: formattedDpLabel, bold: true, alignment: "right", fontSize: 9 },
+      { text: `Rp ${Number(params.dpAmount).toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
+    ]);
+  }
 
   const city = params.city?.trim() || "Bekasi";
   const dateStr = `${city}, ${formatTanggalIndo(params.date)}`;
@@ -876,10 +925,15 @@ export async function buildQuotationPdf(params: {
         bold: true,
         margin: [0, 4, 0, 2],
       },
-      {
-        ol: notesList.map((n) => ({ text: n, fontSize: 9 })),
-        margin: [0, 0, 0, 8],
-      },
+      ...notesList.map((n) => {
+        const isBankInfo = /^(pembayaran|bank|no\.\s*rek|nama|alamat|bekasi)/i.test(n.trim());
+        return {
+          text: isBankInfo ? n : `• ${n}`,
+          fontSize: 9,
+          margin: [isBankInfo ? 4 : 10, 1, 0, 1],
+          bold: /^(pembayaran|nama)/i.test(n.trim()),
+        };
+      }),
       // Kontak
       {
         text: [

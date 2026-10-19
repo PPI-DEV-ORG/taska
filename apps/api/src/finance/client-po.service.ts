@@ -58,7 +58,8 @@ export class ClientPoService {
       include: { customer: true, quotation: { select: { id: true, number: true } }, invoices: true },
     });
     if (!row) throw new NotFoundException("PO client tidak ditemukan");
-    return row;
+    const file = row.fileId ? await this.prisma.main.file.findUnique({ where: { id: row.fileId } }) : null;
+    return { ...row, file };
   }
 
   async create(dto: ClientPoDto, user: RequestUser) {
@@ -80,6 +81,7 @@ export class ClientPoService {
         quotationId: dto.quotationId,
         amount,
         date,
+        fileId: dto.fileId,
         notes: dto.notes,
       },
       include: { customer: true, quotation: { select: { id: true, number: true } } },
@@ -97,7 +99,8 @@ export class ClientPoService {
       entityId: row.id,
       detail: `${number} Rp${amount} — ${customer.name}`,
     });
-    return row;
+    const file = row.fileId ? await this.prisma.main.file.findUnique({ where: { id: row.fileId } }) : null;
+    return { ...row, file };
   }
 
   async update(id: number, dto: ClientPoDto, user: RequestUser) {
@@ -113,6 +116,7 @@ export class ClientPoService {
         quotationId: dto.quotationId !== undefined ? dto.quotationId : row.quotationId,
         amount: dto.amount ?? row.amount,
         date: dto.date ? new Date(dto.date) : row.date,
+        fileId: dto.fileId !== undefined ? dto.fileId : row.fileId,
         notes: dto.notes !== undefined ? dto.notes : row.notes,
       },
       include: { customer: true, quotation: { select: { id: true, number: true } } },
@@ -130,7 +134,8 @@ export class ClientPoService {
       entityId: id,
       detail: `${updated.number} Rp${updated.amount}`,
     });
-    return updated;
+    const file = updated.fileId ? await this.prisma.main.file.findUnique({ where: { id: updated.fileId } }) : null;
+    return { ...updated, file };
   }
 
   async remove(id: number, user: RequestUser) {

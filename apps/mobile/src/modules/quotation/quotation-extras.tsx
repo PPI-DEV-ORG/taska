@@ -30,99 +30,8 @@ import { type Row } from "@/constants/modules";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { QuotationTemplateGenerator } from "@/modules/quotation/quotation-template-generator";
 import { type QuotationItem } from "@/modules/quotation/types";
+import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { Line } from "../shared/line";
-interface TermItem {
-  percent: number;
-  dpp: number;
-  ppn: number;
-  pph: number;
-  usePpn: boolean;
-  usePph: boolean;
-  total: number;
-  dueDate: string;
-}
-
-function buildTerms(
-  scheme: "Termin" | "DP & Pelunasan" | "Sekaligus",
-  count: number,
-  totalDpp: number,
-  defaultPpn: boolean,
-  baseDate: string | number
-): TermItem[] {
-  const today = typeof baseDate === "number" ? baseDate : new Date(baseDate).getTime() || 1792372000000;
-  if (scheme === "Sekaligus") {
-    const dpp = totalDpp;
-    const ppn = defaultPpn ? Math.round(dpp * 0.11) : 0;
-    return [
-      {
-        percent: 100,
-        dpp,
-        ppn,
-        pph: 0,
-        usePpn: defaultPpn,
-        usePph: false,
-        total: dpp + ppn,
-        dueDate: new Date(today + 30 * 86_400_000).toISOString().slice(0, 10),
-      },
-    ];
-  }
-  if (scheme === "DP & Pelunasan") {
-    const dpp1 = Math.round(totalDpp * 0.5);
-    const dpp2 = Math.max(0, totalDpp - dpp1);
-    const ppn1 = defaultPpn ? Math.round(dpp1 * 0.11) : 0;
-    const ppn2 = defaultPpn ? Math.round(dpp2 * 0.11) : 0;
-    return [
-      {
-        percent: 50,
-        dpp: dpp1,
-        ppn: ppn1,
-        pph: 0,
-        usePpn: defaultPpn,
-        usePph: false,
-        total: dpp1 + ppn1,
-        dueDate: new Date(today + 14 * 86_400_000).toISOString().slice(0, 10),
-      },
-      {
-        percent: 50,
-        dpp: dpp2,
-        ppn: ppn2,
-        pph: 0,
-        usePpn: defaultPpn,
-        usePph: false,
-        total: dpp2 + ppn2,
-        dueDate: new Date(today + 45 * 86_400_000).toISOString().slice(0, 10),
-      },
-    ];
-  }
-  // Termin (min 3)
-  const cnt = Math.max(3, count);
-  let percentages: number[] = [];
-  if (cnt === 3) {
-    percentages = [30, 30, 40];
-  } else {
-    const basePct = Math.floor(100 / cnt);
-    percentages = Array.from({ length: cnt - 1 }, () => basePct);
-    percentages.push(100 - basePct * (cnt - 1));
-  }
-  let allocated = 0;
-  return percentages.map((pct, idx) => {
-    const isLast = idx === cnt - 1;
-    const dpp = isLast ? Math.max(0, totalDpp - allocated) : Math.round(totalDpp * (pct / 100));
-    allocated += dpp;
-    const ppn = defaultPpn ? Math.round(dpp * 0.11) : 0;
-    const days = 14 + idx * 30;
-    return {
-      percent: pct,
-      dpp,
-      ppn,
-      pph: 0,
-      usePpn: defaultPpn,
-      usePph: false,
-      total: dpp + ppn,
-      dueDate: new Date(today + days * 86_400_000).toISOString().slice(0, 10),
-    };
-  });
-}
 
 export function QuotationExtras({ row }: { row: Row }) {
   const router = useRouter();
@@ -165,13 +74,18 @@ export function QuotationExtras({ row }: { row: Row }) {
   // Revisi state
   const [revisiOpen, setRevisiOpen] = React.useState(false);
   const [revisiTotal, setRevisiTotal] = React.useState(String(row.total || row.nilai || "0"));
+  const [revisiDiscType, setRevisiDiscType] = React.useState<"nominal" | "percent">("nominal");
   const [revisiDisc, setRevisiDisc] = React.useState(String(row.disc || "0"));
+  const [revisiDiscPercent, setRevisiDiscPercent] = React.useState("0");
   const [revisiReason, setRevisiReason] = React.useState("");
   const [revisiPpnMode, setRevisiPpnMode] = React.useState<"exclude" | "include" | "none">(ppnMode);
 
   const nextVersionNum = (row.versi || 1) + 1;
   const revTotNum = Number(revisiTotal.replace(/\D/g, "")) || 0;
-  const revDiscNum = Number(revisiDisc.replace(/\D/g, "")) || 0;
+  const revDiscPercentNum = Number(revisiDiscPercent.replace(/\D/g, "")) || 0;
+  const revDiscNum = revisiDiscType === "percent"
+    ? Math.round(revTotNum * (revDiscPercentNum / 100))
+    : (Number(revisiDisc.replace(/\D/g, "")) || 0);
   const revNet = Math.max(0, revTotNum - revDiscNum);
   const revPpn = revisiPpnMode === "exclude" ? Math.round(revNet * 0.11) : 0;
   const revAfterDisc = revisiPpnMode === "exclude" ? revNet + revPpn : revNet;
@@ -255,212 +169,11 @@ export function QuotationExtras({ row }: { row: Row }) {
   const calcTotalAfterDisc = ppnMode === "exclude" ? netBeforeTax + calcPpn : netBeforeTax;
   const baseDealDpp = netBeforeTax || dealAmount || 0;
 
-  // Invoice creation modal state (Termin / DP & Pelunasan / Sekaligus)
+  // Invoice creation modal state
   const [invModalOpen, setInvModalOpen] = React.useState(false);
-  const [invNomor, setInvNomor] = React.useState("");
-  const [invScheme, setInvScheme] = React.useState<"Termin" | "DP & Pelunasan" | "Sekaligus">("Termin");
-  const [termCount, setTermCount] = React.useState(3);
-  const [terms, setTerms] = React.useState<TermItem[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = React.useState("AUTO_PROJECT");
-  const [isSubmittingInv, setIsSubmittingInv] = React.useState(false);
-
-  const baseIsoDate = React.useMemo(() => {
-    if (row.dibuat && !isNaN(new Date(row.dibuat).getTime())) {
-      return new Date(row.dibuat).toISOString().slice(0, 10);
-    }
-    return "2026-10-19";
-  }, [row.dibuat]);
 
   function openInvoiceModal() {
-    setSelectedProjectId(relatedProject ? String(relatedProject.id) : "AUTO_PROJECT");
-    setInvScheme("Termin");
-    setTermCount(3);
-    setTerms(buildTerms("Termin", 3, baseDealDpp, ppnMode !== "none", baseIsoDate));
     setInvModalOpen(true);
-  }
-
-  function handleSwitchScheme(s: "Termin" | "DP & Pelunasan" | "Sekaligus") {
-    setInvScheme(s);
-    const cnt = s === "Termin" ? Math.max(3, termCount) : s === "DP & Pelunasan" ? 2 : 1;
-    setTerms(buildTerms(s, cnt, baseDealDpp, ppnMode !== "none", baseIsoDate));
-  }
-
-  function handleTermCountChange(newCnt: number) {
-    if (newCnt < 3 || newCnt > 10) return;
-    setTermCount(newCnt);
-    setTerms(buildTerms("Termin", newCnt, baseDealDpp, ppnMode !== "none", baseIsoDate));
-  }
-
-  function handleUpdateTermPercent(index: number, valStr: string) {
-    const p = Number(valStr.replace(/\D/g, "")) || 0;
-    setTerms((prev) => {
-      const next = [...prev];
-      const cur = next[index];
-      if (!cur) return prev;
-      const dpp = Math.round(baseDealDpp * (p / 100));
-      const ppn = cur.usePpn ? Math.round(dpp * 0.11) : 0;
-      const pph = cur.usePph ? Math.round(dpp * 0.02) : 0;
-      next[index] = {
-        ...cur,
-        percent: p,
-        dpp,
-        ppn,
-        pph,
-        total: dpp + ppn - pph,
-      };
-      return next;
-    });
-  }
-
-  function handleUpdateTermDpp(index: number, valStr: string) {
-    const dpp = Number(valStr.replace(/\D/g, "")) || 0;
-    setTerms((prev) => {
-      const next = [...prev];
-      const cur = next[index];
-      if (!cur) return prev;
-      const pct = baseDealDpp > 0 ? Math.round((dpp / baseDealDpp) * 100) : 0;
-      const ppn = cur.usePpn ? Math.round(dpp * 0.11) : 0;
-      const pph = cur.usePph ? Math.round(dpp * 0.02) : 0;
-      next[index] = {
-        ...cur,
-        percent: pct,
-        dpp,
-        ppn,
-        pph,
-        total: dpp + ppn - pph,
-      };
-      return next;
-    });
-  }
-
-  function handleToggleTermPpn(index: number) {
-    setTerms((prev) => {
-      const next = [...prev];
-      const cur = next[index];
-      if (!cur) return prev;
-      const usePpn = !cur.usePpn;
-      const ppn = usePpn ? Math.round(cur.dpp * 0.11) : 0;
-      next[index] = { ...cur, usePpn, ppn, total: cur.dpp + ppn - cur.pph };
-      return next;
-    });
-  }
-
-  function handleToggleTermPph(index: number) {
-    setTerms((prev) => {
-      const next = [...prev];
-      const cur = next[index];
-      if (!cur) return prev;
-      const usePph = !cur.usePph;
-      const pph = usePph ? Math.round(cur.dpp * 0.02) : 0;
-      next[index] = { ...cur, usePph, pph, total: cur.dpp + cur.ppn - pph };
-      return next;
-    });
-  }
-
-  function handleUpdateTermDueDate(index: number, d: string) {
-    setTerms((prev) => {
-      const next = [...prev];
-      if (next[index]) next[index] = { ...next[index], dueDate: d };
-      return next;
-    });
-  }
-
-  async function handleCreateInvoice() {
-    if (terms.length === 0) {
-      toast("Minimal 1 invoice harus dibuat", "danger");
-      return;
-    }
-    const totalDpp = terms.reduce((s, t) => s + t.dpp, 0);
-    if (totalDpp <= 0) {
-      toast("Total nilai tagihan harus lebih dari 0", "danger");
-      return;
-    }
-
-    const custName = row.customer || row.perusahaan || "Klien";
-    setIsSubmittingInv(true);
-    try {
-      let targetProjectId = selectedProjectId;
-      let targetProjectName = "";
-
-      if (targetProjectId === "AUTO_PROJECT" || !targetProjectId) {
-        if (relatedProject) {
-          targetProjectId = String(relatedProject.id);
-          targetProjectName = relatedProject.nama;
-        } else {
-          const createdProj = await addRow("projects", {
-            nama: `Project ${custName} (${row.nomor})`,
-            customer: custName,
-            perusahaan: custName,
-            customerId: row.customerId,
-            quotationId: row.id,
-            jenis: "Customer",
-            pm: (data.users ?? []).find((u: Row) => u.role === "pm")?.nama || "Dimas Prasetyo",
-            mulai: new Date().toISOString().slice(0, 10),
-            selesai: new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10),
-            status: "Berjalan",
-          });
-          if (createdProj) {
-            targetProjectId = String(createdProj.id);
-            targetProjectName = createdProj.nama;
-          }
-        }
-      } else {
-        const found = (data.projects ?? []).find((p: Row) => String(p.id) === String(targetProjectId));
-        if (found) targetProjectName = found.nama;
-      }
-
-      const baseNomor =
-        invNomor.trim() ||
-        `INV/${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, "0")}/${String(row.id).padStart(3, "0")}`;
-
-      const createdNumbers: string[] = [];
-
-      for (let i = 0; i < terms.length; i++) {
-        const term = terms[i];
-        if (!term) continue;
-        const invoiceNumber = terms.length > 1 ? `${baseNomor}/${i + 1}` : baseNomor;
-        const invoiceType =
-          invScheme === "DP & Pelunasan"
-            ? (i === 0 ? "DP" : "Pelunasan")
-            : invScheme === "Termin"
-            ? "Termin"
-            : "Pelunasan";
-
-        const created = await addRow("invoices", {
-          nomor: invoiceNumber,
-          customer: custName,
-          customerId: row.customerId,
-          quotationId: row.id,
-          quotation: row.nomor,
-          project: targetProjectName,
-          projectId: targetProjectId && targetProjectId !== "AUTO_PROJECT" ? targetProjectId : undefined,
-          jenis: invoiceType,
-          nilai: term.dpp,
-          ppn: term.ppn,
-          total: term.total,
-          tanggal: new Date().toISOString().slice(0, 10),
-          jatuhTempo: term.dueDate,
-          status: "Belum dikirim",
-          catatan: `${invScheme} (${term.percent}%) - Penawaran ${row.nomor}${term.pph > 0 ? ` (PPh 2%: ${rupiah(term.pph)})` : ""}`,
-        });
-
-        if (created) {
-          createdNumbers.push(invoiceNumber);
-        }
-      }
-
-      if (createdNumbers.length > 0) {
-        toast(`${createdNumbers.length} invoice (${createdNumbers.join(", ")}) berhasil dibuat!`);
-        pushHistory("quotations", row.id, `${createdNumbers.length} invoice dibuat (${createdNumbers.join(", ")})`);
-        setInvModalOpen(false);
-        setInvNomor("");
-        await reload();
-      }
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal membuat invoice", "danger");
-    } finally {
-      setIsSubmittingInv(false);
-    }
   }
 
   return (
@@ -600,6 +313,7 @@ export function QuotationExtras({ row }: { row: Row }) {
             notesList?: string[];
             city?: string;
             kopText?: string;
+            kopLogoUrl?: string;
             customerAddress?: string;
             signerName?: string;
             signerTitle?: string;
@@ -616,6 +330,7 @@ export function QuotationExtras({ row }: { row: Row }) {
             notesList: meta?.notesList,
             city: meta?.city,
             kopText: meta?.kopText,
+            kopLogoUrl: meta?.kopLogoUrl,
             customerAddress: meta?.customerAddress,
             signerName: meta?.signerName,
             signerTitle: meta?.signerTitle,
@@ -667,7 +382,7 @@ export function QuotationExtras({ row }: { row: Row }) {
                     <Text className="text-sm font-bold text-foreground">
                       Versi {ver.v}
                     </Text>
-                    {i === 0 ? <StatusBadge status={row.status || "Disetujui"} /> : null}
+                    <StatusBadge status={(ver as any).status || (i === 0 ? row.status : "Ditolak")} />
                   </View>
                   <Text className="text-xs text-muted-foreground mt-0.5">
                     {ver.reason ? `${ver.reason} · ` : ""}{ver.date || "-"}
@@ -960,20 +675,55 @@ export function QuotationExtras({ row }: { row: Row }) {
             <View className="gap-1">
               <Text className="text-xs text-muted-foreground">Nilai Baru Sebelum PPN & Disc (Rp)</Text>
               <Input
-                value={revisiTotal}
-                onChangeText={setRevisiTotal}
+                value={formatThousands(revisiTotal)}
+                onChangeText={(v) => setRevisiTotal(v.replace(/\D/g, ""))}
                 placeholder="Nilai total"
                 keyboardType="numeric"
               />
             </View>
-            <View className="gap-1">
-              <Text className="text-xs text-muted-foreground">Diskon Baru (Rp)</Text>
-              <Input
-                value={revisiDisc}
-                onChangeText={setRevisiDisc}
-                placeholder="Nilai diskon"
-                keyboardType="numeric"
-              />
+            <View className="gap-1.5">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs text-muted-foreground">Diskon Baru</Text>
+                <View className="flex-row gap-1">
+                  <Button
+                    size="sm"
+                    variant={revisiDiscType === "nominal" ? "default" : "outline"}
+                    onPress={() => setRevisiDiscType("nominal")}
+                    className="h-6 px-2"
+                  >
+                    <Text className="text-[10px]">Rp Nominal</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={revisiDiscType === "percent" ? "default" : "outline"}
+                    onPress={() => setRevisiDiscType("percent")}
+                    className="h-6 px-2"
+                  >
+                    <Text className="text-[10px]">% Persen</Text>
+                  </Button>
+                </View>
+              </View>
+              {revisiDiscType === "percent" ? (
+                <View className="flex-row items-center gap-2">
+                  <View className="flex-1">
+                    <Input
+                      value={revisiDiscPercent}
+                      onChangeText={(v) => setRevisiDiscPercent(v.replace(/\D/g, ""))}
+                      placeholder="Contoh: 10"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <Text className="text-xs font-semibold text-muted-foreground">%</Text>
+                  <Text className="text-xs font-semibold text-primary">= {rupiah(revDiscNum)}</Text>
+                </View>
+              ) : (
+                <Input
+                  value={formatThousands(revisiDisc)}
+                  onChangeText={(v) => setRevisiDisc(v.replace(/\D/g, ""))}
+                  placeholder="Nilai diskon (Rp)"
+                  keyboardType="numeric"
+                />
+              )}
             </View>
             <View className="gap-1">
               <Text className="text-xs text-muted-foreground">Tipe / Skema PPN Revisi</Text>
@@ -1014,264 +764,12 @@ export function QuotationExtras({ row }: { row: Row }) {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Buat Invoice dari Penawaran (Termin / DP & Pelunasan / Sekaligus) */}
-      <Dialog open={invModalOpen} onOpenChange={setInvModalOpen}>
-        <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle>Buat Invoice & Skema Pembayaran</DialogTitle>
-          </DialogHeader>
-          <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-3.5 py-1">
-            <View className="gap-1">
-              <Text className="text-xs font-semibold text-muted-foreground">Nomor Invoice Dasar (Base Number)</Text>
-              <Input
-                value={invNomor}
-                onChangeText={setInvNomor}
-                placeholder={`Contoh: INV/${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, "0")}/${String(row.id).padStart(3, "0")}`}
-              />
-              <Text className="text-[11px] text-muted-foreground">
-                Setiap termin otomatis diberikan akhiran urut: <Text className="font-semibold text-primary">/1, /2, /3, dst.</Text>
-              </Text>
-            </View>
-
-            <View className="flex-row gap-2">
-              <View className="flex-1 gap-1">
-                <Text className="text-xs font-semibold text-muted-foreground">Pelanggan</Text>
-                <Input value={row.customer || row.perusahaan || ""} editable={false} className="bg-muted/40" />
-              </View>
-              <View className="flex-1 gap-1">
-                <Text className="text-xs font-semibold text-muted-foreground">Penawaran Sumber</Text>
-                <Input value={row.nomor || ""} editable={false} className="bg-muted/40" />
-              </View>
-            </View>
-
-            <View className="gap-1">
-              <Text className="text-xs font-semibold text-muted-foreground">Project Terkait</Text>
-              <View className="gap-1.5">
-                <Pressable
-                  onPress={() => setSelectedProjectId(relatedProject ? String(relatedProject.id) : "AUTO_PROJECT")}
-                  className={`border rounded-lg p-2.5 flex-row items-center justify-between ${
-                    selectedProjectId === (relatedProject ? String(relatedProject.id) : "AUTO_PROJECT")
-                      ? "bg-primary/10 border-primary"
-                      : "border-border"
-                  }`}
-                >
-                  <View className="flex-1 pr-2">
-                    <Text className="text-xs font-semibold">
-                      {relatedProject
-                        ? `Project Terkait: ${relatedProject.nama}`
-                        : `Buat Project Otomatis (Project ${row.customer || "Client"} - ${row.nomor})`}
-                    </Text>
-                    <Text className="text-[11px] text-muted-foreground">
-                      {relatedProject
-                        ? `Status pembayaran project: ${relatedProject.pembayaran || "Belum lunas"}`
-                        : "Project baru akan dibuat & pembayaran otomatis LUNAS saat invoice lunas"}
-                    </Text>
-                  </View>
-                  {selectedProjectId === (relatedProject ? String(relatedProject.id) : "AUTO_PROJECT") ? (
-                    <Check size={16} color={colors.primary} />
-                  ) : null}
-                </Pressable>
-
-                {(data.projects ?? [])
-                  .filter((p: Row) => !relatedProject || String(p.id) !== String(relatedProject.id))
-                  .slice(0, 2)
-                  .map((p: Row) => (
-                    <Pressable
-                      key={p.id}
-                      onPress={() => setSelectedProjectId(String(p.id))}
-                      className={`border rounded-lg p-2 flex-row items-center justify-between ${
-                        selectedProjectId === String(p.id) ? "bg-primary/10 border-primary" : "border-border"
-                      }`}
-                    >
-                      <View className="flex-1 pr-2">
-                        <Text className="text-xs font-medium">{p.nama}</Text>
-                        <Text className="text-[10px] text-muted-foreground">{p.customer} · {p.pembayaran || "Belum lunas"}</Text>
-                      </View>
-                      {selectedProjectId === String(p.id) ? <Check size={14} color={colors.primary} /> : null}
-                    </Pressable>
-                  ))}
-              </View>
-            </View>
-
-            {/* Pilihan Skema Pembayaran */}
-            <View className="gap-1.5 pt-1">
-              <Text className="text-xs font-semibold text-muted-foreground">Pilih Skema Pembayaran</Text>
-              <View className="flex-row gap-2">
-                {(["Termin", "DP & Pelunasan", "Sekaligus"] as const).map((s) => (
-                  <Button
-                    key={s}
-                    size="sm"
-                    variant={invScheme === s ? "default" : "outline"}
-                    onPress={() => handleSwitchScheme(s)}
-                    className="flex-1 h-9"
-                  >
-                    <Text className="text-xs font-semibold">{s}</Text>
-                  </Button>
-                ))}
-              </View>
-            </View>
-
-            {/* Input jumlah termin jika Termin */}
-            {invScheme === "Termin" && (
-              <View className="flex-row items-center justify-between p-3 rounded-xl bg-card border border-border/80">
-                <View>
-                  <Text className="text-xs font-bold text-foreground">Jumlah Pembayaran Termin</Text>
-                  <Text className="text-[11px] text-muted-foreground">Sesuai kesepakatan, minimal 3 kali pembayaran invoice.</Text>
-                </View>
-                <View className="flex-row items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onPress={() => handleTermCountChange(termCount - 1)}
-                    disabled={termCount <= 3}
-                    className="h-8 w-8 p-0 items-center justify-center"
-                  >
-                    <Minus size={14} color={colors.text} />
-                  </Button>
-                  <Text className="text-sm font-bold text-foreground px-1">{termCount}x</Text>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onPress={() => handleTermCountChange(termCount + 1)}
-                    disabled={termCount >= 10}
-                    className="h-8 w-8 p-0 items-center justify-center"
-                  >
-                    <Plus size={14} color={colors.text} />
-                  </Button>
-                </View>
-              </View>
-            )}
-
-            {/* Ringkasan Nilai & Alokasi */}
-            {(() => {
-              const allocatedPct = terms.reduce((s, t) => s + t.percent, 0);
-              const allocatedDpp = terms.reduce((s, t) => s + t.dpp, 0);
-              const isMatch = allocatedPct === 100;
-              return (
-                <View className={`p-3 rounded-xl border flex-row items-center justify-between ${isMatch ? "bg-primary/5 border-primary/20" : "bg-warning/10 border-warning/30"}`}>
-                  <View>
-                    <Text className="text-xs text-muted-foreground">Total Nilai DPP Penawaran</Text>
-                    <Text className="text-sm font-bold text-foreground">{rupiah(baseDealDpp)}</Text>
-                  </View>
-                  <View className="items-end">
-                    <Text className={`text-xs font-bold ${isMatch ? "text-primary" : "text-warning"}`}>
-                      Alokasi: {allocatedPct}% ({rupiah(allocatedDpp)})
-                    </Text>
-                    {!isMatch && (
-                      <Text className="text-[10px] text-warning font-medium">Harus tepat 100%</Text>
-                    )}
-                  </View>
-                </View>
-              );
-            })()}
-
-            {/* Rincian Setiap Invoice Termin */}
-            <View className="gap-2.5 pt-1">
-              <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Daftar Invoice yang Dibuat ({terms.length} Invoice)
-              </Text>
-
-              {terms.map((term, idx) => {
-                const baseNomor =
-                  invNomor.trim() ||
-                  `INV/${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, "0")}/${String(row.id).padStart(3, "0")}`;
-                const invoiceNumber = terms.length > 1 ? `${baseNomor}/${idx + 1}` : baseNomor;
-                const label =
-                  invScheme === "DP & Pelunasan"
-                    ? idx === 0
-                      ? "Pembayaran 1 (DP / Uang Muka)"
-                      : "Pembayaran 2 (Pelunasan)"
-                    : invScheme === "Termin"
-                    ? `Termin ke-${idx + 1}`
-                    : "Invoice Pembayaran";
-
-                return (
-                  <View key={idx} className="bg-card border border-border/80 rounded-xl p-3 gap-2.5">
-                    <View className="flex-row items-center justify-between pb-1.5 border-b border-border/40">
-                      <View className="flex-row items-center gap-2">
-                        <Receipt size={15} color={colors.primary} />
-                        <Text className="text-xs font-bold text-foreground">{label}</Text>
-                      </View>
-                      <Text className="text-xs font-mono font-bold text-primary">{invoiceNumber}</Text>
-                    </View>
-
-                    <View className="flex-row gap-2">
-                      <View className="w-24 gap-1">
-                        <Text className="text-[11px] text-muted-foreground">Porsi (%)</Text>
-                        <Input
-                          value={String(term.percent)}
-                          onChangeText={(v) => handleUpdateTermPercent(idx, v)}
-                          keyboardType="numeric"
-                          placeholder="%"
-                        />
-                      </View>
-                      <View className="flex-1 gap-1">
-                        <Text className="text-[11px] text-muted-foreground">Nilai DPP (Rp)</Text>
-                        <Input
-                          value={formatThousands(String(term.dpp))}
-                          onChangeText={(v) => handleUpdateTermDpp(idx, v)}
-                          keyboardType="numeric"
-                          placeholder="DPP"
-                        />
-                      </View>
-                    </View>
-
-                    {/* Pajak PPN & PPh */}
-                    <View className="flex-row items-center justify-between bg-panel p-2 rounded-lg border border-border/60">
-                      <View className="flex-row items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant={term.usePpn ? "default" : "outline"}
-                          onPress={() => handleToggleTermPpn(idx)}
-                          className="h-7 px-2"
-                        >
-                          <Text className="text-[11px]">{term.usePpn ? "PPN 11% ✓" : "Tanpa PPN"}</Text>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={term.usePph ? "default" : "outline"}
-                          onPress={() => handleToggleTermPph(idx)}
-                          className="h-7 px-2"
-                        >
-                          <Text className="text-[11px]">{term.usePph ? "PPh 2% ✓" : "Tanpa PPh"}</Text>
-                        </Button>
-                      </View>
-                      <View className="items-end">
-                        {term.usePpn && (
-                          <Text className="text-[10px] text-muted-foreground">PPN: +{rupiah(term.ppn)}</Text>
-                        )}
-                        {term.usePph && (
-                          <Text className="text-[10px] text-danger">PPh: -{rupiah(term.pph)}</Text>
-                        )}
-                        <Text className="text-xs font-bold text-primary mt-0.5">
-                          Total Invoice: {rupiah(term.total)}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View className="gap-1">
-                      <Text className="text-[11px] text-muted-foreground">Jatuh Tempo Pembayaran</Text>
-                      <DatePicker
-                        value={term.dueDate}
-                        onChange={(d) => handleUpdateTermDueDate(idx, d)}
-                        placeholder="Pilih Jatuh Tempo"
-                      />
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </ScrollView>
-          <DialogFooter>
-            <Button variant="outline" onPress={() => setInvModalOpen(false)}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleCreateInvoice} disabled={isSubmittingInv}>
-              <Text>{isSubmittingInv ? "Menyimpan..." : `Simpan & Buat ${terms.length} Invoice`}</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Modal Buat Invoice dari Penawaran */}
+      <CreateInvoiceDialog
+        open={invModalOpen}
+        onOpenChange={setInvModalOpen}
+        initialQuotation={row}
+      />
     </>
   );
 }

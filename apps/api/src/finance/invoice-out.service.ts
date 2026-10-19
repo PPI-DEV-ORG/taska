@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
@@ -8,6 +8,8 @@ import type { InvoiceOut } from "../generated/prisma/client.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { InvoiceOutDto, PaymentDto } from "./dto.js";
 
+import { UploadService } from "../upload/upload.service.js";
+
 type StatusFilter = "DRAFT" | "SENT" | "PARTIAL" | "PAID" | "OVERDUE" | "BATAL";
 
 @Injectable()
@@ -16,6 +18,7 @@ export class InvoiceOutService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly docnum: DocumentNumberService,
+    private readonly upload: UploadService,
   ) {}
 
   /** Status dihitung dari pembayaran + jatuh tempo (PRD: Unpaid/Partial/Paid/Overdue otomatis). */
@@ -165,21 +168,108 @@ export class InvoiceOutService {
     return paginate(items, total, q);
   }
 
+  private metaKey(id: number) {
+    return `invoice:meta:${id}`;
+  }
+
+  async getMeta(id: number): Promise<any> {
+    try {
+      const setting = await this.prisma.main.systemSetting.findUnique({
+        where: { key: this.metaKey(id) },
+      });
+      if (setting?.value) {
+        return JSON.parse(setting.value);
+      }
+    } catch {}
+    return null;
+  }
+
+  async saveMeta(id: number, patch: any): Promise<any> {
+    const existing = (await this.getMeta(id)) || {};
+    const merged = { ...existing, ...patch };
+    const key = this.metaKey(id);
+    await this.prisma.main.systemSetting.upsert({
+      where: { key },
+      update: { value: JSON.stringify(merged) },
+      create: { key, value: JSON.stringify(merged) },
+    }).catch(() => {});
+    return merged;
+  }
+
   async get(id: number) {
     const row = await this.prisma.main.invoiceOut.findUnique({
       where: { id },
       include: {
         customer: true,
-        clientPo: true,
-        project: { select: { id: true, name: true } },
+        clientPo: {
+          include: {
+            quotation: true,
+          },
+        },
+        project: {
+          include: {
+            quotation: true,
+          },
+        },
         payments: { orderBy: { date: "desc" } },
       },
     });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
-    return this.sync(row);
+
+    const meta = (await this.getMeta(id)) || {};
+    const relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    let quoteMeta: any = null;
+    if (relatedQuote) {
+      try {
+        const qSetting = await this.prisma.main.systemSetting.findUnique({
+          where: { key: `quotation:meta:${relatedQuote.id}` },
+        });
+        if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
+      } catch {}
+    }
+
+    const file = row.fileId
+      ? await this.prisma.main.file.findUnique({
+          where: { id: row.fileId },
+          select: { id: true, originalName: true, size: true, mimeType: true },
+        })
+      : null;
+
+    const synced = await this.sync(row);
+    return {
+      ...synced,
+      items: meta.items ?? quoteMeta?.items ?? [],
+      subject: meta.subject ?? quoteMeta?.subject ?? "INVOICE PENAGIHAN",
+      intro: meta.intro ?? quoteMeta?.intro ?? "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
+      notesList: meta.notesList ?? meta.notes ?? [
+        "Pembayaran dapat di Transfer ke:",
+        "Bank : Bank Mandiri",
+        "No. Rek : 1670011359410",
+        "Nama : Ghina Multi Prima",
+        "Alamat : Jl. Bintara Jaya VIII RT.008/RW.009",
+        "Bekasi Barat Bintara Jaya Bekasi",
+      ],
+      dpLabel: meta.dpLabel ?? undefined,
+      dpAmount: meta.dpAmount ?? undefined,
+      city: meta.city ?? quoteMeta?.city ?? "Bekasi",
+      kopText: meta.kopText ?? quoteMeta?.kopText ?? "",
+      kopLogoUrl: meta.kopLogoUrl ?? quoteMeta?.kopLogoUrl ?? "",
+      customerAddress: meta.customerAddress ?? quoteMeta?.customerAddress ?? row.customer?.address ?? "Di Tempat",
+      signerName: meta.signerName ?? "Finance",
+      signerTitle: meta.signerTitle ?? "Finance & Accounting",
+      fileName: file?.originalName ?? `Invoice-${row.number.replace(/\//g, "-")}.xlsx`,
+      fileUploaded: !!row.fileId,
+    };
+  }
+
+  private assertNotSales(user: RequestUser) {
+    if ((user.role || "").toLowerCase() === "sales") {
+      throw new ForbiddenException("Hanya tim Finance yang dapat membuat dan mengubah invoice");
+    }
   }
 
   async create(dto: InvoiceOutDto, user: RequestUser) {
+    this.assertNotSales(user);
     const number = dto.number?.trim() || (await this.docnum.next("invoiceOut"));
     const dup = await this.prisma.main.invoiceOut.findFirst({ where: { number } });
     if (dup) throw new BadRequestException(`Nomor ${number} sudah dipakai`);
@@ -214,6 +304,7 @@ export class InvoiceOutService {
         date,
         dueDate,
         status: dto.status ?? "DRAFT",
+        fileId: dto.fileId,
       },
       include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
     });
@@ -235,6 +326,7 @@ export class InvoiceOutService {
   }
 
   async update(id: number, dto: InvoiceOutDto, user: RequestUser) {
+    this.assertNotSales(user);
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
 
@@ -258,6 +350,7 @@ export class InvoiceOutService {
         date: dto.date ? new Date(dto.date) : row.date,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : row.dueDate,
         ...(dto.status ? { status: dto.status } : {}),
+        fileId: dto.fileId !== undefined ? dto.fileId : row.fileId,
       },
       include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
     });
@@ -267,6 +360,37 @@ export class InvoiceOutService {
         data: { refType: "invoiceOut", refId: String(id) },
       }).catch(() => {});
     }
+
+    if (
+      dto.items !== undefined ||
+      dto.subject !== undefined ||
+      dto.intro !== undefined ||
+      dto.notesList !== undefined ||
+      dto.city !== undefined ||
+      dto.kopText !== undefined ||
+      dto.kopLogoUrl !== undefined ||
+      dto.customerAddress !== undefined ||
+      dto.signerName !== undefined ||
+      dto.signerTitle !== undefined ||
+      dto.dpLabel !== undefined ||
+      dto.dpAmount !== undefined
+    ) {
+      await this.saveMeta(id, {
+        ...(dto.items !== undefined ? { items: dto.items } : {}),
+        ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
+        ...(dto.intro !== undefined ? { intro: dto.intro } : {}),
+        ...(dto.notesList !== undefined ? { notesList: dto.notesList } : {}),
+        ...(dto.city !== undefined ? { city: dto.city } : {}),
+        ...(dto.kopText !== undefined ? { kopText: dto.kopText } : {}),
+        ...(dto.kopLogoUrl !== undefined ? { kopLogoUrl: dto.kopLogoUrl } : {}),
+        ...(dto.customerAddress !== undefined ? { customerAddress: dto.customerAddress } : {}),
+        ...(dto.signerName !== undefined ? { signerName: dto.signerName } : {}),
+        ...(dto.signerTitle !== undefined ? { signerTitle: dto.signerTitle } : {}),
+        ...(dto.dpLabel !== undefined ? { dpLabel: dto.dpLabel } : {}),
+        ...(dto.dpAmount !== undefined ? { dpAmount: dto.dpAmount } : {}),
+      });
+    }
+
     await this.audit.log({
       actor: user,
       action: "UBAH_INVOICE_KELUAR",
@@ -278,10 +402,11 @@ export class InvoiceOutService {
     if (row.projectId && row.projectId !== updated.projectId) {
       await this.syncProjectPayment(row.projectId);
     }
-    return this.sync(updated);
+    return this.get(id);
   }
 
   async addPayment(id: number, dto: PaymentDto, user: RequestUser) {
+    this.assertNotSales(user);
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     if (row.status === "BATAL") throw new BadRequestException("Invoice dibatalkan");
@@ -331,6 +456,7 @@ export class InvoiceOutService {
   }
 
   async setStatus(id: number, status: string, user: RequestUser) {
+    this.assertNotSales(user);
     if (!["DRAFT", "SENT", "PARTIAL", "PAID", "OVERDUE", "BATAL"].includes(status)) {
       throw new BadRequestException(`Status tidak dikenal: ${status}`);
     }
@@ -357,6 +483,7 @@ export class InvoiceOutService {
   }
 
   async remove(id: number, user: RequestUser) {
+    this.assertNotSales(user);
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     await this.prisma.main.$transaction(async (tx) => {
@@ -483,5 +610,230 @@ export class InvoiceOutService {
         : new Date().toISOString().slice(0, 10);
     const filename = `efaktur-pajak-keluaran-${periodStr}.csv`;
     return { csv: lines.join("\r\n"), filename };
+  }
+
+  async extractFile(buffer: Buffer, originalName?: string, user?: RequestUser) {
+    this.assertNotSales(user!);
+    const filename = originalName || "invoice.xlsx";
+    let parsed: any = null;
+    if (filename.toLowerCase().endsWith(".xlsx")) {
+      const { parseQuotationXlsx } = await import("../crm/quotation-excel.js");
+      parsed = await parseQuotationXlsx(buffer).catch(() => null);
+    }
+    let savedFileId: number | null = null;
+    if (user) {
+      const saved = await this.upload.saveNamed(buffer, "dokumen", filename, user, "invoiceExtract");
+      savedFileId = saved?.id ?? null;
+    }
+    return {
+      fileId: savedFileId,
+      filename,
+      items: parsed?.items ?? [],
+      amount: parsed?.total ?? 0,
+      ppn: parsed?.ppn ?? (parsed?.total ? Math.round(parsed.total * 0.11) : 0),
+      discount: parsed?.discount ?? 0,
+      total: parsed?.grandTotal ?? 0,
+      subject: parsed?.subject ? parsed.subject.replace(/penawaran/gi, "Invoice") : "Invoice",
+      notes: parsed?.notes?.join("\n") ?? "",
+      customerName: parsed?.customerName,
+    };
+  }
+
+  async uploadExcel(id: number, buffer: Buffer, originalName?: string, user?: RequestUser) {
+    this.assertNotSales(user!);
+    const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Invoice tidak ditemukan");
+    const filename = originalName || `Invoice-${row.number.replace(/\//g, "-")}.xlsx`;
+    const saved = await this.upload.saveNamed(buffer, "dokumen", filename, user!, "invoiceOut", String(id));
+
+    let parsed: any = null;
+    if (filename.toLowerCase().endsWith(".xlsx")) {
+      const { parseQuotationXlsx } = await import("../crm/quotation-excel.js");
+      parsed = await parseQuotationXlsx(buffer).catch(() => null);
+    }
+
+    const patchData: any = { fileId: saved.id };
+    if (parsed && parsed.total > 0) {
+      patchData.amount = parsed.total;
+      patchData.ppn = parsed.ppn ?? Math.round(parsed.total * 0.11);
+      patchData.total = parsed.grandTotal || (patchData.amount + patchData.ppn);
+    }
+
+    if (parsed) {
+      await this.saveMeta(id, {
+        items: parsed.items,
+        notesList: parsed.notes,
+        subject: parsed.subject ? parsed.subject.replace(/penawaran/gi, "Invoice") : undefined,
+        customerAddress: parsed.customerAddress,
+        city: parsed.city,
+      });
+    }
+
+    await this.prisma.main.invoiceOut.update({
+      where: { id },
+      data: patchData,
+    });
+    return this.get(id);
+  }
+
+  async exportExcel(id: number): Promise<{ buffer: Buffer; filename: string }> {
+    const row = await this.prisma.main.invoiceOut.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        clientPo: {
+          include: {
+            quotation: true,
+          },
+        },
+        project: {
+          include: {
+            quotation: true,
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException("Invoice tidak ditemukan");
+
+    const meta = (await this.getMeta(id)) || {};
+    const relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    let quoteMeta: any = null;
+    if (relatedQuote) {
+      try {
+        const qSetting = await this.prisma.main.systemSetting.findUnique({
+          where: { key: `quotation:meta:${relatedQuote.id}` },
+        });
+        if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
+      } catch {}
+    }
+
+    const items = meta.items ?? quoteMeta?.items ?? [
+      {
+        id: "1",
+        item: row.description?.replace(/\[by:\d+\]/g, "").trim() || "Pengadaan Barang & Jasa",
+        qty: 1,
+        satuan: "Lot",
+        harga: Number(row.amount),
+      },
+    ];
+
+    const isDp = row.type === "DP";
+    const isTermin = row.type === "TERMIN";
+    const quoteTot = Number(relatedQuote?.total || row.amount) || 1;
+    const dpPct = Math.round((Number(row.amount) / quoteTot) * 100);
+
+    const { buildQuotationXlsx } = await import("../crm/quotation-excel.js");
+    const buffer = await buildQuotationXlsx({
+      quoteNo: row.number,
+      date: row.date,
+      city: meta.city || quoteMeta?.city || "Bekasi",
+      customerName: row.customer?.name || "-",
+      customerAddress: meta.customerAddress || quoteMeta?.customerAddress || row.customer?.address || "Di Tempat",
+      leadName: row.project?.name || row.clientPo?.number || "Pekerjaan",
+      kopText: meta.kopText || quoteMeta?.kopText,
+      subject: meta.subject || "INVOICE PENAGIHAN",
+      intro: meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
+      items,
+      total: Number(row.amount),
+      ppn: Number(row.ppn),
+      grandTotal: Number(row.total),
+      dpLabel: meta.dpLabel ?? (isDp ? `DP (${dpPct}%)` : isTermin ? `Termin (${dpPct}%)` : undefined),
+      dpAmount: meta.dpAmount ?? (isDp || isTermin ? Number(row.total) : undefined),
+      notes: meta.notesList ?? meta.notes ?? [
+        "Pembayaran dapat di Transfer ke:",
+        "Bank : Bank Mandiri",
+        "No. Rek : 1670011359410",
+        "Nama : Ghina Multi Prima",
+        "Alamat : Jl. Bintara Jaya VIII RT.008/RW.009",
+        "Bekasi Barat Bintara Jaya Bekasi",
+      ],
+      signerName: meta.signerName || "Finance",
+      signerTitle: meta.signerTitle || "Finance & Accounting",
+    });
+
+    const filename = `Invoice-${row.number.replace(/\//g, "-")}.xlsx`;
+    return { buffer, filename };
+  }
+
+  async exportPdf(id: number): Promise<{ buffer: Buffer; filename: string }> {
+    const row = await this.prisma.main.invoiceOut.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        clientPo: {
+          include: {
+            quotation: true,
+          },
+        },
+        project: {
+          include: {
+            quotation: true,
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException("Invoice tidak ditemukan");
+
+    const meta = (await this.getMeta(id)) || {};
+    const relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    let quoteMeta: any = null;
+    if (relatedQuote) {
+      try {
+        const qSetting = await this.prisma.main.systemSetting.findUnique({
+          where: { key: `quotation:meta:${relatedQuote.id}` },
+        });
+        if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
+      } catch {}
+    }
+
+    const items = meta.items ?? quoteMeta?.items ?? [
+      {
+        id: "1",
+        item: row.description?.replace(/\[by:\d+\]/g, "").trim() || "Pengadaan Barang & Jasa",
+        qty: 1,
+        satuan: "Lot",
+        harga: Number(row.amount),
+      },
+    ];
+
+    const isDp = row.type === "DP" || /dp/i.test(String(row.description || ""));
+    const isTermin = row.type === "TERMIN" || /termin/i.test(String(row.description || ""));
+    const parsedPctMatch = String(row.description || "").match(/\((\d+)%\)/);
+    const parsedPct = parsedPctMatch ? Number(parsedPctMatch[1]) : undefined;
+    const quoteTot = Number(relatedQuote?.total || row.amount) || 1;
+    const dpPct = parsedPct || Math.round((Number(row.amount) / quoteTot) * 100) || 50;
+
+    const { buildQuotationPdf } = await import("../crm/quotation-excel.js");
+    const buffer = await buildQuotationPdf({
+      quoteNo: row.number,
+      date: row.date,
+      city: meta.city || quoteMeta?.city || "Bekasi",
+      customerName: row.customer?.name || "-",
+      customerAddress: meta.customerAddress || quoteMeta?.customerAddress || row.customer?.address || "Di Tempat",
+      leadName: row.project?.name || row.clientPo?.number || "Pekerjaan",
+      kopText: meta.kopText || quoteMeta?.kopText,
+      kopLogoUrl: meta.kopLogoUrl || quoteMeta?.kopLogoUrl,
+      subject: meta.subject || "INVOICE PENAGIHAN",
+      intro: meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
+      items,
+      total: Number(row.amount),
+      ppn: Number(row.ppn),
+      grandTotal: Number(row.total),
+      dpLabel: meta.dpLabel ?? (isDp ? `DP (${dpPct}%)` : isTermin ? `Termin (${dpPct}%)` : undefined),
+      dpAmount: meta.dpAmount ?? (isDp || isTermin ? Number(row.total) : undefined),
+      notes: meta.notesList ?? meta.notes ?? [
+        "Pembayaran dapat di Transfer ke:",
+        "Bank : Bank Mandiri",
+        "No. Rek : 1670011359410",
+        "Nama : Ghina Multi Prima",
+        "Alamat : Jl. Bintara Jaya VIII RT.008/RW.009",
+        "Bekasi Barat Bintara Jaya Bekasi",
+      ],
+      signerName: meta.signerName || "Finance",
+      signerTitle: meta.signerTitle || "Finance & Accounting",
+    });
+
+    const filename = `Invoice-${row.number.replace(/\//g, "-")}.pdf`;
+    return { buffer, filename };
   }
 }

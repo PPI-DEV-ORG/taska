@@ -27,10 +27,14 @@ export function ModuleExtras({
   moduleKey,
   row,
   onRefresh,
+  invoicePayOpen,
+  onInvoicePayOpenChange,
 }: {
   moduleKey: string;
   row: Row;
   onRefresh?: () => Promise<void> | void;
+  invoicePayOpen?: boolean;
+  onInvoicePayOpenChange?: (open: boolean) => void;
 }) {
   const { user, data } = useApp();
 
@@ -70,7 +74,13 @@ export function ModuleExtras({
   }
 
   if (moduleKey === "invoices") {
-    return <InvoiceExtras row={row} />;
+    return (
+      <InvoiceExtras
+        row={row}
+        payOpen={invoicePayOpen}
+        onPayOpenChange={onInvoicePayOpenChange}
+      />
+    );
   }
 
   if (moduleKey === "supplier-pos") {

@@ -14,13 +14,15 @@ import {
   SupplierInvoiceDetailDialog,
   SupplierInvoicePayDialog,
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
+import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
   leads: ["sales", "pm"],
   quotations: ["sales", "pm"],
   surveys: ["sales", "pm"],
-  "po-client": ["finance"],
-  invoices: ["finance", "sales"],
+  "po-client": ["finance", "sales"],
+  invoices: ["finance"],
   projects: ["pm"],
   "damage-reports": ["gudang"],
   customers: ["sales"],
@@ -43,7 +45,7 @@ const DELETE: Record<string, Role[]> = {
   users: ["bos", "admin"],
   surveys: ["sales", "pm", "admin"],
   quotations: ["sales", "pm", "finance", "admin"],
-  "po-client": ["finance", "admin"],
+  "po-client": ["finance", "sales", "admin"],
   invoices: ["finance", "admin"],
   "purchase-requests": ["pm", "procurement", "finance", "gudang", "admin"],
   "supplier-pos": ["procurement", "finance", "admin"],
@@ -92,10 +94,6 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
   }
 }
 
-function sortKey(r: Row): string {
-  return String(r.tanggal ?? r.dibuat ?? r.waktu ?? r.jadwal ?? r.mulai ?? "") + r.id;
-}
-
 export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?: string; headerExtra?: React.ReactNode }) {
   const router = useRouter();
   const { user, data, deleteRow } = useApp();
@@ -140,7 +138,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         }
         return r;
       })
-      .sort((a, b) => (sortKey(a) < sortKey(b) ? 1 : -1));
+      .sort(compareDesc);
   }, [def, data, user, q, status, invoiceTab]);
 
   const allowed = canCreate(def, user!.role);
@@ -231,7 +229,11 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           ) : undefined}
         />
       )}
-      {def.createFields ? <FormDialog def={def} open={open} onOpenChange={setOpen} /> : null}
+      {def.key === "invoices" ? (
+        <CreateInvoiceDialog open={open} onOpenChange={setOpen} />
+      ) : def.createFields ? (
+        <FormDialog def={def} open={open} onOpenChange={setOpen} />
+      ) : null}
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}

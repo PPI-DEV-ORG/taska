@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, ForbiddenException, Get, Param, ParseIntPipe, Patch, Post, Put, Query, Res } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, ParseIntPipe, Patch, Post, Put, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { IsIn } from "class-validator";
 import { InvoiceOutService } from "./invoice-out.service.js";
 import { FinanceListQuery, InvoiceOutDto, PaymentDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
+import { Public } from "../common/decorators/public.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
 class StatusOnlyDto {
@@ -14,6 +16,29 @@ class StatusOnlyDto {
 @Controller("invoices")
 export class InvoiceOutController {
   constructor(private readonly service: InvoiceOutService) {}
+
+  @Post("extract-file")
+  @Require("financeOut", "C")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
+  extractFile(
+    @UploadedFile() file: { buffer: Buffer; originalname?: string } | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    if (!file?.buffer?.length) throw new BadRequestException("File invoice (.xlsx / .pdf) wajib diunggah");
+    return this.service.extractFile(file.buffer, file.originalname, user);
+  }
+
+  @Post(":id/upload-excel")
+  @Require("financeOut", "U")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
+  uploadExcel(
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFile() file: { buffer: Buffer; originalname?: string } | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    if (!file?.buffer?.length) throw new BadRequestException("File invoice (.xlsx / .pdf) wajib diunggah");
+    return this.service.uploadExcel(id, file.buffer, file.originalname, user);
+  }
 
   @Get()
   @Require("financeOut", "L")
@@ -55,6 +80,29 @@ export class InvoiceOutController {
     res?.setHeader("Content-Type", "text/csv; charset=utf-8");
     res?.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res?.end(csv);
+  }
+
+  @Public()
+  @Get(":id/excel")
+  async downloadExcel(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
+    const { buffer, filename } = await this.service.exportExcel(id);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.end(buffer);
+  }
+
+  @Public()
+  @Get(":id/pdf")
+  async downloadPdf(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
+    const { buffer, filename } = await this.service.exportPdf(id);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.end(buffer);
   }
 
   @Get(":id")

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView } from "react-native";
+import { View, ScrollView, Image } from "react-native";
 import { FileDown, Plus, Trash2, Edit3, Eye } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -13,6 +13,8 @@ import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { QuotationPreviewModal } from "@/modules/quotation/quotation-preview-modal";
+import { FileUploader } from "@/components/taska/file-uploader";
+import { apiBase } from "@/services/api";
 
 export function QuotationTemplateGenerator({
   row,
@@ -36,6 +38,7 @@ export function QuotationTemplateGenerator({
       notesList?: string[];
       city?: string;
       kopText?: string;
+      kopLogoUrl?: string;
       customerAddress?: string;
       signerName?: string;
       signerTitle?: string;
@@ -48,6 +51,7 @@ export function QuotationTemplateGenerator({
 
   const [items, setItems] = React.useState<QuotationItem[]>(row.items && row.items.length ? row.items : []);
   const [kopText, setKopText] = React.useState<string>(row.kopText || "");
+  const [kopLogoUrl, setKopLogoUrl] = React.useState<string>((row as any).kopLogoUrl || "");
   const [city, setCity] = React.useState<string>(row.city || "Bekasi");
   const [customerAddress, setCustomerAddress] = React.useState<string>(row.customerAddress || "");
   const [subject, setSubject] = React.useState<string>(
@@ -118,6 +122,7 @@ export function QuotationTemplateGenerator({
         notesList: parsedNotes,
         city,
         kopText,
+        kopLogoUrl,
         customerAddress,
         signerName,
         signerTitle,
@@ -233,6 +238,27 @@ export function QuotationTemplateGenerator({
                   onChangeText={setKopText}
                   placeholder="Contoh: PT GHINA MULTI PRIMA | CCTV & IT Solutions | Telp: 021-22843608 (Kosongkan jika memakai header default)"
                 />
+              </View>
+              <View className="gap-1.5">
+                <Text className="text-xs font-semibold">Gambar / Logo Kop Surat (PNG / JPG)</Text>
+                <FileUploader
+                  label="Pilih File Gambar Logo Kop Surat"
+                  kind="foto"
+                  category="kop-logo"
+                  onUploaded={(fId) => {
+                    setKopLogoUrl(`${apiBase()}/files/${fId}`);
+                  }}
+                  autoFlush
+                />
+                {kopLogoUrl ? (
+                  <View className="flex-row items-center gap-2 mt-1 p-2 bg-card rounded-lg border border-border">
+                    <Image source={{ uri: kopLogoUrl }} style={{ width: 80, height: 35, resizeMode: "contain" }} />
+                    <Text className="text-xs text-muted-foreground flex-1" numberOfLines={1}>Logo kop surat aktif</Text>
+                    <Button size="sm" variant="outline" onPress={() => setKopLogoUrl("")} className="h-7 px-2">
+                      <Text className="text-[11px] text-danger">Hapus</Text>
+                    </Button>
+                  </View>
+                ) : null}
               </View>
               <View className="flex-row gap-2">
                 <View className="flex-1">
@@ -445,6 +471,7 @@ export function QuotationTemplateGenerator({
         notesList={parsedNotes}
         city={city}
         kopText={kopText}
+        kopLogoUrl={kopLogoUrl}
         customerAddress={customerAddress}
         signerName={signerName}
         signerTitle={signerTitle}
@@ -458,6 +485,7 @@ export function QuotationTemplateGenerator({
               notesList: parsedNotes,
               city,
               kopText,
+              kopLogoUrl,
               customerAddress,
               signerName,
               signerTitle,

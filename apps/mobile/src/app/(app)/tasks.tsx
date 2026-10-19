@@ -7,7 +7,7 @@ import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, Chip } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
-import { tanggal } from "@/lib/format";
+import { tanggal, compareDesc } from "@/lib/format";
 
 import { FilterBar } from "@/components/taska/data-table";
 
@@ -21,7 +21,8 @@ export default function TasksScreen() {
   const s = q.trim().toLowerCase();
   const tasks = data.tasks
     .filter((t) => !filterStatus || t.status === filterStatus)
-    .filter((t) => !s || `${t.nama} ${t.project} ${t.pic}`.toLowerCase().includes(s));
+    .filter((t) => !s || `${t.nama} ${t.project} ${t.pic}`.toLowerCase().includes(s))
+    .sort(compareDesc);
 
   function toggleTask(id: string, currentStatus: string) {
     const next = currentStatus === "DONE" ? "IN PROGRESS" : "DONE";

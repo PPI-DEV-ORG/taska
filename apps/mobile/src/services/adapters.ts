@@ -216,7 +216,10 @@ const nameOf = (x: any): string => (x?.name ?? "");
 const idOf = (x: any): string | null => (x?.id != null ? String(x.id) : null);
 
 export function adaptRow(module: string, raw: any): Row {
-  const base: Row = { id: String(raw.id) };
+  const base: Row = {
+    id: String(raw.id),
+    createdAt: raw.createdAt ?? raw.date ?? raw.tanggal ?? raw.dibuat ?? null,
+  };
   switch (module) {
     case "leads": {
       const latestFu = raw.followUps?.[0]?.date ?? raw.updatedAt ?? raw.createdAt;
@@ -301,22 +304,43 @@ export function adaptRow(module: string, raw: any): Row {
         fileStatus: hasFile ? fName : "Belum diupload",
         fileUploaded: hasFile,
         stage: raw.lead?.stage ?? null,
-        _versions: (raw.versions ?? []).map((v: any) => ({
-          id: String(v.id),
-          v: n(v.version),
-          fileId: v.fileId ? Number(v.fileId) : null,
-          total: n(v.total),
-          ppn: n(v.ppn),
-          disc: n(v.discount),
-          totalAfterDisc: n(v.grandTotal),
-          date: d(v.createdAt),
-          reason: v.note || `Revisi v${v.version}`,
-          file: v.fileId ? `Penawaran-${String(raw.number || "").replace(/\//g, "-")}-v${v.version}.xlsx` : "-",
-        })),
+        _versions: (raw.versions ?? []).map((v: any) => {
+          let vStatus = "Draft";
+          let vReason = v.note || `Revisi v${v.version}`;
+          const match = String(v.note || "").match(/^\[STATUS:([^\]]+)\]\s*(.*)$/);
+          if (match) {
+            vStatus = match[1] ?? "Draft";
+            vReason = match[2] || `Revisi v${v.version}`;
+          } else if (v.version < (raw.currentVersion || 1)) {
+            vStatus = "Ditolak";
+          } else {
+            vStatus = toLabel("quotations", raw.status) || "Menunggu";
+          }
+          return {
+            id: String(v.id),
+            v: n(v.version),
+            status: vStatus,
+            fileId: v.fileId ? Number(v.fileId) : null,
+            total: n(v.total),
+            ppn: n(v.ppn),
+            disc: n(v.discount),
+            totalAfterDisc: n(v.grandTotal),
+            date: d(v.createdAt),
+            reason: vReason,
+            file: v.fileId ? `Penawaran-${String(raw.number || "").replace(/\//g, "-")}-v${v.version}.xlsx` : "-",
+          };
+        }),
         files: Array.isArray(raw.files) ? raw.files : [],
       };
     }
-    case "surveys":
+    case "surveys": {
+      const surveyFiles = Array.isArray(raw.files) ? raw.files : [];
+      const mediaFile = surveyFiles.find((f: any) =>
+        f.mimeType?.startsWith("image/") || f.mimeType?.startsWith("video/") || f.kind === "foto" || f.kind === "video"
+      );
+      const docFile = surveyFiles.find((f: any) =>
+        !f.mimeType?.startsWith("image/") && !f.mimeType?.startsWith("video/") && f.kind !== "foto" && f.kind !== "video"
+      );
       return {
         ...base,
         lead: nameOf(raw.lead) ?? "",
@@ -330,7 +354,13 @@ export function adaptRow(module: string, raw: any): Row {
         need: raw.need ?? "",
         requester: nameOf(raw.requester) ?? "",
         approval: raw.approval ? adaptApproval(raw.approval) : undefined,
+        files: surveyFiles,
+        evidenceFileId: raw.evidenceFileId ?? mediaFile?.id ?? null,
+        documentFileId: raw.documentFileId ?? docFile?.id ?? null,
+        mediaFile: mediaFile ?? null,
+        docFile: docFile ?? null,
       };
+    }
     case "po-client":
       return {
         ...base,
@@ -343,7 +373,9 @@ export function adaptRow(module: string, raw: any): Row {
         totalInvoice: n(raw.invoices?.reduce?.((a: number, b: any) => a + n(b.total), 0) ?? 0),
         tanggal: d(raw.date),
         status: toLabel("po-client", "DITERIMA"),
-        fileId: raw.fileId ?? null,
+        fileId: raw.fileId ?? raw.file?.id ?? null,
+        file: raw.file ?? null,
+        catatan: raw.notes ?? raw.catatan ?? "",
       };
     case "invoices":
       return {
@@ -370,6 +402,20 @@ export function adaptRow(module: string, raw: any): Row {
           reference: p.reference ?? "-",
           fileId: p.fileId ?? null,
         })),
+        items: Array.isArray(raw.items) ? raw.items : [],
+        subject: raw.subject ?? undefined,
+        intro: raw.intro ?? undefined,
+        notesList: Array.isArray(raw.notesList) ? raw.notesList : undefined,
+        city: raw.city ?? undefined,
+        kopText: raw.kopText ?? undefined,
+        kopLogoUrl: raw.kopLogoUrl ?? undefined,
+        customerAddress: raw.customerAddress ?? undefined,
+        signerName: raw.signerName ?? undefined,
+        signerTitle: raw.signerTitle ?? undefined,
+        dpLabel: raw.dpLabel ?? undefined,
+        dpAmount: raw.dpAmount != null ? n(raw.dpAmount) : undefined,
+        fileName: raw.fileName ?? undefined,
+        fileUploaded: !!(raw.fileId || raw.fileUploaded),
       };
     case "projects":
       return {
@@ -754,6 +800,7 @@ export type ApprovalRow = {
   id: string; jenis: string; judul: string; pengaju: string; nilai: number;
   jam: number; module: string; refId: string; status: "Menunggu" | "Disetujui" | "Ditolak";
   alasan?: string; pendingRoles?: string[];
+  createdAt?: string | null;
 };
 
 export function adaptApproval(raw: any): ApprovalRow {
@@ -781,6 +828,7 @@ export function adaptApproval(raw: any): ApprovalRow {
     refId: String(raw.entityId),
     status: (STATUS_LABEL[raw.status] as any) ?? "Menunggu",
     pendingRoles: raw.pendingRoles ?? [],
+    createdAt: raw.createdAt ?? null,
   };
 }
 
@@ -1046,6 +1094,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         date: row.tanggal || row.date || today,
         dueDate: row.jatuhTempo || row.dueDate || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
         fileId: row.fileId ? Number(row.fileId) : undefined,
+        description: row.catatan || row.description || undefined,
         status: "DRAFT",
       };
     }
@@ -1264,7 +1313,33 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "notes", "memberIds"],
   tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
   "po-client": ["number", "customerId", "quotationId", "amount", "date", "fileId", "notes"],
-  invoices: ["number", "clientPoId", "projectId", "customerId", "description", "type", "amount", "ppn", "total", "date", "dueDate", "status", "fileId"],
+  invoices: [
+    "number",
+    "clientPoId",
+    "projectId",
+    "customerId",
+    "description",
+    "type",
+    "amount",
+    "ppn",
+    "total",
+    "date",
+    "dueDate",
+    "status",
+    "fileId",
+    "items",
+    "subject",
+    "intro",
+    "notesList",
+    "city",
+    "kopText",
+    "kopLogoUrl",
+    "customerAddress",
+    "signerName",
+    "signerTitle",
+    "dpLabel",
+    "dpAmount",
+  ],
   expenses: ["date", "categoryId", "amount", "description", "projectId", "surveyId", "deliveryNoteId", "costCenterId", "receiptFileId", "paidFileId"],
   "supplier-pos": ["number", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "doFileId", "items"],
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
@@ -1410,9 +1485,23 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   } else if (module === "invoices") {
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);
+    if (patch.ppn !== undefined) out.ppn = num(patch.ppn);
+    if (patch.total !== undefined) out.total = num(patch.total);
     if (patch.jatuhTempo !== undefined) out.dueDate = patch.jatuhTempo;
     if (patch.jenis !== undefined) out.type = toEnum("invoiceType", patch.jenis);
     if (patch.status !== undefined) out.status = toEnum("invoices", patch.status) || patch.status;
+    if (patch.items !== undefined) out.items = patch.items;
+    if (patch.subject !== undefined) out.subject = patch.subject;
+    if (patch.intro !== undefined) out.intro = patch.intro;
+    if (patch.notesList !== undefined) out.notesList = patch.notesList;
+    if (patch.city !== undefined) out.city = patch.city;
+    if (patch.kopText !== undefined) out.kopText = patch.kopText;
+    if (patch.kopLogoUrl !== undefined) out.kopLogoUrl = patch.kopLogoUrl;
+    if (patch.customerAddress !== undefined) out.customerAddress = patch.customerAddress;
+    if (patch.signerName !== undefined) out.signerName = patch.signerName;
+    if (patch.signerTitle !== undefined) out.signerTitle = patch.signerTitle;
+    if (patch.dpLabel !== undefined) out.dpLabel = patch.dpLabel;
+    if (patch.dpAmount !== undefined) out.dpAmount = num(patch.dpAmount);
   } else if (module === "delivery-notes") {
     if (patch.penerimaNama || patch.catatanSerahTerima) {
       out.reportText = [

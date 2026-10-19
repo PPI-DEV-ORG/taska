@@ -222,6 +222,26 @@ export class SurveysService {
       },
     });
 
+    const anyDto = dto as Record<string, any>;
+    if (anyDto.evidenceFileId) {
+      await this.prisma.main.file.update({
+        where: { id: Number(anyDto.evidenceFileId) },
+        data: { refType: "survey", refId: String(id), kind: "FOTO" },
+      }).catch(() => {});
+    }
+    if (anyDto.documentFileId) {
+      await this.prisma.main.file.update({
+        where: { id: Number(anyDto.documentFileId) },
+        data: { refType: "survey", refId: String(id), kind: "DOKUMEN" },
+      }).catch(() => {});
+    }
+    if (anyDto.fileId && !anyDto.evidenceFileId && !anyDto.documentFileId) {
+      await this.prisma.main.file.update({
+        where: { id: Number(anyDto.fileId) },
+        data: { refType: "survey", refId: String(id) },
+      }).catch(() => {});
+    }
+
     if (payload.status && payload.status !== survey.status) {
       if (survey.status === "DIMINTA" && (payload.status === "DIJADWALKAN" || payload.status === "BERJALAN" || payload.status === "BATAL")) {
         const app = await this.approvals.getFor("PERMINTAAN_SURVEY", id);

@@ -23,7 +23,7 @@ import { SearchableSelect } from "@/components/taska/dialogs";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
-import { rupiah } from "@/lib/format";
+import { rupiah, compareDesc } from "@/lib/format";
 import type { Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 
@@ -131,49 +131,53 @@ export default function StockScreen() {
   }
 
   const filteredProducts = React.useMemo(() => {
-    if (!searchQuery.trim()) return products;
-    const q = searchQuery.toLowerCase();
-    return products.filter(
-      (p) =>
-        String(p.nama ?? "").toLowerCase().includes(q) ||
-        String(p.sku ?? "").toLowerCase().includes(q) ||
-        String(p.kategori ?? "").toLowerCase().includes(q)
-    );
+    const list = !searchQuery.trim()
+      ? products
+      : products.filter(
+          (p) =>
+            String(p.nama ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(p.sku ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(p.kategori ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    return [...list].sort(compareDesc);
   }, [products, searchQuery]);
 
   const filteredSerials = React.useMemo(() => {
-    if (!searchQuery.trim()) return serials;
-    const q = searchQuery.toLowerCase();
-    return serials.filter(
-      (s) =>
-        String(s.sn ?? "").toLowerCase().includes(q) ||
-        String(s.produk ?? "").toLowerCase().includes(q) ||
-        String(s.gudang ?? "").toLowerCase().includes(q) ||
-        String(s.project ?? "").toLowerCase().includes(q)
-    );
+    const list = !searchQuery.trim()
+      ? serials
+      : serials.filter(
+          (s) =>
+            String(s.sn ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(s.produk ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(s.gudang ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(s.project ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    return [...list].sort(compareDesc);
   }, [serials, searchQuery]);
 
   const filteredMovements = React.useMemo(() => {
-    if (!searchQuery.trim()) return movements;
-    const q = searchQuery.toLowerCase();
-    return movements.filter(
-      (m) =>
-        String(m.produk ?? "").toLowerCase().includes(q) ||
-        String(m.kategori ?? "").toLowerCase().includes(q) ||
-        String(m.gudang ?? "").toLowerCase().includes(q) ||
-        String(m.project ?? "").toLowerCase().includes(q)
-    );
+    const list = !searchQuery.trim()
+      ? movements
+      : movements.filter(
+          (m) =>
+            String(m.produk ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(m.kategori ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(m.gudang ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(m.project ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    return [...list].sort(compareDesc);
   }, [movements, searchQuery]);
 
   const filteredReservations = React.useMemo(() => {
-    if (!searchQuery.trim()) return reservations;
-    const q = searchQuery.toLowerCase();
-    return reservations.filter(
-      (r) =>
-        String(r.produk ?? "").toLowerCase().includes(q) ||
-        String(r.project ?? "").toLowerCase().includes(q) ||
-        String(r.sn ?? "").toLowerCase().includes(q)
-    );
+    const list = !searchQuery.trim()
+      ? reservations
+      : reservations.filter(
+          (r) =>
+            String(r.produk ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(r.project ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            String(r.sn ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    return [...list].sort(compareDesc);
   }, [reservations, searchQuery]);
 
   const matchedSerial = React.useMemo(() => {

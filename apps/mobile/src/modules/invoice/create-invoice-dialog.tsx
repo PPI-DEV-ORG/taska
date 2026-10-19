@@ -1,0 +1,832 @@
+import * as React from "react";
+import { View, ScrollView, Platform } from "react-native";
+import { Upload, CheckCircle2, FileDown } from "lucide-react-native";
+import { Button } from "@/components/ui/button";
+import { Text } from "@/components/ui/text";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { FormField } from "@/components/taska/basics";
+import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { useApp } from "@/store/app-store";
+import { api } from "@/services/api";
+import { colors } from "@/tokens";
+import { rupiah, formatThousands } from "@/lib/format";
+import { type Row } from "@/constants/modules";
+import { type QuotationItem } from "@/modules/quotation/types";
+import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
+
+function getTodayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getDefaultDueDateIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().slice(0, 10);
+}
+
+function generateInvoiceNumber(
+  isLanjut: boolean,
+  currentScheme: "sekaligus" | "dp" | "termin",
+  existingInvoices: Row[],
+  totalInvoiceCount: number,
+): string {
+  const year = new Date().getFullYear();
+  const month = String(new Date().getMonth() + 1).padStart(2, "0");
+  const count = totalInvoiceCount + 1;
+  const baseSeq = String(count).padStart(3, "0");
+
+  if (isLanjut) {
+    const nextTermNum = existingInvoices.length + 1;
+    const lastInv = existingInvoices[existingInvoices.length - 1];
+    if (lastInv?.nomor && lastInv.nomor.includes("/")) {
+      const parts = lastInv.nomor.split("/");
+      if (!isNaN(Number(parts[parts.length - 1]))) {
+        parts[parts.length - 1] = String(nextTermNum);
+        return parts.join("/");
+      }
+    }
+    return `INV/${year}/${month}/${baseSeq}/${nextTermNum}`;
+  }
+
+  if (currentScheme === "dp" || currentScheme === "termin") {
+    return `INV/${year}/${month}/${baseSeq}/1`;
+  }
+  return `INV/${year}/${month}/${baseSeq}`;
+}
+
+export function CreateInvoiceDialog({
+  open,
+  onOpenChange,
+  initialQuotation,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialQuotation?: Row;
+}) {
+  if (!open) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <CreateInvoiceForm
+        initialQuotation={initialQuotation}
+        onClose={() => onOpenChange(false)}
+      />
+    </Dialog>
+  );
+}
+
+function CreateInvoiceForm({
+  initialQuotation,
+  onClose,
+}: {
+  initialQuotation?: Row;
+  onClose: () => void;
+}) {
+  const { data, toast, reload, addRow, pushHistory } = useApp();
+
+  // Mode: "baru" vs "lanjut"
+  const [mode, setMode] = React.useState<"baru" | "lanjut">(() => {
+    if (initialQuotation) {
+      const hasExisting = (data.invoices ?? []).some(
+        (inv: Row) =>
+          String(inv.quotationId) === String(initialQuotation.id) ||
+          inv.quotation === initialQuotation.nomor ||
+          String(inv.catatan || "").includes(initialQuotation.nomor),
+      );
+      if (hasExisting) return "lanjut";
+    }
+    return "baru";
+  });
+
+  // Source selection
+  const [sourceType, setSourceType] = React.useState<"quotation" | "po" | "customer">("quotation");
+  const [selectedQuotationId, setSelectedQuotationId] = React.useState<string>(() =>
+    initialQuotation?.id ? String(initialQuotation.id) : "",
+  );
+  const [selectedPoId, setSelectedPoId] = React.useState<string>("");
+  const [selectedCustomerId, setSelectedCustomerId] = React.useState<string>(() =>
+    initialQuotation?.customerId ? String(initialQuotation.customerId) : "",
+  );
+
+  // Scheme
+  const [scheme, setScheme] = React.useState<"sekaligus" | "dp" | "termin">("termin");
+  const [dpPercent, setDpPercent] = React.useState<string>("50");
+  const [terminPercent, setTerminPercent] = React.useState<string>("30");
+
+  // Continuation selection
+  const [continuationType, setContinuationType] = React.useState<"termin" | "pelunasan">("termin");
+
+  // Invoice Fields
+  const [tanggal, setTanggal] = React.useState<string>(getTodayIso);
+  const [jatuhTempo, setJatuhTempo] = React.useState<string>(getDefaultDueDateIso);
+  const [catatan, setCatatan] = React.useState<string>(() => {
+    return initialQuotation?.catatan || (initialQuotation?.nomor ? `Invoice untuk Penawaran ${initialQuotation.nomor}` : "");
+  });
+  const [fileId, setFileId] = React.useState<number | null>(null);
+  const [fileName, setFileName] = React.useState<string>("");
+
+  // Items
+  const [items, setItems] = React.useState<QuotationItem[]>(() => {
+    return Array.isArray(initialQuotation?.items) && initialQuotation.items.length > 0
+      ? initialQuotation.items
+      : [];
+  });
+  const [customDpp, setCustomDpp] = React.useState<string>(() => {
+    return !initialQuotation?.items?.length && initialQuotation?.nilai
+      ? formatThousands(initialQuotation.nilai)
+      : "";
+  });
+
+  // Active quotation & PO objects
+  const activeQuotation = React.useMemo(() => {
+    if (selectedQuotationId) {
+      return (data.quotations ?? []).find((q: Row) => String(q.id) === String(selectedQuotationId)) || null;
+    }
+    return initialQuotation || null;
+  }, [data, selectedQuotationId, initialQuotation]);
+
+  const activePo = React.useMemo(() => {
+    if (selectedPoId) {
+      return (data["po-client"] ?? []).find((p: Row) => String(p.id) === String(selectedPoId)) || null;
+    }
+    return null;
+  }, [data, selectedPoId]);
+
+  // Existing invoices related to active quotation or PO
+  const relatedExistingInvoices = React.useMemo(() => {
+    const qNomor = activeQuotation?.nomor;
+    const qId = activeQuotation?.id;
+    const poNum = activePo?.nomor || activePo?.number;
+    const poId = activePo?.id;
+
+    return (data.invoices ?? []).filter((inv: Row) => {
+      if (qId && (String(inv.quotationId) === String(qId) || (qNomor && String(inv.catatan || "").includes(qNomor)))) return true;
+      if (qNomor && (inv.quotation === qNomor || String(inv.po || "").includes(qNomor))) return true;
+      if (poId && String(inv.clientPoId) === String(poId)) return true;
+      if (poNum && (inv.po === poNum || String(inv.catatan || "").includes(poNum))) return true;
+      return false;
+    });
+  }, [data, activeQuotation, activePo]);
+
+  // Invoice Number
+  const [nomor, setNomor] = React.useState<string>(() =>
+    generateInvoiceNumber(
+      mode === "lanjut",
+      scheme,
+      relatedExistingInvoices,
+      data.invoices?.length || 0,
+    ),
+  );
+
+  const terminNumber = relatedExistingInvoices.length + 1;
+
+  // Total base deal DPP
+  const dealDpp = React.useMemo(() => {
+    if (items.length > 0) {
+      return items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0);
+    }
+    if (activePo?.nilai) return Number(activePo.nilai);
+    if (activeQuotation?.nilai) return Number(activeQuotation.nilai);
+    return Number(String(customDpp).replace(/\D/g, "")) || 0;
+  }, [items, activePo, activeQuotation, customDpp]);
+
+  // Total already billed in DPP
+  const alreadyBilledDpp = React.useMemo(() => {
+    return relatedExistingInvoices.reduce((acc: number, inv: Row) => acc + (Number(inv.nilai) || 0), 0);
+  }, [relatedExistingInvoices]);
+
+  const remainingDpp = Math.max(0, dealDpp - alreadyBilledDpp);
+
+  // Submitting & File extracting
+  const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
+  const [isExtracting, setIsExtracting] = React.useState<boolean>(false);
+  const fileInputRef = React.useRef<any>(null);
+
+  // Switch mode handler
+  function handleSwitchMode(newMode: "baru" | "lanjut") {
+    setMode(newMode);
+    setNomor(generateInvoiceNumber(newMode === "lanjut", scheme, relatedExistingInvoices, data.invoices?.length || 0));
+  }
+
+  // Switch scheme handler
+  function handleSwitchScheme(newScheme: "sekaligus" | "dp" | "termin") {
+    setScheme(newScheme);
+    setNomor(generateInvoiceNumber(mode === "lanjut", newScheme, relatedExistingInvoices, data.invoices?.length || 0));
+  }
+
+  // Select quotation handler
+  function handleSelectQuotation(q: Row) {
+    setSelectedQuotationId(String(q.id));
+    if (q.customerId) setSelectedCustomerId(String(q.customerId));
+    if (Array.isArray(q.items) && q.items.length > 0) {
+      setItems(q.items);
+    } else if (q.nilai) {
+      setCustomDpp(formatThousands(q.nilai));
+    }
+    if (q.catatan) {
+      setCatatan(q.catatan);
+    }
+  }
+
+  // Calculate current invoice DPP, PPN 11%, and Total
+  const { currentDpp, currentPpn, currentTotal, calculatedPct } = React.useMemo(() => {
+    let dpp = 0;
+    let pct = 100;
+
+    if (mode === "baru") {
+      if (scheme === "dp") {
+        pct = Number(dpPercent) || 50;
+        dpp = Math.round(dealDpp * (pct / 100));
+      } else if (scheme === "termin") {
+        pct = Number(terminPercent) || 30;
+        dpp = Math.round(dealDpp * (pct / 100));
+      } else {
+        pct = 100;
+        dpp = dealDpp;
+      }
+    } else {
+      if (continuationType === "pelunasan") {
+        dpp = remainingDpp;
+        pct = dealDpp > 0 ? Math.round((dpp / dealDpp) * 100) : 100;
+      } else {
+        pct = Number(terminPercent) || (dealDpp > 0 ? Math.round((remainingDpp / dealDpp) * 100) : 30);
+        dpp = Math.min(remainingDpp, Math.round(dealDpp * (pct / 100)));
+      }
+    }
+
+    const ppn = Math.round(dpp * 0.11);
+    const total = dpp + ppn;
+    return { currentDpp: dpp, currentPpn: ppn, currentTotal: total, calculatedPct: pct };
+  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp]);
+
+  // Handle file extraction
+  async function handleExtractFile(file: any) {
+    if (!file) return;
+    setIsExtracting(true);
+    try {
+      const fd = new FormData();
+      if (Platform.OS === "web") {
+        fd.append("file", file);
+      } else {
+        fd.append("file", {
+          uri: file.uri,
+          name: file.name || "invoice.xlsx",
+          type: file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        } as any);
+      }
+
+      const res = await api<any>("POST", "/invoices/extract-file", undefined, { form: fd });
+      if (res) {
+        if (res.fileId) setFileId(res.fileId);
+        if (res.filename) setFileName(res.filename);
+        if (res.items && Array.isArray(res.items) && res.items.length > 0) {
+          setItems(res.items);
+        } else if (res.amount) {
+          setCustomDpp(formatThousands(res.amount));
+        }
+        if (res.notes) setCatatan(res.notes);
+        if (res.customerName) {
+          const matchCust = (data.customers ?? []).find(
+            (c: Row) => c.nama?.toLowerCase() === res.customerName?.toLowerCase(),
+          );
+          if (matchCust) setSelectedCustomerId(String(matchCust.id));
+        }
+        toast("Data file invoice berhasil diekstrak");
+      }
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengekstrak file invoice", "danger");
+    } finally {
+      setIsExtracting(false);
+    }
+  }
+
+  // Handle Submit
+  async function handleSubmit() {
+    if (!nomor.trim()) {
+      toast("Nomor invoice wajib diisi", "danger");
+      return;
+    }
+    if (currentDpp <= 0) {
+      toast("Nilai tagihan invoice harus lebih dari 0", "danger");
+      return;
+    }
+
+    const customerObj = (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId));
+    const custName = customerObj?.nama || activeQuotation?.customer || activePo?.customer || "Customer";
+
+    const invoiceType =
+      mode === "lanjut"
+        ? continuationType === "pelunasan" || remainingDpp - currentDpp <= 0
+          ? "Pelunasan"
+          : "Termin"
+        : scheme === "dp"
+        ? "DP"
+        : scheme === "termin"
+        ? "Termin"
+        : "Pelunasan";
+
+    const termDesc =
+      mode === "lanjut"
+        ? continuationType === "pelunasan"
+          ? `Pelunasan (${calculatedPct}%) - ${activeQuotation?.nomor || activePo?.nomor || "Invoice"}`
+          : `Termin ${terminNumber} (${calculatedPct}%) - ${activeQuotation?.nomor || activePo?.nomor || "Invoice"}`
+        : scheme === "dp"
+        ? `DP (${calculatedPct}%) - ${activeQuotation?.nomor || "Invoice"}`
+        : scheme === "termin"
+        ? `Termin 1 (${calculatedPct}%) - ${activeQuotation?.nomor || "Invoice"}`
+        : `Pembayaran Penuh (100%) - ${activeQuotation?.nomor || "Invoice"}`;
+
+    const fullCatatan = catatan.trim() ? `${termDesc}. ${catatan.trim()}` : termDesc;
+
+    setIsSubmitting(true);
+    try {
+      const created = await addRow("invoices", {
+        nomor: nomor.trim(),
+        customer: custName,
+        customerId: selectedCustomerId || undefined,
+        quotationId: activeQuotation?.id ? String(activeQuotation.id) : undefined,
+        quotation: activeQuotation?.nomor || undefined,
+        clientPoId: activePo?.id ? String(activePo.id) : undefined,
+        po: activePo?.nomor || activePo?.number || undefined,
+        jenis: invoiceType,
+        nilai: currentDpp,
+        ppn: currentPpn,
+        total: currentTotal,
+        tanggal,
+        jatuhTempo,
+        status: "Belum dikirim",
+        catatan: fullCatatan,
+        fileId: fileId || undefined,
+      });
+
+      if (created) {
+        toast(`Invoice ${nomor} (${invoiceType}) berhasil dibuat!`);
+        if (activeQuotation?.id) {
+          pushHistory("quotations", activeQuotation.id, `Invoice ${nomor} (${rupiah(currentTotal)}) dibuat`);
+        }
+        onClose();
+        await reload();
+      }
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal membuat invoice", "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+      <DialogHeader>
+        <DialogTitle className="flex-row items-center gap-2">
+          <Text className="text-base font-bold">Buat Invoice Penagihan</Text>
+          {activeQuotation ? (
+            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
+              {activeQuotation.nomor}
+            </Text>
+          ) : null}
+        </DialogTitle>
+      </DialogHeader>
+
+      <ScrollView className="max-h-[72vh] px-1" showsVerticalScrollIndicator={false}>
+        {/* Mode Switcher */}
+        <View className="flex-row rounded-lg bg-panel p-1 border border-border mb-4">
+          <Button
+            variant={mode === "baru" ? "default" : "ghost"}
+            size="sm"
+            onPress={() => handleSwitchMode("baru")}
+            className="flex-1 h-8"
+          >
+            <Text className={`text-xs font-semibold ${mode === "baru" ? "text-primary-foreground" : "text-muted-foreground"}`}>
+              Invoice Baru (Mulai Awal / DP / Penuh)
+            </Text>
+          </Button>
+          <Button
+            variant={mode === "lanjut" ? "default" : "ghost"}
+            size="sm"
+            onPress={() => handleSwitchMode("lanjut")}
+            className="flex-1 h-8"
+          >
+            <Text className={`text-xs font-semibold ${mode === "lanjut" ? "text-primary-foreground" : "text-muted-foreground"}`}>
+              Lanjutkan Termin / DP Sebelumnya
+            </Text>
+          </Button>
+        </View>
+
+        {/* Section: Extract from File */}
+        <View className="mb-4 p-3 rounded-xl border border-dashed border-border bg-card/60">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 mr-2">
+              <Text className="text-xs font-semibold text-foreground">Ekstrak Data dari File Excel / PDF</Text>
+              <Text className="text-[11px] text-muted-foreground">
+                Upload file invoice/penawaran (.xlsx / .pdf) untuk mengisi otomatis barang & total.
+              </Text>
+            </View>
+            {Platform.OS === "web" ? (
+              <>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".xlsx,.xls,.pdf"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleExtractFile(f);
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onPress={() => fileInputRef.current?.click()}
+                  disabled={isExtracting}
+                  className="flex-row items-center gap-1.5 h-8"
+                >
+                  <Upload size={13} color={colors.primary} />
+                  <Text className="text-xs font-semibold text-primary">
+                    {isExtracting ? "Mengekstrak..." : "Upload & Ekstrak"}
+                  </Text>
+                </Button>
+              </>
+            ) : null}
+          </View>
+          {fileName ? (
+            <View className="flex-row items-center gap-1.5 mt-2 bg-success/10 px-2 py-1 rounded">
+              <CheckCircle2 size={13} color={colors.success} />
+              <Text className="text-[11px] text-success font-medium flex-1" numberOfLines={1}>
+                File terlampir: {fileName}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Source Link Section */}
+        <View className="mb-4 gap-2">
+          <FormField label="Tautkan Invoice Ke" required>
+            <View className="flex-row gap-2">
+              <Button
+                variant={sourceType === "quotation" ? "default" : "outline"}
+                size="sm"
+                onPress={() => setSourceType("quotation")}
+                className="flex-1 h-8"
+              >
+                <Text className="text-xs">Penawaran</Text>
+              </Button>
+              <Button
+                variant={sourceType === "po" ? "default" : "outline"}
+                size="sm"
+                onPress={() => setSourceType("po")}
+                className="flex-1 h-8"
+              >
+                <Text className="text-xs">PO Client</Text>
+              </Button>
+              <Button
+                variant={sourceType === "customer" ? "default" : "outline"}
+                size="sm"
+                onPress={() => setSourceType("customer")}
+                className="flex-1 h-8"
+              >
+                <Text className="text-xs">Customer Langsung</Text>
+              </Button>
+            </View>
+          </FormField>
+
+          {sourceType === "quotation" ? (
+            <FormField label="Pilih Penawaran Terkait" required>
+              <SearchableSelect
+                value={
+                  activeQuotation
+                    ? `${activeQuotation.nomor} - ${activeQuotation.customer || "-"} - ${activeQuotation.lead || "-"}`
+                    : ""
+                }
+                onChange={(val) => {
+                  const selNo = val.split(" - ")[0]?.trim() || val;
+                  const match = (data.quotations ?? []).find((q: Row) => q.nomor === selNo);
+                  if (match) handleSelectQuotation(match);
+                }}
+                options={(data.quotations ?? []).map(
+                  (q: Row) => `${q.nomor} - ${q.customer || "-"} - ${q.lead || "-"}`,
+                )}
+                placeholder="Cari & pilih penawaran..."
+              />
+              {activeQuotation ? (
+                <View className="flex-row flex-wrap items-center gap-2 mt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => {
+                      downloadQuotationPdf({
+                        quotationId: activeQuotation.id,
+                        customer: activeQuotation.customer,
+                        lead: activeQuotation.lead,
+                        nomor: activeQuotation.nomor,
+                        signer: activeQuotation.pemilik,
+                      });
+                      toast("File PDF penawaran sedang diunduh");
+                    }}
+                    className="h-8 px-2.5 flex-row items-center gap-1.5"
+                  >
+                    <FileDown size={13} color={colors.text} />
+                    <Text className="text-xs">Download PDF Penawaran</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => {
+                      downloadQuotationTemplate({
+                        quotationId: activeQuotation.id,
+                        customer: activeQuotation.customer,
+                        lead: activeQuotation.lead,
+                        nomor: activeQuotation.nomor,
+                        signer: activeQuotation.pemilik,
+                      });
+                      toast("File Excel penawaran (.xlsx) sedang diunduh");
+                    }}
+                    className="h-8 px-2.5 flex-row items-center gap-1.5"
+                  >
+                    <FileDown size={13} color={colors.text} />
+                    <Text className="text-xs">Download Excel Penawaran (.xlsx)</Text>
+                  </Button>
+                </View>
+              ) : null}
+            </FormField>
+          ) : sourceType === "po" ? (
+            <FormField label="Pilih PO Client Terkait" required>
+              <SearchableSelect
+                value={
+                  activePo
+                    ? `${activePo.nomor || activePo.number} - ${activePo.customer || "-"}`
+                    : ""
+                }
+                onChange={(val) => {
+                  const selNo = val.split(" - ")[0]?.trim() || val;
+                  const match = (data["po-client"] ?? []).find(
+                    (p: Row) => (p.nomor || p.number) === selNo,
+                  );
+                  if (match) {
+                    setSelectedPoId(String(match.id));
+                    if (match.customerId) setSelectedCustomerId(String(match.customerId));
+                  }
+                }}
+                options={(data["po-client"] ?? []).map(
+                  (p: Row) => `${p.nomor || p.number} - ${p.customer || "-"}`,
+                )}
+                placeholder="Cari & pilih PO client..."
+              />
+            </FormField>
+          ) : null}
+
+          <FormField label="Customer" required>
+            <SearchableSelect
+              value={
+                (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama || ""
+              }
+              onChange={(val) => {
+                const match = (data.customers ?? []).find((c: Row) => c.nama === val);
+                if (match) setSelectedCustomerId(String(match.id));
+              }}
+              options={(data.customers ?? []).map((c: Row) => c.nama).filter(Boolean)}
+              placeholder="Cari & pilih customer..."
+            />
+          </FormField>
+        </View>
+
+        {/* Mode: Lanjutkan Termin / DP Sebelumnya info banner */}
+        {mode === "lanjut" ? (
+          <View className="mb-4 p-3 rounded-xl bg-panel border border-border gap-2">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-xs font-bold text-foreground">Riwayat Tagihan Sebelumnya</Text>
+              <Text className="text-xs font-semibold text-primary">
+                {relatedExistingInvoices.length} Invoice Tercatat
+              </Text>
+            </View>
+
+            <View className="gap-1 my-1">
+              {relatedExistingInvoices.map((inv: Row) => (
+                <View key={inv.id} className="flex-row justify-between items-center text-xs py-1 border-b border-border/40">
+                  <Text className="text-xs font-mono font-medium">{inv.nomor} ({inv.jenis})</Text>
+                  <Text className="text-xs font-semibold">{rupiah(inv.nilai)}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View className="bg-card p-2 rounded-lg gap-1 border border-border">
+              <View className="flex-row justify-between">
+                <Text className="text-xs text-muted-foreground">Total Nilai Dasar (DPP):</Text>
+                <Text className="text-xs font-bold">{rupiah(dealDpp)}</Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text className="text-xs text-muted-foreground">Sudah Ditagihkan:</Text>
+                <Text className="text-xs font-semibold text-success">{rupiah(alreadyBilledDpp)}</Text>
+              </View>
+              <View className="flex-row justify-between pt-1 border-t border-border">
+                <Text className="text-xs font-bold text-foreground">Sisa Belum Ditagih (DPP):</Text>
+                <Text className="text-xs font-bold text-primary">{rupiah(remainingDpp)}</Text>
+              </View>
+            </View>
+
+            <View className="mt-2">
+              <FormField label="Pilih Jenis Lanjutan" required>
+                <View className="flex-row gap-2">
+                  <Button
+                    variant={continuationType === "termin" ? "default" : "outline"}
+                    size="sm"
+                    onPress={() => setContinuationType("termin")}
+                    className="flex-1 h-8"
+                  >
+                    <Text className="text-xs">Termin {terminNumber}</Text>
+                  </Button>
+                  <Button
+                    variant={continuationType === "pelunasan" ? "default" : "outline"}
+                    size="sm"
+                    onPress={() => setContinuationType("pelunasan")}
+                    className="flex-1 h-8"
+                  >
+                    <Text className="text-xs">Pelunasan (Sisa {rupiah(remainingDpp)})</Text>
+                  </Button>
+                </View>
+              </FormField>
+              {continuationType === "termin" ? (
+                <View className="mt-2">
+                  <FormField label={`Persentase Termin ${terminNumber} (%)`} required>
+                    <Input
+                      value={terminPercent}
+                      onChangeText={setTerminPercent}
+                      keyboardType="numeric"
+                      placeholder="Contoh: 30"
+                    />
+                  </FormField>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : (
+          /* Mode Baru Scheme */
+          <View className="mb-4 p-3 rounded-xl bg-panel border border-border gap-2">
+            <FormField label="Skema Pembayaran" required>
+              <View className="flex-row gap-2">
+                <Button
+                  variant={scheme === "termin" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => handleSwitchScheme("termin")}
+                  className="flex-1 h-8"
+                >
+                  <Text className="text-xs">Termin (Bertahap)</Text>
+                </Button>
+                <Button
+                  variant={scheme === "dp" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => handleSwitchScheme("dp")}
+                  className="flex-1 h-8"
+                >
+                  <Text className="text-xs">DP (Uang Muka)</Text>
+                </Button>
+                <Button
+                  variant={scheme === "sekaligus" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => handleSwitchScheme("sekaligus")}
+                  className="flex-1 h-8"
+                >
+                  <Text className="text-xs">Sekaligus (100%)</Text>
+                </Button>
+              </View>
+            </FormField>
+
+            {scheme === "dp" ? (
+              <FormField label="Persentase DP (%)" required>
+                <Input
+                  value={dpPercent}
+                  onChangeText={setDpPercent}
+                  keyboardType="numeric"
+                  placeholder="50"
+                />
+              </FormField>
+            ) : scheme === "termin" ? (
+              <FormField label="Persentase Termin 1 (%)" required>
+                <Input
+                  value={terminPercent}
+                  onChangeText={setTerminPercent}
+                  keyboardType="numeric"
+                  placeholder="30"
+                />
+              </FormField>
+            ) : null}
+          </View>
+        )}
+
+        {/* Form Fields */}
+        <View className="gap-3 mb-4">
+          <FormField label="Nomor Invoice" required>
+            <Input value={nomor} onChangeText={setNomor} placeholder="INV/2026/10/001" />
+          </FormField>
+
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <FormField label="Tanggal Terbit" required>
+                <DatePicker value={tanggal} onChange={setTanggal} />
+              </FormField>
+            </View>
+            <View className="flex-1">
+              <FormField label="Jatuh Tempo" required>
+                <DatePicker value={jatuhTempo} onChange={setJatuhTempo} />
+              </FormField>
+            </View>
+          </View>
+
+          {items.length === 0 ? (
+            <FormField label="Nilai Kesepakatan / DPP Total (Rp)" required>
+              <Input
+                value={customDpp}
+                onChangeText={(v) => setCustomDpp(formatThousands(v))}
+                keyboardType="numeric"
+                placeholder="Rp 0"
+              />
+            </FormField>
+          ) : null}
+
+          {/* List Barang / Items Table */}
+          {items.length > 0 ? (
+            <View className="gap-1.5 p-3 rounded-xl border border-border bg-card">
+              <View className="flex-row justify-between items-center mb-1">
+                <Text className="text-xs font-bold text-foreground">Daftar Barang & Jasa ({items.length} Item)</Text>
+                <Text className="text-xs font-semibold text-primary">Subtotal: {rupiah(dealDpp)}</Text>
+              </View>
+              {items.slice(0, 5).map((it, idx) => (
+                <View key={it.id || idx} className="flex-row justify-between items-center py-1 border-b border-border/40">
+                  <View className="flex-1 mr-2">
+                    <Text className="text-xs font-medium" numberOfLines={1}>{it.item}</Text>
+                    <Text className="text-[10px] text-muted-foreground">{it.qty} {it.satuan} x {rupiah(it.harga)}</Text>
+                  </View>
+                  <Text className="text-xs font-semibold">{rupiah(it.qty * it.harga)}</Text>
+                </View>
+              ))}
+              {items.length > 5 ? (
+                <Text className="text-[11px] text-muted-foreground italic text-center mt-1">
+                  +{items.length - 5} item lainnya
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          <FormField label="Catatan / Keterangan Invoice">
+            <Textarea
+              value={catatan}
+              onChangeText={setCatatan}
+              placeholder="Catatan tambahan untuk invoice ini..."
+            />
+          </FormField>
+        </View>
+
+        {/* Grand Total Summary Box */}
+        <View className="p-3.5 rounded-xl bg-card border border-border gap-1.5 mb-2">
+          <View className="flex-row justify-between">
+            <Text className="text-xs text-muted-foreground">Total Dasar (DPP):</Text>
+            <Text className="text-xs font-medium">{rupiah(dealDpp)}</Text>
+          </View>
+          <View className="flex-row justify-between">
+            <Text className="text-xs text-muted-foreground">PPN (11%):</Text>
+            <Text className="text-xs font-medium">{rupiah(Math.round(dealDpp * 0.11))}</Text>
+          </View>
+          <View className="flex-row justify-between pb-1.5 border-b border-border">
+            <Text className="text-xs font-semibold text-foreground">Grand Total Kesepakatan:</Text>
+            <Text className="text-xs font-bold text-foreground">{rupiah(dealDpp + Math.round(dealDpp * 0.11))}</Text>
+          </View>
+
+          {/* Current Invoice Tagihan Breakdown */}
+          <View className="flex-row justify-between pt-1">
+            <Text className="text-xs font-bold text-primary">
+              Tagihan Invoice Ini ({calculatedPct}%):
+            </Text>
+            <Text className="text-xs font-bold text-primary">{rupiah(currentDpp)}</Text>
+          </View>
+          <View className="flex-row justify-between">
+            <Text className="text-xs text-muted-foreground">PPN Tagihan Ini (11%):</Text>
+            <Text className="text-xs font-medium">{rupiah(currentPpn)}</Text>
+          </View>
+          <View className="flex-row justify-between pt-1 border-t border-border">
+            <Text className="text-sm font-bold text-foreground">Total Tagihan Invoice Ini:</Text>
+            <Text className="text-sm font-bold text-primary">{rupiah(currentTotal)}</Text>
+          </View>
+
+          {dealDpp - currentDpp > 0 ? (
+            <View className="flex-row justify-between pt-1 border-t border-dashed border-border">
+              <Text className="text-xs text-muted-foreground">Sisa yang Belum Ditagih:</Text>
+              <Text className="text-xs font-semibold text-amber-600">
+                {rupiah(Math.max(0, dealDpp - (alreadyBilledDpp + currentDpp)))}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </ScrollView>
+
+      <DialogFooter>
+        <Button variant="outline" onPress={onClose}>
+          <Text>Batal</Text>
+        </Button>
+        <Button onPress={handleSubmit} disabled={isSubmitting}>
+          <Text>{isSubmitting ? "Menyimpan..." : "Simpan & Buat Invoice"}</Text>
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}

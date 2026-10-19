@@ -110,10 +110,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [errs, setErrs] = React.useState<Record<string, string>>({});
   const [saving, setSaving] = React.useState(false);
   const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
+  const [invoicePayOpen, setInvoicePayOpen] = React.useState(false);
 
   const initialQuotationPpnMode = React.useMemo<PpnMode>(() => getInitialPpnMode(row), [row]);
 
   const quotationPpnMode: PpnMode = (edits.ppnMode as PpnMode) ?? initialQuotationPpnMode;
+
+  const [quotationDiscType, setQuotationDiscType] = React.useState<"nominal" | "percent">("nominal");
+  const [quotationDiscPercent, setQuotationDiscPercent] = React.useState<string>("");
 
   function setQuotationPpnMode(mode: PpnMode) {
     setFieldValue("ppnMode", mode);
@@ -152,13 +156,19 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const isFinanceOrBos = ["finance", "bos", "super_admin"].includes(user?.role ?? "");
   const isReporter = !row?.reporterId || String(row?.reporterId) === String(user?.id) || row?.pelapor === user?.name;
   const canEditExpense = isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar");
-  const canEdit = moduleKey === "expenses" ? canEditExpense : true;
+  const canEdit = moduleKey === "expenses"
+    ? canEditExpense
+    : moduleKey === "invoices"
+    ? isFinanceOrBos
+    : true;
   const canDelete =
     user?.role === "super_admin"
       ? true
       : moduleKey === "expenses"
       ? isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar")
       : moduleKey === "surveys" && user?.role === "finance"
+      ? false
+      : moduleKey === "invoices" && user?.role === "sales"
       ? false
       : true;
 
@@ -434,8 +444,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         router.push(`/invoices/${createdInv.id}` as any);
       }
       return;
-    } else if (a.label === "Catat pembayaran") {
-      void setStatus("invoices", id, "Lunas");
+    } else if (moduleKey === "invoices" && a.label === "Catat pembayaran") {
+      setInvoicePayOpen(true);
+      return;
     }
     if (a.status) setStatus(moduleKey, id, a.status);
     else if (a.toast) toast(a.toast);
@@ -612,7 +623,62 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                     <View
                       className={cn("px-2 py-2", isFullWidth ? "w-full" : "w-full sm:w-1/2")}
                     >
-                      <FormField label={f.label} required={f.required} error={errs[f.key]}>
+                      <FormField
+                        label={
+                          moduleKey === "quotations" && f.key === "disc" ? (
+                            <View className="flex-row items-center justify-between w-full">
+                              <Text className="text-sm font-medium">Diskon</Text>
+                              <View className="flex-row rounded-lg bg-panel p-0.5 border border-border">
+                                <Button
+                                  size="sm"
+                                  variant={quotationDiscType === "nominal" ? "default" : "ghost"}
+                                  className="h-6 px-2.5 py-0"
+                                  onPress={() => setQuotationDiscType("nominal")}
+                                >
+                                  <Text
+                                    className={`text-xs ${
+                                      quotationDiscType === "nominal"
+                                        ? "text-primary-foreground font-semibold"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    Nominal (Rp)
+                                  </Text>
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={quotationDiscType === "percent" ? "default" : "ghost"}
+                                  className="h-6 px-2.5 py-0"
+                                  onPress={() => {
+                                    const tot = quotationFinancials.totNum;
+                                    const curDisc = quotationFinancials.discNum;
+                                    if (tot > 0 && curDisc > 0) {
+                                      setQuotationDiscPercent(String(Math.round((curDisc / tot) * 100)));
+                                    } else {
+                                      setQuotationDiscPercent("");
+                                    }
+                                    setQuotationDiscType("percent");
+                                  }}
+                                >
+                                  <Text
+                                    className={`text-xs ${
+                                      quotationDiscType === "percent"
+                                        ? "text-primary-foreground font-semibold"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    Persen (%)
+                                  </Text>
+                                </Button>
+                              </View>
+                            </View>
+                          ) : (
+                            f.label
+                          )
+                        }
+                        required={f.required}
+                        error={errs[f.key]}
+                      >
                         {f.type === "select" ? (
                           <SearchableSelect
                             value={getFieldValue(f)}
@@ -644,13 +710,52 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                             error={!!errs[f.key]}
                           />
                         ) : f.type === "number" ? (
-                          <Input
-                            value={getFieldValue(f)}
-                            onChangeText={(v) => setFieldValue(f.key, formatThousands(v))}
-                            keyboardType="numeric"
-                            placeholder={`Masukkan ${f.label.toLowerCase()}`}
-                            className={cn(errs[f.key] && "border-danger")}
-                          />
+                          moduleKey === "quotations" && f.key === "disc" ? (
+                            quotationDiscType === "percent" ? (
+                              <View className="gap-1">
+                                <Input
+                                  value={quotationDiscPercent}
+                                  onChangeText={(val) => {
+                                    const pctStr = String(val ?? "").replace(/\D/g, "");
+                                    setQuotationDiscPercent(pctStr);
+                                    const pct = Number(pctStr) || 0;
+                                    const tot = quotationFinancials.totNum;
+                                    const calculatedNominal = Math.round(tot * (pct / 100));
+                                    setFieldValue("disc", formatThousands(calculatedNominal));
+                                  }}
+                                  keyboardType="numeric"
+                                  placeholder="Contoh: 10"
+                                  className={cn(errs[f.key] && "border-danger")}
+                                />
+                                <Text className="text-[11px] text-muted-foreground">
+                                  Nilai diskon: {rupiah(quotationFinancials.discNum)}
+                                </Text>
+                              </View>
+                            ) : (
+                              <View className="gap-1">
+                                <Input
+                                  value={getFieldValue(f)}
+                                  onChangeText={(v) => setFieldValue(f.key, formatThousands(v))}
+                                  keyboardType="numeric"
+                                  placeholder="Contoh: 500.000"
+                                  className={cn(errs[f.key] && "border-danger")}
+                                />
+                                {quotationFinancials.totNum > 0 && quotationFinancials.discNum > 0 ? (
+                                  <Text className="text-[11px] text-muted-foreground">
+                                    Setara dengan {Math.round((quotationFinancials.discNum / quotationFinancials.totNum) * 100)}%
+                                  </Text>
+                                ) : null}
+                              </View>
+                            )
+                          ) : (
+                            <Input
+                              value={getFieldValue(f)}
+                              onChangeText={(v) => setFieldValue(f.key, formatThousands(v))}
+                              keyboardType="numeric"
+                              placeholder={`Masukkan ${f.label.toLowerCase()}`}
+                              className={cn(errs[f.key] && "border-danger")}
+                            />
+                          )
                         ) : f.type === "textarea" ? (
                           <Textarea
                             value={getFieldValue(f)}
@@ -685,7 +790,13 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           </Panel>
         ) : null}
 
-        <ModuleExtras moduleKey={moduleKey} row={row} onRefresh={handleRefresh} />
+        <ModuleExtras
+          moduleKey={moduleKey}
+          row={row}
+          onRefresh={handleRefresh}
+          invoicePayOpen={invoicePayOpen}
+          onInvoicePayOpenChange={setInvoicePayOpen}
+        />
 
         {def.docs?.length ? (
           <Panel title="File & Bukti Pendukung">

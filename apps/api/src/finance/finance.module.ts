@@ -8,9 +8,10 @@ import { InvoiceInController } from "./invoice-in.controller.js";
 import { ExpensesService } from "./expenses.service.js";
 import { ExpensesController } from "./expenses.controller.js";
 import { ApprovalsModule } from "../approvals/approvals.module.js";
+import { UploadModule } from "../upload/upload.module.js";
 
 @Module({
-  imports: [ApprovalsModule],
+  imports: [ApprovalsModule, UploadModule],
   providers: [ClientPoService, InvoiceOutService, InvoiceInService, ExpensesService],
   controllers: [ClientPoController, InvoiceOutController, InvoiceInController, ExpensesController],
   exports: [InvoiceOutService, ExpensesService],

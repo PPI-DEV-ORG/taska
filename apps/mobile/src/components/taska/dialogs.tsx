@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react-native";
+import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Search, FileDown } from "lucide-react-native";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,13 @@ import { rupiah, tanggal } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import type { CreateField, ModuleDef, Row } from "@/constants/modules";
 
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
-export function formatThousands(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
+export function formatThousands(raw: any): string {
+  if (raw == null || raw === "") return "";
+  const digits = String(raw).replace(/\D/g, "");
   if (!digits) return "";
   return Number(digits).toLocaleString("id-ID");
 }
@@ -467,8 +469,13 @@ export function getDynamicOptions(
     case "produk":
     case "item":
       return nonEmpty((data.products ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
-    case "penawaran":
-      return nonEmpty(["-", ...(data.quotations ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
+    case "penawaran": {
+      const qList = (data.quotations ?? []);
+      if (moduleKey === "po-client") {
+        return qList.map((q: any) => `${q.nomor} - ${q.customer || "-"} - ${q.lead || q.nama || "-"}`);
+      }
+      return nonEmpty(["-", ...qList.map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
+    }
     case "po":
       if (moduleKey === "invoices") {
         return nonEmpty(["-", ...(data["po-client"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
@@ -624,6 +631,9 @@ export function FormDialog({
       if (mode === "edit" && f.type === "password" && !vals[f.key]?.trim()) return;
       row[f.key] = f.type === "number" ? Number(String(vals[f.key] ?? "0").replace(/\D/g, "")) : vals[f.key] ?? "";
     });
+    if (def?.key === "po-client" && row.penawaran) {
+      row.penawaran = (String(row.penawaran).split(" - ")[0] ?? "").trim();
+    }
     if (def?.key === "invoices") {
       const nilai = row.nilai || 0;
       row.ppn = Math.round(nilai * 0.11);
@@ -693,8 +703,8 @@ export function FormDialog({
             }
             if (def?.key === "quotations" && f.key === "nilai") {
               const currentTipe = vals.tipePpn || "Exclude PPN (11%)";
-              const rawNilai = Number((vals.nilai || "").replace(/\D/g, "")) || 0;
-              const rawDisc = Number((vals.disc || "").replace(/\D/g, "")) || 0;
+              const rawNilai = Number(String(vals.nilai || "").replace(/\D/g, "")) || 0;
+              const rawDisc = Number(String(vals.disc || "").replace(/\D/g, "")) || 0;
               const netVal = Math.max(0, rawNilai - rawDisc);
               const previewPpn = currentTipe.includes("Exclude") ? Math.round(netVal * 0.11) : 0;
               const previewGrand = currentTipe.includes("Exclude") ? netVal + previewPpn : netVal;
@@ -708,12 +718,21 @@ export function FormDialog({
                   >
                     <Input
                       value={vals[f.key] ?? ""}
-                      onChangeText={(v) =>
-                        setVals((s) => ({
-                          ...s,
-                          [f.key]: formatThousands(v),
-                        }))
-                      }
+                      onChangeText={(v) => {
+                        const newNilai = Number(v.replace(/\D/g, "")) || 0;
+                        setVals((s) => {
+                          let nextDisc = s.disc;
+                          if (s.discType === "percent" && s.discPercent) {
+                            const pct = Number(s.discPercent) || 0;
+                            nextDisc = formatThousands(Math.round(newNilai * (pct / 100)));
+                          }
+                          return {
+                            ...s,
+                            [f.key]: formatThousands(v),
+                            ...(nextDisc !== undefined ? { disc: nextDisc } : {}),
+                          };
+                        });
+                      }}
                       placeholder={f.placeholder || "Contoh: 10.000.000"}
                       keyboardType="numeric"
                       className={cn("h-11 sm:h-11", errs[f.key] && "border-danger")}
@@ -772,6 +791,87 @@ export function FormDialog({
               );
             }
 
+            if (def?.key === "quotations" && f.key === "disc") {
+              const rawNilai = Number(String(vals.nilai || "").replace(/\D/g, "")) || 0;
+              const rawDisc = Number(String(vals.disc || "").replace(/\D/g, "")) || 0;
+              const isPercent = vals.discType === "percent";
+              return (
+                <View key={f.key} className="gap-1.5">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm font-medium text-foreground">Diskon</Text>
+                    <View className="flex-row rounded-lg bg-panel p-0.5 border border-border">
+                      <Button
+                        size="sm"
+                        variant={!isPercent ? "default" : "ghost"}
+                        className="h-6 px-2.5 py-0"
+                        onPress={() => setVals((s) => ({ ...s, discType: "nominal" }))}
+                      >
+                        <Text className={`text-xs ${!isPercent ? "text-primary-foreground font-semibold" : "text-muted-foreground"}`}>
+                          Nominal (Rp)
+                        </Text>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={isPercent ? "default" : "ghost"}
+                        className="h-6 px-2.5 py-0"
+                        onPress={() => {
+                          const pct = rawNilai > 0 && rawDisc > 0 ? String(Math.round((rawDisc / rawNilai) * 100)) : "";
+                          setVals((s) => ({ ...s, discType: "percent", discPercent: pct }));
+                        }}
+                      >
+                        <Text className={`text-xs ${isPercent ? "text-primary-foreground font-semibold" : "text-muted-foreground"}`}>
+                          Persen (%)
+                        </Text>
+                      </Button>
+                    </View>
+                  </View>
+                  {isPercent ? (
+                    <View className="gap-1">
+                      <Input
+                        value={vals.discPercent ?? ""}
+                        onChangeText={(p) => {
+                          const pctStr = p.replace(/\D/g, "");
+                          const pct = Number(pctStr) || 0;
+                          const calculatedDisc = Math.round(rawNilai * (pct / 100));
+                          setVals((s) => ({
+                            ...s,
+                            discPercent: pctStr,
+                            disc: formatThousands(calculatedDisc),
+                          }));
+                        }}
+                        placeholder="Contoh: 10"
+                        keyboardType="numeric"
+                        className={cn("h-11 sm:h-11", errs[f.key] && "border-danger")}
+                      />
+                      <Text className="text-[11px] text-muted-foreground">
+                        Nilai diskon: {rupiah(rawDisc)}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="gap-1">
+                      <Input
+                        value={vals[f.key] ?? ""}
+                        onChangeText={(v) =>
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: formatThousands(v),
+                          }))
+                        }
+                        placeholder={f.placeholder || "Contoh: 500.000"}
+                        keyboardType="numeric"
+                        className={cn("h-11 sm:h-11", errs[f.key] && "border-danger")}
+                      />
+                      {rawNilai > 0 && rawDisc > 0 ? (
+                        <Text className="text-[11px] text-muted-foreground">
+                          Setara dengan {Math.round((rawDisc / rawNilai) * 100)}%
+                        </Text>
+                      ) : null}
+                    </View>
+                  )}
+                </View>
+              );
+            }
+
             return (
               <FormField
                 key={f.key}
@@ -780,7 +880,67 @@ export function FormDialog({
                 error={errs[f.key]}
               >
                 {f.type === "select" ? (
-                  <SearchableSelect value={vals[f.key]} onChange={(v) => setVals((s) => ({ ...s, [f.key]: v }))} options={dynamicOptions(f) ?? []} placeholder={`Pilih ${f.label.toLowerCase()}`} error={!!errs[f.key]} />
+                  <View className="gap-1.5">
+                    <SearchableSelect
+                      value={vals[f.key]}
+                      onChange={(v) => {
+                        if (def?.key === "po-client" && f.key === "penawaran") {
+                          const selNo = v.split(" - ")[0]?.trim() || v;
+                          const quote = (data.quotations ?? []).find(
+                            (q: any) => q.nomor === selNo || `${q.nomor} - ${q.customer || "-"} - ${q.lead || q.nama || "-"}` === v
+                          );
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: v,
+                            ...(quote ? {
+                              nilai: formatThousands(String(quote.totalAfterDisc || quote.nilai || quote.total || 0)),
+                              customer: quote.customer || s.customer || "",
+                            } : {}),
+                          }));
+                        } else {
+                          setVals((s) => ({ ...s, [f.key]: v }));
+                        }
+                      }}
+                      options={dynamicOptions(f) ?? []}
+                      placeholder={`Pilih ${f.label.toLowerCase()}`}
+                      error={!!errs[f.key]}
+                    />
+                    {def?.key === "po-client" && f.key === "penawaran" && vals[f.key] ? (() => {
+                      const selNo = vals[f.key]?.split(" - ")[0]?.trim() || vals[f.key];
+                      const matchedQuote = (data.quotations ?? []).find(
+                        (q: any) => q.nomor === selNo || `${q.nomor} - ${q.customer || "-"} - ${q.lead || q.nama || "-"}` === vals[f.key]
+                      );
+                      if (!matchedQuote) return null;
+                      return (
+                        <View className="flex-row items-center justify-between p-2 rounded-lg bg-panel border border-border/80 mt-1">
+                          <View className="flex-1 mr-2">
+                            <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
+                              {matchedQuote.nomor} · {matchedQuote.customer}
+                            </Text>
+                            <Text className="text-[11px] text-muted-foreground">
+                              Total Penawaran: {rupiah(matchedQuote.totalAfterDisc || matchedQuote.nilai || matchedQuote.total || 0)}
+                            </Text>
+                          </View>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2.5 flex-row items-center gap-1"
+                            onPress={() =>
+                              downloadQuotationPdf({
+                                quotationId: matchedQuote.id,
+                                customer: matchedQuote.customer,
+                                lead: matchedQuote.lead,
+                                nomor: matchedQuote.nomor,
+                              })
+                            }
+                          >
+                            <FileDown size={12} color={colors.primary} />
+                            <Text className="text-[11px] text-primary font-medium">Download PDF</Text>
+                          </Button>
+                        </View>
+                      );
+                    })() : null}
+                  </View>
                 ) : f.type === "multiselect" ? (
                   <MultiSelect
                     values={vals[f.key]?.split(", ").filter(Boolean) ?? []}
