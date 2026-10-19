@@ -216,6 +216,7 @@ export async function uploadFile(
   file: { uri?: string; name?: string; type?: string } | Blob | File | null | undefined,
   kind: "foto" | "dokumen" | "video" = "dokumen",
   category?: string,
+  extra?: { refType?: string; refId?: string | number },
 ): Promise<number | null> {
   if (!file) return null;
   const form = new FormData();
@@ -234,6 +235,8 @@ export async function uploadFile(
   }
   const query = new URLSearchParams({ kind });
   if (category) query.set("category", category);
+  if (extra?.refType) query.set("refType", extra.refType);
+  if (extra?.refId != null) query.set("refId", String(extra.refId));
   const res = await api<{ id: number }>("POST", `/files?${query.toString()}`, undefined, { form });
   return res?.id ?? null;
 }

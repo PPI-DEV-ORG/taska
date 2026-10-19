@@ -283,7 +283,7 @@ export class QuotationsService {
         }))
       : [];
     const itemsSum = items.reduce((s, it) => s + it.qty * it.harga, 0);
-    const total = itemsSum > 0 ? itemsSum : (dto?.total ?? dto?.grandTotal ?? 0);
+    const total = itemsSum > 0 ? itemsSum : (dto?.total ?? dto?.grandTotal ?? Number(lead.estimatedValue || 0));
     const discount = dto?.discount ?? 0;
     const netBeforeTax = Math.max(0, total - discount);
     const ppn = dto?.ppn !== undefined ? dto.ppn : Math.round(netBeforeTax * 0.11);
@@ -400,7 +400,7 @@ export class QuotationsService {
 
     const data = {
       ...(dto.customerId !== undefined ? { customerId: dto.customerId } : {}),
-      ...(dto.validUntil !== undefined ? { validUntil: dto.validUntil ? new Date(dto.validUntil) : null } : {}),
+      ...(dto.validUntil !== undefined ? { validUntil: dto.validUntil && String(dto.validUntil).trim() !== "" ? new Date(dto.validUntil) : null } : {}),
       total,
       ppn,
       discount,
@@ -926,11 +926,11 @@ export class QuotationsService {
 
   /** Status diubah manual dan boleh loncat (PRD #2) — selalu dicatat. */
   async setStatus(id: number, status: string, user: RequestUser) {
-    if (!MANUAL_STATUSES.includes(status)) {
+    const mapped = normalizeQuotationStatus(status) ?? status;
+    if (!MANUAL_STATUSES.includes(mapped) && !MANUAL_STATUSES.includes(status)) {
       throw new BadRequestException(`Status tidak dikenal: ${status}`);
     }
     const row = await this.getEditable(id, user);
-    const mapped = normalizeQuotationStatus(status) ?? status;
     if (mapped === "SENT") return this.send(id, user);
     if (mapped === "PENDING_APPROVAL") return this.submit(id, user);
 

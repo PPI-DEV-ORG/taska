@@ -304,6 +304,7 @@ export function adaptRow(module: string, raw: any): Row {
         _versions: (raw.versions ?? []).map((v: any) => ({
           id: String(v.id),
           v: n(v.version),
+          fileId: v.fileId ? Number(v.fileId) : null,
           total: n(v.total),
           ppn: n(v.ppn),
           disc: n(v.discount),
@@ -312,6 +313,7 @@ export function adaptRow(module: string, raw: any): Row {
           reason: v.note || `Revisi v${v.version}`,
           file: v.fileId ? `Penawaran-${String(raw.number || "").replace(/\//g, "-")}-v${v.version}.xlsx` : "-",
         })),
+        files: Array.isArray(raw.files) ? raw.files : [],
       };
     }
     case "surveys":
@@ -432,7 +434,14 @@ export function adaptRow(module: string, raw: any): Row {
         stock: Array.isArray(raw.stock) ? raw.stock : [],
         approval: raw.approval ? adaptApproval(raw.approval) : undefined,
       };
-    case "supplier-pos":
+    case "supplier-pos": {
+      const rawItems = Array.isArray(raw.items) ? raw.items : [];
+      const firstProdName = nameOf(rawItems[0]?.product) || rawItems[0]?.productName || "";
+      const itemSummary = rawItems
+        .map((i: any) => `${nameOf(i.product) || i.productName || "Barang"} x ${n(i.qty)}`)
+        .join(", ");
+      const displayItem = firstProdName || (raw.item ? String(raw.item).replace(/\s*x\s*\d+.*$/, "") : "") || itemSummary || "-";
+
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -449,9 +458,9 @@ export function adaptRow(module: string, raw: any): Row {
           : raw.status === "DITOLAK" || raw.status === "DIBATALKAN"
             ? toLabel("supplier-pos", raw.status)
             : toLabel("supplier-pos", raw.shipmentStatus),
-        item: (raw.items ?? [])
-          .map((i: any) => `${nameOf(i.product)} x ${n(i.qty)}`)
-          .join(", ") || "-",
+        item: displayItem,
+        itemsSummary: itemSummary || displayItem,
+        items: rawItems,
         requestId: idOf(raw.request),
         projectId: idOf(raw.project),
         shipmentStatus: raw.shipmentStatus,
@@ -459,6 +468,7 @@ export function adaptRow(module: string, raw: any): Row {
         fileId: raw.fileId ?? null,
         doFileId: raw.doFileId ?? null,
       };
+    }
     case "receiving":
       return {
         ...base,
@@ -1035,10 +1045,31 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         evidenceFileId: row.evidenceFileId ?? (row.fileId ? Number(row.fileId) : undefined),
         items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
       };
-    case "supplier-pos":
+    case "supplier-pos": {
+      let items = Array.isArray(row.items) && row.items.length ? row.items : undefined;
+      if (!items && row.item) {
+        const cleanItem = String(row.item || "").replace(/\s*x\s*\d+.*$/, "").trim().toLowerCase();
+        const prod = (db?.products ?? []).find(
+          (p: any) =>
+            String(p.nama || p.name || "").trim().toLowerCase() === cleanItem ||
+            String(p.sku || "").trim().toLowerCase() === cleanItem
+        );
+        if (prod) {
+          items = [
+            {
+              productId: Number(prod.id),
+              qty: Number(row.qty) || 1,
+              price: num(row.total) || Number(prod.purchasePrice || prod.hargaBeli || 0),
+            },
+          ];
+        }
+      }
       return {
         number: row.nomor || row.number || undefined,
-        supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
+        supplierId:
+          row.supplierId != null && row.supplierId !== ""
+            ? Number(row.supplierId)
+            : findId(db?.suppliers, row.supplier) ?? (db?.suppliers?.[0]?.id != null ? Number(db.suppliers[0].id) : undefined),
         requestId: row.requestId != null && row.requestId !== "" ? Number(row.requestId) : findId(db?.["purchase-requests"], row.request),
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
         date: row.tanggal || row.date || today,
@@ -1046,8 +1077,9 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         paymentTerms: row.payment || row.paymentTerms || undefined,
         total: num(row.total),
         fileId: row.fileId ? Number(row.fileId) : undefined,
-        items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
+        items,
       };
+    }
     case "receiving":
       return {
         supplierPoId: row.supplierPoId != null && row.supplierPoId !== "" ? Number(row.supplierPoId) : findId(db?.["supplier-pos"], row.po),
@@ -1153,15 +1185,23 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       const amt = num(row.nilai ?? row.amount);
       const ppn = row.ppn != null ? num(row.ppn) : Math.round(amt * 0.11);
       const tot = num(row.total) || amt + ppn;
+      const suppId =
+        row.supplierId != null && row.supplierId !== ""
+          ? Number(row.supplierId)
+          : findId(db?.suppliers, row.supplier) ?? (db?.suppliers?.[0]?.id != null ? Number(db.suppliers[0].id) : 1);
+      const poId =
+        row.supplierPoId != null && row.supplierPoId !== ""
+          ? Number(row.supplierPoId)
+          : findId(db?.["supplier-pos"], row.po);
+      const dueStr = row.jatuhTempo || row.dueDate || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
       return {
         number: row.nomor || row.number || `INV-SUP-${Date.now().toString().slice(-5)}`,
-        supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
-        supplierPoId: row.supplierPoId != null && row.supplierPoId !== "" ? Number(row.supplierPoId) : findId(db?.["supplier-pos"], row.po),
+        supplierId: suppId,
+        supplierPoId: poId || undefined,
         amount: amt,
         ppn,
         total: tot,
-        date: row.tanggal || row.date || today,
-        dueDate: row.jatuhTempo || row.dueDate || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+        dueDate: dueStr && /^\d{4}-\d{2}-\d{2}/.test(dueStr) ? dueStr : new Date().toISOString().slice(0, 10),
         fileId: row.fileId ? Number(row.fileId) : undefined,
       };
     }
@@ -1313,7 +1353,15 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.disc !== undefined) out.discount = num(patch.disc);
     if (patch.ppn !== undefined) out.ppn = num(patch.ppn);
     if (patch.totalAfterDisc !== undefined) out.grandTotal = num(patch.totalAfterDisc);
-    if (patch.berlaku !== undefined) out.validUntil = patch.berlaku;
+    if (patch.berlaku !== undefined) {
+      const v = String(patch.berlaku).trim();
+      out.validUntil = v && v !== "-" ? new Date(v).toISOString() : undefined;
+      delete out.berlaku;
+    }
+    if (patch.validUntil !== undefined) {
+      const v = String(patch.validUntil).trim();
+      out.validUntil = v && v !== "-" ? new Date(v).toISOString() : undefined;
+    }
     if (patch.status !== undefined) out.status = toEnum("quotations", patch.status) || patch.status;
     if (patch.items !== undefined) out.items = patch.items;
     if (patch.subject !== undefined) out.subject = patch.subject;
@@ -1379,6 +1427,30 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
     if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
     if (patch.supplier !== undefined) out.supplierId = findId(db?.suppliers, patch.supplier);
+  } else if (module === "supplier-pos") {
+    if (patch.supplier !== undefined) out.supplierId = findId(db?.suppliers, patch.supplier);
+    if (patch.total !== undefined) out.total = num(patch.total);
+    if (patch.eta !== undefined) out.eta = patch.eta ? new Date(patch.eta).toISOString() : undefined;
+    if (patch.item !== undefined) {
+      const cleanItem = String(patch.item || "").replace(/\s*x\s*\d+.*$/, "").trim().toLowerCase();
+      const prod = (db?.products ?? []).find(
+        (p: any) =>
+          String(p.nama || p.name || "").trim().toLowerCase() === cleanItem ||
+          String(p.sku || "").trim().toLowerCase() === cleanItem
+      );
+      if (prod) {
+        out.items = [
+          {
+            productId: Number(prod.id),
+            qty: 1,
+            price: num(patch.total) || Number(prod.purchasePrice || prod.hargaBeli || 0),
+          },
+        ];
+      }
+    }
+    if (patch.items !== undefined && Array.isArray(patch.items)) {
+      out.items = patch.items;
+    }
   }
 
   return forPatch(module, out);

@@ -62,10 +62,14 @@ type Props = {
   handleRef?: (h: FileUploaderHandle | null) => void;
   /** true = unggah langsung saat dipilih (konsumen tanpa tombol Simpan). default: staged sampai flush(). */
   autoFlush?: boolean;
+  accept?: string;
+  hint?: string;
+  allowedExtensions?: string[];
 };
 
 export function FileUploader({
   label, kind = "semua", category, required, onChange, onFilePicked, onUploaded, multiple = false, handleRef, autoFlush = false,
+  accept: acceptProp, hint: hintProp, allowedExtensions,
 }: Props) {
   const { toast, offline } = useApp();
   const [staged, setStaged] = React.useState<StagedFile[]>([]);
@@ -94,6 +98,18 @@ export function FileUploader({
   function stage(f: { name?: string; uri?: string; blob?: Blob; size?: number }) {
     const fileName = f.name || "file";
     const ext = (fileName.split(".").pop() || "").toLowerCase();
+
+    if (allowedExtensions && allowedExtensions.length > 0) {
+      const match = allowedExtensions.some((allowed) => {
+        const clean = allowed.replace(/^\./, "").toLowerCase();
+        return ext === clean;
+      });
+      if (!match) {
+        toast(`Format file tidak didukung. Hanya file ${allowedExtensions.join(", ")} yang diperbolehkan.`, "danger");
+        return;
+      }
+    }
+
     const isImg = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext) || f.blob?.type?.startsWith("image/");
     const isVid = ["mp4", "mkv", "mov"].includes(ext) || f.blob?.type?.startsWith("video/");
     const detectedKind: "foto" | "dokumen" | "video" = isImg ? "foto" : isVid ? "video" : target;
@@ -234,11 +250,11 @@ export function FileUploader({
             ref={(el) => { webInputRef.current = el; }}
             type="file"
             multiple={multiple}
-            accept={kind === "semua" ? undefined : ACCEPT[toUploadKind(kind)]}
+            accept={acceptProp ?? (kind === "semua" ? undefined : ACCEPT[toUploadKind(kind)])}
             onChange={handleWebInput}
             className="hidden"
           />
-          <Text className="text-muted-foreground text-center text-[13px]">{LIMIT[kind]}</Text>
+          <Text className="text-muted-foreground text-center text-[13px]">{hintProp ?? LIMIT[kind]}</Text>
         </div>
       ) : (
         <Pressable
