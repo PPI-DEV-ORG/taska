@@ -189,11 +189,13 @@ export function DataTable({
           </View>
 
           {/* Table Rows */}
-          {currentRows.map((r) => {
-            const isRowSelected = selectedIds.includes(r.id) || selectedId === r.id;
+          {currentRows.map((r, rowIdx) => {
+            if (!r) return null;
+            const rowKey = r.id != null ? `${r.id}-${r.direction ?? ""}-${rowIdx}` : `row-${rowIdx}`;
+            const isRowSelected = (selectedIds && selectedIds.includes(r.id)) || selectedId === r.id;
             return (
               <Pressable
-                key={r.id}
+                key={rowKey}
                 onPress={() => onRowPress?.(r)}
                 className={cn(
                   "border-border/40 hover:bg-panel/40 active:bg-panel/60 flex-row items-center border-b px-4 py-3.5 transition-colors w-full",

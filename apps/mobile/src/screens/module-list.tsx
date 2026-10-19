@@ -1,14 +1,19 @@
 import * as React from "react";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronRight, Plus, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { EmptyState, PageHeader } from "@/components/taska/basics";
+import { EmptyState, PageHeader, Chip } from "@/components/taska/basics";
 import { DataTable, FilterBar } from "@/components/taska/data-table";
 import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
 import type { ModuleDef, Role, Row, User } from "@/constants/modules";
 import { colors } from "@/tokens";
+import {
+  SupplierInvoiceDetailDialog,
+  SupplierInvoicePayDialog,
+} from "@/modules/supplier-po/supplier-invoice-dialogs";
 
 const CREATE: Record<string, Role[]> = {
   leads: ["sales", "pm"],
@@ -99,8 +104,29 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   const [open, setOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
 
+  const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "in">("all");
+  const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
+  const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
+
   const rows = React.useMemo(() => {
-    const scoped = scopeRows(def, data[def.key] ?? [], user!);
+    let sourceRows = data[def.key] ?? [];
+    if (def.key === "invoices") {
+      const invOut = (data.invoices ?? []).map((r) => ({ ...r, id: String(r.id), direction: "out" }));
+      const invIn = (data.invoiceIn ?? []).map((r: Row) => ({
+        ...r,
+        id: String(r.id).startsWith("in-") ? String(r.id) : `in-${r.id}`,
+        rawId: (r as any).rawId ?? r.id,
+        direction: "in",
+      }));
+      if (invoiceTab === "out") {
+        sourceRows = invOut;
+      } else if (invoiceTab === "in") {
+        sourceRows = invIn;
+      } else {
+        sourceRows = [...invOut, ...invIn];
+      }
+    }
+    const scoped = scopeRows(def, sourceRows, user!);
     const s = q.trim().toLowerCase();
     return scoped
       .filter((r) => (!status || r[def.statusKey] === status))
@@ -115,7 +141,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         return r;
       })
       .sort((a, b) => (sortKey(a) < sortKey(b) ? 1 : -1));
-  }, [def, data, user, q, status]);
+  }, [def, data, user, q, status, invoiceTab]);
 
   const allowed = canCreate(def, user!.role);
   const deleteAllowed = canDelete(def, user!.role);
@@ -137,6 +163,25 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         action={action}
       />
       {headerExtra}
+      {def.key === "invoices" ? (
+        <View className="flex-row items-center gap-2 mb-3">
+          <Chip
+            label={`Semua (${(data.invoices?.length || 0) + (data.invoiceIn?.length || 0)})`}
+            active={invoiceTab === "all"}
+            onPress={() => setInvoiceTab("all")}
+          />
+          <Chip
+            label={`Invoice Keluar / Klien (${data.invoices?.length || 0})`}
+            active={invoiceTab === "out"}
+            onPress={() => setInvoiceTab("out")}
+          />
+          <Chip
+            label={`Invoice Masuk / Supplier (${data.invoiceIn?.length || 0})`}
+            active={invoiceTab === "in"}
+            onPress={() => setInvoiceTab("in")}
+          />
+        </View>
+      ) : null}
       <FilterBar search={q} onSearch={setQ} statuses={def.statuses} status={status} onStatus={setStatus} />
       {rows.length === 0 ? (
         <EmptyState
@@ -150,7 +195,13 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         <DataTable
           columns={def.columns}
           rows={rows}
-          onRowPress={(r) => router.push(`/${def.key}/${r.id}` as any)}
+          onRowPress={(r) => {
+            if (def.key === "invoices" && r.direction === "in") {
+              setSelectedSupplierInvoice(r);
+            } else {
+              router.push(`/${def.key}/${r.id}` as any);
+            }
+          }}
           actionsWidth={deleteAllowed ? 104 : 64}
           renderActions={deleteAllowed ? (r) => (
             <>
@@ -158,7 +209,13 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
                 variant="ghost"
                 size="icon"
                 className="size-8 rounded-lg hover:bg-panel"
-                onPress={() => router.push(`/${def.key}/${r.id}` as any)}
+                onPress={() => {
+                  if (def.key === "invoices" && r.direction === "in") {
+                    setSelectedSupplierInvoice(r);
+                  } else {
+                    router.push(`/${def.key}/${r.id}` as any);
+                  }
+                }}
               >
                 <ChevronRight size={16} color={colors.muted} />
               </Button>
@@ -184,9 +241,29 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         destructive
         onConfirm={() => {
           if (!deleteTarget) return;
-          void deleteRow(def.key, deleteTarget.id).then((ok) => {
+          const targetModule = def.key === "invoices" && deleteTarget.direction === "in" ? "invoiceIn" : def.key;
+          const targetId = deleteTarget.direction === "in" && (deleteTarget as any).rawId ? (deleteTarget as any).rawId : deleteTarget.id;
+          void deleteRow(targetModule, targetId).then((ok) => {
             if (ok) setDeleteTarget(null);
           });
+        }}
+      />
+
+      <SupplierInvoiceDetailDialog
+        open={!!selectedSupplierInvoice}
+        onOpenChange={(v) => !v && setSelectedSupplierInvoice(null)}
+        invoice={selectedSupplierInvoice}
+        canPay={user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin"}
+        onPayPress={(inv) => setSupplierPayTarget(inv)}
+        onOpenPo={(poId) => router.push(`/supplier-pos/${poId}` as any)}
+      />
+
+      <SupplierInvoicePayDialog
+        open={!!supplierPayTarget}
+        onOpenChange={(v) => !v && setSupplierPayTarget(null)}
+        invoice={supplierPayTarget}
+        onSuccess={() => {
+          setSelectedSupplierInvoice(null);
         }}
       />
     </>

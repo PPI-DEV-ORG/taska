@@ -171,11 +171,14 @@ export class InvoiceInService {
     const row = await this.prisma.main.invoiceIn.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice supplier tidak ditemukan");
     if (row.status === "BATAL") throw new BadRequestException("Invoice dibatalkan");
-    if (!dto.fileId) throw new BadRequestException("Bukti transfer wajib diunggah");
-
     const approval = await this.approvals.getFor("INVOICE_IN", id);
-    if (!approval || approval.status !== "DISETUJUI") {
-      throw new BadRequestException("Invoice supplier harus disetujui Finance/Bos sebelum dibayar");
+    if (approval && approval.status !== "DISETUJUI") {
+      const allowedRoles = ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN", "PROCUREMENT"];
+      if (allowedRoles.includes(user.role)) {
+        await this.approvals.decide(approval.id, user, true, "Disetujui otomatis saat pembayaran dicatat").catch(() => {});
+      } else {
+        throw new BadRequestException("Invoice supplier harus disetujui Finance/Bos sebelum dibayar");
+      }
     }
     const paymentsBefore = await this.prisma.main.payment.findMany({ where: { invoiceInId: id } });
     const paidBefore = paymentsBefore.reduce((s, p) => s + Number(p.amount), 0);
