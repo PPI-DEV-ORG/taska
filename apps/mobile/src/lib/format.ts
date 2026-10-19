@@ -93,3 +93,43 @@ export function waLink(raw?: string | null): string {
   const p = cleanPhone(raw);
   return p ? `https://wa.me/${p}` : "";
 }
+
+/** Urutkan data secara menurun (terbaru ke terlama) berdasarkan tanggal/waktu, dengan fallback ke numeric ID */
+export function compareDesc(a: any, b: any): number {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+
+  // 1. Ekstrak timestamp/tanggal
+  const dateA = a.createdAt || a.tanggal || a.dibuat || a.waktu || a.jadwal || a.mulai || a.date || a.updatedAt;
+  const dateB = b.createdAt || b.tanggal || b.dibuat || b.waktu || b.jadwal || b.mulai || b.date || b.updatedAt;
+
+  if (dateA && dateB) {
+    const timeA = new Date(dateA).getTime();
+    const timeB = new Date(dateB).getTime();
+    if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+      return timeB - timeA; // terbaru di atas
+    }
+    if (String(dateA) !== String(dateB)) {
+      const cmp = String(dateB).localeCompare(String(dateA));
+      if (cmp !== 0) return cmp;
+    }
+  } else if (dateA && !dateB) {
+    return -1;
+  } else if (!dateA && dateB) {
+    return 1;
+  }
+
+  // 2. Ekstrak numeric ID
+  const rawIdA = a.rawId ?? a.id;
+  const rawIdB = b.rawId ?? b.id;
+  const numA = Number(String(rawIdA ?? "").replace(/\D/g, "")) || 0;
+  const numB = Number(String(rawIdB ?? "").replace(/\D/g, "")) || 0;
+  if (numA !== numB) {
+    return numB - numA;
+  }
+
+  // 3. Fallback string ID
+  return String(rawIdB ?? "").localeCompare(String(rawIdA ?? ""), undefined, { numeric: true });
+}
+

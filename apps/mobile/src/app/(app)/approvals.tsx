@@ -8,7 +8,7 @@ import { EmptyState, PageHeader } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
 import { DataTable, FilterBar } from "@/components/taska/data-table";
 import { CAN_APPROVE, Row, type Col } from "@/constants/modules";
-import { rupiah } from "@/lib/format";
+import { rupiah, compareDesc } from "@/lib/format";
 
 const APPROVAL_COLUMNS: Col[] = [
   { key: "judul", label: "Dokumen / Pengajuan", primary: true, flex: 1.8 },
@@ -52,7 +52,8 @@ export default function ApprovalsScreen() {
       };
     })
     .filter((a) => !type || a.jenis === type)
-    .filter((a) => !s || `${a.judul} ${a.pengaju} ${a.jenis}`.toLowerCase().includes(s));
+    .filter((a) => !s || `${a.judul} ${a.pengaju} ${a.jenis}`.toLowerCase().includes(s))
+    .sort(compareDesc);
 
   const can = CAN_APPROVE.includes(user!.role);
 

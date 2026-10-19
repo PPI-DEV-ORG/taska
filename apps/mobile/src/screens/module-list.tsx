@@ -14,6 +14,7 @@ import {
   SupplierInvoiceDetailDialog,
   SupplierInvoicePayDialog,
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
+import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
   leads: ["sales", "pm"],
@@ -92,10 +93,6 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
   }
 }
 
-function sortKey(r: Row): string {
-  return String(r.tanggal ?? r.dibuat ?? r.waktu ?? r.jadwal ?? r.mulai ?? "") + r.id;
-}
-
 export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?: string; headerExtra?: React.ReactNode }) {
   const router = useRouter();
   const { user, data, deleteRow } = useApp();
@@ -140,7 +137,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         }
         return r;
       })
-      .sort((a, b) => (sortKey(a) < sortKey(b) ? 1 : -1));
+      .sort(compareDesc);
   }, [def, data, user, q, status, invoiceTab]);
 
   const allowed = canCreate(def, user!.role);

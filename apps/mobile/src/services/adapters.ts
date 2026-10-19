@@ -216,7 +216,10 @@ const nameOf = (x: any): string => (x?.name ?? "");
 const idOf = (x: any): string | null => (x?.id != null ? String(x.id) : null);
 
 export function adaptRow(module: string, raw: any): Row {
-  const base: Row = { id: String(raw.id) };
+  const base: Row = {
+    id: String(raw.id),
+    createdAt: raw.createdAt ?? raw.date ?? raw.tanggal ?? raw.dibuat ?? null,
+  };
   switch (module) {
     case "leads": {
       const latestFu = raw.followUps?.[0]?.date ?? raw.updatedAt ?? raw.createdAt;
@@ -754,6 +757,7 @@ export type ApprovalRow = {
   id: string; jenis: string; judul: string; pengaju: string; nilai: number;
   jam: number; module: string; refId: string; status: "Menunggu" | "Disetujui" | "Ditolak";
   alasan?: string; pendingRoles?: string[];
+  createdAt?: string | null;
 };
 
 export function adaptApproval(raw: any): ApprovalRow {
@@ -781,6 +785,7 @@ export function adaptApproval(raw: any): ApprovalRow {
     refId: String(raw.entityId),
     status: (STATUS_LABEL[raw.status] as any) ?? "Menunggu",
     pendingRoles: raw.pendingRoles ?? [],
+    createdAt: raw.createdAt ?? null,
   };
 }
 

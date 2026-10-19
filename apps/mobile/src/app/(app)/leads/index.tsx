@@ -17,7 +17,7 @@ import { ModuleList } from "@/screens/module-list";
 import { useApp } from "@/store/app-store";
 import { MODULES, type Row } from "@/constants/modules";
 import { LEAD_STAGES, chartSeries, colors } from "@/tokens";
-import { rupiahShort, tanggal } from "@/lib/format";
+import { rupiahShort, tanggal, compareDesc } from "@/lib/format";
 
 const def = MODULES.leads!;
 
@@ -43,7 +43,9 @@ export default function LeadsScreen() {
   if (view === "tabel") return <ModuleList def={def} headerExtra={<ViewToggle view={view} onView={setView} />} />;
 
   const s = q.trim().toLowerCase();
-  const leads = data.leads.filter((l) => !s || `${l.nama} ${l.perusahaan}`.toLowerCase().includes(s));
+  const leads = data.leads
+    .filter((l) => !s || `${l.nama} ${l.perusahaan}`.toLowerCase().includes(s))
+    .sort(compareDesc);
   const canAdd = ["super_admin", "sales", "pm"].includes(user!.role);
   const canMove = !["bos", "admin"].includes(user!.role);
   const canDelete = ["super_admin", "sales", "pm", "admin"].includes(user!.role);
