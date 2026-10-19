@@ -54,11 +54,7 @@ export class QuotationsService {
     private readonly docnum: DocumentNumberService,
     private readonly approvals: ApprovalsService,
     private readonly upload: UploadService,
-  ) {
-    this.approvals.onChange("PENAWARAN", (entityId, status) =>
-      this.onApprovalDecision(entityId, status),
-    );
-  }
+  ) {}
 
   private metaKey(id: number): string {
     return `quotation.meta.${id}`;
@@ -231,7 +227,7 @@ export class QuotationsService {
     });
     if (!row) throw new NotFoundException("Penawaran tidak ditemukan");
     const [approval, files, metaMap] = await Promise.all([
-      this.approvals.getFor("PENAWARAN", id),
+      Promise.resolve(null),
       this.prisma.main.file.findMany({
         where: { refType: "quotation", refId: String(id) },
         orderBy: { id: "desc" },
@@ -633,6 +629,7 @@ export class QuotationsService {
       customerAddress: meta?.customerAddress || row.customer?.address || "Di Tempat",
       leadName: row.lead?.name || "-",
       kopText: meta?.kopText,
+      kopLogoUrl: (meta as any)?.kopLogoUrl,
       subject: meta?.subject,
       intro: meta?.intro,
       items: meta?.items ?? [],
@@ -887,14 +884,6 @@ export class QuotationsService {
       where: { id },
       data: { status: "PENDING_APPROVAL" },
     });
-    await this.approvals.request({
-      kind: "PENAWARAN",
-      entityId: id,
-      title: `Penawaran ${row.number}${row.lead ? ` — ${row.lead.name}` : ""}`,
-      amount: Number(row.grandTotal),
-      requestedBy: user,
-      href: `/quotations/${id}`,
-    });
     await this.audit.log({
       actor: user,
       action: "AJUKAN_PENAWARAN",
@@ -938,6 +927,13 @@ export class QuotationsService {
       where: { id },
       data: { status: mapped as never },
     });
+    // Update status versi aktif saat ini
+    const statusLabel = mapped === "APPROVED" ? "Disetujui" : mapped === "REJECTED" ? "Ditolak" : mapped === "SENT" ? "Terkirim" : mapped;
+    await this.prisma.main.quotationVersion.updateMany({
+      where: { quotationId: id, version: row.currentVersion },
+      data: { note: `[STATUS:${statusLabel}] Versi ${row.currentVersion}` },
+    }).catch(() => {});
+
     await this.audit.log({
       actor: user,
       action: "UBAH_STATUS_PENAWARAN",
@@ -953,6 +949,18 @@ export class QuotationsService {
   async addVersion(id: number, dto: VersionDto, user: RequestUser) {
     const row = await this.getEditable(id, user);
     const version = row.currentVersion + 1;
+
+    // Bekukan status versi sebelumnya (misal versi 1 ditolak)
+    const prevStatusLabel = row.status === "REJECTED" ? "Ditolak" : row.status === "APPROVED" ? "Disetujui" : "Ditolak";
+    await this.prisma.main.quotationVersion.updateMany({
+      where: { quotationId: id, version: row.currentVersion },
+      data: { note: `[STATUS:${prevStatusLabel}] Versi ${row.currentVersion}` },
+    }).catch(() => {});
+
+    const versionNote = dto.note?.trim()
+      ? `[STATUS:Menunggu] ${dto.note.trim()}`
+      : `[STATUS:Menunggu] Revisi v${version}`;
+
     await this.prisma.main.quotationVersion.create({
       data: {
         quotationId: id,
@@ -962,7 +970,7 @@ export class QuotationsService {
         ppn: dto.ppn ?? row.ppn,
         discount: dto.discount ?? row.discount,
         grandTotal: dto.grandTotal ?? row.grandTotal,
-        note: dto.note,
+        note: versionNote,
         createdById: user.id,
       },
     });
@@ -974,7 +982,7 @@ export class QuotationsService {
         ppn: dto.ppn ?? row.ppn,
         discount: dto.discount ?? row.discount,
         grandTotal: dto.grandTotal ?? row.grandTotal,
-        ...(row.status === "NOT_YET" ? { status: "DRAFT" } : {}),
+        status: "PENDING_APPROVAL",
       },
       include: { versions: { orderBy: { version: "desc" } } },
     });

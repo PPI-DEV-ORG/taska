@@ -274,6 +274,36 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
     };
   }
 
+  if (moduleKey === "surveys") {
+    if (/foto|video|lokasi/i.test(labelLower)) {
+      const mediaFile = (row as any).mediaFile;
+      const fileId = (row as any).evidenceFileId ?? mediaFile?.id ?? null;
+      return {
+        label: docLabel,
+        fieldKey: "evidenceFileId",
+        kind: "semua",
+        fileId,
+        fileName: mediaFile?.originalName ?? (fileId ? `bukti-lokasi-${row.id}` : null),
+        mimeType: mediaFile?.mimeType,
+        fileSize: mediaFile?.size,
+        isImage: mediaFile?.mimeType ? mediaFile.mimeType.startsWith("image/") : false,
+        emptyHint: "Belum ada foto atau video lokasi survey yang diunggah",
+      };
+    }
+    const docFile = (row as any).docFile;
+    const fileId = (row as any).documentFileId ?? docFile?.id ?? null;
+    return {
+      label: docLabel,
+      fieldKey: "documentFileId",
+      kind: "dokumen",
+      fileId,
+      fileName: docFile?.originalName ?? (fileId ? `dokumen-survey-${row.id}` : null),
+      mimeType: docFile?.mimeType,
+      fileSize: docFile?.size,
+      emptyHint: "Belum ada catatan atau dokumen survey yang dilampirkan",
+    };
+  }
+
   // Fallback
   const fallbackFileId = (row as any).fileId ?? null;
   const isImg = /foto|nota|gambar|kondisi|bukti/i.test(labelLower);

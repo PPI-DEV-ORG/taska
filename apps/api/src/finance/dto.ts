@@ -108,6 +108,42 @@ export class InvoiceOutDto {
 
   @IsOptional() @IsInt()
   fileId?: number;
+
+  @IsOptional()
+  items?: any[];
+
+  @IsOptional() @IsString()
+  subject?: string;
+
+  @IsOptional() @IsString()
+  intro?: string;
+
+  @IsOptional()
+  notesList?: string[];
+
+  @IsOptional() @IsString()
+  city?: string;
+
+  @IsOptional() @IsString()
+  kopText?: string;
+
+  @IsOptional() @IsString()
+  kopLogoUrl?: string;
+
+  @IsOptional() @IsString()
+  customerAddress?: string;
+
+  @IsOptional() @IsString()
+  signerName?: string;
+
+  @IsOptional() @IsString()
+  signerTitle?: string;
+
+  @IsOptional() @IsString()
+  dpLabel?: string;
+
+  @IsOptional() @IsNumber()
+  dpAmount?: number;
 }
 
 export class InvoiceInDto {

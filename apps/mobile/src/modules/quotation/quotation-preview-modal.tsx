@@ -1,4 +1,4 @@
-import { View, ScrollView } from "react-native";
+import { View, ScrollView, Image } from "react-native";
 import { FileDown } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -22,9 +22,16 @@ export function QuotationPreviewModal({
   notesList,
   city,
   kopText,
+  kopLogoUrl,
   customerAddress,
   signerName,
   signerTitle,
+  title,
+  dpLabel,
+  dpAmount,
+  closingText,
+  onDownloadPdf,
+  onDownloadExcel,
   onSave,
 }: {
   open: boolean;
@@ -39,9 +46,16 @@ export function QuotationPreviewModal({
   notesList?: string[];
   city?: string;
   kopText?: string;
+  kopLogoUrl?: string;
   customerAddress?: string;
   signerName?: string;
   signerTitle?: string;
+  title?: string;
+  dpLabel?: string;
+  dpAmount?: number;
+  closingText?: string;
+  onDownloadPdf?: () => void;
+  onDownloadExcel?: () => void;
   onSave?: () => void;
 }) {
   const activeNotes =
@@ -53,15 +67,23 @@ export function QuotationPreviewModal({
           "Garansi perangkat 1 Tahun Harddisk dan PSU 6 Bulan Instalasi 3 Bulan",
         ];
 
+  const logoSource = kopLogoUrl || (row as any).kopLogoUrl;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl md:max-w-4xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>Preview File Penawaran (Format Resmi Excel & PDF)</DialogTitle>
+          <DialogTitle>{title || "Preview File Penawaran (Format Resmi Excel & PDF)"}</DialogTitle>
         </DialogHeader>
         <ScrollView style={{ maxHeight: 580 }} contentContainerClassName="gap-3 p-4 bg-white rounded-xl text-black border border-zinc-300">
           {/* KOP SURAT Box */}
-          <View className="border border-black py-3 px-3 items-center justify-center bg-white min-h-[50px]">
+          <View className="border border-black py-3 px-3 items-center justify-center bg-white min-h-[50px] gap-1.5">
+            {logoSource ? (
+              <Image
+                source={{ uri: logoSource }}
+                style={{ width: 140, height: 50, resizeMode: "contain" }}
+              />
+            ) : null}
             <Text className="text-sm font-bold text-black tracking-wide uppercase text-center leading-snug">
               {kopText || row.kopText || "KOP SURAT"}
             </Text>
@@ -142,16 +164,28 @@ export function QuotationPreviewModal({
                 {rupiah(Math.max(0, itemsTotal - discNum + calcPpn))}
               </Text>
             </View>
+            {dpLabel && dpAmount !== undefined ? (
+              <View className="flex-row border-t border-black bg-white py-1.5 px-2">
+                <Text className="flex-1 text-[11px] font-bold text-black text-center">{dpLabel}</Text>
+                <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(dpAmount)}</Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Notes */}
           <View className="gap-0.5 pt-1">
             <Text className="text-xs font-bold text-black">Notes:</Text>
-            {activeNotes.map((n, idx) => (
-              <Text key={idx} className="text-[11px] text-black">
-                {idx + 1}. {n.replace(/^\d+\.\s*/, "")}
-              </Text>
-            ))}
+            {activeNotes.map((n, idx) => {
+              const isBankInfo = /^(pembayaran|bank|no\.\s*rek|nama|alamat|bekasi)/i.test(n.trim());
+              return (
+                <Text
+                  key={idx}
+                  className={`text-[11px] text-black ${isBankInfo && /^(pembayaran|nama)/i.test(n.trim()) ? "font-semibold" : ""}`}
+                >
+                  {isBankInfo ? n : `${idx + 1}. ${n.replace(/^\d+\.\s*/, "")}`}
+                </Text>
+              );
+            })}
           </View>
 
           {/* Contact Block */}
@@ -166,7 +200,7 @@ export function QuotationPreviewModal({
           {/* Penutup & TTD */}
           <View className="gap-3 pt-2">
             <Text className="text-[11px] text-black leading-relaxed">
-              Sekian surat penawaran ini kami buat dengan harapan agar Bapak/Ibu bisa bekerjasama dengan perusahaan kami. Kami tunggu tanggapan dan kabar baik.
+              {closingText || "Sekian surat penawaran ini kami buat dengan harapan agar Bapak/Ibu bisa bekerjasama dengan perusahaan kami. Kami tunggu tanggapan dan kabar baik."}
             </Text>
 
             <View className="items-start gap-0.5 pt-2">
@@ -192,13 +226,17 @@ export function QuotationPreviewModal({
             <Button
               variant="outline"
               onPress={() => {
-                downloadQuotationPdf({
-                  quotationId: row.id,
-                  customer: row.customer || row.perusahaan,
-                  lead: row.lead || row.nama,
-                  nomor: row.nomor,
-                  signer: row.pemilik,
-                });
+                if (onDownloadPdf) {
+                  onDownloadPdf();
+                } else {
+                  downloadQuotationPdf({
+                    quotationId: row.id,
+                    customer: row.customer || row.perusahaan,
+                    lead: row.lead || row.nama,
+                    nomor: row.nomor,
+                    signer: row.pemilik,
+                  });
+                }
               }}
             >
               <FileDown size={15} color={colors.text} />
@@ -208,6 +246,8 @@ export function QuotationPreviewModal({
               onPress={() => {
                 if (onSave) {
                   onSave();
+                } else if (onDownloadExcel) {
+                  onDownloadExcel();
                 } else {
                   downloadQuotationTemplate({
                     quotationId: row.id,

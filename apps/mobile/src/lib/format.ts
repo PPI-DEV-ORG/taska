@@ -18,6 +18,13 @@ export function number(n: number): string {
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
+export function formatThousands(val: number | string | undefined | null): string {
+  if (val == null || val === "") return "";
+  const cleaned = String(val).replace(/\D/g, "");
+  if (!cleaned) return "";
+  return cleaned.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
 /** "2026-10-08" -> "8 Okt 2026" */
 export function tanggal(iso?: string): string {
   if (!iso) return "-";

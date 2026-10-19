@@ -295,13 +295,17 @@ export function Timeline({ items }: { items: { id: string; who: string; what: st
 
 export function FormField({
   label, required, error, hint, children,
-}: { label: string; required?: boolean; error?: string; hint?: string; children: React.ReactNode }) {
+}: { label: React.ReactNode; required?: boolean; error?: string; hint?: string; children: React.ReactNode }) {
   return (
     <View className="gap-1.5">
-      <Text className="text-sm font-medium">
-        {label}
-        {required ? <Text className="text-danger text-sm"> *</Text> : null}
-      </Text>
+      {typeof label === "string" ? (
+        <Text className="text-sm font-medium">
+          {label}
+          {required ? <Text className="text-danger text-sm"> *</Text> : null}
+        </Text>
+      ) : (
+        label
+      )}
       {children}
       {hint && !error ? <Text className="text-muted-foreground text-[13px]">{hint}</Text> : null}
       {error ? <Text className="text-danger text-[13px]">{error}</Text> : null}
