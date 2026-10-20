@@ -58,7 +58,12 @@ export default function TasksScreen() {
               <View className="flex-row items-center justify-between">
                 <View className="flex-1 pr-3">
                   <Text className="text-sm font-semibold">{t.nama}</Text>
-                  <Text className="text-text-secondary text-xs mt-0.5">
+                  {t.deskripsi ? (
+                    <Text className="text-muted-foreground text-xs mt-0.5" numberOfLines={2}>
+                      {t.deskripsi}
+                    </Text>
+                  ) : null}
+                  <Text className="text-text-secondary text-xs mt-1">
                     Project: {t.project} · PIC: {t.pic} · Tenggat: {tanggal(t.tenggat)}
                   </Text>
                 </View>

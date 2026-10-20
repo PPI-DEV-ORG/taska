@@ -117,6 +117,7 @@ export class TasksService {
         projectId,
         parentId: dto.parentId,
         name: dto.name || "Tugas Baru",
+        description: dto.description ?? null,
         assigneeId: dto.assigneeId ?? user.id,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         priority: dto.priority,
@@ -179,6 +180,7 @@ export class TasksService {
       where: { id },
       data: {
         name: dto.name ?? task.name,
+        description: dto.description !== undefined ? dto.description : task.description,
         parentId: dto.parentId !== undefined ? dto.parentId : task.parentId,
         assigneeId: dto.assigneeId !== undefined ? dto.assigneeId : task.assigneeId,
         dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : task.dueDate,

@@ -132,6 +132,9 @@ export class TaskDto {
   @IsOptional() @IsString() @MinLength(1)
   name?: string;
 
+  @IsOptional() @IsString()
+  description?: string;
+
   @IsOptional() @IsInt()
   parentId?: number;
 

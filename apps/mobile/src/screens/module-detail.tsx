@@ -65,7 +65,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     };
   }, [moduleKey, id, refreshIndex]);
 
-  const row = remoteRow ? { ...remoteRow, ...rowFromStore } : rowFromStore;
+  const row = remoteRow ? { ...rowFromStore, ...remoteRow } : rowFromStore;
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
@@ -813,7 +813,12 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                     fieldKey === "photoFileId" ||
                     fieldKey === "scanFileId" ||
                     fieldKey === "evidenceFileId" ||
-                    fieldKey === "documentFileId"
+                    fieldKey === "documentFileId" ||
+                    fieldKey === "latestFileId" ||
+                    fieldKey === "doFileId" ||
+                    fieldKey === "prdFileId" ||
+                    fieldKey === "bahpFileId" ||
+                    fieldKey === "bastFileId"
                   ) {
                     patchPayload.fileId = fileId;
                   }

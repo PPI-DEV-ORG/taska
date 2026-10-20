@@ -26,6 +26,8 @@ export type ResolvedDocItem = {
   fileSize?: number | null;
   isImage?: boolean;
   emptyHint?: string;
+  category?: string;
+  accept?: string;
 };
 
 export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row): ResolvedDocItem {
@@ -127,23 +129,26 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   }
 
   if (moduleKey === "delivery-notes") {
-    const scanId = (row as any).scanFileId ?? (row as any).signedFileId ?? (row as any).fileId ?? null;
+    const scanId = (row as any).scanFileId ?? (row as any).signedFileId ?? null;
     if (/scan|surat|tanda tangan|pendukung/i.test(labelLower)) {
       return {
         label: docLabel,
         fieldKey: "scanFileId",
-        kind: "semua",
+        kind: "foto",
+        category: "surat-jalan",
+        accept: "image/*,.jpg,.jpeg,.png,.webp",
         fileId: scanId,
         fileName: scanId ? `surat-jalan-${row.id}.jpg` : null,
         isImage: true,
-        emptyHint: "Belum ada scan surat jalan bertanda tangan",
+        emptyHint: "Belum ada scan foto surat jalan bertanda tangan",
       };
     }
-    const reportId = (row as any).reportFileId ?? (scanId ? null : (row as any).fileId) ?? null;
+    const reportId = (row as any).reportFileId ?? null;
     return {
       label: docLabel,
       fieldKey: "reportFileId",
-      kind: "semua",
+      kind: "dokumen",
+      category: "surat-jalan",
       fileId: reportId,
       fileName: reportId ? `laporan-hasil-${row.id}` : null,
       emptyHint: "Belum ada laporan hasil dan dokumentasi",
@@ -253,8 +258,9 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
     const fileId = (row as any).latestFileId ?? (row as any).fileId ?? null;
     return {
       label: docLabel,
-      fieldKey: "latestFileId",
+      fieldKey: "fileId",
       kind: "dokumen",
+      category: "penawaran",
       fileId,
       fileName: (row as any).fileName ?? (fileId ? `penawaran-${row.id}` : null),
       emptyHint: "Belum ada file penawaran yang diunggah",
@@ -268,6 +274,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       label: docLabel,
       fieldKey: "fileId",
       kind: "semua",
+      category: "lead",
       fileId,
       fileName: file?.originalName ?? (fileId ? `dokumen-lead-${row.id}` : null),
       mimeType: file?.mimeType,
@@ -285,6 +292,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         label: docLabel,
         fieldKey: "evidenceFileId",
         kind: "semua",
+        category: "survey",
         fileId,
         fileName: mediaFile?.originalName ?? (fileId ? `bukti-lokasi-${row.id}` : null),
         mimeType: mediaFile?.mimeType,
@@ -299,6 +307,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       label: docLabel,
       fieldKey: "documentFileId",
       kind: "dokumen",
+      category: "survey",
       fileId,
       fileName: docFile?.originalName ?? (fileId ? `dokumen-survey-${row.id}` : null),
       mimeType: docFile?.mimeType,
@@ -360,6 +369,8 @@ export function DocumentViewerItem({
           label=""
           autoFlush
           kind={item.kind ?? (item.isImage ? "foto" : "semua")}
+          category={item.category}
+          accept={item.accept ?? (item.kind === "foto" || item.isImage ? "image/*,.jpg,.jpeg,.png,.webp" : undefined)}
           onUploaded={async (fileId) => {
             if (onUploadFile && item.fieldKey) {
               setUploading(true);
