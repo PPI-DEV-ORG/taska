@@ -15,6 +15,7 @@ import { api } from "@/services/api";
 import type { Row } from "@/constants/modules";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
+import { ScrollView } from "react-native-gesture-handler";
 
 const STEPS = [
   "Pilih Project & Jenis Biaya",
@@ -49,6 +50,7 @@ export default function NewPurchaseRequestScreen() {
     products[0]?.nama ? [String(products[0].nama)] : []
   );
   const [itemQuantities, setItemQuantities] = React.useState<Record<string, string>>({});
+  const [catFilter, setCatFilter] = React.useState<string>("Semua");
   const [tujuan, setTujuan] = React.useState("");
 
   const selectedItems = selectedNames.map((name) => {
@@ -63,6 +65,7 @@ export default function NewPurchaseRequestScreen() {
     return {
       productId: prod?.id ? Number(prod.id) : undefined,
       nama: name,
+      merk: prod?.merk || prod?.brand || "",
       satuan: String(prod?.satuan || "unit"),
       hargaBeli: unitPrice,
       qty: q,
@@ -166,6 +169,24 @@ export default function NewPurchaseRequestScreen() {
       {step === 1 && (
         <Panel title="Langkah 2: Pilih Barang & Qty">
           <View className="gap-4">
+            {/* Filter Kategori Barang */}
+            <View className="gap-1.5">
+              <Text className="text-xs font-medium text-muted-foreground">Filter Kategori Barang</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1.5 py-0.5">
+                {["Semua", ...Array.from(new Set(products.map((p) => p.kategori).filter(Boolean)))].map((cat) => (
+                  <Button
+                    key={cat}
+                    size="sm"
+                    variant={catFilter === cat ? "default" : "outline"}
+                    onPress={() => setCatFilter(cat)}
+                    className="h-7 px-2.5 rounded-full"
+                  >
+                    <Text className="text-xs">{cat}</Text>
+                  </Button>
+                ))}
+              </ScrollView>
+            </View>
+
             <FormField
               label="Pilih Barang Master"
               required
@@ -183,7 +204,7 @@ export default function NewPurchaseRequestScreen() {
                     return next;
                   });
                 }}
-                options={products.map((p) => String(p.nama))}
+                options={(catFilter === "Semua" ? products : products.filter((p) => p.kategori === catFilter)).map((p) => String(p.nama))}
                 placeholder="Pilih barang..."
               />
             </FormField>
@@ -200,9 +221,16 @@ export default function NewPurchaseRequestScreen() {
                     className="bg-card border-border/70 rounded-xl border p-3.5 gap-2.5"
                   >
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-sm font-bold text-foreground flex-1 pr-2" numberOfLines={1}>
-                        {item.nama}
-                      </Text>
+                      <View className="flex-row items-center gap-2 flex-1 pr-2">
+                        <Text className="text-sm font-bold text-foreground" numberOfLines={1}>
+                          {item.nama}
+                        </Text>
+                        {item.merk ? (
+                          <View className="bg-panel border-border/60 rounded px-1.5 py-0.5 border">
+                            <Text className="text-[10px] font-medium text-muted-foreground">{item.merk}</Text>
+                          </View>
+                        ) : null}
+                      </View>
                       <Pressable
                         onPress={() => setSelectedNames((prev) => prev.filter((n) => n !== item.nama))}
                         hitSlop={8}

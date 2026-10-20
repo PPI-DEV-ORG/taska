@@ -533,6 +533,8 @@ model Product {
   id             Int              @id @default(autoincrement())
   sku            String           @unique
   name           String
+  brand          String?
+  description    String?          @db.Text
   type           String?
   categoryId     Int?
   category       ProductCategory? @relation(fields: [categoryId], references: [id])
@@ -1072,8 +1074,9 @@ model SupplierPOItem {
 model Receiving {
   id            Int             @id @default(autoincrement())
   number        String          @unique
-  supplierPoId  Int
-  supplierPo    SupplierPO      @relation(fields: [supplierPoId], references: [id])
+  supplierPoId  Int?
+  supplierPo    SupplierPO?     @relation(fields: [supplierPoId], references: [id])
+  supplierName  String?
   warehouseId   Int?
   warehouse     Warehouse?      @relation(fields: [warehouseId], references: [id])
   projectId     Int?

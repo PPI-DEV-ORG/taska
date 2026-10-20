@@ -187,11 +187,18 @@ export default function NewDeliveryNoteScreen() {
                       className="bg-card border-border/70 rounded-xl border p-3 flex-row items-center justify-between gap-3"
                     >
                       <View className="flex-1">
-                        <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                          {name}
-                        </Text>
+                        <View className="flex-row items-center gap-2">
+                          <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                            {name}
+                          </Text>
+                          {prod?.merk ? (
+                            <View className="bg-panel border-border/60 rounded px-1.5 py-0.5 border">
+                              <Text className="text-[10px] font-medium text-muted-foreground">{prod.merk}</Text>
+                            </View>
+                          ) : null}
+                        </View>
                         <Text className="text-xs text-muted-foreground mt-0.5">
-                          Satuan: {String(prod?.satuan || "unit")}
+                          Satuan: {String(prod?.satuan || "unit")} {prod?.berSN ? "· Lacak SN" : "· Curah"}
                         </Text>
                       </View>
 

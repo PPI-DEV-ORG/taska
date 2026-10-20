@@ -202,6 +202,138 @@ async function main() {
   });
   console.log("Seed OK: Project Task dengan deskripsi instruksi kerja");
 
+  // ─── Gudang Master (Warehouse) ───
+  let wh = await prisma.warehouse.findFirst({ where: { name: "Gudang Utama Jakarta" } });
+  if (!wh) {
+    wh = await prisma.warehouse.create({
+      data: {
+        name: "Gudang Utama Jakarta",
+        city: "Jakarta",
+        status: "AKTIF",
+      },
+    });
+  }
+  console.log("Seed OK: Gudang Utama Jakarta");
+
+  // ─── Master Kategori & Produk (Serialized vs Bulk Items) ───
+  const categoriesData = [
+    { name: "Kamera CCTV", prefix: "CAM", description: "Perangkat IP Camera, Dome, Bullet, PTZ & CCTV Analog" },
+    { name: "Kabel & Jaringan", prefix: "CBL", description: "Kabel UTP Cat5e/Cat6, Fiber Optic, Patchcord, Pigtail" },
+    { name: "Perekam (NVR/DVR)", prefix: "NVR", description: "Network Video Recorder, Digital Video Recorder, HDD Surveillance" },
+    { name: "Switch & Networking", prefix: "NET", description: "PoE Switch, Gigabit Switch, Router, Access Point WiFi" },
+    { name: "Akses Kontrol & Biometrik", prefix: "ACS", description: "Mesin Absensi, Face Recognition, RFID Reader, Magnetic Lock, Dropbolt" },
+    { name: "Power & Kelistrikan", prefix: "PWR", description: "Power Supply Box, Adaptor 12V, UPS Backup, PDU Rak" },
+    { name: "Aksesoris & Konektor", prefix: "ACC", description: "Konektor RJ45, BNC, DC Jack, Sambungan FO, Cable Ties, Box Panel" },
+    { name: "Pipa Conduit & Tray", prefix: "CND", description: "Pipa Conduit 20mm, Flexible Conduit, Tray Kabel, Klem & Soket" },
+    { name: "Server & Storage", prefix: "SRV", description: "Server Rakmount, NAS Storage, Harddisk Enterprise, Rak Server" },
+    { name: "Perlengkapan & Tools", prefix: "TLS", description: "Crimping Tool, Tang Kupas, OTDR/Optical Power Meter, Tangga, Tester" },
+  ];
+
+  const catMap = new Map<string, number>();
+  for (const c of categoriesData) {
+    const saved = await prisma.productCategory.upsert({
+      where: { name: c.name },
+      update: { prefix: c.prefix, description: c.description },
+      create: { name: c.name, prefix: c.prefix, description: c.description, status: "AKTIF" },
+    });
+    catMap.set(c.name, saved.id);
+  }
+
+  const sampleProducts = [
+    {
+      sku: "CAM-UNV-4K",
+      name: "IP Camera 4MP Bullet UNV",
+      brand: "Uniview",
+      description: "IP Camera Outdoor 4MP, IR 30m, PoE, WDR",
+      categoryName: "Kamera CCTV",
+      unit: "unit",
+      hasSerial: true,
+      minStock: 5,
+      warrantyMonths: 24,
+      purchasePrice: 750000,
+    },
+    {
+      sku: "CAM-HIK-2MP",
+      name: "IP Camera 2MP Dome Hikvision",
+      brand: "Hikvision",
+      description: "IP Camera Indoor 2MP Dome, IR 20m, PoE",
+      categoryName: "Kamera CCTV",
+      unit: "unit",
+      hasSerial: true,
+      minStock: 5,
+      warrantyMonths: 12,
+      purchasePrice: 500000,
+    },
+    {
+      sku: "CBL-CAT6-BELDEN",
+      name: "Kabel UTP Cat6 305M Belden",
+      brand: "Belden",
+      description: "Kabel UTP Cat6 23AWG 1 roll 305 meter",
+      categoryName: "Kabel & Jaringan",
+      unit: "roll",
+      hasSerial: false,
+      minStock: 3,
+      warrantyMonths: 0,
+      purchasePrice: 1850000,
+    },
+    {
+      sku: "CBL-FO-4C",
+      name: "Kabel Fiber Optic 4 Core Dropcore",
+      brand: "Fiberstar",
+      description: "Kabel Dropcore Single Mode 4 Core per meter",
+      categoryName: "Kabel & Jaringan",
+      unit: "meter",
+      hasSerial: false,
+      minStock: 200,
+      warrantyMonths: 0,
+      purchasePrice: 2500,
+    },
+    {
+      sku: "ACC-RJ45-COMM",
+      name: "Konektor RJ45 Cat6 Commscope",
+      brand: "Commscope",
+      description: "Konektor RJ45 Cat6 Original 100 pcs per box",
+      categoryName: "Aksesoris & Konektor",
+      unit: "box",
+      hasSerial: false,
+      minStock: 2,
+      warrantyMonths: 0,
+      purchasePrice: 250000,
+    },
+  ];
+
+  for (const p of sampleProducts) {
+    const categoryId = catMap.get(p.categoryName);
+    await prisma.product.upsert({
+      where: { sku: p.sku },
+      update: {
+        name: p.name,
+        brand: p.brand,
+        description: p.description,
+        categoryId,
+        unit: p.unit,
+        hasSerial: p.hasSerial,
+        minStock: p.minStock,
+        warrantyMonths: p.warrantyMonths,
+        purchasePrice: p.purchasePrice,
+      },
+      create: {
+        sku: p.sku,
+        name: p.name,
+        brand: p.brand,
+        description: p.description,
+        categoryId,
+        unit: p.unit,
+        hasSerial: p.hasSerial,
+        minStock: p.minStock,
+        warrantyMonths: p.warrantyMonths,
+        purchasePrice: p.purchasePrice,
+        status: "AKTIF",
+      },
+    });
+  }
+  console.log(`Seed OK: ${sampleProducts.length} Produk Master (Serialized & Bulk)`);
+
   await prisma.$disconnect();
 }
 

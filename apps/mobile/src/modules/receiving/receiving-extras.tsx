@@ -93,12 +93,46 @@ export function ReceivingExtras({ row }: { row: Row }) {
 
   return (
     <>
-      <Panel title="Rincian Penerimaan PO">
+      <Panel title="Rincian Penerimaan Barang">
         <Line left="Barang Diterima" right={<Text className="font-semibold">{row.item}</Text>} />
         <Line left="Nomor PO Supplier" right={<Text className="text-text-secondary">{row.po}</Text>} />
         <Line left="Supplier" right={<Text className="text-text-secondary">{row.supplier}</Text>} />
-        <Line left="Petugas Gudang" right={<Text className="text-text-secondary">{row.penerima}</Text>} />
+        <Line left="Petugas Penerima" right={<Text className="text-text-secondary">{row.penerima}</Text>} />
         <Line left="Status Penerimaan" right={<StatusBadge status={row.status} />} />
+        {row.conditionNote ? <Line left="Catatan Kondisi" right={<Text className="text-text-secondary">{row.conditionNote}</Text>} /> : null}
+
+        {Array.isArray(row.items) && row.items.length > 0 && (
+          <View className="mt-3 pt-3 border-t border-border/60 gap-2">
+            <Text className="text-xs font-bold text-foreground">Daftar Item & Serial Number Fisik</Text>
+            {row.items.map((it: any, idx: number) => {
+              const pName = it.product?.name || it.productName || it.name || `Item #${idx + 1}`;
+              const pSku = it.product?.sku || it.sku || "";
+              const pUnit = it.product?.unit || "";
+              const q = it.qtyReceived ?? it.qtyGood ?? it.qtyOrdered ?? 1;
+              const serials = it.serials ? String(it.serials).split(",").filter(Boolean) : [];
+
+              return (
+                <View key={idx} className="bg-panel/40 border-border/70 rounded-xl border p-2.5 gap-1.5">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-xs font-bold text-foreground">
+                      {pName} {pSku ? `(${pSku})` : ""}
+                    </Text>
+                    <Text className="text-xs font-semibold text-primary">{q} {pUnit}</Text>
+                  </View>
+                  {serials.length > 0 && (
+                    <View className="flex-row flex-wrap gap-1 mt-1">
+                      {serials.map((sn: string, sidx: number) => (
+                        <View key={sidx} className="bg-card border-border/60 rounded px-1.5 py-0.5 border">
+                          <Text className="text-[10px] font-mono text-muted-foreground">{sn.trim()}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        )}
       </Panel>
 
       <Panel
