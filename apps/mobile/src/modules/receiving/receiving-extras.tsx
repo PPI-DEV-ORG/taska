@@ -22,6 +22,7 @@ export function ReceivingExtras({ row }: { row: Row }) {
   const [issueQty, setIssueQty] = React.useState("1");
   const [issueNotes, setIssueNotes] = React.useState("");
   const [issueSolusi, setIssueSolusi] = React.useState("Retur Tukar Baru ke Supplier");
+  const [issueFileId, setIssueFileId] = React.useState<number | null>(null);
 
   const [issueList, setIssueList] = React.useState<
     {
@@ -81,10 +82,12 @@ export function ReceivingExtras({ row }: { row: Row }) {
       pelapor: row.penerima || "-",
       status: "Dilaporkan",
       keterangan: `${issueNotes.trim()} (${issueSolusi})`,
+      fileId: issueFileId || undefined,
     });
     patchRow("receiving", row.id, { hasIssue: true });
     setIssueOpen(false);
     setIssueNotes("");
+    setIssueFileId(null);
     toast("Issue Report berhasil dicatat & diteruskan ke Procurement");
   }
 
@@ -188,7 +191,13 @@ export function ReceivingExtras({ row }: { row: Row }) {
               />
             </View>
 
-            <FileUploader label="Upload Foto Bukti Kerusakan / Serial Number" kind="foto" category="laporan-kerusakan" autoFlush />
+            <FileUploader
+              label="Upload Foto Bukti Kerusakan / Serial Number"
+              kind="foto"
+              category="laporan-kerusakan"
+              autoFlush
+              onUploaded={(id) => setIssueFileId(id)}
+            />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setIssueOpen(false)}>

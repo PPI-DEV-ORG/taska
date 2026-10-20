@@ -23,6 +23,7 @@ export function DeliveryNotesExtras({ row }: { row: Row }) {
   const [recipientPhone, setRecipientPhone] = React.useState(row.penerimaKontak || "");
   const [recipientTitle, setRecipientTitle] = React.useState(row.penerimaJabatan || "PIC Lapangan / Security");
   const [handoverNotes, setHandoverNotes] = React.useState("");
+  const [handoverFileId, setHandoverFileId] = React.useState<number | null>(null);
 
   const isDelivered = row.status === "Diterima";
 
@@ -38,9 +39,11 @@ export function DeliveryNotesExtras({ row }: { row: Row }) {
       catatanSerahTerima: handoverNotes.trim(),
       tanggalDiterima: new Date().toISOString().slice(0, 10),
       status: "Diterima",
+      ...(handoverFileId ? { scanFileId: handoverFileId, fileId: handoverFileId } : {}),
     });
     setStatus("delivery-notes", row.id, "Diterima");
     setHandoverOpen(false);
+    setHandoverFileId(null);
     toast("Tanda terima lapangan berhasil dicatat. Status surat jalan kini 'Diterima'");
   }
 
@@ -168,7 +171,13 @@ export function DeliveryNotesExtras({ row }: { row: Row }) {
                 numberOfLines={2}
               />
             </View>
-            <FileUploader label="Upload Foto Bukti Serah Terima / TTD Surat Jalan" kind="foto" category="surat-jalan" autoFlush />
+            <FileUploader
+              label="Upload Foto Bukti Serah Terima / TTD Surat Jalan"
+              kind="foto"
+              category="surat-jalan"
+              autoFlush
+              onUploaded={(id) => setHandoverFileId(id)}
+            />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setHandoverOpen(false)}>

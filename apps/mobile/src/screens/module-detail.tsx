@@ -808,10 +808,13 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
               onUploadFile={async (fieldKey, fileId, item) => {
                 try {
                   const patchPayload: Record<string, any> = { [fieldKey]: fileId };
-                  if (fieldKey === "receiptFileId") {
-                    patchPayload.fileId = fileId;
-                  }
-                  if (fieldKey === "scanFileId") {
+                  if (
+                    fieldKey === "receiptFileId" ||
+                    fieldKey === "photoFileId" ||
+                    fieldKey === "scanFileId" ||
+                    fieldKey === "evidenceFileId" ||
+                    fieldKey === "documentFileId"
+                  ) {
                     patchPayload.fileId = fileId;
                   }
 

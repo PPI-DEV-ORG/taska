@@ -531,7 +531,9 @@ export function adaptRow(module: string, raw: any): Row {
         projectId: idOf(raw.project),
         conditionNote: raw.conditionNote ?? "",
         _items: raw.items ?? [],
-        fileId: raw.receiptFileId ?? (raw.fileId ?? null),
+        receiptFileId: raw.receiptFileId ?? null,
+        photoFileId: raw.photoFileId ?? null,
+        fileId: raw.photoFileId ?? raw.receiptFileId ?? (raw.fileId ?? null),
       };
     case "delivery-notes": {
       const loc = raw.locations?.[0];
@@ -1288,7 +1290,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   expenseCategories: ["name", "status"],
   costCenters: ["name", "status"],
   leads: ["name", "customerId", "sourceId", "clientType", "need", "contactName", "estimatedValue", "probability", "targetClosing", "ownerId", "needsSurvey", "stage", "lostReasonId", "lostNote", "fileId"],
-  surveys: ["leadId", "location", "need", "notes", "scheduleAt", "cost", "status", "memberIds"],
+  surveys: ["leadId", "location", "need", "notes", "scheduleAt", "cost", "status", "memberIds", "evidenceFileId", "documentFileId", "fileId"],
   quotations: [
     "leadId",
     "customerId",
@@ -1343,7 +1345,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   expenses: ["date", "categoryId", "amount", "description", "projectId", "surveyId", "deliveryNoteId", "costCenterId", "receiptFileId", "paidFileId"],
   "supplier-pos": ["number", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "doFileId", "items"],
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
-  receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "items"],
+  receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "photoFileId", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "fileId"],
   followups: ["method", "notes", "date", "nextDate", "status"],

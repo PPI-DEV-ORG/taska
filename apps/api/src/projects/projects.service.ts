@@ -108,7 +108,10 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user);
     const synced = await this.syncPayment(id);
-    const [row, prdFile] = await Promise.all([
+    const fileIds = [project.prdFileId, project.bahpFileId, project.bastFileId, project.doFileId].filter(
+      (fid): fid is number => typeof fid === "number" && fid > 0,
+    );
+    const [row, files] = await Promise.all([
       this.prisma.main.project.findUnique({
         where: { id },
         include: {
@@ -132,12 +135,20 @@ export class ProjectsService {
           _count: { select: { members: true, tasks: true, purchaseRequests: true } },
         },
       }),
-      project.prdFileId
-        ? this.prisma.main.file.findUnique({ where: { id: project.prdFileId } })
-        : Promise.resolve(null),
+      fileIds.length
+        ? this.prisma.main.file.findMany({
+            where: { id: { in: fileIds } },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : Promise.resolve([]),
     ]);
     if (!row) throw new NotFoundException("Project tidak ditemukan");
-    return { ...row, paymentStatus: synced.paymentStatus, prdFile };
+    const fileMap = new Map(files.map((f) => [f.id, f]));
+    const prdFile = project.prdFileId ? fileMap.get(project.prdFileId) ?? null : null;
+    const bahpFile = project.bahpFileId ? fileMap.get(project.bahpFileId) ?? null : null;
+    const bastFile = project.bastFileId ? fileMap.get(project.bastFileId) ?? null : null;
+    const doFile = project.doFileId ? fileMap.get(project.doFileId) ?? null : null;
+    return { ...row, paymentStatus: synced.paymentStatus, prdFile, bahpFile, bastFile, doFile };
   }
 
   async create(dto: ProjectDto, user: RequestUser) {

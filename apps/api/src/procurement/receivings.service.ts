@@ -225,6 +225,8 @@ export class ReceivingsService {
         ...(dto.warehouseId !== undefined ? { warehouseId: dto.warehouseId } : {}),
         ...(dto.conditionNote !== undefined ? { conditionNote: dto.conditionNote } : {}),
         ...(dto.status ? { status: dto.status as any } : {}),
+        ...(dto.receiptFileId !== undefined ? { receiptFileId: dto.receiptFileId } : {}),
+        ...(dto.photoFileId !== undefined ? { photoFileId: dto.photoFileId } : {}),
       },
       include: {
         supplierPo: { select: { id: true, number: true, shipmentStatus: true, supplier: { select: { name: true } } } },
@@ -233,6 +235,8 @@ export class ReceivingsService {
         receiver: { select: { id: true, name: true } },
       },
     });
+    if (dto.receiptFileId) await this.attachFile(dto.receiptFileId, "receiving", updated.id).catch(() => {});
+    if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", updated.id).catch(() => {});
     this.notifications.dataChange("receiving", "update", updated.id);
     return updated;
   }

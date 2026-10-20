@@ -108,15 +108,23 @@ export class RequestsService {
       },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
-    const approval = await this.approvals.getFor("PURCHASE_REQUEST", id);
-    const stock = await Promise.all(
-      row.items.map(async (i) => ({
-        productId: i.productId,
-        ordered: i.qty,
-        available: await this.stock.totalAvailable(i.productId),
-      })),
-    );
-    return { ...row, approval, stock };
+    const [approval, evidenceFile, stock] = await Promise.all([
+      this.approvals.getFor("PURCHASE_REQUEST", id),
+      row.evidenceFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: row.evidenceFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : Promise.resolve(null),
+      Promise.all(
+        row.items.map(async (i) => ({
+          productId: i.productId,
+          ordered: i.qty,
+          available: await this.stock.totalAvailable(i.productId),
+        })),
+      ),
+    ]);
+    return { ...row, evidenceFile, approval, stock };
   }
 
   async create(dto: RequestDto, user: RequestUser) {
@@ -242,6 +250,14 @@ export class RequestsService {
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true } } } },
       },
     });
+    if (dto.evidenceFileId) {
+      await this.prisma.main.file
+        .update({
+          where: { id: dto.evidenceFileId },
+          data: { refType: "purchase_request", refId: String(id) },
+        })
+        .catch(() => {});
+    }
     return updated;
   }
 

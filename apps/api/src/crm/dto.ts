@@ -155,6 +155,15 @@ export class SurveyDto {
 
   @IsOptional() @IsIn(["DIMINTA", "DIJADWALKAN", "BERJALAN", "SELESAI", "BATAL"])
   status?: "DIMINTA" | "DIJADWALKAN" | "BERJALAN" | "SELESAI" | "BATAL";
+
+  @IsOptional() @IsInt()
+  evidenceFileId?: number;
+
+  @IsOptional() @IsInt()
+  documentFileId?: number;
+
+  @IsOptional() @IsInt()
+  fileId?: number;
 }
 
 export class SurveyStatusDto {

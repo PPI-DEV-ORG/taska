@@ -188,13 +188,19 @@ export async function api<T = any>(
   body?: unknown,
   opts: { auth?: boolean; form?: FormData; retry?: boolean } = {},
 ): Promise<T> {
+  let finalBody = body;
+  let finalForm = opts.form;
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    finalForm = body;
+    finalBody = undefined;
+  }
   const auth = opts.auth !== false;
   try {
-    return await once<T>(method, path, body, opts.form, auth);
+    return await once<T>(method, path, finalBody, finalForm, auth);
   } catch (e: any) {
     if (e?.status === 401 && auth && opts.retry !== false) {
       const ok = await tryRefresh();
-      if (ok) return once<T>(method, path, body, opts.form, auth);
+      if (ok) return once<T>(method, path, finalBody, finalForm, auth);
     }
     throw e;
   }

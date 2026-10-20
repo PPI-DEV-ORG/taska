@@ -33,7 +33,7 @@ import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 
 export function openDownloadFile(fileId: number | string) {
-  const url = `${apiBase}/files/${fileId}/download`;
+  const url = `${apiBase()}/files/${fileId}`;
   if (Platform.OS === "web" && typeof window !== "undefined") {
     window.open(url, "_blank");
   } else {
