@@ -79,6 +79,7 @@ export function QuotationExtras({ row }: { row: Row }) {
   const [revisiDiscPercent, setRevisiDiscPercent] = React.useState("0");
   const [revisiReason, setRevisiReason] = React.useState("");
   const [revisiPpnMode, setRevisiPpnMode] = React.useState<"exclude" | "include" | "none">(ppnMode);
+  const [revisiFileId, setRevisiFileId] = React.useState<number | null>(null);
 
   const nextVersionNum = (row.versi || 1) + 1;
   const revTotNum = Number(revisiTotal.replace(/\D/g, "")) || 0;
@@ -98,6 +99,7 @@ export function QuotationExtras({ row }: { row: Row }) {
         discount: revDiscNum,
         grandTotal: revAfterDisc,
         note: revisiReason.trim() || `Revisi v${nextVersionNum}`,
+        fileId: revisiFileId || undefined,
       });
       await reload();
     } catch {
@@ -113,9 +115,11 @@ export function QuotationExtras({ row }: { row: Row }) {
         status: "Revisi",
         fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}-v${nextVersionNum}.xlsx`,
         fileUploaded: true,
+        latestFileId: revisiFileId || undefined,
       });
     }
     setPpnMode(revisiPpnMode);
+    setRevisiFileId(null);
     setRevisiOpen(false);
     toast(`Versi ${nextVersionNum} penawaran berhasil dibuat & berstatus Revisi`);
   }
@@ -480,7 +484,7 @@ export function QuotationExtras({ row }: { row: Row }) {
             autoFlush
             onFilePicked={async (file) => {
               try {
-                await uploadFile(file, "dokumen", String(row.id));
+                await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
                 await reload();
                 toast(`File PDF "${file.name}" berhasil diunggah!`);
               } catch (e: any) {
@@ -751,7 +755,13 @@ export function QuotationExtras({ row }: { row: Row }) {
               </Text>
               <Text className="text-xs font-semibold text-primary">Preview Total Akhir v{nextVersionNum}: {rupiah(revAfterDisc)}</Text>
             </View>
-            <FileUploader label="Upload File Revisi Baru (PDF / Excel)" kind="dokumen" category="penawaran" autoFlush />
+            <FileUploader
+              label="Upload File Revisi Baru (PDF / Excel)"
+              kind="dokumen"
+              category="penawaran"
+              autoFlush
+              onUploaded={(id) => setRevisiFileId(id)}
+            />
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setRevisiOpen(false)}>

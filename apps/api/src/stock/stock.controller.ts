@@ -165,6 +165,12 @@ export class DamagesController {
     return this.service.list(q);
   }
 
+  @Get(":id")
+  @Require("stock", "R")
+  get(@Param("id", ParseIntPipe) id: number) {
+    return this.service.get(id);
+  }
+
   @Post()
   @Require("stock", "C")
   create(@Body() dto: DamageCreateDto, @CurrentUser() user: RequestUser) {

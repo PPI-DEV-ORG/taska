@@ -223,7 +223,7 @@ export function InvoiceExtras({
               try {
                 const formData = new FormData();
                 formData.append("file", file as any);
-                await api("POST", `/invoices/${row.id}/upload-excel`, formData);
+                await api("POST", `/invoices/${row.id}/upload-excel`, undefined, { form: formData });
                 await reload();
                 toast("File Excel berhasil dibaca & diunggah! Nilai invoice & rincian item diperbarui.");
               } catch (e: any) {

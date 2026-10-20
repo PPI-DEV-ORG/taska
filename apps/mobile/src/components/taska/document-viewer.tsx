@@ -104,10 +104,10 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
 
   if (moduleKey === "receiving") {
     if (/kondisi|foto/i.test(labelLower)) {
-      const fileId = (row as any).receiptFileId ?? (row as any).fileId ?? null;
+      const fileId = (row as any).photoFileId ?? (row as any).fileId ?? null;
       return {
         label: docLabel,
-        fieldKey: "receiptFileId",
+        fieldKey: "photoFileId",
         kind: "foto",
         fileId,
         fileName: fileId ? `foto-kondisi-${row.id}.jpg` : null,
@@ -115,10 +115,10 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         emptyHint: "Belum ada foto kondisi barang",
       };
     }
-    const fileId = (row as any).signedFileId ?? ((row as any).receiptFileId ? null : (row as any).fileId) ?? null;
+    const fileId = (row as any).receiptFileId ?? (row as any).fileId ?? null;
     return {
       label: docLabel,
-      fieldKey: "signedFileId",
+      fieldKey: "receiptFileId",
       kind: "semua",
       fileId,
       fileName: fileId ? `tanda-terima-${row.id}` : null,
@@ -187,13 +187,16 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   }
 
   if (moduleKey === "po-client") {
-    const fileId = (row as any).fileId ?? null;
+    const file = (row as any).file;
+    const fileId = (row as any).fileId ?? file?.id ?? null;
     return {
       label: docLabel,
       fieldKey: "fileId",
       kind: "dokumen",
       fileId,
-      fileName: fileId ? `po-client-${row.id}` : null,
+      fileName: file?.originalName ?? (fileId ? `po-client-${row.id}` : null),
+      mimeType: file?.mimeType,
+      fileSize: file?.size,
       emptyHint: "Belum ada file PO dari client",
     };
   }

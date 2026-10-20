@@ -76,13 +76,40 @@ export class DamagesService {
       }
       return row;
     });
+    if (dto.fileId) {
+      await this.prisma.main.file
+        .update({
+          where: { id: dto.fileId },
+          data: { refType: "damage-report", refId: String(created.id) },
+        })
+        .catch(() => {});
+    }
     return created;
+  }
+
+  async get(id: number) {
+    const row = await this.prisma.main.damageReport.findUnique({
+      where: { id },
+      include: {
+        product: { select: { id: true, name: true, sku: true, unit: true } },
+        serialUnit: { select: { id: true, sn: true } },
+        reporter: { select: { id: true, name: true } },
+      },
+    });
+    if (!row) throw new NotFoundException("Laporan tidak ditemukan");
+    const file = row.fileId
+      ? await this.prisma.main.file.findUnique({
+          where: { id: row.fileId },
+          select: { id: true, originalName: true, mimeType: true, size: true },
+        })
+      : null;
+    return { ...row, file };
   }
 
   async update(id: number, dto: DamageCreateDto) {
     const row = await this.prisma.main.damageReport.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Laporan tidak ditemukan");
-    return this.prisma.main.damageReport.update({
+    const updated = await this.prisma.main.damageReport.update({
       where: { id },
       data: {
         ...(dto.date ? { date: new Date(dto.date) } : {}),
@@ -91,6 +118,7 @@ export class DamagesService {
         ...(dto.qty !== undefined ? { qty: dto.qty } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
         ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
       },
       include: {
         product: { select: { name: true, sku: true, unit: true } },
@@ -98,6 +126,15 @@ export class DamagesService {
         reporter: { select: { name: true } },
       },
     });
+    if (dto.fileId) {
+      await this.prisma.main.file
+        .update({
+          where: { id: dto.fileId },
+          data: { refType: "damage-report", refId: String(id) },
+        })
+        .catch(() => {});
+    }
+    return updated;
   }
 
   async setStatus(id: number, status: "DILAPORKAN" | "DIPROSES" | "SELESAI") {
