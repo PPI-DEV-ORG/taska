@@ -166,7 +166,7 @@ export class DamagesController {
   }
 
   @Get(":id")
-  @Require("stock", "R")
+  @Require("stock", "L")
   get(@Param("id", ParseIntPipe) id: number) {
     return this.service.get(id);
   }
