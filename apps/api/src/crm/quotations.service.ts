@@ -226,10 +226,18 @@ export class QuotationsService {
       },
     });
     if (!row) throw new NotFoundException("Penawaran tidak ditemukan");
+    const versionFileIds = (row.versions ?? [])
+      .map((v) => v.fileId)
+      .filter((fid): fid is number => typeof fid === "number" && fid > 0);
     const [approval, files, metaMap] = await Promise.all([
       Promise.resolve(null),
       this.prisma.main.file.findMany({
-        where: { refType: "quotation", refId: String(id) },
+        where: {
+          OR: [
+            { refType: { in: ["quotation", "quotations", "penawaran"] }, refId: String(id) },
+            ...(versionFileIds.length ? [{ id: { in: versionFileIds } }] : []),
+          ],
+        },
         orderBy: { id: "desc" },
         select: { id: true, originalName: true, mimeType: true, size: true, kind: true, createdAt: true },
       }),

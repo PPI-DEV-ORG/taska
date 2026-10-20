@@ -42,6 +42,7 @@ enum LeadStage {
 enum ClientType {
   PARTNER
   END_USER
+  SI
 }
 
 enum FollowUpMethod {
@@ -938,6 +939,7 @@ model Task {
   parent        Task?      @relation("TaskTree", fields: [parentId], references: [id])
   children      Task[]     @relation("TaskTree")
   name          String
+  description   String?    @db.Text
   assigneeId    Int?
   assignee      User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
   dueDate       DateTime?  @db.Date

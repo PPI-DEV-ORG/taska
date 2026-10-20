@@ -33,7 +33,13 @@ import { type QuotationItem } from "@/modules/quotation/types";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { Line } from "../shared/line";
 
-export function QuotationExtras({ row }: { row: Row }) {
+export function QuotationExtras({
+  row,
+  onRefresh,
+}: {
+  row: Row;
+  onRefresh?: () => Promise<void> | void;
+}) {
   const router = useRouter();
   const { patchRow, toast, reload, data, addRow, setStatus, pushHistory } = useApp();
   const versions = Array.from({ length: row.versi }, (_, i) => row.versi - i);
@@ -159,6 +165,7 @@ export function QuotationExtras({ row }: { row: Row }) {
   async function handleDeletePdf(fileId: number, fileName: string) {
     try {
       await api("DELETE", `/files/${fileId}`);
+      await onRefresh?.();
       await reload();
       toast(`File "${fileName}" berhasil dihapus`);
     } catch {
@@ -484,7 +491,9 @@ export function QuotationExtras({ row }: { row: Row }) {
             autoFlush
             onFilePicked={async (file) => {
               try {
-                await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
+                const uploadedId = await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
+                if (!uploadedId) throw new Error("Gagal mengunggah file ke server");
+                await onRefresh?.();
                 await reload();
                 toast(`File PDF "${file.name}" berhasil diunggah!`);
               } catch (e: any) {

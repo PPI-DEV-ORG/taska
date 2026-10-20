@@ -131,6 +131,77 @@ async function main() {
   }
   console.log(`Seed OK: ${costCenters.length} Cost Center`);
 
+  // ─── Customer & Lead Contoh dengan Tipe SI (Sistem Integrator) ───
+  const customerSI = await prisma.customer.upsert({
+    where: { id: 1 },
+    update: {
+      company: "PT Integrasi Sistem Solusindo",
+      notes: "Sistem Integrator (SI) Partner",
+    },
+    create: {
+      name: "PT Integrasi Sistem Solusindo",
+      company: "PT Integrasi Sistem Solusindo",
+      pic: "Bambang Wijaya",
+      email: "bambang@solusindo-si.co.id",
+      phone: "08123456789",
+      city: "Jakarta Barat",
+      notes: "Sistem Integrator (SI) Partner",
+      status: "AKTIF",
+    },
+  });
+
+  await prisma.lead.upsert({
+    where: { id: 1 },
+    update: {
+      clientType: "SI" as any,
+    },
+    create: {
+      name: "Pengadaan Access Control & CCTV Gedung",
+      customer: { connect: { id: customerSI.id } },
+      clientType: "SI" as any,
+      contactName: "Bambang Wijaya",
+      estimatedValue: 125000000,
+      probability: 60,
+      owner: { connect: { id: superAdmin.id } },
+      need: "Kebutuhan paket integrasi CCTV dan Turnstile untuk klien SI",
+      stage: "PROSPECTING",
+    },
+  });
+  console.log("Seed OK: Lead & Customer tipe SI (Sistem Integrator)");
+
+  // ─── Contoh Project & Tugas dengan Deskripsi Detail ───
+  const sampleProject = await prisma.project.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      name: "Instalasi Jaringan & CCTV Kantor Pusat",
+      type: "CUSTOMER",
+      customer: { connect: { id: customerSI.id } },
+      pic: { connect: { id: superAdmin.id } },
+      startDate: new Date(),
+      status: "BERJALAN",
+      progress: 25,
+    },
+  });
+
+  await prisma.task.upsert({
+    where: { id: 1 },
+    update: {
+      description: "Tarik kabel UTP Cat6 dari ruang server lt 1 ke access point dan kamera CCTV lorong lt 2 & 3. Pastikan kabel diberi label penanda dan masuk ke dalam conduit.",
+    },
+    create: {
+      project: { connect: { id: sampleProject.id } },
+      name: "Penarikan Kabel UTP & Conduit Lantai 2-3",
+      description: "Tarik kabel UTP Cat6 dari ruang server lt 1 ke access point dan kamera CCTV lorong lt 2 & 3. Pastikan kabel diberi label penanda dan masuk ke dalam conduit.",
+      assignee: { connect: { id: superAdmin.id } },
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      priority: "TINGGI",
+      status: "IN_PROGRESS",
+      progress: 40,
+    },
+  });
+  console.log("Seed OK: Project Task dengan deskripsi instruksi kerja");
+
   await prisma.$disconnect();
 }
 

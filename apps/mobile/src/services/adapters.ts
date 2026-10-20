@@ -89,7 +89,7 @@ const MAPS: Record<string, Record<string, string>> = {
   },
   movements: { IN: "Masuk", OUT: "Keluar", TRANSFER: "Transfer" },
   costType: { PROJECT: "Project", STOK: "Stok", INTERNAL: "Internal", LAINNYA: "Lainnya" },
-  clientType: { PARTNER: "Partner", END_USER: "End user" },
+  clientType: { PARTNER: "Partner", END_USER: "End user", SI: "SI (Sistem Integrator)" },
   invoiceType: { DP: "DP", TERMIN: "Termin", PELUNASAN: "Pelunasan" },
   projectType: {
     CUSTOMER: "Customer", PRODUCT_RD: "Product/R&D", INTERNAL: "Internal",
@@ -335,12 +335,16 @@ export function adaptRow(module: string, raw: any): Row {
     }
     case "surveys": {
       const surveyFiles = Array.isArray(raw.files) ? raw.files : [];
-      const mediaFile = surveyFiles.find((f: any) =>
-        f.mimeType?.startsWith("image/") || f.mimeType?.startsWith("video/") || f.kind === "foto" || f.kind === "video"
-      );
-      const docFile = surveyFiles.find((f: any) =>
-        !f.mimeType?.startsWith("image/") && !f.mimeType?.startsWith("video/") && f.kind !== "foto" && f.kind !== "video"
-      );
+      const isMedia = (f: any) => {
+        const k = String(f.kind || "").toUpperCase();
+        return f.mimeType?.startsWith("image/") || f.mimeType?.startsWith("video/") || k === "FOTO" || k === "VIDEO";
+      };
+      const isDoc = (f: any) => {
+        const k = String(f.kind || "").toUpperCase();
+        return k === "DOKUMEN" || (!f.mimeType?.startsWith("image/") && !f.mimeType?.startsWith("video/") && k !== "FOTO" && k !== "VIDEO");
+      };
+      const mediaFile = surveyFiles.find(isMedia);
+      const docFile = surveyFiles.find(isDoc);
       return {
         ...base,
         lead: nameOf(raw.lead) ?? "",
@@ -448,6 +452,7 @@ export function adaptRow(module: string, raw: any): Row {
         parent: raw.parentId != null ? String(raw.parentId) : "",
         parentId: raw.parentId != null ? String(raw.parentId) : null,
         nama: raw.name ?? "",
+        deskripsi: raw.description ?? "",
         pic: nameOf(raw.assignee) ?? "",
         assigneeId: idOf(raw.assignee),
         tenggat: d(raw.dueDate),
@@ -537,6 +542,31 @@ export function adaptRow(module: string, raw: any): Row {
       };
     case "delivery-notes": {
       const loc = raw.locations?.[0];
+      let penerimaNama = raw.penerimaNama || "";
+      let penerimaJabatan = raw.penerimaJabatan || "";
+      let penerimaKontak = raw.penerimaKontak || "";
+      let catatanSerahTerima = raw.catatanSerahTerima || "";
+      if (raw.reportText) {
+        try {
+          const parsed = JSON.parse(raw.reportText);
+          if (parsed && typeof parsed === "object") {
+            if (parsed.penerimaNama) penerimaNama = parsed.penerimaNama;
+            if (parsed.penerimaJabatan) penerimaJabatan = parsed.penerimaJabatan;
+            if (parsed.penerimaKontak) penerimaKontak = parsed.penerimaKontak;
+            if (parsed.catatanSerahTerima) catatanSerahTerima = parsed.catatanSerahTerima;
+          }
+        } catch {
+          const matchNama = raw.reportText.match(/Penerima:\s*([^(\n-]+)/i);
+          const matchJabatan = raw.reportText.match(/\(([^)]+)\)/);
+          const matchKontak = raw.reportText.match(/\[(?:Telp|Kontak):\s*([^\]]+)\]/i);
+          const matchCatatan = raw.reportText.match(/-\s*(.+)$/);
+          if (matchNama) penerimaNama = matchNama[1].trim();
+          if (matchJabatan) penerimaJabatan = matchJabatan[1].trim();
+          if (matchKontak) penerimaKontak = matchKontak[1].trim();
+          if (matchCatatan) catatanSerahTerima = matchCatatan[1].trim();
+          else if (!matchNama && !matchJabatan) catatanSerahTerima = raw.reportText;
+        }
+      }
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -552,10 +582,15 @@ export function adaptRow(module: string, raw: any): Row {
         withGoods: !!raw.withGoods,
         reportText: raw.reportText ?? "",
         _locations: raw.locations ?? [],
-        fileId: raw.scanFileId ?? raw.signedFileId ?? (raw.reportFileId ?? null),
+        fileId: raw.scanFileId ?? raw.signedFileId ?? null,
         scanFileId: raw.scanFileId ?? raw.signedFileId ?? null,
         signedFileId: raw.scanFileId ?? raw.signedFileId ?? null,
         reportFileId: raw.reportFileId ?? null,
+        penerimaNama,
+        penerimaJabatan,
+        penerimaKontak,
+        catatanSerahTerima,
+        tanggalDiterima: raw.receivedAt ? d(raw.receivedAt) : (raw.tanggalDiterima ? d(raw.tanggalDiterima) : null),
       };
     }
     case "expenses":
@@ -1056,6 +1091,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     case "tasks":
       return {
         name: row.nama ?? row.name ?? "Tugas Baru",
+        description: row.deskripsi || row.description || undefined,
         parentId: row.parentId != null && row.parentId !== "" ? Number(row.parentId) : undefined,
         assigneeId: row.assigneeId != null && row.assigneeId !== "" ? Number(row.assigneeId) : findId(db?.users, row.pic),
         dueDate: row.tenggat || row.dueDate || undefined,
@@ -1403,14 +1439,21 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (module === "expenses") out.receiptFileId = patch.fileId ? Number(patch.fileId) : null;
     else if (module === "purchase-requests") out.evidenceFileId = patch.fileId ? Number(patch.fileId) : null;
     else if (module === "receiving") out.receiptFileId = patch.fileId ? Number(patch.fileId) : null;
-    else if (module === "delivery-notes") out.signedFileId = patch.fileId ? Number(patch.fileId) : null;
+    else if (module === "delivery-notes") out.scanFileId = patch.fileId ? Number(patch.fileId) : null;
     else out.fileId = patch.fileId ? Number(patch.fileId) : null;
   }
   if (patch.receiptFileId !== undefined) out.receiptFileId = patch.receiptFileId ? Number(patch.receiptFileId) : null;
   if (patch.paidFileId !== undefined) out.paidFileId = patch.paidFileId ? Number(patch.paidFileId) : null;
   if (patch.evidenceFileId !== undefined) out.evidenceFileId = patch.evidenceFileId ? Number(patch.evidenceFileId) : null;
-  if (patch.signedFileId !== undefined) out.signedFileId = patch.signedFileId ? Number(patch.signedFileId) : null;
+  if (patch.documentFileId !== undefined) out.documentFileId = patch.documentFileId ? Number(patch.documentFileId) : null;
+  if (patch.scanFileId !== undefined) out.scanFileId = patch.scanFileId ? Number(patch.scanFileId) : null;
   if (patch.reportFileId !== undefined) out.reportFileId = patch.reportFileId ? Number(patch.reportFileId) : null;
+  if (patch.doFileId !== undefined) out.doFileId = patch.doFileId ? Number(patch.doFileId) : null;
+  if (patch.prdFileId !== undefined) out.prdFileId = patch.prdFileId ? Number(patch.prdFileId) : null;
+  if (patch.bahpFileId !== undefined) out.bahpFileId = patch.bahpFileId ? Number(patch.bahpFileId) : null;
+  if (patch.bastFileId !== undefined) out.bastFileId = patch.bastFileId ? Number(patch.bastFileId) : null;
+  if (patch.photoFileId !== undefined) out.photoFileId = patch.photoFileId ? Number(patch.photoFileId) : null;
+  if (patch.latestFileId !== undefined && module === "quotations") out.fileId = patch.latestFileId ? Number(patch.latestFileId) : null;
 
   if (module === "expenses") {
     if (patch.kategori !== undefined) out.categoryId = findId(db?.expenseCategories, patch.kategori);
@@ -1505,10 +1548,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.dpLabel !== undefined) out.dpLabel = patch.dpLabel;
     if (patch.dpAmount !== undefined) out.dpAmount = num(patch.dpAmount);
   } else if (module === "delivery-notes") {
-    if (patch.penerimaNama || patch.catatanSerahTerima) {
+    if (patch.penerimaNama || patch.catatanSerahTerima || patch.penerimaJabatan || patch.penerimaKontak) {
       out.reportText = [
         patch.penerimaNama ? `Penerima: ${patch.penerimaNama}` : "",
         patch.penerimaJabatan ? `(${patch.penerimaJabatan})` : "",
+        patch.penerimaKontak ? `[Kontak: ${patch.penerimaKontak}]` : "",
         patch.catatanSerahTerima ? `- ${patch.catatanSerahTerima}` : "",
       ]
         .filter(Boolean)

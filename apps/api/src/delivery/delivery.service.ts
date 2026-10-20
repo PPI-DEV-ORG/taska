@@ -143,8 +143,23 @@ export class DeliveryService {
         locations: { include: { project: { select: { name: true } } } },
       },
     });
+
+    if (dto.scanFileId || dto.fileId) {
+      const fid = dto.scanFileId ?? dto.fileId;
+      await this.prisma.main.file.update({
+        where: { id: Number(fid) },
+        data: { refType: "delivery-note", refId: String(id), kind: "FOTO" },
+      }).catch(() => {});
+    }
+    if (dto.reportFileId) {
+      await this.prisma.main.file.update({
+        where: { id: Number(dto.reportFileId) },
+        data: { refType: "delivery-note-report", refId: String(id), kind: "DOKUMEN" },
+      }).catch(() => {});
+    }
+
     this.notifications.dataChange("delivery-notes", "update", updated.id);
-    return updated;
+    return this.get(id);
   }
 
   async list(q: DeliveryListQuery) {

@@ -230,6 +230,8 @@ export async function uploadFile(
     form.append("file", file);
   } else if (typeof Blob !== "undefined" && file instanceof Blob) {
     form.append("file", file, (file as any).name || "upload");
+  } else if ((file as any)?.blob && typeof Blob !== "undefined" && (file as any).blob instanceof Blob) {
+    form.append("file", (file as any).blob, (file as any).name || "upload");
   } else {
     const f = file as { uri?: string; name?: string; type?: string };
     if (!f.uri) return null;

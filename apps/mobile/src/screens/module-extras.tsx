@@ -43,7 +43,7 @@ export function ModuleExtras({
   }
 
   if (moduleKey === "quotations") {
-    return <QuotationExtras row={row} />;
+    return <QuotationExtras row={row} onRefresh={onRefresh} />;
   }
 
   if (moduleKey === "surveys") {
@@ -92,7 +92,7 @@ export function ModuleExtras({
   }
 
   if (moduleKey === "delivery-notes") {
-    return <DeliveryNotesExtras row={row} />;
+    return <DeliveryNotesExtras row={row} onRefresh={onRefresh} />;
   }
 
   if (moduleKey === "expenses") {

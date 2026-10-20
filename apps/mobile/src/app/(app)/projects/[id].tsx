@@ -339,7 +339,12 @@ export default function ProjectDetailScreen() {
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1 pr-3">
                       <Text className="text-sm font-semibold">{t.nama}</Text>
-                      <Text className="text-text-secondary text-xs">
+                      {t.deskripsi ? (
+                        <Text className="text-muted-foreground text-xs mt-0.5" numberOfLines={2}>
+                          {t.deskripsi}
+                        </Text>
+                      ) : null}
+                      <Text className="text-text-secondary text-xs mt-1">
                         PIC: {t.pic} · Tenggat: {tanggal(t.tenggat)}
                         {t.perluBarang ? " · (Perlu pembelian barang)" : ""}
                       </Text>
@@ -376,6 +381,7 @@ export default function ProjectDetailScreen() {
         title="Tambah Tugas Project"
         fields={[
           { key: "nama", label: "Nama Tugas", type: "text", required: true, placeholder: "Contoh: Penarikan kabel lantai 2" },
+          { key: "deskripsi", label: "Deskripsi Tugas", type: "textarea", placeholder: "Detail instruksi / spesifikasi pengerjaan tugas" },
           {
             key: "parentTask",
             label: "Sub-tugas dari (Opsional)",
@@ -397,6 +403,7 @@ export default function ProjectDetailScreen() {
             project: project.nama,
             parentId: parentRow?.id,
             nama: v.nama,
+            deskripsi: v.deskripsi || undefined,
             pic: v.pic,
             tenggat: v.tenggat || new Date().toISOString().slice(0, 10),
             perluBarang: v.perluBarang === "Ya",

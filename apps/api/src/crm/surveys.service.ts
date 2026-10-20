@@ -63,7 +63,28 @@ export class SurveysService {
       }),
       this.prisma.main.survey.count({ where }),
     ]);
-    return paginate(items, total, q);
+
+    const surveyIds = items.map((s) => String(s.id));
+    const files = surveyIds.length
+      ? await this.prisma.main.file.findMany({
+          where: { refType: "survey", refId: { in: surveyIds } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, originalName: true, mimeType: true, size: true, kind: true, refId: true, createdAt: true },
+        })
+      : [];
+    const fileMap = new Map<string, typeof files>();
+    for (const f of files) {
+      if (!f.refId) continue;
+      const arr = fileMap.get(f.refId) ?? [];
+      arr.push(f);
+      fileMap.set(f.refId, arr);
+    }
+    const enriched = items.map((s) => ({
+      ...s,
+      files: fileMap.get(String(s.id)) ?? [],
+    }));
+
+    return paginate(enriched, total, q);
   }
 
   async get(id: number) {
@@ -224,9 +245,11 @@ export class SurveysService {
 
     const anyDto = dto as Record<string, any>;
     if (anyDto.evidenceFileId) {
+      const f = await this.prisma.main.file.findUnique({ where: { id: Number(anyDto.evidenceFileId) } });
+      const k = f?.kind === "VIDEO" || f?.mimeType?.startsWith("video/") ? "VIDEO" : "FOTO";
       await this.prisma.main.file.update({
         where: { id: Number(anyDto.evidenceFileId) },
-        data: { refType: "survey", refId: String(id), kind: "FOTO" },
+        data: { refType: "survey", refId: String(id), kind: k },
       }).catch(() => {});
     }
     if (anyDto.documentFileId) {
@@ -266,7 +289,7 @@ export class SurveysService {
       });
     }
     this.notifications.dataChange("surveys", payload.status ? "status" : "update", updated.id);
-    return updated;
+    return this.get(id);
   }
 
   /** Dipanggil ApprovalsService saat persetujuan permintaan survey berubah. */
