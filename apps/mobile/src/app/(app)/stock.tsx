@@ -299,7 +299,9 @@ export default function StockScreen() {
           <DataTable
             columns={[
               { key: "nama", label: "Nama Barang", primary: true, flex: 1.8 },
+              { key: "merkDisplay", label: "Merk", flex: 0.9 },
               { key: "sku", label: "SKU", flex: 1 },
+              { key: "tipeSN", label: "Tipe", flex: 0.9 },
               { key: "masukDisplay", label: "Masuk", flex: 0.9 },
               { key: "keluarDisplay", label: "Keluar", flex: 0.9 },
               { key: "transferInDisplay", label: "Transfer Masuk", flex: 1.1 },
@@ -313,6 +315,8 @@ export default function StockScreen() {
               const total = saldoOfProduct(String(p.id));
               return {
                 ...p,
+                merkDisplay: p.merk || p.brand || "-",
+                tipeSN: p.berSN ? "Serial" : "Curah",
                 gudang: selectedWarehouseRow?.nama ?? selectedWarehouse,
                 masukDisplay: `${sRow?.masuk ?? 0}`,
                 keluarDisplay: `${sRow?.keluar ?? 0}`,

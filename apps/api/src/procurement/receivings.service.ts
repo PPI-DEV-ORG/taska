@@ -66,6 +66,7 @@ export class ReceivingsService {
         ? {
             OR: [
               { number: { contains: q.q } },
+              { supplierName: { contains: q.q } },
               { supplierPo: { number: { contains: q.q } } },
               { supplierPo: { supplier: { name: { contains: q.q } } } },
             ],
@@ -121,13 +122,9 @@ export class ReceivingsService {
           where: { id: dto.supplierPoId },
           include: { items: true, project: true },
         })
-      : await this.prisma.main.supplierPO.findFirst({
-          orderBy: { id: "desc" },
-          include: { items: true, project: true },
-        });
-    if (!po) throw new NotFoundException("PO supplier tidak ditemukan");
+      : null;
 
-    const direct = !!po.projectId && !dto.warehouseId;
+    const direct = po ? !!po.projectId && !dto.warehouseId : false;
     let warehouseId = direct ? null : dto.warehouseId ?? null;
     if (!direct && !warehouseId) {
       const firstWh = await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } });
@@ -137,16 +134,22 @@ export class ReceivingsService {
     const inputItems =
       dto.items && dto.items.length
         ? dto.items
-        : po.items.map((pi) => ({
+        : po
+        ? po.items.map((pi) => ({
             productId: pi.productId,
             qtyReceived: Math.max(1, pi.qty - pi.receivedQty),
             serials: undefined as string | undefined,
             note: undefined as string | undefined,
-          }));
+          }))
+        : [];
+
+    if (!inputItems.length) {
+      throw new BadRequestException("Item penerimaan barang minimal 1 barang");
+    }
 
     const preparedItems: { productId: number; qtyOrdered: number; qtyReceived: number; serials: string | null; note?: string }[] = [];
     for (const item of inputItems) {
-      const poItem = po.items.find((i) => i.productId === item.productId);
+      const poItem = po ? po.items.find((i) => i.productId === item.productId) : null;
       const qtyReceived = Math.max(1, item.qtyReceived || 1);
       const qtyOrdered = poItem ? Math.max(qtyReceived, poItem.qty - poItem.receivedQty) : qtyReceived;
 
@@ -155,7 +158,7 @@ export class ReceivingsService {
       if (product?.hasSerial && serialsList.length < qtyReceived) {
         const needed = qtyReceived - serialsList.length;
         for (let k = 0; k < needed; k++) {
-          serialsList.push(`SN-${po.id}-${item.productId}-${Date.now()}-${k + 1}`);
+          serialsList.push(`SN-${item.productId}-${Date.now()}-${k + 1}`);
         }
       }
       preparedItems.push({
@@ -168,15 +171,19 @@ export class ReceivingsService {
     }
 
     const number = await this.docnum.next("penerimaan");
+    const isDirectApproved = dto.status === "DITERIMA" || ["GUDANG", "SUPER_ADMIN", "ADMIN"].includes(user.role);
+    const initialStatus = isDirectApproved ? "DITERIMA" : ((dto.status as any) ?? "MENUNGGU");
+
     const receiving = await this.prisma.main.receiving.create({
       data: {
         number,
-        supplierPoId: po.id,
+        supplierPoId: po?.id ?? null,
+        supplierName: dto.supplierName || (po ? null : "Pemasok Langsung"),
         warehouseId,
-        projectId: direct ? po.projectId : null,
+        projectId: direct ? po!.projectId : null,
         date: dto.date ? new Date(dto.date) : new Date(),
         receiverId: user.id,
-        status: (dto.status as any) ?? "MENUNGGU",
+        status: initialStatus as any,
         conditionNote: dto.conditionNote,
         receiptFileId: dto.receiptFileId,
         photoFileId: dto.photoFileId,
@@ -200,17 +207,23 @@ export class ReceivingsService {
       action: "BUAT_PENERIMAAN",
       entityType: "receiving",
       entityId: receiving.id,
-      detail: `${number} — PO ${po.number} (${preparedItems.length} item)`,
+      detail: `${number} — ${po ? `PO ${po.number}` : (dto.supplierName || "Penerimaan Langsung")} (${preparedItems.length} item)`,
     });
-    await this.approvals.request({
-      kind: "PENERIMAAN",
-      entityId: receiving.id,
-      title: `Penerimaan barang ${number}`,
-      amount: Number(po.total),
-      requestedBy: user,
-      href: `/receivings/${receiving.id}`,
-      confirmRoles: [user.role as Role],
-    });
+
+    if (initialStatus === "DITERIMA") {
+      await this.postStock(receiving.id);
+    } else {
+      await this.approvals.request({
+        kind: "PENERIMAAN",
+        entityId: receiving.id,
+        title: `Penerimaan barang ${number}`,
+        amount: po ? Number(po.total) : 0,
+        requestedBy: user,
+        href: `/receivings/${receiving.id}`,
+        confirmRoles: [user.role as Role],
+      });
+    }
+
     this.notifications.dataChange("receiving", "create", receiving.id);
     return receiving;
   }
@@ -380,47 +393,54 @@ export class ReceivingsService {
       }
     }
 
-    for (const item of receiving.items) {
-      await this.prisma.main.supplierPOItem.updateMany({
-        where: { poId: receiving.supplierPoId, productId: item.productId },
-        data: { receivedQty: { increment: item.qtyReceived } },
-      });
-    }
-
-    const partial = receiving.items.some((i) => i.qtyReceived < i.qtyOrdered);
-    await this.prisma.main.receiving.update({
-      where: { id },
-      data: { status: partial ? "DITERIMA_SEBAGIAN" : "DITERIMA" },
-    });
-
-    const po = await this.prisma.main.supplierPO.findUnique({
-      where: { id: receiving.supplierPoId },
-      include: { items: true, request: { select: { id: true, number: true, requesterId: true } } },
-    });
-    if (po) {
-      const allReceived = po.items.every((i) => i.receivedQty >= i.qty);
-      if (allReceived) {
-        await this.prisma.main.supplierPO.update({
-          where: { id: po.id },
-          data: {
-            shipmentStatus: "SAMPAI",
-            arrivedAt: po.arrivedAt ?? new Date(),
-          },
+    if (receiving.supplierPoId) {
+      for (const item of receiving.items) {
+        await this.prisma.main.supplierPOItem.updateMany({
+          where: { poId: receiving.supplierPoId, productId: item.productId },
+          data: { receivedQty: { increment: item.qtyReceived } },
         });
-        if (po.requestId) {
-          await this.prisma.main.purchaseRequest.updateMany({
-            where: { id: po.requestId, status: { in: ["PO_DIBUAT", "DISETUJUI", "DIKIRIM"] } },
-            data: { status: "DITERIMA" },
-          });
-        }
-        await this.notifications.notify({
-          roles: ["PROCUREMENT"],
-          kind: "STOK",
-          text: `Semua barang PO ${po.number} sudah diterima — nyatakan siap ke PM`,
-          href: `/procurement/po/${po.id}`,
-        });
-        this.notifications.dataChange("supplier-pos", "status", po.id);
       }
+
+      const partial = receiving.items.some((i) => i.qtyReceived < i.qtyOrdered);
+      await this.prisma.main.receiving.update({
+        where: { id },
+        data: { status: partial ? "DITERIMA_SEBAGIAN" : "DITERIMA" },
+      });
+
+      const po = await this.prisma.main.supplierPO.findUnique({
+        where: { id: receiving.supplierPoId },
+        include: { items: true, request: { select: { id: true, number: true, requesterId: true } } },
+      });
+      if (po) {
+        const allReceived = po.items.every((i) => i.receivedQty >= i.qty);
+        if (allReceived) {
+          await this.prisma.main.supplierPO.update({
+            where: { id: po.id },
+            data: {
+              shipmentStatus: "SAMPAI",
+              arrivedAt: po.arrivedAt ?? new Date(),
+            },
+          });
+          if (po.requestId) {
+            await this.prisma.main.purchaseRequest.updateMany({
+              where: { id: po.requestId, status: { in: ["PO_DIBUAT", "DISETUJUI", "DIKIRIM"] } },
+              data: { status: "DITERIMA" },
+            });
+          }
+          await this.notifications.notify({
+            roles: ["PROCUREMENT"],
+            kind: "STOK",
+            text: `Semua barang PO ${po.number} sudah diterima — nyatakan siap ke PM`,
+            href: `/procurement/po/${po.id}`,
+          });
+          this.notifications.dataChange("supplier-pos", "status", po.id);
+        }
+      }
+    } else {
+      await this.prisma.main.receiving.update({
+        where: { id },
+        data: { status: "DITERIMA" },
+      });
     }
 
     const receiver = await this.prisma.main.user.findUnique({ where: { id: receiving.receiverId } });
@@ -451,7 +471,7 @@ export class ReceivingsService {
     const issue = await this.prisma.main.issueReport.create({
       data: {
         receivingId: receiving.id,
-        poNumber: receiving.supplierPo.number,
+        poNumber: receiving.supplierPo?.number,
         productId: dto.productId,
         type: dto.type,
         qty: dto.qty ?? 1,

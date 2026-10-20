@@ -82,6 +82,12 @@ export class ProductDto {
   name?: string;
 
   @IsOptional() @IsString()
+  brand?: string;
+
+  @IsOptional() @IsString()
+  description?: string;
+
+  @IsOptional() @IsString()
   type?: string;
 
   @IsOptional() @IsInt()

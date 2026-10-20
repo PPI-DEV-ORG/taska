@@ -24,10 +24,37 @@ export default function StockOpnameScreen() {
     warehouses[1]?.id ?? warehouses[0]?.id ?? ""
   );
   const [counts, setCounts] = React.useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [categoryFilter, setCategoryFilter] = React.useState("Semua");
+  const [brandFilter, setBrandFilter] = React.useState("Semua");
   const [reason, setReason] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
   const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
+
+  const availableCategories = React.useMemo(() => {
+    return ["Semua", ...Array.from(new Set(products.map((p) => p.kategori).filter(Boolean)))];
+  }, [products]);
+
+  const availableBrands = React.useMemo(() => {
+    return ["Semua", ...Array.from(new Set(products.map((p) => p.merk || p.brand).filter(Boolean)))];
+  }, [products]);
+
+  const filteredProducts = React.useMemo(() => {
+    return products.filter((p) => {
+      const pBrand = String(p.merk || p.brand || "");
+      const pCat = String(p.kategori || "");
+      const matchCat = categoryFilter === "Semua" || pCat === categoryFilter;
+      const matchBrand = brandFilter === "Semua" || pBrand === brandFilter;
+      const q = searchQuery.toLowerCase().trim();
+      const matchQuery =
+        !q ||
+        String(p.nama).toLowerCase().includes(q) ||
+        String(p.sku).toLowerCase().includes(q) ||
+        pBrand.toLowerCase().includes(q);
+      return matchCat && matchBrand && matchQuery;
+    });
+  }, [products, categoryFilter, brandFilter, searchQuery]);
 
   function systemQtyOf(productId: string): number {
     const row = stockSummary.find(
@@ -156,19 +183,68 @@ export default function StockOpnameScreen() {
       </View>
 
       <View className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        <View className="lg:col-span-8 w-full">
+        <View className="lg:col-span-8 w-full gap-4">
+          {/* Universal Filter: Kategori, Merk & Pencarian */}
+          <Panel title="Filter Target Opname">
+            <View className="gap-3">
+              <Input
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Cari nama barang, SKU, atau merk..."
+              />
+              <View className="gap-2">
+                <View className="flex-row items-center gap-2">
+                  <Text className="text-xs font-semibold text-muted-foreground w-16">Kategori:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1.5 py-0.5">
+                    {availableCategories.map((c) => (
+                      <Button
+                        key={c}
+                        size="sm"
+                        variant={categoryFilter === c ? "default" : "outline"}
+                        onPress={() => setCategoryFilter(c)}
+                        className="h-7 px-2.5 rounded-full"
+                      >
+                        <Text className="text-xs">{c}</Text>
+                      </Button>
+                    ))}
+                  </ScrollView>
+                </View>
+
+                {availableBrands.length > 2 && (
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-xs font-semibold text-muted-foreground w-16">Merk:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1.5 py-0.5">
+                      {availableBrands.map((b) => (
+                        <Button
+                          key={b}
+                          size="sm"
+                          variant={brandFilter === b ? "default" : "outline"}
+                          onPress={() => setBrandFilter(b)}
+                          className="h-7 px-2.5 rounded-full"
+                        >
+                          <Text className="text-xs">{b}</Text>
+                        </Button>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+            </View>
+          </Panel>
+
           <Panel
             title={`Perhitungan Fisik: ${selectedWarehouse ? String(selectedWarehouse.nama) : "-"}`}
-            subtitle="Masukkan hasil hitungan fisik riil di gudang. Selisih akan dikalkulasi otomatis."
+            subtitle={`Menampilkan ${filteredProducts.length} dari ${products.length} barang di gudang`}
           >
             <View className="gap-2">
-              {products.map((p) => {
+              {filteredProducts.map((p) => {
                 const pid = String(p.id);
                 const systemQty = systemQtyOf(pid);
                 const physQtyStr = counts[pid] ?? String(systemQty);
                 const physQty = Number(physQtyStr) || 0;
                 const diff = physQty - systemQty;
                 const satuan = String(p.satuan ?? "");
+                const merk = p.merk || p.brand;
 
                 return (
                   <View
@@ -176,11 +252,18 @@ export default function StockOpnameScreen() {
                     className="border-border/60 flex-row items-center justify-between border-b py-3 last:border-b-0 hover:bg-panel/40 px-2 rounded-lg transition-colors gap-3"
                   >
                     <View className="flex-1 min-w-0">
-                      <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                        {String(p.nama)}
-                      </Text>
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                          {String(p.nama)}
+                        </Text>
+                        {merk ? (
+                          <View className="bg-panel border-border/60 rounded px-1.5 py-0.5 border">
+                            <Text className="text-[10px] font-medium text-muted-foreground">{merk}</Text>
+                          </View>
+                        ) : null}
+                      </View>
                       <Text className="text-muted-foreground text-xs mt-0.5" numberOfLines={1}>
-                        SKU: {String(p.sku)} · Kategori: {String(p.kategori ?? "-")} · Sistem: {systemQty} {satuan}
+                        SKU: {String(p.sku)} · Kategori: {String(p.kategori ?? "-")} · {p.berSN ? "Serial Number" : "Curah"} · Sistem: {systemQty} {satuan}
                       </Text>
                     </View>
 
@@ -206,8 +289,8 @@ export default function StockOpnameScreen() {
                   </View>
                 );
               })}
-              {products.length === 0 ? (
-                <Text className="text-muted-foreground text-sm py-6 text-center">Belum ada produk master.</Text>
+              {filteredProducts.length === 0 ? (
+                <Text className="text-muted-foreground text-sm py-6 text-center">Tidak ada produk yang cocok dengan filter.</Text>
               ) : null}
             </View>
           </Panel>

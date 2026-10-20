@@ -210,6 +210,9 @@ export class ReceivingDto {
   @IsOptional() @IsInt()
   supplierPoId?: number;
 
+  @IsOptional() @IsString()
+  supplierName?: string;
+
   @IsOptional() @IsInt()
   warehouseId?: number;
 

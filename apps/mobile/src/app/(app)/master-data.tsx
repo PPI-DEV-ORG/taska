@@ -69,6 +69,8 @@ export default function MasterDataScreen() {
   // Modal State untuk Barang (Gudang)
   const [barangOpen, setBarangOpen] = React.useState(false);
   const [barangNama, setBarangNama] = React.useState("");
+  const [barangMerk, setBarangMerk] = React.useState("");
+  const [barangDesc, setBarangDesc] = React.useState("");
   const [barangSku, setBarangSku] = React.useState("");
   const [barangKategori, setBarangKategori] = React.useState("IP Camera");
   const [barangSatuan, setBarangSatuan] = React.useState("unit");
@@ -140,7 +142,7 @@ export default function MasterDataScreen() {
   }, []);
 
   const isSuper = user?.role === "super_admin";
-  const canAddKategori = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
+  const canAddKategori = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin" || user?.role === "procurement";
   const canAddBarang = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin";
   const canAddGudang = isSuper || user?.role === "procurement" || user?.role === "bos" || user?.role === "admin";
   const canAddLeadSource = isSuper || user?.role === "sales" || user?.role === "bos" || user?.role === "admin";
@@ -182,6 +184,10 @@ export default function MasterDataScreen() {
     addRow("products", {
       nama: barangNama,
       sku: barangSku.toUpperCase(),
+      merk: barangMerk.trim() || undefined,
+      brand: barangMerk.trim() || undefined,
+      deskripsi: barangDesc.trim() || undefined,
+      description: barangDesc.trim() || undefined,
       kategori: barangKategori,
       satuan: satuanDisplay,
       isiPerUnit: barangIsiUnit ? Number(barangIsiUnit) : undefined,
@@ -193,6 +199,8 @@ export default function MasterDataScreen() {
     });
     setBarangOpen(false);
     setBarangNama("");
+    setBarangMerk("");
+    setBarangDesc("");
     setBarangSku("");
     setBarangIsiUnit("");
     setBarangHargaBeli("");
@@ -353,6 +361,10 @@ export default function MasterDataScreen() {
                 <ArrowLeft size={15} color={colors.text} />
                 <Text className="text-xs">Kembali</Text>
               </Button>
+              <Button variant="outline" size="sm" onPress={() => setSelectedCategory("kategori-barang")}>
+                <Layers size={14} color={colors.text} />
+                <Text className="text-xs">Kategori Produk</Text>
+              </Button>
               {canAddBarang ? (
                 <Button size="sm" onPress={() => setBarangOpen(true)}>
                   <Plus size={15} color={colors.background} />
@@ -368,6 +380,7 @@ export default function MasterDataScreen() {
         <DataTable
           columns={[
             { key: "nama", label: "Nama Produk / Barang", primary: true, flex: 1.8 },
+            { key: "merk", label: "Merk / Brand", flex: 1 },
             { key: "sku", label: "SKU", flex: 1 },
             { key: "kategori", label: "Kategori", flex: 1 },
             { key: "satuan", label: "Satuan", flex: 0.8 },
@@ -376,6 +389,7 @@ export default function MasterDataScreen() {
           ]}
           rows={(data.products || []).map((p) => ({
             ...p,
+            merk: p.merk || p.brand || "-",
             tipeSN: p.berSN ? "Serial Number" : "Non-SN",
           }))}
           pageSize={8}
@@ -395,6 +409,13 @@ export default function MasterDataScreen() {
                   value={barangNama}
                   onChangeText={setBarangNama}
                   placeholder="Contoh: Switch PoE 24 Port Managed"
+                />
+              </FormField>
+              <FormField label="Merk / Brand (Pabrikan)">
+                <Input
+                  value={barangMerk}
+                  onChangeText={setBarangMerk}
+                  placeholder="Contoh: Uniview, Hikvision, Belden, Ruijie"
                 />
               </FormField>
               <FormField label="Kode SKU" required>
@@ -1036,7 +1057,7 @@ export default function MasterDataScreen() {
       count: `${data.products?.length || 0} Barang`,
       icon: Boxes,
       tag: "Dikelola Gudang",
-      roles: ["admin", "bos", "gudang"],
+      roles: ["admin", "bos", "gudang", "procurement", "pm"],
       onPress: () => setSelectedCategory("barang"),
     },
     {
@@ -1046,7 +1067,7 @@ export default function MasterDataScreen() {
       count: `${data.productCategories?.length || 0} Kategori`,
       icon: Layers,
       tag: "Dikelola Gudang",
-      roles: ["admin", "bos", "gudang"],
+      roles: ["admin", "bos", "gudang", "procurement", "pm"],
       onPress: () => setSelectedCategory("kategori-barang"),
     },
     {

@@ -381,7 +381,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "tanggal", label: "Tanggal", type: "date" },
       { key: "tujuan", label: "Tujuan / kebutuhan", type: "textarea", required: true },
     ],
-    createRoles: ["pm", "procurement", "finance", "gudang", "bos"],
+    createRoles: ["pm", "procurement", "finance", "gudang", "teknisi", "admin", "super_admin", "bos"],
     actions: [
       { label: "Teruskan ke Gudang", status: "Cek stok", toast: "Request diteruskan ke Gudang untuk cek ketersediaan stok" },
       { label: "Buat PO supplier", toast: "PO supplier dibuat, menunggu persetujuan", to: () => "/supplier-pos" },
@@ -740,7 +740,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   bos: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.quotations, N.surveys, N.projects, N.invoices, N.stock, N.reports, N.archive, N.audit],
   sales: [N.dashboard, N.leads, N.quotations, N.surveys, N.invoices, N.customers, N.expenses, N.master],
   pm: [N.dashboard, N.projects, N.surveys, N.requests, N.delivery, N.expenses],
-  teknisi: [N.dashboard, N.surveys, N.myProjects, N.delivery, N.expenses],
+  teknisi: [N.dashboard, N.surveys, N.myProjects, N.requests, N.delivery, N.expenses],
   procurement: [N.dashboard, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.damage, N.expenses, N.master],
   finance: [N.dashboard, N.approvals, N.surveys, N.invoices, N.quotations, N.poClient, N.expenses, N.opname, N.reports],
   gudang: [N.dashboard, N.approvals, N.requests, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.master],

@@ -145,7 +145,7 @@ export const PERMISSIONS: Record<string, Table> = {
     users: "L",
     suppliers: "LCU",
     products: "LCU",
-    productCategories: "L",
+    productCategories: "LCU",
     warehouses: "LCU",
     expenseCategories: "L",
     costCenters: "L",

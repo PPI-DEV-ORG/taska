@@ -31,13 +31,14 @@ export class ProductsService {
     return new Map<number, number>(balances.map((b) => [b.productId, b._sum?.qty ?? 0]));
   }
 
-  async list(q: PageQuery & { status?: string; categoryId?: number }, user: RequestUser) {
+  async list(q: PageQuery & { status?: string; categoryId?: number; brand?: string }, user: RequestUser) {
     const where = searchWhere(
       q,
-      [["sku", "contains"], ["name", "contains"], ["type", "contains"]],
+      [["sku", "contains"], ["name", "contains"], ["type", "contains"], ["brand", "contains"]],
       {
         ...(q.status ? { status: q.status as "AKTIF" | "NONAKTIF" } : {}),
         ...(q.categoryId ? { categoryId: q.categoryId } : {}),
+        ...(q.brand ? { brand: { contains: q.brand } } : {}),
       },
     );
     const [rows, total] = await Promise.all([

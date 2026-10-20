@@ -524,18 +524,19 @@ export function adaptRow(module: string, raw: any): Row {
       return {
         ...base,
         nomor: raw.number ?? "",
-        po: raw.supplierPo?.number ?? "",
+        po: raw.supplierPo?.number ?? "-",
         supplierPoId: idOf(raw.supplierPo),
-        supplier: raw.supplierPo?.supplier?.name ?? "",
+        supplier: raw.supplierPo?.supplier?.name ?? raw.supplierName ?? "-",
         tanggal: d(raw.date),
         penerima: nameOf(raw.receiver) ?? "",
         status: toLabel("receiving", raw.status),
-        item: (raw.items ?? []).map((i: any) => `${nameOf(i.product)} x ${n(i.qtyGood)}`).join(", ") || raw.conditionNote || "-",
+        item: (raw.items ?? []).map((i: any) => `${nameOf(i.product)} x ${n(i.qtyReceived ?? i.qtyGood ?? i.qtyOrdered)} ${i.product?.unit ?? ""}`).join(", ") || raw.conditionNote || "-",
         warehouseId: idOf(raw.warehouse),
         warehouse: nameOf(raw.warehouse) ?? "",
         projectId: idOf(raw.project),
         conditionNote: raw.conditionNote ?? "",
         _items: raw.items ?? [],
+        items: raw.items ?? [],
         receiptFileId: raw.receiptFileId ?? null,
         photoFileId: raw.photoFileId ?? null,
         fileId: raw.photoFileId ?? raw.receiptFileId ?? (raw.fileId ?? null),
@@ -689,7 +690,8 @@ export function adaptRow(module: string, raw: any): Row {
       return { ...base, nama: raw.name ?? "", kota: raw.city ?? "", staf: "-", status: toLabel("users", raw.status) };
     case "products":
       return {
-        ...base, sku: raw.sku ?? "", nama: raw.name ?? "", satuan: raw.unit ?? "",
+        ...base, sku: raw.sku ?? "", nama: raw.name ?? "", merk: raw.brand ?? "", brand: raw.brand ?? "",
+        deskripsi: raw.description ?? "", description: raw.description ?? "", satuan: raw.unit ?? "",
         berSN: !!raw.hasSerial, garansi: raw.warrantyMonths != null ? `${raw.warrantyMonths} bln` : "-",
         min: n(raw.minStock), hargaBeli: n(raw.purchasePrice),
         kategori: nameOf(raw.category) ?? "",
@@ -1184,11 +1186,14 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     }
     case "receiving":
       return {
-        supplierPoId: row.supplierPoId != null && row.supplierPoId !== "" ? Number(row.supplierPoId) : findId(db?.["supplier-pos"], row.po),
+        supplierPoId: row.supplierPoId != null && row.supplierPoId !== "" ? Number(row.supplierPoId) : (row.po && row.po !== "-" ? findId(db?.["supplier-pos"], row.po) : undefined),
+        supplierName: row.supplierName || (row.supplier && row.supplier !== "-" ? row.supplier : undefined),
         warehouseId: row.warehouseId != null && row.warehouseId !== "" ? Number(row.warehouseId) : findId(db?.warehouses, row.gudang ?? row.warehouse),
         date: row.tanggal || row.date || today,
-        conditionNote: row.conditionNote || row.catatan || row.item || undefined,
+        conditionNote: row.conditionNote || row.catatan || undefined,
+        status: row.status ? toEnum("receiving", row.status) : undefined,
         receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
+        photoFileId: row.photoFileId ? Number(row.photoFileId) : undefined,
         items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
       };
     case "delivery-notes":
@@ -1248,6 +1253,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       return {
         sku: row.sku,
         name: row.nama ?? row.name,
+        brand: row.merk || row.brand || undefined,
+        description: row.deskripsi || row.description || undefined,
         unit: row.satuan ?? row.unit,
         categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : findId(db?.productCategories, row.kategori),
         hasSerial: row.berSN != null ? !!row.berSN : !!row.hasSerial,
