@@ -704,17 +704,8 @@ export class ProjectsService {
         });
       }
       if (!prod) {
-        const sku = `PRD-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`;
-        prod = await this.prisma.main.product.create({
-          data: {
-            sku,
-            name: itemName,
-            brand: item.brand || item.merk || undefined,
-            unit: item.unit || "unit",
-            purchasePrice: Number(item.cost || item.purchasePrice || 0),
-            hasSerial: Boolean(item.hasSerial ?? (item.unit === "unit" || item.unit === "pcs")),
-          },
-        });
+        // Item penawaran hanya berupa teks deskripsi commercial, jangan buat produk atau SN baru di master data
+        continue;
       }
 
       const existingReq = await this.prisma.main.projectRequirement.findFirst({
