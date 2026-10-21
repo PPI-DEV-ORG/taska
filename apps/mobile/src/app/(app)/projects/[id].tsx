@@ -522,7 +522,7 @@ export default function ProjectDetailScreen() {
                         await api("DELETE", `/projects/${project.id}/requirements/${r.id}`);
                         await loadRequirements();
                         await reload();
-                        toast("Kebutuhan barang dihapus & reservasi dilepas");
+                        toast("Kebutuhan barang & request berhasil dihapus");
                       } catch (e: any) {
                         toast(e?.message ?? "Gagal menghapus", "danger");
                       }
@@ -556,12 +556,14 @@ export default function ProjectDetailScreen() {
               </Text>
             ) : (
               projectRequests.map((pr: any) => (
-                <Pressable
+                <View
                   key={pr.id}
-                  onPress={() => router.push(`/purchase-requests/${pr.id}` as any)}
                   className="border-border flex-row items-center justify-between border-b py-3 last:border-b-0"
                 >
-                  <View className="flex-1 pr-3">
+                  <Pressable
+                    onPress={() => router.push(`/purchase-requests/${pr.id}` as any)}
+                    className="flex-1 pr-3"
+                  >
                     <View className="flex-row items-center gap-2">
                       <Text className="text-sm font-semibold">{pr.nomor}</Text>
                       <StatusBadge status={pr.status} />
@@ -572,9 +574,38 @@ export default function ProjectDetailScreen() {
                     <Text className="text-muted-foreground text-[11px] mt-0.5">
                       Pemohon: {pr.pemohon || "-"} · {pr.tanggal || "-"}
                     </Text>
+                  </Pressable>
+                  <View className="flex-row items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 rounded-lg hover:bg-danger/10"
+                      onPress={async () => {
+                        const isDiajukan = pr.status === "Diajukan" || pr.status === "DIAJUKAN";
+                        if (!isDiajukan) {
+                          toast("Request sudah berjalan tidak bisa hapus request", "danger");
+                          return;
+                        }
+                        try {
+                          await api("DELETE", `/requests/${pr.id}`);
+                          await reload();
+                          await loadRequirements();
+                          toast("Request barang berhasil dihapus");
+                        } catch (err: any) {
+                          toast(err?.message ?? "Gagal menghapus request", "danger");
+                        }
+                      }}
+                    >
+                      <Trash2 size={15} color={colors.danger} />
+                    </Button>
+                    <Pressable
+                      onPress={() => router.push(`/purchase-requests/${pr.id}` as any)}
+                      className="p-1"
+                    >
+                      <ChevronRight size={16} color={colors.muted} />
+                    </Pressable>
                   </View>
-                  <ChevronRight size={16} color={colors.muted} />
-                </Pressable>
+                </View>
               ))
             )}
           </Panel>

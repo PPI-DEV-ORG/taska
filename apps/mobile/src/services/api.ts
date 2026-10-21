@@ -217,14 +217,39 @@ export function queryString(params?: Record<string, unknown>): string {
   return s ? `?${s}` : "";
 }
 
+export const MAX_FILE_SIZE_BYTES: Record<"foto" | "dokumen" | "video", number> = {
+  foto: 5 * 1024 * 1024,      // 5 MB
+  dokumen: 15 * 1024 * 1024,  // 15 MB
+  video: 25 * 1024 * 1024,    // 25 MB
+};
+
 /** Upload file multipart ke /files, kembalikan file id. */
 export async function uploadFile(
-  file: { uri?: string; name?: string; type?: string } | Blob | File | null | undefined,
+  file: { uri?: string; name?: string; type?: string; size?: number } | Blob | File | null | undefined,
   kind: "foto" | "dokumen" | "video" = "dokumen",
   category?: string,
   extra?: { refType?: string; refId?: string | number },
 ): Promise<number | null> {
   if (!file) return null;
+
+  const maxBytes = MAX_FILE_SIZE_BYTES[kind] ?? 15 * 1024 * 1024;
+  let byteSize: number | undefined;
+  if (typeof File !== "undefined" && file instanceof File) {
+    byteSize = file.size;
+  } else if (typeof Blob !== "undefined" && file instanceof Blob) {
+    byteSize = file.size;
+  } else if ((file as any)?.blob && typeof Blob !== "undefined" && (file as any).blob instanceof Blob) {
+    byteSize = (file as any).blob.size;
+  } else if (typeof (file as any)?.size === "number") {
+    byteSize = (file as any).size;
+  }
+
+  if (typeof byteSize === "number" && byteSize > maxBytes) {
+    const maxMb = (maxBytes / (1024 * 1024)).toFixed(0);
+    const actualMb = (byteSize / (1024 * 1024)).toFixed(1);
+    throw new Error(`Ukuran file (${actualMb} MB) melebihi batas maksimal ${maxMb} MB`);
+  }
+
   const form = new FormData();
   if (typeof File !== "undefined" && file instanceof File) {
     form.append("file", file);
@@ -254,6 +279,9 @@ export async function uploadQuotationExcel(
   quotationId: string | number,
   file: { uri?: string; name?: string; blob?: Blob },
 ): Promise<any> {
+  if (file.blob && file.blob.size > 15 * 1024 * 1024) {
+    throw new Error("Ukuran file melebihi batas maksimal 15 MB");
+  }
   const form = new FormData();
   if (file.blob) {
     form.append("file", file.blob, file.name || "penawaran.xlsx");
@@ -281,6 +309,9 @@ export async function uploadMasterImport(
   imported: number;
   failed: Array<{ row: number; error: string; data: Record<string, any> }>;
 }> {
+  if (file.blob && file.blob.size > 15 * 1024 * 1024) {
+    throw new Error("Ukuran file melebihi batas maksimal 15 MB");
+  }
   const form = new FormData();
   if (file.blob) {
     form.append("file", file.blob, file.name || `import-${type}.xlsx`);

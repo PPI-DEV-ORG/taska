@@ -59,7 +59,7 @@ export class RequestsController {
   }
 
   @Delete(":id")
-  @Require("requests", "A")
+  @Require("requests", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }
