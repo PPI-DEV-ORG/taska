@@ -74,6 +74,12 @@ export class InvoiceOutDto {
   clientPoId?: number;
 
   @IsOptional() @IsInt()
+  quotationId?: number;
+
+  @IsOptional() @IsString()
+  quotation?: string;
+
+  @IsOptional() @IsInt()
   projectId?: number;
 
   @IsOptional() @IsInt()
@@ -87,6 +93,9 @@ export class InvoiceOutDto {
 
   @IsOptional() @IsNumber() @Min(0)
   amount?: number;
+
+  @IsOptional() @IsNumber() @Min(0)
+  discount?: number;
 
   @IsOptional() @IsNumber() @Min(0)
   ppn?: number;

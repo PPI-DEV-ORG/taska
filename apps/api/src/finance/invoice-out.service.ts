@@ -155,8 +155,23 @@ export class InvoiceOutService {
         where,
         include: {
           customer: { select: { id: true, name: true } },
-          clientPo: { select: { id: true, number: true, amount: true } },
-          project: { select: { id: true, name: true } },
+          clientPo: {
+            select: {
+              id: true,
+              number: true,
+              amount: true,
+              quotationId: true,
+              quotation: { select: { id: true, number: true } },
+            },
+          },
+          project: {
+            select: {
+              id: true,
+              name: true,
+              quotationId: true,
+              quotation: { select: { id: true, number: true } },
+            },
+          },
           payments: { orderBy: { date: "desc" } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "dueDate", "createdAt"], "dueDate"),
@@ -164,7 +179,39 @@ export class InvoiceOutService {
       }),
       this.prisma.main.invoiceOut.count({ where }),
     ]);
-    const items = await Promise.all(rows.map((r) => this.sync(r)));
+
+    const invoiceIds = rows.map((r) => r.id);
+    const metaSettings = await this.prisma.main.systemSetting.findMany({
+      where: {
+        key: { in: invoiceIds.map((id) => this.metaKey(id)) },
+      },
+    });
+    const metaMap = new Map<number, any>();
+    for (const s of metaSettings) {
+      try {
+        const id = Number(s.key.replace("invoice:meta:", ""));
+        metaMap.set(id, JSON.parse(s.value));
+      } catch {}
+    }
+
+    const items = await Promise.all(
+      rows.map(async (r) => {
+        const synced = await this.sync(r);
+        const meta = metaMap.get(r.id) || {};
+        const qId = meta.quotationId ?? r.clientPo?.quotationId ?? r.project?.quotationId ?? undefined;
+        let qNum = meta.quotation ?? r.clientPo?.quotation?.number ?? r.project?.quotation?.number ?? undefined;
+        if (!qNum && r.description) {
+          const m = r.description.match(/(?:QUO|PNW)[-\w\/]+/i);
+          if (m) qNum = m[0];
+        }
+        return {
+          ...synced,
+          quotationId: qId,
+          quotation: qNum,
+          discount: meta.discount,
+        };
+      }),
+    );
     return paginate(items, total, q);
   }
 
@@ -217,12 +264,28 @@ export class InvoiceOutService {
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
 
     const meta = (await this.getMeta(id)) || {};
-    const relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    let relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    if (!relatedQuote && (meta.quotationId || row.description)) {
+      try {
+        const qId = meta.quotationId ? Number(meta.quotationId) : null;
+        if (qId) {
+          relatedQuote = await this.prisma.main.quotation.findUnique({ where: { id: qId } });
+        } else {
+          const match = (row.description || "").match(/(?:QUO|PNW)[-\w\/]+/i);
+          if (match) {
+            relatedQuote = await this.prisma.main.quotation.findFirst({
+              where: { number: { contains: match[0] } },
+            });
+          }
+        }
+      } catch {}
+    }
+
     let quoteMeta: any = null;
     if (relatedQuote) {
       try {
-        const qSetting = await this.prisma.main.systemSetting.findUnique({
-          where: { key: `quotation:meta:${relatedQuote.id}` },
+        const qSetting = await this.prisma.main.systemSetting.findFirst({
+          where: { key: { in: [`quotation:meta:${relatedQuote.id}`, `quotation.meta.${relatedQuote.id}`] } },
         });
         if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
       } catch {}
@@ -239,6 +302,9 @@ export class InvoiceOutService {
     return {
       ...synced,
       items: meta.items ?? quoteMeta?.items ?? [],
+      discount: Number(meta.discount ?? quoteMeta?.discount ?? quoteMeta?.disc ?? relatedQuote?.discount ?? 0),
+      quotationId: meta.quotationId ?? relatedQuote?.id ?? undefined,
+      quotation: meta.quotation ?? relatedQuote?.number ?? (row.description ? row.description.match(/(?:QUO|PNW)[-\w\/]+/i)?.[0] : undefined),
       subject: meta.subject ?? quoteMeta?.subject ?? "INVOICE PENAGIHAN",
       intro: meta.intro ?? quoteMeta?.intro ?? "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
       notesList: meta.notesList ?? meta.notes ?? [
@@ -262,14 +328,13 @@ export class InvoiceOutService {
     };
   }
 
-  private assertNotSales(user: RequestUser) {
+  private assertFinanceOrAdmin(user: RequestUser, message = "Hanya tim Finance yang dapat melakukan tindakan ini") {
     if ((user.role || "").toLowerCase() === "sales") {
-      throw new ForbiddenException("Hanya tim Finance yang dapat membuat dan mengubah invoice");
+      throw new ForbiddenException(message);
     }
   }
 
   async create(dto: InvoiceOutDto, user: RequestUser) {
-    this.assertNotSales(user);
     const number = dto.number?.trim() || (await this.docnum.next("invoiceOut"));
     const dup = await this.prisma.main.invoiceOut.findFirst({ where: { number } });
     if (dup) throw new BadRequestException(`Nomor ${number} sudah dipakai`);
@@ -314,6 +379,43 @@ export class InvoiceOutService {
         data: { refType: "invoiceOut", refId: String(row.id) },
       }).catch(() => {});
     }
+
+    if (
+      dto.items !== undefined ||
+      dto.discount !== undefined ||
+      dto.quotationId !== undefined ||
+      dto.quotation !== undefined ||
+      dto.subject !== undefined ||
+      dto.intro !== undefined ||
+      dto.notesList !== undefined ||
+      dto.city !== undefined ||
+      dto.kopText !== undefined ||
+      dto.kopLogoUrl !== undefined ||
+      dto.customerAddress !== undefined ||
+      dto.signerName !== undefined ||
+      dto.signerTitle !== undefined ||
+      dto.dpLabel !== undefined ||
+      dto.dpAmount !== undefined
+    ) {
+      await this.saveMeta(row.id, {
+        ...(dto.items !== undefined ? { items: dto.items } : {}),
+        ...(dto.discount !== undefined ? { discount: dto.discount } : {}),
+        ...(dto.quotationId !== undefined ? { quotationId: dto.quotationId } : {}),
+        ...(dto.quotation !== undefined ? { quotation: dto.quotation } : {}),
+        ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
+        ...(dto.intro !== undefined ? { intro: dto.intro } : {}),
+        ...(dto.notesList !== undefined ? { notesList: dto.notesList } : {}),
+        ...(dto.city !== undefined ? { city: dto.city } : {}),
+        ...(dto.kopText !== undefined ? { kopText: dto.kopText } : {}),
+        ...(dto.kopLogoUrl !== undefined ? { kopLogoUrl: dto.kopLogoUrl } : {}),
+        ...(dto.customerAddress !== undefined ? { customerAddress: dto.customerAddress } : {}),
+        ...(dto.signerName !== undefined ? { signerName: dto.signerName } : {}),
+        ...(dto.signerTitle !== undefined ? { signerTitle: dto.signerTitle } : {}),
+        ...(dto.dpLabel !== undefined ? { dpLabel: dto.dpLabel } : {}),
+        ...(dto.dpAmount !== undefined ? { dpAmount: dto.dpAmount } : {}),
+      });
+    }
+
     await this.audit.log({
       actor: user,
       action: "BUAT_INVOICE_KELUAR",
@@ -322,11 +424,18 @@ export class InvoiceOutService {
       detail: `${number} total Rp${total} — ${customer.name}`,
     });
     await this.syncProjectPayment(row.projectId);
-    return this.sync(row);
+    const synced = await this.sync(row);
+    const qNum = dto.quotation || (desc ? desc.match(/(?:QUO|PNW)[-\w\/]+/i)?.[0] : undefined);
+    return {
+      ...synced,
+      quotationId: dto.quotationId,
+      quotation: qNum,
+      discount: dto.discount,
+      items: dto.items,
+    };
   }
 
   async update(id: number, dto: InvoiceOutDto, user: RequestUser) {
-    this.assertNotSales(user);
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
 
@@ -363,6 +472,8 @@ export class InvoiceOutService {
 
     if (
       dto.items !== undefined ||
+      dto.discount !== undefined ||
+      dto.quotationId !== undefined ||
       dto.subject !== undefined ||
       dto.intro !== undefined ||
       dto.notesList !== undefined ||
@@ -377,6 +488,8 @@ export class InvoiceOutService {
     ) {
       await this.saveMeta(id, {
         ...(dto.items !== undefined ? { items: dto.items } : {}),
+        ...(dto.discount !== undefined ? { discount: dto.discount } : {}),
+        ...(dto.quotationId !== undefined ? { quotationId: dto.quotationId } : {}),
         ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
         ...(dto.intro !== undefined ? { intro: dto.intro } : {}),
         ...(dto.notesList !== undefined ? { notesList: dto.notesList } : {}),
@@ -406,7 +519,7 @@ export class InvoiceOutService {
   }
 
   async addPayment(id: number, dto: PaymentDto, user: RequestUser) {
-    this.assertNotSales(user);
+    this.assertFinanceOrAdmin(user, "Hanya tim Finance yang dapat mencatat pembayaran invoice");
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     if (row.status === "BATAL") throw new BadRequestException("Invoice dibatalkan");
@@ -456,7 +569,9 @@ export class InvoiceOutService {
   }
 
   async setStatus(id: number, status: string, user: RequestUser) {
-    this.assertNotSales(user);
+    if ((user.role || "").toLowerCase() === "sales" && ["PAID", "BATAL"].includes(status)) {
+      throw new ForbiddenException("Hanya tim Finance yang dapat menandai invoice Lunas atau Batal");
+    }
     if (!["DRAFT", "SENT", "PARTIAL", "PAID", "OVERDUE", "BATAL"].includes(status)) {
       throw new BadRequestException(`Status tidak dikenal: ${status}`);
     }
@@ -483,7 +598,7 @@ export class InvoiceOutService {
   }
 
   async remove(id: number, user: RequestUser) {
-    this.assertNotSales(user);
+    this.assertFinanceOrAdmin(user, "Hanya tim Finance yang dapat menghapus invoice");
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     await this.prisma.main.$transaction(async (tx) => {
@@ -613,7 +728,6 @@ export class InvoiceOutService {
   }
 
   async extractFile(buffer: Buffer, originalName?: string, user?: RequestUser) {
-    this.assertNotSales(user!);
     const filename = originalName || "invoice.xlsx";
     let parsed: any = null;
     if (filename.toLowerCase().endsWith(".xlsx")) {
@@ -640,7 +754,6 @@ export class InvoiceOutService {
   }
 
   async uploadExcel(id: number, buffer: Buffer, originalName?: string, user?: RequestUser) {
-    this.assertNotSales(user!);
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     const filename = originalName || `Invoice-${row.number.replace(/\//g, "-")}.xlsx`;
@@ -696,12 +809,28 @@ export class InvoiceOutService {
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
 
     const meta = (await this.getMeta(id)) || {};
-    const relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    let relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    if (!relatedQuote && (meta.quotationId || row.description)) {
+      try {
+        const qId = meta.quotationId ? Number(meta.quotationId) : null;
+        if (qId) {
+          relatedQuote = await this.prisma.main.quotation.findUnique({ where: { id: qId } });
+        } else {
+          const match = (row.description || "").match(/(?:QUO|PNW)[-\w\/]+/i);
+          if (match) {
+            relatedQuote = await this.prisma.main.quotation.findFirst({
+              where: { number: { contains: match[0] } },
+            });
+          }
+        }
+      } catch {}
+    }
+
     let quoteMeta: any = null;
     if (relatedQuote) {
       try {
-        const qSetting = await this.prisma.main.systemSetting.findUnique({
-          where: { key: `quotation:meta:${relatedQuote.id}` },
+        const qSetting = await this.prisma.main.systemSetting.findFirst({
+          where: { key: { in: [`quotation:meta:${relatedQuote.id}`, `quotation.meta.${relatedQuote.id}`] } },
         });
         if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
       } catch {}
@@ -717,9 +846,11 @@ export class InvoiceOutService {
       },
     ];
 
+    const discount = Number(meta.discount ?? quoteMeta?.discount ?? quoteMeta?.disc ?? relatedQuote?.discount ?? 0);
+    const itemsGrossTotal = items.reduce((acc: number, it: any) => acc + (Number(it.qty) || 0) * (Number(it.harga) || 0), 0);
     const isDp = row.type === "DP";
     const isTermin = row.type === "TERMIN";
-    const quoteTot = Number(relatedQuote?.total || row.amount) || 1;
+    const quoteTot = Number(relatedQuote?.total || (itemsGrossTotal > 0 ? itemsGrossTotal : row.amount)) || 1;
     const dpPct = Math.round((Number(row.amount) / quoteTot) * 100);
 
     const { buildQuotationXlsx } = await import("../crm/quotation-excel.js");
@@ -734,7 +865,8 @@ export class InvoiceOutService {
       subject: meta.subject || "INVOICE PENAGIHAN",
       intro: meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
       items,
-      total: Number(row.amount),
+      total: itemsGrossTotal > 0 ? itemsGrossTotal : Number(row.amount),
+      discount,
       ppn: Number(row.ppn),
       grandTotal: Number(row.total),
       dpLabel: meta.dpLabel ?? (isDp ? `DP (${dpPct}%)` : isTermin ? `Termin (${dpPct}%)` : undefined),
@@ -775,12 +907,28 @@ export class InvoiceOutService {
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
 
     const meta = (await this.getMeta(id)) || {};
-    const relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    let relatedQuote = row.clientPo?.quotation || row.project?.quotation;
+    if (!relatedQuote && (meta.quotationId || row.description)) {
+      try {
+        const qId = meta.quotationId ? Number(meta.quotationId) : null;
+        if (qId) {
+          relatedQuote = await this.prisma.main.quotation.findUnique({ where: { id: qId } });
+        } else {
+          const match = (row.description || "").match(/(?:QUO|PNW)[-\w\/]+/i);
+          if (match) {
+            relatedQuote = await this.prisma.main.quotation.findFirst({
+              where: { number: { contains: match[0] } },
+            });
+          }
+        }
+      } catch {}
+    }
+
     let quoteMeta: any = null;
     if (relatedQuote) {
       try {
-        const qSetting = await this.prisma.main.systemSetting.findUnique({
-          where: { key: `quotation:meta:${relatedQuote.id}` },
+        const qSetting = await this.prisma.main.systemSetting.findFirst({
+          where: { key: { in: [`quotation:meta:${relatedQuote.id}`, `quotation.meta.${relatedQuote.id}`] } },
         });
         if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
       } catch {}
@@ -796,11 +944,13 @@ export class InvoiceOutService {
       },
     ];
 
+    const discount = Number(meta.discount ?? quoteMeta?.discount ?? quoteMeta?.disc ?? relatedQuote?.discount ?? 0);
+    const itemsGrossTotal = items.reduce((acc: number, it: any) => acc + (Number(it.qty) || 0) * (Number(it.harga) || 0), 0);
     const isDp = row.type === "DP" || /dp/i.test(String(row.description || ""));
     const isTermin = row.type === "TERMIN" || /termin/i.test(String(row.description || ""));
     const parsedPctMatch = String(row.description || "").match(/\((\d+)%\)/);
     const parsedPct = parsedPctMatch ? Number(parsedPctMatch[1]) : undefined;
-    const quoteTot = Number(relatedQuote?.total || row.amount) || 1;
+    const quoteTot = Number(relatedQuote?.total || (itemsGrossTotal > 0 ? itemsGrossTotal : row.amount)) || 1;
     const dpPct = parsedPct || Math.round((Number(row.amount) / quoteTot) * 100) || 50;
 
     const { buildQuotationPdf } = await import("../crm/quotation-excel.js");
@@ -816,7 +966,8 @@ export class InvoiceOutService {
       subject: meta.subject || "INVOICE PENAGIHAN",
       intro: meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
       items,
-      total: Number(row.amount),
+      total: itemsGrossTotal > 0 ? itemsGrossTotal : Number(row.amount),
+      discount,
       ppn: Number(row.ppn),
       grandTotal: Number(row.total),
       dpLabel: meta.dpLabel ?? (isDp ? `DP (${dpPct}%)` : isTermin ? `Termin (${dpPct}%)` : undefined),

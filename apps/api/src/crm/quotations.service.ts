@@ -305,7 +305,7 @@ export class QuotationsService {
         ppn,
         discount,
         grandTotal,
-        currentVersion: grandTotal > 0 || items.length > 0 ? 1 : 0,
+        currentVersion: 0,
         validUntil: dto?.validUntil ? new Date(dto.validUntil) : undefined,
         status: mappedStatus as never,
       },
@@ -553,30 +553,32 @@ export class QuotationsService {
       user?.id,
     );
 
-    const ver = Math.max(1, row.currentVersion || 1);
-    await this.prisma.main.quotationVersion
-      .upsert({
-        where: { quotationId_version: { quotationId: id, version: ver } },
-        update: {
-          fileId: savedFile.id,
-          total: row.total,
-          ppn: row.ppn,
-          discount: row.discount,
-          grandTotal: row.grandTotal,
-        },
-        create: {
-          quotationId: id,
-          version: ver,
-          fileId: savedFile.id,
-          total: row.total,
-          ppn: row.ppn,
-          discount: row.discount,
-          grandTotal: row.grandTotal,
-          note: `Auto-generated Excel v${ver}`,
-          createdById: user?.id ?? row.ownerId,
-        },
-      })
-      .catch(() => {});
+    const ver = row.currentVersion;
+    if (ver > 0) {
+      await this.prisma.main.quotationVersion
+        .upsert({
+          where: { quotationId_version: { quotationId: id, version: ver } },
+          update: {
+            fileId: savedFile.id,
+            total: row.total,
+            ppn: row.ppn,
+            discount: row.discount,
+            grandTotal: row.grandTotal,
+          },
+          create: {
+            quotationId: id,
+            version: ver,
+            fileId: savedFile.id,
+            total: row.total,
+            ppn: row.ppn,
+            discount: row.discount,
+            grandTotal: row.grandTotal,
+            note: `Auto-generated Excel v${ver}`,
+            createdById: user?.id ?? row.ownerId,
+          },
+        })
+        .catch(() => {});
+    }
   }
 
   /** Download file Excel (.xlsx) penawaran yang selalu sinkron dengan data terbaru. */
@@ -910,6 +912,14 @@ export class QuotationsService {
       where: { id },
       data: { status: "SENT", sentAt: new Date() },
     });
+    if (row.currentVersion > 0) {
+      await this.prisma.main.quotationVersion
+        .updateMany({
+          where: { quotationId: id, version: row.currentVersion },
+          data: { note: `[STATUS:Terkirim] Versi ${row.currentVersion}` },
+        })
+        .catch(() => {});
+    }
     await this.audit.log({
       actor: user,
       action: "KIRIM_PENAWARAN",
@@ -918,6 +928,7 @@ export class QuotationsService {
       detail: row.number,
     });
     this.notifications.dataChange("quotations", "status", updated.id);
+    this.notifications.dataChange("quotations", "update", updated.id);
     return updated;
   }
 
@@ -956,14 +967,16 @@ export class QuotationsService {
   /** Revisi = versi baru, riwayat tidak boleh hilang (PRD #14). */
   async addVersion(id: number, dto: VersionDto, user: RequestUser) {
     const row = await this.getEditable(id, user);
-    const version = row.currentVersion + 1;
+    const version = (row.currentVersion || 0) + 1;
 
-    // Bekukan status versi sebelumnya (misal versi 1 ditolak)
-    const prevStatusLabel = row.status === "REJECTED" ? "Ditolak" : row.status === "APPROVED" ? "Disetujui" : "Ditolak";
-    await this.prisma.main.quotationVersion.updateMany({
-      where: { quotationId: id, version: row.currentVersion },
-      data: { note: `[STATUS:${prevStatusLabel}] Versi ${row.currentVersion}` },
-    }).catch(() => {});
+    // Bekukan status versi sebelumnya jika ada
+    if (row.currentVersion > 0) {
+      const prevStatusLabel = row.status === "REJECTED" ? "Ditolak" : row.status === "APPROVED" ? "Disetujui" : "Ditolak";
+      await this.prisma.main.quotationVersion.updateMany({
+        where: { quotationId: id, version: row.currentVersion },
+        data: { note: `[STATUS:${prevStatusLabel}] Versi ${row.currentVersion}` },
+      }).catch(() => {});
+    }
 
     const versionNote = dto.note?.trim()
       ? `[STATUS:Menunggu] ${dto.note.trim()}`

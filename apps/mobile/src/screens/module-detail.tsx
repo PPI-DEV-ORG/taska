@@ -65,7 +65,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     };
   }, [moduleKey, id, refreshIndex]);
 
-  const row = remoteRow ? { ...rowFromStore, ...remoteRow } : rowFromStore;
+  const row = remoteRow ? { ...remoteRow, ...rowFromStore } : rowFromStore;
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
@@ -327,7 +327,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     setMenu(false);
     if (s === status) return;
     if (def?.confirmStatuses?.includes(s)) setPending(s);
-    else setStatus(moduleKey, id, s);
+    else void setStatus(moduleKey, id, s).then(() => handleRefresh());
   }
 
   async function run(a: ModuleAction) {
@@ -450,8 +450,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       setInvoicePayOpen(true);
       return;
     }
-    if (a.status) setStatus(moduleKey, id, a.status);
-    else if (a.toast) toast(a.toast);
+    if (a.status) {
+      await setStatus(moduleKey, id, a.status);
+      handleRefresh();
+    } else if (a.toast) toast(a.toast);
     if (a.to && row) router.push(a.to(row) as any);
   }
 

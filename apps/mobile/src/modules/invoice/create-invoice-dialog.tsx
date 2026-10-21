@@ -60,10 +60,12 @@ export function CreateInvoiceDialog({
   open,
   onOpenChange,
   initialQuotation,
+  onSuccess,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialQuotation?: Row;
+  onSuccess?: () => void;
 }) {
   if (!open) return null;
 
@@ -72,6 +74,7 @@ export function CreateInvoiceDialog({
       <CreateInvoiceForm
         initialQuotation={initialQuotation}
         onClose={() => onOpenChange(false)}
+        onSuccess={onSuccess}
       />
     </Dialog>
   );
@@ -80,9 +83,11 @@ export function CreateInvoiceDialog({
 function CreateInvoiceForm({
   initialQuotation,
   onClose,
+  onSuccess,
 }: {
   initialQuotation?: Row;
   onClose: () => void;
+  onSuccess?: () => void;
 }) {
   const { data, toast, reload, addRow, pushHistory } = useApp();
 
@@ -182,15 +187,39 @@ function CreateInvoiceForm({
 
   const terminNumber = relatedExistingInvoices.length + 1;
 
-  // Total base deal DPP
-  const dealDpp = React.useMemo(() => {
+  // Active quotation discount
+  const quotationDisc = React.useMemo(() => {
+    const rawDisc = activeQuotation?.disc ?? activeQuotation?.discount ?? 0;
+    return Number(String(rawDisc).replace(/\D/g, "")) || 0;
+  }, [activeQuotation]);
+
+  // Total gross items / amount before discount
+  const grossDealDpp = React.useMemo(() => {
     if (items.length > 0) {
       return items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0);
     }
     if (activePo?.nilai) return Number(activePo.nilai);
+    if (activeQuotation?.total) return Number(activeQuotation.total);
     if (activeQuotation?.nilai) return Number(activeQuotation.nilai);
     return Number(String(customDpp).replace(/\D/g, "")) || 0;
   }, [items, activePo, activeQuotation, customDpp]);
+
+  // Deal DPP (total dasar setelah diskon)
+  const dealDpp = React.useMemo(() => {
+    return Math.max(0, grossDealDpp - quotationDisc);
+  }, [grossDealDpp, quotationDisc]);
+
+  const isNoPpn =
+    activeQuotation?.tipePpn === "No PPN (Tanpa PPN)" ||
+    activeQuotation?.ppnMode === "none" ||
+    (activeQuotation?.ppn === 0 && (quotationDisc > 0 || (activeQuotation?.total || 0) > 0));
+
+  const isIncludePpn =
+    activeQuotation?.tipePpn === "Include PPN (Sudah termasuk)" ||
+    activeQuotation?.ppnMode === "include";
+
+  const dealPpn = isNoPpn ? 0 : Math.round(dealDpp * 0.11);
+  const dealGrandTotal = dealDpp + dealPpn;
 
   // Total already billed in DPP
   const alreadyBilledDpp = React.useMemo(() => {
@@ -256,10 +285,10 @@ function CreateInvoiceForm({
       }
     }
 
-    const ppn = Math.round(dpp * 0.11);
+    const ppn = isNoPpn ? 0 : Math.round(dpp * 0.11);
     const total = dpp + ppn;
     return { currentDpp: dpp, currentPpn: ppn, currentTotal: total, calculatedPct: pct };
-  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp]);
+  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn]);
 
   // Handle file extraction
   async function handleExtractFile(file: any) {
@@ -352,8 +381,17 @@ function CreateInvoiceForm({
         po: activePo?.nomor || activePo?.number || undefined,
         jenis: invoiceType,
         nilai: currentDpp,
+        discount: quotationDisc > 0 ? quotationDisc : undefined,
         ppn: currentPpn,
         total: currentTotal,
+        items: items.length > 0 ? items : undefined,
+        subject: activeQuotation?.subject || "INVOICE PENAGIHAN",
+        intro: activeQuotation?.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
+        notesList: activeQuotation?.notesList,
+        city: activeQuotation?.city,
+        kopText: activeQuotation?.kopText,
+        kopLogoUrl: activeQuotation?.kopLogoUrl,
+        customerAddress: activeQuotation?.customerAddress || customerObj?.address || customerObj?.alamat,
         tanggal,
         jatuhTempo,
         status: "Belum dikirim",
@@ -368,6 +406,7 @@ function CreateInvoiceForm({
         }
         onClose();
         await reload();
+        await onSuccess?.();
       }
     } catch (e: any) {
       toast(e?.message ?? "Gagal membuat invoice", "danger");
@@ -749,7 +788,7 @@ function CreateInvoiceForm({
             <View className="gap-1.5 p-3 rounded-xl border border-border bg-card">
               <View className="flex-row justify-between items-center mb-1">
                 <Text className="text-xs font-bold text-foreground">Daftar Barang & Jasa ({items.length} Item)</Text>
-                <Text className="text-xs font-semibold text-primary">Subtotal: {rupiah(dealDpp)}</Text>
+                <Text className="text-xs font-semibold text-primary">Subtotal: {rupiah(grossDealDpp)}</Text>
               </View>
               {items.slice(0, 5).map((it, idx) => (
                 <View key={it.id || idx} className="flex-row justify-between items-center py-1 border-b border-border/40">
@@ -779,17 +818,31 @@ function CreateInvoiceForm({
 
         {/* Grand Total Summary Box */}
         <View className="p-3.5 rounded-xl bg-card border border-border gap-1.5 mb-2">
+          {quotationDisc > 0 ? (
+            <>
+              <View className="flex-row justify-between">
+                <Text className="text-xs text-muted-foreground">Subtotal Item:</Text>
+                <Text className="text-xs font-medium">{rupiah(grossDealDpp)}</Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text className="text-xs text-danger font-medium">Diskon Penawaran:</Text>
+                <Text className="text-xs font-semibold text-danger">- {rupiah(quotationDisc)}</Text>
+              </View>
+            </>
+          ) : null}
           <View className="flex-row justify-between">
             <Text className="text-xs text-muted-foreground">Total Dasar (DPP):</Text>
             <Text className="text-xs font-medium">{rupiah(dealDpp)}</Text>
           </View>
           <View className="flex-row justify-between">
-            <Text className="text-xs text-muted-foreground">PPN (11%):</Text>
-            <Text className="text-xs font-medium">{rupiah(Math.round(dealDpp * 0.11))}</Text>
+            <Text className="text-xs text-muted-foreground">
+              {isNoPpn ? "PPN (Tanpa PPN):" : isIncludePpn ? "PPN (Termasuk):" : "PPN (11%):"}
+            </Text>
+            <Text className="text-xs font-medium">{rupiah(dealPpn)}</Text>
           </View>
           <View className="flex-row justify-between pb-1.5 border-b border-border">
             <Text className="text-xs font-semibold text-foreground">Grand Total Kesepakatan:</Text>
-            <Text className="text-xs font-bold text-foreground">{rupiah(dealDpp + Math.round(dealDpp * 0.11))}</Text>
+            <Text className="text-xs font-bold text-foreground">{rupiah(dealGrandTotal)}</Text>
           </View>
 
           {/* Current Invoice Tagihan Breakdown */}
@@ -800,7 +853,9 @@ function CreateInvoiceForm({
             <Text className="text-xs font-bold text-primary">{rupiah(currentDpp)}</Text>
           </View>
           <View className="flex-row justify-between">
-            <Text className="text-xs text-muted-foreground">PPN Tagihan Ini (11%):</Text>
+            <Text className="text-xs text-muted-foreground">
+              {isNoPpn ? "PPN Tagihan (Tanpa PPN):" : "PPN Tagihan Ini (11%):"}
+            </Text>
             <Text className="text-xs font-medium">{rupiah(currentPpn)}</Text>
           </View>
           <View className="flex-row justify-between pt-1 border-t border-border">
