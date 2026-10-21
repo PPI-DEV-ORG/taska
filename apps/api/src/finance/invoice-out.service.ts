@@ -789,119 +789,13 @@ export class InvoiceOutService {
     return this.get(id);
   }
 
-  async exportExcel(id: number): Promise<{ buffer: Buffer; filename: string }> {
+  private async resolveInvoiceExportContext(id: number) {
     const row = await this.prisma.main.invoiceOut.findUnique({
       where: { id },
       include: {
         customer: true,
-        clientPo: {
-          include: {
-            quotation: true,
-          },
-        },
-        project: {
-          include: {
-            quotation: true,
-          },
-        },
-      },
-    });
-    if (!row) throw new NotFoundException("Invoice tidak ditemukan");
-
-    const meta = (await this.getMeta(id)) || {};
-    let relatedQuote = row.clientPo?.quotation || row.project?.quotation;
-    if (!relatedQuote && (meta.quotationId || row.description)) {
-      try {
-        const qId = meta.quotationId ? Number(meta.quotationId) : null;
-        if (qId) {
-          relatedQuote = await this.prisma.main.quotation.findUnique({ where: { id: qId } });
-        } else {
-          const match = (row.description || "").match(/(?:QUO|PNW)[-\w\/]+/i);
-          if (match) {
-            relatedQuote = await this.prisma.main.quotation.findFirst({
-              where: { number: { contains: match[0] } },
-            });
-          }
-        }
-      } catch {}
-    }
-
-    let quoteMeta: any = null;
-    if (relatedQuote) {
-      try {
-        const qSetting = await this.prisma.main.systemSetting.findFirst({
-          where: { key: { in: [`quotation:meta:${relatedQuote.id}`, `quotation.meta.${relatedQuote.id}`] } },
-        });
-        if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
-      } catch {}
-    }
-
-    const items = meta.items ?? quoteMeta?.items ?? [
-      {
-        id: "1",
-        item: row.description?.replace(/\[by:\d+\]/g, "").trim() || "Pengadaan Barang & Jasa",
-        qty: 1,
-        satuan: "Lot",
-        harga: Number(row.amount),
-      },
-    ];
-
-    const discount = Number(meta.discount ?? quoteMeta?.discount ?? quoteMeta?.disc ?? relatedQuote?.discount ?? 0);
-    const itemsGrossTotal = items.reduce((acc: number, it: any) => acc + (Number(it.qty) || 0) * (Number(it.harga) || 0), 0);
-    const isDp = row.type === "DP";
-    const isTermin = row.type === "TERMIN";
-    const quoteTot = Number(relatedQuote?.total || (itemsGrossTotal > 0 ? itemsGrossTotal : row.amount)) || 1;
-    const dpPct = Math.round((Number(row.amount) / quoteTot) * 100);
-
-    const { buildQuotationXlsx } = await import("../crm/quotation-excel.js");
-    const buffer = await buildQuotationXlsx({
-      quoteNo: row.number,
-      date: row.date,
-      city: meta.city || quoteMeta?.city || "Bekasi",
-      customerName: row.customer?.name || "-",
-      customerAddress: meta.customerAddress || quoteMeta?.customerAddress || row.customer?.address || "Di Tempat",
-      leadName: row.project?.name || row.clientPo?.number || "Pekerjaan",
-      kopText: meta.kopText || quoteMeta?.kopText,
-      subject: meta.subject || "INVOICE PENAGIHAN",
-      intro: meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
-      items,
-      total: itemsGrossTotal > 0 ? itemsGrossTotal : Number(row.amount),
-      discount,
-      ppn: Number(row.ppn),
-      grandTotal: Number(row.total),
-      dpLabel: meta.dpLabel ?? (isDp ? `DP (${dpPct}%)` : isTermin ? `Termin (${dpPct}%)` : undefined),
-      dpAmount: meta.dpAmount ?? (isDp || isTermin ? Number(row.total) : undefined),
-      notes: meta.notesList ?? meta.notes ?? [
-        "Pembayaran dapat di Transfer ke:",
-        "Bank : Bank Mandiri",
-        "No. Rek : 1670011359410",
-        "Nama : Ghina Multi Prima",
-        "Alamat : Jl. Bintara Jaya VIII RT.008/RW.009",
-        "Bekasi Barat Bintara Jaya Bekasi",
-      ],
-      signerName: meta.signerName || "Finance",
-      signerTitle: meta.signerTitle || "Finance & Accounting",
-    });
-
-    const filename = `Invoice-${row.number.replace(/\//g, "-")}.xlsx`;
-    return { buffer, filename };
-  }
-
-  async exportPdf(id: number): Promise<{ buffer: Buffer; filename: string }> {
-    const row = await this.prisma.main.invoiceOut.findUnique({
-      where: { id },
-      include: {
-        customer: true,
-        clientPo: {
-          include: {
-            quotation: true,
-          },
-        },
-        project: {
-          include: {
-            quotation: true,
-          },
-        },
+        clientPo: { include: { quotation: true } },
+        project: { include: { quotation: true } },
       },
     });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
@@ -953,38 +847,76 @@ export class InvoiceOutService {
     const quoteTot = Number(relatedQuote?.total || (itemsGrossTotal > 0 ? itemsGrossTotal : row.amount)) || 1;
     const dpPct = parsedPct || Math.round((Number(row.amount) / quoteTot) * 100) || 50;
 
-    const { buildQuotationPdf } = await import("../crm/quotation-excel.js");
-    const buffer = await buildQuotationPdf({
-      quoteNo: row.number,
-      date: row.date,
-      city: meta.city || quoteMeta?.city || "Bekasi",
-      customerName: row.customer?.name || "-",
-      customerAddress: meta.customerAddress || quoteMeta?.customerAddress || row.customer?.address || "Di Tempat",
-      leadName: row.project?.name || row.clientPo?.number || "Pekerjaan",
-      kopText: meta.kopText || quoteMeta?.kopText,
-      kopLogoUrl: meta.kopLogoUrl || quoteMeta?.kopLogoUrl,
-      subject: meta.subject || "INVOICE PENAGIHAN",
-      intro: meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
-      items,
-      total: itemsGrossTotal > 0 ? itemsGrossTotal : Number(row.amount),
-      discount,
-      ppn: Number(row.ppn),
-      grandTotal: Number(row.total),
-      dpLabel: meta.dpLabel ?? (isDp ? `DP (${dpPct}%)` : isTermin ? `Termin (${dpPct}%)` : undefined),
-      dpAmount: meta.dpAmount ?? (isDp || isTermin ? Number(row.total) : undefined),
-      notes: meta.notesList ?? meta.notes ?? [
-        "Pembayaran dapat di Transfer ke:",
-        "Bank : Bank Mandiri",
-        "No. Rek : 1670011359410",
-        "Nama : Ghina Multi Prima",
-        "Alamat : Jl. Bintara Jaya VIII RT.008/RW.009",
-        "Bekasi Barat Bintara Jaya Bekasi",
-      ],
-      signerName: meta.signerName || "Finance",
-      signerTitle: meta.signerTitle || "Finance & Accounting",
+    const dpLabel = meta.dpLabel ?? (isDp ? `DP (${dpPct}%)` : isTermin ? `Termin (${dpPct}%)` : undefined);
+    const dpAmount = meta.dpAmount ?? (isDp || isTermin ? Number(row.total) : undefined);
+    const notes = meta.notesList ?? meta.notes ?? [
+      "Pembayaran dapat di Transfer ke:",
+      "Bank : Bank Mandiri",
+      "No. Rek : 1670011359410",
+      "Nama : Ghina Multi Prima",
+      "Alamat : Jl. Bintara Jaya VIII RT.008/RW.009",
+      "Bekasi Barat Bintara Jaya Bekasi",
+    ];
+
+    return { row, meta, quoteMeta, items, discount, itemsGrossTotal, dpLabel, dpAmount, notes };
+  }
+
+  async exportExcel(id: number): Promise<{ buffer: Buffer; filename: string }> {
+    const ctx = await this.resolveInvoiceExportContext(id);
+    const { buildQuotationXlsx } = await import("../crm/quotation-excel.js");
+    const buffer = await buildQuotationXlsx({
+      quoteNo: ctx.row.number,
+      date: ctx.row.date,
+      city: ctx.meta.city || ctx.quoteMeta?.city || "Bekasi",
+      customerName: ctx.row.customer?.name || "-",
+      customerAddress: ctx.meta.customerAddress || ctx.quoteMeta?.customerAddress || ctx.row.customer?.address || "Di Tempat",
+      leadName: ctx.row.project?.name || ctx.row.clientPo?.number || "Pekerjaan",
+      kopText: ctx.meta.kopText || ctx.quoteMeta?.kopText,
+      subject: ctx.meta.subject || "INVOICE PENAGIHAN",
+      intro: ctx.meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
+      items: ctx.items,
+      total: ctx.itemsGrossTotal > 0 ? ctx.itemsGrossTotal : Number(ctx.row.amount),
+      discount: ctx.discount,
+      ppn: Number(ctx.row.ppn),
+      grandTotal: Number(ctx.row.total),
+      dpLabel: ctx.dpLabel,
+      dpAmount: ctx.dpAmount,
+      notes: ctx.notes,
+      signerName: ctx.meta.signerName || "Finance",
+      signerTitle: ctx.meta.signerTitle || "Finance & Accounting",
     });
 
-    const filename = `Invoice-${row.number.replace(/\//g, "-")}.pdf`;
+    const filename = `Invoice-${ctx.row.number.replace(/\//g, "-")}.xlsx`;
+    return { buffer, filename };
+  }
+
+  async exportPdf(id: number): Promise<{ buffer: Buffer; filename: string }> {
+    const ctx = await this.resolveInvoiceExportContext(id);
+    const { buildQuotationPdf } = await import("../crm/quotation-excel.js");
+    const buffer = await buildQuotationPdf({
+      quoteNo: ctx.row.number,
+      date: ctx.row.date,
+      city: ctx.meta.city || ctx.quoteMeta?.city || "Bekasi",
+      customerName: ctx.row.customer?.name || "-",
+      customerAddress: ctx.meta.customerAddress || ctx.quoteMeta?.customerAddress || ctx.row.customer?.address || "Di Tempat",
+      leadName: ctx.row.project?.name || ctx.row.clientPo?.number || "Pekerjaan",
+      kopText: ctx.meta.kopText || ctx.quoteMeta?.kopText,
+      kopLogoUrl: ctx.meta.kopLogoUrl || ctx.quoteMeta?.kopLogoUrl,
+      subject: ctx.meta.subject || "INVOICE PENAGIHAN",
+      intro: ctx.meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
+      items: ctx.items,
+      total: ctx.itemsGrossTotal > 0 ? ctx.itemsGrossTotal : Number(ctx.row.amount),
+      discount: ctx.discount,
+      ppn: Number(ctx.row.ppn),
+      grandTotal: Number(ctx.row.total),
+      dpLabel: ctx.dpLabel,
+      dpAmount: ctx.dpAmount,
+      notes: ctx.notes,
+      signerName: ctx.meta.signerName || "Finance",
+      signerTitle: ctx.meta.signerTitle || "Finance & Accounting",
+    });
+
+    const filename = `Invoice-${ctx.row.number.replace(/\//g, "-")}.pdf`;
     return { buffer, filename };
   }
 }

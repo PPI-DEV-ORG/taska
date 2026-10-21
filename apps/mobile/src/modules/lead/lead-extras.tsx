@@ -125,6 +125,32 @@ export function LeadExtras({ row }: { row: Row }) {
     setLostReasonOpen(false);
   }
 
+  async function handleCreateProject() {
+    const custName = row.perusahaan || row.customer || "Klien";
+    const projName = row.nama
+      ? row.nama.toLowerCase().startsWith("project")
+        ? row.nama
+        : `Project ${row.nama}`
+      : `Project ${custName}`;
+    await addRow("projects", {
+      nama: projName,
+      customer: custName,
+      perusahaan: custName,
+      customerId: row.customerId,
+      quotationId: quotation?.id ? Number(quotation.id) : undefined,
+      penawaran: quotation?.nomor,
+      lead: row.nama,
+      leadId: row.id,
+      jenis: "Customer",
+      pm: data.users?.find((u: any) => u.role === "pm")?.nama || "Dimas Prasetyo",
+      mulai: new Date().toISOString().slice(0, 10),
+      selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
+      status: "Berjalan",
+    });
+    toast("Project baru berhasil dibuat");
+    router.push("/leads");
+  }
+
   return (
     <>
       <Panel
@@ -175,6 +201,56 @@ export function LeadExtras({ row }: { row: Row }) {
           </View>
         )}
       </Panel>
+
+      {row.status === "Won" || (data.projects ?? []).some((p: Row) => (p.leadId && String(p.leadId) === String(row.id)) || (quotation && p.quotationId && String(p.quotationId) === String(quotation.id))) ? (
+        <Panel
+          title="Project Terkait"
+          subtitle="Prospek yang berhasil (Won) dapat langsung dilanjutkan ke pengerjaan Project."
+          right={
+            <Button size="sm" onPress={handleCreateProject} className="flex-row items-center gap-1">
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs">Jadikan Project</Text>
+            </Button>
+          }
+        >
+          {(() => {
+            const relProjects = (data.projects ?? []).filter(
+              (p: Row) =>
+                (p.leadId && String(p.leadId) === String(row.id)) ||
+                (quotation && p.quotationId && String(p.quotationId) === String(quotation.id))
+            );
+            if (relProjects.length === 0) {
+              return (
+                <Text className="py-2 text-xs text-muted-foreground">
+                  Lead ini berstatus Won. Klik tombol &quot;Jadikan Project&quot; untuk membuat project baru.
+                </Text>
+              );
+            }
+            return (
+              <View className="gap-2">
+                {relProjects.map((proj: Row) => (
+                  <View key={proj.id} className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80">
+                    <View className="flex-1 mr-2">
+                      <Text className="text-xs font-bold text-foreground">{proj.nama}</Text>
+                      <Text className="text-[11px] text-muted-foreground">
+                        PM: {proj.pm || "-"} · Status: {proj.status || "Berjalan"}
+                      </Text>
+                    </View>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2.5"
+                      onPress={() => router.push(`/projects/${proj.id}` as any)}
+                    >
+                      <Text className="text-xs">Buka Project</Text>
+                    </Button>
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
+        </Panel>
+      ) : null}
 
       <Panel
         title="PIC & Kepemilikan Lead"

@@ -1098,15 +1098,28 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       const rawType = row.jenis ?? row.type;
       const mappedType = toEnum("projectType", rawType);
       const safeType = allowedTypes.includes(mappedType) ? mappedType : "CUSTOMER";
+
+      let leadObj: any = null;
+      if (row.leadId) {
+        leadObj = (db?.leads ?? []).find((l: any) => Number(l.id) === Number(row.leadId));
+      } else if (row.lead && row.lead !== "-") {
+        const leadName = (String(row.lead).split(" · ")[0] ?? "").trim().toLowerCase();
+        leadObj = (db?.leads ?? []).find((l: any) => l.nama?.toLowerCase() === leadName || l.name?.toLowerCase() === leadName);
+      }
+
+      const qObj = leadObj
+        ? (db?.quotations ?? []).find((q: any) => (q.leadId && String(q.leadId) === String(leadObj.id)) || (q.lead && q.lead.toLowerCase() === leadObj.nama?.toLowerCase()))
+        : null;
+
       const qId = row.quotationId != null && row.quotationId !== ""
         ? Number(row.quotationId)
-        : findId(db?.quotations, row.penawaran);
-      const qObj = qId ? (db?.quotations ?? []).find((q: any) => Number(q.id) === qId) : null;
+        : (qObj?.id ? Number(qObj.id) : findId(db?.quotations, row.penawaran));
+
       const custId = row.customerId != null && row.customerId !== ""
         ? Number(row.customerId)
-        : findId(db?.customers, row.customer ?? row.perusahaan) ?? (qObj?.customerId != null ? Number(qObj.customerId) : undefined);
+        : (leadObj?.customerId ? Number(leadObj.customerId) : (findId(db?.customers, row.customer ?? row.perusahaan) ?? (qObj?.customerId != null ? Number(qObj.customerId) : undefined)));
       const custObj = db?.customers?.find((c: any) => c.id === custId || c.nama === (row.customer ?? row.perusahaan));
-      const custName = custObj?.nama || row.customer || row.perusahaan || "Customer";
+      const custName = custObj?.nama || row.customer || row.perusahaan || leadObj?.perusahaan || leadObj?.customer || "Customer";
       const rawProjName = row.nama ?? row.name;
       const projName = rawProjName && !String(rawProjName).includes("undefined")
         ? rawProjName
@@ -1575,6 +1588,19 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   } else if (module === "projects") {
     if (patch.jenis !== undefined) out.type = toEnum("projectType", patch.jenis);
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.lead !== undefined) {
+      if (patch.lead === "-" || !patch.lead) {
+        out.quotationId = null;
+      } else {
+        const selName = (String(patch.lead).split(" · ")[0] ?? "").trim().toLowerCase();
+        const leadObj = (db?.leads ?? []).find((l: any) => l.nama?.toLowerCase() === selName || l.name?.toLowerCase() === selName);
+        const qObj = leadObj
+          ? (db?.quotations ?? []).find((q: any) => (q.leadId && String(q.leadId) === String(leadObj.id)) || (q.lead && q.lead.toLowerCase() === leadObj.nama?.toLowerCase()))
+          : null;
+        if (qObj?.id) out.quotationId = Number(qObj.id);
+        if (leadObj?.customerId && out.customerId === undefined) out.customerId = Number(leadObj.customerId);
+      }
+    }
     if (patch.penawaran !== undefined) {
       out.quotationId = patch.penawaran === "-" || !patch.penawaran ? null : (findId(db?.quotations, patch.penawaran) ?? null);
     }

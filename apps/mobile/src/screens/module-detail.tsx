@@ -461,7 +461,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const filteredActions = (def.actions ?? []).filter((a) => {
     if (isLead) {
       if (a.label === "Download template penawaran" && !canOfferLead) return false;
-      if (a.label === "Jadikan project" && (leadProject || row.status === "Won" || row.status === "Lost")) return false;
+      if (a.label === "Jadikan project" && row.status === "Lost") return false;
     }
     if (moduleKey === "invoices" && a.label === "Catat pembayaran") {
       const isPaid = row.status === "Lunas" || String(row.rawStatus).toUpperCase() === "PAID" || (row.total > 0 && row.terbayar >= row.total);
