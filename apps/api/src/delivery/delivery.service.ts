@@ -430,6 +430,14 @@ export class DeliveryService {
         href: `/delivery-notes/${id}`,
       });
     }
+    if (dto.status === "DITERIMA") {
+      await this.notifications.notify({
+        roles: ["GUDANG", "PM"],
+        kind: "SURAT",
+        text: `Surat jalan ${row.number} telah diterima di lokasi tujuan`,
+        href: `/delivery-notes/${id}`,
+      });
+    }
     this.notifications.dataChange("delivery-notes", "status", updated.id);
     return updated;
   }
