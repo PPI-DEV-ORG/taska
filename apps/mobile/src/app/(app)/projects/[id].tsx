@@ -818,7 +818,10 @@ export default function ProjectDetailScreen() {
         initialRow={project}
         mode="edit"
         submitLabel="Simpan Perubahan"
-        onSubmit={(patch) => patchRow("projects", project.id, patch)}
+        onSubmit={async (patch) => {
+          await patchRow("projects", project.id, patch);
+          await reload();
+        }}
       />
 
       <ConfirmDialog

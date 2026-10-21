@@ -97,6 +97,7 @@ export class ProjectsService {
               lead: { select: { id: true, name: true } },
             },
           },
+          members: { include: { user: { select: { id: true, name: true, role: true } } } },
           _count: { select: { members: true, tasks: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["startDate", "endDate", "createdAt"], "startDate"),
@@ -263,8 +264,24 @@ export class ProjectsService {
 
     const type = dto.type ?? project.type;
     if (dto.picId !== undefined && dto.picId !== project.picId) {
-      const pic = await this.prisma.main.user.findUnique({ where: { id: dto.picId } });
-      if (!pic) throw new NotFoundException("PIC tidak ditemukan");
+      if (dto.picId !== null) {
+        const pic = await this.prisma.main.user.findUnique({ where: { id: dto.picId } });
+        if (!pic) throw new NotFoundException("PIC tidak ditemukan");
+      }
+    }
+
+    let validMemberIds: number[] | undefined = undefined;
+    if (dto.memberIds !== undefined) {
+      if (dto.memberIds.length === 0) {
+        validMemberIds = [];
+      } else {
+        const existingUsers = await this.prisma.main.user.findMany({
+          where: { id: { in: dto.memberIds } },
+          select: { id: true },
+        });
+        const existingSet = new Set(existingUsers.map((u) => u.id));
+        validMemberIds = dto.memberIds.filter((uid) => existingSet.has(uid));
+      }
     }
 
     const updated = await this.prisma.main.project.update({
@@ -273,7 +290,7 @@ export class ProjectsService {
         name: dto.name ?? project.name,
         type,
         customerId: dto.customerId !== undefined ? dto.customerId : project.customerId,
-        picId: dto.picId ?? project.picId,
+        picId: dto.picId !== undefined ? dto.picId : project.picId,
         quotationId: dto.quotationId !== undefined ? dto.quotationId : project.quotationId,
         startDate: dto.startDate ? new Date(dto.startDate) : project.startDate,
         endDate: dto.endDate !== undefined ? (dto.endDate ? new Date(dto.endDate) : null) : project.endDate,
@@ -284,8 +301,8 @@ export class ProjectsService {
         bastFileId: dto.bastFileId !== undefined ? dto.bastFileId : project.bastFileId,
         doFileId: dto.doFileId !== undefined ? dto.doFileId : project.doFileId,
         notes: dto.notes !== undefined ? dto.notes : project.notes,
-        ...(dto.memberIds
-          ? { members: { deleteMany: {}, create: dto.memberIds.map((userId) => ({ userId })) } }
+        ...(validMemberIds !== undefined
+          ? { members: { deleteMany: {}, create: validMemberIds.map((userId) => ({ userId })) } }
           : {}),
       },
       include: {

@@ -656,8 +656,28 @@ export function FormDialog({
     if (def?.key === "po-client" && row.penawaran) {
       row.penawaran = (String(row.penawaran).split(" - ")[0] ?? "").trim();
     }
-    if (def?.key === "projects" && row.lead) {
-      row.lead = (String(row.lead).split(" · ")[0] ?? "").trim();
+    if (def?.key === "projects") {
+      if (row.lead) {
+        row.lead = (String(row.lead).split(" · ")[0] ?? "").trim();
+      }
+      const allUsers = (data.users && data.users.length > 0) ? data.users : fallbackUsers;
+      if (row.pm) {
+        const pmMatch = allUsers.find((u: any) => {
+          const nm = String(u.name || u.nama || "").trim().toLowerCase();
+          return nm === String(row.pm).trim().toLowerCase();
+        });
+        if (pmMatch?.id) row.pmId = Number(pmMatch.id);
+      }
+      if (row.tim !== undefined) {
+        const names = String(row.tim)
+          .split(",")
+          .map((s) => (s.split("(")[0] ?? "").trim().toLowerCase())
+          .filter(Boolean);
+        row.memberIds = allUsers
+          .filter((u: any) => names.includes(String(u.name ?? u.nama ?? "").trim().toLowerCase()))
+          .map((u: any) => Number(u.id))
+          .filter((x: number) => !Number.isNaN(x) && x > 0);
+      }
     }
     if (def?.key === "invoices") {
       const nilai = row.nilai || 0;
