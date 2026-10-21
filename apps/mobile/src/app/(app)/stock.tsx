@@ -37,7 +37,22 @@ const TABS = [
 
 export default function StockScreen() {
   const router = useRouter();
-  const { data, toast, reload } = useApp();
+  const { data, toast, reload, refreshModule } = useApp();
+
+  const hasFetchedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
+    if (refreshModule) {
+      void Promise.all([
+        refreshModule("products"),
+        refreshModule("warehouses"),
+        refreshModule("serials"),
+        refreshModule("movements"),
+        refreshModule("reservations"),
+      ]);
+    }
+  }, [refreshModule]);
 
   const products: Row[] = data.products ?? [];
   const warehouses: Row[] = data.warehouses ?? [];

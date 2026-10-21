@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Platform } from "react-native";
 import { colorScheme } from "nativewind";
-import { MODULES, ROLE_LABEL, type Notif, type Row, type User } from "@/constants/modules";
+import { MODULES, ROLE_LABEL, NAV_BY_ROLE, CAN_APPROVE, type Notif, type Row, type User, type Role } from "@/constants/modules";
 import { ToastHost, type ToastItem } from "@/components/taska/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens, isNetworkError } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
@@ -109,6 +109,7 @@ type Ctx = {
   pendingSyncCount: number;
   syncOfflineQueue: () => Promise<void>;
   reload: () => Promise<void>;
+  refreshModule: (module: string) => Promise<Row[]>;
   hydrated: boolean;
   theme: "dark" | "light";
   toggleTheme: () => void;
@@ -267,25 +268,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
 
-  const loadAll = React.useCallback(async () => {
-    const [pairs, taskRows, appr, notifRes, stockRes] = await Promise.all([
-      Promise.all(EAGER_MODULES.map(async (m) => [m, await fetchList(m)] as const)),
-      (async () => {
-        try {
-          const projectsRes = await api<Page<any>>("GET", "/projects?limit=200");
-          return await fetchTasks(adaptRows("projects", projectsRes.items));
-        } catch {
-          return [] as Row[];
-        }
-      })(),
-      (async () => {
-        try {
-          const r = await api<{ items: any[] }>("GET", "/approvals/pending");
-          return adaptApprovalList(r.items);
-        } catch {
-          return [] as ApprovalRow[];
-        }
-      })(),
+  const userRef = React.useRef<User | null>(user);
+  React.useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  const loadAll = React.useCallback(async (targetModules?: readonly string[], targetUser?: User | null) => {
+    const activeUser = targetUser ?? userRef.current;
+    const role = (activeUser?.role || "").toLowerCase() as Role;
+    const navItems = role && NAV_BY_ROLE[role] ? NAV_BY_ROLE[role] : [];
+    const roleModuleKeys = new Set(navItems.map((n) => n.key));
+
+    const ESSENTIAL_ALWAYS = new Set(["users", "customers", "projects", "leads", "quotations", "invoices"]);
+
+    const LAZY_MODULES = new Set([
+      "audit-log", "serials", "movements", "reservations", "opname", "damage-reports",
+      "costCenters", "expenseCategories", "lostReasons", "leadSources", "productCategories", "invoiceIn",
+      "suppliers", "warehouses", "followups",
+    ]);
+
+    const modulesToFetch = (targetModules ?? EAGER_MODULES).filter((m) => {
+      if (LAZY_MODULES.has(m)) return false;
+      if (ESSENTIAL_ALWAYS.has(m)) return true;
+      if (role === "super_admin") return true;
+      return roleModuleKeys.has(m);
+    });
+
+    const isApprover = role && CAN_APPROVE.includes(role);
+    const hasStockNav = roleModuleKeys.has("stock") || roleModuleKeys.has("stockView") || role === "super_admin" || role === "gudang";
+
+    const [pairs, notifRes, appr, stockRes] = await Promise.all([
+      Promise.all(modulesToFetch.map(async (m) => [m, await fetchList(m)] as const)),
       (async () => {
         try {
           return await api<Page<any>>("GET", "/notifications?limit=50");
@@ -294,6 +307,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       })(),
       (async () => {
+        if (!isApprover) return [] as ApprovalRow[];
+        try {
+          const r = await api<{ items: any[] }>("GET", "/approvals/pending");
+          return adaptApprovalList(r.items);
+        } catch {
+          return [] as ApprovalRow[];
+        }
+      })(),
+      (async () => {
+        if (!hasStockNav) return null;
         try {
           return await api<Page<any>>("GET", "/stock/summary?limit=200");
         } catch {
@@ -302,16 +325,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })(),
     ]);
 
-    const next = emptyDB();
-    for (const [m, rows] of pairs) (next as any)[m] = rows;
-    next.tasks = taskRows;
-    next.stockSummary = stockRes?.items ?? [];
-    writeStorageJson(STORAGE_CACHE_DB_KEY, next);
-    const withOffline = overlayPendingAdds(next, offlineQueueRef.current);
-    setData(withOffline);
-    setApprovals(appr);
-    setNotifs(adaptNotifList(notifRes?.items));
-    return withOffline;
+    let withOfflineResult: DB | null = null;
+    setData((prev) => {
+      const next = { ...prev };
+      for (const [m, rows] of pairs) (next as any)[m] = rows;
+      if (stockRes?.items) next.stockSummary = stockRes.items;
+      writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+      withOfflineResult = overlayPendingAdds(next, offlineQueueRef.current);
+      return withOfflineResult;
+    });
+    if (appr) setApprovals(appr);
+    if (notifRes) setNotifs(adaptNotifList(notifRes.items));
+    return withOfflineResult;
   }, []);
 
   const login = React.useCallback(
@@ -397,7 +422,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setUser(u);
         writeStorageJson(STORAGE_CACHE_USER_KEY, u);
         setOffline(false);
-        await loadAll();
+        await loadAll(undefined, u);
         void ensureNotifPermission();
       } catch (err: any) {
         if (isNetworkError(err)) {
@@ -416,7 +441,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     })();
     return () => { alive = false; };
-  }, [loadAll]);
+  }, []);
 
   // Browser online/offline event listener + auto-ping API ketika offline atau ada antrean
   React.useEffect(() => {
@@ -1049,11 +1074,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toast, offline, setOffline,
       pendingSyncCount: pendingQueue.length,
       syncOfflineQueue,
-      reload, hydrated, theme, toggleTheme,
+      reload, refreshModule, hydrated, theme, toggleTheme,
     }),
     [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
-     toast, offline, pendingQueue.length, syncOfflineQueue, reload, hydrated, theme, toggleTheme],
+     toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme],
   );
 
   return (

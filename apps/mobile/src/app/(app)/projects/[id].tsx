@@ -42,7 +42,7 @@ type TabKey = typeof TABS[number];
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { data, user, addRow, setStatus, patchRow, deleteRow, history, toast, reload } = useApp();
+  const { data, user, addRow, setStatus, patchRow, deleteRow, history, toast, reload, refreshModule } = useApp();
 
   const [activeTab, setActiveTab] = React.useState<TabKey>("Ringkasan");
   const [taskModalOpen, setTaskModalOpen] = React.useState(false);
@@ -397,7 +397,7 @@ export default function ProjectDetailScreen() {
                           quotationId: Number(project.quotationId),
                         });
                         await loadRequirements();
-                        await reload();
+                        await refreshModule("projects");
                         toast(
                           res?.imported > 0
                             ? `${res.imported} item berhasil ditarik dari Penawaran`
@@ -454,7 +454,7 @@ export default function ProjectDetailScreen() {
                       try {
                         await api("DELETE", `/projects/${project.id}/requirements/${r.id}`);
                         await loadRequirements();
-                        await reload();
+                        await refreshModule("projects");
                         toast("Kebutuhan barang & request berhasil dihapus");
                       } catch (e: any) {
                         toast(e?.message ?? "Gagal menghapus", "danger");
@@ -521,7 +521,7 @@ export default function ProjectDetailScreen() {
                         }
                         try {
                           await api("DELETE", `/requests/${pr.id}`);
-                          await reload();
+                          await refreshModule("purchase-requests");
                           await loadRequirements();
                           toast("Request barang berhasil dihapus");
                         } catch (err: any) {
@@ -594,7 +594,6 @@ export default function ProjectDetailScreen() {
                 try {
                   await patchRow("projects", project.id, { [fieldKey]: fileId });
                   toast(`${item.label} berhasil diperbarui`);
-                  await reload();
                 } catch (err: any) {
                   toast(err?.message || "Gagal memperbarui file", "danger");
                 }
@@ -736,7 +735,6 @@ export default function ProjectDetailScreen() {
               qty: Math.max(1, Math.round(Number(v.qty) || 1)),
             });
             await loadRequirements();
-            await reload();
             toast(
               res?.purchaseRequestCreated
                 ? "Stok tersedia di-reserve & kekurangan otomatis dibuatkan Request ke Procurement"
@@ -801,7 +799,6 @@ export default function ProjectDetailScreen() {
               reason: v.catatan || `Retur sisa material proyek ${project.nama}`,
             });
             await loadRequirements();
-            await reload();
             toast(`Sisa material ${prod.nama} berhasil diretur ke gudang`);
           } catch (e: any) {
             toast(e?.message ?? "Gagal memproses retur barang", "danger");

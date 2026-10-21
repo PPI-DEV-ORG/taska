@@ -34,7 +34,7 @@ import { Line } from "@/modules/shared/line";
 
 export function LeadExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { toast, data, addRow, patchRow, setStatus, pushHistory, user, reload, createQuotationFromLead } = useApp();
+  const { toast, data, addRow, patchRow, setStatus, pushHistory, user, reload, refreshModule, createQuotationFromLead } = useApp();
   
   const leadQuotations = React.useMemo(() => {
     return (data.quotations ?? []).filter(
@@ -784,7 +784,7 @@ export function LeadExtras({ row }: { row: Row }) {
         onOpenChange={setInvoiceModalOpen}
         initialQuotation={quotation}
         onSuccess={async () => {
-          await reload?.();
+          await refreshModule("invoices");
         }}
       />
 

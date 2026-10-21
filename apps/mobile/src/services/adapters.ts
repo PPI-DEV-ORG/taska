@@ -981,16 +981,19 @@ function findId(list: any[] | undefined, val: any): number | undefined {
 
 function resolveMemberIds(row: Record<string, any>, db?: Record<string, any>): number[] | undefined {
   if (Array.isArray(row.memberIds)) return row.memberIds.map(Number).filter((x) => !Number.isNaN(x) && x > 0);
-  if (row.tim) {
-    const names = String(row.tim)
+  if (row.tim !== undefined) {
+    const timStr = String(row.tim || "").trim();
+    if (!timStr || timStr === "-") return [];
+    const names = timStr
       .split(",")
       .map((s) => (s.split("(")[0] ?? "").trim().toLowerCase())
       .filter(Boolean);
-    const ids = (db?.users ?? [])
+    const usersList = (db?.users && db.users.length > 0) ? db.users : [];
+    const ids = usersList
       .filter((u: any) => names.includes(String(u.name ?? u.nama ?? "").trim().toLowerCase()))
       .map((u: any) => Number(u.id))
       .filter((x: number) => !Number.isNaN(x) && x > 0);
-    return ids.length ? ids : undefined;
+    return ids;
   }
   return undefined;
 }
@@ -1605,12 +1608,17 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
       out.quotationId = patch.penawaran === "-" || !patch.penawaran ? null : (findId(db?.quotations, patch.penawaran) ?? null);
     }
     if (patch.quotationId !== undefined) out.quotationId = patch.quotationId ? Number(patch.quotationId) : null;
-    if (patch.pm !== undefined) out.picId = findId(db?.users, patch.pm);
+    if (patch.pmId !== undefined) out.picId = patch.pmId ? Number(patch.pmId) : null;
+    else if (patch.pm !== undefined) {
+      const foundPic = findId(db?.users, patch.pm);
+      if (foundPic !== undefined) out.picId = foundPic;
+    }
     if (patch.mulai !== undefined) out.startDate = patch.mulai;
     if (patch.selesai !== undefined) out.endDate = patch.selesai;
     if (patch.progres !== undefined) out.progress = num(patch.progres);
     if (patch.status !== undefined) out.status = toEnum("projects", patch.status) || patch.status;
-    if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);
+    if (Array.isArray(patch.memberIds)) out.memberIds = patch.memberIds;
+    else if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);
   } else if (module === "tasks") {
     if (patch.pic !== undefined) out.assigneeId = findId(db?.users, patch.pic);
     if (patch.tenggat !== undefined) out.dueDate = patch.tenggat;
