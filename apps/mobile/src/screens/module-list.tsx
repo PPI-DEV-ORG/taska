@@ -96,11 +96,20 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
 
 export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?: string; headerExtra?: React.ReactNode }) {
   const router = useRouter();
-  const { user, data, deleteRow } = useApp();
+  const { user, data, deleteRow, refreshModule } = useApp();
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [open, setOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
+
+  const fetchedRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (def?.key && fetchedRef.current !== def.key) {
+      fetchedRef.current = def.key;
+      void refreshModule(def.key);
+      if (def.key === "invoices") void refreshModule("invoiceIn");
+    }
+  }, [def?.key]);
 
   const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "in">("all");
   const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
