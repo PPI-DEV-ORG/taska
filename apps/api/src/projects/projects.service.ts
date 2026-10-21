@@ -470,35 +470,6 @@ export class ProjectsService {
       orderBy: { id: "asc" },
     });
 
-    // Bila requirements masih kosong, sinkronkan dari purchase request aktif
-    if (rows.length === 0) {
-      const activePrs = await this.prisma.main.purchaseRequest.findMany({
-        where: { projectId, status: { notIn: ["DITOLAK", "DIBATALKAN"] } },
-        include: { items: true },
-      });
-      if (activePrs.length > 0) {
-        for (const pr of activePrs) {
-          for (const item of pr.items) {
-            const isReserved = pr.status === "DIKIRIM" || pr.status === "DITERIMA";
-            await this.prisma.main.projectRequirement.create({
-              data: {
-                projectId,
-                taskId: pr.taskId ?? null,
-                productId: item.productId,
-                qty: item.qty,
-                reservedQty: isReserved ? item.qty : 0,
-                status: isReserved ? "DIRESERVE" : "DIBUTUHKAN",
-              },
-            }).catch(() => {});
-          }
-        }
-        rows = await this.prisma.main.projectRequirement.findMany({
-          where: { projectId },
-          include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
-          orderBy: { id: "asc" },
-        });
-      }
-    }
     const withAvailability = await Promise.all(
       rows.map(async (r) => {
         const avail = await this.availableQty(r.productId, projectId);
@@ -616,19 +587,51 @@ export class ProjectsService {
     const row = await this.prisma.main.projectRequirement.findUnique({ where: { id } });
     if (!row || row.projectId !== projectId) throw new NotFoundException("Kebutuhan tidak ditemukan");
 
-    await this.prisma.main.$transaction([
-      this.prisma.main.stockReservation.updateMany({
+    // Cari purchase request aktif untuk project ini yang mengandung barang ini
+    const relatedPrs = await this.prisma.main.purchaseRequest.findMany({
+      where: {
+        projectId,
+        status: { notIn: ["DITOLAK", "DIBATALKAN"] },
+        items: { some: { productId: row.productId } },
+      },
+      include: { items: true, supplierPOs: true },
+    });
+
+    // Cek apakah ada request yang sudah berjalan (bukan DIAJUKAN atau sudah dibuat PO supplier)
+    const isRunning = relatedPrs.some(
+      (pr) => pr.status !== "DIAJUKAN" || (pr.supplierPOs && pr.supplierPOs.length > 0),
+    );
+    if (isRunning) {
+      throw new BadRequestException("Request sudah berjalan, tidak bisa hapus barang");
+    }
+
+    // Jika request masih berstatus DIAJUKAN, hapus request atau item terkait
+    await this.prisma.main.$transaction(async (tx) => {
+      for (const pr of relatedPrs) {
+        if (pr.items.length <= 1) {
+          await tx.approval.deleteMany({ where: { kind: "PURCHASE_REQUEST", entityId: pr.id } });
+          await tx.purchaseRequestItem.deleteMany({ where: { requestId: pr.id } });
+          await tx.purchaseRequest.delete({ where: { id: pr.id } });
+        } else {
+          await tx.purchaseRequestItem.deleteMany({
+            where: { requestId: pr.id, productId: row.productId },
+          });
+        }
+      }
+
+      await tx.stockReservation.updateMany({
         where: { requirementId: id, releasedAt: null },
         data: { releasedAt: new Date() },
-      }),
-      this.prisma.main.projectRequirement.delete({ where: { id } }),
-    ]);
+      });
+      await tx.projectRequirement.delete({ where: { id } });
+    });
+
     await this.audit.log({
       actor: user,
       action: "HAPUS_KEBUTUHAN_BARANG",
       entityType: "project-requirement",
       entityId: id,
-      detail: `project #${projectId}`,
+      detail: `project #${projectId}, produk #${row.productId}`,
     });
     return { id, deleted: true };
   }

@@ -382,8 +382,14 @@ export class RequestsService {
   }
 
   async remove(id: number, user: RequestUser) {
-    const row = await this.prisma.main.purchaseRequest.findUnique({ where: { id } });
+    const row = await this.prisma.main.purchaseRequest.findUnique({
+      where: { id },
+      include: { supplierPOs: true },
+    });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
+    if (row.status !== "DIAJUKAN" || (row.supplierPOs && row.supplierPOs.length > 0)) {
+      throw new BadRequestException("Request sudah berjalan tidak bisa dihapus");
+    }
     await this.prisma.main.$transaction(async (tx) => {
       await tx.approval.deleteMany({ where: { kind: "PURCHASE_REQUEST", entityId: id } });
       await tx.purchaseRequestItem.deleteMany({ where: { requestId: id } });

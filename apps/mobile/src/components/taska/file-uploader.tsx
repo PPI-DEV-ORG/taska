@@ -10,6 +10,12 @@ import { uploadFile } from "@/services/api";
 
 export type UploadKind = "foto" | "dokumen" | "video" | "semua";
 
+export const MAX_FILE_SIZE_BYTES: Record<"foto" | "dokumen" | "video", number> = {
+  foto: 5 * 1024 * 1024,      // 5 MB
+  dokumen: 15 * 1024 * 1024,  // 15 MB
+  video: 25 * 1024 * 1024,    // 25 MB
+};
+
 // staged = file dipilih tapi belum diunggah ke server; di-flush saat Simpan.
 export type StagedFile = {
   id: number; // id sementara (lokal) untuk key & remove
@@ -65,11 +71,12 @@ type Props = {
   accept?: string;
   hint?: string;
   allowedExtensions?: string[];
+  maxSizeBytes?: number;
 };
 
 export function FileUploader({
   label, kind = "semua", category, required, onChange, onFilePicked, onUploaded, multiple = false, handleRef, autoFlush = false,
-  accept: acceptProp, hint: hintProp, allowedExtensions,
+  accept: acceptProp, hint: hintProp, allowedExtensions, maxSizeBytes,
 }: Props) {
   const { toast, offline } = useApp();
   const [staged, setStaged] = React.useState<StagedFile[]>([]);
@@ -95,7 +102,7 @@ export function FileUploader({
     onChange?.(staged.length);
   }, [staged.length, onChange]);
 
-  function stage(f: { name?: string; uri?: string; blob?: Blob; size?: number }) {
+  function stage(f: { name?: string; uri?: string; blob?: Blob; size?: number }): boolean {
     const fileName = f.name || "file";
     const ext = (fileName.split(".").pop() || "").toLowerCase();
 
@@ -106,7 +113,7 @@ export function FileUploader({
       });
       if (!match) {
         toast(`Format file tidak didukung. Hanya file ${allowedExtensions.join(", ")} yang diperbolehkan.`, "danger");
-        return;
+        return false;
       }
     }
 
@@ -114,10 +121,19 @@ export function FileUploader({
     const isVid = ["mp4", "mkv", "mov"].includes(ext) || f.blob?.type?.startsWith("video/");
     const detectedKind: "foto" | "dokumen" | "video" = isImg ? "foto" : isVid ? "video" : target;
 
+    const maxBytes = maxSizeBytes ?? MAX_FILE_SIZE_BYTES[detectedKind];
+    const byteSize = f.size ?? f.blob?.size;
+    if (typeof byteSize === "number" && byteSize > maxBytes) {
+      const maxMb = (maxBytes / (1024 * 1024)).toFixed(0);
+      const actualMb = (byteSize / (1024 * 1024)).toFixed(1);
+      toast(`Ukuran file (${actualMb} MB) melebihi batas maksimal ${maxMb} MB. File tidak dapat diunggah.`, "danger");
+      return false;
+    }
+
     const entry: StagedFile = {
       id: Date.now() + prevLenRef.current,
       name: fileName,
-      size: f.size ? fmtSize(f.size) : "",
+      size: byteSize ? fmtSize(byteSize) : "",
       uri: f.uri,
       blob: f.blob,
       kind: detectedKind,
@@ -139,6 +155,7 @@ export function FileUploader({
           setBusy(false);
         });
     }
+    return true;
   }
 
   function remove(id: number) {
@@ -188,14 +205,19 @@ export function FileUploader({
 
     setBusy(true);
     try {
+      let anyStaged = false;
       for (const asset of result.assets) {
-        stage({
-          uri: asset.uri,
-          name: asset.fileName ?? asset.uri.split("/").pop() ?? "upload",
-          size: asset.fileSize,
-        });
+        if (
+          stage({
+            uri: asset.uri,
+            name: asset.fileName ?? asset.uri.split("/").pop() ?? "upload",
+            size: asset.fileSize,
+          })
+        ) {
+          anyStaged = true;
+        }
       }
-      if (!autoFlush) {
+      if (anyStaged && !autoFlush) {
         toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
       }
     } finally {
@@ -223,10 +245,13 @@ export function FileUploader({
   }
 
   function stageWebFiles(list: File[]) {
+    let anyStaged = false;
     for (const f of list) {
-      stage({ name: f.name, blob: f, size: f.size });
+      if (stage({ name: f.name, blob: f, size: f.size })) {
+        anyStaged = true;
+      }
     }
-    if (!autoFlush) {
+    if (anyStaged && !autoFlush) {
       toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
     }
   }

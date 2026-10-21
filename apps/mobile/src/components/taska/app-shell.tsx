@@ -299,6 +299,10 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
       input.onchange = async () => {
         const f = input.files?.[0];
         if (!f) return;
+        if (f.size > 5 * 1024 * 1024) {
+          toast("Ukuran foto profil melebihi batas maksimal 5 MB", "danger");
+          return;
+        }
         const localUrl = URL.createObjectURL(f);
         setAvatarUrl(localUrl);
         try {
@@ -326,6 +330,10 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
     });
     const asset = res.assets?.[0];
     if (!asset) return;
+    if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+      toast("Ukuran foto profil melebihi batas maksimal 5 MB", "danger");
+      return;
+    }
     setAvatarUrl(asset.uri);
     try {
       setBusy(true);
