@@ -14,6 +14,7 @@ import {
   Calendar,
   UserCheck,
   Check,
+  Receipt,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -23,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Panel } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { DatePicker } from "@/components/taska/dialogs";
+import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
@@ -33,9 +35,55 @@ import { Line } from "@/modules/shared/line";
 export function LeadExtras({ row }: { row: Row }) {
   const router = useRouter();
   const { toast, data, addRow, patchRow, setStatus, pushHistory, user, reload, createQuotationFromLead } = useApp();
-  const quotation = (data.quotations ?? []).find(
-    (q) => (q.leadId && String(q.leadId) === String(row.id)) || (q.lead && q.lead.toLowerCase() === row.nama.toLowerCase())
-  );
+  
+  const leadQuotations = React.useMemo(() => {
+    return (data.quotations ?? []).filter(
+      (q: Row) =>
+        (q.leadId && String(q.leadId) === String(row.id)) ||
+        (q.lead && row.nama && q.lead.trim().toLowerCase() === row.nama.trim().toLowerCase())
+    );
+  }, [data.quotations, row.id, row.nama]);
+
+  const quotation =
+    leadQuotations[0] ||
+    (data.quotations ?? []).find(
+      (q) =>
+        (q.leadId && String(q.leadId) === String(row.id)) ||
+        (q.lead && q.lead.toLowerCase() === row.nama.toLowerCase())
+    );
+
+  const relProjects = React.useMemo(() => {
+    const qIds = new Set(leadQuotations.map((q) => String(q.id)));
+    return (data.projects ?? []).filter(
+      (p: Row) =>
+        (p.leadId && String(p.leadId) === String(row.id)) ||
+        (p.lead && row.nama && p.lead.trim().toLowerCase() === row.nama.trim().toLowerCase()) ||
+        (p.quotationId && qIds.has(String(p.quotationId)))
+    );
+  }, [data.projects, row.id, row.nama, leadQuotations]);
+
+  const leadInvoices = React.useMemo(() => {
+    const qIds = new Set(leadQuotations.map((q) => String(q.id)));
+    const qNums = new Set(
+      leadQuotations.map((q) => String(q.nomor || "").trim().toLowerCase()).filter(Boolean)
+    );
+    const pIds = new Set(relProjects.map((p) => String(p.id)));
+    const leadName = String(row.nama || "").trim().toLowerCase();
+
+    return (data.invoices ?? []).filter((inv: Row) => {
+      if (inv.quotationId && qIds.has(String(inv.quotationId))) return true;
+      if (inv.quotation && qNums.has(String(inv.quotation).trim().toLowerCase())) return true;
+      if (inv.projectId && pIds.has(String(inv.projectId))) return true;
+      const cat = String(inv.catatan || inv.description || "").toLowerCase();
+      if (leadName && cat.includes(leadName)) return true;
+      for (const qNum of qNums) {
+        if (cat.includes(qNum)) return true;
+      }
+      return false;
+    });
+  }, [data.invoices, leadQuotations, relProjects, row.nama]);
+
+  const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
   const isQualify = ["Qualification", "Proposal", "Negotiation", "Won"].includes(row.status);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
 
@@ -153,56 +201,7 @@ export function LeadExtras({ row }: { row: Row }) {
 
   return (
     <>
-      <Panel
-        title="Penawaran"
-        subtitle="Kelola penawaran harga untuk prospek ini."
-      >
-        {quotation ? (
-          <View className="gap-3">
-            <Line left="Nomor Penawaran" right={<Text className="text-primary font-bold">{quotation.nomor}</Text>} />
-            <Line
-              left="Total Penawaran"
-              right={<Text className="font-bold">{rupiah(quotation.totalAfterDisc || quotation.total || quotation.nilai || 0)}</Text>}
-            />
-            <Line left="Status Penawaran" right={<StatusBadge status={quotation.status || "Draf"} />} />
-            <Button
-              size="sm"
-              onPress={() => router.push(`/quotations/${quotation.id}` as any)}
-              className="flex-row items-center justify-center gap-1.5 mt-1"
-            >
-              <FileText size={15} color={colors.background} />
-              <Text className="text-xs font-semibold">Buka & Kelola Penawaran</Text>
-              <ArrowRight size={14} color={colors.background} />
-            </Button>
-          </View>
-        ) : (
-          <View className="gap-2.5 py-1">
-            <Text className="text-xs text-muted-foreground leading-relaxed">
-              Belum ada penawaran untuk prospek ini. Buat penawaran untuk mengisi rincian produk, harga, dan mengelola dokumen penawaran.
-            </Text>
-            <Button
-              size="sm"
-              onPress={async () => {
-                try {
-                  const created = await createQuotationFromLead(row);
-                  if (created?.id) {
-                    toast("Penawaran berhasil dibuat!");
-                    router.push(`/quotations/${created.id}` as any);
-                  }
-                } catch (e: any) {
-                  toast(e?.message || "Gagal membuat penawaran", "danger");
-                }
-              }}
-              className="self-start flex-row items-center gap-1.5"
-            >
-              <Plus size={14} color={colors.background} />
-              <Text className="text-xs font-semibold">Create Penawaran</Text>
-            </Button>
-          </View>
-        )}
-      </Panel>
-
-      {row.status === "Won" || (data.projects ?? []).some((p: Row) => (p.leadId && String(p.leadId) === String(row.id)) || (quotation && p.quotationId && String(p.quotationId) === String(quotation.id))) ? (
+      {row.status === "Won" || relProjects.length > 0 ? (
         <Panel
           title="Project Terkait"
           subtitle="Prospek yang berhasil (Won) dapat langsung dilanjutkan ke pengerjaan Project."
@@ -214,11 +213,6 @@ export function LeadExtras({ row }: { row: Row }) {
           }
         >
           {(() => {
-            const relProjects = (data.projects ?? []).filter(
-              (p: Row) =>
-                (p.leadId && String(p.leadId) === String(row.id)) ||
-                (quotation && p.quotationId && String(p.quotationId) === String(quotation.id))
-            );
             if (relProjects.length === 0) {
               return (
                 <Text className="py-2 text-xs text-muted-foreground">
@@ -346,6 +340,207 @@ export function LeadExtras({ row }: { row: Row }) {
             ))
           )}
         </View>
+      </Panel>
+
+      {/* Panel Penawaran Terkait */}
+      <Panel
+        title="Penawaran Terkait"
+        subtitle="Daftar penawaran harga yang terhubung dengan lead ini."
+        right={
+          <Button
+            size="sm"
+            onPress={async () => {
+              try {
+                const created = await createQuotationFromLead(row);
+                if (created?.id) {
+                  toast("Penawaran berhasil dibuat!");
+                  router.push(`/quotations/${created.id}` as any);
+                }
+              } catch (e: any) {
+                toast(e?.message || "Gagal membuat penawaran", "danger");
+              }
+            }}
+            className="flex-row items-center gap-1"
+          >
+            <Plus size={14} color={colors.background} />
+            <Text className="text-xs">Buat Penawaran</Text>
+          </Button>
+        }
+      >
+        {leadQuotations.length > 0 ? (
+          <View className="gap-2.5">
+            {leadQuotations.map((q: Row) => (
+              <View key={q.id} className="bg-card border border-border/80 rounded-xl p-3 gap-2">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-2">
+                    <FileText size={16} color={colors.primary} />
+                    <Text className="text-sm font-bold text-foreground">{q.nomor || `Q-${q.id}`}</Text>
+                  </View>
+                  <StatusBadge status={q.status || "Draf"} />
+                </View>
+
+                <View className="flex-row items-center justify-between pt-1">
+                  <View>
+                    <Text className="text-[11px] text-muted-foreground">Total Penawaran</Text>
+                    <Text className="text-xs font-semibold text-foreground">
+                      {rupiah(q.totalAfterDisc || q.total || q.nilai || 0)}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text className="text-[11px] text-muted-foreground">Tanggal</Text>
+                    <Text className="text-xs font-semibold text-foreground">
+                      {q.tanggal || "-"}
+                    </Text>
+                  </View>
+                </View>
+
+                <View className="flex-row items-center justify-end gap-2 pt-1 border-t border-border/40 mt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-2.5"
+                    onPress={() => router.push(`/quotations/${q.id}` as any)}
+                  >
+                    <FileText size={13} color={colors.text} />
+                    <Text className="text-xs ml-1">Buka Penawaran</Text>
+                    <ArrowRight size={13} color={colors.text} className="ml-1" />
+                  </Button>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View className="gap-2.5 py-1">
+            <Text className="text-xs text-muted-foreground leading-relaxed">
+              Belum ada penawaran untuk prospek ini. Buat penawaran untuk mengisi rincian produk, harga, dan mengelola dokumen penawaran.
+            </Text>
+            <Button
+              size="sm"
+              onPress={async () => {
+                try {
+                  const created = await createQuotationFromLead(row);
+                  if (created?.id) {
+                    toast("Penawaran berhasil dibuat!");
+                    router.push(`/quotations/${created.id}` as any);
+                  }
+                } catch (e: any) {
+                  toast(e?.message || "Gagal membuat penawaran", "danger");
+                }
+              }}
+              className="self-start flex-row items-center gap-1.5"
+            >
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs font-semibold">Buat Penawaran</Text>
+            </Button>
+          </View>
+        )}
+      </Panel>
+
+      {/* Panel Invoice Terkait */}
+      <Panel
+        title="Invoice Terkait"
+        subtitle="Kelola tagihan pembayaran untuk prospek atau penawaran ini."
+        right={
+          leadQuotations.length > 0 ? (
+            <Button
+              size="sm"
+              onPress={() => setInvoiceModalOpen(true)}
+              className="flex-row items-center gap-1"
+            >
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs">Buat Invoice</Text>
+            </Button>
+          ) : undefined
+        }
+      >
+        {leadInvoices.length > 0 ? (
+          <View className="gap-2.5">
+            {leadInvoices.map((inv: Row) => {
+              const isPaid = inv.status === "Lunas";
+              return (
+                <View
+                  key={inv.id}
+                  className="bg-card border border-border/80 rounded-xl p-3 gap-2"
+                >
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2">
+                      <Receipt size={16} color={colors.primary} />
+                      <Text className="text-sm font-bold text-foreground">{inv.nomor}</Text>
+                    </View>
+                    <StatusBadge status={inv.status || "Belum dikirim"} />
+                  </View>
+
+                  <View className="flex-row items-center justify-between pt-1">
+                    <View>
+                      <Text className="text-[11px] text-muted-foreground">Total Tagihan</Text>
+                      <Text className="text-xs font-semibold text-foreground">{rupiah(inv.total || inv.nilai || 0)}</Text>
+                    </View>
+                    <View>
+                      <Text className="text-[11px] text-muted-foreground">Terbayar</Text>
+                      <Text className={`text-xs font-semibold ${isPaid ? "text-success" : "text-foreground"}`}>
+                        {rupiah(inv.terbayar || 0)}
+                      </Text>
+                    </View>
+                    <View>
+                      <Text className="text-[11px] text-muted-foreground">Jatuh Tempo</Text>
+                      <Text className="text-xs font-semibold text-foreground">{inv.jatuhTempo || "-"}</Text>
+                    </View>
+                  </View>
+
+                  <View className="flex-row items-center justify-end gap-2 pt-1 border-t border-border/40 mt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2.5"
+                      onPress={() => router.push(`/invoices/${inv.id}` as any)}
+                    >
+                      <Text className="text-xs">Buka Detail</Text>
+                    </Button>
+                    {!isPaid ? (
+                      <Button
+                        size="sm"
+                        className="h-8 px-2.5 bg-success"
+                        onPress={async () => {
+                          try {
+                            await setStatus("invoices", String(inv.id), "Lunas");
+                            toast(`Invoice ${inv.nomor} berhasil dilunasi!`);
+                          } catch {
+                            toast("Gagal mengubah status invoice", "danger");
+                          }
+                        }}
+                      >
+                        <Check size={13} color="#ffffff" />
+                        <Text className="text-xs text-white font-medium ml-1">Jadikan Lunas</Text>
+                      </Button>
+                    ) : (
+                      <View className="flex-row items-center gap-1 px-2 py-1 bg-success/15 rounded-md">
+                        <CheckCircle2 size={13} color={colors.success} />
+                        <Text className="text-xs text-success font-semibold">Lunas</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View className="gap-2.5 py-1">
+            <Text className="text-xs text-muted-foreground leading-relaxed">
+              Belum ada invoice yang dibuat untuk lead ini.
+              {leadQuotations.length > 0 ? " Klik tombol 'Buat Invoice' di atas untuk membuat tagihan dari penawaran terkait." : " Buat penawaran terlebih dahulu sebelum membuat invoice."}
+            </Text>
+            {leadQuotations.length > 0 ? (
+              <Button
+                size="sm"
+                onPress={() => setInvoiceModalOpen(true)}
+                className="self-start flex-row items-center gap-1.5"
+              >
+                <Plus size={14} color={colors.background} />
+                <Text className="text-xs font-semibold">Buat Invoice</Text>
+              </Button>
+            ) : null}
+          </View>
+        )}
       </Panel>
 
       {/* Modal Catat Follow-up */}
@@ -582,6 +777,16 @@ export function LeadExtras({ row }: { row: Row }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Buat Invoice dari Lead */}
+      <CreateInvoiceDialog
+        open={invoiceModalOpen}
+        onOpenChange={setInvoiceModalOpen}
+        initialQuotation={quotation}
+        onSuccess={async () => {
+          await reload?.();
+        }}
+      />
 
     </>
   );
