@@ -10,6 +10,21 @@ import { FormField } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 
+let loginLogoSource: any;
+try {
+  const rawLogo = require("../../assets/taska-logo.png");
+  loginLogoSource =
+    typeof rawLogo === "string"
+      ? { uri: rawLogo }
+      : rawLogo?.default
+      ? typeof rawLogo.default === "string"
+        ? { uri: rawLogo.default }
+        : rawLogo.default
+      : rawLogo;
+} catch {
+  loginLogoSource = null;
+}
+
 export default function LoginScreen() {
   const router = useRouter();
   const { login, toast, theme, toggleTheme } = useApp();
@@ -50,11 +65,17 @@ export default function LoginScreen() {
       <ScrollView contentContainerClassName="flex-grow items-center justify-center p-4 py-6">
         <View className="w-full max-w-[460px] gap-6">
           <View className="items-center gap-3">
-            <Image
-              source={require("../../assets/taska-logo.png")}
-              style={{ width: 64, height: 64 }}
-              resizeMode="contain"
-            />
+            {loginLogoSource ? (
+              <Image
+                source={loginLogoSource}
+                style={{ width: 64, height: 64, resizeMode: "contain" }}
+                resizeMode="contain"
+              />
+            ) : (
+              <View className="bg-panel border-border/80 size-16 items-center justify-center rounded-2xl border shadow-sm">
+                <Text className="text-primary text-3xl font-black">T</Text>
+              </View>
+            )}
             <Text className="text-3xl font-semibold tracking-tight">Taska</Text>
             <Text className="text-text-secondary text-center text-sm">Satu tempat untuk lead, project, barang, dan pengeluaran kantor.</Text>
           </View>

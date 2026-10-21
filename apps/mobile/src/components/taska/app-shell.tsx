@@ -33,14 +33,38 @@ function useNav() {
   return { items, active, pathname };
 }
 
+let taskaLogoSource: any;
+try {
+  const rawLogo = require("../../../assets/taska-logo.png");
+  taskaLogoSource =
+    typeof rawLogo === "string"
+      ? { uri: rawLogo }
+      : rawLogo?.default
+      ? typeof rawLogo.default === "string"
+        ? { uri: rawLogo.default }
+        : rawLogo.default
+      : rawLogo;
+} catch {
+  taskaLogoSource = null;
+}
+
 function Brand({ compact }: { compact?: boolean }) {
+  const [loadError, setLoadError] = React.useState(false);
+
   return (
     <View className="flex-row items-center gap-3">
-      <Image
-        source={require("../../../assets/taska-logo.png")}
-        style={{ width: 36, height: 36 }}
-        resizeMode="contain"
-      />
+      {taskaLogoSource && !loadError ? (
+        <Image
+          source={taskaLogoSource}
+          style={{ width: 36, height: 36, resizeMode: "contain" }}
+          resizeMode="contain"
+          onError={() => setLoadError(true)}
+        />
+      ) : (
+        <View className="bg-panel border-border/80 size-9 items-center justify-center rounded-xl border shadow-sm">
+          <Text className="text-primary text-base font-black">T</Text>
+        </View>
+      )}
       {compact ? null : (
         <View className="flex-1">
           <Text className="text-base font-bold tracking-tight text-foreground">Taska</Text>

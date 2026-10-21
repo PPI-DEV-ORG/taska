@@ -464,14 +464,26 @@ export function getDynamicOptions(
       return nonEmpty((data.leadSources ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
     case "supplier":
       return nonEmpty((data.suppliers ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
-    case "lead":
-      return nonEmpty((data.leads ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+    case "lead": {
+      const lList = (data.leads ?? []);
+      return nonEmpty(
+        [
+          "-",
+          ...lList.map((l: any) => {
+            const name = l.nama || l.name || "";
+            const comp = l.perusahaan || l.customer || "";
+            return comp ? `${name} · ${comp}` : name;
+          }).filter(Boolean),
+        ],
+        f.options
+      );
+    }
     case "produk":
     case "item":
       return nonEmpty((data.products ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
     case "penawaran": {
       const qList = (data.quotations ?? []);
-      if (moduleKey === "po-client" || moduleKey === "projects") {
+      if (moduleKey === "po-client") {
         return nonEmpty(
           [
             "-",
@@ -643,6 +655,9 @@ export function FormDialog({
     });
     if (def?.key === "po-client" && row.penawaran) {
       row.penawaran = (String(row.penawaran).split(" - ")[0] ?? "").trim();
+    }
+    if (def?.key === "projects" && row.lead) {
+      row.lead = (String(row.lead).split(" · ")[0] ?? "").trim();
     }
     if (def?.key === "invoices") {
       const nilai = row.nilai || 0;
@@ -907,6 +922,18 @@ export function FormDialog({
                               customer: quote.customer || s.customer || "",
                             } : {}),
                           }));
+                        } else if (def?.key === "projects" && f.key === "lead") {
+                          const selName = (v.split(" · ")[0] ?? v).trim().toLowerCase();
+                          const lead = v === "-" ? null : (data.leads ?? []).find(
+                            (l: any) => l.nama?.toLowerCase() === selName || l.name?.toLowerCase() === selName
+                          );
+                          const cust = lead?.perusahaan || lead?.customer || "";
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: v,
+                            ...(cust && (!s.customer || s.customer === "-") ? { customer: cust } : {}),
+                            ...(lead && !s.nama ? { nama: `Project ${lead.nama}` } : {}),
+                          }));
                         } else {
                           setVals((s) => ({ ...s, [f.key]: v }));
                         }
@@ -915,6 +942,25 @@ export function FormDialog({
                       placeholder={`Pilih ${f.label.toLowerCase()}`}
                       error={!!errs[f.key]}
                     />
+                    {def?.key === "projects" && f.key === "lead" && vals[f.key] && vals[f.key] !== "-" ? (() => {
+                      const selName = (vals[f.key]?.split(" · ")[0] ?? vals[f.key] ?? "").trim().toLowerCase();
+                      const matchedLead = (data.leads ?? []).find(
+                        (l: any) => l.nama?.toLowerCase() === selName || l.name?.toLowerCase() === selName
+                      );
+                      if (!matchedLead) return null;
+                      return (
+                        <View className="flex-row items-center justify-between p-2 rounded-lg bg-panel border border-border/80 mt-1">
+                          <View className="flex-1 mr-2">
+                            <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
+                              Lead: {matchedLead.nama}
+                            </Text>
+                            <Text className="text-[11px] text-muted-foreground">
+                              Customer: {matchedLead.perusahaan || matchedLead.customer || "-"} · Nilai: {rupiah(matchedLead.nilai || 0)}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })() : null}
                     {def?.key === "po-client" && f.key === "penawaran" && vals[f.key] ? (() => {
                       const selNo = vals[f.key]?.split(" - ")[0]?.trim() || vals[f.key];
                       const matchedQuote = (data.quotations ?? []).find(

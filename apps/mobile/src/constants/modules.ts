@@ -158,7 +158,7 @@ export const MODULES: Record<string, ModuleDef> = {
     actions: [
       { label: "Download template penawaran", toast: "Template penawaran berhasil diunduh" },
       { label: "Minta survey", toast: "Permintaan survey dikirim ke PM" },
-      { label: "Jadikan project", toast: "Project baru dibuat dari lead ini", to: () => "/projects" },
+      { label: "Jadikan project", toast: "Project baru berhasil dibuat", to: () => "/leads" },
     ],
     docs: ["Dokumen pendukung / brief"],
     emptyText: "Belum ada lead. Tambah lead pertama untuk mulai melacak peluang.",
@@ -342,7 +342,7 @@ export const MODULES: Record<string, ModuleDef> = {
     createFields: [
       { key: "nama", label: "Nama project", type: "text", required: true, placeholder: "Contoh: Instalasi CCTV Gudang" },
       { key: "jenis", label: "Jenis", type: "select", required: true, options: ["Customer", "Product/R&D", "Internal", "Maintenance", "Support", "Lainnya"] },
-      { key: "penawaran", label: "Penawaran / Lead terkait (Opsional)", type: "select", options: ["-"] },
+      { key: "lead", label: "Lead terkait (Opsional)", type: "select", options: ["-"] },
       { key: "customer", label: "Customer", type: "select", options: ["-"] },
       { key: "pm", label: "Project Manager (PIC)", type: "select", options: [] },
       { key: "tim", label: "Tim pelaksana", type: "multiselect", options: [] },
