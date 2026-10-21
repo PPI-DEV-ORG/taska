@@ -466,6 +466,22 @@ export class ReceivingsService {
       text: `Penerimaan ${receiving.number} disetujui dan stok sudah tercatat`,
       href: `/receivings/${id}`,
     });
+
+    const projId = receiving.projectId ?? (receiving.supplierPoId ? (await this.prisma.main.supplierPO.findUnique({ where: { id: receiving.supplierPoId }, select: { projectId: true } }))?.projectId : null);
+    if (projId) {
+      const proj = await this.prisma.main.project.findUnique({
+        where: { id: projId },
+        select: { name: true, picId: true },
+      });
+      if (proj?.picId && proj.picId !== receiving.receiverId) {
+        await this.notifications.notify({
+          userIds: [proj.picId],
+          kind: "STOK",
+          text: `Barang pesanan proyek ${proj.name} telah tiba di gudang (${receiving.number})`,
+          href: `/projects/${projId}`,
+        });
+      }
+    }
     this.notifications.dataChange("receiving", "status", id);
     this.notifications.dataChange("stock", "update");
   }

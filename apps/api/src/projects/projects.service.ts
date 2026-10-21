@@ -743,7 +743,14 @@ export class ProjectsService {
         entityId: projectId,
         detail: `Impor ${imported} item kebutuhan barang dari Penawaran #${quotationId}`,
       });
+      await this.notifications.notify({
+        roles: ["PROCUREMENT", "GUDANG"],
+        kind: "STOK",
+        text: `${imported} item kebutuhan barang proyek ditarik dari Penawaran #${quotationId}`,
+        href: `/projects/${projectId}`,
+      });
       this.notifications.dataChange("projects", "update", projectId);
+      this.notifications.dataChange("stock", "update");
     }
 
     return { imported, items: results };
