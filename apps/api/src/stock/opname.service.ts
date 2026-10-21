@@ -51,6 +51,31 @@ export class OpnameService {
         reason: `${opname.reason ?? "Stok opname"} — selisih ${d.diff > 0 ? "+" : ""}${d.diff}`,
         createdById: opname.conductorId,
       });
+
+      // Rekonsiliasi nomor serial bila produk memiliki pelacakan SN
+      const prod = await this.prisma.main.product.findUnique({ where: { id: d.productId } });
+      if (prod?.hasSerial && d.diff < 0) {
+        const missingUnits = await this.prisma.main.serialUnit.findMany({
+          where: { productId: d.productId, warehouseId: opname.warehouseId, status: "DI_GUDANG" },
+          take: Math.abs(d.diff),
+          orderBy: { id: "asc" },
+        });
+        for (const u of missingUnits) {
+          await this.prisma.main.serialUnit.update({
+            where: { id: u.id },
+            data: { status: "RUSAK", warehouseId: null },
+          });
+          await this.prisma.main.serialUnitHistory.create({
+            data: {
+              serialUnitId: u.id,
+              status: "RUSAK",
+              warehouseId: opname.warehouseId,
+              note: `Selisih opname #${opname.id}: barang fisik tidak ditemukan`,
+              changedById: opname.conductorId,
+            },
+          });
+        }
+      }
     }
     await this.prisma.main.stockOpname.update({ where: { id: entityId }, data: { status: "DISETUJUI" } });
     await this.notifications.notify({

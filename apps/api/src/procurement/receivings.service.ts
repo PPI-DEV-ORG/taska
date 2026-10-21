@@ -399,6 +399,15 @@ export class ReceivingsService {
           where: { poId: receiving.supplierPoId, productId: item.productId },
           data: { receivedQty: { increment: item.qtyReceived } },
         });
+
+        const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
+        const poPrice = Number(poItem?.price ?? 0);
+        if (poPrice > 0) {
+          await this.prisma.main.product.update({
+            where: { id: item.productId },
+            data: { purchasePrice: poPrice },
+          }).catch(() => {});
+        }
       }
 
       const partial = receiving.items.some((i) => i.qtyReceived < i.qtyOrdered);

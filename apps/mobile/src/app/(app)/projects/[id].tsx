@@ -13,6 +13,7 @@ import {
   Trash2,
   Upload,
   FileSpreadsheet,
+  RotateCcw,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -46,6 +47,7 @@ export default function ProjectDetailScreen() {
   const [activeTab, setActiveTab] = React.useState<TabKey>("Ringkasan");
   const [taskModalOpen, setTaskModalOpen] = React.useState(false);
   const [reqModalOpen, setReqModalOpen] = React.useState(false);
+  const [returnModalOpen, setReturnModalOpen] = React.useState(false);
   const [editProjectOpen, setEditProjectOpen] = React.useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = React.useState(false);
   const [requirements, setRequirements] = React.useState<any[]>([]);
@@ -234,6 +236,8 @@ export default function ProjectDetailScreen() {
               fields={[
                 { label: "Project Manager (PIC)", key: "pm" },
                 { label: "Tim Lapangan (SE / Teknisi)", key: "tim" },
+                { label: "Penawaran Terkait", key: "penawaran" },
+                { label: "Lead CRM Terkait", key: "lead" },
                 { label: "Tanggal Mulai", key: "mulai", fmt: "date" },
                 { label: "Target Selesai", key: "selesai", fmt: "date" },
                 { label: "Status Logistik Barang", key: "barang" },
@@ -375,105 +379,6 @@ export default function ProjectDetailScreen() {
         </View>
       )}
 
-      <FormDialog
-        open={taskModalOpen}
-        onOpenChange={setTaskModalOpen}
-        title="Tambah Tugas Project"
-        fields={[
-          { key: "nama", label: "Nama Tugas", type: "text", required: true, placeholder: "Contoh: Penarikan kabel lantai 2" },
-          { key: "deskripsi", label: "Deskripsi Tugas", type: "textarea", placeholder: "Detail instruksi / spesifikasi pengerjaan tugas" },
-          {
-            key: "parentTask",
-            label: "Sub-tugas dari (Opsional)",
-            type: "select",
-            options: ["(Tugas Utama)", ...tasks.filter((t) => !t.parent).map((t) => String(t.nama))],
-          },
-          { key: "pic", label: "PIC Tugas", type: "select", required: true, placeholder: "Pilih PIC" },
-          { key: "tenggat", label: "Tenggat Waktu", type: "date" },
-          { key: "perluBarang", label: "Perlu Pembelian Barang?", type: "select", options: ["Tidak", "Ya"] },
-        ]}
-        submitLabel="Simpan Tugas"
-        onSubmit={(v) => {
-          const parentRow =
-            v.parentTask && v.parentTask !== "(Tugas Utama)"
-              ? tasks.find((t) => t.nama === v.parentTask)
-              : undefined;
-          addRow("tasks", {
-            projectId: project.id,
-            project: project.nama,
-            parentId: parentRow?.id,
-            nama: v.nama,
-            deskripsi: v.deskripsi || undefined,
-            pic: v.pic,
-            tenggat: v.tenggat || new Date().toISOString().slice(0, 10),
-            perluBarang: v.perluBarang === "Ya",
-            status: "TODO",
-          });
-        }}
-      />
-
-      <FormDialog
-        open={reqModalOpen}
-        onOpenChange={setReqModalOpen}
-        title="Tambah Kebutuhan Barang Project"
-        fields={[
-          {
-            key: "produk",
-            label: "Pilih Barang / Perangkat",
-            type: "select",
-            required: true,
-            options: (data.products ?? []).map((p) => String(p.nama)),
-          },
-          { key: "qty", label: "Jumlah yang Dibutuhkan", type: "number", required: true, placeholder: "Contoh: 4" },
-        ]}
-        submitLabel="Cek Stok & Simpan"
-        onSubmit={async (v) => {
-          const prod = (data.products ?? []).find((p) => p.nama === v.produk);
-          if (!prod) return;
-          try {
-            const res = await api<any>("POST", `/projects/${project.id}/requirements`, {
-              productId: Number(prod.id),
-              qty: Math.max(1, Math.round(Number(v.qty) || 1)),
-            });
-            await loadRequirements();
-            await reload();
-            toast(
-              res?.purchaseRequestCreated
-                ? "Stok tersedia di-reserve & kekurangan otomatis dibuatkan Request ke Procurement"
-                : "Kebutuhan barang dicatat & stok di-reserve",
-            );
-          } catch (e: any) {
-            toast(e?.message ?? "Gagal menyimpan kebutuhan barang", "danger");
-          }
-        }}
-      />
-
-      <FormDialog
-        open={editProjectOpen}
-        onOpenChange={setEditProjectOpen}
-        def={MODULES.projects}
-        title="Ubah Project"
-        fields={MODULES.projects?.createFields || []}
-        initialRow={project}
-        mode="edit"
-        submitLabel="Simpan Perubahan"
-        onSubmit={(patch) => patchRow("projects", project.id, patch)}
-      />
-
-      <ConfirmDialog
-        open={deleteProjectOpen}
-        onOpenChange={setDeleteProjectOpen}
-        title="Hapus project ini?"
-        description="Project yang dihapus tidak dapat dikembalikan."
-        confirmLabel="Ya, hapus"
-        destructive
-        onConfirm={() => {
-          void deleteRow("projects", project.id).then((ok) => {
-            if (ok) router.replace("/projects");
-          });
-        }}
-      />
-
       {/* Tab 3: Kebutuhan Barang & Reservasi */}
       {activeTab === "Barang" && (
         <View className="gap-4">
@@ -481,13 +386,41 @@ export default function ProjectDetailScreen() {
             title="Kebutuhan Barang Project"
             subtitle="Sistem otomatis mengecek stok, menahan (reserve) yang tersedia, dan mengajukan kekurangan ke Procurement"
             right={
-              <View className="flex-row gap-2">
+              <View className="flex-row flex-wrap gap-2">
+                {project.quotationId ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={async () => {
+                      try {
+                        const res = await api<any>("POST", `/projects/${project.id}/sync-quotation`, {
+                          quotationId: Number(project.quotationId),
+                        });
+                        await loadRequirements();
+                        await reload();
+                        toast(
+                          res?.imported > 0
+                            ? `${res.imported} item berhasil ditarik dari Penawaran`
+                            : "Semua barang penawaran sudah ada di kebutuhan proyek",
+                        );
+                      } catch (e: any) {
+                        toast(e?.message ?? "Gagal menarik barang dari penawaran", "danger");
+                      }
+                    }}
+                  >
+                    <Text className="text-xs">Tarik dari Penawaran</Text>
+                  </Button>
+                ) : null}
                 <Button size="sm" onPress={() => setReqModalOpen(true)}>
                   <Plus size={14} color={colors.background} />
                   <Text className="text-xs">Isi Kebutuhan Barang</Text>
                 </Button>
                 <Button size="sm" variant="outline" onPress={() => router.push("/purchase-requests/new" as any)}>
                   <Text className="text-xs">Request Manual</Text>
+                </Button>
+                <Button size="sm" variant="outline" onPress={() => setReturnModalOpen(true)}>
+                  <RotateCcw size={14} color={colors.text} />
+                  <Text className="text-xs">Retur Sisa Barang</Text>
                 </Button>
               </View>
             }
@@ -740,6 +673,167 @@ export default function ProjectDetailScreen() {
           <Timeline items={history("projects", project.id)} />
         </Panel>
       )}
+
+      {/* Dialogs & Modals */}
+      <FormDialog
+        open={taskModalOpen}
+        onOpenChange={setTaskModalOpen}
+        title="Tambah Tugas Project"
+        fields={[
+          { key: "nama", label: "Nama Tugas", type: "text", required: true, placeholder: "Contoh: Penarikan kabel lantai 2" },
+          { key: "deskripsi", label: "Deskripsi Tugas", type: "textarea", placeholder: "Detail instruksi / spesifikasi pengerjaan tugas" },
+          {
+            key: "parentTask",
+            label: "Sub-tugas dari (Opsional)",
+            type: "select",
+            options: ["(Tugas Utama)", ...tasks.filter((t) => !t.parent).map((t) => String(t.nama))],
+          },
+          { key: "pic", label: "PIC Tugas", type: "select", required: true, placeholder: "Pilih PIC" },
+          { key: "tenggat", label: "Tenggat Waktu", type: "date" },
+          { key: "perluBarang", label: "Perlu Pembelian Barang?", type: "select", options: ["Tidak", "Ya"] },
+        ]}
+        submitLabel="Simpan Tugas"
+        onSubmit={(v) => {
+          const parentRow =
+            v.parentTask && v.parentTask !== "(Tugas Utama)"
+              ? tasks.find((t) => t.nama === v.parentTask)
+              : undefined;
+          addRow("tasks", {
+            projectId: project.id,
+            project: project.nama,
+            parentId: parentRow?.id,
+            nama: v.nama,
+            deskripsi: v.deskripsi || undefined,
+            pic: v.pic,
+            tenggat: v.tenggat || new Date().toISOString().slice(0, 10),
+            perluBarang: v.perluBarang === "Ya",
+            status: "TODO",
+          });
+        }}
+      />
+
+      <FormDialog
+        open={reqModalOpen}
+        onOpenChange={setReqModalOpen}
+        title="Tambah Kebutuhan Barang Project"
+        fields={[
+          {
+            key: "produk",
+            label: "Pilih Barang / Perangkat",
+            type: "select",
+            required: true,
+            options: (data.products ?? []).map((p) => String(p.nama)),
+          },
+          { key: "qty", label: "Jumlah yang Dibutuhkan", type: "number", required: true, placeholder: "Contoh: 4" },
+        ]}
+        submitLabel="Cek Stok & Simpan"
+        onSubmit={async (v) => {
+          const prod = (data.products ?? []).find((p) => p.nama === v.produk);
+          if (!prod) return;
+          try {
+            const res = await api<any>("POST", `/projects/${project.id}/requirements`, {
+              productId: Number(prod.id),
+              qty: Math.max(1, Math.round(Number(v.qty) || 1)),
+            });
+            await loadRequirements();
+            await reload();
+            toast(
+              res?.purchaseRequestCreated
+                ? "Stok tersedia di-reserve & kekurangan otomatis dibuatkan Request ke Procurement"
+                : "Kebutuhan barang dicatat & stok di-reserve",
+            );
+          } catch (e: any) {
+            toast(e?.message ?? "Gagal menyimpan kebutuhan barang", "danger");
+          }
+        }}
+      />
+
+      <FormDialog
+        open={returnModalOpen}
+        onOpenChange={setReturnModalOpen}
+        title="Retur Sisa Material ke Gudang"
+        fields={[
+          {
+            key: "produk",
+            label: "Pilih Barang yang Diretur",
+            type: "select",
+            required: true,
+            options: requirements.length > 0
+              ? requirements.map((r) => String(r.product?.name ?? r.produk ?? "Barang"))
+              : (data.products ?? []).map((p) => String(p.nama)),
+          },
+          {
+            key: "qty",
+            label: "Jumlah Sisa yang Dikembalikan",
+            type: "number",
+            required: true,
+            placeholder: "Contoh: 1",
+          },
+          {
+            key: "gudang",
+            label: "Gudang Tujuan Pengembalian",
+            type: "select",
+            required: true,
+            options: (data.warehouses ?? []).map((w) => String(w.nama || w.name)),
+          },
+          {
+            key: "catatan",
+            label: "Keterangan Retur (Opsional)",
+            type: "text",
+            placeholder: "Contoh: Sisa instalasi kabel 1 roll tidak terpakai",
+          },
+        ]}
+        submitLabel="Kembalikan ke Gudang"
+        onSubmit={async (v) => {
+          const prod = (data.products ?? []).find((p) => p.nama === v.produk);
+          const wh = (data.warehouses ?? []).find((w) => (w.nama || w.name) === v.gudang) ?? data.warehouses?.[0];
+          if (!prod) return;
+          try {
+            await api("POST", `/projects/${project.id}/return-materials`, {
+              warehouseId: wh?.id ? Number(wh.id) : 1,
+              items: [
+                {
+                  productId: Number(prod.id),
+                  qty: Math.max(1, Math.round(Number(v.qty) || 1)),
+                  note: v.catatan || undefined,
+                },
+              ],
+              reason: v.catatan || `Retur sisa material proyek ${project.nama}`,
+            });
+            await loadRequirements();
+            await reload();
+            toast(`Sisa material ${prod.nama} berhasil diretur ke gudang`);
+          } catch (e: any) {
+            toast(e?.message ?? "Gagal memproses retur barang", "danger");
+          }
+        }}
+      />
+
+      <FormDialog
+        open={editProjectOpen}
+        onOpenChange={setEditProjectOpen}
+        def={MODULES.projects}
+        title="Ubah Project"
+        fields={MODULES.projects?.createFields || []}
+        initialRow={project}
+        mode="edit"
+        submitLabel="Simpan Perubahan"
+        onSubmit={(patch) => patchRow("projects", project.id, patch)}
+      />
+
+      <ConfirmDialog
+        open={deleteProjectOpen}
+        onOpenChange={setDeleteProjectOpen}
+        title="Hapus project ini?"
+        description="Project yang dihapus tidak dapat dikembalikan."
+        confirmLabel="Ya, hapus"
+        destructive
+        onConfirm={() => {
+          void deleteRow("projects", project.id).then((ok) => {
+            if (ok) router.replace("/projects");
+          });
+        }}
+      />
     </View>
   );
 }

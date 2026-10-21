@@ -342,6 +342,7 @@ export const MODULES: Record<string, ModuleDef> = {
     createFields: [
       { key: "nama", label: "Nama project", type: "text", required: true, placeholder: "Contoh: Instalasi CCTV Gudang" },
       { key: "jenis", label: "Jenis", type: "select", required: true, options: ["Customer", "Product/R&D", "Internal", "Maintenance", "Support", "Lainnya"] },
+      { key: "penawaran", label: "Penawaran / Lead terkait (Opsional)", type: "select", options: ["-"] },
       { key: "customer", label: "Customer", type: "select", options: ["-"] },
       { key: "pm", label: "Project Manager (PIC)", type: "select", options: [] },
       { key: "tim", label: "Tim pelaksana", type: "multiselect", options: [] },

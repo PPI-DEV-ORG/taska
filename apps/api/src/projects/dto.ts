@@ -11,6 +11,7 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateNested,
 } from "class-validator";
 import { PageQuery } from "../common/dto/page-query.js";
 
@@ -126,6 +127,31 @@ export class RequirementDto {
 
   @IsInt() @Min(1)
   qty!: number;
+}
+
+export class ReturnMaterialItemDto {
+  @Type(() => Number) @IsInt()
+  productId!: number;
+
+  @Type(() => Number) @IsInt() @Min(1)
+  qty!: number;
+
+  @IsOptional() @IsArray()
+  serials?: string[];
+
+  @IsOptional() @IsString()
+  note?: string;
+}
+
+export class ReturnMaterialsDto {
+  @Type(() => Number) @IsInt()
+  warehouseId!: number;
+
+  @IsArray() @ValidateNested({ each: true }) @Type(() => ReturnMaterialItemDto)
+  items!: ReturnMaterialItemDto[];
+
+  @IsOptional() @IsString()
+  reason?: string;
 }
 
 export class TaskDto {
