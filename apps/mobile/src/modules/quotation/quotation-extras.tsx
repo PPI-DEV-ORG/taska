@@ -42,10 +42,10 @@ export function QuotationExtras({
 }) {
   const router = useRouter();
   const { patchRow, toast, reload, data, addRow, setStatus, pushHistory } = useApp();
-  const versions = Array.from({ length: row.versi }, (_, i) => row.versi - i);
   const apiVersions: {
     id: string;
     v: number;
+    status?: string;
     total: number;
     ppn: number;
     disc: number;
@@ -54,21 +54,10 @@ export function QuotationExtras({
     reason: string;
     file: string;
     fileId?: number | null;
-  }[] =
-    Array.isArray(row._versions) && row._versions.length > 0
-      ? row._versions
-      : versions.map((v, i) => ({
-          id: `v-${v}`,
-          v,
-          fileId: null,
-          total: row.total || row.nilai || 0,
-          ppn: row.ppn || 0,
-          disc: row.disc || 0,
-          totalAfterDisc: (row.totalAfterDisc || row.nilai || 0) * (1 - i * 0.02),
-          date: row.dibuat || "",
-          reason: `Versi ${v}`,
-          file: `Penawaran-${row.nomor.replace(/\//g, "-")}-v${v}.xlsx`,
-        }));
+  }[] = Array.isArray(row._versions) ? row._versions : [];
+
+  const maxVer = apiVersions.reduce((max, v) => Math.max(max, v.v || 0), Number(row.versi || 0));
+  const nextVersionNum = maxVer + 1;
   const [ppnMode, setPpnMode] = React.useState<"exclude" | "include" | "none">(
     row.tipePpn === "Include PPN (Sudah termasuk)" || row.ppnMode === "include"
       ? "include"
@@ -87,7 +76,6 @@ export function QuotationExtras({
   const [revisiPpnMode, setRevisiPpnMode] = React.useState<"exclude" | "include" | "none">(ppnMode);
   const [revisiFileId, setRevisiFileId] = React.useState<number | null>(null);
 
-  const nextVersionNum = (row.versi || 1) + 1;
   const revTotNum = Number(revisiTotal.replace(/\D/g, "")) || 0;
   const revDiscPercentNum = Number(revisiDiscPercent.replace(/\D/g, "")) || 0;
   const revDiscNum = revisiDiscType === "percent"
@@ -108,8 +96,10 @@ export function QuotationExtras({
         fileId: revisiFileId || undefined,
       });
       await reload();
+      await onRefresh?.();
+      toast(`Versi ${nextVersionNum} penawaran berhasil dibuat`);
     } catch {
-      patchRow("quotations", row.id, {
+      await patchRow("quotations", row.id, {
         versi: nextVersionNum,
         total: revTotNum,
         nilai: revTotNum,
@@ -123,11 +113,12 @@ export function QuotationExtras({
         fileUploaded: true,
         latestFileId: revisiFileId || undefined,
       });
+      await onRefresh?.();
+      toast(`Versi ${nextVersionNum} penawaran berhasil dibuat & berstatus Revisi`);
     }
     setPpnMode(revisiPpnMode);
     setRevisiFileId(null);
     setRevisiOpen(false);
-    toast(`Versi ${nextVersionNum} penawaran berhasil dibuat & berstatus Revisi`);
   }
 
   // Related Project & Invoices
@@ -141,12 +132,19 @@ export function QuotationExtras({
   }, [data.projects, row.id, row.customerId, row.customer]);
 
   const quotationInvoices = React.useMemo(() => {
+    const qNomor = String(row.nomor || "").trim().toLowerCase();
+    const qId = String(row.id || "");
+    const projId = relatedProject?.id ? String(relatedProject.id) : null;
+
     return (data.invoices ?? []).filter((inv: Row) => {
-      if (inv.quotationId && String(inv.quotationId) === String(row.id)) return true;
-      if (inv.quotation && String(inv.quotation).trim() === String(row.nomor).trim()) return true;
+      if (inv.quotationId && String(inv.quotationId) === qId) return true;
+      if (inv.quotation && String(inv.quotation).trim().toLowerCase() === qNomor) return true;
+      const cat = String(inv.catatan || inv.description || "").toLowerCase();
+      if (qNomor && cat.includes(qNomor)) return true;
+      if (projId && inv.projectId && String(inv.projectId) === projId) return true;
       return false;
     });
-  }, [data.invoices, row.id, row.nomor]);
+  }, [data.invoices, row.id, row.nomor, relatedProject]);
 
   const dealAmount = React.useMemo(() => {
     const raw = row.totalAfterDisc || row.total || row.nilai || 0;
@@ -330,6 +328,7 @@ export function QuotationExtras({
             signerTitle?: string;
           },
           shouldDownload?: boolean,
+          asVersion?: boolean,
         ) => {
           const net = Math.max(0, newTotal - discNum);
           const newPpn = ppnMode === "exclude" ? Math.round(net * 0.11) : 0;
@@ -356,7 +355,23 @@ export function QuotationExtras({
             fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}.xlsx`,
             status: row.status === "Not Yet" ? "Done" : row.status,
           });
-          if (shouldDownload) {
+
+          if (asVersion) {
+            try {
+              await api("POST", `/quotations/${row.id}/versions`, {
+                total: newTotal,
+                ppn: newPpn,
+                discount: discNum,
+                grandTotal: newAfterDisc,
+                note: `Versi dari Template (${items.length} item)`,
+              });
+              await reload();
+              await onRefresh?.();
+              toast(`Template disimpan & Versi baru berhasil ditambahkan ke Riwayat Versi!`);
+            } catch (err: any) {
+              toast(err?.message || "Gagal membuat versi dari template", "danger");
+            }
+          } else if (shouldDownload) {
             downloadQuotationTemplate({
               quotationId: row.id,
               customer: row.customer,
@@ -368,6 +383,7 @@ export function QuotationExtras({
           } else {
             toast("Template & item penawaran berhasil disimpan!");
           }
+          await onRefresh?.();
         }}
       />
 
@@ -377,24 +393,33 @@ export function QuotationExtras({
         right={
           <Button size="sm" variant="outline" onPress={() => setRevisiOpen(true)} className="flex-row items-center gap-1">
             <Plus size={14} color={colors.text} />
-            <Text className="text-xs">Buat Revisi (v{nextVersionNum})</Text>
+            <Text className="text-xs">
+              {apiVersions.length === 0 ? "Buat Versi 1" : `Buat Revisi (v${nextVersionNum})`}
+            </Text>
           </Button>
         }
       >
         <View className="gap-2.5">
-          {apiVersions.map((ver, i) => (
-            <View
-              key={ver.id || ver.v}
-              className="bg-card border border-border/80 rounded-xl p-3 gap-2"
-            >
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1 mr-2">
-                  <View className="flex-row items-center gap-2">
-                    <Text className="text-sm font-bold text-foreground">
-                      Versi {ver.v}
-                    </Text>
-                    <StatusBadge status={(ver as any).status || (i === 0 ? row.status : "Ditolak")} />
-                  </View>
+          {apiVersions.length === 0 ? (
+            <View className="py-6 items-center justify-center">
+              <Text className="text-sm text-muted-foreground text-center">
+                Belum ada versi resmi penawaran. Klik &quot;Buat Versi 1&quot; atau simpan dari template untuk mendokumentasikan penawaran.
+              </Text>
+            </View>
+          ) : (
+            apiVersions.map((ver, i) => (
+              <View
+                key={ver.id || ver.v}
+                className="bg-card border border-border/80 rounded-xl p-3 gap-2"
+              >
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-1 mr-2">
+                    <View className="flex-row items-center gap-2">
+                      <Text className="text-sm font-bold text-foreground">
+                        Versi {ver.v}
+                      </Text>
+                      <StatusBadge status={ver.v === row.versi ? row.status : ((ver as any).status || "Ditolak")} />
+                    </View>
                   <Text className="text-xs text-muted-foreground mt-0.5">
                     {ver.reason ? `${ver.reason} · ` : ""}{ver.date || "-"}
                   </Text>
@@ -453,7 +478,7 @@ export function QuotationExtras({
                 </Button>
               </View>
             </View>
-          ))}
+          )))}
         </View>
       </Panel>
 
@@ -788,6 +813,7 @@ export function QuotationExtras({
         open={invModalOpen}
         onOpenChange={setInvModalOpen}
         initialQuotation={row}
+        onSuccess={onRefresh}
       />
     </>
   );

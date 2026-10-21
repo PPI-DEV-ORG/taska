@@ -45,7 +45,7 @@ export function LeadExtras({ row }: { row: Row }) {
   const [fuDate, setFuDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [fuNote, setFuNote] = React.useState("");
   const [fuNextAction, setFuNextAction] = React.useState("");
-  const [fuStatus, setFuStatus] = React.useState<"SELESAI" | "JADWAL">("SELESAI");
+  const [fuStatus, setFuStatus] = React.useState<"SELESAI" | "TERJADWAL">("SELESAI");
   const [selectedFu, setSelectedFu] = React.useState<any>(null);
   const [editFuStatus, setEditFuStatus] = React.useState<"SELESAI" | "TERJADWAL">("SELESAI");
 
@@ -319,7 +319,7 @@ export function LeadExtras({ row }: { row: Row }) {
             <View className="gap-1.5">
               <Text className="text-xs text-muted-foreground font-medium">Status Follow-up</Text>
               <View className="flex-row gap-2">
-                {(["SELESAI", "JADWAL"] as const).map((st) => (
+                {(["SELESAI", "TERJADWAL"] as const).map((st) => (
                   <Button
                     key={st}
                     size="sm"

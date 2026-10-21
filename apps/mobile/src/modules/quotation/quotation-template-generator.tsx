@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
 import { colors } from "@/tokens";
-import { rupiah } from "@/lib/format";
+import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
@@ -44,6 +44,7 @@ export function QuotationTemplateGenerator({
       signerTitle?: string;
     },
     shouldDownload?: boolean,
+    asVersion?: boolean,
   ) => Promise<void> | void;
 }) {
   const [previewOpen, setPreviewOpen] = React.useState(false);
@@ -111,7 +112,7 @@ export function QuotationTemplateGenerator({
     setItems(items.filter((it) => it.id !== id));
   }
 
-  async function handleSaveItems(shouldDownload = false) {
+  async function handleSaveItems(shouldDownload = false, asVersion = false) {
     const total = items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0);
     await onUpdateItems(
       items,
@@ -128,6 +129,7 @@ export function QuotationTemplateGenerator({
         signerTitle,
       },
       shouldDownload,
+      asVersion,
     );
     setEditItemsOpen(false);
   }
@@ -319,7 +321,7 @@ export function QuotationTemplateGenerator({
                   <View className="flex-1 min-w-[140px]">
                     <Input
                       value={newItemHarga}
-                      onChangeText={setNewItemHarga}
+                      onChangeText={(v) => setNewItemHarga(formatThousands(v))}
                       keyboardType="numeric"
                       placeholder="Harga Satuan (Rp)"
                     />
@@ -363,7 +365,7 @@ export function QuotationTemplateGenerator({
                     </View>
                     <View className="w-28">
                       <Input
-                        value={String(it.harga)}
+                        value={it.harga ? formatThousands(it.harga) : ""}
                         onChangeText={(v) => updateItemField(it.id, { harga: Number(v.replace(/\D/g, "")) || 0 })}
                         keyboardType="numeric"
                         placeholder="Harga"
@@ -446,10 +448,14 @@ export function QuotationTemplateGenerator({
             <Button variant="outline" onPress={() => setEditItemsOpen(false)}>
               <Text>Batal</Text>
             </Button>
-            <Button variant="outline" onPress={() => handleSaveItems(false)}>
+            <Button variant="outline" onPress={() => handleSaveItems(false, false)}>
               <Text>Simpan Template & Data</Text>
             </Button>
-            <Button onPress={() => handleSaveItems(true)}>
+            <Button variant="outline" onPress={() => handleSaveItems(false, true)} className="flex-row items-center gap-1.5">
+              <Plus size={14} color={colors.text} />
+              <Text>Simpan & Jadikan Versi Baru</Text>
+            </Button>
+            <Button onPress={() => handleSaveItems(true, false)} className="flex-row items-center gap-1.5">
               <FileDown size={15} color={colors.background} />
               <Text>Simpan & Download Excel (.xlsx)</Text>
             </Button>

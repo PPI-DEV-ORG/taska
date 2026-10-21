@@ -286,7 +286,7 @@ export function adaptRow(module: string, raw: any): Row {
         disc: n(raw.discount),
         totalAfterDisc: n(raw.grandTotal),
         status: toLabel("quotations", raw.status),
-        versi: n(raw.currentVersion) || 1,
+        versi: n(raw.currentVersion) || 0,
         berlaku: d(raw.validUntil),
         pemilik: nameOf(raw.owner),
         dibuat: d(raw.createdAt),
@@ -308,7 +308,10 @@ export function adaptRow(module: string, raw: any): Row {
           let vStatus = "Draft";
           let vReason = v.note || `Revisi v${v.version}`;
           const match = String(v.note || "").match(/^\[STATUS:([^\]]+)\]\s*(.*)$/);
-          if (match) {
+          if (v.version === raw.currentVersion) {
+            vStatus = toLabel("quotations", raw.status) || match?.[1] || "Menunggu";
+            vReason = match?.[2] || v.note || `Revisi v${v.version}`;
+          } else if (match) {
             vStatus = match[1] ?? "Draft";
             vReason = match[2] || `Revisi v${v.version}`;
           } else if (v.version < (raw.currentVersion || 1)) {
@@ -381,12 +384,27 @@ export function adaptRow(module: string, raw: any): Row {
         file: raw.file ?? null,
         catatan: raw.notes ?? raw.catatan ?? "",
       };
-    case "invoices":
+    case "invoices": {
+      const qNum =
+        raw.quotation ??
+        raw.clientPo?.quotation?.number ??
+        raw.project?.quotation?.number ??
+        (raw.description ? (raw.description.match(/(?:QUO|PNW)[-\w\/]+/i)?.[0] ?? undefined) : undefined);
+      const qId =
+        raw.quotationId ??
+        raw.clientPo?.quotationId ??
+        raw.project?.quotationId ??
+        idOf(raw.clientPo?.quotation) ??
+        idOf(raw.project?.quotation) ??
+        undefined;
+
       return {
         ...base,
         nomor: raw.number ?? "",
         po: raw.clientPo?.number ?? "-",
         clientPoId: idOf(raw.clientPo),
+        quotation: qNum ?? "",
+        quotationId: qId ?? null,
         customer: nameOf(raw.customer) ?? "",
         customerId: idOf(raw.customer),
         jenis: toLabel("invoiceType", raw.type),
@@ -406,6 +424,7 @@ export function adaptRow(module: string, raw: any): Row {
           reference: p.reference ?? "-",
           fileId: p.fileId ?? null,
         })),
+        discount: raw.discount != null ? n(raw.discount) : undefined,
         items: Array.isArray(raw.items) ? raw.items : [],
         subject: raw.subject ?? undefined,
         intro: raw.intro ?? undefined,
@@ -421,6 +440,7 @@ export function adaptRow(module: string, raw: any): Row {
         fileName: raw.fileName ?? undefined,
         fileUploaded: !!(raw.fileId || raw.fileUploaded),
       };
+    }
     case "projects": {
       const qNum = raw.quotation?.number ?? raw.quotation?.nomor ?? null;
       const qCust = raw.quotation?.customer?.name ?? raw.quotation?.customer?.nama ?? null;
@@ -1145,12 +1165,27 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
         type: row.jenis ? (toEnum("invoiceType", row.jenis) || "TERMIN") : "TERMIN",
         amount: amt,
+        discount: row.discount != null ? num(row.discount) : undefined,
         ppn,
         total: tot,
         date: row.tanggal || row.date || today,
         dueDate: row.jatuhTempo || row.dueDate || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
         fileId: row.fileId ? Number(row.fileId) : undefined,
         description: row.catatan || row.description || undefined,
+        quotationId: row.quotationId != null && row.quotationId !== "" ? Number(row.quotationId) : undefined,
+        quotation: row.quotation || undefined,
+        items: Array.isArray(row.items) ? row.items : undefined,
+        subject: row.subject || undefined,
+        intro: row.intro || undefined,
+        notesList: Array.isArray(row.notesList) ? row.notesList : undefined,
+        city: row.city || undefined,
+        kopText: row.kopText || undefined,
+        kopLogoUrl: row.kopLogoUrl || undefined,
+        customerAddress: row.customerAddress || undefined,
+        signerName: row.signerName || undefined,
+        signerTitle: row.signerTitle || undefined,
+        dpLabel: row.dpLabel || undefined,
+        dpAmount: row.dpAmount != null ? num(row.dpAmount) : undefined,
         status: "DRAFT",
       };
     }
@@ -1383,6 +1418,9 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "description",
     "type",
     "amount",
+    "discount",
+    "quotationId",
+    "quotation",
     "ppn",
     "total",
     "date",

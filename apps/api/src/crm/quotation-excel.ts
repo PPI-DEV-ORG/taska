@@ -774,10 +774,16 @@ export async function buildQuotationPdf(params: {
   });
 
   const finalTotal = rawItems.length > 0 ? calcSum : Number(params.total ?? calcSum) || 0;
-  const finalPpn =
-    params.ppn !== undefined && params.ppn > 0 ? Number(params.ppn) : Math.round(finalTotal * 0.11);
   const finalDisc = Number(params.discount ?? 0) || 0;
-  const finalGrandTotal = Math.max(0, finalTotal + finalPpn - finalDisc);
+  const netBeforeTax = Math.max(0, finalTotal - finalDisc);
+  const finalPpn =
+    params.ppn !== undefined
+      ? Number(params.ppn)
+      : Math.round(netBeforeTax * 0.11);
+  const finalGrandTotal =
+    params.grandTotal !== undefined && Number(params.grandTotal) > 0
+      ? Number(params.grandTotal)
+      : Math.max(0, netBeforeTax + finalPpn);
 
   tableBody.push([
     { text: "", colSpan: 4, border: [false, true, false, false] },
