@@ -12,7 +12,7 @@ import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { tanggal } from "@/lib/format";
-import { apiBase } from "@/services/api";
+import { api, apiBase } from "@/services/api";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
@@ -87,32 +87,96 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN" : "Surat jalan penugasan tanpa barang"}
         right={
           (user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang") && !isDelivered ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => {
-                const next = !hasGoods;
-                patchRow("delivery-notes", row.id, {
-                  withGoods: next,
-                  barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
-                });
-                toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
-              }}
-            >
-              <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
-            </Button>
+            <View className="flex-row items-center gap-2">
+              {hasGoods && row.status !== "Dikirim" && row.status !== "DIKIRIM" && (
+                <Button
+                  size="sm"
+                  onPress={async () => {
+                    try {
+                      await api("POST", `/delivery-notes/${row.id}/goods`, {
+                        items: row.items,
+                        serials: Array.isArray(row.snList) ? row.snList : [],
+                      });
+                      await patchRow("delivery-notes", row.id, { status: "Dikirim" });
+                      toast("Barang berhasil dikeluarkan dari gudang & status surat jalan diubah ke Dikirim");
+                      await onRefresh?.();
+                    } catch (e: any) {
+                      toast(e?.message ?? "Gagal memproses pengeluaran barang", "danger");
+                    }
+                  }}
+                >
+                  <Text className="text-xs">Berangkatkan Barang</Text>
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => {
+                  const next = !hasGoods;
+                  patchRow("delivery-notes", row.id, {
+                    withGoods: next,
+                    barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
+                  });
+                  toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
+                }}
+              >
+                <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
+              </Button>
+            </View>
           ) : undefined
         }
       >
         {!hasGoods ? (
           <Text className="text-muted-foreground text-sm">Surat jalan ini untuk penugasan tanpa barang.</Text>
         ) : (
-          <>
-            <Line left={row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional"} sub="Barang ber-SN wajib di-scan sebelum berangkat" />
-            {user!.role === "super_admin" || user!.role === "gudang" || user!.role === "bos" ? (
-              <View className="mt-3"><ScanInput existing={Array.isArray(row.snList) ? row.snList : []} /></View>
+          <View className="gap-3">
+            {Array.isArray(row.items) && row.items.length > 0 ? (
+              <View className="gap-2">
+                <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Daftar Barang Surat Jalan ({row.items.length} item)
+                </Text>
+                {row.items.map((it: any, idx: number) => {
+                  const prod = it.product;
+                  return (
+                    <View
+                      key={it.id ?? idx}
+                      className="p-3 bg-panel/40 border border-border/70 rounded-xl flex-row items-center justify-between"
+                    >
+                      <View className="flex-1 pr-2">
+                        <View className="flex-row items-center gap-2">
+                          <Text className="text-sm font-semibold text-foreground">
+                            {prod?.name ?? it.name ?? "Barang"}
+                          </Text>
+                          {prod?.brand ? (
+                            <View className="bg-panel border border-border/60 rounded px-1.5 py-0.5">
+                              <Text className="text-[10px] font-medium text-muted-foreground">{prod.brand}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <Text className="text-xs text-muted-foreground mt-0.5">
+                          Tipe: {prod?.hasSerial ? "Lacak Serial Number (SN)" : "Barang Curah / Tanpa SN"}
+                        </Text>
+                      </View>
+                      <View className="items-end">
+                        <Text className="text-sm font-bold text-foreground">
+                          {it.qty} {prod?.unit ?? "unit"}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <Line left={row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional"} sub="Barang ber-SN wajib di-scan sebelum berangkat" />
+            )}
+
+            {(user?.role === "super_admin" || user?.role === "gudang" || user?.role === "bos") && !isDelivered ? (
+              <View className="mt-2 pt-2 border-t border-border/50 gap-2">
+                <Text className="text-xs font-semibold text-foreground">Pemindaian Serial Number (Khusus Barang ber-SN):</Text>
+                <ScanInput existing={Array.isArray(row.snList) ? row.snList : []} />
+              </View>
             ) : null}
-          </>
+          </View>
         )}
       </Panel>
 

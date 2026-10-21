@@ -39,6 +39,24 @@ export class LocationDto {
   projectId?: number;
 }
 
+export class DeliveryItemDto {
+  @Type(() => Number)
+  @IsInt()
+  productId: number;
+
+  @Type(() => Number)
+  @IsInt()
+  qty: number;
+
+  @IsOptional()
+  @IsString()
+  serials?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 export class DeliveryCreateDto {
   @IsOptional() @IsDateString()
   date?: string;
@@ -69,11 +87,22 @@ export class DeliveryCreateDto {
 
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LocationDto)
   locations?: LocationDto[];
+
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => DeliveryItemDto)
+  items?: DeliveryItemDto[];
 }
 
 export class GoodsDto {
-  @IsArray() @IsString({ each: true }) @MinLength(1, { each: true })
-  serials: string[];
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  serials?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DeliveryItemDto)
+  items?: DeliveryItemDto[];
 }
 
 export class DeliveryStatusDto {

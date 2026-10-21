@@ -11,7 +11,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { ProjectsService } from "./projects.service.js";
-import { AssignDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto } from "./dto.js";
+import { AssignDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
@@ -118,5 +118,25 @@ export class ProjectsController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.removeRequirement(id, reqId, user);
+  }
+
+  @Post(":id/sync-quotation")
+  @Require("projects", "U")
+  syncQuotation(
+    @Param("id", ParseIntPipe) id: number,
+    @Body("quotationId") quotationId: number,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.syncQuotationRequirements(id, quotationId, user);
+  }
+
+  @Post(":id/return-materials")
+  @Require("projects", "U")
+  returnMaterials(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: ReturnMaterialsDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.returnMaterials(id, dto, user);
   }
 }

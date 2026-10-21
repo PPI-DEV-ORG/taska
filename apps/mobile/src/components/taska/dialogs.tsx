@@ -471,8 +471,18 @@ export function getDynamicOptions(
       return nonEmpty((data.products ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
     case "penawaran": {
       const qList = (data.quotations ?? []);
-      if (moduleKey === "po-client") {
-        return qList.map((q: any) => `${q.nomor} - ${q.customer || "-"} - ${q.lead || q.nama || "-"}`);
+      if (moduleKey === "po-client" || moduleKey === "projects") {
+        return nonEmpty(
+          [
+            "-",
+            ...qList.map((q: any) => {
+              const num = q.nomor || q.number || "";
+              const info = [q.customer, q.lead || q.nama].filter(Boolean).join(" · ");
+              return info ? `${num} - ${info}` : num;
+            }).filter(Boolean),
+          ],
+          f.options
+        );
       }
       return nonEmpty(["-", ...qList.map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
     }

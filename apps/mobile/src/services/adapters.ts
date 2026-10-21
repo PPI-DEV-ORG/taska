@@ -421,7 +421,11 @@ export function adaptRow(module: string, raw: any): Row {
         fileName: raw.fileName ?? undefined,
         fileUploaded: !!(raw.fileId || raw.fileUploaded),
       };
-    case "projects":
+    case "projects": {
+      const qNum = raw.quotation?.number ?? raw.quotation?.nomor ?? null;
+      const qCust = raw.quotation?.customer?.name ?? raw.quotation?.customer?.nama ?? null;
+      const qLead = raw.quotation?.lead?.name ?? raw.quotation?.lead?.nama ?? null;
+      const qDisplay = qNum ? (qCust || qLead ? `${qNum} - ${[qCust, qLead].filter(Boolean).join(" · ")}` : qNum) : "-";
       return {
         ...base,
         nama: raw.name ?? "",
@@ -438,12 +442,16 @@ export function adaptRow(module: string, raw: any): Row {
         selesai: d(raw.endDate),
         barang: "-",
         quotationId: idOf(raw.quotation),
+        penawaran: qDisplay,
+        lead: qLead ?? "-",
+        leadId: raw.quotation?.leadId ?? null,
         prdFileId: raw.prdFileId ?? null,
         bahpFileId: raw.bahpFileId ?? null,
         bastFileId: raw.bastFileId ?? null,
         doFileId: raw.doFileId ?? null,
         _members: (raw.members ?? []).map((m: any) => ({ id: String(m.userId), name: nameOf(m.user), role: roleToUi(m.user?.role) })),
       };
+    }
     case "tasks":
       return {
         ...base,
@@ -582,6 +590,8 @@ export function adaptRow(module: string, raw: any): Row {
         persetujuan: raw.status === "PENDING" ? "Menunggu persetujuan" : "Disetujui",
         withGoods: !!raw.withGoods,
         reportText: raw.reportText ?? "",
+        items: raw.items ?? [],
+        _items: raw.items ?? [],
         _locations: raw.locations ?? [],
         fileId: raw.scanFileId ?? raw.signedFileId ?? null,
         scanFileId: raw.scanFileId ?? raw.signedFileId ?? null,
@@ -934,11 +944,12 @@ function findId(list: any[] | undefined, val: any): number | undefined {
   if (!sVal) return undefined;
   if (Array.isArray(list)) {
     const cleanVal = (sVal.split("(")[0] ?? sVal).trim().toLowerCase();
+    const cleanValDash = (sVal.split(" - ")[0] ?? sVal).trim().toLowerCase();
     const match = list.find((r) => {
       const candidates = [r.nama, r.name, r.nomor, r.number, r.sku].filter(Boolean);
       return candidates.some((c) => {
         const sc = String(c).trim().toLowerCase();
-        return sc === sVal.toLowerCase() || sc === cleanVal;
+        return sc === sVal.toLowerCase() || sc === cleanVal || sc === cleanValDash;
       });
     });
     if (match?.id != null) return Number(match.id);
@@ -1067,9 +1078,13 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       const rawType = row.jenis ?? row.type;
       const mappedType = toEnum("projectType", rawType);
       const safeType = allowedTypes.includes(mappedType) ? mappedType : "CUSTOMER";
+      const qId = row.quotationId != null && row.quotationId !== ""
+        ? Number(row.quotationId)
+        : findId(db?.quotations, row.penawaran);
+      const qObj = qId ? (db?.quotations ?? []).find((q: any) => Number(q.id) === qId) : null;
       const custId = row.customerId != null && row.customerId !== ""
         ? Number(row.customerId)
-        : findId(db?.customers, row.customer ?? row.perusahaan);
+        : findId(db?.customers, row.customer ?? row.perusahaan) ?? (qObj?.customerId != null ? Number(qObj.customerId) : undefined);
       const custObj = db?.customers?.find((c: any) => c.id === custId || c.nama === (row.customer ?? row.perusahaan));
       const custName = custObj?.nama || row.customer || row.perusahaan || "Customer";
       const rawProjName = row.nama ?? row.name;
@@ -1081,6 +1096,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         name: projName,
         type: safeType,
         customerId: custId,
+        quotationId: qId ?? undefined,
         startDate: row.mulai || row.startDate || today,
         endDate: row.selesai || row.endDate || undefined,
         status: "BERJALAN",
@@ -1211,6 +1227,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
                   projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
                 },
               ],
+        items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
         reportText: row.reportText || (row.barang && row.barang !== "-" ? String(row.barang) : undefined),
         scanFileId: row.scanFileId ?? (row.fileId ? Number(row.fileId) : undefined),
         reportFileId: row.reportFileId ? Number(row.reportFileId) : undefined,
@@ -1520,11 +1537,16 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   } else if (module === "projects") {
     if (patch.jenis !== undefined) out.type = toEnum("projectType", patch.jenis);
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.penawaran !== undefined) {
+      out.quotationId = patch.penawaran === "-" || !patch.penawaran ? null : (findId(db?.quotations, patch.penawaran) ?? null);
+    }
+    if (patch.quotationId !== undefined) out.quotationId = patch.quotationId ? Number(patch.quotationId) : null;
     if (patch.pm !== undefined) out.picId = findId(db?.users, patch.pm);
     if (patch.mulai !== undefined) out.startDate = patch.mulai;
     if (patch.selesai !== undefined) out.endDate = patch.selesai;
     if (patch.progres !== undefined) out.progress = num(patch.progres);
     if (patch.status !== undefined) out.status = toEnum("projects", patch.status) || patch.status;
+    if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);
   } else if (module === "tasks") {
     if (patch.pic !== undefined) out.assigneeId = findId(db?.users, patch.pic);
     if (patch.tenggat !== undefined) out.dueDate = patch.tenggat;

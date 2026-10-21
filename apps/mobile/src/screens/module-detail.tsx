@@ -351,6 +351,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         customer: custName,
         perusahaan: custName,
         customerId: row.customerId,
+        quotationId: leadQuotation?.id ? Number(leadQuotation.id) : undefined,
+        penawaran: leadQuotation?.nomor,
         jenis: "Customer",
         pm: data.users?.find((u: any) => u.role === "pm")?.nama || "Dimas Prasetyo",
         mulai: getTodayIso(),

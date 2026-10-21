@@ -7,7 +7,8 @@ import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import type { Project } from "../generated/prisma/client.js";
-import { AssignDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto } from "./dto.js";
+import { AssignDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
+import { StockService } from "../stock/stock.service.js";
 
 const MANAGER_ROLES = ["PM", "ADMIN", "BOS", "SUPER_ADMIN"];
 const MEMBER_ROLES = ["PM", "SE", "TEKNISI", "SUPER_ADMIN"];
@@ -19,6 +20,7 @@ export class ProjectsService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly reservations: ReservationsService,
+    private readonly stock: StockService,
   ) {}
 
   private async access(project: Project, user: RequestUser, forWrite = false) {
@@ -86,7 +88,15 @@ export class ProjectsService {
         include: {
           pic: { select: { id: true, name: true, role: true } },
           customer: { select: { id: true, name: true } },
-          quotation: { select: { id: true, number: true, status: true } },
+          quotation: {
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              customer: { select: { id: true, name: true } },
+              lead: { select: { id: true, name: true } },
+            },
+          },
           _count: { select: { members: true, tasks: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["startDate", "endDate", "createdAt"], "startDate"),
@@ -117,7 +127,16 @@ export class ProjectsService {
         include: {
           pic: { select: { id: true, name: true, role: true } },
           customer: { select: { id: true, name: true } },
-          quotation: { select: { id: true, number: true, status: true, grandTotal: true } },
+          quotation: {
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              grandTotal: true,
+              customer: { select: { id: true, name: true } },
+              lead: { select: { id: true, name: true } },
+            },
+          },
           members: { include: { user: { select: { id: true, name: true, role: true } } } },
           requirements: {
             include: { product: { select: { id: true, sku: true, name: true, unit: true } } },
@@ -214,6 +233,11 @@ export class ProjectsService {
       });
     }
     this.notifications.dataChange("projects", "create", project.id);
+    if (project.quotationId) {
+      await this.syncQuotationRequirements(project.id, project.quotationId, user).catch((err) => {
+        console.warn("Gagal auto-sync BOQ penawaran ke proyek:", err);
+      });
+    }
     return project;
   }
 
@@ -291,6 +315,11 @@ export class ProjectsService {
           href: `/projects/${id}`,
         });
       }
+    }
+    if (dto.quotationId && dto.quotationId !== project.quotationId) {
+      await this.syncQuotationRequirements(id, dto.quotationId, user).catch((err) => {
+        console.warn("Gagal auto-sync BOQ penawaran ke proyek:", err);
+      });
     }
     return updated;
   }
@@ -634,6 +663,197 @@ export class ProjectsService {
       detail: `project #${projectId}, produk #${row.productId}`,
     });
     return { id, deleted: true };
+  }
+
+  async syncQuotationRequirements(projectId: number, quotationId: number, user: RequestUser) {
+    const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException("Project tidak ditemukan");
+
+    const metaSetting = await this.prisma.main.systemSetting.findUnique({
+      where: { key: `quotation.meta.${quotationId}` },
+    });
+    if (!metaSetting?.value) return { imported: 0, items: [] };
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(metaSetting.value);
+    } catch {
+      return { imported: 0, items: [] };
+    }
+
+    const qItems = Array.isArray(parsed?.items) ? parsed.items : [];
+    let imported = 0;
+    const results = [];
+
+    for (const item of qItems) {
+      const itemName = String(item.name || item.item || "").trim();
+      const itemQty = Math.max(1, Math.round(Number(item.qty || item.jumlah) || 1));
+      if (!itemName) continue;
+
+      let prod = await this.prisma.main.product.findFirst({
+        where: {
+          OR: [
+            { name: { equals: itemName } },
+            { sku: { equals: itemName } },
+          ],
+        },
+      });
+      if (!prod) {
+        prod = await this.prisma.main.product.findFirst({
+          where: { name: { contains: itemName } },
+        });
+      }
+      if (!prod) {
+        const sku = `PRD-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`;
+        prod = await this.prisma.main.product.create({
+          data: {
+            sku,
+            name: itemName,
+            brand: item.brand || item.merk || undefined,
+            unit: item.unit || "unit",
+            purchasePrice: Number(item.cost || item.purchasePrice || 0),
+            hasSerial: Boolean(item.hasSerial ?? (item.unit === "unit" || item.unit === "pcs")),
+          },
+        });
+      }
+
+      const existingReq = await this.prisma.main.projectRequirement.findFirst({
+        where: { projectId, productId: prod.id },
+      });
+
+      if (!existingReq) {
+        const reqRow = await this.prisma.main.projectRequirement.create({
+          data: {
+            projectId,
+            productId: prod.id,
+            qty: itemQty,
+          },
+        });
+        await this.reserveFor(projectId, reqRow.id, prod.id, itemQty);
+        imported++;
+        results.push(reqRow);
+      }
+    }
+
+    if (imported > 0) {
+      await this.audit.log({
+        actor: user,
+        action: "SYNC_BOQ_PENAWARAN",
+        entityType: "project",
+        entityId: projectId,
+        detail: `Impor ${imported} item kebutuhan barang dari Penawaran #${quotationId}`,
+      });
+      this.notifications.dataChange("projects", "update", projectId);
+    }
+
+    return { imported, items: results };
+  }
+
+  async returnMaterials(projectId: number, dto: ReturnMaterialsDto, user: RequestUser) {
+    const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException("Project tidak ditemukan");
+    await this.access(project, user, true);
+
+    const warehouse = await this.prisma.main.warehouse.findUnique({ where: { id: dto.warehouseId } });
+    if (!warehouse) throw new NotFoundException("Gudang tujuan retur tidak ditemukan");
+
+    if (!dto.items?.length) throw new BadRequestException("Pilih minimal satu barang yang diretur");
+
+    const returnedItems: Array<{ productId: number; name: string; qty: number }> = [];
+
+    await this.prisma.main.$transaction(async (tx) => {
+      for (const item of dto.items) {
+        const prod = await tx.product.findUnique({ where: { id: item.productId } });
+        if (!prod) continue;
+
+        if (prod.hasSerial && item.serials?.length) {
+          for (const sn of item.serials) {
+            const unit = await tx.serialUnit.findUnique({ where: { sn } });
+            if (unit) {
+              await tx.serialUnit.update({
+                where: { id: unit.id },
+                data: {
+                  status: "DI_GUDANG",
+                  warehouseId: warehouse.id,
+                  projectId: null,
+                },
+              });
+              await tx.serialUnitHistory.create({
+                data: {
+                  serialUnitId: unit.id,
+                  status: "DI_GUDANG",
+                  warehouseId: warehouse.id,
+                  note: `Retur sisa material proyek ${project.name}`,
+                  changedById: user.id,
+                },
+              });
+              await this.stock.applyMovement({
+                date: new Date(),
+                type: "IN",
+                category: "RETUR_PROJECT",
+                productId: prod.id,
+                toWarehouseId: warehouse.id,
+                qty: 1,
+                serialUnitId: unit.id,
+                projectId,
+                reason: dto.reason || `Retur sisa material dari proyek ${project.name}`,
+                createdById: user.id,
+              });
+            }
+          }
+        } else {
+          // Barang curah
+          await this.stock.applyMovement({
+            date: new Date(),
+            type: "IN",
+            category: "RETUR_PROJECT",
+            productId: prod.id,
+            toWarehouseId: warehouse.id,
+            qty: item.qty,
+            projectId,
+            reason: dto.reason || `Retur sisa material dari proyek ${project.name}`,
+            createdById: user.id,
+          });
+        }
+
+        // Sesuaikan reservasi di project requirement jika ada
+        const req = await tx.projectRequirement.findFirst({
+          where: { projectId, productId: item.productId },
+        });
+        if (req && req.reservedQty >= item.qty) {
+          await tx.projectRequirement.update({
+            where: { id: req.id },
+            data: { reservedQty: { decrement: item.qty } },
+          });
+          await tx.stockReservation.updateMany({
+            where: { requirementId: req.id, releasedAt: null },
+            data: { releasedAt: new Date() },
+          });
+        }
+
+        returnedItems.push({ productId: prod.id, name: prod.name, qty: item.qty });
+      }
+    });
+
+    await this.audit.log({
+      actor: user,
+      action: "RETUR_MATERIAL_PROYEK",
+      entityType: "project",
+      entityId: projectId,
+      detail: `${returnedItems.length} item sisa diretur ke ${warehouse.name}`,
+    });
+
+    await this.notifications.notify({
+      roles: ["GUDANG", "PM"],
+      kind: "STOK",
+      text: `${returnedItems.length} item material sisa proyek ${project.name} diretur ke ${warehouse.name}`,
+      href: `/projects/${projectId}`,
+    });
+
+    this.notifications.dataChange("stock", "update");
+    this.notifications.dataChange("projects", "update", projectId);
+
+    return { success: true, returned: returnedItems };
   }
 
   private async attachFile(fileId: number, refType: string, refId: number) {
