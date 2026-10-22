@@ -1,12 +1,14 @@
 import * as React from "react";
 import { View, ScrollView, Pressable } from "react-native";
-import { Printer, Plus, Check } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { Printer, Plus, Check, CheckCircle2, Circle, ExternalLink, RefreshCw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Panel } from "@/components/taska/basics";
+import { Panel, Cell } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { useApp } from "@/store/app-store";
 import { api, downloadDocumentationPdf } from "@/services/api";
 import { colors } from "@/tokens";
@@ -16,16 +18,29 @@ import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-
 import { Line } from "@/modules/shared/line";
 
 export function ProjectExtras({ row }: { row: Row }) {
+  const router = useRouter();
   const { toast, data, reload, user } = useApp();
   const products: Row[] = data.products ?? [];
   const serials: Row[] = data.serials ?? [];
   const [reserveOpen, setReserveOpen] = React.useState(false);
+  const [createInvOpen, setCreateInvOpen] = React.useState(false);
+  const [isSyncingBoq, setIsSyncingBoq] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState("");
   const [reserveQty, setReserveQty] = React.useState("2");
   const [selectedSns, setSelectedSns] = React.useState<string[]>([]);
   const [bastOpen, setBastOpen] = React.useState(false);
   const [requirements, setRequirements] = React.useState<
-    { id: string; produk: string; neededQty: number; reservedQty: number; shortageQty: number; status: string; serials?: string[] }[]
+    {
+      id: string;
+      productId?: string;
+      produk: string;
+      neededQty: number;
+      reservedQty: number;
+      shortageQty: number;
+      unitPrice: number;
+      status: string;
+      serials?: string[];
+    }[]
   >([]);
 
   const activeSelectedProduct = selectedProduct || String(products[0]?.nama ?? "");
@@ -41,9 +56,41 @@ export function ProjectExtras({ row }: { row: Row }) {
       .sort((a, b) => Number(a.id) - Number(b.id));
   }, [serials, activeProductObj]);
 
-  const canViewFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
+  const canViewFinancials = ["super_admin", "bos", "finance", "pm", "sales", "admin"].includes(user?.role || "");
+  const linkedQuotation = React.useMemo(() => {
+    const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
+    return (data.quotations ?? []).find(
+      (q: Row) =>
+        (row.quotationId && String(q.id) === String(row.quotationId)) ||
+        (cleanQuoNum && cleanQuoNum !== "-" && String(q.nomor || "").toLowerCase() === cleanQuoNum),
+    );
+  }, [data.quotations, row.quotationId, row.penawaran]);
+
+  const linkedSurveys = React.useMemo(() => {
+    return (data.surveys ?? []).filter(
+      (s: Row) =>
+        (row.leadId && String(s.leadId) === String(row.leadId)) ||
+        (linkedQuotation?.leadId && String(s.leadId) === String(linkedQuotation.leadId)) ||
+        (row.customer && row.customer !== "-" && s.customer === row.customer),
+    );
+  }, [data.surveys, row.leadId, row.customer, linkedQuotation]);
+
+  const linkedClientPos = React.useMemo(() => {
+    return (data["po-client"] ?? []).filter(
+      (po: Row) =>
+        (linkedQuotation && String(po.quotationId) === String(linkedQuotation.id)) ||
+        (linkedQuotation && String(po.penawaran || "").toLowerCase().includes(String(linkedQuotation.nomor || "").toLowerCase())) ||
+        (row.customer && row.customer !== "-" && po.customer === row.customer),
+    );
+  }, [data, linkedQuotation, row.customer]);
+
   const projectInvoices = (data.invoices || []).filter(
-    (i: any) => String(i.projectId) === String(row.id) && i.status !== "Batal"
+    (i: any) =>
+      i.direction !== "in" &&
+      i.status !== "Batal" &&
+      (String(i.projectId) === String(row.id) ||
+        (i.project && i.project === row.nama) ||
+        (linkedQuotation && String(i.quotationId) === String(linkedQuotation.id))),
   );
   const revenue = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
   const projectPos = (data["supplier-pos"] || []).filter(
@@ -63,6 +110,7 @@ export function ProjectExtras({ row }: { row: Row }) {
       const needed = Number(r.neededQty ?? r.qty ?? 0);
       const reserved = Number(r.reservedQty ?? 0);
       const shortage = Number(r.shortageQty ?? Math.max(0, needed - reserved));
+      const unitPrice = Number(r.product?.purchasePrice ?? 0);
       let parsedSerials: string[] = [];
       if (r.serials) {
         try {
@@ -78,10 +126,12 @@ export function ProjectExtras({ row }: { row: Row }) {
       const snNote = parsedSerials.length > 0 ? ` · SN: ${parsedSerials.join(", ")}` : "";
       return {
         id: String(r.id),
+        productId: r.product?.id != null ? String(r.product.id) : undefined,
         produk: r.product?.name ?? "Barang",
         neededQty: needed,
         reservedQty: reserved,
         shortageQty: shortage,
+        unitPrice,
         serials: parsedSerials,
         status:
           (shortage > 0
@@ -142,6 +192,48 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
   }
 
+  async function handleSyncBoqFromQuotation() {
+    if (!linkedQuotation) {
+      toast("Belum ada penawaran yang terhubung ke project ini", "danger");
+      return;
+    }
+    const qItems: any[] = Array.isArray(linkedQuotation.items) ? linkedQuotation.items : [];
+    if (qItems.length === 0) {
+      toast("Penawaran terkait belum memiliki rincian item BOQ", "danger");
+      return;
+    }
+    setIsSyncingBoq(true);
+    try {
+      let addedCount = 0;
+      for (const it of qItems) {
+        const prod = products.find(
+          (p) =>
+            (it.productId && String(p.id) === String(it.productId)) ||
+            String(p.nama || "").toLowerCase() === String(it.name || it.nama || "").toLowerCase(),
+        );
+        if (!prod || prod.type === "JASA") continue;
+        const sn = it.serialNumber || it.sn;
+        await api("POST", `/projects/${row.id}/requirements`, {
+          productId: Number(prod.id),
+          qty: sn ? 1 : Math.max(1, Number(it.qty) || 1),
+          serials: sn ? [String(sn)] : undefined,
+        });
+        addedCount++;
+      }
+      await loadRequirements();
+      await reload();
+      toast(
+        addedCount > 0
+          ? `${addedCount} item BOQ dari Penawaran ${linkedQuotation.nomor} berhasil disinkronkan ke Project`
+          : "Tidak ada item barang fisik baru untuk disinkronkan",
+      );
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal menyinkronkan BOQ dari penawaran", "danger");
+    } finally {
+      setIsSyncingBoq(false);
+    }
+  }
+
   async function handlePrintBast() {
     const ok = await downloadDocumentationPdf("project", row.id);
     if (ok) {
@@ -153,28 +245,234 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
   }
 
+  const quoServices = React.useMemo(() => {
+    const qItems: any[] = Array.isArray(linkedQuotation?.items) ? linkedQuotation.items : [];
+    return qItems.filter((it: any) => it.itemType === "CUSTOM" || (!it.productId && !it.serialNumber && !it.sn));
+  }, [linkedQuotation]);
+
+  const boqTotalValue = React.useMemo(() => {
+    const matVal = requirements.reduce((acc, m) => acc + m.neededQty * (m.unitPrice || 0), 0);
+    const svcVal = quoServices.reduce((acc, s) => acc + (Number(s.qty) || 1) * (Number(s.price) || 0), 0);
+    return matVal + svcVal;
+  }, [requirements, quoServices]);
+
+  const flowSteps = [
+    { key: "boq", label: "1. BOQ", done: requirements.length > 0 || quoServices.length > 0, sub: `${requirements.length + quoServices.length} item` },
+    { key: "survey", label: "2. Survey (Opsional)", done: linkedSurveys.length > 0, sub: linkedSurveys.length > 0 ? `${linkedSurveys.length} survey` : "Opsional" },
+    { key: "penawaran", label: "3. Penawaran Project", done: !!linkedQuotation, sub: linkedQuotation?.nomor || "Belum ada" },
+    { key: "po", label: "4. PO Project", done: linkedClientPos.length > 0 || projectPos.length > 0, sub: `${linkedClientPos.length} SO · ${projectPos.length} PO` },
+    { key: "progress", label: "5. Progress Project", done: Number(row.progres || 0) > 0, sub: `${row.progres ?? 0}%` },
+    { key: "invoice", label: "6. Invoice Project", done: projectInvoices.length > 0, sub: `${projectInvoices.length} invoice` },
+    { key: "bast", label: "7. Penyelesaian / BAST", done: row.status === "Selesai" || !!row.bastFileId, sub: row.status === "Selesai" ? "Selesai" : "Menunggu" },
+  ];
+
   return (
     <>
       <Panel
-        title="Kebutuhan & Reservasi Material Gudang"
-        subtitle="Sistem otomatis mengecek stok, me-reserve yang tersedia, dan membuat Request ke Procurement jika kurang."
+        title="Alur Terpadu Project (End-to-End)"
+        subtitle="Pantau kelengkapan 7 tahapan project mulai dari BOQ, Survey, Penawaran, PO, Progress, Invoice, hingga BAST"
+      >
+        <View className="flex-row flex-wrap gap-2">
+          {flowSteps.map((st) => (
+            <View
+              key={st.key}
+              className={`border rounded-xl px-3 py-2 flex-row items-center gap-2 ${
+                st.done ? "border-success/40 bg-success/10" : "border-border bg-panel/50"
+              }`}
+            >
+              {st.done ? (
+                <CheckCircle2 size={15} color={colors.success} />
+              ) : (
+                <Circle size={15} color={colors.muted} />
+              )}
+              <View>
+                <Text className="text-xs font-semibold text-foreground">{st.label}</Text>
+                <Text className="text-[11px] text-muted-foreground">{st.sub}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      </Panel>
+
+      <Panel
+        title="1. BOQ (Bill of Quantities) & Reservasi Material Project"
+        subtitle="Daftar seluruh kebutuhan barang (Ber-SN & Non-SN) serta jasa instalasi project. Stok yang tersedia otomatis di-reserve dan kekurangan masuk ke PR Procurement."
         right={
-          <Button size="sm" variant="outline" onPress={() => setReserveOpen(true)} className="flex-row items-center gap-1">
-            <Plus size={14} color={colors.text} />
-            <Text className="text-xs">Tambah Kebutuhan Barang</Text>
-          </Button>
+          <View className="flex-row flex-wrap items-center gap-1.5">
+            {linkedQuotation ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={handleSyncBoqFromQuotation}
+                disabled={isSyncingBoq}
+                className="flex-row items-center gap-1"
+              >
+                <RefreshCw size={13} color={colors.primary} />
+                <Text className="text-xs text-primary font-semibold">
+                  {isSyncingBoq ? "Menyinkronkan..." : "Sinkron BOQ dari Penawaran"}
+                </Text>
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" onPress={() => setReserveOpen(true)} className="flex-row items-center gap-1">
+              <Plus size={14} color={colors.text} />
+              <Text className="text-xs">Tambah Item BOQ</Text>
+            </Button>
+          </View>
         }
       >
         <View className="gap-2">
-          {requirements.length === 0 ? (
-            <Text className="text-muted-foreground text-xs py-2">Belum ada daftar kebutuhan barang untuk project ini.</Text>
+          {requirements.length === 0 && quoServices.length === 0 ? (
+            <Text className="text-muted-foreground text-xs py-2">
+              Belum ada item BOQ untuk project ini. Klik &quot;Tambah Item BOQ&quot; atau &quot;Sinkron BOQ dari Penawaran&quot;.
+            </Text>
           ) : (
-            requirements.map((m) => (
+            <>
+              {requirements.map((m) => (
+                <Line
+                  key={m.id}
+                  left={m.produk}
+                  sub={m.status}
+                  right={
+                    <View className="items-end">
+                      <Text className="font-semibold text-sm">{m.neededQty} unit</Text>
+                      {m.unitPrice > 0 ? (
+                        <Text className="text-muted-foreground text-[11px]">{rupiah(m.neededQty * m.unitPrice)}</Text>
+                      ) : null}
+                    </View>
+                  }
+                />
+              ))}
+              {quoServices.map((sv: any, idx: number) => (
+                <Line
+                  key={`svc-${idx}`}
+                  left={`${sv.name || sv.nama || "Jasa Instalasi"} (Jasa / Pekerjaan)`}
+                  sub={`Dari Penawaran ${linkedQuotation?.nomor || ""} · ${sv.qty || 1} ${sv.unit || "Lot"}`}
+                  right={<Text className="font-semibold text-sm">{rupiah((Number(sv.qty) || 1) * (Number(sv.price) || 0))}</Text>}
+                />
+              ))}
+              {boqTotalValue > 0 ? (
+                <Line
+                  left="Total Estimasi Nilai BOQ (Material + Jasa)"
+                  right={<Text className="text-sm font-bold text-primary">{rupiah(boqTotalValue)}</Text>}
+                />
+              ) : null}
+            </>
+          )}
+        </View>
+      </Panel>
+
+      <Panel
+        title="2–6. Dokumen Komersial Project (Survey, Penawaran, PO & Invoice Project)"
+        subtitle="Integrasi dokumen komersial project dalam satu tampilan terpadu"
+        right={
+          canViewFinancials ? (
+            <Button size="sm" onPress={() => setCreateInvOpen(true)} className="flex-row items-center gap-1 bg-primary">
+              <Plus size={13} color={colors.background} />
+              <Text className="text-xs text-primary-foreground font-semibold">Buat Invoice Project</Text>
+            </Button>
+          ) : undefined
+        }
+      >
+        <Line
+          left="Survey Lokasi (Opsional)"
+          sub={
+            linkedSurveys.length > 0
+              ? linkedSurveys.map((s: Row) => `${s.lokasi || s.lead} (${s.status})`).join(", ")
+              : "Tidak ada / belum ada survey lokasi untuk project ini"
+          }
+          right={
+            linkedSurveys[0] ? (
+              <Button size="sm" variant="outline" onPress={() => router.push(`/surveys/${linkedSurveys[0]!.id}` as any)}>
+                <ExternalLink size={12} color={colors.text} />
+                <Text className="text-xs">Buka Survey</Text>
+              </Button>
+            ) : (
+              <StatusBadge status="Opsional" />
+            )
+          }
+        />
+
+        <Line
+          left="Penawaran Project (Quotation)"
+          sub={
+            linkedQuotation
+              ? `${linkedQuotation.nomor} · Nilai: ${rupiah(linkedQuotation.totalAfterDisc || linkedQuotation.nilai || 0)} (${linkedQuotation.status})`
+              : "Belum ada penawaran yang ditautkan"
+          }
+          right={
+            linkedQuotation ? (
+              <Button size="sm" variant="outline" onPress={() => router.push(`/quotations/${linkedQuotation.id}` as any)}>
+                <ExternalLink size={12} color={colors.text} />
+                <Text className="text-xs">Buka Penawaran</Text>
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onPress={() => router.push("/quotations" as any)}>
+                <Text className="text-xs">Lihat Penawaran</Text>
+              </Button>
+            )
+          }
+        />
+
+        <Line
+          left="PO Project — Sales Order / PO Client"
+          sub={
+            linkedClientPos.length > 0
+              ? linkedClientPos.map((po: Row) => `${po.nomor} (${rupiah(po.nilai)})`).join(", ")
+              : "Belum ada PO Client tercatat"
+          }
+          right={
+            linkedClientPos[0] ? (
+              <Button size="sm" variant="outline" onPress={() => router.push(`/po-client/${linkedClientPos[0]!.id}` as any)}>
+                <ExternalLink size={12} color={colors.text} />
+                <Text className="text-xs">Buka SO / PO Client</Text>
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onPress={() => router.push("/po-client" as any)}>
+                <Text className="text-xs">Catat PO Client</Text>
+              </Button>
+            )
+          }
+        />
+
+        <Line
+          left="PO Project — Pengadaan ke Supplier"
+          sub={
+            projectPos.length > 0
+              ? projectPos.map((po: Row) => `${po.nomor} · ${po.supplier} (${po.status})`).join(", ")
+              : "Belum ada PO Supplier untuk project ini"
+          }
+          right={
+            projectPos[0] ? (
+              <Button size="sm" variant="outline" onPress={() => router.push(`/supplier-pos/${projectPos[0]!.id}` as any)}>
+                <ExternalLink size={12} color={colors.text} />
+                <Text className="text-xs">Buka PO Supplier</Text>
+              </Button>
+            ) : (
+              <StatusBadge status="0 PO Supplier" />
+            )
+          }
+        />
+
+        <View className="mt-2 pt-2 border-t border-border/60 gap-1">
+          <Text className="text-xs font-semibold text-foreground mb-1">
+            Daftar Invoice Project ({projectInvoices.length})
+          </Text>
+          {projectInvoices.length === 0 ? (
+            <Text className="text-muted-foreground text-xs">Belum ada invoice yang diterbitkan untuk project ini.</Text>
+          ) : (
+            projectInvoices.map((inv: any) => (
               <Line
-                key={m.id}
-                left={m.produk}
-                sub={m.status}
-                right={<Text className="font-semibold text-sm">{m.neededQty} unit</Text>}
+                key={inv.id}
+                left={`${inv.nomor} (${inv.jenis})`}
+                sub={`Total ${rupiah(inv.total)} · Terbayar ${rupiah(inv.terbayar)}`}
+                right={
+                  <View className="flex-row items-center gap-2">
+                    <Cell fmt="status" value={inv.status} />
+                    <Button size="sm" variant="outline" onPress={() => router.push(`/invoices/${inv.id}` as any)}>
+                      <Text className="text-xs">Buka</Text>
+                    </Button>
+                  </View>
+                }
               />
             ))
           )}
@@ -388,6 +686,7 @@ export function ProjectExtras({ row }: { row: Row }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <CreateInvoiceDialog open={createInvOpen} onOpenChange={setCreateInvOpen} />
     </>
   );
 }

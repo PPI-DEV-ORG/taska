@@ -683,6 +683,18 @@ export function adaptRow(module: string, raw: any): Row {
       const desc = raw.description ?? "";
       const poMatch = desc.match(/\[PO:\s*([^\]]+)\]/);
       const snMatch = desc.match(/\[SN:\s*([^\]]+)\]/);
+      const isReturSales = /\[RETUR-PENJUALAN\]/i.test(desc);
+      const isReturPurchase = /\[RETUR-PEMBELIAN\]/i.test(desc);
+      const jenisLabel = isReturSales
+        ? "Retur Penjualan"
+        : isReturPurchase
+        ? "Retur Pembelian"
+        : toLabel("damageType", raw.type);
+      const kategoriLaporan = isReturSales
+        ? "Retur Penjualan"
+        : isReturPurchase
+        ? "Retur Pembelian"
+        : "Kerusakan";
       return {
         ...base,
         tanggal: d(raw.date),
@@ -690,11 +702,16 @@ export function adaptRow(module: string, raw: any): Row {
         productId: idOf(raw.product),
         sn: raw.serialUnit?.sn ?? (snMatch ? snMatch[1].trim() : "-"),
         serialUnitId: idOf(raw.serialUnit),
-        jenis: toLabel("damageType", raw.type),
+        jenis: jenisLabel,
+        kategoriLaporan,
         po: poMatch ? poMatch[1].trim() : "-",
         pelapor: nameOf(raw.reporter) ?? "",
         status: toLabel("damage-reports", raw.status),
-        keterangan: desc.replace(/\[PO:\s*[^\]]+\]\s*/g, "").replace(/\[SN:\s*[^\]]+\]\s*/g, ""),
+        keterangan: desc
+          .replace(/\[RETUR-PENJUALAN\]\s*/gi, "")
+          .replace(/\[RETUR-PEMBELIAN\]\s*/gi, "")
+          .replace(/\[PO:\s*[^\]]+\]\s*/g, "")
+          .replace(/\[SN:\s*[^\]]+\]\s*/g, ""),
         qty: n(raw.qty),
         fileId: raw.fileId ?? null,
       };
@@ -756,16 +773,23 @@ export function adaptRow(module: string, raw: any): Row {
     }
     case "warehouses":
       return { ...base, nama: raw.name ?? "", kota: raw.city ?? "", staf: "-", status: toLabel("users", raw.status) };
-    case "products":
+    case "products": {
+      const pType = String(raw.type || "BARANG").toUpperCase() === "JASA" ? "JASA" : "BARANG";
+      const isJasa = pType === "JASA";
       return {
         ...base, sku: raw.sku ?? "", nama: raw.name ?? "", merk: raw.brand ?? "", brand: raw.brand ?? "",
         deskripsi: raw.description ?? "", description: raw.description ?? "", satuan: raw.unit ?? "",
-        berSN: !!raw.hasSerial, garansi: raw.warrantyMonths != null ? `${raw.warrantyMonths} bln` : "-",
+        type: pType,
+        jenisItem: isJasa ? "Jasa" : "Barang",
+        tipeSN: isJasa ? "Jasa (Non-Stok)" : raw.hasSerial ? "Barang Ber-SN" : "Barang Non-SN",
+        berSN: isJasa ? false : !!raw.hasSerial,
+        garansi: raw.warrantyMonths != null ? `${raw.warrantyMonths} bln` : "-",
         min: n(raw.minStock), hargaBeli: n(raw.purchasePrice),
         kategori: nameOf(raw.category) ?? "",
         categoryId: idOf(raw.category),
         status: toLabel("users", raw.status),
       };
+    }
     case "productCategories":
       return { ...base, nama: raw.name ?? "", deskripsi: raw.description ?? "", prefix: raw.prefix ?? "", status: toLabel("users", raw.status) };
     case "leadSources":
@@ -1405,14 +1429,19 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
           : matchedSn?.id != null
           ? Number(matchedSn.id)
           : undefined;
+      const jenisStr = String(row.jenis || "");
+      const isReturSales = /retur\s*penjualan/i.test(jenisStr);
+      const isReturPurchase = /retur\s*pembelian/i.test(jenisStr);
       const prefixes: string[] = [];
+      if (isReturSales && !/\[RETUR-PENJUALAN\]/i.test(baseDesc)) prefixes.push("[RETUR-PENJUALAN]");
+      if (isReturPurchase && !/\[RETUR-PEMBELIAN\]/i.test(baseDesc)) prefixes.push("[RETUR-PEMBELIAN]");
       if (poVal) prefixes.push(`[PO: ${poVal}]`);
       if (snVal) prefixes.push(`[SN: ${snVal}]`);
       return {
         date: row.tanggal || row.date || today,
         productId: row.productId != null && row.productId !== "" ? Number(row.productId) : findId(db?.products, row.produk),
         serialUnitId,
-        type: toEnum("damageType", row.jenis) || "RUSAK",
+        type: (isReturSales || isReturPurchase) ? "RUSAK" : (toEnum("damageType", row.jenis) || "RUSAK"),
         qty: num(row.qty) || 1,
         description: prefixes.length ? `${prefixes.join(" ")} ${baseDesc}` : baseDesc,
         fileId: row.fileId ? Number(row.fileId) : undefined,
@@ -1422,20 +1451,25 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       return { name: row.nama ?? row.name, description: row.deskripsi || row.description || undefined, prefix: row.prefix || undefined, status: "AKTIF" };
     case "warehouses":
       return { name: row.nama ?? row.name, city: row.kota || row.city || undefined, status: "AKTIF" };
-    case "products":
+    case "products": {
+      const isJasa =
+        String(row.type || row.jenisItem || "").toUpperCase().includes("JASA") ||
+        String(row.tipeSN || "").toUpperCase().includes("JASA");
       return {
         sku: row.sku,
         name: row.nama ?? row.name,
+        type: isJasa ? "JASA" : "BARANG",
         brand: row.merk || row.brand || undefined,
         description: row.deskripsi || row.description || undefined,
-        unit: row.satuan ?? row.unit,
+        unit: row.satuan ?? row.unit ?? (isJasa ? "Jasa" : "Unit"),
         categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : findId(db?.productCategories, row.kategori),
-        hasSerial: row.berSN != null ? !!row.berSN : !!row.hasSerial,
-        minStock: num(row.min ?? row.minStock),
+        hasSerial: isJasa ? false : (row.berSN != null ? !!row.berSN : !!row.hasSerial),
+        minStock: isJasa ? 0 : num(row.min ?? row.minStock),
         warrantyMonths: row.garansi ? parseInt(String(row.garansi), 10) || undefined : undefined,
         purchasePrice: num(row.hargaBeli ?? row.purchasePrice),
         status: "AKTIF",
       };
+    }
     case "leadSources":
     case "lostReasons":
     case "expenseCategories":
@@ -1772,7 +1806,12 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.status !== undefined) out.status = toEnum("users", patch.status) || patch.status;
   } else if (module === "damage-reports") {
     if (patch.produk !== undefined) out.productId = findId(db?.products, patch.produk);
-    if (patch.jenis !== undefined) out.type = toEnum("damageType", patch.jenis) || "RUSAK";
+    const jenisStr = String(patch.jenis || "");
+    const isReturSales = /retur\s*penjualan/i.test(jenisStr);
+    const isReturPurchase = /retur\s*pembelian/i.test(jenisStr);
+    if (patch.jenis !== undefined) {
+      out.type = (isReturSales || isReturPurchase) ? "RUSAK" : (toEnum("damageType", patch.jenis) || "RUSAK");
+    }
     if (patch.qty !== undefined) out.qty = num(patch.qty);
     if (patch.serialUnitId !== undefined) out.serialUnitId = patch.serialUnitId ? Number(patch.serialUnitId) : null;
     else if (patch.sn !== undefined) {
@@ -1782,11 +1821,13 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
         : null;
       if (matchedSn?.id != null) out.serialUnitId = Number(matchedSn.id);
     }
-    if (patch.po !== undefined || patch.keterangan !== undefined || patch.sn !== undefined) {
+    if (patch.po !== undefined || patch.keterangan !== undefined || patch.sn !== undefined || isReturSales || isReturPurchase) {
       const p = patch.po && patch.po !== "-" ? (String(patch.po).split(" - ")[0] ?? "").trim() : "";
       const snClean = patch.sn && patch.sn !== "-" ? (String(patch.sn).split(" (")[0] ?? "").trim() : "";
       const d = patch.keterangan !== undefined ? patch.keterangan : "";
       const prefixes: string[] = [];
+      if (isReturSales && !/\[RETUR-PENJUALAN\]/i.test(d)) prefixes.push("[RETUR-PENJUALAN]");
+      if (isReturPurchase && !/\[RETUR-PEMBELIAN\]/i.test(d)) prefixes.push("[RETUR-PEMBELIAN]");
       if (p) prefixes.push(`[PO: ${p}]`);
       if (snClean) prefixes.push(`[SN: ${snClean}]`);
       if (prefixes.length) {
@@ -1799,8 +1840,13 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     ["customers", "suppliers", "products", "productCategories", "warehouses", "leadSources", "lostReasons", "expenseCategories", "costCenters"].includes(module)
   ) {
     if (patch.status !== undefined) out.status = toEnum("users", patch.status) || patch.status;
-    if (module === "products" && patch.kategori !== undefined) {
-      out.categoryId = findId(db?.productCategories, patch.kategori);
+    if (module === "products") {
+      if (patch.kategori !== undefined) out.categoryId = findId(db?.productCategories, patch.kategori);
+      if (patch.jenisItem !== undefined || patch.type !== undefined) {
+        const isJasa = String(patch.type || patch.jenisItem || "").toUpperCase().includes("JASA");
+        out.type = isJasa ? "JASA" : "BARANG";
+        if (isJasa) out.hasSerial = false;
+      }
     }
   } else if (module === "purchase-requests") {
     if (patch.jenisBiaya !== undefined || patch.costType !== undefined) {

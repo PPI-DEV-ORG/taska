@@ -1,12 +1,13 @@
 import * as React from "react";
 import { View, Linking } from "react-native";
-import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown, Printer, RotateCcw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel, FormField } from "@/components/taska/basics";
-import { DatePicker } from "@/components/taska/dialogs";
+import { StatusBadge } from "@/components/taska/status-badge";
+import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase } from "@/services/api";
@@ -29,7 +30,68 @@ export function InvoiceExtras({
   payOpen?: boolean;
   onPayOpenChange?: (open: boolean) => void;
 }) {
-  const { user, toast, reload, data, patchRow, setStatus } = useApp();
+  const { user, toast, reload, data, patchRow, setStatus, addRow } = useApp();
+  const [receiptPreview, setReceiptPreview] = React.useState<{
+    id: string;
+    amount: number;
+    date: string;
+    method: string;
+    reference: string;
+    fileId?: number | null;
+    idx: number;
+  } | null>(null);
+  const [returOpen, setReturOpen] = React.useState(false);
+  const [returProduct, setReturProduct] = React.useState("");
+  const [returSn, setReturSn] = React.useState("");
+  const [returQty, setReturQty] = React.useState("1");
+  const [returNote, setReturNote] = React.useState("");
+  const [isSavingRetur, setIsSavingRetur] = React.useState(false);
+
+  const salesReturns = React.useMemo(() => {
+    const invNo = String(row.nomor || "").toLowerCase();
+    const poNo = String(row.po || "").toLowerCase();
+    return (data["damage-reports"] ?? []).filter((dr: Row) => {
+      const ref = String(dr.po || "").toLowerCase();
+      return (
+        (dr.kategoriLaporan === "Retur Penjualan" || dr.jenis === "Retur Penjualan") &&
+        ((invNo && ref.includes(invNo)) || (poNo && poNo !== "-" && ref.includes(poNo)))
+      );
+    });
+  }, [data, row.nomor, row.po]);
+
+  async function handleSaveSalesReturn() {
+    if (!returProduct) {
+      toast("Pilih barang yang diretur", "danger");
+      return;
+    }
+    if (!returNote.trim()) {
+      toast("Alasan retur wajib diisi", "danger");
+      return;
+    }
+    setIsSavingRetur(true);
+    try {
+      await addRow("damage-reports", {
+        produk: returProduct,
+        sn: returSn || "-",
+        jenis: "Retur Penjualan",
+        qty: Number(returQty) || 1,
+        tanggal: new Date().toISOString().slice(0, 10),
+        po: row.nomor,
+        keterangan: returNote.trim(),
+      });
+      toast("Retur penjualan berhasil dicatat dan stok/SN diperbarui");
+      setReturOpen(false);
+      setReturProduct("");
+      setReturSn("");
+      setReturQty("1");
+      setReturNote("");
+      await reload();
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mencatat retur penjualan", "danger");
+    } finally {
+      setIsSavingRetur(false);
+    }
+  }
   const rawStatusUpper = String(row.rawStatus || "").toUpperCase();
   const isSent = row.status !== "Belum dikirim" && row.status !== "Draft" && rawStatusUpper !== "DRAFT";
   const [isSending, setIsSending] = React.useState(false);
@@ -313,16 +375,25 @@ export function InvoiceExtras({
         }}
       />
 
-      <Panel title="Riwayat Pembayaran Masuk">
+      <Panel title="Receipt / Bukti Pembayaran Masuk" subtitle="Riwayat pembayaran customer & cetak kwitansi resmi (Receipt)">
         {payments.length > 0 ? (
-          payments.map((p) => (
+          payments.map((p, idx) => (
             <Line
               key={p.id}
-              left={`${p.method} · ${p.date}`}
-              sub={p.reference && p.reference !== "-" ? `Ref: ${p.reference}` : "Pembayaran terverifikasi"}
+              left={`KW/${p.reference && p.reference !== "-" ? p.reference : `${row.nomor}/${idx + 1}`} · ${p.method}`}
+              sub={`Tanggal: ${p.date}${p.reference && p.reference !== "-" ? ` · Ref: ${p.reference}` : ""}`}
               right={
-                <View className="flex-row items-center gap-2">
-                  <Text className="text-sm font-semibold text-success">{rupiah(p.amount)}</Text>
+                <View className="flex-row items-center gap-1.5 flex-wrap">
+                  <Text className="text-sm font-semibold text-success mr-1">{rupiah(p.amount)}</Text>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => setReceiptPreview({ ...p, idx })}
+                    className="flex-row items-center gap-1 h-7 px-2"
+                  >
+                    <Printer size={12} color={colors.text} />
+                    <Text className="text-[11px] font-medium">Receipt / Kwitansi</Text>
+                  </Button>
                   {p.fileId ? (
                     <Button
                       variant="ghost"
@@ -331,7 +402,7 @@ export function InvoiceExtras({
                       className="flex-row items-center gap-1 h-7 px-2 hover:bg-panel"
                     >
                       <Paperclip size={12} color={colors.primary} />
-                      <Text className="text-[11px] text-primary font-medium">Bukti Bayar</Text>
+                      <Text className="text-[11px] text-primary font-medium">Bukti Transfer</Text>
                     </Button>
                   ) : null}
                 </View>
@@ -339,11 +410,193 @@ export function InvoiceExtras({
             />
           ))
         ) : row.terbayar > 0 ? (
-          <Line left="Transfer bank" sub="Bukti transfer tercatat" right={<Text className="text-sm">{rupiah(row.terbayar)}</Text>} />
+          <Line
+            left={`KW/${row.nomor}/1 · Transfer`}
+            sub="Bukti pembayaran tercatat"
+            right={
+              <View className="flex-row items-center gap-2">
+                <Text className="text-sm font-semibold text-success">{rupiah(row.terbayar)}</Text>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onPress={() =>
+                    setReceiptPreview({
+                      id: "1",
+                      amount: Number(row.terbayar) || 0,
+                      date: row.tanggal || new Date().toISOString().slice(0, 10),
+                      method: "TRANSFER",
+                      reference: row.nomor,
+                      idx: 0,
+                    })
+                  }
+                  className="flex-row items-center gap-1 h-7 px-2"
+                >
+                  <Printer size={12} color={colors.text} />
+                  <Text className="text-[11px] font-medium">Receipt / Kwitansi</Text>
+                </Button>
+              </View>
+            }
+          />
         ) : (
-          <Text className="text-muted-foreground text-sm">Belum ada pembayaran tercatat.</Text>
+          <Text className="text-muted-foreground text-sm">Belum ada pembayaran / receipt tercatat.</Text>
         )}
       </Panel>
+
+      <Panel
+        title={`Retur Penjualan (${salesReturns.length})`}
+        subtitle="Pencatatan pengembalian barang dari customer (otomatis memperbarui status SN & mutasi stok retur)"
+        right={
+          <Button
+            size="sm"
+            variant="outline"
+            onPress={() => {
+              const firstItem = (row.items ?? []).find((it: any) => it.productId || it.name);
+              if (firstItem) {
+                setReturProduct(firstItem.name || "");
+                setReturSn(firstItem.serialNumber || firstItem.sn || "");
+              }
+              setReturOpen(true);
+            }}
+            className="flex-row items-center gap-1"
+          >
+            <RotateCcw size={13} color={colors.text} />
+            <Text className="text-xs">Catat Retur Penjualan</Text>
+          </Button>
+        }
+      >
+        {salesReturns.length === 0 ? (
+          <Text className="text-muted-foreground text-sm">Belum ada retur penjualan pada invoice ini.</Text>
+        ) : (
+          salesReturns.map((rt: Row) => (
+            <Line
+              key={rt.id}
+              left={`${rt.produk} × ${rt.qty || 1}`}
+              sub={`${rt.sn && rt.sn !== "-" ? `SN: ${rt.sn} · ` : ""}${rt.tanggal} · ${rt.keterangan}`}
+              right={<StatusBadge status={rt.status || "Dilaporkan"} />}
+            />
+          ))
+        )}
+      </Panel>
+
+      <Dialog open={!!receiptPreview} onOpenChange={(v) => !v && setReceiptPreview(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Receipt / Bukti Pembayaran Resmi</DialogTitle>
+          </DialogHeader>
+          {receiptPreview ? (
+            <View className="border-border bg-panel/50 gap-2.5 rounded-xl border p-4">
+              <View className="border-border/60 flex-row items-center justify-between border-b pb-2.5">
+                <View>
+                  <Text className="text-base font-bold text-foreground">KWITANSI / OFFICIAL RECEIPT</Text>
+                  <Text className="text-muted-foreground text-xs">
+                    No: KW/{receiptPreview.reference && receiptPreview.reference !== "-" ? receiptPreview.reference : `${row.nomor}/${receiptPreview.idx + 1}`}
+                  </Text>
+                </View>
+                <StatusBadge status="Lunas" />
+              </View>
+              <Line left="Telah Terima Dari" right={<Text className="text-sm font-semibold">{row.customer}</Text>} />
+              <Line left="Untuk Pembayaran" right={<Text className="text-sm font-medium">Faktur {row.nomor} ({row.jenis})</Text>} />
+              <Line left="Tanggal Pembayaran" right={<Text className="text-sm">{receiptPreview.date}</Text>} />
+              <Line left="Metode & Referensi" right={<Text className="text-sm">{receiptPreview.method} ({receiptPreview.reference || "-"})</Text>} />
+              <View className="bg-primary/10 border-primary/30 mt-1 flex-row items-center justify-between rounded-lg border p-3">
+                <Text className="text-xs font-semibold text-primary">JUMLAH DITERIMA</Text>
+                <Text className="text-lg font-bold text-primary">{rupiah(receiptPreview.amount)}</Text>
+              </View>
+            </View>
+          ) : null}
+          <DialogFooter>
+            {receiptPreview?.fileId ? (
+              <Button variant="outline" onPress={() => openFileUrl(receiptPreview.fileId)}>
+                <Paperclip size={14} color={colors.primary} />
+                <Text>Buka Lampiran Transfer</Text>
+              </Button>
+            ) : null}
+            <Button
+              onPress={() => {
+                if (typeof window !== "undefined" && typeof window.print === "function") {
+                  window.print();
+                } else {
+                  toast("Kwitansi siap dicetak");
+                }
+              }}
+            >
+              <Printer size={14} color={colors.background} />
+              <Text>Cetak Kwitansi</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={returOpen} onOpenChange={setReturOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Catat Retur Penjualan ({row.nomor})</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <FormField label="Barang yang Diretur" required>
+              <SearchableSelect
+                value={returProduct}
+                onChange={(v) => {
+                  setReturProduct(v);
+                  const matchedInvItem = (row.items ?? []).find((it: any) => (it.name || it.nama) === v && (it.serialNumber || it.sn));
+                  setReturSn(matchedInvItem ? (matchedInvItem.serialNumber || matchedInvItem.sn) : "");
+                }}
+                options={Array.from(
+                  new Set([
+                    ...(row.items ?? []).map((it: any) => String(it.name || it.nama || "")).filter(Boolean),
+                    ...(data.products ?? []).filter((p: any) => p.type !== "JASA").map((p: any) => String(p.nama || "")).filter(Boolean),
+                  ]),
+                )}
+                placeholder="Pilih barang dari invoice atau master produk..."
+              />
+            </FormField>
+            {(() => {
+              const prodObj = (data.products ?? []).find((p: any) => p.nama === returProduct || p.name === returProduct);
+              const invSnList = (row.items ?? [])
+                .filter((it: any) => (it.name || it.nama) === returProduct && (it.serialNumber || it.sn))
+                .map((it: any) => String(it.serialNumber || it.sn));
+              const masterSnList = prodObj
+                ? (data.serials ?? [])
+                    .filter((s: any) => String(s.productId) === String(prodObj.id) || s.produk === prodObj.nama)
+                    .map((s: any) => String(s.sn))
+                : [];
+              const snOpts = Array.from(new Set([...invSnList, ...masterSnList])).filter(Boolean);
+              if (!prodObj?.berSN && snOpts.length === 0) return null;
+              return (
+                <FormField label="Serial Number (SN) Barang Retur">
+                  <SearchableSelect
+                    value={returSn}
+                    onChange={(v) => {
+                      setReturSn(v);
+                      setReturQty("1");
+                    }}
+                    options={snOpts}
+                    placeholder="Pilih SN unit yang diretur..."
+                  />
+                </FormField>
+              );
+            })()}
+            <FormField label="Jumlah Retur (Qty)" required>
+              <Input value={returQty} onChangeText={setReturQty} keyboardType="numeric" />
+            </FormField>
+            <FormField label="Alasan Retur Penjualan" required>
+              <Input
+                value={returNote}
+                onChangeText={setReturNote}
+                placeholder="Contoh: Unit kamera mati total saat instalasi / tukar unit baru"
+              />
+            </FormField>
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setReturOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleSaveSalesReturn} disabled={isSavingRetur}>
+              <Text>{isSavingRetur ? "Menyimpan..." : "Simpan Retur Penjualan"}</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="sm:max-w-md">

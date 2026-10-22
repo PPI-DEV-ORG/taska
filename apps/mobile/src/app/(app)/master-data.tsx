@@ -200,11 +200,14 @@ export default function MasterDataScreen() {
       satuanDisplay = `${barangSatuan} (@${barangIsiUnit.trim()} pcs)`;
     }
 
+    const isJasa = barangSN.includes("Jasa");
     addRow("products", {
       nama: barangNama,
       sku: barangSku.toUpperCase(),
-      merk: barangMerk.trim() || undefined,
-      brand: barangMerk.trim() || undefined,
+      type: isJasa ? "JASA" : "BARANG",
+      jenisItem: isJasa ? "Jasa" : "Barang",
+      merk: isJasa ? "-" : (barangMerk.trim() || undefined),
+      brand: isJasa ? "-" : (barangMerk.trim() || undefined),
       deskripsi: barangDesc.trim() || undefined,
       description: barangDesc.trim() || undefined,
       kategori: barangKategori,
@@ -212,9 +215,9 @@ export default function MasterDataScreen() {
       isiPerUnit: barangIsiUnit ? Number(barangIsiUnit) : undefined,
       satuanDasar: barangSatuan,
       hargaBeli: Number(barangHargaBeli.replace(/\D/g, "")) || 0,
-      min: Number(barangMinStok) || 0,
-      garansi: barangGaransi,
-      berSN: barangSN.includes("Ya"),
+      min: isJasa ? 0 : (Number(barangMinStok) || 0),
+      garansi: isJasa ? "Tanpa garansi" : barangGaransi,
+      berSN: isJasa ? false : barangSN.includes("Ya"),
     });
     setBarangOpen(false);
     setBarangNama("");
@@ -372,8 +375,8 @@ export default function MasterDataScreen() {
       <View className="gap-5">
         <PageHeader
           back
-          title="Master Produk & Barang"
-          subtitle={`${data.products?.length || 0} barang terdaftar (Dikelola Gudang)`}
+          title="Master Barang & Jasa (SN / Non-SN)"
+          subtitle={`${data.products?.length || 0} barang & jasa terdaftar (Dikelola Gudang)`}
           action={
             <View className="flex-row gap-2">
               <Button variant="outline" size="sm" onPress={() => setSelectedCategory(null)}>
@@ -392,7 +395,7 @@ export default function MasterDataScreen() {
                   </Button>
                   <Button size="sm" onPress={() => setBarangOpen(true)}>
                     <Plus size={15} color={colors.background} />
-                    <Text className="text-xs">Tambah Barang</Text>
+                    <Text className="text-xs">Tambah Barang / Jasa</Text>
                   </Button>
                 </>
               ) : null}
@@ -404,18 +407,18 @@ export default function MasterDataScreen() {
         />
         <DataTable
           columns={[
-            { key: "nama", label: "Nama Produk / Barang", primary: true, flex: 1.8 },
+            { key: "nama", label: "Nama Barang / Jasa", primary: true, flex: 1.8 },
             { key: "merk", label: "Merk / Brand", flex: 1 },
-            { key: "sku", label: "SKU", flex: 1 },
+            { key: "sku", label: "SKU / Kode", flex: 1 },
             { key: "kategori", label: "Kategori", flex: 1 },
             { key: "satuan", label: "Satuan", flex: 0.8 },
             { key: "garansi", label: "Garansi", flex: 1 },
-            { key: "tipeSN", label: "Tipe SN", flex: 1 },
+            { key: "tipeSN", label: "Tipe Item", flex: 1.1 },
           ]}
           rows={(data.products || []).map((p) => ({
             ...p,
             merk: p.merk || p.brand || "-",
-            tipeSN: p.berSN ? "Serial Number" : "Non-SN",
+            tipeSN: p.type === "JASA" ? "Jasa (Non-Stok)" : p.berSN ? "Barang Ber-SN" : "Barang Non-SN",
           }))}
           pageSize={8}
           actionsWidth={canAddBarang ? 72 : 64}
@@ -507,11 +510,11 @@ export default function MasterDataScreen() {
                   options={["1 tahun", "2 tahun", "3 tahun", "Tanpa garansi"]}
                 />
               </FormField>
-              <FormField label="Lacak Serial Number (SN)" required>
+              <FormField label="Tipe Item (Barang Ber-SN / Non-SN / Jasa)" required>
                 <SearchableSelect
                   value={barangSN}
                   onChange={setBarangSN}
-                  options={["Ya (Serial Number)", "Tidak (Non-SN / Curah)"]}
+                  options={["Ya (Serial Number)", "Tidak (Non-SN / Curah)", "Jasa (Instalasi / Layanan Non-Stok)"]}
                 />
               </FormField>
             </View>

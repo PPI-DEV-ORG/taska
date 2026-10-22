@@ -49,6 +49,8 @@ export class DamagesService {
 
     const type = dto.type ?? "RUSAK";
     const description = dto.description || "-";
+    const isReturPenjualan = description.includes("[RETUR-PENJUALAN]");
+    const isReturPembelian = description.includes("[RETUR-PEMBELIAN]");
 
     const created = await this.prisma.main.$transaction(async (tx) => {
       const row = await tx.damageReport.create({
@@ -69,17 +71,40 @@ export class DamagesService {
           reporter: { select: { name: true } },
         },
       });
-      if (serial && serial.status !== "RUSAK" && type === "RUSAK") {
-        await tx.serialUnit.update({ where: { id: serial.id }, data: { status: "RUSAK" } });
-        await tx.serialUnitHistory.create({
-          data: {
-            serialUnitId: serial.id,
-            status: "RUSAK",
-            warehouseId: serial.warehouseId,
-            note: description,
-            changedById: user.id,
-          },
-        });
+      if (serial) {
+        const nextSerialStatus = isReturPenjualan || isReturPembelian ? "RETUR" : type === "RUSAK" ? "RUSAK" : null;
+        if (nextSerialStatus && serial.status !== nextSerialStatus) {
+          await tx.serialUnit.update({ where: { id: serial.id }, data: { status: nextSerialStatus as any } });
+          await tx.serialUnitHistory.create({
+            data: {
+              serialUnitId: serial.id,
+              status: nextSerialStatus as any,
+              warehouseId: serial.warehouseId,
+              note: description,
+              changedById: user.id,
+            },
+          });
+        }
+      }
+      if (isReturPenjualan || isReturPembelian) {
+        const wh = serial?.warehouseId
+          ? { id: serial.warehouseId }
+          : await tx.warehouse.findFirst({ select: { id: true } });
+        if (wh) {
+          await tx.stockMovement.create({
+            data: {
+              date: dto.date ? new Date(dto.date) : new Date(),
+              type: isReturPenjualan ? "IN" : "OUT",
+              category: isReturPenjualan ? "RETUR_PROJECT" : "PENGGANTIAN",
+              productId: product.id,
+              qty: dto.qty ?? 1,
+              ...(isReturPenjualan ? { toWarehouseId: wh.id } : { fromWarehouseId: wh.id }),
+              snList: serial?.sn ?? null,
+              note: description,
+              createdById: user.id,
+            },
+          });
+        }
       }
       return row;
     });

@@ -359,10 +359,30 @@ export function SerialItemPickerModal({
                 <View className="flex-row items-center gap-2">
                   <Info size={14} color={colors.primary} />
                   <Text className="text-xs text-muted-foreground flex-1">
-                    Gunakan mode ini untuk pemasangan, instalasi, tarik kabel, konfigurasi, atau biaya jasa lainnya yang bukan barang stok.
+                    Pilih dari Katalog Master Jasa atau ketik manual untuk pemasangan, instalasi, tarik kabel, konfigurasi, atau layanan lainnya.
                   </Text>
                 </View>
-                <FormField label="Deskripsi Jasa / Pekerjaan" required>
+                {products.some((p) => p.type === "JASA" || p.jenisItem === "Jasa") ? (
+                  <FormField label="Pilih dari Katalog Master Jasa (Opsional)">
+                    <SearchableSelect
+                      value={serviceName}
+                      options={products
+                        .filter((p) => p.type === "JASA" || p.jenisItem === "Jasa")
+                        .map((p) => `${p.nama} (${p.sku})`)}
+                      onChange={(val) => {
+                        const clean = (val.split(" (")[0] ?? val).trim();
+                        const found = products.find(
+                          (p) => `${p.nama} (${p.sku})` === val || p.nama === clean,
+                        );
+                        setServiceName(found?.nama || clean);
+                        if (found?.satuan) setServiceUnit(found.satuan);
+                        if (found?.hargaBeli) setServicePrice(String(found.hargaBeli));
+                      }}
+                      placeholder="Pilih dari katalog jasa terdaftar..."
+                    />
+                  </FormField>
+                ) : null}
+                <FormField label="Deskripsi Jasa / Pekerjaan (Atau Ketik Bebas)" required>
                   <Input
                     value={serviceName}
                     onChangeText={setServiceName}
@@ -405,7 +425,7 @@ export function SerialItemPickerModal({
                 <FormField label="Pilih Produk dari Master Stok" required>
                   <SearchableSelect
                     value={selectedProduct ? `${selectedProduct.nama} (${selectedProduct.sku})` : ""}
-                    options={products.map((p) => `${p.nama} (${p.sku})`)}
+                    options={products.filter((p) => p.type !== "JASA" && p.jenisItem !== "Jasa").map((p) => `${p.nama} (${p.sku})`)}
                     onChange={handleSelectProduct}
                     placeholder="Cari / pilih kamera, NVR, perangkat, atau material..."
                   />
@@ -687,18 +707,13 @@ export function BatchSerialRegisterModal({
   const [warehouseId, setWarehouseId] = React.useState<string>(
     warehouses[0]?.id ? String(warehouses[0].id) : "1",
   );
-  const [genPrefix, setGenPrefix] = React.useState("UNV-CAM-");
+  const [genPrefix, setGenPrefix] = React.useState(() => {
+    const found = serialProducts.find((p) => String(p.id) === String(defaultProductId));
+    return found?.sku ? `${found.sku}-` : "UNV-CAM-";
+  });
   const [genCount, setGenCount] = React.useState("10");
   const [snText, setSnText] = React.useState("");
   const [saving, setSaving] = React.useState(false);
-
-  React.useEffect(() => {
-    if (defaultProductId) {
-      setProductId(defaultProductId);
-      const found = serialProducts.find((p) => String(p.id) === String(defaultProductId));
-      if (found?.sku) setGenPrefix(`${found.sku}-`);
-    }
-  }, [defaultProductId, serialProducts]);
 
   const selectedProduct = React.useMemo(
     () => serialProducts.find((p) => String(p.id) === String(productId)) ?? null,
