@@ -25,6 +25,8 @@ export default function NewDeliveryNoteScreen() {
   const [hasGoods, setHasGoods] = React.useState(false);
   const [selectedProductNames, setSelectedProductNames] = React.useState<string[]>([]);
   const [itemQuantities, setItemQuantities] = React.useState<Record<string, string>>({});
+  const [itemSerials, setItemSerials] = React.useState<Record<string, string[]>>({});
+  const serials: any[] = data.serials ?? [];
 
   async function submit() {
     if (!tujuan.trim()) {
@@ -50,16 +52,19 @@ export default function NewDeliveryNoteScreen() {
     const itemsSummary = selectedProductNames
       .map((name) => {
         const prod = data.products.find((p) => p.nama === name);
-        const q = Number(itemQuantities[name]) || 1;
-        return `${name} x ${q}${prod?.satuan ? ` ${prod.satuan}` : ""}`;
+        const sns = itemSerials[name] ?? [];
+        const q = prod?.berSN && sns.length > 0 ? sns.length : (Number(itemQuantities[name]) || 1);
+        return `${name} x ${q}${prod?.satuan ? ` ${prod.satuan}` : ""}${sns.length > 0 ? ` (SN: ${sns.join(", ")})` : ""}`;
       })
       .join(", ");
 
     const itemsList = selectedProductNames.map((name) => {
       const prod = data.products.find((p) => p.nama === name);
+      const sns = itemSerials[name] ?? [];
       return {
         productId: prod?.id ? Number(prod.id) : undefined,
-        qty: Number(itemQuantities[name]) || 1,
+        qty: prod?.berSN && sns.length > 0 ? sns.length : (Number(itemQuantities[name]) || 1),
+        serials: sns.length > 0 ? sns : undefined,
       };
     });
 
@@ -180,51 +185,82 @@ export default function NewDeliveryNoteScreen() {
                 </Text>
                 {selectedProductNames.map((name) => {
                   const prod = data.products.find((p) => p.nama === name);
-                  const qtyVal = itemQuantities[name] ?? "1";
+                  const chosenSns = itemSerials[name] ?? [];
+                  const qtyVal = prod?.berSN && chosenSns.length > 0 ? String(chosenSns.length) : (itemQuantities[name] ?? "1");
+                  const availSns = prod?.berSN
+                    ? serials
+                        .filter(
+                          (s) =>
+                            (String(s.productId) === String(prod.id) || s.produk === prod.nama) &&
+                            (s.rawStatus === "DI_GUDANG" || s.rawStatus === "RESERVED" || s.status === "Di gudang" || s.status === "Reserved"),
+                        )
+                        .sort((a, b) => Number(a.id) - Number(b.id))
+                        .map((s) => String(s.sn))
+                    : [];
                   return (
                     <View
                       key={name}
-                      className="bg-card border-border/70 rounded-xl border p-3 flex-row items-center justify-between gap-3"
+                      className="bg-card border-border/70 rounded-xl border p-3 gap-2.5"
                     >
-                      <View className="flex-1">
-                        <View className="flex-row items-center gap-2">
-                          <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                            {name}
+                      <View className="flex-row items-center justify-between gap-3">
+                        <View className="flex-1">
+                          <View className="flex-row items-center gap-2">
+                            <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                              {name}
+                            </Text>
+                            {prod?.merk ? (
+                              <View className="bg-panel border-border/60 rounded px-1.5 py-0.5 border">
+                                <Text className="text-[10px] font-medium text-muted-foreground">{prod.merk}</Text>
+                              </View>
+                            ) : null}
+                          </View>
+                          <Text className="text-xs text-muted-foreground mt-0.5">
+                            Satuan: {String(prod?.satuan || "unit")} {prod?.berSN ? "· Lacak SN" : "· Curah"}
                           </Text>
-                          {prod?.merk ? (
-                            <View className="bg-panel border-border/60 rounded px-1.5 py-0.5 border">
-                              <Text className="text-[10px] font-medium text-muted-foreground">{prod.merk}</Text>
-                            </View>
-                          ) : null}
                         </View>
-                        <Text className="text-xs text-muted-foreground mt-0.5">
-                          Satuan: {String(prod?.satuan || "unit")} {prod?.berSN ? "· Lacak SN" : "· Curah"}
-                        </Text>
+
+                        <View className="flex-row items-center gap-2">
+                          <Text className="text-xs text-muted-foreground">Qty:</Text>
+                          <Input
+                            value={qtyVal}
+                            onChangeText={(v) =>
+                              setItemQuantities((prev) => ({
+                                ...prev,
+                                [name]: v.replace(/\D/g, "") || "1",
+                              }))
+                            }
+                            keyboardType="numeric"
+                            className="w-16 h-9 text-center text-sm font-semibold"
+                          />
+                          <Pressable
+                            onPress={() => {
+                              setSelectedProductNames((prev) => prev.filter((n) => n !== name));
+                            }}
+                            hitSlop={8}
+                            className="size-8 items-center justify-center rounded-lg hover:bg-danger/10 active:bg-danger/10"
+                          >
+                            <Trash2 size={16} color={colors.danger} />
+                          </Pressable>
+                        </View>
                       </View>
 
-                      <View className="flex-row items-center gap-2">
-                        <Text className="text-xs text-muted-foreground">Qty:</Text>
-                        <Input
-                          value={qtyVal}
-                          onChangeText={(v) =>
-                            setItemQuantities((prev) => ({
-                              ...prev,
-                              [name]: v.replace(/\D/g, "") || "1",
-                            }))
-                          }
-                          keyboardType="numeric"
-                          className="w-16 h-9 text-center text-sm font-semibold"
-                        />
-                        <Pressable
-                          onPress={() => {
-                            setSelectedProductNames((prev) => prev.filter((n) => n !== name));
-                          }}
-                          hitSlop={8}
-                          className="size-8 items-center justify-center rounded-lg hover:bg-danger/10 active:bg-danger/10"
-                        >
-                          <Trash2 size={16} color={colors.danger} />
-                        </Pressable>
-                      </View>
+                      {prod?.berSN && (
+                        <View className="pt-2 border-t border-border/50">
+                          <FormField label={`Pilih Unit SN yang Dibawa (${availSns.length} unit tersedia/reserved)`}>
+                            <MultiSelect
+                              values={chosenSns}
+                              options={availSns}
+                              onChange={(sns) => {
+                                setItemSerials((prev) => ({ ...prev, [name]: sns }));
+                                if (sns.length > 0) {
+                                  setItemQuantities((prev) => ({ ...prev, [name]: String(sns.length) }));
+                                }
+                              }}
+                              placeholder="Pilih SN kamera / perangkat yang dibawa..."
+                            />
+                          </FormField>
+                        </View>
+                      )}
                     </View>
                   );
                 })}

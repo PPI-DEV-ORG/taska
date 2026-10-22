@@ -127,6 +127,9 @@ export class RequirementDto {
 
   @IsInt() @Min(1)
   qty!: number;
+
+  @IsOptional() @IsString()
+  serials?: string;
 }
 
 export class ReturnMaterialItemDto {

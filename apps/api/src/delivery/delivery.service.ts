@@ -279,15 +279,24 @@ export class DeliveryService {
 
     let dispatchedCount = 0;
 
-    // 1. Proses Serial Number jika ada
-    const serialList = dto.serials ?? [];
+    // 1. Proses Serial Number jika ada (gabungkan dto.serials & SN yang tersimpan di item surat jalan)
+    const itemSerials = (row.items ?? [])
+      .flatMap((it) => (it.serials ? it.serials.split(",") : []))
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const serialList = Array.from(
+      new Set([
+        ...(dto.serials ?? []).map((s) => s.trim()).filter(Boolean),
+        ...itemSerials,
+      ]),
+    );
     if (serialList.length > 0) {
       const units = await this.prisma.main.serialUnit.findMany({ where: { sn: { in: serialList } } });
       if (units.length !== serialList.length) throw new BadRequestException("Ada serial number yang tidak ditemukan");
 
       for (const u of units) {
-        if (u.status !== "DI_GUDANG") {
-          throw new BadRequestException(`Serial ${u.sn} status ${u.status} — harus DI_GUDANG untuk keluar`);
+        if (u.status !== "DI_GUDANG" && u.status !== "RESERVED") {
+          throw new BadRequestException(`Serial ${u.sn} status ${u.status} — harus DI_GUDANG atau RESERVED untuk keluar`);
         }
         if (!u.warehouseId) throw new BadRequestException(`Serial ${u.sn} tidak tercatat di gudang mana pun`);
       }
@@ -309,6 +318,10 @@ export class DeliveryService {
         await this.prisma.main.serialUnit.update({
           where: { id: u.id },
           data: { status: "DIKIRIM", warehouseId: null },
+        });
+        await this.prisma.main.stockReservation.updateMany({
+          where: { serialUnitId: u.id, releasedAt: null },
+          data: { releasedAt: new Date() },
         });
         await this.prisma.main.serialUnitHistory.create({
           data: {

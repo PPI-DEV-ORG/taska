@@ -129,7 +129,7 @@ const emptyDB = (): DB => ({
 
 /** Modul yang diambil dari backend saat load. Beberapa dibuat lazily (tasks, stock) karena mahal. */
 const EAGER_MODULES = [
-  "leads", "quotations", "surveys", "po-client", "invoices", "projects",
+  "tasks", "leads", "quotations", "surveys", "po-client", "invoices", "projects",
   "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses",
   "damage-reports", "customers", "suppliers", "warehouses", "products",
   "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
@@ -142,8 +142,15 @@ async function fetchList(module: string): Promise<Row[]> {
   try {
     const res = await api<Page<any>>("GET", `${path}?limit=200`);
     const rows = adaptRows(module, res.items);
-    if (rows.length > 0 || module !== "users") return rows;
+    if (rows.length > 0 || (module !== "users" && module !== "tasks")) return rows;
   } catch {}
+  if (module === "tasks") {
+    try {
+      const pRes = await api<Page<any>>("GET", "/projects?limit=200");
+      const projects = adaptRows("projects", pRes.items);
+      return await fetchTasks(projects);
+    } catch {}
+  }
   if (module === "users") {
     try {
       const opts = await api<any[]>("GET", "/users/options");
@@ -279,12 +286,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const navItems = role && NAV_BY_ROLE[role] ? NAV_BY_ROLE[role] : [];
     const roleModuleKeys = new Set(navItems.map((n) => n.key));
 
-    const ESSENTIAL_ALWAYS = new Set(["users", "customers", "projects", "leads", "quotations", "invoices"]);
+    const ESSENTIAL_ALWAYS = new Set([
+      "tasks", "users", "customers", "projects", "leads", "quotations", "invoices",
+      "products", "suppliers", "warehouses", "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
+    ]);
 
     const LAZY_MODULES = new Set([
-      "audit-log", "serials", "movements", "reservations", "opname", "damage-reports",
-      "costCenters", "expenseCategories", "lostReasons", "leadSources", "productCategories", "invoiceIn",
-      "suppliers", "warehouses", "followups",
+      "audit-log", "serials", "movements", "reservations", "opname", "damage-reports", "invoiceIn", "followups",
     ]);
 
     const modulesToFetch = (targetModules ?? EAGER_MODULES).filter((m) => {
@@ -981,44 +989,76 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       // optimistik
-      setData((d) => ({
-        ...d,
-        [module]: (d[module] ?? []).map((r: any) =>
-          r.id === id
-            ? {
+      setData((d) => {
+        let updatedModuleList = d[module] ?? [];
+        if (module === "invoices" && status === "Lunas") {
+          const targetInv = updatedModuleList.find((r: any) => r.id === id);
+          const isPelunasanOrSubsequent =
+            targetInv &&
+            (targetInv.jenis === "Pelunasan" ||
+              /pelunasan/i.test(targetInv.catatan || "") ||
+              /\/(?:[2-9]|\d{2,})$/.test(targetInv.nomor || ""));
+          const basePrefix = targetInv?.nomor?.match(/^(INV\/\d{4}\/\d{2}\/\d+)(?:\/\d+)?$/i)?.[1];
+
+          updatedModuleList = updatedModuleList.map((r: any) => {
+            if (r.id === id) {
+              return {
                 ...r,
                 [key]: status,
-                ...(module === "invoices" && status === "Lunas" ? { terbayar: r.total } : {}),
+                terbayar: r.total,
                 ...(extra ?? {}),
-              }
-            : r
-        ),
-        ...(module === "invoices" && status === "Lunas"
-          ? {
-              projects: (d.projects ?? []).map((p: any) => {
-                const inv = (d.invoices ?? []).find((r) => r.id === id);
-                if (inv && (String(p.id) === String(inv.projectId) || p.nama === inv.project)) {
-                  return { ...p, pembayaran: "Lunas" };
-                }
-                return p;
-              }),
+              };
             }
-          : {}),
-      }));
+            if (isPelunasanOrSubsequent && targetInv) {
+              const isSibling =
+                (targetInv.projectId && r.projectId === targetInv.projectId) ||
+                (targetInv.quotationId && r.quotationId === targetInv.quotationId) ||
+                (targetInv.quotation && r.quotation === targetInv.quotation) ||
+                (basePrefix && r.nomor?.startsWith(basePrefix));
+              if (isSibling && r.status !== "Dibatalkan" && r.status !== "Batal") {
+                return {
+                  ...r,
+                  [key]: status,
+                  terbayar: r.total,
+                };
+              }
+            }
+            return r;
+          });
+        } else {
+          updatedModuleList = updatedModuleList.map((r: any) =>
+            r.id === id
+              ? {
+                  ...r,
+                  [key]: status,
+                  ...(extra ?? {}),
+                }
+              : r
+          );
+        }
+
+        return {
+          ...d,
+          [module]: updatedModuleList,
+          ...(module === "invoices" && status === "Lunas"
+            ? {
+                projects: (d.projects ?? []).map((p: any) => {
+                  const inv = (d.invoices ?? []).find((r) => r.id === id);
+                  if (inv && (String(p.id) === String(inv.projectId) || p.nama === inv.project)) {
+                    return { ...p, pembayaran: "Lunas" };
+                  }
+                  return p;
+                }),
+              }
+            : {}),
+        };
+      });
       pushHistory(module, id, `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`);
       toast(`Status diubah ke ${status}`);
-
-      if (module === "leads" && (status === "Qualification" || status === "Proposal")) {
-        const leadRow = (data.leads ?? []).find((l) => l.id === id);
-        if (leadRow) setTimeout(() => { void createQuotationFromLead({ ...leadRow, status }); }, 50);
-      }
 
       await refreshModule(module);
       if (module === "invoices") {
         await refreshModule("projects");
-      }
-      if (module === "leads" && (status === "Qualification" || status === "Proposal")) {
-        await refreshModule("quotations");
       }
     },
     [data.leads, offline, enqueueOfflineStatus, executeRemoteStatus, pushHistory, toast, refreshModule, createQuotationFromLead],

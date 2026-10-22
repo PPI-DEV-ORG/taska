@@ -81,6 +81,10 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
       return role === "sales" ? rows.filter((r) => r.pemilik === u.name) : rows;
     case "projects":
       return ["pm", "teknisi", "se"].includes(role) ? rows.filter((r) => r.pm === u.name || mine(r.tim)) : rows;
+    case "tasks":
+      return ["teknisi", "se"].includes(role)
+        ? rows.filter((r) => r.pic === u.name || (r.assigneeId && String(r.assigneeId) === String(u.id)) || mine(r.pic))
+        : rows;
     case "surveys":
       return ["teknisi", "se"].includes(role) ? rows.filter((r) => mine(r.tim)) : rows;
     case "delivery-notes":
@@ -118,7 +122,30 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   const rows = React.useMemo(() => {
     let sourceRows = data[def.key] ?? [];
     if (def.key === "invoices") {
-      const invOut = (data.invoices ?? []).map((r) => ({ ...r, id: String(r.id), direction: "out" }));
+      const qList = data.quotations ?? [];
+      const pList = data.projects ?? [];
+      const qMap = new Map(qList.map((q) => [String(q.id), q]));
+      const qNumMap = new Map(qList.map((q) => [String(q.nomor).toLowerCase(), q]));
+      const pMap = new Map(pList.map((p) => [String(p.id), p]));
+      const pNameMap = new Map(pList.map((p) => [String(p.nama).toLowerCase(), p]));
+
+      const enrich = (r: Row) => {
+        const matchedQ = qMap.get(String(r.quotationId)) || qNumMap.get(String(r.quotation || "").toLowerCase());
+        const matchedP = pMap.get(String(r.projectId)) || pNameMap.get(String(r.project || "").toLowerCase());
+        const lead = r.lead || matchedQ?.lead || matchedP?.lead || "";
+        const quote = r.quotation || matchedQ?.nomor || matchedP?.penawaran || "";
+        const proj = r.project || matchedP?.nama || "";
+        const tot = Number(r.total) || 0;
+        const paid = Number(r.terbayar) || 0;
+        const isDp = r.jenis === "DP" || String(r.type).toUpperCase() === "DP";
+        const isPaid = r.status === "Lunas" || r.status === "PAID" || (tot > 0 && paid >= tot);
+        const isPartial = !isPaid && ((paid > 0 && paid < tot) || (isDp && paid > 0));
+        const paymentNote = isPartial ? "dp setengah bayar setengah sebagian dp termin" : "";
+        const currentStatus = isPaid ? "Lunas" : isPartial ? "Dibayar sebagian" : r.status;
+        return { ...r, lead, quotation: quote, project: proj, paymentNote, status: currentStatus };
+      };
+
+      const invOut = (data.invoices ?? []).map((r) => enrich({ ...r, id: String(r.id), direction: "out" }));
       const invIn = (data.invoiceIn ?? []).map((r: Row) => ({
         ...r,
         id: String(r.id).startsWith("in-") ? String(r.id) : `in-${r.id}`,
@@ -136,7 +163,26 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     const scoped = scopeRows(def, sourceRows, user!);
     const s = q.trim().toLowerCase();
     return scoped
-      .filter((r) => (!status || r[def.statusKey] === status))
+      .filter((r) => {
+        if (!status) return true;
+        if (def.key === "invoices") {
+          const tot = Number(r.total) || 0;
+          const paid = Number(r.terbayar) || 0;
+          const isDp = r.jenis === "DP" || String(r.type).toUpperCase() === "DP";
+          const isPaid = r[def.statusKey] === "Lunas" || r[def.statusKey] === "PAID" || (tot > 0 && paid >= tot);
+          const isPartial = !isPaid && ((paid > 0 && paid < tot) || (isDp && paid > 0));
+          if (status === "Dibayar sebagian") {
+            return isPartial || (!isPaid && (r[def.statusKey] === "Dibayar sebagian" || r[def.statusKey] === "PARTIAL"));
+          }
+          if (status === "Lunas") {
+            return isPaid;
+          }
+          if (status === "Belum lunas") {
+            return !isPaid && r[def.statusKey] !== "BATAL" && r[def.statusKey] !== "Dibatalkan" && r[def.statusKey] !== "Batal";
+          }
+        }
+        return r[def.statusKey] === status;
+      })
       .filter((r) => !s || def.search.some((k) => String(r[k] ?? "").toLowerCase().includes(s)))
       .map((r) => {
         if (def.key === "quotations") {

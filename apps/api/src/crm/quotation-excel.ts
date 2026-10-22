@@ -6,6 +6,13 @@ export type QuotationItemData = {
   qty: number;
   satuan: string;
   harga: number;
+  kind?: "GOODS" | "SERVICE";
+  productId?: number;
+  sku?: string;
+  hasSerial?: boolean;
+  serialUnitIds?: number[];
+  serialNumbers?: string[];
+  outOfStockAutoSwap?: boolean;
 };
 
 export type QuotationMeta = {
@@ -20,6 +27,18 @@ export type QuotationMeta = {
   signerTitle?: string;
   latestFileId?: number | null;
   latestFileName?: string | null;
+  stockConflictFlag?: boolean;
+  stockConflictMessage?: string | null;
+  autoSwapLogs?: Array<{
+    date: string;
+    productId: number;
+    productName: string;
+    oldSn: string;
+    newSn: string | null;
+    triggeredByInvoice: string;
+  }>;
+  emergencyPrId?: number | null;
+  emergencyPrNumber?: string | null;
 };
 
 export const DEFAULT_QUOTATION_NOTES = [
@@ -213,8 +232,14 @@ export async function buildQuotationXlsx(params: {
     cNo.alignment = { horizontal: "center", vertical: "middle" };
 
     const cItem = row.getCell(2);
-    cItem.value = it.item || "";
-    cItem.alignment = { horizontal: "left", vertical: "middle" };
+    const snSuffix =
+      Array.isArray(it.serialNumbers) &&
+      it.serialNumbers.length > 0 &&
+      !it.serialNumbers.every((sn) => (it.item || "").includes(sn))
+        ? ` (SN: ${it.serialNumbers.join(", ")})`
+        : "";
+    cItem.value = `${it.item || ""}${snSuffix}`;
+    cItem.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 
     const cQty = row.getCell(3);
     cQty.value = qty;
@@ -763,9 +788,16 @@ export async function buildQuotationPdf(params: {
     const lineTotal = qty * harga;
     calcSum += lineTotal;
 
+    const snSuffix =
+      Array.isArray(it.serialNumbers) &&
+      it.serialNumbers.length > 0 &&
+      !it.serialNumbers.every((sn) => (it.item || "").includes(sn))
+        ? `\nSN: ${it.serialNumbers.join(", ")}`
+        : "";
+
     tableBody.push([
       { text: String(idx + 1), alignment: "center", fontSize: 9 },
-      { text: it.item || "-", fontSize: 9 },
+      { text: `${it.item || "-"}${snSuffix}`, fontSize: 9 },
       { text: String(qty), alignment: "center", fontSize: 9 },
       { text: it.satuan || "Unit", alignment: "center", fontSize: 9 },
       { text: `Rp ${harga.toLocaleString("id-ID")}`, alignment: "right", fontSize: 9 },

@@ -84,7 +84,7 @@ export class RequestsService {
           project: { select: { id: true, name: true } },
           task: { select: { id: true, name: true } },
           supplier: { select: { id: true, name: true } },
-          items: { include: { product: { select: { id: true, sku: true, name: true, unit: true } } } },
+          items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
           _count: { select: { supplierPOs: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "createdAt"),
@@ -163,7 +163,14 @@ export class RequestsService {
         otherNote,
         evidenceFileId: dto.evidenceFileId,
         status: (dto.status as any) ?? "DIAJUKAN",
-        items: { create: items.map((i) => ({ productId: i.productId, qty: i.qty, unitCost: i.unitCost ?? 0 })) },
+        items: {
+          create: items.map((i) => ({
+            productId: i.productId,
+            qty: i.qty,
+            unitCost: i.unitCost ?? 0,
+            serials: i.serials ?? null,
+          })),
+        },
       },
       include: {
         requester: { select: { id: true, name: true, role: true } },
@@ -238,7 +245,12 @@ export class RequestsService {
               estimatedCost: dto.items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0),
               items: {
                 deleteMany: {},
-                create: dto.items.map((i) => ({ productId: i.productId, qty: i.qty, unitCost: i.unitCost ?? 0 })),
+                create: dto.items.map((i) => ({
+                  productId: i.productId,
+                  qty: i.qty,
+                  unitCost: i.unitCost ?? 0,
+                  serials: i.serials ?? null,
+                })),
               },
             }
           : {}),

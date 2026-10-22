@@ -9,9 +9,10 @@ import { QuotationsService } from "./quotations.service.js";
 import { QuotationsController } from "./quotations.controller.js";
 import { ApprovalsModule } from "../approvals/approvals.module.js";
 import { UploadModule } from "../upload/upload.module.js";
+import { StockModule } from "../stock/stock.module.js";
 
 @Module({
-  imports: [ApprovalsModule, UploadModule],
+  imports: [ApprovalsModule, UploadModule, StockModule],
   providers: [LeadsService, FollowUpsService, SurveysService, QuotationsService],
   controllers: [LeadsController, FollowUpsController, SurveysController, QuotationsController],
   exports: [LeadsService, QuotationsService],

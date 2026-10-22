@@ -32,6 +32,7 @@ import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, getAccess, uploadMasterImport, type MasterImportType } from "@/services/api";
 import { DataTable } from "@/components/taska/data-table";
+import { BatchSerialRegisterModal } from "@/components/taska/serial-item-picker";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 
@@ -56,7 +57,7 @@ type DeleteTarget = {
 
 export default function MasterDataScreen() {
   const router = useRouter();
-  const { data, user, addRow, deleteRow, toast, reload } = useApp();
+  const { data, user, addRow, deleteRow, toast, reload, refreshModule } = useApp();
   const [selectedCategory, setSelectedCategory] = React.useState<MasterKey | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null);
 
@@ -79,6 +80,7 @@ export default function MasterDataScreen() {
   const [barangMinStok, setBarangMinStok] = React.useState("5");
   const [barangGaransi, setBarangGaransi] = React.useState("2 tahun");
   const [barangSN, setBarangSN] = React.useState("Ya (Serial Number)");
+  const [batchSnOpen, setBatchSnOpen] = React.useState(false);
 
   // Modal State untuk Gudang (Procurement)
   const [gudangOpen, setGudangOpen] = React.useState(false);
@@ -127,7 +129,24 @@ export default function MasterDataScreen() {
     return "product";
   }
 
+  const hasFetchedRef = React.useRef(false);
   React.useEffect(() => {
+    if (!hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      if (refreshModule) {
+        void Promise.all([
+          refreshModule("productCategories"),
+          refreshModule("products"),
+          refreshModule("suppliers"),
+          refreshModule("warehouses"),
+          refreshModule("leadSources"),
+          refreshModule("lostReasons"),
+          refreshModule("expenseCategories"),
+          refreshModule("costCenters"),
+          refreshModule("customers"),
+        ]);
+      }
+    }
     void (async () => {
       try {
         const res = await api<any[]>("GET", "/settings");
@@ -139,7 +158,7 @@ export default function MasterDataScreen() {
         }
       } catch {}
     })();
-  }, []);
+  }, [refreshModule]);
 
   const isSuper = user?.role === "super_admin";
   const canAddKategori = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin" || user?.role === "procurement";
@@ -366,10 +385,16 @@ export default function MasterDataScreen() {
                 <Text className="text-xs">Kategori Produk</Text>
               </Button>
               {canAddBarang ? (
-                <Button size="sm" onPress={() => setBarangOpen(true)}>
-                  <Plus size={15} color={colors.background} />
-                  <Text className="text-xs">Tambah Barang</Text>
-                </Button>
+                <>
+                  <Button variant="outline" size="sm" onPress={() => setBatchSnOpen(true)}>
+                    <Plus size={15} color={colors.text} />
+                    <Text className="text-xs">Daftar Unit per SN</Text>
+                  </Button>
+                  <Button size="sm" onPress={() => setBarangOpen(true)}>
+                    <Plus size={15} color={colors.background} />
+                    <Text className="text-xs">Tambah Barang</Text>
+                  </Button>
+                </>
               ) : null}
               <Button variant="outline" size="sm" onPress={() => router.push("/stock")}>
                 <Text className="text-xs">Lihat Stok Fisik</Text>
@@ -500,6 +525,7 @@ export default function MasterDataScreen() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <BatchSerialRegisterModal open={batchSnOpen} onClose={() => setBatchSnOpen(false)} />
         {deleteConfirm}
       </View>
     );

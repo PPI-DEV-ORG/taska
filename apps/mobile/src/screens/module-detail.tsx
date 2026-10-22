@@ -453,6 +453,11 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     } else if (moduleKey === "invoices" && a.label === "Catat pembayaran") {
       setInvoicePayOpen(true);
       return;
+    } else if (moduleKey === "invoices" && a.label === "Kirim ke customer") {
+      await setStatus("invoices", id, "Terkirim");
+      toast("Invoice berhasil dikirim ke customer");
+      handleRefresh();
+      return;
     }
     if (a.status) {
       await setStatus(moduleKey, id, a.status);
@@ -467,9 +472,16 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       if (a.label === "Download template penawaran" && !canOfferLead) return false;
       if (a.label === "Jadikan project" && row.status === "Lost") return false;
     }
-    if (moduleKey === "invoices" && a.label === "Catat pembayaran") {
-      const isPaid = row.status === "Lunas" || String(row.rawStatus).toUpperCase() === "PAID" || (row.total > 0 && row.terbayar >= row.total);
-      if (isPaid || row.status === "Batal") return false;
+    if (moduleKey === "invoices") {
+      const rawStatusUpper = String(row.rawStatus || "").toUpperCase();
+      const isSent = row.status !== "Belum dikirim" && row.status !== "Draft" && rawStatusUpper !== "DRAFT";
+      if (a.label === "Catat pembayaran") {
+        const isPaid = row.status === "Lunas" || rawStatusUpper === "PAID" || (row.total > 0 && row.terbayar >= row.total);
+        if (!isSent || isPaid || row.status === "Batal" || row.status === "Dibatalkan") return false;
+      }
+      if (a.label === "Kirim ke customer") {
+        if (isSent || row.status === "Batal" || row.status === "Dibatalkan") return false;
+      }
     }
     if (moduleKey === "quotations" && a.label === "Kirim ke customer") {
       const st = String(row.status ?? "");

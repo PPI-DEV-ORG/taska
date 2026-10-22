@@ -1,12 +1,14 @@
 import * as React from "react";
 import { View, ScrollView, Image } from "react-native";
-import { FileDown, Plus, Trash2, Edit3, Eye } from "lucide-react-native";
+import { FileDown, Plus, Trash2, Edit3, Eye, Package } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
+import { StatusBadge } from "@/components/taska/status-badge";
+import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -42,6 +44,7 @@ export function InvoiceTemplateGenerator({
 }) {
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [editItemsOpen, setEditItemsOpen] = React.useState(false);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
 
   const initialItems: QuotationItem[] = React.useMemo(() => {
     if (Array.isArray(row.items) && row.items.length > 0) return row.items;
@@ -232,7 +235,26 @@ export function InvoiceTemplateGenerator({
               {items.map((it, idx) => (
                 <View key={it.id || idx} className="border-border/50 flex-row items-center border-b py-2 px-3">
                   <Text className="w-8 text-xs text-muted-foreground">{idx + 1}</Text>
-                  <Text className="flex-1 text-xs font-medium">{it.item}</Text>
+                  <View className="flex-1 pr-2">
+                    <Text className="text-xs font-medium">{it.item}</Text>
+                    <View className="flex-row flex-wrap items-center gap-1.5 mt-0.5">
+                      {it.kind === "SERVICE" ? (
+                        <Text className="text-[10px] text-muted-foreground">[Jasa / Non-Barang]</Text>
+                      ) : it.sku ? (
+                        <Text className="text-[10px] text-primary font-mono">[{it.sku}]</Text>
+                      ) : null}
+                      {Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? (
+                        <Text className="text-[10px] font-mono font-semibold text-emerald-500">
+                          SN Reserved: {it.serialNumbers.join(", ")}
+                        </Text>
+                      ) : null}
+                      {it.outOfStockAutoSwap ? (
+                        <Text className="text-[10px] font-bold text-rose-500">
+                          [Konflik Stok SN - Menunggu PR Darurat]
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
                   <Text className="w-16 text-xs text-center">
                     {it.qty} {it.satuan}
                   </Text>
@@ -347,12 +369,25 @@ export function InvoiceTemplateGenerator({
 
             {/* 3. RINCIAN ITEM */}
             <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-3">
-              <Text className="text-xs font-bold text-primary uppercase tracking-wide">3. Rincian Item / Tagihan</Text>
+              <View className="flex-row items-center justify-between flex-wrap gap-2">
+                <Text className="text-xs font-bold text-primary uppercase tracking-wide">3. Rincian Item / Tagihan</Text>
+                <Button size="sm" onPress={() => setPickerOpen(true)}>
+                  <Package size={14} color={colors.background} />
+                  <Text className="text-xs">+ Pilih dari Stok & SN / Jasa</Text>
+                </Button>
+              </View>
 
               {items.map((it, idx) => (
                 <View key={it.id || idx} className="bg-card rounded-lg border border-border/70 p-2.5 gap-2">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-xs font-bold text-muted-foreground">Item #{idx + 1}</Text>
+                    <View className="flex-row items-center gap-2 flex-wrap">
+                      <Text className="text-xs font-bold text-muted-foreground">Item #{idx + 1}</Text>
+                      {Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? (
+                        <StatusBadge status={`SN Reserved: ${it.serialNumbers.join(", ")}`} />
+                      ) : it.kind === "SERVICE" ? (
+                        <StatusBadge status="Jasa / Non-Barang" />
+                      ) : null}
+                    </View>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -540,6 +575,15 @@ export function InvoiceTemplateGenerator({
         onDownloadPdf={() => downloadInvoicePdf({ invoiceId: row.id })}
         onDownloadExcel={() => downloadInvoiceExcel({ invoiceId: row.id })}
         onSave={() => handleSaveItems(false)}
+      />
+
+      <SerialItemPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        currentInvoiceId={row.id}
+        onAddItems={(newItems) => {
+          setItems((prev) => [...prev, ...newItems]);
+        }}
       />
     </>
   );

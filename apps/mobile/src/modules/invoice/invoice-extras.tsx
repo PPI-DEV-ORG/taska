@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Linking } from "react-native";
-import { Plus, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 import { downloadInvoiceExcel } from "@/modules/invoice/invoice-files";
 import { InvoiceTemplateGenerator } from "@/modules/invoice/invoice-template-generator";
+import { ConflictAndSwapBanner } from "@/components/taska/serial-item-picker";
 import { type QuotationItem } from "@/modules/quotation/types";
 
 export function InvoiceExtras({
@@ -28,7 +29,25 @@ export function InvoiceExtras({
   payOpen?: boolean;
   onPayOpenChange?: (open: boolean) => void;
 }) {
-  const { user, toast, reload, data, patchRow } = useApp();
+  const { user, toast, reload, data, patchRow, setStatus } = useApp();
+  const rawStatusUpper = String(row.rawStatus || "").toUpperCase();
+  const isSent = row.status !== "Belum dikirim" && row.status !== "Draft" && rawStatusUpper !== "DRAFT";
+  const [isSending, setIsSending] = React.useState(false);
+  const canManage = user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
+
+  async function handleSendInvoice() {
+    setIsSending(true);
+    try {
+      await setStatus("invoices", String(row.id), "Terkirim");
+      toast("Invoice berhasil dikirim ke customer");
+      await reload();
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengirim invoice", "danger");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
   const sisa = Math.max(0, Number(row.total || 0) - Number(row.terbayar || 0));
   const [internalPayOpen, setInternalPayOpen] = React.useState(false);
   const isControlled = externalPayOpen !== undefined;
@@ -132,6 +151,8 @@ export function InvoiceExtras({
 
   return (
     <>
+      <ConflictAndSwapBanner row={row} />
+
       <Panel
         title="Ringkasan Pembayaran Invoice"
         right={
@@ -142,7 +163,13 @@ export function InvoiceExtras({
                 <Text className="text-xs">CSV E-Faktur</Text>
               </Button>
             ) : null}
-            {(user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin") && sisa > 0 ? (
+            {canManage && !isSent && row.status !== "Batal" && row.status !== "Dibatalkan" ? (
+              <Button size="sm" onPress={handleSendInvoice} disabled={isSending} className="flex-row items-center gap-1 bg-primary">
+                <Send size={13} color="#fff" />
+                <Text className="text-xs text-white font-semibold">{isSending ? "Mengirim..." : "Kirim ke Customer"}</Text>
+              </Button>
+            ) : null}
+            {canManage && isSent && sisa > 0 && row.status !== "Batal" && row.status !== "Dibatalkan" ? (
               <Button variant="outline" size="sm" onPress={openPayModal} className="flex-row items-center gap-1">
                 <Plus size={13} color={colors.text} />
                 <Text className="text-xs">Catat Pembayaran</Text>

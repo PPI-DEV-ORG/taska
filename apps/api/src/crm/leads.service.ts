@@ -143,7 +143,6 @@ export class LeadsService {
         .catch(() => null);
     }
 
-    const quotation = await this.ensureQuotation(lead.id, lead.customerId, lead.owner_id, lead.stage);
     await this.audit.log({
       actor: user,
       action: "BUAT_LEAD",
@@ -160,7 +159,6 @@ export class LeadsService {
       });
     }
     this.notifications.dataChange("leads", "create", lead.id);
-    if (quotation) this.notifications.dataChange("quotations", "create", quotation.id);
     return {
       ...lead,
       fileId: attachedFile?.id ?? fileId ?? null,
@@ -213,8 +211,6 @@ export class LeadsService {
         .catch(() => null);
     }
 
-    const quotation = await this.ensureQuotation(lead.id, lead.customerId, lead.owner_id, lead.stage);
-
     if (current.stage !== lead.stage) {
       await this.audit.log({
         actor: user,
@@ -233,27 +229,11 @@ export class LeadsService {
       });
     }
     this.notifications.dataChange("leads", "update", lead.id);
-    if (quotation) this.notifications.dataChange("quotations", "create", quotation.id);
     return {
       ...lead,
       fileId: attachedFile?.id ?? fileId ?? null,
       file: attachedFile,
     };
-  }
-
-  /** Baris penawaran dibuat otomatis saat lead masuk Qualification (PRD). */
-  private async ensureQuotation(leadId: number, customerId: number | null, ownerId: number, stage: string) {
-    const idx = STAGES.indexOf(stage as (typeof STAGES)[number]);
-    const active = stage === "LOST" || idx >= STAGES.indexOf("QUALIFICATION");
-    if (!active) return null;
-
-    const existing = await this.prisma.main.quotation.findFirst({ where: { leadId } });
-    if (existing) return existing;
-
-    const number = await this.docnum.next("penawaran");
-    return this.prisma.main.quotation.create({
-      data: { number, leadId, customerId, ownerId, status: "NOT_YET" },
-    });
   }
 
   /** Reassign oleh Admin (PRD #17). */

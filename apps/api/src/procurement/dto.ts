@@ -43,6 +43,9 @@ export class RequestItemDto {
 
   @IsOptional() @IsNumber() @Min(0)
   unitCost?: number;
+
+  @IsOptional() @IsString()
+  serials?: string;
 }
 
 export class RequestDto {

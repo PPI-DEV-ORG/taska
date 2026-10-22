@@ -37,6 +37,7 @@ export default function NewPurchaseRequestScreen() {
   const products: Row[] = data.products ?? [];
   const projects: Row[] = data.projects ?? [];
   const stockSummary: any[] = data.stockSummary ?? [];
+  const serials: Row[] = data.serials ?? [];
 
   const [step, setStep] = React.useState(0);
   const [busy, setBusy] = React.useState(false);
@@ -50,6 +51,7 @@ export default function NewPurchaseRequestScreen() {
     products[0]?.nama ? [String(products[0].nama)] : []
   );
   const [itemQuantities, setItemQuantities] = React.useState<Record<string, string>>({});
+  const [itemSerials, setItemSerials] = React.useState<Record<string, string[]>>({});
   const [catFilter, setCatFilter] = React.useState<string>("Semua");
   const [tujuan, setTujuan] = React.useState("");
 
@@ -60,13 +62,27 @@ export default function NewPurchaseRequestScreen() {
           .filter((s: any) => String(s.productId) === String(prod.id))
           .reduce((a: number, s: any) => a + Number(s.saldo ?? 0), 0)
       : 0;
-    const q = Number(itemQuantities[name]) || 1;
+    const chosenSns = itemSerials[name] ?? [];
+    const q = prod?.berSN && chosenSns.length > 0 ? chosenSns.length : (Number(itemQuantities[name]) || 1);
     const unitPrice = Number(prod?.hargaBeli ?? 0);
+    const availSns = prod?.berSN
+      ? serials
+          .filter(
+            (s) =>
+              (String(s.productId) === String(prod.id) || s.produk === prod.nama) &&
+              (s.rawStatus === "DI_GUDANG" || s.status === "Di gudang"),
+          )
+          .sort((a, b) => Number(a.id) - Number(b.id))
+          .map((s) => String(s.sn))
+      : [];
     return {
       productId: prod?.id ? Number(prod.id) : undefined,
       nama: name,
       merk: prod?.merk || prod?.brand || "",
       satuan: String(prod?.satuan || "unit"),
+      berSN: !!prod?.berSN,
+      availSns,
+      chosenSns,
       hargaBeli: unitPrice,
       qty: q,
       stock: stockAvailable,
@@ -88,9 +104,15 @@ export default function NewPurchaseRequestScreen() {
         productId: it.productId,
         qty: it.qty,
         unitCost: it.hargaBeli,
+        serials: it.chosenSns.length > 0 ? it.chosenSns : undefined,
       }));
       const itemDesc = selectedItems
-        .map((it) => `${it.nama} x ${it.qty}${it.satuan ? ` ${it.satuan}` : ""}`)
+        .map(
+          (it) =>
+            `${it.nama} x ${it.qty}${it.satuan ? ` ${it.satuan}` : ""}${
+              it.chosenSns.length > 0 ? ` (SN: ${it.chosenSns.join(", ")})` : ""
+            }`,
+        )
         .join(", ");
 
       addRow("purchase-requests", {
@@ -273,6 +295,26 @@ export default function NewPurchaseRequestScreen() {
                         </Text>
                       </View>
                     </View>
+
+                    {item.berSN && (
+                      <View className="pt-2 border-t border-border/50">
+                        <FormField
+                          label={`Pilih Unit SN dari Stok Gudang (${item.availSns.length} unit tersedia Di Gudang — Opsional)`}
+                        >
+                          <MultiSelect
+                            values={item.chosenSns}
+                            options={item.availSns}
+                            onChange={(sns) => {
+                              setItemSerials((prev) => ({ ...prev, [item.nama]: sns }));
+                              if (sns.length > 0) {
+                                setItemQuantities((prev) => ({ ...prev, [item.nama]: String(sns.length) }));
+                              }
+                            }}
+                            placeholder="Pilih SN spesifik (atau kosongkan jika pengadaan baru)..."
+                          />
+                        </FormField>
+                      </View>
+                    )}
                   </View>
                 ))}
 
