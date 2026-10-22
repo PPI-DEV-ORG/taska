@@ -588,6 +588,7 @@ export function FormDialog({
   const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
   const [fallbackProjects, setFallbackProjects] = React.useState<any[]>([]);
   const [fallbackSupplierPos, setFallbackSupplierPos] = React.useState<any[]>([]);
+  const [fallbackSerials, setFallbackSerials] = React.useState<any[]>([]);
   const fileHandles = React.useRef<(FileUploaderHandle | null)[]>([]);
   const fileHandleAt = (i: number) => (h: FileUploaderHandle | null) => { fileHandles.current[i] = h; };
 
@@ -622,7 +623,24 @@ export function FormDialog({
         })
         .catch(() => {});
     }
-  }, [open, data.users, data.projects, data["supplier-pos"], def?.key]);
+    if (open && def?.key === "damage-reports" && (!data.serials || data.serials.length === 0)) {
+      api<any>("GET", "/serials?limit=500")
+        .then((res) => {
+          const items = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+          if (items.length) {
+            setFallbackSerials(
+              items.map((s: any) => ({
+                ...s,
+                produk: s.product?.name ?? s.produk ?? "",
+                sku: s.product?.sku ?? s.sku ?? "",
+                gudang: s.warehouse?.name ?? s.gudang ?? "-",
+              })),
+            );
+          }
+        })
+        .catch(() => {});
+    }
+  }, [open, data.users, data.projects, data["supplier-pos"], data.serials, def?.key]);
 
   const fields = customFields ?? def?.createFields ?? [];
 
@@ -638,6 +656,9 @@ export function FormDialog({
             init[f.key] = f.type === "number" ? formatThousands(String(rawVal)) : String(rawVal);
           }
         });
+        if (initialRow.sn && initialRow.sn !== "-") {
+          init.sn = String(initialRow.sn);
+        }
         setVals(init);
       } else {
         const init: Record<string, string> = {};
@@ -684,6 +705,17 @@ export function FormDialog({
     });
     if ((def?.key === "damage-reports" || def?.key === "receiving") && row.po) {
       row.po = (String(row.po).split(" - ")[0] ?? "").trim();
+    }
+    if (def?.key === "damage-reports" && vals.sn) {
+      const cleanSn = (String(vals.sn).split(" (")[0] ?? "").trim();
+      row.sn = cleanSn;
+      const allSerials = (data.serials && data.serials.length > 0) ? data.serials : fallbackSerials;
+      const matchedSn = allSerials.find(
+        (s: any) => String(s.sn || "").trim().toLowerCase() === cleanSn.toLowerCase(),
+      );
+      if (matchedSn?.id) {
+        row.serialUnitId = Number(matchedSn.id);
+      }
     }
     if (def?.key === "po-client" && row.penawaran) {
       row.penawaran = (String(row.penawaran).split(" - ")[0] ?? "").trim();
@@ -996,6 +1028,8 @@ export function FormDialog({
                             [f.key]: v,
                             ...(prodName && (!s.produk || s.produk === "-") ? { produk: prodName } : {}),
                           }));
+                        } else if (def?.key === "damage-reports" && f.key === "produk") {
+                          setVals((s) => ({ ...s, [f.key]: v, sn: "" }));
                         } else {
                           setVals((s) => ({ ...s, [f.key]: v }));
                         }
@@ -1004,6 +1038,48 @@ export function FormDialog({
                       placeholder={`Pilih ${f.label.toLowerCase()}`}
                       error={!!errs[f.key]}
                     />
+                    {def?.key === "damage-reports" && f.key === "produk" && vals.produk ? (() => {
+                      const prodObj = (data.products ?? []).find(
+                        (p: any) => p.nama === vals.produk || p.name === vals.produk,
+                      );
+                      if (!prodObj || !(prodObj.berSN || prodObj.hasSerial)) return null;
+                      const allSerials = (data.serials && data.serials.length > 0) ? data.serials : fallbackSerials;
+                      const prodSerials = allSerials.filter(
+                        (s: any) =>
+                          String(s.productId) === String(prodObj.id) ||
+                          s.produk === prodObj.nama ||
+                          (s.sku && prodObj.sku && s.sku === prodObj.sku),
+                      );
+                      const snOptions = prodSerials.map((s: any) => {
+                        const loc = s.gudang && s.gudang !== "-" ? s.gudang : "Gudang";
+                        const st = s.status || s.rawStatus || "Tersedia";
+                        return `${s.sn} (${loc} · ${st})`;
+                      });
+                      return (
+                        <View className="mt-2 pt-2 border-t border-border/60 gap-1.5">
+                          <Text className="text-sm font-medium text-foreground">
+                            Serial Number (SN) Barang <Text className="text-danger">*</Text>
+                          </Text>
+                          <SearchableSelect
+                            value={vals.sn ?? ""}
+                            onChange={(snVal) => {
+                              const cleanSn = (snVal.split(" (")[0] ?? snVal).trim();
+                              setVals((s) => ({
+                                ...s,
+                                sn: cleanSn,
+                                qty: "1",
+                              }));
+                            }}
+                            options={snOptions}
+                            placeholder={
+                              snOptions.length > 0
+                                ? `Pilih SN dari ${prodObj.nama} (${snOptions.length} unit)...`
+                                : `Belum ada unit SN terdaftar untuk ${prodObj.nama}`
+                            }
+                          />
+                        </View>
+                      );
+                    })() : null}
                     {def?.key === "projects" && f.key === "lead" && vals[f.key] && vals[f.key] !== "-" ? (() => {
                       const selName = (vals[f.key]?.split(" · ")[0] ?? vals[f.key] ?? "").trim().toLowerCase();
                       const matchedLead = (data.leads ?? []).find(

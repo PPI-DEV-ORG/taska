@@ -32,6 +32,9 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
   });
   const [handoverNotes, setHandoverNotes] = React.useState("");
   const [handoverFileId, setHandoverFileId] = React.useState<number | null>(null);
+  const [scannedSns, setScannedSns] = React.useState<string[]>(
+    Array.isArray(row.snList) ? row.snList : [],
+  );
 
   if (
     previousRecipient.name !== row.penerimaNama ||
@@ -95,7 +98,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
                     try {
                       await api("POST", `/delivery-notes/${row.id}/goods`, {
                         items: row.items,
-                        serials: Array.isArray(row.snList) ? row.snList : [],
+                        serials: scannedSns.length > 0 ? scannedSns : Array.isArray(row.snList) ? row.snList : [],
                       });
                       await patchRow("delivery-notes", row.id, { status: "Dikirim" });
                       toast("Barang berhasil dikeluarkan dari gudang & status surat jalan diubah ke Dikirim");
@@ -173,7 +176,12 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
             {(user?.role === "super_admin" || user?.role === "gudang" || user?.role === "bos") && !isDelivered ? (
               <View className="mt-2 pt-2 border-t border-border/50 gap-2">
                 <Text className="text-xs font-semibold text-foreground">Pemindaian Serial Number (Khusus Barang ber-SN):</Text>
-                <ScanInput existing={Array.isArray(row.snList) ? row.snList : []} />
+                <ScanInput
+                  existing={Array.isArray(row.snList) ? row.snList : []}
+                  onResult={(scans) => {
+                    setScannedSns(scans.filter((s) => s.ok).map((s) => s.sn));
+                  }}
+                />
               </View>
             ) : null}
           </View>
@@ -215,7 +223,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
                 <View className="rounded-xl border border-border bg-panel overflow-hidden max-w-sm">
                   <Pressable onPress={() => setPreviewOpen(true)} className="relative group bg-muted/10 items-center justify-center">
                     <Image
-                      source={{ uri: `${apiBase}/files/${row.scanFileId || row.fileId}` }}
+                      source={{ uri: `${apiBase()}/files/${row.scanFileId || row.fileId}` }}
                       style={{ width: "100%", height: 160 }}
                       resizeMode="contain"
                     />
@@ -238,7 +246,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
                       variant="ghost"
                       className="h-6 px-2"
                       onPress={() => {
-                        const url = `${apiBase}/files/${row.scanFileId || row.fileId}`;
+                        const url = `${apiBase()}/files/${row.scanFileId || row.fileId}`;
                         if (typeof window !== "undefined") window.open(url, "_blank");
                         else Linking.openURL(url).catch(() => {});
                       }}
@@ -335,7 +343,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
             </DialogHeader>
             <View className="items-center justify-center bg-black/5 rounded-xl overflow-hidden p-1 my-2">
               <Image
-                source={{ uri: `${apiBase}/files/${row.scanFileId || row.fileId}` }}
+                source={{ uri: `${apiBase()}/files/${row.scanFileId || row.fileId}` }}
                 style={{ width: "100%", height: 380 }}
                 resizeMode="contain"
               />
@@ -347,7 +355,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
               <Button
                 size="sm"
                 onPress={() => {
-                  const url = `${apiBase}/files/${row.scanFileId || row.fileId}`;
+                  const url = `${apiBase()}/files/${row.scanFileId || row.fileId}`;
                   if (typeof window !== "undefined") window.open(url, "_blank");
                   else Linking.openURL(url).catch(() => {});
                 }}

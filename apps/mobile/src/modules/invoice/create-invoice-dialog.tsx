@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, ScrollView, Platform } from "react-native";
-import { Upload, CheckCircle2, FileDown } from "lucide-react-native";
+import { Upload, CheckCircle2, FileDown, Package, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
 import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { StatusBadge } from "@/components/taska/status-badge";
+import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
@@ -231,6 +233,7 @@ function CreateInvoiceForm({
   // Submitting & File extracting
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
   const [isExtracting, setIsExtracting] = React.useState<boolean>(false);
+  const [pickerOpen, setPickerOpen] = React.useState<boolean>(false);
   const fileInputRef = React.useRef<any>(null);
 
   // Switch mode handler
@@ -385,6 +388,8 @@ function CreateInvoiceForm({
         ppn: currentPpn,
         total: currentTotal,
         items: items.length > 0 ? items : undefined,
+        dpLabel: calculatedPct < 100 ? `${invoiceType} (${calculatedPct}%)` : undefined,
+        dpAmount: calculatedPct < 100 ? currentDpp : undefined,
         subject: activeQuotation?.subject || "INVOICE PENAGIHAN",
         intro: activeQuotation?.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
         notesList: activeQuotation?.notesList,
@@ -605,6 +610,14 @@ function CreateInvoiceForm({
                   if (match) {
                     setSelectedPoId(String(match.id));
                     if (match.customerId) setSelectedCustomerId(String(match.customerId));
+                    if (match.quotationId) {
+                      const linkedQ = (data.quotations ?? []).find(
+                        (q: Row) => String(q.id) === String(match.quotationId),
+                      );
+                      if (linkedQ && Array.isArray(linkedQ.items) && linkedQ.items.length > 0) {
+                        setItems(linkedQ.items);
+                      }
+                    }
                   }
                 }}
                 options={(data["po-client"] ?? []).map(
@@ -784,28 +797,63 @@ function CreateInvoiceForm({
           ) : null}
 
           {/* List Barang / Items Table */}
-          {items.length > 0 ? (
-            <View className="gap-1.5 p-3 rounded-xl border border-border bg-card">
-              <View className="flex-row justify-between items-center mb-1">
-                <Text className="text-xs font-bold text-foreground">Daftar Barang & Jasa ({items.length} Item)</Text>
-                <Text className="text-xs font-semibold text-primary">Subtotal: {rupiah(grossDealDpp)}</Text>
-              </View>
-              {items.slice(0, 5).map((it, idx) => (
-                <View key={it.id || idx} className="flex-row justify-between items-center py-1 border-b border-border/40">
-                  <View className="flex-1 mr-2">
-                    <Text className="text-xs font-medium" numberOfLines={1}>{it.item}</Text>
-                    <Text className="text-[10px] text-muted-foreground">{it.qty} {it.satuan} x {rupiah(it.harga)}</Text>
-                  </View>
-                  <Text className="text-xs font-semibold">{rupiah(it.qty * it.harga)}</Text>
-                </View>
-              ))}
-              {items.length > 5 ? (
-                <Text className="text-[11px] text-muted-foreground italic text-center mt-1">
-                  +{items.length - 5} item lainnya
+          <View className="gap-2 p-3 rounded-xl border border-border bg-card">
+            <View className="flex-row justify-between items-center flex-wrap gap-2">
+              <View>
+                <Text className="text-xs font-bold text-foreground">
+                  Daftar Barang & Jasa dari Penawaran / Stok ({items.length} Item)
                 </Text>
-              ) : null}
+                <Text className="text-[11px] text-muted-foreground">
+                  Barang ber-SN pada daftar ini otomatis di-reserve untuk Invoice ini.
+                </Text>
+              </View>
+              <Button size="sm" variant="outline" onPress={() => setPickerOpen(true)}>
+                <Package size={13} color={colors.primary} />
+                <Text className="text-xs text-primary font-semibold">+ Pilih Stok & SN / Jasa</Text>
+              </Button>
             </View>
-          ) : null}
+            {items.length > 0 ? (
+              <View className="gap-1.5 mt-1">
+                {items.map((it, idx) => (
+                  <View
+                    key={it.id || idx}
+                    className="flex-row justify-between items-center py-1.5 border-b border-border/40 gap-2"
+                  >
+                    <View className="flex-1 mr-1">
+                      <Text className="text-xs font-medium">{it.item}</Text>
+                      <View className="flex-row flex-wrap items-center gap-1.5 mt-0.5">
+                        <Text className="text-[10px] text-muted-foreground">
+                          {it.qty} {it.satuan} x {rupiah(it.harga)}
+                        </Text>
+                        {Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? (
+                          <StatusBadge status={`Reserve SN: ${it.serialNumbers.join(", ")}`} />
+                        ) : it.kind === "SERVICE" ? (
+                          <StatusBadge status="Jasa / Non-Barang" />
+                        ) : null}
+                      </View>
+                    </View>
+                    <Text className="text-xs font-semibold">{rupiah(it.qty * it.harga)}</Text>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5"
+                      onPress={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 size={13} color={colors.danger} />
+                    </Button>
+                  </View>
+                ))}
+                <View className="flex-row justify-between pt-1">
+                  <Text className="text-xs font-semibold text-muted-foreground">Subtotal Rincian Barang:</Text>
+                  <Text className="text-xs font-bold text-primary">{rupiah(grossDealDpp)}</Text>
+                </View>
+              </View>
+            ) : (
+              <Text className="text-xs text-muted-foreground italic">
+                Belum ada rincian barang/jasa. Pilih penawaran yang memiliki item atau klik &quot;+ Pilih Stok &amp; SN / Jasa&quot;.
+              </Text>
+            )}
+          </View>
 
           <FormField label="Catatan / Keterangan Invoice">
             <Textarea
@@ -882,6 +930,15 @@ function CreateInvoiceForm({
           <Text>{isSubmitting ? "Menyimpan..." : "Simpan & Buat Invoice"}</Text>
         </Button>
       </DialogFooter>
+
+      <SerialItemPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        currentQuotationId={activeQuotation?.id}
+        onAddItems={(newItems) => {
+          setItems((prev) => [...prev, ...newItems]);
+        }}
+      />
     </DialogContent>
   );
 }

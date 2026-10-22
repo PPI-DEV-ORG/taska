@@ -542,11 +542,53 @@ export class ProjectsService {
     return Math.max(0, (balance._sum.qty ?? 0) - (reserved._sum.qty ?? 0));
   }
 
-  private async reserveFor(projectId: number, requirementId: number, productId: number, qty: number) {
+  private async reserveFor(
+    projectId: number,
+    requirementId: number,
+    productId: number,
+    qty: number,
+    serialsStr?: string | null,
+  ) {
     await this.prisma.main.stockReservation.updateMany({
       where: { requirementId, releasedAt: null },
       data: { releasedAt: new Date() },
     });
+
+    const snList = (serialsStr || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (snList.length > 0) {
+      const units = await this.prisma.main.serialUnit.findMany({
+        where: { productId, sn: { in: snList } },
+      });
+      for (const u of units) {
+        await this.prisma.main.stockReservation.create({
+          data: {
+            projectId,
+            productId,
+            serialUnitId: u.id,
+            qty: 1,
+            requirementId,
+          },
+        });
+        if (u.status === "DI_GUDANG") {
+          await this.prisma.main.serialUnit.update({
+            where: { id: u.id },
+            data: { status: "RESERVED", projectId },
+          });
+        }
+      }
+      const reserveQty = units.length;
+      const status = reserveQty >= qty ? "DIRESERVE" : reserveQty > 0 ? "DIRESERVE" : "DIBUTUHKAN";
+      await this.prisma.main.projectRequirement.update({
+        where: { id: requirementId },
+        data: { reservedQty: reserveQty, status: status as never },
+      });
+      return { reservedQty: reserveQty, shortage: Math.max(0, qty - reserveQty) };
+    }
+
     const available = await this.availableQty(productId, projectId);
     const reserveQty = Math.min(available, qty);
     if (reserveQty > 0) {
@@ -574,12 +616,18 @@ export class ProjectsService {
     }
 
     const row = await this.prisma.main.projectRequirement.create({
-      data: { projectId, taskId: dto.taskId, productId: dto.productId, qty: dto.qty },
+      data: {
+        projectId,
+        taskId: dto.taskId,
+        productId: dto.productId,
+        qty: dto.qty,
+        serials: dto.serials ?? null,
+      },
     });
-    const reserved = await this.reserveFor(projectId, row.id, dto.productId, dto.qty);
+    const reserved = await this.reserveFor(projectId, row.id, dto.productId, dto.qty, dto.serials);
     const created = await this.prisma.main.projectRequirement.findUnique({
       where: { id: row.id },
-      include: { product: { select: { id: true, sku: true, name: true, unit: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
     });
 
     await this.audit.log({
@@ -609,12 +657,17 @@ export class ProjectsService {
 
     const updated = await this.prisma.main.projectRequirement.update({
       where: { id },
-      data: { qty: dto.qty, productId: dto.productId, taskId: dto.taskId ?? row.taskId },
+      data: {
+        qty: dto.qty,
+        productId: dto.productId,
+        taskId: dto.taskId ?? row.taskId,
+        ...(dto.serials !== undefined ? { serials: dto.serials || null } : {}),
+      },
     });
-    const reserved = await this.reserveFor(projectId, id, updated.productId, updated.qty);
+    const reserved = await this.reserveFor(projectId, id, updated.productId, updated.qty, updated.serials);
     const current = await this.prisma.main.projectRequirement.findUnique({
       where: { id },
-      include: { product: { select: { id: true, sku: true, name: true, unit: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
     });
     await this.audit.log({
       actor: user,
@@ -703,43 +756,73 @@ export class ProjectsService {
     const results = [];
 
     for (const item of qItems) {
+      if (item.kind === "SERVICE") continue;
       const itemName = String(item.name || item.item || "").trim();
       const itemQty = Math.max(1, Math.round(Number(item.qty || item.jumlah) || 1));
-      if (!itemName) continue;
+      if (!itemName && !item.productId) continue;
 
-      let prod = await this.prisma.main.product.findFirst({
-        where: {
-          OR: [
-            { name: { equals: itemName } },
-            { sku: { equals: itemName } },
-          ],
-        },
-      });
-      if (!prod) {
+      let prod = item.productId
+        ? await this.prisma.main.product.findUnique({ where: { id: Number(item.productId) } })
+        : null;
+      if (!prod && item.sku) {
+        prod = await this.prisma.main.product.findFirst({ where: { sku: String(item.sku) } });
+      }
+      if (!prod && itemName) {
+        const cleanName = itemName.replace(/\s*\(SN:.*$/i, "").replace(/\s*\[SN:.*$/i, "").trim();
         prod = await this.prisma.main.product.findFirst({
-          where: { name: { contains: itemName } },
+          where: {
+            OR: [
+              { name: { equals: cleanName } },
+              { sku: { equals: cleanName } },
+            ],
+          },
         });
+        if (!prod) {
+          prod = await this.prisma.main.product.findFirst({
+            where: { name: { contains: cleanName } },
+          });
+        }
       }
       if (!prod) {
         // Item penawaran hanya berupa teks deskripsi commercial, jangan buat produk atau SN baru di master data
         continue;
       }
 
+      const itemSns: string[] = Array.isArray(item.serialNumbers)
+        ? item.serialNumbers.map((s: any) => String(s ?? "").trim()).filter(Boolean)
+        : [];
       const existingReq = await this.prisma.main.projectRequirement.findFirst({
         where: { projectId, productId: prod.id },
       });
 
       if (!existingReq) {
+        const serialsStr = itemSns.length > 0 ? itemSns.join(", ") : null;
         const reqRow = await this.prisma.main.projectRequirement.create({
           data: {
             projectId,
             productId: prod.id,
             qty: itemQty,
+            serials: serialsStr,
           },
         });
-        await this.reserveFor(projectId, reqRow.id, prod.id, itemQty);
+        await this.reserveFor(projectId, reqRow.id, prod.id, itemQty, serialsStr);
         imported++;
         results.push(reqRow);
+      } else if (itemSns.length > 0) {
+        // Gabungkan jika ada beberapa baris kamera yang sama (1 SN = 1 baris di penawaran)
+        const prevSns = (existingReq.serials || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const mergedSns = Array.from(new Set([...prevSns, ...itemSns]));
+        const newQty = Math.max(existingReq.qty + itemQty, mergedSns.length);
+        const serialsStr = mergedSns.join(", ");
+        const updatedReq = await this.prisma.main.projectRequirement.update({
+          where: { id: existingReq.id },
+          data: { qty: newQty, serials: serialsStr },
+        });
+        await this.reserveFor(projectId, existingReq.id, prod.id, newQty, serialsStr);
+        results.push(updatedReq);
       }
     }
 

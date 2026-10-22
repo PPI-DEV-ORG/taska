@@ -18,15 +18,28 @@ import { Line } from "@/modules/shared/line";
 export function ProjectExtras({ row }: { row: Row }) {
   const { toast, data, reload, user } = useApp();
   const products: Row[] = data.products ?? [];
+  const serials: Row[] = data.serials ?? [];
   const [reserveOpen, setReserveOpen] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState("");
   const [reserveQty, setReserveQty] = React.useState("2");
+  const [selectedSns, setSelectedSns] = React.useState<string[]>([]);
   const [bastOpen, setBastOpen] = React.useState(false);
   const [requirements, setRequirements] = React.useState<
-    { id: string; produk: string; neededQty: number; reservedQty: number; shortageQty: number; status: string }[]
+    { id: string; produk: string; neededQty: number; reservedQty: number; shortageQty: number; status: string; serials?: string[] }[]
   >([]);
 
   const activeSelectedProduct = selectedProduct || String(products[0]?.nama ?? "");
+  const activeProductObj = products.find((p) => p.nama === activeSelectedProduct) ?? products[0];
+  const availableProductSerials = React.useMemo(() => {
+    if (!activeProductObj?.berSN) return [];
+    return serials
+      .filter(
+        (s) =>
+          (String(s.productId) === String(activeProductObj.id) || s.produk === activeProductObj.nama) &&
+          (s.rawStatus === "DI_GUDANG" || s.status === "Di gudang"),
+      )
+      .sort((a, b) => Number(a.id) - Number(b.id));
+  }, [serials, activeProductObj]);
 
   const canViewFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
   const projectInvoices = (data.invoices || []).filter(
@@ -50,16 +63,30 @@ export function ProjectExtras({ row }: { row: Row }) {
       const needed = Number(r.neededQty ?? r.qty ?? 0);
       const reserved = Number(r.reservedQty ?? 0);
       const shortage = Number(r.shortageQty ?? Math.max(0, needed - reserved));
+      let parsedSerials: string[] = [];
+      if (r.serials) {
+        try {
+          const arr = JSON.parse(r.serials);
+          if (Array.isArray(arr)) parsedSerials = arr.map(String);
+        } catch {
+          parsedSerials = String(r.serials)
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+        }
+      }
+      const snNote = parsedSerials.length > 0 ? ` · SN: ${parsedSerials.join(", ")}` : "";
       return {
         id: String(r.id),
         produk: r.product?.name ?? "Barang",
         neededQty: needed,
         reservedQty: reserved,
         shortageQty: shortage,
+        serials: parsedSerials,
         status:
-          shortage > 0
+          (shortage > 0
             ? `Reserved ${reserved} · Kurang ${shortage} (Masuk PR Procurement)`
-            : `Tersedia & Di-reserve (${reserved})`,
+            : `Tersedia & Di-reserve (${reserved})`) + snNote,
       };
     });
   }, []);
@@ -94,12 +121,15 @@ export function ProjectExtras({ row }: { row: Row }) {
       return;
     }
     try {
+      const effectiveQty = prod.berSN && selectedSns.length > 0 ? selectedSns.length : Math.max(1, Math.round(q));
       const res = await api<any>("POST", `/projects/${row.id}/requirements`, {
         productId: Number(prod.id),
-        qty: Math.max(1, Math.round(q)),
+        qty: effectiveQty,
+        serials: selectedSns.length > 0 ? selectedSns : undefined,
       });
       await loadRequirements();
       await reload();
+      setSelectedSns([]);
       setReserveOpen(false);
       const createdPr = res?.purchaseRequestCreated;
       toast(
@@ -224,12 +254,17 @@ export function ProjectExtras({ row }: { row: Row }) {
                 {products.map((p) => (
                   <Pressable
                     key={p.id}
-                    onPress={() => setSelectedProduct(p.nama)}
+                    onPress={() => {
+                      setSelectedProduct(p.nama);
+                      setSelectedSns([]);
+                    }}
                     className={`p-2 rounded flex-row items-center justify-between ${
                       activeSelectedProduct === p.nama ? "bg-primary/10" : ""
                     }`}
                   >
-                    <Text className="text-xs font-medium">{p.nama}</Text>
+                    <Text className="text-xs font-medium">
+                      {p.nama} {p.berSN ? "(Ber-SN)" : ""}
+                    </Text>
                     {activeSelectedProduct === p.nama ? <Check size={14} color={colors.primary} /> : null}
                   </Pressable>
                 ))}
@@ -240,6 +275,48 @@ export function ProjectExtras({ row }: { row: Row }) {
               <Text className="text-xs text-muted-foreground font-medium">Jumlah yang Dibutuhkan</Text>
               <Input value={reserveQty} onChangeText={setReserveQty} placeholder="2" keyboardType="numeric" />
             </View>
+
+            {activeProductObj?.berSN ? (
+              <View className="gap-1.5">
+                <Text className="text-xs text-muted-foreground font-medium">
+                  Pilih Unit SN Spesifik ({availableProductSerials.length} tersedia Di Gudang — kosongkan untuk pilih otomatis FIFO)
+                </Text>
+                <ScrollView style={{ maxHeight: 140 }} className="border border-border rounded-lg p-1">
+                  {availableProductSerials.length === 0 ? (
+                    <Text className="text-xs text-muted-foreground p-2 italic">
+                      Stok SN Di Gudang sedang kosong (otomatis masuk PR Procurement).
+                    </Text>
+                  ) : (
+                    availableProductSerials.map((s) => {
+                      const checked = selectedSns.includes(String(s.sn));
+                      return (
+                        <Pressable
+                          key={s.id}
+                          onPress={() => {
+                            const snVal = String(s.sn);
+                            setSelectedSns((prev) => {
+                              const next = prev.includes(snVal)
+                                ? prev.filter((x) => x !== snVal)
+                                : [...prev, snVal];
+                              if (next.length > 0) setReserveQty(String(next.length));
+                              return next;
+                            });
+                          }}
+                          className={`p-2 rounded flex-row items-center justify-between ${
+                            checked ? "bg-primary/10" : ""
+                          }`}
+                        >
+                          <Text className="text-xs font-mono font-semibold">
+                            {s.sn} <Text className="font-normal text-muted-foreground">({s.gudang})</Text>
+                          </Text>
+                          {checked ? <Check size={14} color={colors.primary} /> : null}
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
+            ) : null}
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setReserveOpen(false)}>

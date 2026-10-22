@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { PrismaService } from "../prisma/prisma.service.js";
 import { StockService } from "./stock.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
-import type { ReplaceSerialDto, SerialListQuery, SerialStatusDto } from "./dto.js";
+import type { CreateSerialBatchDto, ReplaceSerialDto, SerialListQuery, SerialStatusDto } from "./dto.js";
 
 type SerialStatus = "DI_GUDANG" | "RESERVED" | "DIKIRIM" | "TERPASANG" | "RETUR" | "DIGANTI" | "RUSAK";
 
@@ -36,11 +36,21 @@ export class SerialsService {
       this.prisma.main.serialUnit.findMany({
         where,
         include: {
-          product: { select: { name: true, sku: true, unit: true } },
-          warehouse: { select: { name: true } },
-          project: { select: { name: true } },
+          product: { select: { id: true, name: true, sku: true, unit: true, brand: true, purchasePrice: true } },
+          warehouse: { select: { id: true, name: true } },
+          project: { select: { id: true, name: true } },
+          reservations: {
+            where: { releasedAt: null },
+            include: {
+              invoice: { select: { id: true, number: true, status: true } },
+              quotation: { select: { id: true, number: true, status: true } },
+              project: { select: { id: true, name: true } },
+              purchaseRequest: { select: { id: true, number: true, status: true } },
+            },
+            orderBy: { id: "desc" },
+          },
         },
-        orderBy: { id: "desc" },
+        orderBy: q.fifo === "true" ? { id: "asc" } : { id: "desc" },
         skip: (q.page - 1) * q.limit,
         take: q.limit,
       }),
@@ -52,11 +62,20 @@ export class SerialsService {
     const unit = await this.prisma.main.serialUnit.findUnique({
       where: { id },
       include: {
-        product: { select: { name: true, sku: true, unit: true } },
-        warehouse: { select: { name: true } },
-        project: { select: { name: true } },
+        product: { select: { id: true, name: true, sku: true, unit: true, brand: true } },
+        warehouse: { select: { id: true, name: true } },
+        project: { select: { id: true, name: true } },
         replacedFrom: { select: { id: true, sn: true } },
         replacedBy: { select: { id: true, sn: true } },
+        reservations: {
+          where: { releasedAt: null },
+          include: {
+            invoice: { select: { id: true, number: true, status: true } },
+            quotation: { select: { id: true, number: true, status: true } },
+            project: { select: { id: true, name: true } },
+            purchaseRequest: { select: { id: true, number: true, status: true } },
+          },
+        },
         history: {
           orderBy: { id: "desc" },
           include: { changer: { select: { name: true } } },
@@ -162,5 +181,114 @@ export class SerialsService {
       });
     }
     return created;
+  }
+
+  /** Registrasi batch Serial Number untuk suatu barang (contoh: 10 unit kamera UNV dengan SN berbeda). */
+  async createBatch(dto: CreateSerialBatchDto, user: RequestUser) {
+    const product = await this.prisma.main.product.findUnique({ where: { id: dto.productId } });
+    if (!product) throw new NotFoundException("Produk tidak ditemukan");
+
+    const cleanedSerials = Array.from(
+      new Set(
+        (dto.serials ?? [])
+          .flatMap((s) => String(s).split(/[\n,;]+/))
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    );
+    if (cleanedSerials.length === 0) {
+      throw new BadRequestException("Masukkan minimal 1 Serial Number (SN)");
+    }
+
+    let warehouseId = dto.warehouseId;
+    if (warehouseId) {
+      const wh = await this.prisma.main.warehouse.findUnique({ where: { id: warehouseId } });
+      if (!wh) throw new NotFoundException("Gudang tidak ditemukan");
+    } else {
+      const defaultWh =
+        (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
+        (await this.prisma.main.warehouse.findFirst());
+      warehouseId = defaultWh?.id;
+    }
+
+    const existing = await this.prisma.main.serialUnit.findMany({
+      where: { sn: { in: cleanedSerials } },
+      select: { sn: true },
+    });
+    const existingSet = new Set(existing.map((e) => e.sn.toLowerCase()));
+    const newSerials = cleanedSerials.filter((sn) => !existingSet.has(sn.toLowerCase()));
+
+    if (newSerials.length === 0) {
+      throw new BadRequestException(
+        `Semua Serial Number yang dimasukkan sudah terdaftar (${existing.map((e) => e.sn).join(", ")})`,
+      );
+    }
+
+    let warrantyEndsAt: Date | null = null;
+    if (dto.warrantyEndsAt) {
+      warrantyEndsAt = new Date(dto.warrantyEndsAt);
+    } else if (product.warrantyMonths && product.warrantyMonths > 0) {
+      const d = new Date();
+      d.setMonth(d.getMonth() + product.warrantyMonths);
+      warrantyEndsAt = d;
+    }
+
+    if (!product.hasSerial) {
+      await this.prisma.main.product.update({
+        where: { id: product.id },
+        data: { hasSerial: true },
+      });
+    }
+
+    const createdUnits = await this.prisma.main.$transaction(async (tx) => {
+      const units = [];
+      for (const sn of newSerials) {
+        const u = await tx.serialUnit.create({
+          data: {
+            sn,
+            productId: product.id,
+            status: "DI_GUDANG",
+            warehouseId: warehouseId ?? null,
+            warrantyEndsAt,
+          },
+        });
+        await tx.serialUnitHistory.create({
+          data: {
+            serialUnitId: u.id,
+            status: "DI_GUDANG",
+            warehouseId: warehouseId ?? null,
+            note: dto.note || `Registrasi unit SN baru (${product.name})`,
+            changedById: user.id,
+          },
+        });
+        units.push(u);
+      }
+      return units;
+    });
+
+    if (warehouseId) {
+      const now = new Date();
+      for (const u of createdUnits) {
+        await this.stock.applyMovement({
+          date: now,
+          type: "IN",
+          category: "LAINNYA",
+          productId: product.id,
+          toWarehouseId: warehouseId,
+          qty: 1,
+          serialUnitId: u.id,
+          reason: dto.note || `Tambah unit SN ${u.sn}`,
+          createdById: user.id,
+        }).catch(() => {});
+      }
+    }
+
+    return {
+      productId: product.id,
+      productName: product.name,
+      addedCount: createdUnits.length,
+      skippedDuplicates: cleanedSerials.length - newSerials.length,
+      units: createdUnits,
+    };
   }
 }

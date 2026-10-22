@@ -2,6 +2,9 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
+import { ApprovalsService } from "../approvals/approvals.service.js";
+import { ReservationsService } from "../stock/reservations.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { InvoiceOut } from "../generated/prisma/client.js";
@@ -19,6 +22,9 @@ export class InvoiceOutService {
     private readonly audit: AuditService,
     private readonly docnum: DocumentNumberService,
     private readonly upload: UploadService,
+    private readonly reservations: ReservationsService,
+    private readonly notifications: NotificationsService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   /** Status dihitung dari pembayaran + jatuh tempo (PRD: Unpaid/Partial/Paid/Overdue otomatis). */
@@ -27,15 +33,47 @@ export class InvoiceOutService {
     if (row.status === "DRAFT") return "DRAFT";
     const total = Number(row.total);
     const paid = Number(row.paidAmount);
-    if (paid >= total && total > 0) return "PAID";
+    if (row.status === "PAID" || (paid >= total && total > 0)) return "PAID";
+    if (paid > 0) return "PARTIAL";
     const past = new Date(row.dueDate).getTime() < Date.now();
     if (past) return "OVERDUE";
-    if (paid > 0) return "PARTIAL";
     return "SENT";
   }
 
   private async sync(row: InvoiceOut): Promise<InvoiceOut & { status: StatusFilter; warning?: string }> {
-    const status = this.compute(row);
+    let status = this.compute(row);
+    if (status !== "PAID" && (row.type === "DP" || row.type === "TERMIN")) {
+      const match = row.number.match(/^(INV\/\d{4}\/\d{2}\/\d+)(?:\/(\d+))?$/i);
+      const basePrefix = match ? match[1] : null;
+      const termNum = match?.[2] ? Number(match[2]) : 1;
+      if (basePrefix || row.projectId) {
+        const paidSubsequent = await this.prisma.main.invoiceOut.findFirst({
+          where: {
+            id: { not: row.id },
+            status: "PAID",
+            OR: [
+              ...(basePrefix ? [{ number: { startsWith: basePrefix } }] : []),
+              ...(row.projectId ? [{ projectId: row.projectId }] : []),
+            ],
+            type: { in: ["PELUNASAN", "TERMIN"] },
+          },
+        });
+        if (paidSubsequent) {
+          const subMatch = paidSubsequent.number.match(/\/(\d+)$/);
+          const subTermNum = subMatch ? Number(subMatch[1]) : 1;
+          if (paidSubsequent.type === "PELUNASAN" || subTermNum > termNum || /pelunasan/i.test(paidSubsequent.description || "")) {
+            status = "PAID";
+            if (Number(row.paidAmount) < Number(row.total)) {
+              await this.prisma.main.invoiceOut.update({
+                where: { id: row.id },
+                data: { status: "PAID", paidAmount: row.total },
+              });
+              return { ...row, status: "PAID", paidAmount: row.total, ...(await this.warningFor(row)) };
+            }
+          }
+        }
+      }
+    }
     if (status !== row.status) {
       await this.prisma.main.invoiceOut.update({ where: { id: row.id }, data: { status } });
     }
@@ -101,6 +139,12 @@ export class InvoiceOutService {
               { number: { contains: q.q } },
               { description: { contains: q.q } },
               { customer: { name: { contains: q.q } } },
+              { clientPo: { number: { contains: q.q } } },
+              { clientPo: { quotation: { number: { contains: q.q } } } },
+              { clientPo: { quotation: { lead: { name: { contains: q.q } } } } },
+              { project: { name: { contains: q.q } } },
+              { project: { quotation: { number: { contains: q.q } } } },
+              { project: { quotation: { lead: { name: { contains: q.q } } } } },
             ],
           }
         : {}),
@@ -161,7 +205,13 @@ export class InvoiceOutService {
               number: true,
               amount: true,
               quotationId: true,
-              quotation: { select: { id: true, number: true } },
+              quotation: {
+                select: {
+                  id: true,
+                  number: true,
+                  lead: { select: { id: true, name: true } },
+                },
+              },
             },
           },
           project: {
@@ -169,7 +219,13 @@ export class InvoiceOutService {
               id: true,
               name: true,
               quotationId: true,
-              quotation: { select: { id: true, number: true } },
+              quotation: {
+                select: {
+                  id: true,
+                  number: true,
+                  lead: { select: { id: true, name: true } },
+                },
+              },
             },
           },
           payments: { orderBy: { date: "desc" } },
@@ -209,6 +265,12 @@ export class InvoiceOutService {
           quotationId: qId,
           quotation: qNum,
           discount: meta.discount,
+          items: Array.isArray(meta.items) ? meta.items : undefined,
+          stockConflictFlag: Boolean(meta.stockConflictFlag),
+          stockConflictMessage: meta.stockConflictMessage ?? null,
+          autoSwapLogs: Array.isArray(meta.autoSwapLogs) ? meta.autoSwapLogs : [],
+          emergencyPrId: meta.emergencyPrId ?? null,
+          emergencyPrNumber: meta.emergencyPrNumber ?? null,
         };
       }),
     );
@@ -325,7 +387,102 @@ export class InvoiceOutService {
       signerTitle: meta.signerTitle ?? "Finance & Accounting",
       fileName: file?.originalName ?? `Invoice-${row.number.replace(/\//g, "-")}.xlsx`,
       fileUploaded: !!row.fileId,
+      stockConflictFlag: Boolean(meta.stockConflictFlag),
+      stockConflictMessage: meta.stockConflictMessage ?? null,
+      autoSwapLogs: Array.isArray(meta.autoSwapLogs) ? meta.autoSwapLogs : [],
+      emergencyPrId: meta.emergencyPrId ?? null,
+      emergencyPrNumber: meta.emergencyPrNumber ?? null,
     };
+  }
+
+  private normalizeInvoiceItems(rawItems: any[]): any[] {
+    if (!Array.isArray(rawItems)) return [];
+    return rawItems
+      .filter((it) => String(it?.item ?? "").trim().length > 0)
+      .map((it, idx) => {
+        const serialNumbers = Array.isArray(it.serialNumbers)
+          ? it.serialNumbers.map((s: any) => String(s ?? "").trim()).filter(Boolean)
+          : [];
+        const serialUnitIds = Array.isArray(it.serialUnitIds)
+          ? it.serialUnitIds.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
+          : [];
+        const hasSn = Boolean(it.hasSerial || serialNumbers.length > 0 || serialUnitIds.length > 0);
+        const kind: "GOODS" | "SERVICE" =
+          it.kind === "SERVICE"
+            ? "SERVICE"
+            : it.kind === "GOODS" || it.productId || it.sku || hasSn
+              ? "GOODS"
+              : "SERVICE";
+        return {
+          id: String(it.id ?? idx + 1),
+          item: String(it.item ?? "").trim(),
+          qty: Number(it.qty) || (serialNumbers.length > 0 ? serialNumbers.length : 1),
+          satuan: String(it.satuan || "Unit").trim(),
+          harga: Number(it.harga) || 0,
+          kind,
+          ...(it.productId ? { productId: Number(it.productId) } : {}),
+          ...(it.sku ? { sku: String(it.sku) } : {}),
+          ...(hasSn ? { hasSerial: true } : {}),
+          ...(serialUnitIds.length > 0 ? { serialUnitIds } : {}),
+          ...(serialNumbers.length > 0 ? { serialNumbers } : {}),
+          ...(it.outOfStockAutoSwap ? { outOfStockAutoSwap: true } : {}),
+        };
+      });
+  }
+
+  private async resolveRelatedQuotationAndMeta(params: {
+    quotationId?: number | null;
+    quotationNumber?: string | null;
+    clientPoId?: number | null;
+    projectId?: number | null;
+    description?: string | null;
+  }): Promise<{ quotationId?: number; quotationNumber?: string; quoteMeta?: any }> {
+    let qId = params.quotationId ? Number(params.quotationId) : undefined;
+    let qNum = params.quotationNumber || undefined;
+
+    if (!qId && params.clientPoId) {
+      const po = await this.prisma.main.clientPO.findUnique({
+        where: { id: params.clientPoId },
+        include: { quotation: true },
+      });
+      if (po?.quotationId) qId = po.quotationId;
+      if (po?.quotation?.number) qNum = po.quotation.number;
+    }
+    if (!qId && params.projectId) {
+      const proj = await this.prisma.main.project.findUnique({
+        where: { id: params.projectId },
+        include: { quotation: true },
+      });
+      if (proj?.quotationId) qId = proj.quotationId;
+      if (proj?.quotation?.number) qNum = proj.quotation.number;
+    }
+    if (!qId && (qNum || params.description)) {
+      const candidateNum = qNum || params.description?.match(/(?:QUO|PNW)[-\w\/]+/i)?.[0];
+      if (candidateNum) {
+        const qRow = await this.prisma.main.quotation.findFirst({
+          where: { number: { contains: candidateNum } },
+        });
+        if (qRow) {
+          qId = qRow.id;
+          qNum = qRow.number;
+        }
+      }
+    } else if (qId && !qNum) {
+      const qRow = await this.prisma.main.quotation.findUnique({ where: { id: qId } });
+      if (qRow) qNum = qRow.number;
+    }
+
+    let quoteMeta: any = null;
+    if (qId) {
+      try {
+        const qSetting = await this.prisma.main.systemSetting.findFirst({
+          where: { key: { in: [`quotation.meta.${qId}`, `quotation:meta:${qId}`] } },
+        });
+        if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
+      } catch {}
+    }
+
+    return { quotationId: qId, quotationNumber: qNum, quoteMeta };
   }
 
   private assertFinanceOrAdmin(user: RequestUser, message = "Hanya tim Finance yang dapat melakukan tindakan ini") {
@@ -380,11 +537,37 @@ export class InvoiceOutService {
       }).catch(() => {});
     }
 
+    const relatedInfo = await this.resolveRelatedQuotationAndMeta({
+      quotationId: dto.quotationId,
+      quotationNumber: dto.quotation,
+      clientPoId: dto.clientPoId,
+      projectId: dto.projectId,
+      description,
+    });
+
+    // Jika dto.items tidak dikirim atau hanya berisi teks referensi penawaran, tarik daftar barang & SN asli dari Penawaran
+    let resolvedItems = this.normalizeInvoiceItems(dto.items ?? []);
+    const quoteItems = this.normalizeInvoiceItems(relatedInfo.quoteMeta?.items ?? []);
+    const isJustQuotationReference =
+      resolvedItems.length === 1 &&
+      quoteItems.length > 0 &&
+      !resolvedItems[0].productId &&
+      (!resolvedItems[0].serialNumbers || resolvedItems[0].serialNumbers.length === 0) &&
+      /(?:penawaran|quo|pnw)/i.test(resolvedItems[0].item);
+
+    if ((resolvedItems.length === 0 || isJustQuotationReference) && quoteItems.length > 0) {
+      resolvedItems = quoteItems;
+    }
+
+    const effectiveQuotationId = dto.quotationId ?? relatedInfo.quotationId;
+    const effectiveQuotationNum = dto.quotation ?? relatedInfo.quotationNumber;
+
     if (
+      resolvedItems.length > 0 ||
       dto.items !== undefined ||
       dto.discount !== undefined ||
-      dto.quotationId !== undefined ||
-      dto.quotation !== undefined ||
+      effectiveQuotationId !== undefined ||
+      effectiveQuotationNum !== undefined ||
       dto.subject !== undefined ||
       dto.intro !== undefined ||
       dto.notesList !== undefined ||
@@ -398,10 +581,14 @@ export class InvoiceOutService {
       dto.dpAmount !== undefined
     ) {
       await this.saveMeta(row.id, {
-        ...(dto.items !== undefined ? { items: dto.items } : {}),
-        ...(dto.discount !== undefined ? { discount: dto.discount } : {}),
-        ...(dto.quotationId !== undefined ? { quotationId: dto.quotationId } : {}),
-        ...(dto.quotation !== undefined ? { quotation: dto.quotation } : {}),
+        ...(resolvedItems.length > 0 || dto.items !== undefined ? { items: resolvedItems } : {}),
+        ...(dto.discount !== undefined
+          ? { discount: dto.discount }
+          : relatedInfo.quoteMeta?.discount !== undefined
+            ? { discount: relatedInfo.quoteMeta.discount }
+            : {}),
+        ...(effectiveQuotationId !== undefined ? { quotationId: effectiveQuotationId } : {}),
+        ...(effectiveQuotationNum !== undefined ? { quotation: effectiveQuotationNum } : {}),
         ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
         ...(dto.intro !== undefined ? { intro: dto.intro } : {}),
         ...(dto.notesList !== undefined ? { notesList: dto.notesList } : {}),
@@ -416,6 +603,24 @@ export class InvoiceOutService {
       });
     }
 
+    // Reserve SN untuk invoice ini & cek apakah ada SN yang sudah terkunci oleh Invoice Lunas lain
+    if (resolvedItems.length > 0) {
+      await this.checkAndSwapAgainstAlreadyPaidInvoices(row, resolvedItems, user).catch(() => {});
+      const latestMeta = (await this.getMeta(row.id)) || {};
+      const finalItems = Array.isArray(latestMeta.items) ? latestMeta.items : resolvedItems;
+      await this.reservations
+        .syncDocumentReservations({
+          invoiceId: row.id,
+          quotationId: effectiveQuotationId ?? null,
+          projectId: row.projectId ?? null,
+          noteLabel: `Invoice ${row.number}`,
+          userId: user.id,
+          markSerialReserved: true,
+          items: finalItems,
+        })
+        .catch(() => {});
+    }
+
     await this.audit.log({
       actor: user,
       action: "BUAT_INVOICE_KELUAR",
@@ -425,13 +630,21 @@ export class InvoiceOutService {
     });
     await this.syncProjectPayment(row.projectId);
     const synced = await this.sync(row);
-    const qNum = dto.quotation || (desc ? desc.match(/(?:QUO|PNW)[-\w\/]+/i)?.[0] : undefined);
+    if (synced.status === "PAID") {
+      await this.syncRelatedInvoicesOnPaid(synced, user);
+    }
+    const finalMeta = (await this.getMeta(row.id)) || {};
     return {
       ...synced,
-      quotationId: dto.quotationId,
-      quotation: qNum,
-      discount: dto.discount,
-      items: dto.items,
+      quotationId: effectiveQuotationId,
+      quotation: effectiveQuotationNum,
+      discount: finalMeta.discount ?? dto.discount,
+      items: finalMeta.items ?? resolvedItems,
+      stockConflictFlag: Boolean(finalMeta.stockConflictFlag),
+      stockConflictMessage: finalMeta.stockConflictMessage ?? null,
+      autoSwapLogs: finalMeta.autoSwapLogs ?? [],
+      emergencyPrId: finalMeta.emergencyPrId ?? null,
+      emergencyPrNumber: finalMeta.emergencyPrNumber ?? null,
     };
   }
 
@@ -470,8 +683,13 @@ export class InvoiceOutService {
       }).catch(() => {});
     }
 
+    const normalizedItems = dto.items !== undefined ? this.normalizeInvoiceItems(dto.items) : undefined;
+    const allConflictsResolved =
+      normalizedItems !== undefined &&
+      normalizedItems.every((it) => !it.outOfStockAutoSwap && (!it.hasSerial || (it.serialNumbers?.length ?? 0) >= (it.qty || 1)));
+
     if (
-      dto.items !== undefined ||
+      normalizedItems !== undefined ||
       dto.discount !== undefined ||
       dto.quotationId !== undefined ||
       dto.subject !== undefined ||
@@ -487,7 +705,8 @@ export class InvoiceOutService {
       dto.dpAmount !== undefined
     ) {
       await this.saveMeta(id, {
-        ...(dto.items !== undefined ? { items: dto.items } : {}),
+        ...(normalizedItems !== undefined ? { items: normalizedItems } : {}),
+        ...(allConflictsResolved ? { stockConflictFlag: false, stockConflictMessage: null } : {}),
         ...(dto.discount !== undefined ? { discount: dto.discount } : {}),
         ...(dto.quotationId !== undefined ? { quotationId: dto.quotationId } : {}),
         ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
@@ -504,6 +723,22 @@ export class InvoiceOutService {
       });
     }
 
+    if (dto.status === "BATAL") {
+      await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
+    } else if (normalizedItems !== undefined) {
+      await this.reservations
+        .syncDocumentReservations({
+          invoiceId: id,
+          quotationId: dto.quotationId ?? null,
+          projectId: updated.projectId ?? null,
+          noteLabel: `Invoice ${updated.number}`,
+          userId: user.id,
+          markSerialReserved: true,
+          items: normalizedItems,
+        })
+        .catch(() => {});
+    }
+
     await this.audit.log({
       actor: user,
       action: "UBAH_INVOICE_KELUAR",
@@ -515,7 +750,123 @@ export class InvoiceOutService {
     if (row.projectId && row.projectId !== updated.projectId) {
       await this.syncProjectPayment(row.projectId);
     }
+    if (dto.status === "PAID" || (dto.paidAmount !== undefined && Number(dto.paidAmount) >= total)) {
+      await this.syncRelatedInvoicesOnPaid(updated, user);
+    }
     return this.get(id);
+  }
+
+  private async findSiblingInvoices(row: InvoiceOut): Promise<InvoiceOut[]> {
+    const meta = (await this.getMeta(row.id)) || {};
+    let qId = meta.quotationId ? Number(meta.quotationId) : null;
+    if (!qId && row.clientPoId) {
+      const po = await this.prisma.main.clientPO.findUnique({
+        where: { id: row.clientPoId },
+        select: { quotationId: true },
+      });
+      if (po?.quotationId) qId = po.quotationId;
+    }
+    if (!qId && row.projectId) {
+      const proj = await this.prisma.main.project.findUnique({
+        where: { id: row.projectId },
+        select: { quotationId: true },
+      });
+      if (proj?.quotationId) qId = proj.quotationId;
+    }
+
+    const match = row.number.match(/^(INV\/\d{4}\/\d{2}\/\d+)(?:\/\d+)?$/i);
+    const basePrefix = match ? match[1] : null;
+
+    const whereOr: any[] = [];
+    if (row.projectId) whereOr.push({ projectId: row.projectId });
+    if (row.clientPoId) whereOr.push({ clientPoId: row.clientPoId });
+    if (basePrefix) whereOr.push({ number: { startsWith: basePrefix } });
+
+    if (whereOr.length === 0 && !qId) return [];
+
+    const candidates = await this.prisma.main.invoiceOut.findMany({
+      where: {
+        id: { not: row.id },
+        status: { not: "BATAL" },
+        ...(whereOr.length > 0 ? { OR: whereOr } : {}),
+      },
+    });
+
+    if (qId) {
+      const candidateIds = new Set(candidates.map((c) => c.id));
+      const allSettings = await this.prisma.main.systemSetting.findMany({
+        where: {
+          key: { startsWith: "invoice:meta:" },
+          value: { contains: `"quotationId":${qId}` },
+        },
+      });
+      for (const s of allSettings) {
+        const sid = Number(s.key.replace("invoice:meta:", ""));
+        if (sid && sid !== row.id && !candidateIds.has(sid)) {
+          const inv = await this.prisma.main.invoiceOut.findUnique({ where: { id: sid } });
+          if (inv && inv.status !== "BATAL") {
+            candidates.push(inv);
+            candidateIds.add(inv.id);
+          }
+        }
+      }
+    }
+
+    return candidates;
+  }
+
+  private async syncRelatedInvoicesOnPaid(invoice: InvoiceOut, user: RequestUser) {
+    const isPelunasan =
+      invoice.type === "PELUNASAN" ||
+      /pelunasan/i.test(invoice.description || "");
+
+    const matchSuffix = invoice.number.match(/\/(\d+)$/);
+    const termNum = matchSuffix ? Number(matchSuffix[1]) : 1;
+    const isSubsequent = termNum > 1;
+
+    // Settle prior siblings if this is a pelunasan, subsequent installment, or final payment
+    if (isPelunasan || isSubsequent) {
+      const siblings = await this.findSiblingInvoices(invoice);
+      for (const sib of siblings) {
+        const sibMatch = sib.number.match(/\/(\d+)$/);
+        const sibTermNum = sibMatch ? Number(sibMatch[1]) : 1;
+
+        if (isPelunasan || sibTermNum < termNum) {
+          if (sib.status !== "PAID" || Number(sib.paidAmount) < Number(sib.total)) {
+            const sisa = Number(sib.total) - Number(sib.paidAmount);
+            if (sisa > 0) {
+              await this.prisma.main.payment.create({
+                data: {
+                  invoiceOutId: sib.id,
+                  amount: sisa,
+                  date: new Date(),
+                  method: "TRANSFER",
+                  reference: `Auto-settle via pelunasan ${invoice.number}`,
+                  createdById: user.id,
+                },
+              }).catch(() => {});
+            }
+            await this.prisma.main.invoiceOut.update({
+              where: { id: sib.id },
+              data: {
+                status: "PAID",
+                paidAmount: sib.total,
+              },
+            });
+            await this.audit.log({
+              actor: user,
+              action: "UBAH_STATUS_INVOICE",
+              entityType: "invoice-out",
+              entityId: sib.id,
+              detail: `${sib.number}: otomatis LUNAS karena invoice ${invoice.number} telah lunas`,
+            });
+          }
+        }
+      }
+    }
+
+    // Lock SN pada invoice lunas ini & auto-swap FIFO pada penawaran/invoice lain yang belum dibayar
+    await this.lockAndAutoSwapOnPaid(invoice, user).catch(() => {});
   }
 
   async addPayment(id: number, dto: PaymentDto, user: RequestUser) {
@@ -551,9 +902,13 @@ export class InvoiceOutService {
 
     const payments = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
     const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
+    const isNowPaid = paid >= Number(row.total) && Number(row.total) > 0;
     const updated = await this.prisma.main.invoiceOut.update({
       where: { id },
-      data: { paidAmount: paid },
+      data: {
+        paidAmount: paid,
+        ...(isNowPaid ? { status: "PAID" } : {}),
+      },
       include: { customer: true, payments: { orderBy: { date: "desc" } } },
     });
 
@@ -565,6 +920,9 @@ export class InvoiceOutService {
       detail: `Rp${dto.amount} (${row.number}) total bayar Rp${paid}`,
     });
     await this.syncProjectPayment(row.projectId);
+    if (isNowPaid) {
+      await this.syncRelatedInvoicesOnPaid(updated, user);
+    }
     return this.sync(updated);
   }
 
@@ -594,6 +952,12 @@ export class InvoiceOutService {
       detail: `${row.number}: ${row.status} → ${status}`,
     });
     await this.syncProjectPayment(row.projectId);
+    if (status === "BATAL") {
+      await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
+    }
+    if (status === "PAID") {
+      await this.syncRelatedInvoicesOnPaid(updated, user);
+    }
     return this.sync(updated);
   }
 
@@ -601,8 +965,10 @@ export class InvoiceOutService {
     this.assertFinanceOrAdmin(user, "Hanya tim Finance yang dapat menghapus invoice");
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
+    await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
     await this.prisma.main.$transaction(async (tx) => {
       await tx.payment.deleteMany({ where: { invoiceOutId: id } });
+      await tx.systemSetting.deleteMany({ where: { key: this.metaKey(id) } });
       await tx.invoiceOut.delete({ where: { id } });
     });
     await this.audit.log({
@@ -614,6 +980,502 @@ export class InvoiceOutService {
     });
     await this.syncProjectPayment(row.projectId);
     return { id, deleted: true };
+  }
+
+  /**
+   * Saat Invoice baru dibuat dari Penawaran, cek apakah ada SN di dalamnya yang sudah terkunci oleh Invoice Lunas lain.
+   * Jika ada, langsung jalankan auto-swap FIFO (atau flag + buat PR Darurat bila stok habis).
+   */
+  private async checkAndSwapAgainstAlreadyPaidInvoices(
+    invoice: InvoiceOut,
+    items: any[],
+    user: RequestUser,
+  ) {
+    const requestedSns = new Set<string>();
+    const requestedIds = new Set<number>();
+    for (const it of items ?? []) {
+      for (const sn of it.serialNumbers ?? []) {
+        if (sn) requestedSns.add(String(sn).trim());
+      }
+      for (const id of it.serialUnitIds ?? []) {
+        if (Number(id) > 0) requestedIds.add(Number(id));
+      }
+    }
+    if (requestedSns.size === 0 && requestedIds.size === 0) return;
+
+    const siblings = await this.findSiblingInvoices(invoice);
+    const siblingIds = new Set<number>([invoice.id, ...siblings.map((s) => s.id)]);
+
+    // Cari reservasi aktif milik invoice LAIN yang sudah PAID atau unit yang sudah TERPASANG/DIKIRIM
+    const units = await this.prisma.main.serialUnit.findMany({
+      where: {
+        OR: [
+          ...(requestedIds.size > 0 ? [{ id: { in: Array.from(requestedIds) } }] : []),
+          ...(requestedSns.size > 0 ? [{ sn: { in: Array.from(requestedSns) } }] : []),
+        ],
+      },
+      include: {
+        product: { select: { id: true, name: true, sku: true, unit: true } },
+        reservations: {
+          where: { releasedAt: null },
+          include: {
+            invoice: { select: { id: true, number: true, status: true } },
+          },
+        },
+      },
+    });
+
+    const lockedSns = new Map<string, { unitId: number; sn: string; productId: number; productName: string; unitLabel: string; lockedByInvoice: string }>();
+    for (const u of units) {
+      const paidRes = u.reservations.find(
+        (r) => r.invoice && !siblingIds.has(r.invoice.id) && r.invoice.status === "PAID",
+      );
+      if (paidRes?.invoice) {
+        lockedSns.set(u.sn, {
+          unitId: u.id,
+          sn: u.sn,
+          productId: u.productId,
+          productName: u.product.name,
+          unitLabel: u.product.unit || "Unit",
+          lockedByInvoice: paidRes.invoice.number,
+        });
+      } else if (u.status === "TERPASANG" || u.status === "DIKIRIM" || u.status === "RUSAK") {
+        lockedSns.set(u.sn, {
+          unitId: u.id,
+          sn: u.sn,
+          productId: u.productId,
+          productName: u.product.name,
+          unitLabel: u.product.unit || "Unit",
+          lockedByInvoice: `Status ${u.status}`,
+        });
+      }
+    }
+
+    if (lockedSns.size === 0) return;
+
+    await this.swapCollidingItemsForDocument({
+      docType: "INVOICE",
+      docId: invoice.id,
+      docNumber: invoice.number,
+      projectId: invoice.projectId,
+      items,
+      lockedSns,
+      usedReplacementUnitIds: new Set<number>(),
+      user,
+    });
+  }
+
+  /**
+   * Engine Anti-Tabrakan & Auto-Swap FIFO saat sebuah Invoice dinyatakan LUNAS (PAID):
+   * 1. Mengunci seluruh SN yang ada pada Invoice Lunas ini.
+   * 2. Mencari seluruh Invoice lain yang belum lunas (DRAFT/SENT/PARTIAL/OVERDUE) dan Penawaran aktif lain
+   *    yang memakai SN yang sama (baik diinput satuan maupun banyak sekaligus).
+   * 3. Mengganti otomatis SN yang tabrakan dengan SN lain dari model/produk yang sama secara FIFO (status DI_GUDANG).
+   * 4. Bila stok SN pengganti habis (0), memberi flag konflik pada Invoice/Penawaran tersebut dan otomatis membuat Purchase Request (PR) Darurat.
+   */
+  private async lockAndAutoSwapOnPaid(paidInvoice: InvoiceOut, user: RequestUser) {
+    const paidMeta = (await this.getMeta(paidInvoice.id)) || {};
+    const siblings = await this.findSiblingInvoices(paidInvoice);
+    const siblingIds = new Set<number>([paidInvoice.id, ...siblings.map((s) => s.id)]);
+
+    const relatedInfo = await this.resolveRelatedQuotationAndMeta({
+      quotationId: paidMeta.quotationId,
+      quotationNumber: paidMeta.quotation,
+      clientPoId: paidInvoice.clientPoId,
+      projectId: paidInvoice.projectId,
+      description: paidInvoice.description,
+    });
+    const paidQuoteId = relatedInfo.quotationId;
+
+    let paidItems: any[] = Array.isArray(paidMeta.items) && paidMeta.items.length > 0
+      ? paidMeta.items
+      : Array.isArray(relatedInfo.quoteMeta?.items)
+        ? relatedInfo.quoteMeta.items
+        : [];
+
+    if (paidItems.length === 0) {
+      for (const sib of siblings) {
+        const sibMeta = (await this.getMeta(sib.id)) || {};
+        if (Array.isArray(sibMeta.items) && sibMeta.items.length > 0) {
+          paidItems = sibMeta.items;
+          break;
+        }
+      }
+    }
+
+    // Pastikan reservasi SN untuk invoice yang lunas ini tercatat & terkunci
+    const lockedUnits = await this.reservations.syncDocumentReservations({
+      invoiceId: paidInvoice.id,
+      quotationId: paidQuoteId ?? null,
+      projectId: paidInvoice.projectId ?? null,
+      noteLabel: `Invoice Lunas ${paidInvoice.number}`,
+      userId: user.id,
+      markSerialReserved: true,
+      items: paidItems,
+    });
+
+    if (lockedUnits.length === 0) return;
+
+    const productIds = Array.from(new Set(lockedUnits.map((u) => u.productId)));
+    const products = await this.prisma.main.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, sku: true, unit: true },
+    });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    const lockedSns = new Map<
+      string,
+      { unitId: number; sn: string; productId: number; productName: string; unitLabel: string; lockedByInvoice: string }
+    >();
+    for (const u of lockedUnits) {
+      const prod = productMap.get(u.productId);
+      lockedSns.set(u.sn, {
+        unitId: u.id,
+        sn: u.sn,
+        productId: u.productId,
+        productName: prod?.name || `Produk #${u.productId}`,
+        unitLabel: prod?.unit || "Unit",
+        lockedByInvoice: paidInvoice.number,
+      });
+    }
+
+    const usedReplacementUnitIds = new Set<number>(lockedUnits.map((u) => u.id));
+
+    // 1. Cek semua Invoice lain yang belum lunas (bukan sibling dari invoice ini)
+    const unpaidInvoices = await this.prisma.main.invoiceOut.findMany({
+      where: {
+        id: { notIn: Array.from(siblingIds) },
+        status: { notIn: ["PAID", "BATAL"] },
+      },
+    });
+
+    for (const otherInv of unpaidInvoices) {
+      const otherMeta = (await this.getMeta(otherInv.id)) || {};
+      const otherItems: any[] = Array.isArray(otherMeta.items) ? otherMeta.items : [];
+      if (otherItems.length === 0) continue;
+
+      const hasCollision = otherItems.some((it) => {
+        const sns: string[] = Array.isArray(it.serialNumbers) ? it.serialNumbers : [];
+        const ids: number[] = Array.isArray(it.serialUnitIds) ? it.serialUnitIds.map(Number) : [];
+        return (
+          sns.some((sn) => lockedSns.has(String(sn).trim())) ||
+          ids.some((id) => Array.from(lockedSns.values()).some((l) => l.unitId === id))
+        );
+      });
+
+      if (!hasCollision) continue;
+
+      await this.swapCollidingItemsForDocument({
+        docType: "INVOICE",
+        docId: otherInv.id,
+        docNumber: otherInv.number,
+        projectId: otherInv.projectId,
+        items: otherItems,
+        lockedSns,
+        usedReplacementUnitIds,
+        user,
+      });
+    }
+
+    // 2. Cek semua Penawaran (Quotation) lain yang masih aktif (bukan penawaran milik invoice lunas ini)
+    const allQuotationSettings = await this.prisma.main.systemSetting.findMany({
+      where: { key: { startsWith: "quotation.meta." } },
+    });
+
+    for (const qSetting of allQuotationSettings) {
+      const qId = Number(qSetting.key.replace("quotation.meta.", ""));
+      if (!Number.isFinite(qId) || qId <= 0 || qId === paidQuoteId) continue;
+
+      let qMeta: any = null;
+      try {
+        qMeta = JSON.parse(qSetting.value);
+      } catch {
+        continue;
+      }
+      const qItems: any[] = Array.isArray(qMeta?.items) ? qMeta.items : [];
+      if (qItems.length === 0) continue;
+
+      const hasCollision = qItems.some((it) => {
+        const sns: string[] = Array.isArray(it.serialNumbers) ? it.serialNumbers : [];
+        const ids: number[] = Array.isArray(it.serialUnitIds) ? it.serialUnitIds.map(Number) : [];
+        return (
+          sns.some((sn) => lockedSns.has(String(sn).trim())) ||
+          ids.some((id) => Array.from(lockedSns.values()).some((l) => l.unitId === id))
+        );
+      });
+      if (!hasCollision) continue;
+
+      const qRow = await this.prisma.main.quotation.findUnique({ where: { id: qId } });
+      if (!qRow || qRow.status === "REJECTED" || qRow.status === "EXPIRED") continue;
+
+      await this.swapCollidingItemsForDocument({
+        docType: "QUOTATION",
+        docId: qRow.id,
+        docNumber: qRow.number,
+        projectId: null,
+        items: qItems,
+        lockedSns,
+        usedReplacementUnitIds,
+        user,
+      });
+    }
+  }
+
+  private async swapCollidingItemsForDocument(params: {
+    docType: "INVOICE" | "QUOTATION";
+    docId: number;
+    docNumber: string;
+    projectId?: number | null;
+    items: any[];
+    lockedSns: Map<
+      string,
+      { unitId: number; sn: string; productId: number; productName: string; unitLabel: string; lockedByInvoice: string }
+    >;
+    usedReplacementUnitIds: Set<number>;
+    user: RequestUser;
+  }) {
+    const { docType, docId, docNumber, projectId, items, lockedSns, usedReplacementUnitIds, user } = params;
+    const lockedById = new Map(Array.from(lockedSns.values()).map((v) => [v.unitId, v]));
+
+    const updatedItems = JSON.parse(JSON.stringify(items)) as any[];
+    const swapLogs: Array<{
+      date: string;
+      productId: number;
+      productName: string;
+      oldSn: string;
+      newSn: string | null;
+      triggeredByInvoice: string;
+    }> = [];
+    const shortageByProduct = new Map<
+      number,
+      { productId: number; productName: string; unitLabel: string; missingQty: number; oldSns: string[]; triggeredBy: string }
+    >();
+
+    for (const it of updatedItems) {
+      const sns: string[] = Array.isArray(it.serialNumbers)
+        ? it.serialNumbers.map((s: any) => String(s ?? "").trim()).filter(Boolean)
+        : [];
+      const ids: number[] = Array.isArray(it.serialUnitIds)
+        ? it.serialUnitIds.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
+        : [];
+
+      if (sns.length === 0 && ids.length === 0) continue;
+
+      const newSns: string[] = [];
+      const newIds: number[] = [];
+      const count = Math.max(sns.length, ids.length);
+
+      for (let i = 0; i < count; i++) {
+        const snVal = sns[i];
+        const idVal = ids[i];
+        const lockedInfo = (snVal && lockedSns.get(snVal)) || (idVal && lockedById.get(idVal));
+
+        if (!lockedInfo) {
+          if (snVal) newSns.push(snVal);
+          if (idVal) newIds.push(idVal);
+          continue;
+        }
+
+        // Cari SN pengganti yang statusnya DI_GUDANG secara FIFO (id ASC)
+        const replacement = await this.prisma.main.serialUnit.findFirst({
+          where: {
+            productId: lockedInfo.productId,
+            status: "DI_GUDANG",
+            id: { notIn: Array.from(usedReplacementUnitIds) },
+          },
+          orderBy: { id: "asc" },
+        });
+
+        if (replacement) {
+          usedReplacementUnitIds.add(replacement.id);
+          newSns.push(replacement.sn);
+          newIds.push(replacement.id);
+          if (typeof it.item === "string" && it.item.includes(lockedInfo.sn)) {
+            it.item = it.item.replaceAll(lockedInfo.sn, replacement.sn);
+          }
+          swapLogs.push({
+            date: new Date().toISOString(),
+            productId: lockedInfo.productId,
+            productName: lockedInfo.productName,
+            oldSn: lockedInfo.sn,
+            newSn: replacement.sn,
+            triggeredByInvoice: lockedInfo.lockedByInvoice,
+          });
+        } else {
+          // Stok habis untuk model ini!
+          it.outOfStockAutoSwap = true;
+          if (typeof it.item === "string" && !it.item.includes("[STOK SN HABIS")) {
+            it.item = `${it.item.replace(lockedInfo.sn, `${lockedInfo.sn} [TERPAKAI]`)} [STOK SN HABIS - PR DARURAT]`;
+          }
+          swapLogs.push({
+            date: new Date().toISOString(),
+            productId: lockedInfo.productId,
+            productName: lockedInfo.productName,
+            oldSn: lockedInfo.sn,
+            newSn: null,
+            triggeredByInvoice: lockedInfo.lockedByInvoice,
+          });
+          const curShortage = shortageByProduct.get(lockedInfo.productId) ?? {
+            productId: lockedInfo.productId,
+            productName: lockedInfo.productName,
+            unitLabel: lockedInfo.unitLabel,
+            missingQty: 0,
+            oldSns: [],
+            triggeredBy: lockedInfo.lockedByInvoice,
+          };
+          curShortage.missingQty += 1;
+          curShortage.oldSns.push(lockedInfo.sn);
+          shortageByProduct.set(lockedInfo.productId, curShortage);
+        }
+      }
+
+      it.serialNumbers = newSns;
+      it.serialUnitIds = newIds;
+    }
+
+    if (swapLogs.length === 0) return;
+
+    // Jika ada kekurangan stok SN, buat Purchase Request (PR) Darurat otomatis ke Procurement & Flag dokumen
+    let emergencyPr: { id: number; number: string } | null = null;
+    if (shortageByProduct.size > 0) {
+      const prNumber = await this.docnum.next("permintaan");
+      const shortageList = Array.from(shortageByProduct.values());
+      const detailSummary = shortageList
+        .map((s) => `${s.productName} (${s.missingQty} ${s.unitLabel}, eks SN: ${s.oldSns.join(", ")})`)
+        .join("; ");
+
+      const createdPr = await this.prisma.main.purchaseRequest.create({
+        data: {
+          number: prNumber,
+          date: new Date(),
+          costType: "STOK",
+          purpose: `[AUTO-PR DARURAT] Kekurangan stok SN pada ${docType === "INVOICE" ? "Invoice" : "Penawaran"} ${docNumber}`,
+          otherNote: `[AUTO-PR DARURAT] Kekurangan stok SN pada ${docType === "INVOICE" ? "Invoice" : "Penawaran"} ${docNumber} karena SN sebelumnya telah terkunci di Invoice Lunas (${shortageList[0]?.triggeredBy}). Detail: ${detailSummary}`,
+          projectId: projectId ?? null,
+          requesterId: user.id,
+          status: "DIAJUKAN",
+          items: {
+            create: shortageList.map((s) => ({
+              productId: s.productId,
+              qty: s.missingQty,
+              unitCost: 0,
+            })),
+          },
+        },
+      });
+      emergencyPr = { id: createdPr.id, number: createdPr.number };
+
+      await this.approvals
+        .request({
+          kind: "PURCHASE_REQUEST",
+          entityId: createdPr.id,
+          title: `[DARURAT] Purchase Request ${createdPr.number} — Konflik Stok SN ${docNumber}`,
+          amount: 0,
+          requestedBy: user,
+          href: "/purchase-requests",
+        })
+        .catch(() => {});
+    }
+
+    const swappedSuccessCount = swapLogs.filter((l) => l.newSn !== null).length;
+    const missingCount = swapLogs.filter((l) => l.newSn === null).length;
+
+    const conflictMessage =
+      missingCount > 0
+        ? `Stok SN habis untuk ${missingCount} unit (SN sebelumnya telah dibayar di Invoice ${swapLogs[0]?.triggeredByInvoice}). Otomatis dibuat PR Darurat ${emergencyPr?.number ?? ""} ke Procurement.`
+        : null;
+
+    if (docType === "INVOICE") {
+      const existingMeta = (await this.getMeta(docId)) || {};
+      const prevLogs = Array.isArray(existingMeta.autoSwapLogs) ? existingMeta.autoSwapLogs : [];
+      await this.saveMeta(docId, {
+        items: updatedItems,
+        stockConflictFlag: missingCount > 0,
+        stockConflictMessage: conflictMessage,
+        autoSwapLogs: [...swapLogs, ...prevLogs].slice(0, 50),
+        ...(emergencyPr ? { emergencyPrId: emergencyPr.id, emergencyPrNumber: emergencyPr.number } : {}),
+      });
+
+      await this.reservations
+        .syncDocumentReservations({
+          invoiceId: docId,
+          projectId: projectId ?? null,
+          noteLabel: `Auto-Swap FIFO Invoice ${docNumber}`,
+          userId: user.id,
+          markSerialReserved: true,
+          items: updatedItems,
+        })
+        .catch(() => {});
+
+      await this.audit.log({
+        actor: user,
+        action: missingCount > 0 ? "KONFLIK_STOK_SN_INVOICE" : "AUTO_SWAP_SN_INVOICE",
+        entityType: "invoice-out",
+        entityId: docId,
+        detail:
+          missingCount > 0
+            ? `${docNumber}: ${missingCount} SN kehabisan stok saat auto-swap → PR Darurat ${emergencyPr?.number}`
+            : `${docNumber}: ${swappedSuccessCount} SN otomatis diganti (FIFO) karena SN lama lunas di invoice lain`,
+      });
+
+      await this.notifications
+        .notify({
+          roles: ["FINANCE", "SALES", "GUDANG", "PROCUREMENT"],
+          kind: "STOK",
+          text:
+            missingCount > 0
+              ? `⚠️ [FLAG INVOICE ${docNumber}] Stok SN habis saat auto-swap! PR Darurat ${emergencyPr?.number} telah dibuat otomatis.`
+              : `🔄 [Auto-Swap SN FIFO] ${swappedSuccessCount} unit SN pada Invoice ${docNumber} telah diganti otomatis ke SN baru karena SN sebelumnya telah dibayar di invoice lain.`,
+          href: "/invoices",
+        })
+        .catch(() => {});
+    } else {
+      // QUOTATION
+      const key = `quotation.meta.${docId}`;
+      const setting = await this.prisma.main.systemSetting.findUnique({ where: { key } });
+      let qMeta: any = {};
+      try {
+        if (setting?.value) qMeta = JSON.parse(setting.value);
+      } catch {}
+      const prevLogs = Array.isArray(qMeta.autoSwapLogs) ? qMeta.autoSwapLogs : [];
+      const mergedQMeta = {
+        ...qMeta,
+        items: updatedItems,
+        stockConflictFlag: missingCount > 0,
+        stockConflictMessage: conflictMessage,
+        autoSwapLogs: [...swapLogs, ...prevLogs].slice(0, 50),
+        ...(emergencyPr ? { emergencyPrId: emergencyPr.id, emergencyPrNumber: emergencyPr.number } : {}),
+      };
+      await this.prisma.main.systemSetting
+        .upsert({
+          where: { key },
+          update: { value: JSON.stringify(mergedQMeta) },
+          create: { key, value: JSON.stringify(mergedQMeta) },
+        })
+        .catch(() => {});
+
+      await this.reservations
+        .syncDocumentReservations({
+          quotationId: docId,
+          noteLabel: `Auto-Swap FIFO Penawaran ${docNumber}`,
+          userId: user.id,
+          markSerialReserved: false,
+          items: updatedItems,
+        })
+        .catch(() => {});
+
+      await this.notifications
+        .notify({
+          roles: ["SALES", "FINANCE", "GUDANG", "PROCUREMENT"],
+          kind: "STOK",
+          text:
+            missingCount > 0
+              ? `⚠️ [FLAG PENAWARAN ${docNumber}] Stok SN habis saat auto-swap! PR Darurat ${emergencyPr?.number} telah dibuat otomatis.`
+              : `🔄 [Auto-Swap SN FIFO] ${swappedSuccessCount} unit SN pada Penawaran ${docNumber} otomatis diganti ke SN baru karena SN sebelumnya telah dibayar di invoice lain.`,
+          href: "/quotations",
+        })
+        .catch(() => {});
+    }
   }
 
   suggestNumber() {

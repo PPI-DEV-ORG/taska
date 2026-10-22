@@ -81,6 +81,26 @@ export class SerialListQuery extends PageQuery {
 
   @IsOptional() @Type(() => Number) @IsInt()
   warehouseId?: number;
+
+  @IsOptional() @IsIn(["true", "false"])
+  fifo?: "true" | "false";
+}
+
+export class CreateSerialBatchDto {
+  @Type(() => Number) @IsInt()
+  productId!: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  warehouseId?: number;
+
+  @IsArray() @IsString({ each: true })
+  serials!: string[];
+
+  @IsOptional() @IsDateString()
+  warrantyEndsAt?: string;
+
+  @IsOptional() @IsString()
+  note?: string;
 }
 
 export class SerialStatusDto {
@@ -146,21 +166,45 @@ export class ReservationListQuery extends PageQuery {
   projectId?: number;
 
   @IsOptional() @Type(() => Number) @IsInt()
-  productId?: number;
+  quotationId?: number;
 
-  @IsOptional() @IsIn(["true", "false"])
-  released?: "true" | "false";
-}
+  @IsOptional() @Type(() => Number) @IsInt()
+  invoiceId?: number;
 
-export class ReservationCreateDto {
-  @Type(() => Number) @IsInt()
-  projectId: number;
+  @IsOptional() @Type(() => Number) @IsInt()
+  purchaseRequestId?: number;
 
   @IsOptional() @Type(() => Number) @IsInt()
   productId?: number;
 
   @IsOptional() @Type(() => Number) @IsInt()
   serialUnitId?: number;
+
+  @IsOptional() @IsIn(["true", "false"])
+  released?: "true" | "false";
+}
+
+export class ReservationCreateDto {
+  @IsOptional() @Type(() => Number) @IsInt()
+  projectId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  quotationId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  invoiceId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  purchaseRequestId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  productId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  serialUnitId?: number;
+
+  @IsOptional() @IsArray()
+  serialUnitIds?: number[];
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
   qty?: number;

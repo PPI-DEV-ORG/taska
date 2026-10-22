@@ -31,6 +31,7 @@ import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quota
 import { QuotationTemplateGenerator } from "@/modules/quotation/quotation-template-generator";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import { ConflictAndSwapBanner } from "@/components/taska/serial-item-picker";
 import { Line } from "../shared/line";
 
 export function QuotationExtras({
@@ -232,6 +233,8 @@ export function QuotationExtras({
             right={<Text className="text-primary text-base font-bold">{rupiah(row.totalAfterDisc || row.total || row.nilai || 0)}</Text>}
           />
           <Line left="Status Penawaran" right={<StatusBadge status={row.status || "Not Yet"} />} />
+
+          <ConflictAndSwapBanner row={row} />
 
           {row.status === "Not Yet" && (
             <View className="bg-warning/10 border-warning/30 flex-row items-center gap-2 rounded-xl border p-3 mt-1">

@@ -304,6 +304,11 @@ export function adaptRow(module: string, raw: any): Row {
         fileStatus: hasFile ? fName : "Belum diupload",
         fileUploaded: hasFile,
         stage: raw.lead?.stage ?? null,
+        stockConflictFlag: !!raw.stockConflictFlag,
+        stockConflictMessage: raw.stockConflictMessage ?? null,
+        autoSwapLogs: Array.isArray(raw.autoSwapLogs) ? raw.autoSwapLogs : [],
+        emergencyPrId: raw.emergencyPrId ?? null,
+        emergencyPrNumber: raw.emergencyPrNumber ?? null,
         _versions: (raw.versions ?? []).map((v: any) => {
           let vStatus = "Draft";
           let vReason = v.note || `Revisi v${v.version}`;
@@ -397,6 +402,26 @@ export function adaptRow(module: string, raw: any): Row {
         idOf(raw.clientPo?.quotation) ??
         idOf(raw.project?.quotation) ??
         undefined;
+      const leadName =
+        raw.lead ??
+        raw.project?.lead?.name ??
+        raw.project?.quotation?.lead?.name ??
+        raw.clientPo?.quotation?.lead?.name ??
+        "";
+      const totNum = n(raw.total);
+      const paidNum = n(raw.paidAmount);
+      const isDp = raw.type === "DP" || toLabel("invoiceType", raw.type) === "DP";
+      const isPaid = raw.status === "PAID" || toLabel("invoices", raw.status) === "Lunas" || (totNum > 0 && paidNum >= totNum);
+      const isPartial = !isPaid && ((paidNum > 0 && paidNum < totNum) || (isDp && paidNum > 0));
+
+      let displayStatus = toLabel("invoices", raw.status);
+      if (raw.status !== "BATAL" && displayStatus !== "Dibatalkan") {
+        if (isPaid) {
+          displayStatus = "Lunas";
+        } else if (isPartial) {
+          displayStatus = "Dibayar sebagian";
+        }
+      }
 
       return {
         ...base,
@@ -405,13 +430,15 @@ export function adaptRow(module: string, raw: any): Row {
         clientPoId: idOf(raw.clientPo),
         quotation: qNum ?? "",
         quotationId: qId ?? null,
+        lead: leadName,
+        paymentNote: isPartial ? "dp setengah bayar sebagian dp termin" : "",
         customer: nameOf(raw.customer) ?? "",
         customerId: idOf(raw.customer),
         jenis: toLabel("invoiceType", raw.type),
         catatan: (raw.description || "").replace(/\[by:\d+\]/g, "").trim(),
         nilai: n(raw.amount), ppn: n(raw.ppn), total: n(raw.total), terbayar: n(raw.paidAmount),
         jatuhTempo: d(raw.dueDate),
-        status: toLabel("invoices", raw.status),
+        status: displayStatus,
         tanggal: d(raw.date),
         projectId: idOf(raw.project),
         project: nameOf(raw.project) ?? "",
@@ -439,6 +466,11 @@ export function adaptRow(module: string, raw: any): Row {
         dpAmount: raw.dpAmount != null ? n(raw.dpAmount) : undefined,
         fileName: raw.fileName ?? undefined,
         fileUploaded: !!(raw.fileId || raw.fileUploaded),
+        stockConflictFlag: !!raw.stockConflictFlag,
+        stockConflictMessage: raw.stockConflictMessage ?? null,
+        autoSwapLogs: Array.isArray(raw.autoSwapLogs) ? raw.autoSwapLogs : [],
+        emergencyPrId: raw.emergencyPrId ?? null,
+        emergencyPrNumber: raw.emergencyPrNumber ?? null,
       };
     }
     case "projects": {
@@ -650,16 +682,19 @@ export function adaptRow(module: string, raw: any): Row {
     case "damage-reports": {
       const desc = raw.description ?? "";
       const poMatch = desc.match(/\[PO:\s*([^\]]+)\]/);
+      const snMatch = desc.match(/\[SN:\s*([^\]]+)\]/);
       return {
         ...base,
         tanggal: d(raw.date),
         produk: nameOf(raw.product) ?? "",
         productId: idOf(raw.product),
+        sn: raw.serialUnit?.sn ?? (snMatch ? snMatch[1].trim() : "-"),
+        serialUnitId: idOf(raw.serialUnit),
         jenis: toLabel("damageType", raw.type),
-        po: poMatch ? poMatch[1].trim() : (raw.serialUnit?.sn ?? "-"),
+        po: poMatch ? poMatch[1].trim() : "-",
         pelapor: nameOf(raw.reporter) ?? "",
         status: toLabel("damage-reports", raw.status),
-        keterangan: desc.replace(/\[PO:\s*[^\]]+\]\s*/, ""),
+        keterangan: desc.replace(/\[PO:\s*[^\]]+\]\s*/g, "").replace(/\[SN:\s*[^\]]+\]\s*/g, ""),
         qty: n(raw.qty),
         fileId: raw.fileId ?? null,
       };
@@ -738,22 +773,41 @@ export function adaptRow(module: string, raw: any): Row {
     case "expenseCategories":
     case "costCenters":
       return { ...base, nama: raw.name ?? "", status: toLabel("users", raw.status ?? "AKTIF") };
-    case "serials":
+    case "serials": {
+      const activeRes = Array.isArray(raw.reservations) ? raw.reservations : [];
+      const reservedFor = activeRes
+        .map((rv: any) =>
+          rv.invoice?.number
+            ? `INV: ${rv.invoice.number}`
+            : rv.quotation?.number
+            ? `QUO: ${rv.quotation.number}`
+            : rv.purchaseRequest?.number
+            ? `PR: ${rv.purchaseRequest.number}`
+            : rv.project?.name
+            ? `PRJ: ${rv.project.name}`
+            : null,
+        )
+        .filter(Boolean)
+        .join(", ");
       return {
         ...base,
         sn: raw.sn ?? "",
         sku: raw.product?.sku ?? "",
         produk: nameOf(raw.product) ?? "",
-        productId: idOf(raw.product),
+        productId: idOf(raw.product) ?? (raw.productId != null ? String(raw.productId) : null),
         gudang: nameOf(raw.warehouse) ?? "-",
-        warehouseId: idOf(raw.warehouse),
-        project: nameOf(raw.project) ?? "-",
+        warehouseId: idOf(raw.warehouse) ?? (raw.warehouseId != null ? String(raw.warehouseId) : null),
+        project: nameOf(raw.project) || reservedFor || "-",
         projectId: idOf(raw.project),
+        rawStatus: raw.status ?? "DI_GUDANG",
         status: toLabel("serials", raw.status),
         garansiMulai: d(raw.warrantyStart),
         garansiBerakhir: d(raw.warrantyEnd),
         digantiDengan: raw.replacedBy?.sn ?? raw.replacedTo ?? "",
+        reservations: activeRes,
+        reservedFor: reservedFor || "-",
       };
+    }
     case "movements": {
       const tLabel = toLabel("movements", raw.type);
       const gudangLabel =
@@ -776,11 +830,21 @@ export function adaptRow(module: string, raw: any): Row {
         oleh: nameOf(raw.creator) ?? "-",
       };
     }
-    case "reservations":
+    case "reservations": {
+      const docLabel = raw.invoice?.number
+        ? `Invoice ${raw.invoice.number}`
+        : raw.quotation?.number
+        ? `Penawaran ${raw.quotation.number}`
+        : raw.purchaseRequest?.number
+        ? `PR ${raw.purchaseRequest.number}`
+        : nameOf(raw.project) || "-";
       return {
         ...base,
-        project: nameOf(raw.project) ?? "-",
+        project: docLabel,
         projectId: idOf(raw.project),
+        invoiceId: idOf(raw.invoice) ?? (raw.invoiceId != null ? String(raw.invoiceId) : null),
+        quotationId: idOf(raw.quotation) ?? (raw.quotationId != null ? String(raw.quotationId) : null),
+        purchaseRequestId: idOf(raw.purchaseRequest) ?? (raw.purchaseRequestId != null ? String(raw.purchaseRequestId) : null),
         produk: nameOf(raw.product) ?? "-",
         productId: idOf(raw.product),
         sku: raw.product?.sku ?? "",
@@ -790,6 +854,7 @@ export function adaptRow(module: string, raw: any): Row {
         status: raw.releasedAt ? "Dirilis" : "Aktif",
         tanggal: d(raw.createdAt),
       };
+    }
     case "followups":
       return {
         ...base,
@@ -816,6 +881,17 @@ export function adaptRow(module: string, raw: any): Row {
         BATAL: "Batal",
         UNPAID: "Belum lunas",
       };
+      const totNum = n(raw.total);
+      const paidNum = n(raw.paidAmount);
+      const isPartial = paidNum > 0 && paidNum < totNum;
+      let displayStatus = statusMap[raw.status] ?? raw.status ?? "Belum lunas";
+      if (raw.status !== "BATAL" && displayStatus !== "Batal") {
+        if (totNum > 0 && paidNum >= totNum) {
+          displayStatus = "Lunas";
+        } else if (isPartial) {
+          displayStatus = "Dibayar sebagian";
+        }
+      }
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -832,7 +908,7 @@ export function adaptRow(module: string, raw: any): Row {
         terbayar: n(raw.paidAmount),
         tanggal: d(raw.date || raw.createdAt),
         jatuhTempo: d(raw.dueDate),
-        status: statusMap[raw.status] ?? raw.status ?? "Belum lunas",
+        status: displayStatus,
         fileId: raw.fileId ?? raw.file?.id ?? null,
         file: raw.file ?? null,
         transferFileId: raw.transferFileId ?? null,
@@ -1049,6 +1125,15 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         fileId: row.fileId ? Number(row.fileId) : undefined,
         notes: row.notes ?? row.catatan ?? undefined,
         status: row.status ? (toEnum("quotations", row.status) || "DRAFT") : "DRAFT",
+        items: Array.isArray(row.items) ? row.items : undefined,
+        subject: row.subject || undefined,
+        intro: row.intro || undefined,
+        notesList: Array.isArray(row.notesList) ? row.notesList : undefined,
+        city: row.city || undefined,
+        kopText: row.kopText || undefined,
+        customerAddress: row.customerAddress || undefined,
+        signerName: row.signerName || undefined,
+        signerTitle: row.signerTitle || undefined,
       };
     }
     case "surveys": {
@@ -1310,12 +1395,26 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     case "damage-reports": {
       const baseDesc = row.keterangan || row.description || "-";
       const poVal = row.po && row.po !== "-" ? (String(row.po).split(" - ")[0] ?? "").trim() : "";
+      const snVal = row.sn && row.sn !== "-" ? (String(row.sn).split(" (")[0] ?? "").trim() : "";
+      const matchedSn = snVal
+        ? (db?.serials ?? []).find((s: any) => String(s.sn || "").trim().toLowerCase() === snVal.toLowerCase())
+        : null;
+      const serialUnitId =
+        row.serialUnitId != null && row.serialUnitId !== ""
+          ? Number(row.serialUnitId)
+          : matchedSn?.id != null
+          ? Number(matchedSn.id)
+          : undefined;
+      const prefixes: string[] = [];
+      if (poVal) prefixes.push(`[PO: ${poVal}]`);
+      if (snVal) prefixes.push(`[SN: ${snVal}]`);
       return {
         date: row.tanggal || row.date || today,
         productId: row.productId != null && row.productId !== "" ? Number(row.productId) : findId(db?.products, row.produk),
+        serialUnitId,
         type: toEnum("damageType", row.jenis) || "RUSAK",
         qty: num(row.qty) || 1,
-        description: poVal ? `[PO: ${poVal}] ${baseDesc}` : baseDesc,
+        description: prefixes.length ? `${prefixes.join(" ")} ${baseDesc}` : baseDesc,
         fileId: row.fileId ? Number(row.fileId) : undefined,
       };
     }
@@ -1675,11 +1774,23 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.produk !== undefined) out.productId = findId(db?.products, patch.produk);
     if (patch.jenis !== undefined) out.type = toEnum("damageType", patch.jenis) || "RUSAK";
     if (patch.qty !== undefined) out.qty = num(patch.qty);
-    if (patch.po !== undefined || patch.keterangan !== undefined) {
+    if (patch.serialUnitId !== undefined) out.serialUnitId = patch.serialUnitId ? Number(patch.serialUnitId) : null;
+    else if (patch.sn !== undefined) {
+      const snClean = (String(patch.sn).split(" (")[0] ?? "").trim();
+      const matchedSn = snClean
+        ? (db?.serials ?? []).find((s: any) => String(s.sn || "").trim().toLowerCase() === snClean.toLowerCase())
+        : null;
+      if (matchedSn?.id != null) out.serialUnitId = Number(matchedSn.id);
+    }
+    if (patch.po !== undefined || patch.keterangan !== undefined || patch.sn !== undefined) {
       const p = patch.po && patch.po !== "-" ? (String(patch.po).split(" - ")[0] ?? "").trim() : "";
+      const snClean = patch.sn && patch.sn !== "-" ? (String(patch.sn).split(" (")[0] ?? "").trim() : "";
       const d = patch.keterangan !== undefined ? patch.keterangan : "";
-      if (p) {
-        out.description = `[PO: ${p}] ${d}`.trim();
+      const prefixes: string[] = [];
+      if (p) prefixes.push(`[PO: ${p}]`);
+      if (snClean) prefixes.push(`[SN: ${snClean}]`);
+      if (prefixes.length) {
+        out.description = `${prefixes.join(" ")} ${d}`.trim();
       } else if (d) {
         out.description = d;
       }

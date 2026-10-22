@@ -48,8 +48,8 @@ export class LeadDto {
   @IsOptional() @IsInt()
   sourceId?: number;
 
-  @IsOptional() @IsIn(["PARTNER", "END_USER"])
-  clientType?: "PARTNER" | "END_USER";
+  @IsOptional() @IsIn(["PARTNER", "END_USER", "SI"])
+  clientType?: "PARTNER" | "END_USER" | "SI";
 
   @IsOptional() @IsString()
   need?: string;
@@ -214,7 +214,20 @@ export class QuotationDto {
   notes?: string;
 
   @IsOptional() @IsArray()
-  items?: Array<{ id?: string; item: string; qty: number; satuan: string; harga: number }>;
+  items?: Array<{
+    id?: string;
+    item: string;
+    qty: number;
+    satuan: string;
+    harga: number;
+    kind?: "GOODS" | "SERVICE";
+    productId?: number;
+    sku?: string;
+    hasSerial?: boolean;
+    serialUnitIds?: number[];
+    serialNumbers?: string[];
+    outOfStockAutoSwap?: boolean;
+  }>;
 
   @IsOptional() @IsString()
   subject?: string;

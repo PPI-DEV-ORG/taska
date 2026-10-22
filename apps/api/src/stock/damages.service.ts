@@ -38,6 +38,13 @@ export class DamagesService {
     if (dto.serialUnitId) {
       serial = await this.prisma.main.serialUnit.findUnique({ where: { id: dto.serialUnitId } });
       if (!serial) throw new NotFoundException("Serial number tidak ditemukan");
+    } else if (dto.description) {
+      const snMatch = dto.description.match(/\[SN:\s*([^\]]+)\]/i);
+      if (snMatch?.[1]) {
+        serial = await this.prisma.main.serialUnit.findUnique({
+          where: { sn: snMatch[1].trim() },
+        });
+      }
     }
 
     const type = dto.type ?? "RUSAK";
@@ -48,7 +55,7 @@ export class DamagesService {
         data: {
           date: dto.date ? new Date(dto.date) : new Date(),
           productId: product.id,
-          serialUnitId: dto.serialUnitId ?? null,
+          serialUnitId: serial?.id ?? dto.serialUnitId ?? null,
           type,
           qty: dto.qty ?? 1,
           description,

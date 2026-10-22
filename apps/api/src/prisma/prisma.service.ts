@@ -37,6 +37,22 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
       await db.$executeRawUnsafe(`ALTER TABLE \`ApprovalStep\` MODIFY COLUMN \`approverRole\` ${ROLE_ENUM_SQL} NOT NULL`);
       await db.$executeRawUnsafe("ALTER TABLE `SystemSetting` MODIFY COLUMN `value` LONGTEXT NOT NULL");
     } catch {}
+    // Ensure StockReservation & item serial columns for Phase 1-5 SN reservation flow
+    const schemaPatches = [
+      "ALTER TABLE `StockReservation` MODIFY COLUMN `projectId` INT NULL",
+      "ALTER TABLE `StockReservation` ADD COLUMN `quotationId` INT NULL",
+      "ALTER TABLE `StockReservation` ADD COLUMN `invoiceId` INT NULL",
+      "ALTER TABLE `StockReservation` ADD COLUMN `purchaseRequestId` INT NULL",
+      "CREATE INDEX `StockReservation_quotationId_idx` ON `StockReservation`(`quotationId`)",
+      "CREATE INDEX `StockReservation_invoiceId_idx` ON `StockReservation`(`invoiceId`)",
+      "CREATE INDEX `StockReservation_purchaseRequestId_idx` ON `StockReservation`(`purchaseRequestId`)",
+      "CREATE INDEX `StockReservation_serialUnitId_idx` ON `StockReservation`(`serialUnitId`)",
+      "ALTER TABLE `ProjectRequirement` ADD COLUMN `serials` TEXT NULL",
+      "ALTER TABLE `PurchaseRequestItem` ADD COLUMN `serials` TEXT NULL",
+    ];
+    for (const sql of schemaPatches) {
+      await db.$executeRawUnsafe(sql).catch(() => {});
+    }
   }
 
   async onModuleInit() {

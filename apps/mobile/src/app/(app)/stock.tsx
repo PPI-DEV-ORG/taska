@@ -8,11 +8,13 @@ import {
   CircleCheck,
   ExternalLink,
   PackageCheck,
+  Plus,
   RefreshCw,
   Search,
   X,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
+import { BatchSerialRegisterModal } from "@/components/taska/serial-item-picker";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Chip, FormField } from "@/components/taska/basics";
@@ -67,6 +69,8 @@ export default function StockScreen() {
 
   const [transferOpen, setTransferOpen] = React.useState(false);
   const [replacementOpen, setReplacementOpen] = React.useState(false);
+  const [batchSnOpen, setBatchSnOpen] = React.useState(false);
+  const [batchSnDefaultProductId, setBatchSnDefaultProductId] = React.useState<string>("");
 
   const [transferProd, setTransferProd] = React.useState("");
   const [transferFrom, setTransferFrom] = React.useState("");
@@ -213,6 +217,17 @@ export default function StockScreen() {
         subtitle="Manajemen persediaan multi-gudang, penelusuran SN, dan mutasi barang"
         action={
           <View className="flex-row flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => {
+                setBatchSnDefaultProductId("");
+                setBatchSnOpen(true);
+              }}
+            >
+              <Plus size={16} color={colors.text} />
+              <Text>Tambah Barang per SN</Text>
+            </Button>
             <Button variant="outline" size="sm" onPress={() => setTransferOpen(true)}>
               <ArrowLeftRight size={16} color={colors.text} />
               <Text>Transfer Gudang</Text>
@@ -564,20 +579,45 @@ export default function StockScreen() {
                 </View>
 
                 {/* Unit Serial Number */}
-                {pSerials.length > 0 && (
+                {p.berSN && (
                   <View className="gap-2">
-                    <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Unit Serial Terdaftar ({pSerials.length})</Text>
-                    <View className="bg-card border-border max-h-48 divide-y divide-border overflow-y-auto rounded-lg border">
-                      {pSerials.map((s) => (
-                        <View key={s.id} className="flex-row items-center justify-between p-2.5">
-                          <View>
-                            <Text className="font-mono text-xs font-semibold text-foreground">{s.sn}</Text>
-                            <Text className="text-[10px] text-muted-foreground">Lokasi: {s.gudang} • {s.project || "Stok Bebas"}</Text>
-                          </View>
-                          <StatusBadge status={s.status ?? "Tersedia"} />
-                        </View>
-                      ))}
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        Daftar Unit per-SN ({pSerials.length} Unit)
+                      </Text>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onPress={() => {
+                          setBatchSnDefaultProductId(String(p.id));
+                          setBatchSnOpen(true);
+                        }}
+                      >
+                        <Plus size={14} color={colors.text} />
+                        <Text className="text-xs">+ Tambah Unit SN</Text>
+                      </Button>
                     </View>
+                    {pSerials.length > 0 ? (
+                      <View className="bg-card border-border max-h-56 divide-y divide-border overflow-y-auto rounded-lg border">
+                        {pSerials.map((s, idx) => (
+                          <View key={s.id} className="flex-row items-center justify-between p-2.5">
+                            <View className="flex-1 pr-2">
+                              <Text className="font-mono text-xs font-semibold text-foreground">
+                                #{idx + 1} • {s.sn}
+                              </Text>
+                              <Text className="text-[10px] text-muted-foreground">
+                                Lokasi: {s.gudang} • {s.project && s.project !== "-" ? s.project : "Stok Bebas (Di Gudang)"}
+                              </Text>
+                            </View>
+                            <StatusBadge status={s.status ?? "Tersedia"} />
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text className="text-xs italic text-muted-foreground">
+                        Belum ada unit Serial Number terdaftar untuk produk ini. Klik &quot;+ Tambah Unit SN&quot; untuk mendaftarkan unit per-SN.
+                      </Text>
+                    )}
                   </View>
                 )}
 
@@ -806,6 +846,12 @@ export default function StockScreen() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BatchSerialRegisterModal
+        open={batchSnOpen}
+        onClose={() => setBatchSnOpen(false)}
+        defaultProductId={batchSnDefaultProductId}
+      />
     </View>
   );
 }

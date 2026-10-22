@@ -1,12 +1,14 @@
 import * as React from "react";
 import { View, ScrollView, Image } from "react-native";
-import { FileDown, Plus, Trash2, Edit3, Eye } from "lucide-react-native";
+import { FileDown, Plus, Trash2, Edit3, Eye, Package } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
+import { StatusBadge } from "@/components/taska/status-badge";
+import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -49,6 +51,7 @@ export function QuotationTemplateGenerator({
 }) {
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [editItemsOpen, setEditItemsOpen] = React.useState(false);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
 
   const [items, setItems] = React.useState<QuotationItem[]>(row.items && row.items.length ? row.items : []);
   const [kopText, setKopText] = React.useState<string>(row.kopText || "");
@@ -204,7 +207,26 @@ export function QuotationTemplateGenerator({
               {items.map((it, idx) => (
                 <View key={it.id || idx} className="border-border/50 flex-row items-center border-b py-2 px-3">
                   <Text className="w-8 text-xs text-muted-foreground">{idx + 1}</Text>
-                  <Text className="flex-1 text-xs font-medium">{it.item}</Text>
+                  <View className="flex-1 pr-2">
+                    <Text className="text-xs font-medium">{it.item}</Text>
+                    <View className="flex-row flex-wrap items-center gap-1.5 mt-0.5">
+                      {it.kind === "SERVICE" ? (
+                        <Text className="text-[10px] text-muted-foreground">[Jasa / Non-Barang]</Text>
+                      ) : it.sku ? (
+                        <Text className="text-[10px] text-primary font-mono">[{it.sku}]</Text>
+                      ) : null}
+                      {Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? (
+                        <Text className="text-[10px] font-mono font-semibold text-emerald-500">
+                          SN: {it.serialNumbers.join(", ")}
+                        </Text>
+                      ) : null}
+                      {it.outOfStockAutoSwap ? (
+                        <Text className="text-[10px] font-bold text-rose-500">
+                          [Konflik Stok SN - Menunggu PR Darurat]
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
                   <Text className="w-16 text-xs text-center">
                     {it.qty} {it.satuan}
                   </Text>
@@ -301,9 +323,15 @@ export function QuotationTemplateGenerator({
 
             {/* 3. ITEM & JASA */}
             <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-3">
-              <Text className="text-xs font-bold text-primary uppercase tracking-wide">3. Rincian Item / Jasa</Text>
+              <View className="flex-row items-center justify-between flex-wrap gap-2">
+                <Text className="text-xs font-bold text-primary uppercase tracking-wide">3. Rincian Item / Jasa</Text>
+                <Button size="sm" onPress={() => setPickerOpen(true)}>
+                  <Package size={14} color={colors.background} />
+                  <Text className="text-xs">+ Pilih dari Stok & SN / Jasa</Text>
+                </Button>
+              </View>
               <View className="bg-card border-border/80 rounded-xl border p-3 gap-2">
-                <Text className="text-xs font-semibold">Tambah Baris Item / Jasa Baru</Text>
+                <Text className="text-xs font-semibold">Tambah Cepat Teks / Jasa (Non-Barang)</Text>
                 <View className="flex-row flex-wrap gap-2">
                   <View className="flex-1 min-w-[180px]">
                     <Input
@@ -341,12 +369,19 @@ export function QuotationTemplateGenerator({
                     className="bg-card border-border/60 flex-row flex-wrap items-center gap-2 rounded-lg border p-2.5"
                   >
                     <Text className="w-5 text-xs font-semibold">{idx + 1}.</Text>
-                    <View className="flex-1 min-w-[150px]">
+                    <View className="flex-1 min-w-[150px] gap-1">
                       <Input
                         value={it.item}
                         onChangeText={(v) => updateItemField(it.id, { item: v })}
                         placeholder="Nama Item"
                       />
+                      {Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? (
+                        <View className="flex-row flex-wrap items-center gap-1">
+                          <StatusBadge status={`SN: ${it.serialNumbers.join(", ")}`} />
+                        </View>
+                      ) : it.kind === "SERVICE" ? (
+                        <Text className="text-[10px] text-muted-foreground">Jasa / Non-Barang</Text>
+                      ) : null}
                     </View>
                     <View className="w-16">
                       <Input
@@ -499,6 +534,15 @@ export function QuotationTemplateGenerator({
             true,
           );
           setPreviewOpen(false);
+        }}
+      />
+
+      <SerialItemPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        currentQuotationId={row.id}
+        onAddItems={(newItems) => {
+          setItems((prev) => [...prev, ...newItems]);
         }}
       />
     </>

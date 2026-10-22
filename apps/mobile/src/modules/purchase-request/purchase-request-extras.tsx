@@ -308,6 +308,18 @@ export function PurchaseRequestExtras({
               const productName = item.product?.name ?? `Produk #${item.productId}`;
               const sku = item.product?.sku ? `SKU: ${item.product.sku} · ` : "";
               const unit = item.product?.unit ? ` ${item.product.unit}` : "";
+              let parsedSerials: string[] = [];
+              if (item.serials) {
+                try {
+                  const arr = JSON.parse(item.serials);
+                  if (Array.isArray(arr)) parsedSerials = arr.map(String);
+                } catch {
+                  parsedSerials = String(item.serials)
+                    .split(",")
+                    .map((s: string) => s.trim())
+                    .filter(Boolean);
+                }
+              }
               return (
                 <View
                   key={item.id ?? idx}
@@ -320,6 +332,11 @@ export function PurchaseRequestExtras({
                     <Text className="text-muted-foreground text-xs mt-0.5">
                       {sku}Diminta: <Text className="font-semibold text-foreground">{item.ordered}{unit}</Text>
                     </Text>
+                    {parsedSerials.length > 0 ? (
+                      <Text className="text-[11px] font-mono font-semibold text-primary mt-0.5">
+                        SN: {parsedSerials.join(", ")}
+                      </Text>
+                    ) : null}
                   </View>
                   <View className="items-end shrink-0">
                     {item.isEnough ? (

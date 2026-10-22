@@ -29,6 +29,12 @@ export class ProjectTasksController {
 export class TasksController {
   constructor(private readonly service: TasksService) {}
 
+  @Get()
+  @Require("tasks", "L")
+  listAll(@CurrentUser() user: RequestUser) {
+    return this.service.listAll(user);
+  }
+
   @Get(":id")
   @Require("tasks", "L")
   get(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {

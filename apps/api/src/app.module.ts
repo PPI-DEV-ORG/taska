@@ -24,7 +24,6 @@ import { ReportsModule } from "./reports/reports.module.js";
 import { ImportsModule } from "./imports/imports.module.js";
 import { DocumentationModule } from "./documentation/documentation.module.js";
 import { WhatsappModule } from "./whatsapp/whatsapp.module.js";
-import { ThrottleGuard } from "./common/guards/throttle.guard.js";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard.js";
 import { PermissionsGuard } from "./common/guards/permissions.guard.js";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor.js";
@@ -59,7 +58,6 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
   controllers: [AppController],
   providers: [
     AppService,
-    { provide: APP_GUARD, useClass: ThrottleGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },

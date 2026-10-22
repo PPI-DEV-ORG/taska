@@ -72,6 +72,30 @@ export class TasksService {
     return { projectId, items: ordered, total: ordered.length };
   }
 
+  async listAll(user: RequestUser) {
+    const isManager = MANAGER_ROLES.includes(user.role);
+    const where = isManager
+      ? {}
+      : {
+          OR: [
+            { assigneeId: user.id },
+            { project: { picId: user.id } },
+            { project: { members: { some: { userId: user.id } } } },
+          ],
+        };
+    const rows = await this.prisma.main.task.findMany({
+      where,
+      include: {
+        project: { select: { id: true, name: true, picId: true } },
+        assignee: { select: { id: true, name: true, role: true } },
+        parent: { select: { id: true, name: true } },
+      },
+      orderBy: [{ projectId: "desc" }, { id: "asc" }],
+      take: 500,
+    });
+    return { items: rows, total: rows.length };
+  }
+
   async get(id: number, user: RequestUser) {
     const task = await this.prisma.main.task.findUnique({
       where: { id },

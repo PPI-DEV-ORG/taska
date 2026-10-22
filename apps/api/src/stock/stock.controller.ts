@@ -5,6 +5,7 @@ import { OpnameService } from "./opname.service.js";
 import { ReservationsService } from "./reservations.service.js";
 import { DamagesService } from "./damages.service.js";
 import {
+  CreateSerialBatchDto,
   DamageCreateDto,
   DamageListQuery,
   DamageStatusDto,
@@ -70,6 +71,12 @@ export class SerialsController {
   @Require("stock", "L")
   list(@Query() q: SerialListQuery) {
     return this.service.list(q);
+  }
+
+  @Post("batch")
+  @Require("stock", "C")
+  createBatch(@Body() dto: CreateSerialBatchDto, @CurrentUser() user: RequestUser) {
+    return this.service.createBatch(dto, user);
   }
 
   @Get(":id")

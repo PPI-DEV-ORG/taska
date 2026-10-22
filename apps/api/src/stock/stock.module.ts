@@ -19,6 +19,6 @@ import { ApprovalsModule } from "../approvals/approvals.module.js";
   imports: [ApprovalsModule],
   providers: [StockService, MovementsService, SerialsService, OpnameService, ReservationsService, DamagesService],
   controllers: [MovementsController, StockController, SerialsController, OpnamesController, ReservationsController, DamagesController],
-  exports: [StockService, MovementsService, ReservationsService],
+  exports: [StockService, MovementsService, SerialsService, ReservationsService],
 })
 export class StockModule {}

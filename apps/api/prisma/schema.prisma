@@ -725,10 +725,11 @@ model Quotation {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  versions  QuotationVersion[]
-  clientPOs ClientPO[]
-  followUps FollowUp[]
-  projects  Project[]
+  versions     QuotationVersion[]
+  clientPOs    ClientPO[]
+  followUps    FollowUp[]
+  projects     Project[]
+  reservations StockReservation[]
 
   @@index([status])
   @@index([leadId])
@@ -797,7 +798,8 @@ model InvoiceOut {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  payments Payment[]
+  payments     Payment[]
+  reservations StockReservation[]
 
   @@index([status])
   @@index([dueDate])
@@ -974,6 +976,7 @@ model ProjectRequirement {
   product     Product           @relation(fields: [productId], references: [id])
   qty         Int
   reservedQty Int               @default(0)
+  serials     String?           @db.Text
   status      RequirementStatus @default(DIBUTUHKAN)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -1007,8 +1010,9 @@ model PurchaseRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  items       PurchaseRequestItem[]
-  supplierPOs SupplierPO[]
+  items        PurchaseRequestItem[]
+  supplierPOs  SupplierPO[]
+  reservations StockReservation[]
 
   @@index([status])
   @@index([projectId])
@@ -1023,6 +1027,7 @@ model PurchaseRequestItem {
   product   Product         @relation(fields: [productId], references: [id])
   qty       Int
   unitCost  Decimal         @default(0) @db.Decimal(18, 2)
+  serials   String?         @db.Text
 
   @@index([requestId])
 }
@@ -1225,20 +1230,30 @@ model SerialUnitHistory {
 }
 
 model StockReservation {
-  id            Int         @id @default(autoincrement())
-  projectId     Int
-  project       Project     @relation(fields: [projectId], references: [id])
-  productId     Int?
-  product       Product?    @relation(fields: [productId], references: [id])
-  serialUnitId  Int?
-  serialUnit    SerialUnit? @relation(fields: [serialUnitId], references: [id])
-  qty           Int         @default(1)
-  requirementId Int?
-  releasedAt    DateTime?
-  createdAt     DateTime    @default(now())
+  id                Int              @id @default(autoincrement())
+  projectId         Int?
+  project           Project?         @relation(fields: [projectId], references: [id])
+  quotationId       Int?
+  quotation         Quotation?       @relation(fields: [quotationId], references: [id])
+  invoiceId         Int?
+  invoice           InvoiceOut?      @relation(fields: [invoiceId], references: [id])
+  purchaseRequestId Int?
+  purchaseRequest   PurchaseRequest? @relation(fields: [purchaseRequestId], references: [id])
+  productId         Int?
+  product           Product?         @relation(fields: [productId], references: [id])
+  serialUnitId      Int?
+  serialUnit        SerialUnit?      @relation(fields: [serialUnitId], references: [id])
+  qty               Int              @default(1)
+  requirementId     Int?
+  releasedAt        DateTime?
+  createdAt         DateTime         @default(now())
 
   @@index([projectId])
+  @@index([quotationId])
+  @@index([invoiceId])
+  @@index([purchaseRequestId])
   @@index([productId])
+  @@index([serialUnitId])
   @@index([releasedAt])
 }
 

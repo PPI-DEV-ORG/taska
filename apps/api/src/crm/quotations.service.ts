@@ -11,6 +11,7 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { UploadService } from "../upload/upload.service.js";
+import { ReservationsService } from "../stock/reservations.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { ApprovalStatus } from "../generated/prisma/client.js";
@@ -54,7 +55,38 @@ export class QuotationsService {
     private readonly docnum: DocumentNumberService,
     private readonly approvals: ApprovalsService,
     private readonly upload: UploadService,
+    private readonly reservations: ReservationsService,
   ) {}
+
+  private normalizeItem(it: any, idx: number): QuotationItemData {
+    const serialNumbers = Array.isArray(it.serialNumbers)
+      ? it.serialNumbers.map((s: any) => String(s ?? "").trim()).filter(Boolean)
+      : [];
+    const serialUnitIds = Array.isArray(it.serialUnitIds)
+      ? it.serialUnitIds.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+    const hasSn = Boolean(it.hasSerial || serialNumbers.length > 0 || serialUnitIds.length > 0);
+    const kind: "GOODS" | "SERVICE" =
+      it.kind === "SERVICE"
+        ? "SERVICE"
+        : it.kind === "GOODS" || it.productId || it.sku || hasSn
+          ? "GOODS"
+          : "SERVICE";
+    return {
+      id: String(it.id ?? idx + 1),
+      item: String(it.item ?? "").trim(),
+      qty: Number(it.qty) || (serialNumbers.length > 0 ? serialNumbers.length : 1),
+      satuan: String(it.satuan || "Unit").trim(),
+      harga: Number(it.harga) || 0,
+      kind,
+      ...(it.productId ? { productId: Number(it.productId) } : {}),
+      ...(it.sku ? { sku: String(it.sku) } : {}),
+      ...(hasSn ? { hasSerial: true } : {}),
+      ...(serialUnitIds.length > 0 ? { serialUnitIds } : {}),
+      ...(serialNumbers.length > 0 ? { serialNumbers } : {}),
+      ...(it.outOfStockAutoSwap ? { outOfStockAutoSwap: true } : {}),
+    };
+  }
 
   private metaKey(id: number): string {
     return `quotation.meta.${id}`;
@@ -84,6 +116,11 @@ export class QuotationsService {
           signerTitle: parsed.signerTitle,
           latestFileId: parsed.latestFileId ?? null,
           latestFileName: parsed.latestFileName ?? null,
+          stockConflictFlag: Boolean(parsed.stockConflictFlag),
+          stockConflictMessage: parsed.stockConflictMessage ?? null,
+          autoSwapLogs: Array.isArray(parsed.autoSwapLogs) ? parsed.autoSwapLogs : [],
+          emergencyPrId: parsed.emergencyPrId ?? null,
+          emergencyPrNumber: parsed.emergencyPrNumber ?? null,
         });
       } catch {
         // ignore invalid json
@@ -175,6 +212,11 @@ export class QuotationsService {
       signerTitle: meta?.signerTitle ?? "",
       latestFileId: meta?.latestFileId ?? null,
       latestFileName: meta?.latestFileName ?? null,
+      stockConflictFlag: Boolean(meta?.stockConflictFlag),
+      stockConflictMessage: meta?.stockConflictMessage ?? null,
+      autoSwapLogs: meta?.autoSwapLogs ?? [],
+      emergencyPrId: meta?.emergencyPrId ?? null,
+      emergencyPrNumber: meta?.emergencyPrNumber ?? null,
     };
   }
 
@@ -258,6 +300,11 @@ export class QuotationsService {
         signerTitle: meta?.signerTitle,
         latestFileId: meta?.latestFileId ?? latestFile?.id ?? null,
         latestFileName: meta?.latestFileName ?? latestFile?.originalName ?? null,
+        stockConflictFlag: meta?.stockConflictFlag,
+        stockConflictMessage: meta?.stockConflictMessage,
+        autoSwapLogs: meta?.autoSwapLogs,
+        emergencyPrId: meta?.emergencyPrId,
+        emergencyPrNumber: meta?.emergencyPrNumber,
       }),
       approval,
       files,
@@ -278,13 +325,9 @@ export class QuotationsService {
 
     const number = await this.docnum.next("penawaran");
     const items: QuotationItemData[] = Array.isArray(dto?.items)
-      ? dto.items.map((it, idx) => ({
-          id: String(it.id ?? idx + 1),
-          item: String(it.item ?? ""),
-          qty: Number(it.qty) || 1,
-          satuan: String(it.satuan || "Unit"),
-          harga: Number(it.harga) || 0,
-        }))
+      ? dto.items
+          .filter((it) => String(it.item ?? "").trim().length > 0)
+          .map((it, idx) => this.normalizeItem(it, idx))
       : [];
     const itemsSum = items.reduce((s, it) => s + it.qty * it.harga, 0);
     const total = itemsSum > 0 ? itemsSum : (dto?.total ?? dto?.grandTotal ?? Number(lead.estimatedValue || 0));
@@ -345,6 +388,18 @@ export class QuotationsService {
       await this.attachFile(row.id, dto.fileId);
     }
 
+    if (items.length > 0) {
+      await this.reservations
+        .syncDocumentReservations({
+          quotationId: row.id,
+          noteLabel: `Penawaran ${row.number}`,
+          userId: user.id,
+          markSerialReserved: false,
+          items,
+        })
+        .catch(() => {});
+    }
+
     await this.audit.log({
       actor: user,
       action: "BUAT_PENAWARAN",
@@ -365,13 +420,7 @@ export class QuotationsService {
     const items: QuotationItemData[] | undefined = Array.isArray(dto.items)
       ? dto.items
           .filter((it) => String(it.item ?? "").trim().length > 0)
-          .map((it, idx) => ({
-            id: String(it.id ?? idx + 1),
-            item: String(it.item).trim(),
-            qty: Number(it.qty) || 1,
-            satuan: String(it.satuan || "Unit").trim(),
-            harga: Number(it.harga) || 0,
-          }))
+          .map((it, idx) => this.normalizeItem(it, idx))
       : undefined;
 
     const activeItems = items ?? existingMeta?.items ?? [];
@@ -483,6 +532,18 @@ export class QuotationsService {
         },
         user,
       );
+    }
+
+    if (items !== undefined) {
+      await this.reservations
+        .syncDocumentReservations({
+          quotationId: id,
+          noteLabel: `Penawaran ${updated.number}`,
+          userId: user.id,
+          markSerialReserved: false,
+          items: activeItems,
+        })
+        .catch(() => {});
     }
 
     await this.audit.log({
@@ -953,6 +1014,10 @@ export class QuotationsService {
       data: { note: `[STATUS:${statusLabel}] Versi ${row.currentVersion}` },
     }).catch(() => {});
 
+    if (mapped === "REJECTED" || mapped === "EXPIRED") {
+      await this.reservations.releaseForDocument({ quotationId: id }).catch(() => {});
+    }
+
     await this.audit.log({
       actor: user,
       action: "UBAH_STATUS_PENAWARAN",
@@ -1021,6 +1086,7 @@ export class QuotationsService {
 
   async remove(id: number, user: RequestUser) {
     const row = await this.getEditable(id, user);
+    await this.reservations.releaseForDocument({ quotationId: id }).catch(() => {});
     await this.prisma.main.$transaction(async (tx) => {
       await tx.approval.deleteMany({ where: { kind: "PENAWARAN", entityId: id } });
       await tx.followUp.deleteMany({ where: { quotationId: id } });
