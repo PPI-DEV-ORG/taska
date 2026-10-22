@@ -127,9 +127,22 @@ export default function StockScreen() {
   const selectedWarehouseRow = warehouses.find((w) => w.nama === activeWarehouse) ?? warehouses[0];
 
   function saldoOfProduct(productId: string): number {
-    return stockSummary
+    const fromSummary = stockSummary
       .filter((s: any) => String(s.productId) === productId)
       .reduce((a: number, s: any) => a + Number(s.saldo ?? 0), 0);
+    if (fromSummary > 0) return fromSummary;
+
+    // Fallback hitung fisik dari unit SN jika stockSummary belum siap / 0
+    const prod = products.find((p) => String(p.id) === productId);
+    if (prod?.berSN) {
+      const activeSnCount = serials.filter(
+        (s) =>
+          (String(s.productId) === productId || (s.sku && prod.sku && s.sku === prod.sku)) &&
+          (s.rawStatus === "DI_GUDANG" || s.status === "Di gudang" || !s.rawStatus || s.status === "Tersedia"),
+      ).length;
+      if (activeSnCount > 0) return activeSnCount;
+    }
+    return fromSummary;
   }
 
   function summaryOfProductWarehouse(productId: string, warehouseId: string) {

@@ -286,24 +286,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const navItems = role && NAV_BY_ROLE[role] ? NAV_BY_ROLE[role] : [];
     const roleModuleKeys = new Set(navItems.map((n) => n.key));
 
-    const ESSENTIAL_ALWAYS = new Set([
-      "tasks", "users", "customers", "projects", "leads", "quotations", "invoices",
-      "products", "suppliers", "warehouses", "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
-    ]);
-
-    const LAZY_MODULES = new Set([
-      "audit-log", "serials", "movements", "reservations", "opname", "damage-reports", "invoiceIn", "followups",
-    ]);
-
     const modulesToFetch = (targetModules ?? EAGER_MODULES).filter((m) => {
-      if (LAZY_MODULES.has(m)) return false;
-      if (ESSENTIAL_ALWAYS.has(m)) return true;
-      if (role === "super_admin") return true;
-      return roleModuleKeys.has(m);
+      if (m === "audit-log" && role !== "super_admin" && role !== "admin" && role !== "bos") return false;
+      return true;
     });
 
     const isApprover = role && CAN_APPROVE.includes(role);
-    const hasStockNav = roleModuleKeys.has("stock") || roleModuleKeys.has("stockView") || role === "super_admin" || role === "gudang";
 
     const [pairs, notifRes, appr, stockRes] = await Promise.all([
       Promise.all(modulesToFetch.map(async (m) => [m, await fetchList(m)] as const)),
@@ -324,7 +312,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       })(),
       (async () => {
-        if (!hasStockNav) return null;
         try {
           return await api<Page<any>>("GET", "/stock/summary?limit=200");
         } catch {
@@ -587,8 +574,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return taskRows;
     }
     const rows = await fetchList(module);
+    let extraStock: any = undefined;
+    if (module === "products" || module === "serials" || module === "stock" || module === "warehouses") {
+      try {
+        const sRes = await api<Page<any>>("GET", "/stock/summary?limit=200");
+        if (sRes?.items) extraStock = sRes.items;
+      } catch {}
+    }
     setData((d) => {
-      const next = overlayPendingAdds({ ...d, [module]: rows }, offlineQueueRef.current);
+      const next = overlayPendingAdds({
+        ...d,
+        [module]: rows,
+        ...(extraStock ? { stockSummary: extraStock } : {}),
+      }, offlineQueueRef.current);
       writeStorageJson(STORAGE_CACHE_DB_KEY, next);
       return next;
     });

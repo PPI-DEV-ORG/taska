@@ -65,15 +65,42 @@ export function SerialItemPickerModal({
 
   // Quick batch register modal inside picker
   const [batchRegisterOpen, setBatchRegisterOpen] = React.useState(false);
+  const [fallbackSerials, setFallbackSerials] = React.useState<any[]>([]);
 
   React.useEffect(() => {
-    if (open && refreshModule) {
+    if (!open) return;
+    if (refreshModule) {
       void Promise.all([refreshModule("products"), refreshModule("serials"), refreshModule("warehouses")]);
     }
+    api<any>("GET", "/serials?limit=500")
+      .then((res) => {
+        const items = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+        if (items.length > 0) {
+          setFallbackSerials(
+            items.map((s: any) => ({
+              ...s,
+              id: String(s.id),
+              sn: s.sn ?? "",
+              sku: s.product?.sku ?? s.sku ?? "",
+              produk: s.product?.name ?? s.produk ?? "",
+              productId: s.product?.id != null ? String(s.product.id) : (s.productId != null ? String(s.productId) : null),
+              gudang: s.warehouse?.name ?? s.gudang ?? "-",
+              rawStatus: s.status ?? "DI_GUDANG",
+              status: s.status === "DI_GUDANG" ? "Di gudang" : s.status,
+              reservations: Array.isArray(s.reservations) ? s.reservations : [],
+            }))
+          );
+        }
+      })
+      .catch(() => {});
   }, [open, refreshModule]);
 
   const products = React.useMemo(() => (data.products ?? []) as any[], [data.products]);
-  const serials = React.useMemo(() => (data.serials ?? []) as any[], [data.serials]);
+  const serials = React.useMemo(() => {
+    const fromStore = (data.serials ?? []) as any[];
+    if (fromStore.length > 0) return fromStore;
+    return fallbackSerials;
+  }, [data.serials, fallbackSerials]);
 
   const selectedProduct = React.useMemo(
     () => products.find((p) => String(p.id) === String(selectedProductId)) ?? null,
@@ -83,13 +110,17 @@ export function SerialItemPickerModal({
   // Filter SNs for selected product, sorted FIFO (ID ascending)
   const productSerials = React.useMemo(() => {
     if (!selectedProduct) return [];
+    const selId = String(selectedProduct.id);
+    const selSku = String(selectedProduct.sku || "").trim().toLowerCase();
+    const selName = String(selectedProduct.nama || "").trim().toLowerCase();
+
     const list = serials
-      .filter(
-        (s) =>
-          String(s.productId) === String(selectedProduct.id) ||
-          (s.sku && selectedProduct.sku && String(s.sku) === String(selectedProduct.sku)) ||
-          (s.produk && selectedProduct.nama && String(s.produk) === String(selectedProduct.nama)),
-      )
+      .filter((s: any) => {
+        const pIdMatch = s.productId != null && String(s.productId) === selId;
+        const skuMatch = selSku && s.sku && String(s.sku).trim().toLowerCase() === selSku;
+        const nameMatch = selName && s.produk && String(s.produk).trim().toLowerCase() === selName;
+        return pIdMatch || skuMatch || nameMatch;
+      })
       .sort((a, b) => Number(a.id) - Number(b.id));
 
     if (!snSearch.trim()) return list;
