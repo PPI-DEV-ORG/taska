@@ -23,16 +23,18 @@ export class DashboardService {
     const role = user.role;
 
     if (role === "SALES") {
-      const stages = await this.prisma.main.lead.groupBy({ by: ["stage"], _count: true });
-      const followUpsDue = await this.prisma.main.followUp.findMany({
-        where: { status: "TERJADWAL", nextDate: { lte: today }, createdById: user.id },
-        include: { lead: { select: { name: true } } },
-        orderBy: { nextDate: "asc" },
-        take: 10,
-      });
-      const surveys = await this.prisma.main.survey.count({
-        where: { requestedById: user.id, status: { in: ["DIMINTA", "DIJADWALKAN"] } },
-      });
+      const [stages, followUpsDue, surveys] = await Promise.all([
+        this.prisma.main.lead.groupBy({ by: ["stage"], _count: true }),
+        this.prisma.main.followUp.findMany({
+          where: { status: "TERJADWAL", nextDate: { lte: today }, createdById: user.id },
+          include: { lead: { select: { name: true } } },
+          orderBy: { nextDate: "asc" },
+          take: 10,
+        }),
+        this.prisma.main.survey.count({
+          where: { requestedById: user.id, status: { in: ["DIMINTA", "DIJADWALKAN"] } },
+        }),
+      ]);
       return {
         role,
         tiles: [
@@ -45,20 +47,22 @@ export class DashboardService {
     }
 
     if (role === "TEKNISI" || role === "SE") {
-      const tasks = await this.prisma.main.task.findMany({
-        where: { assigneeId: user.id, status: { in: ["TODO", "IN_PROGRESS", "BLOCKED"] } },
-        include: { project: { select: { name: true } } },
-        orderBy: { dueDate: "asc" },
-        take: 10,
-      });
-      const surveyMembers = await this.prisma.main.surveyMember.findMany({
-        where: { userId: user.id },
-        include: { survey: { select: { location: true, scheduleAt: true, status: true } } },
-        take: 10,
-      });
-      const deliveries = await this.prisma.main.deliveryNote.count({
-        where: { creatorId: user.id, status: "PENDING" },
-      });
+      const [tasks, surveyMembers, deliveries] = await Promise.all([
+        this.prisma.main.task.findMany({
+          where: { assigneeId: user.id, status: { in: ["TODO", "IN_PROGRESS", "BLOCKED"] } },
+          include: { project: { select: { name: true } } },
+          orderBy: { dueDate: "asc" },
+          take: 10,
+        }),
+        this.prisma.main.surveyMember.findMany({
+          where: { userId: user.id },
+          include: { survey: { select: { location: true, scheduleAt: true, status: true } } },
+          take: 10,
+        }),
+        this.prisma.main.deliveryNote.count({
+          where: { creatorId: user.id, status: "PENDING" },
+        }),
+      ]);
       return {
         role,
         tiles: [
@@ -73,20 +77,22 @@ export class DashboardService {
 
     if (role === "PM") {
       const mine = { picId: user.id, status: { in: ["BERJALAN", "DITUNDA", "TERLAMBAT"] as never } };
-      const projects = await this.prisma.main.project.count({ where: mine });
-      const paymentDue = await this.prisma.main.project.count({
-        where: { picId: user.id, paymentStatus: "BELUM_LUNAS", status: { not: "SELESAI" } },
-      });
-      const requests = await this.prisma.main.purchaseRequest.count({
-        where: { status: { in: ["DIAJUKAN", "CEK_STOK", "DISETUJUI"] } },
-      });
-      const overdueTasks = await this.prisma.main.task.count({
-        where: {
-          project: { picId: user.id },
-          status: { in: ["TODO", "IN_PROGRESS", "BLOCKED"] },
-          dueDate: { lt: today },
-        },
-      });
+      const [projects, paymentDue, requests, overdueTasks] = await Promise.all([
+        this.prisma.main.project.count({ where: mine }),
+        this.prisma.main.project.count({
+          where: { picId: user.id, paymentStatus: "BELUM_LUNAS", status: { not: "SELESAI" } },
+        }),
+        this.prisma.main.purchaseRequest.count({
+          where: { status: { in: ["DIAJUKAN", "CEK_STOK", "DISETUJUI"] } },
+        }),
+        this.prisma.main.task.count({
+          where: {
+            project: { picId: user.id },
+            status: { in: ["TODO", "IN_PROGRESS", "BLOCKED"] },
+            dueDate: { lt: today },
+          },
+        }),
+      ]);
       return {
         role,
         tiles: [
@@ -99,20 +105,22 @@ export class DashboardService {
     }
 
     if (role === "PROCUREMENT") {
-      const requests = await this.prisma.main.purchaseRequest.groupBy({
-        by: ["status"],
-        _count: true,
-        where: { status: { in: ["DIAJUKAN", "CEK_STOK", "DISETUJUI", "PO_DIBUAT", "DIKIRIM"] } },
-      });
-      const poPending = await this.prisma.main.supplierPO.count({
-        where: { status: "MENUNGGU_PERSETUJUAN" },
-      });
-      const poShipments = await this.prisma.main.supplierPO.groupBy({
-        by: ["shipmentStatus"],
-        _count: true,
-        where: { status: "DISETUJUI" },
-      });
-      const approvals = await this.approvals.pendingFor(user);
+      const [requests, poPending, poShipments, approvals] = await Promise.all([
+        this.prisma.main.purchaseRequest.groupBy({
+          by: ["status"],
+          _count: true,
+          where: { status: { in: ["DIAJUKAN", "CEK_STOK", "DISETUJUI", "PO_DIBUAT", "DIKIRIM"] } },
+        }),
+        this.prisma.main.supplierPO.count({
+          where: { status: "MENUNGGU_PERSETUJUAN" },
+        }),
+        this.prisma.main.supplierPO.groupBy({
+          by: ["shipmentStatus"],
+          _count: true,
+          where: { status: "DISETUJUI" },
+        }),
+        this.approvals.pendingFor(user),
+      ]);
       return {
         role,
         tiles: [
@@ -126,15 +134,16 @@ export class DashboardService {
     }
 
     if (role === "FINANCE") {
-      const today2 = this.today();
-      const invoicesDue = await this.prisma.main.invoiceOut.findMany({
-        where: { dueDate: { lte: today2 }, status: { notIn: ["PAID", "BATAL"] } },
-        include: { customer: { select: { name: true } } },
-        orderBy: { dueDate: "asc" },
-        take: 10,
-      });
-      const expenses = await this.prisma.main.expense.count({ where: { status: "DILAPORKAN" } });
-      const approvals = await this.approvals.pendingFor(user);
+      const [invoicesDue, expenses, approvals] = await Promise.all([
+        this.prisma.main.invoiceOut.findMany({
+          where: { dueDate: { lte: today }, status: { notIn: ["PAID", "BATAL"] } },
+          include: { customer: { select: { name: true } } },
+          orderBy: { dueDate: "asc" },
+          take: 10,
+        }),
+        this.prisma.main.expense.count({ where: { status: "DILAPORKAN" } }),
+        this.approvals.pendingFor(user),
+      ]);
       return {
         role,
         tiles: [
@@ -148,28 +157,38 @@ export class DashboardService {
     }
 
     if (role === "GUDANG") {
-      const balances = await this.prisma.main.stockBalance.findMany({
-        include: { product: { select: { minStock: true, name: true, sku: true } } },
-      });
+      const [balances, deliveryPending, opnamePending, issues] = await Promise.all([
+        this.prisma.main.stockBalance.findMany({
+          include: { product: { select: { minStock: true, name: true, sku: true } } },
+        }),
+        this.prisma.main.deliveryNote.count({ where: { status: "PENDING" } }),
+        this.prisma.main.stockOpname.count({
+          where: { status: "MENUNGGU_PERSETUJUAN" },
+        }),
+        this.prisma.main.issueReport.count({ where: { status: "DILAPORKAN" } }),
+      ]);
+      const productMap = new Map<number, { minStock: number | null; name: string; sku: string }>();
       const totals = new Map<number, number>();
-      for (const b of balances) totals.set(b.productId, (totals.get(b.productId) ?? 0) + b.qty);
-      const lowStock = [...totals.entries()]
-        .filter(([id, qty]) => {
-          const min = balances.find((b) => b.productId === id)?.product.minStock ?? 0;
-          return min > 0 && qty < min;
-        })
-        .map(([id, qty]) => ({
-          productId: id,
-          sku: balances.find((b) => b.productId === id)?.product.sku,
-          name: balances.find((b) => b.productId === id)?.product.name,
-          qty,
-          minStock: balances.find((b) => b.productId === id)?.product.minStock,
-        }));
-      const deliveryPending = await this.prisma.main.deliveryNote.count({ where: { status: "PENDING" } });
-      const opnamePending = await this.prisma.main.stockOpname.count({
-        where: { status: "MENUNGGU_PERSETUJUAN" },
-      });
-      const issues = await this.prisma.main.issueReport.count({ where: { status: "DILAPORKAN" } });
+      for (const b of balances) {
+        totals.set(b.productId, (totals.get(b.productId) ?? 0) + b.qty);
+        if (!productMap.has(b.productId) && b.product) {
+          productMap.set(b.productId, b.product);
+        }
+      }
+      const lowStock: Array<{ productId: number; sku?: string; name?: string; qty: number; minStock?: number | null }> = [];
+      for (const [id, qty] of totals.entries()) {
+        const prod = productMap.get(id);
+        const min = prod?.minStock ?? 0;
+        if (min > 0 && qty < min) {
+          lowStock.push({
+            productId: id,
+            sku: prod?.sku,
+            name: prod?.name,
+            qty,
+            minStock: prod?.minStock,
+          });
+        }
+      }
       return {
         role,
         tiles: [

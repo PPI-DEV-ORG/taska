@@ -18,6 +18,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const detail = typeof body === "string" ? body : JSON.stringify(body);
       if (status >= 500) {
         this.logger.error(`[${status}] ${route} — ${detail}`, exception.stack);
+      } else if (status === 429) {
+        this.logger.warn(`[429 Throttle] ${route} — ${detail}`);
       } else {
         this.logger.warn(`[${status}] ${route} — ${detail}`);
       }

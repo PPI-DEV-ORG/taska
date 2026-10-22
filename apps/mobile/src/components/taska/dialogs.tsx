@@ -291,13 +291,14 @@ export function SearchableSelect({
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
   const list = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
+  const displayLabel = options.find((o) => o === value || (value && value !== "-" && (o.startsWith(`${value} -`) || o.startsWith(`${value} ·`) || o.startsWith(`${value} (`)))) || value;
   return (
     <>
       <Pressable
         onPress={() => { setQ(""); setOpen(true); }}
         className={cn("bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3", error && "border-danger")}
       >
-        <Text className={cn("text-base md:text-sm", !value && "text-muted-foreground")} numberOfLines={1}>{value || placeholder}</Text>
+        <Text className={cn("text-base md:text-sm", !value && "text-muted-foreground")} numberOfLines={1}>{displayLabel || placeholder}</Text>
         <ChevronDown size={16} color={colors.muted} />
       </Pressable>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -315,16 +316,19 @@ export function SearchableSelect({
             </View>
           ) : null}
           <ScrollView style={{ maxHeight: 320 }}>
-            {list.map((o) => (
-              <Pressable
-                key={o}
-                onPress={() => { onChange(o); setOpen(false); }}
-                className="active:bg-panel hover:bg-panel min-h-[44px] flex-row items-center justify-between rounded-lg px-3"
-              >
-                <Text className="flex-1 text-sm">{o}</Text>
-                {o === value ? <Check size={16} color={colors.primary} /> : null}
-              </Pressable>
-            ))}
+            {list.map((o) => {
+              const isSelected = o === value || (value && value !== "-" && (o.startsWith(`${value} -`) || o.startsWith(`${value} ·`) || o.startsWith(`${value} (`)));
+              return (
+                <Pressable
+                  key={o}
+                  onPress={() => { onChange(o); setOpen(false); }}
+                  className="active:bg-panel hover:bg-panel min-h-[44px] flex-row items-center justify-between rounded-lg px-3"
+                >
+                  <Text className={cn("flex-1 text-sm", isSelected && "font-semibold text-primary")}>{o}</Text>
+                  {isSelected ? <Check size={16} color={colors.primary} /> : null}
+                </Pressable>
+              );
+            })}
             {list.length === 0 ? <Text className="text-muted-foreground px-3 py-4 text-sm">Tidak ditemukan.</Text> : null}
           </ScrollView>
         </DialogContent>
@@ -449,7 +453,8 @@ export function getDynamicOptions(
   data: any,
   moduleKey?: string,
   fallbackUsers: any[] = [],
-  fallbackProjects: any[] = []
+  fallbackProjects: any[] = [],
+  fallbackSupplierPos: any[] = []
 ): string[] | undefined {
   if (!["select", "multiselect"].includes(f.type)) return f.options;
   const nonEmpty = (arr: string[], fallback?: string[]) => (arr.length > 0 ? Array.from(new Set(arr)) : fallback);
@@ -498,11 +503,19 @@ export function getDynamicOptions(
       }
       return nonEmpty(["-", ...qList.map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
     }
-    case "po":
+    case "po": {
       if (moduleKey === "invoices") {
         return nonEmpty(["-", ...(data["po-client"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
       }
-      return nonEmpty(["-", ...(data["supplier-pos"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
+      const rawPos = (data["supplier-pos"] && data["supplier-pos"].length > 0) ? data["supplier-pos"] : fallbackSupplierPos;
+      const list = rawPos.map((r: any) => {
+        const no = String(r.nomor || r.number || "");
+        if (!no) return "";
+        const extra = [r.supplier, r.item].filter(Boolean).join(" · ");
+        return extra ? `${no} - ${extra}` : no;
+      }).filter(Boolean);
+      return nonEmpty(["-", ...list], f.options);
+    }
     case "project": {
       const projList = (data.projects && data.projects.length > 0) ? data.projects : fallbackProjects;
       return nonEmpty(
@@ -574,6 +587,7 @@ export function FormDialog({
   const [errs, setErrs] = React.useState<Record<string, string>>({});
   const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
   const [fallbackProjects, setFallbackProjects] = React.useState<any[]>([]);
+  const [fallbackSupplierPos, setFallbackSupplierPos] = React.useState<any[]>([]);
   const fileHandles = React.useRef<(FileUploaderHandle | null)[]>([]);
   const fileHandleAt = (i: number) => (h: FileUploaderHandle | null) => { fileHandles.current[i] = h; };
 
@@ -593,7 +607,22 @@ export function FormDialog({
         })
         .catch(() => {});
     }
-  }, [open, data.users, data.projects]);
+    if (open && (def?.key === "damage-reports" || def?.key === "receiving") && (!data["supplier-pos"] || data["supplier-pos"].length === 0)) {
+      api<any>("GET", "/supplier-pos?limit=200")
+        .then((res) => {
+          const items = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+          if (items.length) {
+            setFallbackSupplierPos(items.map((r: any) => ({
+              ...r,
+              nomor: r.number ?? r.nomor,
+              supplier: r.supplier?.name ?? r.supplier,
+              item: r.items?.[0]?.product?.name ?? r.item,
+            })));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [open, data.users, data.projects, data["supplier-pos"], def?.key]);
 
   const fields = customFields ?? def?.createFields ?? [];
 
@@ -636,7 +665,7 @@ export function FormDialog({
   }
 
   function dynamicOptions(f: CreateField): string[] | undefined {
-    return getDynamicOptions(f, data, def?.key, fallbackUsers, fallbackProjects);
+    return getDynamicOptions(f, data, def?.key, fallbackUsers, fallbackProjects, fallbackSupplierPos);
   }
 
   async function submit() {
@@ -653,6 +682,9 @@ export function FormDialog({
       if (mode === "edit" && f.type === "password" && !vals[f.key]?.trim()) return;
       row[f.key] = f.type === "number" ? Number(String(vals[f.key] ?? "0").replace(/\D/g, "")) : vals[f.key] ?? "";
     });
+    if ((def?.key === "damage-reports" || def?.key === "receiving") && row.po) {
+      row.po = (String(row.po).split(" - ")[0] ?? "").trim();
+    }
     if (def?.key === "po-client" && row.penawaran) {
       row.penawaran = (String(row.penawaran).split(" - ")[0] ?? "").trim();
     }
@@ -953,6 +985,16 @@ export function FormDialog({
                             [f.key]: v,
                             ...(cust && (!s.customer || s.customer === "-") ? { customer: cust } : {}),
                             ...(lead && !s.nama ? { nama: `Project ${lead.nama}` } : {}),
+                          }));
+                        } else if (def?.key === "damage-reports" && f.key === "po") {
+                          const selNo = v.split(" - ")[0]?.trim() || v;
+                          const poList = (data["supplier-pos"] && data["supplier-pos"].length > 0) ? data["supplier-pos"] : fallbackSupplierPos;
+                          const matchedPo = v === "-" ? null : poList.find((p: any) => p.nomor === selNo);
+                          const prodName = matchedPo?.item;
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: v,
+                            ...(prodName && (!s.produk || s.produk === "-") ? { produk: prodName } : {}),
                           }));
                         } else {
                           setVals((s) => ({ ...s, [f.key]: v }));

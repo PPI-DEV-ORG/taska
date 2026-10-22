@@ -647,20 +647,23 @@ export function adaptRow(module: string, raw: any): Row {
         paidFile: raw.paidFile ?? null,
         fileId: raw.receiptFileId ?? (raw.receiptFile?.id ?? (raw.fileId ?? null)),
       };
-    case "damage-reports":
+    case "damage-reports": {
+      const desc = raw.description ?? "";
+      const poMatch = desc.match(/\[PO:\s*([^\]]+)\]/);
       return {
         ...base,
         tanggal: d(raw.date),
         produk: nameOf(raw.product) ?? "",
         productId: idOf(raw.product),
         jenis: toLabel("damageType", raw.type),
-        po: raw.serialUnit?.sn ?? "",
+        po: poMatch ? poMatch[1].trim() : (raw.serialUnit?.sn ?? "-"),
         pelapor: nameOf(raw.reporter) ?? "",
         status: toLabel("damage-reports", raw.status),
-        keterangan: raw.description ?? "",
+        keterangan: desc.replace(/\[PO:\s*[^\]]+\]\s*/, ""),
         qty: n(raw.qty),
         fileId: raw.fileId ?? null,
       };
+    }
     case "customers":
       return {
         ...base,
@@ -1304,15 +1307,18 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         costCenterId: row.costCenterId != null && row.costCenterId !== "" ? Number(row.costCenterId) : findId(db?.costCenters, row.costCenter),
         receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
       };
-    case "damage-reports":
+    case "damage-reports": {
+      const baseDesc = row.keterangan || row.description || "-";
+      const poVal = row.po && row.po !== "-" ? (String(row.po).split(" - ")[0] ?? "").trim() : "";
       return {
         date: row.tanggal || row.date || today,
         productId: row.productId != null && row.productId !== "" ? Number(row.productId) : findId(db?.products, row.produk),
         type: toEnum("damageType", row.jenis) || "RUSAK",
         qty: num(row.qty) || 1,
-        description: row.keterangan || row.description || "-",
+        description: poVal ? `[PO: ${poVal}] ${baseDesc}` : baseDesc,
         fileId: row.fileId ? Number(row.fileId) : undefined,
       };
+    }
     case "productCategories":
       return { name: row.nama ?? row.name, description: row.deskripsi || row.description || undefined, prefix: row.prefix || undefined, status: "AKTIF" };
     case "warehouses":
@@ -1665,6 +1671,19 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
     if (patch.gudang !== undefined) out.warehouseId = findId(db?.warehouses, patch.gudang);
     if (patch.status !== undefined) out.status = toEnum("users", patch.status) || patch.status;
+  } else if (module === "damage-reports") {
+    if (patch.produk !== undefined) out.productId = findId(db?.products, patch.produk);
+    if (patch.jenis !== undefined) out.type = toEnum("damageType", patch.jenis) || "RUSAK";
+    if (patch.qty !== undefined) out.qty = num(patch.qty);
+    if (patch.po !== undefined || patch.keterangan !== undefined) {
+      const p = patch.po && patch.po !== "-" ? (String(patch.po).split(" - ")[0] ?? "").trim() : "";
+      const d = patch.keterangan !== undefined ? patch.keterangan : "";
+      if (p) {
+        out.description = `[PO: ${p}] ${d}`.trim();
+      } else if (d) {
+        out.description = d;
+      }
+    }
   } else if (
     ["customers", "suppliers", "products", "productCategories", "warehouses", "leadSources", "lostReasons", "expenseCategories", "costCenters"].includes(module)
   ) {

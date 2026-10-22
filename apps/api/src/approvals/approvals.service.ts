@@ -82,15 +82,16 @@ export class ApprovalsService {
     }
   }
 
-  private async needsBos(kind: ApprovalKind, amount: number): Promise<boolean> {
+  private async needsBos(kind: ApprovalKind, amount: number, threshold?: number): Promise<boolean> {
     if (kind === "OPNAME") return true;
     if (!THRESHOLD_KINDS.includes(kind)) return false;
-    return amount >= (await this.settings.threshold());
+    const thr = threshold !== undefined ? threshold : await this.settings.threshold();
+    return amount >= thr;
   }
 
-  private async evaluate(a: ApprovalWithSteps): Promise<ApprovalStatus> {
+  private async evaluate(a: ApprovalWithSteps, threshold?: number): Promise<ApprovalStatus> {
     if (a.steps.some((s) => s.status === "DITOLAK")) return "DITOLAK";
-    const groups = plan(a.kind, await this.needsBos(a.kind, Number(a.amount)));
+    const groups = plan(a.kind, await this.needsBos(a.kind, Number(a.amount), threshold));
     for (const g of groups) {
       const steps = g.roles.map((r) => a.steps.find((s) => s.approverRole === r));
       if (g.mode === "any") {
@@ -246,7 +247,7 @@ export class ApprovalsService {
       ...(opts.kind ? { kind: opts.kind as ApprovalKind } : {}),
       ...(opts.q ? { title: { contains: opts.q } } : {}),
     };
-    const [rows, total] = await Promise.all([
+    const [rows, total, threshold] = await Promise.all([
       this.prisma.main.approval.findMany({
         where,
         include: { steps: true, requested_by: { select: { id: true, name: true } } },
@@ -255,6 +256,7 @@ export class ApprovalsService {
         take: opts.limit,
       }),
       this.prisma.main.approval.count({ where }),
+      this.settings.threshold(),
     ]);
     const items = await Promise.all(
       rows.map(async (r) => {
@@ -266,7 +268,7 @@ export class ApprovalsService {
           ...r,
           requestedBy: requester,
           requested_by: requester,
-          status: await this.evaluate(r),
+          status: await this.evaluate(r, threshold),
         };
       }),
     );
@@ -275,17 +277,24 @@ export class ApprovalsService {
 
   /** Antrean yang menunggu peran user (dashboard). */
   async pendingFor(user: RequestUser) {
-    const rows = await this.prisma.main.approval.findMany({
-      where: { status: "MENUNGGU" },
-      include: { steps: true, requested_by: { select: { id: true, name: true } } },
-      orderBy: { createdAt: "asc" },
-      take: 300,
-    });
+    if (user.role === "TEKNISI" || user.role === "SE" || user.role === "SALES") {
+      return { items: [], total: 0 };
+    }
+
+    const [rows, threshold] = await Promise.all([
+      this.prisma.main.approval.findMany({
+        where: { status: "MENUNGGU" },
+        include: { steps: true, requested_by: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "asc" },
+        take: 300,
+      }),
+      this.settings.threshold(),
+    ]);
 
     const items: unknown[] = [];
     for (const r of rows) {
       if (user.role !== "SUPER_ADMIN" && r.requestedById === user.id) continue;
-      const status = await this.evaluate(r);
+      const status = await this.evaluate(r, threshold);
       if (status !== "MENUNGGU") continue;
       const pendingSteps = r.steps.filter((s) => s.status === "MENUNGGU");
       const relevant =
