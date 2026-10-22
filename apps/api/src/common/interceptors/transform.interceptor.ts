@@ -12,17 +12,30 @@ function convert(value: unknown, seen = new WeakSet()): unknown {
   if (value === null || value === undefined) return value;
   if (value instanceof Decimal) return Number(value);
   if (value instanceof Date) return value.toISOString();
+  if (typeof value !== "object") return value;
   if (Buffer.isBuffer(value)) return value;
-  if (typeof value === "object") {
-    if (seen.has(value as object)) return undefined;
-    seen.add(value as object);
-    if (Array.isArray(value)) return value.map((item) => convert(item, seen));
-    if (!isPlainObject(value)) return value;
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = convert(v, seen);
-    return out;
+
+  if (seen.has(value as object)) return undefined;
+  seen.add(value as object);
+
+  if (Array.isArray(value)) {
+    const len = value.length;
+    const arr = new Array(len);
+    for (let i = 0; i < len; i++) {
+      arr[i] = convert(value[i], seen);
+    }
+    return arr;
   }
-  return value;
+
+  if (!isPlainObject(value)) return value;
+
+  const out: Record<string, unknown> = {};
+  for (const k in value) {
+    if (Object.prototype.hasOwnProperty.call(value, k)) {
+      out[k] = convert((value as Record<string, unknown>)[k], seen);
+    }
+  }
+  return out;
 }
 
 /** Ubah Decimal Prisma menjadi number agar JSON bersih. */

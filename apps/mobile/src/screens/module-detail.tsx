@@ -256,6 +256,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       patch.total = nilai + patch.ppn;
     }
 
+    if (moduleKey === "damage-reports" && patch.po) {
+      patch.po = (String(patch.po).split(" - ")[0] ?? "").trim();
+    }
+
     setSaving(true);
     try {
       await patchRow(moduleKey, id, patch);

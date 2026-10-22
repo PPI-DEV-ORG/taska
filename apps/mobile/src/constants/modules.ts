@@ -550,7 +550,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "jenis", label: "Jenis masalah", type: "select", required: true, options: ["Rusak", "Salah barang", "Kurang"] },
       { key: "qty", label: "Jumlah bermasalah (Qty)", type: "number", placeholder: "1" },
       { key: "tanggal", label: "Tanggal kejadian", type: "date" },
-      { key: "po", label: "Nomor PO / Serial Number", type: "text" },
+      { key: "po", label: "Nomor PO", type: "select", options: [] },
       { key: "keterangan", label: "Keterangan", type: "textarea", required: true },
       { key: "dokumen", label: "Foto barang bermasalah (Opsional)", type: "file", kind: "foto", category: "laporan-kerusakan" },
     ],

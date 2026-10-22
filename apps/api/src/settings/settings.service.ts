@@ -12,12 +12,22 @@ export const DEFAULTS: Record<string, string> = {
 
 @Injectable()
 export class SettingsService {
+  private readonly cache = new Map<string, { value: string; expiresAt: number }>();
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getValue(key: string): Promise<string> {
+    const cached = this.cache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
     const row = await this.prisma.main.systemSetting.findUnique({ where: { key } });
-    if (row) return row.value;
-    if (key in DEFAULTS) return DEFAULTS[key];
+    const val = row ? row.value : (key in DEFAULTS ? DEFAULTS[key] : null);
+    if (val !== null && val !== undefined) {
+      this.cache.set(key, { value: val, expiresAt: Date.now() + 60000 });
+      return val;
+    }
     throw new NotFoundException(`Pengaturan ${key} tidak ditemukan`);
   }
 
@@ -46,6 +56,7 @@ export class SettingsService {
   }
 
   async set(key: string, value: string, user: RequestUser) {
+    this.cache.delete(key);
     return this.prisma.main.systemSetting.upsert({
       where: { key },
       update: { value, updatedById: user.id },
