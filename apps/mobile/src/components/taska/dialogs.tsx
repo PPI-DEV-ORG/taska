@@ -508,13 +508,28 @@ export function getDynamicOptions(
         return nonEmpty(["-", ...(data["po-client"] ?? []).map((r: any) => String(r.nomor)).filter(Boolean)], f.options);
       }
       const rawPos = (data["supplier-pos"] && data["supplier-pos"].length > 0) ? data["supplier-pos"] : fallbackSupplierPos;
-      const list = rawPos.map((r: any) => {
+      const suppList = rawPos.map((r: any) => {
         const no = String(r.nomor || r.number || "");
         if (!no) return "";
         const extra = [r.supplier, r.item].filter(Boolean).join(" · ");
         return extra ? `${no} - ${extra}` : no;
       }).filter(Boolean);
-      return nonEmpty(["-", ...list], f.options);
+      if (moduleKey === "damage-reports") {
+        const clientPos = (data["po-client"] ?? []).map((r: any) => {
+          const no = String(r.nomor || r.number || "");
+          if (!no) return "";
+          return r.customer ? `${no} - ${r.customer} (SO/PO Client)` : no;
+        }).filter(Boolean);
+        const invs = (data.invoices ?? [])
+          .filter((r: any) => r.direction !== "in")
+          .map((r: any) => {
+            const no = String(r.nomor || r.number || "");
+            if (!no) return "";
+            return r.customer ? `${no} - ${r.customer} (Invoice)` : no;
+          }).filter(Boolean);
+        return nonEmpty(["-", ...suppList, ...clientPos, ...invs], f.options);
+      }
+      return nonEmpty(["-", ...suppList], f.options);
     }
     case "project": {
       const projList = (data.projects && data.projects.length > 0) ? data.projects : fallbackProjects;

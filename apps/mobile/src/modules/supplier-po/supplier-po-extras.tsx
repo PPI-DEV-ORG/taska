@@ -1,13 +1,13 @@
 import * as React from "react";
 import { View } from "react-native";
-import { CheckCircle2, Circle, Plus } from "lucide-react-native";
+import { CheckCircle2, Circle, Plus, RotateCcw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
@@ -46,6 +46,55 @@ export function SupplierPoExtras({ row }: { row: Row }) {
 
   const [selectedDetailInv, setSelectedDetailInv] = React.useState<Row | null>(null);
   const [payTargetInv, setPayTargetInv] = React.useState<Row | null>(null);
+
+  const [returOpen, setReturOpen] = React.useState(false);
+  const [returProduct, setReturProduct] = React.useState("");
+  const [returSn, setReturSn] = React.useState("");
+  const [returQty, setReturQty] = React.useState("1");
+  const [returNote, setReturNote] = React.useState("");
+  const [isSavingRetur, setIsSavingRetur] = React.useState(false);
+
+  const purchaseReturns = React.useMemo(() => {
+    const poNo = String(row.nomor || "").toLowerCase();
+    return (data["damage-reports"] ?? []).filter((dr: Row) => {
+      const ref = String(dr.po || "").toLowerCase();
+      return poNo && ref.includes(poNo);
+    });
+  }, [data, row.nomor]);
+
+  async function handleSavePurchaseReturn() {
+    if (!returProduct) {
+      toast("Pilih barang yang diretur ke supplier", "danger");
+      return;
+    }
+    if (!returNote.trim()) {
+      toast("Alasan retur wajib diisi", "danger");
+      return;
+    }
+    setIsSavingRetur(true);
+    try {
+      await addRow("damage-reports", {
+        produk: returProduct,
+        sn: returSn || "-",
+        jenis: "Retur Pembelian",
+        qty: Number(returQty) || 1,
+        tanggal: new Date().toISOString().slice(0, 10),
+        po: row.nomor,
+        keterangan: returNote.trim(),
+      });
+      toast("Retur pembelian ke supplier berhasil dicatat");
+      setReturOpen(false);
+      setReturProduct("");
+      setReturSn("");
+      setReturQty("1");
+      setReturNote("");
+      await reload();
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mencatat retur pembelian", "danger");
+    } finally {
+      setIsSavingRetur(false);
+    }
+  }
 
   function go(s: string) {
     patchRow("supplier-pos", row.id, { pengiriman: s, status: s });
@@ -178,6 +227,107 @@ export function SupplierPoExtras({ row }: { row: Row }) {
           )}
         </Panel>
       ) : null}
+
+      <Panel
+        title={`Retur Pembelian & Klaim ke Supplier (${purchaseReturns.length})`}
+        subtitle="Pengembalian barang rusak / salah kirim ke supplier (mendukung pemilihan Serial Number unit)"
+        right={
+          <Button
+            size="sm"
+            variant="outline"
+            onPress={() => {
+              const firstPoItem = Array.isArray(row.items) && row.items.length > 0
+                ? (row.items[0]?.product?.name || row.items[0]?.productName || row.items[0]?.name || "")
+                : (row.item && row.item !== "-" ? String(row.item).split(",")[0]?.trim() || "" : "");
+              if (firstPoItem) setReturProduct(firstPoItem);
+              setReturOpen(true);
+            }}
+            className="flex-row items-center gap-1"
+          >
+            <RotateCcw size={13} color={colors.text} />
+            <Text className="text-xs">Catat Retur Pembelian</Text>
+          </Button>
+        }
+      >
+        {purchaseReturns.length === 0 ? (
+          <Text className="text-muted-foreground text-xs py-1">Belum ada retur pembelian untuk PO ini.</Text>
+        ) : (
+          purchaseReturns.map((rt: Row) => (
+            <Line
+              key={rt.id}
+              left={`${rt.produk} × ${rt.qty || 1} (${rt.jenis})`}
+              sub={`${rt.sn && rt.sn !== "-" ? `SN: ${rt.sn} · ` : ""}${rt.tanggal} · ${rt.keterangan}`}
+              right={<StatusBadge status={rt.status || "Dilaporkan"} />}
+            />
+          ))
+        )}
+      </Panel>
+
+      <Dialog open={returOpen} onOpenChange={setReturOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Catat Retur Pembelian ke Supplier ({row.nomor})</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <FormField label="Barang yang Diretur" required>
+              <SearchableSelect
+                value={returProduct}
+                onChange={(v) => {
+                  setReturProduct(v);
+                  setReturSn("");
+                }}
+                options={Array.from(
+                  new Set([
+                    ...(Array.isArray(row.items)
+                      ? row.items.map((it: any) => String(it.product?.name || it.productName || it.name || "")).filter(Boolean)
+                      : []),
+                    ...(data.products ?? []).filter((p: any) => p.type !== "JASA").map((p: any) => String(p.nama || "")).filter(Boolean),
+                  ]),
+                )}
+                placeholder="Pilih barang dari PO atau master produk..."
+              />
+            </FormField>
+            {(() => {
+              const prodObj = (data.products ?? []).find((p: any) => p.nama === returProduct || p.name === returProduct);
+              if (!prodObj?.berSN) return null;
+              const snOpts = (data.serials ?? [])
+                .filter((s: any) => String(s.productId) === String(prodObj.id) || s.produk === prodObj.nama)
+                .map((s: any) => String(s.sn));
+              return (
+                <FormField label="Serial Number (SN) Unit yang Diretur">
+                  <SearchableSelect
+                    value={returSn}
+                    onChange={(v) => {
+                      setReturSn(v);
+                      setReturQty("1");
+                    }}
+                    options={snOpts}
+                    placeholder="Pilih SN unit yang diretur ke supplier..."
+                  />
+                </FormField>
+              );
+            })()}
+            <FormField label="Jumlah Retur (Qty)" required>
+              <Input value={returQty} onChangeText={setReturQty} keyboardType="numeric" />
+            </FormField>
+            <FormField label="Alasan Retur ke Supplier" required>
+              <Input
+                value={returNote}
+                onChangeText={setReturNote}
+                placeholder="Contoh: Cacat pabrik / lensa pecah saat diterima, minta tukar unit baru"
+              />
+            </FormField>
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setReturOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleSavePurchaseReturn} disabled={isSavingRetur}>
+              <Text>{isSavingRetur ? "Menyimpan..." : "Simpan Retur Pembelian"}</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={invOpen} onOpenChange={setInvOpen}>
         <DialogContent className="sm:max-w-md">

@@ -22,9 +22,9 @@ const CREATE: Record<string, Role[]> = {
   quotations: ["sales", "pm"],
   surveys: ["sales", "pm"],
   "po-client": ["finance", "sales"],
-  invoices: ["finance"],
+  invoices: ["finance", "sales"],
   projects: ["pm"],
-  "damage-reports": ["gudang"],
+  "damage-reports": ["gudang", "sales", "procurement", "finance", "pm"],
   customers: ["sales"],
   suppliers: ["procurement"],
   users: ["bos", "admin"],
@@ -111,13 +111,79 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     if (def?.key && fetchedRef.current !== def.key) {
       fetchedRef.current = def.key;
       void refreshModule(def.key);
-      if (def.key === "invoices") void refreshModule("invoiceIn");
+      if (def.key === "invoices" || def.key === "supplier-pos") void refreshModule("invoiceIn");
     }
   }, [def?.key]);
 
-  const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "in">("all");
+  const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "receipts" | "in">("all");
+  const [poTab, setPoTab] = React.useState<"po" | "faktur" | "pembayaran">("po");
+  const [damageTab, setDamageTab] = React.useState<"all" | "kerusakan" | "retur-sales" | "retur-purchase">("all");
   const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
   const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
+
+  const clientReceipts = React.useMemo(() => {
+    const list: Row[] = [];
+    for (const inv of data.invoices ?? []) {
+      const payments = Array.isArray(inv._payments) ? inv._payments : [];
+      payments.forEach((p: any, idx: number) => {
+        list.push({
+          id: `rcp-${inv.id}-${p.id ?? idx}`,
+          invoiceId: String(inv.id),
+          nomor: p.reference && p.reference !== "-" ? `KW/${p.reference}` : `KW/${inv.nomor}/${idx + 1}`,
+          invoiceNomor: inv.nomor,
+          customer: inv.customer,
+          jenis: `${p.method || "TRANSFER"} · ${inv.jenis || "Invoice"}`,
+          total: Number(p.amount) || 0,
+          terbayar: Number(p.amount) || 0,
+          jatuhTempo: p.date || inv.tanggal,
+          tanggal: p.date || inv.tanggal,
+          status: "Lunas",
+          direction: "receipt",
+          fileId: p.fileId ?? null,
+        });
+      });
+    }
+    return list;
+  }, [data.invoices]);
+
+  const supplierPayments = React.useMemo(() => {
+    const list: Row[] = [];
+    for (const inv of data.invoiceIn ?? []) {
+      const payments = Array.isArray(inv._payments) ? inv._payments : [];
+      if (payments.length > 0) {
+        payments.forEach((p: any, idx: number) => {
+          list.push({
+            ...inv,
+            id: `spay-${inv.id}-${p.id ?? idx}`,
+            rawId: (inv as any).rawId ?? inv.id,
+            nomor: p.reference && p.reference !== "-" ? p.reference : `PAY-SUP/${inv.nomor}/${idx + 1}`,
+            supplier: inv.supplier || inv.customer,
+            item: `Faktur ${inv.nomor}${inv.po && inv.po !== "-" ? ` · PO ${inv.po}` : ""}`,
+            total: Number(p.amount) || 0,
+            eta: p.date || inv.tanggal,
+            tanggal: p.date || inv.tanggal,
+            status: "Lunas",
+            direction: "in",
+          });
+        });
+      } else if (Number(inv.terbayar) > 0) {
+        list.push({
+          ...inv,
+          id: `spay-${inv.id}-0`,
+          rawId: (inv as any).rawId ?? inv.id,
+          nomor: `PAY-SUP/${inv.nomor}`,
+          supplier: inv.supplier || inv.customer,
+          item: `Faktur ${inv.nomor}${inv.po && inv.po !== "-" ? ` · PO ${inv.po}` : ""}`,
+          total: Number(inv.terbayar) || 0,
+          eta: inv.tanggal,
+          tanggal: inv.tanggal,
+          status: inv.status || "Dibayar sebagian",
+          direction: "in",
+        });
+      }
+    }
+    return list;
+  }, [data.invoiceIn]);
 
   const rows = React.useMemo(() => {
     let sourceRows = data[def.key] ?? [];
@@ -154,10 +220,37 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       }));
       if (invoiceTab === "out") {
         sourceRows = invOut;
+      } else if (invoiceTab === "receipts") {
+        sourceRows = clientReceipts;
       } else if (invoiceTab === "in") {
         sourceRows = invIn;
       } else {
         sourceRows = [...invOut, ...invIn];
+      }
+    } else if (def.key === "supplier-pos") {
+      if (poTab === "faktur") {
+        sourceRows = (data.invoiceIn ?? []).map((r: Row) => ({
+          ...r,
+          id: String(r.id).startsWith("in-") ? String(r.id) : `in-${r.id}`,
+          rawId: (r as any).rawId ?? r.id,
+          nomor: r.nomor,
+          supplier: r.supplier || String(r.customer || "").replace(/\s*\(Supplier\)$/i, ""),
+          item: r.po && r.po !== "-" ? `PO: ${r.po} · Terbayar Rp ${(Number(r.terbayar) || 0).toLocaleString("id-ID")}` : `Tagihan Supplier`,
+          total: Number(r.total) || 0,
+          eta: r.jatuhTempo || r.tanggal,
+          status: r.status || "Belum lunas",
+          direction: "in",
+        }));
+      } else if (poTab === "pembayaran") {
+        sourceRows = supplierPayments;
+      }
+    } else if (def.key === "damage-reports") {
+      if (damageTab === "kerusakan") {
+        sourceRows = sourceRows.filter((r) => r.kategoriLaporan !== "Retur Penjualan" && r.kategoriLaporan !== "Retur Pembelian");
+      } else if (damageTab === "retur-sales") {
+        sourceRows = sourceRows.filter((r) => r.kategoriLaporan === "Retur Penjualan" || r.jenis === "Retur Penjualan");
+      } else if (damageTab === "retur-purchase") {
+        sourceRows = sourceRows.filter((r) => r.kategoriLaporan === "Retur Pembelian" || r.jenis === "Retur Pembelian");
       }
     }
     const scoped = scopeRows(def, sourceRows, user!);
@@ -194,7 +287,42 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         return r;
       })
       .sort(compareDesc);
-  }, [def, data, user, q, status, invoiceTab]);
+  }, [def, data, user, q, status, invoiceTab, poTab, damageTab, clientReceipts, supplierPayments]);
+
+  const activeColumns = React.useMemo(() => {
+    if (def.key === "invoices" && invoiceTab === "receipts") {
+      return [
+        { key: "nomor", label: "No. Receipt / Kwitansi", primary: true, flex: 1.5 },
+        { key: "invoiceNomor", label: "No. Invoice", flex: 1.3 },
+        { key: "customer", label: "Customer", flex: 1.5 },
+        { key: "jenis", label: "Metode & Jenis", flex: 1.3 },
+        { key: "total", label: "Nominal Diterima", fmt: "rupiah" as const },
+        { key: "tanggal", label: "Tanggal Bayar", fmt: "date" as const },
+        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
+      ];
+    }
+    if (def.key === "supplier-pos" && poTab === "faktur") {
+      return [
+        { key: "nomor", label: "No. Faktur Supplier", primary: true, flex: 1.4 },
+        { key: "supplier", label: "Supplier", flex: 1.6 },
+        { key: "item", label: "Referensi PO & Bayar", flex: 1.8 },
+        { key: "total", label: "Total Tagihan", fmt: "rupiah" as const },
+        { key: "eta", label: "Jatuh Tempo", fmt: "date" as const },
+        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
+      ];
+    }
+    if (def.key === "supplier-pos" && poTab === "pembayaran") {
+      return [
+        { key: "nomor", label: "No. Bukti / Ref Bayar", primary: true, flex: 1.4 },
+        { key: "supplier", label: "Supplier", flex: 1.6 },
+        { key: "item", label: "Faktur & PO Terkait", flex: 1.8 },
+        { key: "total", label: "Nominal Dibayar", fmt: "rupiah" as const },
+        { key: "eta", label: "Tanggal Bayar", fmt: "date" as const },
+        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
+      ];
+    }
+    return def.columns;
+  }, [def.key, def.columns, invoiceTab, poTab]);
 
   const allowed = canCreate(def, user!.role);
   const deleteAllowed = canDelete(def, user!.role);
@@ -217,21 +345,69 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       />
       {headerExtra}
       {def.key === "invoices" ? (
-        <View className="flex-row items-center gap-2 mb-3">
+        <View className="flex-row flex-wrap items-center gap-2 mb-3">
           <Chip
             label={`Semua (${(data.invoices?.length || 0) + (data.invoiceIn?.length || 0)})`}
             active={invoiceTab === "all"}
             onPress={() => setInvoiceTab("all")}
           />
           <Chip
-            label={`Invoice Keluar / Klien (${data.invoices?.length || 0})`}
+            label={`Faktur Penjualan / Invoice (${data.invoices?.length || 0})`}
             active={invoiceTab === "out"}
             onPress={() => setInvoiceTab("out")}
           />
           <Chip
-            label={`Invoice Masuk / Supplier (${data.invoiceIn?.length || 0})`}
+            label={`Receipt / Bukti Pembayaran (${clientReceipts.length})`}
+            active={invoiceTab === "receipts"}
+            onPress={() => setInvoiceTab("receipts")}
+          />
+          <Chip
+            label={`Faktur Pembelian / Supplier (${data.invoiceIn?.length || 0})`}
             active={invoiceTab === "in"}
             onPress={() => setInvoiceTab("in")}
+          />
+        </View>
+      ) : null}
+      {def.key === "supplier-pos" ? (
+        <View className="flex-row flex-wrap items-center gap-2 mb-3">
+          <Chip
+            label={`Pesanan Pembelian / PO (${data["supplier-pos"]?.length || 0})`}
+            active={poTab === "po"}
+            onPress={() => setPoTab("po")}
+          />
+          <Chip
+            label={`Faktur Pembelian / Tagihan (${data.invoiceIn?.length || 0})`}
+            active={poTab === "faktur"}
+            onPress={() => setPoTab("faktur")}
+          />
+          <Chip
+            label={`Pembayaran Pembelian (${supplierPayments.length})`}
+            active={poTab === "pembayaran"}
+            onPress={() => setPoTab("pembayaran")}
+          />
+        </View>
+      ) : null}
+      {def.key === "damage-reports" ? (
+        <View className="flex-row flex-wrap items-center gap-2 mb-3">
+          <Chip
+            label={`Semua (${data["damage-reports"]?.length || 0})`}
+            active={damageTab === "all"}
+            onPress={() => setDamageTab("all")}
+          />
+          <Chip
+            label="Laporan Kerusakan"
+            active={damageTab === "kerusakan"}
+            onPress={() => setDamageTab("kerusakan")}
+          />
+          <Chip
+            label="Retur Penjualan (Customer)"
+            active={damageTab === "retur-sales"}
+            onPress={() => setDamageTab("retur-sales")}
+          />
+          <Chip
+            label="Retur Pembelian (Supplier)"
+            active={damageTab === "retur-purchase"}
+            onPress={() => setDamageTab("retur-purchase")}
           />
         </View>
       ) : null}
@@ -246,11 +422,13 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         />
       ) : (
         <DataTable
-          columns={def.columns}
+          columns={activeColumns}
           rows={rows}
           onRowPress={(r) => {
-            if (def.key === "invoices" && r.direction === "in") {
+            if ((def.key === "invoices" || def.key === "supplier-pos") && r.direction === "in") {
               setSelectedSupplierInvoice(r);
+            } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
+              router.push(`/invoices/${r.invoiceId}` as any);
             } else {
               router.push(`/${def.key}/${r.id}` as any);
             }
@@ -263,8 +441,10 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
                 size="icon"
                 className="size-8 rounded-lg hover:bg-panel"
                 onPress={() => {
-                  if (def.key === "invoices" && r.direction === "in") {
+                  if ((def.key === "invoices" || def.key === "supplier-pos") && r.direction === "in") {
                     setSelectedSupplierInvoice(r);
+                  } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
+                    router.push(`/invoices/${r.invoiceId}` as any);
                   } else {
                     router.push(`/${def.key}/${r.id}` as any);
                   }
@@ -272,14 +452,16 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
               >
                 <ChevronRight size={16} color={colors.muted} />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 rounded-lg hover:bg-danger/10"
-                onPress={() => setDeleteTarget(r)}
-              >
-                <Trash2 size={15} color={colors.danger} />
-              </Button>
+              {r.direction !== "receipt" ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 rounded-lg hover:bg-danger/10"
+                  onPress={() => setDeleteTarget(r)}
+                >
+                  <Trash2 size={15} color={colors.danger} />
+                </Button>
+              ) : null}
             </>
           ) : undefined}
         />
@@ -298,7 +480,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         destructive
         onConfirm={() => {
           if (!deleteTarget) return;
-          const targetModule = def.key === "invoices" && deleteTarget.direction === "in" ? "invoiceIn" : def.key;
+          const targetModule = (def.key === "invoices" || def.key === "supplier-pos") && deleteTarget.direction === "in" ? "invoiceIn" : def.key;
           const targetId = deleteTarget.direction === "in" && (deleteTarget as any).rawId ? (deleteTarget as any).rawId : deleteTarget.id;
           void deleteRow(targetModule, targetId).then((ok) => {
             if (ok) setDeleteTarget(null);
