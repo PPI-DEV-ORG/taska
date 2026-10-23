@@ -131,16 +131,23 @@ export class SerialsService {
     const old = await this.prisma.main.serialUnit.findUnique({ where: { id } });
     if (!old) throw new NotFoundException("Serial number tidak ditemukan");
     if (old.status === "DIGANTI") throw new BadRequestException("Unit sudah diganti sebelumnya");
-    const dup = await this.prisma.main.serialUnit.findUnique({ where: { sn: dto.newSn } });
-    if (dup) throw new BadRequestException(`Serial ${dto.newSn} sudah tercatat`);
+    const cleanNewSn = dto.newSn.trim();
+    const dup = await this.prisma.main.serialUnit.findUnique({ where: { sn: cleanNewSn } });
+    if (dup) throw new BadRequestException(`Serial ${cleanNewSn} sudah tercatat`);
+
+    // Cek apakah SN lama sebelumnya sudah dikurangi stoknya oleh Laporan Kerusakan / Retur
+    const wasAlreadyDeducted = old.status === "RUSAK" || old.status === "RETUR";
+    const wh = old.warehouseId
+      ? { id: old.warehouseId }
+      : await this.prisma.main.warehouse.findFirst({ select: { id: true } });
 
     const created = await this.prisma.main.$transaction(async (tx) => {
       const unit = await tx.serialUnit.create({
         data: {
-          sn: dto.newSn,
+          sn: cleanNewSn,
           productId: old.productId,
           status: "DI_GUDANG",
-          warehouseId: old.warehouseId,
+          warehouseId: wh?.id ?? old.warehouseId,
           replacedFromId: old.id,
           warrantyEndsAt: dto.warrantyEndsAt ? new Date(dto.warrantyEndsAt) : old.warrantyEndsAt,
         },
@@ -148,35 +155,65 @@ export class SerialsService {
       await tx.serialUnit.update({ where: { id: old.id }, data: { status: "DIGANTI" } });
       await tx.serialUnitHistory.createMany({
         data: [
-          { serialUnitId: old.id, status: "DIGANTI" as SerialStatus, warehouseId: old.warehouseId, note: dto.reason, changedById: user.id },
-          { serialUnitId: unit.id, status: "DI_GUDANG" as SerialStatus, warehouseId: old.warehouseId, note: `Penggantian unit ${old.sn}: ${dto.reason}`, changedById: user.id },
+          {
+            serialUnitId: old.id,
+            status: "DIGANTI" as SerialStatus,
+            warehouseId: wh?.id ?? old.warehouseId,
+            note: `Diganti dengan SN ${cleanNewSn} — ${dto.reason}`,
+            changedById: user.id,
+          },
+          {
+            serialUnitId: unit.id,
+            status: "DI_GUDANG" as SerialStatus,
+            warehouseId: wh?.id ?? old.warehouseId,
+            note: `Unit pengganti dari SN ${old.sn}: ${dto.reason}`,
+            changedById: user.id,
+          },
         ],
+      });
+
+      // Tandai laporan kerusakan/retur terkait SN lama ini menjadi SELESAI
+      await tx.damageReport.updateMany({
+        where: {
+          OR: [
+            { serialUnitId: old.id },
+            ...(dto.damageReportId ? [{ id: dto.damageReportId }] : []),
+          ],
+          status: { not: "SELESAI" },
+        },
+        data: {
+          status: "SELESAI",
+        },
       });
       return unit;
     });
 
-    if (old.warehouseId) {
+    if (wh?.id) {
       const date = new Date();
-      await this.stock.applyMovement({
-        date,
-        type: "OUT",
-        category: "PENGGANTIAN",
-        productId: old.productId,
-        fromWarehouseId: old.warehouseId,
-        qty: 1,
-        serialUnitId: old.id,
-        reason: dto.reason,
-        createdById: user.id,
-      });
+      // Jika sebelumnya masih DI_GUDANG (belum dikurangi oleh laporan rusak/retur), kurangi dulu 1 unit
+      if (!wasAlreadyDeducted) {
+        await this.stock.applyMovement({
+          date,
+          type: "OUT",
+          category: "PENGGANTIAN",
+          productId: old.productId,
+          fromWarehouseId: wh.id,
+          qty: 1,
+          serialUnitId: old.id,
+          reason: `Unit rusak keluar (${old.sn} → ${cleanNewSn}): ${dto.reason}`,
+          createdById: user.id,
+        }).catch(() => {});
+      }
+      // Tambahkan +1 stok untuk unit pengganti baru yang masuk ke gudang
       await this.stock.applyMovement({
         date,
         type: "IN",
         category: "PENGGANTIAN",
         productId: old.productId,
-        toWarehouseId: old.warehouseId,
+        toWarehouseId: wh.id,
         qty: 1,
         serialUnitId: created.id,
-        reason: dto.reason,
+        reason: `Terima unit pengganti SN ${cleanNewSn} (menggantikan SN ${old.sn}): ${dto.reason}`,
         createdById: user.id,
       });
     }

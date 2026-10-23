@@ -163,7 +163,7 @@ export class DeliveryController {
   }
 
   @Delete(":id")
-  @Require("delivery", "A")
+  @Require("delivery", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }

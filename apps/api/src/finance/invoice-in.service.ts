@@ -141,13 +141,13 @@ export class InvoiceInService {
     const updated = await this.prisma.main.invoiceIn.update({
       where: { id },
       data: {
-        ...(dto.number ? { number: dto.number } : {}),
-        supplierId: dto.supplierId,
-        supplierPoId: dto.supplierPoId ?? row.supplierPoId,
-        amount: dto.amount,
-        ppn: dto.ppn ?? row.ppn,
-        total: dto.total,
-        dueDate: new Date(dto.dueDate),
+        ...(dto.number !== undefined ? { number: dto.number } : {}),
+        ...(dto.supplierId !== undefined ? { supplierId: dto.supplierId } : {}),
+        ...(dto.supplierPoId !== undefined ? { supplierPoId: dto.supplierPoId } : {}),
+        ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
+        ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
+        ...(dto.total !== undefined ? { total: dto.total } : {}),
+        ...(dto.dueDate ? { dueDate: new Date(dto.dueDate) } : {}),
       },
       include: { supplier: true },
     });
@@ -155,7 +155,7 @@ export class InvoiceInService {
       await this.prisma.main.file.update({
         where: { id: dto.fileId },
         data: { refType: "invoiceIn", refId: String(id) },
-      });
+      }).catch(() => {});
     }
     await this.audit.log({
       actor: user,
@@ -165,6 +165,22 @@ export class InvoiceInService {
       detail: updated.number ?? `invoice #${id}`,
     });
     return this.sync(updated);
+  }
+
+  async remove(id: number, user: RequestUser) {
+    const row = await this.prisma.main.invoiceIn.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Invoice supplier tidak ditemukan");
+    await this.prisma.main.payment.deleteMany({ where: { invoiceInId: id } });
+    await this.prisma.main.approval.deleteMany({ where: { kind: "INVOICE_IN", entityId: id } });
+    await this.prisma.main.invoiceIn.delete({ where: { id } });
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_INVOICE_MASUK",
+      entityType: "invoice-in",
+      entityId: id,
+      detail: row.number ?? `invoice #${id}`,
+    });
+    return { deleted: true, id };
   }
 
   async addPayment(id: number, dto: PaymentDto, user: RequestUser) {

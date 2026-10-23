@@ -126,6 +126,9 @@ export class ReplaceSerialDto {
 
   @IsOptional() @IsDateString()
   warrantyEndsAt?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  damageReportId?: number;
 }
 
 export class OpnameDetailDto {
@@ -250,4 +253,21 @@ export class DamageStatusDto {
 
   @IsOptional() @IsString()
   reason?: string;
+}
+
+export class DamageReplaceDto {
+  @IsOptional() @IsString()
+  newSn?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
+  qty?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  warehouseId?: number;
+
+  @IsOptional() @IsString()
+  reason?: string;
+
+  @IsOptional() @IsDateString()
+  warrantyEndsAt?: string;
 }

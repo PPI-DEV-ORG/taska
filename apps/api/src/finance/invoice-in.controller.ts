@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query } from "@nestjs/common";
 import { IsIn } from "class-validator";
 import { InvoiceInService } from "./invoice-in.service.js";
 import { FinanceListQuery, InvoiceInDto, PaymentDto } from "./dto.js";
@@ -44,6 +44,12 @@ export class InvoiceInController {
     return this.service.update(id, dto, user);
   }
 
+  @Patch(":id")
+  @Require("procurement", "U")
+  patch(@Param("id", ParseIntPipe) id: number, @Body() dto: InvoiceInDto, @CurrentUser() user: RequestUser) {
+    return this.service.update(id, dto, user);
+  }
+
   @Post(":id/status")
   @Require("procurement", "U")
   setStatus(@Param("id", ParseIntPipe) id: number, @Body() dto: StatusOnlyDto, @CurrentUser() user: RequestUser) {
@@ -54,5 +60,11 @@ export class InvoiceInController {
   @Require("procurement", "U")
   pay(@Param("id", ParseIntPipe) id: number, @Body() dto: PaymentDto, @CurrentUser() user: RequestUser) {
     return this.service.addPayment(id, dto, user);
+  }
+
+  @Delete(":id")
+  @Require("procurement", "U")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.remove(id, user);
   }
 }

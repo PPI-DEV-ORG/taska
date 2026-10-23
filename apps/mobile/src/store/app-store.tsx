@@ -1,11 +1,19 @@
 import * as React from "react";
 import { Platform } from "react-native";
 import { colorScheme } from "nativewind";
+import { useRouter } from "expo-router";
 import { MODULES, ROLE_LABEL, NAV_BY_ROLE, CAN_APPROVE, type Notif, type Row, type User, type Role } from "@/constants/modules";
-import { ToastHost, type ToastItem } from "@/components/taska/toast";
+import { NotifPopupHost, ToastHost, type NotifPopupItem, type ToastItem } from "@/components/taska/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens, isNetworkError } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
-import { ensureNotifPermission, showSystemNotification } from "@/services/notify";
+import {
+  JENIS_LABEL,
+  ensureNotifPermission,
+  initWebNotificationRuntime,
+  playNotificationSound,
+  showSystemNotification,
+  syncServiceWorkerAuth,
+} from "@/services/notify";
 import { setThemePalette } from "@/tokens";
 import {
   PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow, normalizeNotifHref,
@@ -237,6 +245,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [approvals, setApprovals] = React.useState<ApprovalRow[]>([]);
   const [notifs, setNotifs] = React.useState<Notif[]>([]);
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
+  const [notifPopups, setNotifPopups] = React.useState<NotifPopupItem[]>([]);
+  const seenNotifIdsRef = React.useRef<Set<string>>(new Set());
+  const notifHydratedRef = React.useRef<boolean>(false);
+  const router = useRouter();
   const [offline, setOffline] = React.useState<boolean>(() => {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
     return false;
@@ -274,6 +286,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setToasts((t) => [...t, { id, msg, tone }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
+
+  const closeNotifPopup = React.useCallback((popupId: string) => {
+    setNotifPopups((prev) => prev.filter((x) => x.id !== popupId));
+  }, []);
+
+  const pushNotifPopup = React.useCallback((notif: Notif, customTitle?: string) => {
+    const popupId = `np-${notif.id}-${Date.now()}`;
+    const title = customTitle || JENIS_LABEL[notif.jenis] || "Notifikasi Baru";
+    setNotifPopups((prev) => {
+      const filtered = prev.filter((x) => x.notifId !== notif.id);
+      return [{ id: popupId, notifId: notif.id, jenis: notif.jenis, title, text: notif.teks, href: notif.href }, ...filtered].slice(0, 4);
+    });
+    setTimeout(() => {
+      setNotifPopups((prev) => prev.filter((x) => x.id !== popupId));
+    }, 6500);
+  }, []);
+
+  const triggerRealtimeNotifAlert = React.useCallback(
+    (notif: Notif, customTitle?: string) => {
+      playNotificationSound();
+      pushNotifPopup(notif, customTitle);
+      void showSystemNotification({
+        title: customTitle || JENIS_LABEL[notif.jenis] || "Taska Mini ERP",
+        body: notif.teks,
+        notif,
+        onlyWhenBackground: true,
+      });
+    },
+    [pushNotifPopup],
+  );
 
   const userRef = React.useRef<User | null>(user);
   React.useEffect(() => {
@@ -330,7 +372,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return withOfflineResult;
     });
     if (appr) setApprovals(appr);
-    if (notifRes) setNotifs(adaptNotifList(notifRes.items));
+    if (notifRes) {
+      const adaptedNotifs = adaptNotifList(notifRes.items);
+      for (const n of adaptedNotifs) seenNotifIdsRef.current.add(String(n.id));
+      notifHydratedRef.current = true;
+      setNotifs(adaptedNotifs);
+      syncServiceWorkerAuth(Array.from(seenNotifIdsRef.current));
+    }
     return withOfflineResult;
   }, []);
 
@@ -355,6 +403,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const logout = React.useCallback(() => {
     void clearTokens();
     writeStorageJson(STORAGE_CACHE_USER_KEY, null);
+    seenNotifIdsRef.current.clear();
+    notifHydratedRef.current = false;
+    setNotifPopups([]);
+    syncServiceWorkerAuth([]);
     setUser(null);
     setData(emptyDB());
     setApprovals([]);
@@ -389,9 +441,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refreshNotifs = React.useCallback(async () => {
     try {
       const r = await api<Page<any>>("GET", "/notifications?limit=50");
-      setNotifs(adaptNotifList(r.items));
+      const adapted = adaptNotifList(r.items);
+      if (notifHydratedRef.current) {
+        const unseenUnread = adapted.filter((n) => !n.baca && !seenNotifIdsRef.current.has(String(n.id)));
+        for (const n of unseenUnread.slice(0, 2)) {
+          seenNotifIdsRef.current.add(String(n.id));
+          triggerRealtimeNotifAlert(n);
+        }
+      }
+      for (const n of adapted) seenNotifIdsRef.current.add(String(n.id));
+      notifHydratedRef.current = true;
+      setNotifs(adapted);
+      syncServiceWorkerAuth(Array.from(seenNotifIdsRef.current));
     } catch {}
-  }, []);
+  }, [triggerRealtimeNotifAlert]);
 
   const refreshApprovals = React.useCallback(async () => {
     try {
@@ -480,11 +543,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // poll notifications when logged in (fallback when socket.io unavailable)
   React.useEffect(() => {
     if (!user || offline) return;
-    const id = setInterval(() => { void refreshNotifs(); }, 30000);
+    initWebNotificationRuntime((href) => {
+      try {
+        router.push(href as any);
+      } catch {}
+    });
+    const id = setInterval(() => { void refreshNotifs(); }, 15000);
     return () => clearInterval(id);
-  }, [user, offline, refreshNotifs]);
+  }, [user, offline, refreshNotifs, router]);
 
-  // realtime: data-change → refresh tabel; notification → notif + OS/browser notif
+  // realtime: data-change → refresh tabel; notification → popup pojok kanan atas + suara *ting* + OS/browser notif
   const refreshModuleRef = React.useRef<((m: string) => Promise<Row[]>) | null>(null);
 
   React.useEffect(() => {
@@ -522,22 +590,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         LEAD: "lead", TUGAS: "tugas", SURAT: "surat", LAINNYA: "approval",
       };
       const notifId = n.id != null ? String(n.id) : `ws-${Date.now()}`;
+      const alreadySeen = n.id != null && seenNotifIdsRef.current.has(notifId);
+      seenNotifIdsRef.current.add(notifId);
+
       const notif: Notif = {
         id: notifId,
         jenis: WS_KIND[n.kind] ?? "approval",
         teks: n.text ?? "",
-        waktu: new Date().toISOString(),
+        waktu: n.createdAt ?? new Date().toISOString(),
         baca: false,
         href: normalizeNotifHref(n.href),
         roles: "all",
       };
       setNotifs((l) => [notif, ...l.filter((x) => x.id !== notifId)].slice(0, 100));
-      void showSystemNotification({ notif });
-      toast(n.text, "info");
+      syncServiceWorkerAuth(Array.from(seenNotifIdsRef.current));
+      if (!alreadySeen) {
+        triggerRealtimeNotifAlert(notif, n.title);
+      }
     };
 
     let disconnect: (() => void) | null = null;
     void connectSocket({
+      onConnect: () => {
+        void refreshNotifs();
+      },
       onDataChange: (c) => { void handleDataChange(c); },
       onNotification: (n) => { void handleNotification(n); },
     }).then((d) => {
@@ -549,7 +625,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       disconnect?.();
     };
-  }, [user, refreshApprovals, toast]);
+  }, [user, refreshApprovals, refreshNotifs, triggerRealtimeNotifAlert]);
 
   const pushHistory = React.useCallback(
     (module: string, id: string, what: string) => {
@@ -1122,6 +1198,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider value={value}>
       {children}
+      <NotifPopupHost
+        items={notifPopups}
+        onClose={closeNotifPopup}
+        onSelect={(item) => {
+          closeNotifPopup(item.id);
+          if (item.notifId) void markRead(item.notifId);
+          if (item.href) {
+            try {
+              router.push(item.href as any);
+            } catch {}
+          }
+        }}
+      />
       <ToastHost items={toasts} />
     </AppContext.Provider>
   );

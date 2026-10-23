@@ -1,24 +1,74 @@
 import * as React from "react";
 import { View, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { AlertTriangle, Check } from "lucide-react-native";
+import { AlertTriangle, Check, Plus, RefreshCw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, Chip, FormField } from "@/components/taska/basics";
+import { StatusBadge } from "@/components/taska/status-badge";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FormDialog, SearchableSelect } from "@/components/taska/dialogs";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
-import type { Row } from "@/constants/modules";
+import { MODULES, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 
 export default function StockOpnameScreen() {
   const router = useRouter();
-  const { data, user, toast } = useApp();
+  const { data, user, toast, reload, refreshModule } = useApp();
 
   const products: Row[] = data.products ?? [];
   const warehouses: Row[] = data.warehouses ?? [];
   const stockSummary: any[] = data.stockSummary ?? [];
+  const serials: Row[] = data.serials ?? [];
+  const damageReports: Row[] = data["damage-reports"] ?? [];
+
+  const [reportDamageOpen, setReportDamageOpen] = React.useState(false);
+  const [replacementOpen, setReplacementOpen] = React.useState(false);
+  const [oldSn, setOldSn] = React.useState("");
+  const [newSn, setNewSn] = React.useState("");
+  const [replaceReason, setReplaceReason] = React.useState("");
+  const [replaceBusy, setReplaceBusy] = React.useState(false);
+
+  async function handleReplacement() {
+    if (!oldSn.trim() || !newSn.trim() || !replaceReason.trim()) {
+      toast("SN lama, SN baru pengganti, dan alasan wajib diisi", "danger");
+      return;
+    }
+    const cleanOld = (oldSn.split(" (")[0] ?? oldSn).trim();
+    const unit = serials.find((s) => String(s.sn).toLowerCase() === cleanOld.toLowerCase());
+    if (!unit) {
+      toast(`SN lama "${cleanOld}" tidak ditemukan di daftar serial`, "danger");
+      return;
+    }
+    setReplaceBusy(true);
+    try {
+      await api("POST", `/serials/${unit.id}/replace`, {
+        newSn: newSn.trim(),
+        reason: replaceReason.trim(),
+      });
+      toast(`Unit SN ${cleanOld} berhasil diganti dengan SN ${newSn.trim()} & stok gudang diperbarui`);
+      setReplacementOpen(false);
+      setOldSn("");
+      setNewSn("");
+      setReplaceReason("");
+      if (refreshModule) {
+        await Promise.all([
+          refreshModule("serials"),
+          refreshModule("damage-reports"),
+          refreshModule("movements"),
+          refreshModule("products"),
+        ]);
+      }
+      await reload();
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal memproses penggantian unit", "danger");
+    } finally {
+      setReplaceBusy(false);
+    }
+  }
 
   const [selectedWarehouseId, setSelectedWarehouseId] = React.useState<string>(
     warehouses[1]?.id ?? warehouses[0]?.id ?? ""
@@ -133,9 +183,17 @@ export default function StockOpnameScreen() {
       <PageHeader
         back
         title="Stok Opname"
-        subtitle="Perhitungan fisik stok gudang dan pengajuan penyesuaian selisih"
+        subtitle="Perhitungan fisik stok gudang, laporan barang rusak, pergantian unit SN, dan pengajuan penyesuaian selisih"
         action={
-          <View className="flex-row gap-2">
+          <View className="flex-row flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onPress={() => setReportDamageOpen(true)}>
+              <Plus size={14} color={colors.text} />
+              <Text className="text-xs">Lapor Barang Rusak / Retur</Text>
+            </Button>
+            <Button size="sm" variant="outline" onPress={() => setReplacementOpen(true)}>
+              <RefreshCw size={14} color={colors.text} />
+              <Text className="text-xs">Pergantian Unit (SN Lama → Baru)</Text>
+            </Button>
             {warehouses.map((w) => (
               <Chip
                 key={w.id}
@@ -297,6 +355,91 @@ export default function StockOpnameScreen() {
         </View>
 
         <View className="lg:col-span-4 w-full gap-4 lg:sticky lg:top-4">
+          <Panel
+            title="Laporan Barang Rusak & Pergantian Unit (SN)"
+            subtitle="Temuan barang rusak, retur, dan riwayat pergantian SN (SN lama → SN baru)"
+            right={
+              <View className="flex-row gap-1.5">
+                <Button size="sm" variant="outline" onPress={() => setReportDamageOpen(true)}>
+                  <Plus size={13} color={colors.text} />
+                  <Text className="text-xs">+ Lapor Rusak</Text>
+                </Button>
+                <Button size="sm" onPress={() => setReplacementOpen(true)}>
+                  <RefreshCw size={13} color={colors.background} />
+                  <Text className="text-xs text-primary-foreground">Ganti Unit SN</Text>
+                </Button>
+              </View>
+            }
+          >
+            {damageReports.length === 0 ? (
+              <Text className="text-muted-foreground text-xs py-2">
+                Belum ada laporan barang rusak atau retur yang tercatat.
+              </Text>
+            ) : (
+              <View className="gap-2">
+                {damageReports.slice(0, 6).map((dr) => {
+                  const hasReplacement = dr.snPengganti && dr.snPengganti !== "-";
+                  return (
+                    <View
+                      key={dr.id}
+                      className="bg-panel/50 border-border/70 rounded-xl border p-2.5 gap-1.5"
+                    >
+                      <View className="flex-row items-center justify-between gap-2">
+                        <Text className="text-xs font-bold text-foreground flex-1" numberOfLines={1}>
+                          {dr.produk}
+                        </Text>
+                        <StatusBadge status={dr.status || "Dilaporkan"} />
+                      </View>
+                      <View className="flex-row items-center flex-wrap gap-1.5">
+                        <StatusBadge status={dr.jenis || "Rusak"} />
+                        {dr.sn && dr.sn !== "-" ? (
+                          <Text className="text-[11px] font-mono text-danger font-semibold">
+                            SN Lama: {dr.sn}
+                          </Text>
+                        ) : (
+                          <Text className="text-[11px] text-muted-foreground">Qty: {dr.qty || 1}</Text>
+                        )}
+                        {hasReplacement ? (
+                          <Text className="text-[11px] font-mono text-emerald-500 font-bold">
+                            → SN Baru: {dr.snPengganti}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View className="flex-row items-center justify-between mt-0.5">
+                        <Text className="text-[11px] text-muted-foreground flex-1 mr-2" numberOfLines={1}>
+                          {dr.keterangan || "-"}
+                        </Text>
+                        {!hasReplacement && dr.sn && dr.sn !== "-" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2"
+                            onPress={() => {
+                              setOldSn(String(dr.sn));
+                              setReplaceReason(`Penggantian saat opname untuk ${dr.produk} (SN: ${dr.sn})`);
+                              setReplacementOpen(true);
+                            }}
+                          >
+                            <Text className="text-[10px] font-semibold">Terima Ganti SN</Text>
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2"
+                            onPress={() => router.push(`/damage-reports/${dr.id}` as any)}
+                          >
+                            <Text className="text-[10px] text-primary">Detail</Text>
+                          </Button>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </Panel>
+
           <Panel title="Alasan Selisih & Catatan Opname">
             <FormField
               label="Penjelasan Selisih Fisik"
@@ -325,6 +468,67 @@ export default function StockOpnameScreen() {
           </Button>
         </View>
       </View>
+
+      <FormDialog
+        def={MODULES["damage-reports"]}
+        open={reportDamageOpen}
+        onOpenChange={setReportDamageOpen}
+      />
+
+      <Dialog open={replacementOpen} onOpenChange={setReplacementOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Pergantian Barang / Unit Ber-SN (SN Lama → SN Baru)</DialogTitle>
+          </DialogHeader>
+          <View className="gap-4 py-2">
+            <Text className="text-muted-foreground text-xs leading-relaxed">
+              Gunakan form ini saat menerima barang pengganti (contoh: kamera SN 299292 yang rusak/retur diganti dengan kamera baru SN 94949). Sistem otomatis mengubah SN lama menjadi DIGANTI, mendaftarkan SN baru sebagai DI GUDANG, dan menambah kembali stok tersedia (+1).
+            </Text>
+            <FormField label="Pilih / Ketik Serial Number Lama (Rusak / Retur)" required>
+              <View className="gap-1.5">
+                <SearchableSelect
+                  value={oldSn}
+                  onChange={(v) => {
+                    const clean = (v.split(" (")[0] ?? v).trim();
+                    setOldSn(clean);
+                  }}
+                  options={serials
+                    .filter((s) => s.rawStatus !== "DIGANTI" && s.status !== "Diganti")
+                    .map((s) => `${s.sn} (${s.produk} · ${s.status || "Di gudang"})`)}
+                  placeholder="Pilih SN yang rusak / diretur..."
+                />
+                <Input
+                  value={oldSn}
+                  onChangeText={setOldSn}
+                  placeholder="Atau ketik / scan SN lama (contoh: 299292)"
+                />
+              </View>
+            </FormField>
+            <FormField label="Serial Number Baru (Unit Pengganti)" required>
+              <Input
+                value={newSn}
+                onChangeText={setNewSn}
+                placeholder="Ketik / scan SN baru pengganti (contoh: 94949)"
+              />
+            </FormField>
+            <FormField label="Alasan / Catatan Pergantian" required>
+              <Textarea
+                value={replaceReason}
+                onChangeText={setReplaceReason}
+                placeholder="Contoh: Unit pengganti klaim retur supplier untuk kamera rusak"
+              />
+            </FormField>
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setReplacementOpen(false)} disabled={replaceBusy}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleReplacement} disabled={replaceBusy}>
+              <Text>{replaceBusy ? "Memproses..." : "Simpan Pergantian & Tambah Stok"}</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </View>
   );
 }

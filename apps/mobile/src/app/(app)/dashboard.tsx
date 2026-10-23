@@ -100,6 +100,9 @@ function ProjectOverviewCard({
   onViewAll: () => void;
 }) {
   const router = useRouter();
+  const activeOnly = projects.filter(
+    (p) => p.status !== "Selesai" && p.status !== "SELESAI",
+  );
   return (
     <Panel
       title="Project Overview"
@@ -113,32 +116,38 @@ function ProjectOverviewCard({
       className="flex-1"
     >
       <View className="gap-3">
-        {projects.map((p) => (
-          <Pressable
-            key={p.id}
-            onPress={() => router.push(`/projects/${p.id}` as any)}
-            className="bg-card hover:bg-panel border-border/70 flex-col md:flex-row md:items-center justify-between gap-3 rounded-xl border p-4 transition-colors"
-          >
-            <View className="flex-1 min-w-[180px]">
-              <Text className="text-sm font-bold text-foreground" numberOfLines={1}>{p.nama}</Text>
-              <View className="flex-row items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                <View className="flex-row items-center gap-1">
-                  <Calendar size={13} color={colors.muted} />
-                  <Text className="text-muted-foreground text-xs">{tanggal(p.selesai)}</Text>
-                </View>
-                <View className="flex-row items-center gap-1">
-                  <Users size={13} color={colors.muted} />
-                  <Text className="text-muted-foreground text-xs">{p.pm}</Text>
+        {activeOnly.length === 0 ? (
+          <Text className="text-muted-foreground text-xs py-4 text-center">
+            Tidak ada project aktif yang sedang berjalan.
+          </Text>
+        ) : (
+          activeOnly.slice(0, 4).map((p) => (
+            <Pressable
+              key={p.id}
+              onPress={() => router.push(`/projects/${p.id}` as any)}
+              className="bg-card hover:bg-panel border-border/70 flex-col md:flex-row md:items-center justify-between gap-3 rounded-xl border p-4 transition-colors"
+            >
+              <View className="flex-1 min-w-[180px]">
+                <Text className="text-sm font-bold text-foreground" numberOfLines={1}>{p.nama}</Text>
+                <View className="flex-row items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                  <View className="flex-row items-center gap-1">
+                    <Calendar size={13} color={colors.muted} />
+                    <Text className="text-muted-foreground text-xs">{tanggal(p.selesai)}</Text>
+                  </View>
+                  <View className="flex-row items-center gap-1">
+                    <Users size={13} color={colors.muted} />
+                    <Text className="text-muted-foreground text-xs">{p.pm}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <View className="flex-row items-center justify-between md:justify-end gap-4">
-              <StatusBadge status={p.status} />
-              <SegmentedProgress percent={p.progres ?? 60} />
-            </View>
-          </Pressable>
-        ))}
+              <View className="flex-row items-center justify-between md:justify-end gap-4">
+                <StatusBadge status={p.status} />
+                <SegmentedProgress percent={Number(p.progres) || 0} />
+              </View>
+            </Pressable>
+          ))
+        )}
       </View>
     </Panel>
   );

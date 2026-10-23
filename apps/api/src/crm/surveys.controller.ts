@@ -65,7 +65,7 @@ export class SurveysController {
   }
 
   @Delete(":id")
-  @Require("surveys", "A")
+  @Require("surveys", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }

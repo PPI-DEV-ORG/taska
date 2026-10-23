@@ -7,8 +7,19 @@ export type NotifyInput = {
   userIds?: number[];
   roles?: Role[];
   kind?: NotifKind;
+  title?: string;
   text: string;
   href: string;
+};
+
+const KIND_TITLE: Record<string, string> = {
+  APPROVAL: "Persetujuan Dokumen",
+  STOK: "Update Stok & Gudang",
+  PENGIRIMAN: "Update Pengiriman",
+  LEAD: "Prospek & Penawaran",
+  TUGAS: "Tugas & Project",
+  SURAT: "Surat Jalan & Dokumen",
+  LAINNYA: "Notifikasi Taska ERP",
 };
 
 @Injectable()
@@ -27,8 +38,11 @@ export class NotificationsService {
       for (const id of input.userIds) users.add(id);
     }
     if (input.roles?.length) {
+      const targetRoles = Array.from(
+        new Set<Role>([...input.roles, "SUPER_ADMIN" as Role, "ADMIN" as Role]),
+      );
       const rows = await this.prisma.main.user.findMany({
-        where: { status: "AKTIF", role: { in: input.roles } },
+        where: { status: "AKTIF", role: { in: targetRoles } },
         select: { id: true },
       });
       for (const r of rows) users.add(r.id);
@@ -36,6 +50,8 @@ export class NotificationsService {
     if (!users.size) return 0;
 
     const kind = input.kind ?? ("LAINNYA" as NotifKind);
+    const title = input.title ?? KIND_TITLE[kind] ?? "Notifikasi Taska ERP";
+    const createdAt = new Date().toISOString();
 
     const rows = await this.prisma.main.$transaction(
       [...users].map((userId) =>
@@ -50,7 +66,14 @@ export class NotificationsService {
     for (const userId of users) {
       const id = rows[i++]?.id;
       if (id == null) continue;
-      this.gateway.push(userId, { id, kind, text: input.text, href: input.href });
+      this.gateway.push(userId, {
+        id,
+        kind,
+        title,
+        text: input.text,
+        href: input.href,
+        createdAt,
+      });
     }
     this.logger.debug(`notifikasi dikirim ke ${users.size} pengguna`);
     return users.size;

@@ -142,7 +142,7 @@ export class InvoiceOutController {
   }
 
   @Delete(":id")
-  @Require("financeOut", "A")
+  @Require("financeOut", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }

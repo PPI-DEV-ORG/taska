@@ -147,7 +147,11 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const messageContent = msg.message;
+    const messageContent =
+      msg.message?.ephemeralMessage?.message ||
+      msg.message?.viewOnceMessage?.message ||
+      msg.message?.viewOnceMessageV2?.message ||
+      msg.message;
     if (!messageContent) return;
 
     let text =
@@ -155,15 +159,22 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       messageContent.extendedTextMessage?.text ||
       messageContent.imageMessage?.caption ||
       messageContent.documentMessage?.caption ||
+      messageContent.videoMessage?.caption ||
       "";
 
     let mediaBuffer: Buffer | null = null;
     let mimeType: string | null = null;
     let isImage = false;
 
-    if (messageContent.imageMessage) {
+    const imgMsg =
+      messageContent.imageMessage ||
+      (messageContent.documentMessage?.mimetype?.startsWith("image/")
+        ? messageContent.documentMessage
+        : null);
+
+    if (imgMsg) {
       isImage = true;
-      mimeType = messageContent.imageMessage.mimetype || "image/jpeg";
+      mimeType = imgMsg.mimetype || "image/jpeg";
       try {
         mediaBuffer = (await downloadMediaMessage(
           msg as WAMessage,
@@ -179,9 +190,15 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    const altJid =
+      (msg.key as any)?.remoteJidAlt ||
+      msg.key?.participant ||
+      remoteJid;
+
     try {
       await this.conversationService.handleIncomingMessage({
         senderJid: remoteJid,
+        senderPhoneJid: String(altJid || remoteJid),
         senderName: msg.pushName || "Teknisi",
         text: text.trim(),
         mediaBuffer,
