@@ -462,13 +462,16 @@ export function getDynamicOptions(
     case "perusahaan":
     case "customer": {
       const custs = (data.customers ?? []).map((r: any) => String(r.nama || r.name || "")).filter(Boolean);
-      if (moduleKey === "projects") return nonEmpty(["-", ...custs], f.options);
+      if (moduleKey === "projects" || moduleKey === "po-client") return nonEmpty(["-", ...custs], f.options);
       return nonEmpty(custs, f.options);
     }
     case "sumber":
       return nonEmpty((data.leadSources ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
-    case "supplier":
-      return nonEmpty((data.suppliers ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+    case "supplier": {
+      const supps = (data.suppliers ?? []).map((r: any) => String(r.nama)).filter(Boolean);
+      if (moduleKey === "po-client") return nonEmpty(["-", ...supps], f.options);
+      return nonEmpty(supps, f.options);
+    }
     case "lead": {
       const lList = (data.leads ?? []);
       return nonEmpty(
@@ -600,6 +603,7 @@ export function FormDialog({
   const [prevOpen, setPrevOpen] = React.useState(open);
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
+  const [orderDocMode, setOrderDocMode] = React.useState<"SO" | "PO" | "BOTH">("SO");
   const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
   const [fallbackProjects, setFallbackProjects] = React.useState<any[]>([]);
   const [fallbackSupplierPos, setFallbackSupplierPos] = React.useState<any[]>([]);
@@ -686,6 +690,7 @@ export function FormDialog({
           }
         });
         setVals(init);
+        setOrderDocMode(def?.key === "supplier-pos" ? "PO" : "SO");
       }
       setErrs({});
     }
@@ -732,8 +737,55 @@ export function FormDialog({
         row.serialUnitId = Number(matchedSn.id);
       }
     }
-    if (def?.key === "po-client" && row.penawaran) {
-      row.penawaran = (String(row.penawaran).split(" - ")[0] ?? "").trim();
+    if (def?.key === "po-client") {
+      if (row.penawaran) {
+        row.penawaran = (String(row.penawaran).split(" - ")[0] ?? "").trim();
+      }
+      if (orderDocMode === "SO") {
+        row.supplier = undefined;
+        row.supplierId = undefined;
+      } else if (orderDocMode === "PO") {
+        row.customer = undefined;
+        row.customerId = undefined;
+        row.penawaran = undefined;
+        row.quotationId = undefined;
+      }
+      row.docMode = orderDocMode;
+      const now = new Date(row.tanggal || new Date().toISOString());
+      const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const seq = String((data["po-client"]?.length || 0) + 1).padStart(3, "0");
+      if (orderDocMode === "PO") {
+        if (!row.nomorPoClient?.trim()) {
+          row.nomorPoClient = `PO/${ym}/${seq}`;
+        }
+        row.nomor = row.nomorPoClient;
+        row.nomorSo = undefined;
+      } else if (orderDocMode === "SO") {
+        if (!row.nomorSo?.trim()) {
+          row.nomorSo = `SO/${ym}/${seq}`;
+        }
+        row.nomor = row.nomorSo;
+        row.nomorPoClient = undefined;
+      } else {
+        if (!row.nomorSo?.trim()) {
+          row.nomorSo = `SO/${ym}/${seq}`;
+        }
+        if (!row.nomorPoClient?.trim()) {
+          row.nomorPoClient = `PO/${ym}/${seq}`;
+        }
+        row.nomor = row.nomorSo;
+      }
+    }
+    if (def?.key === "supplier-pos") {
+      const now = new Date(row.tanggal || new Date().toISOString());
+      const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const seq = String((data["supplier-pos"]?.length || 0) + 1).padStart(3, "0");
+      if ((orderDocMode === "SO" || orderDocMode === "BOTH") && (!row.nomorSoSupplier?.trim() || row.nomorSoSupplier === "-")) {
+        row.nomorSoSupplier = `SO-S/${ym}/${seq}`;
+      }
+      if (orderDocMode === "PO" && !row.nomor?.trim()) {
+        row.nomor = `PO-S/${ym}/${seq}`;
+      }
     }
     if (def?.key === "projects") {
       if (row.lead) {
@@ -782,9 +834,19 @@ export function FormDialog({
       row.grandTotal = row.totalAfterDisc;
     }
     const uploadedIds = await Promise.all(fileHandles.current.map((h) => h?.flush() ?? Promise.resolve(null)));
-    const firstFileId = uploadedIds.find((id) => id != null);
-    if (firstFileId != null) {
-      row.fileId = firstFileId;
+    fields.forEach((f, idx) => {
+      const fid = uploadedIds[idx];
+      if (f.type === "file" && fid != null) {
+        if (f.key === "dokumen" || f.key === "fileId") {
+          row.fileId = fid;
+        } else {
+          row[f.key] = fid;
+        }
+      }
+    });
+    if (row.fileId == null) {
+      const fallbackFirst = uploadedIds.find((id, idx) => id != null && fields[idx]?.key !== "soFileId");
+      if (fallbackFirst != null) row.fileId = fallbackFirst;
     }
 
     if (onSubmit) {
@@ -810,13 +872,94 @@ export function FormDialog({
           </DialogTitle>
         </DialogHeader>
         <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-4 pb-1">
+          {mode === "create" && (def?.key === "po-client" || def?.key === "supplier-pos") ? (
+            <View className="bg-panel border-border/80 rounded-xl border p-3 gap-2.5">
+              <Text className="text-xs font-bold text-foreground">
+                Pilih Mode Pembuatan Dokumen (SO / PO):
+              </Text>
+              <View className="flex-row flex-wrap gap-1.5">
+                {[
+                  {
+                    id: "SO" as const,
+                    label: "Buat SO & Upload PO",
+                  },
+                  {
+                    id: "PO" as const,
+                    label: "Buat PO & Upload SO",
+                  },
+                  {
+                    id: "BOTH" as const,
+                    label: "PO & SO Sekaligus",
+                  },
+                ].map((opt) => {
+                  const active = orderDocMode === opt.id;
+                  return (
+                    <Button
+                      key={opt.id}
+                      size="sm"
+                      variant={active ? "default" : "outline"}
+                      onPress={() => setOrderDocMode(opt.id)}
+                      className="flex-1 min-w-[130px] h-9 px-2.5"
+                    >
+                      <Text className="text-xs font-semibold">{opt.label}</Text>
+                    </Button>
+                  );
+                })}
+              </View>
+              <Text className="text-[11px] text-muted-foreground leading-relaxed">
+                {orderDocMode === "SO"
+                  ? "Sisi Penjualan: Kita menerbitkan Sales Order (SO) untuk Customer dan mengunggah PO dari Customer (Supplier disembunyikan)."
+                  : orderDocMode === "PO"
+                    ? "Sisi Pembelian: Kita menerbitkan Purchase Order (PO) untuk Supplier dan mengunggah SO dari Supplier (Customer & Penawaran disembunyikan)."
+                    : "Lengkap: Mencatat PO & SO sekaligus dengan pilihan Customer, Supplier, maupun Penawaran."}
+              </Text>
+            </View>
+          ) : null}
           {fields.map((f, i) => {
+            const isOrderModule = mode === "create" && (def?.key === "po-client" || def?.key === "supplier-pos");
+            if (isOrderModule && def?.key === "po-client") {
+              if (orderDocMode === "SO" && f.key === "supplier") {
+                return null;
+              }
+              if (orderDocMode === "PO" && (f.key === "customer" || f.key === "penawaran")) {
+                return null;
+              }
+            }
+            let effectiveLabel = f.label;
+            let effectivePlaceholder = f.placeholder;
+            if (isOrderModule) {
+              if (f.key === "nomorSo" || f.key === "nomorSoSupplier") {
+                effectiveLabel =
+                  orderDocMode === "SO"
+                    ? "Nomor Sales Order (SO) yang Kita Buat (Kosongkan untuk otomatis)"
+                    : "Nomor Sales Order (SO) Referensi (Opsional)";
+                effectivePlaceholder =
+                  orderDocMode === "SO" ? "Otomatis: SO/2026/10/001" : "Contoh: SO/2026/10/001 (Jika sudah ada)";
+              } else if (f.key === "nomorPoClient" || (def?.key === "supplier-pos" && f.key === "nomor")) {
+                effectiveLabel =
+                  orderDocMode === "PO"
+                    ? "Nomor Purchase Order (PO) yang Kita Buat (Kosongkan untuk otomatis)"
+                    : "Nomor Purchase Order (PO) Referensi (Opsional)";
+                effectivePlaceholder =
+                  orderDocMode === "PO" ? "Otomatis: PO/2026/10/001" : "Contoh: PO/2026/10/001 (Jika sudah ada)";
+              } else if (f.key === "fileId") {
+                effectiveLabel =
+                  orderDocMode === "SO"
+                    ? "Upload File Purchase Order (PO) dari Customer (Opsional)"
+                    : "Upload File Purchase Order (PO) Terbitan Kita (Opsional)";
+              } else if (f.key === "soFileId") {
+                effectiveLabel =
+                  orderDocMode === "PO"
+                    ? "Upload File Sales Order (SO) dari Supplier (Opsional)"
+                    : "Upload File Sales Order (SO) Terbitan Kita (Opsional)";
+              }
+            }
             if (f.type === "file") {
               return (
                 <FileField
                   key={f.key}
                   fieldKey={f.key}
-                  label={f.label}
+                  label={effectiveLabel}
                   kind={f.kind}
                   category={f.category}
                   required={f.required}
@@ -999,7 +1142,7 @@ export function FormDialog({
             return (
               <FormField
                 key={f.key}
-                label={mode === "edit" && f.type === "password" ? `${f.label} (Kosongkan jika tidak diubah)` : f.label}
+                label={mode === "edit" && f.type === "password" ? `${effectiveLabel} (Kosongkan jika tidak diubah)` : effectiveLabel}
                 required={mode === "edit" && f.type === "password" ? false : f.required}
                 error={errs[f.key]}
               >
@@ -1114,7 +1257,7 @@ export function FormDialog({
                         </View>
                       );
                     })() : null}
-                    {def?.key === "po-client" && f.key === "penawaran" && vals[f.key] ? (() => {
+                    {def?.key === "po-client" && f.key === "penawaran" && vals[f.key] && vals[f.key] !== "-" ? (() => {
                       const selNo = vals[f.key]?.split(" - ")[0]?.trim() || vals[f.key];
                       const matchedQuote = (data.quotations ?? []).find(
                         (q: any) => q.nomor === selNo || `${q.nomor} - ${q.customer || "-"} - ${q.lead || q.nama || "-"}` === vals[f.key]
@@ -1176,7 +1319,7 @@ export function FormDialog({
                         [f.key]: f.type === "number" ? formatThousands(v) : v,
                       }))
                     }
-                    placeholder={f.placeholder}
+                    placeholder={effectivePlaceholder}
                     keyboardType={f.type === "number" ? "numeric" : "default"}
                     secureTextEntry={f.type === "password"}
                     className={cn("h-11 sm:h-11", errs[f.key] && "border-danger")}

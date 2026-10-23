@@ -1,0 +1,182 @@
+import { rupiah, tanggal } from "@/lib/format";
+
+export interface PrintableOrderItem {
+  name: string;
+  qty: number;
+  unit?: string;
+  price?: number;
+  sn?: string | null;
+}
+
+export function printOrderDocument(opts: {
+  docType: "SO" | "PO";
+  docNumber: string;
+  refNumber?: string;
+  date?: string;
+  counterpartyLabel: string;
+  counterpartyName: string;
+  items: PrintableOrderItem[];
+  totalAmount: number;
+  notes?: string;
+  paymentTerms?: string;
+}) {
+  if (typeof window === "undefined") return;
+
+  const isSo = opts.docType === "SO";
+  const title = isSo ? "SALES ORDER (SO)" : "PURCHASE ORDER (PO)";
+  const subtitle = isSo
+    ? "Dokumen Konfirmasi Pesanan & Acuan Pengiriman (Delivery Order)"
+    : "Dokumen Resmi Pemesanan Barang / Jasa (Purchase Order)";
+  const refLabel = isSo ? "Referensi No. PO" : "Referensi No. SO";
+
+  const rowsHtml =
+    opts.items.length > 0
+      ? opts.items
+          .map((it, idx) => {
+            const qty = Number(it.qty) || 1;
+            const price = Number(it.price) || 0;
+            const sub = qty * price;
+            return `
+              <tr>
+                <td style="text-align:center;">${idx + 1}</td>
+                <td>
+                  <strong>${it.name || "Barang / Jasa"}</strong>
+                  ${it.sn ? `<div style="font-size:11px;color:#555;">SN: ${it.sn}</div>` : ""}
+                </td>
+                <td style="text-align:center;">${qty} ${it.unit || "Unit"}</td>
+                <td style="text-align:right;">${price > 0 ? rupiah(price) : "-"}</td>
+                <td style="text-align:right;font-weight:600;">${sub > 0 ? rupiah(sub) : "-"}</td>
+              </tr>
+            `;
+          })
+          .join("")
+      : `
+        <tr>
+          <td style="text-align:center;">1</td>
+          <td>Pesanan sesuai kesepakatan (${opts.docNumber})</td>
+          <td style="text-align:center;">1 Paket</td>
+          <td style="text-align:right;">${rupiah(opts.totalAmount)}</td>
+          <td style="text-align:right;font-weight:600;">${rupiah(opts.totalAmount)}</td>
+        </tr>
+      `;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${title} - ${opts.docNumber}</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #111827; margin: 32px; font-size: 13px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111827; padding-bottom: 14px; margin-bottom: 20px; }
+    .title { font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
+    .subtitle { font-size: 12px; color: #4b5563; margin-top: 4px; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
+    .meta-item { margin-bottom: 4px; }
+    .meta-label { font-size: 11px; color: #6b7280; text-transform: uppercase; }
+    .meta-val { font-size: 13px; font-weight: 700; color: #111827; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #d1d5db; padding: 9px 10px; font-size: 12.5px; }
+    th { background: #f3f4f6; text-transform: uppercase; font-size: 11px; letter-spacing: 0.4px; }
+    .total-box { margin-top: 16px; display: flex; justify-content: flex-end; }
+    .total-card { width: 280px; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; background: #f9fafb; }
+    .sign-grid { margin-top: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; text-align: center; }
+    .sign-line { margin-top: 64px; border-top: 1px solid #374151; padding-top: 6px; font-weight: 600; }
+    @media print {
+      body { margin: 16px; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="title">${title}</div>
+      <div class="subtitle">${subtitle}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-weight:800;font-size:15px;">PT SAMTEK MANDIRI</div>
+      <div style="font-size:11px;color:#6b7280;">TASKA ERP System</div>
+    </div>
+  </div>
+
+  <div class="meta-grid">
+    <div>
+      <div class="meta-item">
+        <div class="meta-label">Nomor ${opts.docType}</div>
+        <div class="meta-val">${opts.docNumber || "-"}</div>
+      </div>
+      <div class="meta-item" style="margin-top:8px;">
+        <div class="meta-label">${refLabel}</div>
+        <div class="meta-val">${opts.refNumber && opts.refNumber !== "-" ? opts.refNumber : "-"}</div>
+      </div>
+    </div>
+    <div>
+      <div class="meta-item">
+        <div class="meta-label">${opts.counterpartyLabel}</div>
+        <div class="meta-val">${opts.counterpartyName || "-"}</div>
+      </div>
+      <div class="meta-item" style="margin-top:8px;">
+        <div class="meta-label">Tanggal Dokumen</div>
+        <div class="meta-val">${opts.date ? tanggal(opts.date) : "-"}</div>
+      </div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:42px;">No</th>
+        <th>Deskripsi Barang / Jasa</th>
+        <th style="width:90px;">Qty</th>
+        <th style="width:130px;">Harga Satuan</th>
+        <th style="width:140px;">Subtotal</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+
+  <div class="total-box">
+    <div class="total-card">
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;">
+        <span>TOTAL NILAI</span>
+        <span>${rupiah(opts.totalAmount)}</span>
+      </div>
+      ${opts.paymentTerms ? `<div style="font-size:11px;color:#4b5563;margin-top:6px;">Syarat Pembayaran: ${opts.paymentTerms}</div>` : ""}
+    </div>
+  </div>
+
+  ${
+    opts.notes
+      ? `<div style="margin-top:16px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">
+          <strong>Catatan / Instruksi:</strong><br/>${opts.notes}
+         </div>`
+      : ""
+  }
+
+  <div class="sign-grid">
+    <div>
+      <div>Diterbitkan Oleh,</div>
+      <div class="sign-line">PT Samtek Mandiri</div>
+    </div>
+    <div>
+      <div>Disetujui / Dikonfirmasi Oleh,</div>
+      <div class="sign-line">${opts.counterpartyName || "Pihak Terkait"}</div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() { setTimeout(function() { window.print(); }, 250); };
+  </script>
+</body>
+</html>`;
+
+  const w = window.open("", "_blank");
+  if (w) {
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+}
+

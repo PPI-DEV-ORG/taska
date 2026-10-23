@@ -132,6 +132,9 @@ export class PoDto {
   @IsOptional() @IsString()
   number?: string;
 
+  @IsOptional() @IsString()
+  supplierSoNumber?: string;
+
   @IsOptional() @IsInt()
   supplierId?: number;
 
@@ -161,6 +164,9 @@ export class PoDto {
 
   @IsOptional() @IsInt()
   fileId?: number;
+
+  @IsOptional() @IsInt()
+  soFileId?: number;
 
   @IsOptional() @IsInt()
   doFileId?: number;

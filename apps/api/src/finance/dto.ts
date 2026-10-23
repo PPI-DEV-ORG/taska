@@ -47,8 +47,20 @@ export class ClientPoDto {
   @IsOptional() @IsString()
   number?: string;
 
+  @IsOptional() @IsString()
+  soNumber?: string;
+
+  @IsOptional() @IsString()
+  poClientNumber?: string;
+
+  @IsOptional() @IsString()
+  docMode?: "SO" | "PO" | "BOTH";
+
   @IsOptional() @IsInt()
   customerId?: number;
+
+  @IsOptional() @IsInt()
+  supplierId?: number;
 
   @IsOptional() @IsInt()
   quotationId?: number;
@@ -61,6 +73,9 @@ export class ClientPoDto {
 
   @IsOptional() @IsInt()
   fileId?: number;
+
+  @IsOptional() @IsInt()
+  soFileId?: number;
 
   @IsOptional() @IsString()
   notes?: string;

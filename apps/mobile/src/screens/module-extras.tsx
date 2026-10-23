@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw } from "lucide-react-native";
+import { AlertTriangle, CheckCircle2, ExternalLink, Printer, RefreshCw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +25,7 @@ import { ProjectExtras } from "@/modules/project/project-extras";
 import { InvoiceExtras } from "@/modules/invoice/invoice-extras";
 import { SupplierPoExtras } from "@/modules/supplier-po/supplier-po-extras";
 import { PurchaseRequestExtras } from "@/modules/purchase-request/purchase-request-extras";
+import { printOrderDocument } from "@/lib/order-print";
 
 // Re-export agar import lama dari "@/screens/module-extras" tetap valid.
 export { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
@@ -250,7 +251,11 @@ export function ModuleExtras({
       (inv: Row) =>
         inv.direction !== "in" &&
         ((inv.clientPoId && String(inv.clientPoId) === String(row.id)) ||
-          (inv.po && inv.po !== "-" && String(inv.po).toLowerCase() === String(row.nomor || "").toLowerCase()) ||
+          (inv.po && inv.po !== "-" && (
+            String(inv.po).toLowerCase() === String(row.nomor || "").toLowerCase() ||
+            String(inv.po).toLowerCase() === String(row.nomorPoClient || "").toLowerCase() ||
+            String(inv.po).toLowerCase() === String(row.nomorSo || "").toLowerCase()
+          )) ||
           (linkedQuotation && String(inv.quotationId) === String(linkedQuotation.id))),
     );
     const linkedProjects = (data.projects ?? []).filter(
@@ -258,6 +263,16 @@ export function ModuleExtras({
         (linkedQuotation && String(p.quotationId) === String(linkedQuotation.id)) ||
         (row.customer && p.customer === row.customer),
     );
+    const linkedDeliveryNotes = (data["delivery-notes"] ?? []).filter(
+      (dn: Row) =>
+        linkedProjects.some((p: Row) => String(dn.projectId) === String(p.id) || dn.project === p.nama) ||
+        (row.customer && String(dn.tujuan || "").toLowerCase().includes(String(row.customer).toLowerCase())),
+    );
+
+    const isPoActive = row.nomorPoClient && row.nomorPoClient !== "-";
+    const isSoActive = row.nomorSo && row.nomorSo !== "-";
+    const hasPoFile = !!(row.fileId || row.file?.id);
+    const hasSoFile = !!(row.soFileId || row.soFile?.id);
 
     return (
       <>
@@ -271,59 +286,137 @@ export function ModuleExtras({
         ) : null}
 
         <Panel
-          title="Ringkasan Sales Order / PO Client"
+          title="Alur Keterkaitan Dokumen: PO Customer ↔ Sales Order (SO) Kita"
+          subtitle="Sisi Penjualan (Sales) & Pembelian (Procurement): Dokumen PO dan SO saling melengkapi alur pengadaan & penagihan"
           right={
             linkedQuotation ? (
               <Button size="sm" variant="outline" onPress={() => router.push(`/quotations/${linkedQuotation.id}` as any)}>
                 <ExternalLink size={13} color={colors.text} />
-                <Text className="text-xs">Buka Penawaran ({linkedQuotation.nomor})</Text>
+                <Text className="text-xs">Penawaran ({linkedQuotation.nomor})</Text>
               </Button>
             ) : undefined
           }
         >
-          <Line left="Total Nilai SO / PO" right={<Text className="text-sm font-semibold">{rupiah(row.nilai)}</Text>} />
-          <Line left="Total Faktur / Invoice" right={<Text className="text-sm font-medium">{rupiah(row.totalInvoice)}</Text>} />
-          <Line left="Sisa Belum Ditagih" right={<Text className="text-sm font-medium text-primary">{rupiah(Math.max(0, sisa))}</Text>} />
+          <View className="gap-2.5">
+            <View className="bg-panel/60 border-border/80 rounded-xl border p-3 gap-1.5">
+              <View className="flex-row items-center justify-between flex-wrap gap-2">
+                <Text className="text-xs font-bold text-foreground">
+                  1. Purchase Order (PO) — Dokumen Pemesanan
+                </Text>
+                <View className="flex-row items-center gap-1.5">
+                  <StatusBadge status={hasPoFile ? "File PO Terlampir" : isPoActive ? "PO Aktif" : "Belum Ada PO"} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 flex-row items-center gap-1"
+                    onPress={() =>
+                      printOrderDocument({
+                        docType: "PO",
+                        docNumber: row.nomorPoClient && row.nomorPoClient !== "-" ? row.nomorPoClient : (row.nomor || `PO/${row.id}`),
+                        refNumber: row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : undefined,
+                        date: row.tanggal,
+                        counterpartyLabel: row.customer && row.customer !== "-" ? "Customer" : row.supplier && row.supplier !== "-" ? "Supplier" : "Pihak Terkait",
+                        counterpartyName: row.customer && row.customer !== "-" ? row.customer : row.supplier && row.supplier !== "-" ? row.supplier : "-",
+                        items: [],
+                        totalAmount: Number(row.nilai) || 0,
+                        notes: row.catatan,
+                      })
+                    }
+                  >
+                    <Printer size={12} color={colors.text} />
+                    <Text className="text-[11px]">Buat / Cetak PDF PO</Text>
+                  </Button>
+                </View>
+              </View>
+              <Text className="text-xs text-muted-foreground">
+                Nomor PO: <Text className="font-semibold text-foreground">{row.nomorPoClient || row.nomor || "-"}</Text> · Pihak:{" "}
+                <Text className="font-semibold text-foreground">{row.customer && row.customer !== "-" ? row.customer : row.supplier && row.supplier !== "-" ? row.supplier : "-"}</Text>
+              </Text>
+              <Text className="text-[11px] text-muted-foreground">
+                Dokumen resmi pemesanan barang/jasa. Anda dapat membuat/mencetak PDF PO atau mengunggah file PO di panel File & Bukti Pendukung.
+              </Text>
+            </View>
+
+            <View className="bg-panel/60 border-border/80 rounded-xl border p-3 gap-1.5">
+              <View className="flex-row items-center justify-between flex-wrap gap-2">
+                <Text className="text-xs font-bold text-foreground">
+                  2. Sales Order (SO) — Dokumen Konfirmasi Pesanan
+                </Text>
+                <View className="flex-row items-center gap-1.5">
+                  <StatusBadge status={hasSoFile ? "File SO Terlampir" : isSoActive ? "SO Aktif" : "Belum Ada SO"} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 flex-row items-center gap-1"
+                    onPress={() =>
+                      printOrderDocument({
+                        docType: "SO",
+                        docNumber: row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : (row.nomor || `SO/${row.id}`),
+                        refNumber: row.nomorPoClient && row.nomorPoClient !== "-" ? row.nomorPoClient : undefined,
+                        date: row.tanggal,
+                        counterpartyLabel: row.customer && row.customer !== "-" ? "Customer (Pembeli)" : row.supplier && row.supplier !== "-" ? "Supplier" : "Pihak Terkait",
+                        counterpartyName: row.customer && row.customer !== "-" ? row.customer : row.supplier && row.supplier !== "-" ? row.supplier : "-",
+                        items: [],
+                        totalAmount: Number(row.nilai) || 0,
+                        notes: row.catatan,
+                      })
+                    }
+                  >
+                    <Printer size={12} color={colors.text} />
+                    <Text className="text-[11px]">Buat / Cetak PDF SO</Text>
+                  </Button>
+                </View>
+              </View>
+              <Text className="text-xs text-muted-foreground">
+                Nomor SO: <Text className="font-semibold text-primary">{row.nomorSo || "-"}</Text> · Tanggal:{" "}
+                <Text className="font-semibold text-foreground">{row.tanggal || "-"}</Text>
+              </Text>
+              <Text className="text-[11px] text-muted-foreground">
+                Konfirmasi kesanggupan pemenuhan pesanan sekaligus acuan kerja Gudang untuk mencetak Delivery Order (Surat Jalan) & Finance untuk menerbitkan Invoice.
+              </Text>
+            </View>
+          </View>
+
+          <View className="mt-3 pt-2 border-t border-border/60">
+            <Line left="Total Nilai Pesanan (PO / SO)" right={<Text className="text-sm font-semibold">{rupiah(row.nilai)}</Text>} />
+            <Line left="Total Faktur / Invoice Terbit" right={<Text className="text-sm font-medium">{rupiah(row.totalInvoice)}</Text>} />
+            <Line left="Sisa Belum Ditagih" right={<Text className="text-sm font-medium text-primary">{rupiah(Math.max(0, sisa))}</Text>} />
+          </View>
         </Panel>
 
         <Panel
-          title={`Rincian Barang, Jasa & SN (${quoItems.length} item)`}
-          subtitle={linkedQuotation ? `Diambil dari Penawaran ${linkedQuotation.nomor}` : "Daftar item pesanan client"}
+          title={`Delivery Order (DO) / Surat Jalan Terkait (${linkedDeliveryNotes.length})`}
+          subtitle="Tindak lanjut SO oleh tim Gudang/Teknisi untuk pengiriman barang ke customer"
+          right={
+            <Button size="sm" variant="outline" onPress={() => router.push("/delivery-notes" as any)}>
+              <Text className="text-xs">Kelola Surat Jalan</Text>
+            </Button>
+          }
         >
-          {quoItems.length === 0 ? (
-            <Text className="text-muted-foreground text-sm py-1">
-              Belum ada rincian item dari penawaran terkait.
-            </Text>
+          {linkedDeliveryNotes.length === 0 ? (
+            <Text className="text-muted-foreground text-sm py-1">Belum ada Delivery Order (Surat Jalan) untuk SO ini.</Text>
           ) : (
-            <View className="gap-2">
-              {quoItems.map((it: any, idx: number) => {
-                const sn = it.serialNumber || it.sn || null;
-                const isCustom = it.itemType === "CUSTOM" || (!it.productId && !sn);
-                return (
-                  <View key={it.id ?? idx} className="border-border/60 flex-row items-center justify-between border-b py-2.5 last:border-b-0">
-                    <View className="flex-1 min-w-0 pr-3">
-                      <View className="flex-row items-center gap-1.5 flex-wrap">
-                        <Text className="text-sm font-semibold text-foreground">{it.name || it.nama || "Item"}</Text>
-                        <StatusBadge
-                          status={sn ? `SN: ${sn}` : isCustom ? "Jasa / Teks" : "Barang Non-SN"}
-                        />
-                      </View>
-                      <Text className="text-muted-foreground text-xs mt-0.5">
-                        {it.qty || 1} {it.unit || "Unit"} × {rupiah(Number(it.price) || 0)}
-                      </Text>
-                    </View>
-                    <Text className="text-sm font-semibold text-foreground">
-                      {rupiah((Number(it.qty) || 1) * (Number(it.price) || 0))}
-                    </Text>
+            linkedDeliveryNotes.map((dn: Row) => (
+              <Line
+                key={dn.id}
+                left={`${dn.nomor} · ${dn.tujuan || row.customer}`}
+                sub={`Tanggal ${dn.tanggal} · Barang: ${dn.barang || "-"}`}
+                right={
+                  <View className="flex-row items-center gap-2">
+                    <Cell fmt="status" value={dn.status} />
+                    <Button size="sm" variant="outline" onPress={() => router.push(`/delivery-notes/${dn.id}` as any)}>
+                      <Text className="text-xs">Buka DO</Text>
+                    </Button>
                   </View>
-                );
-              })}
-            </View>
+                }
+              />
+            ))
           )}
         </Panel>
 
         <Panel
           title={`Faktur Penjualan / Invoice Terkait (${linkedInvoices.length})`}
+          subtitle="Penagihan pembayaran oleh Finance berdasarkan SO & PO Customer"
           right={
             <Button size="sm" variant="outline" onPress={() => router.push("/invoices" as any)}>
               <Text className="text-xs">Kelola Invoice</Text>

@@ -63,6 +63,43 @@ export class PosService {
     return this.docnum.suggest("pesanan");
   }
 
+  private metaKey(id: number) {
+    return `supplier-po:meta:${id}`;
+  }
+
+  private async getMetaMap(ids: number[]): Promise<Map<number, { supplierSoNumber?: string; soFileId?: number | null }>> {
+    const map = new Map<number, { supplierSoNumber?: string; soFileId?: number | null }>();
+    if (!ids.length) return map;
+    const rows = await this.prisma.main.systemSetting.findMany({
+      where: { key: { in: ids.map((id) => this.metaKey(id)) } },
+    });
+    for (const r of rows) {
+      try {
+        const id = Number(r.key.replace("supplier-po:meta:", ""));
+        map.set(id, JSON.parse(r.value));
+      } catch {}
+    }
+    return map;
+  }
+
+  private async saveMeta(id: number, patch: { supplierSoNumber?: string; soFileId?: number | null }) {
+    const key = this.metaKey(id);
+    let existing: { supplierSoNumber?: string; soFileId?: number | null } = {};
+    try {
+      const cur = await this.prisma.main.systemSetting.findUnique({ where: { key } });
+      if (cur?.value) existing = JSON.parse(cur.value);
+    } catch {}
+    const merged = { ...existing, ...patch };
+    await this.prisma.main.systemSetting
+      .upsert({
+        where: { key },
+        update: { value: JSON.stringify(merged) },
+        create: { key, value: JSON.stringify(merged) },
+      })
+      .catch(() => {});
+    return merged;
+  }
+
   async list(q: PoListQuery) {
     const where = {
       ...(q.status ? { status: q.status as never } : {}),
@@ -98,7 +135,16 @@ export class PosService {
       }),
       this.prisma.main.supplierPO.count({ where }),
     ]);
-    return paginate(items, total, q);
+    const metaMap = await this.getMetaMap(items.map((r) => r.id));
+    const enriched = items.map((r) => {
+      const m = metaMap.get(r.id) ?? {};
+      return {
+        ...r,
+        supplierSoNumber: m.supplierSoNumber ?? null,
+        soFileId: m.soFileId ?? null,
+      };
+    });
+    return paginate(enriched, total, q);
   }
 
   async get(id: number) {
@@ -115,8 +161,17 @@ export class PosService {
       },
     });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
-    const approval = await this.approvals.getFor("SUPPLIER_PO", id);
-    return { ...row, approval };
+    const [approval, metaMap] = await Promise.all([
+      this.approvals.getFor("SUPPLIER_PO", id),
+      this.getMetaMap([id]),
+    ]);
+    const meta = metaMap.get(id) ?? {};
+    return {
+      ...row,
+      supplierSoNumber: meta.supplierSoNumber ?? null,
+      soFileId: meta.soFileId ?? null,
+      approval,
+    };
   }
 
   async create(dto: PoDto, user: RequestUser) {
@@ -171,6 +226,18 @@ export class PosService {
         where: { id: dto.fileId },
         data: { refType: "supplier-po", refId: String(row.id) },
       }).catch(() => {});
+    }
+    if (dto.soFileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.soFileId },
+        data: { refType: "supplier-so", refId: String(row.id) },
+      }).catch(() => {});
+    }
+    if (dto.supplierSoNumber !== undefined || dto.soFileId !== undefined) {
+      await this.saveMeta(row.id, {
+        ...(dto.supplierSoNumber !== undefined ? { supplierSoNumber: dto.supplierSoNumber } : {}),
+        ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
+      });
     }
 
     await this.audit.log({
@@ -237,8 +304,20 @@ export class PosService {
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
       },
     });
+    if (dto.supplierSoNumber !== undefined || dto.soFileId !== undefined) {
+      await this.saveMeta(id, {
+        ...(dto.supplierSoNumber !== undefined ? { supplierSoNumber: dto.supplierSoNumber } : {}),
+        ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
+      });
+    }
+    if (dto.soFileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.soFileId },
+        data: { refType: "supplier-so", refId: String(id) },
+      }).catch(() => {});
+    }
     this.notifications.dataChange("supplier-pos", "update", updated.id);
-    return updated;
+    return this.get(id);
   }
 
   async setStatus(id: number, status: string, user: RequestUser) {
