@@ -26,9 +26,11 @@ import { api } from "@/services/api";
 import { MODULES, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
+import { ProjectExtras } from "@/modules/project/project-extras";
 
 const TABS = [
   "Ringkasan",
+  "Komersial & BOQ",
   "Tugas",
   "Barang",
   "Pengiriman",
@@ -290,6 +292,8 @@ export default function ProjectDetailScreen() {
             </View>
           </Panel>
 
+          <ProjectExtras row={project} />
+
           <Panel title="Handover & Serah Terima Dokumen">
             <Text className="text-text-secondary text-sm">
               Handover dilakukan setelah invoice lunas. Sistem mencatat dokumen serah terima (BAST/BAHP) tanpa memblokir penutupan project bila ada kesepakatan internal.
@@ -350,6 +354,13 @@ export default function ProjectDetailScreen() {
               </View>
             </Panel>
           ) : null}
+        </View>
+      )}
+
+      {/* Tab: Komersial & BOQ */}
+      {activeTab === "Komersial & BOQ" && (
+        <View className="gap-4">
+          <ProjectExtras row={project} />
         </View>
       )}
 

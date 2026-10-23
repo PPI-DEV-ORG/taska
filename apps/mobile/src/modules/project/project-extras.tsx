@@ -56,7 +56,8 @@ export function ProjectExtras({ row }: { row: Row }) {
       .sort((a, b) => Number(a.id) - Number(b.id));
   }, [serials, activeProductObj]);
 
-  const canViewFinancials = ["super_admin", "bos", "finance", "pm", "sales", "admin"].includes(user?.role || "");
+  const normalizedRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
+  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "sales", "admin"].includes(normalizedRole);
   const linkedQuotation = React.useMemo(() => {
     const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
     return (data.quotations ?? []).find(

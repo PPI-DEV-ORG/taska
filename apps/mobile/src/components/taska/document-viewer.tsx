@@ -93,14 +93,25 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         emptyHint: "Belum ada bukti Delivery Order (DO)",
       };
     }
+    if (/sales order|\bso\b/i.test(labelLower)) {
+      const fileId = (row as any).soFileId ?? null;
+      return {
+        label: docLabel,
+        fieldKey: "soFileId",
+        kind: "dokumen",
+        fileId,
+        fileName: fileId ? `so-supplier-${row.id}` : null,
+        emptyHint: "Belum ada file Sales Order (SO) dari Supplier",
+      };
+    }
     const fileId = (row as any).fileId ?? null;
     return {
       label: docLabel,
       fieldKey: "fileId",
       kind: "dokumen",
       fileId,
-      fileName: fileId ? `po-supplier-${row.id}` : null,
-      emptyHint: "Belum ada file PO supplier",
+      fileName: fileId ? `po-terbitan-kita-${row.id}` : null,
+      emptyHint: "Belum ada file Purchase Order (PO) terbitan kita",
     };
   }
 
@@ -192,6 +203,20 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   }
 
   if (moduleKey === "po-client") {
+    if (/sales order|\bso\b/i.test(labelLower)) {
+      const soFile = (row as any).soFile;
+      const soFileId = (row as any).soFileId ?? soFile?.id ?? null;
+      return {
+        label: docLabel,
+        fieldKey: "soFileId",
+        kind: "dokumen",
+        fileId: soFileId,
+        fileName: soFile?.originalName ?? (soFileId ? `sales-order-${row.id}` : null),
+        mimeType: soFile?.mimeType,
+        fileSize: soFile?.size,
+        emptyHint: "Belum ada file Sales Order (SO) terbitan kita",
+      };
+    }
     const file = (row as any).file;
     const fileId = (row as any).fileId ?? file?.id ?? null;
     return {
@@ -199,10 +224,10 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       fieldKey: "fileId",
       kind: "dokumen",
       fileId,
-      fileName: file?.originalName ?? (fileId ? `po-client-${row.id}` : null),
+      fileName: file?.originalName ?? (fileId ? `po-customer-${row.id}` : null),
       mimeType: file?.mimeType,
       fileSize: file?.size,
-      emptyHint: "Belum ada file PO dari client",
+      emptyHint: "Belum ada file Purchase Order (PO) dari customer",
     };
   }
 

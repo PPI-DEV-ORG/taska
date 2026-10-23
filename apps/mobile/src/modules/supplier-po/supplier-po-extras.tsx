@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View } from "react-native";
-import { CheckCircle2, Circle, Plus, RotateCcw } from "lucide-react-native";
+import { CheckCircle2, Circle, Plus, Printer, RotateCcw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
+import { printOrderDocument } from "@/lib/order-print";
 
 import {
   SupplierInvoiceDetailDialog,
@@ -124,9 +125,130 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   }
 
   const canPay = user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
+  const hasPoFile = !!row.fileId;
+  const hasSoFile = !!row.soFileId;
+  const hasDoFile = !!row.doFileId;
 
   return (
     <>
+      <Panel
+        title="Alur Keterkaitan Dokumen: PO Pembelian Kita ↔ Sales Order (SO) Supplier"
+        subtitle="Sisi Pembelian (Procurement): Kita menerbitkan PO ke Supplier, lalu Supplier menerbitkan SO sebagai konfirmasi pesanan"
+      >
+        <View className="gap-2.5">
+          <View className="bg-panel/60 border-border/80 rounded-xl border p-3 gap-1.5">
+            <View className="flex-row items-center justify-between flex-wrap gap-2">
+              <Text className="text-xs font-bold text-foreground">
+                1. Purchase Order (PO) — Dokumen Pemesanan ke Supplier
+              </Text>
+              <View className="flex-row items-center gap-1.5">
+                <StatusBadge status={hasPoFile ? "File PO Terlampir" : "PO Aktif"} />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 flex-row items-center gap-1"
+                  onPress={() =>
+                    printOrderDocument({
+                      docType: "PO",
+                      docNumber: row.nomor || `PO-S/${row.id}`,
+                      refNumber: row.nomorSoSupplier,
+                      date: row.tanggal,
+                      counterpartyLabel: "Supplier (Penjual)",
+                      counterpartyName: row.supplier,
+                      items: Array.isArray(row.items) && row.items.length > 0
+                        ? row.items.map((it: any) => ({
+                            name: it.product?.name || it.productName || it.name || "Barang",
+                            qty: Number(it.qty) || 1,
+                            unit: it.product?.unit || it.unit || "Unit",
+                            price: Number(it.price) || 0,
+                          }))
+                        : [{ name: row.item || "Barang Pesanan", qty: 1, unit: "Paket", price: Number(row.total) || 0 }],
+                      totalAmount: Number(row.total) || 0,
+                    })
+                  }
+                >
+                  <Printer size={12} color={colors.text} />
+                  <Text className="text-[11px]">Buat / Cetak PDF PO</Text>
+                </Button>
+              </View>
+            </View>
+            <Text className="text-xs text-muted-foreground">
+              Nomor PO: <Text className="font-semibold text-primary">{row.nomor || "-"}</Text> · Supplier:{" "}
+              <Text className="font-semibold text-foreground">{row.supplier || "-"}</Text>
+            </Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Dokumen resmi pemesanan barang & kontrol anggaran. Anda dapat membuat/mencetak PDF PO atau mengunggah file PO di panel File & Bukti Pendukung.
+            </Text>
+          </View>
+
+          <View className="bg-panel/60 border-border/80 rounded-xl border p-3 gap-1.5">
+            <View className="flex-row items-center justify-between flex-wrap gap-2">
+              <Text className="text-xs font-bold text-foreground">
+                2. Sales Order (SO) — Dokumen Konfirmasi Pesanan
+              </Text>
+              <View className="flex-row items-center gap-1.5">
+                <StatusBadge
+                  status={
+                    hasSoFile
+                      ? "File SO Terlampir"
+                      : row.nomorSoSupplier && row.nomorSoSupplier !== "-"
+                        ? `SO: ${row.nomorSoSupplier}`
+                        : "Menunggu SO"
+                  }
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 flex-row items-center gap-1"
+                  onPress={() =>
+                    printOrderDocument({
+                      docType: "SO",
+                      docNumber: row.nomorSoSupplier && row.nomorSoSupplier !== "-" ? row.nomorSoSupplier : `SO-S/${row.id}`,
+                      refNumber: row.nomor,
+                      date: row.tanggal,
+                      counterpartyLabel: "Supplier",
+                      counterpartyName: row.supplier,
+                      items: Array.isArray(row.items) && row.items.length > 0
+                        ? row.items.map((it: any) => ({
+                            name: it.product?.name || it.productName || it.name || "Barang",
+                            qty: Number(it.qty) || 1,
+                            unit: it.product?.unit || it.unit || "Unit",
+                            price: Number(it.price) || 0,
+                          }))
+                        : [{ name: row.item || "Barang Pesanan", qty: 1, unit: "Paket", price: Number(row.total) || 0 }],
+                      totalAmount: Number(row.total) || 0,
+                    })
+                  }
+                >
+                  <Printer size={12} color={colors.text} />
+                  <Text className="text-[11px]">Buat / Cetak PDF SO</Text>
+                </Button>
+              </View>
+            </View>
+            <Text className="text-xs text-muted-foreground">
+              Nomor SO:{" "}
+              <Text className="font-semibold text-foreground">{row.nomorSoSupplier || "-"}</Text> · Estimasi Tiba (ETA):{" "}
+              <Text className="font-semibold text-foreground">{row.eta || "-"}</Text>
+            </Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Dokumen konfirmasi bahwa pesanan diterima dan siap diproses menjadi Delivery Order (DO) & Invoice.
+            </Text>
+          </View>
+
+          <View className="bg-panel/60 border-border/80 rounded-xl border p-3 gap-1.5">
+            <View className="flex-row items-center justify-between flex-wrap gap-2">
+              <Text className="text-xs font-bold text-foreground">
+                3. Delivery Order (DO) & Penerimaan Gudang (Receiving)
+              </Text>
+              <StatusBadge status={hasDoFile ? "Bukti DO Terlampir" : row.pengiriman || "Di Supplier"} />
+            </View>
+            <Text className="text-[11px] text-muted-foreground">
+              Unggah File PO Kita, File SO dari Supplier, dan Bukti DO pada panel <Text className="font-semibold text-foreground">File & Bukti Pendukung</Text> di atas.
+            </Text>
+          </View>
+        </View>
+      </Panel>
+
       <Panel title="Pengiriman dari supplier" subtitle="Status diubah manual oleh Procurement dengan bukti DO">
         {steps.map((s, i) => (
           <View key={s} className="flex-row items-center gap-3 py-2">

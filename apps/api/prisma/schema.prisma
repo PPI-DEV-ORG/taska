@@ -514,6 +514,7 @@ model Supplier {
 
   purchaseRequests PurchaseRequest[]
   supplierPOs      SupplierPO[]
+  clientPOs        ClientPO[]
   invoiceIns       InvoiceIn[]
 
   @@index([name])
@@ -759,8 +760,10 @@ model QuotationVersion {
 model ClientPO {
   id          Int        @id @default(autoincrement())
   number      String     @unique
-  customerId  Int
-  customer    Customer   @relation(fields: [customerId], references: [id])
+  customerId  Int?
+  customer    Customer?  @relation(fields: [customerId], references: [id])
+  supplierId  Int?
+  supplier    Supplier?  @relation(fields: [supplierId], references: [id])
   quotationId Int?
   quotation   Quotation? @relation(fields: [quotationId], references: [id])
   amount      Decimal    @db.Decimal(18, 2)
@@ -773,6 +776,7 @@ model ClientPO {
   invoices InvoiceOut[]
 
   @@index([customerId])
+  @@index([supplierId])
   @@index([date])
 }
 

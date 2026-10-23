@@ -373,12 +373,25 @@ export function adaptRow(module: string, raw: any): Row {
         docFile: docFile ?? null,
       };
     }
-    case "po-client":
+    case "po-client": {
+      const custName = nameOf(raw.customer);
+      const suppName = nameOf(raw.supplier);
+      const isNumberSo = /^SO[\-\/]/i.test(String(raw.number || ""));
+      const isNumberPo = /^PO[\-\/]/i.test(String(raw.number || ""));
+      const soNum = raw.soNumber && raw.soNumber !== "-" ? raw.soNumber : (isNumberSo ? raw.number : "-");
+      const poNum = raw.poClientNumber && raw.poClientNumber !== "-" ? raw.poClientNumber : (isNumberPo ? raw.number : "-");
+      const primaryDoc = (raw.number && raw.number !== "-") ? raw.number : (soNum !== "-" ? soNum : poNum !== "-" ? poNum : "");
+
       return {
         ...base,
-        nomor: raw.number ?? "",
-        customer: nameOf(raw.customer) ?? "",
+        nomor: primaryDoc,
+        nomorSo: soNum,
+        nomorPoClient: poNum,
+        docMode: raw.docMode ?? (soNum !== "-" && poNum !== "-" ? "BOTH" : soNum !== "-" ? "SO" : "PO"),
+        customer: custName || (suppName ? `${suppName} (Supplier)` : "-"),
         customerId: idOf(raw.customer),
+        supplier: suppName || "-",
+        supplierId: idOf(raw.supplier),
         penawaran: raw.quotation?.number ?? "-",
         quotationId: idOf(raw.quotation),
         nilai: n(raw.amount),
@@ -387,8 +400,12 @@ export function adaptRow(module: string, raw: any): Row {
         status: toLabel("po-client", "DITERIMA"),
         fileId: raw.fileId ?? raw.file?.id ?? null,
         file: raw.file ?? null,
+        soFileId: raw.soFileId ?? raw.soFile?.id ?? null,
+        soFile: raw.soFile ?? null,
+        items: Array.isArray(raw.items) ? raw.items : [],
         catatan: raw.notes ?? raw.catatan ?? "",
       };
+    }
     case "invoices": {
       const qNum =
         raw.quotation ??
@@ -556,6 +573,7 @@ export function adaptRow(module: string, raw: any): Row {
       return {
         ...base,
         nomor: raw.number ?? "",
+        nomorSoSupplier: raw.supplierSoNumber ?? "-",
         supplier: nameOf(raw.supplier) ?? "",
         supplierId: idOf(raw.supplier),
         pembuat: nameOf(raw.creator) ?? "",
@@ -577,6 +595,7 @@ export function adaptRow(module: string, raw: any): Row {
         shipmentStatus: raw.shipmentStatus,
         poStatus: raw.status,
         fileId: raw.fileId ?? null,
+        soFileId: raw.soFileId ?? null,
         doFileId: raw.doFileId ?? null,
       };
     }
@@ -1273,19 +1292,39 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         progress: num(row.progres ?? row.progress),
         needsPurchase: !!(row.perluBarang ?? row.needsPurchase),
       };
-    case "po-client":
+    case "po-client": {
+      const mode = row.docMode || (row.nomorSo && row.nomorSo !== "-" && row.nomorPoClient && row.nomorPoClient !== "-" ? "BOTH" : row.nomorPoClient && row.nomorPoClient !== "-" ? "PO" : "SO");
+      const numVal = row.nomor || (mode === "PO" ? row.nomorPoClient : row.nomorSo) || undefined;
       return {
-        number: row.nomor || row.number || undefined,
+        number: numVal,
+        soNumber: mode !== "PO" ? (row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : undefined) : undefined,
+        poClientNumber: mode !== "SO" ? (row.nomorPoClient && row.nomorPoClient !== "-" ? row.nomorPoClient : undefined) : undefined,
         customerId:
-          row.customerId != null && row.customerId !== ""
+          row.customerId != null && row.customerId !== "" && row.customerId !== "-"
             ? Number(row.customerId)
-            : findId(db?.customers, row.customer) ?? (db?.customers?.[0]?.id != null ? Number(db.customers[0].id) : undefined),
+            : row.customer && row.customer !== "-"
+              ? findId(db?.customers, row.customer)
+              : undefined,
+        supplierId:
+          row.supplierId != null && row.supplierId !== "" && row.supplierId !== "-"
+            ? Number(row.supplierId)
+            : row.supplier && row.supplier !== "-"
+              ? findId(db?.suppliers, row.supplier)
+              : undefined,
         amount: num(row.nilai ?? row.amount),
         date: row.tanggal || row.date || today,
-        quotationId: row.quotationId != null && row.quotationId !== "" ? Number(row.quotationId) : findId(db?.quotations, row.penawaran),
+        quotationId:
+          row.quotationId != null && row.quotationId !== "" && row.quotationId !== "-"
+            ? Number(row.quotationId)
+            : row.penawaran && row.penawaran !== "-"
+              ? findId(db?.quotations, row.penawaran)
+              : undefined,
         fileId: row.fileId ? Number(row.fileId) : undefined,
+        soFileId: row.soFileId ? Number(row.soFileId) : undefined,
+        items: Array.isArray(row.items) ? row.items : undefined,
         notes: row.catatan || row.notes || undefined,
       };
+    }
     case "invoices": {
       const amt = num(row.nilai ?? row.amount);
       const ppn = row.ppn != null ? num(row.ppn) : Math.round(amt * 0.11);
@@ -1356,6 +1395,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       }
       return {
         number: row.nomor || row.number || undefined,
+        supplierSoNumber: row.nomorSoSupplier && row.nomorSoSupplier !== "-" ? row.nomorSoSupplier : (row.supplierSoNumber || undefined),
         supplierId:
           row.supplierId != null && row.supplierId !== ""
             ? Number(row.supplierId)
@@ -1367,6 +1407,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         paymentTerms: row.payment || row.paymentTerms || undefined,
         total: num(row.total),
         fileId: row.fileId ? Number(row.fileId) : undefined,
+        soFileId: row.soFileId ? Number(row.soFileId) : undefined,
         items,
       };
     }
@@ -1571,7 +1612,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   ],
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "notes", "memberIds"],
   tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
-  "po-client": ["number", "customerId", "quotationId", "amount", "date", "fileId", "notes"],
+  "po-client": ["number", "soNumber", "poClientNumber", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes"],
   invoices: [
     "number",
     "clientPoId",
@@ -1603,7 +1644,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "dpAmount",
   ],
   expenses: ["date", "categoryId", "amount", "description", "projectId", "surveyId", "deliveryNoteId", "costCenterId", "receiptFileId", "paidFileId"],
-  "supplier-pos": ["number", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "doFileId", "items"],
+  "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "items"],
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "photoFileId", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
@@ -1675,6 +1716,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.scanFileId !== undefined) out.scanFileId = patch.scanFileId ? Number(patch.scanFileId) : null;
   if (patch.reportFileId !== undefined) out.reportFileId = patch.reportFileId ? Number(patch.reportFileId) : null;
   if (patch.doFileId !== undefined) out.doFileId = patch.doFileId ? Number(patch.doFileId) : null;
+  if (patch.soFileId !== undefined) out.soFileId = patch.soFileId ? Number(patch.soFileId) : null;
   if (patch.prdFileId !== undefined) out.prdFileId = patch.prdFileId ? Number(patch.prdFileId) : null;
   if (patch.bahpFileId !== undefined) out.bahpFileId = patch.bahpFileId ? Number(patch.bahpFileId) : null;
   if (patch.bastFileId !== undefined) out.bastFileId = patch.bastFileId ? Number(patch.bastFileId) : null;
@@ -1779,8 +1821,24 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.perluBarang !== undefined) out.needsPurchase = !!patch.perluBarang;
     if (patch.status !== undefined) out.status = toEnum("tasks", patch.status) || String(patch.status).replace(" ", "_");
   } else if (module === "po-client") {
-    if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.customer !== undefined) {
+      out.customerId = patch.customer && patch.customer !== "-" ? findId(db?.customers, patch.customer) : null;
+    }
+    if (patch.supplier !== undefined) {
+      out.supplierId = patch.supplier && patch.supplier !== "-" ? findId(db?.suppliers, patch.supplier) : null;
+    }
+    if (patch.penawaran !== undefined) {
+      out.quotationId = patch.penawaran && patch.penawaran !== "-" ? findId(db?.quotations, patch.penawaran) : null;
+    }
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);
+    if (patch.nomorSo !== undefined) out.soNumber = patch.nomorSo;
+    if (patch.nomorPoClient !== undefined) {
+      out.poClientNumber = patch.nomorPoClient;
+      out.number = patch.nomorPoClient;
+    }
+    if (patch.items !== undefined) out.items = patch.items;
+  } else if (module === "supplier-pos") {
+    if (patch.nomorSoSupplier !== undefined) out.supplierSoNumber = patch.nomorSoSupplier;
   } else if (module === "invoices") {
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);
