@@ -1,11 +1,17 @@
 import { rupiah, tanggal } from "@/lib/format";
 
 export interface PrintableOrderItem {
-  name: string;
+  name?: string;
+  item?: string;
+  nama?: string;
+  productName?: string;
   qty: number;
   unit?: string;
+  satuan?: string;
   price?: number;
+  harga?: number;
   sn?: string | null;
+  serialNumbers?: string[] | string | null;
 }
 
 export function printOrderDocument(opts: {
@@ -33,17 +39,26 @@ export function printOrderDocument(opts: {
     opts.items.length > 0
       ? opts.items
           .map((it, idx) => {
+            const name = it.item || it.name || it.nama || it.productName || "Barang / Jasa";
             const qty = Number(it.qty) || 1;
-            const price = Number(it.price) || 0;
+            const price = Number(it.harga ?? it.price ?? 0);
+            const unit = it.satuan || it.unit || "Unit";
+            const sn =
+              it.sn ||
+              (Array.isArray(it.serialNumbers)
+                ? it.serialNumbers.join(", ")
+                : typeof it.serialNumbers === "string"
+                  ? it.serialNumbers
+                  : "");
             const sub = qty * price;
             return `
               <tr>
                 <td style="text-align:center;">${idx + 1}</td>
                 <td>
-                  <strong>${it.name || "Barang / Jasa"}</strong>
-                  ${it.sn ? `<div style="font-size:11px;color:#555;">SN: ${it.sn}</div>` : ""}
+                  <strong>${name}</strong>
+                  ${sn ? `<div style="font-size:11px;color:#555;">SN: ${sn}</div>` : ""}
                 </td>
-                <td style="text-align:center;">${qty} ${it.unit || "Unit"}</td>
+                <td style="text-align:center;">${qty} ${unit}</td>
                 <td style="text-align:right;">${price > 0 ? rupiah(price) : "-"}</td>
                 <td style="text-align:right;font-weight:600;">${sub > 0 ? rupiah(sub) : "-"}</td>
               </tr>

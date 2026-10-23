@@ -12,6 +12,7 @@ type ClientPoMeta = {
   poClientNumber?: string | null;
   docMode?: "SO" | "PO" | "BOTH";
   soFileId?: number | null;
+  items?: any[];
 };
 
 @Injectable()
@@ -104,6 +105,7 @@ export class ClientPoService {
       poClientNumber: poClientNumber || "-",
       docMode: meta.docMode || (soNumber !== "-" && poClientNumber !== "-" ? "BOTH" : soNumber !== "-" ? "SO" : "PO"),
       soFileId: meta.soFileId ?? null,
+      items: Array.isArray(meta.items) ? meta.items : [],
       file,
       soFile,
     };
@@ -223,7 +225,33 @@ export class ClientPoService {
       ? await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } })
       : null;
 
-    const amount = dto.amount ?? 0;
+    let items = Array.isArray(dto.items) ? dto.items : [];
+    if (!items.length && dto.quotationId) {
+      try {
+        const qMeta = await this.prisma.main.systemSetting.findUnique({
+          where: { key: `quotation.meta.${dto.quotationId}` },
+        });
+        if (qMeta?.value) {
+          const parsed = JSON.parse(qMeta.value);
+          if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+            items = parsed.items;
+          }
+        }
+      } catch {}
+    }
+
+    let calculatedAmount = dto.amount;
+    if ((calculatedAmount === undefined || calculatedAmount === null || calculatedAmount === 0) && items.length > 0) {
+      const itemsSum = items.reduce((sum: number, it: any) => {
+        const price = Number(it.harga ?? it.price ?? 0);
+        const qty = Number(it.qty ?? 1);
+        return sum + price * qty;
+      }, 0);
+      if (itemsSum > 0) {
+        calculatedAmount = itemsSum;
+      }
+    }
+    const amount = calculatedAmount ?? 0;
     const date = dto.date ? new Date(dto.date) : new Date();
 
     const row = await this.prisma.main.clientPO.create({
@@ -266,6 +294,7 @@ export class ClientPoService {
       soNumber,
       poClientNumber,
       docMode,
+      items,
       ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
     });
 
@@ -324,11 +353,17 @@ export class ClientPoService {
       },
     });
 
-    if (dto.soNumber !== undefined || dto.poClientNumber !== undefined || dto.soFileId !== undefined) {
+    if (
+      dto.soNumber !== undefined ||
+      dto.poClientNumber !== undefined ||
+      dto.soFileId !== undefined ||
+      dto.items !== undefined
+    ) {
       await this.saveMeta(id, {
         ...(dto.soNumber !== undefined ? { soNumber: dto.soNumber } : {}),
         ...(dto.poClientNumber !== undefined ? { poClientNumber: dto.poClientNumber } : {}),
         ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
+        ...(dto.items !== undefined ? { items: dto.items } : {}),
       });
     }
 

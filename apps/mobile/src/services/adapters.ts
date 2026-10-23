@@ -402,6 +402,7 @@ export function adaptRow(module: string, raw: any): Row {
         file: raw.file ?? null,
         soFileId: raw.soFileId ?? raw.soFile?.id ?? null,
         soFile: raw.soFile ?? null,
+        items: Array.isArray(raw.items) ? raw.items : [],
         catatan: raw.notes ?? raw.catatan ?? "",
       };
     }
@@ -1320,6 +1321,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
               : undefined,
         fileId: row.fileId ? Number(row.fileId) : undefined,
         soFileId: row.soFileId ? Number(row.soFileId) : undefined,
+        items: Array.isArray(row.items) ? row.items : undefined,
         notes: row.catatan || row.notes || undefined,
       };
     }
@@ -1610,7 +1612,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   ],
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "notes", "memberIds"],
   tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
-  "po-client": ["number", "soNumber", "poClientNumber", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "notes"],
+  "po-client": ["number", "soNumber", "poClientNumber", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes"],
   invoices: [
     "number",
     "clientPoId",
@@ -1834,6 +1836,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
       out.poClientNumber = patch.nomorPoClient;
       out.number = patch.nomorPoClient;
     }
+    if (patch.items !== undefined) out.items = patch.items;
   } else if (module === "supplier-pos") {
     if (patch.nomorSoSupplier !== undefined) out.supplierSoNumber = patch.nomorSoSupplier;
   } else if (module === "invoices") {

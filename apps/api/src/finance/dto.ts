@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import {
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
@@ -77,6 +78,9 @@ export class ClientPoDto {
   @IsOptional() @IsInt()
   soFileId?: number;
 
+  @IsOptional() @IsArray()
+  items?: any[];
+
   @IsOptional() @IsString()
   notes?: string;
 }
@@ -133,7 +137,7 @@ export class InvoiceOutDto {
   @IsOptional() @IsInt()
   fileId?: number;
 
-  @IsOptional()
+  @IsOptional() @IsArray()
   items?: any[];
 
   @IsOptional() @IsString()
@@ -142,7 +146,7 @@ export class InvoiceOutDto {
   @IsOptional() @IsString()
   intro?: string;
 
-  @IsOptional()
+  @IsOptional() @IsArray()
   notesList?: string[];
 
   @IsOptional() @IsString()
