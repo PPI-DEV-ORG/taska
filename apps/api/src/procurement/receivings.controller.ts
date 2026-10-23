@@ -71,7 +71,7 @@ export class ReceivingsController {
   }
 
   @Delete(":id")
-  @Require("receiving", "A")
+  @Require("receiving", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }

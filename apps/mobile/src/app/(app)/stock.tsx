@@ -39,7 +39,9 @@ const TABS = [
 
 export default function StockScreen() {
   const router = useRouter();
-  const { data, toast, reload, refreshModule, addRow } = useApp();
+  const { user, data, toast, reload, refreshModule, addRow } = useApp();
+  const canManageCatalog = ["super_admin", "admin", "bos", "gudang", "procurement", "finance"].includes(user?.role ?? "");
+  const canManageStock = ["super_admin", "admin", "bos", "gudang", "procurement", "finance", "pm", "sales"].includes(user?.role ?? "");
 
   const hasFetchedRef = React.useRef(false);
   React.useEffect(() => {
@@ -275,36 +277,42 @@ export default function StockScreen() {
         subtitle="Manajemen daftar barang (Ber-SN & Non-SN), katalog jasa, stok multi-gudang, dan stok opname"
         action={
           <View className="flex-row flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => setAddItemOpen(true)}
-            >
-              <Plus size={16} color={colors.text} />
-              <Text>Tambah Barang / Jasa</Text>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => {
-                setBatchSnDefaultProductId("");
-                setBatchSnOpen(true);
-              }}
-            >
-              <Plus size={16} color={colors.text} />
-              <Text>Tambah Barang per SN</Text>
-            </Button>
-            <Button variant="outline" size="sm" onPress={() => setTransferOpen(true)}>
-              <ArrowLeftRight size={16} color={colors.text} />
-              <Text>Transfer Gudang</Text>
-            </Button>
-            <Button variant="outline" size="sm" onPress={() => setReplacementOpen(true)}>
-              <RefreshCw size={16} color={colors.text} />
-              <Text>Unit Pengganti</Text>
-            </Button>
-            <Button size="sm" onPress={() => router.push("/opname")}>
-              <Text>Stok Opname</Text>
-            </Button>
+            {canManageCatalog ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => setAddItemOpen(true)}
+              >
+                <Plus size={16} color={colors.text} />
+                <Text>Tambah Barang / Jasa</Text>
+              </Button>
+            ) : null}
+            {canManageStock ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onPress={() => {
+                    setBatchSnDefaultProductId("");
+                    setBatchSnOpen(true);
+                  }}
+                >
+                  <Plus size={16} color={colors.text} />
+                  <Text>Tambah Barang per SN</Text>
+                </Button>
+                <Button variant="outline" size="sm" onPress={() => setTransferOpen(true)}>
+                  <ArrowLeftRight size={16} color={colors.text} />
+                  <Text>Transfer Gudang</Text>
+                </Button>
+                <Button variant="outline" size="sm" onPress={() => setReplacementOpen(true)}>
+                  <RefreshCw size={16} color={colors.text} />
+                  <Text>Unit Pengganti</Text>
+                </Button>
+                <Button size="sm" onPress={() => router.push("/opname")}>
+                  <Text>Stok Opname</Text>
+                </Button>
+              </>
+            ) : null}
           </View>
         }
       />
@@ -562,31 +570,44 @@ export default function StockScreen() {
       <Dialog open={replacementOpen} onOpenChange={setReplacementOpen}>
         <DialogContent className="sm:max-w-xl md:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Penggantian Unit Rusak</DialogTitle>
+            <DialogTitle>Penggantian Unit Rusak / Retur (SN Lama → SN Baru)</DialogTitle>
           </DialogHeader>
           <View className="gap-4">
             <Text className="text-text-secondary text-xs">
-              Hubungkan SN unit lama yang bermasalah dengan SN unit baru pengganti. Wajib menyertakan alasan.
+              Pilih atau ketik SN unit lama yang rusak/diretur dan masukkan SN unit baru penggantinya. Stok tersedia di gudang akan otomatis disesuaikan (+1 unit baru siap pakai) dan riwayat kedua SN saling terhubung.
             </Text>
-            <FormField label="Serial Number Lama (Rusak)" required>
-              <Input
-                value={oldSn}
-                onChangeText={setOldSn}
-                placeholder="Contoh: SN-PR01-2601"
-              />
+            <FormField label="Pilih / Ketik Serial Number Lama (Rusak / Retur)" required>
+              <View className="gap-1.5">
+                <SearchableSelect
+                  value={oldSn}
+                  onChange={(v) => {
+                    const clean = (v.split(" (")[0] ?? v).trim();
+                    setOldSn(clean);
+                  }}
+                  options={serials
+                    .filter((s) => s.rawStatus !== "DIGANTI" && s.status !== "Diganti")
+                    .map((s) => `${s.sn} (${s.produk} · ${s.status || "Di gudang"})`)}
+                  placeholder="Pilih dari daftar SN terdaftar..."
+                />
+                <Input
+                  value={oldSn}
+                  onChangeText={setOldSn}
+                  placeholder="Atau ketik / scan SN lama (contoh: 299292)"
+                />
+              </View>
             </FormField>
-            <FormField label="Serial Number Baru (Pengganti)" required>
+            <FormField label="Serial Number Baru (Unit Pengganti)" required>
               <Input
                 value={newSn}
                 onChangeText={setNewSn}
-                placeholder="Contoh: SN-PR01-2688"
+                placeholder="Ketik / scan SN baru pengganti (contoh: 94949)"
               />
             </FormField>
             <FormField label="Alasan Penggantian Unit" required>
               <Textarea
                 value={replaceReason}
                 onChangeText={setReplaceReason}
-                placeholder="Contoh: Port LAN mati total setelah disambar petir"
+                placeholder="Contoh: Unit pengganti klaim retur / garansi untuk kamera rusak"
               />
             </FormField>
           </View>
@@ -829,7 +850,7 @@ export default function StockScreen() {
                   ) : null}
                 </View>
 
-                {s.status === "Rusak" && (
+                {(s.status === "Rusak" || s.status === "Retur" || s.rawStatus === "RUSAK" || s.rawStatus === "RETUR") && (
                   <Button
                     className="w-full gap-2"
                     onPress={() => {
@@ -839,7 +860,7 @@ export default function StockScreen() {
                     }}
                   >
                     <RefreshCw size={14} color="#000" />
-                    <Text>Proses Penggantian Unit Ini</Text>
+                    <Text>Proses Penggantian Unit Ini (Input SN Baru)</Text>
                   </Button>
                 )}
               </View>

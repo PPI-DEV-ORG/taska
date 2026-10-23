@@ -55,13 +55,17 @@ export class ProjectsService {
     });
   }
 
-  /** Rerata progres task (PRD: PM memantau progres). */
+  /** Rerata progres task (PRD: PM memantau progres). Jika project SELESAI, selalu 100%. */
   async recomputeProgress(projectId: number): Promise<Project> {
+    const current = await this.prisma.main.project.findUniqueOrThrow({ where: { id: projectId } });
+    if (current.status === "SELESAI") {
+      if (current.progress === 100) return current;
+      return this.prisma.main.project.update({ where: { id: projectId }, data: { progress: 100 } });
+    }
     const tasks = await this.prisma.main.task.findMany({ where: { projectId }, select: { progress: true } });
     const progress = tasks.length
       ? Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length)
-      : 0;
-    const current = await this.prisma.main.project.findUniqueOrThrow({ where: { id: projectId } });
+      : current.progress;
     if (current.progress === progress) return current;
     return this.prisma.main.project.update({ where: { id: projectId }, data: { progress } });
   }
@@ -284,6 +288,14 @@ export class ProjectsService {
       }
     }
 
+    const nextStatus = dto.status ?? project.status;
+    const isSelesai = nextStatus === "SELESAI";
+    const nextProgress = isSelesai
+      ? 100
+      : dto.progress !== undefined
+      ? dto.progress
+      : project.progress;
+
     const updated = await this.prisma.main.project.update({
       where: { id },
       data: {
@@ -295,7 +307,8 @@ export class ProjectsService {
         startDate: dto.startDate ? new Date(dto.startDate) : project.startDate,
         endDate: dto.endDate !== undefined ? (dto.endDate ? new Date(dto.endDate) : null) : project.endDate,
         ...(dto.status ? { status: dto.status } : {}),
-        ...(dto.progress !== undefined ? { progress: dto.progress } : {}),
+        progress: nextProgress,
+        completedAt: isSelesai ? (project.completedAt ?? new Date()) : null,
         prdFileId: dto.prdFileId !== undefined ? dto.prdFileId : project.prdFileId,
         bahpFileId: dto.bahpFileId !== undefined ? dto.bahpFileId : project.bahpFileId,
         bastFileId: dto.bastFileId !== undefined ? dto.bastFileId : project.bastFileId,
@@ -396,11 +409,13 @@ export class ProjectsService {
       warning = "Project ditutup namun pembayaran belum lunas";
     }
 
+    const isSelesai = dto.status === "SELESAI";
     const updated = await this.prisma.main.project.update({
       where: { id },
       data: {
         status: dto.status,
-        completedAt: dto.status === "SELESAI" ? new Date() : null,
+        completedAt: isSelesai ? new Date() : null,
+        ...(isSelesai ? { progress: 100 } : {}),
         ...(dto.note ? { notes: dto.note } : {}),
       },
       include: { pic: { select: { id: true, name: true } } },

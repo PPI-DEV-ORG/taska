@@ -8,7 +8,14 @@ export type WsDataChange = {
   at?: string;
 };
 
-export type WsNotification = { id?: number; kind: string; text: string; href: string };
+export type WsNotification = {
+  id?: number;
+  kind: string;
+  title?: string;
+  text: string;
+  href: string;
+  createdAt?: string;
+};
 
 type Handlers = {
   onDataChange: (c: WsDataChange) => void;
@@ -31,7 +38,9 @@ export async function connectSocket(handlers: Handlers): Promise<() => void> {
   socket = io(apiOrigin(), {
     path: "/api/ws",
     transports: ["websocket", "polling"],
-    auth: { token },
+    auth: (cb) => {
+      cb({ token: getAccess() ?? token });
+    },
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,

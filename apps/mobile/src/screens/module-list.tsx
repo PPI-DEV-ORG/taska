@@ -21,11 +21,11 @@ const CREATE: Record<string, Role[]> = {
   leads: ["sales", "pm"],
   quotations: ["sales", "pm"],
   surveys: ["sales", "pm"],
-  "po-client": ["finance", "sales"],
-  invoices: ["finance", "sales"],
-  projects: ["pm"],
-  "damage-reports": ["gudang", "sales", "procurement", "finance", "pm"],
-  customers: ["sales"],
+  "po-client": ["finance", "sales", "pm"],
+  invoices: ["finance", "sales", "pm"],
+  projects: ["pm", "sales", "finance"],
+  "damage-reports": ["gudang", "sales", "procurement", "finance", "pm", "teknisi", "se"],
+  customers: ["sales", "pm", "finance"],
   suppliers: ["procurement"],
   users: ["bos", "admin"],
 };
@@ -40,22 +40,22 @@ export function canCreate(def: ModuleDef, role: Role) {
 const DELETE: Record<string, Role[]> = {
   leads: ["sales", "pm", "admin"],
   projects: ["pm", "admin"],
-  customers: ["sales", "admin"],
+  customers: ["sales", "pm", "finance", "admin"],
   suppliers: ["procurement", "admin"],
   users: ["bos", "admin"],
   surveys: ["sales", "pm", "admin"],
   quotations: ["sales", "pm", "finance", "admin"],
-  "po-client": ["finance", "sales", "admin"],
-  invoices: ["finance", "admin"],
+  "po-client": ["finance", "sales", "pm", "admin"],
+  invoices: ["finance", "sales", "pm", "admin"],
   "purchase-requests": ["pm", "procurement", "finance", "gudang", "admin"],
   "supplier-pos": ["procurement", "finance", "admin"],
-  receiving: ["gudang", "admin"],
+  receiving: ["gudang", "procurement", "admin"],
   "delivery-notes": ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin"],
   expenses: ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin"],
-  "damage-reports": ["gudang", "admin"],
+  "damage-reports": ["gudang", "sales", "procurement", "finance", "pm", "admin"],
 };
 
-function canDelete(def: ModuleDef, role: Role) {
+export function canDelete(def: ModuleDef, role: Role) {
   if (role === "super_admin") return true;
   return (DELETE[def.key] ?? []).includes(role);
 }

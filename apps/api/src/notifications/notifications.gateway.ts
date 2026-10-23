@@ -8,7 +8,14 @@ import {
 import type { Server, Socket } from "socket.io";
 
 /** Notifikasi realtime — `id` = row persisted agar FE bisa tandai dibaca. */
-export type WsNotification = { id: number; kind: string; text: string; href: string };
+export type WsNotification = {
+  id: number;
+  kind: string;
+  title?: string;
+  text: string;
+  href: string;
+  createdAt?: string;
+};
 
 /** Perubahan data realtime — dipakai frontend untuk refresh tabel. */
 export type WsDataChange = {
@@ -33,7 +40,8 @@ export class NotificationsGateway implements OnGatewayConnection {
   async handleConnection(client: Socket) {
     try {
       const raw =
-        (client.handshake.auth?.token as string | undefined) ??
+        (client.handshake.auth?.token as string | undefined) ||
+        (client.handshake.query?.token as string | undefined) ||
         (client.handshake.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
       if (!raw) throw new Error("token kosong");
       const payload = await this.jwt.verifyAsync(raw);

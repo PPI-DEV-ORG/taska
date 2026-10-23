@@ -153,22 +153,28 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     setErrs((e) => ({ ...e, [key]: "" }));
   }
 
-  const isFinanceOrBos = ["finance", "bos", "super_admin"].includes(user?.role ?? "");
+  const isFinanceOrBos = ["finance", "bos", "super_admin", "admin"].includes(user?.role ?? "");
   const isReporter = !row?.reporterId || String(row?.reporterId) === String(user?.id) || row?.pelapor === user?.name;
-  const canEditExpense = isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar");
+  const canEditExpense = isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se", "gudang"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar");
   const canEdit = moduleKey === "expenses"
     ? canEditExpense
     : moduleKey === "invoices"
-    ? isFinanceOrBos
+    ? isFinanceOrBos || ["sales", "pm"].includes(user?.role ?? "")
+    : moduleKey === "supplier-pos"
+    ? isFinanceOrBos || ["procurement", "gudang"].includes(user?.role ?? "")
+    : moduleKey === "receiving"
+    ? isFinanceOrBos || ["gudang", "procurement"].includes(user?.role ?? "")
     : true;
   const canDelete =
     user?.role === "super_admin"
       ? true
       : moduleKey === "expenses"
-      ? isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar")
+      ? isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se", "gudang"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar")
       : moduleKey === "surveys" && user?.role === "finance"
       ? false
-      : moduleKey === "invoices" && user?.role === "sales"
+      : moduleKey === "supplier-pos" && !["super_admin", "admin", "bos", "finance", "procurement"].includes(user?.role ?? "")
+      ? false
+      : moduleKey === "receiving" && !["super_admin", "admin", "bos", "gudang", "procurement"].includes(user?.role ?? "")
       ? false
       : true;
 

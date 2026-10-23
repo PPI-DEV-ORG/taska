@@ -8,6 +8,7 @@ import {
   CreateSerialBatchDto,
   DamageCreateDto,
   DamageListQuery,
+  DamageReplaceDto,
   DamageStatusDto,
   MovementListQuery,
   OpnameCreateDto,
@@ -194,6 +195,16 @@ export class DamagesController {
   @Require("stock", "U")
   setStatus(@Param("id", ParseIntPipe) id: number, @Body() dto: DamageStatusDto) {
     return this.service.setStatus(id, dto.status);
+  }
+
+  @Post(":id/replace")
+  @Require("stock", "U")
+  replace(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: DamageReplaceDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.receiveReplacement(id, dto, user);
   }
 
   @Delete(":id")

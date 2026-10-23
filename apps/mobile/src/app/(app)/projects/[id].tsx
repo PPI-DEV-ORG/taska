@@ -174,7 +174,19 @@ export default function ProjectDetailScreen() {
   function markCompleted() {
     if (!project) return;
     setStatus("projects", project.id, "Selesai");
-    toast("Project ditandai selesai");
+    patchRow("projects", project.id, { status: "Selesai", progres: 100 });
+    toast("Project ditandai selesai (progres otomatis 100%)");
+  }
+
+  function updateProgressQuick(pct: number) {
+    if (!project) return;
+    const clamped = Math.max(0, Math.min(100, pct));
+    const nextStatus = clamped === 100 ? "Selesai" : project.status === "Selesai" ? "Berjalan" : project.status;
+    patchRow("projects", project.id, { progres: clamped, status: nextStatus });
+    if (clamped === 100) {
+      setStatus("projects", project.id, "Selesai");
+    }
+    toast(`Progres project diubah ke ${clamped}%${clamped === 100 ? " (Status Selesai)" : ""}`);
   }
 
   return (
@@ -244,8 +256,38 @@ export default function ProjectDetailScreen() {
                 { label: "Status Pembayaran", key: "pembayaran" },
                 { label: "Progres Pekerjaan", key: "progres", fmt: "pct" },
               ]}
-              row={project}
+              row={{
+                ...project,
+                progres: project.status === "Selesai" ? 100 : (project.progres ?? 0),
+              }}
             />
+
+            <View className="mt-4 pt-3 border-t border-border/70 gap-2">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs font-semibold text-foreground">Ubah Cepat Progres Proyek</Text>
+                <Text className="text-xs font-bold text-primary">
+                  {project.status === "Selesai" ? 100 : (project.progres ?? 0)}%
+                </Text>
+              </View>
+              <View className="flex-row flex-wrap gap-1.5">
+                {[10, 25, 50, 75, 100].map((pct) => (
+                  <Button
+                    key={pct}
+                    size="sm"
+                    variant={
+                      (project.status === "Selesai" && pct === 100) ||
+                      (project.status !== "Selesai" && Number(project.progres) === pct)
+                        ? "default"
+                        : "outline"
+                    }
+                    className="h-8 px-3"
+                    onPress={() => updateProgressQuick(pct)}
+                  >
+                    <Text className="text-xs">{pct === 100 ? "100% (Selesai)" : `${pct}%`}</Text>
+                  </Button>
+                ))}
+              </View>
+            </View>
           </Panel>
 
           <Panel title="Handover & Serah Terima Dokumen">
@@ -811,8 +853,15 @@ export default function ProjectDetailScreen() {
         onOpenChange={setEditProjectOpen}
         def={MODULES.projects}
         title="Ubah Project"
-        fields={MODULES.projects?.createFields || []}
-        initialRow={project}
+        fields={[
+          ...(MODULES.projects?.createFields || []),
+          { key: "progres", label: "Progres Pekerjaan (%)", type: "number", placeholder: "Contoh: 100" },
+          { key: "status", label: "Status Project", type: "select", options: ["Berjalan", "Terlambat", "Selesai", "Ditunda"] },
+        ]}
+        initialRow={{
+          ...project,
+          progres: project.status === "Selesai" ? "100" : String(project.progres ?? 0),
+        }}
         mode="edit"
         submitLabel="Simpan Perubahan"
         onSubmit={(patch) => patchRow("projects", project.id, patch)}

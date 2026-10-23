@@ -633,6 +633,16 @@ export class InvoiceOutService {
     if (synced.status === "PAID") {
       await this.syncRelatedInvoicesOnPaid(synced, user);
     }
+    await this.notifications
+      .notify({
+        roles: ["FINANCE", "BOS", "SALES"],
+        kind: "APPROVAL",
+        title: "Invoice Penjualan Baru",
+        text: `Invoice ${number} dibuat untuk ${customer.name} senilai Rp${Number(total).toLocaleString("id-ID")}`,
+        href: `/invoices/${row.id}`,
+      })
+      .catch(() => {});
+    this.notifications.dataChange("invoices", "create", row.id);
     const finalMeta = (await this.getMeta(row.id)) || {};
     return {
       ...synced,
@@ -923,6 +933,18 @@ export class InvoiceOutService {
     if (isNowPaid) {
       await this.syncRelatedInvoicesOnPaid(updated, user);
     }
+    await this.notifications
+      .notify({
+        roles: ["FINANCE", "BOS", "SALES", "PM"],
+        kind: "APPROVAL",
+        title: isNowPaid ? "Invoice Lunas" : "Pembayaran Invoice Diterima",
+        text: isNowPaid
+          ? `Invoice ${row.number} telah LUNAS (total Rp${Number(paid).toLocaleString("id-ID")})`
+          : `Pembayaran Rp${Number(dto.amount).toLocaleString("id-ID")} diterima untuk Invoice ${row.number}`,
+        href: `/invoices/${id}`,
+      })
+      .catch(() => {});
+    this.notifications.dataChange("invoices", "update", id);
     return this.sync(updated);
   }
 

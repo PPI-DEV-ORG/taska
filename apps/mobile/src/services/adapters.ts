@@ -487,7 +487,7 @@ export function adaptRow(module: string, raw: any): Row {
         pm: nameOf(raw.pic) ?? "",
         pmId: raw.pic?.id != null ? String(raw.pic.id) : null,
         tim: (raw.members ?? []).map((m: any) => nameOf(m.user)).filter(Boolean).join(", ") || "-",
-        progres: n(raw.progress),
+        progres: raw.status === "SELESAI" || toLabel("projects", raw.status) === "Selesai" ? 100 : n(raw.progress),
         pembayaran: toLabel("paymentStatus", raw.paymentStatus),
         status: toLabel("projects", raw.status),
         mulai: d(raw.startDate),
@@ -683,6 +683,7 @@ export function adaptRow(module: string, raw: any): Row {
       const desc = raw.description ?? "";
       const poMatch = desc.match(/\[PO:\s*([^\]]+)\]/);
       const snMatch = desc.match(/\[SN:\s*([^\]]+)\]/);
+      const replacedMatch = desc.match(/\[DIGANTI:\s*([^\]]+)\]/i);
       const isReturSales = /\[RETUR-PENJUALAN\]/i.test(desc);
       const isReturPurchase = /\[RETUR-PEMBELIAN\]/i.test(desc);
       const jenisLabel = isReturSales
@@ -695,12 +696,17 @@ export function adaptRow(module: string, raw: any): Row {
         : isReturPurchase
         ? "Retur Pembelian"
         : "Kerusakan";
+      const snPengganti =
+        raw.serialUnit?.replacedBy?.sn ??
+        (replacedMatch ? replacedMatch[1].trim() : "-");
       return {
         ...base,
         tanggal: d(raw.date),
         produk: nameOf(raw.product) ?? "",
         productId: idOf(raw.product),
+        hasSerial: !!raw.product?.hasSerial,
         sn: raw.serialUnit?.sn ?? (snMatch ? snMatch[1].trim() : "-"),
+        snPengganti,
         serialUnitId: idOf(raw.serialUnit),
         jenis: jenisLabel,
         kategoriLaporan,
@@ -711,7 +717,8 @@ export function adaptRow(module: string, raw: any): Row {
           .replace(/\[RETUR-PENJUALAN\]\s*/gi, "")
           .replace(/\[RETUR-PEMBELIAN\]\s*/gi, "")
           .replace(/\[PO:\s*[^\]]+\]\s*/g, "")
-          .replace(/\[SN:\s*[^\]]+\]\s*/g, ""),
+          .replace(/\[SN:\s*[^\]]+\]\s*/g, "")
+          .replace(/\[DIGANTI:\s*[^\]]+\]\s*/gi, ""),
         qty: n(raw.qty),
         fileId: raw.fileId ?? null,
       };
@@ -1532,7 +1539,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   users: ["name", "email", "password", "phone", "position", "department", "role", "status", "warehouseId"],
   customers: ["name", "company", "pic", "email", "phone", "address", "city", "notes", "status"],
   suppliers: ["name", "pic", "email", "phone", "city", "paymentTerms", "notes", "status"],
-  products: ["sku", "name", "type", "categoryId", "unit", "hasSerial", "minStock", "warrantyMonths", "purchasePrice", "status"],
+  products: ["sku", "name", "type", "brand", "description", "categoryId", "unit", "hasSerial", "minStock", "warrantyMonths", "purchasePrice", "status"],
   productCategories: ["name", "description", "prefix", "status"],
   warehouses: ["name", "city", "status"],
   leadSources: ["name", "status"],
@@ -1600,7 +1607,8 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "photoFileId", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
-  "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "fileId"],
+  "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],
+  invoiceIn: ["number", "supplierId", "supplierPoId", "amount", "ppn", "total", "dueDate", "fileId"],
   followups: ["method", "notes", "date", "nextDate", "status"],
 };
 
@@ -1646,6 +1654,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.biaya !== undefined) out.cost = num(patch.biaya);
   if (patch.nominal !== undefined) out.amount = num(patch.nominal);
   if (patch.satuan !== undefined) out.unit = patch.satuan;
+  if (patch.merk !== undefined) out.brand = patch.merk;
   if (patch.berSN !== undefined) out.hasSerial = !!patch.berSN;
   if (patch.min !== undefined) out.minStock = num(patch.min);
   if (patch.hargaBeli !== undefined) out.purchasePrice = num(patch.hargaBeli);
@@ -1755,7 +1764,12 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.mulai !== undefined) out.startDate = patch.mulai;
     if (patch.selesai !== undefined) out.endDate = patch.selesai;
     if (patch.progres !== undefined) out.progress = num(patch.progres);
-    if (patch.status !== undefined) out.status = toEnum("projects", patch.status) || patch.status;
+    if (patch.status !== undefined) {
+      out.status = toEnum("projects", patch.status) || patch.status;
+      if (out.status === "SELESAI" || patch.status === "Selesai") {
+        out.progress = 100;
+      }
+    }
     if (Array.isArray(patch.memberIds)) out.memberIds = patch.memberIds;
     else if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);
   } else if (module === "tasks") {

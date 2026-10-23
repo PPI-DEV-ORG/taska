@@ -77,7 +77,7 @@ export class PosController {
   }
 
   @Delete(":id")
-  @Require("procurement", "A")
+  @Require("procurement", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }

@@ -179,7 +179,7 @@ export class QuotationsController {
   }
 
   @Delete(":id")
-  @Require("quotations", "A")
+  @Require("quotations", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }
