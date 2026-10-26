@@ -3,11 +3,13 @@ import { View, Pressable, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   FileText,
   Plus,
+  Minus,
   Pencil,
   ShoppingCart,
   Trash2,
@@ -16,6 +18,7 @@ import {
   RotateCcw,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, Chip, EmptyState, InfoGrid, Timeline } from "@/components/taska/basics";
 import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
@@ -25,6 +28,7 @@ import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { MODULES, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
+import { cn } from "@/lib/utils";
 import { rupiah, tanggal } from "@/lib/format";
 import { ProjectExtras } from "@/modules/project/project-extras";
 
@@ -55,6 +59,15 @@ export default function ProjectDetailScreen() {
   const [requirements, setRequirements] = React.useState<any[]>([]);
 
   const project = data.projects.find((p) => p.id === id);
+  const currentProgress = project ? (project.status === "Selesai" ? 100 : (Number(project.progres) || 0)) : 0;
+  const [liveProgress, setLiveProgress] = React.useState<number>(currentProgress);
+  const [prevProgress, setPrevProgress] = React.useState<number>(currentProgress);
+  const [savingProgress, setSavingProgress] = React.useState(false);
+
+  if (prevProgress !== currentProgress) {
+    setPrevProgress(currentProgress);
+    setLiveProgress(currentProgress);
+  }
 
   const loadRequirements = React.useCallback(async () => {
     if (!id) return;
@@ -166,6 +179,7 @@ export default function ProjectDetailScreen() {
   }
 
   const isLunas = project.pembayaran === "Lunas";
+  const hasProgressChanged = liveProgress !== currentProgress;
 
   function toggleTask(taskId: string, currentStatus: string) {
     const next = currentStatus === "DONE" ? "IN PROGRESS" : "DONE";
@@ -180,15 +194,24 @@ export default function ProjectDetailScreen() {
     toast("Project ditandai selesai (progres otomatis 100%)");
   }
 
-  function updateProgressQuick(pct: number) {
-    if (!project) return;
-    const clamped = Math.max(0, Math.min(100, pct));
-    const nextStatus = clamped === 100 ? "Selesai" : project.status === "Selesai" ? "Berjalan" : project.status;
-    patchRow("projects", project.id, { progres: clamped, status: nextStatus });
-    if (clamped === 100) {
-      setStatus("projects", project.id, "Selesai");
+  async function saveProgress() {
+    if (!project || !hasProgressChanged) return;
+    setSavingProgress(true);
+    try {
+      const clamped = Math.max(0, Math.min(100, Math.round(liveProgress)));
+      const nextStatus = clamped === 100 ? "Selesai" : project.status === "Selesai" ? "Berjalan" : project.status;
+      await patchRow("projects", project.id, { progres: clamped, status: nextStatus });
+      if (clamped === 100) {
+        await setStatus("projects", project.id, "Selesai");
+      }
+      toast(`Progres project berhasil disimpan: ${clamped}%${clamped === 100 ? " (Status Selesai)" : ""}`);
+    } finally {
+      setSavingProgress(false);
     }
-    toast(`Progres project diubah ke ${clamped}%${clamped === 100 ? " (Status Selesai)" : ""}`);
+  }
+
+  function resetProgress() {
+    setLiveProgress(currentProgress);
   }
 
   return (
@@ -264,30 +287,103 @@ export default function ProjectDetailScreen() {
               }}
             />
 
-            <View className="mt-4 pt-3 border-t border-border/70 gap-2">
+            <View className="mt-4 pt-3 border-t border-border/70 gap-3">
               <View className="flex-row items-center justify-between">
-                <Text className="text-xs font-semibold text-foreground">Ubah Cepat Progres Proyek</Text>
-                <Text className="text-xs font-bold text-primary">
-                  {project.status === "Selesai" ? 100 : (project.progres ?? 0)}%
-                </Text>
+                <View className="flex-row items-center gap-2">
+                  <Text className="text-xs font-semibold text-foreground">Progres Proyek</Text>
+                  {hasProgressChanged ? (
+                    <View className="bg-primary/10 border border-primary/30 px-2 py-0.5 rounded-full">
+                      <Text className="text-[10px] font-medium text-primary">Belum disimpan</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                  <Text className="text-sm font-bold text-primary">{liveProgress}%</Text>
+                  {liveProgress === 100 ? (
+                    <View className="bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                      <Text className="text-[10px] font-bold text-emerald-500">Selesai</Text>
+                    </View>
+                  ) : null}
+                </View>
               </View>
-              <View className="flex-row flex-wrap gap-1.5">
-                {[10, 25, 50, 75, 100].map((pct) => (
+
+              {/* Slider Progres dengan Handle & Tombol Plus/Minus di kedua ujung */}
+              <View className="flex-row items-center gap-2.5">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8 rounded-lg shrink-0 border-border/80 hover:bg-panel active:bg-panel"
+                  disabled={liveProgress <= 0}
+                  onPress={() => setLiveProgress((prev) => Math.max(0, prev - 1))}
+                  accessibilityLabel="Turunkan progres 1%"
+                >
+                  <Minus size={14} color={liveProgress <= 0 ? colors.muted : colors.text} />
+                </Button>
+
+                <Slider
+                  value={liveProgress}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onChange={(val) => setLiveProgress(val)}
+                />
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8 rounded-lg shrink-0 border-border/80 hover:bg-panel active:bg-panel"
+                  disabled={liveProgress >= 100}
+                  onPress={() => setLiveProgress((prev) => Math.min(100, prev + 1))}
+                  accessibilityLabel="Naikkan progres 1%"
+                >
+                  <Plus size={14} color={liveProgress >= 100 ? colors.muted : colors.text} />
+                </Button>
+              </View>
+
+              {/* Preset Nilai & Tombol Simpan */}
+              <View className="flex-row flex-wrap items-center justify-between gap-2">
+                <View className="flex-row flex-wrap gap-1.5 items-center">
+                  {[10, 25, 50, 75, 100].map((pct) => (
+                    <Button
+                      key={pct}
+                      size="sm"
+                      variant={liveProgress === pct ? "default" : "outline"}
+                      className="h-8 px-3"
+                      onPress={() => setLiveProgress(pct)}
+                    >
+                      <Text className="text-xs">{pct === 100 ? "100% (Selesai)" : `${pct}%`}</Text>
+                    </Button>
+                  ))}
+                </View>
+
+                <View className="flex-row items-center gap-2">
+                  {hasProgressChanged && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-3"
+                      onPress={resetProgress}
+                      disabled={savingProgress}
+                    >
+                      <Text className="text-xs">Batal</Text>
+                    </Button>
+                  )}
                   <Button
-                    key={pct}
                     size="sm"
-                    variant={
-                      (project.status === "Selesai" && pct === 100) ||
-                      (project.status !== "Selesai" && Number(project.progres) === pct)
-                        ? "default"
-                        : "outline"
-                    }
-                    className="h-8 px-3"
-                    onPress={() => updateProgressQuick(pct)}
+                    variant={hasProgressChanged ? "default" : "outline"}
+                    className={cn(
+                      "h-8 px-3 flex-row items-center gap-1.5",
+                      !hasProgressChanged && "opacity-50"
+                    )}
+                    onPress={saveProgress}
+                    disabled={!hasProgressChanged || savingProgress}
                   >
-                    <Text className="text-xs">{pct === 100 ? "100% (Selesai)" : `${pct}%`}</Text>
+                    <Check size={14} color={hasProgressChanged ? colors.background : colors.muted} />
+                    <Text className={cn("text-xs font-bold", hasProgressChanged ? "text-primary-foreground" : "text-muted-foreground")}>
+                      {savingProgress ? "Menyimpan..." : "Simpan Progres"}
+                    </Text>
                   </Button>
-                ))}
+                </View>
               </View>
             </View>
           </Panel>

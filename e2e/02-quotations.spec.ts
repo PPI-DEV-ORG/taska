@@ -35,17 +35,35 @@ test.describe("Modul Penawaran (CRUD)", () => {
     await expect(page).toHaveURL(/.*quotations\/\d+/);
     await expect(page.getByText(/Rincian Nilai & Kalkulasi Penawaran/i)).toBeVisible({ timeout: 10000 });
 
-    // 6. Edit Nilai / Diskon Penawaran jika input diskon ada
+    // 6. Test Action Kirim ke Customer
+    const kirimBtn = page.getByRole("button", { name: "Kirim ke customer" });
+    if (await kirimBtn.isVisible()) {
+      await kirimBtn.click();
+      await page.waitForTimeout(500);
+    }
+
+    // 7. Test Ubah Status Penawaran
+    const ubahStatusBtn = page.getByRole("button", { name: "Ubah status" });
+    if (await ubahStatusBtn.isVisible()) {
+      await ubahStatusBtn.click();
+      const statusDialog = page.getByRole("dialog").last();
+      await expect(statusDialog).toBeVisible();
+      await statusDialog.getByText("Disetujui").first().click();
+      await page.waitForTimeout(500);
+    }
+
+    // 8. Edit Nilai / Diskon Penawaran jika input diskon ada
     const discInput = page.getByPlaceholder(/Contoh: 500\.000|Masukkan diskon/i).first();
     if (await discInput.isVisible()) {
       await discInput.fill("100000");
       const simpanBtn = page.getByRole("button", { name: /Simpan Perubahan/i });
       if (await simpanBtn.isVisible()) {
         await simpanBtn.click();
+        await page.waitForTimeout(500);
       }
     }
 
-    // 7. Hapus Penawaran
+    // 9. Hapus Penawaran
     const hapusBtn = page.getByRole("button", { name: "Hapus" }).first();
     await expect(hapusBtn).toBeVisible({ timeout: 10000 });
     await hapusBtn.click();
@@ -54,7 +72,7 @@ test.describe("Modul Penawaran (CRUD)", () => {
     const konfirmasiBtn = page.getByRole("dialog").getByRole("button", { name: /Ya, hapus|Hapus/i });
     await konfirmasiBtn.click();
 
-    // 8. Verifikasi kembali ke list
+    // 10. Verifikasi kembali ke list
     await expect(page).toHaveURL(/.*quotations/);
   });
 });

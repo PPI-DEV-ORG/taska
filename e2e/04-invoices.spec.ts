@@ -41,17 +41,35 @@ test.describe("Modul Invoices (CRUD)", () => {
     // 5. Verifikasi Halaman Detail
     await expect(page).toHaveURL(/.*invoices\/\d+/);
 
-    // 6. Edit Catatan Invoice
+    // 6. Test Action Kirim ke Customer
+    const kirimBtn = page.getByRole("button", { name: /Kirim ke customer/i }).first();
+    if (await kirimBtn.isVisible()) {
+      await kirimBtn.click();
+      await page.waitForTimeout(500);
+    }
+
+    // 7. Test Ubah Status Invoice
+    const ubahStatusBtn = page.getByRole("button", { name: "Ubah status" });
+    if (await ubahStatusBtn.isVisible()) {
+      await ubahStatusBtn.click();
+      const statusDialog = page.getByRole("dialog").last();
+      await expect(statusDialog).toBeVisible();
+      await statusDialog.getByText("Terkirim").first().click();
+      await page.waitForTimeout(500);
+    }
+
+    // 8. Edit Catatan Invoice
     const catatanInput = page.getByPlaceholder(/Tulis deskripsi|catatan/i).first();
     if (await catatanInput.isVisible()) {
       await catatanInput.fill("Invoice catatan diupdate via E2E");
       const simpanBtn = page.getByRole("button", { name: /Simpan Perubahan/i });
       if (await simpanBtn.isVisible()) {
         await simpanBtn.click();
+        await page.waitForTimeout(500);
       }
     }
 
-    // 7. Hapus Invoice
+    // 9. Hapus Invoice
     const hapusBtn = page.getByRole("button", { name: "Hapus" }).first();
     await expect(hapusBtn).toBeVisible({ timeout: 10000 });
     await hapusBtn.click();
