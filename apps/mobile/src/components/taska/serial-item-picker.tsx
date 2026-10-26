@@ -842,7 +842,7 @@ export function BatchSerialRegisterModal({
       const res = await api<any>("POST", "/serials/batch", {
         productId: pid,
         warehouseId: wid,
-        sns: parsedSnList,
+        serials: parsedSnList,
       });
       await reload();
       toast(
