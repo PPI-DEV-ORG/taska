@@ -1015,10 +1015,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       try {
         const leadVal = Number(lead.nilai) || undefined;
+        const ppnVal = leadVal ? Math.round(leadVal * 0.11) : 0;
         const created = await api<any>("POST", "/quotations", {
           leadId: Number(lead.id),
           total: leadVal,
-          grandTotal: leadVal,
+          ppn: ppnVal,
+          grandTotal: leadVal ? leadVal + ppnVal : undefined,
         });
         const adapted = adaptRow("quotations", created);
         const rows = await refreshModule("quotations");

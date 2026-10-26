@@ -71,10 +71,13 @@ export function LeadExtras({ row }: { row: Row }) {
     const leadName = String(row.nama || "").trim().toLowerCase();
 
     return (data.invoices ?? []).filter((inv: Row) => {
+      if (inv.leadId && String(inv.leadId) === String(row.id)) return true;
+      if (inv.lead && leadName && String(inv.lead).trim().toLowerCase() === leadName) return true;
       if (inv.quotationId && qIds.has(String(inv.quotationId))) return true;
       if (inv.quotation && qNums.has(String(inv.quotation).trim().toLowerCase())) return true;
       if (inv.projectId && pIds.has(String(inv.projectId))) return true;
       const cat = String(inv.catatan || inv.description || "").toLowerCase();
+      if (String(inv.catatan || "").includes(`[lead:${row.id}]`)) return true;
       if (leadName && cat.includes(leadName)) return true;
       for (const qNum of qNums) {
         if (cat.includes(qNum)) return true;
@@ -441,16 +444,14 @@ export function LeadExtras({ row }: { row: Row }) {
         title="Invoice Terkait"
         subtitle="Kelola tagihan pembayaran untuk prospek atau penawaran ini."
         right={
-          leadQuotations.length > 0 ? (
-            <Button
-              size="sm"
-              onPress={() => setInvoiceModalOpen(true)}
-              className="flex-row items-center gap-1"
-            >
-              <Plus size={14} color={colors.background} />
-              <Text className="text-xs">Buat Invoice</Text>
-            </Button>
-          ) : undefined
+          <Button
+            size="sm"
+            onPress={() => setInvoiceModalOpen(true)}
+            className="flex-row items-center gap-1"
+          >
+            <Plus size={14} color={colors.background} />
+            <Text className="text-xs">Buat Invoice</Text>
+          </Button>
         }
       >
         {leadInvoices.length > 0 ? (
@@ -526,19 +527,16 @@ export function LeadExtras({ row }: { row: Row }) {
         ) : (
           <View className="gap-2.5 py-1">
             <Text className="text-xs text-muted-foreground leading-relaxed">
-              Belum ada invoice yang dibuat untuk lead ini.
-              {leadQuotations.length > 0 ? " Klik tombol 'Buat Invoice' di atas untuk membuat tagihan dari penawaran terkait." : " Buat penawaran terlebih dahulu sebelum membuat invoice."}
+              Belum ada invoice yang dibuat untuk lead ini. Klik tombol &quot;Buat Invoice&quot; untuk membuat tagihan langsung atau dari penawaran terkait.
             </Text>
-            {leadQuotations.length > 0 ? (
-              <Button
-                size="sm"
-                onPress={() => setInvoiceModalOpen(true)}
-                className="self-start flex-row items-center gap-1.5"
-              >
-                <Plus size={14} color={colors.background} />
-                <Text className="text-xs font-semibold">Buat Invoice</Text>
-              </Button>
-            ) : null}
+            <Button
+              size="sm"
+              onPress={() => setInvoiceModalOpen(true)}
+              className="self-start flex-row items-center gap-1.5"
+            >
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs font-semibold">Buat Invoice</Text>
+            </Button>
           </View>
         )}
       </Panel>
@@ -783,6 +781,7 @@ export function LeadExtras({ row }: { row: Row }) {
         open={invoiceModalOpen}
         onOpenChange={setInvoiceModalOpen}
         initialQuotation={quotation}
+        initialLead={row}
         onSuccess={async () => {
           await refreshModule("invoices");
         }}

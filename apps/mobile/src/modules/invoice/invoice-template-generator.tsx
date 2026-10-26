@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { SearchableSelect } from "@/components/taska/dialogs";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";
@@ -17,6 +18,7 @@ import { QuotationPreviewModal } from "@/modules/quotation/quotation-preview-mod
 import { FileUploader } from "@/components/taska/file-uploader";
 import { apiBase } from "@/services/api";
 import { downloadInvoiceExcel, downloadInvoicePdf } from "@/modules/invoice/invoice-files";
+import { useApp } from "@/store/app-store";
 
 export function InvoiceTemplateGenerator({
   row,
@@ -86,11 +88,29 @@ export function InvoiceTemplateGenerator({
       : DEFAULT_INVOICE_NOTES.join("\n"),
   );
 
+  const { data, toast } = useApp();
+  const products = (data.products ?? []) as any[];
+
   // New item inputs
   const [newItemName, setNewItemName] = React.useState("");
   const [newItemQty, setNewItemQty] = React.useState("1");
   const [newItemSatuan, setNewItemSatuan] = React.useState("Unit");
   const [newItemHarga, setNewItemHarga] = React.useState("");
+
+  const handleSelectProduct = (val: string) => {
+    const clean = (val.split(" (")[0] ?? val).trim();
+    const found = products.find(
+      (p) => `${p.nama} (${p.sku})` === val || p.nama === clean || p.sku === clean,
+    );
+    if (found) {
+      setNewItemName(found.nama || clean);
+      setNewItemSatuan(found.satuan || "Unit");
+      const rawPrice = found.hargaBeli ?? found.purchasePrice ?? found.price ?? found.harga ?? 0;
+      setNewItemHarga(rawPrice > 0 ? formatThousands(rawPrice) : "");
+    } else {
+      setNewItemName(val);
+    }
+  };
 
   const itemsTotal = items.length > 0 ? items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0) : Number(row.nilai || 0);
   const activePpn = Math.round(itemsTotal * 0.11);
@@ -134,6 +154,19 @@ export function InvoiceTemplateGenerator({
 
   function addItem() {
     if (!newItemName.trim()) return;
+    const m = newItemName.match(/\(SN:\s*([^\)]+)\)/i);
+    const sn = m?.[1]?.trim() || null;
+    if (sn) {
+      const isDuplicate = items.some((it) => {
+        if (Array.isArray(it.serialNumbers) && it.serialNumbers.some((s) => String(s).trim().toUpperCase() === sn.toUpperCase())) return true;
+        const itM = String(it.item).match(/\(SN:\s*([^\)]+)\)/i);
+        return itM?.[1]?.trim().toUpperCase() === sn.toUpperCase();
+      });
+      if (isDuplicate) {
+        toast(`Barang/item dengan SN (${sn}) sudah ada di invoice!`, "danger");
+        return;
+      }
+    }
     const q = Number(newItemQty) || 1;
     const h = Number(newItemHarga.replace(/\D/g, "")) || 0;
     const updated = [
@@ -435,6 +468,16 @@ export function InvoiceTemplateGenerator({
               {/* Tambah baris baru */}
               <View className="border-t border-border/60 pt-3 gap-2">
                 <Text className="text-xs font-semibold">Tambah Baris Item Baru</Text>
+                {products.length > 0 && (
+                  <View className="mb-1">
+                    <SearchableSelect
+                      value={newItemName ? (products.find((p) => p.nama === newItemName) ? `${newItemName} (${products.find((p) => p.nama === newItemName)?.sku})` : newItemName) : ""}
+                      options={products.map((p) => `${p.nama} (${p.sku})`)}
+                      onChange={handleSelectProduct}
+                      placeholder="Pilih cepat dari Master Stok / Jasa..."
+                    />
+                  </View>
+                )}
                 <Input
                   value={newItemName}
                   onChangeText={setNewItemName}
@@ -581,8 +624,35 @@ export function InvoiceTemplateGenerator({
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         currentInvoiceId={row.id}
+        existingItems={items}
         onAddItems={(newItems) => {
-          setItems((prev) => [...prev, ...newItems]);
+          const existingSnSet = new Set<string>();
+          items.forEach((it) => {
+            if (Array.isArray(it.serialNumbers)) it.serialNumbers.forEach((s) => existingSnSet.add(String(s).trim().toUpperCase()));
+            const snVal = String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1]?.trim();
+            if (snVal) existingSnSet.add(snVal.toUpperCase());
+          });
+          const valid: QuotationItem[] = [];
+          const duplicates: string[] = [];
+          newItems.forEach((it) => {
+            const snList: string[] = [];
+            if (Array.isArray(it.serialNumbers)) it.serialNumbers.forEach((s) => snList.push(String(s).trim().toUpperCase()));
+            const snVal = String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1]?.trim();
+            if (snVal) snList.push(snVal.toUpperCase());
+            const hasDup = snList.some((s) => existingSnSet.has(s));
+            if (hasDup) {
+              duplicates.push(snList.join(", "));
+            } else {
+              snList.forEach((s) => existingSnSet.add(s));
+              valid.push(it);
+            }
+          });
+          if (duplicates.length > 0) {
+            toast(`Barang/item dengan SN (${duplicates.join(", ")}) sudah ada di invoice`, "danger");
+          }
+          if (valid.length > 0) {
+            setItems((prev) => [...prev, ...valid]);
+          }
         }}
       />
     </>

@@ -176,6 +176,7 @@ export class InvoiceOutService {
           ...(createdIds.length > 0 ? [{ id: { in: createdIds } }] : []),
           { description: { contains: `[by:${user.id}]` } },
           ...(customerIds.length > 0 ? [{ customerId: { in: customerIds } }] : []),
+          ...(salesLeads.length > 0 ? salesLeads.map((l) => ({ description: { contains: `[lead:${l.id}]` } })) : []),
           {
             project: {
               OR: [
@@ -509,7 +510,11 @@ export class InvoiceOutService {
 
     const desc = dto.description?.trim();
     const creatorTag = `[by:${user.id}]`;
-    const description = desc ? (desc.includes(creatorTag) ? desc : `${desc} ${creatorTag}`) : creatorTag;
+    const leadTag = dto.leadId ? `[lead:${dto.leadId}]` : "";
+    let description = desc ? (desc.includes(creatorTag) ? desc : `${desc} ${creatorTag}`) : creatorTag;
+    if (leadTag && !description.includes(leadTag)) {
+      description = `${description} ${leadTag}`;
+    }
 
     const row = await this.prisma.main.invoiceOut.create({
       data: {
