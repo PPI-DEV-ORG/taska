@@ -230,7 +230,7 @@ export function QuotationExtras({
           />
           <Line
             left="TOTAL AFTER DISC (Total Akhir)"
-            right={<Text className="text-primary text-base font-bold">{rupiah(row.totalAfterDisc || row.total || row.nilai || 0)}</Text>}
+            right={<Text className="text-primary text-base font-bold">{rupiah(calcTotalAfterDisc || row.totalAfterDisc || row.total || row.nilai || 0)}</Text>}
           />
           <Line left="Status Penawaran" right={<StatusBadge status={row.status || "Not Yet"} />} />
 

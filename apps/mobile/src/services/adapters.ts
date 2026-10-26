@@ -347,7 +347,10 @@ export function adaptRow(module: string, raw: any): Row {
         total: n(raw.total),
         ppn: n(raw.ppn),
         disc: n(raw.discount),
-        totalAfterDisc: n(raw.grandTotal),
+        totalAfterDisc:
+          n(raw.grandTotal) === n(raw.total) && n(raw.ppn) > 0
+            ? n(raw.total) - n(raw.discount) + n(raw.ppn)
+            : (n(raw.grandTotal) || (n(raw.total) - n(raw.discount) + n(raw.ppn))),
         status: toLabel("quotations", raw.status),
         versi: n(raw.currentVersion) || 0,
         berlaku: d(raw.validUntil),
@@ -395,7 +398,10 @@ export function adaptRow(module: string, raw: any): Row {
             total: n(v.total),
             ppn: n(v.ppn),
             disc: n(v.discount),
-            totalAfterDisc: n(v.grandTotal),
+            totalAfterDisc:
+              n(v.grandTotal) === n(v.total) && n(v.ppn) > 0
+                ? n(v.total) - n(v.discount) + n(v.ppn)
+                : (n(v.grandTotal) || (n(v.total) - n(v.discount) + n(v.ppn))),
             date: d(v.createdAt),
             reason: vReason,
             file: v.fileId ? `Penawaran-${String(raw.number || "").replace(/\//g, "-")}-v${v.version}.xlsx` : "-",
@@ -482,6 +488,15 @@ export function adaptRow(module: string, raw: any): Row {
         idOf(raw.clientPo?.quotation) ??
         idOf(raw.project?.quotation) ??
         undefined;
+      const descLeadMatch = raw.description ? String(raw.description).match(/\[lead:(\d+)\]/i) : null;
+      const descLeadId = descLeadMatch ? descLeadMatch[1] : undefined;
+      const leadId =
+        raw.leadId ??
+        raw.project?.leadId ??
+        raw.project?.lead?.id ??
+        raw.clientPo?.quotation?.leadId ??
+        (descLeadId ? String(descLeadId) : undefined) ??
+        null;
       const leadName =
         raw.lead ??
         raw.project?.lead?.name ??
@@ -511,11 +526,12 @@ export function adaptRow(module: string, raw: any): Row {
         quotation: qNum ?? "",
         quotationId: qId ?? null,
         lead: leadName,
+        leadId: leadId ? String(leadId) : null,
         paymentNote: isPartial ? "dp setengah bayar sebagian dp termin" : "",
         customer: nameOf(raw.customer) ?? "",
         customerId: idOf(raw.customer),
         jenis: toLabel("invoiceType", raw.type),
-        catatan: (raw.description || "").replace(/\[by:\d+\]/g, "").trim(),
+        catatan: (raw.description || "").replace(/\[by:\d+\]/g, "").replace(/\[lead:\d+\]/g, "").trim(),
         nilai: n(raw.amount), ppn: n(raw.ppn), total: n(raw.total), terbayar: n(raw.paidAmount),
         jatuhTempo: d(raw.dueDate),
         status: displayStatus,
@@ -1400,6 +1416,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
             : findId(db?.customers, row.customer) ?? (db?.customers?.[0]?.id != null ? Number(db.customers[0].id) : undefined),
         clientPoId: row.clientPoId != null && row.clientPoId !== "" ? Number(row.clientPoId) : findId(db?.["po-client"], row.po),
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
+        leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : undefined,
         type: row.jenis ? (toEnum("invoiceType", row.jenis) || "TERMIN") : "TERMIN",
         amount: amt,
         discount: row.discount != null ? num(row.discount) : undefined,

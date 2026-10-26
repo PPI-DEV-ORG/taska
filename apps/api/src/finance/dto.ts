@@ -99,6 +99,12 @@ export class InvoiceOutDto {
   quotation?: string;
 
   @IsOptional() @IsInt()
+  leadId?: number;
+
+  @IsOptional() @IsString()
+  lead?: string;
+
+  @IsOptional() @IsInt()
   projectId?: number;
 
   @IsOptional() @IsInt()

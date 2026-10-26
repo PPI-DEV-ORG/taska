@@ -334,7 +334,10 @@ export class QuotationsService {
     const discount = dto?.discount ?? 0;
     const netBeforeTax = Math.max(0, total - discount);
     const ppn = dto?.ppn !== undefined ? dto.ppn : Math.round(netBeforeTax * 0.11);
-    const grandTotal = dto?.grandTotal !== undefined && itemsSum === 0 ? dto.grandTotal : netBeforeTax + ppn;
+    const grandTotal =
+      dto?.grandTotal !== undefined && itemsSum === 0 && (dto?.ppn !== undefined || dto.grandTotal >= netBeforeTax + ppn)
+        ? dto.grandTotal
+        : netBeforeTax + ppn;
     const mappedStatus =
       normalizeQuotationStatus(dto?.status) ?? (grandTotal > 0 || items.length > 0 ? "DRAFT" : "NOT_YET");
 

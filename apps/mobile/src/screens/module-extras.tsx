@@ -24,7 +24,7 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
-import { rupiah, tanggal } from "@/lib/format";
+import { rupiah, tanggal, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 import { LeadExtras } from "@/modules/lead/lead-extras";
@@ -253,13 +253,14 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   const getItemQty = (it: any) => Number(it.qty) || 1;
   const getItemUnit = (it: any) => it.satuan || it.unit || "Unit";
   const getItemPrice = (it: any) => Number(it.harga ?? it.price ?? 0);
-  const getItemSn = (it: any) =>
-    it.sn ||
-    (Array.isArray(it.serialNumbers)
-      ? it.serialNumbers.join(", ")
-      : typeof it.serialNumbers === "string"
-        ? it.serialNumbers
-        : "");
+  const getItemSn = (it: any) => {
+    if (!it) return "";
+    if (it.sn) return String(it.sn);
+    if (Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0) return it.serialNumbers.join(", ");
+    if (typeof it.serialNumbers === "string" && it.serialNumbers) return it.serialNumbers;
+    const m = String(it.item || it.name || "").match(/\(SN:\s*([^\)]+)\)/i);
+    return m?.[1]?.trim() ?? "";
+  };
 
   const itemsTotal = currentItems.reduce((acc, it) => acc + getItemQty(it) * getItemPrice(it), 0);
 
@@ -311,7 +312,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     setItemName(getItemName(target));
     setItemQty(String(getItemQty(target)));
     setItemSatuan(getItemUnit(target));
-    setItemHarga(String(getItemPrice(target)));
+    setItemHarga(formatThousands(getItemPrice(target)));
     setItemSn(getItemSn(target));
     setItemDialogOpen(true);
   };
@@ -322,7 +323,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       return;
     }
     const qty = parseFloat(itemQty) || 1;
-    const harga = parseFloat(itemHarga) || 0;
+    const harga = parseFloat(String(itemHarga).replace(/\D/g, "")) || 0;
     const newItemObj = {
       item: itemName.trim(),
       qty,
@@ -330,6 +331,19 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       harga,
       sn: itemSn.trim() || undefined,
     };
+
+    const targetSn = getItemSn(newItemObj);
+    if (targetSn) {
+      const isDuplicate = currentItems.some((it, i) => {
+        if (editingIndex !== null && i === editingIndex) return false;
+        const existSn = getItemSn(it);
+        return existSn && existSn.trim().toUpperCase() === targetSn.trim().toUpperCase();
+      });
+      if (isDuplicate) {
+        toast(`Barang/item dengan SN (${targetSn}) sudah ada di daftar!`, "danger");
+        return;
+      }
+    }
 
     const updated = [...currentItems];
     if (editingIndex !== null && editingIndex >= 0 && editingIndex < updated.length) {
@@ -690,6 +704,36 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             </DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
+            {((data.products ?? []) as any[]).length > 0 && (
+              <FormField label="Pilih dari Master Stok / Jasa (Opsional)">
+                <SearchableSelect
+                  value={
+                    itemName
+                      ? (((data.products ?? []) as any[]).find((p: any) => p.nama === itemName)
+                        ? `${itemName} (${((data.products ?? []) as any[]).find((p: any) => p.nama === itemName)?.sku})`
+                        : itemName)
+                      : ""
+                  }
+                  options={((data.products ?? []) as any[]).map((p: any) => `${p.nama} (${p.sku})`)}
+                  onChange={(val) => {
+                    const clean = (val.split(" (")[0] ?? val).trim();
+                    const found = ((data.products ?? []) as any[]).find(
+                      (p: any) => `${p.nama} (${p.sku})` === val || p.nama === clean || p.sku === clean,
+                    );
+                    if (found) {
+                      setItemName(found.nama || clean);
+                      if (found.satuan) setItemSatuan(found.satuan);
+                      const rawPrice = found.hargaBeli ?? found.purchasePrice ?? found.price ?? found.harga ?? 0;
+                      setItemHarga(rawPrice > 0 ? formatThousands(rawPrice) : "");
+                    } else {
+                      setItemName(val);
+                    }
+                  }}
+                  placeholder="Pilih item produk / jasa terdaftar..."
+                />
+              </FormField>
+            )}
+
             <FormField label="Nama Barang / Jasa" required>
               <Input
                 value={itemName}
@@ -722,8 +766,8 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
             <FormField label="Harga Satuan (Rp)">
               <Input
-                value={itemHarga}
-                onChangeText={setItemHarga}
+                value={itemHarga ? formatThousands(itemHarga) : ""}
+                onChangeText={(v) => setItemHarga(formatThousands(v))}
                 keyboardType="numeric"
                 placeholder="0"
               />
@@ -752,10 +796,32 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         currentQuotationId={row.quotationId ?? undefined}
+        existingItems={currentItems}
         onAddItems={async (newItems) => {
           setPickerOpen(false);
-          const updated = [...currentItems, ...newItems];
-          await saveItems(updated, true);
+          const existingSnSet = new Set<string>();
+          currentItems.forEach((it) => {
+            const sn = getItemSn(it);
+            if (sn) existingSnSet.add(sn.trim().toUpperCase());
+          });
+          const valid: any[] = [];
+          const duplicates: string[] = [];
+          newItems.forEach((it) => {
+            const sn = getItemSn(it);
+            if (sn && existingSnSet.has(sn.trim().toUpperCase())) {
+              duplicates.push(sn);
+            } else {
+              if (sn) existingSnSet.add(sn.trim().toUpperCase());
+              valid.push(it);
+            }
+          });
+          if (duplicates.length > 0) {
+            toast(`Barang/item dengan SN (${duplicates.join(", ")}) sudah ada di daftar`, "danger");
+          }
+          if (valid.length > 0) {
+            const updated = [...currentItems, ...valid];
+            await saveItems(updated, true);
+          }
         }}
       />
     </>

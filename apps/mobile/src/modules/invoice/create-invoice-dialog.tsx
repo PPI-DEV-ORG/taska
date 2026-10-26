@@ -62,11 +62,13 @@ export function CreateInvoiceDialog({
   open,
   onOpenChange,
   initialQuotation,
+  initialLead,
   onSuccess,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialQuotation?: Row;
+  initialLead?: Row;
   onSuccess?: () => void;
 }) {
   if (!open) return null;
@@ -75,6 +77,7 @@ export function CreateInvoiceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <CreateInvoiceForm
         initialQuotation={initialQuotation}
+        initialLead={initialLead}
         onClose={() => onOpenChange(false)}
         onSuccess={onSuccess}
       />
@@ -84,10 +87,12 @@ export function CreateInvoiceDialog({
 
 function CreateInvoiceForm({
   initialQuotation,
+  initialLead,
   onClose,
   onSuccess,
 }: {
   initialQuotation?: Row;
+  initialLead?: Row;
   onClose: () => void;
   onSuccess?: () => void;
 }) {
@@ -107,15 +112,31 @@ function CreateInvoiceForm({
     return "baru";
   });
 
-  // Source selection
-  const [sourceType, setSourceType] = React.useState<"quotation" | "po" | "customer">("quotation");
+  // Source selection: quotation, po, lead, or customer
+  const [sourceType, setSourceType] = React.useState<"quotation" | "po" | "lead" | "customer">(() => {
+    if (initialQuotation) return "quotation";
+    if (initialLead) return "lead";
+    return "customer";
+  });
   const [selectedQuotationId, setSelectedQuotationId] = React.useState<string>(() =>
     initialQuotation?.id ? String(initialQuotation.id) : "",
   );
   const [selectedPoId, setSelectedPoId] = React.useState<string>("");
-  const [selectedCustomerId, setSelectedCustomerId] = React.useState<string>(() =>
-    initialQuotation?.customerId ? String(initialQuotation.customerId) : "",
+  const [selectedLeadId, setSelectedLeadId] = React.useState<string>(() =>
+    initialLead?.id ? String(initialLead.id) : "",
   );
+  const [selectedCustomerId, setSelectedCustomerId] = React.useState<string>(() => {
+    if (initialQuotation?.customerId) return String(initialQuotation.customerId);
+    if (initialLead?.customerId) return String(initialLead.customerId);
+    if (initialLead?.perusahaan || initialLead?.nama) {
+      const match = (data.customers ?? []).find(
+        (c: Row) =>
+          c.nama?.toLowerCase() === (initialLead.perusahaan || initialLead.nama)?.toLowerCase(),
+      );
+      if (match) return String(match.id);
+    }
+    return "";
+  });
 
   // Scheme
   const [scheme, setScheme] = React.useState<"sekaligus" | "dp" | "termin">("termin");
@@ -129,24 +150,35 @@ function CreateInvoiceForm({
   const [tanggal, setTanggal] = React.useState<string>(getTodayIso);
   const [jatuhTempo, setJatuhTempo] = React.useState<string>(getDefaultDueDateIso);
   const [catatan, setCatatan] = React.useState<string>(() => {
-    return initialQuotation?.catatan || (initialQuotation?.nomor ? `Invoice untuk Penawaran ${initialQuotation.nomor}` : "");
+    if (initialQuotation?.catatan) return initialQuotation.catatan;
+    if (initialQuotation?.nomor) return `Invoice untuk Penawaran ${initialQuotation.nomor}`;
+    if (initialLead?.nama) return `Invoice untuk Lead ${initialLead.nama}`;
+    return "";
   });
   const [fileId, setFileId] = React.useState<number | null>(null);
   const [fileName, setFileName] = React.useState<string>("");
 
   // Items
   const [items, setItems] = React.useState<QuotationItem[]>(() => {
-    return Array.isArray(initialQuotation?.items) && initialQuotation.items.length > 0
-      ? initialQuotation.items
-      : [];
+    if (Array.isArray(initialQuotation?.items) && initialQuotation.items.length > 0) {
+      return initialQuotation.items;
+    }
+    if (Array.isArray(initialLead?.items) && initialLead.items.length > 0) {
+      return initialLead.items;
+    }
+    return [];
   });
   const [customDpp, setCustomDpp] = React.useState<string>(() => {
-    return !initialQuotation?.items?.length && initialQuotation?.nilai
-      ? formatThousands(initialQuotation.nilai)
-      : "";
+    if (!initialQuotation?.items?.length && initialQuotation?.nilai) {
+      return formatThousands(initialQuotation.nilai);
+    }
+    if (!initialQuotation && initialLead?.nilai) {
+      return formatThousands(initialLead.nilai);
+    }
+    return "";
   });
 
-  // Active quotation & PO objects
+  // Active quotation & PO & Lead objects
   const activeQuotation = React.useMemo(() => {
     if (selectedQuotationId) {
       return (data.quotations ?? []).find((q: Row) => String(q.id) === String(selectedQuotationId)) || null;
@@ -161,21 +193,32 @@ function CreateInvoiceForm({
     return null;
   }, [data, selectedPoId]);
 
-  // Existing invoices related to active quotation or PO
+  const activeLead = React.useMemo(() => {
+    if (selectedLeadId) {
+      return (data.leads ?? []).find((l: Row) => String(l.id) === String(selectedLeadId)) || null;
+    }
+    return initialLead || null;
+  }, [data, selectedLeadId, initialLead]);
+
+  // Existing invoices related to active quotation, PO, or Lead
   const relatedExistingInvoices = React.useMemo(() => {
     const qNomor = activeQuotation?.nomor;
     const qId = activeQuotation?.id;
     const poNum = activePo?.nomor || activePo?.number;
     const poId = activePo?.id;
+    const leadId = activeLead?.id;
+    const leadName = activeLead?.nama ? String(activeLead.nama).trim().toLowerCase() : "";
 
     return (data.invoices ?? []).filter((inv: Row) => {
       if (qId && (String(inv.quotationId) === String(qId) || (qNomor && String(inv.catatan || "").includes(qNomor)))) return true;
       if (qNomor && (inv.quotation === qNomor || String(inv.po || "").includes(qNomor))) return true;
       if (poId && String(inv.clientPoId) === String(poId)) return true;
       if (poNum && (inv.po === poNum || String(inv.catatan || "").includes(poNum))) return true;
+      if (leadId && (String(inv.leadId) === String(leadId) || String(inv.catatan || "").includes(`[lead:${leadId}]`))) return true;
+      if (leadName && String(inv.catatan || "").toLowerCase().includes(leadName)) return true;
       return false;
     });
-  }, [data, activeQuotation, activePo]);
+  }, [data, activeQuotation, activePo, activeLead]);
 
   // Invoice Number
   const [nomor, setNomor] = React.useState<string>(() =>
@@ -203,8 +246,9 @@ function CreateInvoiceForm({
     if (activePo?.nilai) return Number(activePo.nilai);
     if (activeQuotation?.total) return Number(activeQuotation.total);
     if (activeQuotation?.nilai) return Number(activeQuotation.nilai);
+    if (activeLead?.nilai) return Number(activeLead.nilai);
     return Number(String(customDpp).replace(/\D/g, "")) || 0;
-  }, [items, activePo, activeQuotation, customDpp]);
+  }, [items, activePo, activeQuotation, activeLead, customDpp]);
 
   // Deal DPP (total dasar setelah diskon)
   const dealDpp = React.useMemo(() => {
@@ -259,6 +303,25 @@ function CreateInvoiceForm({
     }
     if (q.catatan) {
       setCatatan(q.catatan);
+    }
+  }
+
+  // Select lead handler
+  function handleSelectLead(l: Row) {
+    setSelectedLeadId(String(l.id));
+    if (l.customerId) {
+      setSelectedCustomerId(String(l.customerId));
+    } else {
+      const match = (data.customers ?? []).find(
+        (c: Row) => c.nama?.toLowerCase() === (l.perusahaan || l.nama)?.toLowerCase(),
+      );
+      if (match) setSelectedCustomerId(String(match.id));
+    }
+    if (l.nilai && !customDpp) {
+      setCustomDpp(formatThousands(l.nilai));
+    }
+    if (l.nama && !catatan) {
+      setCatatan(`Invoice untuk Lead ${l.nama}`);
     }
   }
 
@@ -346,7 +409,13 @@ function CreateInvoiceForm({
     }
 
     const customerObj = (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId));
-    const custName = customerObj?.nama || activeQuotation?.customer || activePo?.customer || "Customer";
+    const custName =
+      customerObj?.nama ||
+      activeQuotation?.customer ||
+      activePo?.customer ||
+      activeLead?.perusahaan ||
+      activeLead?.nama ||
+      "Customer";
 
     const invoiceType =
       mode === "lanjut"
@@ -359,25 +428,35 @@ function CreateInvoiceForm({
         ? "Termin"
         : "Pelunasan";
 
+    const refTitle =
+      activeQuotation?.nomor ||
+      activePo?.nomor ||
+      (activeLead ? `Lead ${activeLead.nama}` : "Invoice");
+
     const termDesc =
       mode === "lanjut"
         ? continuationType === "pelunasan"
-          ? `Pelunasan (${calculatedPct}%) - ${activeQuotation?.nomor || activePo?.nomor || "Invoice"}`
-          : `Termin ${terminNumber} (${calculatedPct}%) - ${activeQuotation?.nomor || activePo?.nomor || "Invoice"}`
+          ? `Pelunasan (${calculatedPct}%) - ${refTitle}`
+          : `Termin ${terminNumber} (${calculatedPct}%) - ${refTitle}`
         : scheme === "dp"
-        ? `DP (${calculatedPct}%) - ${activeQuotation?.nomor || "Invoice"}`
+        ? `DP (${calculatedPct}%) - ${refTitle}`
         : scheme === "termin"
-        ? `Termin 1 (${calculatedPct}%) - ${activeQuotation?.nomor || "Invoice"}`
-        : `Pembayaran Penuh (100%) - ${activeQuotation?.nomor || "Invoice"}`;
+        ? `Termin 1 (${calculatedPct}%) - ${refTitle}`
+        : `Pembayaran Penuh (100%) - ${refTitle}`;
 
-    const fullCatatan = catatan.trim() ? `${termDesc}. ${catatan.trim()}` : termDesc;
+    let fullCatatan = catatan.trim() ? `${termDesc}. ${catatan.trim()}` : termDesc;
+    if (activeLead?.id && !fullCatatan.includes(`[lead:${activeLead.id}]`)) {
+      fullCatatan += ` [lead:${activeLead.id}]`;
+    }
 
     setIsSubmitting(true);
     try {
       const created = await addRow("invoices", {
         nomor: nomor.trim(),
         customer: custName,
-        customerId: selectedCustomerId || undefined,
+        customerId: selectedCustomerId || (customerObj?.id ? String(customerObj.id) : undefined),
+        leadId: activeLead?.id ? String(activeLead.id) : undefined,
+        lead: activeLead?.nama || undefined,
         quotationId: activeQuotation?.id ? String(activeQuotation.id) : undefined,
         quotation: activeQuotation?.nomor || undefined,
         clientPoId: activePo?.id ? String(activePo.id) : undefined,
@@ -390,7 +469,7 @@ function CreateInvoiceForm({
         items: items.length > 0 ? items : undefined,
         dpLabel: calculatedPct < 100 ? `${invoiceType} (${calculatedPct}%)` : undefined,
         dpAmount: calculatedPct < 100 ? currentDpp : undefined,
-        subject: activeQuotation?.subject || "INVOICE PENAGIHAN",
+        subject: activeQuotation?.subject || `INVOICE PENAGIHAN - ${custName.toUpperCase()}`,
         intro: activeQuotation?.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
         notesList: activeQuotation?.notesList,
         city: activeQuotation?.city,
@@ -408,6 +487,9 @@ function CreateInvoiceForm({
         toast(`Invoice ${nomor} (${invoiceType}) berhasil dibuat!`);
         if (activeQuotation?.id) {
           pushHistory("quotations", activeQuotation.id, `Invoice ${nomor} (${rupiah(currentTotal)}) dibuat`);
+        }
+        if (activeLead?.id) {
+          pushHistory("leads", activeLead.id, `Invoice ${nomor} (${rupiah(currentTotal)}) dibuat langsung`);
         }
         onClose();
         await reload();
@@ -428,6 +510,10 @@ function CreateInvoiceForm({
           {activeQuotation ? (
             <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
               {activeQuotation.nomor}
+            </Text>
+          ) : activeLead ? (
+            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
+              Lead: {activeLead.nama}
             </Text>
           ) : null}
         </DialogTitle>
@@ -507,12 +593,12 @@ function CreateInvoiceForm({
         {/* Source Link Section */}
         <View className="mb-4 gap-2">
           <FormField label="Tautkan Invoice Ke" required>
-            <View className="flex-row gap-2">
+            <View className="flex-row flex-wrap gap-2">
               <Button
                 variant={sourceType === "quotation" ? "default" : "outline"}
                 size="sm"
                 onPress={() => setSourceType("quotation")}
-                className="flex-1 h-8"
+                className="flex-1 min-w-[100px] h-8"
               >
                 <Text className="text-xs">Penawaran</Text>
               </Button>
@@ -520,17 +606,25 @@ function CreateInvoiceForm({
                 variant={sourceType === "po" ? "default" : "outline"}
                 size="sm"
                 onPress={() => setSourceType("po")}
-                className="flex-1 h-8"
+                className="flex-1 min-w-[100px] h-8"
               >
                 <Text className="text-xs">PO Client</Text>
+              </Button>
+              <Button
+                variant={sourceType === "lead" ? "default" : "outline"}
+                size="sm"
+                onPress={() => setSourceType("lead")}
+                className="flex-1 min-w-[100px] h-8"
+              >
+                <Text className="text-xs">Lead / Prospek</Text>
               </Button>
               <Button
                 variant={sourceType === "customer" ? "default" : "outline"}
                 size="sm"
                 onPress={() => setSourceType("customer")}
-                className="flex-1 h-8"
+                className="flex-1 min-w-[100px] h-8"
               >
-                <Text className="text-xs">Customer Langsung</Text>
+                <Text className="text-xs">Customer</Text>
               </Button>
             </View>
           </FormField>
@@ -624,6 +718,27 @@ function CreateInvoiceForm({
                   (p: Row) => `${p.nomor || p.number} - ${p.customer || "-"}`,
                 )}
                 placeholder="Cari & pilih PO client..."
+              />
+            </FormField>
+          ) : sourceType === "lead" ? (
+            <FormField label="Pilih Lead / Prospek Terkait" required>
+              <SearchableSelect
+                value={
+                  activeLead
+                    ? `${activeLead.nama} - ${activeLead.perusahaan || activeLead.customer || "-"}`
+                    : ""
+                }
+                onChange={(val) => {
+                  const selName = val.split(" - ")[0]?.trim() || val;
+                  const match = (data.leads ?? []).find(
+                    (l: Row) => l.nama === selName || `${l.nama} - ${l.perusahaan || l.customer || "-"}` === val,
+                  );
+                  if (match) handleSelectLead(match);
+                }}
+                options={(data.leads ?? []).map(
+                  (l: Row) => `${l.nama} - ${l.perusahaan || l.customer || "-"}`,
+                )}
+                placeholder="Cari & pilih lead / prospek..."
               />
             </FormField>
           ) : null}
@@ -935,8 +1050,35 @@ function CreateInvoiceForm({
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         currentQuotationId={activeQuotation?.id}
+        existingItems={items}
         onAddItems={(newItems) => {
-          setItems((prev) => [...prev, ...newItems]);
+          const existingSnSet = new Set<string>();
+          items.forEach((it) => {
+            if (Array.isArray(it.serialNumbers)) it.serialNumbers.forEach((s) => existingSnSet.add(String(s).trim().toUpperCase()));
+            const snVal = String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1]?.trim();
+            if (snVal) existingSnSet.add(snVal.toUpperCase());
+          });
+          const valid: QuotationItem[] = [];
+          const duplicates: string[] = [];
+          newItems.forEach((it) => {
+            const snList: string[] = [];
+            if (Array.isArray(it.serialNumbers)) it.serialNumbers.forEach((s) => snList.push(String(s).trim().toUpperCase()));
+            const snVal = String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1]?.trim();
+            if (snVal) snList.push(snVal.toUpperCase());
+            const hasDup = snList.some((s) => existingSnSet.has(s));
+            if (hasDup) {
+              duplicates.push(snList.join(", "));
+            } else {
+              snList.forEach((s) => existingSnSet.add(s));
+              valid.push(it);
+            }
+          });
+          if (duplicates.length > 0) {
+            toast(`Barang/item dengan SN (${duplicates.join(", ")}) sudah ada di invoice`, "danger");
+          }
+          if (valid.length > 0) {
+            setItems((prev) => [...prev, ...valid]);
+          }
         }}
       />
     </DialogContent>

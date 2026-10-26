@@ -27,6 +27,7 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
+import { formatThousands } from "@/lib/format";
 import type { QuotationItem } from "@/modules/quotation/types";
 
 type Props = {
@@ -35,6 +36,7 @@ type Props = {
   onAddItems: (items: QuotationItem[]) => void;
   currentInvoiceId?: string | number | null;
   currentQuotationId?: string | number | null;
+  existingItems?: any[];
 };
 
 export function SerialItemPickerModal({
@@ -43,6 +45,7 @@ export function SerialItemPickerModal({
   onAddItems,
   currentInvoiceId,
   currentQuotationId,
+  existingItems,
 }: Props) {
   const { data, reload, toast, refreshModule } = useApp();
 
@@ -133,8 +136,35 @@ export function SerialItemPickerModal({
     );
   }, [serials, selectedProduct, snSearch]);
 
+  const existingSns = React.useMemo(() => {
+    const set = new Set<string>();
+    if (!Array.isArray(existingItems)) return set;
+    for (const it of existingItems) {
+      if (!it) continue;
+      if (it.sn) set.add(String(it.sn).trim().toUpperCase());
+      if (it.serialNumber) set.add(String(it.serialNumber).trim().toUpperCase());
+      if (Array.isArray(it.serialNumbers)) {
+        it.serialNumbers.forEach((s: any) => set.add(String(s).trim().toUpperCase()));
+      }
+      const snStr = String(it.item || it.name || "").match(/\(SN:\s*([^\)]+)\)/i)?.[1];
+      if (snStr) {
+        snStr.split(",").forEach((s) => set.add(s.trim().toUpperCase()));
+      }
+    }
+    return set;
+  }, [existingItems]);
+
   const getSerialAvailability = React.useCallback(
     (snRow: any) => {
+      const cleanSn = String(snRow.sn || "").trim().toUpperCase();
+      if (cleanSn && existingSns.has(cleanSn)) {
+        return {
+          selectable: false,
+          badge: "Sudah Ada di Dokumen",
+          tone: "Ditolak",
+        };
+      }
+
       const rawSt = String(snRow.rawStatus || snRow.status || "").toUpperCase();
       const activeRes: any[] = Array.isArray(snRow.reservations) ? snRow.reservations : [];
 
@@ -195,7 +225,7 @@ export function SerialItemPickerModal({
         tone: "Tersedia",
       };
     },
-    [currentInvoiceId, currentQuotationId],
+    [currentInvoiceId, currentQuotationId, existingSns],
   );
 
   const availableFifoSerials = React.useMemo(() => {
@@ -218,11 +248,20 @@ export function SerialItemPickerModal({
     setSelectedProductId(String(found.id));
     setSelectedSerialIds([]);
     setGoodsUnit(found.satuan || "Unit");
-    setGoodsPrice(String(found.hargaBeli || 0));
+    const rawPrice = found.hargaBeli ?? found.purchasePrice ?? found.price ?? found.harga ?? 0;
+    setGoodsPrice(rawPrice > 0 ? formatThousands(rawPrice) : "");
     setCustomItemLabel(found.nama || "");
   };
 
   const toggleSerial = (id: number) => {
+    const snObj = serials.find((s) => Number(s.id) === id);
+    if (snObj) {
+      const cleanSn = String(snObj.sn || "").trim().toUpperCase();
+      if (cleanSn && existingSns.has(cleanSn)) {
+        toast(`Barang/item dengan SN ${snObj.sn} sudah ada di daftar dokumen ini.`, "danger");
+        return;
+      }
+    }
     setSelectedSerialIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
@@ -250,7 +289,7 @@ export function SerialItemPickerModal({
         return;
       }
       const qty = Math.max(1, Number(serviceQty) || 1);
-      const harga = Math.max(0, Number(String(servicePrice).replace(/[^\d.-]/g, "")) || 0);
+      const harga = Math.max(0, Number(String(servicePrice).replace(/\D/g, "")) || 0);
       onAddItems([
         {
           id: `srv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -274,7 +313,7 @@ export function SerialItemPickerModal({
       return;
     }
 
-    const harga = Math.max(0, Number(String(goodsPrice).replace(/[^\d.-]/g, "")) || 0);
+    const harga = Math.max(0, Number(String(goodsPrice).replace(/\D/g, "")) || 0);
     const satuan = goodsUnit.trim() || selectedProduct.satuan || "Unit";
     const baseName = customItemLabel.trim() || selectedProduct.nama;
     const isSerialProduct = !!selectedProduct.berSN;
@@ -287,6 +326,14 @@ export function SerialItemPickerModal({
       const chosenRows = selectedSerialIds
         .map((id) => productSerials.find((s) => Number(s.id) === id))
         .filter(Boolean);
+
+      const duplicateSns = chosenRows
+        .map((sRow) => String(sRow.sn || "").trim())
+        .filter((sn) => existingSns.has(sn.toUpperCase()));
+      if (duplicateSns.length > 0) {
+        toast(`Barang/item dengan SN (${duplicateSns.join(", ")}) sudah ada di daftar!`, "danger");
+        return;
+      }
 
       if (splitMode === "PER_SN") {
         const newItems: QuotationItem[] = chosenRows.map((sRow, idx) => ({
@@ -403,11 +450,12 @@ export function SerialItemPickerModal({
                       onChange={(val) => {
                         const clean = (val.split(" (")[0] ?? val).trim();
                         const found = products.find(
-                          (p) => `${p.nama} (${p.sku})` === val || p.nama === clean,
+                          (p) => `${p.nama} (${p.sku})` === val || p.nama === clean || p.sku === clean,
                         );
                         setServiceName(found?.nama || clean);
                         if (found?.satuan) setServiceUnit(found.satuan);
-                        if (found?.hargaBeli) setServicePrice(String(found.hargaBeli));
+                        const sPrice = found?.hargaBeli ?? found?.purchasePrice ?? found?.price ?? found?.harga ?? 0;
+                        if (sPrice > 0) setServicePrice(formatThousands(sPrice));
                       }}
                       placeholder="Pilih dari katalog jasa terdaftar..."
                     />
@@ -442,10 +490,10 @@ export function SerialItemPickerModal({
                   <View className="flex-1">
                     <FormField label="Harga Satuan (Rp)">
                       <Input
-                        value={servicePrice}
-                        onChangeText={setServicePrice}
+                        value={servicePrice ? formatThousands(servicePrice) : ""}
+                        onChangeText={(v) => setServicePrice(formatThousands(v))}
                         keyboardType="numeric"
-                        placeholder="1500000"
+                        placeholder="1.500.000"
                       />
                     </FormField>
                   </View>
@@ -504,9 +552,10 @@ export function SerialItemPickerModal({
                       <View className="w-36">
                         <FormField label="Harga Satuan (Rp)">
                           <Input
-                            value={goodsPrice}
-                            onChangeText={setGoodsPrice}
+                            value={goodsPrice ? formatThousands(goodsPrice) : ""}
+                            onChangeText={(v) => setGoodsPrice(formatThousands(v))}
                             keyboardType="numeric"
+                            placeholder="0"
                           />
                         </FormField>
                       </View>
