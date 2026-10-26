@@ -4,6 +4,7 @@ test.describe("Modul Projects (CRUD)", () => {
   const projName = `[TEST] Project E2E ${Date.now()}`;
 
   test("Siklus CRUD: Tambah -> Lihat Detail -> Edit -> Hapus", async ({ page }) => {
+    test.setTimeout(60000);
     // 1. Buka halaman Projects
     await page.goto("/projects");
     await expect(page).toHaveURL(/.*projects/);
@@ -38,7 +39,44 @@ test.describe("Modul Projects (CRUD)", () => {
     await expect(page).toHaveURL(/.*projects\/\d+/);
     await expect(page.getByText(projName).first()).toBeVisible();
 
-    // 6. Hapus Project
+    // 6. Test Tambah Tugas di dalam Project
+    const taskTab = page.getByRole("tab", { name: "Tugas" }).or(page.getByText("Tugas", { exact: true })).first();
+    if (await taskTab.isVisible()) {
+      await taskTab.click();
+      await page.waitForTimeout(300);
+
+      const tambahTugasBtn = page.getByRole("button", { name: "Tambah Tugas" });
+      if (await tambahTugasBtn.isVisible()) {
+        await tambahTugasBtn.click();
+        const taskDialog = page.getByRole("dialog").last();
+        await expect(taskDialog).toBeVisible();
+
+        const taskNameInput = taskDialog.getByPlaceholder(/Penarikan kabel|Nama Tugas/i).first();
+        await taskNameInput.fill(`[TEST] Tugas Setting NVR ${Date.now()}`);
+
+        const picTrigger = taskDialog.getByText(/Pilih PIC/i).first();
+        if (await picTrigger.isVisible()) {
+          await picTrigger.click();
+          await page.getByRole("dialog").last().getByText(/Admin|Super|Teknisi|Hendra/i).first().click().catch(() => {});
+          await page.waitForTimeout(300);
+        }
+
+        await taskDialog.getByRole("button", { name: "Simpan Tugas" }).click();
+        await expect(taskDialog).not.toBeVisible({ timeout: 10000 });
+      }
+    }
+
+    // 7. Test Halaman Modul Tugas Global
+    await page.goto("/tasks");
+    await expect(page).toHaveURL(/.*tasks/);
+    await expect(page.getByText("Daftar Tugas (Tasks)")).toBeVisible({ timeout: 10000 });
+
+    // 8. Kembali ke Project dan Hapus Project
+    await page.goto("/projects");
+    await expect(page).toHaveURL(/.*projects/);
+    await row.click();
+    await expect(page).toHaveURL(/.*projects\/\d+/);
+
     const hapusBtn = page.getByRole("button", { name: "Hapus" }).first();
     await expect(hapusBtn).toBeVisible({ timeout: 10000 });
     await hapusBtn.click();
@@ -47,7 +85,7 @@ test.describe("Modul Projects (CRUD)", () => {
     const konfirmasiBtn = page.getByRole("dialog").getByRole("button", { name: /Ya, hapus|Hapus/i });
     await konfirmasiBtn.click();
 
-    // 7. Verifikasi kembali ke list
+    // 9. Verifikasi kembali ke list
     await expect(page).toHaveURL(/.*projects/);
   });
 });

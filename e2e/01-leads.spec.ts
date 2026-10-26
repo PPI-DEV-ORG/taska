@@ -44,7 +44,24 @@ test.describe("Modul Leads (CRUD)", () => {
     await expect(page).toHaveURL(/.*leads\/\d+/);
     await expect(page.getByText(leadName).first()).toBeVisible();
 
-    // 6. Edit Data Lead di Halaman Detail
+    // 6. Test Ubah Status di Detail Lead
+    const ubahStatusBtn = page.getByRole("button", { name: "Ubah status" });
+    if (await ubahStatusBtn.isVisible()) {
+      await ubahStatusBtn.click();
+      const statusDialog = page.getByRole("dialog").last();
+      await expect(statusDialog).toBeVisible();
+      await statusDialog.getByText("Proposal").first().click();
+      await page.waitForTimeout(500);
+    }
+
+    // 7. Test Action Tombol Minta Survey
+    const mintaSurveyBtn = page.getByRole("button", { name: "Minta survey" });
+    if (await mintaSurveyBtn.isVisible()) {
+      await mintaSurveyBtn.click();
+      await page.waitForTimeout(500);
+    }
+
+    // 8. Edit Data Lead di Halaman Detail
     const catatanInput = page.getByPlaceholder(/Tulis ringkasan|kebutuhan teknis/i).first();
     if (await catatanInput.isVisible()) {
       await catatanInput.fill("Catatan kebutuhan diubah oleh Playwright E2E");
@@ -53,19 +70,20 @@ test.describe("Modul Leads (CRUD)", () => {
       const simpanPerubahanBtn = page.getByRole("button", { name: /Simpan Perubahan/i });
       if (await simpanPerubahanBtn.isVisible()) {
         await simpanPerubahanBtn.click();
+        await page.waitForTimeout(500);
       }
     }
 
-    // 7. Hapus Lead
+    // 9. Hapus Lead
     const hapusBtn = page.getByRole("button", { name: "Hapus" }).first();
-    await expect(hapusBtn).toBeVisible();
+    await expect(hapusBtn).toBeVisible({ timeout: 10000 });
     await hapusBtn.click();
 
     // Konfirmasi Hapus di Dialog
-    const konfirmasiHapusBtn = page.getByRole("dialog").getByRole("button", { name: "Hapus" });
+    const konfirmasiHapusBtn = page.getByRole("dialog").getByRole("button", { name: /Ya, hapus|Hapus/i });
     await konfirmasiHapusBtn.click();
 
-    // 8. Verifikasi kembali ke list dan data sudah terhapus
+    // 10. Verifikasi kembali ke list dan data sudah terhapus
     await expect(page).toHaveURL(/.*leads/);
     await expect(page.getByText(leadName)).not.toBeVisible({ timeout: 10000 });
   });
