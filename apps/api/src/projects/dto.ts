@@ -21,9 +21,22 @@ const TASK_STATUS = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"] as const;
 const PRIORITY = ["RENDAH", "SEDANG", "TINGGI", "URGENT"] as const;
 
 export class ProjectListQuery extends PageQuery {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "SELESAI" || v === "DONE") return "SELESAI";
+      if (v === "BERJALAN" || v === "IN_PROGRESS" || v === "AKTIF" || v === "PROGRESS") return "BERJALAN";
+      if (v === "DIRENCANAKAN" || v === "PLAN" || v === "PLANNED") return "DIRENCANAKAN";
+      if (v === "DITUNDA" || v === "HOLD" || v === "PENDING") return "DITUNDA";
+      if (v === "TERLAMBAT" || v === "OVERDUE" || v === "LATE") return "TERLAMBAT";
+      return v;
+    }
+    return value;
+  })
   @IsOptional() @IsIn(PROJECT_STATUS)
   status?: (typeof PROJECT_STATUS)[number];
 
+  @Transform(({ value }) => typeof value === "string" ? value.toUpperCase().trim().replace(/[\s\-]/g, "_") : value)
   @IsOptional() @IsIn(PROJECT_TYPES)
   type?: (typeof PROJECT_TYPES)[number];
 
@@ -75,7 +88,20 @@ export class ProjectDto {
   @IsOptional() @IsDateString()
   endDate?: string;
 
-  @IsOptional() @IsIn(PROJECT_STATUS)
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "SELESAI" || v === "DONE") return "SELESAI";
+      if (v === "BERJALAN" || v === "IN_PROGRESS" || v === "AKTIF" || v === "PROGRESS") return "BERJALAN";
+      if (v === "DIRENCANAKAN" || v === "PLAN" || v === "PLANNED") return "DIRENCANAKAN";
+      if (v === "DITUNDA" || v === "HOLD" || v === "PENDING") return "DITUNDA";
+      if (v === "TERLAMBAT" || v === "OVERDUE" || v === "LATE") return "TERLAMBAT";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(PROJECT_STATUS)
   status?: (typeof PROJECT_STATUS)[number];
 
   @IsOptional() @IsInt() @Min(0) @Max(100)
@@ -101,6 +127,18 @@ export class ProjectDto {
 }
 
 export class ProjectStatusDto {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "SELESAI" || v === "DONE") return "SELESAI";
+      if (v === "BERJALAN" || v === "IN_PROGRESS" || v === "AKTIF" || v === "PROGRESS") return "BERJALAN";
+      if (v === "DIRENCANAKAN" || v === "PLAN" || v === "PLANNED") return "DIRENCANAKAN";
+      if (v === "DITUNDA" || v === "HOLD" || v === "PENDING") return "DITUNDA";
+      if (v === "TERLAMBAT" || v === "OVERDUE" || v === "LATE") return "TERLAMBAT";
+      return v;
+    }
+    return value;
+  })
   @IsIn(PROJECT_STATUS)
   status!: (typeof PROJECT_STATUS)[number];
 
@@ -173,9 +211,31 @@ export class TaskDto {
   @IsOptional() @IsDateString()
   dueDate?: string;
 
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "LOW") return "RENDAH";
+      if (v === "MEDIUM" || v === "MED") return "SEDANG";
+      if (v === "HIGH") return "TINGGI";
+      if (v === "URGENT") return "URGENT";
+      return v;
+    }
+    return value;
+  })
   @IsOptional() @IsIn(PRIORITY)
   priority?: (typeof PRIORITY)[number];
 
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "TODO") return "TODO";
+      if (v === "IN_PROGRESS" || v === "PROGRESS" || v === "BERJALAN" || v === "DOING") return "IN_PROGRESS";
+      if (v === "BLOCKED" || v === "HOLD" || v === "TERTUNDA" || v === "PENDING") return "BLOCKED";
+      if (v === "DONE" || v === "SELESAI" || v === "COMPLETED") return "DONE";
+      return v;
+    }
+    return value;
+  })
   @IsOptional() @IsIn(TASK_STATUS)
   status?: (typeof TASK_STATUS)[number];
 
@@ -196,6 +256,17 @@ export class TaskDto {
 }
 
 export class TaskStatusDto {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "TODO") return "TODO";
+      if (v === "IN_PROGRESS" || v === "PROGRESS" || v === "BERJALAN" || v === "DOING") return "IN_PROGRESS";
+      if (v === "BLOCKED" || v === "HOLD" || v === "TERTUNDA" || v === "PENDING") return "BLOCKED";
+      if (v === "DONE" || v === "SELESAI" || v === "COMPLETED") return "DONE";
+      return v;
+    }
+    return value;
+  })
   @IsIn(TASK_STATUS)
   status!: (typeof TASK_STATUS)[number];
 

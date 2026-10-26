@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsArray,
   IsDateString,
@@ -107,7 +107,9 @@ export class InvoiceOutDto {
   @IsOptional() @IsString()
   description?: string;
 
-  @IsOptional() @IsIn(["DP", "TERMIN", "PELUNASAN"])
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase().trim() : value))
+  @IsIn(["DP", "TERMIN", "PELUNASAN"])
   type?: "DP" | "TERMIN" | "PELUNASAN";
 
   @IsOptional() @IsNumber() @Min(0)
@@ -131,7 +133,21 @@ export class InvoiceOutDto {
   @IsOptional() @IsDateString()
   dueDate?: string;
 
-  @IsOptional() @IsIn(["DRAFT", "SENT", "PARTIAL", "PAID", "OVERDUE", "BATAL"])
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "LUNAS") return "PAID";
+      if (v === "TERKIRIM") return "SENT";
+      if (v === "BELUM_DIKIRIM") return "DRAFT";
+      if (v === "DIBATALKAN") return "BATAL";
+      if (v === "TERLAMBAT") return "OVERDUE";
+      if (v === "DIBAYAR_SEBAGIAN") return "PARTIAL";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["DRAFT", "SENT", "PARTIAL", "PAID", "OVERDUE", "BATAL"])
   status?: "DRAFT" | "SENT" | "PARTIAL" | "PAID" | "OVERDUE" | "BATAL";
 
   @IsOptional() @IsInt()
@@ -257,11 +273,14 @@ export class ExpenseDto {
   @IsOptional() @IsInt()
   paidFileId?: number;
 
-  @IsOptional() @IsIn(["DILAPORKAN", "DISETUJUI", "DITOLAK", "DIBAYAR"])
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase().trim() : value))
+  @IsIn(["DILAPORKAN", "DISETUJUI", "DITOLAK", "DIBAYAR"])
   status?: "DILAPORKAN" | "DISETUJUI" | "DITOLAK" | "DIBAYAR";
 }
 
 export class ExpenseStatusDto {
+  @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase().trim() : value))
   @IsIn(["DILAPORKAN", "DISETUJUI", "DITOLAK", "DIBAYAR"])
   status!: "DILAPORKAN" | "DISETUJUI" | "DITOLAK" | "DIBAYAR";
 

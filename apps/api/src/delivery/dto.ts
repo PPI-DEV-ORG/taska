@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsArray,
   IsDateString,
@@ -12,7 +12,18 @@ import {
 import { PageQuery } from "../common/dto/page-query.js";
 
 export class DeliveryListQuery extends PageQuery {
-  @IsOptional() @IsIn(["PENDING", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "TERIMA" || v === "SELESAI" || v === "SAMPAI") return "DITERIMA";
+      if (v === "KIRIM") return "DIKIRIM";
+      if (v === "BATAL") return "DIBATALKAN";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["PENDING", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
   status?: "PENDING" | "DIKIRIM" | "DITERIMA" | "DIBATALKAN";
 
   @IsOptional() @IsIn(["true", "false"])
@@ -70,7 +81,18 @@ export class DeliveryCreateDto {
   @IsOptional() @Type(() => Number) @IsInt()
   warehouseId?: number;
 
-  @IsOptional() @IsIn(["PENDING", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "TERIMA" || v === "SELESAI" || v === "SAMPAI") return "DITERIMA";
+      if (v === "KIRIM") return "DIKIRIM";
+      if (v === "BATAL") return "DIBATALKAN";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["PENDING", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
   status?: "PENDING" | "DIKIRIM" | "DITERIMA" | "DIBATALKAN";
 
   @IsOptional() @IsString()
@@ -106,6 +128,16 @@ export class GoodsDto {
 }
 
 export class DeliveryStatusDto {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "TERIMA" || v === "SELESAI" || v === "SAMPAI") return "DITERIMA";
+      if (v === "KIRIM") return "DIKIRIM";
+      if (v === "BATAL") return "DIBATALKAN";
+      return v;
+    }
+    return value;
+  })
   @IsIn(["PENDING", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
   status: "PENDING" | "DIKIRIM" | "DITERIMA" | "DIBATALKAN";
 

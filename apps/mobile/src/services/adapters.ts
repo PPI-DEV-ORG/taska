@@ -113,6 +113,46 @@ for (const [k, m] of Object.entries(MAPS)) {
   REVERSE[k] = {};
   for (const [enumVal, label] of Object.entries(m)) REVERSE[k][label] = enumVal;
 }
+REVERSE.clientType = {
+  ...REVERSE.clientType,
+  "end_user": "END_USER",
+  "enduser": "END_USER",
+  "End User": "END_USER",
+  "ENDUSER": "END_USER",
+  "partner": "PARTNER",
+  "Partner": "PARTNER",
+  "si": "SI",
+  "SI": "SI",
+};
+REVERSE["supplier-pos"] = {
+  ...REVERSE["supplier-pos"],
+  "Di Supplier": "DI_SUPPLIER",
+  "Dalam Perjalanan": "DIKIRIM",
+  "Dikirim": "DIKIRIM",
+  "Sampai": "SAMPAI",
+  "Belum Dikirim": "DI_SUPPLIER",
+};
+REVERSE["delivery-notes"] = {
+  ...REVERSE["delivery-notes"],
+  "Terima": "DITERIMA",
+  "Selesai": "DITERIMA",
+  "Kirim": "DIKIRIM",
+  "Batal": "DIBATALKAN",
+};
+REVERSE.surveys = {
+  ...REVERSE.surveys,
+  "Batal": "BATAL",
+  "Dibatalkan": "BATAL",
+};
+REVERSE.invoices = {
+  ...REVERSE.invoices,
+  "Lunas": "PAID",
+  "Dibayar sebagian": "PARTIAL",
+  "Belum dikirim": "DRAFT",
+  "Terkirim": "SENT",
+  "Dibatalkan": "BATAL",
+  "Terlambat": "OVERDUE",
+};
 REVERSE.quotations = {
   ...REVERSE.quotations,
   Done: "DRAFT",
@@ -143,8 +183,31 @@ export function toLabel(map: string, v: string | null | undefined): string {
   return MAPS[map]?.[v] ?? v;
 }
 export function toEnum(map: string, label: string | null | undefined): string {
-  if (label == null) return "";
-  return REVERSE[map]?.[label] ?? label;
+  if (label == null || label === "") return "";
+  const str = String(label).trim();
+  const direct = REVERSE[map]?.[str];
+  if (direct) return direct;
+
+  const normalized = str.toLowerCase();
+  const rev = REVERSE[map];
+  if (rev) {
+    for (const [k, v] of Object.entries(rev)) {
+      if (k.toLowerCase() === normalized) return v;
+    }
+  }
+
+  const m = MAPS[map];
+  if (m) {
+    const enumUpper = str.toUpperCase().replace(/[\s\-]/g, "_");
+    if (m[enumUpper]) return enumUpper;
+    for (const k of Object.keys(m)) {
+      if (k.toLowerCase() === normalized || k.replace(/_/g, "") === normalized.replace(/_/g, "")) {
+        return k;
+      }
+    }
+  }
+
+  return str;
 }
 
 const ROLE_UI: Record<string, Role> = {
@@ -1644,7 +1707,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "dpAmount",
   ],
   expenses: ["date", "categoryId", "amount", "description", "projectId", "surveyId", "deliveryNoteId", "costCenterId", "receiptFileId", "paidFileId"],
-  "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "items"],
+  "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "photoFileId", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
@@ -1839,6 +1902,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.items !== undefined) out.items = patch.items;
   } else if (module === "supplier-pos") {
     if (patch.nomorSoSupplier !== undefined) out.supplierSoNumber = patch.nomorSoSupplier;
+    if (patch.status !== undefined) out.status = toEnum("supplier-pos", patch.status) || patch.status;
+    if (patch.pengiriman !== undefined || patch.shipmentStatus !== undefined) {
+      const shipVal = patch.pengiriman ?? patch.shipmentStatus;
+      out.shipmentStatus = toEnum("supplier-pos", shipVal) || shipVal;
+    }
   } else if (module === "invoices") {
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);

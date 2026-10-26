@@ -53,7 +53,15 @@ export class RequestDto {
   date?: string;
 
   @IsOptional()
-  @Transform(({ value }) => (typeof value === "string" ? value.trim().toUpperCase() : value))
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.trim().toUpperCase().replace(/[\s\-]/g, "_");
+      if (v === "PROYEK") return "PROJECT";
+      if (v === "STOCK") return "STOK";
+      return v;
+    }
+    return value;
+  })
   @IsIn(["PROJECT", "STOK", "INTERNAL", "LAINNYA"])
   costType?: "PROJECT" | "STOK" | "INTERNAL" | "LAINNYA";
 
@@ -66,7 +74,17 @@ export class RequestDto {
   @IsOptional() @IsInt()
   supplierId?: number;
 
-  @IsOptional() @IsIn(["BARU", "SECOND"])
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.trim().toUpperCase().replace(/[\s\-]/g, "_");
+      if (v === "NEW") return "BARU";
+      if (v === "BEKAS" || v === "SEKOND") return "SECOND";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["BARU", "SECOND"])
   condition?: "BARU" | "SECOND";
 
   @IsOptional() @IsString()
@@ -78,7 +96,9 @@ export class RequestDto {
   @IsOptional() @IsInt()
   evidenceFileId?: number;
 
-  @IsOptional() @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  @IsOptional()
+  @Transform(({ value }) => typeof value === "string" ? value.trim().toUpperCase().replace(/[\s\-]/g, "_") : value)
+  @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
   status?: string;
 
   @IsOptional() @IsArray() @ValidateNested({ each: true })
@@ -87,6 +107,7 @@ export class RequestDto {
 }
 
 export class RequestStatusDto {
+  @Transform(({ value }) => typeof value === "string" ? value.trim().toUpperCase().replace(/[\s\-]/g, "_") : value)
   @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
   status!: string;
 
@@ -98,7 +119,18 @@ export class PoListQuery extends PageQuery {
   @IsOptional() @IsIn(["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"])
   status?: string;
 
-  @IsOptional() @IsIn(["DI_SUPPLIER", "DIKIRIM", "SAMPAI"])
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "BELUM_DIKIRIM" || v === "DI_SUPPLIER" || v === "DISUPPLIER") return "DI_SUPPLIER";
+      if (v === "DALAM_PERJALANAN" || v === "KIRIM" || v === "DIKIRIM") return "DIKIRIM";
+      if (v === "SAMPAI" || v === "DITERIMA" || v === "SELESAI" || v === "TIBA") return "SAMPAI";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["DI_SUPPLIER", "DIKIRIM", "SAMPAI"])
   shipmentStatus?: string;
 
   @IsOptional() @Type(() => Number) @IsInt()
@@ -159,7 +191,18 @@ export class PoDto {
   @IsOptional() @IsString()
   status?: string;
 
-  @IsOptional() @IsIn(["DI_SUPPLIER", "DIKIRIM", "SAMPAI"])
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "BELUM_DIKIRIM" || v === "DI_SUPPLIER" || v === "DISUPPLIER") return "DI_SUPPLIER";
+      if (v === "DALAM_PERJALANAN" || v === "KIRIM" || v === "DIKIRIM") return "DIKIRIM";
+      if (v === "SAMPAI" || v === "DITERIMA" || v === "SELESAI" || v === "TIBA") return "SAMPAI";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["DI_SUPPLIER", "DIKIRIM", "SAMPAI"])
   shipmentStatus?: "DI_SUPPLIER" | "DIKIRIM" | "SAMPAI";
 
   @IsOptional() @IsInt()
@@ -177,6 +220,16 @@ export class PoDto {
 }
 
 export class ShipmentDto {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "BELUM_DIKIRIM" || v === "DI_SUPPLIER" || v === "DISUPPLIER") return "DI_SUPPLIER";
+      if (v === "DALAM_PERJALANAN" || v === "KIRIM" || v === "DIKIRIM") return "DIKIRIM";
+      if (v === "SAMPAI" || v === "DITERIMA" || v === "SELESAI" || v === "TIBA") return "SAMPAI";
+      return v;
+    }
+    return value;
+  })
   @IsIn(["DI_SUPPLIER", "DIKIRIM", "SAMPAI"])
   shipmentStatus!: "DI_SUPPLIER" | "DIKIRIM" | "SAMPAI";
 
