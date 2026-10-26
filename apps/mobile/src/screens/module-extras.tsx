@@ -567,7 +567,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                     </Text>
                   </View>
 
-                  <View className="items-end gap-1">
+                  <View className="shrink-0 items-end gap-1">
                     <Text className="text-xs font-bold text-foreground">
                       {sub > 0 ? rupiah(sub) : "-"}
                     </Text>
@@ -683,7 +683,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       ) : null}
 
       <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md w-[92vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>
               {editingIndex !== null ? "Edit Barang / Jasa" : "Tambah Barang / Jasa"}

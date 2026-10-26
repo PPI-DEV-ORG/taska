@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsArray,
   IsDateString,
@@ -104,6 +104,20 @@ export class CreateSerialBatchDto {
 }
 
 export class SerialStatusDto {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "DI_GUDANG" || v === "GUDANG" || v === "IN_WAREHOUSE") return "DI_GUDANG";
+      if (v === "RESERVED" || v === "DIRESERVASI") return "RESERVED";
+      if (v === "DIKIRIM" || v === "KIRIM" || v === "SHIPPED") return "DIKIRIM";
+      if (v === "TERPASANG" || v === "PASANG" || v === "INSTALLED") return "TERPASANG";
+      if (v === "RETUR" || v === "RETURN" || v === "RETURNED") return "RETUR";
+      if (v === "DIGANTI" || v === "REPLACED") return "DIGANTI";
+      if (v === "RUSAK" || v === "DAMAGED") return "RUSAK";
+      return v;
+    }
+    return value;
+  })
   @IsIn(["DI_GUDANG", "RESERVED", "DIKIRIM", "TERPASANG", "RETUR", "RUSAK"])
   status: "DI_GUDANG" | "RESERVED" | "DIKIRIM" | "TERPASANG" | "RETUR" | "RUSAK";
 
@@ -223,6 +237,16 @@ export class DamageCreateDto {
   @IsOptional() @Type(() => Number) @IsInt()
   serialUnitId?: number;
 
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "RUSAK" || v === "BROKEN" || v === "DAMAGE") return "RUSAK";
+      if (v === "SALAH_BARANG" || v === "WRONG_ITEM" || v === "SALAH") return "SALAH_BARANG";
+      if (v === "KURANG" || v === "SHORTAGE" || v === "LESS") return "KURANG";
+      return v;
+    }
+    return value;
+  })
   @IsOptional() @IsIn(["RUSAK", "SALAH_BARANG", "KURANG"])
   type?: "RUSAK" | "SALAH_BARANG" | "KURANG";
 
@@ -235,11 +259,31 @@ export class DamageCreateDto {
   @IsOptional() @Type(() => Number) @IsInt()
   fileId?: number;
 
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "DILAPORKAN" || v === "REPORTED" || v === "LAPOR") return "DILAPORKAN";
+      if (v === "DIPROSES" || v === "PROSES" || v === "IN_PROGRESS" || v === "PROCESSING") return "DIPROSES";
+      if (v === "SELESAI" || v === "DONE" || v === "RESOLVED" || v === "CLOSED") return "SELESAI";
+      return v;
+    }
+    return value;
+  })
   @IsOptional() @IsIn(["DILAPORKAN", "DIPROSES", "SELESAI"])
   status?: "DILAPORKAN" | "DIPROSES" | "SELESAI";
 }
 
 export class DamageListQuery extends PageQuery {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "DILAPORKAN" || v === "REPORTED" || v === "LAPOR") return "DILAPORKAN";
+      if (v === "DIPROSES" || v === "PROSES" || v === "IN_PROGRESS" || v === "PROCESSING") return "DIPROSES";
+      if (v === "SELESAI" || v === "DONE" || v === "RESOLVED" || v === "CLOSED") return "SELESAI";
+      return v;
+    }
+    return value;
+  })
   @IsOptional() @IsIn(["DILAPORKAN", "DIPROSES", "SELESAI"])
   status?: "DILAPORKAN" | "DIPROSES" | "SELESAI";
 
@@ -248,6 +292,16 @@ export class DamageListQuery extends PageQuery {
 }
 
 export class DamageStatusDto {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "DILAPORKAN" || v === "REPORTED" || v === "LAPOR") return "DILAPORKAN";
+      if (v === "DIPROSES" || v === "PROSES" || v === "IN_PROGRESS" || v === "PROCESSING") return "DIPROSES";
+      if (v === "SELESAI" || v === "DONE" || v === "RESOLVED" || v === "CLOSED") return "SELESAI";
+      return v;
+    }
+    return value;
+  })
   @IsIn(["DILAPORKAN", "DIPROSES", "SELESAI"])
   status: "DILAPORKAN" | "DIPROSES" | "SELESAI";
 

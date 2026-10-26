@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsBoolean,
   IsIn,
@@ -10,6 +10,14 @@ import {
   MinLength,
 } from "class-validator";
 import { PageQuery } from "../common/dto/page-query.js";
+
+function normalizeActiveStatus(value: unknown) {
+  if (typeof value !== "string") return value;
+  const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+  if (v === "AKTIF" || v === "ACTIVE") return "AKTIF";
+  if (v === "NONAKTIF" || v === "NON_AKTIF" || v === "INACTIVE") return "NONAKTIF";
+  return v;
+}
 
 export class ListQuery extends PageQuery {
   @IsOptional() @IsString()
@@ -44,6 +52,7 @@ export class CustomerDto {
   @IsOptional() @IsString()
   notes?: string;
 
+  @Transform(({ value }) => normalizeActiveStatus(value))
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";
 }
@@ -70,6 +79,7 @@ export class SupplierDto {
   @IsOptional() @IsString()
   notes?: string;
 
+  @Transform(({ value }) => normalizeActiveStatus(value))
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";
 }
@@ -108,6 +118,7 @@ export class ProductDto {
   @IsOptional() @IsNumber()
   purchasePrice?: number;
 
+  @Transform(({ value }) => normalizeActiveStatus(value))
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";
 }
@@ -122,6 +133,7 @@ export class ProductCategoryDto {
   @IsOptional() @IsString()
   prefix?: string;
 
+  @Transform(({ value }) => normalizeActiveStatus(value))
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";
 }
@@ -133,6 +145,7 @@ export class WarehouseDto {
   @IsOptional() @IsString()
   city?: string;
 
+  @Transform(({ value }) => normalizeActiveStatus(value))
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";
 }
@@ -141,6 +154,7 @@ export class NamedDto {
   @IsOptional() @IsString()
   name?: string;
 
+  @Transform(({ value }) => normalizeActiveStatus(value))
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";
 }

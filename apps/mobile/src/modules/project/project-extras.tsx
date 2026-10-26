@@ -277,16 +277,16 @@ export function ProjectExtras({ row }: { row: Row }) {
           {flowSteps.map((st) => (
             <View
               key={st.key}
-              className={`border rounded-xl px-3 py-2 flex-row items-center gap-2 ${
+              className={`border rounded-xl px-2.5 py-2 sm:px-3 sm:py-2 flex-row items-center gap-2 flex-1 min-w-[140px] sm:flex-initial ${
                 st.done ? "border-success/40 bg-success/10" : "border-border bg-panel/50"
               }`}
             >
               {st.done ? (
-                <CheckCircle2 size={15} color={colors.success} />
+                <CheckCircle2 size={15} color={colors.success} className="shrink-0" />
               ) : (
-                <Circle size={15} color={colors.muted} />
+                <Circle size={15} color={colors.muted} className="shrink-0" />
               )}
-              <View>
+              <View className="flex-1 min-w-0">
                 <Text className="text-xs font-semibold text-foreground">{st.label}</Text>
                 <Text className="text-[11px] text-muted-foreground">{st.sub}</Text>
               </View>

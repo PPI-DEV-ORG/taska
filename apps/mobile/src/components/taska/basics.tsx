@@ -18,24 +18,24 @@ export function Panel({
   title?: string; subtitle?: string; right?: React.ReactNode; icon?: LucideIcon; children?: React.ReactNode; className?: string; pad?: boolean;
 }) {
   return (
-    <View className={cn("bg-card border-border/80 rounded-2xl border shadow-sm", className)}>
+    <View className={cn("bg-card border-border/80 rounded-2xl border shadow-sm overflow-hidden", className)}>
       {title ? (
-        <View className="border-border/60 flex-row items-center justify-between gap-3 border-b px-5 py-4">
-          <View className="flex-1 flex-row items-center gap-3">
+        <View className="border-border/60 flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b px-4 sm:px-5 py-3 sm:py-4">
+          <View className="flex-1 flex-row items-center gap-2.5 sm:gap-3 min-w-0">
             {Icon ? (
-              <View className="size-8 rounded-lg bg-primary/10 items-center justify-center">
+              <View className="size-8 shrink-0 rounded-lg bg-primary/10 items-center justify-center">
                 <Icon size={18} color={colors.primary} />
               </View>
             ) : null}
-            <View className="flex-1">
-              <Text className="text-base font-semibold tracking-tight">{title}</Text>
+            <View className="flex-1 min-w-0">
+              <Text className="text-sm sm:text-base font-semibold tracking-tight">{title}</Text>
               {subtitle ? <Text className="text-muted-foreground text-xs mt-0.5">{subtitle}</Text> : null}
             </View>
           </View>
-          {right}
+          {right ? <View className="self-start sm:self-auto shrink-0 flex-row flex-wrap items-center gap-1.5">{right}</View> : null}
         </View>
       ) : null}
-      <View className={pad ? "p-5" : ""}>{children}</View>
+      <View className={pad ? "p-4 sm:p-5" : ""}>{children}</View>
     </View>
   );
 }

@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
@@ -48,7 +48,18 @@ export class LeadDto {
   @IsOptional() @IsInt()
   sourceId?: number;
 
-  @IsOptional() @IsIn(["PARTNER", "END_USER", "SI"])
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "ENDUSER" || v === "END_USER") return "END_USER";
+      if (v === "PARTNER") return "PARTNER";
+      if (v === "SI") return "SI";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["PARTNER", "END_USER", "SI"])
   clientType?: "PARTNER" | "END_USER" | "SI";
 
   @IsOptional() @IsString()
@@ -72,7 +83,9 @@ export class LeadDto {
   @IsOptional() @IsBoolean()
   needsSurvey?: boolean;
 
-  @IsOptional() @IsIn(["PROSPECTING", "QUALIFICATION", "PROPOSAL", "NEGOTIATION", "WON", "LOST"])
+  @IsOptional()
+  @Transform(({ value }) => typeof value === "string" ? value.toUpperCase().trim().replace(/[\s\-]/g, "_") : value)
+  @IsIn(["PROSPECTING", "QUALIFICATION", "PROPOSAL", "NEGOTIATION", "WON", "LOST"])
   stage?: "PROSPECTING" | "QUALIFICATION" | "PROPOSAL" | "NEGOTIATION" | "WON" | "LOST";
 
   @IsOptional() @IsInt()
@@ -153,7 +166,16 @@ export class SurveyDto {
   @IsOptional() @IsNumber() @Min(0)
   cost?: number;
 
-  @IsOptional() @IsIn(["DIMINTA", "DIJADWALKAN", "BERJALAN", "SELESAI", "BATAL"])
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "DIBATALKAN" || v === "BATALKAN") return "BATAL";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["DIMINTA", "DIJADWALKAN", "BERJALAN", "SELESAI", "BATAL"])
   status?: "DIMINTA" | "DIJADWALKAN" | "BERJALAN" | "SELESAI" | "BATAL";
 
   @IsOptional() @IsInt()
@@ -167,6 +189,14 @@ export class SurveyDto {
 }
 
 export class SurveyStatusDto {
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v === "DIBATALKAN" || v === "BATALKAN") return "BATAL";
+      return v;
+    }
+    return value;
+  })
   @IsIn(["DIMINTA", "DIJADWALKAN", "BERJALAN", "SELESAI", "BATAL"])
   status!: "DIMINTA" | "DIJADWALKAN" | "BERJALAN" | "SELESAI" | "BATAL";
 
