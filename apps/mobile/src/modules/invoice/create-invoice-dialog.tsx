@@ -17,6 +17,16 @@ import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
+import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
+import {
+  type PphMode,
+  type PpnMode,
+  PPN_MODE_OPTIONS,
+  getInitialPpnMode,
+  ppnModeToTipe,
+  pphRateFor,
+  pphModeToTipe,
+} from "@/modules/quotation/lib";
 
 function getTodayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -255,17 +265,12 @@ function CreateInvoiceForm({
     return Math.max(0, grossDealDpp - quotationDisc);
   }, [grossDealDpp, quotationDisc]);
 
-  const isNoPpn =
-    activeQuotation?.tipePpn === "No PPN (Tanpa PPN)" ||
-    activeQuotation?.ppnMode === "none" ||
-    (activeQuotation?.ppn === 0 && (quotationDisc > 0 || (activeQuotation?.total || 0) > 0));
+  const [ppnMode, setPpnMode] = React.useState<PpnMode>(() => getInitialPpnMode(initialQuotation));
+  const isNoPpn = ppnMode === "none";
+  const isIncludePpn = ppnMode === "include";
 
-  const isIncludePpn =
-    activeQuotation?.tipePpn === "Include PPN (Sudah termasuk)" ||
-    activeQuotation?.ppnMode === "include";
-
-  const dealPpn = isNoPpn ? 0 : Math.round(dealDpp * 0.11);
-  const dealGrandTotal = dealDpp + dealPpn;
+  const dealPpn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, dealDpp - Math.round(dealDpp / 1.11)) : Math.round(dealDpp * 0.11);
+  const dealGrandTotal = isNoPpn || isIncludePpn ? dealDpp : dealDpp + dealPpn;
 
   // Total already billed in DPP
   const alreadyBilledDpp = React.useMemo(() => {
@@ -278,6 +283,7 @@ function CreateInvoiceForm({
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
   const [isExtracting, setIsExtracting] = React.useState<boolean>(false);
   const [pickerOpen, setPickerOpen] = React.useState<boolean>(false);
+  const [pphMode, setPphMode] = React.useState<PphMode>(() => (activeQuotation?.pphMode as PphMode) || "none");
   const fileInputRef = React.useRef<any>(null);
 
   // Switch mode handler
@@ -296,6 +302,8 @@ function CreateInvoiceForm({
   function handleSelectQuotation(q: Row) {
     setSelectedQuotationId(String(q.id));
     if (q.customerId) setSelectedCustomerId(String(q.customerId));
+    if (q.pphMode) setPphMode(q.pphMode as PphMode);
+    if (q.tipePpn || q.ppnMode) setPpnMode(getInitialPpnMode(q));
     if (Array.isArray(q.items) && q.items.length > 0) {
       setItems(q.items);
     } else if (q.nilai) {
@@ -325,8 +333,8 @@ function CreateInvoiceForm({
     }
   }
 
-  // Calculate current invoice DPP, PPN 11%, and Total
-  const { currentDpp, currentPpn, currentTotal, calculatedPct } = React.useMemo(() => {
+  // Calculate current invoice DPP, PPN 11%, PPh, and Total
+  const { currentDpp, currentPpn, currentPph, currentTotal, calculatedPct } = React.useMemo(() => {
     let dpp = 0;
     let pct = 100;
 
@@ -351,10 +359,13 @@ function CreateInvoiceForm({
       }
     }
 
-    const ppn = isNoPpn ? 0 : Math.round(dpp * 0.11);
-    const total = dpp + ppn;
-    return { currentDpp: dpp, currentPpn: ppn, currentTotal: total, calculatedPct: pct };
-  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn]);
+    const rawBase = dpp;
+    const effectiveDpp = isIncludePpn ? Math.round(rawBase / 1.11) : rawBase;
+    const ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawBase - effectiveDpp) : Math.round(rawBase * 0.11);
+    const pph = Math.round(effectiveDpp * pphRateFor(pphMode));
+    const total = Math.max(0, (isIncludePpn ? rawBase : effectiveDpp + ppn) - pph);
+    return { currentDpp: effectiveDpp, currentPpn: ppn, currentPph: pph, currentTotal: total, calculatedPct: pct };
+  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode]);
 
   // Handle file extraction
   async function handleExtractFile(file: any) {
@@ -464,7 +475,12 @@ function CreateInvoiceForm({
         jenis: invoiceType,
         nilai: currentDpp,
         discount: quotationDisc > 0 ? quotationDisc : undefined,
+        tipePpn: ppnModeToTipe(ppnMode),
+        ppnMode,
         ppn: currentPpn,
+        pph: currentPph,
+        pphMode,
+        tipePph: pphModeToTipe(pphMode),
         total: currentTotal,
         items: items.length > 0 ? items : undefined,
         dpLabel: calculatedPct < 100 ? `${invoiceType} (${calculatedPct}%)` : undefined,
@@ -977,6 +993,57 @@ function CreateInvoiceForm({
               placeholder="Catatan tambahan untuk invoice ini..."
             />
           </FormField>
+
+          {/* Ketentuan PPN */}
+          <View className="w-full sm:w-1/2 px-2 py-2">
+            <FormField label="Ketentuan PPN (Pajak Pertambahan Nilai)">
+              <View className="gap-2">
+                <View className="flex-row flex-wrap gap-1.5">
+                  {PPN_MODE_OPTIONS.map((opt) => (
+                    <Button
+                      key={opt.id}
+                      size="sm"
+                      variant={ppnMode === opt.id ? "default" : "outline"}
+                      onPress={() => setPpnMode(opt.id)}
+                      className="h-9 px-3"
+                    >
+                      <Text className="text-xs">{opt.label}</Text>
+                    </Button>
+                  ))}
+                </View>
+                <View className="bg-card border-border/50 gap-1 rounded-lg border p-2.5">
+                  <Text className="text-[11px] text-muted-foreground">
+                    {ppnMode === "exclude"
+                      ? "PPN 11% ditambahkan di luar nilai dasar (DPP)."
+                      : ppnMode === "include"
+                      ? "Nilai dasar sudah termasuk PPN 11%."
+                      : "Transaksi ini tanpa PPN (0%)."}
+                  </Text>
+                  {ppnMode === "include" ? (
+                    <View className="mt-1 gap-0.5">
+                      <Text className="text-xs text-foreground">
+                        DPP (Sebelum PPN): {rupiah(currentDpp)}
+                      </Text>
+                      <Text className="text-xs font-semibold text-primary">
+                        PPN 11% Termasuk: {rupiah(currentPpn)}
+                      </Text>
+                    </View>
+                  ) : currentPpn > 0 ? (
+                    <Text className="text-xs font-semibold text-primary">
+                      PPN 11%: +{rupiah(currentPpn)}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </FormField>
+          </View>
+
+          {/* PPh Selector */}
+          <QuotationPphField
+            mode={pphMode}
+            onChange={setPphMode}
+            pph={currentPph}
+          />
         </View>
 
         {/* Grand Total Summary Box */}
@@ -1017,12 +1084,22 @@ function CreateInvoiceForm({
           </View>
           <View className="flex-row justify-between">
             <Text className="text-xs text-muted-foreground">
-              {isNoPpn ? "PPN Tagihan (Tanpa PPN):" : "PPN Tagihan Ini (11%):"}
+              {isNoPpn ? "PPN Tagihan (Tanpa PPN):" : isIncludePpn ? "PPN Tagihan Ini (11% Termasuk):" : "PPN Tagihan Ini (11%):"}
             </Text>
             <Text className="text-xs font-medium">{rupiah(currentPpn)}</Text>
           </View>
+          {currentPph > 0 ? (
+            <View className="flex-row justify-between">
+              <Text className="text-xs text-amber-600 dark:text-amber-400">
+                Potongan PPh ({pphModeToTipe(pphMode)}):
+              </Text>
+              <Text className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                -{rupiah(currentPph)}
+              </Text>
+            </View>
+          ) : null}
           <View className="flex-row justify-between pt-1 border-t border-border">
-            <Text className="text-sm font-bold text-foreground">Total Tagihan Invoice Ini:</Text>
+            <Text className="text-sm font-bold text-foreground">Total Tagihan Bersih Invoice Ini:</Text>
             <Text className="text-sm font-bold text-primary">{rupiah(currentTotal)}</Text>
           </View>
 

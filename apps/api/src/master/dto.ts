@@ -1,6 +1,7 @@
 import { Transform, Type } from "class-transformer";
 import {
   IsBoolean,
+  IsArray,
   IsIn,
   IsInt,
   IsNumber,
@@ -8,6 +9,7 @@ import {
   IsString,
   Min,
   MinLength,
+  ValidateNested,
 } from "class-validator";
 import { PageQuery } from "../common/dto/page-query.js";
 
@@ -57,6 +59,16 @@ export class CustomerDto {
   status?: "AKTIF" | "NONAKTIF";
 }
 
+export class SupplierTagItemDto {
+  @IsString()
+  itemName!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  price?: number;
+}
+
 export class SupplierDto {
   @IsOptional() @IsString()
   name?: string;
@@ -82,6 +94,24 @@ export class SupplierDto {
   @Transform(({ value }) => normalizeActiveStatus(value))
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])
   status?: "AKTIF" | "NONAKTIF";
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
+      if (v.includes("NON") || v === "NON_PKP") return "NON_PKP";
+      if (v.includes("PKP")) return "PKP";
+    }
+    return value;
+  })
+  @IsIn(["PKP", "NON_PKP"])
+  taxStatus?: "PKP" | "NON_PKP";
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SupplierTagItemDto)
+  tags?: SupplierTagItemDto[];
 }
 
 export class ProductDto {

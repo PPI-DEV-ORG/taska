@@ -61,4 +61,36 @@ export class AuditService {
     ]);
     return { items, total, page: opts.page, limit: opts.limit };
   }
+
+  async forEntity(entityType: string, entityId: string | number) {
+    const rawType = String(entityType).toLowerCase();
+    const variants = new Set([
+      rawType,
+      rawType.replace(/s$/, ""),
+      rawType + "s",
+    ]);
+    if (rawType.includes("pos") || rawType.includes("po")) {
+      variants.add("supplier-pos");
+      variants.add("supplierPO");
+      variants.add("supplier-po");
+      variants.add("client-po");
+    }
+    if (rawType.includes("note")) {
+      variants.add("delivery-notes");
+      variants.add("deliveryNote");
+    }
+    if (rawType.includes("request")) {
+      variants.add("purchase-requests");
+      variants.add("purchaseRequest");
+    }
+
+    return this.prisma.main.auditLog.findMany({
+      where: {
+        entityType: { in: Array.from(variants) },
+        entityId: String(entityId),
+      },
+      orderBy: { id: "desc" },
+      take: 100,
+    });
+  }
 }

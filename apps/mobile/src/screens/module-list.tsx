@@ -22,7 +22,7 @@ const CREATE: Record<string, Role[]> = {
   quotations: ["sales", "pm"],
   surveys: ["sales", "pm"],
   "po-client": ["finance", "sales", "pm"],
-  invoices: ["finance", "sales", "pm"],
+  invoices: ["finance", "admin", "super_admin", "bos"],
   projects: ["pm", "sales", "finance"],
   "damage-reports": ["gudang", "sales", "procurement", "finance", "pm", "teknisi", "se"],
   customers: ["sales", "pm", "finance"],
@@ -211,19 +211,23 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         return { ...r, lead, quotation: quote, project: proj, paymentNote, status: currentStatus };
       };
 
-      const invOut = (data.invoices ?? []).map((r) => enrich({ ...r, id: String(r.id), direction: "out" }));
+      const invOut = (data.invoices ?? []).map((r) =>
+        enrich({ ...r, id: String(r.id), direction: "out", tipeInvoice: "Invoice Masuk" })
+      );
       const invIn = (data.invoiceIn ?? []).map((r: Row) => ({
         ...r,
         id: String(r.id).startsWith("in-") ? String(r.id) : `in-${r.id}`,
         rawId: (r as any).rawId ?? r.id,
         direction: "in",
+        tipeInvoice: "Invoice Keluar",
+        customer: r.supplier || r.customer,
       }));
       if (invoiceTab === "out") {
         sourceRows = invOut;
-      } else if (invoiceTab === "receipts") {
-        sourceRows = clientReceipts;
       } else if (invoiceTab === "in") {
         sourceRows = invIn;
+      } else if (invoiceTab === "receipts") {
+        sourceRows = clientReceipts;
       } else {
         sourceRows = [...invOut, ...invIn];
       }
@@ -276,7 +280,15 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         }
         return r[def.statusKey] === status;
       })
-      .filter((r) => !s || def.search.some((k) => String(r[k] ?? "").toLowerCase().includes(s)))
+      .filter((r) => {
+        if (!s) return true;
+        const matchesField = def.search.some((k) => String(r[k] ?? "").toLowerCase().includes(s));
+        if (matchesField) return true;
+        if (def.key === "suppliers" && Array.isArray(r.tags)) {
+          return r.tags.some((t: any) => String(t.itemName || t.nama || "").toLowerCase().includes(s));
+        }
+        return false;
+      })
       .map((r) => {
         if (def.key === "quotations") {
           return {
@@ -290,14 +302,26 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   }, [def, data, user, q, status, invoiceTab, poTab, damageTab, clientReceipts, supplierPayments]);
 
   const activeColumns = React.useMemo(() => {
-    if (def.key === "invoices" && invoiceTab === "receipts") {
+    if (def.key === "invoices") {
+      if (invoiceTab === "receipts") {
+        return [
+          { key: "nomor", label: "No. Receipt / Kwitansi", primary: true, flex: 1.5 },
+          { key: "invoiceNomor", label: "No. Invoice", flex: 1.3 },
+          { key: "customer", label: "Customer", flex: 1.5 },
+          { key: "jenis", label: "Metode & Jenis", flex: 1.3 },
+          { key: "total", label: "Nominal Diterima", fmt: "rupiah" as const },
+          { key: "tanggal", label: "Tanggal Bayar", fmt: "date" as const },
+          { key: "status", label: "Status", fmt: "status" as const, mobile: true },
+        ];
+      }
       return [
-        { key: "nomor", label: "No. Receipt / Kwitansi", primary: true, flex: 1.5 },
-        { key: "invoiceNomor", label: "No. Invoice", flex: 1.3 },
-        { key: "customer", label: "Customer", flex: 1.5 },
-        { key: "jenis", label: "Metode & Jenis", flex: 1.3 },
-        { key: "total", label: "Nominal Diterima", fmt: "rupiah" as const },
-        { key: "tanggal", label: "Tanggal Bayar", fmt: "date" as const },
+        { key: "nomor", label: "Nomor", primary: true, flex: 1.4 },
+        { key: "tipeInvoice", label: "Tipe", flex: 1.1 },
+        { key: "customer", label: "Pihak (Customer/Supplier)", flex: 1.6 },
+        { key: "jenis", label: "Jenis" },
+        { key: "total", label: "Total", fmt: "rupiah" as const },
+        { key: "terbayar", label: "Terbayar", fmt: "rupiah" as const },
+        { key: "jatuhTempo", label: "Jatuh tempo", fmt: "date" as const },
         { key: "status", label: "Status", fmt: "status" as const, mobile: true },
       ];
     }
@@ -352,19 +376,19 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             onPress={() => setInvoiceTab("all")}
           />
           <Chip
-            label={`Faktur Penjualan / Invoice (${data.invoices?.length || 0})`}
+            label={`Invoice Masuk (${data.invoices?.length || 0})`}
             active={invoiceTab === "out"}
             onPress={() => setInvoiceTab("out")}
           />
           <Chip
-            label={`Receipt / Bukti Pembayaran (${clientReceipts.length})`}
-            active={invoiceTab === "receipts"}
-            onPress={() => setInvoiceTab("receipts")}
-          />
-          <Chip
-            label={`Faktur Pembelian / Supplier (${data.invoiceIn?.length || 0})`}
+            label={`Invoice Keluar (${data.invoiceIn?.length || 0})`}
             active={invoiceTab === "in"}
             onPress={() => setInvoiceTab("in")}
+          />
+          <Chip
+            label={`Receipt / Kwitansi (${clientReceipts.length})`}
+            active={invoiceTab === "receipts"}
+            onPress={() => setInvoiceTab("receipts")}
           />
         </View>
       ) : null}

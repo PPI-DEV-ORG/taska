@@ -10,6 +10,8 @@ import { useApp } from "@/store/app-store";
 import { tanggal, compareDesc } from "@/lib/format";
 
 import { FilterBar } from "@/components/taska/data-table";
+import { TaskDetailDialog } from "@/modules/task/task-detail-dialog";
+import { type Row } from "@/constants/modules";
 
 export default function TasksScreen() {
   const router = useRouter();
@@ -17,6 +19,7 @@ export default function TasksScreen() {
 
   const [q, setQ] = React.useState("");
   const [filterStatus, setFilterStatus] = React.useState("");
+  const [detailTask, setDetailTask] = React.useState<Row | null>(null);
 
   const s = q.trim().toLowerCase();
   const tasks = data.tasks
@@ -69,6 +72,9 @@ export default function TasksScreen() {
                 </View>
                 <View className="flex-row items-center gap-2">
                   <StatusBadge status={t.status} />
+                  <Button variant="outline" size="sm" onPress={() => setDetailTask(t)}>
+                    <Text className="text-xs">Detail / Edit</Text>
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -82,6 +88,7 @@ export default function TasksScreen() {
           ))}
         </View>
       </Panel>
+      <TaskDetailDialog task={detailTask} open={!!detailTask} onOpenChange={(v) => !v && setDetailTask(null)} />
     </View>
   );
 }

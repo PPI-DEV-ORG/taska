@@ -158,10 +158,18 @@ export function QuotationPreviewModal({
                 <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(calcPpn)}</Text>
               </View>
             ) : null}
+            {Number(row.pph || 0) > 0 ? (
+              <View className="flex-row border-b border-black bg-white py-1.5 px-2">
+                <Text className="flex-1 text-[11px] font-bold text-black text-center">
+                  PPh {row.tipePph ? `(${row.tipePph})` : ""}
+                </Text>
+                <Text className="w-24 text-[11px] font-bold text-red-600 text-right">- {rupiah(Number(row.pph || 0))}</Text>
+              </View>
+            ) : null}
             <View className="flex-row bg-white py-2 px-2">
               <Text className="flex-1 text-xs font-bold text-black text-center">GRAND TOTAL</Text>
               <Text className="w-24 text-xs font-bold text-black text-right">
-                {rupiah(Math.max(0, itemsTotal - discNum + calcPpn))}
+                {rupiah(Math.max(0, itemsTotal - discNum + calcPpn - Number(row.pph || 0)))}
               </Text>
             </View>
             {dpLabel && dpAmount !== undefined ? (

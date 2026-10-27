@@ -229,6 +229,15 @@ export class QuotationDto {
   discount?: number;
 
   @IsOptional() @IsNumber() @Min(0)
+  pph?: number;
+
+  @IsOptional() @IsString()
+  pphMode?: string;
+
+  @IsOptional() @IsString()
+  tipePph?: string;
+
+  @IsOptional() @IsNumber() @Min(0)
   grandTotal?: number;
 
   @IsOptional() @IsInt()
@@ -296,6 +305,15 @@ export class VersionDto {
 
   @IsOptional() @IsNumber() @Min(0)
   discount?: number;
+
+  @IsOptional() @IsNumber() @Min(0)
+  pph?: number;
+
+  @IsOptional() @IsString()
+  pphMode?: string;
+
+  @IsOptional() @IsString()
+  tipePph?: string;
 
   @IsOptional() @IsNumber() @Min(0)
   grandTotal?: number;

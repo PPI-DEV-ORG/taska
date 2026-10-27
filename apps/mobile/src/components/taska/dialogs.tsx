@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { downloadQuotationPdf } from "@/modules/quotation/quotation-files";
+import { pphRateFor, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import type { CreateField, ModuleDef, Row } from "@/constants/modules";
 
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
@@ -50,11 +51,15 @@ export function DatePicker({
   onChange,
   placeholder = "Pilih tanggal",
   error,
+  className,
+  formatLabel,
 }: {
   value?: string;
   onChange: (v: string) => void;
   placeholder?: string;
   error?: boolean;
+  className?: string;
+  formatLabel?: (iso: string) => string;
 }) {
   const [open, setOpen] = React.useState(false);
   const initial = parseIsoDate(value);
@@ -111,11 +116,12 @@ export function DatePicker({
         onPress={openPicker}
         className={cn(
           "bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3",
-          error && "border-danger"
+          error && "border-danger",
+          className
         )}
       >
         <Text className={cn("text-base md:text-sm", !selectedIso && "text-muted-foreground")} numberOfLines={1}>
-          {selectedIso ? `${tanggal(selectedIso)} (${selectedIso})` : placeholder}
+          {selectedIso ? (formatLabel ? formatLabel(selectedIso) : `${tanggal(selectedIso)} (${selectedIso})`) : placeholder}
         </Text>
         <CalendarIcon size={16} color={colors.muted} />
       </Pressable>
@@ -811,25 +817,47 @@ export function FormDialog({
       }
     }
     if (def?.key === "invoices") {
-      const nilai = row.nilai || 0;
-      row.ppn = Math.round(nilai * 0.11);
-      row.total = nilai + row.ppn;
+      const rawNilai = row.nilai || 0;
+      row.tipePpn = vals.tipePpn || "Exclude PPN (11%)";
+      row.ppnMode = vals.ppnMode || (row.tipePpn.includes("No") ? "none" : row.tipePpn.includes("Include") ? "include" : "exclude");
+      row.pphMode = (vals.pphMode as PphMode) || "none";
+      row.tipePph = vals.tipePph || pphModeToTipe(row.pphMode);
+
+      const isNoPpn = row.ppnMode === "none" || row.tipePpn.includes("No");
+      const isIncludePpn = row.ppnMode === "include" || row.tipePpn.includes("Include");
+      const dpp = isIncludePpn ? Math.round(rawNilai / 1.11) : rawNilai;
+      row.ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawNilai - dpp) : Math.round(rawNilai * 0.11);
+      const pphRate = pphRateFor(row.pphMode);
+      const pph = Math.round(dpp * pphRate);
+      row.pph = pph;
+      row.total = Math.max(0, (isIncludePpn ? rawNilai : rawNilai + row.ppn) - pph);
     }
     if (def?.key === "quotations") {
       const tot = Number(row.nilai || row.total || 0);
       const disc = Number(row.disc || 0);
       const net = Math.max(0, tot - disc);
-      const tipe = String(row.tipePpn || "Exclude");
-      if (tipe.toLowerCase().includes("no") || tipe.toLowerCase().includes("tanpa")) {
+      row.tipePpn = vals.tipePpn || "Exclude PPN (11%)";
+      row.ppnMode = vals.ppnMode || (row.tipePpn.includes("No") ? "none" : row.tipePpn.includes("Include") ? "include" : "exclude");
+      row.pphMode = (vals.pphMode as PphMode) || "none";
+      row.tipePph = vals.tipePph || pphModeToTipe(row.pphMode);
+
+      const isNoPpn = row.ppnMode === "none" || row.tipePpn.includes("No");
+      const isIncludePpn = row.ppnMode === "include" || row.tipePpn.includes("Include");
+      const dpp = isIncludePpn ? Math.round(net / 1.11) : net;
+      if (isNoPpn) {
         row.ppn = 0;
         row.totalAfterDisc = net;
-      } else if (tipe.toLowerCase().includes("include")) {
-        row.ppn = Math.round(net - (net / 1.11));
+      } else if (isIncludePpn) {
+        row.ppn = Math.max(0, net - dpp);
         row.totalAfterDisc = net;
       } else {
         row.ppn = Math.round(net * 0.11);
         row.totalAfterDisc = net + row.ppn;
       }
+      const pphRate = pphRateFor(row.pphMode);
+      const pph = Math.round(dpp * pphRate);
+      row.pph = pph;
+      row.totalAfterDisc = Math.max(0, row.totalAfterDisc - pph);
       row.total = tot;
       row.grandTotal = row.totalAfterDisc;
     }
@@ -968,16 +996,25 @@ export function FormDialog({
                 />
               );
             }
-            if (def?.key === "quotations" && f.key === "nilai") {
+            if ((def?.key === "quotations" || def?.key === "invoices") && f.key === "nilai") {
               const currentTipe = vals.tipePpn || "Exclude PPN (11%)";
+              const currentPphMode = (vals.pphMode as PphMode) || "none";
               const rawNilai = Number(String(vals.nilai || "").replace(/\D/g, "")) || 0;
-              const rawDisc = Number(String(vals.disc || "").replace(/\D/g, "")) || 0;
+              const rawDisc = def?.key === "quotations" ? (Number(String(vals.disc || "").replace(/\D/g, "")) || 0) : 0;
               const netVal = Math.max(0, rawNilai - rawDisc);
-              const previewPpn = currentTipe.includes("Exclude") ? Math.round(netVal * 0.11) : 0;
-              const previewGrand = currentTipe.includes("Exclude") ? netVal + previewPpn : netVal;
+
+              const isInclude = currentTipe.includes("Include");
+              const isNoPpn = currentTipe.includes("No") || currentTipe.includes("Tanpa");
+              const dppVal = isInclude ? Math.round(netVal / 1.11) : netVal;
+              const previewPpn = isNoPpn ? 0 : isInclude ? Math.max(0, netVal - dppVal) : Math.round(netVal * 0.11);
+              const pphRate = pphRateFor(currentPphMode);
+              const previewPph = Math.round(dppVal * pphRate);
+              const previewGrand = Math.max(0, (isInclude ? netVal : netVal + previewPpn) - previewPph);
+
+              const selectedPphOpt = PPH_MODE_OPTIONS.find((o) => o.id === currentPphMode) || PPH_MODE_OPTIONS[0];
 
               return (
-                <View key={f.key} className="gap-2">
+                <View key={f.key} className="gap-2.5">
                   <FormField
                     label={f.label}
                     required={f.required}
@@ -1013,9 +1050,9 @@ export function FormDialog({
                     </Text>
                     <View className="flex-row gap-1.5">
                       {[
-                        { id: "Exclude PPN (11%)", label: "Exclude PPN (11%)" },
-                        { id: "Include PPN (Sudah termasuk)", label: "Include PPN" },
-                        { id: "No PPN (Tanpa PPN)", label: "No PPN" },
+                        { id: "Exclude PPN (11%)", label: "Exclude PPN (11%)", mode: "exclude" },
+                        { id: "Include PPN (Sudah termasuk)", label: "Include PPN", mode: "include" },
+                        { id: "No PPN (Tanpa PPN)", label: "No PPN", mode: "none" },
                       ].map((opt) => {
                         const active = currentTipe === opt.id || (opt.id.startsWith("Exclude") && !vals.tipePpn);
                         return (
@@ -1023,7 +1060,7 @@ export function FormDialog({
                             key={opt.id}
                             size="sm"
                             variant={active ? "default" : "outline"}
-                            onPress={() => setVals((s) => ({ ...s, tipePpn: opt.id }))}
+                            onPress={() => setVals((s) => ({ ...s, tipePpn: opt.id, ppnMode: opt.mode }))}
                             className="flex-1 h-8 px-2"
                           >
                             <Text className="text-xs">{opt.label}</Text>
@@ -1031,29 +1068,67 @@ export function FormDialog({
                         );
                       })}
                     </View>
-                    {rawNilai > 0 ? (
-                      <View className="bg-card border-border/60 rounded-lg border p-2 gap-0.5 mt-0.5">
+                  </View>
+
+                  {/* Switch Skema PPh (Withholding Tax) */}
+                  <View className="bg-panel border-border/80 rounded-xl border p-3 gap-2">
+                    <Text className="text-xs font-semibold text-foreground">
+                      Skema PPh (Withholding Tax):
+                    </Text>
+                    <View className="flex-row flex-wrap gap-1.5">
+                      {PPH_MODE_OPTIONS.map((opt) => {
+                        const active = currentPphMode === opt.id || (opt.id === "none" && !vals.pphMode);
+                        return (
+                          <Button
+                            key={opt.id}
+                            size="sm"
+                            variant={active ? "default" : "outline"}
+                            onPress={() => setVals((s) => ({ ...s, pphMode: opt.id, tipePph: opt.label }))}
+                            className="h-8 px-2.5"
+                          >
+                            <Text className="text-xs">{opt.label}</Text>
+                          </Button>
+                        );
+                      })}
+                    </View>
+                    <Text className="text-[11px] text-muted-foreground mt-0.5">
+                      {selectedPphOpt?.desc}
+                    </Text>
+                  </View>
+
+                  {/* Ringkasan Estimasi Pajak & Total */}
+                  {rawNilai > 0 ? (
+                    <View className="bg-card border-border/60 rounded-lg border p-2.5 gap-1 mt-0.5">
+                      <View className="flex-row justify-between">
+                        <Text className="text-[11px] text-muted-foreground">
+                          {isInclude ? "Harga Sebelum PPN (DPP):" : def?.key === "quotations" ? "DPP / Net Setelah Diskon:" : "DPP / Nilai Sebelum Pajak:"}
+                        </Text>
+                        <Text className="text-[11px] font-medium text-foreground">{rupiah(dppVal)}</Text>
+                      </View>
+                      <View className="flex-row justify-between">
+                        <Text className="text-[11px] text-muted-foreground">
+                          {isInclude ? "PPN (11% Termasuk):" : "PPN (11%):"}
+                        </Text>
+                        <Text className="text-[11px] font-medium text-foreground">
+                          {isNoPpn ? "Tanpa PPN (Rp 0)" : rupiah(previewPpn)}
+                        </Text>
+                      </View>
+                      {previewPph > 0 ? (
                         <View className="flex-row justify-between">
-                          <Text className="text-[11px] text-muted-foreground">DPP / Net Setelah Diskon:</Text>
-                          <Text className="text-[11px] font-medium text-foreground">{rupiah(netVal)}</Text>
-                        </View>
-                        <View className="flex-row justify-between">
-                          <Text className="text-[11px] text-muted-foreground">PPN:</Text>
-                          <Text className="text-[11px] font-medium text-foreground">
-                            {currentTipe.includes("Include")
-                              ? "Sudah Termasuk dalam Harga"
-                              : currentTipe.includes("No")
-                              ? "Tanpa PPN (Rp 0)"
-                              : rupiah(previewPpn)}
+                          <Text className="text-[11px] text-muted-foreground">
+                            {`Potongan PPh (${selectedPphOpt?.label ?? "PPh"}):`}
+                          </Text>
+                          <Text className="text-[11px] font-medium text-danger">
+                            - {rupiah(previewPph)}
                           </Text>
                         </View>
-                        <View className="flex-row justify-between border-t border-border/50 pt-1 mt-0.5">
-                          <Text className="text-xs font-bold text-foreground">Estimasi Total Akhir:</Text>
-                          <Text className="text-xs font-bold text-primary">{rupiah(previewGrand)}</Text>
-                        </View>
+                      ) : null}
+                      <View className="flex-row justify-between border-t border-border/50 pt-1 mt-0.5">
+                        <Text className="text-xs font-bold text-foreground">Estimasi Total Akhir (Net Ditagih):</Text>
+                        <Text className="text-xs font-bold text-primary">{rupiah(previewGrand)}</Text>
                       </View>
-                    ) : null}
-                  </View>
+                    </View>
+                  ) : null}
                 </View>
               );
             }

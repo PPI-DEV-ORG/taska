@@ -14,7 +14,12 @@ class DecisionDto {
 }
 
 class ApprovalQuery extends PageQuery {
+  @IsOptional()
+  @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
   kind?: string;
 }
 

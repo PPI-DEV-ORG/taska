@@ -25,6 +25,9 @@ export type QuotationMeta = {
   customerAddress?: string;
   signerName?: string;
   signerTitle?: string;
+  pph?: number;
+  pphMode?: string;
+  tipePph?: string;
   latestFileId?: number | null;
   latestFileName?: string | null;
   stockConflictFlag?: boolean;
@@ -85,6 +88,9 @@ export async function buildQuotationXlsx(params: {
   items?: QuotationItemData[];
   total?: number;
   ppn?: number;
+  pph?: number;
+  pphMode?: string;
+  tipePph?: string;
   discount?: number;
   grandTotal?: number;
   dpLabel?: string;
@@ -272,12 +278,13 @@ export async function buildQuotationXlsx(params: {
   const netBeforeTax = Math.max(0, finalTotal - finalDisc);
   const finalPpn =
     params.ppn !== undefined ? Number(params.ppn) : Math.round(netBeforeTax * 0.11);
+  const finalPph = params.pph !== undefined ? Number(params.pph) : 0;
   const finalGrandTotal =
     params.grandTotal !== undefined && Number(params.grandTotal) > 0
       ? Number(params.grandTotal)
-      : netBeforeTax + finalPpn;
+      : Math.max(0, netBeforeTax + finalPpn - finalPph);
 
-  // 8. Summary Rows (TOTAL, PPN (11%), optional DISC, GRAND TOTAL)
+  // 8. Summary Rows (TOTAL, PPN (11%), optional DISC, optional PPH, GRAND TOTAL)
   let currRow = lastItemRow + 1;
 
   // TOTAL
@@ -333,6 +340,24 @@ export async function buildQuotationXlsx(params: {
   valPpn.alignment = { horizontal: "right", vertical: "middle" };
   valPpn.border = thinBorder;
 
+  // PPH (jika ada potongan PPh > 0)
+  let pphRowIdx: number | null = null;
+  if (finalPph > 0) {
+    pphRowIdx = currRow++;
+    const lblPph = ws.getCell(pphRowIdx, 5);
+    lblPph.value = params.tipePph ? `POTONGAN ${params.tipePph.toUpperCase()}` : "POTONGAN PPH";
+    lblPph.font = { name: "Calibri", size: 10, bold: true };
+    lblPph.alignment = { horizontal: "right", vertical: "middle" };
+    lblPph.border = thinBorder;
+
+    const valPph = ws.getCell(pphRowIdx, 6);
+    valPph.value = -finalPph;
+    valPph.font = { name: "Calibri", size: 10, bold: true };
+    valPph.numFmt = '"Rp"* #,##0';
+    valPph.alignment = { horizontal: "right", vertical: "middle" };
+    valPph.border = thinBorder;
+  }
+
   // GRAND TOTAL
   const grandRowIdx = currRow++;
   const lblGrand = ws.getCell(grandRowIdx, 5);
@@ -342,10 +367,14 @@ export async function buildQuotationXlsx(params: {
   lblGrand.border = thinBorder;
 
   const valGrand = ws.getCell(grandRowIdx, 6);
+  let grandFormula = discRowIdx
+    ? `F${totalRowIdx}-F${discRowIdx}+F${ppnRowIdx}`
+    : `F${totalRowIdx}+F${ppnRowIdx}`;
+  if (pphRowIdx) {
+    grandFormula += `+F${pphRowIdx}`; // valPph bernilai negatif
+  }
   valGrand.value = {
-    formula: discRowIdx
-      ? `F${totalRowIdx}-F${discRowIdx}+F${ppnRowIdx}`
-      : `F${totalRowIdx}+F${ppnRowIdx}`,
+    formula: grandFormula,
     result: finalGrandTotal,
   };
   valGrand.font = { name: "Calibri", size: 10, bold: true };
@@ -746,6 +775,9 @@ export async function buildQuotationPdf(params: {
   items?: QuotationItemData[];
   total?: number;
   ppn?: number;
+  pph?: number;
+  pphMode?: string;
+  tipePph?: string;
   discount?: number;
   grandTotal?: number;
   dpLabel?: string;
@@ -812,10 +844,11 @@ export async function buildQuotationPdf(params: {
     params.ppn !== undefined
       ? Number(params.ppn)
       : Math.round(netBeforeTax * 0.11);
+  const finalPph = params.pph !== undefined ? Number(params.pph) : 0;
   const finalGrandTotal =
     params.grandTotal !== undefined && Number(params.grandTotal) > 0
       ? Number(params.grandTotal)
-      : Math.max(0, netBeforeTax + finalPpn);
+      : Math.max(0, netBeforeTax + finalPpn - finalPph);
 
   tableBody.push([
     { text: "", colSpan: 4, border: [false, true, false, false] },
@@ -845,6 +878,17 @@ export async function buildQuotationPdf(params: {
     { text: finalPpn > 0 ? "PPN (11%)" : "PPN", bold: true, alignment: "right", fontSize: 9 },
     { text: `Rp ${finalPpn.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
   ]);
+
+  if (finalPph > 0) {
+    tableBody.push([
+      { text: "", colSpan: 4, border: [false, false, false, false] },
+      {},
+      {},
+      {},
+      { text: params.tipePph ? `POTONGAN ${params.tipePph.toUpperCase()}` : "POTONGAN PPH", bold: true, alignment: "right", fontSize: 9 },
+      { text: `- Rp ${finalPph.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
+    ]);
+  }
 
   tableBody.push([
     { text: "", colSpan: 4, border: [false, false, false, false] },

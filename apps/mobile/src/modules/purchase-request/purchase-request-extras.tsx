@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Panel } from "@/components/taska/basics";
+import { Panel, FormField } from "@/components/taska/basics";
+import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { type Row } from "@/constants/modules";
@@ -23,6 +24,7 @@ export function PurchaseRequestExtras({
   const [rejectReason, setRejectReason] = React.useState("");
   const [confirmSendOpen, setConfirmSendOpen] = React.useState(false);
   const [confirmReceiveOpen, setConfirmReceiveOpen] = React.useState(false);
+  const [doFileId, setDoFileId] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [localStatus, setLocalStatus] = React.useState<string | null>(null);
 
@@ -153,7 +155,7 @@ export function PurchaseRequestExtras({
     setLoading(true);
     try {
       setLocalStatus("DITERIMA");
-      await setStatus("purchase-requests", row.id, "Diterima");
+      await setStatus("purchase-requests", row.id, "Diterima", undefined, doFileId ? { doFileId } : undefined);
       setConfirmReceiveOpen(false);
       toast("Penerimaan barang telah dikonfirmasi");
       if (onRefresh) await onRefresh();
@@ -484,9 +486,19 @@ export function PurchaseRequestExtras({
           <DialogHeader>
             <DialogTitle>Konfirmasi Terima Barang</DialogTitle>
             <DialogDescription>
-              Apakah seluruh barang yang diminta sudah Anda terima dalam kondisi baik dari Gudang?
+              Apakah seluruh barang yang diminta sudah Anda terima dalam kondisi baik di lokasi proyek?
             </DialogDescription>
           </DialogHeader>
+          <View className="py-2 gap-3">
+            <FormField label="Dokumen Surat Jalan / Delivery Order (DO) PDF" hint="Lampirkan dokumen atau foto bukti pengiriman DO ke proyek (opsional)">
+              <FileUploader
+                label="Unggah Dokumen DO"
+                kind="dokumen"
+                autoFlush={true}
+                onUploaded={(id) => setDoFileId(id)}
+              />
+            </FormField>
+          </View>
           <DialogFooter className="gap-2">
             <Button variant="outline" onPress={() => setConfirmReceiveOpen(false)} disabled={loading}>
               <Text>Batal</Text>

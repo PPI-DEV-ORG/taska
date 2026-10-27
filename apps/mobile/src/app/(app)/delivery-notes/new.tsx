@@ -64,7 +64,7 @@ export default function NewDeliveryNoteScreen() {
       return {
         productId: prod?.id ? Number(prod.id) : undefined,
         qty: prod?.berSN && sns.length > 0 ? sns.length : (Number(itemQuantities[name]) || 1),
-        serials: sns.length > 0 ? sns : undefined,
+        serials: sns.length > 0 ? sns.join(", ") : undefined,
       };
     });
 

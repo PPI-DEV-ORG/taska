@@ -28,7 +28,9 @@ export type ModuleKey =
   | "approvals"
   | "reports"
   | "archive"
-  | "audit";
+  | "audit"
+  | "attendance"
+  | "payroll";
 
 const ALL: Record<ModuleKey, Action[]> = {
   dashboard: ["L", "C", "U", "A"],
@@ -59,6 +61,8 @@ const ALL: Record<ModuleKey, Action[]> = {
   reports: ["L", "C", "U", "A"],
   archive: ["L", "C", "U", "A"],
   audit: ["L", "C", "U", "A"],
+  attendance: ["L", "C", "U", "A"],
+  payroll: ["L", "C", "U", "A"],
 };
 
 function grant(actions: string): Action[] {
@@ -145,9 +149,9 @@ export const PERMISSIONS: Record<string, Table> = {
   PROCUREMENT: {
     dashboard: "L",
     users: "L",
-    suppliers: "LCU",
-    products: "LCU",
-    productCategories: "LCU",
+    suppliers: "LCUD",
+    products: "LCUD",
+    productCategories: "LCUD",
     warehouses: "LCU",
     expenseCategories: "L",
     costCenters: "L",
@@ -155,7 +159,7 @@ export const PERMISSIONS: Record<string, Table> = {
     requests: "LCU",
     procurement: "LCUA",
     receiving: "LCUA",
-    stock: "LCU",
+    stock: "LCUD",
     delivery: "LCU",
     expenses: "LCU",
     approvals: "LA",
@@ -177,6 +181,7 @@ export const PERMISSIONS: Record<string, Table> = {
     quotations: "LCUA",
     financeOut: "LCUA",
     projects: "LCU",
+    tasks: "LCU",
     requests: "LCU",
     procurement: "LCUA",
     receiving: "L",
@@ -225,6 +230,14 @@ export const PERMISSIONS: Record<string, Table> = {
     reports: "L",
   },
 };
+
+// Absensi: setiap karyawan boleh melihat & mencatat absen miliknya (service membatasi ke data sendiri).
+// Payroll: hanya Finance (selain Super Admin / Admin / Bos yang sudah penuh).
+for (const table of Object.values(PERMISSIONS)) {
+  if (!table.attendance) table.attendance = "LC";
+}
+PERMISSIONS.FINANCE!.attendance = "LCU";
+PERMISSIONS.FINANCE!.payroll = "LCUA";
 
 export function can(role: string, module: ModuleKey, action: Action): boolean {
   const norm = (role || "").toUpperCase();

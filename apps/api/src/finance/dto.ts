@@ -128,6 +128,15 @@ export class InvoiceOutDto {
   ppn?: number;
 
   @IsOptional() @IsNumber() @Min(0)
+  pph?: number;
+
+  @IsOptional() @IsString()
+  pphMode?: string;
+
+  @IsOptional() @IsString()
+  tipePph?: string;
+
+  @IsOptional() @IsNumber() @Min(0)
   total?: number;
 
   @IsOptional() @IsNumber() @Min(0)
@@ -211,6 +220,15 @@ export class InvoiceInDto {
 
   @IsOptional() @IsNumber() @Min(0)
   ppn?: number;
+
+  @IsOptional() @IsNumber() @Min(0)
+  pph?: number;
+
+  @IsOptional() @IsString()
+  pphMode?: string;
+
+  @IsOptional() @IsString()
+  tipePph?: string;
 
   @IsNumber() @Min(0)
   total!: number;

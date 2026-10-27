@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Pressable, View, Linking } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Inbox, RefreshCw, MessageSquare, Mail, type LucideIcon } from "lucide-react-native";
+import { ArrowLeft, Inbox, RefreshCw, MessageSquare, Mail, ChevronDown, ChevronUp, type LucideIcon } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { StatusBadge } from "@/components/taska/status-badge";
@@ -275,20 +275,50 @@ export function InfoGrid({ fields, row }: { fields: { label: string; key: string
 }
 
 export function Timeline({ items }: { items: { id: string; who: string; what: string; when: string }[] }) {
+  const [showAll, setShowAll] = React.useState(false);
+  const displayItems = showAll || items.length <= 10 ? items : items.slice(0, 10);
+  const hasMore = items.length > 10;
+
   return (
     <View>
-      {items.map((it, i) => (
+      {displayItems.map((it, i) => (
         <View key={it.id} className="flex-row gap-3">
           <View className="items-center">
             <View className="bg-primary mt-1.5 size-2.5 rounded-full" />
-            {i < items.length - 1 ? <View className="bg-border w-px flex-1" /> : null}
+            {i < displayItems.length - 1 || (!showAll && hasMore) ? (
+              <View className="bg-border w-px flex-1" />
+            ) : null}
           </View>
           <View className="flex-1 pb-4">
-            <Text className="text-sm"><Text className="text-sm font-semibold">{it.who}</Text> {it.what.charAt(0).toLowerCase() + it.what.slice(1)}</Text>
+            <Text className="text-sm">
+              <Text className="text-sm font-semibold">{it.who}</Text>{" "}
+              {it.what.charAt(0).toLowerCase() + it.what.slice(1)}
+            </Text>
             <Text className="text-muted-foreground text-[13px]">{waktuRelatif(it.when)}</Text>
           </View>
         </View>
       ))}
+
+      {hasMore && (
+        <Pressable
+          onPress={() => setShowAll((prev) => !prev)}
+          className="mt-1 flex-row items-center gap-1.5 py-1.5 self-start"
+        >
+          {showAll ? (
+            <>
+              <ChevronUp size={14} color={colors.primary} />
+              <Text className="text-xs font-semibold text-primary">Tampilkan lebih sedikit</Text>
+            </>
+          ) : (
+            <>
+              <ChevronDown size={14} color={colors.primary} />
+              <Text className="text-xs font-semibold text-primary">
+                Lihat selengkapnya ({items.length - 10} riwayat lainnya)
+              </Text>
+            </>
+          )}
+        </Pressable>
+      )}
     </View>
   );
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Controller, Get, Param, Query } from "@nestjs/common";
 import { IsOptional, IsString } from "class-validator";
 import { AuditService } from "./audit.service.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
@@ -12,6 +12,14 @@ class AuditQuery extends PageQuery {
 @Controller("audit-logs")
 export class AuditController {
   constructor(private readonly audit: AuditService) {}
+
+  @Get("entity/:entityType/:entityId")
+  forEntity(
+    @Param("entityType") entityType: string,
+    @Param("entityId") entityId: string,
+  ) {
+    return this.audit.forEntity(entityType, entityId);
+  }
 
   @Get()
   @Require("audit", "L")

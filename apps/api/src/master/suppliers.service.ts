@@ -14,9 +14,13 @@ export class SuppliersService {
       [["name", "contains"], ["pic", "contains"], ["city", "contains"], ["email", "contains"]],
       q.status ? { status: q.status as "AKTIF" | "NONAKTIF" } : {},
     );
+    if (q.q && Array.isArray(where.OR)) {
+      where.OR.push({ itemTags: { some: { itemName: { contains: q.q } } } });
+    }
     const [items, total] = await Promise.all([
-      this.prisma.main.supplier.findMany({
+      (this.prisma.main.supplier as any).findMany({
         where,
+        include: { itemTags: true },
         orderBy: orderBy(q.sort, q.dir, ["name", "createdAt"], "createdAt"),
         ...pageSkip(q),
       }),
@@ -26,31 +30,70 @@ export class SuppliersService {
   }
 
   options() {
-    return this.prisma.main.supplier.findMany({
+    return (this.prisma.main.supplier as any).findMany({
       where: { status: "AKTIF" },
-      select: { id: true, name: true, city: true, paymentTerms: true },
+      select: { id: true, name: true, city: true, paymentTerms: true, taxStatus: true, itemTags: true },
       orderBy: { name: "asc" },
     });
   }
 
   async get(id: number) {
-    const row = await this.prisma.main.supplier.findUnique({ where: { id } });
+    const row = await (this.prisma.main.supplier as any).findUnique({
+      where: { id },
+      include: { itemTags: true },
+    });
     if (!row) throw new NotFoundException("Supplier tidak ditemukan");
     return row;
   }
 
-  create(dto: SupplierDto) {
-    return this.prisma.main.supplier.create({
+  async create(dto: SupplierDto) {
+    const { tags, ...supplierData } = dto;
+    return (this.prisma.main.supplier as any).create({
       data: {
-        ...dto,
+        ...supplierData,
         name: dto.name || "Supplier Baru",
+        taxStatus: dto.taxStatus || "NON_PKP",
+        ...(Array.isArray(tags) && tags.length > 0
+          ? {
+              itemTags: {
+                create: tags
+                  .filter((t) => t.itemName?.trim())
+                  .map((t) => ({
+                    itemName: t.itemName.trim(),
+                    price: t.price != null && !Number.isNaN(Number(t.price)) ? Number(t.price) : null,
+                  })),
+              },
+            }
+          : {}),
       },
+      include: { itemTags: true },
     });
   }
 
   async update(id: number, dto: SupplierDto) {
     await this.get(id);
-    return this.prisma.main.supplier.update({ where: { id }, data: dto });
+    const { tags, ...supplierData } = dto;
+    if (Array.isArray(tags)) {
+      await (this.prisma.main as any).supplierItemTag.deleteMany({ where: { supplierId: id } }).catch(() => {});
+      const validTags = tags.filter((t) => t.itemName?.trim());
+      if (validTags.length > 0) {
+        await (this.prisma.main as any).supplierItemTag.createMany({
+          data: validTags.map((t) => ({
+            supplierId: id,
+            itemName: t.itemName.trim(),
+            price: t.price != null && !Number.isNaN(Number(t.price)) ? Number(t.price) : null,
+          })),
+        }).catch(() => {});
+      }
+    }
+    return (this.prisma.main.supplier as any).update({
+      where: { id },
+      data: {
+        ...supplierData,
+        ...(dto.taxStatus ? { taxStatus: dto.taxStatus } : {}),
+      },
+      include: { itemTags: true },
+    });
   }
 
   async remove(id: number) {

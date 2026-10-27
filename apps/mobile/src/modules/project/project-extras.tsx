@@ -16,10 +16,42 @@ import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
+import { DocumentViewerItem, resolveModuleDocs } from "@/components/taska/document-viewer";
+import { adaptRows } from "@/services/adapters";
+
+/**
+ * Biaya operasional yang dikaitkan ke project, diambil langsung dari server per projectId
+ * (tidak bergantung pada scope list role / limit store) lalu digabung dengan data store.
+ */
+export function useProjectExpenses(projectId: string | number | undefined, projectName?: string): Row[] {
+  const { data } = useApp();
+  const [remote, setRemote] = React.useState<Row[]>([]);
+  const storeCount = (data.expenses ?? []).length;
+  React.useEffect(() => {
+    if (!projectId) return;
+    let active = true;
+    api<any>("GET", `/expenses?projectId=${projectId}&limit=200`)
+      .then((res) => {
+        if (active) setRemote(adaptRows("expenses", Array.isArray(res?.items) ? res.items : []));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [projectId, storeCount]);
+  return React.useMemo(() => {
+    const map = new Map<string, Row>();
+    for (const e of data.expenses ?? []) {
+      if (String(e.projectId) === String(projectId) || (projectName && e.project === projectName)) map.set(String(e.id), e);
+    }
+    for (const e of remote) map.set(String(e.id), e);
+    return Array.from(map.values()).filter((e) => e.status !== "Ditolak");
+  }, [data.expenses, remote, projectId, projectName]);
+}
 
 export function ProjectExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { toast, data, reload, user } = useApp();
+  const { toast, data, reload, user, patchRow } = useApp();
   const products: Row[] = data.products ?? [];
   const serials: Row[] = data.serials ?? [];
   const [reserveOpen, setReserveOpen] = React.useState(false);
@@ -34,6 +66,8 @@ export function ProjectExtras({ row }: { row: Row }) {
       id: string;
       productId?: string;
       produk: string;
+      sku?: string;
+      kategori?: string;
       neededQty: number;
       reservedQty: number;
       shortageQty: number;
@@ -98,9 +132,7 @@ export function ProjectExtras({ row }: { row: Row }) {
     (po: any) => String(po.projectId) === String(row.id) && po.status !== "Ditolak" && po.status !== "DIBATALKAN"
   );
   const poCost = projectPos.reduce((sum: number, po: any) => sum + Number(po.total || 0), 0);
-  const projectExpenses = (data.expenses || []).filter(
-    (e: any) => String(e.projectId) === String(row.id) && e.status !== "Ditolak"
-  );
+  const projectExpenses = useProjectExpenses(row.id, row.nama);
   const expenseCost = projectExpenses.reduce((sum: number, e: any) => sum + Number(e.nominal || 0), 0);
   const totalCost = poCost + expenseCost;
   const netProfit = revenue - totalCost;
@@ -129,6 +161,8 @@ export function ProjectExtras({ row }: { row: Row }) {
         id: String(r.id),
         productId: r.product?.id != null ? String(r.product.id) : undefined,
         produk: r.product?.name ?? "Barang",
+        sku: r.product?.sku ?? "",
+        kategori: r.product?.category?.name ?? "",
         neededQty: needed,
         reservedQty: reserved,
         shortageQty: shortage,
@@ -257,14 +291,19 @@ export function ProjectExtras({ row }: { row: Row }) {
     return matVal + svcVal;
   }, [requirements, quoServices]);
 
+  // Sumber kebenaran: tahapan dari server (sama untuk semua role); fallback ke hitungan lokal.
+  const st = (row as any).stages as
+    | { boq: boolean; survey: boolean; penawaran: boolean; po: boolean; progress: boolean; invoice: boolean; bast: boolean; counts: Record<string, number> }
+    | null
+    | undefined;
   const flowSteps = [
-    { key: "boq", label: "1. BOQ", done: requirements.length > 0 || quoServices.length > 0, sub: `${requirements.length + quoServices.length} item` },
-    { key: "survey", label: "2. Survey (Opsional)", done: linkedSurveys.length > 0, sub: linkedSurveys.length > 0 ? `${linkedSurveys.length} survey` : "Opsional" },
-    { key: "penawaran", label: "3. Penawaran Project", done: !!linkedQuotation, sub: linkedQuotation?.nomor || "Belum ada" },
-    { key: "po", label: "4. PO Project", done: linkedClientPos.length > 0 || projectPos.length > 0, sub: `${linkedClientPos.length} SO · ${projectPos.length} PO` },
-    { key: "progress", label: "5. Progress Project", done: Number(row.progres || 0) > 0, sub: `${row.progres ?? 0}%` },
-    { key: "invoice", label: "6. Invoice Project", done: projectInvoices.length > 0, sub: `${projectInvoices.length} invoice` },
-    { key: "bast", label: "7. Penyelesaian / BAST", done: row.status === "Selesai" || !!row.bastFileId, sub: row.status === "Selesai" ? "Selesai" : "Menunggu" },
+    { key: "boq", label: "1. BOQ", done: st ? st.boq : !!row.boqFileId || requirements.length > 0 || quoServices.length > 0, sub: row.boqFileId ? "Dokumen BOQ terunggah" : `${st?.counts.requirements ?? requirements.length + quoServices.length} item` },
+    { key: "survey", label: "2. Survey (Opsional)", done: st ? st.survey : linkedSurveys.length > 0, sub: (st?.counts.surveys ?? linkedSurveys.length) > 0 ? `${st?.counts.surveys ?? linkedSurveys.length} survey` : "Opsional" },
+    { key: "penawaran", label: "3. Penawaran Project", done: st ? st.penawaran : !!linkedQuotation, sub: linkedQuotation?.nomor || (st?.penawaran ? "Tertaut" : "Belum ada") },
+    { key: "po", label: "4. PO Project", done: st ? st.po : linkedClientPos.length > 0 || projectPos.length > 0, sub: `${st?.counts.clientPos ?? linkedClientPos.length} SO · ${st?.counts.supplierPos ?? projectPos.length} PO` },
+    { key: "progress", label: "5. Progress Project", done: st ? st.progress : Number(row.progres || 0) > 0, sub: `${row.progres ?? 0}%` },
+    { key: "invoice", label: "6. Invoice Project", done: st ? st.invoice : projectInvoices.length > 0, sub: `${st?.counts.invoices ?? projectInvoices.length} invoice` },
+    { key: "bast", label: "7. Penyelesaian / BAST", done: st ? st.bast : row.status === "Selesai" || !!row.bastFileId, sub: row.status === "Selesai" ? "Selesai" : "Menunggu" },
   ];
 
   return (
@@ -322,6 +361,14 @@ export function ProjectExtras({ row }: { row: Row }) {
         }
       >
         <View className="gap-2">
+          <DocumentViewerItem
+            item={resolveModuleDocs("projects", "Dokumen BOQ (Excel / PDF)", row)}
+            canUpload
+            onUploadFile={async (fieldKey, fileId) => {
+              await patchRow("projects", row.id, { [fieldKey]: fileId });
+              toast("Dokumen BOQ berhasil diunggah");
+            }}
+          />
           {requirements.length === 0 && quoServices.length === 0 ? (
             <Text className="text-muted-foreground text-xs py-2">
               Belum ada item BOQ untuk project ini. Klik &quot;Tambah Item BOQ&quot; atau &quot;Sinkron BOQ dari Penawaran&quot;.
@@ -332,7 +379,7 @@ export function ProjectExtras({ row }: { row: Row }) {
                 <Line
                   key={m.id}
                   left={m.produk}
-                  sub={m.status}
+                  sub={`${m.sku ? `SKU: ${m.sku} · ` : ""}${m.kategori ? `Kategori: ${m.kategori} · ` : ""}${m.status}`}
                   right={
                     <View className="items-end">
                       <Text className="font-semibold text-sm">{m.neededQty} unit</Text>

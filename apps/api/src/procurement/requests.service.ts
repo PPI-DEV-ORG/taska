@@ -108,11 +108,17 @@ export class RequestsService {
       },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
-    const [approval, evidenceFile, stock] = await Promise.all([
+    const [approval, evidenceFile, doFile, stock] = await Promise.all([
       this.approvals.getFor("PURCHASE_REQUEST", id),
       row.evidenceFileId
         ? this.prisma.main.file.findUnique({
             where: { id: row.evidenceFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : Promise.resolve(null),
+      (row as any).doFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: (row as any).doFileId },
             select: { id: true, originalName: true, mimeType: true, size: true },
           })
         : Promise.resolve(null),
@@ -124,7 +130,7 @@ export class RequestsService {
         })),
       ),
     ]);
-    return { ...row, evidenceFile, approval, stock };
+    return { ...row, evidenceFile, doFile, approval, stock };
   }
 
   async create(dto: RequestDto, user: RequestUser) {
@@ -281,8 +287,9 @@ export class RequestsService {
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
 
-    // Bila Gudang menyerahkan / mengirim barang (DIKIRIM): kurangi stok gudang
-    if (dto.status === "DIKIRIM" && row.status !== "DIKIRIM" && row.status !== "DITERIMA") {
+    // Bila Gudang menyerahkan / mengirim barang (DIKIRIM) atau barang Diterima di proyek (DITERIMA): kurangi stok gudang jika belum pernah dikurangi
+    const shouldReduceStock = (dto.status === "DIKIRIM" || dto.status === "DITERIMA") && row.status !== "DIKIRIM" && row.status !== "DITERIMA";
+    if (shouldReduceStock) {
       const defaultWarehouse =
         (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
         (await this.prisma.main.warehouse.findFirst());
@@ -305,7 +312,7 @@ export class RequestsService {
               fromWarehouseId: warehouseId,
               qty: item.qty,
               projectId: row.projectId ?? null,
-              reason: `Pengeluaran barang request ${row.number} oleh ${user.name}`,
+              reason: `Pengeluaran barang request ${row.number} status ${dto.status} oleh ${user.name}`,
               createdById: user.id,
             });
           } catch (e) {
@@ -341,9 +348,21 @@ export class RequestsService {
 
     const updated = await this.prisma.main.purchaseRequest.update({
       where: { id },
-      data: { status: dto.status as never, rejectReason: dto.reason ?? row.rejectReason },
+      data: {
+        status: dto.status as never,
+        rejectReason: dto.reason ?? row.rejectReason,
+        ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
+      },
       include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
     });
+    if (dto.doFileId) {
+      await this.prisma.main.file
+        .update({
+          where: { id: dto.doFileId },
+          data: { refType: "purchase_request_do", refId: String(id) },
+        })
+        .catch(() => {});
+    }
     await this.audit.log({
       actor: user,
       action: "UBAH_STATUS_REQUEST",

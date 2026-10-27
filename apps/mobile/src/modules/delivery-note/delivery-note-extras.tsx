@@ -97,7 +97,12 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
                   onPress={async () => {
                     try {
                       await api("POST", `/delivery-notes/${row.id}/goods`, {
-                        items: row.items,
+                        items: (Array.isArray(row.items) ? row.items : []).map((i: any) => ({
+                          productId: Number(i.productId ?? i.product?.id),
+                          qty: Number(i.qty) || 1,
+                          serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+                          note: i.note ? String(i.note) : undefined,
+                        })),
                         serials: scannedSns.length > 0 ? scannedSns : Array.isArray(row.snList) ? row.snList : [],
                       });
                       await patchRow("delivery-notes", row.id, { status: "Dikirim" });

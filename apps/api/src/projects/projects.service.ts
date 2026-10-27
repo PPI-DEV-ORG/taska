@@ -123,7 +123,7 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user);
     const synced = await this.syncPayment(id);
-    const fileIds = [project.prdFileId, project.bahpFileId, project.bastFileId, project.doFileId].filter(
+    const fileIds = [project.prdFileId, project.bahpFileId, project.bastFileId, project.doFileId, project.boqFileId].filter(
       (fid): fid is number => typeof fid === "number" && fid > 0,
     );
     const [row, files] = await Promise.all([
@@ -144,7 +144,7 @@ export class ProjectsService {
           },
           members: { include: { user: { select: { id: true, name: true, role: true } } } },
           requirements: {
-            include: { product: { select: { id: true, sku: true, name: true, unit: true } } },
+            include: { product: { select: { id: true, sku: true, name: true, unit: true, category: { select: { id: true, name: true } } } } },
             orderBy: { id: "asc" as const },
           },
           tasks: {
@@ -172,7 +172,33 @@ export class ProjectsService {
     const bahpFile = project.bahpFileId ? fileMap.get(project.bahpFileId) ?? null : null;
     const bastFile = project.bastFileId ? fileMap.get(project.bastFileId) ?? null : null;
     const doFile = project.doFileId ? fileMap.get(project.doFileId) ?? null : null;
-    return { ...row, paymentStatus: synced.paymentStatus, prdFile, bahpFile, bastFile, doFile };
+    const boqFile = project.boqFileId ? fileMap.get(project.boqFileId) ?? null : null;
+
+    // Tahapan project dihitung di server agar identik untuk semua role (PM, Procurement, dll.)
+    const [invoiceCount, poCount, clientPoCount, surveyCount] = await Promise.all([
+      this.prisma.main.invoiceOut.count({ where: { projectId: id, status: { not: "BATAL" as never } } }).catch(() => 0),
+      this.prisma.main.supplierPO.count({ where: { projectId: id, status: { notIn: ["DITOLAK", "DIBATALKAN"] as never } } }).catch(() => 0),
+      project.quotationId
+        ? this.prisma.main.clientPO.count({ where: { quotationId: project.quotationId } }).catch(() => 0)
+        : Promise.resolve(0),
+      project.quotationId
+        ? this.prisma.main.quotation
+            .findUnique({ where: { id: project.quotationId }, select: { leadId: true } })
+            .then((q) => (q?.leadId ? this.prisma.main.survey.count({ where: { leadId: q.leadId } }) : 0))
+            .catch(() => 0)
+        : Promise.resolve(0),
+    ]);
+    const stages = {
+      boq: !!project.boqFileId || row.requirements.length > 0,
+      survey: surveyCount > 0,
+      penawaran: !!project.quotationId,
+      po: poCount > 0 || clientPoCount > 0,
+      progress: project.progress > 0,
+      invoice: invoiceCount > 0,
+      bast: project.status === "SELESAI" || !!project.bastFileId,
+      counts: { requirements: row.requirements.length, surveys: surveyCount, clientPos: clientPoCount, supplierPos: poCount, invoices: invoiceCount },
+    };
+    return { ...row, paymentStatus: synced.paymentStatus, prdFile, bahpFile, bastFile, doFile, boqFile, stages };
   }
 
   async create(dto: ProjectDto, user: RequestUser) {
@@ -313,6 +339,7 @@ export class ProjectsService {
         bahpFileId: dto.bahpFileId !== undefined ? dto.bahpFileId : project.bahpFileId,
         bastFileId: dto.bastFileId !== undefined ? dto.bastFileId : project.bastFileId,
         doFileId: dto.doFileId !== undefined ? dto.doFileId : project.doFileId,
+        boqFileId: dto.boqFileId !== undefined ? dto.boqFileId : project.boqFileId,
         notes: dto.notes !== undefined ? dto.notes : project.notes,
         ...(validMemberIds !== undefined
           ? { members: { deleteMany: {}, create: validMemberIds.map((userId) => ({ userId })) } }
@@ -324,7 +351,7 @@ export class ProjectsService {
         members: { include: { user: { select: { id: true, name: true, role: true } } } },
       },
     });
-    for (const fid of [dto.prdFileId, dto.bahpFileId, dto.bastFileId, dto.doFileId]) {
+    for (const fid of [dto.prdFileId, dto.bahpFileId, dto.bastFileId, dto.doFileId, dto.boqFileId]) {
       if (fid) await this.attachFile(fid, "project", id);
     }
 
@@ -527,7 +554,7 @@ export class ProjectsService {
 
     let rows = await this.prisma.main.projectRequirement.findMany({
       where: { projectId },
-      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true, category: { select: { id: true, name: true } } } } },
       orderBy: { id: "asc" },
     });
 
@@ -642,7 +669,7 @@ export class ProjectsService {
     const reserved = await this.reserveFor(projectId, row.id, dto.productId, dto.qty, dto.serials);
     const created = await this.prisma.main.projectRequirement.findUnique({
       where: { id: row.id },
-      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true, category: { select: { id: true, name: true } } } } },
     });
 
     await this.audit.log({
@@ -682,7 +709,7 @@ export class ProjectsService {
     const reserved = await this.reserveFor(projectId, id, updated.productId, updated.qty, updated.serials);
     const current = await this.prisma.main.projectRequirement.findUnique({
       where: { id },
-      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } },
+      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true, category: { select: { id: true, name: true } } } } },
     });
     await this.audit.log({
       actor: user,

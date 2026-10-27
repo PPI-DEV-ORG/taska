@@ -391,6 +391,27 @@ export class ApprovalsService {
       detail: `${approval.kind} #${approval.entityId} ${approval.title}${reason ? ` — ${reason}` : ""}`,
     });
 
+    const entityModuleMap: Record<string, string> = {
+      PENAWARAN: "quotations",
+      PENGELUARAN: "expenses",
+      SUPPLIER_PO: "supplier-pos",
+      PURCHASE_REQUEST: "purchase-requests",
+      PERMINTAAN_SURVEY: "surveys",
+      OPNAME: "opname",
+      SURAT_JALAN: "delivery-notes",
+      PENERIMAAN: "receiving",
+    };
+    const targetModule = entityModuleMap[approval.kind];
+    if (targetModule) {
+      await this.audit.log({
+        actor: user,
+        action: approve ? "DISETUJUI" : "DITOLAK",
+        entityType: targetModule,
+        entityId: approval.entityId,
+        detail: `Persetujuan ${approve ? "disetujui" : "ditolak"} oleh ${user.name}${reason ? ` (${reason})` : ""}`,
+      });
+    }
+
     await this.notifications.notify({
       userIds: [approval.requestedById],
       kind: "APPROVAL",

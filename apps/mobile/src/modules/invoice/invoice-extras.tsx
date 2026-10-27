@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Linking } from "react-native";
-import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown, Printer, RotateCcw } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown, Printer, RotateCcw, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase } from "@/services/api";
+import { api, apiBase, uploadFile } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";
 import { buildEfakturCsv } from "@/lib/efaktur";
@@ -18,7 +18,7 @@ import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 import { downloadInvoiceExcel } from "@/modules/invoice/invoice-files";
 import { InvoiceTemplateGenerator } from "@/modules/invoice/invoice-template-generator";
-import { ConflictAndSwapBanner } from "@/components/taska/serial-item-picker";
+import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { type QuotationItem } from "@/modules/quotation/types";
 
 export function InvoiceExtras({
@@ -46,6 +46,70 @@ export function InvoiceExtras({
   const [returQty, setReturQty] = React.useState("1");
   const [returNote, setReturNote] = React.useState("");
   const [isSavingRetur, setIsSavingRetur] = React.useState(false);
+
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+  const items: QuotationItem[] = Array.isArray(row.items) ? row.items : [];
+
+  async function handleAddItems(newItems: QuotationItem[]) {
+    const existingSnSet = new Set<string>();
+    items.forEach((it) => {
+      if (Array.isArray(it.serialNumbers)) it.serialNumbers.forEach((s) => existingSnSet.add(String(s).trim().toUpperCase()));
+      const snVal = String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1]?.trim();
+      if (snVal) existingSnSet.add(snVal.toUpperCase());
+    });
+    const valid: QuotationItem[] = [];
+    newItems.forEach((it) => {
+      const snList: string[] = [];
+      if (Array.isArray(it.serialNumbers)) it.serialNumbers.forEach((s) => snList.push(String(s).trim().toUpperCase()));
+      const snVal = String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1]?.trim();
+      if (snVal) snList.push(snVal.toUpperCase());
+      const hasDup = snList.some((s) => existingSnSet.has(s));
+      if (!hasDup) {
+        snList.forEach((s) => existingSnSet.add(s));
+        valid.push(it);
+      }
+    });
+
+    const updated = [...items, ...valid];
+    const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || 0)), 0);
+    const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
+    const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
+    const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
+    const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
+    const pph = Number(row.pph || 0);
+    const total = Math.max(0, (isInclude ? newAmount : dpp + ppn) - pph);
+
+    await patchRow("invoices", row.id, {
+      items: updated,
+      nilai: dpp,
+      amount: dpp,
+      ppn,
+      total,
+    });
+    await reload();
+    toast(`Berhasil menambahkan ${valid.length} barang ke invoice! Stok ter-reserve.`);
+  }
+
+  async function handleDeleteItem(idx: number) {
+    const updated = items.filter((_, i) => i !== idx);
+    const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || 0)), 0);
+    const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
+    const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
+    const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
+    const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
+    const pph = Number(row.pph || 0);
+    const total = Math.max(0, (isInclude ? newAmount : dpp + ppn) - pph);
+
+    await patchRow("invoices", row.id, {
+      items: updated,
+      nilai: dpp,
+      amount: dpp,
+      ppn,
+      total,
+    });
+    await reload();
+    toast("Barang berhasil dihapus dari invoice");
+  }
 
   const salesReturns = React.useMemo(() => {
     const invNo = String(row.nomor || "").toLowerCase();
@@ -240,9 +304,40 @@ export function InvoiceExtras({
           </View>
         }
       >
-        <Line left="Nilai Sebelum PPN" right={<Text className="text-sm font-medium">{rupiah(row.nilai || 0)}</Text>} />
-        <Line left="PPN (11%)" right={<Text className="text-sm font-medium">{rupiah(row.ppn || 0)}</Text>} />
-        <Line left="Total Tagihan" right={<Text className="text-sm font-bold">{rupiah(row.total || 0)}</Text>} />
+        {row.ppnMode === "include" || String(row.tipePpn || "").includes("Include") ? (
+          <>
+            <Line
+              left="Harga Sebelum PPN (DPP)"
+              right={<Text className="text-sm font-medium">{rupiah(Math.round(((Number(row.total) || 0) + (Number(row.pph) || 0)) / 1.11) || Math.round((Number(row.nilai) || 0) / 1.11))}</Text>}
+            />
+            <Line
+              left="PPN 11% (Termasuk)"
+              right={<Text className="text-sm font-semibold text-primary">{rupiah(Number(row.ppn) || Math.max(0, ((Number(row.total) || 0) + (Number(row.pph) || 0)) - Math.round(((Number(row.total) || 0) + (Number(row.pph) || 0)) / 1.11)))}</Text>}
+            />
+            {Number(row.pph || 0) > 0 ? (
+              <Line
+                left={`Pemotongan ${row.tipePph || "PPh"}`}
+                right={<Text className="text-sm font-semibold text-danger">- {rupiah(row.pph || 0)}</Text>}
+              />
+            ) : null}
+            <Line left="Total Tagihan (Inc. PPN)" right={<Text className="text-sm font-bold text-primary">{rupiah(row.total || 0)}</Text>} />
+          </>
+        ) : (
+          <>
+            <Line left="Nilai Sebelum PPN" right={<Text className="text-sm font-medium">{rupiah(row.nilai || 0)}</Text>} />
+            <Line
+              left={row.ppnMode === "none" || String(row.tipePpn || "").includes("No") || String(row.tipePpn || "").includes("Tanpa") ? "PPN (Tanpa PPN)" : "PPN (11%)"}
+              right={<Text className="text-sm font-medium">{rupiah(row.ppn || 0)}</Text>}
+            />
+            {Number(row.pph || 0) > 0 ? (
+              <Line
+                left={`Pemotongan ${row.tipePph || "PPh"}`}
+                right={<Text className="text-sm font-semibold text-danger">- {rupiah(row.pph || 0)}</Text>}
+              />
+            ) : null}
+            <Line left="Total Tagihan" right={<Text className="text-sm font-bold">{rupiah(row.total || 0)}</Text>} />
+          </>
+        )}
         <Line left="Sudah Dibayar" right={<Text className="text-success text-sm font-medium">{rupiah(row.terbayar || 0)}</Text>} />
         <Line left="Sisa Tagihan" right={<Text className="text-sm font-semibold">{rupiah(sisa)}</Text>} />
         {row.fileId ? (
@@ -265,115 +360,108 @@ export function InvoiceExtras({
         ) : null}
       </Panel>
 
+      {/* Panel Daftar & Alokasi Barang Terpakai */}
       <Panel
-        title="File Excel Invoice — Download & Smart Upload (.xlsx)"
-        subtitle="Download file Excel (.xlsx) invoice sesuai format, edit manual di Excel jika diperlukan, lalu upload kembali — sistem otomatis membaca tabel item, DPP, PPN, dan Total Invoice."
+        title="Daftar & Alokasi Barang Terpakai"
+        subtitle="Tracking stok barang dan alokasi yang dipakai pada invoice ini agar stok gudang tetap akurat."
+        right={
+          <Button
+            size="sm"
+            onPress={() => setPickerOpen(true)}
+            className="flex-row items-center gap-1"
+          >
+            <Plus size={14} color={colors.background} />
+            <Text className="text-xs">Tambah Barang</Text>
+          </Button>
+        }
       >
-        <View className="gap-3">
-          <Line
-            left="Status File Dokumen"
-            right={
-              row.fileId || row.fileUploaded ? (
-                <View className="flex-row items-center gap-1.5">
-                  <CheckCircle2 size={15} color={colors.primary} />
-                  <Text className="text-xs font-semibold text-primary">File Terupload</Text>
-                </View>
-              ) : (
-                <Text className="text-xs text-muted-foreground font-medium">Belum Ada File</Text>
-              )
-            }
-          />
-          {row.fileName ? (
-            <Line left="Nama File Terakhir" right={<Text className="text-xs text-foreground font-mono">{row.fileName}</Text>} />
-          ) : null}
+        <ConflictAndSwapBanner row={row} />
 
-          <View className="flex-row flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onPress={() => {
-                downloadInvoiceExcel({ invoiceId: row.id });
-                toast("File Excel invoice (.xlsx) sedang diunduh");
-              }}
-            >
-              <FileDown size={15} color={colors.text} />
-              <Text className="text-xs">Download File Excel (.xlsx) Saat Ini</Text>
+        {items.length > 0 ? (
+          <View className="gap-2 pt-1">
+            <View className="border border-border/80 rounded-xl overflow-hidden bg-card">
+              <View className="flex-row bg-muted/60 p-2.5 border-b border-border/70">
+                <Text className="text-[11px] font-bold text-muted-foreground w-8">No</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground flex-1">Nama Barang / SKU</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground w-16 text-center">Qty</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground w-28 text-right">Harga (Rp)</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground w-28 text-right">Subtotal (Rp)</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground w-12 text-center">Aksi</Text>
+              </View>
+              {items.map((it, idx) => {
+                const sub = (Number(it.qty) || 1) * (Number(it.price) || 0);
+                const snText = Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0
+                  ? it.serialNumbers.join(", ")
+                  : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
+
+                return (
+                  <View key={it.id || idx} className="flex-row items-center p-2.5 border-b border-border/40 last:border-b-0">
+                    <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
+                    <View className="flex-1 mr-2">
+                      <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
+                      {snText ? (
+                        <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
+                      ) : null}
+                    </View>
+                    <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.unit || "unit"}</Text>
+                    <Text className="text-xs text-foreground w-28 text-right">{rupiah(it.price || 0)}</Text>
+                    <Text className="text-xs font-semibold text-foreground w-28 text-right">{rupiah(sub)}</Text>
+                    <View className="w-12 items-center">
+                      <Button size="icon" variant="ghost" className="size-7" onPress={() => handleDeleteItem(idx)}>
+                        <Trash2 size={13} color={colors.danger} />
+                      </Button>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ) : (
+          <View className="p-4 rounded-xl border border-dashed border-border/80 items-center justify-center gap-2">
+            <Text className="text-xs text-muted-foreground">Belum ada barang yang dialokasikan ke invoice ini.</Text>
+            <Button size="sm" variant="outline" onPress={() => setPickerOpen(true)} className="flex-row items-center gap-1.5">
+              <Plus size={14} color={colors.text} />
+              <Text className="text-xs">Pilih dari Stok Gudang</Text>
             </Button>
           </View>
-
-          <FileUploader
-            label="Pilih atau Tarik File Excel (.xlsx) Invoice — Sistem Otomatis Baca Isi Tabel & Total"
-            kind="dokumen"
-            autoFlush
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            hint="Hanya file Excel (.xlsx) maksimal 15 MB"
-            allowedExtensions={[".xlsx"]}
-            onFilePicked={async (file) => {
-              try {
-                const formData = new FormData();
-                formData.append("file", file as any);
-                await api("POST", `/invoices/${row.id}/upload-excel`, undefined, { form: formData });
-                await reload();
-                toast("File Excel berhasil dibaca & diunggah! Nilai invoice & rincian item diperbarui.");
-              } catch (e: any) {
-                toast(e?.message || "Gagal memproses file Excel", "danger");
-              }
-            }}
-          />
-        </View>
+        )}
       </Panel>
 
-      <InvoiceTemplateGenerator
-        key={`${row.id}-${row.nilai}-${row.total}-${(row.items ?? []).length}`}
-        row={row}
-        onUpdateInvoice={async (
-          items: QuotationItem[],
-          newAmount: number,
-          meta?: {
-            subject?: string;
-            intro?: string;
-            notesList?: string[];
-            city?: string;
-            kopText?: string;
-            kopLogoUrl?: string;
-            customerAddress?: string;
-            signerName?: string;
-            signerTitle?: string;
-            dpLabel?: string;
-            dpAmount?: number;
-          },
-          shouldDownload?: boolean,
-        ) => {
-          const newPpn = Math.round(newAmount * 0.11);
-          const newTotal = newAmount + newPpn;
-          await patchRow("invoices", row.id, {
-            items,
-            subject: meta?.subject,
-            intro: meta?.intro,
-            notesList: meta?.notesList,
-            city: meta?.city,
-            kopText: meta?.kopText,
-            kopLogoUrl: meta?.kopLogoUrl,
-            customerAddress: meta?.customerAddress,
-            signerName: meta?.signerName,
-            signerTitle: meta?.signerTitle,
-            dpLabel: meta?.dpLabel,
-            dpAmount: meta?.dpAmount,
-            nilai: newAmount,
-            amount: newAmount,
-            ppn: newPpn,
-            total: newTotal,
-            fileUploaded: true,
-            fileName: `Invoice-${row.nomor.replace(/\//g, "-")}.xlsx`,
-          });
-          if (shouldDownload) {
-            downloadInvoiceExcel({ invoiceId: row.id });
-            toast("Template invoice disimpan & file Excel (.xlsx) diunduh!");
-          } else {
-            toast("Template & rincian invoice berhasil disimpan!");
-          }
-        }}
+      <SerialItemPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        currentQuotationId={row.quotationId ? Number(row.quotationId) : undefined}
+        existingItems={items}
+        onAddItems={handleAddItems}
       />
+
+      {/* Dokumen Faktur Manual */}
+      <Panel
+        title="Dokumen Faktur Manual"
+        subtitle="Upload dokumen file invoice / penagihan manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke invoice ini."
+      >
+        <FileUploader
+          label="Pilih atau Tarik File Invoice Manual (PDF / Excel)"
+          kind="dokumen"
+          category="invoice"
+          autoFlush
+          onFilePicked={async (file) => {
+            try {
+              const uploadedId = await uploadFile(file, "dokumen", "invoice", { refType: "invoice", refId: row.id });
+              if (!uploadedId) throw new Error("Gagal mengunggah file ke server");
+              await patchRow("invoices", row.id, {
+                fileUploaded: true,
+                fileName: file.name,
+                fileId: uploadedId,
+              });
+              await reload();
+              toast(`File "${file.name}" berhasil diunggah!`);
+            } catch (e: any) {
+              toast(e?.message || "Gagal mengunggah file", "danger");
+            }
+          }}
+        />
+      </Panel>
 
       <Panel title="Receipt / Bukti Pembayaran Masuk" subtitle="Riwayat pembayaran customer & cetak kwitansi resmi (Receipt)">
         {payments.length > 0 ? (

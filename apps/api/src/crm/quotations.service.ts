@@ -201,6 +201,9 @@ export class QuotationsService {
     return {
       ...row,
       status,
+      pph: Number((meta as any)?.pph ?? 0),
+      pphMode: (meta as any)?.pphMode ?? "none",
+      tipePph: (meta as any)?.tipePph ?? "Tanpa PPh",
       items: meta?.items ?? [],
       subject: meta?.subject ?? "",
       intro: meta?.intro ?? "",
@@ -518,7 +521,10 @@ export class QuotationsService {
       dto.customerAddress !== undefined ||
       dto.city !== undefined ||
       dto.signerName !== undefined ||
-      dto.signerTitle !== undefined
+      dto.signerTitle !== undefined ||
+      dto.pph !== undefined ||
+      dto.pphMode !== undefined ||
+      dto.tipePph !== undefined
     ) {
       await this.generateAndAttachExcel(
         id,
@@ -532,7 +538,10 @@ export class QuotationsService {
           customerAddress: dto.customerAddress ?? existingMeta?.customerAddress,
           signerName: dto.signerName ?? existingMeta?.signerName,
           signerTitle: dto.signerTitle ?? existingMeta?.signerTitle,
-        },
+          pph: dto.pph ?? (existingMeta as any)?.pph,
+          pphMode: dto.pphMode ?? (existingMeta as any)?.pphMode,
+          tipePph: dto.tipePph ?? (existingMeta as any)?.tipePph,
+        } as any,
         user,
       );
     }

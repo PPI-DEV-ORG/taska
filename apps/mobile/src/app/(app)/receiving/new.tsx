@@ -92,7 +92,6 @@ export default function NewReceivingScreen() {
     const catName = quickCatNama.trim();
     addRow("productCategories", {
       nama: catName,
-      prefix: (quickCatPrefix.trim() || "CAT").toUpperCase(),
       status: "Aktif",
     });
     setNewKategori(catName);
@@ -578,13 +577,6 @@ export default function NewReceivingScreen() {
                 value={quickCatNama}
                 onChangeText={setQuickCatNama}
                 placeholder="Contoh: Switch & Networking"
-              />
-            </FormField>
-            <FormField label="Prefix SKU (Singkatan Kode)">
-              <Input
-                value={quickCatPrefix}
-                onChangeText={setQuickCatPrefix}
-                placeholder="Contoh: NET (Otomatis huruf besar)"
               />
             </FormField>
           </View>
