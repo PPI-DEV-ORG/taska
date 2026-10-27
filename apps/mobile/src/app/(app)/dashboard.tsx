@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Boxes,
+  BookOpen,
   Calendar,
   CheckCircle2,
   ClipboardCheck,
@@ -255,11 +256,11 @@ function QuickActionsCard({ role }: { role: string }) {
         ) : null}
         {isSuper || role === "bos" || role === "admin" || role === "finance" ? (
           <QuickActionButton
-            label="Neraca, P&L & Jurnal"
-            icon={TrendingUp}
+            label="Buku Besar & COA"
+            icon={BookOpen}
             shortcut="⌘K"
             className="flex-1 min-w-[170px]"
-            onPress={() => router.push("/reports")}
+            onPress={() => router.push("/accounting")}
           />
         ) : null}
         {role === "sales" || role === "procurement" || role === "finance" ? (

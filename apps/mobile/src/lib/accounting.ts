@@ -37,13 +37,65 @@ export interface JournalLine {
   journalNo: string;
   tanggal: string;
   refNo: string;
-  sumber: "Invoice Client" | "Pembayaran Invoice" | "PO Supplier" | "Pelunasan PO" | "Pengeluaran (Expense)" | "Pembayaran Expense";
+  sumber: "Invoice Client" | "Pembayaran Invoice" | "PO Supplier" | "Pelunasan PO" | "Pengeluaran (Expense)" | "Pembayaran Expense" | "Jurnal Manual";
   keterangan: string;
   project: string;
   kodeAkun: string;
   namaAkun: string;
   debit: number;
   kredit: number;
+}
+
+export interface ManualJournalLine {
+  kodeAkun: string;
+  keterangan: string;
+  debit: number;
+  kredit: number;
+}
+
+export interface ManualJournal {
+  id: string;
+  journalNo: string;
+  tanggal: string;
+  refNo: string;
+  keterangan: string;
+  project?: string;
+  lines: ManualJournalLine[];
+}
+
+export const STORAGE_MANUAL_JOURNALS_KEY = "taska.accounting.manual_journals";
+export const STORAGE_CUSTOM_COA_KEY = "taska.accounting.custom_coa";
+
+export function loadManualJournals(): ManualJournal[] {
+  if (typeof window === "undefined" || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_MANUAL_JOURNALS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveManualJournals(journals: ManualJournal[]) {
+  if (typeof window !== "undefined" && window.localStorage) {
+    window.localStorage.setItem(STORAGE_MANUAL_JOURNALS_KEY, JSON.stringify(journals));
+  }
+}
+
+export function loadCustomCoa(): CoaAccount[] {
+  if (typeof window === "undefined" || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_CUSTOM_COA_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomCoa(accounts: CoaAccount[]) {
+  if (typeof window !== "undefined" && window.localStorage) {
+    window.localStorage.setItem(STORAGE_CUSTOM_COA_KEY, JSON.stringify(accounts));
+  }
 }
 
 export interface ProjectPnlRow {
@@ -154,7 +206,16 @@ function normStr(v: any, fallback = "-"): string {
   return s || fallback;
 }
 
-export function computeFinancialStatements(data: Record<string, any[]>): FinancialStatementsBundle {
+export function computeFinancialStatements(
+  data: Record<string, any[]>,
+  manualJournals: ManualJournal[] = [],
+  customAccounts: CoaAccount[] = []
+): FinancialStatementsBundle {
+  const activeCoa: Record<string, CoaAccount> = { ...CHART_OF_ACCOUNTS };
+  customAccounts.forEach((acc) => {
+    activeCoa[acc.code] = acc;
+  });
+
   const invoices = (data.invoices || []).filter((inv) => normStr(inv.status).toLowerCase() !== "batal");
   const supplierPos = (data["supplier-pos"] || []).filter((po) => normStr(po.status).toLowerCase() !== "dibatalkan");
   const expenses = (data.expenses || []).filter((ex) => normStr(ex.status).toLowerCase() !== "ditolak");
@@ -175,7 +236,7 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
     const jNo = `JU-${String(seq++).padStart(4, "0")}`;
     entries.forEach((e, idx) => {
       if (e.debit === 0 && e.kredit === 0) return;
-      const acc = CHART_OF_ACCOUNTS[e.kodeAkun];
+      const acc = activeCoa[e.kodeAkun];
       journalLines.push({
         id: `${jNo}-${idx + 1}`,
         journalNo: jNo,
@@ -350,6 +411,34 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
         ]);
       }
     }
+  }
+
+  // 3b. Manual Journals (Entri Jurnal Penyesuaian Manual)
+  for (const mj of manualJournals) {
+    const jNo = mj.journalNo || `JM-${String(seq++).padStart(4, "0")}`;
+    const tanggal = normStr(mj.tanggal, "2026-02-01");
+    const refNo = normStr(mj.refNo, "-");
+    const project = normStr(mj.project, "-");
+
+    mj.lines.forEach((l, idx) => {
+      const d = toNum(l.debit);
+      const k = toNum(l.kredit);
+      if (d === 0 && k === 0) return;
+      const acc = activeCoa[l.kodeAkun];
+      journalLines.push({
+        id: `${jNo}-${idx + 1}`,
+        journalNo: jNo,
+        tanggal,
+        refNo,
+        sumber: "Jurnal Manual",
+        keterangan: l.keterangan || mj.keterangan,
+        project,
+        kodeAkun: l.kodeAkun,
+        namaAkun: acc ? acc.name : l.kodeAkun,
+        debit: d,
+        kredit: k,
+      });
+    });
   }
 
   // Sort journal lines chronologically (newest first for display, keeping pair order intact)
@@ -562,7 +651,7 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
   const totalPasiva = totalKewajiban + totalEkuitas;
 
   // 7. COA Trial Balance Summary
-  const coaBalances: CoaTrialBalanceRow[] = Object.values(CHART_OF_ACCOUNTS).map((acc) => {
+  const coaBalances: CoaTrialBalanceRow[] = Object.values(activeCoa).map((acc) => {
     const lines = journalLines.filter((l) => l.kodeAkun === acc.code);
     let d = lines.reduce((s, l) => s + l.debit, 0);
     let k = lines.reduce((s, l) => s + l.kredit, 0);
