@@ -477,7 +477,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       (async () => {
         if (!isApprover) return [] as ApprovalRow[];
         try {
-          const r = await api<{ items: any[] }>("GET", "/approvals/pending");
+          const r = await api<{ items: any[] }>("GET", "/approvals?limit=100");
           return adaptApprovalList(r.items);
         } catch {
           return [] as ApprovalRow[];
@@ -588,7 +588,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const refreshApprovals = React.useCallback(async () => {
     try {
-      const r = await api<{ items: any[] }>("GET", "/approvals/pending");
+      const r = await api<{ items: any[] }>("GET", "/approvals?limit=100");
       setApprovals(adaptApprovalList(r.items));
     } catch {}
   }, []);

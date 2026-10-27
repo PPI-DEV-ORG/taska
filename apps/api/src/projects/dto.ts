@@ -119,6 +119,9 @@ export class ProjectDto {
   @IsOptional() @IsInt()
   doFileId?: number;
 
+  @IsOptional() @IsInt()
+  boqFileId?: number;
+
   @IsOptional() @IsString()
   notes?: string;
 

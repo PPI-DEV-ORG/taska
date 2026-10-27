@@ -147,7 +147,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   const quotationFinancials = React.useMemo(() => {
     if (moduleKey !== "quotations" || !row) {
-      return { totNum: 0, discNum: 0, ppn: 0, pph: 0, totalAfterDisc: 0 };
+      return { totNum: 0, discNum: 0, dpp: 0, ppn: 0, pph: 0, totalAfterDisc: 0 };
     }
     const nilaiRaw = "nilai" in edits ? edits.nilai : (row.nilai || row.total || 0);
     const discRaw = "disc" in edits ? edits.disc : (row.disc || 0);
@@ -156,16 +156,18 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   const invoiceFinancials = React.useMemo(() => {
     if (moduleKey !== "invoices" || !row) {
-      return { amt: 0, ppn: 0, pph: 0, total: 0 };
+      return { amt: 0, dpp: 0, ppn: 0, pph: 0, total: 0 };
     }
     const nilaiRaw = "nilai" in edits ? edits.nilai : (row.nilai || row.amount || 0);
     const amt = Number(String(nilaiRaw).replace(/\D/g, "")) || 0;
     const ppnMode = quotationPpnMode;
     const pphMode = quotationPphMode;
-    const ppn = ppnMode === "exclude" ? Math.round(amt * 0.11) : 0;
-    const pph = Math.round(amt * pphRateFor(pphMode));
-    const total = Math.max(0, amt + ppn - pph);
-    return { amt, ppn, pph, total };
+    const isInclude = ppnMode === "include";
+    const dpp = isInclude ? Math.round(amt / 1.11) : amt;
+    const ppn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, amt - dpp) : Math.round(amt * 0.11);
+    const pph = Math.round(dpp * pphRateFor(pphMode));
+    const total = Math.max(0, (isInclude ? amt : amt + ppn) - pph);
+    return { amt, dpp, ppn, pph, total };
   }, [moduleKey, edits, row, quotationPpnMode, quotationPphMode]);
 
   React.useEffect(() => {
@@ -301,9 +303,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     }
 
     if (moduleKey === "invoices") {
-      const { amt, ppn, pph, total } = invoiceFinancials;
-      patch.amount = amt;
-      patch.nilai = amt;
+      const { dpp, ppn, pph, total } = invoiceFinancials;
+      patch.amount = dpp;
+      patch.nilai = dpp;
       patch.ppn = ppn;
       patch.pph = pph;
       patch.total = total;
@@ -315,6 +317,17 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
     if (moduleKey === "damage-reports" && patch.po) {
       patch.po = (String(patch.po).split(" - ")[0] ?? "").trim();
+    }
+
+    if (moduleKey === "supplier-pos" && patch.supplier) {
+      const suppList = (data.suppliers ?? []);
+      const match = suppList.find(
+        (s: any) =>
+          String(s.nama || s.name || "").trim().toLowerCase() === String(patch.supplier).trim().toLowerCase()
+      );
+      if (match?.id) {
+        patch.supplierId = Number(match.id);
+      }
     }
 
     setSaving(true);
@@ -859,6 +872,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                           onChange={setQuotationPpnMode}
                           ppn={quotationFinancials.ppn}
                           totalAfterDisc={quotationFinancials.totalAfterDisc}
+                          dpp={quotationFinancials.dpp}
                         />
                         <QuotationPphField
                           mode={quotationPphMode}
@@ -875,6 +889,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                           onChange={setQuotationPpnMode}
                           ppn={invoiceFinancials.ppn}
                           totalAfterDisc={invoiceFinancials.total}
+                          dpp={invoiceFinancials.dpp}
                         />
                         <QuotationPphField
                           mode={quotationPphMode}

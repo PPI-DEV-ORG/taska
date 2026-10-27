@@ -60,6 +60,7 @@ export class DeliveryItemDto {
   qty: number;
 
   @IsOptional()
+  @Transform(({ value }) => (Array.isArray(value) ? value.join(", ") : typeof value === "string" ? value : undefined))
   @IsString()
   serials?: string;
 

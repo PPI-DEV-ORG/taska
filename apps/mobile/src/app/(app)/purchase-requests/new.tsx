@@ -55,6 +55,15 @@ export default function NewPurchaseRequestScreen() {
   const [catFilter, setCatFilter] = React.useState<string>("Semua");
   const [tujuan, setTujuan] = React.useState("");
 
+  const categoryOptions = React.useMemo(() => {
+    const fromMaster = (data.productCategories ?? [])
+      .filter((c: any) => c.status !== "NONAKTIF")
+      .map((c: any) => String(c.nama || c.name || "").trim())
+      .filter(Boolean);
+    const fromProducts = products.map((p) => String(p.kategori || "").trim()).filter(Boolean);
+    return ["Semua", ...Array.from(new Set([...fromMaster, ...fromProducts]))];
+  }, [data.productCategories, products]);
+
   const selectedItems = selectedNames.map((name) => {
     const prod = products.find((p) => p.nama === name);
     const stockAvailable = prod
@@ -195,7 +204,7 @@ export default function NewPurchaseRequestScreen() {
             <View className="gap-1.5">
               <Text className="text-xs font-medium text-muted-foreground">Filter Kategori Barang</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1.5 py-0.5">
-                {["Semua", ...Array.from(new Set(products.map((p) => p.kategori).filter(Boolean)))].map((cat) => (
+                {categoryOptions.map((cat) => (
                   <Button
                     key={cat}
                     size="sm"
@@ -226,7 +235,7 @@ export default function NewPurchaseRequestScreen() {
                     return next;
                   });
                 }}
-                options={(catFilter === "Semua" ? products : products.filter((p) => p.kategori === catFilter)).map((p) => String(p.nama))}
+                options={(catFilter === "Semua" ? products : products.filter((p) => String(p.kategori || "").trim().toLowerCase() === catFilter.toLowerCase())).map((p) => String(p.nama))}
                 placeholder="Pilih barang..."
               />
             </FormField>

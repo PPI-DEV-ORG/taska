@@ -70,9 +70,11 @@ export function calcQuotationFinancials(
   const totNum = Number(String(nilaiRaw).replace(/\D/g, "")) || 0;
   const discNum = Number(String(discRaw).replace(/\D/g, "")) || 0;
   const netBeforeTax = Math.max(0, totNum - discNum);
-  const ppn = ppnMode === "exclude" ? Math.round(netBeforeTax * 0.11) : 0;
+  const isInclude = ppnMode === "include";
+  const dpp = isInclude ? Math.round(netBeforeTax / 1.11) : netBeforeTax;
+  const ppn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, netBeforeTax - dpp) : Math.round(netBeforeTax * 0.11);
   const pphRate = pphRateFor(pphMode);
-  const pph = Math.round(netBeforeTax * pphRate);
-  const totalAfterDisc = Math.max(0, netBeforeTax + ppn - pph);
-  return { totNum, discNum, ppn, pph, totalAfterDisc };
+  const pph = Math.round(dpp * pphRate);
+  const totalAfterDisc = Math.max(0, (isInclude ? netBeforeTax : netBeforeTax + ppn) - pph);
+  return { totNum, discNum, dpp, ppn, pph, totalAfterDisc };
 }

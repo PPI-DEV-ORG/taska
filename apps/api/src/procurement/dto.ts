@@ -71,7 +71,9 @@ export class RequestDto {
   @IsOptional() @IsInt()
   taskId?: number;
 
-  @IsOptional() @IsInt()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   supplierId?: number;
 
   @IsOptional()
@@ -113,6 +115,9 @@ export class RequestStatusDto {
 
   @IsOptional() @IsString()
   reason?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  doFileId?: number;
 }
 
 export class PoListQuery extends PageQuery {
@@ -167,7 +172,9 @@ export class PoDto {
   @IsOptional() @IsString()
   supplierSoNumber?: string;
 
-  @IsOptional() @IsInt()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   supplierId?: number;
 
   @IsOptional() @IsInt()

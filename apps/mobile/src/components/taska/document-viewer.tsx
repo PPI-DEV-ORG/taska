@@ -66,6 +66,21 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   }
 
   if (moduleKey === "purchase-requests") {
+    if (/do|delivery|surat jalan/i.test(labelLower)) {
+      const fileId = (row as any).doFileId ?? null;
+      const fileMeta = (row as any).doFile;
+      return {
+        label: docLabel,
+        fieldKey: "doFileId",
+        kind: "semua",
+        fileId,
+        fileName: fileMeta?.originalName ?? (fileId ? `do-request-${row.id}.pdf` : null),
+        mimeType: fileMeta?.mimeType ?? "application/pdf",
+        fileSize: fileMeta?.size,
+        isImage: fileMeta?.mimeType?.startsWith("image/"),
+        emptyHint: "Belum ada Delivery Order (DO) pengiriman barang yang dilampirkan",
+      };
+    }
     const fileId = (row as any).evidenceFileId ?? (row as any).fileId ?? null;
     const fileMeta = (row as any).evidenceFile ?? (row as any).file;
     return {
@@ -232,6 +247,20 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   }
 
   if (moduleKey === "projects") {
+    if (/boq|bill of quantit/i.test(labelLower)) {
+      const fileId = (row as any).boqFileId ?? null;
+      const fileMeta = (row as any).boqFile;
+      return {
+        label: docLabel,
+        fieldKey: "boqFileId",
+        kind: "dokumen",
+        fileId,
+        fileName: fileMeta?.originalName ?? (fileId ? `boq-${row.id}` : null),
+        mimeType: fileMeta?.mimeType,
+        fileSize: fileMeta?.size,
+        emptyHint: "Belum ada dokumen BOQ (Excel / PDF) yang diunggah",
+      };
+    }
     if (/prd|spesifikasi/i.test(labelLower)) {
       const fileId = (row as any).prdFileId ?? null;
       return {

@@ -3,7 +3,9 @@ export type QuotationItem = {
   item: string;
   qty: number;
   satuan: string;
+  unit?: string;
   harga: number;
+  price?: number;
   kind?: "GOODS" | "SERVICE";
   productId?: number;
   sku?: string;

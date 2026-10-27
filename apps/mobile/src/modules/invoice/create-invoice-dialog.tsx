@@ -269,7 +269,7 @@ function CreateInvoiceForm({
   const isNoPpn = ppnMode === "none";
   const isIncludePpn = ppnMode === "include";
 
-  const dealPpn = isNoPpn || isIncludePpn ? 0 : Math.round(dealDpp * 0.11);
+  const dealPpn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, dealDpp - Math.round(dealDpp / 1.11)) : Math.round(dealDpp * 0.11);
   const dealGrandTotal = isNoPpn || isIncludePpn ? dealDpp : dealDpp + dealPpn;
 
   // Total already billed in DPP
@@ -359,10 +359,12 @@ function CreateInvoiceForm({
       }
     }
 
-    const ppn = isNoPpn || isIncludePpn ? 0 : Math.round(dpp * 0.11);
-    const pph = Math.round(dpp * pphRateFor(pphMode));
-    const total = Math.max(0, dpp + ppn - pph);
-    return { currentDpp: dpp, currentPpn: ppn, currentPph: pph, currentTotal: total, calculatedPct: pct };
+    const rawBase = dpp;
+    const effectiveDpp = isIncludePpn ? Math.round(rawBase / 1.11) : rawBase;
+    const ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawBase - effectiveDpp) : Math.round(rawBase * 0.11);
+    const pph = Math.round(effectiveDpp * pphRateFor(pphMode));
+    const total = Math.max(0, (isIncludePpn ? rawBase : effectiveDpp + ppn) - pph);
+    return { currentDpp: effectiveDpp, currentPpn: ppn, currentPph: pph, currentTotal: total, calculatedPct: pct };
   }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode]);
 
   // Handle file extraction
@@ -1017,7 +1019,16 @@ function CreateInvoiceForm({
                       ? "Nilai dasar sudah termasuk PPN 11%."
                       : "Transaksi ini tanpa PPN (0%)."}
                   </Text>
-                  {currentPpn > 0 ? (
+                  {ppnMode === "include" ? (
+                    <View className="mt-1 gap-0.5">
+                      <Text className="text-xs text-foreground">
+                        DPP (Sebelum PPN): {rupiah(currentDpp)}
+                      </Text>
+                      <Text className="text-xs font-semibold text-primary">
+                        PPN 11% Termasuk: {rupiah(currentPpn)}
+                      </Text>
+                    </View>
+                  ) : currentPpn > 0 ? (
                     <Text className="text-xs font-semibold text-primary">
                       PPN 11%: +{rupiah(currentPpn)}
                     </Text>
@@ -1073,7 +1084,7 @@ function CreateInvoiceForm({
           </View>
           <View className="flex-row justify-between">
             <Text className="text-xs text-muted-foreground">
-              {isNoPpn ? "PPN Tagihan (Tanpa PPN):" : "PPN Tagihan Ini (11%):"}
+              {isNoPpn ? "PPN Tagihan (Tanpa PPN):" : isIncludePpn ? "PPN Tagihan Ini (11% Termasuk):" : "PPN Tagihan Ini (11%):"}
             </Text>
             <Text className="text-xs font-medium">{rupiah(currentPpn)}</Text>
           </View>

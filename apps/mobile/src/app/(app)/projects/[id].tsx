@@ -26,11 +26,13 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { DocumentViewerList, DocumentViewerItem, resolveModuleDocs } from "@/components/taska/document-viewer";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
+import { adaptRow } from "@/services/adapters";
 import { MODULES, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import { rupiah, tanggal } from "@/lib/format";
-import { ProjectExtras } from "@/modules/project/project-extras";
+import { ProjectExtras, useProjectExpenses } from "@/modules/project/project-extras";
+import { TaskDetailDialog } from "@/modules/task/task-detail-dialog";
 
 const TABS = [
   "Ringkasan",
@@ -57,6 +59,7 @@ export default function ProjectDetailScreen() {
   const [editProjectOpen, setEditProjectOpen] = React.useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = React.useState(false);
   const [requirements, setRequirements] = React.useState<any[]>([]);
+  const [detailTask, setDetailTask] = React.useState<Row | null>(null);
 
   React.useEffect(() => {
     if (id) {
@@ -64,7 +67,23 @@ export default function ProjectDetailScreen() {
     }
   }, [id, loadHistory]);
 
-  const project = data.projects.find((p) => p.id === id);
+  const storeProject = data.projects.find((p) => p.id === id);
+  const [remoteDetail, setRemoteDetail] = React.useState<Row | null>(null);
+  React.useEffect(() => {
+    if (!id) return;
+    let active = true;
+    api<any>("GET", `/projects/${id}`)
+      .then((raw) => {
+        if (active && raw) setRemoteDetail(adaptRow("projects", raw));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [id, storeProject?.boqFileId, storeProject?.progres, storeProject?.status, storeProject?.bastFileId]);
+  const project = storeProject
+    ? { ...storeProject, stages: remoteDetail?.stages ?? null, boqFile: remoteDetail?.boqFile ?? storeProject.boqFile ?? null }
+    : undefined;
   const currentProgress = project ? (project.status === "Selesai" ? 100 : (Number(project.progres) || 0)) : 0;
   const [liveProgress, setLiveProgress] = React.useState<number>(currentProgress);
   const [prevProgress, setPrevProgress] = React.useState<number>(currentProgress);
@@ -98,6 +117,8 @@ export default function ProjectDetailScreen() {
       active = false;
     };
   }, [id]);
+
+  const projectExpenses = useProjectExpenses(project?.id, project?.nama);
 
   if (!project) {
     return (
@@ -147,11 +168,6 @@ export default function ProjectDetailScreen() {
   );
   const poCost = projectPos.reduce((sum: number, po: any) => sum + Number(po.total || 0), 0);
 
-  const projectExpenses = (data.expenses ?? []).filter(
-    (e: any) =>
-      (String(e.projectId) === String(project.id) || e.project === project.nama) &&
-      e.status !== "Ditolak"
-  );
   const expenseCost = projectExpenses.reduce((sum: number, e: any) => sum + Number(e.nominal || 0), 0);
   const totalCost = poCost + expenseCost;
   const netProfit = revenue - totalCost;
@@ -510,6 +526,9 @@ export default function ProjectDetailScreen() {
                     </View>
                     <View className="flex-row items-center gap-2">
                       <StatusBadge status={t.status} />
+                      <Button variant="outline" size="sm" onPress={() => setDetailTask(t)}>
+                        <Text className="text-xs">Detail / Edit</Text>
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -531,6 +550,7 @@ export default function ProjectDetailScreen() {
               ))
             )}
           </Panel>
+          <TaskDetailDialog task={detailTask} open={!!detailTask} onOpenChange={(v) => !v && setDetailTask(null)} />
         </View>
       )}
 

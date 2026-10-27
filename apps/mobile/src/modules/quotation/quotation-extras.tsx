@@ -28,10 +28,10 @@ import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
-import { QuotationTemplateGenerator } from "@/modules/quotation/quotation-template-generator";
 import { type QuotationItem } from "@/modules/quotation/types";
+import { PPH_MODE_OPTIONS, pphRateFor, pphModeToTipe, getInitialPphMode, type PphMode } from "@/modules/quotation/lib";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
-import { ConflictAndSwapBanner } from "@/components/taska/serial-item-picker";
+import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { Line } from "../shared/line";
 
 export function QuotationExtras({
@@ -42,7 +42,7 @@ export function QuotationExtras({
   onRefresh?: () => Promise<void> | void;
 }) {
   const router = useRouter();
-  const { patchRow, toast, reload, data, addRow, setStatus, pushHistory } = useApp();
+  const { user, patchRow, toast, reload, data, addRow, setStatus, pushHistory } = useApp();
   const apiVersions: {
     id: string;
     v: number;
@@ -67,6 +67,8 @@ export function QuotationExtras({
       : "exclude"
   );
 
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+
   // Revisi state
   const [revisiOpen, setRevisiOpen] = React.useState(false);
   const [revisiTotal, setRevisiTotal] = React.useState(String(row.total || row.nilai || "0"));
@@ -75,6 +77,7 @@ export function QuotationExtras({
   const [revisiDiscPercent, setRevisiDiscPercent] = React.useState("0");
   const [revisiReason, setRevisiReason] = React.useState("");
   const [revisiPpnMode, setRevisiPpnMode] = React.useState<"exclude" | "include" | "none">(ppnMode);
+  const [revisiPphMode, setRevisiPphMode] = React.useState<PphMode>(getInitialPphMode(row));
   const [revisiFileId, setRevisiFileId] = React.useState<number | null>(null);
 
   const revTotNum = Number(revisiTotal.replace(/\D/g, "")) || 0;
@@ -83,8 +86,12 @@ export function QuotationExtras({
     ? Math.round(revTotNum * (revDiscPercentNum / 100))
     : (Number(revisiDisc.replace(/\D/g, "")) || 0);
   const revNet = Math.max(0, revTotNum - revDiscNum);
-  const revPpn = revisiPpnMode === "exclude" ? Math.round(revNet * 0.11) : 0;
-  const revAfterDisc = revisiPpnMode === "exclude" ? revNet + revPpn : revNet;
+  const isRevInclude = revisiPpnMode === "include";
+  const revDpp = isRevInclude ? Math.round(revNet / 1.11) : revNet;
+  const revPpn = revisiPpnMode === "none" ? 0 : isRevInclude ? Math.max(0, revNet - revDpp) : Math.round(revNet * 0.11);
+  const revPphRate = pphRateFor(revisiPphMode);
+  const revPph = Math.round(revDpp * revPphRate);
+  const revAfterDisc = Math.max(0, (revisiPpnMode === "exclude" ? revNet + revPpn : revNet) - revPph);
 
   async function handleCreateRevision() {
     try {
@@ -92,6 +99,9 @@ export function QuotationExtras({
         total: revTotNum,
         ppn: revPpn,
         discount: revDiscNum,
+        pph: revPph,
+        pphMode: revisiPphMode,
+        tipePph: pphModeToTipe(revisiPphMode),
         grandTotal: revAfterDisc,
         note: revisiReason.trim() || `Revisi v${nextVersionNum}`,
         fileId: revisiFileId || undefined,
@@ -106,6 +116,9 @@ export function QuotationExtras({
         nilai: revTotNum,
         disc: revDiscNum,
         ppn: revPpn,
+        pph: revPph,
+        pphMode: revisiPphMode,
+        tipePph: pphModeToTipe(revisiPphMode),
         totalAfterDisc: revAfterDisc,
         ppnMode: revisiPpnMode,
         tipePpn: revisiPpnMode === "exclude" ? "Exclude PPN (11%)" : revisiPpnMode === "include" ? "Include PPN (Sudah termasuk)" : "No PPN (Tanpa PPN)",
@@ -179,6 +192,73 @@ export function QuotationExtras({
   const calcTotalAfterDisc = ppnMode === "exclude" ? netBeforeTax + calcPpn : netBeforeTax;
   const baseDealDpp = netBeforeTax || dealAmount || 0;
 
+  const items: QuotationItem[] = Array.isArray(row.items) ? row.items : [];
+  const canCreateInvoice = ["finance", "admin", "super_admin", "bos"].includes(
+    (user?.role || "").toLowerCase()
+  );
+
+  async function handleAddItems(newItems: QuotationItem[]) {
+    const existingSnSet = new Set<string>();
+    items.forEach((it) => {
+      if (Array.isArray(it.serialNumbers)) it.serialNumbers.forEach((s) => existingSnSet.add(String(s).trim().toUpperCase()));
+      const snVal = String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1]?.trim();
+      if (snVal) existingSnSet.add(snVal.toUpperCase());
+    });
+    const valid: QuotationItem[] = [];
+    newItems.forEach((it) => {
+      const snList: string[] = [];
+      if (Array.isArray(it.serialNumbers)) it.serialNumbers.forEach((s) => snList.push(String(s).trim().toUpperCase()));
+      const snVal = String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1]?.trim();
+      if (snVal) snList.push(snVal.toUpperCase());
+      const hasDup = snList.some((s) => existingSnSet.has(s));
+      if (!hasDup) {
+        snList.forEach((s) => existingSnSet.add(s));
+        valid.push(it);
+      }
+    });
+
+    const updated = [...items, ...valid];
+    const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
+    const net = Math.max(0, newTotal - discNum);
+    const isInclude = ppnMode === "include";
+    const newDpp = isInclude ? Math.round(net / 1.11) : net;
+    const newPpn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, net - newDpp) : Math.round(net * 0.11);
+    const newAfterDisc = ppnMode === "exclude" ? net + newPpn : net;
+
+    await patchRow("quotations", row.id, {
+      items: updated,
+      total: newTotal,
+      nilai: newTotal,
+      ppn: newPpn,
+      totalAfterDisc: newAfterDisc,
+      status: row.status === "Not Yet" ? "Done" : row.status,
+    });
+    await reload();
+    await onRefresh?.();
+    toast(`Berhasil menambahkan ${valid.length} barang! Stok telah ter-reserve.`);
+  }
+
+  async function handleDeleteItem(idx: number) {
+    const updated = items.filter((_, i) => i !== idx);
+    const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
+    const net = Math.max(0, newTotal - discNum);
+    const isInclude = ppnMode === "include";
+    const newDpp = isInclude ? Math.round(net / 1.11) : net;
+    const newPpn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, net - newDpp) : Math.round(net * 0.11);
+    const newAfterDisc = ppnMode === "exclude" ? net + newPpn : net;
+
+    await patchRow("quotations", row.id, {
+      items: updated,
+      total: newTotal,
+      nilai: newTotal,
+      ppn: newPpn,
+      totalAfterDisc: newAfterDisc,
+    });
+    await reload();
+    await onRefresh?.();
+    toast("Barang berhasil dihapus");
+  }
+
   // Invoice creation modal state
   const [invModalOpen, setInvModalOpen] = React.useState(false);
 
@@ -214,24 +294,54 @@ export function QuotationExtras({
             }
           />
           <Line left="Customer" right={<Text className="text-text-secondary">{row.customer}</Text>} />
-          <Line left="TOTAL (Sebelum PPN & Disc)" right={<Text className="font-semibold">{rupiah(row.total || row.nilai || 0)}</Text>} />
-          <Line left="DISC (Diskon)" right={<Text className="text-danger font-semibold">- {rupiah(row.disc || 0)}</Text>} />
-          <Line
-            left={ppnMode === "include" ? "PPN (Sudah Termasuk)" : ppnMode === "none" ? "PPN (Tanpa PPN)" : "PPN (11%)"}
-            right={
-              <Text className="font-semibold">
-                {ppnMode === "include"
-                  ? "Included"
-                  : ppnMode === "none"
-                  ? "Rp 0"
-                  : rupiah(row.ppn ?? Math.round(Math.max(0, (row.total || row.nilai || 0) - (row.disc || 0)) * 0.11))}
-              </Text>
-            }
-          />
-          <Line
-            left="TOTAL AFTER DISC (Total Akhir)"
-            right={<Text className="text-primary text-base font-bold">{rupiah(calcTotalAfterDisc || row.totalAfterDisc || row.total || row.nilai || 0)}</Text>}
-          />
+          {ppnMode === "include" ? (
+            <>
+              <Line left="Nilai Sebelum Diskon (Inc. PPN)" right={<Text className="font-semibold">{rupiah(row.total || row.nilai || 0)}</Text>} />
+              {Number(row.disc || 0) > 0 ? (
+                <Line left="DISC (Diskon)" right={<Text className="text-danger font-semibold">- {rupiah(row.disc || 0)}</Text>} />
+              ) : null}
+              <Line left="DPP (Harga Sebelum PPN)" right={<Text className="font-semibold">{rupiah(Math.round(netBeforeTax / 1.11))}</Text>} />
+              <Line
+                left="PPN 11% (Termasuk)"
+                right={<Text className="text-primary font-semibold">{rupiah(row.ppn ?? Math.max(0, netBeforeTax - Math.round(netBeforeTax / 1.11)))}</Text>}
+              />
+              {Number(row.pph || 0) > 0 ? (
+                <Line
+                  left={`Pemotongan ${row.tipePph || "PPh"}`}
+                  right={<Text className="text-danger font-semibold">- {rupiah(row.pph || 0)}</Text>}
+                />
+              ) : null}
+              <Line
+                left="TOTAL AKHIR (Inc. PPN)"
+                right={<Text className="text-primary text-base font-bold">{rupiah(Math.max(0, netBeforeTax - Number(row.pph || 0)))}</Text>}
+              />
+            </>
+          ) : (
+            <>
+              <Line left="TOTAL (Sebelum PPN & Disc)" right={<Text className="font-semibold">{rupiah(row.total || row.nilai || 0)}</Text>} />
+              <Line left="DISC (Diskon)" right={<Text className="text-danger font-semibold">- {rupiah(row.disc || 0)}</Text>} />
+              <Line
+                left={ppnMode === "none" ? "PPN (Tanpa PPN)" : "PPN (11%)"}
+                right={
+                  <Text className="font-semibold">
+                    {ppnMode === "none"
+                      ? "Rp 0"
+                      : rupiah(row.ppn ?? Math.round(Math.max(0, (row.total || row.nilai || 0) - (row.disc || 0)) * 0.11))}
+                  </Text>
+                }
+              />
+              {Number(row.pph || 0) > 0 ? (
+                <Line
+                  left={`Pemotongan ${row.tipePph || "PPh"}`}
+                  right={<Text className="text-danger font-semibold">- {rupiah(row.pph || 0)}</Text>}
+                />
+              ) : null}
+              <Line
+                left="TOTAL AFTER DISC (Total Akhir)"
+                right={<Text className="text-primary text-base font-bold">{rupiah(calcTotalAfterDisc || row.totalAfterDisc || row.total || row.nilai || 0)}</Text>}
+              />
+            </>
+          )}
           <Line left="Status Penawaran" right={<StatusBadge status={row.status || "Not Yet"} />} />
 
           <ConflictAndSwapBanner row={row} />
@@ -247,148 +357,110 @@ export function QuotationExtras({
         </View>
       </Panel>
 
+      {/* Panel Daftar & Alokasi Barang Penawaran */}
       <Panel
-        title="File Excel Penawaran — Download & Smart Upload (.xlsx)"
-        subtitle="Cara 1: Download file Excel (.xlsx) sesuai contoh, edit manual di Excel, lalu upload kembali — sistem otomatis membaca tabel item, TOTAL, PPN, DISC & GRAND TOTAL."
+        title="Daftar & Alokasi Barang Penawaran"
+        subtitle="Kelola barang, jasa & nomor seri (SN) untuk penawaran ini agar stok ter-reserve otomatis."
+        right={
+          <Button
+            size="sm"
+            onPress={() => setPickerOpen(true)}
+            className="flex-row items-center gap-1"
+          >
+            <Plus size={14} color={colors.background} />
+            <Text className="text-xs">Tambah Barang</Text>
+          </Button>
+        }
       >
-        <View className="gap-3">
-          <Line
-            left="Status File Dokumen"
-            right={
-              row.fileUploaded ? (
-                <View className="flex-row items-center gap-1.5">
-                  <CheckCircle2 size={15} color={colors.primary} />
-                  <Text className="text-xs font-semibold text-primary">File Terupload & Ter-link ke Lead</Text>
-                </View>
-              ) : (
-                <Text className="text-xs text-muted-foreground font-medium">Belum Ada File</Text>
-              )
-            }
-          />
-          {row.fileName ? (
-            <Line left="Nama File Terakhir" right={<Text className="text-xs text-foreground font-mono">{row.fileName}</Text>} />
-          ) : null}
+        <ConflictAndSwapBanner row={row} />
 
-          <View className="flex-row flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onPress={() => {
-                downloadQuotationTemplate({
-                  quotationId: row.id,
-                  customer: row.customer,
-                  lead: row.lead,
-                  nomor: row.nomor,
-                  signer: row.pemilik,
-                });
-                toast("File Excel penawaran (.xlsx) sedang diunduh");
-              }}
-            >
-              <FileDown size={15} color={colors.text} />
-              <Text className="text-xs">Download File Excel (.xlsx) Saat Ini</Text>
+        {items.length > 0 ? (
+          <View className="gap-2 pt-1">
+            <View className="border border-border/80 rounded-xl overflow-hidden bg-card">
+              <View className="flex-row bg-muted/60 p-2.5 border-b border-border/70">
+                <Text className="text-[11px] font-bold text-muted-foreground w-8">No</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground flex-1">Nama Barang / SKU</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground w-16 text-center">Qty</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground w-28 text-right">Harga (Rp)</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground w-28 text-right">Subtotal (Rp)</Text>
+                <Text className="text-[11px] font-bold text-muted-foreground w-12 text-center">Aksi</Text>
+              </View>
+              {items.map((it, idx) => {
+                const itemPrice = Number(it.harga ?? it.price ?? 0);
+                const sub = (Number(it.qty) || 1) * itemPrice;
+                const snText = Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0
+                  ? it.serialNumbers.join(", ")
+                  : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
+
+                return (
+                  <View key={it.id || idx} className="flex-row items-center p-2.5 border-b border-border/40 last:border-b-0">
+                    <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
+                    <View className="flex-1 mr-2">
+                      <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
+                      {snText ? (
+                        <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
+                      ) : null}
+                    </View>
+                    <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.satuan || it.unit || "unit"}</Text>
+                    <Text className="text-xs text-foreground w-28 text-right">{rupiah(itemPrice)}</Text>
+                    <Text className="text-xs font-semibold text-foreground w-28 text-right">{rupiah(sub)}</Text>
+                    <View className="w-12 items-center">
+                      <Button size="icon" variant="ghost" className="size-7" onPress={() => handleDeleteItem(idx)}>
+                        <Trash2 size={13} color={colors.danger} />
+                      </Button>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ) : (
+          <View className="p-4 rounded-xl border border-dashed border-border/80 items-center justify-center gap-2">
+            <Text className="text-xs text-muted-foreground">Belum ada barang yang ditambahkan ke penawaran ini.</Text>
+            <Button size="sm" variant="outline" onPress={() => setPickerOpen(true)} className="flex-row items-center gap-1.5">
+              <Plus size={14} color={colors.text} />
+              <Text className="text-xs">Pilih dari Stok Gudang</Text>
             </Button>
           </View>
-
-          <FileUploader
-            label="Pilih atau Tarik File Excel (.xlsx) Penawaran — Sistem Otomatis Baca Isi Tabel & Total"
-            kind="dokumen"
-            autoFlush
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            hint="Hanya file Excel (.xlsx) maksimal 15 MB"
-            allowedExtensions={[".xlsx"]}
-            onFilePicked={async (file) => {
-              try {
-                await uploadQuotationExcel(row.id, file);
-                await reload();
-                toast("File Excel berhasil dibaca! Tabel item, TOTAL, PPN, DISC & status otomatis diperbarui.");
-              } catch (e: any) {
-                toast(e?.message || "Gagal memproses file Excel", "danger");
-              }
-            }}
-          />
-        </View>
+        )}
       </Panel>
 
-      <QuotationTemplateGenerator
-        key={`${row.id}-${row.versi}-${row.total}-${row.disc}-${(row.items ?? []).length}`}
-        row={row}
-        totNum={totNum}
-        calcPpn={calcPpn}
-        calcTotalAfterDisc={calcTotalAfterDisc}
-        discNum={discNum}
-        onUpdateItems={async (
-          items: QuotationItem[],
-          newTotal: number,
-          meta?: {
-            subject?: string;
-            intro?: string;
-            notesList?: string[];
-            city?: string;
-            kopText?: string;
-            kopLogoUrl?: string;
-            customerAddress?: string;
-            signerName?: string;
-            signerTitle?: string;
-          },
-          shouldDownload?: boolean,
-          asVersion?: boolean,
-        ) => {
-          const net = Math.max(0, newTotal - discNum);
-          const newPpn = ppnMode === "exclude" ? Math.round(net * 0.11) : 0;
-          const newAfterDisc = ppnMode === "exclude" ? net + newPpn : net;
-          await patchRow("quotations", row.id, {
-            items,
-            subject: meta?.subject,
-            intro: meta?.intro,
-            notesList: meta?.notesList,
-            city: meta?.city,
-            kopText: meta?.kopText,
-            kopLogoUrl: meta?.kopLogoUrl,
-            customerAddress: meta?.customerAddress,
-            signerName: meta?.signerName,
-            signerTitle: meta?.signerTitle,
-            total: newTotal,
-            nilai: newTotal,
-            ppn: newPpn,
-            disc: discNum,
-            totalAfterDisc: newAfterDisc,
-            ppnMode,
-            tipePpn: ppnMode === "exclude" ? "Exclude PPN (11%)" : ppnMode === "include" ? "Include PPN (Sudah termasuk)" : "No PPN (Tanpa PPN)",
-            fileUploaded: true,
-            fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}.xlsx`,
-            status: row.status === "Not Yet" ? "Done" : row.status,
-          });
-
-          if (asVersion) {
-            try {
-              await api("POST", `/quotations/${row.id}/versions`, {
-                total: newTotal,
-                ppn: newPpn,
-                discount: discNum,
-                grandTotal: newAfterDisc,
-                note: `Versi dari Template (${items.length} item)`,
-              });
-              await reload();
-              await onRefresh?.();
-              toast(`Template disimpan & Versi baru berhasil ditambahkan ke Riwayat Versi!`);
-            } catch (err: any) {
-              toast(err?.message || "Gagal membuat versi dari template", "danger");
-            }
-          } else if (shouldDownload) {
-            downloadQuotationTemplate({
-              quotationId: row.id,
-              customer: row.customer,
-              lead: row.lead,
-              nomor: row.nomor,
-              signer: meta?.signerName || row.pemilik,
-            });
-            toast("Template penawaran disimpan & file Excel (.xlsx) diunduh!");
-          } else {
-            toast("Template & item penawaran berhasil disimpan!");
-          }
-          await onRefresh?.();
-        }}
+      <SerialItemPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        currentQuotationId={row.id}
+        existingItems={items}
+        onAddItems={handleAddItems}
       />
+
+      {/* Dokumen Penawaran Manual */}
+      <Panel
+        title="Dokumen Penawaran Manual"
+        subtitle="Upload dokumen file penawaran manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke penawaran ini."
+      >
+        <FileUploader
+          label="Pilih atau Tarik File Dokumen Penawaran Manual (PDF / Excel)"
+          kind="dokumen"
+          category="penawaran"
+          autoFlush
+          onFilePicked={async (file) => {
+            try {
+              const uploadedId = await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
+              if (!uploadedId) throw new Error("Gagal mengunggah file ke server");
+              await patchRow("quotations", row.id, {
+                fileUploaded: true,
+                fileName: file.name,
+                latestFileId: uploadedId,
+              });
+              await onRefresh?.();
+              await reload();
+              toast(`File "${file.name}" berhasil diunggah!`);
+            } catch (e: any) {
+              toast(e?.message || "Gagal mengunggah file", "danger");
+            }
+          }}
+        />
+      </Panel>
 
       <Panel
         title="Riwayat Versi"
@@ -595,14 +667,16 @@ export function QuotationExtras({
         title="Invoice & Penagihan"
         subtitle="Kelola tagihan pembayaran untuk penawaran ini. Status pembayaran project akan otomatis sinkron."
         right={
-          <Button
-            size="sm"
-            onPress={openInvoiceModal}
-            className="flex-row items-center gap-1"
-          >
-            <Plus size={14} color={colors.background} />
-            <Text className="text-xs">Buat Invoice</Text>
-          </Button>
+          canCreateInvoice ? (
+            <Button
+              size="sm"
+              onPress={openInvoiceModal}
+              className="flex-row items-center gap-1"
+            >
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs">Buat Invoice</Text>
+            </Button>
+          ) : undefined
         }
       >
         {quotationInvoices.length > 0 ? (
@@ -680,17 +754,19 @@ export function QuotationExtras({
         ) : (
           <View className="gap-2 py-2">
             <Text className="text-xs text-muted-foreground leading-relaxed">
-              Belum ada invoice yang dibuat untuk penawaran ini. Anda dapat membuat invoice langsung di sini.
+              Belum ada invoice yang dibuat untuk penawaran ini.
             </Text>
-            <Button
-              size="sm"
-              variant="outline"
-              onPress={openInvoiceModal}
-              className="self-start flex-row items-center gap-1.5 mt-1"
-            >
-              <Receipt size={14} color={colors.text} />
-              <Text className="text-xs">Buat Invoice untuk Penawaran Ini</Text>
-            </Button>
+            {canCreateInvoice ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={openInvoiceModal}
+                className="self-start flex-row items-center gap-1.5 mt-1"
+              >
+                <Receipt size={14} color={colors.text} />
+                <Text className="text-xs">Buat Invoice untuk Penawaran Ini</Text>
+              </Button>
+            ) : null}
           </View>
         )}
       </Panel>
@@ -714,7 +790,7 @@ export function QuotationExtras({
               />
             </View>
             <View className="gap-1">
-              <Text className="text-xs text-muted-foreground">Nilai Baru Sebelum PPN & Disc (Rp)</Text>
+              <Text className="text-xs text-muted-foreground">Nilai baru sebelum disc (Rp)</Text>
               <Input
                 value={formatThousands(revisiTotal)}
                 onChangeText={(v) => setRevisiTotal(v.replace(/\D/g, ""))}
@@ -786,11 +862,56 @@ export function QuotationExtras({
                 ))}
               </View>
             </View>
-            <View className="bg-panel border-border/60 rounded-lg border p-2.5">
-              <Text className="text-[11px] text-muted-foreground">
-                {revisiPpnMode === "include" ? "PPN: Sudah Termasuk dalam Nilai" : revisiPpnMode === "none" ? "PPN: Tanpa PPN (Rp 0)" : `Preview PPN (11%): ${rupiah(revPpn)}`}
-              </Text>
-              <Text className="text-xs font-semibold text-primary">Preview Total Akhir v{nextVersionNum}: {rupiah(revAfterDisc)}</Text>
+            <View className="gap-1">
+              <Text className="text-xs text-muted-foreground">Skema PPh (Withholding Tax)</Text>
+              <View className="flex-row flex-wrap gap-1.5">
+                {PPH_MODE_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.id}
+                    size="sm"
+                    variant={revisiPphMode === opt.id ? "default" : "outline"}
+                    onPress={() => setRevisiPphMode(opt.id)}
+                    className="h-8 px-2.5"
+                  >
+                    <Text className="text-xs">{opt.label}</Text>
+                  </Button>
+                ))}
+              </View>
+            </View>
+            <View className="bg-panel border-border/60 rounded-lg border p-2.5 gap-1">
+              {revisiPpnMode === "include" ? (
+                <>
+                  <View className="flex-row justify-between">
+                    <Text className="text-[11px] text-muted-foreground">Harga Sebelum PPN (DPP):</Text>
+                    <Text className="text-[11px] font-medium text-foreground">{rupiah(revDpp)}</Text>
+                  </View>
+                  <View className="flex-row justify-between">
+                    <Text className="text-[11px] text-muted-foreground">PPN (11% Termasuk):</Text>
+                    <Text className="text-[11px] font-medium text-primary">{rupiah(revPpn)}</Text>
+                  </View>
+                </>
+              ) : (
+                <View className="flex-row justify-between">
+                  <Text className="text-[11px] text-muted-foreground">
+                    {revisiPpnMode === "none" ? "PPN: Tanpa PPN (Rp 0)" : "PPN (11%):"}
+                  </Text>
+                  {revisiPpnMode !== "none" && (
+                    <Text className="text-[11px] font-medium text-foreground">{rupiah(revPpn)}</Text>
+                  )}
+                </View>
+              )}
+              {revPph > 0 ? (
+                <View className="flex-row justify-between">
+                  <Text className="text-[11px] text-muted-foreground">
+                    {`Potongan PPh (${PPH_MODE_OPTIONS.find((o) => o.id === revisiPphMode)?.label}):`}
+                  </Text>
+                  <Text className="text-[11px] font-medium text-danger">- {rupiah(revPph)}</Text>
+                </View>
+              ) : null}
+              <View className="flex-row justify-between border-t border-border/40 pt-1 mt-0.5">
+                <Text className="text-xs font-semibold text-foreground">Preview Total Akhir v{nextVersionNum}:</Text>
+                <Text className="text-xs font-bold text-primary">{rupiah(revAfterDisc)}</Text>
+              </View>
             </View>
             <FileUploader
               label="Upload File Revisi Baru (PDF / Excel)"

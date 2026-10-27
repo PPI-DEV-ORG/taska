@@ -608,9 +608,16 @@ export class ReportsService {
       const cat = ex.category?.name ?? "Operasional";
       const proj = ex.project?.name ?? "-";
       const amt = Number(ex.amount) || 0;
+      const isReimburse = /reimburse/i.test(`${cat} ${ex.description}`);
       if (amt > 0) {
         addLines(d, ref, proj, [
-          { code: "6101", name: "Beban Operasional", desc: `Beban ${cat}: ${ex.description} (${rep})`, debit: amt, kredit: 0 },
+          {
+            code: isReimburse ? "6202.08" : "6101",
+            name: isReimburse ? "Beban Reimburse" : "Beban Operasional",
+            desc: `${isReimburse ? "Beban Reimburse" : `Beban ${cat}`}: ${ex.description} (${rep})`,
+            debit: amt,
+            kredit: 0,
+          },
           { code: "2103", name: "Hutang Reimbursement", desc: `Kewajiban Reimbursement ${rep}`, debit: 0, kredit: amt },
         ]);
         if (ex.status === "DIBAYAR") {

@@ -336,28 +336,57 @@ export function adaptRow(module: string, raw: any): Row {
         ? `Penawaran-${String(raw.number).replace(/\//g, "-")}.xlsx`
         : "Penawaran.xlsx";
       const fName = raw.latestFileName || (hasFile ? defaultXlsxName : "");
-      return {
-        ...base,
-        nomor: raw.number ?? "",
-        lead: nameOf(raw.lead) ?? "",
-        leadId: idOf(raw.lead),
-        customer: nameOf(raw.customer) ?? "",
-        customerId: idOf(raw.customer),
-        nilai: n(raw.total),
-        total: n(raw.total),
-        ppn: n(raw.ppn),
-        disc: n(raw.discount),
-        pph: n(raw.pph),
-        pphMode: raw.pphMode || "none",
-        tipePph: raw.tipePph || (raw.pphMode ? String(raw.pphMode).toUpperCase() : "Tanpa PPh"),
-        totalAfterDisc:
-          n(raw.grandTotal) === n(raw.total) && n(raw.ppn) > 0
-            ? n(raw.total) - n(raw.discount) + n(raw.ppn) - n(raw.pph)
-            : (n(raw.grandTotal) || (n(raw.total) - n(raw.discount) + n(raw.ppn) - n(raw.pph))),
-        status: toLabel("quotations", raw.status),
-        versi: n(raw.currentVersion) || 0,
-        berlaku: d(raw.validUntil),
-        pemilik: nameOf(raw.owner),
+        const qRawTot = n(raw.total);
+        const qRawDisc = n(raw.discount);
+        const qRawNet = Math.max(0, qRawTot - qRawDisc);
+        const qRawPpn = n(raw.ppn);
+        const qRawGrand = n(raw.grandTotal);
+        const qRawPph = n(raw.pph);
+        const qPphMode = raw.pphMode || "none";
+        const qTipePph = raw.tipePph || (qPphMode !== "none" ? String(qPphMode).toUpperCase() : "Tanpa PPh");
+
+        let qPpnMode: "exclude" | "include" | "none" = "exclude";
+        let qTipePpn = "Exclude PPN (11%)";
+        if (raw.ppnMode === "include" || String(raw.tipePpn || "").includes("Include")) {
+          qPpnMode = "include";
+          qTipePpn = "Include PPN (Sudah termasuk)";
+        } else if (raw.ppnMode === "none" || String(raw.tipePpn || "").includes("No") || String(raw.tipePpn || "").includes("Tanpa") || (qRawPpn === 0 && qRawGrand > 0 && Math.abs(qRawGrand - qRawNet) < 2)) {
+          qPpnMode = "none";
+          qTipePpn = "No PPN (Tanpa PPN)";
+        } else if (qRawPpn > 0 && qRawGrand > 0 && Math.abs(qRawGrand + qRawPph - qRawNet) < 2) {
+          qPpnMode = "include";
+          qTipePpn = "Include PPN (Sudah termasuk)";
+        }
+
+        const qTotalAfterDisc = qRawGrand > 0
+          ? qRawGrand
+          : (qPpnMode === "include"
+              ? Math.max(0, qRawNet - qRawPph)
+              : qPpnMode === "none"
+                ? Math.max(0, qRawNet - qRawPph)
+                : Math.max(0, qRawNet + qRawPpn - qRawPph));
+
+        return {
+          ...base,
+          nomor: raw.number ?? "",
+          lead: nameOf(raw.lead) ?? "",
+          leadId: idOf(raw.lead),
+          customer: nameOf(raw.customer) ?? "",
+          customerId: idOf(raw.customer),
+          nilai: qRawTot,
+          total: qRawTot,
+          ppn: qRawPpn,
+          disc: qRawDisc,
+          pph: qRawPph,
+          pphMode: qPphMode,
+          tipePph: qTipePph,
+          ppnMode: qPpnMode,
+          tipePpn: qTipePpn,
+          totalAfterDisc: qTotalAfterDisc,
+          status: toLabel("quotations", raw.status),
+          versi: n(raw.currentVersion) || 0,
+          berlaku: d(raw.validUntil),
+          pemilik: nameOf(raw.owner),
         dibuat: d(raw.createdAt),
         items: Array.isArray(raw.items) ? raw.items : [],
         subject: raw.subject ?? "",
@@ -521,6 +550,25 @@ export function adaptRow(module: string, raw: any): Row {
         }
       }
 
+      const rawAmt = n(raw.amount);
+      const rawPpn = n(raw.ppn);
+      const rawPph = n(raw.pph);
+      const invPphMode = raw.pphMode || "none";
+      const invTipePph = raw.tipePph || (invPphMode !== "none" ? String(invPphMode).toUpperCase() : "Tanpa PPh");
+
+      let invPpnMode: "exclude" | "include" | "none" = "exclude";
+      let invTipePpn = "Exclude PPN (11%)";
+      if (raw.ppnMode === "include" || String(raw.tipePpn || "").includes("Include")) {
+        invPpnMode = "include";
+        invTipePpn = "Include PPN (Sudah termasuk)";
+      } else if (raw.ppnMode === "none" || String(raw.tipePpn || "").includes("No") || String(raw.tipePpn || "").includes("Tanpa") || (rawPpn === 0 && totNum > 0)) {
+        invPpnMode = "none";
+        invTipePpn = "No PPN (Tanpa PPN)";
+      } else if (rawPpn > 0 && totNum > 0 && Math.abs(totNum + rawPph - rawAmt) < 2) {
+        invPpnMode = "include";
+        invTipePpn = "Include PPN (Sudah termasuk)";
+      }
+
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -535,12 +583,14 @@ export function adaptRow(module: string, raw: any): Row {
         customerId: idOf(raw.customer),
         jenis: toLabel("invoiceType", raw.type),
         catatan: (raw.description || "").replace(/\[by:\d+\]/g, "").replace(/\[lead:\d+\]/g, "").trim(),
-        nilai: n(raw.amount),
-        ppn: n(raw.ppn),
-        pph: n(raw.pph),
-        pphMode: raw.pphMode || "none",
-        tipePph: raw.tipePph || (raw.pphMode ? String(raw.pphMode).toUpperCase() : "Tanpa PPh"),
-        total: n(raw.total),
+        nilai: rawAmt,
+        ppn: rawPpn,
+        pph: rawPph,
+        pphMode: invPphMode,
+        tipePph: invTipePph,
+        ppnMode: invPpnMode,
+        tipePpn: invTipePpn,
+        total: totNum,
         terbayar: n(raw.paidAmount),
         jatuhTempo: d(raw.dueDate),
         status: displayStatus,
@@ -606,6 +656,9 @@ export function adaptRow(module: string, raw: any): Row {
         bahpFileId: raw.bahpFileId ?? null,
         bastFileId: raw.bastFileId ?? null,
         doFileId: raw.doFileId ?? null,
+        boqFileId: raw.boqFileId ?? null,
+        boqFile: raw.boqFile ?? null,
+        stages: raw.stages ?? null,
         _members: (raw.members ?? []).map((m: any) => ({ id: String(m.userId), name: nameOf(m.user), role: roleToUi(m.user?.role) })),
       };
     }
@@ -645,6 +698,8 @@ export function adaptRow(module: string, raw: any): Row {
         tujuan: raw.purpose ?? "",
         supplierId: idOf(raw.supplier),
         fileId: raw.evidenceFileId ?? (raw.fileId ?? null),
+        doFileId: raw.doFileId ?? null,
+        doFile: raw.doFile ?? null,
         rejectReason: raw.rejectReason,
         items: Array.isArray(raw.items) ? raw.items : [],
         stock: Array.isArray(raw.stock) ? raw.stock : [],
@@ -852,6 +907,10 @@ export function adaptRow(module: string, raw: any): Row {
         payment: raw.paymentTerms ?? "",
         catatan: raw.notes ?? "",
         status: toLabel("users", raw.status),
+        taxStatus: raw.taxStatus || "NON_PKP",
+        jenisUsaha: raw.taxStatus === "PKP" ? "PKP" : "Non-PKP",
+        tags: Array.isArray(raw.itemTags) ? raw.itemTags : [],
+        tagSummary: (raw.itemTags ?? []).map((t: any) => t.itemName).join(", "),
       };
     case "users": {
       const row = apiUserToRow(raw);
@@ -1175,6 +1234,24 @@ export function adaptNotifList(list: any[] | undefined): NotifRow[] {
   return (list ?? []).map(adaptNotif);
 }
 
+function parseTagInput(tagInput: string): { itemName: string; price?: number }[] {
+  if (!tagInput || typeof tagInput !== "string") return [];
+  return tagInput
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const parts = item.split(":");
+      const itemName = parts[0]?.trim() || "";
+      const priceNum = parts[1] ? Number(parts[1].replace(/[^\d.-]/g, "")) : undefined;
+      return {
+        itemName,
+        price: priceNum && !Number.isNaN(priceNum) ? priceNum : undefined,
+      };
+    })
+    .filter((t) => t.itemName.length > 0);
+}
+
 function findId(list: any[] | undefined, val: any): number | undefined {
   if (val == null || val === "" || val === "-") return undefined;
   const sVal = String(val).trim();
@@ -1314,6 +1391,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         paymentTerms: row.payment || row.paymentTerms || undefined,
         notes: row.catatan || row.notes || undefined,
         status: "AKTIF",
+        taxStatus: row.taxStatus || (row.jenisUsaha === "PKP" ? "PKP" : "NON_PKP"),
+        tags: Array.isArray(row.tags) && row.tags.length ? row.tags : row.tagInput ? parseTagInput(row.tagInput) : undefined,
       };
     case "users":
       return {
@@ -1470,7 +1549,13 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         purpose: row.purpose || row.tujuan || row.item || "Kebutuhan operasional",
         otherNote: row.otherNote || row.catatan || undefined,
         evidenceFileId: row.evidenceFileId ?? (row.fileId ? Number(row.fileId) : undefined),
-        items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
+        items:
+          Array.isArray(row.items) && row.items.length
+            ? row.items.map((i: any) => ({
+                ...i,
+                serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+              }))
+            : undefined,
       };
     case "supplier-pos": {
       let items = Array.isArray(row.items) && row.items.length ? row.items : undefined;
@@ -1519,7 +1604,13 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         status: row.status ? toEnum("receiving", row.status) : undefined,
         receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
         photoFileId: row.photoFileId ? Number(row.photoFileId) : undefined,
-        items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
+        items:
+          Array.isArray(row.items) && row.items.length
+            ? row.items.map((i: any) => ({
+                ...i,
+                serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+              }))
+            : undefined,
       };
     case "delivery-notes":
       return {
@@ -1536,7 +1627,13 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
                   projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
                 },
               ],
-        items: Array.isArray(row.items) && row.items.length ? row.items : undefined,
+        items:
+          Array.isArray(row.items) && row.items.length
+            ? row.items.map((i: any) => ({
+                ...i,
+                serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+              }))
+            : undefined,
         reportText: row.reportText || (row.barang && row.barang !== "-" ? String(row.barang) : undefined),
         scanFileId: row.scanFileId ?? (row.fileId ? Number(row.fileId) : undefined),
         reportFileId: row.reportFileId ? Number(row.reportFileId) : undefined,
@@ -1677,7 +1774,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
 const PATCH_FIELDS: Record<string, readonly string[]> = {
   users: ["name", "email", "password", "phone", "position", "department", "role", "status", "warehouseId"],
   customers: ["name", "company", "pic", "email", "phone", "address", "city", "notes", "status"],
-  suppliers: ["name", "pic", "email", "phone", "city", "paymentTerms", "notes", "status"],
+  suppliers: ["name", "pic", "email", "phone", "city", "paymentTerms", "notes", "status", "taxStatus", "tags"],
   products: ["sku", "name", "type", "brand", "description", "categoryId", "unit", "hasSerial", "minStock", "warrantyMonths", "purchasePrice", "status"],
   productCategories: ["name", "description", "prefix", "status"],
   warehouses: ["name", "city", "status"],
@@ -1711,8 +1808,8 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "signerName",
     "signerTitle",
   ],
-  projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "notes", "memberIds"],
-  tasks: ["name", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
+  projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "boqFileId", "notes", "memberIds"],
+  tasks: ["name", "description", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
   "po-client": ["number", "soNumber", "poClientNumber", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes"],
   invoices: [
     "number",
@@ -1824,6 +1921,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.prdFileId !== undefined) out.prdFileId = patch.prdFileId ? Number(patch.prdFileId) : null;
   if (patch.bahpFileId !== undefined) out.bahpFileId = patch.bahpFileId ? Number(patch.bahpFileId) : null;
   if (patch.bastFileId !== undefined) out.bastFileId = patch.bastFileId ? Number(patch.bastFileId) : null;
+  if (patch.boqFileId !== undefined) out.boqFileId = patch.boqFileId ? Number(patch.boqFileId) : null;
   if (patch.photoFileId !== undefined) out.photoFileId = patch.photoFileId ? Number(patch.photoFileId) : null;
   if (patch.latestFileId !== undefined && module === "quotations") out.fileId = patch.latestFileId ? Number(patch.latestFileId) : null;
 
@@ -2027,6 +2125,12 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     ["customers", "suppliers", "products", "productCategories", "warehouses", "leadSources", "lostReasons", "expenseCategories", "costCenters"].includes(module)
   ) {
     if (patch.status !== undefined) out.status = toEnum("users", patch.status) || patch.status;
+    if (module === "suppliers") {
+      if (patch.taxStatus !== undefined) out.taxStatus = patch.taxStatus;
+      if (patch.jenisUsaha !== undefined) out.taxStatus = patch.jenisUsaha === "PKP" ? "PKP" : "NON_PKP";
+      if (patch.tags !== undefined) out.tags = patch.tags;
+      else if (patch.tagInput !== undefined) out.tags = parseTagInput(patch.tagInput);
+    }
     if (module === "products") {
       if (patch.kategori !== undefined) out.categoryId = findId(db?.productCategories, patch.kategori);
       if (patch.jenisItem !== undefined || patch.type !== undefined) {
@@ -2042,7 +2146,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
     if (patch.supplier !== undefined) out.supplierId = findId(db?.suppliers, patch.supplier);
   } else if (module === "supplier-pos") {
-    if (patch.supplier !== undefined) out.supplierId = findId(db?.suppliers, patch.supplier);
+    if (patch.supplierId !== undefined && patch.supplierId !== "" && patch.supplierId !== null) {
+      out.supplierId = Number(patch.supplierId);
+    } else if (patch.supplier !== undefined) {
+      out.supplierId = findId(db?.suppliers, patch.supplier);
+    }
     if (patch.total !== undefined) out.total = num(patch.total);
     if (patch.eta !== undefined) out.eta = patch.eta ? new Date(patch.eta).toISOString() : undefined;
     if (patch.item !== undefined) {

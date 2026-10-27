@@ -24,10 +24,13 @@ export default function ApprovalsScreen() {
   const { approvals, decide, user, data } = useApp();
   const [q, setQ] = React.useState("");
   const [type, setType] = React.useState("");
-  const pending = approvals.filter((a) => a.status === "Menunggu");
-  const types = Array.from(new Set(pending.map((a) => a.jenis)));
+  const [statusFilter, setStatusFilter] = React.useState<string>("Semua");
+
+  const pendingCount = approvals.filter((a) => a.status === "Menunggu").length;
+  const types = Array.from(new Set(approvals.map((a) => a.jenis)));
   const s = q.trim().toLowerCase();
-  const list = pending
+
+  const list = approvals
     .map((a) => {
       let pengaju = a.pengaju;
       if (!pengaju || pengaju === "-") {
@@ -51,15 +54,34 @@ export default function ApprovalsScreen() {
         waktuTunggu: a.jam >= 24 ? `${Math.round(a.jam / 24)} hari` : `${a.jam} jam`,
       };
     })
+    .filter((a) => (statusFilter === "Semua" ? true : a.status === statusFilter))
     .filter((a) => !type || a.jenis === type)
-    .filter((a) => !s || `${a.judul} ${a.pengaju} ${a.jenis}`.toLowerCase().includes(s))
+    .filter((a) => !s || `${a.judul} ${a.pengaju} ${a.jenis} ${a.status}`.toLowerCase().includes(s))
     .sort(compareDesc);
 
   const can = CAN_APPROVE.includes(user!.role);
 
   return (
     <>
-      <PageHeader title="Persetujuan" subtitle={`${pending.length} dokumen menunggu`} />
+      <PageHeader
+        title="Persetujuan"
+        subtitle={`${pendingCount} menunggu | Total ${approvals.length} pengajuan`}
+      />
+      <View className="flex-row items-center gap-1.5 mb-2">
+        {["Semua", "Menunggu", "Disetujui", "Ditolak"].map((st) => (
+          <Button
+            key={st}
+            size="sm"
+            variant={statusFilter === st ? "default" : "outline"}
+            className="h-7 px-2.5 text-xs"
+            onPress={() => setStatusFilter(st)}
+          >
+            <Text className="text-xs">
+              {st === "Menunggu" && pendingCount > 0 ? `${st} (${pendingCount})` : st}
+            </Text>
+          </Button>
+        ))}
+      </View>
       <FilterBar
         search={q}
         onSearch={setQ}
@@ -69,7 +91,7 @@ export default function ApprovalsScreen() {
         onStatus={setType}
       />
       {list.length === 0 ? (
-        <EmptyState icon={CircleCheck} title="Semua sudah beres" text="Tidak ada dokumen yang menunggu persetujuan Anda." />
+        <EmptyState icon={CircleCheck} title="Tidak ada data" text="Tidak ada dokumen persetujuan yang cocok dengan filter." />
       ) : (
         <DataTable
           columns={APPROVAL_COLUMNS}
@@ -78,7 +100,19 @@ export default function ApprovalsScreen() {
           onRowPress={(r) => router.push(`/${r.module}/${r.refId}` as any)}
           renderActions={(r) => (
             <View className="flex-row items-center gap-1.5">
-              {can ? (
+              {r.status === "Disetujui" ? (
+                <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2 py-1">
+                  <Text className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    ✓ Disetujui
+                  </Text>
+                </View>
+              ) : r.status === "Ditolak" ? (
+                <View className="bg-destructive/15 border border-destructive/30 rounded-md px-2 py-1">
+                  <Text className="text-[11px] font-semibold text-destructive">
+                    ✗ Ditolak
+                  </Text>
+                </View>
+              ) : can ? (
                 <>
                   <Button
                     size="sm"

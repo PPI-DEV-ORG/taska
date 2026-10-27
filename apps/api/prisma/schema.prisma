@@ -509,15 +509,29 @@ model Supplier {
   paymentTerms String?
   notes        String?
   status       ActiveStatus @default(AKTIF)
+  taxStatus    String?      @default("NON_PKP")
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
+  itemTags         SupplierItemTag[]
   purchaseRequests PurchaseRequest[]
   supplierPOs      SupplierPO[]
   clientPOs        ClientPO[]
   invoiceIns       InvoiceIn[]
 
   @@index([name])
+}
+
+model SupplierItemTag {
+  id         Int      @id @default(autoincrement())
+  supplierId Int
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  itemName   String
+  price      Decimal? @db.Decimal(18, 2)
+  createdAt  DateTime @default(now())
+
+  @@index([supplierId])
+  @@index([itemName])
 }
 
 model ProductCategory {
@@ -907,6 +921,7 @@ model Project {
   bahpFileId    Int?
   bastFileId    Int?
   doFileId      Int?
+  boqFileId     Int?
   notes         String?
   completedAt   DateTime?
   createdAt     DateTime      @default(now())
@@ -1009,6 +1024,7 @@ model PurchaseRequest {
   purpose        String
   otherNote      String?
   evidenceFileId Int?
+  doFileId       Int?
   status         PrStatus      @default(DIAJUKAN)
   rejectReason   String?
   createdAt      DateTime      @default(now())
@@ -1369,3 +1385,56 @@ model DeliveryNoteItem {
 }
 
 // ─────────────────────────────── (relasi terakhir) ───────────────────────────────
+
+// ─────────────────────────────── HR: Absensi & Payroll ───────────────────────────────
+
+model Attendance {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  date          DateTime  @db.Date
+  checkIn       DateTime?
+  checkOut      DateTime?
+  status        String    @default("HADIR")
+  overtimeHours Decimal   @default(0) @db.Decimal(6, 2)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model SalaryConfig {
+  userId      Int      @id
+  basicSalary Decimal  @default(0) @db.Decimal(18, 2)
+  allowance   Decimal  @default(0) @db.Decimal(18, 2)
+  ptkp        String   @default("TK/0")
+  hasNpwp     Boolean  @default(true)
+  pph21Rate   Decimal? @db.Decimal(6, 3)
+  updatedAt   DateTime @updatedAt
+}
+
+model PayrollSlip {
+  id            Int       @id @default(autoincrement())
+  period        String
+  userId        Int
+  basicSalary   Decimal   @default(0) @db.Decimal(18, 2)
+  allowance     Decimal   @default(0) @db.Decimal(18, 2)
+  overtimePay   Decimal   @default(0) @db.Decimal(18, 2)
+  absentDeduct  Decimal   @default(0) @db.Decimal(18, 2)
+  grossSalary   Decimal   @default(0) @db.Decimal(18, 2)
+  bpjs          Decimal   @default(0) @db.Decimal(18, 2)
+  pph21         Decimal   @default(0) @db.Decimal(18, 2)
+  netSalary     Decimal   @default(0) @db.Decimal(18, 2)
+  workDays      Int       @default(0)
+  presentDays   Int       @default(0)
+  absentDays    Int       @default(0)
+  lateCount     Int       @default(0)
+  status        String    @default("DRAFT")
+  paidAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([period, userId])
+  @@index([period])
+}

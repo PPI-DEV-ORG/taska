@@ -51,11 +51,15 @@ export function DatePicker({
   onChange,
   placeholder = "Pilih tanggal",
   error,
+  className,
+  formatLabel,
 }: {
   value?: string;
   onChange: (v: string) => void;
   placeholder?: string;
   error?: boolean;
+  className?: string;
+  formatLabel?: (iso: string) => string;
 }) {
   const [open, setOpen] = React.useState(false);
   const initial = parseIsoDate(value);
@@ -112,11 +116,12 @@ export function DatePicker({
         onPress={openPicker}
         className={cn(
           "bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3",
-          error && "border-danger"
+          error && "border-danger",
+          className
         )}
       >
         <Text className={cn("text-base md:text-sm", !selectedIso && "text-muted-foreground")} numberOfLines={1}>
-          {selectedIso ? `${tanggal(selectedIso)} (${selectedIso})` : placeholder}
+          {selectedIso ? (formatLabel ? formatLabel(selectedIso) : `${tanggal(selectedIso)} (${selectedIso})`) : placeholder}
         </Text>
         <CalendarIcon size={16} color={colors.muted} />
       </Pressable>
@@ -812,7 +817,7 @@ export function FormDialog({
       }
     }
     if (def?.key === "invoices") {
-      const nilai = row.nilai || 0;
+      const rawNilai = row.nilai || 0;
       row.tipePpn = vals.tipePpn || "Exclude PPN (11%)";
       row.ppnMode = vals.ppnMode || (row.tipePpn.includes("No") ? "none" : row.tipePpn.includes("Include") ? "include" : "exclude");
       row.pphMode = (vals.pphMode as PphMode) || "none";
@@ -820,11 +825,12 @@ export function FormDialog({
 
       const isNoPpn = row.ppnMode === "none" || row.tipePpn.includes("No");
       const isIncludePpn = row.ppnMode === "include" || row.tipePpn.includes("Include");
-      row.ppn = isNoPpn || isIncludePpn ? 0 : Math.round(nilai * 0.11);
+      const dpp = isIncludePpn ? Math.round(rawNilai / 1.11) : rawNilai;
+      row.ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawNilai - dpp) : Math.round(rawNilai * 0.11);
       const pphRate = pphRateFor(row.pphMode);
-      const pph = Math.round(nilai * pphRate);
+      const pph = Math.round(dpp * pphRate);
       row.pph = pph;
-      row.total = Math.max(0, (isIncludePpn || isNoPpn ? nilai : nilai + row.ppn) - pph);
+      row.total = Math.max(0, (isIncludePpn ? rawNilai : rawNilai + row.ppn) - pph);
     }
     if (def?.key === "quotations") {
       const tot = Number(row.nilai || row.total || 0);
@@ -835,18 +841,21 @@ export function FormDialog({
       row.pphMode = (vals.pphMode as PphMode) || "none";
       row.tipePph = vals.tipePph || pphModeToTipe(row.pphMode);
 
-      if (row.ppnMode === "none" || row.tipePpn.includes("No")) {
+      const isNoPpn = row.ppnMode === "none" || row.tipePpn.includes("No");
+      const isIncludePpn = row.ppnMode === "include" || row.tipePpn.includes("Include");
+      const dpp = isIncludePpn ? Math.round(net / 1.11) : net;
+      if (isNoPpn) {
         row.ppn = 0;
         row.totalAfterDisc = net;
-      } else if (row.ppnMode === "include" || row.tipePpn.includes("Include")) {
-        row.ppn = Math.round(net - (net / 1.11));
+      } else if (isIncludePpn) {
+        row.ppn = Math.max(0, net - dpp);
         row.totalAfterDisc = net;
       } else {
         row.ppn = Math.round(net * 0.11);
         row.totalAfterDisc = net + row.ppn;
       }
       const pphRate = pphRateFor(row.pphMode);
-      const pph = Math.round(net * pphRate);
+      const pph = Math.round(dpp * pphRate);
       row.pph = pph;
       row.totalAfterDisc = Math.max(0, row.totalAfterDisc - pph);
       row.total = tot;
@@ -996,10 +1005,11 @@ export function FormDialog({
 
               const isInclude = currentTipe.includes("Include");
               const isNoPpn = currentTipe.includes("No") || currentTipe.includes("Tanpa");
-              const previewPpn = isNoPpn || isInclude ? 0 : Math.round(netVal * 0.11);
+              const dppVal = isInclude ? Math.round(netVal / 1.11) : netVal;
+              const previewPpn = isNoPpn ? 0 : isInclude ? Math.max(0, netVal - dppVal) : Math.round(netVal * 0.11);
               const pphRate = pphRateFor(currentPphMode);
-              const previewPph = Math.round(netVal * pphRate);
-              const previewGrand = Math.max(0, netVal + previewPpn - previewPph);
+              const previewPph = Math.round(dppVal * pphRate);
+              const previewGrand = Math.max(0, (isInclude ? netVal : netVal + previewPpn) - previewPph);
 
               const selectedPphOpt = PPH_MODE_OPTIONS.find((o) => o.id === currentPphMode) || PPH_MODE_OPTIONS[0];
 
@@ -1091,18 +1101,16 @@ export function FormDialog({
                     <View className="bg-card border-border/60 rounded-lg border p-2.5 gap-1 mt-0.5">
                       <View className="flex-row justify-between">
                         <Text className="text-[11px] text-muted-foreground">
-                          {def?.key === "quotations" ? "DPP / Net Setelah Diskon:" : "DPP / Nilai Sebelum Pajak:"}
+                          {isInclude ? "Harga Sebelum PPN (DPP):" : def?.key === "quotations" ? "DPP / Net Setelah Diskon:" : "DPP / Nilai Sebelum Pajak:"}
                         </Text>
-                        <Text className="text-[11px] font-medium text-foreground">{rupiah(netVal)}</Text>
+                        <Text className="text-[11px] font-medium text-foreground">{rupiah(dppVal)}</Text>
                       </View>
                       <View className="flex-row justify-between">
-                        <Text className="text-[11px] text-muted-foreground">PPN:</Text>
+                        <Text className="text-[11px] text-muted-foreground">
+                          {isInclude ? "PPN (11% Termasuk):" : "PPN (11%):"}
+                        </Text>
                         <Text className="text-[11px] font-medium text-foreground">
-                          {isInclude
-                            ? "Sudah Termasuk dalam Harga"
-                            : isNoPpn
-                            ? "Tanpa PPN (Rp 0)"
-                            : rupiah(previewPpn)}
+                          {isNoPpn ? "Tanpa PPN (Rp 0)" : rupiah(previewPpn)}
                         </Text>
                       </View>
                       {previewPph > 0 ? (
