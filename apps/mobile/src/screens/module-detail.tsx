@@ -12,7 +12,17 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { ModuleExtras } from "@/screens/module-extras";
 import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
 import { QuotationPpnField } from "@/modules/quotation/quotation-ppn-field";
-import { calcQuotationFinancials, getInitialPpnMode, ppnModeToTipe, type PpnMode } from "@/modules/quotation/lib";
+import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
+import {
+  calcQuotationFinancials,
+  getInitialPpnMode,
+  ppnModeToTipe,
+  getInitialPphMode,
+  pphModeToTipe,
+  pphRateFor,
+  type PpnMode,
+  type PphMode,
+} from "@/modules/quotation/lib";
 import { useApp } from "@/store/app-store";
 import { CAN_APPROVE, MODULES, type ModuleAction, type Row, type CreateField } from "@/constants/modules";
 import { colors } from "@/tokens";
@@ -38,7 +48,7 @@ function get30DaysLaterIso(): string {
 
 export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string }) {
   const router = useRouter();
-  const { data, user, addRow, patchRow, deleteRow, setStatus, history, approvals, decide, toast } = useApp();
+  const { data, user, addRow, patchRow, deleteRow, setStatus, history, loadHistory, approvals, decide, toast } = useApp();
   const { bp, isMobile } = useBreakpoint();
   const def = MODULES[moduleKey];
   const rowFromStore = data[moduleKey]?.find((r: { id: string }) => r.id === id);
@@ -48,6 +58,12 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const handleRefresh = React.useCallback(() => {
     setRefreshIndex((i) => i + 1);
   }, []);
+
+  React.useEffect(() => {
+    if (moduleKey && id && !String(id).startsWith("offline-")) {
+      void loadHistory(moduleKey, id);
+    }
+  }, [moduleKey, id, refreshIndex, loadHistory]);
 
   React.useEffect(() => {
     const path = PATHS[moduleKey];
@@ -113,8 +129,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [invoicePayOpen, setInvoicePayOpen] = React.useState(false);
 
   const initialQuotationPpnMode = React.useMemo<PpnMode>(() => getInitialPpnMode(row), [row]);
-
   const quotationPpnMode: PpnMode = (edits.ppnMode as PpnMode) ?? initialQuotationPpnMode;
+
+  const initialQuotationPphMode = React.useMemo<PphMode>(() => getInitialPphMode(row), [row]);
+  const quotationPphMode: PphMode = (edits.pphMode as PphMode) ?? initialQuotationPphMode;
 
   const [quotationDiscType, setQuotationDiscType] = React.useState<"nominal" | "percent">("nominal");
   const [quotationDiscPercent, setQuotationDiscPercent] = React.useState<string>("");
@@ -123,14 +141,32 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     setFieldValue("ppnMode", mode);
   }
 
+  function setQuotationPphMode(mode: PphMode) {
+    setFieldValue("pphMode", mode);
+  }
+
   const quotationFinancials = React.useMemo(() => {
     if (moduleKey !== "quotations" || !row) {
-      return { totNum: 0, discNum: 0, ppn: 0, totalAfterDisc: 0 };
+      return { totNum: 0, discNum: 0, ppn: 0, pph: 0, totalAfterDisc: 0 };
     }
     const nilaiRaw = "nilai" in edits ? edits.nilai : (row.nilai || row.total || 0);
     const discRaw = "disc" in edits ? edits.disc : (row.disc || 0);
-    return calcQuotationFinancials(nilaiRaw, discRaw, quotationPpnMode);
-  }, [moduleKey, edits, row, quotationPpnMode]);
+    return calcQuotationFinancials(nilaiRaw, discRaw, quotationPpnMode, quotationPphMode);
+  }, [moduleKey, edits, row, quotationPpnMode, quotationPphMode]);
+
+  const invoiceFinancials = React.useMemo(() => {
+    if (moduleKey !== "invoices" || !row) {
+      return { amt: 0, ppn: 0, pph: 0, total: 0 };
+    }
+    const nilaiRaw = "nilai" in edits ? edits.nilai : (row.nilai || row.amount || 0);
+    const amt = Number(String(nilaiRaw).replace(/\D/g, "")) || 0;
+    const ppnMode = quotationPpnMode;
+    const pphMode = quotationPphMode;
+    const ppn = ppnMode === "exclude" ? Math.round(amt * 0.11) : 0;
+    const pph = Math.round(amt * pphRateFor(pphMode));
+    const total = Math.max(0, amt + ppn - pph);
+    return { amt, ppn, pph, total };
+  }, [moduleKey, edits, row, quotationPpnMode, quotationPphMode]);
 
   React.useEffect(() => {
     if (!data.users || data.users.length === 0) {
@@ -180,7 +216,12 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   const isDirty = React.useMemo(() => {
     if (!row || !canEdit) return false;
-    if (moduleKey === "quotations" && "ppnMode" in edits && edits.ppnMode !== initialQuotationPpnMode) return true;
+    if (
+      (moduleKey === "quotations" || moduleKey === "invoices") &&
+      (("ppnMode" in edits && edits.ppnMode !== initialQuotationPpnMode) ||
+        ("pphMode" in edits && edits.pphMode !== initialQuotationPphMode))
+    )
+      return true;
     return editableFields.some((f) => {
       if (!(f.key in edits)) return false;
       if (f.type === "password") return Boolean(edits[f.key]?.trim());
@@ -243,23 +284,33 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     });
 
     if (moduleKey === "quotations") {
-      const { totNum, discNum, ppn, totalAfterDisc } = quotationFinancials;
+      const { totNum, discNum, ppn, pph, totalAfterDisc } = quotationFinancials;
       patch.total = totNum;
       patch.nilai = totNum;
       patch.disc = discNum;
       patch.ppn = ppn;
+      patch.pph = pph;
       patch.totalAfterDisc = totalAfterDisc;
       patch.ppnMode = quotationPpnMode;
       patch.tipePpn = ppnModeToTipe(quotationPpnMode);
+      patch.pphMode = quotationPphMode;
+      patch.tipePph = pphModeToTipe(quotationPphMode);
       if (totalAfterDisc > 0 && row.status === "Not Yet") {
         patch.status = "Done";
       }
     }
 
     if (moduleKey === "invoices") {
-      const nilai = patch.nilai || 0;
-      patch.ppn = Math.round(nilai * 0.11);
-      patch.total = nilai + patch.ppn;
+      const { amt, ppn, pph, total } = invoiceFinancials;
+      patch.amount = amt;
+      patch.nilai = amt;
+      patch.ppn = ppn;
+      patch.pph = pph;
+      patch.total = total;
+      patch.ppnMode = quotationPpnMode;
+      patch.tipePpn = ppnModeToTipe(quotationPpnMode);
+      patch.pphMode = quotationPphMode;
+      patch.tipePph = pphModeToTipe(quotationPphMode);
     }
 
     if (moduleKey === "damage-reports" && patch.po) {
@@ -802,12 +853,35 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
                     {moduleKey === "quotations" &&
                     (f.key === "disc" || (!editableFields.some((ef) => ef.key === "disc") && f.key === "nilai")) ? (
-                      <QuotationPpnField
-                        mode={quotationPpnMode}
-                        onChange={setQuotationPpnMode}
-                        ppn={quotationFinancials.ppn}
-                        totalAfterDisc={quotationFinancials.totalAfterDisc}
-                      />
+                      <>
+                        <QuotationPpnField
+                          mode={quotationPpnMode}
+                          onChange={setQuotationPpnMode}
+                          ppn={quotationFinancials.ppn}
+                          totalAfterDisc={quotationFinancials.totalAfterDisc}
+                        />
+                        <QuotationPphField
+                          mode={quotationPphMode}
+                          onChange={setQuotationPphMode}
+                          pph={quotationFinancials.pph}
+                        />
+                      </>
+                    ) : null}
+
+                    {moduleKey === "invoices" && f.key === "nilai" ? (
+                      <>
+                        <QuotationPpnField
+                          mode={quotationPpnMode}
+                          onChange={setQuotationPpnMode}
+                          ppn={invoiceFinancials.ppn}
+                          totalAfterDisc={invoiceFinancials.total}
+                        />
+                        <QuotationPphField
+                          mode={quotationPphMode}
+                          onChange={setQuotationPphMode}
+                          pph={invoiceFinancials.pph}
+                        />
+                      </>
                     ) : null}
                   </React.Fragment>
                 );

@@ -22,6 +22,7 @@ import { colors } from "@/tokens";
 import { buildEfakturCsv } from "@/lib/efaktur";
 import { generatePdfTable } from "@/lib/simple-pdf";
 import { computeFinancialStatements } from "@/lib/accounting";
+import { useLocalSearchParams } from "expo-router";
 
 type ReportTab = "cards" | "pnl" | "balance-sheet" | "cash-flow" | "journal";
 
@@ -96,8 +97,15 @@ export default function ReportsScreen() {
   const { data, approvals, user, toast } = useApp();
   const roleLower = (user?.role || "").toLowerCase();
   const canAccessFinancials = ["super_admin", "admin", "bos", "finance"].includes(roleLower);
+  const params = useLocalSearchParams<{ tab?: ReportTab }>();
 
-  const [activeTab, setActiveTab] = React.useState<ReportTab>(canAccessFinancials ? "pnl" : "cards");
+  const [selectedTab, setSelectedTab] = React.useState<ReportTab>(
+    canAccessFinancials ? "pnl" : "cards"
+  );
+  const activeTab = params.tab && canAccessFinancials
+    ? (params.tab as ReportTab)
+    : selectedTab;
+  const setActiveTab = setSelectedTab;
   const [journalQuery, setJournalQuery] = React.useState("");
   const [journalSourceFilter, setJournalSourceFilter] = React.useState<string>("Semua");
 
@@ -266,6 +274,7 @@ export default function ReportsScreen() {
         `"1101","Kas & Bank Operasional","ASET LANCAR (AKTIVA)","${bs.assets.kasDanBank}"`,
         `"1102","Piutang Usaha Pelanggan (Accounts Receivable)","ASET LANCAR (AKTIVA)","${bs.assets.piutangUsaha}"`,
         `"1103","Persediaan Barang Gudang (Inventory Valuation)","ASET LANCAR (AKTIVA)","${bs.assets.persediaanBarang}"`,
+        `"1105","Uang Muka PPh / Pajak Dibayar Dimuka (Prepaid Tax)","ASET LANCAR (AKTIVA)","${bs.assets.uangMukaPph || 0}"`,
         `"=","TOTAL ASET (AKTIVA)","TOTAL AKTIVA","${bs.assets.totalAsetLancar}"`,
         `"2101","Hutang Usaha Supplier (Accounts Payable)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangSupplier}"`,
         `"2102","Hutang PPN Keluaran (Output VAT)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangPpnKeluaran}"`,
@@ -873,6 +882,22 @@ export default function ReportsScreen() {
                       {rupiah(fin.balanceSheet.assets.persediaanBarang)}
                     </Text>
                   </View>
+
+                  {(fin.balanceSheet.assets.uangMukaPph || 0) > 0 ? (
+                    <View className="border-border/50 border-t pt-2 flex-row justify-between items-center py-1">
+                      <View className="gap-0.5">
+                        <Text className="text-sm font-medium">
+                          [1105] Uang Muka PPh (Pajak Dibayar Dimuka)
+                        </Text>
+                        <Text className="text-xs text-text-secondary">
+                          Kredit pajak PPh dipotong oleh pelanggan (Bukti Potong PPh 21/23/4(2)/22)
+                        </Text>
+                      </View>
+                      <Text className="text-sm font-bold font-mono text-warning">
+                        {rupiah(fin.balanceSheet.assets.uangMukaPph)}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-row justify-between items-center">

@@ -113,8 +113,10 @@ export function InvoiceTemplateGenerator({
   };
 
   const itemsTotal = items.length > 0 ? items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0) : Number(row.nilai || 0);
-  const activePpn = Math.round(itemsTotal * 0.11);
-  const activeGrandTotal = itemsTotal + activePpn;
+  const isNoPpn = row.tipePpn === "No PPN (Tanpa PPN)" || row.ppnMode === "none" || (row.ppn === 0 && Number(row.total || 0) > 0);
+  const activePpn = isNoPpn ? 0 : Math.round(itemsTotal * 0.11);
+  const activePph = Number(row.pph || 0);
+  const activeGrandTotal = Math.max(0, itemsTotal + activePpn - activePph);
 
   const noteMatch = String(row.catatan || row.description || "").match(/\((\d+)%\)/);
   const parsedPct = noteMatch ? Number(noteMatch[1]) : undefined;
@@ -303,11 +305,21 @@ export function InvoiceTemplateGenerator({
                   <Text className="text-xs font-medium">{rupiah(itemsTotal)}</Text>
                 </View>
                 <View className="flex-row justify-between">
-                  <Text className="text-xs text-muted-foreground">PPN (11%)</Text>
+                  <Text className="text-xs text-muted-foreground">{isNoPpn ? "PPN (Tanpa PPN)" : "PPN (11%)"}</Text>
                   <Text className="text-xs font-medium">{rupiah(activePpn)}</Text>
                 </View>
+                {activePph > 0 ? (
+                  <View className="flex-row justify-between">
+                    <Text className="text-xs text-amber-600 dark:text-amber-400">
+                      Potongan {row.tipePph || "PPh"}:
+                    </Text>
+                    <Text className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                      -{rupiah(activePph)}
+                    </Text>
+                  </View>
+                ) : null}
                 <View className="flex-row justify-between pt-1 border-t border-border/30">
-                  <Text className="text-xs font-bold">Grand Total</Text>
+                  <Text className="text-xs font-bold">Grand Total (Net Ditagih)</Text>
                   <Text className="text-xs font-bold">{rupiah(activeGrandTotal)}</Text>
                 </View>
                 {showDpRow && dpLabel ? (

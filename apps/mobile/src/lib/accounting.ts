@@ -20,9 +20,11 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
   "1102": { code: "1102", name: "Piutang Usaha (Accounts Receivable)", category: "Aset Lancar", normalBalance: "DEBIT" },
   "1103": { code: "1103", name: "Persediaan Barang Gudang (Inventory)", category: "Aset Lancar", normalBalance: "DEBIT" },
   "1104": { code: "1104", name: "PPN Masukan (Input VAT)", category: "Aset Lancar", normalBalance: "DEBIT" },
+  "1105": { code: "1105", name: "Uang Muka PPh / Pajak Dibayar Dimuka (Prepaid Withholding Tax)", category: "Aset Lancar", normalBalance: "DEBIT" },
   "2101": { code: "2101", name: "Hutang Usaha Supplier (Accounts Payable)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT" },
   "2102": { code: "2102", name: "Hutang PPN Keluaran (Output VAT)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT" },
   "2103": { code: "2103", name: "Hutang Biaya & Reimbursement Operasional", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT" },
+  "2104": { code: "2104", name: "Hutang PPh Potong / Pungut", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT" },
   "3101": { code: "3101", name: "Modal Kerja & Cadangan Persediaan Awal", category: "Ekuitas", normalBalance: "KREDIT" },
   "3102": { code: "3102", name: "Laba Ditahan / Laba Bersih Tahun Berjalan", category: "Ekuitas", normalBalance: "KREDIT" },
   "4101": { code: "4101", name: "Pendapatan Proyek & Integrasi Sistem", category: "Pendapatan", normalBalance: "KREDIT" },
@@ -80,6 +82,7 @@ export interface BalanceSheetSummary {
     kasDanBank: number;
     piutangUsaha: number;
     persediaanBarang: number;
+    uangMukaPph: number;
     totalAsetLancar: number;
   };
   liabilities: {
@@ -195,20 +198,32 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
     const tanggal = normStr(inv.tanggal, "2026-02-01");
     const customer = normStr(inv.customer, "Pelanggan");
     const project = normStr(inv.project, "-");
-    const total = toNum(inv.total) || toNum(inv.nilai) + toNum(inv.ppn);
-    const dpp = toNum(inv.nilai) || Math.round(total / 1.11);
-    const ppn = Math.max(0, total - dpp);
+    const pph = toNum(inv.pph);
+    const tipePph = normStr(inv.tipePph || inv.pphMode);
+    const total = toNum(inv.total) || Math.max(0, toNum(inv.nilai) + toNum(inv.ppn) - pph);
+    const dpp = toNum(inv.nilai) || Math.round((total + pph) / 1.11);
+    const ppn = toNum(inv.ppn) || Math.max(0, (total + pph) - dpp);
     const isLunas = normStr(inv.status).toLowerCase() === "lunas";
     const terbayar = isLunas ? Math.max(toNum(inv.terbayar), total) : Math.min(total, toNum(inv.terbayar));
 
-    if (total > 0) {
+    if (total > 0 || pph > 0) {
       pushJournalPair(tanggal, nomor, "Invoice Client", project, [
         {
           kodeAkun: "1102",
-          keterangan: `Tagihan Invoice ${nomor} — ${customer}`,
+          keterangan: `Tagihan Piutang Invoice ${nomor} — ${customer}`,
           debit: total,
           kredit: 0,
         },
+        ...(pph > 0
+          ? [
+              {
+                kodeAkun: "1105",
+                keterangan: `Uang Muka PPh (${tipePph || "Dipotong Pelanggan"}) atas ${nomor}`,
+                debit: pph,
+                kredit: 0,
+              },
+            ]
+          : []),
         {
           kodeAkun: "4101",
           keterangan: `Pendapatan Proyek (${customer}) — ${nomor}`,
@@ -219,7 +234,7 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
           ? [
               {
                 kodeAkun: "2102",
-                keterangan: `PPN Keluaran 11% atas ${nomor}`,
+                keterangan: `PPN Keluaran atas ${nomor}`,
                 debit: 0,
                 kredit: ppn,
               },
@@ -345,18 +360,21 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
   let revenueGross = 0;
   let revenueDpp = 0;
   let ppnKeluaran = 0;
+  let totalPphWithheld = 0;
   let paidCashIn = 0;
 
   for (const inv of invoices) {
-    const total = toNum(inv.total) || toNum(inv.nilai) + toNum(inv.ppn);
-    const dpp = toNum(inv.nilai) || Math.round(total / 1.11);
-    const ppn = Math.max(0, total - dpp);
+    const pph = toNum(inv.pph);
+    const total = toNum(inv.total) || Math.max(0, toNum(inv.nilai) + toNum(inv.ppn) - pph);
+    const dpp = toNum(inv.nilai) || Math.round((total + pph) / 1.11);
+    const ppn = toNum(inv.ppn) || Math.max(0, (total + pph) - dpp);
     const isLunas = normStr(inv.status).toLowerCase() === "lunas";
     const terbayar = isLunas ? Math.max(toNum(inv.terbayar), total) : Math.min(total, toNum(inv.terbayar));
 
-    revenueGross += total;
+    revenueGross += (dpp + ppn);
     revenueDpp += dpp;
     ppnKeluaran += ppn;
+    totalPphWithheld += pph;
     paidCashIn += terbayar;
   }
 
@@ -526,7 +544,8 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
     }
   }
 
-  const piutangUsaha = Math.max(0, revenueGross - paidCashIn);
+  const uangMukaPph = totalPphWithheld;
+  const piutangUsaha = Math.max(0, (revenueGross - uangMukaPph) - paidCashIn);
   const hutangSupplier = Math.max(0, cogsTotal - cashOutSuppliers);
   const hutangReimbursement = Math.max(0, opexTotal - cashOutExpenses);
   const hutangPpnKeluaran = ppnKeluaran;
@@ -537,7 +556,7 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
   const modalKerjaAwal = persediaanBarang + baseWorkingCapitalCash;
   const labaBerjalan = netProfit;
 
-  const totalAsetLancar = kasDanBank + piutangUsaha + persediaanBarang;
+  const totalAsetLancar = kasDanBank + piutangUsaha + persediaanBarang + uangMukaPph;
   const totalKewajiban = hutangSupplier + hutangReimbursement + hutangPpnKeluaran;
   const totalEkuitas = modalKerjaAwal + labaBerjalan;
   const totalPasiva = totalKewajiban + totalEkuitas;
@@ -594,6 +613,7 @@ export function computeFinancialStatements(data: Record<string, any[]>): Financi
         kasDanBank,
         piutangUsaha,
         persediaanBarang,
+        uangMukaPph,
         totalAsetLancar,
       },
       liabilities: {

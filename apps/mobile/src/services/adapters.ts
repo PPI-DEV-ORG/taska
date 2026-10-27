@@ -347,10 +347,13 @@ export function adaptRow(module: string, raw: any): Row {
         total: n(raw.total),
         ppn: n(raw.ppn),
         disc: n(raw.discount),
+        pph: n(raw.pph),
+        pphMode: raw.pphMode || "none",
+        tipePph: raw.tipePph || (raw.pphMode ? String(raw.pphMode).toUpperCase() : "Tanpa PPh"),
         totalAfterDisc:
           n(raw.grandTotal) === n(raw.total) && n(raw.ppn) > 0
-            ? n(raw.total) - n(raw.discount) + n(raw.ppn)
-            : (n(raw.grandTotal) || (n(raw.total) - n(raw.discount) + n(raw.ppn))),
+            ? n(raw.total) - n(raw.discount) + n(raw.ppn) - n(raw.pph)
+            : (n(raw.grandTotal) || (n(raw.total) - n(raw.discount) + n(raw.ppn) - n(raw.pph))),
         status: toLabel("quotations", raw.status),
         versi: n(raw.currentVersion) || 0,
         berlaku: d(raw.validUntil),
@@ -532,7 +535,13 @@ export function adaptRow(module: string, raw: any): Row {
         customerId: idOf(raw.customer),
         jenis: toLabel("invoiceType", raw.type),
         catatan: (raw.description || "").replace(/\[by:\d+\]/g, "").replace(/\[lead:\d+\]/g, "").trim(),
-        nilai: n(raw.amount), ppn: n(raw.ppn), total: n(raw.total), terbayar: n(raw.paidAmount),
+        nilai: n(raw.amount),
+        ppn: n(raw.ppn),
+        pph: n(raw.pph),
+        pphMode: raw.pphMode || "none",
+        tipePph: raw.tipePph || (raw.pphMode ? String(raw.pphMode).toUpperCase() : "Tanpa PPh"),
+        total: n(raw.total),
+        terbayar: n(raw.paidAmount),
         jatuhTempo: d(raw.dueDate),
         status: displayStatus,
         tanggal: d(raw.date),
@@ -1243,11 +1252,16 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         ppn = row.ppn != null ? num(row.ppn) : Math.round(net * 0.11);
         grand = num(row.totalAfterDisc ?? row.grandTotal) || (net + ppn);
       }
+      const pph = row.pph != null ? num(row.pph) : 0;
+      grand = Math.max(0, grand - pph);
       return {
         leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : findId(db?.leads, row.lead),
         customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.customer ?? row.perusahaan),
         total: tot,
         ppn,
+        pph,
+        pphMode: row.pphMode || "none",
+        tipePph: row.tipePph || "Tanpa PPh",
         discount: disc,
         grandTotal: grand,
         validUntil: row.berlaku || row.validUntil || undefined,
@@ -1407,7 +1421,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     case "invoices": {
       const amt = num(row.nilai ?? row.amount);
       const ppn = row.ppn != null ? num(row.ppn) : Math.round(amt * 0.11);
-      const tot = num(row.total) || amt + ppn;
+      const pph = row.pph != null ? num(row.pph) : 0;
+      const tot = num(row.total) || Math.max(0, amt + ppn - pph);
       return {
         number: row.nomor || row.number || undefined,
         customerId:
@@ -1421,6 +1436,9 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         amount: amt,
         discount: row.discount != null ? num(row.discount) : undefined,
         ppn,
+        pph,
+        pphMode: row.pphMode || "none",
+        tipePph: row.tipePph || "Tanpa PPh",
         total: tot,
         date: row.tanggal || row.date || today,
         dueDate: row.jatuhTempo || row.dueDate || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
@@ -1675,6 +1693,9 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "validUntil",
     "discount",
     "ppn",
+    "pph",
+    "pphMode",
+    "tipePph",
     "total",
     "grandTotal",
     "notes",
@@ -1705,6 +1726,9 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "quotationId",
     "quotation",
     "ppn",
+    "pph",
+    "pphMode",
+    "tipePph",
     "total",
     "date",
     "dueDate",
@@ -1835,6 +1859,9 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.total !== undefined) out.total = num(patch.total);
     if (patch.disc !== undefined) out.discount = num(patch.disc);
     if (patch.ppn !== undefined) out.ppn = num(patch.ppn);
+    if (patch.pph !== undefined) out.pph = num(patch.pph);
+    if (patch.pphMode !== undefined) out.pphMode = patch.pphMode;
+    if (patch.tipePph !== undefined) out.tipePph = patch.tipePph;
     if (patch.totalAfterDisc !== undefined) out.grandTotal = num(patch.totalAfterDisc);
     if (patch.berlaku !== undefined) {
       const v = String(patch.berlaku).trim();
@@ -1928,6 +1955,9 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);
     if (patch.ppn !== undefined) out.ppn = num(patch.ppn);
+    if (patch.pph !== undefined) out.pph = num(patch.pph);
+    if (patch.pphMode !== undefined) out.pphMode = patch.pphMode;
+    if (patch.tipePph !== undefined) out.tipePph = patch.tipePph;
     if (patch.total !== undefined) out.total = num(patch.total);
     if (patch.jatuhTempo !== undefined) out.dueDate = patch.jatuhTempo;
     if (patch.jenis !== undefined) out.type = toEnum("invoiceType", patch.jenis);

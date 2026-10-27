@@ -350,15 +350,21 @@ export class ReportsService {
       persediaan += Math.max(0, Number(item.saldo) || 0) * unitCost;
     }
 
-    const revGross = invoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
+    const revGross = invoices.reduce((s, i) => s + (Number(i.amount) || 0) + (Number(i.ppn) || 0), 0);
     const revDpp = invoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     const ppnKeluaran = invoices.reduce((s, i) => s + (Number(i.ppn) || 0), 0);
+    const uangMukaPph = invoices.reduce((s, i) => {
+      const expFull = (Number(i.amount) || 0) + (Number(i.ppn) || 0);
+      const tot = Number(i.total) > 0 ? Number(i.total) : expFull;
+      return s + Math.max(0, expFull - tot);
+    }, 0);
     const cashIn = invoices.reduce((s, i) => {
-      const tot = Number(i.total) || 0;
+      const expFull = (Number(i.amount) || 0) + (Number(i.ppn) || 0);
+      const tot = Number(i.total) > 0 ? Number(i.total) : expFull;
       const paid = Number(i.paidAmount) || 0;
       return s + (i.status === "PAID" ? Math.max(paid, tot) : Math.min(tot, paid));
     }, 0);
-    const piutangUsaha = Math.max(0, revGross - cashIn);
+    const piutangUsaha = Math.max(0, (revGross - uangMukaPph) - cashIn);
 
     const cogsTotal = supplierPos.reduce((s, po) => s + (Number(po.total) || 0), 0);
     const poPaid = supplierPos
@@ -378,7 +384,7 @@ export class ReportsService {
     const modalKerjaAwal = persediaan + baseWorkingCapital;
     const labaBerjalan = revDpp - cogsTotal - opexTotal;
 
-    const totalAset = kasDanBank + piutangUsaha + persediaan;
+    const totalAset = kasDanBank + piutangUsaha + persediaan + uangMukaPph;
     const totalKewajiban = hutangSupplier + hutangReimbursement + ppnKeluaran;
     const totalEkuitas = modalKerjaAwal + labaBerjalan;
     const totalPasiva = totalKewajiban + totalEkuitas;
@@ -387,6 +393,7 @@ export class ReportsService {
       ["1101", "Kas & Bank Operasional", "ASET LANCAR (AKTIVA)", `Rp ${kasDanBank.toLocaleString("id-ID")}`],
       ["1102", "Piutang Usaha Pelanggan (Accounts Receivable)", "ASET LANCAR (AKTIVA)", `Rp ${piutangUsaha.toLocaleString("id-ID")}`],
       ["1103", "Persediaan Barang Gudang (Inventory)", "ASET LANCAR (AKTIVA)", `Rp ${persediaan.toLocaleString("id-ID")}`],
+      ...(uangMukaPph > 0 ? [["1105", "Uang Muka PPh / Pajak Dibayar Dimuka", "ASET LANCAR (AKTIVA)", `Rp ${uangMukaPph.toLocaleString("id-ID")}`]] : []),
       ["=", "TOTAL ASET (AKTIVA)", "TOTAL AKTIVA", `Rp ${totalAset.toLocaleString("id-ID")}`],
       ["2101", "Hutang Usaha Supplier (Accounts Payable)", "KEWAJIBAN JANGKA PENDEK", `Rp ${hutangSupplier.toLocaleString("id-ID")}`],
       ["2102", "Hutang PPN Keluaran (Output VAT)", "KEWAJIBAN JANGKA PENDEK", `Rp ${ppnKeluaran.toLocaleString("id-ID")}`],
@@ -554,12 +561,15 @@ export class ReportsService {
       const proj = inv.project?.name ?? "-";
       const dpp = Number(inv.amount) || 0;
       const ppn = Number(inv.ppn) || 0;
-      const tot = Number(inv.total) || dpp + ppn;
+      const expectedFull = dpp + ppn;
+      const tot = Number(inv.total) > 0 ? Number(inv.total) : expectedFull;
+      const pph = Math.max(0, expectedFull - tot);
       const paid = inv.status === "PAID" ? Math.max(Number(inv.paidAmount) || 0, tot) : Number(inv.paidAmount) || 0;
 
-      if (tot > 0) {
+      if (tot > 0 || pph > 0) {
         addLines(d, inv.number, proj, [
           { code: "1102", name: "Piutang Usaha", desc: `Tagihan Invoice ${inv.number} — ${cust}`, debit: tot, kredit: 0 },
+          ...(pph > 0 ? [{ code: "1105", name: "Uang Muka PPh / Pajak Dibayar Dimuka", desc: `Uang Muka PPh atas ${inv.number}`, debit: pph, kredit: 0 }] : []),
           { code: "4101", name: "Pendapatan Proyek", desc: `Pendapatan Proyek ${inv.number} (${cust})`, debit: 0, kredit: dpp },
           ...(ppn > 0 ? [{ code: "2102", name: "Hutang PPN Keluaran", desc: `PPN Keluaran 11% atas ${inv.number}`, debit: 0, kredit: ppn }] : []),
         ]);

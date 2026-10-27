@@ -48,7 +48,7 @@ type TabKey = typeof TABS[number];
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { data, user, addRow, setStatus, patchRow, deleteRow, history, toast, reload, refreshModule } = useApp();
+  const { data, user, addRow, setStatus, patchRow, deleteRow, history, loadHistory, toast, reload, refreshModule } = useApp();
 
   const [activeTab, setActiveTab] = React.useState<TabKey>("Ringkasan");
   const [taskModalOpen, setTaskModalOpen] = React.useState(false);
@@ -57,6 +57,12 @@ export default function ProjectDetailScreen() {
   const [editProjectOpen, setEditProjectOpen] = React.useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = React.useState(false);
   const [requirements, setRequirements] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    if (id) {
+      void loadHistory("projects", id);
+    }
+  }, [id, loadHistory]);
 
   const project = data.projects.find((p) => p.id === id);
   const currentProgress = project ? (project.status === "Selesai" ? 100 : (Number(project.progres) || 0)) : 0;

@@ -72,6 +72,133 @@ export type OfflineQueueItem = {
 const STORAGE_QUEUE_KEY = "taska.offline.queue.v1";
 const STORAGE_CACHE_DB_KEY = "taska.offline.db.v1";
 const STORAGE_CACHE_USER_KEY = "taska.offline.user.v1";
+const STORAGE_CACHE_HIST_KEY = "taska.offline.hist.v1";
+
+const FIELD_LABELS: Record<string, string> = {
+  nama: "Nama",
+  customer: "Customer",
+  klien: "Klien",
+  nilai: "Nilai",
+  nominal: "Nominal",
+  total: "Total",
+  status: "Status",
+  stage: "Tahap",
+  kontak: "Kontak",
+  telepon: "Telepon",
+  email: "Email",
+  alamat: "Alamat",
+  catatan: "Catatan",
+  catatanTeknis: "Catatan Teknis",
+  notes: "Catatan",
+  keterangan: "Keterangan",
+  pemilik: "Pemilik",
+  pemohon: "Pemohon",
+  pelapor: "Pelapor",
+  pm: "Project Manager",
+  progres: "Progres",
+  pembayaran: "Pembayaran",
+  tanggal: "Tanggal",
+  jatuhTempo: "Jatuh Tempo",
+  dueDate: "Jatuh Tempo",
+  gudang: "Gudang",
+  supplier: "Supplier",
+  tipe: "Tipe",
+  metode: "Metode",
+  kategori: "Kategori",
+  probability: "Probabilitas",
+  urgensi: "Urgensi",
+  prioritas: "Prioritas",
+  alasanLost: "Alasan Batal",
+  lokasi: "Lokasi",
+  perihal: "Perihal",
+  nomor: "Nomor Dokumen",
+  spesifikasi: "Spesifikasi",
+  ongkir: "Biaya Pengiriman",
+  diskon: "Diskon",
+  ppn: "PPN",
+  termin: "Termin Pembayaran",
+};
+
+function formatFieldVal(val: any): string {
+  if (val === null || val === undefined || val === "") return "-";
+  if (typeof val === "boolean") return val ? "Ya" : "Tidak";
+  if (typeof val === "number") {
+    if (val >= 1000) {
+      return `Rp ${val.toLocaleString("id-ID")}`;
+    }
+    return String(val);
+  }
+  if (typeof val === "object") {
+    if (Array.isArray(val)) return `${val.length} item`;
+    return JSON.stringify(val);
+  }
+  return String(val);
+}
+
+function formatAuditAction(action: string, detail?: string | null): string {
+  const d = detail ? String(detail).trim() : "";
+  if (action === "DISETUJUI" || action === "SETUJUI") {
+    return d || "Disetujui";
+  }
+  if (action === "DITOLAK" || action === "TOLAK") {
+    return d || "Ditolak";
+  }
+  if (action === "AJUKAN_PERSETUJUAN") {
+    return d ? `Mengajukan persetujuan (${d})` : "Mengajukan persetujuan";
+  }
+  if (action === "UBAH_STAGE") {
+    return d ? `Perubahan tahap: ${d}` : "Mengubah tahap lead";
+  }
+  if (action === "REASSIGN_LEAD") {
+    return d ? `Pengalihan kepemilikan lead: ${d}` : "Mengalihkan kepemilikan lead";
+  }
+  if (action === "ISI_PENAWARAN") {
+    return d ? `Memperbarui rincian penawaran: ${d}` : "Memperbarui rincian penawaran";
+  }
+  if (action === "CATAT_PEMBAYARAN") {
+    return d ? `Mencatat pembayaran: ${d}` : "Mencatat pembayaran invoice";
+  }
+  if (action === "BATALKAN_INVOICE") {
+    return d ? `Membatalkan invoice: ${d}` : "Invoice dibatalkan";
+  }
+  if (action === "UBAH_STATUS_INVOICE") {
+    return d ? `Mengubah status invoice: ${d}` : "Mengubah status invoice";
+  }
+  if (action === "BUAT_INVOICE") {
+    return d ? `Membuat invoice: ${d}` : "Membuat invoice baru";
+  }
+  if (action === "UPDATE_INVOICE") {
+    return d ? `Memperbarui invoice: ${d}` : "Memperbarui invoice";
+  }
+  if (action === "HAPUS_INVOICE") {
+    return d ? `Menghapus invoice: ${d}` : "Menghapus invoice";
+  }
+  if (action.startsWith("PATCH")) {
+    if (d && d.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(d);
+        const keys = Object.keys(parsed).filter((k) => !["id", "updatedAt"].includes(k));
+        if (keys.length > 0) {
+          const desc = keys.slice(0, 3).map((k) => `${FIELD_LABELS[k] || k}: ${formatFieldVal(parsed[k])}`).join(", ");
+          return `Mengedit data: ${desc}${keys.length > 3 ? "..." : ""}`;
+        }
+      } catch {}
+    }
+    return d ? `Mengedit data (${d})` : "Mengedit data";
+  }
+  if (action.startsWith("POST")) {
+    if (d && d.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(d);
+        if (parsed.status) {
+          return `Mengubah status menjadi ${parsed.status}${parsed.note ? ` (${parsed.note})` : ""}`;
+        }
+      } catch {}
+    }
+    return d || action;
+  }
+  return d ? `${action}: ${d}` : action;
+}
 
 function readStorageJson<T>(key: string, fallback: T): T {
   if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
@@ -105,6 +232,7 @@ type Ctx = {
   createQuotationFromLead: (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }) => Promise<Row | null>;
   history: (module: string, id: string) => HistoryItem[];
   pushHistory: (module: string, id: string, what: string) => void;
+  loadHistory: (module: string, id: string) => Promise<void>;
   approvals: ApprovalRow[];
   decide: (id: string, decision: "Disetujui" | "Ditolak", reason?: string) => Promise<void>;
   notifs: Notif[];
@@ -241,7 +369,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const q = readStorageJson<OfflineQueueItem[]>(STORAGE_QUEUE_KEY, []);
     return overlayPendingAdds(cached ?? emptyDB(), q);
   });
-  const [hist, setHist] = React.useState<Record<string, HistoryItem[]>>({});
+  const [hist, setHist] = React.useState<Record<string, HistoryItem[]>>(() =>
+    readStorageJson<Record<string, HistoryItem[]>>(STORAGE_CACHE_HIST_KEY, {})
+  );
   const [approvals, setApprovals] = React.useState<ApprovalRow[]>([]);
   const [notifs, setNotifs] = React.useState<Notif[]>([]);
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
@@ -630,12 +760,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const pushHistory = React.useCallback(
     (module: string, id: string, what: string) => {
       const k = `${module}:${id}`;
-      setHist((h) => ({
-        ...h,
-        [k]: [{ id: String(++seq.current), who: user?.name ?? "-", what, when: new Date().toISOString() }, ...(h[k] ?? [])],
-      }));
+      setHist((h) => {
+        const next = {
+          ...h,
+          [k]: [{ id: String(++seq.current), who: user?.name ?? "Sistem", what, when: new Date().toISOString() }, ...(h[k] ?? [])],
+        };
+        writeStorageJson(STORAGE_CACHE_HIST_KEY, next);
+        return next;
+      });
     },
     [user],
+  );
+
+  const loadHistory = React.useCallback(
+    async (module: string, id: string) => {
+      if (!module || !id || offline) return;
+      try {
+        const rawLogs = await api<any[]>("GET", `/audit-logs/entity/${module}/${id}`);
+        if (!Array.isArray(rawLogs) || rawLogs.length === 0) return;
+        const items: HistoryItem[] = rawLogs.map((log: any) => ({
+          id: `al-${log.id}`,
+          who: log.actorName || "Sistem",
+          what: formatAuditAction(log.action, log.detail),
+          when: log.createdAt || new Date().toISOString(),
+        }));
+        const k = `${module}:${id}`;
+        setHist((h) => {
+          const existing = h[k] ?? [];
+          const existingIds = new Set(existing.map((x) => x.id));
+          const newItems = items.filter((x) => !existingIds.has(x.id));
+          if (newItems.length === 0) return h;
+          const merged = [...existing, ...newItems].sort(
+            (a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()
+          );
+          const next = { ...h, [k]: merged };
+          writeStorageJson(STORAGE_CACHE_HIST_KEY, next);
+          return next;
+        });
+      } catch {}
+    },
+    [offline],
   );
 
   const refreshModule = React.useCallback(async (module: string) => {
@@ -834,6 +998,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (module: string, id: string, patch: Record<string, any>) => {
       const path = PATHS[module];
       if (!path) return;
+      const existingRow = (data[module] as Row[] | undefined)?.find((r: any) => String(r.id) === String(id));
+      if (existingRow) {
+        const changedKeys = Object.keys(patch).filter((k) => {
+          if (["id", "updatedAt", "createdAt", "items", "file"].includes(k)) return false;
+          const oldVal = existingRow[k];
+          const newVal = patch[k];
+          if (oldVal === undefined && (newVal === "" || newVal === undefined)) return false;
+          return String(oldVal ?? "") !== String(newVal ?? "");
+        });
+        if (changedKeys.length > 0) {
+          const changesDesc = changedKeys
+            .slice(0, 3)
+            .map((k) => {
+              const label = FIELD_LABELS[k] || k;
+              const oldVal = existingRow[k];
+              const newVal = patch[k];
+              if (oldVal !== undefined && oldVal !== null && oldVal !== "") {
+                return `${label} (${formatFieldVal(oldVal)} → ${formatFieldVal(newVal)})`;
+              }
+              return `${label}: ${formatFieldVal(newVal)}`;
+            })
+            .join(", ");
+          const suffix = changedKeys.length > 3 ? ` (+${changedKeys.length - 3} kolom lainnya)` : "";
+          pushHistory(module, id, `Mengedit data: ${changesDesc}${suffix}`);
+        } else if (patch.items) {
+          pushHistory(module, id, "Mengedit rincian barang / item");
+        }
+      }
       // Optimistic local update so UI-only or immediate fields reflect right away
       setData((d) => {
         const next = {
@@ -863,7 +1055,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toast(e?.message ?? "Gagal mengubah", "danger");
       }
     },
-    [data, offline, enqueueOfflinePatch, refreshModule, toast],
+    [data, offline, enqueueOfflinePatch, pushHistory, refreshModule, toast],
   );
 
   const executeRemoteStatus = React.useCallback(
@@ -1129,7 +1321,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             : {}),
         };
       });
-      pushHistory(module, id, `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`);
+      const actionText =
+        status === "Disetujui"
+          ? `Disetujui${note ? `: ${note}` : ""}`
+          : status === "Ditolak"
+          ? `Ditolak${note ? `: ${note}` : ""}`
+          : `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`;
+      pushHistory(module, id, actionText);
       toast(`Status diubah ke ${status}`);
 
       await refreshModule(module);
@@ -1143,12 +1341,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const history = React.useCallback(
     (module: string, id: string): HistoryItem[] => {
       const custom = hist[`${module}:${id}`] ?? [];
-      const row = (data[module] as Row[] | undefined)?.find((r: any) => r.id === id);
+      const row = (data[module] as Row[] | undefined)?.find((r: any) => String(r.id) === String(id));
       const owner = row?.pemilik ?? row?.pembuat ?? row?.pemohon ?? row?.pelapor ?? row?.pm ?? "Sistem";
-      return [
+
+      const auditItems = (data["audit-log"] ?? [])
+        .filter((al: any) => {
+          const m = String(al.jenis || "").toLowerCase();
+          const matchModule = m === module || m === module.replace(/s$/, "") || m === module + "s";
+          return matchModule && String(al.refId) === String(id);
+        })
+        .map((al: any) => ({
+          id: `al-${al.id}`,
+          who: al.pengguna || "Sistem",
+          what: formatAuditAction(al.aksi, al.detail),
+          when: al.waktu || new Date().toISOString(),
+        }));
+
+      const all = [
         ...custom,
+        ...auditItems,
         { id: "d1", who: owner, what: "Membuat data", when: row?.createdAt ?? new Date().toISOString() },
       ];
+
+      const seen = new Set<string>();
+      const result: HistoryItem[] = [];
+      for (const item of all) {
+        const sig = `${item.who}:${item.what}:${item.when ? item.when.slice(0, 16) : ""}`;
+        if (seen.has(item.id) || seen.has(sig)) continue;
+        seen.add(item.id);
+        seen.add(sig);
+        result.push(item);
+      }
+      return result.sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
     },
     [hist, data],
   );
@@ -1161,6 +1385,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           reason,
         });
         setApprovals((l) => l.map((x) => (x.id === id ? { ...x, status: decision } : x)));
+
+        const target = approvals.find((a) => String(a.id) === String(id));
+        if (target && target.module && target.refId) {
+          pushHistory(
+            target.module,
+            target.refId,
+            `${decision === "Disetujui" ? "Disetujui" : "Ditolak"}${reason ? `: ${reason}` : ""}`
+          );
+        }
+
         toast(decision === "Disetujui" ? "Dokumen disetujui" : "Dokumen ditolak", decision === "Disetujui" ? "success" : "danger");
         await reload();
       } catch (e: any) {
@@ -1168,7 +1402,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toast(e?.message ?? "Gagal memutuskan", "danger");
       }
     },
-    [toast, reload],
+    [approvals, pushHistory, toast, reload],
   );
 
   const myNotifs = notifs;
@@ -1186,14 +1420,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
       deleteRow,
-      history, pushHistory, approvals, decide, notifs: myNotifs, unread, markRead, markAllRead,
+      history, pushHistory, loadHistory, approvals, decide, notifs: myNotifs, unread, markRead, markAllRead,
       toast, offline, setOffline,
       pendingSyncCount: pendingQueue.length,
       syncOfflineQueue,
       reload, refreshModule, hydrated, theme, toggleTheme,
     }),
     [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
-     history, pushHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
+     history, pushHistory, loadHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
      toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme],
   );
 

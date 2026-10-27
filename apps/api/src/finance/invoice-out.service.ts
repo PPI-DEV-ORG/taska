@@ -364,6 +364,9 @@ export class InvoiceOutService {
     const synced = await this.sync(row);
     return {
       ...synced,
+      pph: Number(meta.pph ?? 0),
+      pphMode: meta.pphMode ?? "none",
+      tipePph: meta.tipePph ?? "Tanpa PPh",
       items: meta.items ?? quoteMeta?.items ?? [],
       discount: Number(meta.discount ?? quoteMeta?.discount ?? quoteMeta?.disc ?? relatedQuote?.discount ?? 0),
       quotationId: meta.quotationId ?? relatedQuote?.id ?? undefined,
@@ -583,7 +586,10 @@ export class InvoiceOutService {
       dto.signerName !== undefined ||
       dto.signerTitle !== undefined ||
       dto.dpLabel !== undefined ||
-      dto.dpAmount !== undefined
+      dto.dpAmount !== undefined ||
+      dto.pph !== undefined ||
+      dto.pphMode !== undefined ||
+      dto.tipePph !== undefined
     ) {
       await this.saveMeta(row.id, {
         ...(resolvedItems.length > 0 || dto.items !== undefined ? { items: resolvedItems } : {}),
@@ -605,6 +611,9 @@ export class InvoiceOutService {
         ...(dto.signerTitle !== undefined ? { signerTitle: dto.signerTitle } : {}),
         ...(dto.dpLabel !== undefined ? { dpLabel: dto.dpLabel } : {}),
         ...(dto.dpAmount !== undefined ? { dpAmount: dto.dpAmount } : {}),
+        ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
+        ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
+        ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
       });
     }
 
@@ -717,7 +726,10 @@ export class InvoiceOutService {
       dto.signerName !== undefined ||
       dto.signerTitle !== undefined ||
       dto.dpLabel !== undefined ||
-      dto.dpAmount !== undefined
+      dto.dpAmount !== undefined ||
+      dto.pph !== undefined ||
+      dto.pphMode !== undefined ||
+      dto.tipePph !== undefined
     ) {
       await this.saveMeta(id, {
         ...(normalizedItems !== undefined ? { items: normalizedItems } : {}),
@@ -735,6 +747,9 @@ export class InvoiceOutService {
         ...(dto.signerTitle !== undefined ? { signerTitle: dto.signerTitle } : {}),
         ...(dto.dpLabel !== undefined ? { dpLabel: dto.dpLabel } : {}),
         ...(dto.dpAmount !== undefined ? { dpAmount: dto.dpAmount } : {}),
+        ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
+        ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
+        ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
       });
     }
 

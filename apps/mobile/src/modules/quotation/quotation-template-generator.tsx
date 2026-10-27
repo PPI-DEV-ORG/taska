@@ -107,7 +107,8 @@ export function QuotationTemplateGenerator({
   const isNoPpn = row.tipePpn === "No PPN (Tanpa PPN)" || row.ppnMode === "none" || (row.ppn === 0 && (row.disc > 0 || (row.total || 0) > 0));
   const netBeforeTax = Math.max(0, itemsTotal - discNum);
   const activePpn = isNoPpn || isIncludePpn ? 0 : Math.round(netBeforeTax * 0.11);
-  const activeGrandTotal = isNoPpn || isIncludePpn ? netBeforeTax : netBeforeTax + activePpn;
+  const activePph = Number(row.pph || 0);
+  const activeGrandTotal = Math.max(0, (isIncludePpn || isNoPpn ? netBeforeTax : netBeforeTax + activePpn) - activePph);
   const parsedNotes = notesText
     .split("\n")
     .map((s) => s.trim().replace(/^\d+\.\s*/, ""))
@@ -514,6 +515,16 @@ export function QuotationTemplateGenerator({
                   {isIncludePpn ? "Included" : isNoPpn ? "Rp 0" : rupiah(activePpn)}
                 </Text>
               </View>
+              {activePph > 0 ? (
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-xs text-muted-foreground">
+                    {`PPh (${row.tipePph || "Dipotong"}):`}
+                  </Text>
+                  <Text className="text-xs font-semibold text-danger">
+                    - {rupiah(activePph)}
+                  </Text>
+                </View>
+              ) : null}
               <View className="flex-row items-center justify-between pt-1 border-t border-border/50">
                 <Text className="text-xs font-bold">GRAND TOTAL:</Text>
                 <Text className="text-sm font-bold text-primary">
