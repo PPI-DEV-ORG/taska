@@ -1,23 +1,23 @@
 -- AlterTable Project
-ALTER TABLE `Project` ADD COLUMN `boqFileId` INTEGER NULL;
+ALTER TABLE `Project` ADD COLUMN IF NOT EXISTS `boqFileId` INTEGER NULL;
 
 -- AlterTable PurchaseRequest
-ALTER TABLE `PurchaseRequest` ADD COLUMN `doFileId` INTEGER NULL;
+ALTER TABLE `PurchaseRequest` ADD COLUMN IF NOT EXISTS `doFileId` INTEGER NULL;
 
 -- AlterTable Supplier
-ALTER TABLE `Supplier` ADD COLUMN `taxStatus` VARCHAR(191) NULL DEFAULT 'NON_PKP';
+ALTER TABLE `Supplier` ADD COLUMN IF NOT EXISTS `taxStatus` VARCHAR(191) NULL DEFAULT 'NON_PKP';
 
 -- AlterTable StockReservation
-ALTER TABLE `StockReservation` MODIFY `projectId` INTEGER NULL,
-    ADD COLUMN `quotationId` INTEGER NULL,
-    ADD COLUMN `invoiceId` INTEGER NULL,
-    ADD COLUMN `purchaseRequestId` INTEGER NULL;
+ALTER TABLE `StockReservation` MODIFY `projectId` INTEGER NULL;
+ALTER TABLE `StockReservation` ADD COLUMN IF NOT EXISTS `quotationId` INTEGER NULL;
+ALTER TABLE `StockReservation` ADD COLUMN IF NOT EXISTS `invoiceId` INTEGER NULL;
+ALTER TABLE `StockReservation` ADD COLUMN IF NOT EXISTS `purchaseRequestId` INTEGER NULL;
 
 -- AlterTable ProjectRequirement
-ALTER TABLE `ProjectRequirement` ADD COLUMN `serials` TEXT NULL;
+ALTER TABLE `ProjectRequirement` ADD COLUMN IF NOT EXISTS `serials` TEXT NULL;
 
 -- AlterTable PurchaseRequestItem
-ALTER TABLE `PurchaseRequestItem` ADD COLUMN `serials` TEXT NULL;
+ALTER TABLE `PurchaseRequestItem` ADD COLUMN IF NOT EXISTS `serials` TEXT NULL;
 
 -- CreateTable SupplierItemTag
 CREATE TABLE IF NOT EXISTS `SupplierItemTag` (
@@ -91,7 +91,6 @@ CREATE TABLE IF NOT EXISTS `PayrollSlip` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateIndex
-CREATE INDEX `StockReservation_quotationId_idx` ON `StockReservation`(`quotationId`);
-CREATE INDEX `StockReservation_invoiceId_idx` ON `StockReservation`(`invoiceId`);
-CREATE INDEX `StockReservation_purchaseRequestId_idx` ON `StockReservation`(`purchaseRequestId`);
-
+CREATE INDEX IF NOT EXISTS `StockReservation_quotationId_idx` ON `StockReservation`(`quotationId`);
+CREATE INDEX IF NOT EXISTS `StockReservation_invoiceId_idx` ON `StockReservation`(`invoiceId`);
+CREATE INDEX IF NOT EXISTS `StockReservation_purchaseRequestId_idx` ON `StockReservation`(`purchaseRequestId`);
