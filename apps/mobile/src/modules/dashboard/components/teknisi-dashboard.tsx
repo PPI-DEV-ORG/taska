@@ -3,10 +3,11 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel, KpiCard, KpiRow, StatusBadge } from "@/components/taska/basics";
+import { Panel, KpiCard, KpiRow } from "@/components/taska/basics";
+import { StatusBadge } from "@/components/taska/status-badge";
 import { CheckCircle2, Calendar, Truck, Boxes, FolderKanban, ClipboardCheck } from "lucide-react-native";
 import { tanggal } from "@/lib/format";
-import { ROLE_LABEL } from "@/constants/modules";
+import { ROLE_LABEL, type Role } from "@/constants/modules";
 import { DashboardGreeting } from "./dashboard-greeting";
 import { QuickActionsCard } from "./quick-actions-card";
 
@@ -26,7 +27,7 @@ export function TeknisiDashboard({ user, data, isMobile }: TeknisiDashboardProps
 
   return (
     <View className="gap-6">
-      <DashboardGreeting name={user.name} roleTitle={ROLE_LABEL[role]} />
+      <DashboardGreeting name={user.name} roleTitle={ROLE_LABEL[role as Role] ?? user.role} />
 
       <KpiRow>
         <KpiCard

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, KpiCard, KpiRow } from "@/components/taska/basics";
 import { FolderKanban, CheckCircle2, AlertTriangle, FileText } from "lucide-react-native";
 import { tanggal } from "@/lib/format";
-import { ROLE_LABEL } from "@/constants/modules";
+import { ROLE_LABEL, type Role } from "@/constants/modules";
 import { DashboardGreeting } from "./dashboard-greeting";
 import { ProjectOverviewCard } from "./project-overview-card";
 import { QuickActionsCard } from "./quick-actions-card";
@@ -27,7 +27,7 @@ export function SeDashboard({ user, data, isMobile }: SeDashboardProps) {
 
   return (
     <View className="gap-6">
-      <DashboardGreeting name={user.name} roleTitle={ROLE_LABEL[role]} />
+      <DashboardGreeting name={user.name} roleTitle={ROLE_LABEL[role as Role] ?? user.role} />
 
       <KpiRow>
         <KpiCard

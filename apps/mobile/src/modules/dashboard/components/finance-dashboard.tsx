@@ -3,12 +3,13 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel, KpiCard, KpiRow, ChartCard } from "@/components/taska/basics";
+import { Panel, KpiCard, KpiRow } from "@/components/taska/basics";
+import { ChartCard } from "@/components/taska/charts";
 import { HBarChart } from "@/components/taska/charts";
 import { ClipboardCheck, AlertTriangle, Wallet, TrendingUp } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah, rupiahShort } from "@/lib/format";
-import { ROLE_LABEL } from "@/constants/modules";
+import { ROLE_LABEL, type Role } from "@/constants/modules";
 import { DashboardGreeting } from "./dashboard-greeting";
 import { ProjectOverviewCard } from "./project-overview-card";
 import { QuickActionsCard } from "./quick-actions-card";
@@ -120,7 +121,7 @@ export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDas
 
   return (
     <View className="gap-6">
-      <DashboardGreeting name={user.name} roleTitle={ROLE_LABEL[role]} />
+      <DashboardGreeting name={user.name} roleTitle={ROLE_LABEL[role as Role] ?? user.role} />
 
       <KpiRow>
         <KpiCard
