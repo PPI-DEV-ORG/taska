@@ -9,8 +9,9 @@ import {
 } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
 import { PageHeader } from "@/components/taska/basics";
+import { DatePicker } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
-import { rupiah } from "@/lib/format";
+import { rupiah, tanggal } from "@/lib/format";
 import { colors } from "@/tokens";
 import { computeFinancialStatements } from "@/lib/accounting";
 import { useLocalSearchParams } from "expo-router";
@@ -37,7 +38,30 @@ export default function ReportsScreen() {
     : selectedTab;
   const setActiveTab = setSelectedTab;
 
-  const fin = React.useMemo(() => computeFinancialStatements(data), [data]);
+  const [reportDate, setReportDate] = React.useState("");
+
+  const filteredData = React.useMemo(() => {
+    if (!reportDate) return data;
+    const target = reportDate.slice(0, 10);
+    const filterItems = (arr?: any[]) => {
+      if (!arr) return [];
+      return arr.filter((item) => {
+        const cands = [item.tanggal, item.closing, item.jadwal, item.jatuhTempo, item.waktu, item.createdAt, item.date];
+        return cands.some((c) => c && (String(c).startsWith(target) || String(c).includes(target)));
+      });
+    };
+    return {
+      ...data,
+      invoices: filterItems(data.invoices),
+      expenses: filterItems(data.expenses),
+      "supplier-pos": filterItems(data["supplier-pos"]),
+      "delivery-notes": filterItems(data["delivery-notes"]),
+      leads: filterItems(data.leads),
+      projects: data.projects,
+    };
+  }, [data, reportDate]);
+
+  const fin = React.useMemo(() => computeFinancialStatements(filteredData), [filteredData]);
 
   const reportCards = React.useMemo(() => {
     const leadsCount = (data.leads ?? []).length;
@@ -182,7 +206,20 @@ export default function ReportsScreen() {
     <View className="gap-5 w-full pb-10">
       <PageHeader
         title="Pusat Akuntansi, Pajak & Laporan Eksekutif"
-        subtitle="Pembukuan Double-Entry SAK, Laba Rugi (P&L), Neraca, Arus Kas, Jurnal Umum, dan Rekap Operasional"
+        subtitle={
+          reportDate
+            ? `Filter tanggal aktif: ${tanggal(reportDate)} (${reportDate})`
+            : "Pembukuan Double-Entry SAK, Laba Rugi (P&L), Neraca, Arus Kas, Jurnal Umum, dan Rekap Operasional"
+        }
+        action={
+          <DatePicker
+            value={reportDate}
+            onChange={setReportDate}
+            placeholder="Filter tanggal laporan..."
+            clearable
+            className="h-10 min-w-[170px] max-w-[240px] rounded-xl bg-card border-border/80 shadow-sm px-3"
+          />
+        }
       />
 
       {canAccessFinancials && (

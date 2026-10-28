@@ -14,6 +14,7 @@ import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { PageHeader } from "@/components/taska/basics";
 import { Button } from "@/components/ui/button";
+import { formatThousands } from "@/lib/format";
 
 import { TabType, formatPeriodLabel } from "@/modules/hr/types";
 import { MyAttendanceTab } from "@/modules/hr/components/my-attendance-tab";
@@ -402,8 +403,8 @@ export default function HrScreen() {
     try {
       await api("POST", "/hr/payroll/configs", {
         userId: editConfigTarget.userId,
-        basicSalary: Number(editBasicSalary) || 0,
-        allowance: Number(editAllowance) || 0,
+        basicSalary: Number(String(editBasicSalary).replace(/\D/g, "")) || 0,
+        allowance: Number(String(editAllowance).replace(/\D/g, "")) || 0,
         ptkp: editPtkp,
         hasNpwp: editHasNpwpLabel.startsWith("Punya"),
         pph21Rate: editCustomRate ? Number(editCustomRate) : null,
@@ -704,8 +705,8 @@ export default function HrScreen() {
             fetchConfigs={fetchConfigs}
             onEditConfig={(c) => {
               setEditConfigTarget(c);
-              setEditBasicSalary(String(c.basicSalary || 0));
-              setEditAllowance(String(c.allowance || 0));
+              setEditBasicSalary(c.basicSalary ? formatThousands(c.basicSalary) : "");
+              setEditAllowance(c.allowance ? formatThousands(c.allowance) : "");
               setEditPtkp(c.ptkp || "TK/0");
               setEditHasNpwpLabel(c.hasNpwp ? "Punya NPWP" : "Tidak Ada (+20% Tarif)");
               setEditCustomRate(c.pph21Rate ? String(c.pph21Rate) : "");

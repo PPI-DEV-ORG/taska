@@ -2,7 +2,7 @@ import React from "react";
 import { View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { FormField } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect, formatThousands } from "@/components/taska/dialogs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,8 +57,8 @@ export function EditSalaryConfigDialog({
           <View className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Gaji Pokok (Rp)" required>
               <Input
-                value={basicSalary}
-                onChangeText={setBasicSalary}
+                value={basicSalary ? formatThousands(basicSalary) : ""}
+                onChangeText={(v) => setBasicSalary(formatThousands(v))}
                 keyboardType="numeric"
                 placeholder="0"
               />
@@ -66,8 +66,8 @@ export function EditSalaryConfigDialog({
 
             <FormField label="Tunjangan Tetap (Rp)" required>
               <Input
-                value={allowance}
-                onChangeText={setAllowance}
+                value={allowance ? formatThousands(allowance) : ""}
+                onChangeText={(v) => setAllowance(formatThousands(v))}
                 keyboardType="numeric"
                 placeholder="0"
               />

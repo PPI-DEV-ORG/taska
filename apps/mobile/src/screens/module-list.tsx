@@ -103,6 +103,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   const { user, data, deleteRow, refreshModule } = useApp();
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState("");
+  const [dateFilter, setDateFilter] = React.useState("");
   const [open, setOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
 
@@ -250,11 +251,11 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       }
     } else if (def.key === "damage-reports") {
       if (damageTab === "kerusakan") {
-        sourceRows = sourceRows.filter((r) => r.kategoriLaporan !== "Retur Penjualan" && r.kategoriLaporan !== "Retur Pembelian");
+        sourceRows = sourceRows.filter((r: Row) => r.kategoriLaporan !== "Retur Penjualan" && r.kategoriLaporan !== "Retur Pembelian");
       } else if (damageTab === "retur-sales") {
-        sourceRows = sourceRows.filter((r) => r.kategoriLaporan === "Retur Penjualan" || r.jenis === "Retur Penjualan");
+        sourceRows = sourceRows.filter((r: Row) => r.kategoriLaporan === "Retur Penjualan" || r.jenis === "Retur Penjualan");
       } else if (damageTab === "retur-purchase") {
-        sourceRows = sourceRows.filter((r) => r.kategoriLaporan === "Retur Pembelian" || r.jenis === "Retur Pembelian");
+        sourceRows = sourceRows.filter((r: Row) => r.kategoriLaporan === "Retur Pembelian" || r.jenis === "Retur Pembelian");
       }
     }
     const scoped = scopeRows(def, sourceRows, user!);
@@ -289,6 +290,29 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         }
         return false;
       })
+      .filter((r) => {
+        if (!dateFilter) return true;
+        const target = dateFilter.slice(0, 10);
+        const candidates = [
+          r.tanggal,
+          r.closing,
+          r.jadwal,
+          r.jatuhTempo,
+          r.waktu,
+          r.eta,
+          r.dibutuhkan,
+          r.tenggat,
+          r.createdAt,
+          r.updatedAt,
+          r.timestamp,
+          r.date,
+        ];
+        return candidates.some((c) => {
+          if (!c) return false;
+          const str = String(c);
+          return str.startsWith(target) || str.includes(target);
+        });
+      })
       .map((r) => {
         if (def.key === "quotations") {
           return {
@@ -299,7 +323,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         return r;
       })
       .sort(compareDesc);
-  }, [def, data, user, q, status, invoiceTab, poTab, damageTab, clientReceipts, supplierPayments]);
+  }, [def, data, user, q, status, dateFilter, invoiceTab, poTab, damageTab, clientReceipts, supplierPayments]);
 
   const activeColumns = React.useMemo(() => {
     if (def.key === "invoices") {
@@ -435,14 +459,32 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           />
         </View>
       ) : null}
-      <FilterBar search={q} onSearch={setQ} statuses={def.statuses} status={status} onStatus={setStatus} />
+      <FilterBar
+        search={q}
+        onSearch={setQ}
+        statuses={def.statuses}
+        status={status}
+        onStatus={setStatus}
+        date={dateFilter}
+        onDate={setDateFilter}
+      />
       {rows.length === 0 ? (
         <EmptyState
           icon={def.icon}
-          title={q || status ? "Tidak ada yang cocok" : `Belum ada ${def.singular.toLowerCase()}`}
-          text={q || status ? "Coba ubah kata kunci atau filter status." : def.emptyText}
-          actionLabel={q || status ? "Reset filter" : allowed ? def.createLabel : undefined}
-          onAction={() => { if (q || status) { setQ(""); setStatus(""); } else if (def.newHref) router.push(def.newHref as any); else setOpen(true); }}
+          title={q || status || dateFilter ? "Tidak ada yang cocok" : `Belum ada ${def.singular.toLowerCase()}`}
+          text={q || status || dateFilter ? "Coba ubah kata kunci, filter tanggal, atau filter status." : def.emptyText}
+          actionLabel={q || status || dateFilter ? "Reset filter" : allowed ? def.createLabel : undefined}
+          onAction={() => {
+            if (q || status || dateFilter) {
+              setQ("");
+              setStatus("");
+              setDateFilter("");
+            } else if (def.newHref) {
+              router.push(def.newHref as any);
+            } else {
+              setOpen(true);
+            }
+          }}
         />
       ) : (
         <DataTable

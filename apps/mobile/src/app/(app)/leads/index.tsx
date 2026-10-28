@@ -36,6 +36,7 @@ export default function LeadsScreen() {
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
   const [view, setView] = React.useState("papan");
   const [q, setQ] = React.useState("");
+  const [dateFilter, setDateFilter] = React.useState("");
   const [form, setForm] = React.useState(false);
   const [lost, setLost] = React.useState<Row | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
@@ -43,8 +44,14 @@ export default function LeadsScreen() {
   if (view === "tabel") return <ModuleList def={def} headerExtra={<ViewToggle view={view} onView={setView} />} />;
 
   const s = q.trim().toLowerCase();
-  const leads = data.leads
+  const leads = (data.leads ?? [])
     .filter((l) => !s || `${l.nama} ${l.perusahaan}`.toLowerCase().includes(s))
+    .filter((l) => {
+      if (!dateFilter) return true;
+      const target = dateFilter.slice(0, 10);
+      const candidates = [l.closing, l.tanggal, l.createdAt, l.updatedAt];
+      return candidates.some((c) => c && (String(c).startsWith(target) || String(c).includes(target)));
+    })
     .sort(compareDesc);
   const canAdd = ["super_admin", "sales", "pm"].includes(user!.role);
   const canMove = !["bos", "admin"].includes(user!.role);
@@ -67,7 +74,13 @@ export default function LeadsScreen() {
         action={canAdd ? <Button onPress={() => setForm(true)}><Plus size={16} color={colors.background} /><Text>Tambah lead</Text></Button> : undefined}
       />
       <ViewToggle view={view} onView={setView} />
-      <FilterBar search={q} onSearch={setQ} placeholder="Cari lead atau perusahaan" />
+      <FilterBar
+        search={q}
+        onSearch={setQ}
+        date={dateFilter}
+        onDate={setDateFilter}
+        placeholder="Cari lead atau perusahaan"
+      />
       <ScrollView horizontal showsHorizontalScrollIndicator contentContainerClassName="gap-3 pb-3">
         {LEAD_STAGES.map((stage, si) => {
           const col = leads.filter((l) => l.status === stage);
