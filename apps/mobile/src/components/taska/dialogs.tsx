@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Search, FileDown } from "lucide-react-native";
+import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Search, FileDown, X } from "lucide-react-native";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,7 @@ export function DatePicker({
   error,
   className,
   formatLabel,
+  clearable,
 }: {
   value?: string;
   onChange: (v: string) => void;
@@ -60,6 +61,7 @@ export function DatePicker({
   error?: boolean;
   className?: string;
   formatLabel?: (iso: string) => string;
+  clearable?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const initial = parseIsoDate(value);
@@ -123,7 +125,21 @@ export function DatePicker({
         <Text className={cn("text-base md:text-sm", !selectedIso && "text-muted-foreground")} numberOfLines={1}>
           {selectedIso ? (formatLabel ? formatLabel(selectedIso) : `${tanggal(selectedIso)} (${selectedIso})`) : placeholder}
         </Text>
-        <CalendarIcon size={16} color={colors.muted} />
+        <View className="flex-row items-center gap-1.5">
+          {clearable && selectedIso ? (
+            <Pressable
+              hitSlop={8}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onChange("");
+              }}
+              className="p-1 hover:bg-muted/30 rounded-full"
+            >
+              <X size={14} color={colors.muted} />
+            </Pressable>
+          ) : null}
+          <CalendarIcon size={16} color={colors.muted} />
+        </View>
       </Pressable>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
@@ -134,6 +150,17 @@ export function DatePicker({
           <View className="gap-3">
             {/* Quick shortcuts */}
             <View className="flex-row flex-wrap gap-1.5">
+              {clearable ? (
+                <Pressable
+                  onPress={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                  className="bg-danger/10 border-danger/30 hover:bg-danger/20 rounded-lg border px-2.5 py-1.5"
+                >
+                  <Text className="text-xs font-semibold text-danger">Reset Tanggal</Text>
+                </Pressable>
+              ) : null}
               {[
                 { label: "Hari ini", offset: 0 },
                 { label: "Besok", offset: 1 },

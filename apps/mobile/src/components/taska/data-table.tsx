@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Cell, Chip } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { DatePicker } from "@/components/taska/dialogs";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -15,15 +16,32 @@ import type { Col, Row } from "@/constants/modules";
 const DEFAULT_PAGE_SIZE = 8;
 
 export function FilterBar({
-  search, onSearch, statuses, status, onStatus, right, placeholder = "Cari",
+  search,
+  onSearch,
+  statuses,
+  status,
+  onStatus,
+  right,
+  placeholder = "Cari",
+  date,
+  onDate,
+  datePlaceholder = "Filter tanggal...",
 }: {
-  search: string; onSearch: (v: string) => void; statuses?: string[]; status?: string; onStatus?: (v: string) => void;
-  right?: React.ReactNode; placeholder?: string;
+  search: string;
+  onSearch: (v: string) => void;
+  statuses?: string[];
+  status?: string;
+  onStatus?: (v: string) => void;
+  right?: React.ReactNode;
+  placeholder?: string;
+  date?: string;
+  onDate?: (v: string) => void;
+  datePlaceholder?: string;
 }) {
   return (
     <View className="mb-4 gap-3">
-      <View className="flex-row items-center gap-3">
-        <View className="bg-card border-border/80 h-10 max-w-md flex-1 flex-row items-center gap-2.5 rounded-xl border px-3 shadow-sm">
+      <View className="flex-row flex-wrap items-center gap-2.5">
+        <View className="bg-card border-border/80 h-10 max-w-md flex-1 min-w-[200px] flex-row items-center gap-2.5 rounded-xl border px-3 shadow-sm">
           <Search size={15} color={colors.muted} />
           <Input
             value={search}
@@ -32,6 +50,17 @@ export function FilterBar({
             className="h-8 flex-1 border-0 bg-transparent px-0 shadow-none text-xs sm:h-8"
           />
         </View>
+        {onDate ? (
+          <View className="w-full sm:w-auto">
+            <DatePicker
+              value={date}
+              onChange={onDate}
+              placeholder={datePlaceholder}
+              clearable
+              className="h-10 min-w-[170px] max-w-[240px] rounded-xl bg-card border-border/80 shadow-sm px-3"
+            />
+          </View>
+        ) : null}
         <Text className="text-muted-foreground hidden text-xs md:flex">Urutan: terbaru</Text>
         {right}
       </View>

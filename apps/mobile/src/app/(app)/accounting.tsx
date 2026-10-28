@@ -77,6 +77,7 @@ export default function AccountingScreen() {
 
   // Tab 1: Journal filters & pagination
   const [journalQuery, setJournalQuery] = React.useState("");
+  const [journalDate, setJournalDate] = React.useState("");
   const [journalSourceFilter, setJournalSourceFilter] = React.useState<string>("Semua");
   const [journalPage, setJournalPage] = React.useState(1);
   const JOURNAL_PAGE_SIZE = 25;
@@ -89,6 +90,7 @@ export default function AccountingScreen() {
 
   // Tab 3: Ledger account selection
   const [selectedLedgerCode, setSelectedLedgerCode] = React.useState<string>(params.account || "1101");
+  const [ledgerDate, setLedgerDate] = React.useState("");
 
   if (params.account && selectedLedgerCode !== params.account) {
     setSelectedLedgerCode(params.account);
@@ -115,9 +117,14 @@ export default function AccountingScreen() {
   // Ledger Lines for Selected Account
   const selectedAcc = allAccountsMap[selectedLedgerCode] || fin.coaBalances[0];
   const ledgerLines = React.useMemo(() => {
-    const matching = fin.journalLines
+    let matching = fin.journalLines
       .filter((l) => l.kodeAkun === selectedLedgerCode)
       .sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+
+    if (ledgerDate) {
+      const target = ledgerDate.slice(0, 10);
+      matching = matching.filter((l) => l.tanggal?.startsWith(target));
+    }
 
     return matching.reduce<{ lines: (typeof matching[0] & { runningBalance: number })[]; balance: number }>(
       (acc, l) => {
@@ -128,7 +135,7 @@ export default function AccountingScreen() {
       },
       { lines: [], balance: 0 },
     ).lines;
-  }, [fin.journalLines, selectedLedgerCode, selectedAcc]);
+  }, [fin.journalLines, selectedLedgerCode, selectedAcc, ledgerDate]);
 
   // Handlers
   const handleSaveManualJournal = () => {
@@ -258,6 +265,10 @@ export default function AccountingScreen() {
   const filteredJournal = fin.journalLines.filter((l) => {
     if (!l) return false;
     if (journalSourceFilter !== "Semua" && l.sumber !== journalSourceFilter) return false;
+    if (journalDate) {
+      const target = journalDate.slice(0, 10);
+      if (!l.tanggal?.startsWith(target)) return false;
+    }
     if (!journalQuery.trim()) return true;
     const q = journalQuery.toLowerCase();
     return (
@@ -378,6 +389,8 @@ export default function AccountingScreen() {
             handleExportJournalCsv={handleExportJournalCsv}
             journalQuery={journalQuery}
             setJournalQuery={setJournalQuery}
+            journalDate={journalDate}
+            setJournalDate={setJournalDate}
             journalPage={journalPage}
             setJournalPage={setJournalPage}
             journalSourceFilter={journalSourceFilter}
@@ -428,6 +441,8 @@ export default function AccountingScreen() {
             selectedAcc={selectedAcc}
             selectedLedgerCode={selectedLedgerCode}
             setSelectedLedgerCode={setSelectedLedgerCode}
+            ledgerDate={ledgerDate}
+            setLedgerDate={setLedgerDate}
             fin={fin}
             ledgerLines={ledgerLines}
           />

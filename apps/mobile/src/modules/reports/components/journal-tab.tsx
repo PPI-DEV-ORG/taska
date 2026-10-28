@@ -4,6 +4,7 @@ import { CheckCircle2, Search } from "lucide-react-native";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Panel } from "@/components/taska/basics";
+import { DatePicker } from "@/components/taska/dialogs";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 import { Pill, ExportBar } from "./report-ui-helpers";
@@ -16,10 +17,15 @@ interface JournalTabProps {
 
 export function JournalTab({ fin, onDownload }: JournalTabProps) {
   const [journalQuery, setJournalQuery] = React.useState("");
+  const [journalDate, setJournalDate] = React.useState("");
   const [journalSourceFilter, setJournalSourceFilter] = React.useState<string>("Semua");
 
   const filteredJournal = React.useMemo(() => {
     return fin.journalLines.filter((l: any) => {
+      if (journalDate) {
+        const target = journalDate.slice(0, 10);
+        if (!l.tanggal?.startsWith(target)) return false;
+      }
       if (journalSourceFilter !== "Semua") {
         if (journalSourceFilter === "Pengeluaran (Expense)") {
           if (l.sumber !== "Pengeluaran (Expense)") return false;
@@ -53,7 +59,7 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
       }
       return true;
     });
-  }, [fin.journalLines, journalQuery, journalSourceFilter]);
+  }, [fin.journalLines, journalQuery, journalDate, journalSourceFilter]);
 
   return (
     <View className="gap-5 w-full">
@@ -123,15 +129,26 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
         subtitle="Pencatatan kronologis ayat jurnal berpasangan (Debit & Kredit)"
       >
         <View className="gap-3">
-          <View className="flex-row flex-wrap items-center justify-between gap-2">
-            <View className="flex-row items-center gap-2 flex-1 min-w-[240px]">
-              <Search size={15} color={colors.textSecondary} />
-              <Input
-                value={journalQuery}
-                onChangeText={setJournalQuery}
-                placeholder="Cari nomor jurnal, referensi, akun, atau keterangan..."
-                className="flex-1 h-9 text-xs"
-              />
+          <View className="flex-row flex-wrap items-center justify-between gap-2.5">
+            <View className="flex-row flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+              <View className="flex-row items-center gap-2 flex-1 min-w-[200px] bg-card border border-border/80 rounded-xl px-3 h-10 shadow-sm">
+                <Search size={15} color={colors.textSecondary} />
+                <Input
+                  value={journalQuery}
+                  onChangeText={setJournalQuery}
+                  placeholder="Cari nomor jurnal, referensi, akun, atau keterangan..."
+                  className="flex-1 h-8 text-xs border-0 bg-transparent px-0 shadow-none"
+                />
+              </View>
+              <View className="w-full sm:w-auto">
+                <DatePicker
+                  value={journalDate}
+                  onChange={setJournalDate}
+                  placeholder="Filter tanggal..."
+                  clearable
+                  className="h-10 min-w-[160px] max-w-[220px] rounded-xl bg-card border-border/80 shadow-sm px-3"
+                />
+              </View>
             </View>
             <View className="flex-row flex-wrap gap-1.5">
               {[

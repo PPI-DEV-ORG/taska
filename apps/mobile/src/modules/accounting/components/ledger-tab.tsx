@@ -2,13 +2,15 @@ import * as React from "react";
 import { View, ScrollView } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Panel } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
 import { rupiah } from "@/lib/format";
 
 interface LedgerTabProps {
   selectedAcc: any;
   selectedLedgerCode: string;
   setSelectedLedgerCode: (v: string) => void;
+  ledgerDate?: string;
+  setLedgerDate?: (v: string) => void;
   fin: any;
   ledgerLines: any[];
 }
@@ -17,6 +19,8 @@ export function LedgerTab({
   selectedAcc,
   selectedLedgerCode,
   setSelectedLedgerCode,
+  ledgerDate,
+  setLedgerDate,
   fin,
   ledgerLines,
 }: LedgerTabProps) {
@@ -26,16 +30,27 @@ export function LedgerTab({
         title={`Buku Besar (General Ledger): [${selectedAcc?.code}] ${selectedAcc?.name}`}
         subtitle={`Kategori: ${selectedAcc?.category} · Saldo Normal: ${selectedAcc?.normalBalance} · Total ${ledgerLines.length} Mutasi Transaksi`}
         right={
-          <View className="w-72">
-            <SearchableSelect
-              value={selectedLedgerCode ? `[${selectedLedgerCode}] ${selectedAcc?.name}` : ""}
-              options={fin.coaBalances.map((a: any) => `[${a.code}] ${a.name}`)}
-              onChange={(val) => {
-                const m = val.match(/\[(\w+)\]/);
-                if (m && m[1]) setSelectedLedgerCode(m[1]);
-              }}
-              placeholder="Pilih Akun Buku Besar..."
-            />
+          <View className="flex-row flex-wrap items-center gap-2">
+            <View className="w-56 sm:w-64">
+              <SearchableSelect
+                value={selectedLedgerCode ? `[${selectedLedgerCode}] ${selectedAcc?.name}` : ""}
+                options={fin.coaBalances.map((a: any) => `[${a.code}] ${a.name}`)}
+                onChange={(val) => {
+                  const m = val.match(/\[(\w+)\]/);
+                  if (m && m[1]) setSelectedLedgerCode(m[1]);
+                }}
+                placeholder="Pilih Akun Buku Besar..."
+              />
+            </View>
+            {setLedgerDate ? (
+              <DatePicker
+                value={ledgerDate}
+                onChange={setLedgerDate}
+                placeholder="Filter tanggal..."
+                clearable
+                className="h-10 min-w-[150px] max-w-[200px] rounded-xl bg-card border-border/80 shadow-sm px-3"
+              />
+            ) : null}
           </View>
         }
       >
