@@ -69,7 +69,13 @@ export class AuditService {
       rawType.replace(/s$/, ""),
       rawType + "s",
     ]);
-    if (rawType.includes("pos") || rawType.includes("po")) {
+    if (rawType.startsWith("poc") || rawType.includes("poc")) {
+      variants.add("pocReport");
+      variants.add("pocReports");
+      variants.add("poc-reports");
+      variants.add("poc-report");
+      variants.add("poc");
+    } else if (rawType.includes("pos") || rawType.includes("po")) {
       variants.add("supplier-pos");
       variants.add("supplierPO");
       variants.add("supplier-po");

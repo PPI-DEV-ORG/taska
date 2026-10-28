@@ -260,7 +260,7 @@ const emptyDB = (): DB => ({
   customers: [], suppliers: [], warehouses: [], products: [],
   productCategories: [], leadSources: [], lostReasons: [], expenseCategories: [], costCenters: [],
   followups: [], issueReports: [], opname: [], users: [], "audit-log": [],
-  serials: [], movements: [], reservations: [], invoiceIn: [],
+  serials: [], movements: [], reservations: [], invoiceIn: [], "poc-reports": [],
 });
 
 /** Modul yang diambil dari backend saat load. Beberapa dibuat lazily (tasks, stock) karena mahal. */
@@ -270,6 +270,7 @@ const EAGER_MODULES = [
   "damage-reports", "customers", "suppliers", "warehouses", "products",
   "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
   "opname", "users", "audit-log", "serials", "movements", "reservations", "followups", "invoiceIn",
+  "poc-reports",
 ] as const;
 
 async function fetchList(module: string): Promise<Row[]> {
@@ -786,11 +787,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }));
         const k = `${module}:${id}`;
         setHist((h) => {
-          const existing = h[k] ?? [];
-          const existingIds = new Set(existing.map((x) => x.id));
-          const newItems = items.filter((x) => !existingIds.has(x.id));
-          if (newItems.length === 0) return h;
-          const merged = [...existing, ...newItems].sort(
+          const localOnly = (h[k] ?? []).filter((x) => !String(x.id).startsWith("al-"));
+          const merged = [...items, ...localOnly].sort(
             (a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()
           );
           const next = { ...h, [k]: merged };

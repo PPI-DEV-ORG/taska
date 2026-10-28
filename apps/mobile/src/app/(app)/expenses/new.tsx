@@ -33,20 +33,57 @@ export default function NewExpenseScreen() {
     return dynamic.length > 0 ? dynamic : DEFAULT_KATEGORI_LIST;
   }, [data.expenseCategories]);
 
-  const params = useLocalSearchParams<{ projectId?: string; project?: string }>();
+  const params = useLocalSearchParams<{
+    projectId?: string;
+    project?: string;
+    surveyId?: string;
+    survey?: string;
+    pocId?: string;
+    pocReportId?: string;
+    poc?: string;
+  }>();
 
   const [tanggalNota, setTanggalNota] = React.useState(new Date().toISOString().slice(0, 10));
   const [nominal, setNominal] = React.useState("");
   const [kategori, setKategori] = React.useState(kategoriOptions[0] || "Bensin");
-  const [selectedProject, setSelectedProject] = React.useState<string>(() => {
+
+  const defaultProject = React.useMemo(() => {
     if (params.project) return String(params.project);
     if (params.projectId) {
       const match = data.projects.find((p) => String(p.id) === String(params.projectId));
       return match ? String(match.nama) : "-";
     }
     return "-";
-  });
-  const [selectedSurvey, setSelectedSurvey] = React.useState("-");
+  }, [params.project, params.projectId, data.projects]);
+
+  const defaultSurvey = React.useMemo(() => {
+    if (params.survey) return String(params.survey);
+    if (params.surveyId) {
+      const match = data.surveys.find((s: any) => String(s.id) === String(params.surveyId));
+      return match ? `Survey #${match.id} - ${match.lead || match.customer || match.lokasi || "Survey"}` : "-";
+    }
+    return "-";
+  }, [params.survey, params.surveyId, data.surveys]);
+
+  const defaultPoc = React.useMemo(() => {
+    const pId = params.pocId || params.pocReportId;
+    if (params.poc) return String(params.poc);
+    if (pId) {
+      const match = ((data as any)["poc-reports"] ?? []).find((p: any) => String(p.id) === String(pId));
+      return match ? `POC ${match.nomor || match.number} - ${match.judul || match.title}` : "-";
+    }
+    return "-";
+  }, [params.poc, params.pocId, params.pocReportId, data]);
+
+  const [customProject, setCustomProject] = React.useState<string | null>(null);
+  const [customSurvey, setCustomSurvey] = React.useState<string | null>(null);
+  const [customPoc, setCustomPoc] = React.useState<string | null>(null);
+
+  const selectedProject = customProject ?? defaultProject;
+  const selectedSurvey = customSurvey ?? defaultSurvey;
+  const selectedPoc = customPoc ?? defaultPoc;
+
+  const [sumberDana, setSumberDana] = React.useState<"Dana Perusahaan" | "Talangan Pribadi (Reimbursement)">("Dana Perusahaan");
   const [alasan, setAlasan] = React.useState("");
   const [photoCount, setPhotoCount] = React.useState(0);
 
@@ -58,6 +95,14 @@ export default function NewExpenseScreen() {
       ),
     ];
   }, [data.surveys]);
+
+  const pocOptions = React.useMemo(() => {
+    const list = (data as any)["poc-reports"] ?? [];
+    return [
+      "-",
+      ...list.map((p: any) => `POC ${p.nomor || p.number} - ${p.judul || p.title}`),
+    ];
+  }, [data]);
 
   const numNominal = Number(nominal.replace(/\D/g, "")) || 0;
   const isBig = numNominal > BOS_THRESHOLD;
@@ -76,6 +121,40 @@ export default function NewExpenseScreen() {
     const foundProject = data.projects.find(
       (p) => String(p.nama) === selectedProject || (params.projectId && String(p.id) === String(params.projectId))
     );
+    const resolvedProjectId =
+      foundProject?.id != null
+        ? Number(foundProject.id)
+        : params.projectId
+          ? Number(params.projectId)
+          : undefined;
+
+    const foundSurvey = data.surveys.find((s: any) => {
+      const opt = `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}`;
+      return opt === selectedSurvey || (params.surveyId && String(s.id) === String(params.surveyId));
+    });
+    const resolvedSurveyId =
+      foundSurvey?.id != null
+        ? Number(foundSurvey.id)
+        : params.surveyId
+          ? Number(params.surveyId)
+          : undefined;
+
+    const pocList = ((data as any)["poc-reports"] ?? []);
+    const pId = params.pocId || params.pocReportId;
+    const foundPoc = pocList.find((p: any) => {
+      const opt = `POC ${p.nomor || p.number} - ${p.judul || p.title}`;
+      return opt === selectedPoc || (pId && String(p.id) === String(pId));
+    });
+    const resolvedPocReportId =
+      foundPoc?.id != null
+        ? Number(foundPoc.id)
+        : pId
+          ? Number(pId)
+          : undefined;
+
+    const isTalangan = sumberDana === "Talangan Pribadi (Reimbursement)";
+    const fundingSource = isTalangan ? "TALANGAN_PRIBADI" : "PERUSAHAAN";
+    const reimbursementStatus = isTalangan ? "SUBMITTED" : null;
 
     const row = {
       tanggal: tanggalNota,
@@ -83,8 +162,14 @@ export default function NewExpenseScreen() {
       kategori,
       nominal: numNominal,
       project: selectedProject,
-      projectId: foundProject?.id ?? (params.projectId ? Number(params.projectId) : undefined),
+      projectId: resolvedProjectId,
       survey: selectedSurvey,
+      surveyId: resolvedSurveyId,
+      pocReport: selectedPoc,
+      pocReportId: resolvedPocReportId,
+      fundingSource,
+      sumberDana,
+      reimbursementStatus,
       alasan,
       status: "Dilaporkan",
       nota: photoCount > 0 || fileId ? "nota.jpg" : "-",
@@ -141,10 +226,19 @@ export default function NewExpenseScreen() {
             />
           </FormField>
 
+          <FormField label="Sumber Pendanaan" required>
+            <SearchableSelect
+              value={sumberDana}
+              onChange={(val) => setSumberDana(val as any)}
+              options={["Dana Perusahaan", "Talangan Pribadi (Reimbursement)"]}
+              placeholder="Pilih sumber dana"
+            />
+          </FormField>
+
           <FormField label="Terkait Project (Opsional)">
             <SearchableSelect
               value={selectedProject}
-              onChange={setSelectedProject}
+              onChange={setCustomProject}
               options={["-", ...data.projects.map((p) => p.nama)]}
               placeholder="Pilih project jika ada"
             />
@@ -153,9 +247,18 @@ export default function NewExpenseScreen() {
           <FormField label="Terkait Survey (Opsional)">
             <SearchableSelect
               value={selectedSurvey}
-              onChange={setSelectedSurvey}
+              onChange={setCustomSurvey}
               options={surveyOptions}
               placeholder="Pilih survey jika ada"
+            />
+          </FormField>
+
+          <FormField label="Terkait Kegiatan POC / Demo (Opsional)">
+            <SearchableSelect
+              value={selectedPoc}
+              onChange={setCustomPoc}
+              options={pocOptions}
+              placeholder="Pilih kegiatan POC jika ada"
             />
           </FormField>
 

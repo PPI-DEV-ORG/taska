@@ -12,12 +12,14 @@ const MODULE_FOR: Record<DocKind, ModuleKey> = {
   survey: "surveys",
   project: "projects",
   "delivery-note": "delivery",
+  poc: "pocReports",
 };
 
 const TITLE_FOR: Record<DocKind, string> = {
   survey: "Laporan Dokumentasi Survey",
   project: "Laporan Dokumentasi Instalasi",
   "delivery-note": "Laporan Dokumentasi Surat Jalan",
+  poc: "Laporan Proof of Concept (POC) / Demo",
 };
 
 type PhotoWithFile = DocumentationPhoto & {
@@ -64,6 +66,11 @@ export class DocumentationService {
       const p = await this.prisma.main.project.findUnique({ where: { id: entityId } });
       if (!p) throw new NotFoundException("Project tidak ditemukan");
       return { label: `Project #${p.id} — ${p.name}` };
+    }
+    if (kind === "poc") {
+      const poc = await (this.prisma.main as any).pocReport.findUnique({ where: { id: entityId } });
+      if (!poc) throw new NotFoundException("Laporan POC tidak ditemukan");
+      return { label: `POC ${poc.number} — ${poc.title}` };
     }
     const d = await this.prisma.main.deliveryNote.findUnique({ where: { id: entityId } });
     if (!d) throw new NotFoundException("Surat jalan tidak ditemukan");
@@ -165,6 +172,7 @@ export class DocumentationService {
     const photos = await this.photosOf(kind, entityId);
     const images: Record<string, string> = {};
     const content: Record<string, unknown>[] = [];
+    let customHeader: string | null = null;
 
     if (kind === "survey") {
       const s = await this.prisma.main.survey.findUnique({
@@ -212,6 +220,168 @@ export class DocumentationService {
           ["Progres", `${p.progress}%`],
           ["Pembayaran", p.paymentStatus],
           ["Task", p.tasks.map((t) => `${t.name} (${t.status})`).join("; ") || "-"],
+        ]),
+      );
+    } else if (kind === "poc") {
+      const poc = (await (this.prisma.main as any).pocReport.findUnique({
+        where: { id: entityId },
+        include: {
+          customer: { select: { name: true } },
+          project: { select: { name: true } },
+          lead: { select: { name: true } },
+          owner: { select: { name: true } },
+          members: { include: { user: { select: { name: true, role: true } } } },
+          checklists: { orderBy: { id: "asc" } },
+          expenses: { include: { reporter: { select: { name: true } } }, orderBy: { date: "asc" } },
+        },
+      })) as {
+        id: number;
+        number: string;
+        title: string;
+        description?: string | null;
+        type: string;
+        date: Date;
+        endDate?: Date | null;
+        location?: string | null;
+        status: string;
+        resultStatus?: string | null;
+        clientName?: string | null;
+        targetCriteria?: string | null;
+        productsTested?: string | null;
+        budget: number | string | Record<string, unknown>;
+        actualCost: number | string | Record<string, unknown>;
+        companyHeader?: string | null;
+        logoFileId?: number | null;
+        actualExecutionDate?: Date | null;
+        actualAttendees?: string | null;
+        activitiesDone?: string | null;
+        testResults?: string | null;
+        issuesFound?: string | null;
+        followUpNeeded?: string | null;
+        conclusion?: string | null;
+        recommendations?: string | null;
+        customer?: { name: string } | null;
+        project?: { name: string } | null;
+        lead?: { name: string } | null;
+        owner: { name: string };
+        members: Array<{ user: { name: string; role: string } }>;
+        checklists: Array<{ id: number; title: string; isDone: boolean; notes?: string | null }>;
+        expenses: Array<{ id: number; amount: number | string | Record<string, unknown>; status: string; fundingSource?: string; reporter?: { name: string } }>;
+      } | null;
+      if (!poc) throw new NotFoundException("Laporan POC tidak ditemukan");
+      customHeader = poc.companyHeader ?? null;
+
+      if (poc.logoFileId) {
+        try {
+          const logo = await this.upload.read(poc.logoFileId);
+          images["headerLogo"] = `data:image/png;base64,${logo.buffer.toString("base64")}`;
+        } catch {}
+      }
+
+      const clientOrExpo =
+        poc.clientName ||
+        poc.customer?.name ||
+        (poc.lead ? `Lead: ${poc.lead.name}` : "-");
+
+      content.push(
+        this.infoTable([
+          ["Nomor POC", poc.number],
+          ["Judul Kegiatan", poc.title],
+          [
+            "Tipe POC",
+            poc.type === "DEMO_CLIENT"
+              ? "Demo ke Klien"
+              : poc.type === "EXPO_EXHIBITION"
+                ? "Pameran / Expo"
+                : "Pengujian Internal",
+          ],
+          [
+            "Tanggal",
+            new Date(poc.date).toLocaleDateString("id-ID") +
+              (poc.endDate ? ` s/d ${new Date(poc.endDate).toLocaleDateString("id-ID")}` : ""),
+          ],
+          ["Lokasi", poc.location ?? "-"],
+          ["Klien / Partner", clientOrExpo],
+          ["Proyek Terkait", poc.project ? poc.project.name : "-"],
+          ["Status Alur", poc.status],
+          ["Hasil Pengujian", poc.resultStatus ?? "Belum Dievaluasi"],
+          ["PIC / Owner", poc.owner.name],
+          ["Tim yang Bertugas", poc.members.map((m: { user: { name: string } }) => m.user.name).join(", ") || "-"],
+        ]),
+      );
+
+      if (poc.targetCriteria || poc.productsTested || poc.description) {
+        content.push({ text: "Tujuan & Spesifikasi Uji", fontSize: 11, bold: true, margin: [0, 10, 0, 4] });
+        content.push(
+          this.infoTable([
+            ["Target & Kriteria", poc.targetCriteria ?? "-"],
+            ["Perangkat Diuji", poc.productsTested ?? "-"],
+            ["Deskripsi", poc.description ?? "-"],
+          ]),
+        );
+      }
+
+      if (
+        poc.activitiesDone ||
+        poc.testResults ||
+        poc.issuesFound ||
+        poc.followUpNeeded ||
+        poc.conclusion ||
+        poc.recommendations
+      ) {
+        content.push({ text: "Hasil Eksekusi & Evaluasi", fontSize: 11, bold: true, margin: [0, 10, 0, 4] });
+        content.push(
+          this.infoTable([
+            ["Aktivitas Selesai", poc.activitiesDone ?? "-"],
+            ["Hasil Pengujian", poc.testResults ?? "-"],
+            ["Kendala / Temuan", poc.issuesFound ?? "-"],
+            ["Tindak Lanjut", poc.followUpNeeded ?? "-"],
+            ["Kesimpulan", poc.conclusion ?? "-"],
+            ["Rekomendasi", poc.recommendations ?? "-"],
+          ]),
+        );
+      }
+
+      if (poc.checklists.length) {
+        const doneCount = poc.checklists.filter((c: { isDone: boolean }) => c.isDone).length;
+        content.push({
+          text: `Checklist Persiapan (${doneCount}/${poc.checklists.length} Selesai)`,
+          fontSize: 11,
+          bold: true,
+          margin: [0, 10, 0, 4],
+        });
+        content.push({
+          table: {
+            widths: [20, "*", 60],
+            body: [
+              [{ text: "No", bold: true }, { text: "Item Persiapan", bold: true }, { text: "Status", bold: true }],
+              ...poc.checklists.map((c: { title: string; notes?: string | null; isDone: boolean }, idx: number) => [
+                String(idx + 1),
+                c.title + (c.notes ? ` (${c.notes})` : ""),
+                c.isDone ? "SELESAI" : "BELUM",
+              ]),
+            ],
+          },
+          layout: "lightHorizontalLines",
+          fontSize: 8,
+        });
+      }
+
+      const validExp = poc.expenses.filter((e: { status: string }) => e.status !== "REJECTED");
+      const totalCompany = validExp
+        .filter((e: { fundingSource?: string }) => e.fundingSource === "PERUSAHAAN")
+        .reduce((s: number, e: { amount: unknown }) => s + Number(e.amount), 0);
+      const totalPersonal = validExp
+        .filter((e: { fundingSource?: string }) => e.fundingSource === "TALANGAN_PRIBADI")
+        .reduce((s: number, e: { amount: unknown }) => s + Number(e.amount), 0);
+
+      content.push({ text: "Ringkasan Biaya Operasional POC", fontSize: 11, bold: true, margin: [0, 10, 0, 4] });
+      content.push(
+        this.infoTable([
+          ["Total Anggaran", `Rp${Number(poc.budget).toLocaleString("id-ID")}`],
+          ["Total Biaya Aktual", `Rp${Number(poc.actualCost).toLocaleString("id-ID")}`],
+          ["Dana Perusahaan", `Rp${totalCompany.toLocaleString("id-ID")}`],
+          ["Talangan Pribadi Karyawan", `Rp${totalPersonal.toLocaleString("id-ID")}`],
         ]),
       );
     } else {
@@ -279,6 +449,10 @@ export class DocumentationService {
       images: imgs,
       content: [
         { text: TITLE_FOR[kind], fontSize: 14, bold: true, alignment: "center" },
+        ...(imgs["headerLogo"]
+          ? [{ image: "headerLogo", width: 90, alignment: "center", margin: [0, 0, 0, 6] }]
+          : []),
+        { text: customHeader || TITLE_FOR[kind], fontSize: 14, bold: true, alignment: "center" },
         { text: entityLabel.label, fontSize: 10, alignment: "center", margin: [0, 2, 0, 10] },
         ...items,
         {

@@ -112,7 +112,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   const editableKeySet = React.useMemo(() => new Set(editableFields.map((f) => f.key)), [editableFields]);
   const readOnlyFields = React.useMemo(() => {
-    if (!def) return [];
+    if (!def || moduleKey === "poc-reports") return [];
     return def.fields.filter((f) => {
       if (editableKeySet.has(f.key) || f.key === def.statusKey) return false;
       if (moduleKey === "suppliers" && (f.key === "tagSummary" || f.key === "tagInput" || f.key === "tags")) return false;

@@ -801,6 +801,23 @@ export function ProjectExtras({ row }: { row: Row }) {
               </Text>
             }
           />
+          <View className="mt-3 pt-3 border-t border-border flex-row items-center justify-between">
+            <Text className="text-xs text-muted-foreground">Catat biaya bensin, makan lembur, transport:</Text>
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() =>
+                router.push({
+                  pathname: "/expenses/new",
+                  params: { projectId: String(row.id), project: String(row.nama) },
+                } as any)
+              }
+              className="gap-1"
+            >
+              <Plus size={14} color={colors.muted} />
+              <Text className="text-xs font-semibold">Tambah Pengeluaran</Text>
+            </Button>
+          </View>
         </Panel>
       ) : null}
 

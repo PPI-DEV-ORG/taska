@@ -495,7 +495,7 @@ export function getDynamicOptions(
     case "perusahaan":
     case "customer": {
       const custs = (data.customers ?? []).map((r: any) => String(r.nama || r.name || "")).filter(Boolean);
-      if (moduleKey === "projects" || moduleKey === "po-client") return nonEmpty(["-", ...custs], f.options);
+      if (moduleKey === "projects" || moduleKey === "po-client" || moduleKey === "poc-reports") return nonEmpty(["-", ...custs], f.options);
       return nonEmpty(custs, f.options);
     }
     case "sumber":

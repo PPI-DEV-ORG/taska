@@ -36,6 +36,22 @@ export class ExpensesService {
     } catch {}
   }
 
+  private async syncPocCost(pocReportId: number | null | undefined) {
+    if (!pocReportId) return;
+    try {
+      const expenses = await this.prisma.main.expense.findMany({
+        where: { pocReportId, status: { not: "DITOLAK" } },
+        select: { amount: true },
+      });
+      const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+      await this.prisma.main.pocReport.update({
+        where: { id: pocReportId },
+        data: { actualCost: total },
+      });
+      this.notifications.dataChange("poc-reports", "update", pocReportId);
+    } catch {}
+  }
+
   private async where(
     q: PageQuery & {
       status?: string;
@@ -43,6 +59,8 @@ export class ExpensesService {
       projectId?: number;
       surveyId?: number;
       deliveryNoteId?: number;
+      pocReportId?: number;
+      fundingSource?: string;
       from?: string;
       to?: string;
     },
@@ -50,7 +68,7 @@ export class ExpensesService {
   ) {
     const role = (user.role || "").toUpperCase();
     const scope =
-      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) || q.surveyId || q.projectId
+      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) || q.surveyId || q.projectId || q.pocReportId
         ? {}
         : { reporterId: user.id };
     return {
@@ -59,6 +77,8 @@ export class ExpensesService {
       ...(q.reporterId ? { reporterId: q.reporterId } : {}),
       ...(q.projectId ? { projectId: q.projectId } : {}),
       ...(q.surveyId ? { surveyId: q.surveyId } : {}),
+      ...(q.pocReportId ? { pocReportId: q.pocReportId } : {}),
+      ...(q.fundingSource ? { fundingSource: q.fundingSource } : {}),
       ...(q.deliveryNoteId ? { deliveryNoteId: q.deliveryNoteId } : {}),
       ...(q.from || q.to
         ? { date: { ...(q.from ? { gte: new Date(q.from) } : {}), ...(q.to ? { lte: new Date(q.to) } : {}) } }
@@ -155,7 +175,7 @@ export class ExpensesService {
 
   async create(dto: ExpenseDto, user: RequestUser) {
     let costCenterId = dto.projectId ? undefined : dto.costCenterId;
-    if (!dto.projectId && !dto.surveyId && !dto.deliveryNoteId && !costCenterId) {
+    if (!dto.projectId && !dto.surveyId && !dto.deliveryNoteId && !dto.pocReportId && !costCenterId) {
       const cc = await this.prisma.main.costCenter.findFirst();
       costCenterId = cc?.id;
     }
@@ -174,6 +194,13 @@ export class ExpensesService {
         projectId: dto.projectId,
         surveyId: dto.surveyId,
         deliveryNoteId: dto.deliveryNoteId,
+        pocReportId: dto.pocReportId,
+        fundingSource: dto.fundingSource ?? "PERUSAHAAN",
+        reimbursementStatus: dto.fundingSource === "TALANGAN_PRIBADI" ? (dto.reimbursementStatus ?? "DRAFT") : null,
+        paymentMethod: dto.paymentMethod,
+        approvedAmount: dto.approvedAmount,
+        paidAmount: dto.paidAmount,
+        receiptFileIds: dto.receiptFileIds,
         costCenterId,
         receiptFileId: dto.receiptFileId,
         paidFileId: dto.paidFileId,
@@ -185,6 +212,7 @@ export class ExpensesService {
         costCenter: { select: { id: true, name: true } },
         project: { select: { id: true, name: true } },
         survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
+        pocReport: { select: { id: true, number: true, title: true } },
       },
     });
 
@@ -197,6 +225,9 @@ export class ExpensesService {
 
     if (dto.surveyId) {
       await this.syncSurveyCost(dto.surveyId);
+    }
+    if (dto.pocReportId) {
+      await this.syncPocCost(dto.pocReportId);
     }
 
     await this.approvals.request({
@@ -259,6 +290,13 @@ export class ExpensesService {
         projectId: dto.projectId !== undefined ? dto.projectId : row.projectId,
         surveyId: dto.surveyId !== undefined ? dto.surveyId : row.surveyId,
         deliveryNoteId: dto.deliveryNoteId !== undefined ? dto.deliveryNoteId : row.deliveryNoteId,
+        pocReportId: dto.pocReportId !== undefined ? dto.pocReportId : row.pocReportId,
+        fundingSource: dto.fundingSource !== undefined ? dto.fundingSource : row.fundingSource,
+        reimbursementStatus: dto.reimbursementStatus !== undefined ? dto.reimbursementStatus : row.reimbursementStatus,
+        paymentMethod: dto.paymentMethod !== undefined ? dto.paymentMethod : row.paymentMethod,
+        approvedAmount: dto.approvedAmount !== undefined ? dto.approvedAmount : row.approvedAmount,
+        paidAmount: dto.paidAmount !== undefined ? dto.paidAmount : row.paidAmount,
+        receiptFileIds: dto.receiptFileIds !== undefined ? dto.receiptFileIds : row.receiptFileIds,
         costCenterId: dto.costCenterId !== undefined ? dto.costCenterId : row.costCenterId,
         receiptFileId: dto.receiptFileId !== undefined ? dto.receiptFileId : row.receiptFileId,
         paidFileId: dto.paidFileId !== undefined ? dto.paidFileId : row.paidFileId,
@@ -270,6 +308,7 @@ export class ExpensesService {
         costCenter: { select: { id: true, name: true } },
         project: { select: { id: true, name: true } },
         survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
+        pocReport: { select: { id: true, number: true, title: true } },
       },
     });
 
@@ -278,6 +317,12 @@ export class ExpensesService {
     }
     if (row.surveyId && row.surveyId !== updated.surveyId) {
       await this.syncSurveyCost(row.surveyId);
+    }
+    if (updated.pocReportId) {
+      await this.syncPocCost(updated.pocReportId);
+    }
+    if (row.pocReportId && row.pocReportId !== updated.pocReportId) {
+      await this.syncPocCost(row.pocReportId);
     }
 
     await this.audit.log({
@@ -327,6 +372,9 @@ export class ExpensesService {
 
     if (row.surveyId) {
       await this.syncSurveyCost(row.surveyId);
+    }
+    if (row.pocReportId) {
+      await this.syncPocCost(row.pocReportId);
     }
 
     await this.audit.log({
@@ -379,6 +427,9 @@ export class ExpensesService {
     if (row.surveyId) {
       await this.syncSurveyCost(row.surveyId);
     }
+    if (row.pocReportId) {
+      await this.syncPocCost(row.pocReportId);
+    }
     await this.audit.log({
       actor: user,
       action: "HAPUS_PENGELUARAN",
@@ -400,6 +451,9 @@ export class ExpensesService {
     });
     if (row.surveyId) {
       await this.syncSurveyCost(row.surveyId);
+    }
+    if (row.pocReportId) {
+      await this.syncPocCost(row.pocReportId);
     }
     await this.notifications.notify({
       userIds: [row.reporterId],
