@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable, Platform } from "react-native";
+import { View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { Check, ChevronDown, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } from "@/components/taska/basics";
 import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands } from "@/components/taska/dialogs";
-import { DocumentViewerList, type ResolvedDocItem } from "@/components/taska/document-viewer";
+import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { ModuleExtras } from "@/screens/module-extras";
 import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
@@ -81,7 +81,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     };
   }, [moduleKey, id, refreshIndex]);
 
-  const row = remoteRow ? { ...remoteRow, ...rowFromStore } : rowFromStore;
+  const row = React.useMemo(() => {
+    return remoteRow ? { ...remoteRow, ...rowFromStore } : rowFromStore;
+  }, [remoteRow, rowFromStore]);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
@@ -94,33 +96,43 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   const editableFields: CreateField[] = React.useMemo(() => {
     if (!def) return [];
-    const raw = def.createFields?.length
+    let raw = def.createFields?.length
       ? def.createFields
       : def.fields.map((f) => ({
           key: f.key,
           label: f.label,
           type: (f.fmt === "rupiah" || f.fmt === "number" ? "number" : f.fmt === "date" ? "date" : "text") as any,
         }));
+    if (moduleKey === "suppliers") {
+      raw = raw.filter((f) => f.key !== "tagInput" && f.key !== "tagSummary" && f.key !== "tags");
+    }
     return raw.filter((f) => f.type !== "file");
-  }, [def]);
+  }, [def, moduleKey]);
 
   const editableKeySet = React.useMemo(() => new Set(editableFields.map((f) => f.key)), [editableFields]);
   const readOnlyFields = React.useMemo(() => {
     if (!def) return [];
-    return def.fields.filter((f) => !editableKeySet.has(f.key) && f.key !== def.statusKey);
-  }, [def, editableKeySet]);
+    return def.fields.filter((f) => {
+      if (editableKeySet.has(f.key) || f.key === def.statusKey) return false;
+      if (moduleKey === "suppliers" && (f.key === "tagSummary" || f.key === "tagInput" || f.key === "tags")) return false;
+      return true;
+    });
+  }, [def, editableKeySet, moduleKey]);
 
-  function getInitialFieldValue(f: CreateField, r: Row) {
-    if (f.type === "password") return "";
-    let rawVal = r[f.key];
-    if (moduleKey === "supplier-pos" && f.key === "item" && rawVal) {
-      rawVal = String(rawVal).replace(/\s*x\s*\d+.*$/, "").trim();
-    }
-    if (rawVal != null && rawVal !== "-") {
-      return f.type === "number" ? formatThousands(String(rawVal)) : String(rawVal);
-    }
-    return "";
-  }
+  const getInitialFieldValue = React.useCallback(
+    (f: CreateField, r: Row) => {
+      if (f.type === "password") return "";
+      let rawVal = r[f.key];
+      if (moduleKey === "supplier-pos" && f.key === "item" && rawVal) {
+        rawVal = String(rawVal).replace(/\s*x\s*\d+.*$/, "").trim();
+      }
+      if (rawVal != null && rawVal !== "-") {
+        return f.type === "number" ? formatThousands(String(rawVal)) : String(rawVal);
+      }
+      return "";
+    },
+    [moduleKey]
+  );
 
   const [edits, setEdits] = React.useState<Record<string, any>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
@@ -231,7 +243,16 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       const original = getInitialFieldValue(f, row);
       return current !== original;
     });
-  }, [editableFields, edits, row, canEdit, moduleKey, initialQuotationPpnMode]);
+  }, [
+    editableFields,
+    edits,
+    row,
+    canEdit,
+    moduleKey,
+    initialQuotationPpnMode,
+    initialQuotationPphMode,
+    getInitialFieldValue,
+  ]);
 
   const floatingStyle = React.useMemo<any>(() => {
     const left = isMobile ? 0 : bp === "tablet" ? 76 : 256;
@@ -319,15 +340,19 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       patch.po = (String(patch.po).split(" - ")[0] ?? "").trim();
     }
 
-    if (moduleKey === "supplier-pos" && patch.supplier) {
+    if ((moduleKey === "supplier-pos" || moduleKey === "po-client") && patch.supplier) {
+      const cleanSupp = (String(patch.supplier).split(" - ")[0] ?? "").trim();
       const suppList = (data.suppliers ?? []);
       const match = suppList.find(
-        (s: any) =>
-          String(s.nama || s.name || "").trim().toLowerCase() === String(patch.supplier).trim().toLowerCase()
+        (s: any) => {
+          const sName = String(s.nama || s.name || "").trim().toLowerCase();
+          return sName === String(patch.supplier).trim().toLowerCase() || sName === cleanSupp.toLowerCase();
+        }
       );
       if (match?.id) {
         patch.supplierId = Number(match.id);
       }
+      patch.supplier = cleanSupp;
     }
 
     setSaving(true);
@@ -355,36 +380,6 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       (q: Row) => (q.leadId && String(q.leadId) === String(row.id)) || (q.lead && q.lead.toLowerCase() === row.nama?.toLowerCase())
     );
   }, [isLead, data.quotations, row]);
-
-  const leadProject = React.useMemo(() => {
-    if (!isLead || !row) return null;
-    const custName = (row.perusahaan || row.customer || "").trim().toLowerCase();
-    const leadName = (row.nama || "").trim().toLowerCase();
-    return (data.projects ?? []).find((p: Row) => {
-      if (p.leadId && String(p.leadId) === String(row.id)) return true;
-      if (leadQuotation && p.quotationId && String(p.quotationId) === String(leadQuotation.id)) return true;
-      if (row.customerId && p.customerId && String(p.customerId) === String(row.customerId)) return true;
-      if (custName && p.customer && p.customer.trim().toLowerCase() === custName) return true;
-      if (leadName && p.nama && p.nama.trim().toLowerCase().includes(leadName)) return true;
-      return false;
-    });
-  }, [isLead, data.projects, leadQuotation, row]);
-
-  const leadHasInvoice = React.useMemo(() => {
-    if (!isLead || !row) return false;
-    const custName = (row.perusahaan || row.customer || "").trim().toLowerCase();
-    const projId = leadProject ? String(leadProject.id) : null;
-    const projName = leadProject ? String(leadProject.nama).trim().toLowerCase() : null;
-
-    return (data.invoices ?? []).some((inv: Row) => {
-      if (inv.leadId && String(inv.leadId) === String(row.id)) return true;
-      if (row.customerId && inv.customerId && String(inv.customerId) === String(row.customerId)) return true;
-      if (projId && inv.projectId && String(inv.projectId) === projId) return true;
-      if (projName && inv.project && String(inv.project).trim().toLowerCase() === projName) return true;
-      if (custName && inv.customer && String(inv.customer).trim().toLowerCase() === custName) return true;
-      return false;
-    });
-  }, [isLead, data.invoices, leadProject, row]);
 
   if (!def || !row) {
     return <EmptyState title="Data tidak ditemukan" text="Dokumen ini mungkin sudah diarsipkan atau tautannya salah." actionLabel="Kembali ke daftar" onAction={() => router.replace(`/${moduleKey}` as any)} />;
@@ -688,7 +683,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 : undefined
             }
           >
-            <InfoGrid fields={def.fields} row={row} />
+            <InfoGrid
+              fields={
+                moduleKey === "suppliers"
+                  ? def.fields.filter((f) => f.key !== "tagSummary" && f.key !== "tagInput" && f.key !== "tags")
+                  : def.fields
+              }
+              row={row}
+            />
           </Panel>
         ) : editableFields.length > 0 || readOnlyFields.length > 0 ? (
           <Panel title="Informasi">

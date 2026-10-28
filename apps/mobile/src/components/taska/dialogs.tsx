@@ -501,7 +501,27 @@ export function getDynamicOptions(
     case "sumber":
       return nonEmpty((data.leadSources ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
     case "supplier": {
-      const supps = (data.suppliers ?? []).map((r: any) => String(r.nama)).filter(Boolean);
+      const supps = (data.suppliers ?? []).map((r: any) => {
+        const name = String(r.nama || r.name || "").trim();
+        if (!name) return "";
+        let tagText = "";
+        if (r.tagSummary) {
+          tagText = String(r.tagSummary).trim();
+        } else if (Array.isArray(r.tags) && r.tags.length > 0) {
+          tagText = r.tags
+            .map((t: any) => (typeof t === "string" ? t : t.itemName || t.nama || ""))
+            .filter(Boolean)
+            .join(", ");
+        } else if (Array.isArray(r.itemTags) && r.itemTags.length > 0) {
+          tagText = r.itemTags
+            .map((t: any) => (typeof t === "string" ? t : t.itemName || t.nama || ""))
+            .filter(Boolean)
+            .join(", ");
+        } else if (r.tagInput) {
+          tagText = String(r.tagInput).trim();
+        }
+        return tagText ? `${name} - ${tagText}` : name;
+      }).filter(Boolean);
       if (moduleKey === "po-client") return nonEmpty(["-", ...supps], f.options);
       return nonEmpty(supps, f.options);
     }
@@ -807,6 +827,22 @@ export function FormDialog({
           row.nomorPoClient = `PO/${ym}/${seq}`;
         }
         row.nomor = row.nomorSo;
+      }
+    }
+    if (def?.key === "supplier-pos" || def?.key === "po-client") {
+      if (row.supplier) {
+        const cleanSupp = (String(row.supplier).split(" - ")[0] ?? "").trim();
+        const suppList = (data.suppliers ?? []);
+        const match = suppList.find(
+          (s: any) => {
+            const sName = String(s.nama || s.name || "").trim().toLowerCase();
+            return sName === String(row.supplier).trim().toLowerCase() || sName === cleanSupp.toLowerCase();
+          }
+        );
+        if (match?.id) {
+          row.supplierId = Number(match.id);
+        }
+        row.supplier = cleanSupp;
       }
     }
     if (def?.key === "supplier-pos") {

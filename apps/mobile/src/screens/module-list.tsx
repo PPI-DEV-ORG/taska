@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronRight, Plus, Trash2 } from "lucide-react-native";
+import { ChevronRight, Plus, Trash2, CreditCard } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { EmptyState, PageHeader, Chip } from "@/components/taska/basics";
@@ -14,6 +14,7 @@ import {
   SupplierInvoiceDetailDialog,
   SupplierInvoicePayDialog,
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
+import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { compareDesc } from "@/lib/format";
 
@@ -114,13 +115,14 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       void refreshModule(def.key);
       if (def.key === "invoices" || def.key === "supplier-pos") void refreshModule("invoiceIn");
     }
-  }, [def?.key]);
+  }, [def?.key, refreshModule]);
 
   const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "receipts" | "in">("all");
   const [poTab, setPoTab] = React.useState<"po" | "faktur" | "pembayaran">("po");
   const [damageTab, setDamageTab] = React.useState<"all" | "kerusakan" | "retur-sales" | "retur-purchase">("all");
   const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
   const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
+  const [paymentTermsOpen, setPaymentTermsOpen] = React.useState(false);
 
   const clientReceipts = React.useMemo(() => {
     const list: Row[] = [];
@@ -374,10 +376,25 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
 
   const allowed = canCreate(def, user!.role);
   const deleteAllowed = canDelete(def, user!.role);
+  const canManagePaymentTerms = def.key === "suppliers" && ["super_admin", "admin", "bos", "procurement", "finance"].includes(user!.role);
+
   const action = allowed ? (
-    <Button onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}>
-      <Plus size={16} color={colors.background} />
-      <Text>{def.createLabel ?? `Tambah ${def.singular}`}</Text>
+    <View className="flex-row items-center gap-2">
+      {canManagePaymentTerms ? (
+        <Button variant="outline" onPress={() => setPaymentTermsOpen(true)} className="gap-1.5 h-10 px-3">
+          <CreditCard size={15} color={colors.primary} />
+          <Text className="text-xs font-semibold">Atur Syarat Pembayaran</Text>
+        </Button>
+      ) : null}
+      <Button onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}>
+        <Plus size={16} color={colors.background} />
+        <Text>{def.createLabel ?? `Tambah ${def.singular}`}</Text>
+      </Button>
+    </View>
+  ) : canManagePaymentTerms ? (
+    <Button variant="outline" onPress={() => setPaymentTermsOpen(true)} className="gap-1.5 h-10 px-3">
+      <CreditCard size={15} color={colors.primary} />
+      <Text className="text-xs font-semibold">Atur Syarat Pembayaran</Text>
     </Button>
   ) : undefined;
 
@@ -570,6 +587,11 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         onSuccess={() => {
           setSelectedSupplierInvoice(null);
         }}
+      />
+
+      <SupplierPaymentTermsDialog
+        open={paymentTermsOpen}
+        onOpenChange={setPaymentTermsOpen}
       />
     </>
   );
