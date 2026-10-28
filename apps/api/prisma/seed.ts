@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import bcrypt from "bcryptjs";
@@ -114,6 +115,25 @@ async function main() {
     });
   }
   console.log(`Seed OK: ${lostReasons.length} Alasan Gagal`);
+
+  // ─── Jenis Aktivitas Kunjungan (VisitActivityType) sesuai PRD ───
+  const visitActivityTypes = [
+    "Product Introduction",
+    "Product Presentation / Demo",
+    "Business Meeting",
+    "Project Coordination",
+    "Negotiation",
+    "Follow-up Meeting",
+    "Other",
+  ];
+  for (const name of visitActivityTypes) {
+    await prisma.visitActivityType.upsert({
+      where: { name },
+      update: {},
+      create: { name, status: "AKTIF" },
+    });
+  }
+  console.log(`Seed OK: ${visitActivityTypes.length} Jenis Aktivitas Kunjungan`);
 
   // ─── Kategori Pengeluaran (ExpenseCategory) sesuai PRD ───
   const expenseCategories = [

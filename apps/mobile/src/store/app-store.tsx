@@ -261,6 +261,7 @@ const emptyDB = (): DB => ({
   productCategories: [], leadSources: [], lostReasons: [], expenseCategories: [], costCenters: [],
   followups: [], issueReports: [], opname: [], users: [], "audit-log": [],
   serials: [], movements: [], reservations: [], invoiceIn: [], "poc-reports": [],
+  "visit-reports": [], "visit-activity-types": [],
 });
 
 /** Modul yang diambil dari backend saat load. Beberapa dibuat lazily (tasks, stock) karena mahal. */
@@ -270,7 +271,7 @@ const EAGER_MODULES = [
   "damage-reports", "customers", "suppliers", "warehouses", "products",
   "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
   "opname", "users", "audit-log", "serials", "movements", "reservations", "followups", "invoiceIn",
-  "poc-reports",
+  "poc-reports", "visit-reports", "visit-activity-types",
 ] as const;
 
 async function fetchList(module: string): Promise<Row[]> {
@@ -1344,8 +1345,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const auditItems = (data["audit-log"] ?? [])
         .filter((al: any) => {
-          const m = String(al.jenis || "").toLowerCase();
-          const matchModule = m === module || m === module.replace(/s$/, "") || m === module + "s";
+          const m = String(al.jenis || "").toLowerCase().replace(/[-_]/g, "");
+          const mod = String(module || "").toLowerCase().replace(/[-_]/g, "");
+          const matchModule =
+            m === mod ||
+            m === mod.replace(/s$/, "") ||
+            m === mod + "s" ||
+            (mod.startsWith("visit") && m.startsWith("visit")) ||
+            (mod.startsWith("poc") && m.startsWith("poc"));
           return matchModule && String(al.refId) === String(id);
         })
         .map((al: any) => ({

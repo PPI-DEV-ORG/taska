@@ -13,6 +13,8 @@ export type QuotationItemData = {
   serialUnitIds?: number[];
   serialNumbers?: string[];
   outOfStockAutoSwap?: boolean;
+  pphMode?: string;
+  tipePph?: string;
 };
 
 export type QuotationMeta = {

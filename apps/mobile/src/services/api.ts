@@ -329,7 +329,7 @@ export async function uploadMasterImport(
 
 /** Unduh PDF kompilasi dokumentasi (survey, project, delivery-note, poc) dari server. */
 export async function downloadDocumentationPdf(
-  kind: "survey" | "project" | "delivery-note" | "poc",
+  kind: "survey" | "project" | "delivery-note" | "poc" | "visit",
   entityId: string | number,
 ): Promise<boolean> {
   if (typeof window === "undefined" || typeof document === "undefined") return false;

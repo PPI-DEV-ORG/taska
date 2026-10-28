@@ -50,6 +50,18 @@ export const colors = {
   get muted() {
     return currentMode === "light" ? LIGHT_SURFACE.muted : DARK_SURFACE.muted;
   },
+  get foreground() {
+    return currentMode === "light" ? LIGHT_SURFACE.text : DARK_SURFACE.text;
+  },
+  get textMuted() {
+    return currentMode === "light" ? LIGHT_SURFACE.textSecondary : DARK_SURFACE.textSecondary;
+  },
+  get mutedForeground() {
+    return currentMode === "light" ? LIGHT_SURFACE.textSecondary : DARK_SURFACE.textSecondary;
+  },
+  get accent() {
+    return "#EB5E28";
+  },
   primary: "#EB5E28",
   primaryHover: "#FF7A45",
   primaryPressed: "#D14E1C",

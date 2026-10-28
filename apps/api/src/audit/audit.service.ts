@@ -69,17 +69,32 @@ export class AuditService {
       rawType.replace(/s$/, ""),
       rawType + "s",
     ]);
-    if (rawType.startsWith("poc") || rawType.includes("poc")) {
+    if (rawType.startsWith("poc") || rawType === "poc-reports" || rawType === "poc-report") {
       variants.add("pocReport");
       variants.add("pocReports");
       variants.add("poc-reports");
       variants.add("poc-report");
       variants.add("poc");
-    } else if (rawType.includes("pos") || rawType.includes("po")) {
+    } else if (rawType.startsWith("visit") || rawType === "visit-reports" || rawType === "visit-report") {
+      variants.add("visitReport");
+      variants.add("visitReports");
+      variants.add("visit-reports");
+      variants.add("visit-report");
+      variants.add("visit");
+    } else if (
+      rawType === "po" ||
+      rawType === "pos" ||
+      rawType === "supplier-pos" ||
+      rawType === "supplier-po" ||
+      rawType === "supplierpo" ||
+      rawType === "po-client" ||
+      rawType === "client-po"
+    ) {
       variants.add("supplier-pos");
       variants.add("supplierPO");
       variants.add("supplier-po");
       variants.add("client-po");
+      variants.add("clientPO");
     }
     if (rawType.includes("note")) {
       variants.add("delivery-notes");

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView, Image } from "react-native";
+import { View, ScrollView, Image, Pressable } from "react-native";
 import { FileDown, Plus, Trash2, Edit3, Eye, Package } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";

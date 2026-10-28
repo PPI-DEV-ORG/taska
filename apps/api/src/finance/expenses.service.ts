@@ -51,6 +51,7 @@ export class ExpensesService {
       surveyId?: number;
       deliveryNoteId?: number;
       pocReportId?: number;
+      visitReportId?: number;
       fundingSource?: string;
       from?: string;
       to?: string;
@@ -59,7 +60,7 @@ export class ExpensesService {
   ) {
     const role = (user.role || "").toUpperCase();
     const scope =
-      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) || q.surveyId || q.projectId || q.pocReportId
+      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) || q.surveyId || q.projectId || q.pocReportId || q.visitReportId
         ? {}
         : { reporterId: user.id };
     return {
@@ -69,6 +70,7 @@ export class ExpensesService {
       ...(q.projectId ? { projectId: q.projectId } : {}),
       ...(q.surveyId ? { surveyId: q.surveyId } : {}),
       ...(q.pocReportId ? { pocReportId: q.pocReportId } : {}),
+      ...(q.visitReportId ? { visitReportId: q.visitReportId } : {}),
       ...(q.fundingSource ? { fundingSource: q.fundingSource } : {}),
       ...(q.deliveryNoteId ? { deliveryNoteId: q.deliveryNoteId } : {}),
       ...(q.from || q.to
@@ -102,6 +104,7 @@ export class ExpensesService {
           survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
           deliveryNote: { select: { id: true, number: true } },
           pocReport: { select: { id: true, number: true, title: true } },
+          visitReport: { select: { id: true, number: true, title: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
         ...pageSkip(q),
@@ -145,6 +148,7 @@ export class ExpensesService {
         survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
         deliveryNote: { select: { id: true, number: true } },
         pocReport: { select: { id: true, number: true, title: true } },
+        visitReport: { select: { id: true, number: true, title: true } },
       },
     });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
@@ -168,7 +172,7 @@ export class ExpensesService {
 
   async create(dto: ExpenseDto, user: RequestUser) {
     let costCenterId = dto.projectId ? undefined : dto.costCenterId;
-    if (!dto.projectId && !dto.surveyId && !dto.deliveryNoteId && !dto.pocReportId && !costCenterId) {
+    if (!dto.projectId && !dto.surveyId && !dto.deliveryNoteId && !dto.pocReportId && !dto.visitReportId && !costCenterId) {
       const cc = await this.prisma.main.costCenter.findFirst();
       costCenterId = cc?.id;
     }
@@ -188,6 +192,7 @@ export class ExpensesService {
         surveyId: dto.surveyId,
         deliveryNoteId: dto.deliveryNoteId,
         pocReportId: dto.pocReportId,
+        visitReportId: dto.visitReportId,
         fundingSource: dto.fundingSource ?? "PERUSAHAAN",
         reimbursementStatus: dto.fundingSource === "TALANGAN_PRIBADI" ? (dto.reimbursementStatus ?? "DRAFT") : null,
         paymentMethod: dto.paymentMethod,
@@ -206,6 +211,7 @@ export class ExpensesService {
         project: { select: { id: true, name: true } },
         survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
         pocReport: { select: { id: true, number: true, title: true } },
+        visitReport: { select: { id: true, number: true, title: true } },
       },
     });
 
@@ -284,6 +290,7 @@ export class ExpensesService {
         surveyId: dto.surveyId !== undefined ? dto.surveyId : row.surveyId,
         deliveryNoteId: dto.deliveryNoteId !== undefined ? dto.deliveryNoteId : row.deliveryNoteId,
         pocReportId: dto.pocReportId !== undefined ? dto.pocReportId : row.pocReportId,
+        visitReportId: dto.visitReportId !== undefined ? dto.visitReportId : row.visitReportId,
         fundingSource: dto.fundingSource !== undefined ? dto.fundingSource : row.fundingSource,
         reimbursementStatus: dto.reimbursementStatus !== undefined ? dto.reimbursementStatus : row.reimbursementStatus,
         paymentMethod: dto.paymentMethod !== undefined ? dto.paymentMethod : row.paymentMethod,
@@ -302,6 +309,7 @@ export class ExpensesService {
         project: { select: { id: true, name: true } },
         survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
         pocReport: { select: { id: true, number: true, title: true } },
+        visitReport: { select: { id: true, number: true, title: true } },
       },
     });
 

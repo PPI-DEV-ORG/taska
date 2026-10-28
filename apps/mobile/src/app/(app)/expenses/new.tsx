@@ -41,6 +41,9 @@ export default function NewExpenseScreen() {
     pocId?: string;
     pocReportId?: string;
     poc?: string;
+    visitId?: string;
+    visitReportId?: string;
+    visit?: string;
   }>();
 
   const [tanggalNota, setTanggalNota] = React.useState(new Date().toISOString().slice(0, 10));
@@ -75,13 +78,25 @@ export default function NewExpenseScreen() {
     return "-";
   }, [params.poc, params.pocId, params.pocReportId, data]);
 
+  const defaultVisit = React.useMemo(() => {
+    const vId = params.visitId || params.visitReportId;
+    if (params.visit) return String(params.visit);
+    if (vId) {
+      const match = ((data as any)["visit-reports"] ?? []).find((v: any) => String(v.id) === String(vId));
+      return match ? `VISIT ${match.nomor || match.number} - ${match.judul || match.title}` : "-";
+    }
+    return "-";
+  }, [params.visit, params.visitId, params.visitReportId, data]);
+
   const [customProject, setCustomProject] = React.useState<string | null>(null);
   const [customSurvey, setCustomSurvey] = React.useState<string | null>(null);
   const [customPoc, setCustomPoc] = React.useState<string | null>(null);
+  const [customVisit, setCustomVisit] = React.useState<string | null>(null);
 
   const selectedProject = customProject ?? defaultProject;
   const selectedSurvey = customSurvey ?? defaultSurvey;
   const selectedPoc = customPoc ?? defaultPoc;
+  const selectedVisit = customVisit ?? defaultVisit;
 
   const [sumberDana, setSumberDana] = React.useState<"Dana Perusahaan" | "Talangan Pribadi (Reimbursement)">("Dana Perusahaan");
   const [alasan, setAlasan] = React.useState("");
@@ -101,6 +116,14 @@ export default function NewExpenseScreen() {
     return [
       "-",
       ...list.map((p: any) => `POC ${p.nomor || p.number} - ${p.judul || p.title}`),
+    ];
+  }, [data]);
+
+  const visitOptions = React.useMemo(() => {
+    const list = (data as any)["visit-reports"] ?? [];
+    return [
+      "-",
+      ...list.map((v: any) => `VISIT ${v.nomor || v.number} - ${v.judul || v.title}`),
     ];
   }, [data]);
 
@@ -152,6 +175,19 @@ export default function NewExpenseScreen() {
           ? Number(pId)
           : undefined;
 
+    const visitList = ((data as any)["visit-reports"] ?? []);
+    const vId = params.visitId || params.visitReportId;
+    const foundVisit = visitList.find((v: any) => {
+      const opt = `VISIT ${v.nomor || v.number} - ${v.judul || v.title}`;
+      return opt === selectedVisit || (vId && String(v.id) === String(vId));
+    });
+    const resolvedVisitReportId =
+      foundVisit?.id != null
+        ? Number(foundVisit.id)
+        : vId
+          ? Number(vId)
+          : undefined;
+
     const isTalangan = sumberDana === "Talangan Pribadi (Reimbursement)";
     const fundingSource = isTalangan ? "TALANGAN_PRIBADI" : "PERUSAHAAN";
     const reimbursementStatus = isTalangan ? "SUBMITTED" : null;
@@ -167,6 +203,8 @@ export default function NewExpenseScreen() {
       surveyId: resolvedSurveyId,
       pocReport: selectedPoc,
       pocReportId: resolvedPocReportId,
+      visitReport: selectedVisit,
+      visitReportId: resolvedVisitReportId,
       fundingSource,
       sumberDana,
       reimbursementStatus,
@@ -259,6 +297,15 @@ export default function NewExpenseScreen() {
               onChange={setCustomPoc}
               options={pocOptions}
               placeholder="Pilih kegiatan POC jika ada"
+            />
+          </FormField>
+
+          <FormField label="Terkait Kunjungan / Offline Meeting (Opsional)">
+            <SearchableSelect
+              value={selectedVisit}
+              onChange={setCustomVisit}
+              options={visitOptions}
+              placeholder="Pilih aktivitas kunjungan jika ada"
             />
           </FormField>
 

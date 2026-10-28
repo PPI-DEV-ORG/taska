@@ -24,10 +24,10 @@ export function DocumentationPhotosPanel({
   title,
   subtitle,
 }: {
-  kind: "survey" | "project" | "delivery-note" | "poc";
+  kind: "survey" | "project" | "delivery-note" | "poc" | "visit";
   entityId: string | number;
   title: string;
-  subtitle: string;
+  subtitle?: string;
 }) {
   const { toast } = useApp();
   const [photos, setPhotos] = React.useState<DocPhotoItem[]>([]);

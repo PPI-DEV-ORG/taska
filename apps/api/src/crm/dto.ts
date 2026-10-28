@@ -266,6 +266,8 @@ export class QuotationDto {
     serialUnitIds?: number[];
     serialNumbers?: string[];
     outOfStockAutoSwap?: boolean;
+    pphMode?: string;
+    tipePph?: string;
   }>;
 
   @IsOptional() @IsString()

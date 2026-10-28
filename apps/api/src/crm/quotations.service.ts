@@ -77,7 +77,7 @@ export class QuotationsService {
       item: String(it.item ?? "").trim(),
       qty: Number(it.qty) || (serialNumbers.length > 0 ? serialNumbers.length : 1),
       satuan: String(it.satuan || "Unit").trim(),
-      harga: Number(it.harga) || 0,
+      harga: Number(it.harga ?? it.price ?? 0) || 0,
       kind,
       ...(it.productId ? { productId: Number(it.productId) } : {}),
       ...(it.sku ? { sku: String(it.sku) } : {}),
@@ -85,6 +85,8 @@ export class QuotationsService {
       ...(serialUnitIds.length > 0 ? { serialUnitIds } : {}),
       ...(serialNumbers.length > 0 ? { serialNumbers } : {}),
       ...(it.outOfStockAutoSwap ? { outOfStockAutoSwap: true } : {}),
+      ...(it.pphMode ? { pphMode: String(it.pphMode) } : {}),
+      ...(it.tipePph ? { tipePph: String(it.tipePph) } : {}),
     };
   }
 
@@ -337,10 +339,16 @@ export class QuotationsService {
     const discount = dto?.discount ?? 0;
     const netBeforeTax = Math.max(0, total - discount);
     const ppn = dto?.ppn !== undefined ? dto.ppn : Math.round(netBeforeTax * 0.11);
+    const itemsPph = items.reduce((acc, it) => {
+      const mode = (it as any).pphMode || "none";
+      const rate = mode === "pph21" ? 0.005 : mode === "pph23" ? 0.02 : mode === "pph4_2" ? 0.0175 : mode === "pph22" ? 0.015 : 0;
+      return acc + Math.round((Number(it.qty) || 0) * (Number(it.harga) || 0) * rate);
+    }, 0);
+    const pph = dto?.pph !== undefined ? dto.pph : itemsPph;
     const grandTotal =
-      dto?.grandTotal !== undefined && itemsSum === 0 && (dto?.ppn !== undefined || dto.grandTotal >= netBeforeTax + ppn)
+      dto?.grandTotal !== undefined
         ? dto.grandTotal
-        : netBeforeTax + ppn;
+        : Math.max(0, netBeforeTax + ppn - pph);
     const mappedStatus =
       normalizeQuotationStatus(dto?.status) ?? (grandTotal > 0 || items.length > 0 ? "DRAFT" : "NOT_YET");
 
@@ -387,6 +395,9 @@ export class QuotationsService {
           customerAddress: dto?.customerAddress,
           signerName: dto?.signerName,
           signerTitle: dto?.signerTitle,
+          pph,
+          pphMode: dto?.pphMode ?? (pph > 0 ? "pph23" : "none"),
+          tipePph: dto?.tipePph ?? (pph > 0 ? "PPh 23" : "Tanpa PPh"),
         },
         user,
       );
@@ -444,10 +455,16 @@ export class QuotationsService {
       dto.ppn !== undefined
         ? dto.ppn
         : Math.round(netBeforeTax * 0.11);
+    const itemsPph = activeItems.reduce((acc, it) => {
+      const mode = (it as any).pphMode || "none";
+      const rate = mode === "pph21" ? 0.005 : mode === "pph23" ? 0.02 : mode === "pph4_2" ? 0.0175 : mode === "pph22" ? 0.015 : 0;
+      return acc + Math.round((Number(it.qty) || 0) * (Number(it.harga) || 0) * rate);
+    }, 0);
+    const pph = dto.pph !== undefined ? dto.pph : (itemsPph > 0 ? itemsPph : Number((existingMeta as any)?.pph ?? 0));
     const grandTotal =
-      dto.grandTotal !== undefined && items === undefined && dto.total === undefined && dto.discount === undefined
+      dto.grandTotal !== undefined
         ? dto.grandTotal
-        : netBeforeTax + ppn;
+        : Math.max(0, netBeforeTax + ppn - pph);
 
     const mappedStatus = normalizeQuotationStatus(dto.status);
     const nextVersion =
@@ -506,6 +523,9 @@ export class QuotationsService {
           ...(dto.customerAddress !== undefined ? { customerAddress: dto.customerAddress } : {}),
           ...(dto.signerName !== undefined ? { signerName: dto.signerName } : {}),
           ...(dto.signerTitle !== undefined ? { signerTitle: dto.signerTitle } : {}),
+          ...(dto.pph !== undefined || pph !== undefined ? { pph: dto.pph ?? pph } : {}),
+          ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
+          ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
           ...(f ? { latestFileId: f.id, latestFileName: f.originalName } : {}),
         },
         user.id,

@@ -31,7 +31,8 @@ export type ModuleKey =
   | "audit"
   | "attendance"
   | "payroll"
-  | "pocReports";
+  | "pocReports"
+  | "visitReports";
 
 const ALL: Record<ModuleKey, Action[]> = {
   dashboard: ["L", "C", "U", "A"],
@@ -65,6 +66,7 @@ const ALL: Record<ModuleKey, Action[]> = {
   attendance: ["L", "C", "U", "A"],
   payroll: ["L", "C", "U", "A"],
   pocReports: ["L", "C", "U", "A"],
+  visitReports: ["L", "C", "U", "A"],
 };
 
 function grant(actions: string): Action[] {
@@ -101,6 +103,7 @@ export const PERMISSIONS: Record<string, Table> = {
     delivery: "LCU",
     expenses: "LCU",
     pocReports: "LCU",
+    visitReports: "LCU",
     reports: "L",
   },
 
@@ -129,6 +132,7 @@ export const PERMISSIONS: Record<string, Table> = {
     delivery: "LCU",
     expenses: "LCU",
     pocReports: "LCU",
+    visitReports: "LCU",
     approvals: "LA",
     reports: "L",
   },
@@ -148,6 +152,7 @@ export const PERMISSIONS: Record<string, Table> = {
     delivery: "LCU",
     expenses: "LCU",
     pocReports: "LCU",
+    visitReports: "LCU",
     reports: "L",
   },
 
@@ -168,6 +173,7 @@ export const PERMISSIONS: Record<string, Table> = {
     delivery: "LCU",
     expenses: "LCU",
     pocReports: "LCU",
+    visitReports: "LCU",
     approvals: "LA",
     reports: "L",
   },
@@ -195,6 +201,7 @@ export const PERMISSIONS: Record<string, Table> = {
     delivery: "LCUA",
     expenses: "LCUA",
     pocReports: "LCUA",
+    visitReports: "LCUA",
     approvals: "LUA",
     reports: "L",
     archive: "L",
@@ -217,6 +224,7 @@ export const PERMISSIONS: Record<string, Table> = {
     delivery: "LCU",
     expenses: "LCU",
     pocReports: "LCU",
+    visitReports: "LCU",
     approvals: "LA",
     reports: "L",
   },
@@ -236,6 +244,7 @@ export const PERMISSIONS: Record<string, Table> = {
     delivery: "LCU",
     expenses: "LCU",
     pocReports: "LCU",
+    visitReports: "LCU",
     reports: "L",
   },
 };

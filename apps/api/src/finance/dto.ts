@@ -291,6 +291,9 @@ export class ExpenseDto {
   @IsOptional() @IsInt()
   pocReportId?: number;
 
+  @IsOptional() @IsInt()
+  visitReportId?: number;
+
   @IsOptional() @IsString()
   fundingSource?: string;
 

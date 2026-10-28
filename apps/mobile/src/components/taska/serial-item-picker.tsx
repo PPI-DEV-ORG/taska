@@ -28,6 +28,7 @@ import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { formatThousands } from "@/lib/format";
+import { pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import type { QuotationItem } from "@/modules/quotation/types";
 
 type Props = {
@@ -59,18 +60,24 @@ export function SerialItemPickerModal({
   const [goodsUnit, setGoodsUnit] = React.useState("Unit");
   const [goodsPrice, setGoodsPrice] = React.useState("");
   const [customItemLabel, setCustomItemLabel] = React.useState("");
-  const [goodsPphMode, setGoodsPphMode] = React.useState("none");
+  const [goodsPphMode, setGoodsPphMode] = React.useState<PphMode>("none");
 
   // Service tab states
   const [serviceName, setServiceName] = React.useState("");
   const [serviceQty, setServiceQty] = React.useState("1");
   const [serviceUnit, setServiceUnit] = React.useState("Lot");
   const [servicePrice, setServicePrice] = React.useState("");
-  const [servicePphMode, setServicePphMode] = React.useState("none");
+  const [servicePphMode, setServicePphMode] = React.useState<PphMode>("none");
 
   // Quick batch register modal inside picker
   const [batchRegisterOpen, setBatchRegisterOpen] = React.useState(false);
   const [fallbackSerials, setFallbackSerials] = React.useState<any[]>([]);
+
+  const handleClose = () => {
+    setGoodsPphMode("none");
+    setServicePphMode("none");
+    onClose();
+  };
 
   React.useEffect(() => {
     if (!open) return;
@@ -302,6 +309,7 @@ export function SerialItemPickerModal({
           kind: "SERVICE",
           hasSerial: false,
           pphMode: servicePphMode,
+          tipePph: pphModeToTipe(servicePphMode),
         },
       ]);
       setServiceName("");
@@ -353,6 +361,7 @@ export function SerialItemPickerModal({
           serialUnitIds: [Number(sRow.id)],
           serialNumbers: [String(sRow.sn)],
           pphMode: goodsPphMode,
+          tipePph: pphModeToTipe(goodsPphMode),
         }));
         onAddItems(newItems);
       } else {
@@ -372,6 +381,7 @@ export function SerialItemPickerModal({
             serialUnitIds: sIds,
             serialNumbers: sns,
             pphMode: goodsPphMode,
+            tipePph: pphModeToTipe(goodsPphMode),
           },
         ]);
       }
@@ -389,16 +399,17 @@ export function SerialItemPickerModal({
           sku: selectedProduct.sku || undefined,
           hasSerial: false,
           pphMode: goodsPphMode,
+          tipePph: pphModeToTipe(goodsPphMode),
         },
       ]);
     }
 
-    onClose();
+    handleClose();
   };
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="sm:max-w-2xl md:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Tambah Item (Stok Per-SN / Jasa Non-Barang)</DialogTitle>
@@ -509,13 +520,13 @@ export function SerialItemPickerModal({
                 <View className="gap-1.5 pt-1">
                   <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Jasa</Text>
                   <View className="flex-row items-center gap-1.5 flex-wrap">
-                    {[
+                    {([
                       { id: "none", label: "Non-PPh" },
                       { id: "pph21", label: "PPh 21 (0.5%)" },
                       { id: "pph23", label: "PPh 23 (2%)" },
                       { id: "pph4_2", label: "PPh 4(2) (1.75%)" },
                       { id: "pph22", label: "PPh 22 (1.5%)" },
-                    ].map((opt) => {
+                    ] as const).map((opt) => {
                       const active = servicePphMode === opt.id;
                       return (
                         <Pressable
@@ -599,13 +610,13 @@ export function SerialItemPickerModal({
                     <View className="gap-1.5">
                       <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Barang</Text>
                       <View className="flex-row items-center gap-1.5 flex-wrap">
-                        {[
+                        {([
                           { id: "none", label: "Non-PPh" },
                           { id: "pph21", label: "PPh 21 (0.5%)" },
                           { id: "pph23", label: "PPh 23 (2%)" },
                           { id: "pph4_2", label: "PPh 4(2) (1.75%)" },
                           { id: "pph22", label: "PPh 22 (1.5%)" },
-                        ].map((opt) => {
+                        ] as const).map((opt) => {
                           const active = goodsPphMode === opt.id;
                           return (
                             <Pressable
@@ -786,7 +797,7 @@ export function SerialItemPickerModal({
           </View>
 
           <DialogFooter>
-            <Button variant="outline" onPress={onClose}>
+            <Button variant="outline" onPress={handleClose}>
               <Text>Batal</Text>
             </Button>
             <Button onPress={handleConfirmAdd}>

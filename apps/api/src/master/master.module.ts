@@ -13,6 +13,7 @@ import {
   ExpenseCategoriesController,
   LeadSourcesController,
   LostReasonsController,
+  VisitActivityTypesController,
 } from "./lookups.controller.js";
 
 @Module({
@@ -27,6 +28,7 @@ import {
     LostReasonsController,
     ExpenseCategoriesController,
     CostCentersController,
+    VisitActivityTypesController,
   ],
   exports: [ProductsService, SuppliersService, CustomersService, LookupsService],
 })

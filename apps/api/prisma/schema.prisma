@@ -329,6 +329,8 @@ model User {
   expenses       Expense[]           @relation("ExpenseReporter")
   pocReports     PocReport[]         @relation("PocOwner")
   pocMembers     PocMember[]
+  visitReports   VisitReport[]       @relation("VisitOwner")
+  visitMembers   VisitMember[]
   createdDN      DeliveryNote[]      @relation("DNCreator")
   movements      StockMovement[]
   serialHist     SerialUnitHistory[]
@@ -500,6 +502,7 @@ model Customer {
   clientPOs  ClientPO[]
   invoices   InvoiceOut[]
   pocReports PocReport[]
+  visitReports VisitReport[]
 
   @@index([name])
   @@index([status])
@@ -618,6 +621,13 @@ model LostReason {
   leads  Lead[]
 }
 
+model VisitActivityType {
+  id      Int          @id @default(autoincrement())
+  name    String       @unique
+  status  ActiveStatus @default(AKTIF)
+  visits  VisitReport[]
+}
+
 model ExpenseCategory {
   id       Int          @id @default(autoincrement())
   name     String       @unique
@@ -661,6 +671,7 @@ model Lead {
   surveys    Survey[]
   quotations Quotation[]
   pocReports PocReport[]
+  visitReports VisitReport[]
 
   @@index([stage])
   @@index([owner_id])
@@ -893,6 +904,8 @@ model Expense {
   deliveryNote   DeliveryNote?    @relation(fields: [deliveryNoteId], references: [id])
   pocReportId    Int?
   pocReport      PocReport?       @relation(fields: [pocReportId], references: [id])
+  visitReportId  Int?
+  visitReport    VisitReport?     @relation(fields: [visitReportId], references: [id])
   costCenterId   Int?
   costCenter     CostCenter?      @relation(fields: [costCenterId], references: [id])
   receiptFileId  Int?
@@ -915,6 +928,7 @@ model Expense {
   @@index([projectId])
   @@index([surveyId])
   @@index([pocReportId])
+  @@index([visitReportId])
   @@index([deliveryNoteId])
 }
 
@@ -953,6 +967,7 @@ model Project {
   invoices         InvoiceOut[]
   expenses         Expense[]
   pocReports       PocReport[]
+  visitReports     VisitReport[]
   dnLocations      DeliveryNoteLocation[]
   purchaseRequests PurchaseRequest[]
   serialUnits      SerialUnit[]
@@ -1535,4 +1550,91 @@ model PocChecklist {
   updatedAt   DateTime  @updatedAt
 
   @@index([pocReportId])
+}
+
+// ─────────────────────────────── Kunjungan / Offline Meeting ───────────────────────────────
+
+model VisitReport {
+  id                     Int                @id @default(autoincrement())
+  number                 String             @unique
+  title                  String
+  activityTypeId         Int?
+  activityType           VisitActivityType? @relation(fields: [activityTypeId], references: [id])
+  activityTypeName       String?
+  status                 String             @default("Planned")
+  date                   DateTime           @db.Date
+  endDate                DateTime?          @db.Date
+  location               String?
+  clientName             String?
+  clientContact          String?
+  customerId             Int?
+  customer               Customer?          @relation(fields: [customerId], references: [id])
+  leadId                 Int?
+  lead                   Lead?              @relation(fields: [leadId], references: [id])
+  projectId              Int?
+  project                Project?           @relation(fields: [projectId], references: [id])
+  purpose                String?            @db.Text
+  description            String?            @db.Text
+
+  // Minutes of Meeting (MoM)
+  summary                String?            @db.Text
+  clientNeeds            String?            @db.Text
+  productsIntroduced     String?            @db.Text
+  clientFeedback         String?            @db.Text
+  agreements             String?            @db.Text
+  potentialOpportunities String?            @db.Text
+  obstacles              String?            @db.Text
+  conclusion             String?            @db.Text
+
+  // Custom PDF Header & Logo
+  companyHeader          String?
+  logoFileId             Int?
+  documentFileId         Int?
+
+  // PIC & Metadata
+  ownerId                Int
+  owner                  User               @relation("VisitOwner", fields: [ownerId], references: [id])
+  createdById            Int
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  members                VisitMember[]
+  actions                VisitActionItem[]
+  expenses               Expense[]
+
+  @@index([status])
+  @@index([date])
+  @@index([ownerId])
+  @@index([projectId])
+  @@index([customerId])
+  @@index([leadId])
+  @@index([activityTypeId])
+}
+
+model VisitMember {
+  id            Int         @id @default(autoincrement())
+  visitReportId Int
+  visitReport   VisitReport @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          User        @relation(fields: [userId], references: [id])
+
+  @@unique([visitReportId, userId])
+  @@index([visitReportId])
+  @@index([userId])
+}
+
+model VisitActionItem {
+  id            Int         @id @default(autoincrement())
+  visitReportId Int
+  visitReport   VisitReport @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
+  task          String      @db.Text
+  assigneeId    Int?
+  dueDate       DateTime?   @db.Date
+  status        String      @default("Open")
+  notes         String?     @db.Text
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([visitReportId])
+  @@index([assigneeId])
 }

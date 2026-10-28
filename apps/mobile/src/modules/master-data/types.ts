@@ -6,6 +6,7 @@ export type MasterKey =
   | "gudang"
   | "sumber-lead"
   | "alasan-lost"
+  | "jenis-kunjungan"
   | "kategori-pengeluaran"
   | "cost-center"
   | "pengaturan-sistem";

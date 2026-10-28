@@ -495,7 +495,7 @@ export function getDynamicOptions(
     case "perusahaan":
     case "customer": {
       const custs = (data.customers ?? []).map((r: any) => String(r.nama || r.name || "")).filter(Boolean);
-      if (moduleKey === "projects" || moduleKey === "po-client" || moduleKey === "poc-reports") return nonEmpty(["-", ...custs], f.options);
+      if (moduleKey === "projects" || moduleKey === "po-client" || moduleKey === "poc-reports" || moduleKey === "visit-reports") return nonEmpty(["-", ...custs], f.options);
       return nonEmpty(custs, f.options);
     }
     case "sumber":
@@ -606,6 +606,18 @@ export function getDynamicOptions(
         [
           "-",
           ...pocList.map((p: any) => `POC ${p.nomor || p.number} - ${p.judul || p.title}`).filter(Boolean),
+        ],
+        f.options
+      );
+    }
+    case "visitReport":
+    case "visit":
+    case "kunjungan": {
+      const visitList = (data["visit-reports"] ?? []);
+      return nonEmpty(
+        [
+          "-",
+          ...visitList.map((v: any) => `VISIT ${v.nomor || v.number} - ${v.judul || v.title}`).filter(Boolean),
         ],
         f.options
       );

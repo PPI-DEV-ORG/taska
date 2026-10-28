@@ -155,6 +155,23 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           return String(match.nama);
         }
       }
+      if (f.key === "lead") {
+        const lId = r.leadId;
+        const match = (data?.leads ?? []).find(
+          (l: any) =>
+            (lId != null && String(l.id) === String(lId)) ||
+            (rawVal && rawVal !== "-" && (
+              l.nama === rawVal ||
+              l.name === rawVal ||
+              `${l.nama || l.name} · ${l.perusahaan || l.customer}` === rawVal
+            ))
+        );
+        if (match) {
+          const name = match.nama || match.name || "";
+          const comp = match.perusahaan || match.customer || "";
+          return comp ? `${name} · ${comp}` : name;
+        }
+      }
       if (rawVal != null && rawVal !== "-") {
         return f.type === "number" ? formatThousands(String(rawVal)) : String(rawVal);
       }

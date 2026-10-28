@@ -3,7 +3,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
 
-export type LookupModel = "leadSource" | "lostReason" | "expenseCategory" | "costCenter";
+export type LookupModel = "leadSource" | "lostReason" | "expenseCategory" | "costCenter" | "visitActivityType";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

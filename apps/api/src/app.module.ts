@@ -24,6 +24,7 @@ import { ReportsModule } from "./reports/reports.module.js";
 import { ImportsModule } from "./imports/imports.module.js";
 import { DocumentationModule } from "./documentation/documentation.module.js";
 import { PocModule } from "./poc/poc.module.js";
+import { VisitsModule } from "./visits/visits.module.js";
 import { WhatsappModule } from "./whatsapp/whatsapp.module.js";
 import { HrModule } from "./hr/hr.module.js";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard.js";
@@ -56,6 +57,7 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
     ImportsModule,
     DocumentationModule,
     PocModule,
+    VisitsModule,
     WhatsappModule,
     HrModule,
   ],

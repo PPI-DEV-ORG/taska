@@ -13,6 +13,7 @@ const MODULE_FOR: Record<DocKind, ModuleKey> = {
   project: "projects",
   "delivery-note": "delivery",
   poc: "pocReports",
+  visit: "visitReports",
 };
 
 const TITLE_FOR: Record<DocKind, string> = {
@@ -20,6 +21,7 @@ const TITLE_FOR: Record<DocKind, string> = {
   project: "Laporan Dokumentasi Instalasi",
   "delivery-note": "Laporan Dokumentasi Surat Jalan",
   poc: "Laporan Proof of Concept (POC) / Demo",
+  visit: "Laporan Kunjungan & Offline Meeting",
 };
 
 type PhotoWithFile = DocumentationPhoto & {
@@ -71,6 +73,11 @@ export class DocumentationService {
       const poc = await (this.prisma.main as any).pocReport.findUnique({ where: { id: entityId } });
       if (!poc) throw new NotFoundException("Laporan POC tidak ditemukan");
       return { label: `POC ${poc.number} — ${poc.title}` };
+    }
+    if (kind === "visit") {
+      const visit = await (this.prisma.main as any).visitReport.findUnique({ where: { id: entityId } });
+      if (!visit) throw new NotFoundException("Laporan kunjungan tidak ditemukan");
+      return { label: `Kunjungan ${visit.number} — ${visit.title}` };
     }
     const d = await this.prisma.main.deliveryNote.findUnique({ where: { id: entityId } });
     if (!d) throw new NotFoundException("Surat jalan tidak ditemukan");
@@ -384,6 +391,130 @@ export class DocumentationService {
           ["Talangan Pribadi Karyawan", `Rp${totalPersonal.toLocaleString("id-ID")}`],
         ]),
       );
+    } else if (kind === "visit") {
+      const visit = (await (this.prisma.main as any).visitReport.findUnique({
+        where: { id: entityId },
+        include: {
+          activityType: { select: { name: true } },
+          customer: { select: { name: true } },
+          project: { select: { name: true } },
+          lead: { select: { name: true } },
+          owner: { select: { name: true } },
+          members: { include: { user: { select: { name: true, role: true } } } },
+          actions: { orderBy: { id: "asc" } },
+          expenses: { include: { reporter: { select: { name: true } } }, orderBy: { date: "asc" } },
+        },
+      })) as any;
+
+      if (!visit) throw new NotFoundException("Laporan kunjungan tidak ditemukan");
+      customHeader = visit.companyHeader ?? null;
+
+      if (visit.logoFileId) {
+        try {
+          const logo = await this.upload.read(visit.logoFileId);
+          images["headerLogo"] = `data:image/png;base64,${logo.buffer.toString("base64")}`;
+        } catch {}
+      }
+
+      const clientDisplay =
+        visit.clientName ||
+        visit.customer?.name ||
+        (visit.lead ? `Lead: ${visit.lead.name}` : "-");
+
+      content.push(
+        this.infoTable([
+          ["Nomor Kunjungan", visit.number],
+          ["Judul Aktivitas", visit.title],
+          ["Jenis Aktivitas", visit.activityType?.name || visit.activityTypeName || "-"],
+          ["Tanggal", new Date(visit.date).toLocaleDateString("id-ID")],
+          ["Status", visit.status],
+          ["Klien / Perusahaan", clientDisplay],
+          ["Kontak Klien", visit.clientContact ?? "-"],
+          ["Lokasi", visit.location ?? "-"],
+          ["Project Terkait", visit.project?.name ?? "-"],
+          ["PIC / Owner", visit.owner.name],
+          ["Tim Hadir", visit.members.map((m: { user: { name: string } }) => m.user.name).join(", ") || "-"],
+        ]),
+      );
+
+      if (visit.purpose || visit.description) {
+        content.push({ text: "Tujuan & Deskripsi", fontSize: 11, bold: true, margin: [0, 10, 0, 4] });
+        content.push(
+          this.infoTable([
+            ["Tujuan Kunjungan", visit.purpose ?? "-"],
+            ["Deskripsi Singkat", visit.description ?? "-"],
+          ]),
+        );
+      }
+
+      if (
+        visit.summary ||
+        visit.clientNeeds ||
+        visit.productsIntroduced ||
+        visit.clientFeedback ||
+        visit.agreements ||
+        visit.potentialOpportunities ||
+        visit.obstacles ||
+        visit.conclusion
+      ) {
+        content.push({ text: "Minutes of Meeting (MoM) & Hasil Pertemuan", fontSize: 11, bold: true, margin: [0, 10, 0, 4] });
+        content.push(
+          this.infoTable([
+            ["Ringkasan Pembahasan", visit.summary ?? "-"],
+            ["Kebutuhan / Masalah Klien", visit.clientNeeds ?? "-"],
+            ["Produk / Solusi Ditawarkan", visit.productsIntroduced ?? "-"],
+            ["Tanggapan / Masukan Klien", visit.clientFeedback ?? "-"],
+            ["Kesepakatan & Keputusan", visit.agreements ?? "-"],
+            ["Peluang Bisnis", visit.potentialOpportunities ?? "-"],
+            ["Kendala / Klarifikasi", visit.obstacles ?? "-"],
+            ["Kesimpulan", visit.conclusion ?? "-"],
+          ]),
+        );
+      }
+
+      if (visit.actions && visit.actions.length) {
+        content.push({
+          text: `Rencana Tindak Lanjut (${visit.actions.length} Item)`,
+          fontSize: 11,
+          bold: true,
+          margin: [0, 10, 0, 4],
+        });
+        content.push({
+          table: {
+            widths: [20, "*", 60, 60],
+            body: [
+              [{ text: "No", bold: true }, { text: "Deskripsi Tugas", bold: true }, { text: "Target Waktu", bold: true }, { text: "Status", bold: true }],
+              ...visit.actions.map((a: any, idx: number) => [
+                String(idx + 1),
+                a.task + (a.notes ? ` (${a.notes})` : ""),
+                a.dueDate ? new Date(a.dueDate).toLocaleDateString("id-ID") : "-",
+                a.status,
+              ]),
+            ],
+          },
+          layout: "lightHorizontalLines",
+          fontSize: 8,
+        });
+      }
+
+      const validExp = visit.expenses.filter((e: { status: string }) => e.status !== "DITOLAK");
+      if (validExp.length) {
+        const totalCompany = validExp
+          .filter((e: { fundingSource?: string }) => e.fundingSource === "PERUSAHAAN")
+          .reduce((s: number, e: { amount: unknown }) => s + Number(e.amount), 0);
+        const totalPersonal = validExp
+          .filter((e: { fundingSource?: string }) => e.fundingSource === "TALANGAN_PRIBADI")
+          .reduce((s: number, e: { amount: unknown }) => s + Number(e.amount), 0);
+
+        content.push({ text: "Ringkasan Biaya Kunjungan", fontSize: 11, bold: true, margin: [0, 10, 0, 4] });
+        content.push(
+          this.infoTable([
+            ["Total Pengeluaran", `Rp${(totalCompany + totalPersonal).toLocaleString("id-ID")}`],
+            ["Dana Perusahaan", `Rp${totalCompany.toLocaleString("id-ID")}`],
+            ["Talangan Pribadi (Reimbursement)", `Rp${totalPersonal.toLocaleString("id-ID")}`],
+          ]),
+        );
+      }
     } else {
       const d = await this.prisma.main.deliveryNote.findUnique({
         where: { id: entityId },

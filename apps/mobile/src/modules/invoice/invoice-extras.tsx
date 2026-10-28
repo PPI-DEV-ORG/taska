@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Linking } from "react-native";
+import { View, Linking, Pressable } from "react-native";
 import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown, Printer, RotateCcw, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -415,7 +415,8 @@ export function InvoiceExtras({
                 <Text className="text-[11px] font-bold text-muted-foreground w-12 text-center">Aksi</Text>
               </View>
               {items.map((it, idx) => {
-                const sub = (Number(it.qty) || 1) * (Number(it.price) || 0);
+                const itemPrice = Number(it.harga ?? it.price ?? 0);
+                const sub = (Number(it.qty) || 1) * itemPrice;
                 const snText = Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0
                   ? it.serialNumbers.join(", ")
                   : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
@@ -431,8 +432,8 @@ export function InvoiceExtras({
                           <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
                         ) : null}
                       </View>
-                      <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.unit || "unit"}</Text>
-                      <Text className="text-xs text-foreground w-28 text-right">{rupiah(it.price || 0)}</Text>
+                      <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.satuan || it.unit || "unit"}</Text>
+                      <Text className="text-xs text-foreground w-28 text-right">{rupiah(itemPrice)}</Text>
                       <View className="w-28 items-end">
                         <Text className="text-xs font-semibold text-foreground">{rupiah(sub)}</Text>
                         {itemPph > 0 ? (
