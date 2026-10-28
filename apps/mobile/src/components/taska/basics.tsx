@@ -5,6 +5,9 @@ import { ArrowLeft, Inbox, RefreshCw, MessageSquare, Mail, ChevronDown, ChevronU
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { ChartCard } from "@/components/taska/charts";
+
+export { StatusBadge, ChartCard };
 import { useApp } from "@/store/app-store";
 import { cn } from "@/lib/utils";
 import { number, rupiah, tanggal, waktuRelatif, formatPhone, waLink } from "@/lib/format";
