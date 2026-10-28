@@ -12,7 +12,7 @@ import { useApp } from "@/store/app-store";
 import { tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 
-const STATUSES = ["TODO", "IN PROGRESS", "BLOCKED", "DONE"];
+const STATUSES = ["TODO", "IN PROGRESS", "PENDING", "TESTED", "DONE", "REJECTED", "BLOCKED"];
 
 /** Detail + edit task. Klik "Edit" untuk mengubah nama, deskripsi, PIC, tenggat, status. */
 export function TaskDetailDialog({
@@ -25,6 +25,7 @@ export function TaskDetailDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const { data, patchRow, toast } = useApp();
+  const [prevKey, setPrevKey] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [nama, setNama] = React.useState("");
@@ -33,15 +34,18 @@ export function TaskDetailDialog({
   const [tenggat, setTenggat] = React.useState("");
   const [status, setStatus] = React.useState("TODO");
 
-  React.useEffect(() => {
-    if (!task) return;
-    setEditing(false);
-    setNama(String(task.nama ?? ""));
-    setDeskripsi(String(task.deskripsi ?? ""));
-    setPic(String(task.pic ?? ""));
-    setTenggat(String(task.tenggat ?? ""));
-    setStatus(String(task.status ?? "TODO"));
-  }, [task, open]);
+  const currentKey = open && task ? `${task.id}-${open}` : null;
+  if (currentKey !== prevKey) {
+    setPrevKey(currentKey);
+    if (task && open) {
+      setEditing(false);
+      setNama(String(task.nama ?? ""));
+      setDeskripsi(String(task.deskripsi ?? ""));
+      setPic(String(task.pic ?? ""));
+      setTenggat(String(task.tenggat ?? ""));
+      setStatus(String(task.status ?? "TODO"));
+    }
+  }
 
   if (!task) return null;
 

@@ -9,17 +9,17 @@ import { toneColor, type Tone } from "@/tokens";
 const S: Record<string, [Tone, LucideIcon]> = {};
 const add = (tone: Tone, icon: LucideIcon, names: string[]) => names.forEach((n) => (S[n] = [tone, icon]));
 
-add("success", CheckCircle2, ["Lunas", "Disetujui", "Diterima", "Selesai", "Dibayar", "Aktif", "Won", "Sampai", "DONE", "Done", "Masuk", "PAID", "paid"]);
+add("success", CheckCircle2, ["Lunas", "Disetujui", "Diterima", "Selesai", "Dibayar", "Aktif", "Won", "Sampai", "DONE", "Done", "Don", "Masuk", "PAID", "paid"]);
 add("warning", Clock, [
   "Menunggu persetujuan", "Menunggu", "Menunggu penerimaan", "Dilaporkan", "Diajukan", "Cek stok", "Draft",
-  "Dibayar sebagian", "Diterima sebagian", "Pending", "Diminta", "Belum dikirim", "Belum lunas", "Dijadwalkan",
+  "Dibayar sebagian", "Diterima sebagian", "Pending", "PENDING", "Diminta", "Belum dikirim", "Belum lunas", "Dijadwalkan",
   "Di Supplier", "TODO", "Diproses", "Revisi", "Prospecting", "Ditunda", "Reserved", "Menunggu Bos", "Planned",
   "UNPAID", "unpaid", "PARTIAL", "partial",
 ]);
 add("danger", AlertTriangle, ["Terlambat", "Kedaluwarsa", "Rusak", "Kurang", "Salah barang", "BLOCKED", "OVERDUE", "overdue"]);
-add("danger", XCircle, ["Ditolak", "Dibatalkan", "Lost", "Nonaktif", "BATAL", "batal"]);
+add("danger", XCircle, ["Ditolak", "Dibatalkan", "Lost", "Nonaktif", "BATAL", "batal", "REJECTED", "Rejected", "rejected"]);
 add("info", Send, ["Terkirim", "Dikirim", "Keluar"]);
-add("info", Play, ["Berjalan", "IN PROGRESS", "In Progress", "In Review", "Qualification", "Proposal", "Negotiation", "PO dibuat"]);
+add("info", Play, ["Berjalan", "IN PROGRESS", "In Progress", "Inprogress", "TESTED", "Tested", "tested", "In Review", "Qualification", "Proposal", "Negotiation", "PO dibuat"]);
 add("info", Truck, ["Di gudang", "Terpasang"]);
 add("info", ArrowLeftRight, ["Transfer"]);
 add("neutral", Info, ["Kebutuhan"]);
