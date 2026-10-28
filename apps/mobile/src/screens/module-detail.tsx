@@ -127,12 +127,40 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       if (moduleKey === "supplier-pos" && f.key === "item" && rawVal) {
         rawVal = String(rawVal).replace(/\s*x\s*\d+.*$/, "").trim();
       }
+      if (moduleKey === "expenses" && (f.key === "pocReport" || f.key === "poc")) {
+        const pId = r.pocReportId;
+        const pocList = (data?.["poc-reports"] ?? []);
+        const match = pocList.find(
+          (p: any) =>
+            (pId != null && String(p.id) === String(pId)) ||
+            (rawVal && rawVal !== "-" && (
+              p.nomor === rawVal ||
+              p.number === rawVal ||
+              `POC ${p.nomor || p.number} - ${p.judul || p.title}` === rawVal
+            ))
+        );
+        if (match) {
+          return `POC ${match.nomor || match.number} - ${match.judul || match.title}`;
+        }
+      }
+      if (moduleKey === "expenses" && f.key === "survey" && r.surveyId != null) {
+        const match = (data?.surveys ?? []).find((s: any) => String(s.id) === String(r.surveyId));
+        if (match) {
+          return `Survey #${match.id} - ${match.lead || match.customer || match.lokasi || "Survey"}`;
+        }
+      }
+      if (moduleKey === "expenses" && f.key === "project" && r.projectId != null) {
+        const match = (data?.projects ?? []).find((p: any) => String(p.id) === String(r.projectId));
+        if (match) {
+          return String(match.nama);
+        }
+      }
       if (rawVal != null && rawVal !== "-") {
         return f.type === "number" ? formatThousands(String(rawVal)) : String(rawVal);
       }
       return "";
     },
-    [moduleKey]
+    [moduleKey, data]
   );
 
   const [edits, setEdits] = React.useState<Record<string, any>>({});

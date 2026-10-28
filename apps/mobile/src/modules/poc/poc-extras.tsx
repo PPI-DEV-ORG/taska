@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable, Linking } from "react-native";
+import { View, Pressable } from "react-native";
 import {
   Printer,
   Plus,
@@ -7,11 +7,8 @@ import {
   CheckCircle2,
   Circle,
   Trash2,
-  Users,
   CheckSquare,
-  Wallet,
   Settings,
-  AlertCircle,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -290,28 +287,36 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
           </View>
         </View>
 
-        {/* Quick Progression Flow */}
+        {/* Progression Status Flow */}
         <View className="mt-4 pt-3 border-t border-border flex-row items-center gap-1.5 flex-wrap">
-          <Text className="text-xs text-muted-foreground mr-1">Ubah Status:</Text>
-          {["Draft", "Planned", "Preparation", "Ready", "In Progress", "Completed"].map((st) => (
-            <Button
-              key={st}
-              size="sm"
-              variant={row.status === st ? "default" : "outline"}
-              className="h-7 px-2.5"
-              onPress={() => handleQuickStatus(st)}
-            >
-              <Text className="text-xs">{st}</Text>
-            </Button>
-          ))}
-          <Button
-            size="sm"
-            variant="destructive"
-            className="h-7 px-2.5 ml-auto"
-            onPress={() => handleQuickStatus("Cancelled")}
-          >
-            <Text className="text-xs">Batal</Text>
-          </Button>
+          <Text className="text-xs text-muted-foreground mr-1">Alur Status:</Text>
+          {["Draft", "Planned", "Preparation", "Ready", "In Progress", "Completed"].map((st, idx, arr) => {
+            const isCurrent = (row.status || "Draft").toLowerCase() === st.toLowerCase();
+            return (
+              <React.Fragment key={st}>
+                <View
+                  className={`px-2.5 py-1 rounded-full border ${
+                    isCurrent
+                      ? "bg-primary/15 border-primary"
+                      : "bg-muted/20 border-border"
+                  }`}
+                >
+                  <Text
+                    className={`text-xs ${
+                      isCurrent
+                        ? "font-semibold text-primary"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {st}
+                  </Text>
+                </View>
+                {idx < arr.length - 1 ? (
+                  <Text className="text-[11px] text-muted-foreground/60">→</Text>
+                ) : null}
+              </React.Fragment>
+            );
+          })}
         </View>
       </Panel>
 

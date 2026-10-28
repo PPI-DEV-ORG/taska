@@ -13,7 +13,7 @@ import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { useApp } from "@/store/app-store";
 import { api, downloadDocumentationPdf } from "@/services/api";
 import { colors } from "@/tokens";
-import { rupiah, formatThousands } from "@/lib/format";
+import { rupiah, formatThousands, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
@@ -771,52 +771,93 @@ export function ProjectExtras({ row }: { row: Row }) {
       {canViewFinancials ? (
         <Panel
           title="Analisa Untung-Rugi (P&L Project)"
-          subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan dan pengeluaran beban riil."
-        >
-          <Line
-            left="Pendapatan Proyek (DPP Invoice)"
-            sub={`${projectInvoices.length} invoice terbit`}
-            right={<Text className="font-semibold text-sm">{rupiah(revenue)}</Text>}
-          />
-          <Line
-            left="Biaya Pengadaan Material (PO Supplier)"
-            sub={`${projectPos.length} purchase order supplier`}
-            right={<Text className="font-semibold text-sm text-danger">{rupiah(poCost)}</Text>}
-          />
-          <Line
-            left="Biaya Operasional & Reimburse"
-            sub={`${projectExpenses.length} transaksi operasional`}
-            right={<Text className="font-semibold text-sm text-danger">{rupiah(expenseCost)}</Text>}
-          />
-          <Line
-            left="Total Beban & Biaya (HPP + Operasional)"
-            right={<Text className="font-bold text-sm text-danger">{rupiah(totalCost)}</Text>}
-          />
-          <Line
-            left="Laba Bersih Proyek (Net Profit)"
-            sub={`Margin: ${marginPct}%`}
-            right={
-              <Text className={`font-bold text-base ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
-                {rupiah(netProfit)}
-              </Text>
-            }
-          />
-          <View className="mt-3 pt-3 border-t border-border flex-row items-center justify-between">
-            <Text className="text-xs text-muted-foreground">Catat biaya bensin, makan lembur, transport:</Text>
+          subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan dan pengeluaran beban riil"
+          right={
             <Button
               size="sm"
-              variant="outline"
               onPress={() =>
                 router.push({
                   pathname: "/expenses/new",
                   params: { projectId: String(row.id), project: String(row.nama) },
                 } as any)
               }
-              className="gap-1"
+              className="gap-1.5"
             >
-              <Plus size={14} color={colors.muted} />
-              <Text className="text-xs font-semibold">Tambah Pengeluaran</Text>
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs font-semibold">+ Catat Biaya Project</Text>
             </Button>
+          }
+        >
+          <View className="gap-4">
+            <View className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Pendapatan (DPP Invoice)</Text>
+                <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice terbit</Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Beban PO Supplier</Text>
+                <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Biaya Operasional & Reimburse</Text>
+                <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(expenseCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectExpenses.length} transaksi</Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Laba Bersih ({marginPct}%)</Text>
+                <Text className={`text-base font-bold mt-1 ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
+                  {rupiah(netProfit)}
+                </Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">Total Beban: {rupiah(totalCost)}</Text>
+              </View>
+            </View>
+
+            {/* Rincian Operasional & Reimbursement */}
+            <View className="gap-2 pt-2 border-t border-border mt-1">
+              <Text className="text-xs font-semibold text-foreground">
+                Rincian Biaya Operasional & Reimbursement ({projectExpenses.length} pengeluaran)
+              </Text>
+              {projectExpenses.length === 0 ? (
+                <Text className="text-xs text-muted-foreground py-2">
+                  Belum ada pengeluaran operasional yang dicatat untuk project ini.
+                </Text>
+              ) : (
+                <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                  {projectExpenses.map((exp: Row) => {
+                    const isTalangan = exp.fundingSource === "TALANGAN_PRIBADI" || exp.sumberDana?.includes("Talangan");
+                    return (
+                      <View key={exp.id} className="p-3 flex-row items-center justify-between bg-card/30">
+                        <View className="flex-1 pr-2">
+                          <View className="flex-row items-center gap-2 flex-wrap">
+                            <Text className="text-sm font-semibold text-foreground">
+                              {exp.alasan || exp.description || exp.kategori}
+                            </Text>
+                            <StatusBadge status={exp.status} />
+                            <View
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                isTalangan
+                                  ? "bg-amber-500/15 text-amber-500"
+                                  : "bg-blue-500/15 text-blue-500"
+                              }`}
+                            >
+                              <Text className="text-[10px]">
+                                {isTalangan ? "Talangan Pribadi" : "Dana Kantor"}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text className="text-xs text-muted-foreground mt-1">
+                            {tanggal(exp.tanggal || exp.date)} • Pelapor: {exp.pelapor || "Teknisi"} • Kategori: {exp.kategori || "-"}
+                          </Text>
+                        </View>
+                        <Text className="text-sm font-bold text-foreground">{rupiah(exp.nominal || exp.amount || 0)}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
           </View>
         </Panel>
       ) : null}

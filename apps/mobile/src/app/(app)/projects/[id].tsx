@@ -167,6 +167,12 @@ export default function ProjectDetailScreen() {
   const expenses = data.expenses.filter(
     (e) => (pName && e.project === pName) || String(e.projectId) === String(project.id)
   );
+  const companyExpenseCost = expenses
+    .filter((e) => e.fundingSource === "PERUSAHAAN" || e.sumberDana?.includes("Perusahaan") || (!e.fundingSource && !e.sumberDana?.includes("Talangan")))
+    .reduce((acc, e) => acc + (Number(e.nominal || e.amount) || 0), 0);
+  const personalExpenseCost = expenses
+    .filter((e) => e.fundingSource === "TALANGAN_PRIBADI" || e.sumberDana?.includes("Talangan"))
+    .reduce((acc, e) => acc + (Number(e.nominal || e.amount) || 0), 0);
   const deliveryNotes = data["delivery-notes"].filter(
     (dn) => (pName && dn.project === pName) || String(dn.projectId) === String(project.id)
   );
@@ -823,61 +829,101 @@ export default function ProjectDetailScreen() {
                 </Button>
               }
             >
-              <View className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <View className="p-3 bg-panel/60 border border-border/80 rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Pendapatan DPP</Text>
-                  <Text className="text-sm font-semibold text-foreground mt-0.5">{rupiah(revenue)}</Text>
+              <View className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <View className="p-3 bg-card/60 border border-border rounded-lg">
+                  <Text className="text-xs text-muted-foreground">Pendapatan (DPP Invoice)</Text>
+                  <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
+                  <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice</Text>
                 </View>
-                <View className="p-3 bg-panel/60 border border-border/80 rounded-lg">
+                <View className="p-3 bg-card/60 border border-border rounded-lg">
                   <Text className="text-xs text-muted-foreground">Biaya PO Supplier</Text>
-                  <Text className="text-sm font-semibold text-danger mt-0.5">{rupiah(poCost)}</Text>
+                  <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
+                  <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
                 </View>
-                <View className="p-3 bg-panel/60 border border-border/80 rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Operasional/Biaya</Text>
-                  <Text className="text-sm font-semibold text-danger mt-0.5">{rupiah(expenseCost)}</Text>
+                <View className="p-3 bg-card/60 border border-border rounded-lg">
+                  <Text className="text-xs text-muted-foreground">Operasional & Reimburse</Text>
+                  <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(expenseCost)}</Text>
+                  <Text className="text-[10px] text-muted-foreground mt-0.5">{expenses.length} pengeluaran</Text>
                 </View>
-                <View className="p-3 bg-panel/60 border border-border/80 rounded-lg">
+                <View className="p-3 bg-card/60 border border-border rounded-lg">
                   <Text className="text-xs text-muted-foreground">Laba Bersih ({marginPct}%)</Text>
-                  <Text className={`text-sm font-bold mt-0.5 ${netProfit >= 0 ? "text-success" : "text-danger"}`}>{rupiah(netProfit)}</Text>
+                  <Text className={`text-base font-bold mt-1 ${netProfit >= 0 ? "text-success" : "text-danger"}`}>{rupiah(netProfit)}</Text>
+                  <Text className="text-[10px] text-muted-foreground mt-0.5">Total Beban: {rupiah(totalCost)}</Text>
                 </View>
               </View>
             </Panel>
           ) : null}
 
           <Panel
-            title="Pengeluaran Lapangan Project"
-            subtitle="Bensin, makan, transport, perlengkapan teknisi"
+            title="Biaya Operasional & Reimbursement Project"
+            subtitle="Tracking pengeluaran terhubung, pemisahan dana perusahaan vs talangan pribadi"
             right={
               <Button
                 size="sm"
-                variant="outline"
                 onPress={() =>
                   router.push({
                     pathname: "/expenses/new",
                     params: { projectId: String(project.id), project: String(project.nama) },
                   } as any)
                 }
+                className="gap-1.5"
               >
-                <Text>Catat Pengeluaran</Text>
+                <Plus size={14} color={colors.background} />
+                <Text className="text-xs font-semibold">+ Catat Biaya Project</Text>
               </Button>
             }
           >
-            {expenses.length === 0 ? (
-              <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada pengeluaran yang dicatat untuk project ini.</Text>
-            ) : (
-              expenses.map((e) => (
-                <View key={e.id} className="border-border flex-row items-center justify-between border-b py-2.5 last:border-b-0">
-                  <View className="flex-1 pr-2">
-                    <Text className="text-sm font-medium">{e.alasan}</Text>
-                    <Text className="text-muted-foreground text-xs">{e.pelapor} · {e.kategori} · {tanggal(e.tanggal)}</Text>
-                  </View>
-                  <View className="items-end gap-1">
-                    <Text className="text-sm font-semibold">{rupiah(e.nominal)}</Text>
-                    <StatusBadge status={e.status} />
-                  </View>
+            <View className="gap-4">
+              <View className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <View className="p-3 rounded-lg bg-card/60 border border-border">
+                  <Text className="text-xs text-muted-foreground">Total Pengeluaran</Text>
+                  <Text className="text-base font-bold mt-1 text-primary">{rupiah(expenseCost)}</Text>
                 </View>
-              ))
-            )}
+                <View className="p-3 rounded-lg bg-card/60 border border-border">
+                  <Text className="text-xs text-muted-foreground">Dana Perusahaan</Text>
+                  <Text className="text-base font-bold mt-1">{rupiah(companyExpenseCost)}</Text>
+                </View>
+                <View className="p-3 rounded-lg bg-card/60 border border-border">
+                  <Text className="text-xs text-muted-foreground">Talangan Pribadi (Klaim)</Text>
+                  <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(personalExpenseCost)}</Text>
+                </View>
+              </View>
+
+              {expenses.length === 0 ? (
+                <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada pengeluaran yang dicatat untuk project ini.</Text>
+              ) : (
+                <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                  {expenses.map((e) => {
+                    const isTalangan = e.fundingSource === "TALANGAN_PRIBADI" || e.sumberDana?.includes("Talangan");
+                    return (
+                      <View key={e.id} className="p-3 flex-row items-center justify-between bg-card/30">
+                        <View className="flex-1 pr-2">
+                          <View className="flex-row items-center gap-2 flex-wrap">
+                            <Text className="text-sm font-semibold text-foreground">{e.alasan || e.description || e.kategori}</Text>
+                            <StatusBadge status={e.status} />
+                            <View
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                isTalangan
+                                  ? "bg-amber-500/15 text-amber-500"
+                                  : "bg-blue-500/15 text-blue-500"
+                              }`}
+                            >
+                              <Text className="text-[10px]">
+                                {isTalangan ? "Talangan Pribadi" : "Dana Kantor"}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text className="text-xs text-muted-foreground mt-1">
+                            {tanggal(e.tanggal || e.date)} • Pelapor: {e.pelapor || "Karyawan"} • Kategori: {e.kategori || "-"}
+                          </Text>
+                        </View>
+                        <Text className="text-sm font-bold text-foreground">{rupiah(e.nominal || e.amount || 0)}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
           </Panel>
         </View>
       )}

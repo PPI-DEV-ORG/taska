@@ -864,9 +864,14 @@ export function adaptRow(module: string, raw: any): Row {
           ? `Survey #${raw.survey.id} - ${raw.survey.lead?.name || raw.survey.location || "Survey"}`
           : "-",
         pocReportId: raw.pocReportId != null ? String(raw.pocReportId) : null,
-        pocReport: raw.pocReport
-          ? `POC ${raw.pocReport.number || raw.pocReport.nomor} - ${raw.pocReport.title || raw.pocReport.judul}`
-          : "-",
+        pocReport:
+          typeof raw.pocReport === "string" && raw.pocReport !== "-"
+            ? raw.pocReport
+            : raw.pocReport && typeof raw.pocReport === "object"
+            ? `POC ${raw.pocReport.number || raw.pocReport.nomor || `#${raw.pocReport.id}`} - ${raw.pocReport.title || raw.pocReport.judul || "POC"}`
+            : raw.pocReportId != null
+            ? `POC #${raw.pocReportId}`
+            : "-",
         fundingSource: raw.fundingSource || "PERUSAHAAN",
         sumberDana:
           raw.fundingSource === "TALANGAN_PRIBADI"
@@ -1779,7 +1784,17 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
           row.pocReportId != null && row.pocReportId !== "" && row.pocReportId !== "-"
             ? Number(row.pocReportId)
             : row.pocReport && row.pocReport !== "-"
-            ? Number(String(row.pocReport).match(/#(\d+)/)?.[1] || findId(db?.["poc-reports"], row.pocReport)) || undefined
+            ? Number(
+                String(row.pocReport).match(/#(\d+)/)?.[1] ||
+                (db?.["poc-reports"] ?? []).find(
+                  (p: any) =>
+                    `POC ${p.nomor || p.number} - ${p.judul || p.title}` === row.pocReport ||
+                    p.nomor === row.pocReport ||
+                    p.number === row.pocReport ||
+                    p.judul === row.pocReport
+                )?.id ||
+                findId(db?.["poc-reports"], row.pocReport)
+              ) || undefined
             : undefined,
         fundingSource:
           row.fundingSource ||
@@ -2043,7 +2058,11 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "dpLabel",
     "dpAmount",
   ],
-  expenses: ["date", "categoryId", "amount", "description", "projectId", "surveyId", "deliveryNoteId", "costCenterId", "receiptFileId", "paidFileId"],
+  expenses: [
+    "date", "categoryId", "amount", "description", "projectId", "surveyId",
+    "deliveryNoteId", "pocReportId", "fundingSource", "reimbursementStatus",
+    "paymentMethod", "costCenterId", "receiptFileId", "paidFileId",
+  ],
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "photoFileId", "items"],
@@ -2141,6 +2160,30 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
           : Number(String(patch.survey).match(/#(\d+)/)?.[1]) || null;
     }
     if (patch.surveyId !== undefined) out.surveyId = patch.surveyId ? Number(patch.surveyId) : null;
+    if (patch.pocReport !== undefined) {
+      out.pocReportId =
+        patch.pocReport === "-" || !patch.pocReport
+          ? null
+          : Number(
+              String(patch.pocReport).match(/#(\d+)/)?.[1] ||
+              (db?.["poc-reports"] ?? []).find(
+                (p: any) =>
+                  `POC ${p.nomor || p.number} - ${p.judul || p.title}` === patch.pocReport ||
+                  p.nomor === patch.pocReport ||
+                  p.number === patch.pocReport ||
+                  p.judul === patch.pocReport
+              )?.id ||
+              findId(db?.["poc-reports"], patch.pocReport)
+            ) || null;
+    }
+    if (patch.pocReportId !== undefined) out.pocReportId = patch.pocReportId ? Number(patch.pocReportId) : null;
+    if (patch.sumberDana !== undefined) {
+      out.fundingSource =
+        String(patch.sumberDana).toLowerCase().includes("talangan")
+          ? "TALANGAN_PRIBADI"
+          : "PERUSAHAAN";
+    }
+    if (patch.fundingSource !== undefined) out.fundingSource = patch.fundingSource;
     if (patch.costCenter !== undefined) out.costCenterId = findId(db?.costCenters, patch.costCenter);
   }
 

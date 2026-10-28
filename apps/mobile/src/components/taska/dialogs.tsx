@@ -599,6 +599,17 @@ export function getDynamicOptions(
         ["-", ...(data.surveys ?? []).map((s: any) => `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}`)],
         f.options
       );
+    case "pocReport":
+    case "poc": {
+      const pocList = (data["poc-reports"] ?? []);
+      return nonEmpty(
+        [
+          "-",
+          ...pocList.map((p: any) => `POC ${p.nomor || p.number} - ${p.judul || p.title}`).filter(Boolean),
+        ],
+        f.options
+      );
+    }
     case "gudang":
     case "warehouse":
       return nonEmpty(["-", ...(data.warehouses ?? []).map((r: any) => String(r.nama)).filter(Boolean)], f.options);

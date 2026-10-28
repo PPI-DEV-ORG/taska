@@ -366,7 +366,11 @@ export function computeFinancialStatements(
     (po) => po && !["dibatalkan", "ditolak", "batal", "draft"].includes(normStr(po.status).toLowerCase())
   );
   const expenses = ((data?.expenses) || []).filter(
-    (ex) => ex && !["ditolak", "dibatalkan", "batal", "draft"].includes(normStr(ex.status).toLowerCase())
+    (ex) => {
+      if (!ex) return false;
+      const st = normStr(ex.status).toLowerCase();
+      return ["disetujui", "dibayar", "approved", "paid"].includes(st);
+    }
   );
   const products = (data?.products || []).filter(Boolean);
   const stock = (data?.stock || []).filter(Boolean);

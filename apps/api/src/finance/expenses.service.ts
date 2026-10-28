@@ -23,15 +23,6 @@ export class ExpensesService {
   private async syncSurveyCost(surveyId: number | null | undefined) {
     if (!surveyId) return;
     try {
-      const expenses = await this.prisma.main.expense.findMany({
-        where: { surveyId, status: { not: "DITOLAK" } },
-        select: { amount: true },
-      });
-      const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
-      await this.prisma.main.survey.update({
-        where: { id: surveyId },
-        data: { cost: total },
-      });
       this.notifications.dataChange("surveys", "update", surveyId);
     } catch {}
   }
@@ -110,6 +101,7 @@ export class ExpensesService {
           project: { select: { id: true, name: true } },
           survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
           deliveryNote: { select: { id: true, number: true } },
+          pocReport: { select: { id: true, number: true, title: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
         ...pageSkip(q),
@@ -152,6 +144,7 @@ export class ExpensesService {
         project: { select: { id: true, name: true } },
         survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
         deliveryNote: { select: { id: true, number: true } },
+        pocReport: { select: { id: true, number: true, title: true } },
       },
     });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
