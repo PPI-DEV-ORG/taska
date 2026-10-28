@@ -29,7 +29,7 @@ import {
   saveDeletedCoaCodes,
 } from "@/lib/accounting";
 
-import { AccountingTab, COA_CATEGORIES } from "@/modules/accounting/types";
+import { AccountingTab } from "@/modules/accounting/types";
 import { JournalTab } from "@/modules/accounting/components/journal-tab";
 import { CoaTab } from "@/modules/accounting/components/coa-tab";
 import { LedgerTab } from "@/modules/accounting/components/ledger-tab";
