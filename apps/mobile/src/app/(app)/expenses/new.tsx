@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { AlertTriangle, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,10 +33,19 @@ export default function NewExpenseScreen() {
     return dynamic.length > 0 ? dynamic : DEFAULT_KATEGORI_LIST;
   }, [data.expenseCategories]);
 
+  const params = useLocalSearchParams<{ projectId?: string; project?: string }>();
+
   const [tanggalNota, setTanggalNota] = React.useState(new Date().toISOString().slice(0, 10));
   const [nominal, setNominal] = React.useState("");
   const [kategori, setKategori] = React.useState(kategoriOptions[0] || "Bensin");
-  const [selectedProject, setSelectedProject] = React.useState("-");
+  const [selectedProject, setSelectedProject] = React.useState<string>(() => {
+    if (params.project) return String(params.project);
+    if (params.projectId) {
+      const match = data.projects.find((p) => String(p.id) === String(params.projectId));
+      return match ? String(match.nama) : "-";
+    }
+    return "-";
+  });
   const [selectedSurvey, setSelectedSurvey] = React.useState("-");
   const [alasan, setAlasan] = React.useState("");
   const [photoCount, setPhotoCount] = React.useState(0);
@@ -64,6 +73,9 @@ export default function NewExpenseScreen() {
     }
 
     const fileId = (await fileHandle.current?.flush()) ?? undefined;
+    const foundProject = data.projects.find(
+      (p) => String(p.nama) === selectedProject || (params.projectId && String(p.id) === String(params.projectId))
+    );
 
     const row = {
       tanggal: tanggalNota,
@@ -71,6 +83,7 @@ export default function NewExpenseScreen() {
       kategori,
       nominal: numNominal,
       project: selectedProject,
+      projectId: foundProject?.id ?? (params.projectId ? Number(params.projectId) : undefined),
       survey: selectedSurvey,
       alasan,
       status: "Dilaporkan",

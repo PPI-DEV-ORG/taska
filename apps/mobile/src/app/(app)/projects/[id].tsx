@@ -848,7 +848,16 @@ export default function ProjectDetailScreen() {
             title="Pengeluaran Lapangan Project"
             subtitle="Bensin, makan, transport, perlengkapan teknisi"
             right={
-              <Button size="sm" variant="outline" onPress={() => router.push("/expenses/new" as any)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={() =>
+                  router.push({
+                    pathname: "/expenses/new",
+                    params: { projectId: String(project.id), project: String(project.nama) },
+                  } as any)
+                }
+              >
                 <Text>Catat Pengeluaran</Text>
               </Button>
             }
@@ -921,25 +930,79 @@ export default function ProjectDetailScreen() {
       <FormDialog
         open={reqModalOpen}
         onOpenChange={setReqModalOpen}
-        title="Tambah Kebutuhan Barang Project"
+        title="Tambah Kebutuhan Barang / BOQ Project"
         fields={[
           {
-            key: "produk",
-            label: "Pilih Barang / Perangkat",
+            key: "source",
+            label: "Sumber Item",
             type: "select",
-            required: true,
-            options: (data.products ?? []).map((p) => String(p.nama || p.name)).filter(Boolean),
+            options: ["Dari Stok / Inventory", "Item Kustom Non-Inventory (Beli Luar)"],
+            defaultValue: "Dari Stok / Inventory",
+          },
+          {
+            key: "produk",
+            label: "Pilih Barang dari Stok (Jika dari Stok)",
+            type: "select",
+            options: ["-", ...(data.products ?? []).map((p) => String(p.nama || p.name)).filter(Boolean)],
+          },
+          {
+            key: "customName",
+            label: "Nama Item Kustom (Contoh: Pipa PVC Pelindung Kabel)",
+            type: "text",
+            placeholder: "Ketik jika item kustom / non-inventory...",
+          },
+          {
+            key: "customPrice",
+            label: "Estimasi Harga Satuan Rp (Untuk Item Kustom)",
+            type: "number",
+            placeholder: "Contoh: 25000",
+          },
+          {
+            key: "customUnit",
+            label: "Satuan Item Kustom (Opsional)",
+            type: "text",
+            placeholder: "Contoh: batang, meter, roll, pcs",
+            defaultValue: "pcs",
           },
           { key: "qty", label: "Jumlah yang Dibutuhkan", type: "number", required: true, placeholder: "Contoh: 4" },
         ]}
-        submitLabel="Cek Stok & Simpan"
+        submitLabel="Simpan ke BOQ"
         onSubmit={async (v) => {
+          const isCustom =
+            v.source === "Item Kustom Non-Inventory (Beli Luar)" ||
+            ((!v.produk || v.produk === "-") && !!v.customName);
+          const qty = Math.max(1, Math.round(Number(v.qty) || 1));
+
+          if (isCustom) {
+            const name = String(v.customName || "").trim();
+            if (!name) {
+              toast("Nama item kustom wajib diisi", "danger");
+              return;
+            }
+            try {
+              const res = await api<any>("POST", `/projects/${project.id}/requirements`, {
+                name,
+                unit: String(v.customUnit || "pcs").trim(),
+                price: Number(String(v.customPrice || "0").replace(/\D/g, "")) || 0,
+                qty,
+              });
+              await loadRequirements();
+              toast(`Item kustom "${name}" dicatat ke BOQ & otomatis masuk antrean Request Procurement`);
+            } catch (e: any) {
+              toast(e?.message ?? "Gagal menyimpan item kustom", "danger");
+            }
+            return;
+          }
+
           const prod = (data.products ?? []).find((p) => (p.nama || p.name) === v.produk);
-          if (!prod) return;
+          if (!prod) {
+            toast("Pilih barang dari stok atau isi nama item kustom", "danger");
+            return;
+          }
           try {
             const res = await api<any>("POST", `/projects/${project.id}/requirements`, {
               productId: Number(prod.id),
-              qty: Math.max(1, Math.round(Number(v.qty) || 1)),
+              qty,
             });
             await loadRequirements();
             toast(

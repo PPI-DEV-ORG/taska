@@ -89,6 +89,7 @@ export type CreateField = {
   placeholder?: string;
   kind?: "foto" | "dokumen" | "video" | "semua";
   category?: string;
+  defaultValue?: string;
 };
 export type ModuleAction = { label: string; toast: string; to?: (r: Row) => string; status?: string };
 

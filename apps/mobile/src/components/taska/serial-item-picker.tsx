@@ -59,12 +59,14 @@ export function SerialItemPickerModal({
   const [goodsUnit, setGoodsUnit] = React.useState("Unit");
   const [goodsPrice, setGoodsPrice] = React.useState("");
   const [customItemLabel, setCustomItemLabel] = React.useState("");
+  const [goodsPphMode, setGoodsPphMode] = React.useState("none");
 
   // Service tab states
   const [serviceName, setServiceName] = React.useState("");
   const [serviceQty, setServiceQty] = React.useState("1");
   const [serviceUnit, setServiceUnit] = React.useState("Lot");
   const [servicePrice, setServicePrice] = React.useState("");
+  const [servicePphMode, setServicePphMode] = React.useState("none");
 
   // Quick batch register modal inside picker
   const [batchRegisterOpen, setBatchRegisterOpen] = React.useState(false);
@@ -299,11 +301,13 @@ export function SerialItemPickerModal({
           harga,
           kind: "SERVICE",
           hasSerial: false,
+          pphMode: servicePphMode,
         },
       ]);
       setServiceName("");
       setServiceQty("1");
       setServicePrice("");
+      setServicePphMode("none");
       onClose();
       return;
     }
@@ -348,6 +352,7 @@ export function SerialItemPickerModal({
           hasSerial: true,
           serialUnitIds: [Number(sRow.id)],
           serialNumbers: [String(sRow.sn)],
+          pphMode: goodsPphMode,
         }));
         onAddItems(newItems);
       } else {
@@ -366,6 +371,7 @@ export function SerialItemPickerModal({
             hasSerial: true,
             serialUnitIds: sIds,
             serialNumbers: sns,
+            pphMode: goodsPphMode,
           },
         ]);
       }
@@ -382,6 +388,7 @@ export function SerialItemPickerModal({
           productId: Number(selectedProduct.id),
           sku: selectedProduct.sku || undefined,
           hasSerial: false,
+          pphMode: goodsPphMode,
         },
       ]);
     }
@@ -498,6 +505,34 @@ export function SerialItemPickerModal({
                     </FormField>
                   </View>
                 </View>
+
+                <View className="gap-1.5 pt-1">
+                  <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Jasa</Text>
+                  <View className="flex-row items-center gap-1.5 flex-wrap">
+                    {[
+                      { id: "none", label: "Non-PPh" },
+                      { id: "pph21", label: "PPh 21 (0.5%)" },
+                      { id: "pph23", label: "PPh 23 (2%)" },
+                      { id: "pph4_2", label: "PPh 4(2) (1.75%)" },
+                      { id: "pph22", label: "PPh 22 (1.5%)" },
+                    ].map((opt) => {
+                      const active = servicePphMode === opt.id;
+                      return (
+                        <Pressable
+                          key={opt.id}
+                          onPress={() => setServicePphMode(opt.id)}
+                          className={`px-2 py-1 rounded-md border ${
+                            active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                          }`}
+                        >
+                          <Text className={`text-xs ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                            {opt.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
               </View>
             ) : (
               <View className="gap-3.5">
@@ -558,6 +593,34 @@ export function SerialItemPickerModal({
                             placeholder="0"
                           />
                         </FormField>
+                      </View>
+                    </View>
+
+                    <View className="gap-1.5">
+                      <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Barang</Text>
+                      <View className="flex-row items-center gap-1.5 flex-wrap">
+                        {[
+                          { id: "none", label: "Non-PPh" },
+                          { id: "pph21", label: "PPh 21 (0.5%)" },
+                          { id: "pph23", label: "PPh 23 (2%)" },
+                          { id: "pph4_2", label: "PPh 4(2) (1.75%)" },
+                          { id: "pph22", label: "PPh 22 (1.5%)" },
+                        ].map((opt) => {
+                          const active = goodsPphMode === opt.id;
+                          return (
+                            <Pressable
+                              key={opt.id}
+                              onPress={() => setGoodsPphMode(opt.id)}
+                              className={`px-2 py-1 rounded-md border ${
+                                active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                              }`}
+                            >
+                              <Text className={`text-xs ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                                {opt.label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
                       </View>
                     </View>
 

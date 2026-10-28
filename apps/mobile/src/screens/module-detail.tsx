@@ -15,6 +15,7 @@ import { QuotationPpnField } from "@/modules/quotation/quotation-ppn-field";
 import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
 import {
   calcQuotationFinancials,
+  calcItemPph,
   getInitialPpnMode,
   ppnModeToTipe,
   getInitialPphMode,
@@ -163,7 +164,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     }
     const nilaiRaw = "nilai" in edits ? edits.nilai : (row.nilai || row.total || 0);
     const discRaw = "disc" in edits ? edits.disc : (row.disc || 0);
-    return calcQuotationFinancials(nilaiRaw, discRaw, quotationPpnMode, quotationPphMode);
+    const rowItems = Array.isArray(row.items) ? row.items : [];
+    return calcQuotationFinancials(nilaiRaw, discRaw, quotationPpnMode, quotationPphMode, rowItems);
   }, [moduleKey, edits, row, quotationPpnMode, quotationPphMode]);
 
   const invoiceFinancials = React.useMemo(() => {
@@ -177,7 +179,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     const isInclude = ppnMode === "include";
     const dpp = isInclude ? Math.round(amt / 1.11) : amt;
     const ppn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, amt - dpp) : Math.round(amt * 0.11);
-    const pph = Math.round(dpp * pphRateFor(pphMode));
+    const rowItems = Array.isArray(row.items) ? row.items : [];
+    const itemPph = rowItems.reduce((acc: number, it: any) => acc + calcItemPph(it), 0);
+    const pph = rowItems.length > 0 ? itemPph : Math.round(dpp * pphRateFor(pphMode));
     const total = Math.max(0, (isInclude ? amt : amt + ppn) - pph);
     return { amt, dpp, ppn, pph, total };
   }, [moduleKey, edits, row, quotationPpnMode, quotationPphMode]);
@@ -316,8 +320,6 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       patch.totalAfterDisc = totalAfterDisc;
       patch.ppnMode = quotationPpnMode;
       patch.tipePpn = ppnModeToTipe(quotationPpnMode);
-      patch.pphMode = quotationPphMode;
-      patch.tipePph = pphModeToTipe(quotationPphMode);
       if (totalAfterDisc > 0 && row.status === "Not Yet") {
         patch.status = "Done";
       }
@@ -868,20 +870,13 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
                     {moduleKey === "quotations" &&
                     (f.key === "disc" || (!editableFields.some((ef) => ef.key === "disc") && f.key === "nilai")) ? (
-                      <>
-                        <QuotationPpnField
-                          mode={quotationPpnMode}
-                          onChange={setQuotationPpnMode}
-                          ppn={quotationFinancials.ppn}
-                          totalAfterDisc={quotationFinancials.totalAfterDisc}
-                          dpp={quotationFinancials.dpp}
-                        />
-                        <QuotationPphField
-                          mode={quotationPphMode}
-                          onChange={setQuotationPphMode}
-                          pph={quotationFinancials.pph}
-                        />
-                      </>
+                      <QuotationPpnField
+                        mode={quotationPpnMode}
+                        onChange={setQuotationPpnMode}
+                        ppn={quotationFinancials.ppn}
+                        totalAfterDisc={quotationFinancials.totalAfterDisc}
+                        dpp={quotationFinancials.dpp}
+                      />
                     ) : null}
 
                     {moduleKey === "invoices" && f.key === "nilai" ? (

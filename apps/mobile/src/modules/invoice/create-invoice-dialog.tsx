@@ -22,10 +22,12 @@ import {
   type PphMode,
   type PpnMode,
   PPN_MODE_OPTIONS,
+  PPH_MODE_OPTIONS,
   getInitialPpnMode,
   ppnModeToTipe,
   pphRateFor,
   pphModeToTipe,
+  calcItemPph,
 } from "@/modules/quotation/lib";
 
 function getTodayIso(): string {
@@ -362,10 +364,11 @@ function CreateInvoiceForm({
     const rawBase = dpp;
     const effectiveDpp = isIncludePpn ? Math.round(rawBase / 1.11) : rawBase;
     const ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawBase - effectiveDpp) : Math.round(rawBase * 0.11);
-    const pph = Math.round(effectiveDpp * pphRateFor(pphMode));
+    const itemPphSum = items.reduce((acc, it) => acc + calcItemPph(it), 0);
+    const pph = items.length > 0 ? itemPphSum : Math.round(effectiveDpp * pphRateFor(pphMode));
     const total = Math.max(0, (isIncludePpn ? rawBase : effectiveDpp + ppn) - pph);
     return { currentDpp: effectiveDpp, currentPpn: ppn, currentPph: pph, currentTotal: total, calculatedPct: pct };
-  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode]);
+  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode, items]);
 
   // Handle file extraction
   async function handleExtractFile(file: any) {
@@ -944,36 +947,77 @@ function CreateInvoiceForm({
               </Button>
             </View>
             {items.length > 0 ? (
-              <View className="gap-1.5 mt-1">
-                {items.map((it, idx) => (
-                  <View
-                    key={it.id || idx}
-                    className="flex-row justify-between items-center py-1.5 border-b border-border/40 gap-2"
-                  >
-                    <View className="flex-1 mr-1">
-                      <Text className="text-xs font-medium">{it.item}</Text>
-                      <View className="flex-row flex-wrap items-center gap-1.5 mt-0.5">
-                        <Text className="text-[10px] text-muted-foreground">
-                          {it.qty} {it.satuan} x {rupiah(it.harga)}
-                        </Text>
-                        {Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? (
-                          <StatusBadge status={`Reserve SN: ${it.serialNumbers.join(", ")}`} />
-                        ) : it.kind === "SERVICE" ? (
-                          <StatusBadge status="Jasa / Non-Barang" />
-                        ) : null}
+              <View className="gap-2 mt-1">
+                {items.map((it, idx) => {
+                  const itPph = calcItemPph(it);
+                  const itemPrice = Number(it.harga || it.price || 0);
+                  const sub = (Number(it.qty) || 1) * itemPrice;
+                  return (
+                    <View
+                      key={it.id || idx}
+                      className="py-2 border-b border-border/40 gap-1.5"
+                    >
+                      <View className="flex-row justify-between items-center gap-2">
+                        <View className="flex-1 mr-1">
+                          <Text className="text-xs font-medium">{it.item}</Text>
+                          <View className="flex-row flex-wrap items-center gap-1.5 mt-0.5">
+                            <Text className="text-[10px] text-muted-foreground">
+                              {it.qty} {it.satuan || it.unit || "unit"} x {rupiah(itemPrice)}
+                            </Text>
+                            {Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? (
+                              <StatusBadge status={`Reserve SN: ${it.serialNumbers.join(", ")}`} />
+                            ) : it.kind === "SERVICE" ? (
+                              <StatusBadge status="Jasa / Non-Barang" />
+                            ) : null}
+                          </View>
+                        </View>
+                        <View className="items-end gap-0.5">
+                          <Text className="text-xs font-semibold">{rupiah(sub)}</Text>
+                          {itPph > 0 ? (
+                            <Text className="text-[10px] text-danger font-medium">PPh: -{rupiah(itPph)}</Text>
+                          ) : null}
+                        </View>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5"
+                          onPress={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 size={13} color={colors.danger} />
+                        </Button>
+                      </View>
+
+                      {/* Selector PPh Per-Item */}
+                      <View className="flex-row items-center gap-1 flex-wrap">
+                        <Text className="text-[10px] text-muted-foreground mr-1">PPh Item:</Text>
+                        {PPH_MODE_OPTIONS.map((opt) => {
+                          const active = (it.pphMode || "none") === opt.id;
+                          return (
+                            <Pressable
+                              key={opt.id}
+                              onPress={() => {
+                                setItems((prev) =>
+                                  prev.map((item, i) =>
+                                    i === idx ? { ...item, pphMode: opt.id, tipePph: opt.label } : item
+                                  )
+                                );
+                              }}
+                              className={`px-2 py-0.5 rounded border ${
+                                active
+                                  ? "bg-primary/10 border-primary"
+                                  : "bg-muted/40 border-border/60"
+                              }`}
+                            >
+                              <Text className={`text-[10px] ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                                {opt.id === "none" ? "Non-PPh" : opt.label.split(" ")[0]}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
                       </View>
                     </View>
-                    <Text className="text-xs font-semibold">{rupiah(it.qty * it.harga)}</Text>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5"
-                      onPress={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
-                    >
-                      <Trash2 size={13} color={colors.danger} />
-                    </Button>
-                  </View>
-                ))}
+                  );
+                })}
                 <View className="flex-row justify-between pt-1">
                   <Text className="text-xs font-semibold text-muted-foreground">Subtotal Rincian Barang:</Text>
                   <Text className="text-xs font-bold text-primary">{rupiah(grossDealDpp)}</Text>

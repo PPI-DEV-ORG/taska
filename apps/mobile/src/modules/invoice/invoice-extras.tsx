@@ -20,6 +20,7 @@ import { downloadInvoiceExcel } from "@/modules/invoice/invoice-files";
 import { InvoiceTemplateGenerator } from "@/modules/invoice/invoice-template-generator";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { type QuotationItem } from "@/modules/quotation/types";
+import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 
 export function InvoiceExtras({
   row,
@@ -71,12 +72,12 @@ export function InvoiceExtras({
     });
 
     const updated = [...items, ...valid];
-    const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || 0)), 0);
+    const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
     const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
     const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
     const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
     const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
-    const pph = Number(row.pph || 0);
+    const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
     const total = Math.max(0, (isInclude ? newAmount : dpp + ppn) - pph);
 
     await patchRow("invoices", row.id, {
@@ -84,6 +85,7 @@ export function InvoiceExtras({
       nilai: dpp,
       amount: dpp,
       ppn,
+      pph,
       total,
     });
     await reload();
@@ -92,12 +94,12 @@ export function InvoiceExtras({
 
   async function handleDeleteItem(idx: number) {
     const updated = items.filter((_, i) => i !== idx);
-    const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || 0)), 0);
+    const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
     const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
     const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
     const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
     const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
-    const pph = Number(row.pph || 0);
+    const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
     const total = Math.max(0, (isInclude ? newAmount : dpp + ppn) - pph);
 
     await patchRow("invoices", row.id, {
@@ -105,10 +107,34 @@ export function InvoiceExtras({
       nilai: dpp,
       amount: dpp,
       ppn,
+      pph,
       total,
     });
     await reload();
     toast("Barang berhasil dihapus dari invoice");
+  }
+
+  async function handleUpdateItemPph(idx: number, newPphMode: PphMode) {
+    const updated = items.map((it, i) =>
+      i === idx ? { ...it, pphMode: newPphMode, tipePph: pphModeToTipe(newPphMode) } : it
+    );
+    const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
+    const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
+    const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
+    const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
+    const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
+    const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
+    const total = Math.max(0, (isInclude ? newAmount : dpp + ppn) - pph);
+
+    await patchRow("invoices", row.id, {
+      items: updated,
+      nilai: dpp,
+      amount: dpp,
+      ppn,
+      pph,
+      total,
+    });
+    await reload();
   }
 
   const salesReturns = React.useMemo(() => {
@@ -394,22 +420,51 @@ export function InvoiceExtras({
                   ? it.serialNumbers.join(", ")
                   : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
 
+                const itemPph = calcItemPph(it);
                 return (
-                  <View key={it.id || idx} className="flex-row items-center p-2.5 border-b border-border/40 last:border-b-0">
-                    <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
-                    <View className="flex-1 mr-2">
-                      <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
-                      {snText ? (
-                        <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
-                      ) : null}
+                  <View key={it.id || idx} className="p-2.5 border-b border-border/40 last:border-b-0 gap-1.5">
+                    <View className="flex-row items-center">
+                      <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
+                      <View className="flex-1 mr-2">
+                        <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
+                        {snText ? (
+                          <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
+                        ) : null}
+                      </View>
+                      <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.unit || "unit"}</Text>
+                      <Text className="text-xs text-foreground w-28 text-right">{rupiah(it.price || 0)}</Text>
+                      <View className="w-28 items-end">
+                        <Text className="text-xs font-semibold text-foreground">{rupiah(sub)}</Text>
+                        {itemPph > 0 ? (
+                          <Text className="text-[10px] text-danger font-medium">PPh: -{rupiah(itemPph)}</Text>
+                        ) : null}
+                      </View>
+                      <View className="w-12 items-center">
+                        <Button size="icon" variant="ghost" className="size-7" onPress={() => handleDeleteItem(idx)}>
+                          <Trash2 size={13} color={colors.danger} />
+                        </Button>
+                      </View>
                     </View>
-                    <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.unit || "unit"}</Text>
-                    <Text className="text-xs text-foreground w-28 text-right">{rupiah(it.price || 0)}</Text>
-                    <Text className="text-xs font-semibold text-foreground w-28 text-right">{rupiah(sub)}</Text>
-                    <View className="w-12 items-center">
-                      <Button size="icon" variant="ghost" className="size-7" onPress={() => handleDeleteItem(idx)}>
-                        <Trash2 size={13} color={colors.danger} />
-                      </Button>
+
+                    {/* Selector PPh Per-Item */}
+                    <View className="flex-row items-center gap-1 flex-wrap pl-8">
+                      <Text className="text-[10px] text-muted-foreground mr-1">Tarif PPh:</Text>
+                      {PPH_MODE_OPTIONS.map((opt) => {
+                        const active = (it.pphMode || "none") === opt.id;
+                        return (
+                          <Pressable
+                            key={opt.id}
+                            onPress={() => handleUpdateItemPph(idx, opt.id)}
+                            className={`px-1.5 py-0.5 rounded border ${
+                              active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                            }`}
+                          >
+                            <Text className={`text-[9px] ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                              {opt.id === "none" ? "Non-PPh" : opt.label.split(" ")[0]}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
                     </View>
                   </View>
                 );

@@ -736,7 +736,9 @@ export function FormDialog({
         const init: Record<string, string> = {};
         const today = toIsoDate(new Date());
         fields.forEach((f) => {
-          if (f.type === "date" && def?.defaults?.[f.key]) {
+          if (f.defaultValue != null) {
+            init[f.key] = String(f.defaultValue);
+          } else if (f.type === "date" && def?.defaults?.[f.key]) {
             init[f.key] = today;
           } else if (f.type === "date" && f.required) {
             init[f.key] = today;

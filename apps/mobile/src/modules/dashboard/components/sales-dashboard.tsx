@@ -125,7 +125,7 @@ export function SalesDashboard({ user, data, isMobile }: SalesDashboardProps) {
         <View className={isMobile ? "w-full" : "flex-[1.5]"}>
           <ProjectOverviewCard
             projects={data.projects.slice(0, 4)}
-            onViewAll={() => router.push("/projects")}
+            disableNavigation
           />
         </View>
 

@@ -554,7 +554,20 @@ export class ProjectsService {
 
     let rows = await this.prisma.main.projectRequirement.findMany({
       where: { projectId },
-      include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true, category: { select: { id: true, name: true } } } } },
+      include: {
+        product: {
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            unit: true,
+            hasSerial: true,
+            purchasePrice: true,
+            description: true,
+            category: { select: { id: true, name: true } },
+          },
+        },
+      },
       orderBy: { id: "asc" },
     });
 
@@ -650,7 +663,38 @@ export class ProjectsService {
     const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user, true);
-    const product = await this.prisma.main.product.findUnique({ where: { id: dto.productId } });
+
+    let productId = dto.productId;
+    if (!productId && dto.name) {
+      let prod = await this.prisma.main.product.findFirst({
+        where: { name: { equals: dto.name.trim(), mode: "insensitive" } },
+      });
+      if (!prod) {
+        const sku = `SKU-BOQ-${Date.now().toString(36).toUpperCase()}`;
+        prod = await this.prisma.main.product.create({
+          data: {
+            sku,
+            name: dto.name.trim(),
+            unit: dto.unit || "unit",
+            purchasePrice: dto.price ? Number(dto.price) : 0,
+            description: dto.pphMode ? `PPH:${dto.pphMode}` : null,
+            type: "BARANG",
+          },
+        });
+      } else if ((dto.price && Number(prod.purchasePrice) === 0) || dto.pphMode) {
+        await this.prisma.main.product.update({
+          where: { id: prod.id },
+          data: {
+            ...(dto.price ? { purchasePrice: Number(dto.price) } : {}),
+            ...(dto.pphMode ? { description: `PPH:${dto.pphMode}` } : {}),
+          },
+        });
+      }
+      productId = prod.id;
+    }
+    if (!productId) throw new BadRequestException("Barang atau nama barang wajib diisi");
+
+    const product = await this.prisma.main.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException("Barang tidak ditemukan");
     if (dto.taskId) {
       const task = await this.prisma.main.task.findUnique({ where: { id: dto.taskId } });
@@ -661,12 +705,12 @@ export class ProjectsService {
       data: {
         projectId,
         taskId: dto.taskId,
-        productId: dto.productId,
+        productId,
         qty: dto.qty,
         serials: dto.serials ?? null,
       },
     });
-    const reserved = await this.reserveFor(projectId, row.id, dto.productId, dto.qty, dto.serials);
+    const reserved = await this.reserveFor(projectId, row.id, productId, dto.qty, dto.serials);
     const created = await this.prisma.main.projectRequirement.findUnique({
       where: { id: row.id },
       include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true, category: { select: { id: true, name: true } } } } },
@@ -696,6 +740,18 @@ export class ProjectsService {
     await this.access(project, user, true);
     const row = await this.prisma.main.projectRequirement.findUnique({ where: { id } });
     if (!row || row.projectId !== projectId) throw new NotFoundException("Kebutuhan tidak ditemukan");
+
+    if (dto.name || dto.unit || dto.price !== undefined || dto.pphMode !== undefined) {
+      await this.prisma.main.product.update({
+        where: { id: row.productId },
+        data: {
+          ...(dto.name ? { name: dto.name.trim() } : {}),
+          ...(dto.unit ? { unit: dto.unit.trim() } : {}),
+          ...(dto.price !== undefined ? { purchasePrice: Number(dto.price) } : {}),
+          ...(dto.pphMode !== undefined ? { description: dto.pphMode ? `PPH:${dto.pphMode}` : null } : {}),
+        },
+      });
+    }
 
     const updated = await this.prisma.main.projectRequirement.update({
       where: { id },
