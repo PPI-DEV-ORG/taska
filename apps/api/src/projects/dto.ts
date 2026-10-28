@@ -17,7 +17,7 @@ import { PageQuery } from "../common/dto/page-query.js";
 
 const PROJECT_TYPES = ["CUSTOMER", "PRODUCT_RD", "INTERNAL", "MAINTENANCE", "SUPPORT", "OTHER"] as const;
 const PROJECT_STATUS = ["DIRENCANAKAN", "BERJALAN", "DITUNDA", "TERLAMBAT", "SELESAI"] as const;
-const TASK_STATUS = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"] as const;
+const TASK_STATUS = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "REJECTED", "PENDING", "TESTED"] as const;
 const PRIORITY = ["RENDAH", "SEDANG", "TINGGI", "URGENT"] as const;
 
 export class ProjectListQuery extends PageQuery {
@@ -232,9 +232,12 @@ export class TaskDto {
     if (typeof value === "string") {
       const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
       if (v === "TODO") return "TODO";
-      if (v === "IN_PROGRESS" || v === "PROGRESS" || v === "BERJALAN" || v === "DOING") return "IN_PROGRESS";
-      if (v === "BLOCKED" || v === "HOLD" || v === "TERTUNDA" || v === "PENDING") return "BLOCKED";
-      if (v === "DONE" || v === "SELESAI" || v === "COMPLETED") return "DONE";
+      if (v === "IN_PROGRESS" || v === "PROGRESS" || v === "BERJALAN" || v === "DOING" || v === "INPROGRESS") return "IN_PROGRESS";
+      if (v === "PENDING" || v === "HOLD" || v === "TERTUNDA") return "PENDING";
+      if (v === "TESTED" || v === "TESTING" || v === "UJI") return "TESTED";
+      if (v === "REJECTED" || v === "DITOLAK" || v === "REJECT") return "REJECTED";
+      if (v === "DONE" || v === "SELESAI" || v === "COMPLETED" || v === "DON") return "DONE";
+      if (v === "BLOCKED") return "BLOCKED";
       return v;
     }
     return value;
@@ -263,9 +266,12 @@ export class TaskStatusDto {
     if (typeof value === "string") {
       const v = value.toUpperCase().trim().replace(/[\s\-]/g, "_");
       if (v === "TODO") return "TODO";
-      if (v === "IN_PROGRESS" || v === "PROGRESS" || v === "BERJALAN" || v === "DOING") return "IN_PROGRESS";
-      if (v === "BLOCKED" || v === "HOLD" || v === "TERTUNDA" || v === "PENDING") return "BLOCKED";
-      if (v === "DONE" || v === "SELESAI" || v === "COMPLETED") return "DONE";
+      if (v === "IN_PROGRESS" || v === "PROGRESS" || v === "BERJALAN" || v === "DOING" || v === "INPROGRESS") return "IN_PROGRESS";
+      if (v === "PENDING" || v === "HOLD" || v === "TERTUNDA") return "PENDING";
+      if (v === "TESTED" || v === "TESTING" || v === "UJI") return "TESTED";
+      if (v === "REJECTED" || v === "DITOLAK" || v === "REJECT") return "REJECTED";
+      if (v === "DONE" || v === "SELESAI" || v === "COMPLETED" || v === "DON") return "DONE";
+      if (v === "BLOCKED") return "BLOCKED";
       return v;
     }
     return value;

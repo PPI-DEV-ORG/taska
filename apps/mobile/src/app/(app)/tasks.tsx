@@ -44,7 +44,7 @@ export default function TasksScreen() {
         search={q}
         onSearch={setQ}
         placeholder="Cari tugas, project, atau PIC..."
-        statuses={["TODO", "IN PROGRESS", "BLOCKED", "DONE"]}
+        statuses={["TODO", "IN PROGRESS", "PENDING", "TESTED", "DONE", "REJECTED", "BLOCKED"]}
         status={filterStatus}
         onStatus={setFilterStatus}
       />

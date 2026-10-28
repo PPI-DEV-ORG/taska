@@ -134,6 +134,9 @@ enum TaskStatus {
   IN_PROGRESS
   BLOCKED
   DONE
+  REJECTED
+  PENDING
+  TESTED
 }
 
 enum Priority {

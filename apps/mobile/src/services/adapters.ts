@@ -68,7 +68,15 @@ const MAPS: Record<string, Record<string, string>> = {
     DIRENCANAKAN: "Direncanakan", BERJALAN: "Berjalan", DITUNDA: "Ditunda",
     TERLAMBAT: "Terlambat", SELESAI: "Selesai",
   },
-  tasks: { TODO: "TODO", IN_PROGRESS: "IN PROGRESS", BLOCKED: "BLOCKED", DONE: "DONE" },
+  tasks: {
+    TODO: "TODO",
+    IN_PROGRESS: "IN PROGRESS",
+    PENDING: "PENDING",
+    TESTED: "TESTED",
+    DONE: "DONE",
+    REJECTED: "REJECTED",
+    BLOCKED: "BLOCKED",
+  },
   "purchase-requests": {
     DIAJUKAN: "Diajukan", CEK_STOK: "Cek stok", DISETUJUI: "Disetujui", DITOLAK: "Ditolak",
     PO_DIBUAT: "PO dibuat", DIKIRIM: "Dikirim", DITERIMA: "Diterima", DIBATALKAN: "Dibatalkan",
