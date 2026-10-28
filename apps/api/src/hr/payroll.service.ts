@@ -37,6 +37,45 @@ export class PayrollService {
     });
   }
 
+  async getSalaryConfigByUserId(userId: number) {
+    const user = await (this.prisma.main as any).user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        phone: true,
+        position: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException("Karyawan tidak ditemukan");
+    }
+
+    const cfg = await (this.prisma.main as any).salaryConfig.findUnique({
+      where: { userId },
+    });
+
+    return {
+      userId,
+      user,
+      basicSalary: cfg ? Number(cfg.basicSalary) : 0,
+      allowance: cfg ? Number(cfg.allowance) : 0,
+      ptkp: cfg?.ptkp || "TK/0",
+      hasNpwp: cfg?.hasNpwp ?? true,
+      pph21Rate: cfg?.pph21Rate ? Number(cfg.pph21Rate) : null,
+    };
+  }
+
+  async deleteSalaryConfig(userId: number) {
+    await (this.prisma.main as any).salaryConfig.deleteMany({
+      where: { userId },
+    });
+    return { success: true, message: "Setting gaji karyawan berhasil dihapus" };
+  }
+
   async updateSalaryConfig(userId: number, dto: UpdateSalaryConfigDto) {
     return (this.prisma.main as any).salaryConfig.upsert({
       where: { userId },
@@ -240,7 +279,63 @@ export class PayrollService {
       createdSlips.push(slip);
     }
 
-    return this.getSlips(period);
+    const slips = await this.getSlips(period);
+    return {
+      generated: createdSlips.length,
+      count: createdSlips.length,
+      slips,
+    };
+  }
+
+  async getSlipById(id: number, userId?: number) {
+    const where: any = { id };
+    if (userId) where.userId = userId;
+
+    const slip = await (this.prisma.main as any).payrollSlip.findFirst({
+      where,
+    });
+
+    if (!slip) {
+      throw new NotFoundException("Slip gaji tidak ditemukan");
+    }
+
+    const user = await (this.prisma.main as any).user.findUnique({
+      where: { id: slip.userId },
+      select: { id: true, name: true, email: true, role: true, phone: true, position: true },
+    });
+
+    return {
+      ...slip,
+      basicSalary: Number(slip.basicSalary),
+      allowance: Number(slip.allowance),
+      overtimePay: Number(slip.overtimePay),
+      absentDeduct: Number(slip.absentDeduct),
+      grossSalary: Number(slip.grossSalary),
+      bpjs: Number(slip.bpjs),
+      pph21: Number(slip.pph21),
+      netSalary: Number(slip.netSalary),
+      user: user || { id: slip.userId, name: `User #${slip.userId}` },
+    };
+  }
+
+  async deleteSlip(id: number) {
+    const slip = await (this.prisma.main as any).payrollSlip.findUnique({
+      where: { id },
+    });
+
+    if (!slip) {
+      throw new NotFoundException("Slip gaji tidak ditemukan");
+    }
+
+    if (slip.status === "PAID") {
+      throw new BadRequestException("Slip gaji yang sudah berstatus PAID tidak dapat dihapus");
+    }
+
+    await (this.prisma.main as any).payrollSlip.delete({
+      where: { id },
+    });
+
+    return { success: true, message: "Slip gaji berhasil dihapus" };
   }
 
   async markPaid(id: number, dto: PaySlipDto) {

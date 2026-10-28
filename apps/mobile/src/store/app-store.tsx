@@ -901,7 +901,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setData((d) => {
         const next = {
           ...d,
-          [module]: (d[module] ?? []).map((r: any) => (r.id === id ? { ...r, [key]: status } : r)),
+          [module]: (d[module] ?? []).map((r: any) => (String(r.id) === String(id) ? { ...r, [key]: status } : r)),
         };
         writeStorageJson(STORAGE_CACHE_DB_KEY, next);
         return next;
@@ -1030,7 +1030,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setData((d) => {
         const next = {
           ...d,
-          [module]: (d[module] ?? []).map((r: Row) => (r.id === id ? { ...r, ...patch } : r)),
+          [module]: (d[module] ?? []).map((r: Row) => (String(r.id) === String(id) ? { ...r, ...patch } : r)),
         };
         writeStorageJson(STORAGE_CACHE_DB_KEY, next);
         return next;

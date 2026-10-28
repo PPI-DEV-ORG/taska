@@ -26,7 +26,7 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { DocumentViewerList, DocumentViewerItem, resolveModuleDocs } from "@/components/taska/document-viewer";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
-import { adaptRow } from "@/services/adapters";
+import { adaptRow, toLabel } from "@/services/adapters";
 import { MODULES, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -67,7 +67,7 @@ export default function ProjectDetailScreen() {
     }
   }, [id, loadHistory]);
 
-  const storeProject = data.projects.find((p) => p.id === id);
+  const storeProject = data.projects.find((p) => String(p.id) === String(id));
   const [remoteDetail, setRemoteDetail] = React.useState<Row | null>(null);
   React.useEffect(() => {
     if (!id) return;
@@ -81,10 +81,36 @@ export default function ProjectDetailScreen() {
       active = false;
     };
   }, [id, storeProject?.boqFileId, storeProject?.progres, storeProject?.status, storeProject?.bastFileId]);
-  const project = storeProject
-    ? { ...storeProject, stages: remoteDetail?.stages ?? null, boqFile: remoteDetail?.boqFile ?? storeProject.boqFile ?? null }
+  const baseProject = storeProject ?? remoteDetail;
+  const project = baseProject
+    ? {
+        ...baseProject,
+        ...(remoteDetail ?? {}),
+        nama: String(remoteDetail?.nama || baseProject.nama || remoteDetail?.name || baseProject.name || ""),
+        name: String(remoteDetail?.name || baseProject.name || remoteDetail?.nama || baseProject.nama || ""),
+        status: remoteDetail?.status || baseProject.status || (baseProject.status ? toLabel("projects", baseProject.status) : "Berjalan"),
+        pembayaran: remoteDetail?.pembayaran || baseProject.pembayaran || (baseProject.paymentStatus ? toLabel("paymentStatus", baseProject.paymentStatus) : "Belum lunas"),
+        paymentStatus: remoteDetail?.paymentStatus || baseProject.paymentStatus || remoteDetail?.pembayaran || baseProject.pembayaran || "Belum lunas",
+        jenis: remoteDetail?.jenis || baseProject.jenis || (baseProject.type ? toLabel("projectType", baseProject.type) : "Customer"),
+        type: remoteDetail?.type || baseProject.type || remoteDetail?.jenis || baseProject.jenis || "CUSTOMER",
+        customer: typeof (remoteDetail?.customer ?? baseProject.customer) === "object"
+          ? ((remoteDetail?.customer ?? baseProject.customer)?.name || (remoteDetail?.customer ?? baseProject.customer)?.nama || "-")
+          : String(remoteDetail?.customer || baseProject.customer || "-"),
+        progres: (remoteDetail?.status === "Selesai" || baseProject.status === "Selesai" || String(remoteDetail?.status || baseProject.status).toUpperCase() === "SELESAI")
+          ? 100
+          : (remoteDetail?.progres ?? baseProject.progres ?? remoteDetail?.progress ?? baseProject.progress ?? 0),
+        progress: (remoteDetail?.status === "Selesai" || baseProject.status === "Selesai" || String(remoteDetail?.status || baseProject.status).toUpperCase() === "SELESAI")
+          ? 100
+          : (remoteDetail?.progress ?? baseProject.progress ?? remoteDetail?.progres ?? baseProject.progres ?? 0),
+        quotationId: remoteDetail?.quotationId ?? baseProject.quotationId ?? remoteDetail?.quotationid ?? baseProject.quotationid ?? (remoteDetail?.quotation?.id ? String(remoteDetail.quotation.id) : (baseProject.quotation?.id ? String(baseProject.quotation.id) : null)),
+        quotationid: remoteDetail?.quotationid ?? baseProject.quotationid ?? remoteDetail?.quotationId ?? baseProject.quotationId ?? (remoteDetail?.quotation?.id ? String(remoteDetail.quotation.id) : (baseProject.quotation?.id ? String(baseProject.quotation.id) : null)),
+        stages: remoteDetail?.stages ?? baseProject.stages ?? null,
+        boqFile: remoteDetail?.boqFile ?? baseProject.boqFile ?? null,
+      }
     : undefined;
-  const currentProgress = project ? (project.status === "Selesai" ? 100 : (Number(project.progres) || 0)) : 0;
+  const currentProgress = project
+    ? (project.status === "Selesai" || String(project.status).toUpperCase() === "SELESAI" ? 100 : (Number(project.progres ?? project.progress) || 0))
+    : 0;
   const [liveProgress, setLiveProgress] = React.useState<number>(currentProgress);
   const [prevProgress, setPrevProgress] = React.useState<number>(currentProgress);
   const [savingProgress, setSavingProgress] = React.useState(false);
@@ -131,30 +157,31 @@ export default function ProjectDetailScreen() {
     );
   }
 
+  const pName = project.nama || project.name || "";
   const tasks = data.tasks.filter(
     (t) =>
       String(t.projectId) === String(project.id) ||
-      t.project === project.id ||
-      t.project === project.nama
+      String(t.project) === String(project.id) ||
+      (pName && t.project === pName)
   );
   const expenses = data.expenses.filter(
-    (e) => e.project === project.nama || String(e.projectId) === String(project.id)
+    (e) => (pName && e.project === pName) || String(e.projectId) === String(project.id)
   );
   const deliveryNotes = data["delivery-notes"].filter(
-    (dn) => dn.project === project.nama || String(dn.projectId) === String(project.id)
+    (dn) => (pName && dn.project === pName) || String(dn.projectId) === String(project.id)
   );
   const projectRequests = (data["purchase-requests"] ?? []).filter(
     (pr: any) =>
       String(pr.projectId) === String(project.id) ||
-      pr.project === project.nama ||
-      pr.project === project.id
+      (pName && pr.project === pName) ||
+      String(pr.project) === String(project.id)
   );
 
   const canViewFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
 
   const projectInvoices = (data.invoices ?? []).filter(
     (i: any) =>
-      (String(i.projectId) === String(project.id) || i.project === project.nama) &&
+      (String(i.projectId) === String(project.id) || (pName && i.project === pName)) &&
       i.status !== "Batal" &&
       i.status !== "BATAL"
   );
@@ -162,7 +189,7 @@ export default function ProjectDetailScreen() {
 
   const projectPos = (data["supplier-pos"] ?? []).filter(
     (po: any) =>
-      (String(po.projectId) === String(project.id) || po.project === project.nama) &&
+      (String(po.projectId) === String(project.id) || (pName && po.project === pName)) &&
       po.status !== "Ditolak" &&
       po.status !== "DIBATALKAN"
   );
@@ -178,7 +205,7 @@ export default function ProjectDetailScreen() {
       toast("Akses ditolak: Hanya untuk Finance, Bos, dan Super Admin", "danger");
       return;
     }
-    const header = `LAPORAN UNTUNG-RUGI (P&L) PROYEK\nNama Proyek: ${project?.nama}\nCustomer: ${project?.customer}\nTanggal Cetak: ${new Date().toISOString().slice(0, 10)}\n\n`;
+    const header = `LAPORAN UNTUNG-RUGI (P&L) PROYEK\nNama Proyek: ${project?.nama || project?.name || ""}\nCustomer: ${project?.customer || "-"}\nTanggal Cetak: ${new Date().toISOString().slice(0, 10)}\n\n`;
     const summary = [
       `KOMPONEN KEUANGAN,NOMINAL (RP),KETERANGAN`,
       `Pendapatan DPP Invoice,${revenue},"${projectInvoices.length} invoice tercatat"`,
@@ -192,7 +219,7 @@ export default function ProjectDetailScreen() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `pnl-${project?.nama.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `pnl-${(project?.nama || project?.name || "proyek").toLowerCase().replace(/[^a-z0-9]/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -200,7 +227,7 @@ export default function ProjectDetailScreen() {
     toast("Laporan Untung-Rugi (P&L) proyek berhasil diunduh");
   }
 
-  const isLunas = project.pembayaran === "Lunas";
+  const isLunas = project.pembayaran === "Lunas" || String(project.paymentStatus).toUpperCase() === "LUNAS";
   const hasProgressChanged = liveProgress !== currentProgress;
 
   function toggleTask(taskId: string, currentStatus: string) {
@@ -513,7 +540,7 @@ export default function ProjectDetailScreen() {
                 >
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1 pr-3">
-                      <Text className="text-sm font-semibold">{t.nama}</Text>
+                      <Text className="text-sm font-semibold">{t.nama || t.name}</Text>
                       {t.deskripsi ? (
                         <Text className="text-muted-foreground text-xs mt-0.5" numberOfLines={2}>
                           {t.deskripsi}
@@ -550,7 +577,12 @@ export default function ProjectDetailScreen() {
               ))
             )}
           </Panel>
-          <TaskDetailDialog task={detailTask} open={!!detailTask} onOpenChange={(v) => !v && setDetailTask(null)} />
+          <TaskDetailDialog
+            task={detailTask ? ((data.tasks ?? []).find((t: Row) => String(t.id) === String(detailTask.id)) ?? detailTask) : null}
+            open={!!detailTask}
+            onOpenChange={(v) => !v && setDetailTask(null)}
+            onSaved={(updated) => setDetailTask(updated)}
+          />
         </View>
       )}
 
@@ -860,7 +892,7 @@ export default function ProjectDetailScreen() {
             key: "parentTask",
             label: "Sub-tugas dari (Opsional)",
             type: "select",
-            options: ["(Tugas Utama)", ...tasks.filter((t) => !t.parent).map((t) => String(t.nama))],
+            options: ["(Tugas Utama)", ...tasks.filter((t) => !t.parent).map((t) => String(t.nama || t.name)).filter(Boolean)],
           },
           { key: "pic", label: "PIC Tugas", type: "select", required: true, placeholder: "Pilih PIC" },
           { key: "tenggat", label: "Tenggat Waktu", type: "date" },
@@ -870,11 +902,11 @@ export default function ProjectDetailScreen() {
         onSubmit={(v) => {
           const parentRow =
             v.parentTask && v.parentTask !== "(Tugas Utama)"
-              ? tasks.find((t) => t.nama === v.parentTask)
+              ? tasks.find((t) => (t.nama || t.name) === v.parentTask)
               : undefined;
           addRow("tasks", {
             projectId: project.id,
-            project: project.nama,
+            project: project.nama || project.name,
             parentId: parentRow?.id,
             nama: v.nama,
             deskripsi: v.deskripsi || undefined,
@@ -896,13 +928,13 @@ export default function ProjectDetailScreen() {
             label: "Pilih Barang / Perangkat",
             type: "select",
             required: true,
-            options: (data.products ?? []).map((p) => String(p.nama)),
+            options: (data.products ?? []).map((p) => String(p.nama || p.name)).filter(Boolean),
           },
           { key: "qty", label: "Jumlah yang Dibutuhkan", type: "number", required: true, placeholder: "Contoh: 4" },
         ]}
         submitLabel="Cek Stok & Simpan"
         onSubmit={async (v) => {
-          const prod = (data.products ?? []).find((p) => p.nama === v.produk);
+          const prod = (data.products ?? []).find((p) => (p.nama || p.name) === v.produk);
           if (!prod) return;
           try {
             const res = await api<any>("POST", `/projects/${project.id}/requirements`, {
@@ -933,7 +965,7 @@ export default function ProjectDetailScreen() {
             required: true,
             options: requirements.length > 0
               ? requirements.map((r) => String(r.product?.name ?? r.produk ?? "Barang"))
-              : (data.products ?? []).map((p) => String(p.nama)),
+              : (data.products ?? []).map((p) => String(p.nama || p.name)).filter(Boolean),
           },
           {
             key: "qty",
@@ -958,7 +990,7 @@ export default function ProjectDetailScreen() {
         ]}
         submitLabel="Kembalikan ke Gudang"
         onSubmit={async (v) => {
-          const prod = (data.products ?? []).find((p) => p.nama === v.produk);
+          const prod = (data.products ?? []).find((p) => (p.nama || p.name) === v.produk);
           const wh = (data.warehouses ?? []).find((w) => (w.nama || w.name) === v.gudang) ?? data.warehouses?.[0];
           if (!prod) return;
           try {

@@ -1,17 +1,32 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query } from "@nestjs/common";
 import { PayrollService } from "./payroll.service.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
-import { GeneratePayrollDto, PaySlipDto, UpdateSalaryConfigDto } from "./dto.js";
+import { GeneratePayrollDto, PaySlipDto, SaveSalaryConfigDto, UpdateSalaryConfigDto } from "./dto.js";
 
 @Controller("hr/payroll")
 export class PayrollController {
   constructor(private readonly payroll: PayrollService) {}
 
   @Get("configs")
-  @Require("payroll", "L")
+  @Require("payroll", "U")
   getConfigs() {
     return this.payroll.getSalaryConfigs();
+  }
+
+  @Get("configs/:userId")
+  @Require("payroll", "U")
+  getConfigByUserId(@Param("userId", ParseIntPipe) userId: number) {
+    return this.payroll.getSalaryConfigByUserId(userId);
+  }
+
+  @Post("configs")
+  @Require("payroll", "U")
+  saveConfig(@Body() dto: SaveSalaryConfigDto) {
+    if (!dto.userId) {
+      throw new BadRequestException("userId wajib disertakan");
+    }
+    return this.payroll.updateSalaryConfig(dto.userId, dto);
   }
 
   @Put("configs/:userId")
@@ -21,6 +36,12 @@ export class PayrollController {
     @Body() dto: UpdateSalaryConfigDto,
   ) {
     return this.payroll.updateSalaryConfig(userId, dto);
+  }
+
+  @Delete("configs/:userId")
+  @Require("payroll", "U")
+  deleteConfig(@Param("userId", ParseIntPipe) userId: number) {
+    return this.payroll.deleteSalaryConfig(userId);
   }
 
   @Get("slips")
@@ -39,6 +60,16 @@ export class PayrollController {
     return this.payroll.getSlips(period, effectiveUserId);
   }
 
+  @Get("slips/:id")
+  @Require("payroll", "L")
+  getSlipById(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseIntPipe) id: number,
+  ) {
+    const isFinanceOrAdmin = ["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE"].includes(user.role?.toUpperCase() || "");
+    return this.payroll.getSlipById(id, isFinanceOrAdmin ? undefined : user.id);
+  }
+
   @Post("generate")
   @Require("payroll", "C")
   generate(@Body() dto: GeneratePayrollDto) {
@@ -52,6 +83,14 @@ export class PayrollController {
     @Body() dto: PaySlipDto,
   ) {
     return this.payroll.markPaid(id, dto);
+  }
+
+  @Delete("slips/:id")
+  @Require("payroll", "U")
+  deleteSlip(
+    @Param("id", ParseIntPipe) id: number,
+  ) {
+    return this.payroll.deleteSlip(id);
   }
 }
 
