@@ -266,6 +266,9 @@ export class InvoiceOutService {
           quotationId: qId,
           quotation: qNum,
           discount: meta.discount,
+          pph: Number(meta.pph ?? 0),
+          pphMode: meta.pphMode ?? "none",
+          tipePph: meta.tipePph ?? "Tanpa PPh",
           items: Array.isArray(meta.items) ? meta.items : undefined,
           stockConflictFlag: Boolean(meta.stockConflictFlag),
           stockConflictMessage: meta.stockConflictMessage ?? null,
@@ -421,8 +424,8 @@ export class InvoiceOutService {
           id: String(it.id ?? idx + 1),
           item: String(it.item ?? "").trim(),
           qty: Number(it.qty) || (serialNumbers.length > 0 ? serialNumbers.length : 1),
-          satuan: String(it.satuan || "Unit").trim(),
-          harga: Number(it.harga) || 0,
+          satuan: String(it.satuan || it.unit || "Unit").trim(),
+          harga: Number(it.harga ?? it.price ?? 0) || 0,
           kind,
           ...(it.productId ? { productId: Number(it.productId) } : {}),
           ...(it.sku ? { sku: String(it.sku) } : {}),
@@ -430,6 +433,8 @@ export class InvoiceOutService {
           ...(serialUnitIds.length > 0 ? { serialUnitIds } : {}),
           ...(serialNumbers.length > 0 ? { serialNumbers } : {}),
           ...(it.outOfStockAutoSwap ? { outOfStockAutoSwap: true } : {}),
+          ...(it.pphMode ? { pphMode: String(it.pphMode) } : {}),
+          ...(it.tipePph ? { tipePph: String(it.tipePph) } : {}),
         };
       });
   }

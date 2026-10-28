@@ -280,7 +280,7 @@ export class ReportsService {
         where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, ...this.dateRange(q, "date") },
       }),
       this.prisma.main.expense.findMany({
-        where: { status: { not: "DITOLAK" }, ...this.dateRange(q, "date") },
+        where: { status: { in: ["DISETUJUI", "DIBAYAR"] }, ...this.dateRange(q, "date") },
         include: { category: { select: { name: true } } },
       }),
     ]);
@@ -336,7 +336,7 @@ export class ReportsService {
         where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, ...this.dateRange(q, "date") },
       }),
       this.prisma.main.expense.findMany({
-        where: { status: { not: "DITOLAK" }, ...this.dateRange(q, "date") },
+        where: { status: { in: ["DISETUJUI", "DIBAYAR"] }, ...this.dateRange(q, "date") },
       }),
       this.movements.summary({ page: 1, limit: MAX_ROWS, dir: "desc" }).catch(() => ({ items: [] })),
     ]);
@@ -515,7 +515,7 @@ export class ReportsService {
         orderBy: { date: "asc" },
       }),
       this.prisma.main.expense.findMany({
-        where: { status: { not: "DITOLAK" }, ...this.dateRange(q, "date") },
+        where: { status: { in: ["DISETUJUI", "DIBAYAR"] }, ...this.dateRange(q, "date") },
         include: {
           reporter: { select: { name: true } },
           category: { select: { name: true } },

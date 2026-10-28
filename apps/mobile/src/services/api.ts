@@ -327,9 +327,9 @@ export async function uploadMasterImport(
   return api("POST", `/imports?type=${type}`, undefined, { form });
 }
 
-/** Unduh PDF kompilasi dokumentasi (survey, project, delivery-note) dari server. */
+/** Unduh PDF kompilasi dokumentasi (survey, project, delivery-note, poc) dari server. */
 export async function downloadDocumentationPdf(
-  kind: "survey" | "project" | "delivery-note",
+  kind: "survey" | "project" | "delivery-note" | "poc" | "visit",
   entityId: string | number,
 ): Promise<boolean> {
   if (typeof window === "undefined" || typeof document === "undefined") return false;

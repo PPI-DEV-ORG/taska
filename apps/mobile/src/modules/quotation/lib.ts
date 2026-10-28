@@ -61,11 +61,20 @@ export function pphModeToTipe(mode: PphMode): string {
   return opt ? opt.label : "Tanpa PPh";
 }
 
+export function calcItemPph(item: { qty?: number; harga?: number; price?: number; pphMode?: PphMode }): number {
+  const mode = item.pphMode || "none";
+  if (mode === "none") return 0;
+  const qty = Number(item.qty) || 0;
+  const harga = Number(item.harga ?? item.price ?? 0);
+  return Math.round(qty * harga * pphRateFor(mode));
+}
+
 export function calcQuotationFinancials(
   nilaiRaw: unknown,
   discRaw: unknown,
   ppnMode: PpnMode = "exclude",
-  pphMode: PphMode = "none"
+  pphMode: PphMode = "none",
+  items?: Array<{ qty?: number; harga?: number; price?: number; pphMode?: PphMode }>
 ) {
   const totNum = Number(String(nilaiRaw).replace(/\D/g, "")) || 0;
   const discNum = Number(String(discRaw).replace(/\D/g, "")) || 0;
@@ -73,8 +82,16 @@ export function calcQuotationFinancials(
   const isInclude = ppnMode === "include";
   const dpp = isInclude ? Math.round(netBeforeTax / 1.11) : netBeforeTax;
   const ppn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, netBeforeTax - dpp) : Math.round(netBeforeTax * 0.11);
-  const pphRate = pphRateFor(pphMode);
-  const pph = Math.round(dpp * pphRate);
+
+  // Jika ada items, hitung PPh per-item
+  let pph = 0;
+  if (Array.isArray(items) && items.length > 0) {
+    pph = items.reduce((acc, it) => acc + calcItemPph(it), 0);
+  } else {
+    const pphRate = pphRateFor(pphMode);
+    pph = Math.round(dpp * pphRate);
+  }
+
   const totalAfterDisc = Math.max(0, (isInclude ? netBeforeTax : netBeforeTax + ppn) - pph);
   return { totNum, discNum, dpp, ppn, pph, totalAfterDisc };
 }

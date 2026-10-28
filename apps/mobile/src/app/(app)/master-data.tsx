@@ -13,6 +13,7 @@ import { MasterKategoriBarangView } from "@/modules/master-data/components/maste
 import { MasterGudangView } from "@/modules/master-data/components/master-gudang-view";
 import { MasterSumberLeadView } from "@/modules/master-data/components/master-sumber-lead-view";
 import { MasterAlasanLostView } from "@/modules/master-data/components/master-alasan-lost-view";
+import { MasterJenisKunjunganView } from "@/modules/master-data/components/master-jenis-kunjungan-view";
 import { MasterKategoriPengeluaranView } from "@/modules/master-data/components/master-kategori-pengeluaran-view";
 import { MasterCostCenterView } from "@/modules/master-data/components/master-cost-center-view";
 import { MasterPengaturanSistemView } from "@/modules/master-data/components/master-pengaturan-sistem-view";
@@ -154,6 +155,17 @@ export default function MasterDataScreen() {
           addRow={addRow}
           toast={toast}
           renderActions={deleteActions("lostReasons", "alasan Lost", canAddLostReason)}
+        />
+      )}
+
+      {selectedCategory === "jenis-kunjungan" && (
+        <MasterJenisKunjunganView
+          data={data}
+          user={user}
+          onBack={() => setSelectedCategory(null)}
+          addRow={addRow}
+          toast={toast}
+          renderActions={deleteActions("visit-activity-types", "jenis aktivitas", canAddLeadSource)}
         />
       )}
 

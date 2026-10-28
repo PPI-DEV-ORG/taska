@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View, ScrollView, Pressable } from "react-native";
 import { useRouter } from "expo-router";
-import { Printer, Plus, Check, CheckCircle2, Circle, ExternalLink, RefreshCw } from "lucide-react-native";
+import { Printer, Plus, Check, CheckCircle2, Circle, ExternalLink, RefreshCw, Package, Edit2, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -9,10 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Panel, Cell } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { useApp } from "@/store/app-store";
 import { api, downloadDocumentationPdf } from "@/services/api";
 import { colors } from "@/tokens";
-import { rupiah } from "@/lib/format";
+import { rupiah, formatThousands, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
@@ -49,17 +50,28 @@ export function useProjectExpenses(projectId: string | number | undefined, proje
   }, [data.expenses, remote, projectId, projectName]);
 }
 
+const PPH_OPTIONS = [
+  { id: "none", label: "Non-PPh" },
+  { id: "pph21", label: "PPh 21 (0.5%)" },
+  { id: "pph23", label: "PPh 23 (2%)" },
+  { id: "pph4_2", label: "PPh 4(2) (1.75%)" },
+  { id: "pph22", label: "PPh 22 (1.5%)" },
+];
+
 export function ProjectExtras({ row }: { row: Row }) {
   const router = useRouter();
   const { toast, data, reload, user, patchRow } = useApp();
   const products: Row[] = data.products ?? [];
   const serials: Row[] = data.serials ?? [];
-  const [reserveOpen, setReserveOpen] = React.useState(false);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const [createInvOpen, setCreateInvOpen] = React.useState(false);
   const [isSyncingBoq, setIsSyncingBoq] = React.useState(false);
-  const [selectedProduct, setSelectedProduct] = React.useState("");
-  const [reserveQty, setReserveQty] = React.useState("2");
-  const [selectedSns, setSelectedSns] = React.useState<string[]>([]);
+  const [customBoqOpen, setCustomBoqOpen] = React.useState(false);
+  const [customBoqName, setCustomBoqName] = React.useState("");
+  const [customBoqPrice, setCustomBoqPrice] = React.useState("");
+  const [customBoqUnit, setCustomBoqUnit] = React.useState("pcs");
+  const [customBoqQty, setCustomBoqQty] = React.useState("1");
+  const [customBoqPphMode, setCustomBoqPphMode] = React.useState("none");
   const [bastOpen, setBastOpen] = React.useState(false);
   const [requirements, setRequirements] = React.useState<
     {
@@ -72,23 +84,30 @@ export function ProjectExtras({ row }: { row: Row }) {
       reservedQty: number;
       shortageQty: number;
       unitPrice: number;
+      unit?: string;
+      pphMode?: string;
       status: string;
       serials?: string[];
     }[]
   >([]);
 
-  const activeSelectedProduct = selectedProduct || String(products[0]?.nama ?? "");
-  const activeProductObj = products.find((p) => p.nama === activeSelectedProduct) ?? products[0];
-  const availableProductSerials = React.useMemo(() => {
-    if (!activeProductObj?.berSN) return [];
-    return serials
-      .filter(
-        (s) =>
-          (String(s.productId) === String(activeProductObj.id) || s.produk === activeProductObj.nama) &&
-          (s.rawStatus === "DI_GUDANG" || s.status === "Di gudang"),
-      )
-      .sort((a, b) => Number(a.id) - Number(b.id));
-  }, [serials, activeProductObj]);
+  // Edit BOQ Requirement state
+  const [editReqOpen, setEditReqOpen] = React.useState(false);
+  const [editingReq, setEditingReq] = React.useState<any>(null);
+  const [editReqName, setEditReqName] = React.useState("");
+  const [editReqQty, setEditReqQty] = React.useState("1");
+  const [editReqUnit, setEditReqUnit] = React.useState("unit");
+  const [editReqPrice, setEditReqPrice] = React.useState("");
+  const [editReqPphMode, setEditReqPphMode] = React.useState("none");
+
+  // Edit BOQ Service state
+  const [editServiceOpen, setEditServiceOpen] = React.useState(false);
+  const [editingServiceIdx, setEditingServiceIdx] = React.useState<number | null>(null);
+  const [editServiceName, setEditServiceName] = React.useState("");
+  const [editServiceQty, setEditServiceQty] = React.useState("1");
+  const [editServiceUnit, setEditServiceUnit] = React.useState("Lot");
+  const [editServicePrice, setEditServicePrice] = React.useState("");
+  const [editServicePphMode, setEditServicePphMode] = React.useState("none");
 
   const normalizedRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
   const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "sales", "admin"].includes(normalizedRole);
@@ -157,12 +176,23 @@ export function ProjectExtras({ row }: { row: Row }) {
         }
       }
       const snNote = parsedSerials.length > 0 ? ` · SN: ${parsedSerials.join(", ")}` : "";
+      const desc = r.product?.description || "";
+      const pphMatch = desc.match(/^PPH:(.+)$/);
+      const matchedQuoItem = Array.isArray(linkedQuotation?.items)
+        ? linkedQuotation.items.find((qi: any) =>
+            (qi.productId && String(qi.productId) === String(r.product?.id)) ||
+            String(qi.item || qi.name || "").toLowerCase() === String(r.product?.name || "").toLowerCase()
+          )
+        : null;
+      const pphMode = pphMatch ? pphMatch[1] : (matchedQuoItem?.pphMode || "none");
       return {
         id: String(r.id),
         productId: r.product?.id != null ? String(r.product.id) : undefined,
         produk: r.product?.name ?? "Barang",
         sku: r.product?.sku ?? "",
         kategori: r.product?.category?.name ?? "",
+        unit: r.product?.unit || "unit",
+        pphMode,
         neededQty: needed,
         reservedQty: reserved,
         shortageQty: shortage,
@@ -174,7 +204,7 @@ export function ProjectExtras({ row }: { row: Row }) {
             : `Tersedia & Di-reserve (${reserved})`) + snNote,
       };
     });
-  }, []);
+  }, [linkedQuotation]);
 
   const loadRequirements = React.useCallback(async () => {
     try {
@@ -198,32 +228,61 @@ export function ProjectExtras({ row }: { row: Row }) {
     };
   }, [row.id, mapRequirements]);
 
-  async function handleAddReservation() {
-    const q = Number(reserveQty) || 1;
-    const prod = products.find((p) => p.nama === activeSelectedProduct) ?? products[0];
-    if (!prod) {
-      toast("Pilih perangkat terlebih dahulu", "danger");
+  async function handleAddBoqFromPicker(pickedItems: any[]) {
+    try {
+      let count = 0;
+      for (const it of pickedItems) {
+        const prod = products.find(
+          (p) =>
+            (it.productId && String(p.id) === String(it.productId)) ||
+            String(p.nama || "").toLowerCase() === String(it.item || "").toLowerCase(),
+        );
+        const q = Number(it.qty) || 1;
+        const priceNum = Number(it.price ?? it.harga ?? prod?.purchasePrice ?? 0);
+        await api("POST", `/projects/${row.id}/requirements`, {
+          productId: prod ? Number(prod.id) : (it.productId ? Number(it.productId) : undefined),
+          name: !prod && !it.productId ? it.item : undefined,
+          unit: it.unit || it.satuan || prod?.unit || "unit",
+          price: priceNum,
+          qty: q,
+          serials: Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? it.serialNumbers : undefined,
+        });
+        count++;
+      }
+      await loadRequirements();
+      await reload();
+      setPickerOpen(false);
+      toast(`${count} item barang / SN berhasil dialokasikan ke BOQ Project!`);
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal menambahkan item ke BOQ", "danger");
+    }
+  }
+
+  async function handleAddCustomBoq() {
+    if (!customBoqName.trim()) {
+      toast("Nama item kustom wajib diisi", "danger");
       return;
     }
+    const q = Math.max(1, Math.round(Number(customBoqQty) || 1));
+    const priceNum = Number(customBoqPrice.replace(/\D/g, "")) || 0;
     try {
-      const effectiveQty = prod.berSN && selectedSns.length > 0 ? selectedSns.length : Math.max(1, Math.round(q));
-      const res = await api<any>("POST", `/projects/${row.id}/requirements`, {
-        productId: Number(prod.id),
-        qty: effectiveQty,
-        serials: selectedSns.length > 0 ? selectedSns : undefined,
+      await api("POST", `/projects/${row.id}/requirements`, {
+        name: customBoqName.trim(),
+        unit: customBoqUnit.trim() || "pcs",
+        price: priceNum,
+        qty: q,
+        pphMode: customBoqPphMode,
       });
       await loadRequirements();
       await reload();
-      setSelectedSns([]);
-      setReserveOpen(false);
-      const createdPr = res?.purchaseRequestCreated;
-      toast(
-        createdPr
-          ? `Kebutuhan dicatat: stok tersedia di-reserve & kekurangan otomatis masuk Request Procurement`
-          : `Reservasi ${q} unit ${prod.nama} berhasil dicatat`,
-      );
+      setCustomBoqName("");
+      setCustomBoqPrice("");
+      setCustomBoqQty("1");
+      setCustomBoqPphMode("none");
+      setCustomBoqOpen(false);
+      toast(`Item BOQ kustom "${customBoqName}" x${q} berhasil ditambahkan ke Project`);
     } catch (e: any) {
-      toast(e?.message ?? "Gagal menyimpan kebutuhan barang", "danger");
+      toast(e?.message ?? "Gagal menyimpan item kustom", "danger");
     }
   }
 
@@ -252,6 +311,7 @@ export function ProjectExtras({ row }: { row: Row }) {
           productId: Number(prod.id),
           qty: sn ? 1 : Math.max(1, Number(it.qty) || 1),
           serials: sn ? [String(sn)] : undefined,
+          pphMode: it.pphMode,
         });
         addedCount++;
       }
@@ -269,6 +329,115 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
   }
 
+  function openEditRequirement(m: any) {
+    setEditingReq(m);
+    setEditReqName(m.produk || "");
+    setEditReqQty(String(m.neededQty || 1));
+    setEditReqUnit(m.unit || "unit");
+    setEditReqPrice(m.unitPrice ? formatThousands(m.unitPrice) : "");
+    setEditReqPphMode(m.pphMode || "none");
+    setEditReqOpen(true);
+  }
+
+  async function handleSaveEditRequirement() {
+    if (!editingReq) return;
+    const q = Math.max(1, Math.round(Number(editReqQty) || 1));
+    const priceNum = Number(String(editReqPrice).replace(/\D/g, "")) || 0;
+    try {
+      await api("PUT", `/projects/${row.id}/requirements/${editingReq.id}`, {
+        name: editReqName.trim() || undefined,
+        qty: q,
+        unit: editReqUnit.trim() || "unit",
+        price: priceNum,
+        pphMode: editReqPphMode,
+      });
+      await loadRequirements();
+      await reload();
+      setEditReqOpen(false);
+      setEditingReq(null);
+      toast("Item BOQ berhasil diperbarui");
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal memperbarui item BOQ", "danger");
+    }
+  }
+
+  async function handleDeleteRequirement(m: any) {
+    try {
+      await api("DELETE", `/projects/${row.id}/requirements/${m.id}`);
+      await loadRequirements();
+      await reload();
+      toast(`Item "${m.produk}" berhasil dihapus dari BOQ`);
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal menghapus item BOQ", "danger");
+    }
+  }
+
+  function openEditService(sv: any, idx: number) {
+    setEditingServiceIdx(idx);
+    setEditServiceName(sv.name || sv.nama || sv.item || "Jasa Instalasi");
+    setEditServiceQty(String(sv.qty || 1));
+    setEditServiceUnit(sv.unit || sv.satuan || "Lot");
+    setEditServicePrice(sv.price || sv.harga ? formatThousands(sv.price || sv.harga) : "");
+    setEditServicePphMode(sv.pphMode || "none");
+    setEditServiceOpen(true);
+  }
+
+  async function handleSaveEditService() {
+    if (editingServiceIdx === null || !linkedQuotation) return;
+    const qItems = [...(Array.isArray(linkedQuotation.items) ? linkedQuotation.items : [])];
+    const targetService = quoServices[editingServiceIdx];
+    if (!targetService) return;
+    const realIdx = qItems.findIndex(
+      (it) => it === targetService || (it.item === targetService.item && it.id === targetService.id)
+    );
+    if (realIdx === -1) return;
+
+    const q = Math.max(1, Math.round(Number(editServiceQty) || 1));
+    const priceNum = Number(String(editServicePrice).replace(/\D/g, "")) || 0;
+
+    qItems[realIdx] = {
+      ...qItems[realIdx],
+      item: editServiceName.trim() || qItems[realIdx].item,
+      name: editServiceName.trim() || qItems[realIdx].name,
+      qty: q,
+      unit: editServiceUnit.trim() || qItems[realIdx].unit || "Lot",
+      satuan: editServiceUnit.trim() || qItems[realIdx].satuan || "Lot",
+      price: priceNum,
+      harga: priceNum,
+      pphMode: editServicePphMode,
+    };
+
+    try {
+      await patchRow("quotations", linkedQuotation.id, { items: qItems });
+      await reload();
+      setEditServiceOpen(false);
+      setEditingServiceIdx(null);
+      toast("Jasa BOQ berhasil diperbarui");
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal memperbarui jasa BOQ", "danger");
+    }
+  }
+
+  async function handleDeleteService(idx: number) {
+    if (!linkedQuotation) return;
+    const qItems = [...(Array.isArray(linkedQuotation.items) ? linkedQuotation.items : [])];
+    const targetService = quoServices[idx];
+    if (!targetService) return;
+    const realIdx = qItems.findIndex(
+      (it) => it === targetService || (it.item === targetService.item && it.id === targetService.id)
+    );
+    if (realIdx === -1) return;
+
+    qItems.splice(realIdx, 1);
+    try {
+      await patchRow("quotations", linkedQuotation.id, { items: qItems });
+      await reload();
+      toast("Jasa BOQ berhasil dihapus");
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal menghapus jasa BOQ", "danger");
+    }
+  }
+
   async function handlePrintBast() {
     const ok = await downloadDocumentationPdf("project", row.id);
     if (ok) {
@@ -280,10 +449,10 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
   }
 
-  const quoServices = React.useMemo(() => {
-    const qItems: any[] = Array.isArray(linkedQuotation?.items) ? linkedQuotation.items : [];
-    return qItems.filter((it: any) => it.itemType === "CUSTOM" || (!it.productId && !it.serialNumber && !it.sn));
-  }, [linkedQuotation]);
+  const qItems: any[] = Array.isArray(linkedQuotation?.items) ? linkedQuotation.items : [];
+  const quoServices = qItems.filter(
+    (it: any) => it.itemType === "CUSTOM" || (!it.productId && !it.serialNumber && !it.sn)
+  );
 
   const boqTotalValue = React.useMemo(() => {
     const matVal = requirements.reduce((acc, m) => acc + m.neededQty * (m.unitPrice || 0), 0);
@@ -353,9 +522,13 @@ export function ProjectExtras({ row }: { row: Row }) {
                 </Text>
               </Button>
             ) : null}
-            <Button size="sm" variant="outline" onPress={() => setReserveOpen(true)} className="flex-row items-center gap-1">
+            <Button size="sm" variant="outline" onPress={() => setCustomBoqOpen(true)} className="flex-row items-center gap-1">
               <Plus size={14} color={colors.text} />
-              <Text className="text-xs">Tambah Item BOQ</Text>
+              <Text className="text-xs">+ Item Kustom</Text>
+            </Button>
+            <Button size="sm" variant="default" onPress={() => setPickerOpen(true)} className="flex-row items-center gap-1 bg-primary">
+              <Package size={14} color="#fff" />
+              <Text className="text-xs text-white font-medium">+ Pilih Stok & SN / Jasa</Text>
             </Button>
           </View>
         }
@@ -379,13 +552,33 @@ export function ProjectExtras({ row }: { row: Row }) {
                 <Line
                   key={m.id}
                   left={m.produk}
-                  sub={`${m.sku ? `SKU: ${m.sku} · ` : ""}${m.kategori ? `Kategori: ${m.kategori} · ` : ""}${m.status}`}
+                  sub={`${m.sku ? `SKU: ${m.sku} · ` : ""}${m.kategori ? `Kategori: ${m.kategori} · ` : ""}${m.pphMode && m.pphMode !== "none" ? `PPh: ${m.pphMode.toUpperCase()} · ` : ""}${m.status}`}
                   right={
-                    <View className="items-end">
-                      <Text className="font-semibold text-sm">{m.neededQty} unit</Text>
-                      {m.unitPrice > 0 ? (
-                        <Text className="text-muted-foreground text-[11px]">{rupiah(m.neededQty * m.unitPrice)}</Text>
-                      ) : null}
+                    <View className="flex-row items-center gap-3">
+                      <View className="items-end">
+                        <Text className="font-semibold text-sm">{m.neededQty} {m.unit || "unit"}</Text>
+                        {m.unitPrice > 0 ? (
+                          <Text className="text-muted-foreground text-[11px]">{rupiah(m.neededQty * m.unitPrice)}</Text>
+                        ) : null}
+                      </View>
+                      <View className="flex-row items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onPress={() => openEditRequirement(m)}
+                        >
+                          <Edit2 size={13} color={colors.text} />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onPress={() => handleDeleteRequirement(m)}
+                        >
+                          <Trash2 size={13} color={colors.danger} />
+                        </Button>
+                      </View>
                     </View>
                   }
                 />
@@ -393,9 +586,33 @@ export function ProjectExtras({ row }: { row: Row }) {
               {quoServices.map((sv: any, idx: number) => (
                 <Line
                   key={`svc-${idx}`}
-                  left={`${sv.name || sv.nama || "Jasa Instalasi"} (Jasa / Pekerjaan)`}
-                  sub={`Dari Penawaran ${linkedQuotation?.nomor || ""} · ${sv.qty || 1} ${sv.unit || "Lot"}`}
-                  right={<Text className="font-semibold text-sm">{rupiah((Number(sv.qty) || 1) * (Number(sv.price) || 0))}</Text>}
+                  left={`${sv.name || sv.nama || sv.item || "Jasa Instalasi"} (Jasa / Pekerjaan)`}
+                  sub={`Dari Penawaran ${linkedQuotation?.nomor || ""} · ${sv.qty || 1} ${sv.unit || sv.satuan || "Lot"}${sv.pphMode && sv.pphMode !== "none" ? ` · PPh: ${sv.pphMode.toUpperCase()}` : ""}`}
+                  right={
+                    <View className="flex-row items-center gap-3">
+                      <View className="items-end">
+                        <Text className="font-semibold text-sm">{rupiah((Number(sv.qty) || 1) * (Number(sv.price || sv.harga) || 0))}</Text>
+                      </View>
+                      <View className="flex-row items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onPress={() => openEditService(sv, idx)}
+                        >
+                          <Edit2 size={13} color={colors.text} />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onPress={() => handleDeleteService(idx)}
+                        >
+                          <Trash2 size={13} color={colors.danger} />
+                        </Button>
+                      </View>
+                    </View>
+                  }
                 />
               ))}
               {boqTotalValue > 0 ? (
@@ -554,122 +771,336 @@ export function ProjectExtras({ row }: { row: Row }) {
       {canViewFinancials ? (
         <Panel
           title="Analisa Untung-Rugi (P&L Project)"
-          subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan dan pengeluaran beban riil."
+          subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan dan pengeluaran beban riil"
+          right={
+            <Button
+              size="sm"
+              onPress={() =>
+                router.push({
+                  pathname: "/expenses/new",
+                  params: { projectId: String(row.id), project: String(row.nama) },
+                } as any)
+              }
+              className="gap-1.5"
+            >
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs font-semibold">+ Catat Biaya Project</Text>
+            </Button>
+          }
         >
-          <Line
-            left="Pendapatan Proyek (DPP Invoice)"
-            sub={`${projectInvoices.length} invoice terbit`}
-            right={<Text className="font-semibold text-sm">{rupiah(revenue)}</Text>}
-          />
-          <Line
-            left="Biaya Pengadaan Material (PO Supplier)"
-            sub={`${projectPos.length} purchase order supplier`}
-            right={<Text className="font-semibold text-sm text-danger">{rupiah(poCost)}</Text>}
-          />
-          <Line
-            left="Biaya Operasional & Reimburse"
-            sub={`${projectExpenses.length} transaksi operasional`}
-            right={<Text className="font-semibold text-sm text-danger">{rupiah(expenseCost)}</Text>}
-          />
-          <Line
-            left="Total Beban & Biaya (HPP + Operasional)"
-            right={<Text className="font-bold text-sm text-danger">{rupiah(totalCost)}</Text>}
-          />
-          <Line
-            left="Laba Bersih Proyek (Net Profit)"
-            sub={`Margin: ${marginPct}%`}
-            right={
-              <Text className={`font-bold text-base ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
-                {rupiah(netProfit)}
+          <View className="gap-4">
+            <View className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Pendapatan (DPP Invoice)</Text>
+                <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice terbit</Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Beban PO Supplier</Text>
+                <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Biaya Operasional & Reimburse</Text>
+                <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(expenseCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectExpenses.length} transaksi</Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Laba Bersih ({marginPct}%)</Text>
+                <Text className={`text-base font-bold mt-1 ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
+                  {rupiah(netProfit)}
+                </Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">Total Beban: {rupiah(totalCost)}</Text>
+              </View>
+            </View>
+
+            {/* Rincian Operasional & Reimbursement */}
+            <View className="gap-2 pt-2 border-t border-border mt-1">
+              <Text className="text-xs font-semibold text-foreground">
+                Rincian Biaya Operasional & Reimbursement ({projectExpenses.length} pengeluaran)
               </Text>
-            }
-          />
+              {projectExpenses.length === 0 ? (
+                <Text className="text-xs text-muted-foreground py-2">
+                  Belum ada pengeluaran operasional yang dicatat untuk project ini.
+                </Text>
+              ) : (
+                <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                  {projectExpenses.map((exp: Row) => {
+                    const isTalangan = exp.fundingSource === "TALANGAN_PRIBADI" || exp.sumberDana?.includes("Talangan");
+                    return (
+                      <View key={exp.id} className="p-3 flex-row items-center justify-between bg-card/30">
+                        <View className="flex-1 pr-2">
+                          <View className="flex-row items-center gap-2 flex-wrap">
+                            <Text className="text-sm font-semibold text-foreground">
+                              {exp.alasan || exp.description || exp.kategori}
+                            </Text>
+                            <StatusBadge status={exp.status} />
+                            <View
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                isTalangan
+                                  ? "bg-amber-500/15 text-amber-500"
+                                  : "bg-blue-500/15 text-blue-500"
+                              }`}
+                            >
+                              <Text className="text-[10px]">
+                                {isTalangan ? "Talangan Pribadi" : "Dana Kantor"}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text className="text-xs text-muted-foreground mt-1">
+                            {tanggal(exp.tanggal || exp.date)} • Pelapor: {exp.pelapor || "Teknisi"} • Kategori: {exp.kategori || "-"}
+                          </Text>
+                        </View>
+                        <Text className="text-sm font-bold text-foreground">{rupiah(exp.nominal || exp.amount || 0)}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          </View>
         </Panel>
       ) : null}
 
-      {/* Modal Alokasi Material */}
-      <Dialog open={reserveOpen} onOpenChange={setReserveOpen}>
+      {/* Modal Pilih Stok & SN / Jasa (SerialItemPickerModal sama dengan Penawaran & Invoice) */}
+      <SerialItemPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onAddItems={handleAddBoqFromPicker}
+      />
+
+      {/* Modal Tambah Item Kustom BOQ (Non-Inventory) */}
+      <Dialog open={customBoqOpen} onOpenChange={setCustomBoqOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Tambah Kebutuhan Material Project</DialogTitle>
+            <DialogTitle>Tambah Item BOQ Kustom (Non-Inventory)</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
             <View className="gap-1">
-              <Text className="text-xs text-muted-foreground font-medium">Pilih Perangkat / Material</Text>
-              <ScrollView style={{ maxHeight: 180 }} className="border border-border rounded-lg p-1">
-                {products.map((p) => (
-                  <Pressable
-                    key={p.id}
-                    onPress={() => {
-                      setSelectedProduct(p.nama);
-                      setSelectedSns([]);
-                    }}
-                    className={`p-2 rounded flex-row items-center justify-between ${
-                      activeSelectedProduct === p.nama ? "bg-primary/10" : ""
-                    }`}
-                  >
-                    <Text className="text-xs font-medium">
-                      {p.nama} {p.berSN ? "(Ber-SN)" : ""}
-                    </Text>
-                    {activeSelectedProduct === p.nama ? <Check size={14} color={colors.primary} /> : null}
-                  </Pressable>
-                ))}
-              </ScrollView>
+              <Text className="text-xs text-muted-foreground font-medium">Nama Item Kustom (Bebas)</Text>
+              <Input
+                value={customBoqName}
+                onChangeText={setCustomBoqName}
+                placeholder="Contoh: Pipa PVC pelindung kabel 20mm"
+              />
+            </View>
+
+            <View className="flex-row gap-2">
+              <View className="flex-1 gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Estimasi Harga Satuan (Rp)</Text>
+                <Input
+                  value={customBoqPrice ? formatThousands(customBoqPrice) : ""}
+                  onChangeText={(v) => setCustomBoqPrice(formatThousands(v))}
+                  keyboardType="numeric"
+                  placeholder="Contoh: 25.000"
+                />
+              </View>
+              <View className="w-24 gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Satuan</Text>
+                <Input
+                  value={customBoqUnit}
+                  onChangeText={setCustomBoqUnit}
+                  placeholder="pcs / batang"
+                />
+              </View>
             </View>
 
             <View className="gap-1">
-              <Text className="text-xs text-muted-foreground font-medium">Jumlah yang Dibutuhkan</Text>
-              <Input value={reserveQty} onChangeText={setReserveQty} placeholder="2" keyboardType="numeric" />
+              <Text className="text-xs text-muted-foreground font-medium">Jumlah yang Dibutuhkan (Qty)</Text>
+              <Input
+                value={customBoqQty}
+                onChangeText={setCustomBoqQty}
+                placeholder="1"
+                keyboardType="numeric"
+              />
             </View>
 
-            {activeProductObj?.berSN ? (
-              <View className="gap-1.5">
-                <Text className="text-xs text-muted-foreground font-medium">
-                  Pilih Unit SN Spesifik ({availableProductSerials.length} tersedia Di Gudang — kosongkan untuk pilih otomatis FIFO)
-                </Text>
-                <ScrollView style={{ maxHeight: 140 }} className="border border-border rounded-lg p-1">
-                  {availableProductSerials.length === 0 ? (
-                    <Text className="text-xs text-muted-foreground p-2 italic">
-                      Stok SN Di Gudang sedang kosong (otomatis masuk PR Procurement).
-                    </Text>
-                  ) : (
-                    availableProductSerials.map((s) => {
-                      const checked = selectedSns.includes(String(s.sn));
-                      return (
-                        <Pressable
-                          key={s.id}
-                          onPress={() => {
-                            const snVal = String(s.sn);
-                            setSelectedSns((prev) => {
-                              const next = prev.includes(snVal)
-                                ? prev.filter((x) => x !== snVal)
-                                : [...prev, snVal];
-                              if (next.length > 0) setReserveQty(String(next.length));
-                              return next;
-                            });
-                          }}
-                          className={`p-2 rounded flex-row items-center justify-between ${
-                            checked ? "bg-primary/10" : ""
-                          }`}
-                        >
-                          <Text className="text-xs font-mono font-semibold">
-                            {s.sn} <Text className="font-normal text-muted-foreground">({s.gudang})</Text>
-                          </Text>
-                          {checked ? <Check size={14} color={colors.primary} /> : null}
-                        </Pressable>
-                      );
-                    })
-                  )}
-                </ScrollView>
+            <View className="gap-1.5 pt-1">
+              <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Item</Text>
+              <View className="flex-row items-center gap-1.5 flex-wrap">
+                {PPH_OPTIONS.map((opt) => {
+                  const active = customBoqPphMode === opt.id;
+                  return (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => setCustomBoqPphMode(opt.id)}
+                      className={`px-2 py-1 rounded-md border ${
+                        active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                      }`}
+                    >
+                      <Text className={`text-xs ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-            ) : null}
+            </View>
           </View>
           <DialogFooter>
-            <Button variant="outline" onPress={() => setReserveOpen(false)}>
+            <Button variant="outline" onPress={() => setCustomBoqOpen(false)}>
               <Text>Batal</Text>
             </Button>
-            <Button onPress={handleAddReservation}>
-              <Text>Cek Stok & Simpan</Text>
+            <Button onPress={handleAddCustomBoq}>
+              <Text>Simpan ke BOQ</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Edit Item BOQ Requirement */}
+      <Dialog open={editReqOpen} onOpenChange={setEditReqOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Item BOQ Material</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <View className="gap-1">
+              <Text className="text-xs text-muted-foreground font-medium">Nama Item</Text>
+              <Input
+                value={editReqName}
+                onChangeText={setEditReqName}
+                placeholder="Nama item / perangkat"
+              />
+            </View>
+
+            <View className="flex-row gap-2">
+              <View className="flex-1 gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Estimasi Harga Satuan (Rp)</Text>
+                <Input
+                  value={editReqPrice ? formatThousands(editReqPrice) : ""}
+                  onChangeText={(v) => setEditReqPrice(formatThousands(v))}
+                  keyboardType="numeric"
+                  placeholder="0"
+                />
+              </View>
+              <View className="w-24 gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Satuan</Text>
+                <Input
+                  value={editReqUnit}
+                  onChangeText={setEditReqUnit}
+                  placeholder="unit / pcs"
+                />
+              </View>
+            </View>
+
+            <View className="gap-1">
+              <Text className="text-xs text-muted-foreground font-medium">Jumlah yang Dibutuhkan (Qty)</Text>
+              <Input
+                value={editReqQty}
+                onChangeText={setEditReqQty}
+                placeholder="1"
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View className="gap-1.5 pt-1">
+              <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Item</Text>
+              <View className="flex-row items-center gap-1.5 flex-wrap">
+                {PPH_OPTIONS.map((opt) => {
+                  const active = editReqPphMode === opt.id;
+                  return (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => setEditReqPphMode(opt.id)}
+                      className={`px-2 py-1 rounded-md border ${
+                        active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                      }`}
+                    >
+                      <Text className={`text-xs ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setEditReqOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleSaveEditRequirement}>
+              <Text>Simpan Perubahan</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Edit Item BOQ Jasa */}
+      <Dialog open={editServiceOpen} onOpenChange={setEditServiceOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Jasa / Pekerjaan BOQ</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <View className="gap-1">
+              <Text className="text-xs text-muted-foreground font-medium">Deskripsi Jasa / Pekerjaan</Text>
+              <Input
+                value={editServiceName}
+                onChangeText={setEditServiceName}
+                placeholder="Contoh: Jasa Instalasi & Setting CCTV"
+              />
+            </View>
+
+            <View className="flex-row gap-2">
+              <View className="flex-1 gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Harga / Biaya Jasa (Rp)</Text>
+                <Input
+                  value={editServicePrice ? formatThousands(editServicePrice) : ""}
+                  onChangeText={(v) => setEditServicePrice(formatThousands(v))}
+                  keyboardType="numeric"
+                  placeholder="0"
+                />
+              </View>
+              <View className="w-24 gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Satuan</Text>
+                <Input
+                  value={editServiceUnit}
+                  onChangeText={setEditServiceUnit}
+                  placeholder="Lot / Titik"
+                />
+              </View>
+            </View>
+
+            <View className="gap-1">
+              <Text className="text-xs text-muted-foreground font-medium">Qty</Text>
+              <Input
+                value={editServiceQty}
+                onChangeText={setEditServiceQty}
+                placeholder="1"
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View className="gap-1.5 pt-1">
+              <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Jasa</Text>
+              <View className="flex-row items-center gap-1.5 flex-wrap">
+                {PPH_OPTIONS.map((opt) => {
+                  const active = editServicePphMode === opt.id;
+                  return (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => setEditServicePphMode(opt.id)}
+                      className={`px-2 py-1 rounded-md border ${
+                        active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                      }`}
+                    >
+                      <Text className={`text-xs ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setEditServiceOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleSaveEditService}>
+              <Text>Simpan Perubahan</Text>
             </Button>
           </DialogFooter>
         </DialogContent>

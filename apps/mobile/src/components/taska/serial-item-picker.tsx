@@ -28,6 +28,7 @@ import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { formatThousands } from "@/lib/format";
+import { pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import type { QuotationItem } from "@/modules/quotation/types";
 
 type Props = {
@@ -59,16 +60,24 @@ export function SerialItemPickerModal({
   const [goodsUnit, setGoodsUnit] = React.useState("Unit");
   const [goodsPrice, setGoodsPrice] = React.useState("");
   const [customItemLabel, setCustomItemLabel] = React.useState("");
+  const [goodsPphMode, setGoodsPphMode] = React.useState<PphMode>("none");
 
   // Service tab states
   const [serviceName, setServiceName] = React.useState("");
   const [serviceQty, setServiceQty] = React.useState("1");
   const [serviceUnit, setServiceUnit] = React.useState("Lot");
   const [servicePrice, setServicePrice] = React.useState("");
+  const [servicePphMode, setServicePphMode] = React.useState<PphMode>("none");
 
   // Quick batch register modal inside picker
   const [batchRegisterOpen, setBatchRegisterOpen] = React.useState(false);
   const [fallbackSerials, setFallbackSerials] = React.useState<any[]>([]);
+
+  const handleClose = () => {
+    setGoodsPphMode("none");
+    setServicePphMode("none");
+    onClose();
+  };
 
   React.useEffect(() => {
     if (!open) return;
@@ -299,11 +308,14 @@ export function SerialItemPickerModal({
           harga,
           kind: "SERVICE",
           hasSerial: false,
+          pphMode: servicePphMode,
+          tipePph: pphModeToTipe(servicePphMode),
         },
       ]);
       setServiceName("");
       setServiceQty("1");
       setServicePrice("");
+      setServicePphMode("none");
       onClose();
       return;
     }
@@ -348,6 +360,8 @@ export function SerialItemPickerModal({
           hasSerial: true,
           serialUnitIds: [Number(sRow.id)],
           serialNumbers: [String(sRow.sn)],
+          pphMode: goodsPphMode,
+          tipePph: pphModeToTipe(goodsPphMode),
         }));
         onAddItems(newItems);
       } else {
@@ -366,6 +380,8 @@ export function SerialItemPickerModal({
             hasSerial: true,
             serialUnitIds: sIds,
             serialNumbers: sns,
+            pphMode: goodsPphMode,
+            tipePph: pphModeToTipe(goodsPphMode),
           },
         ]);
       }
@@ -382,16 +398,18 @@ export function SerialItemPickerModal({
           productId: Number(selectedProduct.id),
           sku: selectedProduct.sku || undefined,
           hasSerial: false,
+          pphMode: goodsPphMode,
+          tipePph: pphModeToTipe(goodsPphMode),
         },
       ]);
     }
 
-    onClose();
+    handleClose();
   };
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="sm:max-w-2xl md:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Tambah Item (Stok Per-SN / Jasa Non-Barang)</DialogTitle>
@@ -498,6 +516,34 @@ export function SerialItemPickerModal({
                     </FormField>
                   </View>
                 </View>
+
+                <View className="gap-1.5 pt-1">
+                  <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Jasa</Text>
+                  <View className="flex-row items-center gap-1.5 flex-wrap">
+                    {([
+                      { id: "none", label: "Non-PPh" },
+                      { id: "pph21", label: "PPh 21 (0.5%)" },
+                      { id: "pph23", label: "PPh 23 (2%)" },
+                      { id: "pph4_2", label: "PPh 4(2) (1.75%)" },
+                      { id: "pph22", label: "PPh 22 (1.5%)" },
+                    ] as const).map((opt) => {
+                      const active = servicePphMode === opt.id;
+                      return (
+                        <Pressable
+                          key={opt.id}
+                          onPress={() => setServicePphMode(opt.id)}
+                          className={`px-2 py-1 rounded-md border ${
+                            active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                          }`}
+                        >
+                          <Text className={`text-xs ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                            {opt.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
               </View>
             ) : (
               <View className="gap-3.5">
@@ -558,6 +604,34 @@ export function SerialItemPickerModal({
                             placeholder="0"
                           />
                         </FormField>
+                      </View>
+                    </View>
+
+                    <View className="gap-1.5">
+                      <Text className="text-xs text-muted-foreground font-medium">Tarif Pajak PPh Barang</Text>
+                      <View className="flex-row items-center gap-1.5 flex-wrap">
+                        {([
+                          { id: "none", label: "Non-PPh" },
+                          { id: "pph21", label: "PPh 21 (0.5%)" },
+                          { id: "pph23", label: "PPh 23 (2%)" },
+                          { id: "pph4_2", label: "PPh 4(2) (1.75%)" },
+                          { id: "pph22", label: "PPh 22 (1.5%)" },
+                        ] as const).map((opt) => {
+                          const active = goodsPphMode === opt.id;
+                          return (
+                            <Pressable
+                              key={opt.id}
+                              onPress={() => setGoodsPphMode(opt.id)}
+                              className={`px-2 py-1 rounded-md border ${
+                                active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                              }`}
+                            >
+                              <Text className={`text-xs ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                                {opt.label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
                       </View>
                     </View>
 
@@ -723,7 +797,7 @@ export function SerialItemPickerModal({
           </View>
 
           <DialogFooter>
-            <Button variant="outline" onPress={onClose}>
+            <Button variant="outline" onPress={handleClose}>
               <Text>Batal</Text>
             </Button>
             <Button onPress={handleConfirmAdd}>

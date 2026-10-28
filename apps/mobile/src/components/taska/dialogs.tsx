@@ -495,7 +495,7 @@ export function getDynamicOptions(
     case "perusahaan":
     case "customer": {
       const custs = (data.customers ?? []).map((r: any) => String(r.nama || r.name || "")).filter(Boolean);
-      if (moduleKey === "projects" || moduleKey === "po-client") return nonEmpty(["-", ...custs], f.options);
+      if (moduleKey === "projects" || moduleKey === "po-client" || moduleKey === "poc-reports" || moduleKey === "visit-reports") return nonEmpty(["-", ...custs], f.options);
       return nonEmpty(custs, f.options);
     }
     case "sumber":
@@ -599,6 +599,29 @@ export function getDynamicOptions(
         ["-", ...(data.surveys ?? []).map((s: any) => `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}`)],
         f.options
       );
+    case "pocReport":
+    case "poc": {
+      const pocList = (data["poc-reports"] ?? []);
+      return nonEmpty(
+        [
+          "-",
+          ...pocList.map((p: any) => `POC ${p.nomor || p.number} - ${p.judul || p.title}`).filter(Boolean),
+        ],
+        f.options
+      );
+    }
+    case "visitReport":
+    case "visit":
+    case "kunjungan": {
+      const visitList = (data["visit-reports"] ?? []);
+      return nonEmpty(
+        [
+          "-",
+          ...visitList.map((v: any) => `VISIT ${v.nomor || v.number} - ${v.judul || v.title}`).filter(Boolean),
+        ],
+        f.options
+      );
+    }
     case "gudang":
     case "warehouse":
       return nonEmpty(["-", ...(data.warehouses ?? []).map((r: any) => String(r.nama)).filter(Boolean)], f.options);
@@ -736,7 +759,9 @@ export function FormDialog({
         const init: Record<string, string> = {};
         const today = toIsoDate(new Date());
         fields.forEach((f) => {
-          if (f.type === "date" && def?.defaults?.[f.key]) {
+          if (f.defaultValue != null) {
+            init[f.key] = String(f.defaultValue);
+          } else if (f.type === "date" && def?.defaults?.[f.key]) {
             init[f.key] = today;
           } else if (f.type === "date" && f.required) {
             init[f.key] = today;

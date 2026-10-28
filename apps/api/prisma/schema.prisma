@@ -327,6 +327,10 @@ model User {
   projectMembers ProjectMember[]
   tasks          Task[]              @relation("TaskAssignee")
   expenses       Expense[]           @relation("ExpenseReporter")
+  pocReports     PocReport[]         @relation("PocOwner")
+  pocMembers     PocMember[]
+  visitReports   VisitReport[]       @relation("VisitOwner")
+  visitMembers   VisitMember[]
   createdDN      DeliveryNote[]      @relation("DNCreator")
   movements      StockMovement[]
   serialHist     SerialUnitHistory[]
@@ -497,6 +501,8 @@ model Customer {
   quotations Quotation[]
   clientPOs  ClientPO[]
   invoices   InvoiceOut[]
+  pocReports PocReport[]
+  visitReports VisitReport[]
 
   @@index([name])
   @@index([status])
@@ -615,6 +621,13 @@ model LostReason {
   leads  Lead[]
 }
 
+model VisitActivityType {
+  id      Int          @id @default(autoincrement())
+  name    String       @unique
+  status  ActiveStatus @default(AKTIF)
+  visits  VisitReport[]
+}
+
 model ExpenseCategory {
   id       Int          @id @default(autoincrement())
   name     String       @unique
@@ -657,6 +670,8 @@ model Lead {
   followUps  FollowUp[]
   surveys    Survey[]
   quotations Quotation[]
+  pocReports PocReport[]
+  visitReports VisitReport[]
 
   @@index([stage])
   @@index([owner_id])
@@ -887,12 +902,23 @@ model Expense {
   survey         Survey?          @relation(fields: [surveyId], references: [id])
   deliveryNoteId Int?
   deliveryNote   DeliveryNote?    @relation(fields: [deliveryNoteId], references: [id])
+  pocReportId    Int?
+  pocReport      PocReport?       @relation(fields: [pocReportId], references: [id])
+  visitReportId  Int?
+  visitReport    VisitReport?     @relation(fields: [visitReportId], references: [id])
   costCenterId   Int?
   costCenter     CostCenter?      @relation(fields: [costCenterId], references: [id])
   receiptFileId  Int?
+  receiptFileIds String?          @db.Text
   paidFileId     Int?
   paidAt         DateTime?
   rejectReason   String?
+  fundingSource  String           @default("PERUSAHAAN")
+  reimbursementStatus String?
+  paymentMethod  String?
+  approvedAmount Decimal?         @db.Decimal(18, 2)
+  paidAmount     Decimal?         @db.Decimal(18, 2)
+  paidById       Int?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -900,6 +926,9 @@ model Expense {
   @@index([reporterId])
   @@index([date])
   @@index([projectId])
+  @@index([surveyId])
+  @@index([pocReportId])
+  @@index([visitReportId])
   @@index([deliveryNoteId])
 }
 
@@ -937,6 +966,8 @@ model Project {
   movements        StockMovement[]
   invoices         InvoiceOut[]
   expenses         Expense[]
+  pocReports       PocReport[]
+  visitReports     VisitReport[]
   dnLocations      DeliveryNoteLocation[]
   purchaseRequests PurchaseRequest[]
   serialUnits      SerialUnit[]
@@ -1440,4 +1471,170 @@ model PayrollSlip {
 
   @@unique([period, userId])
   @@index([period])
+}
+
+// ─────────────────────────────── POC (Proof of Concept / Demo / Expo) ───────────────────────────────
+
+model PocReport {
+  id                  Int            @id @default(autoincrement())
+  number              String         @unique
+  title               String
+  description         String?        @db.Text
+  date                DateTime       @db.Date
+  endDate             DateTime?      @db.Date
+  location            String?
+  type                String         @default("DEMO_CLIENT")
+  status              String         @default("Draft")
+  resultStatus        String?
+  clientName          String?
+  customerId          Int?
+  customer            Customer?      @relation(fields: [customerId], references: [id])
+  projectId           Int?
+  project             Project?       @relation(fields: [projectId], references: [id])
+  leadId              Int?
+  lead                Lead?          @relation(fields: [leadId], references: [id])
+  targetCriteria      String?        @db.Text
+  productsTested      String?        @db.Text
+  budget              Decimal        @default(0) @db.Decimal(18, 2)
+  actualCost          Decimal        @default(0) @db.Decimal(18, 2)
+  actualExecutionDate DateTime?      @db.Date
+  actualAttendees     String?        @db.Text
+  activitiesDone      String?        @db.Text
+  testResults         String?        @db.Text
+  issuesFound         String?        @db.Text
+  followUpNeeded      String?        @db.Text
+  conclusion          String?        @db.Text
+  recommendations     String?        @db.Text
+  companyHeader       String?
+  logoFileId          Int?
+  documentFileId      Int?
+  ownerId             Int
+  owner               User           @relation("PocOwner", fields: [ownerId], references: [id])
+  createdById         Int
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  members             PocMember[]
+  checklists          PocChecklist[]
+  expenses            Expense[]
+
+  @@index([status])
+  @@index([date])
+  @@index([ownerId])
+  @@index([projectId])
+  @@index([customerId])
+}
+
+model PocMember {
+  id          Int       @id @default(autoincrement())
+  pocReportId Int
+  pocReport   PocReport @relation(fields: [pocReportId], references: [id], onDelete: Cascade)
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([pocReportId, userId])
+  @@index([pocReportId])
+  @@index([userId])
+}
+
+model PocChecklist {
+  id          Int       @id @default(autoincrement())
+  pocReportId Int
+  pocReport   PocReport @relation(fields: [pocReportId], references: [id], onDelete: Cascade)
+  title       String
+  isDone      Boolean   @default(false)
+  dueDate     DateTime? @db.Date
+  assigneeId  Int?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([pocReportId])
+}
+
+// ─────────────────────────────── Kunjungan / Offline Meeting ───────────────────────────────
+
+model VisitReport {
+  id                     Int                @id @default(autoincrement())
+  number                 String             @unique
+  title                  String
+  activityTypeId         Int?
+  activityType           VisitActivityType? @relation(fields: [activityTypeId], references: [id])
+  activityTypeName       String?
+  status                 String             @default("Planned")
+  date                   DateTime           @db.Date
+  endDate                DateTime?          @db.Date
+  location               String?
+  clientName             String?
+  clientContact          String?
+  customerId             Int?
+  customer               Customer?          @relation(fields: [customerId], references: [id])
+  leadId                 Int?
+  lead                   Lead?              @relation(fields: [leadId], references: [id])
+  projectId              Int?
+  project                Project?           @relation(fields: [projectId], references: [id])
+  purpose                String?            @db.Text
+  description            String?            @db.Text
+
+  // Minutes of Meeting (MoM)
+  summary                String?            @db.Text
+  clientNeeds            String?            @db.Text
+  productsIntroduced     String?            @db.Text
+  clientFeedback         String?            @db.Text
+  agreements             String?            @db.Text
+  potentialOpportunities String?            @db.Text
+  obstacles              String?            @db.Text
+  conclusion             String?            @db.Text
+
+  // Custom PDF Header & Logo
+  companyHeader          String?
+  logoFileId             Int?
+  documentFileId         Int?
+
+  // PIC & Metadata
+  ownerId                Int
+  owner                  User               @relation("VisitOwner", fields: [ownerId], references: [id])
+  createdById            Int
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  members                VisitMember[]
+  actions                VisitActionItem[]
+  expenses               Expense[]
+
+  @@index([status])
+  @@index([date])
+  @@index([ownerId])
+  @@index([projectId])
+  @@index([customerId])
+  @@index([leadId])
+  @@index([activityTypeId])
+}
+
+model VisitMember {
+  id            Int         @id @default(autoincrement())
+  visitReportId Int
+  visitReport   VisitReport @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          User        @relation(fields: [userId], references: [id])
+
+  @@unique([visitReportId, userId])
+  @@index([visitReportId])
+  @@index([userId])
+}
+
+model VisitActionItem {
+  id            Int         @id @default(autoincrement())
+  visitReportId Int
+  visitReport   VisitReport @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
+  task          String      @db.Text
+  assigneeId    Int?
+  dueDate       DateTime?   @db.Date
+  status        String      @default("Open")
+  notes         String?     @db.Text
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([visitReportId])
+  @@index([assigneeId])
 }

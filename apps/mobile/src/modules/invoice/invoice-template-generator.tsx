@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView, Image } from "react-native";
+import { View, ScrollView, Image, Pressable } from "react-native";
 import { FileDown, Plus, Trash2, Edit3, Eye, Package } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -19,6 +19,13 @@ import { FileUploader } from "@/components/taska/file-uploader";
 import { apiBase } from "@/services/api";
 import { downloadInvoiceExcel, downloadInvoicePdf } from "@/modules/invoice/invoice-files";
 import { useApp } from "@/store/app-store";
+import {
+  type PphMode,
+  PPH_MODE_OPTIONS,
+  pphRateFor,
+  pphModeToTipe,
+  calcItemPph,
+} from "@/modules/quotation/lib";
 
 export function InvoiceTemplateGenerator({
   row,
@@ -96,6 +103,7 @@ export function InvoiceTemplateGenerator({
   const [newItemQty, setNewItemQty] = React.useState("1");
   const [newItemSatuan, setNewItemSatuan] = React.useState("Unit");
   const [newItemHarga, setNewItemHarga] = React.useState("");
+  const [newItemPphMode, setNewItemPphMode] = React.useState<PphMode>("none");
 
   const handleSelectProduct = (val: string) => {
     const clean = (val.split(" (")[0] ?? val).trim();
@@ -107,6 +115,9 @@ export function InvoiceTemplateGenerator({
       setNewItemSatuan(found.satuan || "Unit");
       const rawPrice = found.hargaBeli ?? found.purchasePrice ?? found.price ?? found.harga ?? 0;
       setNewItemHarga(rawPrice > 0 ? formatThousands(rawPrice) : "");
+      if (found.type === "JASA") {
+        setNewItemPphMode("pph23");
+      }
     } else {
       setNewItemName(val);
     }
@@ -115,7 +126,8 @@ export function InvoiceTemplateGenerator({
   const itemsTotal = items.length > 0 ? items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0) : Number(row.nilai || 0);
   const isNoPpn = row.tipePpn === "No PPN (Tanpa PPN)" || row.ppnMode === "none" || (row.ppn === 0 && Number(row.total || 0) > 0);
   const activePpn = isNoPpn ? 0 : Math.round(itemsTotal * 0.11);
-  const activePph = Number(row.pph || 0);
+  const itemsPph = items.reduce((acc, curr) => acc + calcItemPph(curr), 0);
+  const activePph = items.length > 0 ? itemsPph : Number(row.pph || 0);
   const activeGrandTotal = Math.max(0, itemsTotal + activePpn - activePph);
 
   const noteMatch = String(row.catatan || row.description || "").match(/\((\d+)%\)/);
@@ -171,14 +183,26 @@ export function InvoiceTemplateGenerator({
     }
     const q = Number(newItemQty) || 1;
     const h = Number(newItemHarga.replace(/\D/g, "")) || 0;
-    const updated = [
+    const pphMode = newItemPphMode;
+    const updated: QuotationItem[] = [
       ...items,
-      { id: String(Date.now()), item: newItemName.trim(), qty: q, satuan: newItemSatuan.trim() || "Unit", harga: h },
+      {
+        id: String(Date.now()),
+        item: newItemName.trim(),
+        qty: q,
+        satuan: newItemSatuan.trim() || "Unit",
+        harga: h,
+        price: h,
+        kind: newItemName.toLowerCase().includes("jasa") || newItemName.toLowerCase().includes("instalasi") ? "SERVICE" : "GOODS",
+        pphMode,
+        tipePph: pphModeToTipe(pphMode),
+      },
     ];
     setItems(updated);
     setNewItemName("");
     setNewItemQty("1");
     setNewItemHarga("");
+    setNewItemPphMode("none");
   }
 
   function updateItemField(id: string, patch: Partial<QuotationItem>) {
@@ -206,7 +230,8 @@ export function InvoiceTemplateGenerator({
         signerTitle,
         dpLabel: showDpRow ? dpLabel : undefined,
         dpAmount: showDpRow ? dpAmount : undefined,
-      },
+        pph: activePph,
+      } as any,
       shouldDownload,
     );
     setEditItemsOpen(false);
@@ -286,6 +311,11 @@ export function InvoiceTemplateGenerator({
                       {it.outOfStockAutoSwap ? (
                         <Text className="text-[10px] font-bold text-rose-500">
                           [Konflik Stok SN - Menunggu PR Darurat]
+                        </Text>
+                      ) : null}
+                      {calcItemPph(it) > 0 ? (
+                        <Text className="text-[10px] text-danger font-medium">
+                          [{pphModeToTipe(it.pphMode || "none")}: -{rupiah(calcItemPph(it))}]
                         </Text>
                       ) : null}
                     </View>
@@ -474,6 +504,32 @@ export function InvoiceTemplateGenerator({
                       />
                     </View>
                   </View>
+
+                  {/* Selector PPh Per-Item */}
+                  <View className="flex-row items-center gap-1 flex-wrap pt-1 border-t border-border/30">
+                    <Text className="text-[10px] text-muted-foreground mr-1">Tarif PPh:</Text>
+                    {PPH_MODE_OPTIONS.map((opt) => {
+                      const active = (it.pphMode || "none") === opt.id;
+                      return (
+                        <Pressable
+                          key={opt.id}
+                          onPress={() => updateItemField(it.id, { pphMode: opt.id, tipePph: opt.label })}
+                          className={`px-1.5 py-0.5 rounded border ${
+                            active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                          }`}
+                        >
+                          <Text className={`text-[9px] ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                            {opt.id === "none" ? "Non-PPh" : opt.label.split(" ")[0]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                    {calcItemPph(it) > 0 ? (
+                      <Text className="text-[10px] text-danger font-medium ml-1">
+                        (Dipotong PPh: -{rupiah(calcItemPph(it))})
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
               ))}
 
@@ -523,6 +579,24 @@ export function InvoiceTemplateGenerator({
                     <Plus size={14} color={colors.background} />
                     <Text className="text-xs">Tambah</Text>
                   </Button>
+                </View>
+
+                {/* Selector PPh New Item */}
+                <View className="flex-row items-center gap-1.5 flex-wrap pt-0.5">
+                  <Text className="text-[10px] text-muted-foreground mr-1">Tarif PPh Item Baru:</Text>
+                  {PPH_MODE_OPTIONS.map((opt) => (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => setNewItemPphMode(opt.id)}
+                      className={`px-1.5 py-0.5 rounded border ${
+                        newItemPphMode === opt.id ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                      }`}
+                    >
+                      <Text className={`text-[10px] ${newItemPphMode === opt.id ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                        {opt.id === "none" ? "Non-PPh" : opt.label.split(" ")[0]}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </View>
               </View>
             </View>

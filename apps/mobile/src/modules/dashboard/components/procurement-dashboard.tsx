@@ -87,7 +87,7 @@ export function ProcurementDashboard({ user, data, now, isMobile }: ProcurementD
         <View className={isMobile ? "w-full" : "flex-[1.5]"}>
           <ProjectOverviewCard
             projects={data.projects.slice(0, 4)}
-            onViewAll={() => router.push("/projects")}
+            disableNavigation
           />
         </View>
 

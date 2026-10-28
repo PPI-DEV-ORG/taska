@@ -1,3 +1,5 @@
+import type { PphMode } from "./lib";
+
 export type QuotationItem = {
   id: string;
   item: string;
@@ -13,4 +15,6 @@ export type QuotationItem = {
   serialUnitIds?: number[];
   serialNumbers?: string[];
   outOfStockAutoSwap?: boolean;
+  pphMode?: PphMode;
+  tipePph?: string;
 };

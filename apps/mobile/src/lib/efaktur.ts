@@ -13,13 +13,13 @@ export function buildEfakturCsv(
     "OF,KODE_OBJEK,NAMA,HARGA_SATUAN,JUMLAH_BARANG,HARGA_TOTAL,DISKON,DPP,PPN,TARIF_PPNBM,PPNBM",
   ];
 
-  const lines: string[] = [header[0], header[1]];
+  const lines: string[] = [header[0]!, header[1]!];
 
   let currentNsfpNum = 1;
   let nsfpPrefix = "";
   if (options?.nsfpStart) {
     const match = options.nsfpStart.match(/^(.*?)(\d{8})$/);
-    if (match) {
+    if (match && match[1] && match[2]) {
       nsfpPrefix = match[1];
       currentNsfpNum = parseInt(match[2], 10);
     }
@@ -56,7 +56,7 @@ export function buildEfakturCsv(
     let npwp = "0000000000000000";
     const notes = custObj?.notes || custObj?.alamat || inv.catatan || "";
     const npwpMatch = String(notes).match(/npwp\s*[:=]?\s*([0-9.\-]+)/i);
-    if (npwpMatch) {
+    if (npwpMatch && npwpMatch[1]) {
       const cleaned = npwpMatch[1].replace(/\D/g, "");
       if (cleaned.length >= 15) {
         npwp = cleaned.slice(0, 16);

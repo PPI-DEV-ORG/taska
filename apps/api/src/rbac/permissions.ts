@@ -30,7 +30,9 @@ export type ModuleKey =
   | "archive"
   | "audit"
   | "attendance"
-  | "payroll";
+  | "payroll"
+  | "pocReports"
+  | "visitReports";
 
 const ALL: Record<ModuleKey, Action[]> = {
   dashboard: ["L", "C", "U", "A"],
@@ -63,6 +65,8 @@ const ALL: Record<ModuleKey, Action[]> = {
   audit: ["L", "C", "U", "A"],
   attendance: ["L", "C", "U", "A"],
   payroll: ["L", "C", "U", "A"],
+  pocReports: ["L", "C", "U", "A"],
+  visitReports: ["L", "C", "U", "A"],
 };
 
 function grant(actions: string): Action[] {
@@ -98,6 +102,8 @@ export const PERMISSIONS: Record<string, Table> = {
     projects: "LCU",
     delivery: "LCU",
     expenses: "LCU",
+    pocReports: "LCU",
+    visitReports: "LCU",
     reports: "L",
   },
 
@@ -125,6 +131,8 @@ export const PERMISSIONS: Record<string, Table> = {
     stock: "LCU",
     delivery: "LCU",
     expenses: "LCU",
+    pocReports: "LCU",
+    visitReports: "LCU",
     approvals: "LA",
     reports: "L",
   },
@@ -143,6 +151,8 @@ export const PERMISSIONS: Record<string, Table> = {
     stock: "LC",
     delivery: "LCU",
     expenses: "LCU",
+    pocReports: "LCU",
+    visitReports: "LCU",
     reports: "L",
   },
 
@@ -162,6 +172,8 @@ export const PERMISSIONS: Record<string, Table> = {
     stock: "LCUD",
     delivery: "LCU",
     expenses: "LCU",
+    pocReports: "LCU",
+    visitReports: "LCU",
     approvals: "LA",
     reports: "L",
   },
@@ -188,6 +200,8 @@ export const PERMISSIONS: Record<string, Table> = {
     stock: "LCUA",
     delivery: "LCUA",
     expenses: "LCUA",
+    pocReports: "LCUA",
+    visitReports: "LCUA",
     approvals: "LUA",
     reports: "L",
     archive: "L",
@@ -209,6 +223,8 @@ export const PERMISSIONS: Record<string, Table> = {
     stock: "LCU",
     delivery: "LCU",
     expenses: "LCU",
+    pocReports: "LCU",
+    visitReports: "LCU",
     approvals: "LA",
     reports: "L",
   },
@@ -227,6 +243,8 @@ export const PERMISSIONS: Record<string, Table> = {
     requests: "LC",
     delivery: "LCU",
     expenses: "LCU",
+    pocReports: "LCU",
+    visitReports: "LCU",
     reports: "L",
   },
 };

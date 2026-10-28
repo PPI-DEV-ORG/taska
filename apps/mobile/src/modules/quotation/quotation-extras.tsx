@@ -29,7 +29,15 @@ import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { type QuotationItem } from "@/modules/quotation/types";
-import { PPH_MODE_OPTIONS, pphRateFor, pphModeToTipe, getInitialPphMode, type PphMode } from "@/modules/quotation/lib";
+import {
+  PPH_MODE_OPTIONS,
+  pphRateFor,
+  pphModeToTipe,
+  getInitialPphMode,
+  type PphMode,
+  calcItemPph,
+  calcQuotationFinancials,
+} from "@/modules/quotation/lib";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { Line } from "../shared/line";
@@ -67,6 +75,9 @@ export function QuotationExtras({
       : "exclude"
   );
 
+  const items: QuotationItem[] = Array.isArray(row.items) ? row.items : [];
+  const totalItemsPph = items.reduce((acc, it) => acc + calcItemPph(it), 0);
+
   const [pickerOpen, setPickerOpen] = React.useState(false);
 
   // Revisi state
@@ -77,7 +88,6 @@ export function QuotationExtras({
   const [revisiDiscPercent, setRevisiDiscPercent] = React.useState("0");
   const [revisiReason, setRevisiReason] = React.useState("");
   const [revisiPpnMode, setRevisiPpnMode] = React.useState<"exclude" | "include" | "none">(ppnMode);
-  const [revisiPphMode, setRevisiPphMode] = React.useState<PphMode>(getInitialPphMode(row));
   const [revisiFileId, setRevisiFileId] = React.useState<number | null>(null);
 
   const revTotNum = Number(revisiTotal.replace(/\D/g, "")) || 0;
@@ -89,8 +99,7 @@ export function QuotationExtras({
   const isRevInclude = revisiPpnMode === "include";
   const revDpp = isRevInclude ? Math.round(revNet / 1.11) : revNet;
   const revPpn = revisiPpnMode === "none" ? 0 : isRevInclude ? Math.max(0, revNet - revDpp) : Math.round(revNet * 0.11);
-  const revPphRate = pphRateFor(revisiPphMode);
-  const revPph = Math.round(revDpp * revPphRate);
+  const revPph = totalItemsPph;
   const revAfterDisc = Math.max(0, (revisiPpnMode === "exclude" ? revNet + revPpn : revNet) - revPph);
 
   async function handleCreateRevision() {
@@ -100,8 +109,6 @@ export function QuotationExtras({
         ppn: revPpn,
         discount: revDiscNum,
         pph: revPph,
-        pphMode: revisiPphMode,
-        tipePph: pphModeToTipe(revisiPphMode),
         grandTotal: revAfterDisc,
         note: revisiReason.trim() || `Revisi v${nextVersionNum}`,
         fileId: revisiFileId || undefined,
@@ -117,8 +124,6 @@ export function QuotationExtras({
         disc: revDiscNum,
         ppn: revPpn,
         pph: revPph,
-        pphMode: revisiPphMode,
-        tipePph: pphModeToTipe(revisiPphMode),
         totalAfterDisc: revAfterDisc,
         ppnMode: revisiPpnMode,
         tipePpn: revisiPpnMode === "exclude" ? "Exclude PPN (11%)" : revisiPpnMode === "include" ? "Include PPN (Sudah termasuk)" : "No PPN (Tanpa PPN)",
@@ -192,7 +197,6 @@ export function QuotationExtras({
   const calcTotalAfterDisc = ppnMode === "exclude" ? netBeforeTax + calcPpn : netBeforeTax;
   const baseDealDpp = netBeforeTax || dealAmount || 0;
 
-  const items: QuotationItem[] = Array.isArray(row.items) ? row.items : [];
   const canCreateInvoice = ["finance", "admin", "super_admin", "bos"].includes(
     (user?.role || "").toLowerCase()
   );
@@ -219,18 +223,16 @@ export function QuotationExtras({
 
     const updated = [...items, ...valid];
     const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
-    const net = Math.max(0, newTotal - discNum);
-    const isInclude = ppnMode === "include";
-    const newDpp = isInclude ? Math.round(net / 1.11) : net;
-    const newPpn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, net - newDpp) : Math.round(net * 0.11);
-    const newAfterDisc = ppnMode === "exclude" ? net + newPpn : net;
+    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
 
     await patchRow("quotations", row.id, {
       items: updated,
       total: newTotal,
       nilai: newTotal,
-      ppn: newPpn,
-      totalAfterDisc: newAfterDisc,
+      dpp,
+      ppn,
+      pph,
+      totalAfterDisc,
       status: row.status === "Not Yet" ? "Done" : row.status,
     });
     await reload();
@@ -241,22 +243,40 @@ export function QuotationExtras({
   async function handleDeleteItem(idx: number) {
     const updated = items.filter((_, i) => i !== idx);
     const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
-    const net = Math.max(0, newTotal - discNum);
-    const isInclude = ppnMode === "include";
-    const newDpp = isInclude ? Math.round(net / 1.11) : net;
-    const newPpn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, net - newDpp) : Math.round(net * 0.11);
-    const newAfterDisc = ppnMode === "exclude" ? net + newPpn : net;
+    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
 
     await patchRow("quotations", row.id, {
       items: updated,
       total: newTotal,
       nilai: newTotal,
-      ppn: newPpn,
-      totalAfterDisc: newAfterDisc,
+      dpp,
+      ppn,
+      pph,
+      totalAfterDisc,
     });
     await reload();
     await onRefresh?.();
     toast("Barang berhasil dihapus");
+  }
+
+  async function handleUpdateItemPph(idx: number, newPphMode: PphMode) {
+    const updated = items.map((it, i) =>
+      i === idx ? { ...it, pphMode: newPphMode, tipePph: pphModeToTipe(newPphMode) } : it
+    );
+    const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
+    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
+
+    await patchRow("quotations", row.id, {
+      items: updated,
+      total: newTotal,
+      nilai: newTotal,
+      dpp,
+      ppn,
+      pph,
+      totalAfterDisc,
+    });
+    await reload();
+    await onRefresh?.();
   }
 
   // Invoice creation modal state
@@ -305,15 +325,15 @@ export function QuotationExtras({
                 left="PPN 11% (Termasuk)"
                 right={<Text className="text-primary font-semibold">{rupiah(row.ppn ?? Math.max(0, netBeforeTax - Math.round(netBeforeTax / 1.11)))}</Text>}
               />
-              {Number(row.pph || 0) > 0 ? (
+              {totalItemsPph > 0 ? (
                 <Line
-                  left={`Pemotongan ${row.tipePph || "PPh"}`}
-                  right={<Text className="text-danger font-semibold">- {rupiah(row.pph || 0)}</Text>}
+                  left="Potongan PPh (Akumulasi Per-Item)"
+                  right={<Text className="text-danger font-semibold">- {rupiah(totalItemsPph)}</Text>}
                 />
               ) : null}
               <Line
                 left="TOTAL AKHIR (Inc. PPN)"
-                right={<Text className="text-primary text-base font-bold">{rupiah(Math.max(0, netBeforeTax - Number(row.pph || 0)))}</Text>}
+                right={<Text className="text-primary text-base font-bold">{rupiah(Math.max(0, netBeforeTax - totalItemsPph))}</Text>}
               />
             </>
           ) : (
@@ -330,15 +350,15 @@ export function QuotationExtras({
                   </Text>
                 }
               />
-              {Number(row.pph || 0) > 0 ? (
+              {totalItemsPph > 0 ? (
                 <Line
-                  left={`Pemotongan ${row.tipePph || "PPh"}`}
-                  right={<Text className="text-danger font-semibold">- {rupiah(row.pph || 0)}</Text>}
+                  left="Potongan PPh (Akumulasi Per-Item)"
+                  right={<Text className="text-danger font-semibold">- {rupiah(totalItemsPph)}</Text>}
                 />
               ) : null}
               <Line
                 left="TOTAL AFTER DISC (Total Akhir)"
-                right={<Text className="text-primary text-base font-bold">{rupiah(calcTotalAfterDisc || row.totalAfterDisc || row.total || row.nilai || 0)}</Text>}
+                right={<Text className="text-primary text-base font-bold">{rupiah(Math.max(0, calcTotalAfterDisc - totalItemsPph))}</Text>}
               />
             </>
           )}
@@ -392,26 +412,97 @@ export function QuotationExtras({
                   ? it.serialNumbers.join(", ")
                   : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
 
+                const itemPph = calcItemPph(it);
                 return (
-                  <View key={it.id || idx} className="flex-row items-center p-2.5 border-b border-border/40 last:border-b-0">
-                    <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
-                    <View className="flex-1 mr-2">
-                      <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
-                      {snText ? (
-                        <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
-                      ) : null}
+                  <View key={it.id || idx} className="p-2.5 border-b border-border/40 last:border-b-0 gap-1.5">
+                    <View className="flex-row items-center">
+                      <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
+                      <View className="flex-1 mr-2">
+                        <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
+                        {snText ? (
+                          <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
+                        ) : null}
+                      </View>
+                      <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.satuan || it.unit || "unit"}</Text>
+                      <Text className="text-xs text-foreground w-28 text-right">{rupiah(itemPrice)}</Text>
+                      <View className="w-28 items-end">
+                        <Text className="text-xs font-semibold text-foreground">{rupiah(sub)}</Text>
+                        {itemPph > 0 ? (
+                          <Text className="text-[10px] text-danger font-medium">PPh: -{rupiah(itemPph)}</Text>
+                        ) : null}
+                      </View>
+                      <View className="w-12 items-center">
+                        <Button size="icon" variant="ghost" className="size-7" onPress={() => handleDeleteItem(idx)}>
+                          <Trash2 size={13} color={colors.danger} />
+                        </Button>
+                      </View>
                     </View>
-                    <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.satuan || it.unit || "unit"}</Text>
-                    <Text className="text-xs text-foreground w-28 text-right">{rupiah(itemPrice)}</Text>
-                    <Text className="text-xs font-semibold text-foreground w-28 text-right">{rupiah(sub)}</Text>
-                    <View className="w-12 items-center">
-                      <Button size="icon" variant="ghost" className="size-7" onPress={() => handleDeleteItem(idx)}>
-                        <Trash2 size={13} color={colors.danger} />
-                      </Button>
+
+                    {/* Selector PPh Per-Item */}
+                    <View className="flex-row items-center gap-1 flex-wrap pl-8">
+                      <Text className="text-[10px] text-muted-foreground mr-1">Tarif PPh:</Text>
+                      {PPH_MODE_OPTIONS.map((opt) => {
+                        const active = (it.pphMode || "none") === opt.id;
+                        return (
+                          <Pressable
+                            key={opt.id}
+                            onPress={() => handleUpdateItemPph(idx, opt.id)}
+                            className={`px-1.5 py-0.5 rounded border ${
+                              active ? "bg-primary/10 border-primary" : "bg-muted/40 border-border/60"
+                            }`}
+                          >
+                            <Text className={`text-[9px] ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                              {opt.id === "none" ? "Non-PPh" : opt.label.split(" ")[0]}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
                     </View>
                   </View>
                 );
               })}
+            </View>
+
+            {/* Ringkasan Kalkulasi Akumulasi Pajak & Total */}
+            <View className="bg-panel/70 border border-border/80 rounded-xl p-3.5 gap-2 mt-1">
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Total Nilai Barang & Jasa (Sebelum Pajak):</Text>
+                <Text className="text-xs font-semibold">{rupiah(totNum)}</Text>
+              </View>
+              {discNum > 0 ? (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-muted-foreground">Diskon Penawaran:</Text>
+                  <Text className="text-xs font-semibold text-danger">- {rupiah(discNum)}</Text>
+                </View>
+              ) : null}
+              {ppnMode !== "none" ? (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-muted-foreground">{ppnMode === "include" ? "PPN 11% (Termasuk):" : "PPN 11% (Exclude):"}</Text>
+                  <Text className="text-xs font-semibold text-primary">{rupiah(calcPpn)}</Text>
+                </View>
+              ) : (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-muted-foreground">PPN:</Text>
+                  <Text className="text-xs font-semibold text-muted-foreground">Tanpa PPN (Rp 0)</Text>
+                </View>
+              )}
+              {totalItemsPph > 0 ? (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-muted-foreground font-medium">
+                    Total Potongan PPh (Akumulasi Per-Item):
+                  </Text>
+                  <Text className="text-xs font-bold text-danger">- {rupiah(totalItemsPph)}</Text>
+                </View>
+              ) : (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-muted-foreground">Pemotongan PPh:</Text>
+                  <Text className="text-xs text-muted-foreground">Rp 0 (Semua Non-PPh)</Text>
+                </View>
+              )}
+              <View className="border-t border-border/60 pt-2 flex-row justify-between items-center">
+                <Text className="text-xs font-bold text-foreground">Grand Total Akhir Penawaran:</Text>
+                <Text className="text-sm font-bold text-primary">{rupiah(Math.max(0, calcTotalAfterDisc - totalItemsPph))}</Text>
+              </View>
             </View>
           </View>
         ) : (
@@ -862,22 +953,6 @@ export function QuotationExtras({
                 ))}
               </View>
             </View>
-            <View className="gap-1">
-              <Text className="text-xs text-muted-foreground">Skema PPh (Withholding Tax)</Text>
-              <View className="flex-row flex-wrap gap-1.5">
-                {PPH_MODE_OPTIONS.map((opt) => (
-                  <Button
-                    key={opt.id}
-                    size="sm"
-                    variant={revisiPphMode === opt.id ? "default" : "outline"}
-                    onPress={() => setRevisiPphMode(opt.id)}
-                    className="h-8 px-2.5"
-                  >
-                    <Text className="text-xs">{opt.label}</Text>
-                  </Button>
-                ))}
-              </View>
-            </View>
             <View className="bg-panel border-border/60 rounded-lg border p-2.5 gap-1">
               {revisiPpnMode === "include" ? (
                 <>
@@ -902,9 +977,7 @@ export function QuotationExtras({
               )}
               {revPph > 0 ? (
                 <View className="flex-row justify-between">
-                  <Text className="text-[11px] text-muted-foreground">
-                    {`Potongan PPh (${PPH_MODE_OPTIONS.find((o) => o.id === revisiPphMode)?.label}):`}
-                  </Text>
+                  <Text className="text-[11px] text-muted-foreground">Potongan PPh (Akumulasi Item):</Text>
                   <Text className="text-[11px] font-medium text-danger">- {rupiah(revPph)}</Text>
                 </View>
               ) : null}

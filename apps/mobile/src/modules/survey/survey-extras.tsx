@@ -28,6 +28,7 @@ export function SurveyExtras({ row }: { row: Row }) {
   const [expenseOpen, setExpenseOpen] = React.useState(false);
   const [expNominal, setExpNominal] = React.useState("");
   const [expKategori, setExpKategori] = React.useState("Bensin");
+  const [expFundingSource, setExpFundingSource] = React.useState<"PERUSAHAAN" | "TALANGAN_PRIBADI">("TALANGAN_PRIBADI");
   const [expTanggal, setExpTanggal] = React.useState("");
   const [expKet, setExpKet] = React.useState("");
   const [expFileId, setExpFileId] = React.useState<number | null>(null);
@@ -45,9 +46,29 @@ export function SurveyExtras({ row }: { row: Row }) {
   }, [data.expenses, row.id, row.lead]);
 
   const totalBiayaTerpakai = React.useMemo(() => {
-    const sum = surveyExpenses.reduce((acc: number, e: Row) => acc + (Number(e.nominal) || 0), 0);
-    return sum > 0 ? sum : (Number(row.biaya) || 0);
-  }, [surveyExpenses, row.biaya]);
+    return surveyExpenses.reduce((acc: number, e: Row) => acc + (Number(e.nominal || e.amount) || 0), 0);
+  }, [surveyExpenses]);
+
+  const companyCost = React.useMemo(() => {
+    return surveyExpenses
+      .filter(
+        (e: Row) =>
+          e.fundingSource === "PERUSAHAAN" ||
+          e.sumberDana?.includes("Perusahaan") ||
+          (!e.fundingSource && !e.sumberDana?.includes("Talangan"))
+      )
+      .reduce((acc: number, e: Row) => acc + (Number(e.nominal || e.amount) || 0), 0);
+  }, [surveyExpenses]);
+
+  const personalAdvanceCost = React.useMemo(() => {
+    return surveyExpenses
+      .filter(
+        (e: Row) =>
+          e.fundingSource === "TALANGAN_PRIBADI" ||
+          e.sumberDana?.includes("Talangan")
+      )
+      .reduce((acc: number, e: Row) => acc + (Number(e.nominal || e.amount) || 0), 0);
+  }, [surveyExpenses]);
 
   function handleSaveTechNotes() {
     setTechNotes(inputTechNotes);
@@ -82,17 +103,17 @@ export function SurveyExtras({ row }: { row: Row }) {
       pelapor: reporterName,
       fileId: uploadedId || null,
       receiptFileId: uploadedId || null,
+      fundingSource: expFundingSource,
+      sumberDana: expFundingSource === "TALANGAN_PRIBADI" ? "Talangan Pribadi (Reimbursement)" : "Kas Kecil / Petty Cash Perusahaan",
       status: "Dilaporkan",
     });
-
-    const nextBiaya = totalBiayaTerpakai + nom;
-    patchRow("surveys", row.id, { biaya: nextBiaya });
 
     setExpenseOpen(false);
     setExpNominal("");
     setExpKet("");
     setExpTanggal("");
     setExpFileId(null);
+    setExpFundingSource("TALANGAN_PRIBADI");
     toast(`Biaya survey ${rupiah(nom)} dicatat ke modul Pengeluaran`);
   }
 
@@ -136,59 +157,89 @@ export function SurveyExtras({ row }: { row: Row }) {
       />
 
       <Panel
-        title="Biaya Operasional Survey"
-        subtitle="Bensin, makan, tol, atau parkir teknisi selama survey lapangan."
+        title="Biaya Operasional & Reimbursement Survey"
+        subtitle="Tracking pengeluaran terhubung, pemisahan dana perusahaan vs talangan pribadi"
         right={
-          <Button size="sm" onPress={() => setExpenseOpen(true)} className="flex-row items-center gap-1">
+          <Button size="sm" onPress={() => setExpenseOpen(true)} className="gap-1.5">
             <Plus size={14} color={colors.background} />
-            <Text className="text-xs">Catat Biaya</Text>
+            <Text className="text-xs font-semibold">+ Catat Biaya Survey</Text>
           </Button>
         }
       >
-        <Line left="Total Biaya Terpakai" right={<Text className="font-bold text-primary">{rupiah(totalBiayaTerpakai)}</Text>} />
-        <Line left="Tim Pelaksana" right={<Text className="text-text-secondary">{row.tim || "-"}</Text>} />
+        <View className="gap-4">
+          <View className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <View className="p-3 rounded-lg bg-card/60 border border-border">
+              <Text className="text-xs text-muted-foreground">Anggaran (Budget)</Text>
+              <Text className="text-base font-bold mt-1">{rupiah(row.biaya || row.cost || row.anggaran || 0)}</Text>
+            </View>
+            <View className="p-3 rounded-lg bg-card/60 border border-border">
+              <Text className="text-xs text-muted-foreground">Total Biaya Terpakai</Text>
+              <Text className="text-base font-bold mt-1 text-primary">{rupiah(totalBiayaTerpakai)}</Text>
+            </View>
+            <View className="p-3 rounded-lg bg-card/60 border border-border">
+              <Text className="text-xs text-muted-foreground">Dana Perusahaan</Text>
+              <Text className="text-base font-bold mt-1">{rupiah(companyCost)}</Text>
+            </View>
+            <View className="p-3 rounded-lg bg-card/60 border border-border">
+              <Text className="text-xs text-muted-foreground">Talangan Pribadi (Klaim)</Text>
+              <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(personalAdvanceCost)}</Text>
+            </View>
+          </View>
 
-        <View className="gap-2 pt-2 border-t border-border mt-1">
-          <Text className="text-xs font-semibold text-foreground">
-            Rincian Biaya Survey ({surveyExpenses.length} pengeluaran)
-          </Text>
+          {/* Expense table */}
           {surveyExpenses.length === 0 ? (
-            <Text className="text-xs text-muted-foreground py-1">Belum ada rincian biaya tercatat.</Text>
+            <Text className="text-xs text-muted-foreground py-4 text-center">
+              Belum ada pengeluaran yang dicatat untuk survey ini.
+            </Text>
           ) : (
-            surveyExpenses.map((exp: Row, idx: number) => {
-              const hasReceipt = !!(exp.receiptFileId || exp.fileId || (exp.receiptFile as any)?.id);
-              return (
-                <Pressable
-                  key={exp.id || idx}
-                  onPress={() => setSelectedExp(exp)}
-                  className="bg-panel border-border/70 rounded-xl border p-2.5 flex-row items-center justify-between hover:bg-muted/30 active:opacity-75 transition-colors cursor-pointer"
-                >
-                  <View className="flex-1 pr-2">
-                    <View className="flex-row items-center gap-1.5">
-                      <StatusBadge status={exp.kategori || "Biaya"} />
-                      <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
-                        {exp.alasan || exp.kategori}
-                      </Text>
-                    </View>
-                    <View className="flex-row items-center gap-2 mt-0.5">
-                      <Text className="text-[11px] text-muted-foreground">
-                        Oleh: {exp.pelapor || "Teknisi"} · {exp.tanggal || exp.dibuat || "-"}
-                      </Text>
-                      {hasReceipt ? (
-                        <View className="flex-row items-center gap-0.5 bg-primary/10 px-1.5 py-0.5 rounded">
-                          <Camera size={10} color={colors.primary} />
-                          <Text className="text-[9px] text-primary font-medium">Ada Nota</Text>
+            <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+              {surveyExpenses.map((exp: Row, idx: number) => {
+                const hasReceipt = !!(exp.receiptFileId || exp.fileId || (exp.receiptFile as any)?.id);
+                const isTalangan = exp.fundingSource === "TALANGAN_PRIBADI" || exp.sumberDana?.includes("Talangan");
+                return (
+                  <Pressable
+                    key={exp.id || idx}
+                    onPress={() => setSelectedExp(exp)}
+                    className="p-3 flex-row items-center justify-between bg-card/30 hover:bg-muted/30 active:opacity-75 transition-colors cursor-pointer"
+                  >
+                    <View className="flex-1 pr-2">
+                      <View className="flex-row items-center gap-2 flex-wrap">
+                        <Text className="text-sm font-semibold text-foreground">
+                          {exp.alasan || exp.description || exp.kategori}
+                        </Text>
+                        <StatusBadge status={exp.status || "Dilaporkan"} />
+                        <View
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            isTalangan
+                              ? "bg-amber-500/15 text-amber-500"
+                              : "bg-blue-500/15 text-blue-500"
+                          }`}
+                        >
+                          <Text className="text-[10px]">
+                            {isTalangan ? "Talangan Pribadi" : "Dana Kantor"}
+                          </Text>
                         </View>
-                      ) : null}
+                      </View>
+                      <View className="flex-row items-center gap-2 mt-1 flex-wrap">
+                        <Text className="text-xs text-muted-foreground">
+                          {tanggal(exp.tanggal || exp.date || exp.dibuat)} • Pelapor: {exp.pelapor || "Teknisi"} • Kategori: {exp.kategori || "-"}
+                        </Text>
+                        {hasReceipt ? (
+                          <View className="flex-row items-center gap-0.5 bg-primary/10 px-1.5 py-0.5 rounded">
+                            <Camera size={10} color={colors.primary} />
+                            <Text className="text-[9px] text-primary font-medium">Ada Nota</Text>
+                          </View>
+                        ) : null}
+                      </View>
                     </View>
-                  </View>
-                  <View className="items-end gap-1">
-                    <Text className="text-xs font-bold text-primary">{rupiah(exp.nominal || 0)}</Text>
-                    <Text className="text-[10px] text-primary underline">Lihat Detail</Text>
-                  </View>
-                </Pressable>
-              );
-            })
+                    <View className="items-end gap-1">
+                      <Text className="text-sm font-bold text-foreground">{rupiah(exp.nominal || exp.amount || 0)}</Text>
+                      <Text className="text-[10px] text-primary underline">Lihat Detail</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
           )}
         </View>
       </Panel>
@@ -257,6 +308,27 @@ export function SurveyExtras({ row }: { row: Row }) {
                   ))}
                 </View>
               </View>
+              <View className="gap-1.5">
+                <Text className="text-xs text-muted-foreground font-medium">Sumber Dana</Text>
+                <View className="flex-row gap-2">
+                  <Button
+                    size="sm"
+                    variant={expFundingSource === "TALANGAN_PRIBADI" ? "default" : "outline"}
+                    onPress={() => setExpFundingSource("TALANGAN_PRIBADI")}
+                    className="flex-1 h-8"
+                  >
+                    <Text className="text-xs">Talangan Pribadi</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={expFundingSource === "PERUSAHAAN" ? "default" : "outline"}
+                    onPress={() => setExpFundingSource("PERUSAHAAN")}
+                    className="flex-1 h-8"
+                  >
+                    <Text className="text-xs">Dana Kantor</Text>
+                  </Button>
+                </View>
+              </View>
               <View className="gap-1">
                 <Text className="text-xs text-muted-foreground">Nominal (Rp)</Text>
                 <Input
@@ -323,6 +395,16 @@ export function SurveyExtras({ row }: { row: Row }) {
                     <Line left="Nominal" right={<Text className="text-base font-bold text-primary">{rupiah(selectedExp.nominal || 0)}</Text>} />
                     <Line left="Keterangan / Alasan" right={<Text className="text-xs font-medium max-w-[220px] text-right">{selectedExp.alasan || "-"}</Text>} />
                     <Line left="Pelapor" right={<Text className="text-xs font-semibold">{selectedExp.pelapor || "-"}</Text>} />
+                    <Line
+                      left="Sumber Dana"
+                      right={
+                        <Text className="text-xs font-semibold">
+                          {selectedExp.fundingSource === "TALANGAN_PRIBADI" || selectedExp.sumberDana?.includes("Talangan")
+                            ? "Talangan Pribadi (Reimbursement)"
+                            : "Kas Kecil / Perusahaan"}
+                        </Text>
+                      }
+                    />
                     <Line left="Tanggal Dicatat" right={<Text className="text-xs text-muted-foreground">{selectedExp.tanggal || selectedExp.dibuat || "-"}</Text>} />
                     <Line left="Status Pengeluaran" right={<StatusBadge status={selectedExp.status || "Dilaporkan"} />} />
                   </View>

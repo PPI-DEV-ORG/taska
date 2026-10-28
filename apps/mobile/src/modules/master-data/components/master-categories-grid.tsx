@@ -14,6 +14,7 @@ import {
   HelpCircle,
   Receipt,
   PieChart,
+  Handshake,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -66,6 +67,16 @@ export function MasterCategoriesGrid({
       tag: "Dikelola Sales",
       roles: ["admin", "bos", "sales"],
       onPress: () => onSelectCategory("alasan-lost"),
+    },
+    {
+      id: "jenis-kunjungan" as MasterKey,
+      title: "Jenis Aktivitas Kunjungan",
+      desc: "Kategori kunjungan & meeting (Demo, Negosiasi, Koordinasi, MoM)",
+      count: `${(data["visit-activity-types"]?.length || 0)} Jenis`,
+      icon: Handshake,
+      tag: "Dikelola Sales & PM",
+      roles: ["admin", "bos", "sales", "pm"],
+      onPress: () => onSelectCategory("jenis-kunjungan"),
     },
     {
       id: "supplier" as MasterKey,

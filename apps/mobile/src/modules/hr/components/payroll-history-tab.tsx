@@ -290,7 +290,7 @@ export function PayrollHistoryTab({
                         <Text style={{ width: 90 }} className="text-muted-foreground text-xs font-semibold tracking-wider text-right">Aksi</Text>
                       </View>
 
-                      {pagedSlips.map((row) => (
+                      {pagedSlips.map((row: any) => (
                         <View
                           key={row.id}
                           className="border-border/60 hover:bg-panel/40 flex-row items-center border-b px-4 py-3.5 transition-colors w-full"

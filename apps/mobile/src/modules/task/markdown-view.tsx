@@ -61,14 +61,16 @@ export function MarkdownView({ content }: { content: string }) {
   let i = 0;
 
   while (i < rawLines.length) {
-    const line = rawLines[i];
+    const line = rawLines[i] ?? "";
 
     // 1. Code Block (``` ... ```)
     if (line.trim().startsWith("```")) {
       const codeLines: string[] = [];
       i++;
-      while (i < rawLines.length && !rawLines[i].trim().startsWith("```")) {
-        codeLines.push(rawLines[i]);
+      while (i < rawLines.length) {
+        const nextL = rawLines[i] ?? "";
+        if (nextL.trim().startsWith("```")) break;
+        codeLines.push(nextL);
         i++;
       }
       elements.push(
@@ -88,13 +90,15 @@ export function MarkdownView({ content }: { content: string }) {
     // 2. Table (| col 1 | col 2 |)
     if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
       const tableLines: string[] = [];
-      while (i < rawLines.length && rawLines[i].trim().startsWith("|") && rawLines[i].trim().endsWith("|")) {
-        tableLines.push(rawLines[i]);
+      while (i < rawLines.length) {
+        const nextL = rawLines[i] ?? "";
+        if (!(nextL.trim().startsWith("|") && nextL.trim().endsWith("|"))) break;
+        tableLines.push(nextL);
         i++;
       }
 
       if (tableLines.length >= 2) {
-        const headerCells = tableLines[0]
+        const headerCells = (tableLines[0] ?? "")
           .split("|")
           .slice(1, -1)
           .map((c) => c.trim());
@@ -205,7 +209,7 @@ export function MarkdownView({ content }: { content: string }) {
 
     // 6. Checklist (- [ ] or - [x])
     const checklistMatch = line.match(/^[-*]\s+\[([ xX])\]\s+(.*)$/);
-    if (checklistMatch) {
+    if (checklistMatch && checklistMatch[1] && checklistMatch[2]) {
       const isChecked = checklistMatch[1].toLowerCase() === "x";
       const itemText = checklistMatch[2];
       elements.push(
@@ -230,7 +234,7 @@ export function MarkdownView({ content }: { content: string }) {
 
     // 7. Bullet Lists (- text or * text)
     const bulletMatch = line.match(/^[-*]\s+(.*)$/);
-    if (bulletMatch) {
+    if (bulletMatch && bulletMatch[1]) {
       elements.push(
         <View key={`bullet-${i}`} className="flex-row items-start gap-2 my-0.5 ml-1">
           <Text className="text-primary text-xs leading-5">•</Text>
@@ -245,7 +249,7 @@ export function MarkdownView({ content }: { content: string }) {
 
     // 8. Numbered Lists (1. text)
     const numMatch = line.match(/^(\d+)\.\s+(.*)$/);
-    if (numMatch) {
+    if (numMatch && numMatch[1] && numMatch[2]) {
       elements.push(
         <View key={`num-${i}`} className="flex-row items-start gap-1.5 my-0.5 ml-1">
           <Text className="text-xs font-semibold text-muted-foreground min-w-[18px]">

@@ -85,6 +85,7 @@ export function generatePdfTable(options: {
 
   for (let r = 0; r < displayRows.length; r++) {
     const row = displayRows[r];
+    if (!row) continue;
     const isEven = r % 2 === 0;
 
     // Background bergantian (zebra striping)

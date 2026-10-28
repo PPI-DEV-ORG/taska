@@ -15,7 +15,7 @@ import { CurrentUser, type RequestUser } from "../common/decorators/current-user
 import { Type } from "class-transformer";
 import { IsIn, IsInt, IsOptional, IsString, MinLength } from "class-validator";
 
-const ENTITY_KINDS = ["survey", "project", "delivery-note"] as const;
+const ENTITY_KINDS = ["survey", "project", "delivery-note", "poc", "visit"] as const;
 export type DocKind = (typeof ENTITY_KINDS)[number];
 
 class AttachDto {

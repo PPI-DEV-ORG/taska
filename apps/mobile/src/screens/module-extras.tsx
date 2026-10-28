@@ -30,6 +30,8 @@ import { Line } from "@/modules/shared/line";
 import { LeadExtras } from "@/modules/lead/lead-extras";
 import { QuotationExtras } from "@/modules/quotation/quotation-extras";
 import { SurveyExtras } from "@/modules/survey/survey-extras";
+import { PocExtras } from "@/modules/poc/poc-extras";
+import { VisitExtras } from "@/modules/visits/visit-extras";
 import { ReceivingExtras } from "@/modules/receiving/receiving-extras";
 import { DeliveryNotesExtras } from "@/modules/delivery-note/delivery-note-extras";
 import { ProjectExtras } from "@/modules/project/project-extras";
@@ -1008,6 +1010,14 @@ export function ModuleExtras({
 
   if (moduleKey === "surveys") {
     return <SurveyExtras row={row} />;
+  }
+
+  if (moduleKey === "poc-reports") {
+    return <PocExtras row={row} onRefresh={onRefresh} />;
+  }
+
+  if (moduleKey === "visit-reports") {
+    return <VisitExtras row={row} onRefresh={onRefresh} />;
   }
 
   if (moduleKey === "projects") {

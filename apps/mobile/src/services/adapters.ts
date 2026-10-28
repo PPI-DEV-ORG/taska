@@ -48,10 +48,28 @@ export const PATHS: Record<string, string> = {
   reservations: "/reservations",
   followups: "/follow-ups",
   invoiceIn: "/invoice-in",
+  "poc-reports": "/poc-reports",
+  "visit-reports": "/visit-reports",
+  "visit-activity-types": "/visit-activity-types",
 };
 
 // ─── status label maps (backend enum → UI label) ───
 const MAPS: Record<string, Record<string, string>> = {
+  "poc-reports": {
+    Draft: "Draft",
+    Planned: "Planned",
+    Preparation: "Preparation",
+    Ready: "Ready",
+    "In Progress": "In Progress",
+    Completed: "Completed",
+    "On Hold": "On Hold",
+    Cancelled: "Cancelled",
+  },
+  "visit-reports": {
+    Planned: "Planned",
+    Completed: "Completed",
+    Cancelled: "Cancelled",
+  },
   leads: {
     PROSPECTING: "Prospecting", QUALIFICATION: "Qualification", PROPOSAL: "Proposal",
     NEGOTIATION: "Negotiation", WON: "Won", LOST: "Lost",
@@ -852,6 +870,36 @@ export function adaptRow(module: string, raw: any): Row {
         survey: raw.survey
           ? `Survey #${raw.survey.id} - ${raw.survey.lead?.name || raw.survey.location || "Survey"}`
           : "-",
+        pocReportId: raw.pocReportId != null ? String(raw.pocReportId) : null,
+        pocReport:
+          typeof raw.pocReport === "string" && raw.pocReport !== "-"
+            ? raw.pocReport
+            : raw.pocReport && typeof raw.pocReport === "object"
+            ? `POC ${raw.pocReport.number || raw.pocReport.nomor || `#${raw.pocReport.id}`} - ${raw.pocReport.title || raw.pocReport.judul || "POC"}`
+            : raw.pocReportId != null
+            ? `POC #${raw.pocReportId}`
+            : "-",
+        visitReportId: raw.visitReportId != null ? String(raw.visitReportId) : null,
+        visitReport:
+          typeof raw.visitReport === "string" && raw.visitReport !== "-"
+            ? raw.visitReport
+            : raw.visitReport && typeof raw.visitReport === "object"
+            ? `VISIT ${raw.visitReport.number || raw.visitReport.nomor || `#${raw.visitReport.id}`} - ${raw.visitReport.title || raw.visitReport.judul || "Kunjungan"}`
+            : raw.visitReportId != null
+            ? `VISIT #${raw.visitReportId}`
+            : "-",
+        fundingSource: raw.fundingSource || "PERUSAHAAN",
+        sumberDana:
+          raw.fundingSource === "TALANGAN_PRIBADI"
+            ? "Talangan Pribadi (Reimbursement)"
+            : "Dana Perusahaan",
+        reimbursementStatus: raw.reimbursementStatus ?? null,
+        approvedAmount: raw.approvedAmount != null ? n(raw.approvedAmount) : null,
+        paidAmount: raw.paidAmount != null ? n(raw.paidAmount) : null,
+        paymentMethod: raw.paymentMethod ?? null,
+        paidById: raw.paidById ?? null,
+        paidBy: nameOf(raw.paidBy) ?? null,
+        receiptFileIds: Array.isArray(raw.receiptFileIds) ? raw.receiptFileIds : [],
         alasan: raw.description ?? "",
         status: toLabel("expenses", raw.status),
         costCenterId: idOf(raw.costCenter),
@@ -861,6 +909,142 @@ export function adaptRow(module: string, raw: any): Row {
         paidFile: raw.paidFile ?? null,
         fileId: raw.receiptFileId ?? (raw.receiptFile?.id ?? (raw.fileId ?? null)),
       };
+    case "poc-reports": {
+      const typeLabel =
+        raw.type === "DEMO_CLIENT"
+          ? "Demo Klien"
+          : raw.type === "EXPO_EXHIBITION"
+            ? "Pameran / Expo"
+            : raw.type === "INTERNAL_POC"
+              ? "Pengujian Internal"
+              : raw.type || "Demo Klien";
+      const clientOrExpo =
+        raw.clientName ||
+        (raw.customer ? nameOf(raw.customer) : null) ||
+        (raw.lead ? `Lead: ${nameOf(raw.lead)}` : null) ||
+        "-";
+      const membersList = Array.isArray(raw.members)
+        ? raw.members.map((m: any) => m.user?.name || nameOf(m)).filter(Boolean).join(", ")
+        : "-";
+
+      return {
+        ...base,
+        nomor: raw.number || `POC #${raw.id}`,
+        judul: raw.title || "-",
+        title: raw.title || "-",
+        deskripsi: raw.description ?? "",
+        description: raw.description ?? "",
+        tipe: typeLabel,
+        type: typeLabel,
+        tipeLabel: typeLabel,
+        typeCode: raw.type || "DEMO_CLIENT",
+        tanggal: d(raw.date),
+        date: raw.date ? String(raw.date).slice(0, 10) : "",
+        tanggalSelesai: raw.endDate ? d(raw.endDate) : "-",
+        endDate: raw.endDate ? String(raw.endDate).slice(0, 10) : "",
+        lokasi: raw.location ?? "-",
+        location: raw.location ?? "",
+        status: raw.status || "Draft",
+        hasilStatus: raw.resultStatus || "Pending Evaluation",
+        resultStatus: raw.resultStatus || "Pending Evaluation",
+        klien: clientOrExpo,
+        clientName: raw.clientName || clientOrExpo,
+        customerId: idOf(raw.customer) ?? raw.customerId,
+        customer: nameOf(raw.customer) ?? "-",
+        projectId: idOf(raw.project) ?? raw.projectId,
+        project: nameOf(raw.project) ?? "-",
+        leadId: idOf(raw.lead) ?? raw.leadId,
+        lead: nameOf(raw.lead) ?? "-",
+        pemilik: nameOf(raw.owner) ?? "",
+        ownerId: idOf(raw.owner) ?? raw.ownerId,
+        targetCriteria: raw.targetCriteria ?? "",
+        productsTested: raw.productsTested ?? "",
+        anggaran: n(raw.budget),
+        budget: n(raw.budget),
+        biaya: n(raw.actualCost),
+        actualCost: n(raw.actualCost),
+        actualExecutionDate: raw.actualExecutionDate ? d(raw.actualExecutionDate) : null,
+        actualAttendees: raw.actualAttendees ?? "",
+        activitiesDone: raw.activitiesDone ?? "",
+        testResults: raw.testResults ?? "",
+        issuesFound: raw.issuesFound ?? "",
+        followUpNeeded: raw.followUpNeeded ?? "",
+        conclusion: raw.conclusion ?? "",
+        recommendations: raw.recommendations ?? "",
+        companyHeader: raw.companyHeader ?? "",
+        logoFileId: raw.logoFileId ?? null,
+        documentFileId: raw.documentFileId ?? null,
+        tim: membersList,
+        members: raw.members ?? [],
+        checklists: raw.checklists ?? [],
+        expenses: raw.expenses ?? [],
+        financeSummary: raw.financeSummary ?? null,
+      };
+    }
+    case "visit-reports": {
+      const clientNameDisplay =
+        raw.clientName ||
+        (raw.customer ? nameOf(raw.customer) : null) ||
+        (raw.lead ? `Lead: ${nameOf(raw.lead)}` : null) ||
+        "-";
+      const membersList = Array.isArray(raw.members)
+        ? raw.members.map((m: any) => m.user?.name || nameOf(m)).filter(Boolean).join(", ")
+        : "-";
+      const actType = raw.activityType?.name || raw.activityTypeName || "-";
+      const totalBiaya = raw.expenseSummary?.total ?? (Array.isArray(raw.expenses) ? raw.expenses.reduce((s: number, e: any) => s + Number(e.amount || 0), 0) : 0);
+
+      return {
+        ...base,
+        nomor: raw.number || `VISIT #${raw.id}`,
+        judul: raw.title || "-",
+        title: raw.title || "-",
+        deskripsi: raw.description ?? "",
+        description: raw.description ?? "",
+        tipe: actType,
+        activityType: actType,
+        activityTypeId: raw.activityTypeId,
+        activityTypeName: raw.activityTypeName,
+        tanggal: d(raw.date),
+        date: raw.date ? String(raw.date).slice(0, 10) : "",
+        tanggalSelesai: raw.endDate ? d(raw.endDate) : "-",
+        endDate: raw.endDate ? String(raw.endDate).slice(0, 10) : "",
+        lokasi: raw.location ?? "-",
+        location: raw.location ?? "",
+        status: raw.status || "Planned",
+        klien: clientNameDisplay,
+        clientName: raw.clientName || clientNameDisplay,
+        kontakKlien: raw.clientContact ?? "-",
+        clientContact: raw.clientContact ?? "",
+        customerId: idOf(raw.customer) ?? raw.customerId,
+        customer: nameOf(raw.customer) ?? "-",
+        projectId: idOf(raw.project) ?? raw.projectId,
+        project: nameOf(raw.project) ?? "-",
+        leadId: idOf(raw.lead) ?? raw.leadId,
+        lead: nameOf(raw.lead) ?? "-",
+        pemilik: nameOf(raw.owner) ?? "",
+        ownerId: idOf(raw.owner) ?? raw.ownerId,
+        tim: membersList,
+        members: raw.members ?? [],
+        memberUserIds: Array.isArray(raw.members) ? raw.members.map((m: any) => m.userId || m.user?.id) : [],
+        tujuan: raw.purpose ?? "",
+        purpose: raw.purpose ?? "",
+        totalBiaya,
+        summary: raw.summary ?? "",
+        clientNeeds: raw.clientNeeds ?? "",
+        productsIntroduced: raw.productsIntroduced ?? "",
+        clientFeedback: raw.clientFeedback ?? "",
+        agreements: raw.agreements ?? "",
+        potentialOpportunities: raw.potentialOpportunities ?? "",
+        obstacles: raw.obstacles ?? "",
+        conclusion: raw.conclusion ?? "",
+        companyHeader: raw.companyHeader ?? "",
+        logoFileId: raw.logoFileId ?? null,
+        documentFileId: raw.documentFileId ?? null,
+        actions: raw.actions ?? [],
+        expenses: raw.expenses ?? [],
+        expenseSummary: raw.expenseSummary ?? null,
+      };
+    }
     case "damage-reports": {
       const desc = raw.description ?? "";
       const poMatch = desc.match(/\[PO:\s*([^\]]+)\]/);
@@ -1279,11 +1463,12 @@ function findId(list: any[] | undefined, val: any): number | undefined {
   if (Array.isArray(list)) {
     const cleanVal = (sVal.split("(")[0] ?? sVal).trim().toLowerCase();
     const cleanValDash = (sVal.split(" - ")[0] ?? sVal).trim().toLowerCase();
+    const cleanValDot = (sVal.split(" · ")[0] ?? sVal).trim().toLowerCase();
     const match = list.find((r) => {
       const candidates = [r.nama, r.name, r.nomor, r.number, r.sku].filter(Boolean);
       return candidates.some((c) => {
         const sc = String(c).trim().toLowerCase();
-        return sc === sVal.toLowerCase() || sc === cleanVal || sc === cleanValDash;
+        return sc === sVal.toLowerCase() || sc === cleanVal || sc === cleanValDash || sc === cleanValDot;
       });
     });
     if (match?.id != null) return Number(match.id);
@@ -1676,9 +1861,173 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
             : row.survey && row.survey !== "-"
             ? Number(String(row.survey).match(/#(\d+)/)?.[1] || findId(db?.surveys, row.survey)) || undefined
             : undefined,
+        pocReportId:
+          row.pocReportId != null && row.pocReportId !== "" && row.pocReportId !== "-"
+            ? Number(row.pocReportId)
+            : row.pocReport && row.pocReport !== "-"
+            ? Number(
+                String(row.pocReport).match(/#(\d+)/)?.[1] ||
+                (db?.["poc-reports"] ?? []).find(
+                  (p: any) =>
+                    `POC ${p.nomor || p.number} - ${p.judul || p.title}` === row.pocReport ||
+                    p.nomor === row.pocReport ||
+                    p.number === row.pocReport ||
+                    p.judul === row.pocReport
+                )?.id ||
+                findId(db?.["poc-reports"], row.pocReport)
+              ) || undefined
+            : undefined,
+        visitReportId:
+          row.visitReportId != null && row.visitReportId !== "" && row.visitReportId !== "-"
+            ? Number(row.visitReportId)
+            : row.visitReport && row.visitReport !== "-"
+            ? Number(
+                String(row.visitReport).match(/#(\d+)/)?.[1] ||
+                (db?.["visit-reports"] ?? []).find(
+                  (p: any) =>
+                    `VISIT ${p.nomor || p.number} - ${p.judul || p.title}` === row.visitReport ||
+                    p.nomor === row.visitReport ||
+                    p.number === row.visitReport ||
+                    p.judul === row.visitReport
+                )?.id ||
+                findId(db?.["visit-reports"], row.visitReport)
+              ) || undefined
+            : undefined,
+        fundingSource:
+          row.fundingSource ||
+          (row.sumberDana && String(row.sumberDana).toLowerCase().includes("talangan")
+            ? "TALANGAN_PRIBADI"
+            : "PERUSAHAAN"),
+        reimbursementStatus: row.reimbursementStatus || undefined,
+        paymentMethod: row.paymentMethod || undefined,
+        approvedAmount: row.approvedAmount != null ? num(row.approvedAmount) : undefined,
+        paidAmount: row.paidAmount != null ? num(row.paidAmount) : undefined,
         costCenterId: row.costCenterId != null && row.costCenterId !== "" ? Number(row.costCenterId) : findId(db?.costCenters, row.costCenter),
         receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
+        receiptFileIds: Array.isArray(row.receiptFileIds) ? row.receiptFileIds.map(Number) : undefined,
       };
+    case "poc-reports": {
+      const rawType = String(row.type || row.tipe || row.tipeLabel || "").trim();
+      let typeCode = "DEMO_CLIENT";
+      if (rawType === "EXPO_EXHIBITION" || /pameran|expo/i.test(rawType)) {
+        typeCode = "EXPO_EXHIBITION";
+      } else if (rawType === "INTERNAL_POC" || /internal/i.test(rawType)) {
+        typeCode = "INTERNAL_POC";
+      } else if (rawType === "DEMO_CLIENT" || /klien|client|demo/i.test(rawType)) {
+        typeCode = "DEMO_CLIENT";
+      }
+
+      const memberIds =
+        resolveMemberIds(row, db) ||
+        (Array.isArray(row.memberUserIds)
+          ? row.memberUserIds.map(Number)
+          : Array.isArray(row.members)
+            ? row.members.map((m: any) => Number(m.userId || m.id || m)).filter(Boolean)
+            : undefined);
+
+      return {
+        title: row.title || row.judul || "POC Report",
+        description: row.description || row.deskripsi || undefined,
+        type: typeCode,
+        date: row.date || row.tanggal || today,
+        endDate: row.endDate || (row.tanggalSelesai && row.tanggalSelesai !== "-" ? row.tanggalSelesai : undefined),
+        location: row.location || (row.lokasi && row.lokasi !== "-" ? row.lokasi : undefined),
+        status: row.status || "Draft",
+        resultStatus: row.resultStatus || row.hasilStatus || undefined,
+        clientName: row.clientName || (row.klien && row.klien !== "-" ? row.klien : undefined),
+        customerId:
+          row.customerId != null && row.customerId !== ""
+            ? Number(row.customerId)
+            : row.customer && row.customer !== "-"
+              ? findId(db?.customers, row.customer)
+              : undefined,
+        projectId:
+          row.projectId != null && row.projectId !== ""
+            ? Number(row.projectId)
+            : row.project && row.project !== "-"
+              ? findId(db?.projects, row.project)
+              : undefined,
+        leadId:
+          row.leadId != null && row.leadId !== ""
+            ? Number(row.leadId)
+            : row.lead && row.lead !== "-"
+              ? findId(db?.leads, row.lead)
+              : undefined,
+        targetCriteria: row.targetCriteria || undefined,
+        productsTested: row.productsTested || undefined,
+        budget: num(row.budget ?? row.anggaran ?? 0),
+        actualExecutionDate: row.actualExecutionDate || undefined,
+        actualAttendees: row.actualAttendees || undefined,
+        activitiesDone: row.activitiesDone || undefined,
+        testResults: row.testResults || undefined,
+        issuesFound: row.issuesFound || undefined,
+        followUpNeeded: row.followUpNeeded || undefined,
+        conclusion: row.conclusion || undefined,
+        recommendations: row.recommendations || undefined,
+        companyHeader: row.companyHeader || undefined,
+        logoFileId: row.logoFileId ? Number(row.logoFileId) : undefined,
+        documentFileId: row.documentFileId ? Number(row.documentFileId) : undefined,
+        memberUserIds: memberIds,
+      };
+    }
+    case "visit-reports": {
+      const memberIds =
+        resolveMemberIds(row, db) ||
+        (Array.isArray(row.memberUserIds)
+          ? row.memberUserIds.map(Number)
+          : Array.isArray(row.members)
+            ? row.members.map((m: any) => Number(m.userId || m.id || m)).filter(Boolean)
+            : undefined);
+
+      const actTypeId =
+        row.activityTypeId != null && row.activityTypeId !== ""
+          ? Number(row.activityTypeId)
+          : findId(db?.["visit-activity-types"], row.tipe || row.activityType);
+
+      return {
+        title: row.judul || row.title || "Laporan Kunjungan",
+        activityTypeId: actTypeId || undefined,
+        activityTypeName: row.tipe || row.activityType || undefined,
+        status: row.status || "Planned",
+        date: row.date || row.tanggal || today,
+        endDate: row.endDate || (row.tanggalSelesai && row.tanggalSelesai !== "-" ? row.tanggalSelesai : undefined),
+        location: row.location || (row.lokasi && row.lokasi !== "-" ? row.lokasi : undefined),
+        clientName: row.clientName || (row.klien && row.klien !== "-" ? row.klien : undefined),
+        clientContact: row.clientContact || (row.kontakKlien && row.kontakKlien !== "-" ? row.kontakKlien : undefined),
+        customerId:
+          row.customerId != null && row.customerId !== ""
+            ? Number(row.customerId)
+            : row.customer && row.customer !== "-"
+              ? findId(db?.customers, row.customer)
+              : undefined,
+        projectId:
+          row.projectId != null && row.projectId !== ""
+            ? Number(row.projectId)
+            : row.project && row.project !== "-"
+              ? findId(db?.projects, row.project)
+              : undefined,
+        leadId:
+          row.leadId != null && row.leadId !== ""
+            ? Number(row.leadId)
+            : row.lead && row.lead !== "-"
+              ? findId(db?.leads, row.lead)
+              : undefined,
+        purpose: row.purpose || row.tujuan || undefined,
+        description: row.description || row.deskripsi || undefined,
+        summary: row.summary || undefined,
+        clientNeeds: row.clientNeeds || undefined,
+        productsIntroduced: row.productsIntroduced || undefined,
+        clientFeedback: row.clientFeedback || undefined,
+        agreements: row.agreements || undefined,
+        potentialOpportunities: row.potentialOpportunities || undefined,
+        obstacles: row.obstacles || undefined,
+        conclusion: row.conclusion || undefined,
+        companyHeader: row.companyHeader || undefined,
+        logoFileId: row.logoFileId ? Number(row.logoFileId) : undefined,
+        documentFileId: row.documentFileId ? Number(row.documentFileId) : undefined,
+        memberUserIds: memberIds,
+      };
+    }
     case "damage-reports": {
       const baseDesc = row.keterangan || row.description || "-";
       const poVal = row.po && row.po !== "-" ? (String(row.po).split(" - ")[0] ?? "").trim() : "";
@@ -1864,7 +2213,11 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "dpLabel",
     "dpAmount",
   ],
-  expenses: ["date", "categoryId", "amount", "description", "projectId", "surveyId", "deliveryNoteId", "costCenterId", "receiptFileId", "paidFileId"],
+  expenses: [
+    "date", "categoryId", "amount", "description", "projectId", "surveyId",
+    "deliveryNoteId", "pocReportId", "visitReportId", "fundingSource", "reimbursementStatus",
+    "paymentMethod", "costCenterId", "receiptFileId", "paidFileId",
+  ],
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
   "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "photoFileId", "items"],
@@ -1872,6 +2225,20 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],
   invoiceIn: ["number", "supplierId", "supplierPoId", "amount", "ppn", "total", "dueDate", "fileId"],
   followups: ["method", "notes", "date", "nextDate", "status"],
+  "poc-reports": [
+    "title", "description", "type", "date", "endDate", "location", "status", "resultStatus",
+    "clientName", "customerId", "leadId", "projectId", "targetCriteria", "productsTested",
+    "budget", "actualExecutionDate", "actualAttendees", "activitiesDone", "testResults",
+    "issuesFound", "followUpNeeded", "conclusion", "recommendations", "companyHeader",
+    "logoFileId", "documentFileId", "memberUserIds",
+  ],
+  "visit-reports": [
+    "title", "activityTypeId", "activityTypeName", "status", "date", "endDate",
+    "location", "clientName", "clientContact", "customerId", "leadId", "projectId",
+    "purpose", "description", "summary", "clientNeeds", "productsIntroduced",
+    "clientFeedback", "agreements", "potentialOpportunities", "obstacles", "conclusion",
+    "companyHeader", "logoFileId", "documentFileId", "ownerId", "memberUserIds",
+  ],
 };
 
 /** Hapus field yang tidak dikenal DTO update agar tidak 400. */
@@ -1955,6 +2322,47 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
           : Number(String(patch.survey).match(/#(\d+)/)?.[1]) || null;
     }
     if (patch.surveyId !== undefined) out.surveyId = patch.surveyId ? Number(patch.surveyId) : null;
+    if (patch.pocReport !== undefined) {
+      out.pocReportId =
+        patch.pocReport === "-" || !patch.pocReport
+          ? null
+          : Number(
+              String(patch.pocReport).match(/#(\d+)/)?.[1] ||
+              (db?.["poc-reports"] ?? []).find(
+                (p: any) =>
+                  `POC ${p.nomor || p.number} - ${p.judul || p.title}` === patch.pocReport ||
+                  p.nomor === patch.pocReport ||
+                  p.number === patch.pocReport ||
+                  p.judul === patch.pocReport
+              )?.id ||
+              findId(db?.["poc-reports"], patch.pocReport)
+            ) || null;
+    }
+    if (patch.pocReportId !== undefined) out.pocReportId = patch.pocReportId ? Number(patch.pocReportId) : null;
+    if (patch.visitReport !== undefined) {
+      out.visitReportId =
+        patch.visitReport === "-" || !patch.visitReport
+          ? null
+          : Number(
+              String(patch.visitReport).match(/#(\d+)/)?.[1] ||
+              (db?.["visit-reports"] ?? []).find(
+                (p: any) =>
+                  `VISIT ${p.nomor || p.number} - ${p.judul || p.title}` === patch.visitReport ||
+                  p.nomor === patch.visitReport ||
+                  p.number === patch.visitReport ||
+                  p.judul === patch.visitReport
+              )?.id ||
+              findId(db?.["visit-reports"], patch.visitReport)
+            ) || null;
+    }
+    if (patch.visitReportId !== undefined) out.visitReportId = patch.visitReportId ? Number(patch.visitReportId) : null;
+    if (patch.sumberDana !== undefined) {
+      out.fundingSource =
+        String(patch.sumberDana).toLowerCase().includes("talangan")
+          ? "TALANGAN_PRIBADI"
+          : "PERUSAHAAN";
+    }
+    if (patch.fundingSource !== undefined) out.fundingSource = patch.fundingSource;
     if (patch.costCenter !== undefined) out.costCenterId = findId(db?.costCenters, patch.costCenter);
   }
 
@@ -2193,6 +2601,63 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.items !== undefined && Array.isArray(patch.items)) {
       out.items = patch.items;
     }
+  } else if (module === "poc-reports") {
+    if (patch.type !== undefined || patch.tipe !== undefined || patch.tipeLabel !== undefined) {
+      const rawType = String(patch.type || patch.tipe || patch.tipeLabel || "").trim();
+      if (rawType === "EXPO_EXHIBITION" || /pameran|expo/i.test(rawType)) {
+        out.type = "EXPO_EXHIBITION";
+      } else if (rawType === "INTERNAL_POC" || /internal/i.test(rawType)) {
+        out.type = "INTERNAL_POC";
+      } else if (rawType === "DEMO_CLIENT" || /klien|client|demo/i.test(rawType)) {
+        out.type = "DEMO_CLIENT";
+      }
+    }
+    if (patch.title !== undefined || patch.judul !== undefined) out.title = patch.title || patch.judul;
+    if (patch.description !== undefined || patch.deskripsi !== undefined) out.description = patch.description ?? patch.deskripsi;
+    if (patch.date !== undefined || patch.tanggal !== undefined) out.date = patch.date || patch.tanggal;
+    if (patch.endDate !== undefined || patch.tanggalSelesai !== undefined) out.endDate = patch.endDate ?? patch.tanggalSelesai;
+    if (patch.location !== undefined || patch.lokasi !== undefined) out.location = patch.location ?? patch.lokasi;
+    if (patch.clientName !== undefined || patch.klien !== undefined) out.clientName = patch.clientName ?? patch.klien;
+    if (patch.budget !== undefined || patch.anggaran !== undefined) out.budget = num(patch.budget ?? patch.anggaran);
+    if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
+    if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.lead !== undefined) {
+      out.leadId = patch.lead === "-" || !patch.lead ? null : (findId(db?.leads, patch.lead) || null);
+    }
+    if (patch.leadId !== undefined) out.leadId = patch.leadId ? Number(patch.leadId) : null;
+    if (patch.tim !== undefined) out.memberUserIds = resolveMemberIds(patch, db);
+  } else if (module === "visit-reports") {
+    if (patch.title !== undefined || patch.judul !== undefined) out.title = patch.title || patch.judul;
+    if (patch.tipe !== undefined || patch.activityType !== undefined) {
+      const actId = findId(db?.["visit-activity-types"], patch.tipe || patch.activityType);
+      if (actId) out.activityTypeId = actId;
+      out.activityTypeName = patch.tipe || patch.activityType;
+    }
+    if (patch.activityTypeId !== undefined) out.activityTypeId = patch.activityTypeId ? Number(patch.activityTypeId) : null;
+    if (patch.date !== undefined || patch.tanggal !== undefined) out.date = patch.date || patch.tanggal;
+    if (patch.endDate !== undefined || patch.tanggalSelesai !== undefined) out.endDate = patch.endDate ?? patch.tanggalSelesai;
+    if (patch.location !== undefined || patch.lokasi !== undefined) out.location = patch.location ?? patch.lokasi;
+    if (patch.clientName !== undefined || patch.klien !== undefined) out.clientName = patch.clientName ?? patch.klien;
+    if (patch.clientContact !== undefined || patch.kontakKlien !== undefined) out.clientContact = patch.clientContact ?? patch.kontakKlien;
+    if (patch.purpose !== undefined || patch.tujuan !== undefined) out.purpose = patch.purpose ?? patch.tujuan;
+    if (patch.description !== undefined || patch.deskripsi !== undefined) out.description = patch.description ?? patch.deskripsi;
+    if (patch.summary !== undefined) out.summary = patch.summary;
+    if (patch.clientNeeds !== undefined) out.clientNeeds = patch.clientNeeds;
+    if (patch.productsIntroduced !== undefined) out.productsIntroduced = patch.productsIntroduced;
+    if (patch.clientFeedback !== undefined) out.clientFeedback = patch.clientFeedback;
+    if (patch.agreements !== undefined) out.agreements = patch.agreements;
+    if (patch.potentialOpportunities !== undefined) out.potentialOpportunities = patch.potentialOpportunities;
+    if (patch.obstacles !== undefined) out.obstacles = patch.obstacles;
+    if (patch.conclusion !== undefined) out.conclusion = patch.conclusion;
+    if (patch.companyHeader !== undefined) out.companyHeader = patch.companyHeader;
+    if (patch.logoFileId !== undefined) out.logoFileId = patch.logoFileId ? Number(patch.logoFileId) : null;
+    if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
+    if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.lead !== undefined) {
+      out.leadId = patch.lead === "-" || !patch.lead ? null : (findId(db?.leads, patch.lead) || null);
+    }
+    if (patch.leadId !== undefined) out.leadId = patch.leadId ? Number(patch.leadId) : null;
+    if (patch.tim !== undefined) out.memberUserIds = resolveMemberIds(patch, db);
   }
 
   return forPatch(module, out);

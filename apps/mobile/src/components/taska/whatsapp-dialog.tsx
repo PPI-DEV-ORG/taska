@@ -41,9 +41,16 @@ export function WhatsappDialog({
 
   React.useEffect(() => {
     if (!open) return;
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 3000);
-    return () => clearInterval(interval);
+    const timeout = setTimeout(() => {
+      void fetchStatus();
+    }, 0);
+    const interval = setInterval(() => {
+      void fetchStatus();
+    }, 3000);
+    return () => {
+      clearTimeout(timeout);
+      clearInterval(interval);
+    };
   }, [open, fetchStatus]);
 
   async function handleRestart() {

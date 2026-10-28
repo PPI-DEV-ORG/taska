@@ -160,8 +160,17 @@ export class AssignDto {
 }
 
 export class RequirementDto {
-  @IsInt()
-  productId!: number;
+  @IsOptional() @IsInt()
+  productId?: number;
+
+  @IsOptional() @IsString()
+  name?: string;
+
+  @IsOptional() @IsString()
+  unit?: string;
+
+  @IsOptional() @Type(() => Number) @IsNumber()
+  price?: number;
 
   @IsOptional() @IsInt()
   taskId?: number;
@@ -171,6 +180,9 @@ export class RequirementDto {
 
   @IsOptional() @IsString()
   serials?: string;
+
+  @IsOptional() @IsString()
+  pphMode?: string;
 }
 
 export class ReturnMaterialItemDto {

@@ -289,6 +289,30 @@ export class ExpenseDto {
   deliveryNoteId?: number;
 
   @IsOptional() @IsInt()
+  pocReportId?: number;
+
+  @IsOptional() @IsInt()
+  visitReportId?: number;
+
+  @IsOptional() @IsString()
+  fundingSource?: string;
+
+  @IsOptional() @IsString()
+  reimbursementStatus?: string;
+
+  @IsOptional() @IsString()
+  paymentMethod?: string;
+
+  @IsOptional() @IsNumber()
+  approvedAmount?: number;
+
+  @IsOptional() @IsNumber()
+  paidAmount?: number;
+
+  @IsOptional() @IsString()
+  receiptFileIds?: string;
+
+  @IsOptional() @IsInt()
   costCenterId?: number;
 
   @IsOptional() @IsInt()
