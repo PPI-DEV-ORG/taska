@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateIf } from "class-validator";
 import { Type } from "class-transformer";
 
 export class CheckInDto {
@@ -56,8 +56,14 @@ export class UpdateSalaryConfigDto {
   hasNpwp?: boolean;
 
   @IsOptional()
+  @ValidateIf((_, val) => val !== null && val !== undefined)
   @IsNumber()
-  pph21Rate?: number;
+  pph21Rate?: number | null;
+}
+
+export class SaveSalaryConfigDto extends UpdateSalaryConfigDto {
+  @IsNumber()
+  userId: number;
 }
 
 export class GeneratePayrollDto {

@@ -232,9 +232,10 @@ export const PERMISSIONS: Record<string, Table> = {
 };
 
 // Absensi: setiap karyawan boleh melihat & mencatat absen miliknya (service membatasi ke data sendiri).
-// Payroll: hanya Finance (selain Super Admin / Admin / Bos yang sudah penuh).
+// Payroll: setiap karyawan boleh melihat slip miliknya (L); Finance/Admin/Bos memiliki akses penuh (LCUA).
 for (const table of Object.values(PERMISSIONS)) {
   if (!table.attendance) table.attendance = "LC";
+  if (!table.payroll) table.payroll = "L";
 }
 PERMISSIONS.FINANCE!.attendance = "LCU";
 PERMISSIONS.FINANCE!.payroll = "LCUA";

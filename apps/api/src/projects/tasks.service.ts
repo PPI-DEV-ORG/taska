@@ -145,7 +145,7 @@ export class TasksService {
         assigneeId: dto.assigneeId ?? user.id,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         priority: dto.priority,
-        status: dto.status ?? "TODO",
+        status: (dto.status as any) ?? "TODO",
         progress: dto.status === "DONE" ? 100 : (dto.progress ?? 0),
         needsPurchase: dto.needsPurchase ?? false,
         bahpFileId: dto.bahpFileId,
@@ -209,7 +209,7 @@ export class TasksService {
         assigneeId: dto.assigneeId !== undefined ? dto.assigneeId : task.assigneeId,
         dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : task.dueDate,
         priority: dto.priority ?? task.priority,
-        ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.status ? { status: dto.status as any } : {}),
         progress: nextProgress,
         needsPurchase: dto.needsPurchase ?? task.needsPurchase,
         bahpFileId: dto.bahpFileId ?? task.bahpFileId,
@@ -251,7 +251,7 @@ export class TasksService {
     const progress = dto.status === "DONE" ? 100 : (dto.progress ?? task.progress);
     const updated = await this.prisma.main.task.update({
       where: { id },
-      data: { status: dto.status, progress },
+      data: { status: dto.status as any, progress },
       include: {
         project: { select: { id: true, name: true } },
         assignee: { select: { id: true, name: true, role: true } },

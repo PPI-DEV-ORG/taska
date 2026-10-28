@@ -88,7 +88,12 @@ export default function TasksScreen() {
           ))}
         </View>
       </Panel>
-      <TaskDetailDialog task={detailTask} open={!!detailTask} onOpenChange={(v) => !v && setDetailTask(null)} />
+      <TaskDetailDialog
+        task={detailTask ? (data.tasks.find((t) => String(t.id) === String(detailTask.id)) ?? detailTask) : null}
+        open={!!detailTask}
+        onOpenChange={(v) => !v && setDetailTask(null)}
+        onSaved={(updated) => setDetailTask(updated)}
+      />
     </View>
   );
 }

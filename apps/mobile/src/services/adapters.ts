@@ -281,7 +281,6 @@ export function apiUserToRow(u: ApiUser): User {
 }
 
 const n = (v: unknown): number => (v == null ? 0 : Number(v));
-const s = (v: unknown): string => (v == null ? "" : String(v));
 const d = (v: unknown): string => (v ? String(v).slice(0, 10) : "");
 const nameOf = (x: any): string => (x?.name ?? "");
 const idOf = (x: any): string | null => (x?.id != null ? String(x.id) : null);
@@ -641,25 +640,38 @@ export function adaptRow(module: string, raw: any): Row {
       const qCust = raw.quotation?.customer?.name ?? raw.quotation?.customer?.nama ?? null;
       const qLead = raw.quotation?.lead?.name ?? raw.quotation?.lead?.nama ?? null;
       const qDisplay = qNum ? (qCust || qLead ? `${qNum} - ${[qCust, qLead].filter(Boolean).join(" · ")}` : qNum) : "-";
+      const statusLabel = toLabel("projects", raw.status);
+      const isSelesai = String(raw.status).toUpperCase() === "SELESAI" || statusLabel === "Selesai";
+      const progressVal = isSelesai ? 100 : n(raw.progress ?? raw.progres);
+      const paymentVal = toLabel("paymentStatus", raw.paymentStatus ?? raw.pembayaran);
+      const typeVal = toLabel("projectType", raw.type ?? raw.jenis);
+      const custName = (typeof raw.customer === "string" ? raw.customer : (raw.customer?.name ?? raw.customer?.nama)) ?? nameOf(raw.customer) ?? "-";
+      const qId = idOf(raw.quotation) ?? (raw.quotationId != null ? String(raw.quotationId) : (raw.quotationid != null ? String(raw.quotationid) : null));
+
       return {
         ...base,
-        nama: raw.name ?? "",
-        jenis: toLabel("projectType", raw.type),
-        customerId: idOf(raw.customer),
-        customer: nameOf(raw.customer) ?? "-",
-        pm: nameOf(raw.pic) ?? "",
-        pmId: raw.pic?.id != null ? String(raw.pic.id) : null,
+        nama: raw.name ?? raw.nama ?? "",
+        name: raw.name ?? raw.nama ?? "",
+        jenis: typeVal,
+        type: raw.type ?? typeVal,
+        customerId: idOf(raw.customer) ?? (raw.customerId != null ? String(raw.customerId) : null),
+        customer: custName,
+        pm: (typeof raw.pic === "string" ? raw.pic : (raw.pic?.name ?? raw.pic?.nama)) ?? nameOf(raw.pic) ?? raw.pm ?? "",
+        pmId: raw.pic?.id != null ? String(raw.pic.id) : (raw.picId != null ? String(raw.picId) : null),
         tim: (raw.members ?? []).map((m: any) => nameOf(m.user)).filter(Boolean).join(", ") || "-",
-        progres: raw.status === "SELESAI" || toLabel("projects", raw.status) === "Selesai" ? 100 : n(raw.progress),
-        pembayaran: toLabel("paymentStatus", raw.paymentStatus),
-        status: toLabel("projects", raw.status),
-        mulai: d(raw.startDate),
-        selesai: d(raw.endDate),
+        progres: progressVal,
+        progress: progressVal,
+        pembayaran: paymentVal,
+        paymentStatus: paymentVal,
+        status: statusLabel,
+        mulai: d(raw.startDate ?? raw.mulai),
+        selesai: d(raw.endDate ?? raw.selesai),
         barang: "-",
-        quotationId: idOf(raw.quotation),
+        quotationId: qId,
+        quotationid: qId,
         penawaran: qDisplay,
         lead: qLead ?? "-",
-        leadId: raw.quotation?.leadId ?? null,
+        leadId: raw.quotation?.leadId ?? (raw.leadId != null ? String(raw.leadId) : null),
         prdFileId: raw.prdFileId ?? null,
         bahpFileId: raw.bahpFileId ?? null,
         bastFileId: raw.bastFileId ?? null,

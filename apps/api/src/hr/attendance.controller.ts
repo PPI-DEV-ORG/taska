@@ -56,6 +56,12 @@ export class AttendanceController {
     return this.attendance.checkOut(user.id, dto);
   }
 
+  @Post("manual")
+  @Require("attendance", "U")
+  manual(@Body() dto: RecordAttendanceDto) {
+    return this.attendance.recordStatus(dto);
+  }
+
   @Post("record")
   @Require("attendance", "U")
   record(@Body() dto: RecordAttendanceDto) {
