@@ -133,7 +133,6 @@ export const PERMISSIONS: Record<string, Table> = {
     expenses: "LCU",
     pocReports: "LCU",
     visitReports: "LCU",
-    approvals: "LA",
     reports: "L",
   },
 

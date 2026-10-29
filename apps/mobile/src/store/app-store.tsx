@@ -73,6 +73,7 @@ const STORAGE_QUEUE_KEY = "taska.offline.queue.v1";
 const STORAGE_CACHE_DB_KEY = "taska.offline.db.v1";
 const STORAGE_CACHE_USER_KEY = "taska.offline.user.v1";
 const STORAGE_CACHE_HIST_KEY = "taska.offline.hist.v1";
+const STORAGE_CACHE_APPROVALS_KEY = "taska.offline.approvals.v1";
 
 const FIELD_LABELS: Record<string, string> = {
   nama: "Nama",
@@ -234,6 +235,7 @@ type Ctx = {
   pushHistory: (module: string, id: string, what: string) => void;
   loadHistory: (module: string, id: string) => Promise<void>;
   approvals: ApprovalRow[];
+  refreshApprovals: () => Promise<void>;
   decide: (id: string, decision: "Disetujui" | "Ditolak", reason?: string) => Promise<void>;
   notifs: Notif[];
   unread: number;
@@ -374,7 +376,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [hist, setHist] = React.useState<Record<string, HistoryItem[]>>(() =>
     readStorageJson<Record<string, HistoryItem[]>>(STORAGE_CACHE_HIST_KEY, {})
   );
-  const [approvals, setApprovals] = React.useState<ApprovalRow[]>([]);
+  const [approvals, setApprovals] = React.useState<ApprovalRow[]>(() =>
+    readStorageJson<ApprovalRow[]>(STORAGE_CACHE_APPROVALS_KEY, [])
+  );
   const [notifs, setNotifs] = React.useState<Notif[]>([]);
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
   const [notifPopups, setNotifPopups] = React.useState<NotifPopupItem[]>([]);
@@ -503,7 +507,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       withOfflineResult = overlayPendingAdds(next, offlineQueueRef.current);
       return withOfflineResult;
     });
-    if (appr) setApprovals(appr);
+    if (appr) {
+      setApprovals(appr);
+      writeStorageJson(STORAGE_CACHE_APPROVALS_KEY, appr);
+    }
     if (notifRes) {
       const adaptedNotifs = adaptNotifList(notifRes.items);
       for (const n of adaptedNotifs) seenNotifIdsRef.current.add(String(n.id));
@@ -522,10 +529,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await setTokens(res.accessToken, res.refreshToken);
       const u = apiUserToRow(res.user);
       u.roleLabel = ROLE_LABEL[u.role] ?? u.role;
+      userRef.current = u;
       setUser(u);
       writeStorageJson(STORAGE_CACHE_USER_KEY, u);
       setOffline(false);
-      await loadAll();
+      await loadAll(undefined, u);
       // minta izin notifikasi saat masih dalam gestur tap login (iOS perlu gesture)
       void ensureNotifPermission();
     },
@@ -535,6 +543,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const logout = React.useCallback(() => {
     void clearTokens();
     writeStorageJson(STORAGE_CACHE_USER_KEY, null);
+    writeStorageJson(STORAGE_CACHE_APPROVALS_KEY, []);
     seenNotifIdsRef.current.clear();
     notifHydratedRef.current = false;
     setNotifPopups([]);
@@ -591,7 +600,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refreshApprovals = React.useCallback(async () => {
     try {
       const r = await api<{ items: any[] }>("GET", "/approvals?limit=100");
-      setApprovals(adaptApprovalList(r.items));
+      const adapted = adaptApprovalList(r.items);
+      setApprovals(adapted);
+      writeStorageJson(STORAGE_CACHE_APPROVALS_KEY, adapted);
     } catch {}
   }, []);
 
@@ -807,6 +818,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshModule = React.useCallback(async (module: string) => {
+    if (module === "approvals") {
+      await refreshApprovals();
+      return [];
+    }
     if (module === "tasks") {
       const projects = await fetchList("projects");
       const taskRows = await fetchTasks(projects);
@@ -825,6 +840,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (sRes?.items) extraStock = sRes.items;
       } catch {}
     }
+    if (
+      ["quotations", "surveys", "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses", "opname"].includes(
+        module,
+      )
+    ) {
+      void refreshApprovals();
+    }
     setData((d) => {
       const next = overlayPendingAdds({
         ...d,
@@ -835,7 +857,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
     return rows;
-  }, []);
+  }, [refreshApprovals]);
 
   React.useEffect(() => {
     refreshModuleRef.current = refreshModule;
@@ -1431,14 +1453,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
       deleteRow,
-      history, pushHistory, loadHistory, approvals, decide, notifs: myNotifs, unread, markRead, markAllRead,
+      history, pushHistory, loadHistory, approvals, refreshApprovals, decide, notifs: myNotifs, unread, markRead, markAllRead,
       toast, offline, setOffline,
       pendingSyncCount: pendingQueue.length,
       syncOfflineQueue,
       reload, refreshModule, hydrated, theme, toggleTheme,
     }),
     [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
-     history, pushHistory, loadHistory, approvals, decide, myNotifs, unread, markRead, markAllRead,
+     history, pushHistory, loadHistory, approvals, refreshApprovals, decide, myNotifs, unread, markRead, markAllRead,
      toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme],
   );
 
