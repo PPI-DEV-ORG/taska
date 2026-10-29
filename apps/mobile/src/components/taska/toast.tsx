@@ -1,4 +1,6 @@
-import { Pressable, View } from "react-native";
+import * as React from "react";
+import { Platform, Pressable, View } from "react-native";
+import { Portal } from "@rn-primitives/portal";
 import {
   Bell,
   CircleAlert,
@@ -38,12 +40,30 @@ const NOTIF_ICON: Record<Notif["jenis"], any> = {
   surat: FileText,
 };
 
+function renderTopLayer(key: string, node: React.ReactNode) {
+  if (Platform.OS === "web" && typeof document !== "undefined") {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ReactDOM = require("react-dom") as {
+      createPortal?: (children: React.ReactNode, container: Element) => React.ReactNode;
+    };
+    if (ReactDOM?.createPortal) {
+      return ReactDOM.createPortal(node, document.body);
+    }
+  }
+  return <Portal name={key}>{node}</Portal>;
+}
+
 export function ToastHost({ items }: { items: ToastItem[] }) {
-  return (
+  if (!items.length) return null;
+  const content = (
     <View
       pointerEvents="none"
       className="absolute bottom-24 left-0 right-0 items-center gap-2 px-4 md:bottom-8"
-      style={{ zIndex: 1000 }}
+      style={{
+        position: (Platform.OS === "web" ? "fixed" : "absolute") as any,
+        zIndex: 2147483647,
+        elevation: 9999,
+      }}
     >
       {items.map((t) => {
         const Icon = ICON[t.tone];
@@ -51,7 +71,7 @@ export function ToastHost({ items }: { items: ToastItem[] }) {
         return (
           <View
             key={t.id}
-            className="bg-popover border-border max-w-md flex-row items-center gap-3 rounded-xl border px-4 py-3"
+            className="bg-popover border-border max-w-md flex-row items-center gap-3 rounded-xl border px-4 py-3 shadow-lg"
           >
             <Icon size={18} color={color} />
             <Text className="flex-shrink text-sm">{t.msg}</Text>
@@ -60,6 +80,7 @@ export function ToastHost({ items }: { items: ToastItem[] }) {
       })}
     </View>
   );
+  return renderTopLayer("taska-toast-host", content);
 }
 
 export function NotifPopupHost({
@@ -72,11 +93,15 @@ export function NotifPopupHost({
   onSelect?: (item: NotifPopupItem) => void;
 }) {
   if (!items.length) return null;
-  return (
+  const content = (
     <View
       pointerEvents="box-none"
       className="absolute right-4 top-4 w-80 max-w-[92vw] gap-2.5 md:w-96"
-      style={{ zIndex: 9999 }}
+      style={{
+        position: (Platform.OS === "web" ? "fixed" : "absolute") as any,
+        zIndex: 2147483646,
+        elevation: 9998,
+      }}
     >
       {items.map((item) => {
         const Icon = NOTIF_ICON[item.jenis] ?? Bell;
@@ -126,4 +151,5 @@ export function NotifPopupHost({
       })}
     </View>
   );
+  return renderTopLayer("taska-notif-popup-host", content);
 }
