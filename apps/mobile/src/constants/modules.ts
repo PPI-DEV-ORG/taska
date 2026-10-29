@@ -309,7 +309,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "soFileId", label: "Upload File Sales Order (SO) (Opsional)", type: "file" },
     ],
     defaults: { status: "Diterima", customer: "-", supplier: "-", penawaran: "-", totalInvoice: 0 },
-    docs: ["File Purchase Order (PO) dari Customer", "File Sales Order (SO) Terbitan Kita"],
+    docs: ["File Purchase Order (PO) dari Customer", "File Sales Order (SO) Terbitan Kita", "File Delivery Order (DO) yang Sudah Ditandatangani"],
     emptyText: "Belum ada Sales Order / PO client. Catat PO dari customer dan terbitkan Sales Order (SO) setelah penawaran disetujui.",
   },
   invoices: {
@@ -500,7 +500,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "conditionNote", label: "Catatan kondisi fisik", type: "textarea" },
     ],
     createRoles: ["gudang", "bos"],
-    docs: ["Foto kondisi barang", "Tanda terima"],
+    docs: ["File Delivery Order (DO) / Tanda Terima (Gambar / PDF)", "Foto kondisi barang"],
     emptyText: "Belum ada penerimaan barang.",
   },
   "delivery-notes": {
@@ -534,7 +534,7 @@ export const MODULES: Record<string, ModuleDef> = {
     ],
     createRoles: ALL,
     actions: [{ label: "Upload laporan hasil", toast: "Laporan hasil disimpan" }],
-    docs: ["Scan surat bertanda tangan", "Laporan hasil dan dokumentasi"],
+    docs: ["File DO / Surat Jalan Bertanda Tangan Kedua Pihak (Gambar / PDF)", "Laporan hasil dan dokumentasi"],
     emptyText: "Belum ada surat jalan. Buat surat jalan setiap kali keluar untuk urusan kerja.",
     confirmStatuses: ["Dibatalkan"],
   },

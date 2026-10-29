@@ -15,25 +15,35 @@ export interface PrintableOrderItem {
 }
 
 export function printOrderDocument(opts: {
-  docType: "SO" | "PO";
+  docType: "SO" | "PO" | "DO";
   docNumber: string;
   refNumber?: string;
   date?: string;
   counterpartyLabel: string;
   counterpartyName: string;
   items: PrintableOrderItem[];
-  totalAmount: number;
+  totalAmount?: number;
   notes?: string;
   paymentTerms?: string;
+  senderName?: string;
+  recipientName?: string;
 }) {
   if (typeof window === "undefined") return;
 
   const isSo = opts.docType === "SO";
-  const title = isSo ? "SALES ORDER (SO)" : "PURCHASE ORDER (PO)";
-  const subtitle = isSo
-    ? "Dokumen Konfirmasi Pesanan & Acuan Pengiriman (Delivery Order)"
-    : "Dokumen Resmi Pemesanan Barang / Jasa (Purchase Order)";
-  const refLabel = isSo ? "Referensi No. PO" : "Referensi No. SO";
+  const isDo = opts.docType === "DO";
+  const title = isDo
+    ? "DELIVERY ORDER (DO) / SURAT JALAN"
+    : isSo
+      ? "SALES ORDER (SO)"
+      : "PURCHASE ORDER (PO)";
+  const subtitle = isDo
+    ? "Dokumen Resmi Pengiriman & Serah Terima Barang (Wajib Ditandatangani Kedua Pihak)"
+    : isSo
+      ? "Dokumen Konfirmasi Pesanan & Acuan Pengiriman (Delivery Order)"
+      : "Dokumen Resmi Pemesanan Barang / Jasa (Purchase Order)";
+  const refLabel = isDo ? "Referensi No. SO / PO" : isSo ? "Referensi No. PO" : "Referensi No. SO";
+  const totalAmount = Number(opts.totalAmount ?? 0);
 
   const rowsHtml =
     opts.items.length > 0
@@ -51,6 +61,17 @@ export function printOrderDocument(opts: {
                   ? it.serialNumbers
                   : "");
             const sub = qty * price;
+            if (isDo) {
+              return `
+                <tr>
+                  <td style="text-align:center;">${idx + 1}</td>
+                  <td><strong>${name}</strong></td>
+                  <td>${sn ? `<span style="font-family:monospace;font-size:11.5px;">${sn}</span>` : "-"}</td>
+                  <td style="text-align:center;font-weight:700;">${qty} ${unit}</td>
+                  <td>Baik / Lengkap</td>
+                </tr>
+              `;
+            }
             return `
               <tr>
                 <td style="text-align:center;">${idx + 1}</td>
@@ -65,13 +86,23 @@ export function printOrderDocument(opts: {
             `;
           })
           .join("")
-      : `
+      : isDo
+        ? `
+        <tr>
+          <td style="text-align:center;">1</td>
+          <td>Pengiriman barang sesuai pesanan (${opts.docNumber})</td>
+          <td>-</td>
+          <td style="text-align:center;font-weight:700;">1 Paket</td>
+          <td>Baik / Lengkap</td>
+        </tr>
+      `
+        : `
         <tr>
           <td style="text-align:center;">1</td>
           <td>Pesanan sesuai kesepakatan (${opts.docNumber})</td>
           <td style="text-align:center;">1 Paket</td>
-          <td style="text-align:right;">${rupiah(opts.totalAmount)}</td>
-          <td style="text-align:right;font-weight:600;">${rupiah(opts.totalAmount)}</td>
+          <td style="text-align:right;">${rupiah(totalAmount)}</td>
+          <td style="text-align:right;font-weight:600;">${rupiah(totalAmount)}</td>
         </tr>
       `;
 
@@ -139,28 +170,42 @@ export function printOrderDocument(opts: {
 
   <table>
     <thead>
-      <tr>
-        <th style="width:42px;">No</th>
-        <th>Deskripsi Barang / Jasa</th>
-        <th style="width:90px;">Qty</th>
-        <th style="width:130px;">Harga Satuan</th>
-        <th style="width:140px;">Subtotal</th>
-      </tr>
+      ${
+        isDo
+          ? `<tr>
+              <th style="width:42px;">No</th>
+              <th>Deskripsi Barang</th>
+              <th style="width:180px;">Serial Number (SN)</th>
+              <th style="width:100px;">Qty</th>
+              <th style="width:130px;">Kondisi / Ket</th>
+            </tr>`
+          : `<tr>
+              <th style="width:42px;">No</th>
+              <th>Deskripsi Barang / Jasa</th>
+              <th style="width:90px;">Qty</th>
+              <th style="width:130px;">Harga Satuan</th>
+              <th style="width:140px;">Subtotal</th>
+            </tr>`
+      }
     </thead>
     <tbody>
       ${rowsHtml}
     </tbody>
   </table>
 
-  <div class="total-box">
-    <div class="total-card">
-      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;">
-        <span>TOTAL NILAI</span>
-        <span>${rupiah(opts.totalAmount)}</span>
-      </div>
-      ${opts.paymentTerms ? `<div style="font-size:11px;color:#4b5563;margin-top:6px;">Syarat Pembayaran: ${opts.paymentTerms}</div>` : ""}
-    </div>
-  </div>
+  ${
+    isDo
+      ? ""
+      : `<div class="total-box">
+          <div class="total-card">
+            <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;">
+              <span>TOTAL NILAI</span>
+              <span>${rupiah(totalAmount)}</span>
+            </div>
+            ${opts.paymentTerms ? `<div style="font-size:11px;color:#4b5563;margin-top:6px;">Syarat Pembayaran: ${opts.paymentTerms}</div>` : ""}
+          </div>
+        </div>`
+  }
 
   ${
     opts.notes
@@ -170,16 +215,33 @@ export function printOrderDocument(opts: {
       : ""
   }
 
-  <div class="sign-grid">
-    <div>
-      <div>Diterbitkan Oleh,</div>
-      <div class="sign-line">PT Samtek Mandiri</div>
-    </div>
-    <div>
-      <div>Disetujui / Dikonfirmasi Oleh,</div>
-      <div class="sign-line">${opts.counterpartyName || "Pihak Terkait"}</div>
-    </div>
-  </div>
+  ${
+    isDo
+      ? `<div style="margin-top:44px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;text-align:center;">
+          <div>
+            <div>Diserahkan Oleh (Gudang),</div>
+            <div class="sign-line">${opts.senderName || "PT Samtek Mandiri"}</div>
+          </div>
+          <div>
+            <div>Dikirim / Dibawa Oleh,</div>
+            <div class="sign-line">Kurir / Teknisi Pengirim</div>
+          </div>
+          <div>
+            <div>Diterima Oleh (Pihak Kedua),</div>
+            <div class="sign-line">${opts.recipientName || opts.counterpartyName || "Penerima & Cap/TTD"}</div>
+          </div>
+        </div>`
+      : `<div class="sign-grid">
+          <div>
+            <div>Diterbitkan Oleh,</div>
+            <div class="sign-line">PT Samtek Mandiri</div>
+          </div>
+          <div>
+            <div>Disetujui / Dikonfirmasi Oleh,</div>
+            <div class="sign-line">${opts.counterpartyName || "Pihak Terkait"}</div>
+          </div>
+        </div>`
+  }
 
   <script>
     window.onload = function() { setTimeout(function() { window.print(); }, 250); };

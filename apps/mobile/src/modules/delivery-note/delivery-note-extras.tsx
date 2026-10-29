@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Image, Pressable, Linking } from "react-native";
-import { CheckCircle2, Download, ExternalLink, Eye, Image as ImageIcon } from "lucide-react-native";
+import { CheckCircle2, Download, ExternalLink, Eye, FileText, Image as ImageIcon, Printer } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -16,9 +16,10 @@ import { api, apiBase } from "@/services/api";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
+import { printOrderDocument } from "@/lib/order-print";
 
 export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promise<void> | void }) {
-  const { user, setStatus, patchRow, toast } = useApp();
+  const { user, data, setStatus, patchRow, toast } = useApp();
   const [handoverOpen, setHandoverOpen] = React.useState(false);
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
@@ -70,9 +71,20 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         ...(handoverFileId ? { scanFileId: handoverFileId, fileId: handoverFileId } : {}),
       });
       await setStatus("delivery-notes", row.id, "Diterima");
+      if (handoverFileId) {
+        const matchedSo = (data["po-client"] ?? []).find(
+          (so: Row) =>
+            (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
+            (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo)) ||
+            (so.customer && so.customer !== "-" && String(row.tujuan || "").toLowerCase().includes(String(so.customer).toLowerCase()))
+        );
+        if (matchedSo?.id) {
+          await patchRow("po-client", matchedSo.id, { doFileId: handoverFileId }).catch(() => {});
+        }
+      }
       setHandoverOpen(false);
       setHandoverFileId(null);
-      toast("Tanda terima lapangan berhasil dicatat. Status surat jalan kini 'Diterima'");
+      toast("Tanda terima & DO bertanda tangan kedua pihak berhasil disimpan");
       await onRefresh?.();
     } catch (err: any) {
       toast(err?.message || "Gagal mencatat tanda terima", "danger");
@@ -83,55 +95,97 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
 
   const hasGoods = row.withGoods !== undefined ? Boolean(row.withGoods) : (row.barang && row.barang !== "-");
 
+  function handlePrintDo() {
+    const printableItems =
+      Array.isArray(row.items) && row.items.length > 0
+        ? row.items.map((it: any) => ({
+            name: it.product?.name || it.name || "Barang",
+            qty: Number(it.qty) || 1,
+            unit: it.product?.unit || it.unit || "Unit",
+            sn: it.serials || undefined,
+          }))
+        : row.barang && row.barang !== "-"
+          ? String(row.barang)
+              .split(", ")
+              .map((b: string) => ({ name: b, qty: 1, unit: "Unit" }))
+          : [{ name: "Pengiriman Barang Operasional", qty: 1, unit: "Paket" }];
+
+    printOrderDocument({
+      docType: "DO",
+      docNumber: row.nomor || `DO/${row.id}`,
+      refNumber: row.alasan || undefined,
+      date: row.tanggal,
+      counterpartyLabel: "Tujuan / Penerima (Customer)",
+      counterpartyName: row.tujuan || "-",
+      items: printableItems,
+      notes: row.catatanSerahTerima || row.alasan || undefined,
+      senderName: row.pembuat || "Gudang PT Samtek Mandiri",
+      recipientName: row.penerimaNama || row.tujuan || "Penerima Barang",
+    });
+  }
+
   return (
     <>
       <Panel
-        title="Barang yang Dibawa"
-        subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN" : "Surat jalan penugasan tanpa barang"}
+        title="Barang yang Dibawa & Dokumen Delivery Order (DO)"
+        subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN (Stok otomatis berkurang saat status Dikirim)" : "Surat jalan penugasan tanpa barang"}
         right={
-          (user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang") && !isDelivered ? (
-            <View className="flex-row items-center gap-2">
-              {hasGoods && row.status !== "Dikirim" && row.status !== "DIKIRIM" && (
+          <View className="flex-row items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={handlePrintDo}
+              className="flex-row items-center gap-1"
+            >
+              <Printer size={13} color={colors.text} />
+              <Text className="text-xs">Buat / Cetak PDF DO</Text>
+            </Button>
+            {(user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang") && !isDelivered ? (
+              <>
+                {hasGoods && row.status !== "Dikirim" && row.status !== "DIKIRIM" && (
+                  <Button
+                    size="sm"
+                    onPress={async () => {
+                      try {
+                        await api("POST", `/delivery-notes/${row.id}/goods`, {
+                          items: (Array.isArray(row.items) ? row.items : [])
+                            .map((i: any) => ({
+                              productId: Number(i.productId ?? i.product?.id),
+                              qty: Number(i.qty) || 1,
+                              serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+                              note: i.note ? String(i.note) : undefined,
+                            }))
+                            .filter((i: any) => !Number.isNaN(i.productId) && i.productId > 0),
+                          serials: scannedSns.length > 0 ? scannedSns : Array.isArray(row.snList) ? row.snList : [],
+                        });
+                        await patchRow("delivery-notes", row.id, { status: "Dikirim" });
+                        toast("Barang berhasil dikeluarkan dari gudang, stok berkurang & status diubah ke Dikirim");
+                        await onRefresh?.();
+                      } catch (e: any) {
+                        toast(e?.message ?? "Gagal memproses pengeluaran barang", "danger");
+                      }
+                    }}
+                  >
+                    <Text className="text-xs">Kirim Barang (Potong Stok)</Text>
+                  </Button>
+                )}
                 <Button
+                  variant="outline"
                   size="sm"
-                  onPress={async () => {
-                    try {
-                      await api("POST", `/delivery-notes/${row.id}/goods`, {
-                        items: (Array.isArray(row.items) ? row.items : []).map((i: any) => ({
-                          productId: Number(i.productId ?? i.product?.id),
-                          qty: Number(i.qty) || 1,
-                          serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
-                          note: i.note ? String(i.note) : undefined,
-                        })),
-                        serials: scannedSns.length > 0 ? scannedSns : Array.isArray(row.snList) ? row.snList : [],
-                      });
-                      await patchRow("delivery-notes", row.id, { status: "Dikirim" });
-                      toast("Barang berhasil dikeluarkan dari gudang & status surat jalan diubah ke Dikirim");
-                      await onRefresh?.();
-                    } catch (e: any) {
-                      toast(e?.message ?? "Gagal memproses pengeluaran barang", "danger");
-                    }
+                  onPress={() => {
+                    const next = !hasGoods;
+                    patchRow("delivery-notes", row.id, {
+                      withGoods: next,
+                      barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
+                    });
+                    toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
                   }}
                 >
-                  <Text className="text-xs">Berangkatkan Barang</Text>
+                  <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
                 </Button>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onPress={() => {
-                  const next = !hasGoods;
-                  patchRow("delivery-notes", row.id, {
-                    withGoods: next,
-                    barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
-                  });
-                  toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
-                }}
-              >
-                <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
-              </Button>
-            </View>
-          ) : undefined
+              </>
+            ) : null}
+          </View>
         }
       >
         {!hasGoods ? (
@@ -322,8 +376,10 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
               />
             </View>
             <FileUploader
-              label="Upload Foto Bukti Serah Terima / TTD Surat Jalan"
-              kind="foto"
+              label="Upload DO / Surat Jalan yang Sudah Di-TTD Kedua Pihak (Gambar / PDF)"
+              kind="semua"
+              accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+              allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
               category="surat-jalan"
               autoFlush
               onUploaded={(id) => setHandoverFileId(id)}

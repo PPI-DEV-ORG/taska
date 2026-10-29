@@ -9,7 +9,7 @@ import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } fr
 import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands } from "@/components/taska/dialogs";
 import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { ModuleExtras } from "@/screens/module-extras";
+import { ModuleExtras, isPoPurchaseRow } from "@/screens/module-extras";
 import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
 import { QuotationPpnField } from "@/modules/quotation/quotation-ppn-field";
 import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
@@ -969,8 +969,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         {def.docs?.length ? (
           <Panel title="File & Bukti Pendukung">
             <DocumentViewerList
-              moduleKey={moduleKey}
-              docs={def.docs}
+              moduleKey={moduleKey === "po-client" && isPoPurchaseRow(row) ? "supplier-pos" : moduleKey}
+              docs={moduleKey === "po-client" && isPoPurchaseRow(row) ? (MODULES["supplier-pos"]?.docs ?? def.docs) : def.docs}
               row={row}
               canUpload={canEdit}
               onUploadFile={async (fieldKey, fileId, item) => {
@@ -996,6 +996,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                     toast("Bukti transfer reimbursement berhasil dilampirkan & status diubah menjadi Dibayar");
                   } else {
                     await patchRow(moduleKey, id, patchPayload);
+                    if (
+                      moduleKey === "receiving" &&
+                      (fieldKey === "receiptFileId" || fieldKey === "photoFileId") &&
+                      row?.supplierPoId
+                    ) {
+                      await patchRow("supplier-pos", String(row.supplierPoId), {
+                        doFileId: fileId,
+                      }).catch(() => {});
+                    }
                     toast(`${item.label} berhasil diperbarui`);
                   }
 

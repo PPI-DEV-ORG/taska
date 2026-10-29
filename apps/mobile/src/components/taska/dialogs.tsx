@@ -680,6 +680,8 @@ export function FormDialog({
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
   const [orderDocMode, setOrderDocMode] = React.useState<"SO" | "PO" | "BOTH">("SO");
+  const [soPaymentFlow, setSoPaymentFlow] = React.useState<"REGULER" | "WALK_IN">("REGULER");
+  const [soPaymentMethod, setSoPaymentMethod] = React.useState<"TRANSFER" | "TUNAI">("TRANSFER");
   const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
   const [fallbackProjects, setFallbackProjects] = React.useState<any[]>([]);
   const [fallbackSupplierPos, setFallbackSupplierPos] = React.useState<any[]>([]);
@@ -769,6 +771,8 @@ export function FormDialog({
         });
         setVals(init);
         setOrderDocMode(def?.key === "supplier-pos" ? "PO" : "SO");
+        setSoPaymentFlow("REGULER");
+        setSoPaymentMethod("TRANSFER");
       }
       setErrs({});
     }
@@ -974,8 +978,85 @@ export function FormDialog({
         toast(`${def.singular} diperbarui`);
         handleOpenChange(false);
       } else {
-        const saved = await addRow(def.key, row);
-        if (saved) handleOpenChange(false);
+        if (def.key === "po-client" && orderDocMode === "PO") {
+          const poPayload = {
+            ...row,
+            nomor: row.nomorPoClient || row.nomor,
+            nomorSoSupplier: row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : undefined,
+            supplier: row.supplier,
+            supplierId: row.supplierId,
+            total: Number(row.nilai || 0),
+            eta: row.tanggal,
+            pengiriman: "Di Supplier",
+            status: "Di Supplier",
+            fileId: row.fileId,
+            soFileId: row.soFileId,
+          };
+          const savedPo = await addRow("supplier-pos", poPayload);
+          if (savedPo) {
+            toast("PO Pembelian Supplier berhasil dibuat");
+            handleOpenChange(false);
+          }
+        } else {
+          const saved = await addRow(def.key, row);
+          if (saved) {
+            if (def.key === "po-client" && orderDocMode === "SO" && soPaymentFlow === "WALK_IN") {
+              const now = new Date();
+              const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+              const seq = String((data.invoices?.length || 0) + 1).padStart(3, "0");
+              const invNo = `INV/${ym}/NOTA-${seq}`;
+              const grandAmt = Number(row.nilai || 0);
+              const todayStr = toIsoDate(now);
+              const matchedCust = (data.customers ?? []).find(
+                (c: any) =>
+                  (row.customer && (c.nama === row.customer || c.name === row.customer)) ||
+                  (row.customerId && Number(c.id) === Number(row.customerId))
+              );
+              const custId = matchedCust?.id
+                ? Number(matchedCust.id)
+                : row.customerId && !Number.isNaN(Number(row.customerId))
+                  ? Number(row.customerId)
+                  : data.customers?.[0]?.id
+                    ? Number(data.customers[0].id)
+                    : undefined;
+              const cleanSavedPoId = saved?.id && !String(saved.id).startsWith("offline-") && !Number.isNaN(Number(saved.id))
+                ? Number(saved.id)
+                : undefined;
+              const createdInv = await addRow("invoices", {
+                nomor: invNo,
+                customerId: custId,
+                customer: row.customer || matchedCust?.nama || matchedCust?.name || "Walk-in Customer",
+                clientPoId: cleanSavedPoId,
+                po: saved?.nomorSo || saved?.nomor || row.nomor,
+                quotation: row.penawaran && row.penawaran !== "-" ? row.penawaran : undefined,
+                jenis: "Penuh",
+                nilai: grandAmt,
+                dpp: grandAmt,
+                ppn: 0,
+                pph: 0,
+                total: grandAmt,
+                tipePpn: "No PPN (Tanpa PPN)",
+                ppnMode: "none",
+                pphMode: "none",
+                tanggal: todayStr,
+                jatuhTempo: todayStr,
+                status: "Lunas",
+                terbayar: grandAmt,
+                catatan: `Nota Penjualan Langsung (Walk-in · ${soPaymentMethod}) — Ref SO: ${saved?.nomorSo || saved?.nomor || row.nomor}`,
+              });
+              if (createdInv?.id && grandAmt > 0 && !String(createdInv.id).startsWith("offline-")) {
+                await api("POST", `/invoices/${createdInv.id}/payments`, {
+                  amount: grandAmt,
+                  method: soPaymentMethod,
+                  date: todayStr,
+                  reference: `NOTA-${saved?.nomorSo || saved?.nomor || row.nomor}`,
+                }).catch(() => {});
+              }
+              toast(`SO / Nota & Invoice Keluar (${invNo}) berhasil dibuat dengan status Lunas (${soPaymentMethod})`);
+            }
+            handleOpenChange(false);
+          }
+        }
       }
     }
   }
@@ -1029,6 +1110,51 @@ export function FormDialog({
                     ? "Sisi Pembelian: Kita menerbitkan Purchase Order (PO) untuk Supplier dan mengunggah SO dari Supplier (Customer & Penawaran disembunyikan)."
                     : "Lengkap: Mencatat PO & SO sekaligus dengan pilihan Customer, Supplier, maupun Penawaran."}
               </Text>
+              {def?.key === "po-client" && orderDocMode === "SO" ? (
+                <View className="mt-1 pt-2.5 border-t border-border/60 gap-2">
+                  <Text className="text-xs font-bold text-foreground">
+                    Alur Penjualan & Pembayaran Customer:
+                  </Text>
+                  <View className="flex-row flex-wrap gap-1.5">
+                    <Button
+                      size="sm"
+                      variant={soPaymentFlow === "REGULER" ? "default" : "outline"}
+                      onPress={() => setSoPaymentFlow("REGULER")}
+                      className="flex-1 min-w-[160px] h-8 px-2.5"
+                    >
+                      <Text className="text-xs font-semibold">Reguler / PO Client (Tempo / DP)</Text>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={soPaymentFlow === "WALK_IN" ? "default" : "outline"}
+                      onPress={() => setSoPaymentFlow("WALK_IN")}
+                      className="flex-1 min-w-[160px] h-8 px-2.5"
+                    >
+                      <Text className="text-xs font-semibold">Datang Langsung / Nota (Langsung Lunas)</Text>
+                    </Button>
+                  </View>
+                  {soPaymentFlow === "WALK_IN" ? (
+                    <View className="flex-row items-center justify-between bg-success/10 border border-success/30 rounded-lg p-2.5 gap-2">
+                      <Text className="text-[11px] text-foreground flex-1">
+                        Otomatis menerbitkan Invoice Keluar / Nota dengan status <Text className="font-bold text-success">LUNAS</Text>:
+                      </Text>
+                      <View className="flex-row gap-1">
+                        {(["TRANSFER", "TUNAI"] as const).map((m) => (
+                          <Button
+                            key={m}
+                            size="sm"
+                            variant={soPaymentMethod === m ? "default" : "outline"}
+                            onPress={() => setSoPaymentMethod(m)}
+                            className="h-7 px-2.5"
+                          >
+                            <Text className="text-[11px] font-semibold">{m}</Text>
+                          </Button>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
           ) : null}
           {fields.map((f, i) => {
