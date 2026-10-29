@@ -247,16 +247,35 @@ export const PERMISSIONS: Record<string, Table> = {
     visitReports: "LCU",
     reports: "L",
   },
+
+  HR: {
+    dashboard: "L",
+    users: "LCU",
+    attendance: "LCUA",
+    payroll: "LCUA",
+    expenseCategories: "L",
+    costCenters: "L",
+    expenses: "LCU",
+    surveys: "L",
+    projects: "L",
+    tasks: "L",
+    requests: "LC",
+    pocReports: "LCU",
+    visitReports: "LCU",
+    reports: "L",
+  },
 };
 
 // Absensi: setiap karyawan boleh melihat & mencatat absen miliknya (service membatasi ke data sendiri).
-// Payroll: setiap karyawan boleh melihat slip miliknya (L); Finance/Admin/Bos memiliki akses penuh (LCUA).
+// Payroll: setiap karyawan boleh melihat slip miliknya (L); Finance/HR/Admin/Bos memiliki akses penuh (LCUA).
 for (const table of Object.values(PERMISSIONS)) {
   if (!table.attendance) table.attendance = "LC";
   if (!table.payroll) table.payroll = "L";
 }
 PERMISSIONS.FINANCE!.attendance = "LCU";
 PERMISSIONS.FINANCE!.payroll = "LCUA";
+PERMISSIONS.HR!.attendance = "LCUA";
+PERMISSIONS.HR!.payroll = "LCUA";
 
 export function can(role: string, module: ModuleKey, action: Action): boolean {
   const norm = (role || "").toUpperCase();

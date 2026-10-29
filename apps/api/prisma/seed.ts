@@ -17,6 +17,9 @@ async function main() {
 
   // Pastikan kolom dan tabel baru ada sebelum query Prisma dilakukan (Railway / fresh db safety)
   const schemaPatches = [
+    "ALTER TABLE `User` MODIFY COLUMN `role` ENUM('SUPER_ADMIN','ADMIN','BOS','SALES','PM','TEKNISI','PROCUREMENT','FINANCE','GUDANG','SE','HR') NOT NULL",
+    "ALTER TABLE `Notification` MODIFY COLUMN `targetRole` ENUM('SUPER_ADMIN','ADMIN','BOS','SALES','PM','TEKNISI','PROCUREMENT','FINANCE','GUDANG','SE','HR') NULL",
+    "ALTER TABLE `ApprovalStep` MODIFY COLUMN `approverRole` ENUM('SUPER_ADMIN','ADMIN','BOS','SALES','PM','TEKNISI','PROCUREMENT','FINANCE','GUDANG','SE','HR') NOT NULL",
     "ALTER TABLE `StockReservation` MODIFY COLUMN `projectId` INT NULL",
     "ALTER TABLE `StockReservation` ADD COLUMN `quotationId` INT NULL",
     "ALTER TABLE `StockReservation` ADD COLUMN `invoiceId` INT NULL",

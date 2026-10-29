@@ -201,22 +201,14 @@ export default function NewPurchaseRequestScreen() {
         <Panel title="Langkah 2: Pilih Barang & Qty">
           <View className="gap-4">
             {/* Filter Kategori Barang */}
-            <View className="gap-1.5">
-              <Text className="text-xs font-medium text-muted-foreground">Filter Kategori Barang</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1.5 py-0.5">
-                {categoryOptions.map((cat) => (
-                  <Button
-                    key={cat}
-                    size="sm"
-                    variant={catFilter === cat ? "default" : "outline"}
-                    onPress={() => setCatFilter(cat)}
-                    className="h-7 px-2.5 rounded-full"
-                  >
-                    <Text className="text-xs">{cat}</Text>
-                  </Button>
-                ))}
-              </ScrollView>
-            </View>
+            <FormField label="Filter Kategori Barang">
+              <SearchableSelect
+                value={catFilter}
+                onChange={setCatFilter}
+                options={categoryOptions}
+                placeholder="Pilih kategori barang"
+              />
+            </FormField>
 
             <FormField
               label="Pilih Barang Master"

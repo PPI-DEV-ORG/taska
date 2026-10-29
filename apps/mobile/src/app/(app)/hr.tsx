@@ -31,8 +31,8 @@ import { ScheduleSettingsDialog } from "@/modules/hr/components/schedule-setting
 export default function HrScreen() {
   const { user, toast } = useApp();
   const roleLower = (user?.role || "").toLowerCase();
-  const isFinanceOrAdmin = ["super_admin", "admin", "bos", "finance"].includes(roleLower);
-  const isSuperAdminOrBos = ["super_admin", "bos"].includes(roleLower);
+  const isFinanceOrAdmin = ["super_admin", "admin", "bos", "finance", "hr"].includes(roleLower);
+  const isSuperAdminOrBos = ["super_admin", "bos", "admin", "hr"].includes(roleLower);
 
   const [activeTab, setActiveTab] = React.useState<TabType>("my-attendance");
 

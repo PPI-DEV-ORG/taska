@@ -51,7 +51,7 @@ export class PayrollController {
     @Query("period") period?: string,
     @Query("userId") userIdStr?: string,
   ) {
-    const isFinanceOrAdmin = ["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE"].includes(user.role?.toUpperCase() || "");
+    const isFinanceOrAdmin = ["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "HR"].includes(user.role?.toUpperCase() || "");
     const requestedUserId = userIdStr ? parseInt(userIdStr, 10) : undefined;
     
     // Karyawan biasa hanya bisa melihat slip gaji miliknya
@@ -66,7 +66,7 @@ export class PayrollController {
     @CurrentUser() user: RequestUser,
     @Param("id", ParseIntPipe) id: number,
   ) {
-    const isFinanceOrAdmin = ["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE"].includes(user.role?.toUpperCase() || "");
+    const isFinanceOrAdmin = ["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "HR"].includes(user.role?.toUpperCase() || "");
     return this.payroll.getSlipById(id, isFinanceOrAdmin ? undefined : user.id);
   }
 
