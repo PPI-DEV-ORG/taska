@@ -78,6 +78,8 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
       "ALTER TABLE `CalendarEvent` ADD COLUMN `excludedDates` TEXT NULL",
       "ALTER TABLE `CalendarEvent` ADD COLUMN `overdueNotifiedAt` DATETIME(3) NULL",
       "CREATE TABLE IF NOT EXISTS `CalendarAttendee` (`id` INT NOT NULL AUTO_INCREMENT, `eventId` INT NOT NULL, `userId` INT NOT NULL, PRIMARY KEY (`id`), UNIQUE INDEX `CalendarAttendee_eventId_userId_key` (`eventId`, `userId`), INDEX `CalendarAttendee_userId_idx` (`userId`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
+      "ALTER TABLE `FollowUp` ADD COLUMN `pocReportId` INT NULL",
+      "ALTER TABLE `FollowUp` ADD COLUMN `visitReportId` INT NULL",
     ];
     for (const sql of schemaPatches) {
       await db.$executeRawUnsafe(sql).catch(() => {});

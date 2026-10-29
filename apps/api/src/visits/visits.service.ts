@@ -145,6 +145,12 @@ export class VisitsService {
         actions: {
           orderBy: { createdAt: "asc" },
         },
+        followUps: {
+          include: {
+            creator: { select: { id: true, name: true } },
+          },
+          orderBy: { date: "desc" },
+        },
         expenses: {
           include: {
             reporter: { select: { id: true, name: true } },

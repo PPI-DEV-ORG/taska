@@ -215,14 +215,14 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       };
 
       const invOut = (data.invoices ?? []).map((r) =>
-        enrich({ ...r, id: String(r.id), direction: "out", tipeInvoice: "Invoice Masuk" })
+        enrich({ ...r, id: String(r.id), direction: "out", tipeInvoice: "Invoice Keluar" })
       );
       const invIn = (data.invoiceIn ?? []).map((r: Row) => ({
         ...r,
         id: String(r.id).startsWith("in-") ? String(r.id) : `in-${r.id}`,
         rawId: (r as any).rawId ?? r.id,
         direction: "in",
-        tipeInvoice: "Invoice Keluar",
+        tipeInvoice: "Invoice Masuk",
         customer: r.supplier || r.customer,
       }));
       if (invoiceTab === "out") {
@@ -417,12 +417,12 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             onPress={() => setInvoiceTab("all")}
           />
           <Chip
-            label={`Invoice Masuk (${data.invoices?.length || 0})`}
+            label={`Invoice Keluar (${data.invoices?.length || 0})`}
             active={invoiceTab === "out"}
             onPress={() => setInvoiceTab("out")}
           />
           <Chip
-            label={`Invoice Keluar (${data.invoiceIn?.length || 0})`}
+            label={`Invoice Masuk (${data.invoiceIn?.length || 0})`}
             active={invoiceTab === "in"}
             onPress={() => setInvoiceTab("in")}
           />

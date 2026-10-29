@@ -134,6 +134,12 @@ export class PocService {
         checklists: {
           orderBy: { id: "asc" },
         },
+        followUps: {
+          include: {
+            creator: { select: { id: true, name: true } },
+          },
+          orderBy: { date: "desc" },
+        },
         expenses: {
           include: {
             category: { select: { id: true, name: true } },

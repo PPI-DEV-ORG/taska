@@ -30,6 +30,7 @@ import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
+import { FollowUpPanel } from "@/modules/shared/follow-up-panel";
 import { useRouter } from "expo-router";
 
 type ActionItem = {
@@ -436,9 +437,12 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
                       </Text>
                       <StatusBadge status={item.status} />
                     </View>
-                    {item.dueDate || item.notes ? (
+                    {item.assigneeId || item.dueDate || item.notes ? (
                       <Text className="text-xs text-muted-foreground mt-0.5">
                         {[
+                          item.assigneeId
+                            ? `PIC: ${(data.users ?? []).find((u: Row) => Number(u.id) === Number(item.assigneeId))?.nama || `#${item.assigneeId}`}`
+                            : null,
                           item.dueDate ? `Target: ${tanggal(item.dueDate)}` : null,
                           item.notes ? `Catatan: ${item.notes}` : null,
                         ]
@@ -485,6 +489,15 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
           </View>
         )}
       </Panel>
+
+      {/* ─── Riwayat Follow-up & Event Mendatang (Sinkron Kalender) ─── */}
+      <FollowUpPanel
+        moduleKey="visit-reports"
+        entityId={row.id}
+        initialFollowUps={row._followUps}
+        subtitle="Catat aktivitas komunikasi lanjutan & jadwalkan follow-up berikutnya hasil Kunjungan / Meeting. Jadwal berikutnya otomatis tampil di Kalender."
+        onUpdated={onRefresh}
+      />
 
       {/* ─── Biaya & Pengeluaran Kunjungan (Reimbursement) ─── */}
       <Panel
@@ -554,6 +567,11 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
                             {isPersonal ? "Talangan Pribadi" : "Dana Kantor"}
                           </Text>
                         </View>
+                        {!exp.receiptFileId && (!Array.isArray(exp.receiptFileIds) || exp.receiptFileIds.length === 0) ? (
+                          <View className="px-2 py-0.5 rounded bg-danger/15">
+                            <Text className="text-[10px] text-danger font-semibold">Tanpa Bukti</Text>
+                          </View>
+                        ) : null}
                       </View>
                       <Text className="text-xs text-muted-foreground mt-1">
                         {tanggal(exp.tanggal || exp.date)} • Pelapor: {exp.pelapor || "Karyawan"} • Kategori: {exp.kategori || "-"}

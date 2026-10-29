@@ -122,7 +122,16 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
 
   // ───────────────────────────── Aggregator ─────────────────────────────
 
+  private followUpColsReady = false;
+  private async ensureFollowUpCols() {
+    if (this.followUpColsReady) return;
+    await this.db.$executeRawUnsafe("ALTER TABLE `FollowUp` ADD COLUMN `pocReportId` INT NULL").catch(() => {});
+    await this.db.$executeRawUnsafe("ALTER TABLE `FollowUp` ADD COLUMN `visitReportId` INT NULL").catch(() => {});
+    this.followUpColsReady = true;
+  }
+
   async list(q: CalendarQuery, user: RequestUser) {
+    await this.ensureFollowUpCols();
     const role = this.roleOf(user);
     const isGlobal = this.isGlobal(user);
     const canSeeFinanceTax = this.isFinanceOrTaxAuthorized(user);
@@ -381,11 +390,30 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       this.db.followUp.findMany({
         where: {
           AND: [
-            ...(all ? [] : [{ OR: [{ createdById: me }, { lead: { owner_id: me } }] }]),
+            ...(all
+              ? []
+              : [
+                  {
+                    OR: [
+                      { createdById: me },
+                      { lead: { owner_id: me } },
+                      { pocReport: { ownerId: me } },
+                      { visitReport: { ownerId: me } },
+                      ...(includeTeam
+                        ? [
+                            { pocReport: { members: { some: { userId: me } } } },
+                            { pocReport: { project: inMyProject } },
+                            { visitReport: { members: { some: { userId: me } } } },
+                            { visitReport: { project: inMyProject } },
+                          ]
+                        : []),
+                    ],
+                  },
+                ]),
             {
               OR: [
+                { date: { gte: from, lte: to } },
                 { nextDate: { gte: from, lte: to } },
-                { nextDate: null, date: { gte: from, lte: to } },
               ],
             },
           ],
@@ -394,6 +422,8 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           creator: { select: { id: true, name: true, role: true } },
           lead: { select: { id: true, name: true, owner: { select: { id: true, name: true, role: true } } } },
           quotation: { select: { id: true, number: true } },
+          pocReport: { select: { id: true, number: true, title: true, owner: { select: { id: true, name: true, role: true } } } },
+          visitReport: { select: { id: true, number: true, title: true, owner: { select: { id: true, name: true, role: true } } } },
         },
       }),
       this.db.quotation.findMany({
@@ -572,27 +602,88 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       });
     }
     for (const f of followUps) {
-      const targetDate = f.nextDate ?? f.date;
-      if (!targetDate) continue;
-      const status = f.nextDate && f.status === "TERJADWAL" ? "NOT_STARTED" : normStatus(f.status);
-      const owner = f.creator ?? f.lead?.owner;
-      const route = f.quotationId
-        ? `/quotations/${f.quotationId}`
-        : f.leadId
-          ? `/leads/${f.leadId}`
-          : null;
-      items.push({
-        key: `followup-${f.id}`, sourceModule: f.quotationId ? "quotations" : "leads",
-        sourceId: f.quotationId ?? f.leadId ?? f.id,
-        title: `Follow-up ${f.quotation?.number ?? f.lead?.name ?? "Prospek"} (${f.method})`,
-        subtitle: f.notes,
-        category: "SALES", start: iso(targetDate)!, end: null,
-        occurrenceDate: wibDateKey(targetDate), isAllDay: true,
-        status, priority: "MEDIUM",
-        picId: owner?.id ?? null, picName: owner?.name ?? null, picRole: owner?.role ?? null,
-        routePath: route, isOverdue: overdueOf(targetDate, status, true),
-        editable: false,
-      });
+      const owner = f.creator ?? f.pocReport?.owner ?? f.visitReport?.owner ?? f.lead?.owner;
+      const isPoc = !!f.pocReportId;
+      const isVisit = !!f.visitReportId;
+      const isQuote = !isPoc && !isVisit && !!f.quotationId;
+      const sourceModule = isPoc
+        ? "poc-reports"
+        : isVisit
+          ? "visit-reports"
+          : isQuote
+            ? "quotations"
+            : "leads";
+      const sourceId = f.pocReportId ?? f.visitReportId ?? f.quotationId ?? f.leadId ?? f.id;
+      const category = isPoc ? "POC" : isVisit ? "KUNJUNGAN" : "SALES";
+      const route = isPoc
+        ? `/poc-reports/${f.pocReportId}`
+        : isVisit
+          ? `/visit-reports/${f.visitReportId}`
+          : isQuote
+            ? `/quotations/${f.quotationId}`
+            : f.leadId
+              ? `/leads/${f.leadId}`
+              : null;
+      const refLabel = isPoc
+        ? `POC ${f.pocReport?.number ?? ""} - ${f.pocReport?.title ?? ""}`
+        : isVisit
+          ? `Kunjungan ${f.visitReport?.number ?? ""} - ${f.visitReport?.title ?? ""}`
+          : isQuote
+            ? `Penawaran ${f.quotation?.number ?? ""}`
+            : f.lead?.name ?? "Prospek";
+
+      if (f.date && f.date >= from && f.date <= to) {
+        const status = f.status === "TERJADWAL" ? "NOT_STARTED" : normStatus(f.status);
+        items.push({
+          key: `followup-${f.id}`,
+          sourceModule,
+          sourceId,
+          title: `Follow-up ${refLabel} (${f.method})`,
+          subtitle: f.notes,
+          category,
+          start: iso(f.date)!,
+          end: null,
+          occurrenceDate: wibDateKey(f.date),
+          isAllDay: true,
+          status,
+          priority: "MEDIUM",
+          picId: owner?.id ?? null,
+          picName: owner?.name ?? null,
+          picRole: owner?.role ?? null,
+          routePath: route,
+          isOverdue: overdueOf(f.date, status, true),
+          editable: false,
+        });
+      }
+
+      if (
+        f.nextDate &&
+        f.nextDate >= from &&
+        f.nextDate <= to &&
+        (!f.date || wibDateKey(f.nextDate) !== wibDateKey(f.date))
+      ) {
+        const nextStatus = "NOT_STARTED";
+        items.push({
+          key: `followup-${f.id}-next`,
+          sourceModule,
+          sourceId,
+          title: `Jadwal Follow-up Berikutnya: ${refLabel} (${f.method})`,
+          subtitle: f.notes ? `Tindak lanjut dari catatan: ${f.notes}` : null,
+          category,
+          start: iso(f.nextDate)!,
+          end: null,
+          occurrenceDate: wibDateKey(f.nextDate),
+          isAllDay: true,
+          status: nextStatus,
+          priority: "HIGH",
+          picId: owner?.id ?? null,
+          picName: owner?.name ?? null,
+          picRole: owner?.role ?? null,
+          routePath: route,
+          isOverdue: overdueOf(f.nextDate, nextStatus, true),
+          editable: false,
+        });
+      }
     }
     for (const qt of quotations) {
       if (!qt.validUntil) continue;

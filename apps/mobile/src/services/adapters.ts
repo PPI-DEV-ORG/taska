@@ -979,6 +979,8 @@ export function adaptRow(module: string, raw: any): Row {
         tim: membersList,
         members: raw.members ?? [],
         checklists: raw.checklists ?? [],
+        followUps: raw.followUps ?? [],
+        _followUps: raw.followUps ?? [],
         expenses: raw.expenses ?? [],
         financeSummary: raw.financeSummary ?? null,
       };
@@ -1043,6 +1045,8 @@ export function adaptRow(module: string, raw: any): Row {
         logoFileId: raw.logoFileId ?? null,
         documentFileId: raw.documentFileId ?? null,
         actions: raw.actions ?? [],
+        followUps: raw.followUps ?? [],
+        _followUps: raw.followUps ?? [],
         expenses: raw.expenses ?? [],
         expenseSummary: raw.expenseSummary ?? null,
       };
@@ -1264,6 +1268,8 @@ export function adaptRow(module: string, raw: any): Row {
         leadId: raw.leadId != null ? String(raw.leadId) : idOf(raw.lead),
         lead: nameOf(raw.lead) ?? "",
         quotationId: raw.quotationId != null ? String(raw.quotationId) : null,
+        pocReportId: raw.pocReportId != null ? String(raw.pocReportId) : idOf(raw.pocReport),
+        visitReportId: raw.visitReportId != null ? String(raw.visitReportId) : idOf(raw.visitReport),
         tanggal: d(raw.date),
         date: d(raw.date),
         metode: toLabel("followupMethod", raw.method),
@@ -2104,6 +2110,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       return {
         leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : undefined,
         quotationId: row.quotationId != null && row.quotationId !== "" ? Number(row.quotationId) : undefined,
+        pocReportId: row.pocReportId != null && row.pocReportId !== "" ? Number(row.pocReportId) : undefined,
+        visitReportId: row.visitReportId != null && row.visitReportId !== "" ? Number(row.visitReportId) : undefined,
         date: row.date || row.tanggal || today,
         method,
         notes: row.notes || row.catatan || "-",
