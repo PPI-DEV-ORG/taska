@@ -135,20 +135,19 @@ export class ReceivingsService {
       dto.items && dto.items.length
         ? dto.items
         : po
-        ? po.items.map((pi) => ({
-            productId: pi.productId,
-            qtyReceived: Math.max(1, pi.qty - pi.receivedQty),
-            serials: undefined as string | undefined,
-            note: undefined as string | undefined,
-          }))
+        ? po.items
+            .filter((pi): pi is typeof pi & { productId: number } => pi.productId != null)
+            .map((pi) => ({
+              productId: pi.productId,
+              qtyReceived: Math.max(1, pi.qty - pi.receivedQty),
+              serials: undefined as string | undefined,
+              note: undefined as string | undefined,
+            }))
         : [];
-
-    if (!inputItems.length) {
-      throw new BadRequestException("Item penerimaan barang minimal 1 barang");
-    }
 
     const preparedItems: { productId: number; qtyOrdered: number; qtyReceived: number; serials: string | null; note?: string }[] = [];
     for (const item of inputItems) {
+      if (!item.productId) continue;
       const poItem = po ? po.items.find((i) => i.productId === item.productId) : null;
       const qtyReceived = Math.max(1, item.qtyReceived || 1);
       const qtyOrdered = poItem ? Math.max(qtyReceived, poItem.qty - poItem.receivedQty) : qtyReceived;

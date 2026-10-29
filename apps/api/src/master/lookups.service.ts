@@ -87,4 +87,58 @@ export class LookupsService {
     await this.delegate(model).delete({ where: { id } });
     return { id, deleted: true };
   }
+
+  async listCoa() {
+    const items = await (this.prisma.main as any).coaAccount
+      ?.findMany({
+        where: { status: "AKTIF" },
+        orderBy: { code: "asc" },
+      })
+      .catch(() => []);
+    return { items: items ?? [] };
+  }
+
+  async upsertCoa(dto: {
+    code?: string;
+    name?: string;
+    category?: string;
+    normalBalance?: string;
+    type?: string;
+    parentCode?: string;
+  }) {
+    const code = (dto.code || "").trim();
+    const name = (dto.name || "").trim();
+    if (!code || !name) throw new ConflictException("Kode akun dan nama akun wajib diisi");
+    const inferredParent = !dto.parentCode && code.includes(".") ? code.split(".")[0] : dto.parentCode;
+    return (this.prisma.main as any).coaAccount.upsert({
+      where: { code },
+      update: {
+        name,
+        category: dto.category || "Beban Operasional",
+        normalBalance: dto.normalBalance || "DEBIT",
+        type: dto.type ?? null,
+        parentCode: inferredParent && inferredParent !== "-" ? inferredParent : null,
+        status: "AKTIF",
+      },
+      create: {
+        code,
+        name,
+        category: dto.category || "Beban Operasional",
+        normalBalance: dto.normalBalance || "DEBIT",
+        type: dto.type ?? null,
+        parentCode: inferredParent && inferredParent !== "-" ? inferredParent : null,
+        status: "AKTIF",
+      },
+    });
+  }
+
+  async removeCoa(code: string) {
+    await (this.prisma.main as any).coaAccount
+      .updateMany({
+        where: { code },
+        data: { status: "NONAKTIF" },
+      })
+      .catch(() => {});
+    return { code, deleted: true };
+  }
 }

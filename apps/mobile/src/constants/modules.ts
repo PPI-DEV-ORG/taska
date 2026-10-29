@@ -390,7 +390,9 @@ export const MODULES: Record<string, ModuleDef> = {
     key: "purchase-requests", title: "Request barang", singular: "Request barang", icon: ShoppingCart, idPrefix: "RB",
     columns: [
       { key: "nomor", label: "Nomor", primary: true, flex: 1.3 },
-      { key: "project", label: "Project", flex: 2 },
+      { key: "project", label: "Project", flex: 1.6 },
+      { key: "sumberPengadaan", label: "Sumber", flex: 1.2 },
+      { key: "metodePembayaran", label: "Pembayaran", flex: 1.1 },
       { key: "item", label: "Barang", flex: 2 },
       { key: "estimasi", label: "Estimasi", fmt: "rupiah" },
       { key: "tanggal", label: "Tanggal", fmt: "date" },
@@ -399,6 +401,8 @@ export const MODULES: Record<string, ModuleDef> = {
     fields: [
       { label: "Tanggal", key: "tanggal", fmt: "date" }, { label: "Pemohon", key: "pemohon" },
       { label: "Jenis biaya", key: "jenisBiaya" }, { label: "Project", key: "project" },
+      { label: "Sumber pengadaan", key: "sumberPengadaan" }, { label: "Metode pembayaran", key: "metodePembayaran" },
+      { label: "Alokasi akuntansi", key: "alokasiAkuntansi" },
       { label: "Barang", key: "item" }, { label: "Estimasi harga", key: "estimasi", fmt: "rupiah" },
       { label: "Tujuan", key: "tujuan" },
     ],
@@ -923,7 +927,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.customers, N.expenses, N.hr, N.master],
   pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.requests, N.delivery, N.expenses, N.hr],
   teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.hr],
-  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.damage, N.expenses, N.visitReports, N.hr, N.master],
+  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.opname, N.damage, N.expenses, N.visitReports, N.hr, N.master],
   finance: [N.dashboard, N.calendar, N.approvals, N.surveys, N.pocReports, N.visitReports, N.invoices, N.quotations, N.poClient, N.accounting, N.hr, N.stock, N.expenses, N.opname, N.reports],
   gudang: [N.dashboard, N.calendar, N.approvals, N.requests, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.hr, N.master],
   se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.delivery, N.expenses, N.hr],

@@ -80,6 +80,15 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
       "CREATE TABLE IF NOT EXISTS `CalendarAttendee` (`id` INT NOT NULL AUTO_INCREMENT, `eventId` INT NOT NULL, `userId` INT NOT NULL, PRIMARY KEY (`id`), UNIQUE INDEX `CalendarAttendee_eventId_userId_key` (`eventId`, `userId`), INDEX `CalendarAttendee_userId_idx` (`userId`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
       "ALTER TABLE `FollowUp` ADD COLUMN `pocReportId` INT NULL",
       "ALTER TABLE `FollowUp` ADD COLUMN `visitReportId` INT NULL",
+      "CREATE TABLE IF NOT EXISTS `CoaAccount` (`id` INT NOT NULL AUTO_INCREMENT, `code` VARCHAR(64) NOT NULL, `name` VARCHAR(191) NOT NULL, `category` VARCHAR(191) NOT NULL, `normalBalance` VARCHAR(32) NOT NULL DEFAULT 'DEBIT', `type` VARCHAR(64) NULL, `parentCode` VARCHAR(64) NULL, `status` VARCHAR(32) NOT NULL DEFAULT 'AKTIF', `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY (`id`), UNIQUE INDEX `CoaAccount_code_key` (`code`), INDEX `CoaAccount_parentCode_idx` (`parentCode`), INDEX `CoaAccount_category_idx` (`category`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
+      "ALTER TABLE `PurchaseRequest` ADD COLUMN `procurementSource` VARCHAR(64) NULL DEFAULT 'SUPPLIER'",
+      "ALTER TABLE `PurchaseRequest` ADD COLUMN `paymentMethod` VARCHAR(64) NULL DEFAULT 'UTANG'",
+      "ALTER TABLE `PurchaseRequestItem` MODIFY COLUMN `productId` INT NULL",
+      "ALTER TABLE `PurchaseRequestItem` ADD COLUMN `customName` VARCHAR(191) NULL",
+      "ALTER TABLE `PurchaseRequestItem` ADD COLUMN `customUnit` VARCHAR(64) NULL",
+      "ALTER TABLE `SupplierPOItem` MODIFY COLUMN `productId` INT NULL",
+      "ALTER TABLE `SupplierPOItem` ADD COLUMN `customName` VARCHAR(191) NULL",
+      "ALTER TABLE `SupplierPOItem` ADD COLUMN `customUnit` VARCHAR(64) NULL",
     ];
     for (const sql of schemaPatches) {
       await db.$executeRawUnsafe(sql).catch(() => {});
@@ -104,6 +113,65 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
             passwordHash,
           },
         });
+      }
+
+      // Bersihkan duplikat data seed akibat upsert id=1 sebelumnya
+      const dupLeads = await this.main.lead.findMany({
+        where: { name: "Pengadaan Access Control & CCTV Gedung" },
+        orderBy: { id: "asc" },
+      });
+      if (dupLeads.length > 1) {
+        const extraIds = dupLeads.slice(1).map((l) => l.id);
+        await this.main.lead.deleteMany({ where: { id: { in: extraIds } } }).catch(() => {});
+      }
+
+      const dupProjects = await this.main.project.findMany({
+        where: { name: "Instalasi Jaringan & CCTV Kantor Pusat" },
+        orderBy: { id: "asc" },
+      });
+      if (dupProjects.length > 1) {
+        const extraProjIds = dupProjects.slice(1).map((p) => p.id);
+        await this.main.task.deleteMany({ where: { projectId: { in: extraProjIds } } }).catch(() => {});
+        await this.main.project.deleteMany({ where: { id: { in: extraProjIds } } }).catch(() => {});
+      }
+
+      const dupCustomers = await this.main.customer.findMany({
+        where: { name: "PT Integrasi Sistem Solusindo" },
+        orderBy: { id: "asc" },
+      });
+      if (dupCustomers.length > 1) {
+        const extraCustIds = dupCustomers.slice(1).map((c) => c.id);
+        await this.main.customer.deleteMany({ where: { id: { in: extraCustIds } } }).catch(() => {});
+      }
+
+      // Pastikan persetujuan OPNAME yang masih menunggu diarahkan ke PROCUREMENT
+      const pendingOpnames = await this.main.approval.findMany({
+        where: { kind: "OPNAME", status: "MENUNGGU" },
+        select: { id: true },
+      });
+      if (pendingOpnames.length > 0) {
+        const opnameIds = pendingOpnames.map((o) => o.id);
+        await this.main.approvalStep.deleteMany({
+          where: { approvalId: { in: opnameIds }, approverRole: "BOS" },
+        }).catch(() => {});
+        await this.main.approvalStep.updateMany({
+          where: { approvalId: { in: opnameIds }, approverRole: "FINANCE" },
+          data: { approverRole: "PROCUREMENT" },
+        }).catch(() => {});
+      }
+
+      // Pastikan akun COA HPP Project (5101) & HPP Retail (5102) di bawah induk 5000 tersedia
+      const hppCoas = [
+        { code: "5000", name: "Beban Pokok Penjualan (HPP - Header)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: null },
+        { code: "5101", name: "HPP Project (Pengadaan Barang & Material Proyek)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
+        { code: "5102", name: "HPP Retail (Harga Pokok Penjualan Barang Stok)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
+      ];
+      for (const hc of hppCoas) {
+        await (this.main as any).coaAccount?.upsert({
+          where: { code: hc.code },
+          update: { name: hc.name, category: hc.category, normalBalance: hc.normalBalance, parentCode: hc.parentCode },
+          create: { ...hc, status: "AKTIF" },
+        }).catch(() => {});
       }
     } catch {}
   }

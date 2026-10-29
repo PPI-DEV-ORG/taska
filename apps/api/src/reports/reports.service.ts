@@ -288,7 +288,11 @@ export class ReportsService {
     const revDpp = invoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     const revPpn = invoices.reduce((s, i) => s + (Number(i.ppn) || 0), 0);
     const revGross = invoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
-    const cogs = supplierPos.reduce((s, po) => s + (Number(po.total) || 0), 0);
+    const cogsProject = supplierPos
+      .filter((po) => !!(po.projectId))
+      .reduce((s, po) => s + (Number(po.total) || 0), 0);
+    const cogsRetail = 0;
+    const cogs = cogsProject + cogsRetail;
     const grossProfit = revDpp - cogs;
 
     const catMap = new Map<string, number>();
@@ -307,7 +311,8 @@ export class ReportsService {
       ["4101", "Pendapatan Proyek & Integrasi (DPP Bersih)", "Pendapatan", `Rp ${revDpp.toLocaleString("id-ID")}`],
       ["2102", "PPN Keluaran Terpungut (11% — titipan pajak)", "Informasi Pajak", `Rp ${revPpn.toLocaleString("id-ID")}`],
       ["-", "Total Tagihan Kotor (Gross Invoiced)", "Pendapatan Kotor", `Rp ${revGross.toLocaleString("id-ID")}`],
-      ["5101", "Harga Pokok Penjualan / Pengadaan PO Supplier (HPP)", "Beban Pokok (HPP)", `(Rp ${cogs.toLocaleString("id-ID")})`],
+      ["5101", "HPP Project (Pengadaan Barang & Material Proyek)", "Beban Pokok (HPP)", `(Rp ${cogsProject.toLocaleString("id-ID")})`],
+      ["5102", "HPP Retail (Harga Pokok Penjualan Barang Stok)", "Beban Pokok (HPP)", `(Rp ${cogsRetail.toLocaleString("id-ID")})`],
       ["=", "LABA KOTOR (GROSS PROFIT)", "Subtotal", `Rp ${grossProfit.toLocaleString("id-ID")}`],
       ...Array.from(catMap.entries()).map(([cat, amt]) => [
         "6101",
@@ -585,18 +590,33 @@ export class ReportsService {
     for (const po of supplierPos) {
       const d = new Date(po.date).toLocaleDateString("id-ID");
       const sup = (po as any).supplier?.name ?? "Supplier";
-      const proj = (po as any).project?.name ?? "-";
+      const isProjectPo = !!(po.projectId || (po as any).project?.name);
+      const proj = (po as any).project?.name ?? (isProjectPo ? "Proyek" : "Stok Gudang / Retail");
       const tot = Number(po.total) || 0;
+      const isKas = /kas|tunai|cash/i.test(String(po.paymentTerms || ""));
+      const debitCode = isProjectPo ? "5101" : "1200";
+      const debitName = isProjectPo ? "HPP Project (Pengadaan Proyek)" : "Persediaan Barang Dagang (Aset)";
+      const debitDesc = isProjectPo
+        ? `HPP Project Pengadaan PO ${po.number} — ${sup}`
+        : `Pembelian Aset Persediaan Stok/Retail PO ${po.number} — ${sup}`;
+
       if (tot > 0) {
-        addLines(d, po.number, proj, [
-          { code: "5101", name: "Harga Pokok Pengadaan (HPP)", desc: `Pengadaan PO ${po.number} — ${sup}`, debit: tot, kredit: 0 },
-          { code: "2101", name: "Hutang Usaha Supplier", desc: `Hutang PO ${po.number} (${sup})`, debit: 0, kredit: tot },
-        ]);
-        if (po.status === "DISETUJUI") {
-          addLines(d, `${po.number}/SETTLE`, proj, [
-            { code: "2101", name: "Hutang Usaha Supplier", desc: `Pelunasan Hutang PO ${po.number} — ${sup}`, debit: tot, kredit: 0 },
-            { code: "1101", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas PO ${po.number}`, debit: 0, kredit: tot },
+        if (isKas) {
+          addLines(d, po.number, proj, [
+            { code: debitCode, name: debitName, desc: debitDesc, debit: tot, kredit: 0 },
+            { code: "1000.01", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas Tunai PO ${po.number} (${sup})`, debit: 0, kredit: tot },
           ]);
+        } else {
+          addLines(d, po.number, proj, [
+            { code: debitCode, name: debitName, desc: debitDesc, debit: tot, kredit: 0 },
+            { code: "210102", name: "Hutang Usaha Supplier", desc: `Hutang PO ${po.number} (${sup})`, debit: 0, kredit: tot },
+          ]);
+          if (po.status === "DISETUJUI") {
+            addLines(d, `${po.number}/SETTLE`, proj, [
+              { code: "210102", name: "Hutang Usaha Supplier", desc: `Pelunasan Hutang PO ${po.number} — ${sup}`, debit: tot, kredit: 0 },
+              { code: "1000.01", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas PO ${po.number}`, debit: 0, kredit: tot },
+            ]);
+          }
         }
       }
     }

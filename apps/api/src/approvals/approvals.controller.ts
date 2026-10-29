@@ -29,8 +29,8 @@ export class ApprovalsController {
 
   @Get()
   @Require("approvals", "L")
-  list(@Query() q: ApprovalQuery) {
-    return this.approvals.list({ page: q.page, limit: q.limit, status: q.status, kind: q.kind, q: q.q });
+  list(@Query() q: ApprovalQuery, @CurrentUser() user: RequestUser) {
+    return this.approvals.list({ page: q.page, limit: q.limit, status: q.status, kind: q.kind, q: q.q, user });
   }
 
   @Get("pending")

@@ -32,11 +32,46 @@ export default function ApprovalsScreen() {
     }, [refreshApprovals]),
   );
 
-  const pendingCount = approvals.filter((a) => a.status === "Menunggu").length;
-  const types = Array.from(new Set(approvals.map((a) => a.jenis)));
+  const role = user?.role;
+  const userId = user?.id;
+  const roleApprovals = React.useMemo(() => {
+    return approvals.filter((a) => {
+      if (role === "super_admin" || role === "admin") return true;
+      if (a.canApprove === false) return false;
+      if (a.requestedById && userId && String(a.requestedById) === String(userId)) return false;
+
+      if (role === "finance") {
+        if (a.module === "opname" || a.module === "receiving") return false;
+        if (Array.isArray(a.steps) && a.steps.length > 0) {
+          const isSurveyOrPr = a.module === "surveys" || a.module === "purchase-requests";
+          if (a.status === "Menunggu") {
+            const hasPendingForFinance = a.steps.some(
+              (st: any) =>
+                st.status === "MENUNGGU" &&
+                (st.approverRole === "FINANCE" || isSurveyOrPr),
+            );
+            if (!hasPendingForFinance) return false;
+          } else {
+            const hasFinanceStep = a.steps.some(
+              (st: any) => st.approverRole === "FINANCE" || isSurveyOrPr,
+            );
+            if (!hasFinanceStep) return false;
+          }
+        }
+      } else if (role === "procurement") {
+        if (!["opname", "receiving", "purchase-requests"].includes(a.module)) return false;
+      } else if (role === "gudang") {
+        if (!["receiving", "purchase-requests"].includes(a.module)) return false;
+      }
+      return true;
+    });
+  }, [approvals, role, userId]);
+
+  const pendingCount = roleApprovals.filter((a) => a.status === "Menunggu").length;
+  const types = Array.from(new Set(roleApprovals.map((a) => a.jenis)));
   const s = q.trim().toLowerCase();
 
-  const list = approvals
+  const list = roleApprovals
     .map((a) => {
       let pengaju = a.pengaju;
       if (!pengaju || pengaju === "-") {
@@ -71,7 +106,7 @@ export default function ApprovalsScreen() {
     <>
       <PageHeader
         title="Persetujuan"
-        subtitle={`${pendingCount} menunggu | Total ${approvals.length} pengajuan`}
+        subtitle={`${pendingCount} menunggu | Total ${roleApprovals.length} pengajuan`}
         onRefresh={refreshApprovals}
       />
       <View className="flex-row items-center gap-1.5 mb-2">

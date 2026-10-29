@@ -26,6 +26,7 @@ interface JournalTabProps {
   currentJournalPage: number;
   totalJournalPages: number;
   JOURNAL_PAGE_SIZE: number;
+  setJournalPageSize?: (s: number) => void;
   onSelectAccount: (code: string) => void;
 }
 
@@ -44,6 +45,7 @@ export function JournalTab({
   currentJournalPage,
   totalJournalPages,
   JOURNAL_PAGE_SIZE,
+  setJournalPageSize,
   onSelectAccount,
 }: JournalTabProps) {
   return (
@@ -209,9 +211,40 @@ export function JournalTab({
           {/* Pagination Footer */}
           {filteredJournal.length > 0 && (
             <View className="border-border/60 bg-card/60 flex-row flex-wrap items-center justify-between border-t px-4 py-3 gap-2">
-              <Text className="text-xs text-muted-foreground">
-                Menampilkan {(currentJournalPage - 1) * JOURNAL_PAGE_SIZE + 1} - {Math.min(currentJournalPage * JOURNAL_PAGE_SIZE, filteredJournal.length)} dari {filteredJournal.length} baris
-              </Text>
+              <View className="flex-row flex-wrap items-center gap-2">
+                {setJournalPageSize ? (
+                  <>
+                    <Text className="text-xs text-muted-foreground">Tampilkan:</Text>
+                    <View className="flex-row items-center gap-1">
+                      {([10, 20, 30, 50, 100] as const).map((opt) => {
+                        const active = JOURNAL_PAGE_SIZE === opt;
+                        return (
+                          <Pressable
+                            key={opt}
+                            onPress={() => setJournalPageSize(opt)}
+                            className={`h-7 px-2 items-center justify-center rounded-md border ${
+                              active
+                                ? "bg-primary/15 border-primary"
+                                : "bg-panel border-border/80 hover:bg-panel/80"
+                            }`}
+                          >
+                            <Text
+                              className={`text-xs ${
+                                active ? "text-primary font-bold" : "text-muted-foreground font-medium"
+                              }`}
+                            >
+                              {opt}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : null}
+                <Text className="text-xs text-muted-foreground">
+                  ({(currentJournalPage - 1) * JOURNAL_PAGE_SIZE + 1}-{Math.min(currentJournalPage * JOURNAL_PAGE_SIZE, filteredJournal.length)} dari {filteredJournal.length} baris)
+                </Text>
+              </View>
               <View className="flex-row items-center gap-1.5">
                 <Button
                   variant="outline"

@@ -124,7 +124,7 @@ export class PosService {
         where,
         include: {
           supplier: { select: { id: true, name: true } },
-          request: { select: { id: true, number: true, purpose: true } },
+          request: { select: { id: true, number: true, purpose: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
           project: { select: { id: true, name: true } },
           creator: { select: { id: true, name: true } },
           items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
@@ -153,7 +153,7 @@ export class PosService {
       include: {
         supplier: true,
         creator: { select: { id: true, name: true } },
-        request: { select: { id: true, number: true, purpose: true, status: true } },
+        request: { select: { id: true, number: true, purpose: true, status: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
         project: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
         receivings: { select: { id: true, number: true, status: true, date: true, warehouseId: true } },
@@ -213,11 +213,19 @@ export class PosService {
         fileId: dto.fileId,
         doFileId: dto.doFileId,
         createdById: user.id,
-        items: { create: items.map((i) => ({ productId: i.productId, qty: i.qty, price: i.price })) },
+        items: {
+          create: items.map((i) => ({
+            productId: i.productId ?? null,
+            customName: i.customName ?? null,
+            customUnit: i.customUnit ?? null,
+            qty: i.qty,
+            price: i.price,
+          })),
+        },
       },
       include: {
         supplier: true,
-        request: { select: { id: true, number: true, purpose: true } },
+        request: { select: { id: true, number: true, purpose: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
         project: { select: { id: true, name: true } },
       },
     });
@@ -274,7 +282,9 @@ export class PosService {
       await this.prisma.main.supplierPOItem.createMany({
         data: dto.items.map((i) => ({
           poId: id,
-          productId: i.productId,
+          productId: i.productId ?? null,
+          customName: i.customName ?? null,
+          customUnit: i.customUnit ?? null,
           qty: i.qty,
           price: i.price,
         })),

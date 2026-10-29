@@ -41,6 +41,8 @@ export function PayrollHistoryTab({
   groupedHistorySlips,
   setSelectedSlip,
 }: PayrollHistoryTabProps) {
+  const [histPageSize, setHistPageSize] = React.useState(10);
+
   return (
     <View className="gap-4 w-full">
       {/* Filter Bar */}
@@ -193,7 +195,7 @@ export function PayrollHistoryTab({
               ? historyExpandedPeriods[group.period]
               : (groupIdx === 0 || !!historySearchQuery.trim() || historyPeriodFilter !== "Semua");
 
-          const HIST_PAGE_SIZE = 10;
+          const HIST_PAGE_SIZE = histPageSize;
           const page = historyPagePerMonth[group.period] || 1;
           const totalPages = Math.max(1, Math.ceil(group.slips.length / HIST_PAGE_SIZE));
           const currentPage = Math.min(Math.max(1, page), totalPages);
@@ -358,11 +360,44 @@ export function PayrollHistoryTab({
                   {/* Pagination Footer per Bulan */}
                   {group.slips.length > 0 && (
                     <View className="border-border/60 bg-card/60 flex-row flex-wrap items-center justify-between border-t px-4 py-3 gap-2">
-                      <Text className="text-xs text-muted-foreground">
-                        Menampilkan {(currentPage - 1) * HIST_PAGE_SIZE + 1} -{" "}
-                        {Math.min(currentPage * HIST_PAGE_SIZE, group.slips.length)} dari{" "}
-                        {group.slips.length} slip gaji (Hal {currentPage}/{totalPages})
-                      </Text>
+                      <View className="flex-row flex-wrap items-center gap-2">
+                        <Text className="text-xs text-muted-foreground">Tampilkan:</Text>
+                        <View className="flex-row items-center gap-1">
+                          {([10, 20, 30, 50, 100] as const).map((opt) => {
+                            const active = HIST_PAGE_SIZE === opt;
+                            return (
+                              <Pressable
+                                key={opt}
+                                onPress={() => {
+                                  setHistPageSize(opt);
+                                  setHistoryPagePerMonth((prev) => ({
+                                    ...prev,
+                                    [group.period]: 1,
+                                  }));
+                                }}
+                                className={`h-7 px-2 items-center justify-center rounded-md border ${
+                                  active
+                                    ? "bg-primary/15 border-primary"
+                                    : "bg-panel border-border/80 hover:bg-panel/80"
+                                }`}
+                              >
+                                <Text
+                                  className={`text-xs ${
+                                    active ? "text-primary font-bold" : "text-muted-foreground font-medium"
+                                  }`}
+                                >
+                                  {opt}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                        <Text className="text-xs text-muted-foreground">
+                          ({(currentPage - 1) * HIST_PAGE_SIZE + 1}-
+                          {Math.min(currentPage * HIST_PAGE_SIZE, group.slips.length)} dari{" "}
+                          {group.slips.length} slip gaji · Hal {currentPage}/{totalPages})
+                        </Text>
+                      </View>
                       <View className="flex-row items-center gap-1.5">
                         <Button
                           variant="outline"

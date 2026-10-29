@@ -157,9 +157,9 @@ export function SupplierPoExtras({ row }: { row: Row }) {
                       counterpartyName: row.supplier,
                       items: Array.isArray(row.items) && row.items.length > 0
                         ? row.items.map((it: any) => ({
-                            name: it.product?.name || it.productName || it.name || "Barang",
+                            name: it.product?.name || it.customName || it.productName || it.name || "Barang",
                             qty: Number(it.qty) || 1,
-                            unit: it.product?.unit || it.unit || "Unit",
+                            unit: it.product?.unit || it.customUnit || it.unit || "Unit",
                             price: Number(it.price) || 0,
                           }))
                         : [{ name: row.item || "Barang Pesanan", qty: 1, unit: "Paket", price: Number(row.total) || 0 }],
@@ -210,9 +210,9 @@ export function SupplierPoExtras({ row }: { row: Row }) {
                       counterpartyName: row.supplier,
                       items: Array.isArray(row.items) && row.items.length > 0
                         ? row.items.map((it: any) => ({
-                            name: it.product?.name || it.productName || it.name || "Barang",
+                            name: it.product?.name || it.customName || it.productName || it.name || "Barang",
                             qty: Number(it.qty) || 1,
-                            unit: it.product?.unit || it.unit || "Unit",
+                            unit: it.product?.unit || it.customUnit || it.unit || "Unit",
                             price: Number(it.price) || 0,
                           }))
                         : [{ name: row.item || "Barang Pesanan", qty: 1, unit: "Paket", price: Number(row.total) || 0 }],
@@ -272,8 +272,8 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       <Panel title="Barang di PO ini">
         {Array.isArray(row.items) && row.items.length > 0 ? (
           row.items.map((it: any, idx: number) => {
-            const prodName = it.product?.name || it.productName || it.name || it.product?.sku || `Barang #${idx + 1}`;
-            const qtyText = `${it.qty || 1} ${it.product?.unit || it.unit || "Unit"}`;
+            const prodName = it.product?.name || it.customName || it.productName || it.name || it.product?.sku || `Barang #${idx + 1}`;
+            const qtyText = `${it.qty || 1} ${it.product?.unit || it.customUnit || it.unit || "Unit"}`;
             const itemTotal = Number(it.price ? it.price * (it.qty || 1) : 0);
             return (
               <Line

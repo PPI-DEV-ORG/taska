@@ -1,6 +1,7 @@
 import * as React from "react";
 import { View } from "react-native";
-import { CheckCircle2, AlertTriangle, Truck, PackageCheck, XCircle, Clock, Check, ArrowRight } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { CheckCircle2, AlertTriangle, Truck, PackageCheck, XCircle, Clock, Check, FileText, Plus } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,6 +10,7 @@ import { Panel, FormField } from "@/components/taska/basics";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
+import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { toEnum } from "@/services/adapters";
 
@@ -19,7 +21,8 @@ export function PurchaseRequestExtras({
   row: Row;
   onRefresh?: () => Promise<void> | void;
 }) {
-  const { user, setStatus, decide, toast, reload } = useApp();
+  const router = useRouter();
+  const { user, data, addRow, setStatus, decide, toast, reload } = useApp();
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [rejectReason, setRejectReason] = React.useState("");
   const [confirmSendOpen, setConfirmSendOpen] = React.useState(false);
@@ -64,17 +67,74 @@ export function PurchaseRequestExtras({
   // Check if all items have sufficient warehouse stock
   const stockSummary = React.useMemo(() => {
     return items.map((i) => {
-      const match = stockInfo.find((s) => s.productId === i.productId);
+      const isCustom = !i.productId && !!i.customName;
+      const match = i.productId ? stockInfo.find((s) => s.productId === i.productId) : undefined;
       const available = match?.available ?? 0;
       const ordered = i.qty ?? 0;
       return {
         ...i,
+        isCustom,
         available,
         ordered,
-        isEnough: available >= ordered,
+        isEnough: isCustom ? false : available >= ordered,
       };
     });
   }, [items, stockInfo]);
+
+  const linkedPo = React.useMemo(() => {
+    return (data["supplier-pos"] ?? []).find(
+      (sp: Row) =>
+        (sp.requestId && String(sp.requestId) === String(row.id)) ||
+        (row.nomor && sp.request && String(sp.request).toLowerCase() === String(row.nomor).toLowerCase()),
+    );
+  }, [data, row.id, row.nomor]);
+
+  const linkedInvoices = React.useMemo(() => {
+    if (!linkedPo) return [];
+    return (data.invoiceIn ?? []).filter(
+      (inv: Row) => String(inv.supplierPoId) === String(linkedPo.id) || inv.po === linkedPo.nomor,
+    );
+  }, [data.invoiceIn, linkedPo]);
+
+  async function handleCreatePoFromRequest() {
+    setLoading(true);
+    try {
+      const firstSuppId = data.suppliers?.[0]?.id ? String(data.suppliers[0].id) : undefined;
+      const targetSupplier = row.supplier && row.supplier !== "-" ? row.supplier : (data.suppliers?.[0]?.nama ?? "Supplier Utama");
+      const targetSupplierId = row.supplierId || firstSuppId;
+      const reqItems = Array.isArray(row.items) && row.items.length
+        ? row.items.map((i: any) => ({
+            productId: i.productId || i.product?.id ? Number(i.productId || i.product?.id) : undefined,
+            customName: i.customName || undefined,
+            customUnit: i.customUnit || undefined,
+            qty: Number(i.qty) || 1,
+            price: Number(i.unitCost || i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
+          }))
+        : undefined;
+
+      const created = await addRow("supplier-pos", {
+        supplier: targetSupplier,
+        supplierId: targetSupplierId,
+        request: row.nomor,
+        requestId: row.id,
+        projectId: row.projectId,
+        project: row.project,
+        paymentTerms: row.paymentMethod === "KAS" ? "Kas / Tunai" : "Tempo / Utang",
+        item: row.item,
+        items: reqItems,
+        total: row.estimasi || 0,
+        status: "Draft",
+      });
+      if (created) {
+        toast(`PO / SO Supplier untuk request ${row.nomor} berhasil dibuat`);
+        router.push(`/supplier-pos/${created.id}` as any);
+      }
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal membuat PO Supplier", "danger");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const allStockAvailable = stockSummary.length > 0 && stockSummary.every((s) => s.isEnough);
 
@@ -294,10 +354,85 @@ export function PurchaseRequestExtras({
         </View>
       ) : null}
 
+      {/* ─── SKEMA AKUNTANSI & KETERKAITAN PO/SO & INVOICE ─── */}
+      <Panel
+        title="Skema Akuntansi & Keterkaitan Dokumen (PO/SO & Invoice)"
+        subtitle="Pemisahan otomatis antara HPP Project (5101) dan Aset Persediaan / Retail (1200)"
+      >
+        <View className="gap-2.5">
+          <View className="bg-panel/50 border-border/70 rounded-xl border p-3 gap-1.5">
+            <View className="flex-row justify-between items-center">
+              <Text className="text-xs text-muted-foreground">Sumber Pengadaan:</Text>
+              <Text className="text-xs font-bold text-foreground">
+                {row.sumberPengadaan || (row.procurementSource === "RETAIL" ? "Beli Ritel / Toko" : "Supplier / PO")}
+              </Text>
+            </View>
+            <View className="flex-row justify-between items-center">
+              <Text className="text-xs text-muted-foreground">Metode Pembayaran:</Text>
+              <Text className="text-xs font-bold text-foreground">
+                {row.metodePembayaran || (row.paymentMethod === "KAS" ? "Kas / Tunai" : "Utang / Tempo")}
+              </Text>
+            </View>
+            <View className="flex-row justify-between items-center">
+              <Text className="text-xs text-muted-foreground">Pos DEBIT Akuntansi:</Text>
+              <Text className="text-xs font-bold text-primary">
+                {row.costType === "PROJECT" || (row.project && row.project !== "-")
+                  ? "[5101] HPP Project (Pengadaan Proyek)"
+                  : "[1200] Persediaan Barang Dagang (Aset)"}
+              </Text>
+            </View>
+            <View className="flex-row justify-between items-center">
+              <Text className="text-xs text-muted-foreground">Pos KREDIT Akuntansi:</Text>
+              <Text className="text-xs font-bold text-warning">
+                {row.paymentMethod === "KAS"
+                  ? "[1000.01] Kas / Bank (Berkurang)"
+                  : "[210102] Hutang Usaha Supplier (Utang)"}
+              </Text>
+            </View>
+          </View>
+
+          <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1">
+            {linkedPo ? (
+              <View className="flex-row flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onPress={() => router.push(`/supplier-pos/${linkedPo.id}` as any)}
+                >
+                  <FileText size={14} color={colors.primary} />
+                  <Text className="text-xs font-semibold text-primary">
+                    Lihat PO / SO: {linkedPo.nomor}
+                  </Text>
+                </Button>
+                {linkedInvoices.length > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => router.push(`/invoices` as any)}
+                  >
+                    <FileText size={14} color={colors.text} />
+                    <Text className="text-xs">
+                      Invoice Masuk ({linkedInvoices.length}): {linkedInvoices[0]?.nomor}
+                    </Text>
+                  </Button>
+                ) : null}
+              </View>
+            ) : (isProcurement || isGudang) && !isDitolak ? (
+              <Button size="sm" variant="outline" onPress={handleCreatePoFromRequest} disabled={loading}>
+                <Plus size={14} color={colors.primary} />
+                <Text className="text-xs font-semibold text-primary">
+                  Terbitkan PO / SO & Hubungkan ke Invoice Masuk
+                </Text>
+              </Button>
+            ) : null}
+          </View>
+        </View>
+      </Panel>
+
       {/* ─── RINCIAN BARANG & KETERSEDIAAN STOK GUDANG ─── */}
       <Panel
         title={`Rincian Barang (${items.length || 1} Item)`}
-        subtitle="Perbandingan jumlah kebutuhan vs ketersediaan fisik di gudang"
+        subtitle="Mendukung barang dari Master Barang (Ber-SN / Non-SN) maupun barang Non-Master (Beli Ritel)"
       >
         {stockSummary.length === 0 ? (
           <View className="py-2">
@@ -307,9 +442,10 @@ export function PurchaseRequestExtras({
         ) : (
           <View className="gap-2.5">
             {stockSummary.map((item, idx) => {
-              const productName = item.product?.name ?? `Produk #${item.productId}`;
-              const sku = item.product?.sku ? `SKU: ${item.product.sku} · ` : "";
-              const unit = item.product?.unit ? ` ${item.product.unit}` : "";
+              const productName = item.product?.name || item.customName || `Barang #${idx + 1}`;
+              const sku = item.product?.sku ? `SKU: ${item.product.sku} · ` : item.isCustom ? "Non-Master (Ritel) · " : "";
+              const unit = item.product?.unit || item.customUnit ? ` ${item.product?.unit || item.customUnit}` : "";
+              const unitCost = Number(item.unitCost || 0);
               let parsedSerials: string[] = [];
               if (item.serials) {
                 try {
@@ -333,6 +469,7 @@ export function PurchaseRequestExtras({
                     </Text>
                     <Text className="text-muted-foreground text-xs mt-0.5">
                       {sku}Diminta: <Text className="font-semibold text-foreground">{item.ordered}{unit}</Text>
+                      {unitCost > 0 ? ` · @ ${rupiah(unitCost)}` : ""}
                     </Text>
                     {parsedSerials.length > 0 ? (
                       <Text className="text-[11px] font-mono font-semibold text-primary mt-0.5">
@@ -341,7 +478,13 @@ export function PurchaseRequestExtras({
                     ) : null}
                   </View>
                   <View className="items-end shrink-0">
-                    {item.isEnough ? (
+                    {item.isCustom ? (
+                      <View className="bg-info/15 border border-info/30 rounded-md px-2.5 py-1">
+                        <Text className="text-info text-xs font-semibold">
+                          Beli Ritel / Non-Master
+                        </Text>
+                      </View>
+                    ) : item.isEnough ? (
                       <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2.5 py-1">
                         <Text className="text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
                           Stok Cukup (Tersedia {item.available}{unit})

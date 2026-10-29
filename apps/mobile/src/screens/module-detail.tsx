@@ -436,7 +436,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const approval =
     approvals.find((a) => a.module === moduleKey && a.refId === id && a.status === "Menunggu") ??
     ((row as any)?.approval?.status === "Menunggu" ? (row as any).approval : undefined);
-  const canDecide = !!approval && CAN_APPROVE.includes(user!.role);
+  const canDecide =
+    !!approval &&
+    CAN_APPROVE.includes(user!.role) &&
+    approval.canApprove !== false &&
+    (moduleKey !== "opname" ||
+      user?.role === "procurement" ||
+      user?.role === "super_admin" ||
+      user?.role === "admin");
   const isExpenseFinanceActionable = moduleKey === "expenses" && isFinanceOrBos && status !== "Ditolak" && status !== "Dibayar";
 
   function pick(s: string) {
@@ -482,18 +489,22 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
       const reqItems = Array.isArray(row.items) && row.items.length
         ? row.items.map((i: any) => ({
-            productId: Number(i.productId || i.product?.id),
+            productId: i.productId || i.product?.id ? Number(i.productId || i.product?.id) : undefined,
+            customName: i.customName || undefined,
+            customUnit: i.customUnit || undefined,
             qty: Number(i.qty) || 1,
-            price: Number(i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
+            price: Number(i.unitCost || i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
           }))
         : undefined;
 
       const created = await addRow("supplier-pos", {
-        supplier: targetSupplier,
+        supplier: targetSupplier !== "-" ? targetSupplier : (data.suppliers?.[0]?.nama ?? "Supplier Utama"),
         supplierId: targetSupplierId,
         request: row.nomor,
         requestId: row.id,
         projectId: row.projectId,
+        project: row.project,
+        paymentTerms: row.paymentMethod === "KAS" ? "Kas / Tunai" : "Tempo / Utang",
         item: row.item,
         items: reqItems,
         total: row.estimasi || 0,

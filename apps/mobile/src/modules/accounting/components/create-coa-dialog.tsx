@@ -4,6 +4,7 @@ import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/taska/basics";
+import { SearchableSelect } from "@/components/taska/dialogs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { CoaAccount } from "@/lib/accounting";
 import { COA_CATEGORIES } from "../types";
@@ -19,6 +20,9 @@ interface CreateCoaDialogProps {
   setNewAccCategory: (v: CoaAccount["category"]) => void;
   newAccNormalBalance: "DEBIT" | "KREDIT";
   setNewAccNormalBalance: (v: "DEBIT" | "KREDIT") => void;
+  newAccParentCode?: string;
+  setNewAccParentCode?: (v: string) => void;
+  parentOptions?: CoaAccount[];
   onSave: () => void;
 }
 
@@ -33,8 +37,46 @@ export function CreateCoaDialog({
   setNewAccCategory,
   newAccNormalBalance,
   setNewAccNormalBalance,
+  newAccParentCode = "",
+  setNewAccParentCode,
+  parentOptions = [],
   onSave,
 }: CreateCoaDialogProps) {
+  const selectOptions = React.useMemo(() => {
+    const formatted = parentOptions.map((p) => `[${p.code}] ${p.name}`);
+    return ["- (Akun Induk / Tanpa Parent)", ...formatted];
+  }, [parentOptions]);
+
+  const selectedLabel = React.useMemo(() => {
+    if (!newAccParentCode || newAccParentCode === "-") {
+      return "- (Akun Induk / Tanpa Parent)";
+    }
+    const found = parentOptions.find((p) => p.code === newAccParentCode);
+    return found ? `[${found.code}] ${found.name}` : `- (Akun Induk / Tanpa Parent)`;
+  }, [newAccParentCode, parentOptions]);
+
+  const handleSelectParent = (label: string) => {
+    if (!setNewAccParentCode) return;
+    if (!label || label.startsWith("-")) {
+      setNewAccParentCode("");
+      return;
+    }
+    const match = label.match(/^\[([^\]]+)\]/);
+    const parentCode = match?.[1] || "";
+    setNewAccParentCode(parentCode);
+
+    const parentAcc = parentOptions.find((p) => p.code === parentCode);
+    if (parentAcc) {
+      setNewAccCategory(parentAcc.category);
+      setNewAccNormalBalance(parentAcc.normalBalance);
+      if (!newAccCode.trim() || newAccCode.startsWith(`${parentCode}.`)) {
+        const childCount = parentOptions.filter((p) => p.parentCode === parentCode || p.code.startsWith(`${parentCode}.`)).length;
+        const nextSuffix = String(childCount + 1).padStart(2, "0");
+        setNewAccCode(`${parentCode}.${nextSuffix}`);
+      }
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -42,13 +84,32 @@ export function CreateCoaDialog({
           <DialogTitle>Tambah Akun Baru ke COA</DialogTitle>
         </DialogHeader>
 
-        <View className="gap-3 p-1">
           <FormField label="Kode Akun" required>
             <Input
               value={newAccCode}
-              onChangeText={setNewAccCode}
-              placeholder="Contoh: 1106, 2105, 6102"
-              keyboardType="numeric"
+              onChangeText={(txt) => {
+                setNewAccCode(txt);
+                if (txt.includes(".") && setNewAccParentCode) {
+                  const prefix = txt.split(".")[0];
+                  const found = parentOptions.find((p) => p.code === prefix);
+                  if (found) {
+                    setNewAccParentCode(found.code);
+                    setNewAccCategory(found.category);
+                    setNewAccNormalBalance(found.normalBalance);
+                  }
+                }
+              }}
+              placeholder="Contoh: 6201.05, 1106, 2105"
+            />
+          </FormField>
+
+        <View className="gap-3 p-1">
+          <FormField label="Parent Account (Akun Induk COA)">
+            <SearchableSelect
+              value={selectedLabel}
+              onChange={handleSelectParent}
+              options={selectOptions}
+              placeholder="Pilih akun induk (Contoh: [6201] Gaji & Tunjangan)"
             />
           </FormField>
 
