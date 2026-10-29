@@ -5,6 +5,8 @@ import {
   Plus,
   Edit3,
   CheckCircle2,
+  Circle,
+  CheckSquare,
   Clock,
   Trash2,
   ListTodo,
@@ -182,8 +184,8 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
     }
   }
 
-  async function handleToggleActionStatus(item: ActionItem) {
-    const nextStatus = item.status === "Done" ? "Open" : item.status === "Open" ? "In Progress" : "Done";
+  async function handleChangeActionStatus(item: ActionItem, nextStatus: string) {
+    if (item.status === nextStatus) return;
     try {
       setActions((prev) =>
         prev.map((a) => (a.id === item.id ? { ...a, status: nextStatus } : a))
@@ -322,101 +324,71 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
       <Panel
         title="Minutes of Meeting (MoM) & Hasil Diskusi"
         subtitle="Dokumentasi ringkasan pembahasan, kebutuhan klien, masukan, dan keputusan rapat"
+        right={
+          <Button
+            size="sm"
+            variant="outline"
+            onPress={() => {
+              setSummary(row.summary || "");
+              setClientNeeds(row.clientNeeds || "");
+              setProductsIntroduced(row.productsIntroduced || "");
+              setClientFeedback(row.clientFeedback || "");
+              setAgreements(row.agreements || "");
+              setPotentialOpportunities(row.potentialOpportunities || "");
+              setObstacles(row.obstacles || "");
+              setConclusion(row.conclusion || "");
+              setMomDialogOpen(true);
+            }}
+            className="gap-1"
+          >
+            <Edit3 size={14} color={colors.text} />
+            <Text className="text-xs font-medium">Edit / Lengkapi MoM</Text>
+          </Button>
+        }
       >
-        <View style={{ gap: 12 }}>
-          <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => {
-                setSummary(row.summary || "");
-                setClientNeeds(row.clientNeeds || "");
-                setProductsIntroduced(row.productsIntroduced || "");
-                setClientFeedback(row.clientFeedback || "");
-                setAgreements(row.agreements || "");
-                setPotentialOpportunities(row.potentialOpportunities || "");
-                setObstacles(row.obstacles || "");
-                setConclusion(row.conclusion || "");
-                setMomDialogOpen(true);
-              }}
-            >
-              <Edit3 size={14} color={colors.foreground} />
-              <Text style={{ fontSize: 12, fontWeight: "600" }}>Edit / Lengkapi MoM</Text>
-            </Button>
+        <View className="gap-3">
+          <View className="p-3 bg-card/40 rounded-lg border border-border">
+            <Text className="text-xs text-muted-foreground font-semibold">RINGKASAN PEMBAHASAN</Text>
+            <Text className="text-sm mt-1 whitespace-pre-line">
+              {row.summary || "Belum ada ringkasan pembahasan yang dicatat."}
+            </Text>
           </View>
 
-          <View style={{ gap: 10 }}>
-            <View style={{ backgroundColor: colors.muted + "20", padding: 12, borderRadius: 8, gap: 4 }}>
-              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, textTransform: "uppercase" }}>
-                Ringkasan Pembahasan
-              </Text>
-              <Text style={{ fontSize: 13, color: colors.foreground, lineHeight: 18 }}>
-                {row.summary || "Belum ada ringkasan pembahasan yang dicatat."}
-              </Text>
+          <View className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <View className="p-3 bg-card/40 rounded-lg border border-border">
+              <Text className="text-xs text-muted-foreground font-semibold">KEBUTUHAN / PERMASALAHAN KLIEN</Text>
+              <Text className="text-sm font-medium mt-1 whitespace-pre-line">{row.clientNeeds || "-"}</Text>
             </View>
-
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-              <View style={{ flex: 1, minWidth: 260, backgroundColor: colors.muted + "15", padding: 12, borderRadius: 8, gap: 4 }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, textTransform: "uppercase" }}>
-                  Kebutuhan / Permasalahan Klien
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.foreground }}>
-                  {row.clientNeeds || "-"}
-                </Text>
-              </View>
-
-              <View style={{ flex: 1, minWidth: 260, backgroundColor: colors.muted + "15", padding: 12, borderRadius: 8, gap: 4 }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, textTransform: "uppercase" }}>
-                  Produk / Solusi yang Diperkenalkan
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.foreground }}>
-                  {row.productsIntroduced || "-"}
-                </Text>
-              </View>
+            <View className="p-3 bg-card/40 rounded-lg border border-border">
+              <Text className="text-xs text-muted-foreground font-semibold">PRODUK / SOLUSI YANG DIPERKENALKAN</Text>
+              <Text className="text-sm font-medium mt-1 whitespace-pre-line">{row.productsIntroduced || "-"}</Text>
             </View>
+          </View>
 
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-              <View style={{ flex: 1, minWidth: 260, backgroundColor: colors.muted + "15", padding: 12, borderRadius: 8, gap: 4 }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, textTransform: "uppercase" }}>
-                  Kesepakatan & Keputusan
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.foreground }}>
-                  {row.agreements || "-"}
-                </Text>
-              </View>
-
-              <View style={{ flex: 1, minWidth: 260, backgroundColor: colors.muted + "15", padding: 12, borderRadius: 8, gap: 4 }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, textTransform: "uppercase" }}>
-                  Potensi Peluang Bisnis
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.foreground }}>
-                  {row.potentialOpportunities || "-"}
-                </Text>
-              </View>
+          <View className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <View className="p-3 bg-card/40 rounded-lg border border-border">
+              <Text className="text-xs text-muted-foreground font-semibold">KESEPAKATAN & KEPUTUSAN</Text>
+              <Text className="text-sm font-medium mt-1 whitespace-pre-line">{row.agreements || "-"}</Text>
             </View>
+            <View className="p-3 bg-card/40 rounded-lg border border-border">
+              <Text className="text-xs text-muted-foreground font-semibold">POTENSI PELUANG BISNIS</Text>
+              <Text className="text-sm font-medium mt-1 whitespace-pre-line">{row.potentialOpportunities || "-"}</Text>
+            </View>
+          </View>
 
-            {Boolean(row.obstacles || row.conclusion || row.clientFeedback) ? (
-              <View style={{ backgroundColor: colors.muted + "10", padding: 12, borderRadius: 8, gap: 8 }}>
-                {row.clientFeedback ? (
-                  <View style={{ gap: 2 }}>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground }}>TANGGAPAN / MASUKAN KLIEN:</Text>
-                    <Text style={{ fontSize: 12, color: colors.foreground }}>{row.clientFeedback}</Text>
-                  </View>
-                ) : null}
-                {row.obstacles ? (
-                  <View style={{ gap: 2 }}>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#b45309" }}>KENDALA / HAL YANG PERLU DIKLARIFIKASI:</Text>
-                    <Text style={{ fontSize: 12, color: colors.foreground }}>{row.obstacles}</Text>
-                  </View>
-                ) : null}
-                {row.conclusion ? (
-                  <View style={{ gap: 2 }}>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#15803d" }}>KESIMPULAN AKHIR:</Text>
-                    <Text style={{ fontSize: 12, color: colors.foreground }}>{row.conclusion}</Text>
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
+          <View className="p-3 bg-card/40 rounded-lg border border-border">
+            <Text className="text-xs text-muted-foreground font-semibold">TANGGAPAN / MASUKAN KLIEN</Text>
+            <Text className="text-sm mt-1 whitespace-pre-line">{row.clientFeedback || "-"}</Text>
+          </View>
+
+          <View className="p-3 bg-card/40 rounded-lg border border-border">
+            <Text className="text-xs text-muted-foreground font-semibold">KENDALA / HAL YANG PERLU DIKLARIFIKASI</Text>
+            <Text className="text-sm mt-1 whitespace-pre-line">{row.obstacles || "-"}</Text>
+          </View>
+
+          <View className="p-3 bg-card/40 rounded-lg border border-border">
+            <Text className="text-xs text-muted-foreground font-semibold">KESIMPULAN AKHIR</Text>
+            <Text className="text-sm mt-1 whitespace-pre-line">{row.conclusion || "-"}</Text>
           </View>
         </View>
       </Panel>
@@ -425,227 +397,169 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
       <Panel
         title={`Rencana Tindak Lanjut (${completedActions}/${actions.length} Selesai)`}
         subtitle="Daftar pekerjaan lanjutan hasil pertemuan beserta penanggung jawab dan tenggat waktu"
+        right={
+          <Button
+            size="sm"
+            variant="outline"
+            onPress={() => setAddActionOpen(true)}
+            className="gap-1"
+          >
+            <Plus size={14} color={colors.text} />
+            <Text className="text-xs font-medium">Tambah Tindak Lanjut</Text>
+          </Button>
+        }
       >
-        <View style={{ gap: 12 }}>
-          <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => setAddActionOpen(true)}
-            >
-              <Plus size={14} color={colors.foreground} />
-              <Text style={{ fontSize: 12, fontWeight: "600" }}>Tambah Tindak Lanjut</Text>
-            </Button>
+        {actions.length === 0 ? (
+          <View className="py-6 items-center">
+            <CheckSquare size={32} color={colors.muted} />
+            <Text className="text-muted-foreground text-xs mt-2">
+              Belum ada tindak lanjut. Klik &quot;Tambah Tindak Lanjut&quot; untuk memantau eksekusi hasil meeting.
+            </Text>
           </View>
-
-          {actions.length === 0 ? (
-            <View style={{ padding: 20, alignItems: "center", justifyContent: "center" }}>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground }}>
-                Belum ada tindak lanjut. Tambahkan pekerjaan lanjutan untuk memantau eksekusi hasil meeting.
-              </Text>
-            </View>
-          ) : (
-            <View style={{ gap: 8 }}>
-              {actions.map((item, idx) => {
-                const isDone = item.status === "Done";
-                const isProg = item.status === "In Progress";
-                return (
-                  <View
-                    key={item.id || idx}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: 12,
-                      borderRadius: 8,
-                      borderWidth: 1,
-                      borderColor: isDone ? "#86efac" : colors.border,
-                      backgroundColor: isDone ? "#f0fdf4" : colors.card,
-                      gap: 12,
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => handleToggleActionStatus(item)}
-                      style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 10 }}
-                    >
-                      <View
-                        style={{
-                          paddingHorizontal: 8,
-                          paddingVertical: 3,
-                          borderRadius: 6,
-                          backgroundColor: isDone ? "#dcfce7" : isProg ? "#fef9c3" : "#f1f5f9",
-                        }}
+        ) : (
+          <View className="gap-2">
+            {actions.map((item, idx) => {
+              const isDone = item.status === "Done";
+              return (
+                <View
+                  key={item.id || idx}
+                  className="flex-row flex-wrap items-center justify-between gap-2.5 p-3 rounded-lg border border-border bg-card/40"
+                >
+                  <View className="flex-1 min-w-[200px] pr-2">
+                    <View className="flex-row items-center gap-2 flex-wrap">
+                      <Text
+                        className={`text-sm ${
+                          isDone ? "line-through text-muted-foreground" : "font-medium"
+                        }`}
                       >
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            fontWeight: "700",
-                            color: isDone ? "#166534" : isProg ? "#854d0e" : "#475569",
-                          }}
-                        >
-                          {item.status}
-                        </Text>
-                      </View>
-
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={{
-                            fontSize: 13,
-                            fontWeight: "600",
-                            color: isDone ? colors.mutedForeground : colors.foreground,
-                            textDecorationLine: isDone ? "line-through" : "none",
-                          }}
-                        >
-                          {item.task}
-                        </Text>
-                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 2 }}>
-                          {item.dueDate ? (
-                            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>
-                              Target: {tanggal(item.dueDate)}
-                            </Text>
-                          ) : null}
-                          {item.notes ? (
-                            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>
-                              Catatan: {item.notes}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    </Pressable>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onPress={() => handleDeleteAction(item.id)}
-                    >
-                      <Trash2 size={14} color="#dc2626" />
-                    </Button>
+                        {item.task}
+                      </Text>
+                      <StatusBadge status={item.status} />
+                    </View>
+                    {item.dueDate || item.notes ? (
+                      <Text className="text-xs text-muted-foreground mt-0.5">
+                        {[
+                          item.dueDate ? `Target: ${tanggal(item.dueDate)}` : null,
+                          item.notes ? `Catatan: ${item.notes}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </Text>
+                    ) : null}
                   </View>
-                );
-              })}
-            </View>
-          )}
-        </View>
+
+                  <View className="flex-row items-center gap-1.5">
+                    <View className="flex-row items-center rounded-lg border border-border bg-muted/30 p-0.5">
+                      {(["Open", "In Progress", "Done"] as const).map((st) => {
+                        const active = item.status === st;
+                        return (
+                          <Pressable
+                            key={st}
+                            onPress={() => handleChangeActionStatus(item, st)}
+                            className={`px-2.5 py-1 rounded-md ${
+                              active ? "bg-primary" : "hover:bg-card"
+                            }`}
+                          >
+                            <Text
+                              className={`text-[11px] ${
+                                active ? "font-semibold text-primary-foreground" : "text-muted-foreground"
+                              }`}
+                            >
+                              {st}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    <Pressable
+                      onPress={() => handleDeleteAction(item.id)}
+                      className="p-1.5 opacity-60 hover:opacity-100"
+                    >
+                      <Trash2 size={15} color={colors.danger} />
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
       </Panel>
 
       {/* ─── Biaya & Pengeluaran Kunjungan (Reimbursement) ─── */}
       <Panel
         title="Biaya & Pengeluaran Kunjungan"
         subtitle="Pencatatan dana perusahaan serta klaim reimbursement dana talangan pribadi karyawan"
+        right={
+          <Button
+            size="sm"
+            onPress={() => {
+              router.push({
+                pathname: "/expenses/new",
+                params: {
+                  visitReportId: String(row.id),
+                  visitId: String(row.id),
+                  visit: `VISIT ${row.nomor} - ${row.judul}`,
+                  projectId: row.projectId ? String(row.projectId) : undefined,
+                },
+              } as any);
+            }}
+            className="gap-1.5"
+          >
+            <Plus size={14} color={colors.background} />
+            <Text className="text-xs font-semibold">Catat Biaya Kunjungan</Text>
+          </Button>
+        }
       >
-        <View style={{ gap: 14 }}>
-          {/* Summary Cards */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-            <View style={{ flex: 1, minWidth: 140, backgroundColor: colors.muted + "20", padding: 12, borderRadius: 8 }}>
-              <Text style={{ fontSize: 11, color: colors.mutedForeground }}>Total Biaya Lapangan</Text>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, marginTop: 4 }}>
-                {rupiah(totalBiayaAktual)}
-              </Text>
+        <View className="gap-4">
+          <View className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <View className="p-3 rounded-lg bg-card/60 border border-border">
+              <Text className="text-xs text-muted-foreground">Total Biaya Lapangan</Text>
+              <Text className="text-base font-bold mt-1 text-primary">{rupiah(totalBiayaAktual)}</Text>
             </View>
-
-            <View style={{ flex: 1, minWidth: 140, backgroundColor: "#eff6ff", padding: 12, borderRadius: 8 }}>
-              <Text style={{ fontSize: 11, color: "#1e40af" }}>Dana Perusahaan</Text>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: "#1e3a8a", marginTop: 4 }}>
-                {rupiah(companyCost)}
-              </Text>
+            <View className="p-3 rounded-lg bg-card/60 border border-border">
+              <Text className="text-xs text-muted-foreground">Dana Perusahaan</Text>
+              <Text className="text-base font-bold mt-1">{rupiah(companyCost)}</Text>
             </View>
-
-            <View style={{ flex: 1, minWidth: 140, backgroundColor: "#fff7ed", padding: 12, borderRadius: 8 }}>
-              <Text style={{ fontSize: 11, color: "#c2410c" }}>Talangan Pribadi (Reimburse)</Text>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: "#9a3412", marginTop: 4 }}>
-                {rupiah(personalAdvanceCost)}
-              </Text>
+            <View className="p-3 rounded-lg bg-card/60 border border-border">
+              <Text className="text-xs text-muted-foreground">Talangan Pribadi (Klaim)</Text>
+              <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(personalAdvanceCost)}</Text>
             </View>
           </View>
 
-          <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
-            <Button
-              size="sm"
-              onPress={() => {
-                router.push({
-                  pathname: "/expenses/new",
-                  params: {
-                    visitReportId: String(row.id),
-                    visitId: String(row.id),
-                    visit: `VISIT ${row.nomor} - ${row.judul}`,
-                    projectId: row.projectId ? String(row.projectId) : undefined,
-                  },
-                });
-              }}
-            >
-              <Plus size={14} color="#fff" />
-              <Text style={{ fontSize: 12, fontWeight: "600", color: "#fff" }}>
-                + Catat Biaya Kunjungan
-              </Text>
-            </Button>
-          </View>
-
-          {/* Expenses List */}
           {visitExpenses.length === 0 ? (
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontStyle: "italic", textAlign: "center", paddingVertical: 10 }}>
+            <Text className="text-xs text-muted-foreground py-4 text-center">
               Belum ada biaya tercatat untuk aktivitas kunjungan ini.
             </Text>
           ) : (
-            <View style={{ gap: 8 }}>
+            <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
               {visitExpenses.map((exp: Row) => {
                 const isPersonal =
                   exp.fundingSource === "TALANGAN_PRIBADI" ||
                   exp.sumberDana?.includes("Talangan");
                 return (
-                  <View
-                    key={exp.id}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: 10,
-                      borderRadius: 6,
-                      backgroundColor: colors.card,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                    }}
-                  >
-                    <View style={{ gap: 2, flex: 1 }}>
-                      <Text style={{ fontSize: 13, fontWeight: "600" }}>{exp.alasan || exp.description}</Text>
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground }}>
-                        {exp.kategori} · {tanggal(exp.tanggal)} · Oleh: {exp.pelapor}
-                      </Text>
-                      <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
+                  <View key={exp.id} className="p-3 flex-row items-center justify-between bg-card/30">
+                    <View className="flex-1 pr-2">
+                      <View className="flex-row items-center gap-2 flex-wrap">
+                        <Text className="text-sm font-semibold">{exp.alasan || exp.description}</Text>
+                        <StatusBadge status={exp.status} />
                         <View
-                          style={{
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
-                            borderRadius: 4,
-                            backgroundColor: isPersonal ? "#ffedd5" : "#dbeafe",
-                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            isPersonal
+                              ? "bg-amber-500/15 text-amber-500"
+                              : "bg-blue-500/15 text-blue-500"
+                          }`}
                         >
-                          <Text style={{ fontSize: 10, fontWeight: "600", color: isPersonal ? "#9a3412" : "#1e40af" }}>
+                          <Text className="text-[10px]">
                             {isPersonal ? "Talangan Pribadi" : "Dana Kantor"}
                           </Text>
                         </View>
-                        {isPersonal && exp.reimbursementStatus ? (
-                          <View
-                            style={{
-                              paddingHorizontal: 6,
-                              paddingVertical: 2,
-                              borderRadius: 4,
-                              backgroundColor: "#f1f5f9",
-                            }}
-                          >
-                            <Text style={{ fontSize: 10, color: "#475569" }}>
-                              Reimburse: {exp.reimbursementStatus}
-                            </Text>
-                          </View>
-                        ) : null}
                       </View>
-                    </View>
-
-                    <View style={{ alignItems: "flex-end", gap: 4 }}>
-                      <Text style={{ fontSize: 13, fontWeight: "700" }}>
-                        {rupiah(Number(exp.nominal) || 0)}
+                      <Text className="text-xs text-muted-foreground mt-1">
+                        {tanggal(exp.tanggal || exp.date)} • Pelapor: {exp.pelapor || "Karyawan"} • Kategori: {exp.kategori || "-"}
                       </Text>
-                      <StatusBadge status={exp.status} />
                     </View>
+                    <Text className="text-sm font-bold">{rupiah(exp.nominal || exp.amount || 0)}</Text>
                   </View>
                 );
               })}
