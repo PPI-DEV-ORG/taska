@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable, Platform } from "react-native";
+import { View, Pressable, Platform, ScrollView } from "react-native";
 import { Upload, Eye, Edit3, FileText } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,10 +106,11 @@ export function TaskDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl w-[94vw] max-h-[92vh] flex flex-col p-6">
+        <DialogHeader className="shrink-0 mb-1">
           <DialogTitle>{editing ? "Edit Tugas" : "Detail Tugas"}</DialogTitle>
         </DialogHeader>
+        <ScrollView className="flex-1 -mx-2 px-2" contentContainerClassName="gap-3 py-1 pb-4" showsVerticalScrollIndicator>
         {editing ? (
           <View className="gap-3 py-1">
             <FormField label="Nama Tugas" required>
@@ -174,16 +175,40 @@ export function TaskDetailDialog({
               </View>
 
               {editorTab === "write" ? (
-                <Textarea
-                  value={deskripsi}
-                  onChangeText={setDeskripsi}
-                  numberOfLines={7}
-                  placeholder="Deskripsi tugas... Mendukung format Markdown (.md), tabel, checklist [ ], dll."
-                  className="min-h-[140px] font-mono text-xs"
-                />
+                <View className="border border-border/80 rounded-xl overflow-hidden bg-card/60">
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator
+                    contentContainerClassName="min-w-full"
+                  >
+                    <Textarea
+                      value={deskripsi}
+                      onChangeText={setDeskripsi}
+                      numberOfLines={10}
+                      placeholder="Deskripsi tugas... Mendukung format Markdown (.md), tabel, checklist [ ], dll."
+                      className="min-h-[180px] max-h-[450px] font-mono text-xs border-0 bg-transparent rounded-none min-w-[650px] w-full"
+                      style={{ whiteSpace: "pre", overflowX: "auto", overflowY: "auto" } as any}
+                    />
+                  </ScrollView>
+                </View>
               ) : (
-                <View className="bg-panel/40 border border-border/80 rounded-xl p-3 min-h-[140px] max-h-[300px] overflow-y-auto">
-                  <MarkdownView content={deskripsi} />
+                <View className="bg-panel/40 border border-border/80 rounded-xl p-3 min-h-[180px] max-h-[480px]">
+                  <ScrollView
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator
+                    className="max-h-[450px]"
+                  >
+                    <ScrollView
+                      horizontal
+                      nestedScrollEnabled
+                      showsHorizontalScrollIndicator
+                      contentContainerClassName="min-w-full"
+                    >
+                      <View className="min-w-full">
+                        <MarkdownView content={deskripsi} />
+                      </View>
+                    </ScrollView>
+                  </ScrollView>
                 </View>
               )}
             </View>
@@ -206,8 +231,23 @@ export function TaskDetailDialog({
             </View>
             <View className="gap-1">
               <Text className="text-xs font-semibold text-muted-foreground">Deskripsi / Spesifikasi</Text>
-              <View className="bg-panel/40 border border-border/80 rounded-xl p-3.5 max-h-[360px] overflow-y-auto">
-                <MarkdownView content={deskripsi !== undefined ? deskripsi : (liveTask?.deskripsi ?? task.deskripsi)} />
+              <View className="bg-panel/40 border border-border/80 rounded-xl p-3.5 min-h-[140px] max-h-[540px]">
+                <ScrollView
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  className="max-h-[500px]"
+                >
+                  <ScrollView
+                    horizontal
+                    nestedScrollEnabled
+                    showsHorizontalScrollIndicator
+                    contentContainerClassName="min-w-full"
+                  >
+                    <View className="min-w-full">
+                      <MarkdownView content={deskripsi !== undefined ? deskripsi : (liveTask?.deskripsi ?? task.deskripsi)} />
+                    </View>
+                  </ScrollView>
+                </ScrollView>
               </View>
             </View>
             <View className="gap-1">
@@ -229,7 +269,8 @@ export function TaskDetailDialog({
             ) : null}
           </View>
         )}
-        <DialogFooter className="gap-2">
+        </ScrollView>
+        <DialogFooter className="shrink-0 mt-2 pt-2 gap-2">
           {editing ? (
             <>
               <Button variant="outline" onPress={() => setEditing(false)} disabled={saving}>
