@@ -930,5 +930,5 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   hr: [N.dashboard, N.calendar, N.hr, N.users, N.expenses, N.visitReports, N.pocReports, N.requests, N.reports],
 };
 
-export const CAN_APPROVE: Role[] = ["super_admin", "bos", "finance", "gudang", "procurement"];
+export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "gudang", "procurement"];
 

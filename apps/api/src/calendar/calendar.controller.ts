@@ -36,8 +36,11 @@ export class CalendarController {
   }
 
   @Delete("events/:id")
-  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
-    return this.service.remove(id, user);
+  remove(
+    @Param("id", ParseIntPipe) id: number,
+    @Query("occurrenceDate") occurrenceDate: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.remove(id, user, occurrenceDate);
   }
 }
-

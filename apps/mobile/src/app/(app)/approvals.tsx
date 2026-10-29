@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { CircleCheck } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -21,10 +21,16 @@ const APPROVAL_COLUMNS: Col[] = [
 
 export default function ApprovalsScreen() {
   const router = useRouter();
-  const { approvals, decide, user, data } = useApp();
+  const { approvals, refreshApprovals, decide, user, data } = useApp();
   const [q, setQ] = React.useState("");
   const [type, setType] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<string>("Semua");
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void refreshApprovals();
+    }, [refreshApprovals]),
+  );
 
   const pendingCount = approvals.filter((a) => a.status === "Menunggu").length;
   const types = Array.from(new Set(approvals.map((a) => a.jenis)));
@@ -66,6 +72,7 @@ export default function ApprovalsScreen() {
       <PageHeader
         title="Persetujuan"
         subtitle={`${pendingCount} menunggu | Total ${approvals.length} pengajuan`}
+        onRefresh={refreshApprovals}
       />
       <View className="flex-row items-center gap-1.5 mb-2">
         {["Semua", "Menunggu", "Disetujui", "Ditolak"].map((st) => (

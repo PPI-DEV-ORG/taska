@@ -1664,10 +1664,14 @@ model CalendarEvent {
   creator         User     @relation("CalendarCreator", fields: [creatorId], references: [id])
   assigneeId      Int?
   assignee        User?    @relation("CalendarAssignee", fields: [assigneeId], references: [id])
-  customerId      Int?
-  projectId       Int?
-  leadId          Int?
-  createdAt       DateTime @default(now())
+  customerId        Int?
+  projectId         Int?
+  leadId            Int?
+  invoiceId         Int?
+  supplierId        Int?
+  excludedDates     String?   @db.Text
+  overdueNotifiedAt DateTime?
+  createdAt         DateTime  @default(now())
   updatedAt       DateTime @updatedAt
 
   attendees CalendarAttendee[]

@@ -1,19 +1,23 @@
 import * as React from "react";
 import { Pressable, View } from "react-native";
+import { AlertTriangle } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import {
-  CATEGORY_META, HARI, addDays, groupByDay, parseYmd, startOfWeek, statusLabel, wibTime, ymd,
+  CATEGORY_META, HARI, PRIORITY_LABEL, addDays, groupByDay, parseYmd, startOfWeek, statusLabel, wibTime, ymd,
   type CalItem,
 } from "./types";
 
 const catColor = (c: string) => (CATEGORY_META[c] ?? CATEGORY_META.OTHER!).color;
 
 function timeText(it: CalItem): string {
-  if (it.isAllDay || it.sourceModule !== "calendar") return it.isAllDay ? "Sepanjang hari" : wibTime(it.start);
-  return it.end ? `${wibTime(it.start)} - ${wibTime(it.end)}` : wibTime(it.start);
+  if (it.isAllDay || it.sourceModule !== "calendar") {
+    return it.isAllDay ? "Sepanjang hari" : `${wibTime(it.start)} WIB`;
+  }
+  return it.end ? `${wibTime(it.start)} - ${wibTime(it.end)} WIB` : `${wibTime(it.start)} WIB`;
 }
 
 export function EventPill({ item, onPress, compact }: { item: CalItem; onPress: (i: CalItem) => void; compact?: boolean }) {
@@ -21,9 +25,10 @@ export function EventPill({ item, onPress, compact }: { item: CalItem; onPress: 
   return (
     <Pressable
       onPress={() => onPress(item)}
-      className="flex-row items-center gap-1.5 rounded-md px-1.5 py-0.5"
+      className="flex-row items-center gap-1 rounded-md px-1.5 py-0.5"
       style={{ backgroundColor: `${color}1F`, borderLeftWidth: 3, borderLeftColor: item.isOverdue ? "#EF5350" : color }}
     >
+      {item.hasConflict ? <AlertTriangle size={10} color={colors.warning} /> : null}
       <Text
         numberOfLines={1}
         className={cn("flex-1 text-[11px] font-medium", item.isOverdue ? "text-danger" : "text-foreground", item.status === "COMPLETED" && "line-through opacity-60")}
@@ -47,10 +52,14 @@ export function EventCard({ item, onPress }: { item: CalItem; onPress: (i: CalIt
       <View className="flex-1 min-w-0">
         <View className="flex-row flex-wrap items-center gap-2">
           <Text className="text-sm font-semibold flex-shrink" numberOfLines={2}>{item.title}</Text>
+          {item.eventNumber ? (
+            <Text className="text-muted-foreground text-[11px]">{item.eventNumber}</Text>
+          ) : null}
         </View>
         <Text className="text-muted-foreground mt-0.5 text-xs" numberOfLines={1}>
           {timeText(item)}
           {item.picName ? ` · PIC: ${item.picName}` : ""}
+          {item.priority ? ` · Prioritas: ${PRIORITY_LABEL[item.priority] ?? item.priority}` : ""}
         </Text>
         {item.subtitle ? <Text className="text-text-secondary mt-0.5 text-xs" numberOfLines={1}>{item.subtitle}</Text> : null}
         <View className="mt-2 flex-row flex-wrap items-center gap-2">
@@ -58,6 +67,12 @@ export function EventCard({ item, onPress }: { item: CalItem; onPress: (i: CalIt
             <Text className="text-[11px] font-semibold" style={{ color }}>{meta.label}</Text>
           </View>
           <StatusBadge status={statusLabel(item)} />
+          {item.hasConflict ? (
+            <View className="flex-row items-center gap-1 rounded-full bg-warning/15 border border-warning/30 px-2 py-0.5">
+              <AlertTriangle size={11} color={colors.warning} />
+              <Text className="text-[11px] font-semibold text-warning">Bentrok: {item.conflictWith}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </Pressable>
@@ -205,7 +220,7 @@ export function DayView({ day, items, onOpen }: { day: string; items: CalItem[];
       ) : null}
       {timed.length ? (
         <View className="gap-2">
-          <Text className="text-muted-foreground text-xs font-semibold uppercase">Terjadwal</Text>
+          <Text className="text-muted-foreground text-xs font-semibold uppercase">Terjadwal (WIB)</Text>
           {timed.map((it) => <EventCard key={it.key} item={it} onPress={onOpen} />)}
         </View>
       ) : null}
@@ -243,4 +258,3 @@ export function AgendaView({ items, onOpen }: { items: CalItem[]; onOpen: (i: Ca
     </View>
   );
 }
-

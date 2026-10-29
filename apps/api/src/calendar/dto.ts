@@ -11,7 +11,7 @@ import {
 } from "class-validator";
 
 export const CAL_CATEGORIES = [
-  "MEETING", "KUNJUNGAN", "POC", "SURVEY", "PROJECT", "TASK",
+  "MEETING", "SALES", "KUNJUNGAN", "POC", "SURVEY", "PROJECT", "TASK",
   "FINANCE", "TAX", "PROCUREMENT", "OPERATIONAL", "OTHER",
 ] as const;
 export const CAL_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "PENDING", "COMPLETED", "CANCELLED"] as const;
@@ -55,6 +55,9 @@ export class CalendarEventDto {
   @IsOptional() @Type(() => Number) @IsInt()
   reminderMinutes?: number | null;
 
+  @IsOptional() @IsBoolean()
+  remindOnCreate?: boolean;
+
   @IsOptional() @Type(() => Number) @IsInt()
   assigneeId?: number | null;
 
@@ -72,6 +75,19 @@ export class CalendarEventDto {
 
   @IsOptional() @Type(() => Number) @IsInt()
   leadId?: number | null;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  invoiceId?: number | null;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  supplierId?: number | null;
+
+  /** Untuk edit 1 kejadian dari seri berulang ("single" vs "series"). */
+  @IsOptional() @IsIn(["single", "series"])
+  occurrenceMode?: "single" | "series";
+
+  @IsOptional() @IsString()
+  occurrenceDate?: string;
 }
 
 export class CalendarStatusDto {
@@ -80,6 +96,15 @@ export class CalendarStatusDto {
 
   @IsOptional() @IsString()
   note?: string;
+
+  @IsOptional() @IsString()
+  completionNote?: string;
+
+  @IsOptional() @IsIn(["single", "series"])
+  occurrenceMode?: "single" | "series";
+
+  @IsOptional() @IsString()
+  occurrenceDate?: string;
 }
 
 export class CalendarQuery {
@@ -89,9 +114,9 @@ export class CalendarQuery {
   @IsOptional() @IsDateString()
   to?: string;
 
-  /** "me" = agenda saya, "all" = semua (hanya SUPER_ADMIN / BOS). */
-  @IsOptional() @IsIn(["me", "all"])
-  scope?: "me" | "all";
+  /** "me" = agenda pribadi & undangan saya, "team" = tim & project saya, "all" = semua (SUPER_ADMIN / BOS / ADMIN). */
+  @IsOptional() @IsIn(["me", "team", "all"])
+  scope?: "me" | "team" | "all";
 
   @IsOptional() @IsString()
   category?: string;
@@ -103,9 +128,11 @@ export class CalendarQuery {
   assigneeId?: number;
 
   @IsOptional() @IsString()
+  team?: string;
+
+  @IsOptional() @IsString()
   q?: string;
 
   @IsOptional() @IsString()
   overdue?: string;
 }
-
