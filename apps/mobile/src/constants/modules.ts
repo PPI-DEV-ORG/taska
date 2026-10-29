@@ -40,7 +40,8 @@ export type Role =
   | "procurement"
   | "finance"
   | "gudang"
-  | "se";
+  | "se"
+  | "hr";
 
 export const ROLE_LABEL: Record<Role, string> = {
   super_admin: "Super Admin",
@@ -53,6 +54,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   finance: "Finance",
   gudang: "Gudang",
   se: "Software Engineer",
+  hr: "HR",
 };
 
 export type Row = Record<string, any> & { id: string };
@@ -121,7 +123,7 @@ export type ModuleDef = {
   confirmStatuses?: string[];
 };
 
-const ALL: Role[] = ["super_admin", "admin", "bos", "sales", "pm", "teknisi", "procurement", "finance", "gudang", "se"];
+const ALL: Role[] = ["super_admin", "admin", "bos", "sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "hr"];
 
 export const MODULES: Record<string, ModuleDef> = {
   leads: {
@@ -708,7 +710,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "name", label: "Nama lengkap", type: "text", required: true, placeholder: "Masukkan nama lengkap" },
       { key: "email", label: "Email", type: "text", required: true, placeholder: "nama@taska.co.id" },
       { key: "password", label: "Kata sandi", type: "password", required: true, placeholder: "Masukkan kata sandi akun" },
-      { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Super Admin", "Admin / Bos", "Sales", "Project Manager", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
+      { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Super Admin", "Admin / Bos", "HR", "Sales", "Project Manager", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
       { key: "phone", label: "Nomor telepon", type: "text", placeholder: "0812-xxxx-xxxx" },
       { key: "position", label: "Jabatan", type: "text", placeholder: "Contoh: Senior Engineer" },
       { key: "gudang", label: "Gudang ditugaskan (Opsional)", type: "select", options: ["-"] },
@@ -925,6 +927,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   finance: [N.dashboard, N.calendar, N.approvals, N.surveys, N.pocReports, N.visitReports, N.invoices, N.quotations, N.poClient, N.accounting, N.hr, N.stock, N.expenses, N.opname, N.reports],
   gudang: [N.dashboard, N.calendar, N.approvals, N.requests, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.hr, N.master],
   se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.delivery, N.expenses, N.hr],
+  hr: [N.dashboard, N.calendar, N.hr, N.users, N.expenses, N.visitReports, N.pocReports, N.requests, N.reports],
 };
 
 export const CAN_APPROVE: Role[] = ["super_admin", "bos", "finance", "gudang", "procurement"];

@@ -15,6 +15,7 @@ function normalizeRole(value: unknown) {
   if (v === "FINANCE" || v === "KEUANGAN") return Role.FINANCE;
   if (v === "GUDANG" || v === "WAREHOUSE") return Role.GUDANG;
   if (v === "SE" || v === "SOFTWARE_ENGINEER" || v === "ENGINEER") return Role.SE;
+  if (v === "HR" || v === "HRD" || v === "HUMAN_RESOURCE" || v === "HUMAN_RESOURCES" || v === "HR_/_PERSONALIA") return Role.HR;
   return v;
 }
 

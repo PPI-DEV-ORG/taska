@@ -13,7 +13,7 @@ function makeClient(urlEnv: string): PrismaClient {
   return new PrismaClient({ adapter: new PrismaMariaDb(u.toString()) });
 }
 
-const ROLE_ENUM_SQL = "ENUM('SUPER_ADMIN','ADMIN','BOS','SALES','PM','TEKNISI','PROCUREMENT','FINANCE','GUDANG','SE')";
+const ROLE_ENUM_SQL = "ENUM('SUPER_ADMIN','ADMIN','BOS','SALES','PM','TEKNISI','PROCUREMENT','FINANCE','GUDANG','SE','HR')";
 
 /**
  * Dua instance Prisma dengan klien yang sama:

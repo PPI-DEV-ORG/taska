@@ -239,7 +239,7 @@ export function toEnum(map: string, label: string | null | undefined): string {
 const ROLE_UI: Record<string, Role> = {
   SUPER_ADMIN: "super_admin",
   ADMIN: "admin", BOS: "bos", SALES: "sales", PM: "pm", TEKNISI: "teknisi",
-  PROCUREMENT: "procurement", FINANCE: "finance", GUDANG: "gudang", SE: "se",
+  PROCUREMENT: "procurement", FINANCE: "finance", GUDANG: "gudang", SE: "se", HR: "hr",
 };
 const ROLE_FROM_UI: Record<string, string> = {};
 for (const [k, v] of Object.entries(ROLE_UI)) ROLE_FROM_UI[v] = k;
@@ -251,6 +251,8 @@ const ROLE_FROM_LABEL: Record<string, string> = {
   "Admin / Bos": "BOS",
   Admin: "ADMIN",
   Bos: "BOS",
+  HR: "HR",
+  "HR / Personalia": "HR",
   Sales: "SALES",
   "Project Manager": "PM",
   Teknisi: "TEKNISI",

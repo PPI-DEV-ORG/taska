@@ -23,6 +23,7 @@ enum Role {
   FINANCE
   GUDANG
   SE
+  HR
 }
 
 enum ActiveStatus {

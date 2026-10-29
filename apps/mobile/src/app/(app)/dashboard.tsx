@@ -55,7 +55,7 @@ export default function DashboardScreen() {
     );
   }
 
-  if (role === "finance") {
+  if (role === "finance" || role === "hr") {
     return (
       <FinanceDashboard
         user={user}

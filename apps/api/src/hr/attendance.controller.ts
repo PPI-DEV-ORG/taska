@@ -18,8 +18,8 @@ export class AttendanceController {
   @Require("attendance", "U")
   saveSettings(@CurrentUser() user: RequestUser, @Body() dto: WorkScheduleSettingsDto) {
     const role = (user.role || "").toLowerCase();
-    if (!["super_admin", "bos", "admin"].includes(role)) {
-      throw new BadRequestException("Hanya Super Admin dan Bos yang dapat mengatur jam kerja & aturan lembur");
+    if (!["super_admin", "bos", "admin", "hr"].includes(role)) {
+      throw new BadRequestException("Hanya Super Admin, Bos, Admin, dan HR yang dapat mengatur jam kerja & aturan lembur");
     }
     return this.attendance.saveSettings(user.id, dto);
   }
@@ -32,8 +32,8 @@ export class AttendanceController {
     @Body() dto: UpdateAttendanceDto,
   ) {
     const role = (user.role || "").toLowerCase();
-    if (!["super_admin", "bos", "admin"].includes(role)) {
-      throw new BadRequestException("Hanya Super Admin, Bos, dan Admin yang dapat mengubah data presensi");
+    if (!["super_admin", "bos", "admin", "hr"].includes(role)) {
+      throw new BadRequestException("Hanya Super Admin, Bos, Admin, dan HR yang dapat mengubah data presensi");
     }
     return this.attendance.updateAttendance(parseInt(idStr, 10), dto);
   }
