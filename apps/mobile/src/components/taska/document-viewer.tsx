@@ -99,13 +99,17 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   if (moduleKey === "supplier-pos") {
     if (/do|delivery/i.test(labelLower)) {
       const fileId = (row as any).doFileId ?? null;
+      const doFile = (row as any).doFile;
       return {
         label: docLabel,
         fieldKey: "doFileId",
         kind: "semua",
+        accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
         fileId,
-        fileName: fileId ? `do-supplier-${row.id}` : null,
-        emptyHint: "Belum ada bukti Delivery Order (DO)",
+        fileName: doFile?.originalName ?? (fileId ? `do-supplier-${row.id}` : null),
+        mimeType: doFile?.mimeType,
+        isImage: doFile?.mimeType ? doFile.mimeType.startsWith("image/") : undefined,
+        emptyHint: "Belum ada bukti Delivery Order (DO) (Gambar / PDF)",
       };
     }
     if (/sales order|\bso\b/i.test(labelLower)) {
@@ -113,7 +117,8 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       return {
         label: docLabel,
         fieldKey: "soFileId",
-        kind: "dokumen",
+        kind: "semua",
+        accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx",
         fileId,
         fileName: fileId ? `so-supplier-${row.id}` : null,
         emptyHint: "Belum ada file Sales Order (SO) dari Supplier",
@@ -123,7 +128,8 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
     return {
       label: docLabel,
       fieldKey: "fileId",
-      kind: "dokumen",
+      kind: "semua",
+      accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx",
       fileId,
       fileName: fileId ? `po-terbitan-kita-${row.id}` : null,
       emptyHint: "Belum ada file Purchase Order (PO) terbitan kita",
@@ -131,49 +137,50 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   }
 
   if (moduleKey === "receiving") {
-    if (/kondisi|foto/i.test(labelLower)) {
+    if (/kondisi|foto/i.test(labelLower) && !/do|delivery|tanda terima/i.test(labelLower)) {
       const fileId = (row as any).photoFileId ?? (row as any).fileId ?? null;
       return {
         label: docLabel,
         fieldKey: "photoFileId",
-        kind: "foto",
+        kind: "semua",
+        accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
         fileId,
-        fileName: fileId ? `foto-kondisi-${row.id}.jpg` : null,
-        isImage: true,
+        fileName: fileId ? `foto-kondisi-${row.id}` : null,
         emptyHint: "Belum ada foto kondisi barang",
       };
     }
-    const fileId = (row as any).receiptFileId ?? (row as any).fileId ?? null;
+    const fileId = (row as any).receiptFileId ?? (row as any).photoFileId ?? (row as any).fileId ?? null;
     return {
       label: docLabel,
       fieldKey: "receiptFileId",
       kind: "semua",
+      accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
       fileId,
-      fileName: fileId ? `tanda-terima-${row.id}` : null,
-      emptyHint: "Belum ada dokumen tanda terima",
+      fileName: fileId ? `do-tanda-terima-${row.id}` : null,
+      emptyHint: "Belum ada dokumen DO / tanda terima (Gambar / PDF)",
     };
   }
 
   if (moduleKey === "delivery-notes") {
-    const scanId = (row as any).scanFileId ?? (row as any).signedFileId ?? null;
-    if (/scan|surat|tanda tangan|pendukung/i.test(labelLower)) {
+    const scanId = (row as any).scanFileId ?? (row as any).signedFileId ?? (row as any).fileId ?? null;
+    if (/scan|surat|tanda tangan|pendukung|do|delivery/i.test(labelLower)) {
       return {
         label: docLabel,
         fieldKey: "scanFileId",
-        kind: "foto",
+        kind: "semua",
         category: "surat-jalan",
-        accept: "image/*,.jpg,.jpeg,.png,.webp",
+        accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
         fileId: scanId,
-        fileName: scanId ? `surat-jalan-${row.id}.jpg` : null,
-        isImage: true,
-        emptyHint: "Belum ada scan foto surat jalan bertanda tangan",
+        fileName: scanId ? `do-surat-jalan-ttd-${row.id}` : null,
+        emptyHint: "Belum ada file DO / surat jalan bertanda tangan kedua pihak (Gambar / PDF)",
       };
     }
     const reportId = (row as any).reportFileId ?? null;
     return {
       label: docLabel,
       fieldKey: "reportFileId",
-      kind: "dokumen",
+      kind: "semua",
+      accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
       category: "surat-jalan",
       fileId: reportId,
       fileName: reportId ? `laporan-hasil-${row.id}` : null,
@@ -218,13 +225,29 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   }
 
   if (moduleKey === "po-client") {
+    if (/do|delivery|surat jalan/i.test(labelLower)) {
+      const doFile = (row as any).doFile;
+      const doFileId = (row as any).doFileId ?? doFile?.id ?? null;
+      return {
+        label: docLabel,
+        fieldKey: "doFileId",
+        kind: "semua",
+        accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
+        fileId: doFileId,
+        fileName: doFile?.originalName ?? (doFileId ? `do-tertandatangan-${row.id}` : null),
+        mimeType: doFile?.mimeType,
+        fileSize: doFile?.size,
+        emptyHint: "Belum ada file Delivery Order (DO) yang sudah ditandatangani (Gambar / PDF)",
+      };
+    }
     if (/sales order|\bso\b/i.test(labelLower)) {
       const soFile = (row as any).soFile;
       const soFileId = (row as any).soFileId ?? soFile?.id ?? null;
       return {
         label: docLabel,
         fieldKey: "soFileId",
-        kind: "dokumen",
+        kind: "semua",
+        accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx",
         fileId: soFileId,
         fileName: soFile?.originalName ?? (soFileId ? `sales-order-${row.id}` : null),
         mimeType: soFile?.mimeType,
@@ -237,7 +260,8 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
     return {
       label: docLabel,
       fieldKey: "fileId",
-      kind: "dokumen",
+      kind: "semua",
+      accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx",
       fileId,
       fileName: file?.originalName ?? (fileId ? `po-customer-${row.id}` : null),
       mimeType: file?.mimeType,
@@ -299,11 +323,11 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       return {
         label: docLabel,
         fieldKey: "doFileId",
-        kind: "foto",
+        kind: "semua",
+        accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
         fileId,
         fileName: fileId ? `do-surat-jalan-${row.id}` : null,
-        isImage: true,
-        emptyHint: "Belum ada file Delivery Order (DO) bertandatangan",
+        emptyHint: "Belum ada file Delivery Order (DO) bertandatangan (Gambar / PDF)",
       };
     }
   }

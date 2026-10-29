@@ -9,7 +9,7 @@ import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } fr
 import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands } from "@/components/taska/dialogs";
 import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { ModuleExtras } from "@/screens/module-extras";
+import { ModuleExtras, isPoPurchaseRow } from "@/screens/module-extras";
 import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
 import { QuotationPpnField } from "@/modules/quotation/quotation-ppn-field";
 import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
@@ -436,7 +436,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const approval =
     approvals.find((a) => a.module === moduleKey && a.refId === id && a.status === "Menunggu") ??
     ((row as any)?.approval?.status === "Menunggu" ? (row as any).approval : undefined);
-  const canDecide = !!approval && CAN_APPROVE.includes(user!.role);
+  const canDecide =
+    !!approval &&
+    CAN_APPROVE.includes(user!.role) &&
+    approval.canApprove !== false &&
+    (moduleKey !== "opname" ||
+      user?.role === "procurement" ||
+      user?.role === "super_admin" ||
+      user?.role === "admin");
   const isExpenseFinanceActionable = moduleKey === "expenses" && isFinanceOrBos && status !== "Ditolak" && status !== "Dibayar";
 
   function pick(s: string) {
@@ -482,18 +489,22 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
       const reqItems = Array.isArray(row.items) && row.items.length
         ? row.items.map((i: any) => ({
-            productId: Number(i.productId || i.product?.id),
+            productId: i.productId || i.product?.id ? Number(i.productId || i.product?.id) : undefined,
+            customName: i.customName || undefined,
+            customUnit: i.customUnit || undefined,
             qty: Number(i.qty) || 1,
-            price: Number(i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
+            price: Number(i.unitCost || i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
           }))
         : undefined;
 
       const created = await addRow("supplier-pos", {
-        supplier: targetSupplier,
+        supplier: targetSupplier !== "-" ? targetSupplier : (data.suppliers?.[0]?.nama ?? "Supplier Utama"),
         supplierId: targetSupplierId,
         request: row.nomor,
         requestId: row.id,
         projectId: row.projectId,
+        project: row.project,
+        paymentTerms: row.paymentMethod === "KAS" ? "Kas / Tunai" : "Tempo / Utang",
         item: row.item,
         items: reqItems,
         total: row.estimasi || 0,
@@ -958,8 +969,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         {def.docs?.length ? (
           <Panel title="File & Bukti Pendukung">
             <DocumentViewerList
-              moduleKey={moduleKey}
-              docs={def.docs}
+              moduleKey={moduleKey === "po-client" && isPoPurchaseRow(row) ? "supplier-pos" : moduleKey}
+              docs={moduleKey === "po-client" && isPoPurchaseRow(row) ? (MODULES["supplier-pos"]?.docs ?? def.docs) : def.docs}
               row={row}
               canUpload={canEdit}
               onUploadFile={async (fieldKey, fileId, item) => {
@@ -985,6 +996,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                     toast("Bukti transfer reimbursement berhasil dilampirkan & status diubah menjadi Dibayar");
                   } else {
                     await patchRow(moduleKey, id, patchPayload);
+                    if (
+                      moduleKey === "receiving" &&
+                      (fieldKey === "receiptFileId" || fieldKey === "photoFileId") &&
+                      row?.supplierPoId
+                    ) {
+                      await patchRow("supplier-pos", String(row.supplierPoId), {
+                        doFileId: fileId,
+                      }).catch(() => {});
+                    }
                     toast(`${item.label} berhasil diperbarui`);
                   }
 

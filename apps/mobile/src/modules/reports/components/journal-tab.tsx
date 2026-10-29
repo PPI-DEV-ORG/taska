@@ -85,7 +85,7 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
         <ScrollView horizontal showsHorizontalScrollIndicator>
           <View className="min-w-[820px] w-full gap-1">
             <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
-              <Text className="w-[80px] text-xs font-bold">Kode</Text>
+              <Text className="w-[115px] text-xs font-bold">Kode</Text>
               <Text className="flex-1 text-xs font-bold">Nama Akun (COA)</Text>
               <Text className="w-[160px] text-xs font-bold">Kategori</Text>
               <Text className="w-[90px] text-xs font-bold text-center">Saldo Normal</Text>
@@ -93,33 +93,80 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
               <Text className="w-[130px] text-xs font-bold text-right">Mutasi Kredit</Text>
               <Text className="w-[140px] text-xs font-bold text-right">Saldo Akhir</Text>
             </View>
-            {fin.coaBalances.map((acc: any) => (
-              <View
-                key={`${acc.code}-${acc.name}`}
-                className="border-border/60 flex-row items-center border-b px-3 py-2"
-              >
-                <Text className="w-[80px] text-xs font-bold font-mono text-primary">
-                  {acc.code}
-                </Text>
-                <Text className="flex-1 text-xs font-medium">{acc.name}</Text>
-                <Text className="w-[160px] text-xs text-text-secondary">{acc.category}</Text>
-                <View className="w-[90px] items-center">
-                  <Pill
-                    label={acc.normalBalance}
-                    tone={acc.normalBalance === "DEBIT" ? "info" : "primary"}
-                  />
+            {fin.coaBalances.map((acc: any) => {
+              const depth = Number(acc.depth || 0);
+              const isHeader = Boolean(acc.isHeader);
+              return (
+                <View
+                  key={`${acc.code}-${acc.name}`}
+                  className={`border-border/60 flex-row items-center border-b px-3 py-2 ${
+                    isHeader ? "bg-panel/60" : ""
+                  }`}
+                >
+                  <View
+                    style={{ paddingLeft: depth * 12 }}
+                    className="w-[115px] flex-row items-center gap-1"
+                  >
+                    {depth > 0 ? (
+                      <Text className="text-xs font-mono text-muted-foreground">↳</Text>
+                    ) : null}
+                    <Text
+                      className={`text-xs font-mono ${
+                        isHeader ? "font-bold text-primary" : "font-semibold text-primary/90"
+                      }`}
+                    >
+                      {acc.code}
+                    </Text>
+                  </View>
+                  <View
+                    style={{ paddingLeft: depth * 16 }}
+                    className="flex-1 flex-row items-center gap-2 pr-2"
+                  >
+                    {depth > 0 ? (
+                      <View className="w-1.5 h-1.5 rounded-full bg-primary/50" />
+                    ) : null}
+                    <Text
+                      className={`text-xs ${
+                        isHeader ? "font-bold text-foreground" : "font-medium text-foreground/90"
+                      }`}
+                    >
+                      {acc.name}
+                    </Text>
+                    {acc.parentCode ? (
+                      <View className="bg-muted/40 border-border/60 rounded border px-1.5 py-0.5">
+                        <Text className="text-[10px] text-muted-foreground font-mono">
+                          Sub {acc.parentCode}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text className="w-[160px] text-xs text-text-secondary">{acc.category}</Text>
+                  <View className="w-[90px] items-center">
+                    <Pill
+                      label={acc.normalBalance}
+                      tone={acc.normalBalance === "DEBIT" ? "info" : "primary"}
+                    />
+                  </View>
+                  <Text
+                    className={`w-[130px] text-xs font-mono text-right ${
+                      isHeader ? "font-bold" : ""
+                    }`}
+                  >
+                    {rupiah(acc.totalDebit)}
+                  </Text>
+                  <Text
+                    className={`w-[130px] text-xs font-mono text-right ${
+                      isHeader ? "font-bold" : ""
+                    }`}
+                  >
+                    {rupiah(acc.totalKredit)}
+                  </Text>
+                  <Text className="w-[140px] text-xs font-bold font-mono text-right">
+                    {rupiah(acc.endingBalance)}
+                  </Text>
                 </View>
-                <Text className="w-[130px] text-xs font-mono text-right">
-                  {rupiah(acc.totalDebit)}
-                </Text>
-                <Text className="w-[130px] text-xs font-mono text-right">
-                  {rupiah(acc.totalKredit)}
-                </Text>
-                <Text className="w-[140px] text-xs font-bold font-mono text-right">
-                  {rupiah(acc.endingBalance)}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </ScrollView>
       </Panel>

@@ -135,20 +135,19 @@ export class ReceivingsService {
       dto.items && dto.items.length
         ? dto.items
         : po
-        ? po.items.map((pi) => ({
-            productId: pi.productId,
-            qtyReceived: Math.max(1, pi.qty - pi.receivedQty),
-            serials: undefined as string | undefined,
-            note: undefined as string | undefined,
-          }))
+        ? po.items
+            .filter((pi): pi is typeof pi & { productId: number } => pi.productId != null)
+            .map((pi) => ({
+              productId: pi.productId,
+              qtyReceived: Math.max(1, pi.qty - pi.receivedQty),
+              serials: undefined as string | undefined,
+              note: undefined as string | undefined,
+            }))
         : [];
-
-    if (!inputItems.length) {
-      throw new BadRequestException("Item penerimaan barang minimal 1 barang");
-    }
 
     const preparedItems: { productId: number; qtyOrdered: number; qtyReceived: number; serials: string | null; note?: string }[] = [];
     for (const item of inputItems) {
+      if (!item.productId) continue;
       const poItem = po ? po.items.find((i) => i.productId === item.productId) : null;
       const qtyReceived = Math.max(1, item.qtyReceived || 1);
       const qtyOrdered = poItem ? Math.max(qtyReceived, poItem.qty - poItem.receivedQty) : qtyReceived;
@@ -174,6 +173,8 @@ export class ReceivingsService {
     const isDirectApproved = dto.status === "DITERIMA" || ["GUDANG", "SUPER_ADMIN", "ADMIN"].includes(user.role);
     const initialStatus = isDirectApproved ? "DITERIMA" : ((dto.status as any) ?? "MENUNGGU");
 
+    const effectiveDoFileId = dto.receiptFileId ?? dto.photoFileId;
+
     const receiving = await this.prisma.main.receiving.create({
       data: {
         number,
@@ -185,8 +186,8 @@ export class ReceivingsService {
         receiverId: user.id,
         status: initialStatus as any,
         conditionNote: dto.conditionNote,
-        receiptFileId: dto.receiptFileId,
-        photoFileId: dto.photoFileId,
+        receiptFileId: effectiveDoFileId,
+        photoFileId: dto.photoFileId ?? dto.receiptFileId,
         items: {
           create: preparedItems,
         },
@@ -199,8 +200,17 @@ export class ReceivingsService {
         items: true,
       },
     });
-    if (dto.receiptFileId) await this.attachFile(dto.receiptFileId, "receiving", receiving.id).catch(() => {});
+    if (effectiveDoFileId) await this.attachFile(effectiveDoFileId, "receiving", receiving.id).catch(() => {});
     if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", receiving.id).catch(() => {});
+    if (po?.id && effectiveDoFileId) {
+      await this.prisma.main.supplierPO
+        .update({
+          where: { id: po.id },
+          data: { doFileId: effectiveDoFileId },
+        })
+        .catch(() => {});
+      this.notifications.dataChange("supplier-pos", "update", po.id);
+    }
 
     await this.audit.log({
       actor: user,
@@ -234,6 +244,7 @@ export class ReceivingsService {
     const updated = await this.prisma.main.receiving.update({
       where: { id },
       data: {
+        ...(dto.supplierPoId !== undefined ? { supplierPoId: dto.supplierPoId } : {}),
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.warehouseId !== undefined ? { warehouseId: dto.warehouseId } : {}),
         ...(dto.conditionNote !== undefined ? { conditionNote: dto.conditionNote } : {}),
@@ -250,6 +261,18 @@ export class ReceivingsService {
     });
     if (dto.receiptFileId) await this.attachFile(dto.receiptFileId, "receiving", updated.id).catch(() => {});
     if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", updated.id).catch(() => {});
+    const rawTargetPoId = dto.supplierPoId ?? updated.supplierPo?.id ?? row.supplierPoId;
+    const targetPoId = rawTargetPoId != null ? Number(rawTargetPoId) : null;
+    const syncedDoFileId = dto.receiptFileId ?? dto.photoFileId ?? updated.receiptFileId ?? updated.photoFileId;
+    if (targetPoId && syncedDoFileId) {
+      await this.prisma.main.supplierPO
+        .update({
+          where: { id: targetPoId },
+          data: { doFileId: syncedDoFileId },
+        })
+        .catch(() => {});
+      this.notifications.dataChange("supplier-pos", "update", targetPoId);
+    }
     this.notifications.dataChange("receiving", "update", updated.id);
     return updated;
   }

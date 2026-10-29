@@ -25,7 +25,7 @@ interface ReceivingLineItem {
 
 export default function NewReceivingScreen() {
   const router = useRouter();
-  const { data, user, addRow, toast } = useApp();
+  const { data, user, addRow, patchRow, toast } = useApp();
 
   const pos = data["supplier-pos"] || [];
   const warehouses = data.warehouses || [];
@@ -238,10 +238,18 @@ export default function NewReceivingScreen() {
       catatan: notes,
       fileId,
       receiptFileId: fileId,
+      photoFileId: fileId,
     };
 
-    addRow("receiving", row);
-    toast("Penerimaan barang berhasil disimpan dan stok gudang terupdate");
+    await addRow("receiving", row);
+    if (sourceType === "PO" && po?.id) {
+      await patchRow("supplier-pos", String(po.id), {
+        ...(fileId ? { doFileId: fileId } : {}),
+        pengiriman: "Sampai",
+        status: "Sampai",
+      }).catch(() => {});
+    }
+    toast("Penerimaan barang berhasil disimpan, stok bertambah & DO terhubung ke PO");
     router.replace("/stock");
   }
 
@@ -450,11 +458,14 @@ export default function NewReceivingScreen() {
         </View>
       </Panel>
 
-      {/* Panel 3: Foto Dokumentasi */}
-      <Panel title="Foto Dokumentasi & Tanda Terima">
+      {/* Panel 3: File DO & Foto Dokumentasi */}
+      <Panel title="File Delivery Order (DO) & Foto Dokumentasi">
         <FileUploader
-          label="Foto Fisik Barang & Surat Jalan (DO)"
-          kind="foto"
+          label="Upload File DO / Surat Jalan Supplier & Bukti Fisik (Gambar / PDF)"
+          kind="semua"
+          accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+          allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
+          hint="Mendukung Gambar (JPG, PNG, WEBP) atau Dokumen PDF. File DO otomatis ter-attach ke Penerimaan & PO Supplier."
           category="penerimaan"
           handleRef={(h) => { fileHandle.current = h; }}
         />

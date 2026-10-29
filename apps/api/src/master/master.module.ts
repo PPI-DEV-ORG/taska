@@ -9,6 +9,7 @@ import { CategoriesService, WarehousesService } from "./categories-warehouses.se
 import { ProductCategoriesController, WarehousesController } from "./categories-warehouses.controller.js";
 import { LookupsService } from "./lookups.service.js";
 import {
+  CoaAccountsController,
   CostCentersController,
   ExpenseCategoriesController,
   LeadSourcesController,
@@ -29,6 +30,7 @@ import {
     ExpenseCategoriesController,
     CostCentersController,
     VisitActivityTypesController,
+    CoaAccountsController,
   ],
   exports: [ProductsService, SuppliersService, CustomersService, LookupsService],
 })

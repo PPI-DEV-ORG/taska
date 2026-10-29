@@ -21,7 +21,7 @@ function plan(kind: ApprovalKind, needsBos: boolean): Group[] {
     case "PENERIMAAN":
       return [{ roles: ["GUDANG"], mode: "all" }, { roles: ["PROCUREMENT"], mode: "all" }];
     case "OPNAME":
-      return [{ roles: ["FINANCE"], mode: "all" }, { roles: ["BOS"], mode: "all" }];
+      return [{ roles: ["PROCUREMENT"], mode: "all" }];
     case "PERMINTAAN_SURVEY":
       return [{ roles: ["PM", "BOS", "FINANCE"], mode: "any" }];
     case "SURAT_JALAN":
@@ -83,7 +83,6 @@ export class ApprovalsService {
   }
 
   private async needsBos(kind: ApprovalKind, amount: number, threshold?: number): Promise<boolean> {
-    if (kind === "OPNAME") return true;
     if (!THRESHOLD_KINDS.includes(kind)) return false;
     const thr = threshold !== undefined ? threshold : await this.settings.threshold();
     return amount >= thr;
@@ -241,13 +240,46 @@ export class ApprovalsService {
     };
   }
 
-  async list(opts: { page: number; limit: number; status?: string; kind?: string; q?: string }) {
+  private canRoleApprove(user: RequestUser | undefined, r: ApprovalWithSteps, evaluatedStatus: ApprovalStatus): boolean {
+    if (!user) return true;
+    if (user.role === "SUPER_ADMIN" || user.role === "ADMIN") return true;
+    if (r.requestedById === user.id) return false;
+
+    if (r.kind === "OPNAME") {
+      return user.role === "PROCUREMENT";
+    }
+    if (r.kind === "PENERIMAAN") {
+      return user.role === "GUDANG" || user.role === "PROCUREMENT";
+    }
+
+    const pendingSteps = r.steps.filter((s) => s.status === "MENUNGGU");
+    if (evaluatedStatus === "MENUNGGU") {
+      return pendingSteps.some(
+        (s) =>
+          s.approverRole === (user.role as Role) ||
+          (r.kind === "PERMINTAAN_SURVEY" &&
+            (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")) ||
+          (r.kind === "PURCHASE_REQUEST" &&
+            (user.role === "GUDANG" || user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS")),
+      );
+    }
+
+    return (
+      r.steps.some((s) => s.approverRole === (user.role as Role)) ||
+      (r.kind === "PERMINTAAN_SURVEY" &&
+        (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")) ||
+      (r.kind === "PURCHASE_REQUEST" &&
+        (user.role === "GUDANG" || user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS"))
+    );
+  }
+
+  async list(opts: { page: number; limit: number; status?: string; kind?: string; q?: string; user?: RequestUser }) {
     const where = {
       ...(opts.status ? { status: opts.status as ApprovalStatus } : {}),
       ...(opts.kind ? { kind: opts.kind as ApprovalKind } : {}),
       ...(opts.q ? { title: { contains: opts.q } } : {}),
     };
-    const [rows, total, threshold] = await Promise.all([
+    const [rows, threshold] = await Promise.all([
       this.prisma.main.approval.findMany({
         where,
         include: { steps: true, requested_by: { select: { id: true, name: true } } },
@@ -255,24 +287,32 @@ export class ApprovalsService {
         skip: (opts.page - 1) * opts.limit,
         take: opts.limit,
       }),
-      this.prisma.main.approval.count({ where }),
       this.settings.threshold(),
     ]);
-    const items = await Promise.all(
+    const mapped = await Promise.all(
       rows.map(async (r) => {
         let requester = (r as any).requested_by;
         if (!requester || !requester.name) {
           requester = await this.resolveRequester(r.kind, r.entityId);
         }
+        const status = await this.evaluate(r, threshold);
+        const canApprove = this.canRoleApprove(opts.user, r, status);
         return {
           ...r,
           requestedBy: requester,
           requested_by: requester,
-          status: await this.evaluate(r, threshold),
+          status,
+          canApprove,
         };
       }),
     );
-    return { items, total, page: opts.page, limit: opts.limit };
+    const shouldFilterByRole =
+      opts.user &&
+      opts.user.role !== "SUPER_ADMIN" &&
+      opts.user.role !== "ADMIN" &&
+      opts.user.role !== "BOS";
+    const items = shouldFilterByRole ? mapped.filter((item) => item.canApprove) : mapped;
+    return { items, total: items.length, page: opts.page, limit: opts.limit };
   }
 
   /** Antrean yang menunggu peran user (dashboard). */
@@ -296,6 +336,7 @@ export class ApprovalsService {
       if (user.role !== "SUPER_ADMIN" && r.requestedById === user.id) continue;
       const status = await this.evaluate(r, threshold);
       if (status !== "MENUNGGU") continue;
+      if (!this.canRoleApprove(user, r, status)) continue;
       const pendingSteps = r.steps.filter((s) => s.status === "MENUNGGU");
       const relevant =
         user.role === "SUPER_ADMIN" || user.role === "ADMIN"
@@ -303,6 +344,7 @@ export class ApprovalsService {
           : pendingSteps.filter(
               (s) =>
                 s.approverRole === (user.role as Role) ||
+                (r.kind === "OPNAME" && user.role === "PROCUREMENT") ||
                 (r.kind === "PERMINTAAN_SURVEY" &&
                   (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")) ||
                 (r.kind === "PURCHASE_REQUEST" &&
@@ -324,6 +366,7 @@ export class ApprovalsService {
         requestedBy: requester,
         requested_by: requester,
         status,
+        canApprove: true,
         pendingRoles: relevant.map((s) => s.approverRole),
       });
     }
@@ -341,11 +384,22 @@ export class ApprovalsService {
     if (user.role !== "SUPER_ADMIN" && approval.requestedById === user.id) {
       throw new ForbiddenException("Pembuat dokumen tidak boleh menyetujui dokumennya sendiri");
     }
+    if (
+      approval.kind === "OPNAME" &&
+      user.role !== "PROCUREMENT" &&
+      user.role !== "SUPER_ADMIN" &&
+      user.role !== "ADMIN"
+    ) {
+      throw new ForbiddenException("Opname hanya dapat disetujui oleh Procurement");
+    }
 
     const pending = approval.steps.filter((s) => s.status === "MENUNGGU");
     let step =
       pending.find((s) => s.approverRole === (user.role as Role)) ??
       (user.role === "SUPER_ADMIN" || user.role === "ADMIN" ? pending[0] : undefined);
+    if (!step && approval.kind === "OPNAME" && user.role === "PROCUREMENT") {
+      step = pending[0];
+    }
     if (
       !step &&
       approval.kind === "PERMINTAAN_SURVEY" &&
@@ -362,15 +416,28 @@ export class ApprovalsService {
     }
     if (!step) throw new ForbiddenException(`Peran ${user.role} bukan penyetuju dokumen ini`);
 
-    await this.prisma.main.approvalStep.update({
-      where: { id: step.id },
-      data: {
-        status: approve ? "DISETUJUI" : "DITOLAK",
-        decidedById: user.id,
-        decidedAt: new Date(),
-        reason: reason ?? null,
-      },
-    });
+    if (approval.kind === "OPNAME") {
+      await this.prisma.main.approvalStep.updateMany({
+        where: { approvalId, status: "MENUNGGU" },
+        data: {
+          approverRole: "PROCUREMENT",
+          status: approve ? "DISETUJUI" : "DITOLAK",
+          decidedById: user.id,
+          decidedAt: new Date(),
+          reason: reason ?? null,
+        },
+      });
+    } else {
+      await this.prisma.main.approvalStep.update({
+        where: { id: step.id },
+        data: {
+          status: approve ? "DISETUJUI" : "DITOLAK",
+          decidedById: user.id,
+          decidedAt: new Date(),
+          reason: reason ?? null,
+        },
+      });
+    }
 
     const updated = (await this.prisma.main.approval.findUnique({
       where: { id: approvalId },

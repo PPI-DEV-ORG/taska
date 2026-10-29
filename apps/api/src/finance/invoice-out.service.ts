@@ -76,6 +76,20 @@ export class InvoiceOutService {
     }
     if (status !== row.status) {
       await this.prisma.main.invoiceOut.update({ where: { id: row.id }, data: { status } });
+      if (status === "OVERDUE") {
+        const cust = await this.prisma.main.customer
+          .findUnique({ where: { id: row.customerId }, select: { name: true } })
+          .catch(() => null);
+        const sisa = Math.max(0, Number(row.total) - Number(row.paidAmount));
+        await this.notifications
+          .notify({
+            roles: ["FINANCE", "BOS"],
+            kind: "APPROVAL",
+            text: `Invoice ${row.number}${cust?.name ? ` (${cust.name})` : ""} sudah jatuh tempo! Sisa tagihan Rp${sisa.toLocaleString("id-ID")} perlu segera ditagih oleh Finance.`,
+            href: `/invoices/${row.id}`,
+          })
+          .catch(() => {});
+      }
     }
     return { ...row, status, ...(await this.warningFor(row)) };
   }

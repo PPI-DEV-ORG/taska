@@ -1,4 +1,6 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: new URL("../.env", import.meta.url) });
+dotenv.config();
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import bcrypt from "bcryptjs";
@@ -57,6 +59,7 @@ async function main() {
     "CREATE TABLE IF NOT EXISTS `CalendarAttendee` (`id` INT NOT NULL AUTO_INCREMENT, `eventId` INT NOT NULL, `userId` INT NOT NULL, PRIMARY KEY (`id`), UNIQUE INDEX `CalendarAttendee_eventId_userId_key` (`eventId`, `userId`), INDEX `CalendarAttendee_userId_idx` (`userId`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
     "ALTER TABLE `FollowUp` ADD COLUMN `pocReportId` INT NULL",
     "ALTER TABLE `FollowUp` ADD COLUMN `visitReportId` INT NULL",
+    "CREATE TABLE IF NOT EXISTS `CoaAccount` (`id` INT NOT NULL AUTO_INCREMENT, `code` VARCHAR(64) NOT NULL, `name` VARCHAR(191) NOT NULL, `category` VARCHAR(191) NOT NULL, `normalBalance` VARCHAR(32) NOT NULL DEFAULT 'DEBIT', `type` VARCHAR(64) NULL, `parentCode` VARCHAR(64) NULL, `status` VARCHAR(32) NOT NULL DEFAULT 'AKTIF', `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY (`id`), UNIQUE INDEX `CoaAccount_code_key` (`code`), INDEX `CoaAccount_parentCode_idx` (`parentCode`), INDEX `CoaAccount_category_idx` (`category`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
   ];
   for (const sql of schemaPatches) {
     await prisma.$executeRawUnsafe(sql).catch(() => {});
@@ -199,74 +202,99 @@ async function main() {
   console.log(`Seed OK: ${costCenters.length} Cost Center`);
 
   // ─── Customer & Lead Contoh dengan Tipe SI (Sistem Integrator) ───
-  const customerSI = await prisma.customer.upsert({
-    where: { id: 1 },
-    update: {
-      company: "PT Integrasi Sistem Solusindo",
-      notes: "Sistem Integrator (SI) Partner",
-    },
-    create: {
-      name: "PT Integrasi Sistem Solusindo",
-      company: "PT Integrasi Sistem Solusindo",
-      pic: "Bambang Wijaya",
-      email: "bambang@solusindo-si.co.id",
-      phone: "08123456789",
-      city: "Jakarta Barat",
-      notes: "Sistem Integrator (SI) Partner",
-      status: "AKTIF",
-    },
+  const existingCustomersSI = await prisma.customer.findMany({
+    where: { name: "PT Integrasi Sistem Solusindo" },
+    orderBy: { id: "asc" },
   });
+  let customerSI = existingCustomersSI[0];
+  if (!customerSI) {
+    customerSI = await prisma.customer.create({
+      data: {
+        name: "PT Integrasi Sistem Solusindo",
+        company: "PT Integrasi Sistem Solusindo",
+        pic: "Bambang Wijaya",
+        email: "bambang@solusindo-si.co.id",
+        phone: "08123456789",
+        city: "Jakarta Barat",
+        notes: "Sistem Integrator (SI) Partner",
+        status: "AKTIF",
+      },
+    });
+  }
 
-  await prisma.lead.upsert({
-    where: { id: 1 },
-    update: {
-      clientType: "SI" as any,
-    },
-    create: {
-      name: "Pengadaan Access Control & CCTV Gedung",
-      customer: { connect: { id: customerSI.id } },
-      clientType: "SI" as any,
-      contactName: "Bambang Wijaya",
-      estimatedValue: 125000000,
-      probability: 60,
-      owner: { connect: { id: superAdmin.id } },
-      need: "Kebutuhan paket integrasi CCTV dan Turnstile untuk klien SI",
-      stage: "PROSPECTING",
-    },
+  const existingLeadsSI = await prisma.lead.findMany({
+    where: { name: "Pengadaan Access Control & CCTV Gedung" },
+    orderBy: { id: "asc" },
   });
+  if (existingLeadsSI.length === 0) {
+    await prisma.lead.create({
+      data: {
+        name: "Pengadaan Access Control & CCTV Gedung",
+        customer: { connect: { id: customerSI.id } },
+        clientType: "SI" as any,
+        contactName: "Bambang Wijaya",
+        estimatedValue: 125000000,
+        probability: 60,
+        owner: { connect: { id: superAdmin.id } },
+        need: "Kebutuhan paket integrasi CCTV dan Turnstile untuk klien SI",
+        stage: "PROSPECTING",
+      },
+    });
+  } else if (existingLeadsSI.length > 1) {
+    const duplicateLeadIds = existingLeadsSI.slice(1).map((l) => l.id);
+    await prisma.lead.deleteMany({ where: { id: { in: duplicateLeadIds } } }).catch(() => {});
+  }
   console.log("Seed OK: Lead & Customer tipe SI (Sistem Integrator)");
 
   // ─── Contoh Project & Tugas dengan Deskripsi Detail ───
-  const sampleProject = await prisma.project.upsert({
-    where: { id: 1 },
-    update: {},
-    create: {
-      name: "Instalasi Jaringan & CCTV Kantor Pusat",
-      type: "CUSTOMER",
-      customer: { connect: { id: customerSI.id } },
-      pic: { connect: { id: superAdmin.id } },
-      startDate: new Date(),
-      status: "BERJALAN",
-      progress: 25,
-    },
+  const existingProjects = await prisma.project.findMany({
+    where: { name: "Instalasi Jaringan & CCTV Kantor Pusat" },
+    orderBy: { id: "asc" },
   });
+  let sampleProject = existingProjects[0];
+  if (!sampleProject) {
+    sampleProject = await prisma.project.create({
+      data: {
+        name: "Instalasi Jaringan & CCTV Kantor Pusat",
+        type: "CUSTOMER",
+        customer: { connect: { id: customerSI.id } },
+        pic: { connect: { id: superAdmin.id } },
+        startDate: new Date(),
+        status: "BERJALAN",
+        progress: 25,
+      },
+    });
+  } else if (existingProjects.length > 1) {
+    const duplicateProjectIds = existingProjects.slice(1).map((p) => p.id);
+    await prisma.task.deleteMany({ where: { projectId: { in: duplicateProjectIds } } }).catch(() => {});
+    await prisma.project.deleteMany({ where: { id: { in: duplicateProjectIds } } }).catch(() => {});
+  }
 
-  await prisma.task.upsert({
-    where: { id: 1 },
-    update: {
-      description: "Tarik kabel UTP Cat6 dari ruang server lt 1 ke access point dan kamera CCTV lorong lt 2 & 3. Pastikan kabel diberi label penanda dan masuk ke dalam conduit.",
-    },
-    create: {
-      project: { connect: { id: sampleProject.id } },
+  if (existingCustomersSI.length > 1) {
+    const duplicateCustIds = existingCustomersSI.slice(1).map((c) => c.id);
+    await prisma.customer.deleteMany({ where: { id: { in: duplicateCustIds } } }).catch(() => {});
+  }
+
+  const existingTask = await prisma.task.findFirst({
+    where: {
+      projectId: sampleProject.id,
       name: "Penarikan Kabel UTP & Conduit Lantai 2-3",
-      description: "Tarik kabel UTP Cat6 dari ruang server lt 1 ke access point dan kamera CCTV lorong lt 2 & 3. Pastikan kabel diberi label penanda dan masuk ke dalam conduit.",
-      assignee: { connect: { id: superAdmin.id } },
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      priority: "TINGGI",
-      status: "IN_PROGRESS",
-      progress: 40,
     },
   });
+  if (!existingTask) {
+    await prisma.task.create({
+      data: {
+        project: { connect: { id: sampleProject.id } },
+        name: "Penarikan Kabel UTP & Conduit Lantai 2-3",
+        description: "Tarik kabel UTP Cat6 dari ruang server lt 1 ke access point dan kamera CCTV lorong lt 2 & 3. Pastikan kabel diberi label penanda dan masuk ke dalam conduit.",
+        assignee: { connect: { id: superAdmin.id } },
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        priority: "TINGGI",
+        status: "IN_PROGRESS",
+        progress: 40,
+      },
+    });
+  }
   console.log("Seed OK: Project Task dengan deskripsi instruksi kerja");
 
   // ─── Gudang Master (Warehouse) ───
@@ -400,6 +428,117 @@ async function main() {
     });
   }
   console.log(`Seed OK: ${sampleProducts.length} Produk Master (Serialized & Bulk)`);
+
+  // Pastikan kolom baru Pengadaan & Non-Master Barang tersedia di DB
+  const alterSqls = [
+    "ALTER TABLE `PurchaseRequest` ADD COLUMN `procurementSource` VARCHAR(64) NULL DEFAULT 'SUPPLIER'",
+    "ALTER TABLE `PurchaseRequest` ADD COLUMN `paymentMethod` VARCHAR(64) NULL DEFAULT 'UTANG'",
+    "ALTER TABLE `PurchaseRequestItem` MODIFY COLUMN `productId` INT NULL",
+    "ALTER TABLE `PurchaseRequestItem` ADD COLUMN `customName` VARCHAR(191) NULL",
+    "ALTER TABLE `PurchaseRequestItem` ADD COLUMN `customUnit` VARCHAR(64) NULL",
+    "ALTER TABLE `SupplierPOItem` MODIFY COLUMN `productId` INT NULL",
+    "ALTER TABLE `SupplierPOItem` ADD COLUMN `customName` VARCHAR(191) NULL",
+    "ALTER TABLE `SupplierPOItem` ADD COLUMN `customUnit` VARCHAR(64) NULL",
+  ];
+  for (const sql of alterSqls) {
+    await prisma.$executeRawUnsafe(sql).catch(() => {});
+  }
+
+  // ─── Bagan Akun Standar (Chart of Accounts / COA dengan Hierarki Parent) ───
+  const defaultCoaList: Array<{
+    code: string;
+    name: string;
+    category: string;
+    normalBalance: string;
+    type?: string;
+    parentCode?: string;
+  }> = [
+    { code: "1000", name: "Kas & Bank (Header)", category: "Aset Lancar", normalBalance: "DEBIT" },
+    { code: "1000.01", name: "Kas Kecil", category: "Aset Lancar", normalBalance: "DEBIT", type: "cash/bank", parentCode: "1000" },
+    { code: "1000.02", name: "Bank Mandiri PT GMP", category: "Aset Lancar", normalBalance: "DEBIT", type: "cash/bank", parentCode: "1000" },
+    { code: "1100", name: "Piutang (Header)", category: "Aset Lancar", normalBalance: "DEBIT" },
+    { code: "1100.02", name: "Uang Muka Pembelian", category: "Aset Lancar", normalBalance: "DEBIT", type: "account receivable", parentCode: "1100" },
+    { code: "110302", name: "Account Receivable (Piutang Usaha)", category: "Aset Lancar", normalBalance: "DEBIT", type: "account receivable", parentCode: "1100" },
+    { code: "1105", name: "Uang Muka PPh / Pajak Dibayar Dimuka", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1100" },
+    { code: "1200", name: "Persediaan barang dagang", category: "Aset Lancar", normalBalance: "DEBIT", type: "inventory" },
+    { code: "1300", name: "Perlengkapan", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset" },
+    { code: "1600", name: "Ppn masukan", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset" },
+    { code: "2000", name: "Hutang (Header)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT" },
+    { code: "2100", name: "Ppn Keluaran", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "other current liability", parentCode: "2000" },
+    { code: "210102", name: "Account Payable (Hutang Usaha)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "account payable", parentCode: "2000" },
+    { code: "210202", name: "Advance Sales (Uang Muka Penjualan)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "account payable", parentCode: "2000" },
+    { code: "2103", name: "Hutang Biaya & Reimbursement Operasional", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", parentCode: "2000" },
+    { code: "2104", name: "Hutang PPh Potong / Pungut", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", parentCode: "2000" },
+    { code: "2105", name: "Hutang PPh Pasal 21 (Karyawan)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "other current liability", parentCode: "2000" },
+    { code: "2106", name: "Hutang PPh Pasal 23 (Jasa / Vendor)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "other current liability", parentCode: "2000" },
+    { code: "2107", name: "Hutang BPJS Karyawan", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "other current liability", parentCode: "2000" },
+    { code: "3000", name: "Modal (Header)", category: "Ekuitas", normalBalance: "KREDIT" },
+    { code: "310001", name: "OPENING BALANCE EQUITY", category: "Ekuitas", normalBalance: "KREDIT", type: "equity", parentCode: "3000" },
+    { code: "3200.02", name: "Dividend", category: "Ekuitas", normalBalance: "KREDIT", type: "equity", parentCode: "3000" },
+    { code: "3102", name: "Laba Ditahan / Laba Bersih Tahun Berjalan", category: "Ekuitas", normalBalance: "KREDIT", parentCode: "3000" },
+    { code: "4000", name: "Pendapatan (Header)", category: "Pendapatan", normalBalance: "KREDIT" },
+    { code: "4000.01", name: "Penjualan", category: "Pendapatan", normalBalance: "KREDIT", type: "revenue", parentCode: "4000" },
+    { code: "4000.02", name: "Pendapatan jasa", category: "Pendapatan", normalBalance: "KREDIT", type: "revenue", parentCode: "4000" },
+    { code: "4000.03", name: "Pendapatan software dan lisensi", category: "Pendapatan", normalBalance: "KREDIT", type: "revenue", parentCode: "4000" },
+    { code: "4000.04", name: "Retur penjualan", category: "Pendapatan", normalBalance: "DEBIT", type: "revenue", parentCode: "4000" },
+    { code: "4000.05", name: "Potongan penjualan", category: "Pendapatan", normalBalance: "DEBIT", type: "revenue", parentCode: "4000" },
+    { code: "5000", name: "Beban Pokok Penjualan (HPP - Header)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT" },
+    { code: "5101", name: "HPP Project (Pengadaan Barang & Material Proyek)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
+    { code: "5102", name: "HPP Retail (Harga Pokok Penjualan Barang Stok)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
+    { code: "6000", name: "EXPENSE (Header)", category: "Beban Operasional", normalBalance: "DEBIT" },
+    { code: "6100", name: "Biaya pemasaran", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+    { code: "6101", name: "Biaya iklan", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6100" },
+    { code: "6102", name: "Biaya komisi", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6100" },
+    { code: "6103", name: "Biaya entertain", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6100" },
+    { code: "6200", name: "Biaya Umum & Administrasi", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6000" },
+    { code: "6201", name: "Gaji & Tunjangan", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6200" },
+    { code: "6201.01", name: "Biaya gaji", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6201" },
+    { code: "6201.02", name: "Biaya transport karyawan", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6201" },
+    { code: "6201.03", name: "Biaya catering & Makan karyawan", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6201" },
+    { code: "6201.04", name: "Biaya THR", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6201" },
+    { code: "6202", name: "Beban Utility", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6200" },
+    { code: "6202.01", name: "Biaya Listrik", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6202" },
+    { code: "6202.02", name: "Biaya PAM", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6202" },
+    { code: "6202.03", name: "Biaya Telekomunikasi", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6202" },
+    { code: "6202.04", name: "Biaya Pajak", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6202" },
+    { code: "6202.05", name: "Biaya Retribusi & sumbangan", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6202" },
+    { code: "6202.06", name: "Biaya ATK", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6202" },
+    { code: "6202.07", name: "Biaya Umum & Adm lainnya", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6202" },
+    { code: "6202.08", name: "Beban Reimburse", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6202" },
+    { code: "6203", name: "Repair & maintenance expense", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6200" },
+    { code: "6203.01", name: "pemeliharaan gedung", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6203" },
+    { code: "6203.02", name: "pemeliharaan kendaraan", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6203" },
+    { code: "7100", name: "Pendapatan diluar usaha", category: "Pendapatan Diluar Usaha", normalBalance: "KREDIT" },
+    { code: "7100.01", name: "Pendapatan bunga deposito", category: "Pendapatan Diluar Usaha", normalBalance: "KREDIT", parentCode: "7100" },
+    { code: "7100.02", name: "penjualan inventory / perlengkapan", category: "Pendapatan Diluar Usaha", normalBalance: "KREDIT", parentCode: "7100" },
+    { code: "7100.03", name: "pendapatan lain-lain", category: "Pendapatan Diluar Usaha", normalBalance: "KREDIT", parentCode: "7100" },
+    { code: "7200", name: "Biaya diluar usaha", category: "Beban Diluar Usaha", normalBalance: "DEBIT" },
+    { code: "7200.01", name: "biaya adm bank", category: "Beban Diluar Usaha", normalBalance: "DEBIT", parentCode: "7200" },
+    { code: "7200.02", name: "beban lain-lain", category: "Beban Diluar Usaha", normalBalance: "DEBIT", parentCode: "7200" },
+  ];
+
+  for (const c of defaultCoaList) {
+    await (prisma as any).coaAccount.upsert({
+      where: { code: c.code },
+      update: {
+        name: c.name,
+        category: c.category,
+        normalBalance: c.normalBalance,
+        type: c.type ?? null,
+        parentCode: c.parentCode ?? null,
+      },
+      create: {
+        code: c.code,
+        name: c.name,
+        category: c.category,
+        normalBalance: c.normalBalance,
+        type: c.type ?? null,
+        parentCode: c.parentCode ?? null,
+        status: "AKTIF",
+      },
+    });
+  }
+  console.log(`Seed OK: ${defaultCoaList.length} Bagan Akun (COA) dengan relasi parentCode`);
 
   await prisma.$disconnect();
 }

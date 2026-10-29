@@ -16,6 +16,7 @@ import {
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import { isPoPurchaseRow } from "@/screens/module-extras";
 import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
@@ -114,11 +115,13 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       fetchedRef.current = def.key;
       void refreshModule(def.key);
       if (def.key === "invoices" || def.key === "supplier-pos") void refreshModule("invoiceIn");
+      if (def.key === "po-client") void refreshModule("supplier-pos");
     }
   }, [def?.key, refreshModule]);
 
   const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "receipts" | "in">("all");
   const [poTab, setPoTab] = React.useState<"po" | "faktur" | "pembayaran">("po");
+  const [soPoTab, setSoPoTab] = React.useState<"all" | "so" | "po">("all");
   const [damageTab, setDamageTab] = React.useState<"all" | "kerusakan" | "retur-sales" | "retur-purchase">("all");
   const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
   const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
@@ -251,6 +254,50 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       } else if (poTab === "pembayaran") {
         sourceRows = supplierPayments;
       }
+    } else if (def.key === "po-client") {
+      const clientPoRows = (data["po-client"] ?? []).map((r: Row) => {
+        const isPo = isPoPurchaseRow(r);
+        return {
+          ...r,
+          jenisOrder: isPo ? "PO Pembelian (Supplier)" : "SO Penjualan (Customer)",
+          _orderKind: isPo ? "po" : "so",
+        };
+      });
+      const existingPoNums = new Set(
+        clientPoRows
+          .map((r: any) => String(r.nomorPoClient || r.nomor || "").trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const supplierPoRows = (data["supplier-pos"] ?? [])
+        .filter((sp: Row) => {
+          const num = String(sp.nomor || "").trim().toLowerCase();
+          return !num || !existingPoNums.has(num);
+        })
+        .map((sp: Row) => ({
+          ...sp,
+          id: `spo-${sp.id}`,
+          rawPoId: String(sp.id),
+          isSupplierPo: true,
+          nomor: sp.nomor,
+          nomorSo: sp.nomorSoSupplier || "-",
+          nomorPoClient: sp.nomor,
+          customer: "-",
+          supplier: sp.supplier || "-",
+          penawaran: sp.pr && sp.pr !== "-" ? `PR: ${sp.pr}` : "-",
+          nilai: Number(sp.total || 0),
+          tanggal: sp.eta || sp.tanggal || sp.createdAt,
+          status: sp.status || sp.pengiriman || "Di Supplier",
+          jenisOrder: "PO Pembelian (Supplier)",
+          _orderKind: "po",
+        }));
+      const combined = [...clientPoRows, ...supplierPoRows];
+      if (soPoTab === "so") {
+        sourceRows = combined.filter((r: any) => r._orderKind === "so");
+      } else if (soPoTab === "po") {
+        sourceRows = combined.filter((r: any) => r._orderKind === "po");
+      } else {
+        sourceRows = combined;
+      }
     } else if (def.key === "damage-reports") {
       if (damageTab === "kerusakan") {
         sourceRows = sourceRows.filter((r: Row) => r.kategoriLaporan !== "Retur Penjualan" && r.kategoriLaporan !== "Retur Pembelian");
@@ -325,7 +372,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         return r;
       })
       .sort(compareDesc);
-  }, [def, data, user, q, status, dateFilter, invoiceTab, poTab, damageTab, clientReceipts, supplierPayments]);
+  }, [def, data, user, q, status, dateFilter, invoiceTab, poTab, soPoTab, damageTab, clientReceipts, supplierPayments]);
 
   const activeColumns = React.useMemo(() => {
     if (def.key === "invoices") {
@@ -452,6 +499,25 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           />
         </View>
       ) : null}
+      {def.key === "po-client" ? (
+        <View className="flex-row flex-wrap items-center gap-2 mb-3">
+          <Chip
+            label="Semua (SO & PO)"
+            active={soPoTab === "all"}
+            onPress={() => setSoPoTab("all")}
+          />
+          <Chip
+            label="Sales Order / SO Penjualan (Customer)"
+            active={soPoTab === "so"}
+            onPress={() => setSoPoTab("so")}
+          />
+          <Chip
+            label="Purchase Order / PO Pembelian (Supplier)"
+            active={soPoTab === "po"}
+            onPress={() => setSoPoTab("po")}
+          />
+        </View>
+      ) : null}
       {def.key === "damage-reports" ? (
         <View className="flex-row flex-wrap items-center gap-2 mb-3">
           <Chip
@@ -512,6 +578,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
               setSelectedSupplierInvoice(r);
             } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
               router.push(`/invoices/${r.invoiceId}` as any);
+            } else if (def.key === "po-client" && (r as any).isSupplierPo && (r as any).rawPoId) {
+              router.push(`/supplier-pos/${(r as any).rawPoId}` as any);
             } else {
               router.push(`/${def.key}/${r.id}` as any);
             }
@@ -528,6 +596,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
                     setSelectedSupplierInvoice(r);
                   } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
                     router.push(`/invoices/${r.invoiceId}` as any);
+                  } else if (def.key === "po-client" && (r as any).isSupplierPo && (r as any).rawPoId) {
+                    router.push(`/supplier-pos/${(r as any).rawPoId}` as any);
                   } else {
                     router.push(`/${def.key}/${r.id}` as any);
                   }
@@ -563,8 +633,17 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         destructive
         onConfirm={() => {
           if (!deleteTarget) return;
-          const targetModule = (def.key === "invoices" || def.key === "supplier-pos") && deleteTarget.direction === "in" ? "invoiceIn" : def.key;
-          const targetId = deleteTarget.direction === "in" && (deleteTarget as any).rawId ? (deleteTarget as any).rawId : deleteTarget.id;
+          const isMergedSuppPo = def.key === "po-client" && (deleteTarget as any).isSupplierPo;
+          const targetModule = isMergedSuppPo
+            ? "supplier-pos"
+            : (def.key === "invoices" || def.key === "supplier-pos") && deleteTarget.direction === "in"
+              ? "invoiceIn"
+              : def.key;
+          const targetId = isMergedSuppPo
+            ? (deleteTarget as any).rawPoId
+            : deleteTarget.direction === "in" && (deleteTarget as any).rawId
+              ? (deleteTarget as any).rawId
+              : deleteTarget.id;
           void deleteRow(targetModule, targetId).then((ok) => {
             if (ok) setDeleteTarget(null);
           });

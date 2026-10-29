@@ -64,3 +64,43 @@ export const VisitActivityTypesController = makeLookupController(
   "visitActivityType",
   "visitReports",
 );
+
+class CoaAccountDto {
+  @IsOptional() @IsString()
+  code?: string;
+
+  @IsOptional() @IsString()
+  name?: string;
+
+  @IsOptional() @IsString()
+  category?: string;
+
+  @IsOptional() @IsString()
+  normalBalance?: string;
+
+  @IsOptional() @IsString()
+  type?: string;
+
+  @IsOptional() @IsString()
+  parentCode?: string;
+}
+
+@Controller("coa-accounts")
+export class CoaAccountsController {
+  constructor(readonly service: LookupsService) {}
+
+  @Get()
+  list() {
+    return this.service.listCoa();
+  }
+
+  @Post()
+  create(@Body() dto: CoaAccountDto) {
+    return this.service.upsertCoa(dto);
+  }
+
+  @Delete(":code")
+  remove(@Param("code") code: string) {
+    return this.service.removeCoa(code);
+  }
+}

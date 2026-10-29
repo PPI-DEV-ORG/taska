@@ -277,6 +277,17 @@ export class DeliveryService {
       (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
       (await this.prisma.main.warehouse.findFirst());
 
+    const alreadyDispatched = await this.prisma.main.stockMovement.count({
+      where: { deliveryNoteId: id, type: "OUT" },
+    });
+    if (alreadyDispatched > 0) {
+      await this.prisma.main.deliveryNote.update({
+        where: { id },
+        data: { status: "DIKIRIM" },
+      });
+      return this.get(id);
+    }
+
     let dispatchedCount = 0;
 
     // 1. Proses Serial Number jika ada (gabungkan dto.serials & SN yang tersimpan di item surat jalan)
@@ -290,60 +301,131 @@ export class DeliveryService {
         ...itemSerials,
       ]),
     );
+    const dispatchedSerialProductQty = new Map<number, number>();
     if (serialList.length > 0) {
       const units = await this.prisma.main.serialUnit.findMany({ where: { sn: { in: serialList } } });
-      if (units.length !== serialList.length) throw new BadRequestException("Ada serial number yang tidak ditemukan");
-
       for (const u of units) {
-        if (u.status !== "DI_GUDANG" && u.status !== "RESERVED") {
-          throw new BadRequestException(`Serial ${u.sn} status ${u.status} — harus DI_GUDANG atau RESERVED untuk keluar`);
-        }
-        if (!u.warehouseId) throw new BadRequestException(`Serial ${u.sn} tidak tercatat di gudang mana pun`);
-      }
-
-      for (const u of units) {
-        await this.stock.applyMovement({
-          date: row.date,
-          type: "OUT",
-          category: "KELUAR_SURAT_JALAN",
-          productId: u.productId,
-          fromWarehouseId: u.warehouseId,
-          qty: 1,
-          serialUnitId: u.id,
-          deliveryNoteId: row.id,
-          projectId: firstLocation?.projectId ?? null,
-          reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
-          createdById: user.id,
-        });
-        await this.prisma.main.serialUnit.update({
-          where: { id: u.id },
-          data: { status: "DIKIRIM", warehouseId: null },
-        });
-        await this.prisma.main.stockReservation.updateMany({
-          where: { serialUnitId: u.id, releasedAt: null },
-          data: { releasedAt: new Date() },
-        });
-        await this.prisma.main.serialUnitHistory.create({
-          data: {
+        if ((u.status === "DI_GUDANG" || u.status === "RESERVED") && u.warehouseId) {
+          await this.stock.applyMovement({
+            date: row.date,
+            type: "OUT",
+            category: "KELUAR_SURAT_JALAN",
+            productId: u.productId,
+            fromWarehouseId: u.warehouseId,
+            qty: 1,
             serialUnitId: u.id,
-            status: "DIKIRIM",
-            warehouseId: u.warehouseId,
-            note: `Keluar dengan surat jalan ${row.number}`,
-            changedById: user.id,
-          },
-        });
-        dispatchedCount++;
+            deliveryNoteId: row.id,
+            projectId: firstLocation?.projectId ?? null,
+            reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
+            createdById: user.id,
+          });
+          await this.prisma.main.serialUnit.update({
+            where: { id: u.id },
+            data: { status: "DIKIRIM", warehouseId: null },
+          });
+          await this.prisma.main.stockReservation.updateMany({
+            where: { serialUnitId: u.id, releasedAt: null },
+            data: { releasedAt: new Date() },
+          });
+          await this.prisma.main.serialUnitHistory.create({
+            data: {
+              serialUnitId: u.id,
+              status: "DIKIRIM",
+              warehouseId: u.warehouseId,
+              note: `Keluar dengan surat jalan ${row.number}`,
+              changedById: user.id,
+            },
+          });
+          dispatchedCount++;
+          dispatchedSerialProductQty.set(u.productId, (dispatchedSerialProductQty.get(u.productId) ?? 0) + 1);
+        }
       }
     }
 
-    // 2. Proses Barang Curah / Non-Serial
+    // 2. Proses Barang Curah & Sisa Barang Serial yang belum ter-scan SN spesifik
     const itemsToProcess = dto.items?.length ? dto.items : row.items;
     for (const item of itemsToProcess) {
+      if (!item.productId) continue;
       const product = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
-      if (!product || product.hasSerial) continue; // Barang serial sudah diproses via serialList
+      if (!product) continue;
+      const alreadyForProd = dispatchedSerialProductQty.get(item.productId) ?? 0;
+      const remainingQty = Math.max(0, Number(item.qty || 0) - alreadyForProd);
+      if (remainingQty <= 0) continue;
+
+      if (product.hasSerial) {
+        const autoUnits = await this.prisma.main.serialUnit.findMany({
+          where: {
+            productId: item.productId,
+            status: { in: ["DI_GUDANG", "RESERVED"] },
+            warehouseId: { not: null },
+          },
+          take: remainingQty,
+        });
+        for (const u of autoUnits) {
+          if (!u.warehouseId) continue;
+          await this.stock.applyMovement({
+            date: row.date,
+            type: "OUT",
+            category: "KELUAR_SURAT_JALAN",
+            productId: u.productId,
+            fromWarehouseId: u.warehouseId,
+            qty: 1,
+            serialUnitId: u.id,
+            deliveryNoteId: row.id,
+            projectId: firstLocation?.projectId ?? null,
+            reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
+            createdById: user.id,
+          });
+          await this.prisma.main.serialUnit.update({
+            where: { id: u.id },
+            data: { status: "DIKIRIM", warehouseId: null },
+          });
+          await this.prisma.main.stockReservation.updateMany({
+            where: { serialUnitId: u.id, releasedAt: null },
+            data: { releasedAt: new Date() },
+          });
+          await this.prisma.main.serialUnitHistory.create({
+            data: {
+              serialUnitId: u.id,
+              status: "DIKIRIM",
+              warehouseId: u.warehouseId,
+              note: `Keluar dengan surat jalan ${row.number}`,
+              changedById: user.id,
+            },
+          });
+          dispatchedCount++;
+        }
+        const stillRemaining = remainingQty - autoUnits.length;
+        if (stillRemaining <= 0) continue;
+        const balance =
+          (await this.prisma.main.stockBalance.findFirst({
+            where: { productId: item.productId, qty: { gte: stillRemaining } },
+          })) ??
+          (await this.prisma.main.stockBalance.findFirst({
+            where: { productId: item.productId, qty: { gt: 0 } },
+          }));
+        const warehouseId = balance?.warehouseId ?? defaultWarehouse?.id;
+        if (warehouseId) {
+          await this.stock.applyMovement({
+            date: row.date,
+            type: "OUT",
+            category: "KELUAR_SURAT_JALAN",
+            productId: item.productId,
+            fromWarehouseId: warehouseId,
+            qty: stillRemaining,
+            deliveryNoteId: row.id,
+            projectId: firstLocation?.projectId ?? null,
+            reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
+            createdById: user.id,
+          }).catch(() => {});
+          dispatchedCount += stillRemaining;
+        }
+        continue;
+      }
+
       const balance =
         (await this.prisma.main.stockBalance.findFirst({
-          where: { productId: item.productId, qty: { gte: item.qty } },
+          where: { productId: item.productId, qty: { gte: remainingQty } },
         })) ??
         (await this.prisma.main.stockBalance.findFirst({
           where: { productId: item.productId, qty: { gt: 0 } },
@@ -356,13 +438,13 @@ export class DeliveryService {
           category: "KELUAR_SURAT_JALAN",
           productId: item.productId,
           fromWarehouseId: warehouseId,
-          qty: item.qty,
+          qty: remainingQty,
           deliveryNoteId: row.id,
           projectId: firstLocation?.projectId ?? null,
           reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason} (Barang curah)` : null,
           createdById: user.id,
-        });
-        dispatchedCount += item.qty;
+        }).catch(() => {});
+        dispatchedCount += remainingQty;
       }
     }
 
@@ -390,9 +472,13 @@ export class DeliveryService {
   async setStatus(id: number, dto: DeliveryStatusDto, user: RequestUser) {
     const row = await this.prisma.main.deliveryNote.findUnique({
       where: { id },
-      include: { locations: true },
+      include: { locations: true, items: true },
     });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
+
+    if (dto.status === "DIKIRIM" && (row.withGoods || (row.items && row.items.length > 0))) {
+      await this.prepareGoods(id, {}, user).catch(() => {});
+    }
 
     if (dto.status === "DITERIMA") {
       const firstLocation = row.locations[0];

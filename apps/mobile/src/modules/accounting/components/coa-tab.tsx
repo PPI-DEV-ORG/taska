@@ -22,6 +22,7 @@ interface CoaTabProps {
   currentCoaPage: number;
   totalCoaPages: number;
   COA_PAGE_SIZE: number;
+  setCoaPageSize?: (s: number) => void;
   onSelectLedger: (code: string) => void;
   onDeleteCoa: (acc: CoaTrialBalanceRow) => void;
 }
@@ -38,6 +39,7 @@ export function CoaTab({
   currentCoaPage,
   totalCoaPages,
   COA_PAGE_SIZE,
+  setCoaPageSize,
   onSelectLedger,
   onDeleteCoa,
 }: CoaTabProps) {
@@ -103,8 +105,8 @@ export function CoaTab({
           >
             <View className="min-w-full w-full gap-1">
               <View className="bg-panel border-border flex-row items-center border-b px-4 py-2.5 rounded-t-lg w-full">
-                <Text className="w-[90px] text-xs font-bold">Kode</Text>
-                <Text className="flex-1 min-w-[220px] text-xs font-bold">Nama Akun (COA)</Text>
+                <Text className="w-[120px] text-xs font-bold">Kode</Text>
+                <Text className="flex-1 min-w-[260px] text-xs font-bold">Nama Akun (COA)</Text>
                 <Text className="w-[180px] text-xs font-bold">Kategori Pos</Text>
                 <Text className="w-[110px] text-xs font-bold text-center">Saldo Normal</Text>
                 <Text className="w-[130px] text-xs font-bold text-right pr-4">Mutasi Debit</Text>
@@ -118,15 +120,52 @@ export function CoaTab({
                 const name = String(acc.name ?? "");
                 const category = String(acc.category ?? "");
                 const normalBal = String(acc.normalBalance ?? "DEBIT");
+                const depth = Number(acc.depth || 0);
+                const isHeader = Boolean(acc.isHeader);
                 return (
                   <View
                     key={`${code}-${name}`}
-                    className="border-border/60 flex-row items-center border-b px-4 py-2 hover:bg-panel/40 w-full"
+                    className={`border-border/60 flex-row items-center border-b px-4 py-2 hover:bg-panel/40 w-full ${
+                      isHeader ? "bg-panel/50" : ""
+                    }`}
                   >
-                    <Text className="w-[90px] text-xs font-bold font-mono text-primary">
-                      {code}
-                    </Text>
-                    <Text className="flex-1 min-w-[220px] text-xs font-medium text-foreground">{name}</Text>
+                    <View
+                      style={{ paddingLeft: depth * 12 }}
+                      className="w-[120px] flex-row items-center gap-1"
+                    >
+                      {depth > 0 ? (
+                        <Text className="text-xs font-mono text-muted-foreground">↳</Text>
+                      ) : null}
+                      <Text
+                        className={`text-xs font-mono ${
+                          isHeader ? "font-bold text-primary" : "font-semibold text-primary/90"
+                        }`}
+                      >
+                        {code}
+                      </Text>
+                    </View>
+                    <View
+                      style={{ paddingLeft: depth * 16 }}
+                      className="flex-1 min-w-[260px] flex-row items-center gap-2 pr-2"
+                    >
+                      {depth > 0 ? (
+                        <View className="w-1.5 h-1.5 rounded-full bg-primary/50" />
+                      ) : null}
+                      <Text
+                        className={`text-xs ${
+                          isHeader ? "font-bold text-foreground" : "font-medium text-foreground/90"
+                        }`}
+                      >
+                        {name}
+                      </Text>
+                      {acc.parentCode ? (
+                        <View className="bg-muted/40 border-border/60 rounded border px-1.5 py-0.5">
+                          <Text className="text-[10px] text-muted-foreground font-mono">
+                            Sub {acc.parentCode}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text className="w-[180px] text-xs text-muted-foreground">{category}</Text>
                     <View className="w-[110px] items-center justify-center">
                       <View
@@ -145,10 +184,18 @@ export function CoaTab({
                         </Text>
                       </View>
                     </View>
-                    <Text className="w-[130px] text-xs font-mono text-right pr-4">
+                    <Text
+                      className={`w-[130px] text-xs font-mono text-right pr-4 ${
+                        isHeader ? "font-bold" : ""
+                      }`}
+                    >
                       {rupiah(acc.totalDebit)}
                     </Text>
-                    <Text className="w-[130px] text-xs font-mono text-right pr-4">
+                    <Text
+                      className={`w-[130px] text-xs font-mono text-right pr-4 ${
+                        isHeader ? "font-bold" : ""
+                      }`}
+                    >
                       {rupiah(acc.totalKredit)}
                     </Text>
                     <Text className="w-[150px] text-xs font-bold font-mono text-right text-primary pr-8">
@@ -180,11 +227,42 @@ export function CoaTab({
             </View>
           </ScrollView>
 
-          {filteredCoa.length > COA_PAGE_SIZE && (
-            <View className="flex-row items-center justify-between border-t border-border/60 pt-3 px-1">
-              <Text className="text-xs text-muted-foreground">
-                Menampilkan {(currentCoaPage - 1) * COA_PAGE_SIZE + 1} - {Math.min(currentCoaPage * COA_PAGE_SIZE, filteredCoa.length)} dari {filteredCoa.length} akun
-              </Text>
+          {filteredCoa.length > 0 && (
+            <View className="flex-row flex-wrap items-center justify-between border-t border-border/60 pt-3 px-1 gap-2">
+              <View className="flex-row flex-wrap items-center gap-2">
+                {setCoaPageSize ? (
+                  <>
+                    <Text className="text-xs text-muted-foreground">Tampilkan:</Text>
+                    <View className="flex-row items-center gap-1">
+                      {([10, 20, 30, 50, 100] as const).map((opt) => {
+                        const active = COA_PAGE_SIZE === opt;
+                        return (
+                          <Pressable
+                            key={opt}
+                            onPress={() => setCoaPageSize(opt)}
+                            className={`h-7 px-2 items-center justify-center rounded-md border ${
+                              active
+                                ? "bg-primary/15 border-primary"
+                                : "bg-panel border-border/80 hover:bg-panel/80"
+                            }`}
+                          >
+                            <Text
+                              className={`text-xs ${
+                                active ? "text-primary font-bold" : "text-muted-foreground font-medium"
+                              }`}
+                            >
+                              {opt}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : null}
+                <Text className="text-xs text-muted-foreground">
+                  ({(currentCoaPage - 1) * COA_PAGE_SIZE + 1}-{Math.min(currentCoaPage * COA_PAGE_SIZE, filteredCoa.length)} dari {filteredCoa.length} akun)
+                </Text>
+              </View>
               <View className="flex-row items-center gap-1.5">
                 <Button
                   variant="outline"

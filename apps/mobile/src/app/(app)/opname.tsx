@@ -169,7 +169,7 @@ export default function StockOpnameScreen() {
           reason: reason.trim(),
         });
       }
-      toast("Hasil opname diajukan untuk persetujuan Finance dan Bos");
+      toast("Hasil opname diajukan untuk persetujuan Procurement");
       router.replace("/stock");
     } catch (e: any) {
       toast(e?.message ?? "Gagal mengajukan opname", "danger");
@@ -444,7 +444,7 @@ export default function StockOpnameScreen() {
             <FormField
               label="Penjelasan Selisih Fisik"
               required
-              hint="Wajib menyertakan alasan untuk persetujuan Finance dan Bos"
+              hint="Wajib menyertakan alasan untuk persetujuan Procurement"
             >
               <Textarea
                 value={reason}
@@ -458,7 +458,7 @@ export default function StockOpnameScreen() {
           <View className="bg-warning/15 border border-warning/30 flex-row items-start gap-3 rounded-xl p-4">
             <AlertTriangle size={20} color={colors.warning} className="shrink-0 mt-0.5" />
             <Text className="text-warning text-xs leading-relaxed flex-1">
-              Penyesuaian stok opname wajib disetujui bersama oleh Finance dan Bos sebelum saldo sistem dimutasi.
+              Penyesuaian stok opname wajib disetujui oleh Procurement sebelum saldo sistem dimutasi.
             </Text>
           </View>
 

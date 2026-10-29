@@ -124,10 +124,14 @@ export class PosService {
         where,
         include: {
           supplier: { select: { id: true, name: true } },
-          request: { select: { id: true, number: true, purpose: true } },
+          request: { select: { id: true, number: true, purpose: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
           project: { select: { id: true, name: true } },
           creator: { select: { id: true, name: true } },
           items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
+          receivings: {
+            select: { id: true, number: true, status: true, date: true, warehouseId: true, receiptFileId: true, photoFileId: true },
+            orderBy: { id: "desc" },
+          },
           _count: { select: { items: true, receivings: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
@@ -138,8 +142,11 @@ export class PosService {
     const metaMap = await this.getMetaMap(items.map((r) => r.id));
     const enriched = items.map((r) => {
       const m = metaMap.get(r.id) ?? {};
+      const recWithDo = (r.receivings ?? []).find((rc) => rc.receiptFileId || rc.photoFileId);
+      const fallbackDoFileId = recWithDo?.receiptFileId ?? recWithDo?.photoFileId ?? null;
       return {
         ...r,
+        doFileId: r.doFileId ?? fallbackDoFileId,
         supplierSoNumber: m.supplierSoNumber ?? null,
         soFileId: m.soFileId ?? null,
       };
@@ -153,10 +160,13 @@ export class PosService {
       include: {
         supplier: true,
         creator: { select: { id: true, name: true } },
-        request: { select: { id: true, number: true, purpose: true, status: true } },
+        request: { select: { id: true, number: true, purpose: true, status: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
         project: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
-        receivings: { select: { id: true, number: true, status: true, date: true, warehouseId: true } },
+        receivings: {
+          select: { id: true, number: true, status: true, date: true, warehouseId: true, receiptFileId: true, photoFileId: true },
+          orderBy: { id: "desc" },
+        },
         invoiceIns: { select: { id: true, number: true, status: true, total: true } },
       },
     });
@@ -166,8 +176,11 @@ export class PosService {
       this.getMetaMap([id]),
     ]);
     const meta = metaMap.get(id) ?? {};
+    const recWithDo = (row.receivings ?? []).find((rc) => rc.receiptFileId || rc.photoFileId);
+    const fallbackDoFileId = recWithDo?.receiptFileId ?? recWithDo?.photoFileId ?? null;
     return {
       ...row,
+      doFileId: row.doFileId ?? fallbackDoFileId,
       supplierSoNumber: meta.supplierSoNumber ?? null,
       soFileId: meta.soFileId ?? null,
       approval,
@@ -213,11 +226,19 @@ export class PosService {
         fileId: dto.fileId,
         doFileId: dto.doFileId,
         createdById: user.id,
-        items: { create: items.map((i) => ({ productId: i.productId, qty: i.qty, price: i.price })) },
+        items: {
+          create: items.map((i) => ({
+            productId: i.productId ?? null,
+            customName: i.customName ?? null,
+            customUnit: i.customUnit ?? null,
+            qty: i.qty,
+            price: i.price,
+          })),
+        },
       },
       include: {
         supplier: true,
-        request: { select: { id: true, number: true, purpose: true } },
+        request: { select: { id: true, number: true, purpose: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
         project: { select: { id: true, name: true } },
       },
     });
@@ -232,6 +253,15 @@ export class PosService {
         where: { id: dto.soFileId },
         data: { refType: "supplier-so", refId: String(row.id) },
       }).catch(() => {});
+    }
+    if (dto.doFileId) {
+      await this.prisma.main.receiving
+        .updateMany({
+          where: { supplierPoId: row.id },
+          data: { receiptFileId: dto.doFileId },
+        })
+        .catch(() => {});
+      this.notifications.dataChange("receiving", "update", row.id);
     }
     if (dto.supplierSoNumber !== undefined || dto.soFileId !== undefined) {
       await this.saveMeta(row.id, {
@@ -274,7 +304,9 @@ export class PosService {
       await this.prisma.main.supplierPOItem.createMany({
         data: dto.items.map((i) => ({
           poId: id,
-          productId: i.productId,
+          productId: i.productId ?? null,
+          customName: i.customName ?? null,
+          customUnit: i.customUnit ?? null,
           qty: i.qty,
           price: i.price,
         })),
@@ -304,6 +336,15 @@ export class PosService {
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
       },
     });
+    if (dto.doFileId) {
+      await this.prisma.main.receiving
+        .updateMany({
+          where: { supplierPoId: row.id },
+          data: { receiptFileId: dto.doFileId },
+        })
+        .catch(() => {});
+      this.notifications.dataChange("receiving", "update", row.id);
+    }
     if (dto.supplierSoNumber !== undefined || dto.soFileId !== undefined) {
       await this.saveMeta(id, {
         ...(dto.supplierSoNumber !== undefined ? { supplierSoNumber: dto.supplierSoNumber } : {}),

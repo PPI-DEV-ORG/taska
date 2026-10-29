@@ -13,6 +13,7 @@ import { Text } from "@/components/ui/text";
 import { PageHeader } from "@/components/taska/basics";
 import { ConfirmDialog } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
+import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import {
   CHART_OF_ACCOUNTS,
@@ -80,13 +81,13 @@ export default function AccountingScreen() {
   const [journalDate, setJournalDate] = React.useState("");
   const [journalSourceFilter, setJournalSourceFilter] = React.useState<string>("Semua");
   const [journalPage, setJournalPage] = React.useState(1);
-  const JOURNAL_PAGE_SIZE = 25;
+  const [JOURNAL_PAGE_SIZE, setJournalPageSize] = React.useState(20);
 
   // Tab 2: COA filters & pagination
   const [coaQuery, setCoaQuery] = React.useState("");
   const [coaCategoryFilter, setCoaCategoryFilter] = React.useState<string>("Semua");
   const [coaPage, setCoaPage] = React.useState(1);
-  const COA_PAGE_SIZE = 15;
+  const [COA_PAGE_SIZE, setCoaPageSize] = React.useState(50);
 
   // Tab 3: Ledger account selection
   const [selectedLedgerCode, setSelectedLedgerCode] = React.useState<string>(params.account || "1101");
@@ -113,6 +114,35 @@ export default function AccountingScreen() {
   const [newAccName, setNewAccName] = React.useState("");
   const [newAccCategory, setNewAccCategory] = React.useState<CoaAccount["category"]>("Aset Lancar");
   const [newAccNormalBalance, setNewAccNormalBalance] = React.useState<"DEBIT" | "KREDIT">("DEBIT");
+  const [newAccParentCode, setNewAccParentCode] = React.useState<string>("");
+
+  React.useEffect(() => {
+    let active = true;
+    api<{ items?: any[] }>("GET", "/coa-accounts")
+      .then((res) => {
+        if (!active || !Array.isArray(res?.items) || res.items.length === 0) return;
+        const dbAccounts: CoaAccount[] = res.items.map((item: any) => ({
+          code: String(item.code),
+          name: String(item.name),
+          category: item.category as CoaAccount["category"],
+          normalBalance: (item.normalBalance === "KREDIT" ? "KREDIT" : "DEBIT") as "DEBIT" | "KREDIT",
+          ...(item.type ? { type: String(item.type) } : {}),
+          ...(item.parentCode ? { parentCode: String(item.parentCode) } : {}),
+        }));
+        setCustomAccounts((prev) => {
+          const mergedMap = new Map<string, CoaAccount>();
+          prev.forEach((a) => mergedMap.set(a.code, a));
+          dbAccounts.forEach((a) => mergedMap.set(a.code, a));
+          const merged = Array.from(mergedMap.values());
+          saveCustomCoa(merged);
+          return merged;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Ledger Lines for Selected Account
   const selectedAcc = allAccountsMap[selectedLedgerCode] || fin.coaBalances[0];
@@ -198,21 +228,30 @@ export default function AccountingScreen() {
       return;
     }
 
+    const inferredParent =
+      newAccParentCode && newAccParentCode !== "-"
+        ? newAccParentCode
+        : code.includes(".")
+          ? code.split(".")[0]
+          : undefined;
     const newAcc: CoaAccount = {
       code,
       name,
       category: newAccCategory,
       normalBalance: newAccNormalBalance,
+      ...(inferredParent && allAccountsMap[inferredParent] ? { parentCode: inferredParent } : {}),
     };
 
     const next = [...customAccounts, newAcc];
     setCustomAccounts(next);
     saveCustomCoa(next);
+    void api("POST", "/coa-accounts", newAcc).catch(() => {});
 
     toast(`Akun [${code}] ${name} berhasil ditambahkan ke COA.`, "success");
     setCoaModalOpen(false);
     setNewAccCode("");
     setNewAccName("");
+    setNewAccParentCode("");
   };
 
   const handleDeleteCoaAccount = () => {
@@ -222,6 +261,7 @@ export default function AccountingScreen() {
     const nextCustom = customAccounts.filter((a) => a.code !== targetCode);
     setCustomAccounts(nextCustom);
     saveCustomCoa(nextCustom);
+    void api("DELETE", `/coa-accounts/${encodeURIComponent(targetCode)}`).catch(() => {});
 
     if (CHART_OF_ACCOUNTS[targetCode]) {
       const nextDeleted = Array.from(new Set([...deletedCoaCodes, targetCode]));
@@ -400,6 +440,10 @@ export default function AccountingScreen() {
             currentJournalPage={currentJournalPage}
             totalJournalPages={totalJournalPages}
             JOURNAL_PAGE_SIZE={JOURNAL_PAGE_SIZE}
+            setJournalPageSize={(s) => {
+              setJournalPageSize(s);
+              setJournalPage(1);
+            }}
             onSelectAccount={(code) => {
               setSelectedLedgerCode(code);
               setActiveTab("ledger");
@@ -421,6 +465,10 @@ export default function AccountingScreen() {
             currentCoaPage={currentCoaPage}
             totalCoaPages={totalCoaPages}
             COA_PAGE_SIZE={COA_PAGE_SIZE}
+            setCoaPageSize={(s) => {
+              setCoaPageSize(s);
+              setCoaPage(1);
+            }}
             onSelectLedger={(code) => {
               setSelectedLedgerCode(code);
               setActiveTab("ledger");
@@ -485,6 +533,15 @@ export default function AccountingScreen() {
         setNewAccCategory={setNewAccCategory}
         newAccNormalBalance={newAccNormalBalance}
         setNewAccNormalBalance={setNewAccNormalBalance}
+        newAccParentCode={newAccParentCode}
+        setNewAccParentCode={setNewAccParentCode}
+        parentOptions={fin.coaBalances.map((row) => ({
+          code: row.code,
+          name: row.name,
+          category: row.category,
+          normalBalance: row.normalBalance,
+          parentCode: row.parentCode,
+        }))}
         onSave={handleSaveCustomAccount}
       />
 

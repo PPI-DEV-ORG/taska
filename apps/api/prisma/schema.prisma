@@ -1051,28 +1051,30 @@ model ProjectRequirement {
 // ─────────────────────────────── Procurement ───────────────────────────────
 
 model PurchaseRequest {
-  id             Int           @id @default(autoincrement())
-  number         String        @unique
-  date           DateTime      @db.Date
-  requesterId    Int
-  requester      User          @relation("PRRequester", fields: [requesterId], references: [id])
-  costType       CostType
-  projectId      Int?
-  project        Project?      @relation(fields: [projectId], references: [id])
-  taskId         Int?
-  task           Task?         @relation(fields: [taskId], references: [id])
-  supplierId     Int?
-  supplier       Supplier?     @relation(fields: [supplierId], references: [id])
-  condition      ItemCondition @default(BARU)
-  estimatedCost  Decimal       @default(0) @db.Decimal(18, 2)
-  purpose        String
-  otherNote      String?
-  evidenceFileId Int?
-  doFileId       Int?
-  status         PrStatus      @default(DIAJUKAN)
-  rejectReason   String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id                Int           @id @default(autoincrement())
+  number            String        @unique
+  date              DateTime      @db.Date
+  requesterId       Int
+  requester         User          @relation("PRRequester", fields: [requesterId], references: [id])
+  costType          CostType
+  procurementSource String?       @default("SUPPLIER")
+  paymentMethod     String?       @default("UTANG")
+  projectId         Int?
+  project           Project?      @relation(fields: [projectId], references: [id])
+  taskId            Int?
+  task              Task?         @relation(fields: [taskId], references: [id])
+  supplierId        Int?
+  supplier          Supplier?     @relation(fields: [supplierId], references: [id])
+  condition         ItemCondition @default(BARU)
+  estimatedCost     Decimal       @default(0) @db.Decimal(18, 2)
+  purpose           String
+  otherNote         String?
+  evidenceFileId    Int?
+  doFileId          Int?
+  status            PrStatus      @default(DIAJUKAN)
+  rejectReason      String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   items        PurchaseRequestItem[]
   supplierPOs  SupplierPO[]
@@ -1084,14 +1086,16 @@ model PurchaseRequest {
 }
 
 model PurchaseRequestItem {
-  id        Int             @id @default(autoincrement())
-  requestId Int
-  request   PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  productId Int
-  product   Product         @relation(fields: [productId], references: [id])
-  qty       Int
-  unitCost  Decimal         @default(0) @db.Decimal(18, 2)
-  serials   String?         @db.Text
+  id         Int             @id @default(autoincrement())
+  requestId  Int
+  request    PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  productId  Int?
+  product    Product?        @relation(fields: [productId], references: [id])
+  customName String?
+  customUnit String?
+  qty        Int
+  unitCost   Decimal         @default(0) @db.Decimal(18, 2)
+  serials    String?         @db.Text
 
   @@index([requestId])
 }
@@ -1132,8 +1136,10 @@ model SupplierPOItem {
   id          Int        @id @default(autoincrement())
   poId        Int
   po          SupplierPO @relation(fields: [poId], references: [id], onDelete: Cascade)
-  productId   Int
-  product     Product    @relation(fields: [productId], references: [id])
+  productId   Int?
+  product     Product?   @relation(fields: [productId], references: [id])
+  customName  String?
+  customUnit  String?
   qty         Int
   price       Decimal    @db.Decimal(18, 2)
   receivedQty Int        @default(0)
@@ -1700,3 +1706,23 @@ model CalendarAttendee {
   @@unique([eventId, userId])
   @@index([userId])
 }
+
+// ─────────────────────────────── Bagan Akun (COA) ───────────────────────────────
+model CoaAccount {
+  id            Int          @id @default(autoincrement())
+  code          String       @unique
+  name          String
+  category      String
+  normalBalance String       @default("DEBIT")
+  type          String?
+  parentCode    String?
+  parent        CoaAccount?  @relation("CoaHierarchy", fields: [parentCode], references: [code], onDelete: SetNull)
+  children      CoaAccount[] @relation("CoaHierarchy")
+  status        String       @default("AKTIF")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([parentCode])
+  @@index([category])
+}
+

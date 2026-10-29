@@ -125,8 +125,10 @@ export class RequestsService {
       Promise.all(
         row.items.map(async (i) => ({
           productId: i.productId,
+          customName: (i as any).customName ?? null,
+          customUnit: (i as any).customUnit ?? null,
           ordered: i.qty,
-          available: await this.stock.totalAvailable(i.productId),
+          available: i.productId ? await this.stock.totalAvailable(i.productId) : 0,
         })),
       ),
     ]);
@@ -160,6 +162,8 @@ export class RequestsService {
         date: dto.date ? new Date(dto.date) : new Date(),
         requesterId: user.id,
         costType,
+        procurementSource: dto.procurementSource ?? "SUPPLIER",
+        paymentMethod: dto.paymentMethod ?? "UTANG",
         projectId,
         taskId: dto.taskId,
         supplierId: dto.supplierId,
@@ -171,7 +175,9 @@ export class RequestsService {
         status: (dto.status as any) ?? "DIAJUKAN",
         items: {
           create: items.map((i) => ({
-            productId: i.productId,
+            productId: i.productId ?? null,
+            customName: i.customName ?? null,
+            customUnit: i.customUnit ?? null,
             qty: i.qty,
             unitCost: i.unitCost ?? 0,
             serials: i.serials ?? null,
@@ -194,6 +200,7 @@ export class RequestsService {
 
     if (projectId && items.length > 0) {
       for (const item of items) {
+        if (!item.productId) continue;
         const existingReq = await this.prisma.main.projectRequirement.findFirst({
           where: { projectId, productId: item.productId },
         });
@@ -238,6 +245,8 @@ export class RequestsService {
       data: {
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.costType ? { costType: dto.costType } : {}),
+        ...(dto.procurementSource !== undefined ? { procurementSource: dto.procurementSource } : {}),
+        ...(dto.paymentMethod !== undefined ? { paymentMethod: dto.paymentMethod } : {}),
         ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
         ...(dto.taskId !== undefined ? { taskId: dto.taskId } : {}),
         ...(dto.supplierId !== undefined ? { supplierId: dto.supplierId } : {}),
@@ -252,7 +261,9 @@ export class RequestsService {
               items: {
                 deleteMany: {},
                 create: dto.items.map((i) => ({
-                  productId: i.productId,
+                  productId: i.productId ?? null,
+                  customName: i.customName ?? null,
+                  customUnit: i.customUnit ?? null,
                   qty: i.qty,
                   unitCost: i.unitCost ?? 0,
                   serials: i.serials ?? null,
@@ -294,6 +305,7 @@ export class RequestsService {
         (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
         (await this.prisma.main.warehouse.findFirst());
       for (const item of row.items) {
+        if (!item.productId) continue;
         const balance =
           (await this.prisma.main.stockBalance.findFirst({
             where: { productId: item.productId, qty: { gte: item.qty } },
@@ -324,6 +336,7 @@ export class RequestsService {
 
     if ((dto.status === "DIKIRIM" || dto.status === "DITERIMA") && row.projectId) {
       for (const item of row.items) {
+        if (!item.productId) continue;
         const existing = await this.prisma.main.projectRequirement.findFirst({
           where: { projectId: row.projectId, productId: item.productId },
         });
@@ -418,10 +431,14 @@ export class RequestsService {
       include: { supplierPOs: true },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
-    if (row.status !== "DIAJUKAN" || (row.supplierPOs && row.supplierPOs.length > 0)) {
-      throw new BadRequestException("Request sudah berjalan tidak bisa dihapus");
+    const deletableStatuses = ["DIAJUKAN", "CEK_STOK", "DITOLAK"];
+    if (!deletableStatuses.includes(row.status) || (row.supplierPOs && row.supplierPOs.length > 0)) {
+      throw new BadRequestException(
+        "Request sudah berjalan tidak bisa dihapus (hanya status Diajukan, Cek Stok, atau Ditolak yang dapat dihapus)",
+      );
     }
     await this.prisma.main.$transaction(async (tx) => {
+      await tx.stockReservation.deleteMany({ where: { purchaseRequestId: id } });
       await tx.approval.deleteMany({ where: { kind: "PURCHASE_REQUEST", entityId: id } });
       await tx.purchaseRequestItem.deleteMany({ where: { requestId: id } });
       await tx.purchaseRequest.delete({ where: { id } });
@@ -449,14 +466,14 @@ export class RequestsService {
     if (!row) throw new NotFoundException("Request tidak ditemukan");
     const items = await Promise.all(
       row.items.map(async (i) => {
-        const available = await this.stock.totalAvailable(i.productId);
+        const available = i.productId ? await this.stock.totalAvailable(i.productId) : 0;
         return {
           productId: i.productId,
-          name: i.product.name,
-          unit: i.product.unit,
+          name: i.product?.name ?? (i as any).customName ?? "Barang Non-Master",
+          unit: i.product?.unit ?? (i as any).customUnit ?? "unit",
           ordered: i.qty,
           available,
-          enough: available >= i.qty,
+          enough: i.productId ? available >= i.qty : false,
         };
       }),
     );

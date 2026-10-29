@@ -19,7 +19,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 import { Panel, Cell, FormField } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { FileUploader } from "@/components/taska/file-uploader";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
@@ -376,7 +377,7 @@ function DamageReportExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Pr
 
 function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promise<void> | void }) {
   const router = useRouter();
-  const { data, patchRow, toast } = useApp();
+  const { data, addRow, patchRow, reload, toast } = useApp();
 
   const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
   const linkedQuotation = (data.quotations ?? []).find(
@@ -430,6 +431,31 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   const [itemHarga, setItemHarga] = React.useState("0");
   const [itemSn, setItemSn] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+
+  // Buat Delivery Order (DO) / Surat Jalan dari SO state
+  const [createDoOpen, setCreateDoOpen] = React.useState(false);
+  const [doTujuan, setDoTujuan] = React.useState(
+    row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Customer"
+  );
+  const [doAlasan, setDoAlasan] = React.useState(
+    `Pengiriman Barang Sales Order ${row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : row.nomor || ""}`
+  );
+  const [doTanggal, setDoTanggal] = React.useState(() => new Date().toISOString().slice(0, 10));
+  const [creatingDo, setCreatingDo] = React.useState(false);
+
+  // Terbitkan Invoice Keluar dari SO state
+  const [createInvOpen, setCreateInvOpen] = React.useState(false);
+  const [invFlowMode, setInvFlowMode] = React.useState<"LUNAS" | "TEMPO" | "DP" | "PELUNASAN">("LUNAS");
+  const [invPayMethod, setInvPayMethod] = React.useState<"TRANSFER" | "TUNAI">("TRANSFER");
+  const [invDpPaidNow, setInvDpPaidNow] = React.useState(true);
+  const [invDpPercent, setInvDpPercent] = React.useState("50");
+  const [invCustomAmount, setInvCustomAmount] = React.useState("");
+  const [invDueDate, setInvDueDate] = React.useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    return d.toISOString().slice(0, 10);
+  });
+  const [creatingInv, setCreatingInv] = React.useState(false);
 
   const saveItems = async (newItems: any[], updateAmount = true) => {
     setSaving(true);
@@ -542,8 +568,156 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   const linkedDeliveryNotes = (data["delivery-notes"] ?? []).filter(
     (dn: Row) =>
       linkedProjects.some((p: Row) => String(dn.projectId) === String(p.id) || dn.project === p.nama) ||
-      (row.customer && String(dn.tujuan || "").toLowerCase().includes(String(row.customer).toLowerCase())),
+      (row.nomor && String(dn.alasan || "").toLowerCase().includes(String(row.nomor).toLowerCase())) ||
+      (row.nomorSo && row.nomorSo !== "-" && String(dn.alasan || "").toLowerCase().includes(String(row.nomorSo).toLowerCase())) ||
+      (row.customer && row.customer !== "-" && String(dn.tujuan || "").toLowerCase().includes(String(row.customer).toLowerCase())),
   );
+
+  const handleCreateDoFromSo = async () => {
+    if (!doTujuan.trim()) {
+      toast("Lokasi / tujuan pengiriman wajib diisi", "danger");
+      return;
+    }
+    setCreatingDo(true);
+    try {
+      const productsList = (data.products ?? []) as any[];
+      const mappedItems = currentItems
+        .map((it) => {
+          const name = getItemName(it);
+          const clean = (name.split(" (")[0] ?? name).trim().toLowerCase();
+          const matchedProd = productsList.find(
+            (p) =>
+              (it.productId && Number(p.id) === Number(it.productId)) ||
+              String(p.nama || p.name || "").trim().toLowerCase() === clean ||
+              String(p.sku || "").trim().toLowerCase() === clean
+          );
+          const sn = getItemSn(it);
+          return {
+            productId: matchedProd?.id ? Number(matchedProd.id) : (Number(productsList[0]?.id) || 1),
+            qty: getItemQty(it),
+            serials: sn || undefined,
+            note: name,
+          };
+        })
+        .filter((x) => x.productId > 0);
+
+      const barangSummary =
+        currentItems.length > 0
+          ? currentItems.map((it) => `${getItemName(it)} x ${getItemQty(it)} ${getItemUnit(it)}`).join(", ")
+          : `Barang pesanan SO ${row.nomorSo || row.nomor}`;
+
+      const createdDn = await addRow("delivery-notes", {
+        tanggal: doTanggal,
+        tujuan: doTujuan.trim(),
+        alasan: doAlasan.trim() || `Pengiriman Barang SO ${row.nomorSo || row.nomor}`,
+        projectId: linkedProjects[0]?.id ? Number(linkedProjects[0].id) : undefined,
+        project: linkedProjects[0]?.nama || "-",
+        withGoods: true,
+        barang: barangSummary,
+        items: mappedItems.length > 0 ? mappedItems : undefined,
+      });
+      if (createdDn) {
+        setCreateDoOpen(false);
+        await reload();
+        await onRefresh?.();
+        toast("Delivery Order (DO) / Surat Jalan berhasil dibuat dari barang SO ini");
+      }
+    } catch (e: any) {
+      toast(e?.message || "Gagal membuat Delivery Order", "danger");
+    } finally {
+      setCreatingDo(false);
+    }
+  };
+
+  const handleCreateInvoiceOutFromSo = async () => {
+    const baseDeal = Number(row.nilai || itemsTotal || 0);
+    const remaining = Math.max(0, baseDeal - Number(row.totalInvoice || 0));
+    let dpp = baseDeal;
+    if (invCustomAmount.trim()) {
+      dpp = Number(String(invCustomAmount).replace(/\D/g, "")) || 0;
+    } else if (invFlowMode === "DP") {
+      const pct = Number(invDpPercent) || 50;
+      dpp = Math.round(baseDeal * (pct / 100));
+    } else if (invFlowMode === "PELUNASAN") {
+      dpp = remaining > 0 ? remaining : baseDeal;
+    }
+    if (dpp <= 0) {
+      toast("Nominal invoice harus lebih dari 0", "danger");
+      return;
+    }
+
+    setCreatingInv(true);
+    try {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const ppn = Math.round(dpp * 0.11);
+      const total = dpp + ppn;
+      const jenisLabel = invFlowMode === "DP" ? "DP" : "Pelunasan";
+
+      const matchedCust = (data.customers ?? []).find(
+        (c: any) =>
+          (row.customerId && Number(c.id) === Number(row.customerId)) ||
+          (row.customer && row.customer !== "-" && (c.nama === row.customer || c.name === row.customer))
+      );
+      const custId = matchedCust?.id
+        ? Number(matchedCust.id)
+        : row.customerId && !Number.isNaN(Number(row.customerId))
+          ? Number(row.customerId)
+          : data.customers?.[0]?.id
+            ? Number(data.customers[0].id)
+            : undefined;
+      const cleanPoId = row.id && !String(row.id).startsWith("offline-") && !Number.isNaN(Number(row.id)) ? Number(row.id) : undefined;
+
+      const createdInv = await addRow("invoices", {
+        customerId: custId,
+        customer: row.customer && row.customer !== "-" ? row.customer : matchedCust?.nama || matchedCust?.name || "Pelanggan Ritel",
+        clientPoId: cleanPoId,
+        po: row.nomor || row.nomorSo || row.nomorPoClient,
+        projectId: linkedProjects[0]?.id ? Number(linkedProjects[0].id) : undefined,
+        project: linkedProjects[0]?.nama,
+        quotationId: row.quotationId ? Number(row.quotationId) : undefined,
+        quotation: row.penawaran && row.penawaran !== "-" ? row.penawaran : undefined,
+        jenis: jenisLabel,
+        nilai: dpp,
+        ppn,
+        total,
+        tanggal: todayIso,
+        jatuhTempo: invFlowMode === "LUNAS" ? todayIso : invDueDate,
+        items: currentItems.length > 0 ? currentItems : undefined,
+        catatan:
+          invFlowMode === "LUNAS"
+            ? `Nota / Invoice Lunas (${invPayMethod}) atas SO ${row.nomorSo || row.nomor}`
+            : invFlowMode === "TEMPO"
+              ? `Invoice Tempo atas SO ${row.nomorSo || row.nomor} (Jatuh tempo ${invDueDate})`
+              : invFlowMode === "DP"
+                ? `Invoice DP (${invDpPercent}%) atas SO ${row.nomorSo || row.nomor}`
+                : `Invoice Pelunasan atas SO ${row.nomorSo || row.nomor}`,
+      });
+
+      if (createdInv?.id && !String(createdInv.id).startsWith("offline-")) {
+        const shouldPayImmediately = invFlowMode === "LUNAS" || (invFlowMode === "DP" && invDpPaidNow);
+        if (shouldPayImmediately) {
+          await api("POST", `/invoices/${createdInv.id}/payments`, {
+            amount: total,
+            date: todayIso,
+            method: invPayMethod,
+            reference: `LUNAS-SO-${row.nomorSo || row.nomor || createdInv.id}`,
+          }).catch(() => {});
+          toast(`Invoice ${jenisLabel} (${rupiah(total)}) berhasil diterbitkan & langsung tercatat LUNAS (${invPayMethod})`);
+        } else {
+          await api("POST", `/invoices/${createdInv.id}/status`, { status: "SENT" }).catch(() => {});
+          toast(`Invoice ${invFlowMode === "TEMPO" ? "Tempo" : jenisLabel} berhasil diterbitkan (Jatuh tempo: ${invDueDate})`);
+        }
+      }
+      setCreateInvOpen(false);
+      setInvCustomAmount("");
+      await reload();
+      await onRefresh?.();
+    } catch (e: any) {
+      toast(e?.message || "Gagal menerbitkan invoice", "danger");
+    } finally {
+      setCreatingInv(false);
+    }
+  };
 
   const isPoActive = row.nomorPoClient && row.nomorPoClient !== "-";
   const isSoActive = row.nomorSo && row.nomorSo !== "-";
@@ -773,27 +947,60 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       </Panel>
 
       <Panel
-        title={`Delivery Order (DO) / Surat Jalan Terkait (${linkedDeliveryNotes.length})`}
-        subtitle="Tindak lanjut SO oleh tim Gudang/Teknisi untuk pengiriman barang ke customer"
+        title={`Delivery Order (DO) / Surat Jalan Pengiriman Barang (${linkedDeliveryNotes.length})`}
+        subtitle="Buat DO dari barang yang dipilih di SO, cetak PDF DO, kirim barang (stok otomatis berkurang saat Dikirim), dan upload DO yang sudah di-TTD kedua pihak (Gambar / PDF)"
         right={
-          <Button size="sm" variant="outline" onPress={() => router.push("/delivery-notes" as any)}>
-            <Text className="text-xs">Kelola Surat Jalan</Text>
-          </Button>
+          <View className="flex-row items-center gap-1.5 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 flex-row items-center gap-1"
+              onPress={() =>
+                printOrderDocument({
+                  docType: "DO",
+                  docNumber: linkedDeliveryNotes[0]?.nomor || `DO/${row.nomorSo || row.nomor || row.id}`,
+                  refNumber: row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : row.nomor,
+                  date: row.tanggal,
+                  counterpartyLabel: "Penerima (Customer)",
+                  counterpartyName: row.customer && row.customer !== "-" ? row.customer : "-",
+                  items: currentItems,
+                  notes: row.catatan,
+                })
+              }
+            >
+              <Printer size={12} color={colors.text} />
+              <Text className="text-[11px]">Buat / Cetak PDF DO</Text>
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 px-2.5 flex-row items-center gap-1"
+              onPress={() => {
+                setDoTujuan(row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Customer");
+                setDoAlasan(`Pengiriman Barang Sales Order ${row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : row.nomor || ""}`);
+                setCreateDoOpen(true);
+              }}
+            >
+              <Plus size={12} color="#fff" />
+              <Text className="text-[11px] text-white">Buat Surat Jalan (DO)</Text>
+            </Button>
+          </View>
         }
       >
         {linkedDeliveryNotes.length === 0 ? (
-          <Text className="text-muted-foreground text-sm py-1">Belum ada Delivery Order (Surat Jalan) untuk SO ini.</Text>
+          <Text className="text-muted-foreground text-sm py-1">
+            Belum ada Delivery Order (Surat Jalan) untuk SO ini. Klik &quot;Buat Surat Jalan (DO)&quot; untuk menarik daftar barang SO di atas ke pengiriman Gudang.
+          </Text>
         ) : (
           linkedDeliveryNotes.map((dn: Row) => (
             <Line
               key={dn.id}
               left={`${dn.nomor} · ${dn.tujuan || row.customer}`}
-              sub={`Tanggal ${dn.tanggal} · Barang: ${dn.barang || "-"}`}
+              sub={`Tanggal ${dn.tanggal} · Barang: ${dn.barang || "-"}${dn.scanFileId ? " · DO TTD Terlampir" : ""}`}
               right={
                 <View className="flex-row items-center gap-2">
                   <Cell fmt="status" value={dn.status} />
                   <Button size="sm" variant="outline" onPress={() => router.push(`/delivery-notes/${dn.id}` as any)}>
-                    <Text className="text-xs">Buka DO</Text>
+                    <Text className="text-xs">Buka & Kirim DO</Text>
                   </Button>
                 </View>
               }
@@ -803,12 +1010,38 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       </Panel>
 
       <Panel
-        title={`Faktur Penjualan / Invoice Terkait (${linkedInvoices.length})`}
-        subtitle="Penagihan pembayaran oleh Finance berdasarkan SO & PO Customer"
+        title={`Faktur Penjualan / Invoice Keluar Terkait (${linkedInvoices.length})`}
+        subtitle="Alur Penagihan SO: Bisa Langsung Lunas (Walk-in / Nota Tunai-Transfer), Pembayaran Tempo (Notif Finance saat Jatuh Tempo), atau DP → Pelunasan"
         right={
-          <Button size="sm" variant="outline" onPress={() => router.push("/invoices" as any)}>
-            <Text className="text-xs">Kelola Invoice</Text>
-          </Button>
+          <View className="flex-row items-center gap-1.5 flex-wrap">
+            {linkedInvoices.some((i: Row) => i.jenis === "DP") && sisa > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 flex-row items-center gap-1"
+                onPress={() => {
+                  setInvFlowMode("PELUNASAN");
+                  setInvCustomAmount(formatThousands(Math.max(0, sisa)));
+                  setCreateInvOpen(true);
+                }}
+              >
+                <Plus size={12} color={colors.primary} />
+                <Text className="text-[11px] text-primary font-semibold">Buat Inv Pelunasan</Text>
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              className="h-7 px-2.5 flex-row items-center gap-1"
+              onPress={() => {
+                setInvFlowMode(linkedInvoices.some((i: Row) => i.jenis === "DP") && sisa > 0 ? "PELUNASAN" : "LUNAS");
+                setInvCustomAmount("");
+                setCreateInvOpen(true);
+              }}
+            >
+              <Plus size={12} color="#fff" />
+              <Text className="text-[11px] text-white">Terbitkan Invoice Keluar</Text>
+            </Button>
+          </View>
         }
       >
         {linkedInvoices.length === 0 ? (
@@ -980,8 +1213,166 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
           }
         }}
       />
+
+      {/* Dialog Buat Surat Jalan / Delivery Order (DO) dari SO */}
+      <Dialog open={createDoOpen} onOpenChange={setCreateDoOpen}>
+        <DialogContent className="max-w-md w-[92vw] sm:w-full">
+          <DialogHeader>
+            <DialogTitle>Buat Delivery Order (DO) / Surat Jalan dari SO</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <FormField label="Tujuan Pengiriman (Customer / Alamat)" required>
+              <Input value={doTujuan} onChangeText={setDoTujuan} placeholder="Nama customer / alamat pengiriman" />
+            </FormField>
+            <FormField label="Keperluan / Referensi SO" required>
+              <Input value={doAlasan} onChangeText={setDoAlasan} />
+            </FormField>
+            <FormField label="Tanggal Pengiriman" required>
+              <DatePicker value={doTanggal} onChange={setDoTanggal} />
+            </FormField>
+            <View className="bg-panel/60 border border-border/80 rounded-xl p-3 gap-1.5">
+              <Text className="text-xs font-bold text-foreground">
+                Barang yang Akan Dibawa ({currentItems.length} item dari SO):
+              </Text>
+              {currentItems.length === 0 ? (
+                <Text className="text-xs text-muted-foreground">
+                  Belum ada rincian item di SO (tetap bisa dibuat DO pengiriman umum).
+                </Text>
+              ) : (
+                currentItems.map((it, i) => (
+                  <Text key={i} className="text-xs text-muted-foreground">
+                    • {getItemName(it)} × {getItemQty(it)} {getItemUnit(it)}
+                    {getItemSn(it) ? ` (SN: ${getItemSn(it)})` : ""}
+                  </Text>
+                ))
+              )}
+              <Text className="text-[11px] text-primary mt-1">
+                Saat Surat Jalan di-approve lalu statusnya diubah menjadi &quot;Dikirim&quot;, stok gudang akan otomatis berkurang.
+              </Text>
+            </View>
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setCreateDoOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleCreateDoFromSo} disabled={creatingDo}>
+              <Text className="text-white">{creatingDo ? "Membuat DO..." : "Simpan & Buat DO"}</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Terbitkan Invoice Keluar dari SO (Lunas Walk-in / Tempo / DP / Pelunasan) */}
+      <Dialog open={createInvOpen} onOpenChange={setCreateInvOpen}>
+        <DialogContent className="max-w-md w-[92vw] sm:w-full">
+          <DialogHeader>
+            <DialogTitle>Terbitkan Invoice Keluar ({row.nomorSo || row.nomor})</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <FormField label="Pilih Skema Pembayaran (Sesuai Alur Ritel / Project)" required>
+              <View className="flex-row flex-wrap gap-1.5">
+                {[
+                  { id: "LUNAS" as const, label: "Langsung Lunas (Nota / Walk-in)" },
+                  { id: "TEMPO" as const, label: "Pembayaran Tempo" },
+                  { id: "DP" as const, label: "Invoice DP" },
+                  { id: "PELUNASAN" as const, label: "Invoice Pelunasan" },
+                ].map((opt) => (
+                  <Button
+                    key={opt.id}
+                    size="sm"
+                    variant={invFlowMode === opt.id ? "default" : "outline"}
+                    onPress={() => setInvFlowMode(opt.id)}
+                    className="flex-1 min-w-[140px] h-9"
+                  >
+                    <Text className="text-xs font-semibold">{opt.label}</Text>
+                  </Button>
+                ))}
+              </View>
+            </FormField>
+
+            {invFlowMode === "DP" ? (
+              <FormField label="Persentase DP (%)">
+                <Input value={invDpPercent} onChangeText={setInvDpPercent} keyboardType="numeric" placeholder="50" />
+              </FormField>
+            ) : null}
+
+            <FormField label="Nominal DPP Sebelum PPN (Rp) (Kosongkan untuk otomatis dari SO)">
+              <Input
+                value={invCustomAmount}
+                onChangeText={(v) => setInvCustomAmount(formatThousands(v))}
+                keyboardType="numeric"
+                placeholder={`Otomatis: ${rupiah(
+                  invFlowMode === "DP"
+                    ? Math.round(Number(row.nilai || itemsTotal || 0) * ((Number(invDpPercent) || 50) / 100))
+                    : invFlowMode === "PELUNASAN" && sisa > 0
+                      ? sisa
+                      : Number(row.nilai || itemsTotal || 0)
+                )}`}
+              />
+            </FormField>
+
+            {invFlowMode === "LUNAS" || (invFlowMode === "DP" && invDpPaidNow) ? (
+              <FormField label="Metode Pembayaran (Tunai / Transfer)">
+                <View className="flex-row gap-2">
+                  <Button
+                    size="sm"
+                    variant={invPayMethod === "TRANSFER" ? "default" : "outline"}
+                    onPress={() => setInvPayMethod("TRANSFER")}
+                    className="flex-1"
+                  >
+                    <Text className="text-xs">Transfer Bank</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={invPayMethod === "TUNAI" ? "default" : "outline"}
+                    onPress={() => setInvPayMethod("TUNAI")}
+                    className="flex-1"
+                  >
+                    <Text className="text-xs">Tunai / Kas</Text>
+                  </Button>
+                </View>
+              </FormField>
+            ) : null}
+
+            {invFlowMode === "TEMPO" || invFlowMode === "PELUNASAN" || (invFlowMode === "DP" && !invDpPaidNow) ? (
+              <FormField label="Tanggal Jatuh Tempo (Notif ke Finance saat jatuh tempo)" required>
+                <DatePicker value={invDueDate} onChange={setInvDueDate} />
+              </FormField>
+            ) : null}
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setCreateInvOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleCreateInvoiceOutFromSo} disabled={creatingInv}>
+              <Text className="text-white">
+                {creatingInv
+                  ? "Menerbitkan..."
+                  : invFlowMode === "LUNAS"
+                    ? "Terbitkan & Lunas Sekarang"
+                    : "Terbitkan Invoice Keluar"}
+              </Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
+}
+
+export function isPoPurchaseRow(row?: Row | null): boolean {
+  if (!row) return false;
+  if ((row as any).isSupplierPo) return true;
+  if (row.docMode === "PO") return true;
+  if (row.supplierId && (!row.customerId || row.customerId === "-")) return true;
+  if (
+    row.supplier &&
+    row.supplier !== "-" &&
+    (!row.customer || row.customer === "-" || String(row.customer).includes("(Supplier)"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function ModuleExtras({
@@ -1025,6 +1416,20 @@ export function ModuleExtras({
   }
 
   if (moduleKey === "po-client") {
+    if (isPoPurchaseRow(row)) {
+      const normalizedPoRow: Row = {
+        ...row,
+        nomor: row.nomorPoClient && row.nomorPoClient !== "-" ? row.nomorPoClient : row.nomor,
+        nomorSoSupplier: row.nomorSoSupplier ?? (row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : "-"),
+        supplier:
+          row.supplier && row.supplier !== "-"
+            ? row.supplier
+            : String(row.customer || "-").replace(/\s*\(Supplier\)$/i, ""),
+        total: Number(row.total ?? row.nilai ?? 0),
+        pengiriman: row.pengiriman || "Di Supplier",
+      };
+      return <SupplierPoExtras row={normalizedPoRow} />;
+    }
     return <ClientPoExtras row={row} onRefresh={onRefresh} />;
   }
 

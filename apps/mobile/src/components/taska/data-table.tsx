@@ -13,7 +13,8 @@ import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import type { Col, Row } from "@/constants/modules";
 
-const DEFAULT_PAGE_SIZE = 8;
+const DEFAULT_PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100] as const;
 
 export function FilterBar({
   search,
@@ -100,6 +101,7 @@ export function DataTable({
   const { isMobile } = useBreakpoint();
   const effectiveActionsWidth = actionsWidth ?? (renderActions ? 136 : 64);
   const [currentPage, setCurrentPage] = React.useState(1);
+  const [limit, setLimit] = React.useState<number>(() => (pageSize === 8 ? 10 : pageSize));
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [sortKey, setSortKey] = React.useState<string | null>(null);
   const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("asc");
@@ -127,10 +129,10 @@ export function DataTable({
     });
   }, [rows, sortKey, sortOrder]);
 
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / limit));
   const validPage = Math.min(currentPage, totalPages);
-  const startIndex = (validPage - 1) * pageSize;
-  const currentRows = sortedRows.slice(startIndex, startIndex + pageSize);
+  const startIndex = (validPage - 1) * limit;
+  const currentRows = sortedRows.slice(startIndex, startIndex + limit);
 
   function handleSelectAll() {
     if (selectedIds.length === currentRows.length && currentRows.length > 0) {
@@ -295,80 +297,118 @@ export function DataTable({
       </ScrollView>
 
       {/* Pagination Footer */}
-      <View className="border-border/60 bg-card/60 flex-row items-center justify-between border-t px-4 py-3">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={validPage <= 1}
-          onPress={() => setCurrentPage((p) => Math.max(1, p - 1))}
-          className={cn("h-9 rounded-xl px-3 border-border/80 flex-row items-center gap-1.5", validPage <= 1 && "opacity-40")}
-        >
-          <ChevronLeft size={15} color={colors.text} />
-          <Text className="text-xs font-semibold">Previous</Text>
-        </Button>
-
-        {/* Page numbers indicator */}
-        <View className="flex-row items-center gap-1">
-          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-            const p = i + 1;
-            const isActive = p === validPage;
-            return (
-              <Pressable
-                key={p}
-                onPress={() => setCurrentPage(p)}
-                className={cn(
-                  "size-8 items-center justify-center rounded-lg border",
-                  isActive
-                    ? "bg-primary border-primary"
-                    : "border-transparent hover:bg-panel"
-                )}
-              >
-                <Text
+      <View className="border-border/60 bg-card/60 flex-row flex-wrap items-center justify-between border-t px-4 py-3 gap-3">
+        <View className="flex-row flex-wrap items-center gap-2">
+          <Text className="text-xs text-muted-foreground">Tampilkan:</Text>
+          <View className="flex-row items-center gap-1">
+            {PAGE_SIZE_OPTIONS.map((opt) => {
+              const active = limit === opt;
+              return (
+                <Pressable
+                  key={opt}
+                  onPress={() => {
+                    setLimit(opt);
+                    setCurrentPage(1);
+                  }}
                   className={cn(
-                    "text-xs font-semibold",
-                    isActive ? "text-primary-foreground font-bold" : "text-muted-foreground"
+                    "h-7 px-2 items-center justify-center rounded-md border",
+                    active
+                      ? "bg-primary/15 border-primary"
+                      : "bg-panel border-border/80 hover:bg-panel/80"
                   )}
                 >
-                  {p}
-                </Text>
-              </Pressable>
-            );
-          })}
-          {totalPages > 5 && (
-            <>
-              <Text className="text-muted-foreground text-xs px-1">...</Text>
-              <Pressable
-                onPress={() => setCurrentPage(totalPages)}
-                className={cn(
-                  "size-8 items-center justify-center rounded-lg border",
-                  validPage === totalPages
-                    ? "bg-primary border-primary"
-                    : "border-transparent hover:bg-panel"
-                )}
-              >
-                <Text
-                  className={cn(
-                    "text-xs font-semibold",
-                    validPage === totalPages ? "text-primary-foreground font-bold" : "text-muted-foreground"
-                  )}
-                >
-                  {totalPages}
-                </Text>
-              </Pressable>
-            </>
-          )}
+                  <Text
+                    className={cn(
+                      "text-xs",
+                      active ? "text-primary font-bold" : "text-muted-foreground font-medium"
+                    )}
+                  >
+                    {opt}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text className="text-xs text-muted-foreground ml-1">
+            ({sortedRows.length === 0 ? 0 : startIndex + 1}-{Math.min(startIndex + limit, sortedRows.length)} dari {sortedRows.length})
+          </Text>
         </View>
 
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={validPage >= totalPages}
-          onPress={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-          className={cn("h-9 rounded-xl px-3 border-border/80 flex-row items-center gap-1.5", validPage >= totalPages && "opacity-40")}
-        >
-          <Text className="text-xs font-semibold">Next</Text>
-          <ChevronRight size={15} color={colors.text} />
-        </Button>
+        <View className="flex-row items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={validPage <= 1}
+            onPress={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            className={cn("h-9 rounded-xl px-3 border-border/80 flex-row items-center gap-1.5", validPage <= 1 && "opacity-40")}
+          >
+            <ChevronLeft size={15} color={colors.text} />
+            <Text className="text-xs font-semibold">Previous</Text>
+          </Button>
+
+          {/* Page numbers indicator */}
+          <View className="flex-row items-center gap-1">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              const p = i + 1;
+              const isActive = p === validPage;
+              return (
+                <Pressable
+                  key={p}
+                  onPress={() => setCurrentPage(p)}
+                  className={cn(
+                    "size-8 items-center justify-center rounded-lg border",
+                    isActive
+                      ? "bg-primary border-primary"
+                      : "border-transparent hover:bg-panel"
+                  )}
+                >
+                  <Text
+                    className={cn(
+                      "text-xs font-semibold",
+                      isActive ? "text-primary-foreground font-bold" : "text-muted-foreground"
+                    )}
+                  >
+                    {p}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            {totalPages > 5 && (
+              <>
+                <Text className="text-muted-foreground text-xs px-1">...</Text>
+                <Pressable
+                  onPress={() => setCurrentPage(totalPages)}
+                  className={cn(
+                    "size-8 items-center justify-center rounded-lg border",
+                    validPage === totalPages
+                      ? "bg-primary border-primary"
+                      : "border-transparent hover:bg-panel"
+                  )}
+                >
+                  <Text
+                    className={cn(
+                      "text-xs font-semibold",
+                      validPage === totalPages ? "text-primary-foreground font-bold" : "text-muted-foreground"
+                    )}
+                  >
+                    {totalPages}
+                  </Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={validPage >= totalPages}
+            onPress={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            className={cn("h-9 rounded-xl px-3 border-border/80 flex-row items-center gap-1.5", validPage >= totalPages && "opacity-40")}
+          >
+            <Text className="text-xs font-semibold">Next</Text>
+            <ChevronRight size={15} color={colors.text} />
+          </Button>
+        </View>
       </View>
     </View>
   );

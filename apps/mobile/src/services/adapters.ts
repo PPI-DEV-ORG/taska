@@ -719,23 +719,37 @@ export function adaptRow(module: string, raw: any): Row {
         progres: n(raw.progress),
         priority: raw.priority,
       };
-    case "purchase-requests":
+    case "purchase-requests": {
+      const prSource = String(raw.procurementSource || "SUPPLIER").toUpperCase();
+      const prPay = String(raw.paymentMethod || "UTANG").toUpperCase();
+      const isProj = raw.costType === "PROJECT" || !!(raw.projectId || raw.project);
       return {
         ...base,
         nomor: raw.number ?? "",
         tanggal: d(raw.date),
-        project: nameOf(raw.project) ?? "-",
+        project: nameOf(raw.project) || "-",
         projectId: idOf(raw.project) ?? (raw.projectId != null ? String(raw.projectId) : null),
+        costType: raw.costType ?? (isProj ? "PROJECT" : "STOK"),
         jenisBiaya: toLabel("costType", raw.costType),
+        procurementSource: prSource,
+        sumberPengadaan: prSource === "RETAIL" ? "Beli Ritel / Toko" : "Supplier / PO",
+        paymentMethod: prPay,
+        metodePembayaran: prPay === "KAS" ? "Kas / Tunai" : "Utang / Tempo",
+        alokasiAkuntansi: isProj ? "5101 — HPP Project" : "1200 — Aset Persediaan Barang",
         pemohon: nameOf(raw.requester) ?? "",
         pemohonId: raw.requester?.id != null ? String(raw.requester.id) : null,
         item: (raw.items ?? [])
-          .map((i: any) => `${nameOf(i.product)} x ${n(i.qty)}${i.product?.unit ? ` ${i.product.unit}` : ""}`)
+          .map((i: any) => {
+            const iName = nameOf(i.product) || i.customName || "Barang";
+            const iUnit = i.product?.unit || i.customUnit || "";
+            return `${iName} x ${n(i.qty)}${iUnit ? ` ${iUnit}` : ""}`;
+          })
           .join(", ") || raw.purpose || "-",
         estimasi: n(raw.estimatedCost),
         rawStatus: raw.status,
         status: toLabel("purchase-requests", raw.status),
         tujuan: raw.purpose ?? "",
+        supplier: nameOf(raw.supplier) || "-",
         supplierId: idOf(raw.supplier),
         fileId: raw.evidenceFileId ?? (raw.fileId ?? null),
         doFileId: raw.doFileId ?? null,
@@ -745,13 +759,20 @@ export function adaptRow(module: string, raw: any): Row {
         stock: Array.isArray(raw.stock) ? raw.stock : [],
         approval: raw.approval ? adaptApproval(raw.approval) : undefined,
       };
+    }
     case "supplier-pos": {
       const rawItems = Array.isArray(raw.items) ? raw.items : [];
-      const firstProdName = nameOf(rawItems[0]?.product) || rawItems[0]?.productName || "";
+      const firstProdName = nameOf(rawItems[0]?.product) || rawItems[0]?.customName || rawItems[0]?.productName || "";
       const itemSummary = rawItems
-        .map((i: any) => `${nameOf(i.product) || i.productName || "Barang"} x ${n(i.qty)}`)
+        .map((i: any) => `${nameOf(i.product) || i.customName || i.productName || "Barang"} x ${n(i.qty)}`)
         .join(", ");
       const displayItem = firstProdName || (raw.item ? String(raw.item).replace(/\s*x\s*\d+.*$/, "") : "") || itemSummary || "-";
+      const effProjId = idOf(raw.project) ?? (raw.projectId != null ? String(raw.projectId) : (raw.request?.projectId != null ? String(raw.request.projectId) : null));
+      const effProjName = nameOf(raw.project) || "";
+      const effCostType = raw.request?.costType || (effProjId || effProjName ? "PROJECT" : "STOK");
+      const effPayMethod =
+        raw.request?.paymentMethod ||
+        (/kas|tunai|cash/i.test(String(raw.paymentTerms || "")) ? "KAS" : "UTANG");
 
       return {
         ...base,
@@ -773,8 +794,14 @@ export function adaptRow(module: string, raw: any): Row {
         item: displayItem,
         itemsSummary: itemSummary || displayItem,
         items: rawItems,
+        request: raw.request?.number ?? "-",
         requestId: idOf(raw.request),
-        projectId: idOf(raw.project),
+        project: effProjName || "-",
+        projectId: effProjId,
+        costType: effCostType,
+        procurementSource: raw.request?.procurementSource ?? "SUPPLIER",
+        paymentMethod: effPayMethod,
+        paymentTerms: raw.paymentTerms ?? "",
         shipmentStatus: raw.shipmentStatus,
         poStatus: raw.status,
         fileId: raw.fileId ?? null,
@@ -1357,6 +1384,9 @@ export type ApprovalRow = {
   id: string; jenis: string; judul: string; pengaju: string; nilai: number;
   jam: number; module: string; refId: string; status: "Menunggu" | "Disetujui" | "Ditolak";
   alasan?: string; pendingRoles?: string[];
+  canApprove?: boolean;
+  requestedById?: number | null;
+  steps?: any[];
   createdAt?: string | null;
 };
 
@@ -1385,6 +1415,9 @@ export function adaptApproval(raw: any): ApprovalRow {
     refId: String(raw.entityId),
     status: (STATUS_LABEL[raw.status] as any) ?? "Menunggu",
     pendingRoles: raw.pendingRoles ?? [],
+    canApprove: typeof raw.canApprove === "boolean" ? raw.canApprove : undefined,
+    requestedById: raw.requestedById ?? raw.requestedBy?.id ?? null,
+    steps: Array.isArray(raw.steps) ? raw.steps : [],
     createdAt: raw.createdAt ?? null,
   };
 }
@@ -1757,6 +1790,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       return {
         date: row.tanggal || row.date || today,
         costType: String(toEnum("costType", row.costType || row.jenisBiaya) || row.costType || row.jenisBiaya || "STOK").toUpperCase(),
+        procurementSource: row.procurementSource ? String(row.procurementSource).toUpperCase() : "SUPPLIER",
+        paymentMethod: row.paymentMethod ? String(row.paymentMethod).toUpperCase() : "UTANG",
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
         supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
         purpose: row.purpose || row.tujuan || row.item || "Kebutuhan operasional",
@@ -1765,7 +1800,11 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         items:
           Array.isArray(row.items) && row.items.length
             ? row.items.map((i: any) => ({
-                ...i,
+                productId: i.productId != null ? Number(i.productId) : undefined,
+                customName: i.customName || undefined,
+                customUnit: i.customUnit || undefined,
+                qty: Number(i.qty) || 1,
+                unitCost: Number(i.unitCost ?? i.price ?? 0),
                 serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
               }))
             : undefined,
@@ -2229,7 +2268,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "paymentMethod", "costCenterId", "receiptFileId", "paidFileId",
   ],
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
-  "purchase-requests": ["date", "costType", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
+  "purchase-requests": ["date", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "photoFileId", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],

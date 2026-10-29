@@ -82,9 +82,25 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
             </Text>
             <View className="flex-row justify-between items-center py-1">
               <Text className="text-sm text-text-secondary">
-                [5101] Beban Pengadaan Material & Perangkat (PO Supplier)
+                [5101] HPP Project (Pengadaan Barang & Material Proyek)
               </Text>
               <Text className="text-sm font-mono text-danger">
+                ({rupiah(fin.incomeStatement.cogsProject ?? fin.incomeStatement.cogsTotal)})
+              </Text>
+            </View>
+            <View className="flex-row justify-between items-center py-1">
+              <Text className="text-sm text-text-secondary">
+                [5102] HPP Retail (Harga Pokok Penjualan Barang Stok)
+              </Text>
+              <Text className="text-sm font-mono text-danger">
+                ({rupiah(fin.incomeStatement.cogsRetail ?? 0)})
+              </Text>
+            </View>
+            <View className="border-border/60 border-t pt-1.5 flex-row justify-between items-center">
+              <Text className="text-xs font-semibold text-muted-foreground">
+                [5000] Total Beban Pokok Penjualan (HPP Project + HPP Retail)
+              </Text>
+              <Text className="text-xs font-bold font-mono text-danger">
                 ({rupiah(fin.incomeStatement.cogsTotal)})
               </Text>
             </View>

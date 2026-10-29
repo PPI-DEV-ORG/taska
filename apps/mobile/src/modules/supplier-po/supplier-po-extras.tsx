@@ -1,6 +1,7 @@
 import * as React from "react";
-import { View } from "react-native";
-import { CheckCircle2, Circle, Plus, Printer, RotateCcw } from "lucide-react-native";
+import { View, Linking } from "react-native";
+import { useRouter } from "expo-router";
+import { CheckCircle2, Circle, ExternalLink, PackageCheck, Plus, Printer, RotateCcw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api } from "@/services/api";
+import { api, apiBase } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -25,6 +26,7 @@ import {
 const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
 
 export function SupplierPoExtras({ row }: { row: Row }) {
+  const router = useRouter();
   const { user, patchRow, setStatus, addRow, toast, data, reload } = useApp();
   const steps = ["Di Supplier", "Dikirim", "Sampai"];
   const cur = steps.indexOf(row.pengiriman);
@@ -33,6 +35,12 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   const supplierInvoices: Row[] = (data.invoiceIn ?? []).filter(
     (inv: Row) => String(inv.supplierPoId) === String(row.id) || inv.po === row.nomor
   );
+
+  const linkedReceivings: Row[] = (data.receiving ?? []).filter(
+    (rc: Row) => String(rc.supplierPoId) === String(row.id) || (row.nomor && rc.po === row.nomor)
+  );
+  const recWithDo = linkedReceivings.find((rc: any) => rc.receiptFileId || rc.photoFileId || rc.fileId);
+  const effectiveDoFileId = row.doFileId || recWithDo?.receiptFileId || recWithDo?.photoFileId || recWithDo?.fileId || null;
 
   const [invOpen, setInvOpen] = React.useState(false);
   const [invNumber, setInvNumber] = React.useState(`INV-SUP-${row.nomor || row.id}`);
@@ -43,6 +51,10 @@ export function SupplierPoExtras({ row }: { row: Row }) {
     d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
+  const [invPaymentScheme, setInvPaymentScheme] = React.useState<"TEMPO" | "LUNAS">(
+    row.paymentMethod === "KAS" ? "LUNAS" : "TEMPO"
+  );
+  const [invPayMethod, setInvPayMethod] = React.useState<"TRANSFER" | "TUNAI">("TRANSFER");
   const [invFileId, setInvFileId] = React.useState<number | null>(null);
 
   const [selectedDetailInv, setSelectedDetailInv] = React.useState<Row | null>(null);
@@ -105,6 +117,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   async function handleCreateInvoiceIn() {
     const amt = Number(String(invAmount).replace(/\D/g, "")) || 0;
     const ppn = Math.round(amt * 0.11);
+    const total = amt + ppn;
     const created = await addRow("invoiceIn", {
       nomor: invNumber,
       supplierId: row.supplierId,
@@ -113,11 +126,24 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       po: row.nomor,
       nilai: amt,
       ppn,
-      total: amt + ppn,
-      jatuhTempo: invDue,
+      total,
+      jatuhTempo: invPaymentScheme === "LUNAS" ? invDate : invDue,
       fileId: invFileId ?? undefined,
     });
     if (created) {
+      if (invPaymentScheme === "LUNAS" && created.id && !String(created.id).startsWith("offline-")) {
+        const cleanId = String(created.id).replace(/^in-/, "");
+        await api("POST", `/invoice-in/${cleanId}/payments`, {
+          amount: total,
+          date: invDate,
+          method: invPayMethod,
+          reference: `LUNAS-${row.nomor || cleanId}`,
+          fileId: invFileId ?? undefined,
+        }).catch(() => {});
+        toast("Invoice masuk & pelunasan langsung berhasil dicatat");
+      } else {
+        toast("Invoice masuk (Tempo / Utang) berhasil dicatat");
+      }
       setInvOpen(false);
       setInvFileId(null);
       await reload();
@@ -127,7 +153,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   const canPay = user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
   const hasPoFile = !!row.fileId;
   const hasSoFile = !!row.soFileId;
-  const hasDoFile = !!row.doFileId;
+  const hasDoFile = !!effectiveDoFileId;
 
   return (
     <>
@@ -157,9 +183,9 @@ export function SupplierPoExtras({ row }: { row: Row }) {
                       counterpartyName: row.supplier,
                       items: Array.isArray(row.items) && row.items.length > 0
                         ? row.items.map((it: any) => ({
-                            name: it.product?.name || it.productName || it.name || "Barang",
+                            name: it.product?.name || it.customName || it.productName || it.name || "Barang",
                             qty: Number(it.qty) || 1,
-                            unit: it.product?.unit || it.unit || "Unit",
+                            unit: it.product?.unit || it.customUnit || it.unit || "Unit",
                             price: Number(it.price) || 0,
                           }))
                         : [{ name: row.item || "Barang Pesanan", qty: 1, unit: "Paket", price: Number(row.total) || 0 }],
@@ -210,9 +236,9 @@ export function SupplierPoExtras({ row }: { row: Row }) {
                       counterpartyName: row.supplier,
                       items: Array.isArray(row.items) && row.items.length > 0
                         ? row.items.map((it: any) => ({
-                            name: it.product?.name || it.productName || it.name || "Barang",
+                            name: it.product?.name || it.customName || it.productName || it.name || "Barang",
                             qty: Number(it.qty) || 1,
-                            unit: it.product?.unit || it.unit || "Unit",
+                            unit: it.product?.unit || it.customUnit || it.unit || "Unit",
                             price: Number(it.price) || 0,
                           }))
                         : [{ name: row.item || "Barang Pesanan", qty: 1, unit: "Paket", price: Number(row.total) || 0 }],
@@ -240,11 +266,51 @@ export function SupplierPoExtras({ row }: { row: Row }) {
               <Text className="text-xs font-bold text-foreground">
                 3. Delivery Order (DO) & Penerimaan Gudang (Receiving)
               </Text>
-              <StatusBadge status={hasDoFile ? "Bukti DO Terlampir" : row.pengiriman || "Di Supplier"} />
+              <View className="flex-row items-center gap-1.5">
+                <StatusBadge status={hasDoFile ? "Bukti DO Terlampir" : row.pengiriman || "Di Supplier"} />
+                {effectiveDoFileId ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 flex-row items-center gap-1"
+                    onPress={() => {
+                      const url = `${apiBase()}/files/${effectiveDoFileId}`;
+                      if (typeof window !== "undefined") window.open(url, "_blank");
+                      else Linking.openURL(url).catch(() => {});
+                    }}
+                  >
+                    <ExternalLink size={12} color={colors.text} />
+                    <Text className="text-[11px]">Buka File DO</Text>
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  className="h-7 px-2.5 flex-row items-center gap-1"
+                  onPress={() => router.push("/receiving/new" as any)}
+                >
+                  <PackageCheck size={12} color="#fff" />
+                  <Text className="text-[11px] text-white">Terima di Gudang & Upload DO</Text>
+                </Button>
+              </View>
             </View>
-            <Text className="text-[11px] text-muted-foreground">
-              Unggah File PO Kita, File SO dari Supplier, dan Bukti DO pada panel <Text className="font-semibold text-foreground">File & Bukti Pendukung</Text> di atas.
-            </Text>
+            {linkedReceivings.length > 0 ? (
+              <View className="mt-1 gap-1">
+                {linkedReceivings.map((rc: Row) => (
+                  <View key={rc.id} className="flex-row items-center justify-between bg-card/70 border border-border/60 rounded-lg px-2.5 py-1.5">
+                    <Text className="text-xs text-foreground">
+                      <Text className="font-semibold">{rc.nomor}</Text> · {rc.tanggal} · {rc.item}
+                    </Text>
+                    <Button size="sm" variant="ghost" className="h-6 px-2" onPress={() => router.push(`/receiving/${rc.id}` as any)}>
+                      <Text className="text-[11px] text-primary">Detail Penerimaan</Text>
+                    </Button>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text className="text-[11px] text-muted-foreground">
+                Saat barang tiba di Gudang, petugas membuat Penerimaan dengan memilih PO ini, scan SN, dan upload File DO (Gambar/PDF) — otomatis ter-attach ke PO ini.
+              </Text>
+            )}
           </View>
         </View>
       </Panel>
@@ -272,8 +338,8 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       <Panel title="Barang di PO ini">
         {Array.isArray(row.items) && row.items.length > 0 ? (
           row.items.map((it: any, idx: number) => {
-            const prodName = it.product?.name || it.productName || it.name || it.product?.sku || `Barang #${idx + 1}`;
-            const qtyText = `${it.qty || 1} ${it.product?.unit || it.unit || "Unit"}`;
+            const prodName = it.product?.name || it.customName || it.productName || it.name || it.product?.sku || `Barang #${idx + 1}`;
+            const qtyText = `${it.qty || 1} ${it.product?.unit || it.customUnit || it.unit || "Unit"}`;
             const itemTotal = Number(it.price ? it.price * (it.qty || 1) : 0);
             return (
               <Line
@@ -454,9 +520,51 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       <Dialog open={invOpen} onOpenChange={setInvOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Catat Invoice Masuk Supplier</DialogTitle>
+            <DialogTitle>Catat Invoice Masuk dari Supplier</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
+            <FormField label="Skema Pembayaran ke Supplier" required>
+              <View className="flex-row gap-2">
+                <Button
+                  size="sm"
+                  variant={invPaymentScheme === "TEMPO" ? "default" : "outline"}
+                  onPress={() => setInvPaymentScheme("TEMPO")}
+                  className="flex-1"
+                >
+                  <Text className="text-xs font-semibold">Tempo (Utang)</Text>
+                </Button>
+                <Button
+                  size="sm"
+                  variant={invPaymentScheme === "LUNAS" ? "default" : "outline"}
+                  onPress={() => setInvPaymentScheme("LUNAS")}
+                  className="flex-1"
+                >
+                  <Text className="text-xs font-semibold">Langsung Lunas</Text>
+                </Button>
+              </View>
+            </FormField>
+            {invPaymentScheme === "LUNAS" ? (
+              <FormField label="Metode Pembayaran Lunas">
+                <View className="flex-row gap-2">
+                  <Button
+                    size="sm"
+                    variant={invPayMethod === "TRANSFER" ? "default" : "outline"}
+                    onPress={() => setInvPayMethod("TRANSFER")}
+                    className="flex-1"
+                  >
+                    <Text className="text-xs">Transfer Bank</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={invPayMethod === "TUNAI" ? "default" : "outline"}
+                    onPress={() => setInvPayMethod("TUNAI")}
+                    className="flex-1"
+                  >
+                    <Text className="text-xs">Kas / Tunai</Text>
+                  </Button>
+                </View>
+              </FormField>
+            ) : null}
             <FormField label="Nomor Invoice Supplier" required>
               <Input value={invNumber} onChangeText={setInvNumber} />
             </FormField>
@@ -466,12 +574,15 @@ export function SupplierPoExtras({ row }: { row: Row }) {
             <FormField label="Tanggal Invoice" required>
               <DatePicker value={invDate} onChange={setInvDate} />
             </FormField>
-            <FormField label="Jatuh Tempo" required>
-              <DatePicker value={invDue} onChange={setInvDue} />
-            </FormField>
+            {invPaymentScheme === "TEMPO" ? (
+              <FormField label="Jatuh Tempo" required>
+                <DatePicker value={invDue} onChange={setInvDue} />
+              </FormField>
+            ) : null}
             <FileUploader
-              label="Upload File Invoice dari Supplier"
-              kind="dokumen"
+              label="Upload File Invoice dari Supplier (Gambar / PDF)"
+              kind="semua"
+              accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
               category="invoice"
               autoFlush
               onUploaded={(fileId) => setInvFileId(fileId)}
@@ -482,7 +593,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
               <Text>Batal</Text>
             </Button>
             <Button onPress={handleCreateInvoiceIn}>
-              <Text>Simpan Invoice Masuk</Text>
+              <Text>{invPaymentScheme === "LUNAS" ? "Simpan & Tandai Lunas" : "Simpan Invoice Masuk"}</Text>
             </Button>
           </DialogFooter>
         </DialogContent>

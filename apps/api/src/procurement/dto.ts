@@ -35,8 +35,14 @@ export class RequestListQuery extends PageQuery {
 }
 
 export class RequestItemDto {
-  @IsInt()
-  productId!: number;
+  @IsOptional() @Type(() => Number) @IsInt()
+  productId?: number;
+
+  @IsOptional() @IsString()
+  customName?: string;
+
+  @IsOptional() @IsString()
+  customUnit?: string;
 
   @IsInt() @Min(1)
   qty!: number;
@@ -64,6 +70,12 @@ export class RequestDto {
   })
   @IsIn(["PROJECT", "STOK", "INTERNAL", "LAINNYA"])
   costType?: "PROJECT" | "STOK" | "INTERNAL" | "LAINNYA";
+
+  @IsOptional() @IsString()
+  procurementSource?: string;
+
+  @IsOptional() @IsString()
+  paymentMethod?: string;
 
   @IsOptional() @IsInt()
   projectId?: number;
@@ -155,8 +167,14 @@ export class PoListQuery extends PageQuery {
 }
 
 export class PoItemDto {
-  @IsInt()
-  productId!: number;
+  @IsOptional() @Type(() => Number) @IsInt()
+  productId?: number;
+
+  @IsOptional() @IsString()
+  customName?: string;
+
+  @IsOptional() @IsString()
+  customUnit?: string;
 
   @IsInt() @Min(1)
   qty!: number;
