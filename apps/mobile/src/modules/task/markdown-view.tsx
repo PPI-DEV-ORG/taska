@@ -51,6 +51,12 @@ function renderInline(text: string): React.ReactNode {
   return parts.length > 0 ? parts : text;
 }
 
+function hasWideMarkdown(content: string): boolean {
+  if (!content) return false;
+  // tabel markdown (| a | b |) atau code fence block (```)
+  return content.includes("|") || content.includes("```");
+}
+
 export function MarkdownView({ content }: { content: string }) {
   if (!content || !content.trim()) {
     return <Text className="text-sm text-muted-foreground italic">Tidak ada deskripsi.</Text>;
@@ -58,6 +64,7 @@ export function MarkdownView({ content }: { content: string }) {
 
   const rawLines = content.replace(/\r\n/g, "\n").split("\n");
   const elements: React.ReactNode[] = [];
+  const needsHorizontalScroll = hasWideMarkdown(content);
   let i = 0;
 
   while (i < rawLines.length) {
@@ -76,11 +83,18 @@ export function MarkdownView({ content }: { content: string }) {
       elements.push(
         <View
           key={`code-${i}`}
-          className="my-2 p-3 bg-muted/80 border border-border/80 rounded-xl overflow-x-auto"
+          className="my-2 p-3 bg-muted/80 border border-border/80 rounded-xl overflow-hidden"
         >
-          <Text className="font-mono text-xs text-foreground leading-relaxed">
-            {codeLines.join("\n")}
-          </Text>
+          <ScrollView
+            horizontal
+            nestedScrollEnabled
+            showsHorizontalScrollIndicator
+            contentContainerClassName="min-w-full"
+          >
+            <Text className="font-mono text-xs text-foreground leading-relaxed whitespace-pre min-w-max">
+              {codeLines.join("\n")}
+            </Text>
+          </ScrollView>
         </View>
       );
       i++;
@@ -105,51 +119,53 @@ export function MarkdownView({ content }: { content: string }) {
         const bodyLines = tableLines.slice(2); // Skip separator (|---|)
 
         elements.push(
-          <ScrollView
-            key={`table-${i}`}
-            horizontal
-            showsHorizontalScrollIndicator
-            className="my-2 border border-border/80 rounded-xl overflow-hidden"
-          >
-            <View className="min-w-full">
-              {/* Table Header */}
-              <View className="flex-row bg-muted/70 border-b border-border">
-                {headerCells.map((h, colIdx) => (
-                  <View
-                    key={colIdx}
-                    className="px-3 py-2 border-r border-border/60 last:border-r-0 min-w-[100px]"
-                  >
-                    <Text className="text-xs font-bold text-foreground">{h}</Text>
-                  </View>
-                ))}
-              </View>
+          <View key={`table-${i}`} className="my-2 border border-border/80 rounded-xl overflow-hidden">
+            <ScrollView
+              horizontal
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator
+              contentContainerClassName="min-w-full"
+            >
+              <View className="min-w-max">
+                {/* Table Header */}
+                <View className="flex-row bg-muted/70 border-b border-border">
+                  {headerCells.map((h, colIdx) => (
+                    <View
+                      key={colIdx}
+                      className="px-3.5 py-2.5 border-r border-border/60 last:border-r-0 min-w-[120px]"
+                    >
+                      <Text className="text-xs font-bold text-foreground">{h}</Text>
+                    </View>
+                  ))}
+                </View>
 
-              {/* Table Body */}
-              {bodyLines.map((rowLine, rowIdx) => {
-                const cells = rowLine
-                  .split("|")
-                  .slice(1, -1)
-                  .map((c) => c.trim());
-                return (
-                  <View
-                    key={rowIdx}
-                    className={`flex-row border-b border-border/50 last:border-b-0 ${
-                      rowIdx % 2 === 1 ? "bg-muted/20" : "bg-card"
-                    }`}
-                  >
-                    {cells.map((cell, colIdx) => (
-                      <View
-                        key={colIdx}
-                        className="px-3 py-2 border-r border-border/50 last:border-r-0 min-w-[100px]"
-                      >
-                        <Text className="text-xs text-foreground">{renderInline(cell)}</Text>
-                      </View>
-                    ))}
-                  </View>
-                );
-              })}
-            </View>
-          </ScrollView>
+                {/* Table Body */}
+                {bodyLines.map((rowLine, rowIdx) => {
+                  const cells = rowLine
+                    .split("|")
+                    .slice(1, -1)
+                    .map((c) => c.trim());
+                  return (
+                    <View
+                      key={rowIdx}
+                      className={`flex-row border-b border-border/50 last:border-b-0 ${
+                        rowIdx % 2 === 1 ? "bg-muted/20" : "bg-card"
+                      }`}
+                    >
+                      {cells.map((cell, colIdx) => (
+                        <View
+                          key={colIdx}
+                          className="px-3.5 py-2 border-r border-border/50 last:border-r-0 min-w-[120px]"
+                        >
+                          <Text className="text-xs text-foreground">{renderInline(cell)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
         );
         continue;
       }
@@ -277,6 +293,10 @@ export function MarkdownView({ content }: { content: string }) {
     i++;
   }
 
-  return <View className="gap-0.5">{elements}</View>;
+  return (
+    <View className="gap-0.5 w-full">
+      {elements}
+    </View>
+  );
 }
 

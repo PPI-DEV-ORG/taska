@@ -188,38 +188,22 @@ export function CreateTaskDialog({
 
             {editorTab === "write" ? (
               <View className="border border-border/80 rounded-xl overflow-hidden bg-card/60">
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator
-                  contentContainerClassName="min-w-full"
-                >
-                  <Textarea
-                    value={deskripsi}
-                    onChangeText={setDeskripsi}
-                    numberOfLines={10}
-                    placeholder="Detail instruksi / spesifikasi pengerjaan tugas... Mendukung format Markdown (.md), tabel, checklist [ ], dll."
-                    className="min-h-[180px] max-h-[450px] font-mono text-xs border-0 bg-transparent rounded-none min-w-[650px] w-full"
-                    style={{ whiteSpace: "pre", overflowX: "auto", overflowY: "auto" } as any}
-                  />
-                </ScrollView>
+                <Textarea
+                  value={deskripsi}
+                  onChangeText={setDeskripsi}
+                  numberOfLines={8}
+                  placeholder="Detail instruksi / spesifikasi pengerjaan tugas... Mendukung format Markdown (.md), tabel, checklist [ ], dll."
+                  className="min-h-[140px] max-h-[450px] font-mono text-xs border-0 bg-transparent rounded-none w-full"
+                />
               </View>
             ) : (
-              <View className="bg-panel/40 border border-border/80 rounded-xl p-3 min-h-[180px] max-h-[480px]">
+              <View className="bg-panel/40 border border-border/80 rounded-xl p-3 min-h-[100px] max-h-[450px]">
                 <ScrollView
                   nestedScrollEnabled
                   showsVerticalScrollIndicator
-                  className="max-h-[450px]"
+                  className="max-h-[420px]"
                 >
-                  <ScrollView
-                    horizontal
-                    nestedScrollEnabled
-                    showsHorizontalScrollIndicator
-                    contentContainerClassName="min-w-full"
-                  >
-                    <View className="min-w-full">
-                      <MarkdownView content={deskripsi || "*Belum ada deskripsi yang ditulis.*"} />
-                    </View>
-                  </ScrollView>
+                  <MarkdownView content={deskripsi || "*Belum ada deskripsi yang ditulis.*"} />
                 </ScrollView>
               </View>
             )}
