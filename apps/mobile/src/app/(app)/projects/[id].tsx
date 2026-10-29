@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { rupiah, tanggal } from "@/lib/format";
 import { ProjectExtras, useProjectExpenses } from "@/modules/project/project-extras";
 import { TaskDetailDialog } from "@/modules/task/task-detail-dialog";
+import { CreateTaskDialog } from "@/modules/task/create-task-dialog";
 
 const TABS = [
   "Ringkasan",
@@ -936,41 +937,12 @@ export default function ProjectDetailScreen() {
       )}
 
       {/* Dialogs & Modals */}
-      <FormDialog
+      <CreateTaskDialog
         open={taskModalOpen}
         onOpenChange={setTaskModalOpen}
-        title="Tambah Tugas Project"
-        fields={[
-          { key: "nama", label: "Nama Tugas", type: "text", required: true, placeholder: "Contoh: Penarikan kabel lantai 2" },
-          { key: "deskripsi", label: "Deskripsi Tugas", type: "textarea", placeholder: "Detail instruksi / spesifikasi pengerjaan tugas" },
-          {
-            key: "parentTask",
-            label: "Sub-tugas dari (Opsional)",
-            type: "select",
-            options: ["(Tugas Utama)", ...tasks.filter((t) => !t.parent).map((t) => String(t.nama || t.name)).filter(Boolean)],
-          },
-          { key: "pic", label: "PIC Tugas", type: "select", required: true, placeholder: "Pilih PIC" },
-          { key: "tenggat", label: "Tenggat Waktu", type: "date" },
-          { key: "perluBarang", label: "Perlu Pembelian Barang?", type: "select", options: ["Tidak", "Ya"] },
-        ]}
-        submitLabel="Simpan Tugas"
-        onSubmit={(v) => {
-          const parentRow =
-            v.parentTask && v.parentTask !== "(Tugas Utama)"
-              ? tasks.find((t) => (t.nama || t.name) === v.parentTask)
-              : undefined;
-          addRow("tasks", {
-            projectId: project.id,
-            project: project.nama || project.name,
-            parentId: parentRow?.id,
-            nama: v.nama,
-            deskripsi: v.deskripsi || undefined,
-            pic: v.pic,
-            tenggat: v.tenggat || new Date().toISOString().slice(0, 10),
-            perluBarang: v.perluBarang === "Ya",
-            status: "TODO",
-          });
-        }}
+        projectId={project.id}
+        projectName={project.nama || project.name}
+        existingTasks={tasks}
       />
 
       <FormDialog

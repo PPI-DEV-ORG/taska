@@ -19,6 +19,7 @@ import {
   CATEGORY_META, MANUAL_CATEGORY_KEYS, PRIORITY_LABEL, RECURRENCE_LABEL, REMINDER_OPTIONS, STATUS_KEYS, STATUS_LABEL,
   statusLabel, toIsoWib, wibKey, wibTime, ymd, type CalItem,
 } from "./types";
+import { ScrollView } from "react-native-gesture-handler";
 
 type Person = { id: number; name: string };
 
@@ -65,17 +66,40 @@ export function EventFormDialog({
   const [reminder, setReminder] = React.useState<number | null>(null);
   const [description, setDescription] = React.useState("");
 
-  React.useEffect(() => {
-    if (!open) return;
-    if (!eventId) {
-      setTitle(""); setCategory("MEETING"); setStartDate(defaultDate || ymd(new Date())); setStartTime("09:00");
-      setEndDate(""); setEndTime("10:00"); setAllDay(false); setAssignee(user?.name ?? ""); setAttendees([]);
-      setPriority("MEDIUM"); setStatus("NOT_STARTED"); setRecurrence("NONE"); setUntil(""); setReminder(null); setDescription("");
-      return;
+  const [prevFormKey, setPrevFormKey] = React.useState<string | null>(null);
+  const currentFormKey = open ? `${eventId ?? "new"}-${defaultDate ?? ""}` : null;
+  if (currentFormKey !== prevFormKey) {
+    setPrevFormKey(currentFormKey);
+    if (open) {
+      if (eventId) {
+        setLoading(true);
+      } else {
+        setLoading(false);
+        setTitle("");
+        setCategory("MEETING");
+        setStartDate(defaultDate || ymd(new Date()));
+        setStartTime("09:00");
+        setEndDate("");
+        setEndTime("10:00");
+        setAllDay(false);
+        setAssignee(user?.name ?? "");
+        setAttendees([]);
+        setPriority("MEDIUM");
+        setStatus("NOT_STARTED");
+        setRecurrence("NONE");
+        setUntil("");
+        setReminder(null);
+        setDescription("");
+      }
     }
-    setLoading(true);
+  }
+
+  React.useEffect(() => {
+    if (!open || !eventId) return;
+    let active = true;
     api<any>("GET", `/calendar/events/${eventId}`)
       .then((e) => {
+        if (!active) return;
         setTitle(e.title ?? ""); setCategory(e.category ?? "MEETING");
         setStartDate(wibKey(e.startDate)); setStartTime(wibTime(e.startDate));
         setEndDate(e.endDate ? wibKey(e.endDate) : ""); setEndTime(e.endDate ? wibTime(e.endDate) : "10:00");
@@ -85,9 +109,16 @@ export function EventFormDialog({
         setRecurrence(e.recurrence ?? "NONE"); setUntil(e.recurrenceUntil ? wibKey(e.recurrenceUntil) : "");
         setReminder(e.reminderMinutes ?? null); setDescription(e.description ?? "");
       })
-      .catch((err) => toast(err?.message ?? "Gagal memuat agenda", "danger"))
-      .finally(() => setLoading(false));
-  }, [open, eventId, defaultDate]);
+      .catch((err) => {
+        if (active) toast(err?.message ?? "Gagal memuat agenda", "danger");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, eventId]);
 
   async function save() {
     if (title.trim().length < 2) return toast("Judul agenda wajib diisi", "danger");
@@ -124,14 +155,14 @@ export function EventFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[90vh] flex flex-col p-6">
+        <DialogHeader className="shrink-0 mb-1">
           <DialogTitle>{eventId ? "Edit Agenda" : "Buat Agenda"}</DialogTitle>
         </DialogHeader>
         {loading ? (
           <Text className="text-muted-foreground py-6 text-center text-sm">Memuat...</Text>
         ) : (
-          <View className="gap-3 py-1">
+          <ScrollView className="flex-1 -mx-2 px-2" contentContainerClassName="gap-3 py-1 pb-4" showsVerticalScrollIndicator>
             <FormField label="Judul Agenda" required>
               <Input value={title} onChangeText={setTitle} placeholder="Contoh: Follow-up penawaran PT Contoh" />
             </FormField>
@@ -214,9 +245,9 @@ export function EventFormDialog({
             <FormField label="Deskripsi / catatan">
               <Textarea value={description} onChangeText={setDescription} numberOfLines={4} />
             </FormField>
-          </View>
+          </ScrollView>
         )}
-        <DialogFooter>
+        <DialogFooter className="shrink-0 mt-2 pt-2">
           <Button variant="outline" onPress={() => onOpenChange(false)}><Text>Batal</Text></Button>
           <Button onPress={save} disabled={saving || loading}><Text>{saving ? "Menyimpan..." : "Simpan"}</Text></Button>
         </DialogFooter>
@@ -248,22 +279,39 @@ export function EventDetailDialog({
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const isManual = item?.sourceModule === "calendar";
 
-  React.useEffect(() => {
+  const [prevItemKey, setPrevItemKey] = React.useState<string | null>(null);
+  const currentItemKey = item?.key ?? null;
+  if (currentItemKey !== prevItemKey) {
+    setPrevItemKey(currentItemKey);
     setDetail(null);
     setHistory([]);
+  }
+
+  React.useEffect(() => {
     if (!item || !isManual) return;
+    let active = true;
     // Riwayat HANYA untuk agenda ini (entityType + entityId).
-    api<any>("GET", `/calendar/events/${item.sourceId}`).then(setDetail).catch(() => undefined);
+    api<any>("GET", `/calendar/events/${item.sourceId}`)
+      .then((res) => {
+        if (active) setDetail(res);
+      })
+      .catch(() => undefined);
+
     api<any[]>("GET", `/audit-logs/entity/calendarEvent/${item.sourceId}`)
-      .then((rows) =>
+      .then((rows) => {
+        if (!active) return;
         setHistory(
           (rows ?? [])
             .filter((r) => String(r.entityId) === String(item.sourceId) && r.entityType === "calendarEvent")
             .map((r) => ({ id: `al-${r.id}`, who: r.actorName || "Sistem", what: r.detail || r.action, when: r.createdAt })),
-        ),
-      )
+        );
+      })
       .catch(() => undefined);
-  }, [item?.key]);
+
+    return () => {
+      active = false;
+    };
+  }, [item?.sourceId, isManual]);
 
   if (!item) return null;
   const meta = CATEGORY_META[item.category] ?? CATEGORY_META.OTHER!;
