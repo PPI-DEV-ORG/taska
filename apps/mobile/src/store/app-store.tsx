@@ -601,7 +601,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       await hydrateTokens();
       if (!getAccess()) {
-        if (alive) setHydrated(true);
+        if (alive) {
+          // Sesi sudah habis: jangan pakai user cache, paksa kembali ke login saat refresh.
+          writeStorageJson(STORAGE_CACHE_USER_KEY, null);
+          setUser(null);
+          setHydrated(true);
+        }
         return;
       }
       try {
@@ -1347,12 +1352,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .filter((al: any) => {
           const m = String(al.jenis || "").toLowerCase().replace(/[-_]/g, "");
           const mod = String(module || "").toLowerCase().replace(/[-_]/g, "");
-          const matchModule =
-            m === mod ||
-            m === mod.replace(/s$/, "") ||
-            m === mod + "s" ||
-            (mod.startsWith("visit") && m.startsWith("visit")) ||
-            (mod.startsWith("poc") && m.startsWith("poc"));
+          const alias = (x: string) =>
+            x.startsWith("visit") && !x.includes("activity") && !x.includes("action") && !x.includes("member")
+              ? "visitreport"
+              : x.startsWith("poc") && !x.includes("member")
+                ? "pocreport"
+                : x.replace(/s$/, "");
+          const matchModule = alias(m) === alias(mod);
           return matchModule && String(al.refId) === String(id);
         })
         .map((al: any) => ({

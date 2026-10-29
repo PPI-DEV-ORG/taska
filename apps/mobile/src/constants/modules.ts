@@ -27,6 +27,7 @@ import {
   FileSignature,
   Presentation,
   Handshake,
+  CalendarDays,
 } from "lucide-react-native";
 
 export type Role =
@@ -876,6 +877,7 @@ export type NavItem = { key: string; label: string; short?: string; href: string
 
 const N = {
   dashboard: { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  calendar: { key: "calendar", label: "Kalender Kerja", short: "Kalender", href: "/calendar", icon: CalendarDays },
   approvals: { key: "approvals", label: "Persetujuan", href: "/approvals", icon: CheckSquare },
   leads: { key: "leads", label: "Leads", href: "/leads", icon: Target },
   quotations: { key: "quotations", label: "Penawaran", href: "/quotations", icon: FileText },
@@ -909,20 +911,20 @@ const N = {
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   super_admin: [
-    N.dashboard, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.customers,
+    N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.customers,
     N.projects, N.tasks, N.requests, N.supplierPos, N.shipments, N.receiving,
     N.stock, N.opname, N.delivery, N.poClient, N.invoices, N.expenses,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
-  admin: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.surveys, N.pocReports, N.visitReports, N.projects, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
-  bos: [N.dashboard, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.surveys, N.pocReports, N.visitReports, N.projects, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
-  sales: [N.dashboard, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.customers, N.expenses, N.hr, N.master],
-  pm: [N.dashboard, N.projects, N.surveys, N.pocReports, N.visitReports, N.requests, N.delivery, N.expenses, N.hr],
-  teknisi: [N.dashboard, N.surveys, N.pocReports, N.visitReports, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.hr],
-  procurement: [N.dashboard, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.damage, N.expenses, N.visitReports, N.hr, N.master],
-  finance: [N.dashboard, N.approvals, N.surveys, N.pocReports, N.visitReports, N.invoices, N.quotations, N.poClient, N.accounting, N.hr, N.stock, N.expenses, N.opname, N.reports],
-  gudang: [N.dashboard, N.approvals, N.requests, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.hr, N.master],
-  se: [N.dashboard, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.delivery, N.expenses, N.hr],
+  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.surveys, N.pocReports, N.visitReports, N.projects, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
+  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.surveys, N.pocReports, N.visitReports, N.projects, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
+  sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.customers, N.expenses, N.hr, N.master],
+  pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.requests, N.delivery, N.expenses, N.hr],
+  teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.hr],
+  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.stockView, N.damage, N.expenses, N.visitReports, N.hr, N.master],
+  finance: [N.dashboard, N.calendar, N.approvals, N.surveys, N.pocReports, N.visitReports, N.invoices, N.quotations, N.poClient, N.accounting, N.hr, N.stock, N.expenses, N.opname, N.reports],
+  gudang: [N.dashboard, N.calendar, N.approvals, N.requests, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.hr, N.master],
+  se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.delivery, N.expenses, N.hr],
 };
 
 export const CAN_APPROVE: Role[] = ["super_admin", "bos", "finance", "gudang", "procurement"];

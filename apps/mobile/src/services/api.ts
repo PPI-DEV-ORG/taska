@@ -112,7 +112,10 @@ export function isNetworkError(err: any): boolean {
 async function tryRefresh(): Promise<boolean> {
   await hydrateTokens();
   const r = getRefresh();
-  if (!r) return false;
+  if (!r) {
+    await setTokens(null, null);
+    return false;
+  }
   try {
     const res = await fetch(`${apiBase()}/auth/refresh`, {
       method: "POST",
@@ -120,7 +123,7 @@ async function tryRefresh(): Promise<boolean> {
       body: JSON.stringify({ refreshToken: r }),
     });
     if (!res.ok) {
-      setTokens(null, null);
+      await setTokens(null, null);
       return false;
     }
     const data = await res.json();

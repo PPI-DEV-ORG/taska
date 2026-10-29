@@ -96,6 +96,9 @@ export class AuditService {
       variants.add("client-po");
       variants.add("clientPO");
     }
+    if (rawType.startsWith("calendar")) {
+      variants.add("calendarEvent");
+    }
     if (rawType.includes("note")) {
       variants.add("delivery-notes");
       variants.add("deliveryNote");

@@ -331,6 +331,9 @@ model User {
   pocMembers     PocMember[]
   visitReports   VisitReport[]       @relation("VisitOwner")
   visitMembers   VisitMember[]
+  calendarCreated   CalendarEvent[]    @relation("CalendarCreator")
+  calendarAssigned  CalendarEvent[]    @relation("CalendarAssignee")
+  calendarAttendees CalendarAttendee[]
   createdDN      DeliveryNote[]      @relation("DNCreator")
   movements      StockMovement[]
   serialHist     SerialUnitHistory[]
@@ -1637,4 +1640,50 @@ model VisitActionItem {
 
   @@index([visitReportId])
   @@index([assigneeId])
+}
+
+// ─────────────────────────────── Kalender Kerja ───────────────────────────────
+model CalendarEvent {
+  id              Int      @id @default(autoincrement())
+  number          String   @unique
+  title           String
+  description     String?  @db.Text
+  category        String   @default("MEETING")
+  status          String   @default("NOT_STARTED")
+  priority        String   @default("MEDIUM")
+  startDate       DateTime
+  endDate         DateTime?
+  isAllDay        Boolean  @default(false)
+  recurrence      String   @default("NONE")
+  recurrenceUntil DateTime?
+  reminderMinutes Int?
+  lastRemindedAt  DateTime?
+  completionNote  String?  @db.Text
+  creatorId       Int
+  creator         User     @relation("CalendarCreator", fields: [creatorId], references: [id])
+  assigneeId      Int?
+  assignee        User?    @relation("CalendarAssignee", fields: [assigneeId], references: [id])
+  customerId      Int?
+  projectId       Int?
+  leadId          Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  attendees CalendarAttendee[]
+
+  @@index([startDate])
+  @@index([assigneeId])
+  @@index([creatorId])
+  @@index([category])
+}
+
+model CalendarAttendee {
+  id      Int           @id @default(autoincrement())
+  eventId Int
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  Int
+  user    User          @relation(fields: [userId], references: [id])
+
+  @@unique([eventId, userId])
+  @@index([userId])
 }
