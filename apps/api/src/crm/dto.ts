@@ -29,6 +29,12 @@ export class CrmListQuery extends PageQuery {
   quotationId?: number;
 
   @IsOptional() @Type(() => Number) @IsInt()
+  pocReportId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  visitReportId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
   ownerId?: number;
 
   @IsOptional() @Type(() => Number) @IsInt()
@@ -99,11 +105,17 @@ export class LeadDto {
 }
 
 export class FollowUpDto {
-  @IsOptional() @IsInt()
+  @IsOptional() @Type(() => Number) @IsInt()
   leadId?: number;
 
-  @IsOptional() @IsInt()
+  @IsOptional() @Type(() => Number) @IsInt()
   quotationId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  pocReportId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  visitReportId?: number;
 
   @IsDateString()
   date!: string;
@@ -122,11 +134,17 @@ export class FollowUpDto {
 }
 
 export class UpdateFollowUpDto {
-  @IsOptional() @IsInt()
+  @IsOptional() @Type(() => Number) @IsInt()
   leadId?: number;
 
-  @IsOptional() @IsInt()
+  @IsOptional() @Type(() => Number) @IsInt()
   quotationId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  pocReportId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  visitReportId?: number;
 
   @IsOptional() @IsDateString()
   date?: string;

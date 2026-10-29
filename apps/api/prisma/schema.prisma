@@ -684,22 +684,28 @@ model Lead {
 }
 
 model FollowUp {
-  id          Int            @id @default(autoincrement())
-  leadId      Int?
-  lead        Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  quotationId Int?
-  date        DateTime       @db.Date
-  method      FollowUpMethod
-  notes       String
-  nextDate    DateTime?      @db.Date
-  status      FollowUpStatus @default(SELESAI)
-  createdById Int?
-  creator     User?          @relation(fields: [createdById], references: [id])
-  createdAt   DateTime       @default(now())
-  quotation   Quotation?     @relation(fields: [quotationId], references: [id])
+  id            Int            @id @default(autoincrement())
+  leadId        Int?
+  lead          Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  quotationId   Int?
+  pocReportId   Int?
+  pocReport     PocReport?     @relation(fields: [pocReportId], references: [id], onDelete: Cascade)
+  visitReportId Int?
+  visitReport   VisitReport?   @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
+  date          DateTime       @db.Date
+  method        FollowUpMethod
+  notes         String
+  nextDate      DateTime?      @db.Date
+  status        FollowUpStatus @default(SELESAI)
+  createdById   Int?
+  creator       User?          @relation(fields: [createdById], references: [id])
+  createdAt     DateTime       @default(now())
+  quotation     Quotation?     @relation(fields: [quotationId], references: [id])
 
   @@index([leadId])
   @@index([quotationId])
+  @@index([pocReportId])
+  @@index([visitReportId])
   @@index([date])
 }
 
@@ -1521,6 +1527,7 @@ model PocReport {
   members             PocMember[]
   checklists          PocChecklist[]
   expenses            Expense[]
+  followUps           FollowUp[]
 
   @@index([status])
   @@index([date])
@@ -1605,6 +1612,7 @@ model VisitReport {
   members                VisitMember[]
   actions                VisitActionItem[]
   expenses               Expense[]
+  followUps              FollowUp[]
 
   @@index([status])
   @@index([date])

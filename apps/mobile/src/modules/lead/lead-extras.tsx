@@ -581,8 +581,17 @@ export function LeadExtras({ row }: { row: Row }) {
             </View>
 
             <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Tanggal Follow-up Berikutnya (Opsional)</Text>
-              <DatePicker value={fuNextAction} onChange={setFuNextAction} placeholder="Pilih tanggal jadwal berikutnya" />
+              <Text className="text-xs text-muted-foreground font-medium">
+                Tanggal Follow-up Berikutnya / Event Mendatang (Muncul di Kalender)
+              </Text>
+              <DatePicker
+                value={fuNextAction}
+                onChange={(v) => {
+                  setFuNextAction(v);
+                  if (v) setFuStatus("TERJADWAL");
+                }}
+                placeholder="Pilih tanggal jadwal berikutnya"
+              />
             </View>
 
             <View className="gap-1.5">

@@ -9,6 +9,7 @@ import {
   Trash2,
   CheckSquare,
   Settings,
+  AlertTriangle,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -25,6 +26,7 @@ import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
+import { FollowUpPanel } from "@/modules/shared/follow-up-panel";
 import { useRouter } from "expo-router";
 
 type ChecklistItem = {
@@ -51,6 +53,29 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
   const [newChecklistTitle, setNewChecklistTitle] = React.useState("");
   const [newChecklistNotes, setNewChecklistNotes] = React.useState("");
   const [newChecklistDate, setNewChecklistDate] = React.useState("");
+  const [newChecklistAssignee, setNewChecklistAssignee] = React.useState("");
+
+  const userOptions = React.useMemo(() => {
+    return ["-", ...(data.users ?? []).map((u: Row) => String(u.nama || u.name))];
+  }, [data.users]);
+
+  const overlappingPocs = React.useMemo(() => {
+    const myStart = String(row.mulai || row.startDate || "").slice(0, 10);
+    const myEnd = String(row.selesai || row.endDate || myStart).slice(0, 10);
+    if (!myStart) return [];
+    return (data["poc-reports"] ?? []).filter((p: Row) => {
+      if (String(p.id) === String(row.id)) return false;
+      if (["Cancelled", "Failed", "Completed"].includes(String(p.status))) return false;
+      const sameOwner =
+        (row.ownerId && p.ownerId && String(row.ownerId) === String(p.ownerId)) ||
+        (row.pemilik && p.pemilik && row.pemilik !== "-" && String(row.pemilik) === String(p.pemilik));
+      if (!sameOwner) return false;
+      const pStart = String(p.mulai || p.startDate || "").slice(0, 10);
+      const pEnd = String(p.selesai || p.endDate || pStart).slice(0, 10);
+      if (!pStart) return false;
+      return myStart <= pEnd && myEnd >= pStart;
+    });
+  }, [data, row.id, row.mulai, row.startDate, row.selesai, row.endDate, row.ownerId, row.pemilik]);
 
   // Result & Evaluation dialog
   const [resultDialogOpen, setResultDialogOpen] = React.useState(false);
@@ -144,15 +169,20 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
       return;
     }
     try {
+      const assigneeUser = (data.users ?? []).find(
+        (u: Row) => String(u.nama || u.name) === newChecklistAssignee
+      );
       await api("POST", `/poc-reports/${row.id}/checklists`, {
         title: newChecklistTitle.trim(),
         notes: newChecklistNotes.trim() || undefined,
         dueDate: newChecklistDate || undefined,
+        assigneeId: assigneeUser?.id ? Number(assigneeUser.id) : undefined,
       });
       toast("Item persiapan checklist berhasil ditambahkan");
       setNewChecklistTitle("");
       setNewChecklistNotes("");
       setNewChecklistDate("");
+      setNewChecklistAssignee("");
       setAddChecklistOpen(false);
       reloadChecklist();
     } catch {
@@ -252,6 +282,15 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
 
   return (
     <View className="gap-6 mt-4">
+      {overlappingPocs.length > 0 ? (
+        <View className="bg-warning/15 border-warning/40 flex-row items-center gap-2 rounded-xl border p-3">
+          <AlertTriangle size={16} color={colors.warning} />
+          <Text className="text-warning flex-1 text-xs">
+            Perhatian: Jadwal POC ini beririsan dengan {overlappingPocs.length} POC aktif lain milik PIC {row.pemilik} ({overlappingPocs.map((p: Row) => p.nomor || p.judul).join(", ")}).
+          </Text>
+        </View>
+      ) : null}
+
       {/* ── Action & Status Banner ── */}
       <Panel>
         <View className="flex-row flex-wrap items-center justify-between gap-3">
@@ -367,8 +406,18 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
                     >
                       {item.title}
                     </Text>
-                    {item.notes ? (
-                      <Text className="text-xs text-muted-foreground mt-0.5">{item.notes}</Text>
+                    {item.assigneeId || item.dueDate || item.notes ? (
+                      <Text className="text-xs text-muted-foreground mt-0.5">
+                        {[
+                          item.assigneeId
+                            ? `PIC: ${(data.users ?? []).find((u: Row) => Number(u.id) === Number(item.assigneeId))?.nama || `#${item.assigneeId}`}`
+                            : null,
+                          item.dueDate ? `Target: ${tanggal(item.dueDate)}` : null,
+                          item.notes ? item.notes : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </Text>
                     ) : null}
                   </View>
                 </Pressable>
@@ -416,6 +465,11 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
           </View>
 
           <View className="p-3 bg-card/40 rounded-lg border border-border">
+            <Text className="text-xs text-muted-foreground font-semibold">AKTIVITAS YANG DILAKUKAN</Text>
+            <Text className="text-sm mt-1 whitespace-pre-line">{row.activitiesDone || "-"}</Text>
+          </View>
+
+          <View className="p-3 bg-card/40 rounded-lg border border-border">
             <Text className="text-xs text-muted-foreground font-semibold">HASIL PENGUJIAN TEKNIS</Text>
             <Text className="text-sm mt-1 whitespace-pre-line">{row.testResults || "Belum ada catatan hasil uji."}</Text>
           </View>
@@ -426,15 +480,29 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
           </View>
 
           <View className="p-3 bg-card/40 rounded-lg border border-border">
+            <Text className="text-xs text-muted-foreground font-semibold">TINDAK LANJUT YANG DIPERLUKAN</Text>
+            <Text className="text-sm mt-1 whitespace-pre-line">{row.followUpNeeded || "-"}</Text>
+          </View>
+
+          <View className="p-3 bg-card/40 rounded-lg border border-border">
             <Text className="text-xs text-muted-foreground font-semibold">KESIMPULAN & REKOMENDASI</Text>
             <Text className="text-sm mt-1 whitespace-pre-line">
               {row.conclusion || row.recommendations
-                ? `${row.conclusion || ""}\n${row.recommendations ? `Rekomendasi: ${row.recommendations}` : ""}`
+                ? `${row.conclusion || ""}${row.conclusion && row.recommendations ? "\n" : ""}${row.recommendations ? `Rekomendasi: ${row.recommendations}` : ""}`
                 : "-"}
             </Text>
           </View>
         </View>
       </Panel>
+
+      {/* ── Riwayat Follow-up & Event Mendatang (Sinkron Kalender) ── */}
+      <FollowUpPanel
+        moduleKey="poc-reports"
+        entityId={row.id}
+        initialFollowUps={row._followUps}
+        subtitle="Catat aktivitas komunikasi & jadwal follow-up lanjutan hasil POC / Expo. Jadwal berikutnya otomatis tampil di Kalender."
+        onUpdated={onRefresh}
+      />
 
       {/* ── Biaya Operasional & Reimbursement (Phase 2 - Section H) ── */}
       <Panel
@@ -507,6 +575,11 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
                             : "Dana Kantor"}
                         </Text>
                       </View>
+                      {!e.receiptFileId && (!Array.isArray(e.receiptFileIds) || e.receiptFileIds.length === 0) ? (
+                        <View className="px-2 py-0.5 rounded bg-danger/15">
+                          <Text className="text-[10px] text-danger font-semibold">Tanpa Bukti</Text>
+                        </View>
+                      ) : null}
                     </View>
                     <Text className="text-xs text-muted-foreground mt-1">
                       {tanggal(e.tanggal || e.date)} • Pelapor: {e.pelapor || "Karyawan"} • Kategori: {e.kategori || "-"}
@@ -541,6 +614,15 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
                 value={newChecklistTitle}
                 onChangeText={setNewChecklistTitle}
                 placeholder="Contoh: Bawa kabel converter HDMI & roll kabel listrik"
+              />
+            </View>
+            <View className="gap-1.5">
+              <Text className="text-xs font-semibold">Penanggung Jawab (Assignee)</Text>
+              <SearchableSelect
+                value={newChecklistAssignee}
+                onChange={setNewChecklistAssignee}
+                options={userOptions}
+                placeholder="Pilih staf penanggung jawab"
               />
             </View>
             <View className="gap-1.5">
@@ -640,11 +722,20 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
             </View>
 
             <View className="gap-1">
-              <Text className="text-xs font-semibold">Kesimpulan & Rekomendasi</Text>
+              <Text className="text-xs font-semibold">Kesimpulan Akhir</Text>
               <Textarea
                 value={conclusion}
                 onChangeText={setConclusion}
                 placeholder="Kesimpulan keseluruhan kegiatan..."
+              />
+            </View>
+
+            <View className="gap-1">
+              <Text className="text-xs font-semibold">Rekomendasi Teknis / Bisnis</Text>
+              <Textarea
+                value={recommendations}
+                onChangeText={setRecommendations}
+                placeholder="Rekomendasi konfigurasi, kapasitas server, atau langkah komersial berikutnya..."
               />
             </View>
           </View>
