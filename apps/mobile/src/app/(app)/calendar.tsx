@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { AgendaView, DayView, EventCard, MonthView, WeekView } from "@/modules/calendar/calendar-views";
 import { EventDetailDialog, EventFormDialog } from "@/modules/calendar/event-dialogs";
 import {
-  BULAN_PANJANG, CATEGORY_KEYS, CATEGORY_META, HARI, STATUS_LABEL, addDays, groupByDay, parseYmd, startOfWeek, ymd,
+  BULAN_PANJANG, CATEGORY_KEYS, CATEGORY_META, HARI, STATUS_LABEL, TEAM_FILTER_OPTIONS, addDays, groupByDay, parseYmd, startOfWeek, ymd,
   type CalItem, type CalendarView,
 } from "@/modules/calendar/types";
 
@@ -62,11 +62,12 @@ export default function CalendarScreen() {
   const [view, setView] = React.useState<CalendarView>("month");
   const [cursor, setCursor] = React.useState(() => new Date());
   const [selected, setSelected] = React.useState(() => ymd(new Date()));
-  const [scope, setScope] = React.useState<"me" | "all">("me");
+  const [scope, setScope] = React.useState<"me" | "team" | "all">("me");
   const [cats, setCats] = React.useState<string[]>([]);
   const [status, setStatus] = React.useState("");
   const [onlyOverdue, setOnlyOverdue] = React.useState(false);
   const [pic, setPic] = React.useState("");
+  const [team, setTeam] = React.useState("");
   const [q, setQ] = React.useState("");
   const [items, setItems] = React.useState<CalItem[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -74,6 +75,7 @@ export default function CalendarScreen() {
   const [detail, setDetail] = React.useState<CalItem | null>(null);
   const [formOpen, setFormOpen] = React.useState(false);
   const [editId, setEditId] = React.useState<number | null>(null);
+  const [editOccDate, setEditOccDate] = React.useState<string | undefined>(undefined);
   const [jumpOpen, setJumpOpen] = React.useState(false);
   const [jumpYear, setJumpYear] = React.useState(() => new Date().getFullYear());
   const [jumpMonth, setJumpMonth] = React.useState(() => new Date().getMonth());
@@ -107,6 +109,7 @@ export default function CalendarScreen() {
   const load = React.useCallback(async () => {
     const { from, to } = rangeOf(view, cursor);
     const picId = pic ? (data.users ?? []).find((u: any) => (u.name || u.nama) === pic)?.id : undefined;
+    const teamKey = team ? TEAM_FILTER_OPTIONS.find((t) => t.label === team)?.code : undefined;
     setLoading(true);
     try {
       const r = await api<{ items: CalItem[] }>(
@@ -114,10 +117,11 @@ export default function CalendarScreen() {
         `/calendar/events${queryString({
           from: from.toISOString(),
           to: to.toISOString(),
-          scope: canViewAll ? scope : "me",
+          scope: scope === "all" && !canViewAll ? "team" : scope,
           category: cats.join(","),
           status: Object.entries(STATUS_LABEL).find(([, l]) => l === status)?.[0],
           assigneeId: picId,
+          team: teamKey,
           overdue: onlyOverdue ? "1" : undefined,
           q: q.trim() || undefined,
         })}`,
@@ -128,7 +132,7 @@ export default function CalendarScreen() {
     } finally {
       setLoading(false);
     }
-  }, [view, cursor, scope, cats, status, onlyOverdue, pic, q, canViewAll]);
+  }, [view, cursor, scope, cats, status, onlyOverdue, pic, team, q, canViewAll, data.users, toast]);
 
   React.useEffect(() => {
     const t = setTimeout(() => void load(), 150);
@@ -168,9 +172,15 @@ export default function CalendarScreen() {
     <View className="gap-5">
       <PageHeader
         title="Kalender Kerja"
-        subtitle={scope === "all" && canViewAll ? "Seluruh agenda, jadwal, dan deadline perusahaan" : "Agenda, jadwal, dan deadline saya"}
+        subtitle={
+          scope === "all" && canViewAll
+            ? "Seluruh agenda, jadwal, dan deadline perusahaan"
+            : scope === "team"
+              ? "Agenda tim, project, dan kegiatan lintas anggota di mana saya terlibat"
+              : "Agenda pribadi, tugas, dan kegiatan yang melibatkan saya"
+        }
         action={
-          <Button size="sm" onPress={() => { setEditId(null); setFormOpen(true); }}>
+          <Button size="sm" onPress={() => { setEditId(null); setEditOccDate(undefined); setFormOpen(true); }}>
             <Plus size={15} color="#fff" />
             <Text className="text-xs">Buat agenda</Text>
           </Button>
@@ -182,12 +192,13 @@ export default function CalendarScreen() {
         onSearch={setQ}
         placeholder="Cari agenda, klien, atau PIC..."
         right={
-          canViewAll ? (
-            <View className="flex-row gap-2">
-              <Chip label="Agenda saya" active={scope === "me"} onPress={() => setScope("me")} />
-              <Chip label="Semua tim" active={scope === "all"} onPress={() => setScope("all")} />
-            </View>
-          ) : undefined
+          <View className="flex-row flex-wrap gap-2">
+            <Chip label="Agenda saya" active={scope === "me"} onPress={() => setScope("me")} />
+            <Chip label="Tim & Project saya" active={scope === "team"} onPress={() => setScope("team")} />
+            {canViewAll ? (
+              <Chip label="Semua perusahaan" active={scope === "all"} onPress={() => setScope("all")} />
+            ) : null}
+          </View>
         }
         statuses={Object.values(STATUS_LABEL)}
         status={status}
@@ -207,15 +218,25 @@ export default function CalendarScreen() {
         <Chip label={`Overdue${overdueCount ? ` (${overdueCount})` : ""}`} active={onlyOverdue} onPress={() => setOnlyOverdue((v) => !v)} />
       </ScrollView>
 
-      {canViewAll && scope === "all" ? (
-        <View className="max-w-xs">
-          <SearchableSelect value={pic} onChange={(v) => setPic(v === pic ? "" : v)} options={userNames} placeholder="Filter penanggung jawab" />
+      {(scope === "team" || (canViewAll && scope === "all")) ? (
+        <View className="flex-row flex-wrap gap-3">
+          <View className="w-64">
+            <SearchableSelect value={pic} onChange={(v) => setPic(v === pic ? "" : v)} options={userNames} placeholder="Filter penanggung jawab (PIC)" />
+          </View>
+          <View className="w-64">
+            <SearchableSelect
+              value={team}
+              onChange={(v) => setTeam(v === team ? "" : v)}
+              options={TEAM_FILTER_OPTIONS.filter((t) => t.code !== "").map((t) => t.label)}
+              placeholder="Filter tim / divisi"
+            />
+          </View>
         </View>
       ) : null}
 
       <Panel
         title={titleOf(view, cursor)}
-        subtitle={loading ? "Memuat..." : `${items.length} aktivitas`}
+        subtitle={loading ? "Memuat..." : `${items.length} aktivitas · Zona waktu WIB (UTC+7)`}
         right={
           <>
             <View className="flex-row items-center rounded-lg border border-border/60 bg-muted/60 p-0.5">
@@ -283,13 +304,14 @@ export default function CalendarScreen() {
         item={detail}
         onClose={() => setDetail(null)}
         onChanged={() => void load()}
-        onEdit={(id) => { setEditId(id); setFormOpen(true); }}
+        onEdit={(id, occDate) => { setEditId(id); setEditOccDate(occDate); setFormOpen(true); }}
       />
       <EventFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
         eventId={editId}
         defaultDate={selected}
+        occurrenceDate={editOccDate}
         onSaved={() => void load()}
       />
 
