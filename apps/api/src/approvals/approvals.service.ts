@@ -28,8 +28,8 @@ function plan(kind: ApprovalKind, needsBos: boolean): Group[] {
       return [{ roles: ["FINANCE", "BOS"], mode: "any" }];
     case "PURCHASE_REQUEST":
       return needsBos
-        ? [{ roles: ["GUDANG", "PROCUREMENT", "FINANCE", "BOS"], mode: "any" }, { roles: ["BOS"], mode: "all" }]
-        : [{ roles: ["GUDANG", "PROCUREMENT", "FINANCE", "BOS"], mode: "any" }];
+        ? [{ roles: ["FINANCE", "BOS", "GUDANG", "PM"], mode: "any" }, { roles: ["BOS"], mode: "all" }]
+        : [{ roles: ["FINANCE", "BOS", "GUDANG", "PM"], mode: "any" }];
     default:
       return needsBos
         ? [{ roles: ["FINANCE", "BOS"], mode: "any" }, { roles: ["BOS"], mode: "all" }]

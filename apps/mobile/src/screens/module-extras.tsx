@@ -1416,20 +1416,6 @@ export function ModuleExtras({
   }
 
   if (moduleKey === "po-client") {
-    if (isPoPurchaseRow(row)) {
-      const normalizedPoRow: Row = {
-        ...row,
-        nomor: row.nomorPoClient && row.nomorPoClient !== "-" ? row.nomorPoClient : row.nomor,
-        nomorSoSupplier: row.nomorSoSupplier ?? (row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : "-"),
-        supplier:
-          row.supplier && row.supplier !== "-"
-            ? row.supplier
-            : String(row.customer || "-").replace(/\s*\(Supplier\)$/i, ""),
-        total: Number(row.total ?? row.nilai ?? 0),
-        pengiriman: row.pengiriman || "Di Supplier",
-      };
-      return <SupplierPoExtras row={normalizedPoRow} />;
-    }
     return <ClientPoExtras row={row} onRefresh={onRefresh} />;
   }
 

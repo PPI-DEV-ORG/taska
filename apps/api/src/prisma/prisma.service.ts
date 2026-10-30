@@ -89,6 +89,10 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
       "ALTER TABLE `SupplierPOItem` MODIFY COLUMN `productId` INT NULL",
       "ALTER TABLE `SupplierPOItem` ADD COLUMN `customName` VARCHAR(191) NULL",
       "ALTER TABLE `SupplierPOItem` ADD COLUMN `customUnit` VARCHAR(64) NULL",
+      "ALTER TABLE `PurchaseRequest` MODIFY COLUMN `status` ENUM('DIAJUKAN','CEK_STOK','DISETUJUI','DIBAYAR','DITOLAK','PO_DIBUAT','DIKIRIM','DITERIMA','DIBATALKAN') NOT NULL DEFAULT 'DIAJUKAN'",
+      "ALTER TABLE `PurchaseRequest` ADD COLUMN `paymentStatus` VARCHAR(64) NULL DEFAULT 'BELUM_DIBAYAR'",
+      "ALTER TABLE `PurchaseRequest` ADD COLUMN `paymentProofFileId` INT NULL",
+      "ALTER TABLE `Receiving` ADD COLUMN `requestId` INT NULL",
     ];
     for (const sql of schemaPatches) {
       await db.$executeRawUnsafe(sql).catch(() => {});

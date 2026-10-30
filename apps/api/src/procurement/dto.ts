@@ -2,6 +2,7 @@ import { Transform, Type } from "class-transformer";
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -43,6 +44,9 @@ export class RequestItemDto {
 
   @IsOptional() @IsString()
   customUnit?: string;
+
+  @IsOptional() @IsBoolean()
+  hasSerial?: boolean;
 
   @IsInt() @Min(1)
   qty!: number;
@@ -110,10 +114,19 @@ export class RequestDto {
   @IsOptional() @IsInt()
   evidenceFileId?: number;
 
+  @IsOptional() @Type(() => Number) @IsInt()
+  doFileId?: number;
+
   @IsOptional()
   @Transform(({ value }) => typeof value === "string" ? value.trim().toUpperCase().replace(/[\s\-]/g, "_") : value)
-  @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DIBAYAR", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
   status?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  paymentProofFileId?: number;
+
+  @IsOptional() @IsString()
+  paymentStatus?: string;
 
   @IsOptional() @IsArray() @ValidateNested({ each: true })
   @Type(() => RequestItemDto)
@@ -122,7 +135,7 @@ export class RequestDto {
 
 export class RequestStatusDto {
   @Transform(({ value }) => typeof value === "string" ? value.trim().toUpperCase().replace(/[\s\-]/g, "_") : value)
-  @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DIBAYAR", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
   status!: string;
 
   @IsOptional() @IsString()
@@ -130,6 +143,12 @@ export class RequestStatusDto {
 
   @IsOptional() @Type(() => Number) @IsInt()
   doFileId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  paymentProofFileId?: number;
+
+  @IsOptional() @IsString()
+  paymentStatus?: string;
 }
 
 export class PoListQuery extends PageQuery {
@@ -175,6 +194,9 @@ export class PoItemDto {
 
   @IsOptional() @IsString()
   customUnit?: string;
+
+  @IsOptional() @IsBoolean()
+  hasSerial?: boolean;
 
   @IsInt() @Min(1)
   qty!: number;
@@ -280,6 +302,11 @@ export class ReceivingItemDto {
   @IsInt()
   productId!: number;
 
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  qtyOrdered?: number;
+
   @IsInt() @Min(0)
   qtyReceived!: number;
 
@@ -296,6 +323,9 @@ export class ReceivingDto {
 
   @IsOptional() @IsInt()
   supplierPoId?: number;
+
+  @IsOptional() @IsInt()
+  requestId?: number;
 
   @IsOptional() @IsString()
   supplierName?: string;

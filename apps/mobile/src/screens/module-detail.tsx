@@ -434,7 +434,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   const status = def.statusKey ? String(row[def.statusKey] ?? "") : "";
   const approval =
-    approvals.find((a) => a.module === moduleKey && a.refId === id && a.status === "Menunggu") ??
+    approvals.find((a) => a.module === moduleKey && String(a.refId) === String(id) && a.status === "Menunggu") ??
     ((row as any)?.approval?.status === "Menunggu" ? (row as any).approval : undefined);
   const canDecide =
     !!approval &&
@@ -969,8 +969,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         {def.docs?.length ? (
           <Panel title="File & Bukti Pendukung">
             <DocumentViewerList
-              moduleKey={moduleKey === "po-client" && isPoPurchaseRow(row) ? "supplier-pos" : moduleKey}
-              docs={moduleKey === "po-client" && isPoPurchaseRow(row) ? (MODULES["supplier-pos"]?.docs ?? def.docs) : def.docs}
+              moduleKey={moduleKey}
+              docs={def.docs}
               row={row}
               canUpload={canEdit}
               onUploadFile={async (fieldKey, fileId, item) => {

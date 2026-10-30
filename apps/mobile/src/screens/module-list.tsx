@@ -23,7 +23,8 @@ const CREATE: Record<string, Role[]> = {
   leads: ["sales", "pm"],
   quotations: ["sales", "pm"],
   surveys: ["sales", "pm"],
-  "po-client": ["finance", "sales", "pm"],
+  "po-client": ["finance", "sales", "pm", "procurement", "gudang"],
+  "supplier-pos": ["procurement", "finance", "gudang", "pm"],
   invoices: ["finance", "admin", "super_admin", "bos"],
   projects: ["pm", "sales", "finance"],
   "damage-reports": ["gudang", "sales", "procurement", "finance", "pm", "teknisi", "se"],
@@ -116,12 +117,12 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       void refreshModule(def.key);
       if (def.key === "invoices" || def.key === "supplier-pos") void refreshModule("invoiceIn");
       if (def.key === "po-client") void refreshModule("supplier-pos");
+      if (def.key === "supplier-pos") void refreshModule("po-client");
     }
   }, [def?.key, refreshModule]);
 
   const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "receipts" | "in">("all");
   const [poTab, setPoTab] = React.useState<"po" | "faktur" | "pembayaran">("po");
-  const [soPoTab, setSoPoTab] = React.useState<"all" | "so" | "po">("all");
   const [damageTab, setDamageTab] = React.useState<"all" | "kerusakan" | "retur-sales" | "retur-purchase">("all");
   const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
   const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
@@ -253,51 +254,14 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         }));
       } else if (poTab === "pembayaran") {
         sourceRows = supplierPayments;
+      } else {
+        sourceRows = (data["supplier-pos"] ?? []).map((sp: Row) => ({
+          ...sp,
+          nomor: String(sp.nomor || "").replace(/^(?:POD|PO-S)\//i, "PO/"),
+        }));
       }
     } else if (def.key === "po-client") {
-      const clientPoRows = (data["po-client"] ?? []).map((r: Row) => {
-        const isPo = isPoPurchaseRow(r);
-        return {
-          ...r,
-          jenisOrder: isPo ? "PO Pembelian (Supplier)" : "SO Penjualan (Customer)",
-          _orderKind: isPo ? "po" : "so",
-        };
-      });
-      const existingPoNums = new Set(
-        clientPoRows
-          .map((r: any) => String(r.nomorPoClient || r.nomor || "").trim().toLowerCase())
-          .filter(Boolean),
-      );
-      const supplierPoRows = (data["supplier-pos"] ?? [])
-        .filter((sp: Row) => {
-          const num = String(sp.nomor || "").trim().toLowerCase();
-          return !num || !existingPoNums.has(num);
-        })
-        .map((sp: Row) => ({
-          ...sp,
-          id: `spo-${sp.id}`,
-          rawPoId: String(sp.id),
-          isSupplierPo: true,
-          nomor: sp.nomor,
-          nomorSo: sp.nomorSoSupplier || "-",
-          nomorPoClient: sp.nomor,
-          customer: "-",
-          supplier: sp.supplier || "-",
-          penawaran: sp.pr && sp.pr !== "-" ? `PR: ${sp.pr}` : "-",
-          nilai: Number(sp.total || 0),
-          tanggal: sp.eta || sp.tanggal || sp.createdAt,
-          status: sp.status || sp.pengiriman || "Di Supplier",
-          jenisOrder: "PO Pembelian (Supplier)",
-          _orderKind: "po",
-        }));
-      const combined = [...clientPoRows, ...supplierPoRows];
-      if (soPoTab === "so") {
-        sourceRows = combined.filter((r: any) => r._orderKind === "so");
-      } else if (soPoTab === "po") {
-        sourceRows = combined.filter((r: any) => r._orderKind === "po");
-      } else {
-        sourceRows = combined;
-      }
+      sourceRows = data["po-client"] ?? [];
     } else if (def.key === "damage-reports") {
       if (damageTab === "kerusakan") {
         sourceRows = sourceRows.filter((r: Row) => r.kategoriLaporan !== "Retur Penjualan" && r.kategoriLaporan !== "Retur Pembelian");
@@ -372,7 +336,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         return r;
       })
       .sort(compareDesc);
-  }, [def, data, user, q, status, dateFilter, invoiceTab, poTab, soPoTab, damageTab, clientReceipts, supplierPayments]);
+  }, [def, data, user, q, status, dateFilter, invoiceTab, poTab, damageTab, clientReceipts, supplierPayments]);
 
   const activeColumns = React.useMemo(() => {
     if (def.key === "invoices") {
@@ -483,7 +447,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       {def.key === "supplier-pos" ? (
         <View className="flex-row flex-wrap items-center gap-2 mb-3">
           <Chip
-            label={`Pesanan Pembelian / PO (${data["supplier-pos"]?.length || 0})`}
+            label="Pesanan Pembelian / PO"
             active={poTab === "po"}
             onPress={() => setPoTab("po")}
           />
@@ -496,25 +460,6 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             label={`Pembayaran Pembelian (${supplierPayments.length})`}
             active={poTab === "pembayaran"}
             onPress={() => setPoTab("pembayaran")}
-          />
-        </View>
-      ) : null}
-      {def.key === "po-client" ? (
-        <View className="flex-row flex-wrap items-center gap-2 mb-3">
-          <Chip
-            label="Semua (SO & PO)"
-            active={soPoTab === "all"}
-            onPress={() => setSoPoTab("all")}
-          />
-          <Chip
-            label="Sales Order / SO Penjualan (Customer)"
-            active={soPoTab === "so"}
-            onPress={() => setSoPoTab("so")}
-          />
-          <Chip
-            label="Purchase Order / PO Pembelian (Supplier)"
-            active={soPoTab === "po"}
-            onPress={() => setSoPoTab("po")}
           />
         </View>
       ) : null}
@@ -578,8 +523,6 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
               setSelectedSupplierInvoice(r);
             } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
               router.push(`/invoices/${r.invoiceId}` as any);
-            } else if (def.key === "po-client" && (r as any).isSupplierPo && (r as any).rawPoId) {
-              router.push(`/supplier-pos/${(r as any).rawPoId}` as any);
             } else {
               router.push(`/${def.key}/${r.id}` as any);
             }
@@ -596,8 +539,6 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
                     setSelectedSupplierInvoice(r);
                   } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
                     router.push(`/invoices/${r.invoiceId}` as any);
-                  } else if (def.key === "po-client" && (r as any).isSupplierPo && (r as any).rawPoId) {
-                    router.push(`/supplier-pos/${(r as any).rawPoId}` as any);
                   } else {
                     router.push(`/${def.key}/${r.id}` as any);
                   }
@@ -633,15 +574,12 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         destructive
         onConfirm={() => {
           if (!deleteTarget) return;
-          const isMergedSuppPo = def.key === "po-client" && (deleteTarget as any).isSupplierPo;
-          const targetModule = isMergedSuppPo
-            ? "supplier-pos"
-            : (def.key === "invoices" || def.key === "supplier-pos") && deleteTarget.direction === "in"
+          const targetModule =
+            (def.key === "invoices" || def.key === "supplier-pos") && deleteTarget.direction === "in"
               ? "invoiceIn"
               : def.key;
-          const targetId = isMergedSuppPo
-            ? (deleteTarget as any).rawPoId
-            : deleteTarget.direction === "in" && (deleteTarget as any).rawId
+          const targetId =
+            deleteTarget.direction === "in" && (deleteTarget as any).rawId
               ? (deleteTarget as any).rawId
               : deleteTarget.id;
           void deleteRow(targetModule, targetId).then((ok) => {
