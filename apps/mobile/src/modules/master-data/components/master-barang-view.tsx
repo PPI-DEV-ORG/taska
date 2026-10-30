@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Layers, Plus } from "lucide-react-native";
+import { ArrowLeft, Edit3, Layers, Plus } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -11,6 +11,7 @@ import { SearchableSelect, formatThousands } from "@/components/taska/dialogs";
 import { DataTable } from "@/components/taska/data-table";
 import { BatchSerialRegisterModal } from "@/components/taska/serial-item-picker";
 import { colors } from "@/tokens";
+import { rupiah } from "@/lib/format";
 import type { MasterKey } from "../types";
 
 interface MasterBarangViewProps {
@@ -19,6 +20,7 @@ interface MasterBarangViewProps {
   onBack: () => void;
   onSelectCategory: (cat: MasterKey) => void;
   addRow: (module: string, payload: any) => void;
+  patchRow?: (module: string, id: string | number, payload: any) => Promise<any>;
   toast: (msg: string, type?: "success" | "danger" | "info" | "warning") => void;
   renderActions?: (row: any) => React.ReactNode;
 }
@@ -29,6 +31,7 @@ export function MasterBarangView({
   onBack,
   onSelectCategory,
   addRow,
+  patchRow,
   toast,
   renderActions,
 }: MasterBarangViewProps) {
@@ -47,8 +50,41 @@ export function MasterBarangView({
   const [barangSN, setBarangSN] = React.useState("Ya (Serial Number)");
   const [batchSnOpen, setBatchSnOpen] = React.useState(false);
 
+  // Edit Harga Dialog State
+  const [editPriceOpen, setEditPriceOpen] = React.useState(false);
+  const [editingProduct, setEditingProduct] = React.useState<any>(null);
+  const [editHargaVal, setEditHargaVal] = React.useState("");
+  const [isSavingPrice, setIsSavingPrice] = React.useState(false);
+
   const isSuper = user?.role === "super_admin";
   const canAddBarang = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin" || user?.role === "procurement";
+  const canEditPrice = isSuper || user?.role === "procurement" || user?.role === "finance" || user?.role === "pm" || user?.role === "bos" || user?.role === "admin" || user?.role === "gudang";
+
+  function handleOpenEditPrice(product: any) {
+    setEditingProduct(product);
+    const currPrice = product.hargaBeli ?? product.purchasePrice ?? 0;
+    setEditHargaVal(currPrice > 0 ? String(currPrice) : "");
+    setEditPriceOpen(true);
+  }
+
+  async function handleSavePrice() {
+    if (!editingProduct || !patchRow) return;
+    setIsSavingPrice(true);
+    try {
+      const cleanPrice = Number(editHargaVal.replace(/\D/g, "")) || 0;
+      await patchRow("products", editingProduct.id, {
+        hargaBeli: cleanPrice,
+        purchasePrice: cleanPrice,
+      });
+      toast(`Harga untuk "${editingProduct.nama || editingProduct.sku}" berhasil diperbarui`);
+      setEditPriceOpen(false);
+      setEditingProduct(null);
+    } catch (err: any) {
+      toast(err?.message || "Gagal mengubah harga", "danger");
+    } finally {
+      setIsSavingPrice(false);
+    }
+  }
 
   function handleSaveBarang() {
     if (!barangNama.trim() || !barangSku.trim()) {
@@ -133,17 +169,36 @@ export function MasterBarangView({
           { key: "sku", label: "SKU / Kode", flex: 1 },
           { key: "kategori", label: "Kategori", flex: 1 },
           { key: "satuan", label: "Satuan", flex: 0.8 },
+          { key: "hargaDisplay", label: "Harga Beli", flex: 1.2 },
           { key: "garansi", label: "Garansi", flex: 1 },
           { key: "tipeSN", label: "Tipe Item", flex: 1.1 },
         ]}
-        rows={(data.products || []).map((p: any) => ({
-          ...p,
-          merk: p.merk || p.brand || "-",
-          tipeSN: p.type === "JASA" ? "Jasa (Non-Stok)" : p.berSN ? "Barang Ber-SN" : "Barang Non-SN",
-        }))}
+        rows={(data.products || []).map((p: any) => {
+          const rawPrice = Number(p.hargaBeli ?? p.purchasePrice ?? 0);
+          return {
+            ...p,
+            merk: p.merk || p.brand || "-",
+            hargaDisplay: rawPrice > 0 ? rupiah(rawPrice) : "-",
+            tipeSN: p.type === "JASA" ? "Jasa (Non-Stok)" : p.berSN ? "Barang Ber-SN" : "Barang Non-SN",
+          };
+        })}
         pageSize={8}
-        actionsWidth={canAddBarang ? 72 : 64}
-        renderActions={renderActions}
+        actionsWidth={canEditPrice ? 96 : canAddBarang ? 72 : 64}
+        renderActions={(row: any) => (
+          <View className="flex-row items-center gap-1">
+            {canEditPrice ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-lg hover:bg-primary/10"
+                onPress={() => handleOpenEditPrice(row)}
+              >
+                <Edit3 size={15} color={colors.primary} />
+              </Button>
+            ) : null}
+            {renderActions ? renderActions(row) : null}
+          </View>
+        )}
       />
 
       {/* Modal Tambah Barang (Gudang) */}
@@ -249,6 +304,45 @@ export function MasterBarangView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Edit Harga Barang / Jasa */}
+      <Dialog open={editPriceOpen} onOpenChange={setEditPriceOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Harga Barang / Jasa</DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <View className="bg-muted/40 p-3 rounded-lg border border-border/60 gap-1">
+              <Text className="text-xs text-muted-foreground">Item:</Text>
+              <Text className="text-sm font-bold text-foreground">
+                {editingProduct?.nama}
+              </Text>
+              <Text className="text-xs font-mono text-primary">
+                SKU: {editingProduct?.sku} · Satuan: {editingProduct?.satuan}
+              </Text>
+            </View>
+
+            <FormField label="Harga Beli / Standar (Rp)" required>
+              <Input
+                value={editHargaVal ? formatThousands(editHargaVal) : ""}
+                onChangeText={(v) => setEditHargaVal(v.replace(/\D/g, ""))}
+                keyboardType="numeric"
+                placeholder="Contoh: 1.500.000"
+                autoFocus
+              />
+            </FormField>
+          </View>
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setEditPriceOpen(false)} disabled={isSavingPrice}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleSavePrice} disabled={isSavingPrice}>
+              <Text>{isSavingPrice ? "Menyimpan..." : "Simpan Harga"}</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <BatchSerialRegisterModal open={batchSnOpen} onClose={() => setBatchSnOpen(false)} />
     </View>
   );

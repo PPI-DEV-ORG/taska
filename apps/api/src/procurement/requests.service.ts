@@ -122,10 +122,15 @@ export class RequestsService {
             select: { id: true, originalName: true, mimeType: true, size: true },
           })
         : Promise.resolve(null),
-      this.prisma.main.file.findFirst({
-        where: { refType: "purchase_request_payment", refId: String(id) },
-        select: { id: true, originalName: true, mimeType: true, size: true },
-      }),
+      (row as any).paymentProofFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: (row as any).paymentProofFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          })
+        : this.prisma.main.file.findFirst({
+            where: { refType: "purchase_request_payment", refId: String(id) },
+            select: { id: true, originalName: true, mimeType: true, size: true },
+          }),
       Promise.all(
         row.items.map(async (i) => ({
           productId: i.productId,
@@ -138,8 +143,10 @@ export class RequestsService {
     ]);
     const isPaid =
       (row.status as string) === "DIBAYAR" ||
-      (row.otherNote as string)?.includes("[DIBAYAR]") ||
+      (row.otherNote as string)?.includes("[DIBAYAR") ||
       !!paymentProofFile;
+    const fundingMatch = (row.otherNote as string)?.match(/\[DIBAYAR:([^\]]+)\]/);
+    const fundingSource = fundingMatch ? fundingMatch[1] : undefined;
     return {
       ...row,
       evidenceFile,
@@ -148,6 +155,7 @@ export class RequestsService {
       stock,
       paymentProofFile,
       paymentProofFileId: paymentProofFile?.id ?? null,
+      fundingSource,
       paymentStatus: isPaid ? "DIBAYAR" : "BELUM_DIBAYAR",
       isPaid,
     };
@@ -468,6 +476,9 @@ export class RequestsService {
     }
 
     const isMarkingPaid = dto.status === "DIBAYAR" || !!dto.paymentProofFileId;
+    const paidTag = dto.fundingSource
+      ? `[DIBAYAR:${dto.fundingSource}]`
+      : "[DIBAYAR]";
     let updated: any;
     try {
       updated = await this.prisma.main.purchaseRequest.update({
@@ -476,8 +487,9 @@ export class RequestsService {
           status: dto.status as never,
           rejectReason: dto.reason ?? row.rejectReason,
           ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
-          ...(isMarkingPaid && !row.otherNote?.includes("[DIBAYAR]")
-            ? { otherNote: row.otherNote ? `[DIBAYAR] ${row.otherNote}` : "[DIBAYAR]" }
+          ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
+          ...(isMarkingPaid && !row.otherNote?.includes("[DIBAYAR")
+            ? { otherNote: row.otherNote ? `${paidTag} ${row.otherNote}` : paidTag }
             : {}),
         },
         include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
@@ -491,7 +503,8 @@ export class RequestsService {
             status: "DISETUJUI" as never,
             rejectReason: dto.reason ?? row.rejectReason,
             ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
-            otherNote: row.otherNote ? (row.otherNote.includes("[DIBAYAR]") ? row.otherNote : `[DIBAYAR] ${row.otherNote}`) : "[DIBAYAR]",
+            ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
+            otherNote: row.otherNote ? (row.otherNote.includes("[DIBAYAR") ? row.otherNote : `${paidTag} ${row.otherNote}`) : paidTag,
           },
           include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
         });

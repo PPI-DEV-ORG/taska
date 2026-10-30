@@ -19,7 +19,7 @@ import { MasterCostCenterView } from "@/modules/master-data/components/master-co
 import { MasterPengaturanSistemView } from "@/modules/master-data/components/master-pengaturan-sistem-view";
 
 export default function MasterDataScreen() {
-  const { data, user, addRow, deleteRow, toast, reload, refreshModule } = useApp();
+  const { data, user, addRow, patchRow, deleteRow, toast, reload, refreshModule } = useApp();
   const [selectedCategory, setSelectedCategory] = React.useState<MasterKey | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null);
   const [importOpen, setImportOpen] = React.useState(false);
@@ -109,6 +109,7 @@ export default function MasterDataScreen() {
           onBack={() => setSelectedCategory(null)}
           onSelectCategory={(cat) => setSelectedCategory(cat)}
           addRow={addRow}
+          patchRow={(module, id, payload) => patchRow(module, String(id), payload)}
           toast={toast}
           renderActions={deleteActions("products", "barang", canAddBarang)}
         />

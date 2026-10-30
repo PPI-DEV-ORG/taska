@@ -757,9 +757,11 @@ export function adaptRow(module: string, raw: any): Row {
         fileId: raw.evidenceFileId ?? (raw.fileId ?? null),
         doFileId: raw.doFileId ?? null,
         doFile: raw.doFile ?? null,
-        paymentProofFileId: raw.paymentProofFileId ?? null,
+        paymentProofFileId: raw.paymentProofFileId ?? (raw.paymentProofFile?.id ?? null),
+        paymentProofFile: raw.paymentProofFile ?? null,
+        fundingSource: raw.fundingSource || (raw.otherNote?.match(/\[DIBAYAR:([^\]]+)\]/)?.[1] ?? null),
         paymentStatus: raw.paymentStatus || (raw.status === "DIBAYAR" || raw.status === "DIKIRIM" || raw.status === "DITERIMA" ? "DIBAYAR" : "BELUM_DIBAYAR"),
-        isPaid: raw.status === "DIBAYAR" || raw.status === "DIKIRIM" || raw.status === "DITERIMA" || raw.paymentStatus === "DIBAYAR" || !!raw.paymentProofFileId,
+        isPaid: raw.status === "DIBAYAR" || raw.status === "DIKIRIM" || raw.status === "DITERIMA" || raw.paymentStatus === "DIBAYAR" || !!raw.paymentProofFileId || !!raw.paymentProofFile,
         rejectReason: raw.rejectReason,
         items: Array.isArray(raw.items) ? raw.items : [],
         stock: Array.isArray(raw.stock) ? raw.stock : [],
@@ -2290,7 +2292,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "paymentMethod", "costCenterId", "receiptFileId", "paidFileId",
   ],
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
-  "purchase-requests": ["date", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "status", "items"],
+  "purchase-requests": ["date", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "fundingSource", "status", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "requestId", "date", "conditionNote", "receiptFileId", "photoFileId", "status", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],
@@ -2655,6 +2657,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.status !== undefined) out.status = toEnum("purchase-requests", patch.status) || patch.status;
     if (patch.doFileId !== undefined) out.doFileId = patch.doFileId ? Number(patch.doFileId) : null;
     if (patch.paymentProofFileId !== undefined) out.paymentProofFileId = patch.paymentProofFileId ? Number(patch.paymentProofFileId) : null;
+    if (patch.fundingSource !== undefined) out.fundingSource = patch.fundingSource;
     if (patch.paymentStatus !== undefined) out.paymentStatus = patch.paymentStatus;
   } else if (module === "receiving") {
     if (patch.status !== undefined) out.status = toEnum("receiving", patch.status) || patch.status;

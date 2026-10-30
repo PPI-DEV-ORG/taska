@@ -36,8 +36,8 @@ export function LedgerTab({
                 value={selectedLedgerCode ? `[${selectedLedgerCode}] ${selectedAcc?.name}` : ""}
                 options={fin.coaBalances.map((a: any) => `[${a.code}] ${a.name}`)}
                 onChange={(val) => {
-                  const m = val.match(/\[(\w+)\]/);
-                  if (m && m[1]) setSelectedLedgerCode(m[1]);
+                  const m = val.match(/\[([^\]]+)\]/);
+                  if (m && m[1]) setSelectedLedgerCode(m[1].trim());
                 }}
                 placeholder="Pilih Akun Buku Besar..."
               />
@@ -98,6 +98,7 @@ export function LedgerTab({
                 <Text className="w-[85px] text-xs font-bold">No. Jurnal</Text>
                 <Text className="w-[90px] text-xs font-bold">Tanggal</Text>
                 <Text className="w-[125px] text-xs font-bold">Referensi</Text>
+                <Text className="w-[110px] text-xs font-bold">Akun Terkait</Text>
                 <Text className="w-[130px] text-xs font-bold">Sumber Transaksi</Text>
                 <Text className="flex-1 text-xs font-bold">Uraian / Keterangan</Text>
                 <Text className="w-[115px] text-xs font-bold text-right">Debit (Rp)</Text>
@@ -126,6 +127,9 @@ export function LedgerTab({
                       </Text>
                       <Text className="w-[125px] text-xs font-semibold font-mono" numberOfLines={1}>
                         {l.refNo}
+                      </Text>
+                      <Text className="w-[110px] text-[11px] font-mono text-primary" numberOfLines={1}>
+                        {l.kodeAkun}
                       </Text>
                       <Text className="w-[130px] text-xs text-muted-foreground" numberOfLines={1}>
                         {l.sumber}
