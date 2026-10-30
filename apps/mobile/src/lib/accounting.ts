@@ -684,6 +684,14 @@ export function computeFinancialStatements(
       !!pr.buktiPembayaran ||
       stLower === "dibayar";
 
+    const prFundingCode =
+      pr.fundingSource === "1000.02" || /mandiri|bank/i.test(String(pr.fundingSource || ""))
+        ? "1000.02"
+        : pr.fundingSource === "1000.01" || /kecil|petty/i.test(String(pr.fundingSource || ""))
+          ? "1000.01"
+          : (activeCoa[pr.fundingSource]?.code || "1000.01");
+    const prFundingLabel = activeCoa[prFundingCode]?.name || "Kas Kecil";
+
     if (isKasPr) {
       // Pembelian Ritel Tunai / Lunas: Jurnal Kas Keluar tercatat saat ditandai Dibayar
       if (!isPaid && !["dibayar", "dikirim", "diterima", "selesai"].includes(stLower)) continue;
@@ -703,8 +711,8 @@ export function computeFinancialStatements(
           kredit: 0,
         },
         {
-          kodeAkun: "1000.01",
-          keterangan: `Pengeluaran Kas / Bank Beli Ritel ${nomorPr}`,
+          kodeAkun: prFundingCode,
+          keterangan: `Pengeluaran ${prFundingLabel} Beli Ritel ${nomorPr}`,
           debit: 0,
           kredit: totalPr,
         },
@@ -748,8 +756,8 @@ export function computeFinancialStatements(
             kredit: 0,
           },
           {
-            kodeAkun: "1000.01",
-            keterangan: `Pengeluaran Kas / Bank Pelunasan Hutang ${nomorPr}`,
+            kodeAkun: prFundingCode,
+            keterangan: `Pengeluaran ${prFundingLabel} Pelunasan Hutang ${nomorPr}`,
             debit: 0,
             kredit: totalPr,
           },

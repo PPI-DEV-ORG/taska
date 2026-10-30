@@ -144,11 +144,29 @@ export default function AccountingScreen() {
     };
   }, []);
 
-  // Ledger Lines for Selected Account
+  // Ledger Lines for Selected Account (termasuk mutasi dari akun children / sub-accounts bila akun parent)
   const selectedAcc = allAccountsMap[selectedLedgerCode] || fin.coaBalances[0];
   const ledgerLines = React.useMemo(() => {
+    // Kumpulkan kode akun yang relevan: akun itu sendiri + seluruh children/sub-akunnya
+    const targetCodes = new Set<string>();
+    targetCodes.add(selectedLedgerCode);
+
+    // Kumpulkan turunan rekursif dari parentCode atau prefiks titik (dot notation)
+    const collectDescendantCodes = (parentCode: string) => {
+      Object.values(allAccountsMap).forEach((acc) => {
+        if (!acc?.code) return;
+        if (acc.parentCode === parentCode || acc.code.startsWith(`${parentCode}.`)) {
+          if (!targetCodes.has(acc.code)) {
+            targetCodes.add(acc.code);
+            collectDescendantCodes(acc.code);
+          }
+        }
+      });
+    };
+    collectDescendantCodes(selectedLedgerCode);
+
     let matching = fin.journalLines
-      .filter((l) => l.kodeAkun === selectedLedgerCode)
+      .filter((l) => targetCodes.has(l.kodeAkun))
       .sort((a, b) => a.tanggal.localeCompare(b.tanggal));
 
     if (ledgerDate) {
@@ -165,7 +183,7 @@ export default function AccountingScreen() {
       },
       { lines: [], balance: 0 },
     ).lines;
-  }, [fin.journalLines, selectedLedgerCode, selectedAcc, ledgerDate]);
+  }, [fin.journalLines, selectedLedgerCode, selectedAcc, ledgerDate, allAccountsMap]);
 
   // Handlers
   const handleSaveManualJournal = () => {

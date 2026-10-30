@@ -419,7 +419,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Teruskan ke Gudang", status: "Cek stok", toast: "Request diteruskan ke Gudang untuk cek ketersediaan stok" },
       { label: "Buat PO supplier", toast: "PO supplier dibuat, menunggu persetujuan", to: () => "/supplier-pos" },
     ],
-    docs: ["Bukti permintaan (WA, email, atau BOQ)", "Surat Jalan / Delivery Order (DO)"],
+    docs: ["Bukti permintaan (WA, email, atau BOQ)", "Bukti Pembayaran / Transfer", "Surat Jalan / Delivery Order (DO)"],
     emptyText: "Belum ada request barang. Buat request untuk project atau stok.",
   },
   "supplier-pos": {

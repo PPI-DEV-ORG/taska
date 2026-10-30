@@ -128,6 +128,9 @@ export class RequestDto {
   @IsOptional() @IsString()
   paymentStatus?: string;
 
+  @IsOptional() @IsString()
+  fundingSource?: string;
+
   @IsOptional() @IsArray() @ValidateNested({ each: true })
   @Type(() => RequestItemDto)
   items?: RequestItemDto[];
@@ -149,6 +152,9 @@ export class RequestStatusDto {
 
   @IsOptional() @IsString()
   paymentStatus?: string;
+
+  @IsOptional() @IsString()
+  fundingSource?: string;
 }
 
 export class PoListQuery extends PageQuery {

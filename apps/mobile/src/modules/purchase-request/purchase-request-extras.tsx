@@ -13,6 +13,7 @@ import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { toEnum } from "@/services/adapters";
+import { SearchableSelect } from "@/components/taska/dialogs";
 
 export function PurchaseRequestExtras({
   row,
@@ -29,6 +30,7 @@ export function PurchaseRequestExtras({
   const [confirmReceiveOpen, setConfirmReceiveOpen] = React.useState(false);
   const [payModalOpen, setPayModalOpen] = React.useState(false);
   const [paymentProofFileId, setPaymentProofFileId] = React.useState<number | null>(null);
+  const [selectedFundingSource, setSelectedFundingSource] = React.useState<string>("1000.01");
   const [doFileId, setDoFileId] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [localStatus, setLocalStatus] = React.useState<string | null>(null);
@@ -225,6 +227,7 @@ export function PurchaseRequestExtras({
       setLocalStatus("DIBAYAR");
       await setStatus("purchase-requests", row.id, "Dibayar", undefined, {
         paymentProofFileId,
+        fundingSource: selectedFundingSource,
       });
       setPayModalOpen(false);
       toast("Request berhasil ditandai telah dibayar. Jurnal akuntansi telah tercatat!");
@@ -542,8 +545,10 @@ export function PurchaseRequestExtras({
               <Text className="text-xs font-bold text-warning">
                 {isStockTake
                   ? "[1200] Persediaan Barang Dagang (Stok Gudang Berkurang — Tanpa Kas/Utang)"
+                  : row.fundingSource === "1000.02" || /mandiri|bank/i.test(String(row.fundingSource || ""))
+                  ? "[1000.02] Bank Mandiri PT GMP (Pengeluaran Transfer)"
                   : isRetailCash
-                  ? "[1000.01] Kas / Bank (Pengeluaran Tunai)"
+                  ? "[1000.01] Kas Kecil / Tunai (Pengeluaran Kas)"
                   : "[210102] Hutang Usaha (Nota Bon Toko / Supplier)"}
               </Text>
             </View>
@@ -582,6 +587,16 @@ export function PurchaseRequestExtras({
                   Terbitkan PO / SO & Hubungkan ke Invoice Masuk
                 </Text>
               </Button>
+            ) : null}
+
+            {/* Link Bukti Pembayaran Kas / Transfer */}
+            {row.paymentProofFileId || row.paymentProofFile ? (
+              <View className="flex-row items-center gap-1.5 bg-card border-border/70 border rounded-lg px-2.5 py-1">
+                <CheckCircle2 size={13} color={colors.success} />
+                <Text className="text-xs font-semibold text-foreground">
+                  Bukti Bayar Terlampir
+                </Text>
+              </View>
             ) : null}
 
             {/* Link Bukti Surat Jalan DO */}
@@ -930,6 +945,28 @@ export function PurchaseRequestExtras({
             </DialogDescription>
           </DialogHeader>
           <View className="py-2 gap-3">
+            <FormField label="Pilih Sumber Dana (Akun Kas / Bank)" required hint="Akun kas/bank yang akan dikreditkan pada jurnal pengeluaran">
+              <SearchableSelect
+                value={
+                  selectedFundingSource === "1000.02"
+                    ? "Bank Mandiri PT GMP [1000.02]"
+                    : "Kas Kecil / Tunai [1000.01]"
+                }
+                options={[
+                  "Kas Kecil / Tunai [1000.01]",
+                  "Bank Mandiri PT GMP [1000.02]",
+                ]}
+                onChange={(val) => {
+                  if (val.includes("1000.02") || val.includes("Mandiri")) {
+                    setSelectedFundingSource("1000.02");
+                  } else {
+                    setSelectedFundingSource("1000.01");
+                  }
+                }}
+                placeholder="Pilih rekening kas / bank..."
+              />
+            </FormField>
+
             <FormField label="Bukti Pembayaran / Struk Kas / Transfer" hint="Wajib dilampirkan sebagai bukti sah pencatatan kas keluar">
               <FileUploader
                 label="Unggah Bukti Bayar"

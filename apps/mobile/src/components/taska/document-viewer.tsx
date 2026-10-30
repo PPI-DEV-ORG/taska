@@ -66,6 +66,21 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
   }
 
   if (moduleKey === "purchase-requests") {
+    if (/bayar|payment|bukti transfer/i.test(labelLower)) {
+      const fileId = (row as any).paymentProofFileId ?? (row as any).paymentProofFile?.id ?? null;
+      const fileMeta = (row as any).paymentProofFile;
+      return {
+        label: docLabel,
+        fieldKey: "paymentProofFileId",
+        kind: "semua",
+        fileId,
+        fileName: fileMeta?.originalName ?? (fileId ? `bukti-bayar-request-${row.id}` : null),
+        mimeType: fileMeta?.mimeType,
+        fileSize: fileMeta?.size,
+        isImage: fileMeta?.mimeType?.startsWith("image/"),
+        emptyHint: "Belum ada bukti pembayaran / transfer yang dilampirkan",
+      };
+    }
     if (/do|delivery|surat jalan/i.test(labelLower)) {
       const fileId = (row as any).doFileId ?? null;
       const fileMeta = (row as any).doFile;
