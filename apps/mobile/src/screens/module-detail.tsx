@@ -611,6 +611,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       if (["Terkirim", "Disetujui", "Ditolak", "Kedaluwarsa", "Not Yet"].includes(st)) return false;
     }
     if (moduleKey === "quotations" && a.label === "Buat invoice") {
+      const isFinanceOrAdmin = ["finance", "admin", "super_admin", "bos"].includes(
+        (user?.role || "").toLowerCase()
+      );
+      if (!isFinanceOrAdmin) return false;
       const qHasInvoice = (data.invoices ?? []).some(
         (inv: Row) =>
           (inv.quotationId && String(inv.quotationId) === String(row.id)) ||

@@ -295,7 +295,9 @@ export function Timeline({ items }: { items: { id: string; who: string; what: st
           <View className="flex-1 pb-4">
             <Text className="text-sm">
               <Text className="text-sm font-semibold">{it.who}</Text>{" "}
-              {it.what.charAt(0).toLowerCase() + it.what.slice(1)}
+              {/^[A-Z][a-z]/.test(it.what)
+                ? it.what.charAt(0).toLowerCase() + it.what.slice(1)
+                : it.what}
             </Text>
             <Text className="text-muted-foreground text-[13px]">{waktuRelatif(it.when)}</Text>
           </View>

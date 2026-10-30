@@ -86,6 +86,10 @@ export function LeadExtras({ row }: { row: Row }) {
     });
   }, [data.invoices, leadQuotations, relProjects, row.nama]);
 
+  const isFinanceOrAdmin = ["finance", "admin", "super_admin", "bos"].includes(
+    (user?.role || "").toLowerCase()
+  );
+
   const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
   const isQualify = ["Qualification", "Proposal", "Negotiation", "Won"].includes(row.status);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
@@ -444,14 +448,16 @@ export function LeadExtras({ row }: { row: Row }) {
         title="Invoice Terkait"
         subtitle="Kelola tagihan pembayaran untuk prospek atau penawaran ini."
         right={
-          <Button
-            size="sm"
-            onPress={() => setInvoiceModalOpen(true)}
-            className="flex-row items-center gap-1"
-          >
-            <Plus size={14} color={colors.background} />
-            <Text className="text-xs">Buat Invoice</Text>
-          </Button>
+          isFinanceOrAdmin ? (
+            <Button
+              size="sm"
+              onPress={() => setInvoiceModalOpen(true)}
+              className="flex-row items-center gap-1"
+            >
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs">Buat Invoice</Text>
+            </Button>
+          ) : undefined
         }
       >
         {leadInvoices.length > 0 ? (
@@ -527,16 +533,18 @@ export function LeadExtras({ row }: { row: Row }) {
         ) : (
           <View className="gap-2.5 py-1">
             <Text className="text-xs text-muted-foreground leading-relaxed">
-              Belum ada invoice yang dibuat untuk lead ini. Klik tombol &quot;Buat Invoice&quot; untuk membuat tagihan langsung atau dari penawaran terkait.
+              Belum ada invoice yang dibuat untuk lead ini.
             </Text>
-            <Button
-              size="sm"
-              onPress={() => setInvoiceModalOpen(true)}
-              className="self-start flex-row items-center gap-1.5"
-            >
-              <Plus size={14} color={colors.background} />
-              <Text className="text-xs font-semibold">Buat Invoice</Text>
-            </Button>
+            {isFinanceOrAdmin ? (
+              <Button
+                size="sm"
+                onPress={() => setInvoiceModalOpen(true)}
+                className="self-start flex-row items-center gap-1.5"
+              >
+                <Plus size={14} color={colors.background} />
+                <Text className="text-xs font-semibold">Buat Invoice</Text>
+              </Button>
+            ) : null}
           </View>
         )}
       </Panel>

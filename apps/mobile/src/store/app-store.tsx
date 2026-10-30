@@ -15,6 +15,7 @@ import {
   syncServiceWorkerAuth,
 } from "@/services/notify";
 import { setThemePalette } from "@/tokens";
+import { formatAuditAction } from "@/lib/audit-format";
 import {
   PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow, normalizeNotifHref,
   apiUserToRow, buildCreateBody, buildPatchBody, buildStatusBody, statusEnumFor,
@@ -134,71 +135,6 @@ function formatFieldVal(val: any): string {
     return JSON.stringify(val);
   }
   return String(val);
-}
-
-function formatAuditAction(action: string, detail?: string | null): string {
-  const d = detail ? String(detail).trim() : "";
-  if (action === "DISETUJUI" || action === "SETUJUI") {
-    return d || "Disetujui";
-  }
-  if (action === "DITOLAK" || action === "TOLAK") {
-    return d || "Ditolak";
-  }
-  if (action === "AJUKAN_PERSETUJUAN") {
-    return d ? `Mengajukan persetujuan (${d})` : "Mengajukan persetujuan";
-  }
-  if (action === "UBAH_STAGE") {
-    return d ? `Perubahan tahap: ${d}` : "Mengubah tahap lead";
-  }
-  if (action === "REASSIGN_LEAD") {
-    return d ? `Pengalihan kepemilikan lead: ${d}` : "Mengalihkan kepemilikan lead";
-  }
-  if (action === "ISI_PENAWARAN") {
-    return d ? `Memperbarui rincian penawaran: ${d}` : "Memperbarui rincian penawaran";
-  }
-  if (action === "CATAT_PEMBAYARAN") {
-    return d ? `Mencatat pembayaran: ${d}` : "Mencatat pembayaran invoice";
-  }
-  if (action === "BATALKAN_INVOICE") {
-    return d ? `Membatalkan invoice: ${d}` : "Invoice dibatalkan";
-  }
-  if (action === "UBAH_STATUS_INVOICE") {
-    return d ? `Mengubah status invoice: ${d}` : "Mengubah status invoice";
-  }
-  if (action === "BUAT_INVOICE") {
-    return d ? `Membuat invoice: ${d}` : "Membuat invoice baru";
-  }
-  if (action === "UPDATE_INVOICE") {
-    return d ? `Memperbarui invoice: ${d}` : "Memperbarui invoice";
-  }
-  if (action === "HAPUS_INVOICE") {
-    return d ? `Menghapus invoice: ${d}` : "Menghapus invoice";
-  }
-  if (action.startsWith("PATCH")) {
-    if (d && d.startsWith("{")) {
-      try {
-        const parsed = JSON.parse(d);
-        const keys = Object.keys(parsed).filter((k) => !["id", "updatedAt"].includes(k));
-        if (keys.length > 0) {
-          const desc = keys.slice(0, 3).map((k) => `${FIELD_LABELS[k] || k}: ${formatFieldVal(parsed[k])}`).join(", ");
-          return `Mengedit data: ${desc}${keys.length > 3 ? "..." : ""}`;
-        }
-      } catch {}
-    }
-    return d ? `Mengedit data (${d})` : "Mengedit data";
-  }
-  if (action.startsWith("POST")) {
-    if (d && d.startsWith("{")) {
-      try {
-        const parsed = JSON.parse(d);
-        if (parsed.status) {
-          return `Mengubah status menjadi ${parsed.status}${parsed.note ? ` (${parsed.note})` : ""}`;
-        }
-      } catch {}
-    }
-    return d || action;
-  }
-  return d ? `${action}: ${d}` : action;
 }
 
 function readStorageJson<T>(key: string, fallback: T): T {

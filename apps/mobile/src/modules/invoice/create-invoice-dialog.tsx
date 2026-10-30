@@ -246,9 +246,16 @@ function CreateInvoiceForm({
 
   // Active quotation discount
   const quotationDisc = React.useMemo(() => {
-    const rawDisc = activeQuotation?.disc ?? activeQuotation?.discount ?? 0;
+    const rawDisc =
+      activeQuotation?.disc ??
+      activeQuotation?.discount ??
+      activePo?.discount ??
+      activePo?.disc ??
+      (data.quotations ?? []).find((q: Row) => String(q.id) === String(activePo?.quotationId))?.disc ??
+      (data.quotations ?? []).find((q: Row) => String(q.id) === String(activePo?.quotationId))?.discount ??
+      0;
     return Number(String(rawDisc).replace(/\D/g, "")) || 0;
-  }, [activeQuotation]);
+  }, [activeQuotation, activePo, data.quotations]);
 
   // Total gross items / amount before discount
   const grossDealDpp = React.useMemo(() => {
@@ -724,6 +731,7 @@ function CreateInvoiceForm({
                     setSelectedPoId(String(match.id));
                     if (match.customerId) setSelectedCustomerId(String(match.customerId));
                     if (match.quotationId) {
+                      setSelectedQuotationId(String(match.quotationId));
                       const linkedQ = (data.quotations ?? []).find(
                         (q: Row) => String(q.id) === String(match.quotationId),
                       );
