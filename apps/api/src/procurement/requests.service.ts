@@ -108,7 +108,7 @@ export class RequestsService {
       },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
-    const [approval, evidenceFile, doFile, stock] = await Promise.all([
+    const [approval, evidenceFile, doFile, paymentProofFile, stock] = await Promise.all([
       this.approvals.getFor("PURCHASE_REQUEST", id),
       row.evidenceFileId
         ? this.prisma.main.file.findUnique({
@@ -122,6 +122,10 @@ export class RequestsService {
             select: { id: true, originalName: true, mimeType: true, size: true },
           })
         : Promise.resolve(null),
+      this.prisma.main.file.findFirst({
+        where: { refType: "purchase_request_payment", refId: String(id) },
+        select: { id: true, originalName: true, mimeType: true, size: true },
+      }),
       Promise.all(
         row.items.map(async (i) => ({
           productId: i.productId,
@@ -132,7 +136,21 @@ export class RequestsService {
         })),
       ),
     ]);
-    return { ...row, evidenceFile, doFile, approval, stock };
+    const isPaid =
+      (row.status as string) === "DIBAYAR" ||
+      (row.otherNote as string)?.includes("[DIBAYAR]") ||
+      !!paymentProofFile;
+    return {
+      ...row,
+      evidenceFile,
+      doFile,
+      approval,
+      stock,
+      paymentProofFile,
+      paymentProofFileId: paymentProofFile?.id ?? null,
+      paymentStatus: isPaid ? "DIBAYAR" : "BELUM_DIBAYAR",
+      isPaid,
+    };
   }
 
   async create(dto: RequestDto, user: RequestUser) {
@@ -254,6 +272,9 @@ export class RequestsService {
         ...(dto.purpose !== undefined ? { purpose: dto.purpose } : {}),
         ...(dto.otherNote !== undefined ? { otherNote: dto.otherNote } : {}),
         ...(dto.evidenceFileId !== undefined ? { evidenceFileId: dto.evidenceFileId } : {}),
+        ...(dto.doFileId !== undefined ? { doFileId: dto.doFileId } : {}),
+        ...(dto.paymentProofFileId !== undefined ? { paymentProofFileId: dto.paymentProofFileId } : {}),
+        ...(dto.paymentStatus !== undefined ? { paymentStatus: dto.paymentStatus } : {}),
         ...(dto.status ? { status: dto.status as any } : {}),
         ...(dto.items?.length
           ? {
@@ -287,6 +308,14 @@ export class RequestsService {
         })
         .catch(() => {});
     }
+    if (dto.doFileId) {
+      await this.prisma.main.file
+        .update({
+          where: { id: dto.doFileId },
+          data: { refType: "purchase_request_do", refId: String(id) },
+        })
+        .catch(() => {});
+    }
     return updated;
   }
 
@@ -298,37 +327,116 @@ export class RequestsService {
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
 
-    // Bila Gudang menyerahkan / mengirim barang (DIKIRIM) atau barang Diterima di proyek (DITERIMA): kurangi stok gudang jika belum pernah dikurangi
-    const shouldReduceStock = (dto.status === "DIKIRIM" || dto.status === "DITERIMA") && row.status !== "DIKIRIM" && row.status !== "DITERIMA";
+    // Untuk request internal (ambil stok gudang untuk project): kurangi stok OUT saat diserahkan/dikirim.
+    // Untuk pembelian (ritel / PO): barang belum ada di gudang, stok baru bertambah saat Penerimaan (Receiving).
+    const isPurchase =
+      row.procurementSource === "RETAIL" ||
+      row.procurementSource === "SUPPLIER";
+
+    const shouldReduceStock =
+      !isPurchase &&
+      (dto.status === "DIKIRIM" || dto.status === "DITERIMA") &&
+      row.status !== "DIKIRIM" &&
+      row.status !== "DITERIMA";
+
     if (shouldReduceStock) {
       const defaultWarehouse =
         (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
         (await this.prisma.main.warehouse.findFirst());
       for (const item of row.items) {
         if (!item.productId) continue;
-        const balance =
-          (await this.prisma.main.stockBalance.findFirst({
-            where: { productId: item.productId, qty: { gte: item.qty } },
-          })) ??
-          (await this.prisma.main.stockBalance.findFirst({
-            where: { productId: item.productId, qty: { gt: 0 } },
-          }));
-        const warehouseId = balance?.warehouseId ?? defaultWarehouse?.id;
-        if (warehouseId) {
-          try {
-            await this.stock.applyMovement({
-              date: new Date(),
-              type: "OUT",
-              category: row.projectId ? "KELUAR_PROJECT" : "BARANG_TERPAKAI",
-              productId: item.productId,
-              fromWarehouseId: warehouseId,
-              qty: item.qty,
-              projectId: row.projectId ?? null,
-              reason: `Pengeluaran barang request ${row.number} status ${dto.status} oleh ${user.name}`,
-              createdById: user.id,
-            });
-          } catch (e) {
-            console.warn(`Gagal mencatat movement stok request ${row.number}:`, (e as Error).message);
+        const product = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
+        const requestedSns = item.serials
+          ? String(item.serials)
+              .split(/[\n,;]+/)
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [];
+
+        let handledQty = 0;
+        if (product?.hasSerial) {
+          const serialUnits =
+            requestedSns.length > 0
+              ? await this.prisma.main.serialUnit.findMany({
+                  where: { sn: { in: requestedSns } },
+                })
+              : await this.prisma.main.serialUnit.findMany({
+                  where: {
+                    productId: item.productId,
+                    status: { in: ["DI_GUDANG", "RESERVED"] },
+                    warehouseId: { not: null },
+                  },
+                  take: item.qty,
+                });
+
+          for (const u of serialUnits) {
+            const whId = u.warehouseId ?? defaultWarehouse?.id;
+            if (!whId) continue;
+            try {
+              await this.stock.applyMovement({
+                date: new Date(),
+                type: "OUT",
+                category: row.projectId ? "KELUAR_PROJECT" : "BARANG_TERPAKAI",
+                productId: item.productId,
+                fromWarehouseId: whId,
+                qty: 1,
+                serialUnitId: u.id,
+                projectId: row.projectId ?? null,
+                reason: `Pengeluaran unit SN ${u.sn} request ${row.number} oleh ${user.name}`,
+                createdById: user.id,
+              });
+              const targetSnStatus = dto.status === "DITERIMA" && row.projectId ? "TERPASANG" : "DIKIRIM";
+              await this.prisma.main.serialUnit.update({
+                where: { id: u.id },
+                data: {
+                  status: targetSnStatus,
+                  warehouseId: null,
+                  projectId: row.projectId ?? u.projectId,
+                },
+              });
+              await this.prisma.main.serialUnitHistory.create({
+                data: {
+                  serialUnitId: u.id,
+                  status: targetSnStatus,
+                  warehouseId: whId,
+                  projectId: row.projectId ?? null,
+                  note: `Keluar untuk request barang ${row.number}`,
+                  changedById: user.id,
+                },
+              });
+              handledQty++;
+            } catch (e) {
+              console.warn(`Gagal mencatat movement SN ${u.sn} request ${row.number}:`, (e as Error).message);
+            }
+          }
+        }
+
+        const remainingQty = Math.max(0, item.qty - handledQty);
+        if (remainingQty > 0) {
+          const balance =
+            (await this.prisma.main.stockBalance.findFirst({
+              where: { productId: item.productId, qty: { gte: remainingQty } },
+            })) ??
+            (await this.prisma.main.stockBalance.findFirst({
+              where: { productId: item.productId, qty: { gt: 0 } },
+            }));
+          const warehouseId = balance?.warehouseId ?? defaultWarehouse?.id;
+          if (warehouseId) {
+            try {
+              await this.stock.applyMovement({
+                date: new Date(),
+                type: "OUT",
+                category: row.projectId ? "KELUAR_PROJECT" : "BARANG_TERPAKAI",
+                productId: item.productId,
+                fromWarehouseId: warehouseId,
+                qty: remainingQty,
+                projectId: row.projectId ?? null,
+                reason: `Pengeluaran barang request ${row.number} status ${dto.status} oleh ${user.name}`,
+                createdById: user.id,
+              });
+            } catch (e) {
+              console.warn(`Gagal mencatat movement stok request ${row.number}:`, (e as Error).message);
+            }
           }
         }
       }
@@ -359,15 +467,38 @@ export class RequestsService {
       }
     }
 
-    const updated = await this.prisma.main.purchaseRequest.update({
-      where: { id },
-      data: {
-        status: dto.status as never,
-        rejectReason: dto.reason ?? row.rejectReason,
-        ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
-      },
-      include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
-    });
+    const isMarkingPaid = dto.status === "DIBAYAR" || !!dto.paymentProofFileId;
+    let updated: any;
+    try {
+      updated = await this.prisma.main.purchaseRequest.update({
+        where: { id },
+        data: {
+          status: dto.status as never,
+          rejectReason: dto.reason ?? row.rejectReason,
+          ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
+          ...(isMarkingPaid && !row.otherNote?.includes("[DIBAYAR]")
+            ? { otherNote: row.otherNote ? `[DIBAYAR] ${row.otherNote}` : "[DIBAYAR]" }
+            : {}),
+        },
+        include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
+      });
+    } catch (err: any) {
+      if (dto.status === "DIBAYAR") {
+        // Fallback bila MySQL enum belum di-alter ke DIBAYAR
+        updated = await this.prisma.main.purchaseRequest.update({
+          where: { id },
+          data: {
+            status: "DISETUJUI" as never,
+            rejectReason: dto.reason ?? row.rejectReason,
+            ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
+            otherNote: row.otherNote ? (row.otherNote.includes("[DIBAYAR]") ? row.otherNote : `[DIBAYAR] ${row.otherNote}`) : "[DIBAYAR]",
+          },
+          include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
+        });
+      } else {
+        throw err;
+      }
+    }
     if (dto.doFileId) {
       await this.prisma.main.file
         .update({
@@ -375,6 +506,101 @@ export class RequestsService {
           data: { refType: "purchase_request_do", refId: String(id) },
         })
         .catch(() => {});
+    }
+    if (dto.paymentProofFileId) {
+      await this.prisma.main.file
+        .update({
+          where: { id: dto.paymentProofFileId },
+          data: { refType: "purchase_request_payment", refId: String(id) },
+        })
+        .catch(() => {});
+    }
+
+    // Bila pengadaan/pembelian ritel ditandai DIKIRIM oleh Procurement: otomatis buat data Penerimaan di Gudang
+    if (dto.status === "DIKIRIM" && row.procurementSource === "RETAIL") {
+      try {
+        const existingRec = await this.prisma.main.receiving.findFirst({
+          where: {
+            OR: [
+              { requestId: row.id },
+              { conditionNote: { contains: row.number } },
+            ],
+          },
+        });
+        if (!existingRec) {
+          const recNumber = await this.docnum.next("penerimaan");
+          const defaultWh =
+            (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
+            (await this.prisma.main.warehouse.findFirst());
+          const defaultCat =
+            (await this.prisma.main.productCategory.findFirst({ where: { status: "AKTIF" } })) ??
+            (await this.prisma.main.productCategory.findFirst());
+
+          const recItems: any[] = [];
+          for (const it of row.items) {
+            let pId = it.productId;
+            if (!pId && it.customName) {
+              let p = await this.prisma.main.product.findFirst({
+                where: { name: { equals: it.customName } },
+              });
+              if (!p) {
+                // Deteksi apakah user menandai ber-SN atau nama barang mengindikasikan barang elektronik/kamera
+                const isSnItem = (it as any).hasSerial !== undefined
+                  ? !!(it as any).hasSerial
+                  : /kamera|cctv|dvr|nvr|switch|router|access point|server|ups|ip cam/i.test(it.customName);
+                p = await this.prisma.main.product.create({
+                  data: {
+                    sku: `SKU-${Date.now().toString().slice(-6)}`,
+                    name: it.customName,
+                    unit: it.customUnit || "unit",
+                    ...(defaultCat?.id ? { category: { connect: { id: defaultCat.id } } } : {}),
+                    purchasePrice: Number(it.unitCost) || 0,
+                    hasSerial: isSnItem,
+                    status: "AKTIF",
+                  },
+                });
+              }
+              pId = p.id;
+            }
+            if (pId) {
+              const itemQty = Math.max(1, Number(it.qty) || 1);
+              recItems.push({
+                productId: pId,
+                qtyOrdered: itemQty,
+                qtyReceived: itemQty,
+                note: it.customName ? `Item Ritel: ${it.customName}` : undefined,
+              });
+            }
+          }
+
+          const createdRec = await this.prisma.main.receiving.create({
+            data: {
+              number: recNumber,
+              requestId: row.id,
+              supplierName: (row as any).supplier?.name || "Pembelian Ritel / Toko",
+              warehouseId: defaultWh?.id ?? null,
+              projectId: row.projectId ?? null,
+              date: new Date(),
+              receiverId: user.id,
+              status: "MENUNGGU",
+              conditionNote: `Ref Request: ${row.number} — ${row.purpose}`,
+              receiptFileId: row.evidenceFileId ?? null,
+              items: {
+                create: recItems,
+              },
+            },
+          });
+          this.notifications.dataChange("receiving", "create", createdRec.id);
+          await this.notifications.notify({
+            roles: ["GUDANG"],
+            kind: "STOK",
+            text: `Penerimaan baru ${recNumber} otomatis dibuat untuk request ${row.number}. Cek fisik barang saat tiba.`,
+            href: `/receivings/${createdRec.id}`,
+          });
+        }
+      } catch (err) {
+        console.warn(`Gagal membuat otomatis penerimaan untuk request ${row.number}:`, (err as Error).message);
+      }
     }
     await this.audit.log({
       actor: user,

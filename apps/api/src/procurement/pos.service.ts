@@ -100,7 +100,44 @@ export class PosService {
     return merged;
   }
 
+  private migrationDone = false;
+  private async ensurePoMigration() {
+    if (this.migrationDone) return;
+    this.migrationDone = true;
+    try {
+      await this.prisma.main.$executeRawUnsafe(`
+        INSERT INTO \`SupplierPO\` (\`number\`, \`supplierId\`, \`total\`, \`date\`, \`paymentTerms\`, \`status\`, \`shipmentStatus\`, \`fileId\`, \`createdById\`, \`createdAt\`, \`updatedAt\`)
+        SELECT 
+          c.number,
+          COALESCE(c.supplierId, (SELECT id FROM \`Supplier\` WHERE status = 'AKTIF' ORDER BY id ASC LIMIT 1), (SELECT id FROM \`Supplier\` ORDER BY id ASC LIMIT 1)),
+          c.amount,
+          c.date,
+          'Tempo / Utang',
+          'DI_SUPPLIER',
+          'DI_SUPPLIER',
+          c.fileId,
+          (SELECT id FROM \`User\` WHERE role IN ('ADMIN', 'BOS', 'PROCUREMENT', 'FINANCE') ORDER BY id ASC LIMIT 1),
+          c.createdAt,
+          c.updatedAt
+        FROM \`ClientPO\` c
+        WHERE (c.number LIKE 'PO/%' OR c.number LIKE 'POD/%' OR c.number LIKE 'PO-%')
+          AND c.number NOT IN (SELECT number FROM \`SupplierPO\`)
+      `).catch(() => {});
+      await this.prisma.main.$executeRawUnsafe(`
+        UPDATE \`InvoiceOut\` 
+        SET \`clientPoId\` = NULL 
+        WHERE \`clientPoId\` IN (
+          SELECT id FROM (SELECT id FROM \`ClientPO\` WHERE number LIKE 'PO/%' OR number LIKE 'POD/%' OR number LIKE 'PO-%') as tmp
+        )
+      `).catch(() => {});
+      await this.prisma.main.$executeRawUnsafe(`
+        DELETE FROM \`ClientPO\` WHERE number LIKE 'PO/%' OR number LIKE 'POD/%' OR number LIKE 'PO-%'
+      `).catch(() => {});
+    } catch {}
+  }
+
   async list(q: PoListQuery) {
+    await this.ensurePoMigration();
     const where = {
       ...(q.status ? { status: q.status as never } : {}),
       ...(q.shipmentStatus ? { shipmentStatus: q.shipmentStatus as never } : {}),
@@ -144,10 +181,18 @@ export class PosService {
       const m = metaMap.get(r.id) ?? {};
       const recWithDo = (r.receivings ?? []).find((rc) => rc.receiptFileId || rc.photoFileId);
       const fallbackDoFileId = recWithDo?.receiptFileId ?? recWithDo?.photoFileId ?? null;
+      const rawNum = String(r.number || "");
+      const normalizedNumber = rawNum.replace(/^(?:POD|PO-S)\//i, "PO/");
+      if (normalizedNumber !== rawNum && normalizedNumber) {
+        void this.prisma.main.supplierPO
+          .update({ where: { id: r.id }, data: { number: normalizedNumber } })
+          .catch(() => {});
+      }
       return {
         ...r,
+        number: normalizedNumber || r.number,
         doFileId: r.doFileId ?? fallbackDoFileId,
-        supplierSoNumber: m.supplierSoNumber ?? null,
+        supplierSoNumber: m.supplierSoNumber ? String(m.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
         soFileId: m.soFileId ?? null,
       };
     });
@@ -178,10 +223,18 @@ export class PosService {
     const meta = metaMap.get(id) ?? {};
     const recWithDo = (row.receivings ?? []).find((rc) => rc.receiptFileId || rc.photoFileId);
     const fallbackDoFileId = recWithDo?.receiptFileId ?? recWithDo?.photoFileId ?? null;
+    const rawNum = String(row.number || "");
+    const normalizedNumber = rawNum.replace(/^(?:POD|PO-S)\//i, "PO/");
+    if (normalizedNumber !== rawNum && normalizedNumber) {
+      void this.prisma.main.supplierPO
+        .update({ where: { id: row.id }, data: { number: normalizedNumber } })
+        .catch(() => {});
+    }
     return {
       ...row,
+      number: normalizedNumber || row.number,
       doFileId: row.doFileId ?? fallbackDoFileId,
-      supplierSoNumber: meta.supplierSoNumber ?? null,
+      supplierSoNumber: meta.supplierSoNumber ? String(meta.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
       soFileId: meta.soFileId ?? null,
       approval,
     };

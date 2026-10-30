@@ -15,7 +15,7 @@ import { api } from "@/services/api";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { pphRateFor, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
-import type { CreateField, ModuleDef, Row } from "@/constants/modules";
+import { MODULES, type CreateField, type ModuleDef, type Row } from "@/constants/modules";
 
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
 export function formatThousands(raw: any): string {
@@ -675,11 +675,10 @@ export function FormDialog({
   submitLabel?: string;
   onSubmit?: (row: Record<string, any>) => void | Promise<any>;
 }) {
-  const { addRow, patchRow, data, toast } = useApp();
+  const { addRow, patchRow, refreshModule, data, toast } = useApp();
   const [prevOpen, setPrevOpen] = React.useState(open);
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [errs, setErrs] = React.useState<Record<string, string>>({});
-  const [orderDocMode, setOrderDocMode] = React.useState<"SO" | "PO" | "BOTH">("SO");
   const [soPaymentFlow, setSoPaymentFlow] = React.useState<"REGULER" | "WALK_IN">("REGULER");
   const [soPaymentMethod, setSoPaymentMethod] = React.useState<"TRANSFER" | "TUNAI">("TRANSFER");
   const [fallbackUsers, setFallbackUsers] = React.useState<any[]>([]);
@@ -739,14 +738,45 @@ export function FormDialog({
     }
   }, [open, data.users, data.projects, data["supplier-pos"], data.serials, def?.key]);
 
-  const fields = customFields ?? def?.createFields ?? [];
+  const isOrderModule = mode === "create" && (def?.key === "po-client" || def?.key === "supplier-pos");
+  const [orderDocMode, setOrderDocMode] = React.useState<"SO" | "PO">(def?.key === "supplier-pos" ? "PO" : "SO");
+
+  const effectiveDef = isOrderModule
+    ? orderDocMode === "PO"
+      ? MODULES["supplier-pos"]
+      : MODULES["po-client"]
+    : def;
+  const targetKey = effectiveDef?.key ?? def?.key;
+  const fields = customFields ?? effectiveDef?.createFields ?? [];
+
+  function handleOrderModeChange(nextMode: "SO" | "PO") {
+    setOrderDocMode(nextMode);
+    const targetModule = nextMode === "PO" ? MODULES["supplier-pos"] : MODULES["po-client"];
+    const targetFields = targetModule?.createFields ?? [];
+    const init: Record<string, string> = {};
+    const today = toIsoDate(new Date());
+    targetFields.forEach((f) => {
+      if (f.defaultValue != null) {
+        init[f.key] = String(f.defaultValue);
+      } else if (f.type === "date" && (targetModule?.defaults?.[f.key] || f.required)) {
+        init[f.key] = today;
+      }
+    });
+    setVals(init);
+    setErrs({});
+    fileHandles.current = [];
+  }
 
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
+      const initialMode = def?.key === "supplier-pos" ? "PO" : "SO";
+      setOrderDocMode(initialMode);
+      const initDef = isOrderModule ? (initialMode === "PO" ? MODULES["supplier-pos"] : MODULES["po-client"]) : def;
+      const initFields = customFields ?? initDef?.createFields ?? [];
       if (mode === "edit" && initialRow) {
         const init: Record<string, string> = {};
-        fields.forEach((f) => {
+        initFields.forEach((f) => {
           if (f.type === "file" || f.type === "password") return;
           const rawVal = initialRow[f.key];
           if (rawVal != null && rawVal !== "-") {
@@ -760,17 +790,14 @@ export function FormDialog({
       } else {
         const init: Record<string, string> = {};
         const today = toIsoDate(new Date());
-        fields.forEach((f) => {
+        initFields.forEach((f) => {
           if (f.defaultValue != null) {
             init[f.key] = String(f.defaultValue);
-          } else if (f.type === "date" && def?.defaults?.[f.key]) {
-            init[f.key] = today;
-          } else if (f.type === "date" && f.required) {
+          } else if (f.type === "date" && (initDef?.defaults?.[f.key] || f.required)) {
             init[f.key] = today;
           }
         });
         setVals(init);
-        setOrderDocMode(def?.key === "supplier-pos" ? "PO" : "SO");
         setSoPaymentFlow("REGULER");
         setSoPaymentMethod("TRANSFER");
       }
@@ -788,7 +815,7 @@ export function FormDialog({
   }
 
   function dynamicOptions(f: CreateField): string[] | undefined {
-    return getDynamicOptions(f, data, def?.key, fallbackUsers, fallbackProjects, fallbackSupplierPos);
+    return getDynamicOptions(f, data, targetKey, fallbackUsers, fallbackProjects, fallbackSupplierPos);
   }
 
   async function submit() {
@@ -819,46 +846,33 @@ export function FormDialog({
         row.serialUnitId = Number(matchedSn.id);
       }
     }
-    if (def?.key === "po-client") {
+    if (targetKey === "po-client") {
       if (row.penawaran) {
         row.penawaran = (String(row.penawaran).split(" - ")[0] ?? "").trim();
       }
-      if (orderDocMode === "SO") {
-        row.supplier = undefined;
-        row.supplierId = undefined;
-      } else if (orderDocMode === "PO") {
-        row.customer = undefined;
-        row.customerId = undefined;
-        row.penawaran = undefined;
-        row.quotationId = undefined;
-      }
-      row.docMode = orderDocMode;
+      row.docMode = "SO";
+      row.supplier = undefined;
+      row.supplierId = undefined;
       const now = new Date(row.tanggal || new Date().toISOString());
       const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
       const seq = String((data["po-client"]?.length || 0) + 1).padStart(3, "0");
-      if (orderDocMode === "PO") {
-        if (!row.nomorPoClient?.trim()) {
-          row.nomorPoClient = `PO/${ym}/${seq}`;
-        }
-        row.nomor = row.nomorPoClient;
-        row.nomorSo = undefined;
-      } else if (orderDocMode === "SO") {
-        if (!row.nomorSo?.trim()) {
-          row.nomorSo = `SO/${ym}/${seq}`;
-        }
-        row.nomor = row.nomorSo;
-        row.nomorPoClient = undefined;
+      if (!row.nomorSo?.trim() && !row.nomor?.trim()) {
+        row.nomor = `SO/${ym}/${seq}`;
       } else {
-        if (!row.nomorSo?.trim()) {
-          row.nomorSo = `SO/${ym}/${seq}`;
-        }
-        if (!row.nomorPoClient?.trim()) {
-          row.nomorPoClient = `PO/${ym}/${seq}`;
-        }
-        row.nomor = row.nomorSo;
+        row.nomor = (row.nomorSo?.trim() || row.nomor?.trim())!;
+      }
+      row.nomorSo = row.nomor;
+      if (row.customer) {
+        const cleanCust = (String(row.customer).split(" - ")[0] ?? "").trim();
+        const cust = (data.customers ?? []).find(
+          (c: any) =>
+            (c.nama && c.nama.trim().toLowerCase() === cleanCust.toLowerCase()) ||
+            (c.name && c.name.trim().toLowerCase() === cleanCust.toLowerCase())
+        );
+        if (cust?.id) row.customerId = Number(cust.id);
       }
     }
-    if (def?.key === "supplier-pos" || def?.key === "po-client") {
+    if (targetKey === "supplier-pos") {
       if (row.supplier) {
         const cleanSupp = (String(row.supplier).split(" - ")[0] ?? "").trim();
         const suppList = (data.suppliers ?? []);
@@ -873,16 +887,11 @@ export function FormDialog({
         }
         row.supplier = cleanSupp;
       }
-    }
-    if (def?.key === "supplier-pos") {
       const now = new Date(row.tanggal || new Date().toISOString());
       const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
       const seq = String((data["supplier-pos"]?.length || 0) + 1).padStart(3, "0");
-      if ((orderDocMode === "SO" || orderDocMode === "BOTH") && (!row.nomorSoSupplier?.trim() || row.nomorSoSupplier === "-")) {
-        row.nomorSoSupplier = `SO-S/${ym}/${seq}`;
-      }
-      if (orderDocMode === "PO" && !row.nomor?.trim()) {
-        row.nomor = `PO-S/${ym}/${seq}`;
+      if (!row.nomor?.trim()) {
+        row.nomor = `PO/${ym}/${seq}`;
       }
     }
     if (def?.key === "projects") {
@@ -974,88 +983,74 @@ export function FormDialog({
       handleOpenChange(false);
     } else if (def) {
       if (mode === "edit" && initialRow) {
-        await patchRow(def.key, initialRow.id, row);
-        toast(`${def.singular} diperbarui`);
+        await patchRow(targetKey!, initialRow.id, row);
+        toast(`${effectiveDef?.singular ?? def.singular} diperbarui`);
         handleOpenChange(false);
       } else {
-        if (def.key === "po-client" && orderDocMode === "PO") {
-          const poPayload = {
-            ...row,
-            nomor: row.nomorPoClient || row.nomor,
-            nomorSoSupplier: row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : undefined,
-            supplier: row.supplier,
-            supplierId: row.supplierId,
-            total: Number(row.nilai || 0),
-            eta: row.tanggal,
-            pengiriman: "Di Supplier",
-            status: "Di Supplier",
-            fileId: row.fileId,
-            soFileId: row.soFileId,
-          };
-          const savedPo = await addRow("supplier-pos", poPayload);
-          if (savedPo) {
-            toast("PO Pembelian Supplier berhasil dibuat");
-            handleOpenChange(false);
-          }
-        } else {
-          const saved = await addRow(def.key, row);
-          if (saved) {
-            if (def.key === "po-client" && orderDocMode === "SO" && soPaymentFlow === "WALK_IN") {
-              const now = new Date();
-              const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
-              const seq = String((data.invoices?.length || 0) + 1).padStart(3, "0");
-              const invNo = `INV/${ym}/NOTA-${seq}`;
-              const grandAmt = Number(row.nilai || 0);
-              const todayStr = toIsoDate(now);
-              const matchedCust = (data.customers ?? []).find(
-                (c: any) =>
-                  (row.customer && (c.nama === row.customer || c.name === row.customer)) ||
-                  (row.customerId && Number(c.id) === Number(row.customerId))
-              );
-              const custId = matchedCust?.id
-                ? Number(matchedCust.id)
-                : row.customerId && !Number.isNaN(Number(row.customerId))
-                  ? Number(row.customerId)
-                  : data.customers?.[0]?.id
-                    ? Number(data.customers[0].id)
-                    : undefined;
-              const cleanSavedPoId = saved?.id && !String(saved.id).startsWith("offline-") && !Number.isNaN(Number(saved.id))
-                ? Number(saved.id)
-                : undefined;
-              const createdInv = await addRow("invoices", {
-                nomor: invNo,
-                customerId: custId,
-                customer: row.customer || matchedCust?.nama || matchedCust?.name || "Walk-in Customer",
-                clientPoId: cleanSavedPoId,
-                po: saved?.nomorSo || saved?.nomor || row.nomor,
-                quotation: row.penawaran && row.penawaran !== "-" ? row.penawaran : undefined,
-                jenis: "Penuh",
-                nilai: grandAmt,
-                dpp: grandAmt,
-                ppn: 0,
-                pph: 0,
-                total: grandAmt,
-                tipePpn: "No PPN (Tanpa PPN)",
-                ppnMode: "none",
-                pphMode: "none",
-                tanggal: todayStr,
-                jatuhTempo: todayStr,
-                status: "Lunas",
-                terbayar: grandAmt,
-                catatan: `Nota Penjualan Langsung (Walk-in · ${soPaymentMethod}) — Ref SO: ${saved?.nomorSo || saved?.nomor || row.nomor}`,
-              });
-              if (createdInv?.id && grandAmt > 0 && !String(createdInv.id).startsWith("offline-")) {
-                await api("POST", `/invoices/${createdInv.id}/payments`, {
-                  amount: grandAmt,
-                  method: soPaymentMethod,
-                  date: todayStr,
-                  reference: `NOTA-${saved?.nomorSo || saved?.nomor || row.nomor}`,
-                }).catch(() => {});
-              }
-              toast(`SO / Nota & Invoice Keluar (${invNo}) berhasil dibuat dengan status Lunas (${soPaymentMethod})`);
+        const saved = await addRow(targetKey!, row);
+        if (saved) {
+          if (targetKey === "po-client" && soPaymentFlow === "WALK_IN") {
+            const now = new Date();
+            const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+            const seq = String((data.invoices?.length || 0) + 1).padStart(3, "0");
+            const invNo = `INV/${ym}/NOTA-${seq}`;
+            const grandAmt = Number(row.nilai || 0);
+            const todayStr = toIsoDate(now);
+            const matchedCust = (data.customers ?? []).find(
+              (c: any) =>
+                (row.customer && (c.nama === row.customer || c.name === row.customer)) ||
+                (row.customerId && Number(c.id) === Number(row.customerId))
+            );
+            const custId = matchedCust?.id
+              ? Number(matchedCust.id)
+              : row.customerId && !Number.isNaN(Number(row.customerId))
+                ? Number(row.customerId)
+                : data.customers?.[0]?.id
+                  ? Number(data.customers[0].id)
+                  : undefined;
+            const cleanSavedPoId = saved?.id && !String(saved.id).startsWith("offline-") && !Number.isNaN(Number(saved.id))
+              ? Number(saved.id)
+              : undefined;
+            const createdInv = await addRow("invoices", {
+              nomor: invNo,
+              customerId: custId,
+              customer: row.customer || matchedCust?.nama || matchedCust?.name || "Walk-in Customer",
+              clientPoId: cleanSavedPoId,
+              po: saved?.nomorSo || saved?.nomor || row.nomor,
+              quotation: row.penawaran && row.penawaran !== "-" ? row.penawaran : undefined,
+              jenis: "Pelunasan",
+              nilai: grandAmt,
+              dpp: grandAmt,
+              ppn: 0,
+              pph: 0,
+              total: grandAmt,
+              tipePpn: "No PPN (Tanpa PPN)",
+              ppnMode: "none",
+              pphMode: "none",
+              tanggal: todayStr,
+              jatuhTempo: todayStr,
+              status: "Lunas",
+              terbayar: grandAmt,
+              catatan: `Nota Penjualan Langsung (Walk-in · ${soPaymentMethod}) — Ref SO: ${saved?.nomorSo || saved?.nomor || row.nomor}`,
+            });
+            if (createdInv?.id && grandAmt > 0 && !String(createdInv.id).startsWith("offline-")) {
+              await api("POST", `/invoices/${createdInv.id}/payments`, {
+                amount: grandAmt,
+                method: soPaymentMethod,
+                date: todayStr,
+                reference: `NOTA-${saved?.nomorSo || saved?.nomor || row.nomor}`,
+              }).catch(() => {});
+              await refreshModule("invoices").catch(() => {});
             }
-            handleOpenChange(false);
+            toast(`SO / Nota & Invoice Keluar (${invNo}) berhasil dibuat dengan status Lunas (${soPaymentMethod})`);
+          } else {
+            toast(`${effectiveDef?.singular ?? def.singular} berhasil dibuat`);
           }
+          if (isOrderModule) {
+            void refreshModule("po-client");
+            void refreshModule("supplier-pos");
+          }
+          handleOpenChange(false);
         }
       }
     }
@@ -1065,52 +1060,39 @@ export function FormDialog({
       <DialogContent className="sm:max-w-xl md:max-w-2xl lg:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
-            {title ?? (mode === "edit" ? `Ubah ${def?.singular ?? "Data"}` : (def?.createLabel ?? `Tambah ${def?.singular ?? "Data"}`))}
+            {title ?? (mode === "edit" ? `Ubah ${effectiveDef?.singular ?? "Data"}` : (effectiveDef?.createLabel ?? `Tambah ${effectiveDef?.singular ?? "Data"}`))}
           </DialogTitle>
         </DialogHeader>
         <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-4 pb-1">
-          {mode === "create" && (def?.key === "po-client" || def?.key === "supplier-pos") ? (
+          {isOrderModule ? (
             <View className="bg-panel border-border/80 rounded-xl border p-3 gap-2.5">
               <Text className="text-xs font-bold text-foreground">
-                Pilih Mode Pembuatan Dokumen (SO / PO):
+                Pilih Tipe Dokumen yang Ingin Dibuat:
               </Text>
               <View className="flex-row flex-wrap gap-1.5">
-                {[
-                  {
-                    id: "SO" as const,
-                    label: "Buat SO & Upload PO",
-                  },
-                  {
-                    id: "PO" as const,
-                    label: "Buat PO & Upload SO",
-                  },
-                  {
-                    id: "BOTH" as const,
-                    label: "PO & SO Sekaligus",
-                  },
-                ].map((opt) => {
-                  const active = orderDocMode === opt.id;
-                  return (
-                    <Button
-                      key={opt.id}
-                      size="sm"
-                      variant={active ? "default" : "outline"}
-                      onPress={() => setOrderDocMode(opt.id)}
-                      className="flex-1 min-w-[130px] h-9 px-2.5"
-                    >
-                      <Text className="text-xs font-semibold">{opt.label}</Text>
-                    </Button>
-                  );
-                })}
+                <Button
+                  size="sm"
+                  variant={orderDocMode === "SO" ? "default" : "outline"}
+                  onPress={() => handleOrderModeChange("SO")}
+                  className="flex-1 min-w-[140px] h-9 px-2.5"
+                >
+                  <Text className="text-xs font-semibold">Buat SO (Penjualan Customer)</Text>
+                </Button>
+                <Button
+                  size="sm"
+                  variant={orderDocMode === "PO" ? "default" : "outline"}
+                  onPress={() => handleOrderModeChange("PO")}
+                  className="flex-1 min-w-[140px] h-9 px-2.5"
+                >
+                  <Text className="text-xs font-semibold">Buat PO (Pembelian Supplier)</Text>
+                </Button>
               </View>
               <Text className="text-[11px] text-muted-foreground leading-relaxed">
                 {orderDocMode === "SO"
-                  ? "Sisi Penjualan: Kita menerbitkan Sales Order (SO) untuk Customer dan mengunggah PO dari Customer (Supplier disembunyikan)."
-                  : orderDocMode === "PO"
-                    ? "Sisi Pembelian: Kita menerbitkan Purchase Order (PO) untuk Supplier dan mengunggah SO dari Supplier (Customer & Penawaran disembunyikan)."
-                    : "Lengkap: Mencatat PO & SO sekaligus dengan pilihan Customer, Supplier, maupun Penawaran."}
+                  ? "Sisi Penjualan: Menerbitkan Sales Order (SO) untuk Customer dan mencatat nomor/file PO dari Customer. Data otomatis masuk ke tabel SO (Sales Order)."
+                  : "Sisi Pembelian: Menerbitkan Purchase Order (PO) untuk Supplier dan mencatat nomor/file SO dari Supplier. Data otomatis masuk ke tabel PO (Purchase Order)."}
               </Text>
-              {def?.key === "po-client" && orderDocMode === "SO" ? (
+              {orderDocMode === "SO" ? (
                 <View className="mt-1 pt-2.5 border-t border-border/60 gap-2">
                   <Text className="text-xs font-bold text-foreground">
                     Alur Penjualan & Pembayaran Customer:
@@ -1158,44 +1140,8 @@ export function FormDialog({
             </View>
           ) : null}
           {fields.map((f, i) => {
-            const isOrderModule = mode === "create" && (def?.key === "po-client" || def?.key === "supplier-pos");
-            if (isOrderModule && def?.key === "po-client") {
-              if (orderDocMode === "SO" && f.key === "supplier") {
-                return null;
-              }
-              if (orderDocMode === "PO" && (f.key === "customer" || f.key === "penawaran")) {
-                return null;
-              }
-            }
-            let effectiveLabel = f.label;
-            let effectivePlaceholder = f.placeholder;
-            if (isOrderModule) {
-              if (f.key === "nomorSo" || f.key === "nomorSoSupplier") {
-                effectiveLabel =
-                  orderDocMode === "SO"
-                    ? "Nomor Sales Order (SO) yang Kita Buat (Kosongkan untuk otomatis)"
-                    : "Nomor Sales Order (SO) Referensi (Opsional)";
-                effectivePlaceholder =
-                  orderDocMode === "SO" ? "Otomatis: SO/2026/10/001" : "Contoh: SO/2026/10/001 (Jika sudah ada)";
-              } else if (f.key === "nomorPoClient" || (def?.key === "supplier-pos" && f.key === "nomor")) {
-                effectiveLabel =
-                  orderDocMode === "PO"
-                    ? "Nomor Purchase Order (PO) yang Kita Buat (Kosongkan untuk otomatis)"
-                    : "Nomor Purchase Order (PO) Referensi (Opsional)";
-                effectivePlaceholder =
-                  orderDocMode === "PO" ? "Otomatis: PO/2026/10/001" : "Contoh: PO/2026/10/001 (Jika sudah ada)";
-              } else if (f.key === "fileId") {
-                effectiveLabel =
-                  orderDocMode === "SO"
-                    ? "Upload File Purchase Order (PO) dari Customer (Opsional)"
-                    : "Upload File Purchase Order (PO) Terbitan Kita (Opsional)";
-              } else if (f.key === "soFileId") {
-                effectiveLabel =
-                  orderDocMode === "PO"
-                    ? "Upload File Sales Order (SO) dari Supplier (Opsional)"
-                    : "Upload File Sales Order (SO) Terbitan Kita (Opsional)";
-              }
-            }
+            const effectiveLabel = f.label;
+            const effectivePlaceholder = f.placeholder;
             if (f.type === "file") {
               return (
                 <FileField

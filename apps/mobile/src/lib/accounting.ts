@@ -624,10 +624,10 @@ export function computeFinancialStatements(
     }
   }
 
-  // 2b. Direct Retail Purchase Requests (Request Barang yang dibeli langsung dari ritel tanpa PO Supplier terpisah)
+  // 2b. Request Barang (Ambil Stok Gudang untuk Project & Pembelian Ritel Tunai / Tempo)
   for (const pr of purchaseRequests) {
     const stLower = normStr(pr.status).toLowerCase();
-    const isApprovedOrDone = ["disetujui", "dikirim", "diterima", "selesai"].includes(stLower);
+    const isApprovedOrDone = ["disetujui", "dibayar", "dikirim", "diterima", "selesai"].includes(stLower);
     if (!isApprovedOrDone) continue;
 
     const hasPo = supplierPos.some(
@@ -637,9 +637,6 @@ export function computeFinancialStatements(
     );
     if (hasPo) continue;
 
-    const isRetailSource = String(pr.procurementSource || "").toUpperCase() === "RETAIL";
-    if (!isRetailSource) continue;
-
     const totalPr = toNum(pr.estimasi);
     if (totalPr <= 0) continue;
 
@@ -648,36 +645,117 @@ export function computeFinancialStatements(
     const isProjectPr =
       String(pr.costType || "").toUpperCase() === "PROJECT" ||
       !!(pr.projectId || (pr.project && pr.project !== "-"));
-    const isKasPr = String(pr.paymentMethod || "").toUpperCase() === "KAS";
     const projectLabel = isProjectPr ? normStr(pr.project, "Proyek") : "Stok Gudang / Retail";
     const debitCode = isProjectPr ? "5101" : "1200";
-    const debitDesc = isProjectPr
-      ? `HPP Project Beli Ritel ${nomorPr} (${normStr(pr.item, pr.tujuan)})`
-      : `Pembelian Aset Persediaan Ritel/Stok ${nomorPr} (${normStr(pr.item, pr.tujuan)})`;
 
-    if (isProjectPr) {
-      cogsProjectTotal += totalPr;
+    const procSource = String(pr.procurementSource || "").toUpperCase();
+
+    // ─── Flow 1: Ambil Stok Gudang untuk Project (Internal Material Transfer) ───
+    if (procSource === "GUDANG") {
+      const isDispatchedOrReceived = ["dikirim", "diterima", "selesai"].includes(stLower);
+      if (isDispatchedOrReceived && isProjectPr) {
+        cogsProjectTotal += totalPr;
+        pushJournalPair(tanggalPr, nomorPr, "Request Barang / Ritel", projectLabel, [
+          {
+            kodeAkun: "5101",
+            keterangan: `HPP Project (Bahan/Material dari Gudang) ${nomorPr} (${normStr(pr.item, pr.tujuan)})`,
+            debit: totalPr,
+            kredit: 0,
+          },
+          {
+            kodeAkun: "1200",
+            keterangan: `Pengeluaran Persediaan Barang Gudang ${nomorPr}`,
+            debit: 0,
+            kredit: totalPr,
+          },
+        ]);
+      }
+      continue;
     }
+
+    // ─── Flow 2 & 3: Pembelian Ritel (Tunai vs Hutang/Tempo) ───
+    const isRetailSource = procSource === "RETAIL" || !procSource;
+    if (!isRetailSource) continue;
+
+    const isKasPr = String(pr.paymentMethod || "").toUpperCase() === "KAS";
+    const isPaid =
+      String(pr.paymentStatus || "").toUpperCase() === "DIBAYAR" ||
+      !!pr.paymentProofFileId ||
+      !!pr.buktiPembayaran ||
+      stLower === "dibayar";
+
     if (isKasPr) {
-      cashOutDirectRetail += totalPr;
-    }
+      // Pembelian Ritel Tunai / Lunas: Jurnal Kas Keluar tercatat saat ditandai Dibayar
+      if (!isPaid && !["dibayar", "dikirim", "diterima", "selesai"].includes(stLower)) continue;
 
-    pushJournalPair(tanggalPr, nomorPr, "Request Barang / Ritel", projectLabel, [
-      {
-        kodeAkun: debitCode,
-        keterangan: debitDesc,
-        debit: totalPr,
-        kredit: 0,
-      },
-      {
-        kodeAkun: isKasPr ? "1000.01" : "210102",
-        keterangan: isKasPr
-          ? `Pengeluaran Kas Pembelian Ritel ${nomorPr}`
-          : `Hutang Pembelian Ritel ${nomorPr} (${normStr(pr.supplier, "Toko Ritel")})`,
-        debit: 0,
-        kredit: totalPr,
-      },
-    ]);
+      if (isProjectPr) cogsProjectTotal += totalPr;
+      cashOutDirectRetail += totalPr;
+
+      const debitDesc = isProjectPr
+        ? `HPP Project Beli Ritel Tunai ${nomorPr} (${normStr(pr.item, pr.tujuan)})`
+        : `Pembelian Aset Persediaan Ritel Tunai ${nomorPr} (${normStr(pr.item, pr.tujuan)})`;
+
+      pushJournalPair(tanggalPr, nomorPr, "Request Barang / Ritel", projectLabel, [
+        {
+          kodeAkun: debitCode,
+          keterangan: debitDesc,
+          debit: totalPr,
+          kredit: 0,
+        },
+        {
+          kodeAkun: "1000.01",
+          keterangan: `Pengeluaran Kas / Bank Beli Ritel ${nomorPr}`,
+          debit: 0,
+          kredit: totalPr,
+        },
+      ]);
+    } else {
+      // Pembelian Ritel Hutang / Tempo / Nota Bon Toko
+      const isDispatchedOrReceived = ["dikirim", "diterima", "selesai"].includes(stLower);
+
+      // Tahap 1: Pengakuan Hutang saat barang & nota bon dikirim/diterima
+      if (isDispatchedOrReceived || isPaid) {
+        if (isProjectPr) cogsProjectTotal += totalPr;
+
+        const debitDesc = isProjectPr
+          ? `HPP Project Beli Ritel Tempo ${nomorPr} (${normStr(pr.item, pr.tujuan)})`
+          : `Persediaan Beli Ritel Tempo ${nomorPr} (${normStr(pr.item, pr.tujuan)})`;
+
+        pushJournalPair(tanggalPr, nomorPr, "Request Barang / Ritel", projectLabel, [
+          {
+            kodeAkun: debitCode,
+            keterangan: debitDesc,
+            debit: totalPr,
+            kredit: 0,
+          },
+          {
+            kodeAkun: "210102",
+            keterangan: `Hutang Usaha Toko Ritel ${nomorPr} (${normStr(pr.supplier, "Toko")})`,
+            debit: 0,
+            kredit: totalPr,
+          },
+        ]);
+      }
+
+      // Tahap 2: Pelunasan Hutang saat Finance bayar
+      if (isPaid) {
+        cashOutDirectRetail += totalPr;
+        pushJournalPair(tanggalPr, nomorPr, "Request Barang / Ritel", projectLabel, [
+          {
+            kodeAkun: "210102",
+            keterangan: `Pelunasan Hutang Toko Ritel ${nomorPr}`,
+            debit: totalPr,
+            kredit: 0,
+          },
+          {
+            kodeAkun: "1000.01",
+            keterangan: `Pengeluaran Kas / Bank Pelunasan Hutang ${nomorPr}`,
+            debit: 0,
+            kredit: totalPr,
+          },
+        ]);
+      }
+    }
   }
 
   // 3. Journal Entries from Operational Expenses (Accrual + Reimbursement Payout)

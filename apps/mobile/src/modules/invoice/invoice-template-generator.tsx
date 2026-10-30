@@ -124,11 +124,13 @@ export function InvoiceTemplateGenerator({
   };
 
   const itemsTotal = items.length > 0 ? items.reduce((acc, curr) => acc + curr.qty * curr.harga, 0) : Number(row.nilai || 0);
+  const activeDiscount = Number(row.discount || row.disc || (row.meta as any)?.discount || 0);
+  const effectiveDpp = Math.max(0, itemsTotal - activeDiscount);
   const isNoPpn = row.tipePpn === "No PPN (Tanpa PPN)" || row.ppnMode === "none" || (row.ppn === 0 && Number(row.total || 0) > 0);
-  const activePpn = isNoPpn ? 0 : Math.round(itemsTotal * 0.11);
+  const activePpn = isNoPpn ? 0 : Math.round(effectiveDpp * 0.11);
   const itemsPph = items.reduce((acc, curr) => acc + calcItemPph(curr), 0);
   const activePph = items.length > 0 ? itemsPph : Number(row.pph || 0);
-  const activeGrandTotal = Math.max(0, itemsTotal + activePpn - activePph);
+  const activeGrandTotal = Math.max(0, effectiveDpp + activePpn - activePph);
 
   const noteMatch = String(row.catatan || row.description || "").match(/\((\d+)%\)/);
   const parsedPct = noteMatch ? Number(noteMatch[1]) : undefined;
@@ -331,9 +333,21 @@ export function InvoiceTemplateGenerator({
               {/* Rincian Total */}
               <View className="bg-panel/40 p-3 gap-1 border-t border-border/50">
                 <View className="flex-row justify-between">
-                  <Text className="text-xs text-muted-foreground">Total</Text>
+                  <Text className="text-xs text-muted-foreground">Subtotal Item</Text>
                   <Text className="text-xs font-medium">{rupiah(itemsTotal)}</Text>
                 </View>
+                {activeDiscount > 0 && (
+                  <View className="flex-row justify-between">
+                    <Text className="text-xs text-danger font-medium">Diskon</Text>
+                    <Text className="text-xs font-semibold text-danger">-{rupiah(activeDiscount)}</Text>
+                  </View>
+                )}
+                {activeDiscount > 0 && (
+                  <View className="flex-row justify-between">
+                    <Text className="text-xs text-muted-foreground">Dasar Pengenaan Pajak (DPP)</Text>
+                    <Text className="text-xs font-medium">{rupiah(effectiveDpp)}</Text>
+                  </View>
+                )}
                 <View className="flex-row justify-between">
                   <Text className="text-xs text-muted-foreground">{isNoPpn ? "PPN (Tanpa PPN)" : "PPN (11%)"}</Text>
                   <Text className="text-xs font-medium">{rupiah(activePpn)}</Text>

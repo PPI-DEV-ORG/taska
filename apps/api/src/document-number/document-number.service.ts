@@ -18,9 +18,9 @@ export type DocType = keyof typeof DOC_TYPES;
 
 const FORMAT_UMUM: Record<DocType, string> = {
   penawaran: "PNW/YYYY/MM/NNN",
-  clientPO: "POC/YYYY/MM/NNN",
+  clientPO: "SO/YYYY/MM/NNN",
   permintaan: "PNJ/YYYY/MM/NNN",
-  pesanan: "POD/YYYY/MM/NNN",
+  pesanan: "PO/YYYY/MM/NNN",
   suratJalan: "SJN/YYYY/MM/NNN",
   penerimaan: "RCP/YYYY/MM/NNN",
   invoiceOut: "INV/YYYY/MM/NNN",
@@ -55,6 +55,11 @@ export class DocumentNumberService {
       format = await this.settings.getValue(DOC_TYPES[docType]);
     } catch {
       /* pakai format bawaan */
+    }
+    if (docType === "pesanan") {
+      format = format.replace(/^(?:POD|PO-S)\//i, "PO/");
+    } else if (docType === "clientPO") {
+      format = format.replace(/^POC\//i, "SO/");
     }
     return applyFormat(format, year, month, seq);
   }

@@ -421,6 +421,19 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   const itemsTotal = currentItems.reduce((acc, it) => acc + getItemQty(it) * getItemPrice(it), 0);
 
+  // Hitung diskon yang berlaku dari SO atau Penawaran
+  const rawQuoDisc = Number(linkedQuotation?.disc || linkedQuotation?.discount || 0);
+  const rawRowDisc = Number(row.discount || row.disc || 0);
+  const soNilai = Number(row.nilai || 0);
+  const effectiveDiscount =
+    rawRowDisc > 0
+      ? rawRowDisc
+      : rawQuoDisc > 0
+        ? rawQuoDisc
+        : soNilai > 0 && itemsTotal > soNilai
+          ? itemsTotal - soNilai
+          : 0;
+
   // Dialog state
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [itemDialogOpen, setItemDialogOpen] = React.useState(false);
@@ -674,12 +687,13 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         po: row.nomor || row.nomorSo || row.nomorPoClient,
         projectId: linkedProjects[0]?.id ? Number(linkedProjects[0].id) : undefined,
         project: linkedProjects[0]?.nama,
-        quotationId: row.quotationId ? Number(row.quotationId) : undefined,
-        quotation: row.penawaran && row.penawaran !== "-" ? row.penawaran : undefined,
+        quotationId: row.quotationId ? Number(row.quotationId) : linkedQuotation?.id ? Number(linkedQuotation.id) : undefined,
+        quotation: row.penawaran && row.penawaran !== "-" ? row.penawaran : linkedQuotation?.nomor || undefined,
         jenis: jenisLabel,
         nilai: dpp,
         ppn,
         total,
+        discount: effectiveDiscount > 0 ? effectiveDiscount : undefined,
         tanggal: todayIso,
         jatuhTempo: invFlowMode === "LUNAS" ? todayIso : invDueDate,
         items: currentItems.length > 0 ? currentItems : undefined,
@@ -938,9 +952,23 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               );
             })}
 
-            <View className="mt-2 pt-2 border-t border-border/60 flex-row justify-between items-center">
-              <Text className="text-xs font-semibold text-foreground">Total Rincian Item</Text>
-              <Text className="text-xs font-bold text-primary">{rupiah(itemsTotal)}</Text>
+            <View className="mt-2 pt-2 border-t border-border/60 gap-1.5">
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Subtotal Rincian Item</Text>
+                <Text className="text-xs font-semibold text-foreground">{rupiah(itemsTotal)}</Text>
+              </View>
+              {effectiveDiscount > 0 && (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-danger font-medium">Diskon Penawaran / SO</Text>
+                  <Text className="text-xs font-semibold text-danger">-{rupiah(effectiveDiscount)}</Text>
+                </View>
+              )}
+              <View className="flex-row justify-between items-center pt-1 border-t border-border/40">
+                <Text className="text-xs font-bold text-foreground">Total Nilai SO (Setelah Diskon)</Text>
+                <Text className="text-xs font-bold text-primary">
+                  {rupiah(Number(row.nilai) || Math.max(0, itemsTotal - effectiveDiscount))}
+                </Text>
+              </View>
             </View>
           </View>
         )}
@@ -1416,20 +1444,6 @@ export function ModuleExtras({
   }
 
   if (moduleKey === "po-client") {
-    if (isPoPurchaseRow(row)) {
-      const normalizedPoRow: Row = {
-        ...row,
-        nomor: row.nomorPoClient && row.nomorPoClient !== "-" ? row.nomorPoClient : row.nomor,
-        nomorSoSupplier: row.nomorSoSupplier ?? (row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : "-"),
-        supplier:
-          row.supplier && row.supplier !== "-"
-            ? row.supplier
-            : String(row.customer || "-").replace(/\s*\(Supplier\)$/i, ""),
-        total: Number(row.total ?? row.nilai ?? 0),
-        pengiriman: row.pengiriman || "Di Supplier",
-      };
-      return <SupplierPoExtras row={normalizedPoRow} />;
-    }
     return <ClientPoExtras row={row} onRefresh={onRefresh} />;
   }
 

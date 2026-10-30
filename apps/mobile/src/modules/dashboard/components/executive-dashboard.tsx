@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { FolderKanban, TrendingUp, ClipboardCheck, Wallet } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah, rupiahShort } from "@/lib/format";
+import { formatAuditAction } from "@/lib/audit-format";
 import { ROLE_LABEL, type Role } from "@/constants/modules";
 import { DashboardGreeting } from "./dashboard-greeting";
 import { ProjectOverviewCard } from "./project-overview-card";
@@ -213,14 +214,18 @@ export function ExecutiveDashboard({
         </Panel>
 
         <Panel title="Aktivitas Lintas Divisi" subtitle="Audit log sistem" className="flex-1 min-w-[300px]">
-          {data["audit-log"].slice(0, 4).map((al: any) => (
-            <View key={al.id} className="border-border/60 border-b py-2.5 last:border-b-0">
-              <Text className="text-sm">
-                <Text className="font-semibold text-foreground">{al.pengguna}</Text> {al.aksi.toLowerCase()}
-              </Text>
-              <Text className="text-muted-foreground text-xs mt-0.5">{al.jenis} · {al.refId}</Text>
-            </View>
-          ))}
+          {data["audit-log"].slice(0, 4).map((al: any) => {
+            const text = formatAuditAction(al.aksi, al.detail);
+            return (
+              <View key={al.id} className="border-border/60 border-b py-2.5 last:border-b-0">
+                <Text className="text-sm">
+                  <Text className="font-semibold text-foreground">{al.pengguna}</Text>{" "}
+                  {text.charAt(0).toLowerCase() + text.slice(1)}
+                </Text>
+                <Text className="text-muted-foreground text-xs mt-0.5">{al.jenis} · {al.refId}</Text>
+              </View>
+            );
+          })}
         </Panel>
       </View>
     </View>

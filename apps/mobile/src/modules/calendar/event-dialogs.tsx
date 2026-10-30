@@ -13,6 +13,7 @@ import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect } from "@/comp
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { tanggal } from "@/lib/format";
+import { formatAuditAction } from "@/lib/audit-format";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import {
@@ -469,7 +470,7 @@ export function EventDetailDialog({
         setHistory(
           (rows ?? [])
             .filter((r) => String(r.entityId) === String(sourceId) && r.entityType === "calendarEvent")
-            .map((r) => ({ id: `al-${r.id}`, who: r.actorName || "Sistem", what: r.detail || r.action, when: r.createdAt })),
+            .map((r) => ({ id: `al-${r.id}`, who: r.actorName || "Sistem", what: formatAuditAction(r.action, r.detail), when: r.createdAt })),
         );
       })
       .catch(() => undefined);

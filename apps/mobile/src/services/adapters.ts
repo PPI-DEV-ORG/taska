@@ -96,7 +96,7 @@ const MAPS: Record<string, Record<string, string>> = {
     BLOCKED: "BLOCKED",
   },
   "purchase-requests": {
-    DIAJUKAN: "Diajukan", CEK_STOK: "Cek stok", DISETUJUI: "Disetujui", DITOLAK: "Ditolak",
+    DIAJUKAN: "Diajukan", CEK_STOK: "Cek stok", DISETUJUI: "Disetujui", DIBAYAR: "Dibayar", DITOLAK: "Ditolak",
     PO_DIBUAT: "PO dibuat", DIKIRIM: "Dikirim", DITERIMA: "Diterima", DIBATALKAN: "Dibatalkan",
   },
   "supplier-pos": {
@@ -504,11 +504,14 @@ export function adaptRow(module: string, raw: any): Row {
     case "po-client": {
       const custName = nameOf(raw.customer);
       const suppName = nameOf(raw.supplier);
-      const isNumberSo = /^SO[\-\/]/i.test(String(raw.number || ""));
-      const isNumberPo = /^PO[\-\/]/i.test(String(raw.number || ""));
-      const soNum = raw.soNumber && raw.soNumber !== "-" ? raw.soNumber : (isNumberSo ? raw.number : "-");
-      const poNum = raw.poClientNumber && raw.poClientNumber !== "-" ? raw.poClientNumber : (isNumberPo ? raw.number : "-");
-      const primaryDoc = (raw.number && raw.number !== "-") ? raw.number : (soNum !== "-" ? soNum : poNum !== "-" ? poNum : "");
+      const normOrderNum = (v?: string | null) =>
+        v ? String(v).replace(/^(?:POD|PO-S)\//i, "PO/").replace(/^(?:POC|SO-S)\//i, "SO/") : "";
+      const normRawNumber = normOrderNum(raw.number);
+      const isNumberSo = /^SO[\-\/]/i.test(normRawNumber);
+      const isNumberPo = /^PO[\-\/]/i.test(normRawNumber);
+      const soNum = raw.soNumber && raw.soNumber !== "-" ? normOrderNum(raw.soNumber) : (isNumberSo ? normRawNumber : "-");
+      const poNum = raw.poClientNumber && raw.poClientNumber !== "-" ? normOrderNum(raw.poClientNumber) : (isNumberPo ? normRawNumber : "-");
+      const primaryDoc = (normRawNumber && normRawNumber !== "-") ? normRawNumber : (soNum !== "-" ? soNum : poNum !== "-" ? poNum : "");
 
       return {
         ...base,
@@ -754,6 +757,9 @@ export function adaptRow(module: string, raw: any): Row {
         fileId: raw.evidenceFileId ?? (raw.fileId ?? null),
         doFileId: raw.doFileId ?? null,
         doFile: raw.doFile ?? null,
+        paymentProofFileId: raw.paymentProofFileId ?? null,
+        paymentStatus: raw.paymentStatus || (raw.status === "DIBAYAR" || raw.status === "DIKIRIM" || raw.status === "DITERIMA" ? "DIBAYAR" : "BELUM_DIBAYAR"),
+        isPaid: raw.status === "DIBAYAR" || raw.status === "DIKIRIM" || raw.status === "DITERIMA" || raw.paymentStatus === "DIBAYAR" || !!raw.paymentProofFileId,
         rejectReason: raw.rejectReason,
         items: Array.isArray(raw.items) ? raw.items : [],
         stock: Array.isArray(raw.stock) ? raw.stock : [],
@@ -776,8 +782,8 @@ export function adaptRow(module: string, raw: any): Row {
 
       return {
         ...base,
-        nomor: raw.number ?? "",
-        nomorSoSupplier: raw.supplierSoNumber ?? "-",
+        nomor: String(raw.number ?? "").replace(/^(?:POD|PO-S)\//i, "PO/"),
+        nomorSoSupplier: raw.supplierSoNumber ? String(raw.supplierSoNumber).replace(/^SO-S\//i, "SO/") : "-",
         supplier: nameOf(raw.supplier) ?? "",
         supplierId: idOf(raw.supplier),
         pembuat: nameOf(raw.creator) ?? "",
@@ -809,16 +815,23 @@ export function adaptRow(module: string, raw: any): Row {
         doFileId: raw.doFileId ?? null,
       };
     }
-    case "receiving":
+    case "receiving": {
+      const matchReqNumber = raw.conditionNote?.match(/Ref Request:\s*([^\s—]+)/)?.[1];
+      const effReqNum = raw.request?.number || matchReqNumber || "-";
       return {
         ...base,
         nomor: raw.number ?? "",
         po: raw.supplierPo?.number ?? "-",
         supplierPoId: idOf(raw.supplierPo),
+        requestId: idOf(raw.request) ?? (raw.requestId != null ? String(raw.requestId) : null),
+        requestNumber: effReqNum,
+        request: effReqNum,
         supplier: raw.supplierPo?.supplier?.name ?? raw.supplierName ?? "-",
+        supplierName: raw.supplierPo?.supplier?.name ?? raw.supplierName ?? "-",
         tanggal: d(raw.date),
         penerima: nameOf(raw.receiver) ?? "",
         status: toLabel("receiving", raw.status),
+        rawStatus: raw.status,
         item: (raw.items ?? []).map((i: any) => `${nameOf(i.product)} x ${n(i.qtyReceived ?? i.qtyGood ?? i.qtyOrdered)} ${i.product?.unit ?? ""}`).join(", ") || raw.conditionNote || "-",
         warehouseId: idOf(raw.warehouse),
         warehouse: nameOf(raw.warehouse) ?? "",
@@ -830,6 +843,7 @@ export function adaptRow(module: string, raw: any): Row {
         photoFileId: raw.photoFileId ?? null,
         fileId: raw.photoFileId ?? raw.receiptFileId ?? (raw.fileId ?? null),
       };
+    }
     case "delivery-notes": {
       const loc = raw.locations?.[0];
       let penerimaNama = raw.penerimaNama || "";
@@ -1757,7 +1771,12 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         clientPoId: row.clientPoId != null && row.clientPoId !== "" ? Number(row.clientPoId) : findId(db?.["po-client"], row.po),
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
         leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : undefined,
-        type: row.jenis ? (toEnum("invoiceType", row.jenis) || "TERMIN") : "TERMIN",
+        type: (() => {
+          const mapped = row.jenis ? toEnum("invoiceType", row.jenis) : "TERMIN";
+          if (mapped === "DP" || mapped === "TERMIN" || mapped === "PELUNASAN") return mapped;
+          if (/penuh|lunas/i.test(String(row.jenis))) return "PELUNASAN";
+          return "TERMIN";
+        })(),
         amount: amt,
         discount: row.discount != null ? num(row.discount) : undefined,
         ppn,
@@ -1849,6 +1868,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     case "receiving":
       return {
         supplierPoId: row.supplierPoId != null && row.supplierPoId !== "" ? Number(row.supplierPoId) : (row.po && row.po !== "-" ? findId(db?.["supplier-pos"], row.po) : undefined),
+        requestId: row.requestId != null && row.requestId !== "" ? Number(row.requestId) : undefined,
         supplierName: row.supplierName || (row.supplier && row.supplier !== "-" ? row.supplier : undefined),
         warehouseId: row.warehouseId != null && row.warehouseId !== "" ? Number(row.warehouseId) : findId(db?.warehouses, row.gudang ?? row.warehouse),
         date: row.tanggal || row.date || today,
@@ -1859,8 +1879,10 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         items:
           Array.isArray(row.items) && row.items.length
             ? row.items.map((i: any) => ({
-                ...i,
-                serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+                productId: Number(i.productId),
+                qtyReceived: Number(i.qtyReceived ?? i.qty ?? 1),
+                serials: Array.isArray(i.serials) ? i.serials.join(",") : i.serials ? String(i.serials) : undefined,
+                note: i.note,
               }))
             : undefined,
       };
@@ -2268,8 +2290,8 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "paymentMethod", "costCenterId", "receiptFileId", "paidFileId",
   ],
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
-  "purchase-requests": ["date", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "items"],
-  receiving: ["supplierPoId", "warehouseId", "projectId", "date", "conditionNote", "receiptFileId", "photoFileId", "items"],
+  "purchase-requests": ["date", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "status", "items"],
+  receiving: ["supplierPoId", "warehouseId", "projectId", "requestId", "date", "conditionNote", "receiptFileId", "photoFileId", "status", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],
   invoiceIn: ["number", "supplierId", "supplierPoId", "amount", "ppn", "total", "dueDate", "fileId"],
@@ -2535,7 +2557,15 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.tipePph !== undefined) out.tipePph = patch.tipePph;
     if (patch.total !== undefined) out.total = num(patch.total);
     if (patch.jatuhTempo !== undefined) out.dueDate = patch.jatuhTempo;
-    if (patch.jenis !== undefined) out.type = toEnum("invoiceType", patch.jenis);
+    if (patch.jenis !== undefined) {
+      const mapped = toEnum("invoiceType", patch.jenis);
+      out.type =
+        mapped === "DP" || mapped === "TERMIN" || mapped === "PELUNASAN"
+          ? mapped
+          : /penuh|lunas/i.test(String(patch.jenis))
+            ? "PELUNASAN"
+            : "TERMIN";
+    }
     if (patch.status !== undefined) out.status = toEnum("invoices", patch.status) || patch.status;
     if (patch.items !== undefined) out.items = patch.items;
     if (patch.subject !== undefined) out.subject = patch.subject;
@@ -2622,6 +2652,23 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
     if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
     if (patch.supplier !== undefined) out.supplierId = findId(db?.suppliers, patch.supplier);
+    if (patch.status !== undefined) out.status = toEnum("purchase-requests", patch.status) || patch.status;
+    if (patch.doFileId !== undefined) out.doFileId = patch.doFileId ? Number(patch.doFileId) : null;
+    if (patch.paymentProofFileId !== undefined) out.paymentProofFileId = patch.paymentProofFileId ? Number(patch.paymentProofFileId) : null;
+    if (patch.paymentStatus !== undefined) out.paymentStatus = patch.paymentStatus;
+  } else if (module === "receiving") {
+    if (patch.status !== undefined) out.status = toEnum("receiving", patch.status) || patch.status;
+    if (patch.requestId !== undefined) out.requestId = patch.requestId ? Number(patch.requestId) : null;
+    if (patch.supplierPoId !== undefined) out.supplierPoId = patch.supplierPoId ? Number(patch.supplierPoId) : null;
+    if (patch.warehouseId !== undefined) out.warehouseId = patch.warehouseId ? Number(patch.warehouseId) : null;
+    if (patch.items !== undefined && Array.isArray(patch.items)) {
+      out.items = patch.items.map((i: any) => ({
+        productId: Number(i.productId),
+        qtyReceived: Number(i.qtyReceived ?? i.qty ?? 1),
+        serials: Array.isArray(i.serials) ? i.serials.join(",") : i.serials ? String(i.serials) : undefined,
+        note: i.note,
+      }));
+    }
   } else if (module === "supplier-pos") {
     if (patch.supplierId !== undefined && patch.supplierId !== "" && patch.supplierId !== null) {
       out.supplierId = Number(patch.supplierId);

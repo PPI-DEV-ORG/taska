@@ -163,6 +163,7 @@ enum PrStatus {
   DIAJUKAN
   CEK_STOK
   DISETUJUI
+  DIBAYAR
   DITOLAK
   PO_DIBUAT
   DIKIRIM
@@ -1071,6 +1072,8 @@ model PurchaseRequest {
   otherNote         String?
   evidenceFileId    Int?
   doFileId          Int?
+  paymentProofFileId Int?
+  paymentStatus     String?       @default("BELUM_DIBAYAR")
   status            PrStatus      @default(DIAJUKAN)
   rejectReason      String?
   createdAt         DateTime      @default(now())
@@ -1079,6 +1082,7 @@ model PurchaseRequest {
   items        PurchaseRequestItem[]
   supplierPOs  SupplierPO[]
   reservations StockReservation[]
+  receivings   Receiving[]
 
   @@index([status])
   @@index([projectId])
@@ -1152,6 +1156,8 @@ model Receiving {
   number        String          @unique
   supplierPoId  Int?
   supplierPo    SupplierPO?     @relation(fields: [supplierPoId], references: [id])
+  requestId     Int?
+  request       PurchaseRequest? @relation(fields: [requestId], references: [id])
   supplierName  String?
   warehouseId   Int?
   warehouse     Warehouse?      @relation(fields: [warehouseId], references: [id])
@@ -1172,6 +1178,7 @@ model Receiving {
 
   @@index([status])
   @@index([supplierPoId])
+  @@index([requestId])
   @@index([warehouseId])
 }
 

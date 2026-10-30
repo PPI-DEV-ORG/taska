@@ -78,9 +78,11 @@ export class ReceivingsService {
         where,
         include: {
           supplierPo: { select: { id: true, number: true, shipmentStatus: true, supplier: { select: { name: true } } } },
+          request: { select: { id: true, number: true, purpose: true, costType: true, procurementSource: true } },
           warehouse: { select: { id: true, name: true } },
           project: { select: { id: true, name: true } },
           receiver: { select: { id: true, name: true } },
+          items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
           _count: { select: { items: true, issueReports: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
@@ -104,6 +106,7 @@ export class ReceivingsService {
             supplier: { select: { id: true, name: true } },
           },
         },
+        request: { select: { id: true, number: true, purpose: true, costType: true, procurementSource: true, requester: { select: { name: true } } } },
         warehouse: { select: { id: true, name: true } },
         project: { select: { id: true, name: true } },
         receiver: { select: { id: true, name: true, role: true } },
@@ -179,6 +182,7 @@ export class ReceivingsService {
       data: {
         number,
         supplierPoId: po?.id ?? null,
+        requestId: dto.requestId ?? null,
         supplierName: dto.supplierName || (po ? null : "Pemasok Langsung"),
         warehouseId,
         projectId: direct ? po!.projectId : null,
@@ -212,6 +216,21 @@ export class ReceivingsService {
       this.notifications.dataChange("supplier-pos", "update", po.id);
     }
 
+    if (dto.requestId) {
+      const prData: any = {};
+      if (effectiveDoFileId) prData.doFileId = effectiveDoFileId;
+      if (initialStatus === "DITERIMA") prData.status = "DITERIMA";
+      if (Object.keys(prData).length > 0) {
+        await this.prisma.main.purchaseRequest
+          .update({
+            where: { id: dto.requestId },
+            data: prData,
+          })
+          .catch(() => {});
+        this.notifications.dataChange("purchase-requests", "update", dto.requestId);
+      }
+    }
+
     await this.audit.log({
       actor: user,
       action: "BUAT_PENERIMAAN",
@@ -239,24 +258,54 @@ export class ReceivingsService {
   }
 
   async update(id: number, dto: ReceivingDto, user: RequestUser) {
-    const row = await this.prisma.main.receiving.findUnique({ where: { id } });
+    const row = await this.prisma.main.receiving.findUnique({ where: { id }, include: { items: true } });
     if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
+
+    let preparedItems: any[] | undefined = undefined;
+    if (dto.items && dto.items.length) {
+      preparedItems = [];
+      for (const item of dto.items) {
+        if (!item.productId) continue;
+        const qtyReceived = Math.max(1, Number(item.qtyReceived) || 1);
+        const qtyOrdered = Number(item.qtyOrdered) || qtyReceived;
+        const serialsList = parseSerials(item.serials);
+        preparedItems.push({
+          productId: item.productId,
+          qtyOrdered,
+          qtyReceived,
+          serials: serialsList.length ? serialsList.join(",") : null,
+          note: item.note,
+        });
+      }
+    }
+
     const updated = await this.prisma.main.receiving.update({
       where: { id },
       data: {
         ...(dto.supplierPoId !== undefined ? { supplierPoId: dto.supplierPoId } : {}),
+        ...(dto.requestId !== undefined ? { requestId: dto.requestId } : {}),
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.warehouseId !== undefined ? { warehouseId: dto.warehouseId } : {}),
         ...(dto.conditionNote !== undefined ? { conditionNote: dto.conditionNote } : {}),
         ...(dto.status ? { status: dto.status as any } : {}),
         ...(dto.receiptFileId !== undefined ? { receiptFileId: dto.receiptFileId } : {}),
         ...(dto.photoFileId !== undefined ? { photoFileId: dto.photoFileId } : {}),
+        ...(preparedItems
+          ? {
+              items: {
+                deleteMany: {},
+                create: preparedItems,
+              },
+            }
+          : {}),
       },
       include: {
         supplierPo: { select: { id: true, number: true, shipmentStatus: true, supplier: { select: { name: true } } } },
+        request: { select: { id: true, number: true } },
         warehouse: { select: { id: true, name: true } },
         project: { select: { id: true, name: true } },
         receiver: { select: { id: true, name: true } },
+        items: true,
       },
     });
     if (dto.receiptFileId) await this.attachFile(dto.receiptFileId, "receiving", updated.id).catch(() => {});
@@ -273,6 +322,31 @@ export class ReceivingsService {
         .catch(() => {});
       this.notifications.dataChange("supplier-pos", "update", targetPoId);
     }
+
+    const rawTargetReqId = dto.requestId ?? (updated as any).request?.id ?? (updated as any).requestId ?? (row as any).requestId;
+    const targetReqId = rawTargetReqId != null ? Number(rawTargetReqId) : null;
+    if (targetReqId) {
+      const prData: any = {};
+      if (syncedDoFileId) prData.doFileId = syncedDoFileId;
+      if (dto.status === "DITERIMA" || (updated.status as any) === "DITERIMA") {
+        prData.status = "DITERIMA";
+      }
+      if (Object.keys(prData).length > 0) {
+        await this.prisma.main.purchaseRequest
+          .update({
+            where: { id: targetReqId },
+            data: prData,
+          })
+          .catch(() => {});
+        this.notifications.dataChange("purchase-requests", "update", targetReqId);
+      }
+    }
+
+    // Jika status diubah menjadi DITERIMA dan sebelumnya masih MENUNGGU, catat stok & serial unit
+    if (dto.status === "DITERIMA" && row.status === "MENUNGGU") {
+      await this.postStock(id);
+    }
+
     this.notifications.dataChange("receiving", "update", updated.id);
     return updated;
   }
@@ -329,9 +403,14 @@ export class ReceivingsService {
     });
     if (!receiving) return;
 
+    const effectiveWhId =
+      receiving.warehouseId ??
+      (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } }))?.id ??
+      (await this.prisma.main.warehouse.findFirst())?.id;
+
     for (const item of receiving.items) {
       const serials = parseSerials(item.serials ?? undefined);
-      if (receiving.warehouseId) {
+      if (effectiveWhId) {
         if (item.product.hasSerial && serials.length) {
           for (const sn of serials) {
             const unit = await this.prisma.main.serialUnit.create({
@@ -339,21 +418,21 @@ export class ReceivingsService {
                 sn,
                 productId: item.productId,
                 status: "DI_GUDANG",
-                warehouseId: receiving.warehouseId,
+                warehouseId: effectiveWhId,
                 warrantyEndsAt: item.product.warrantyMonths
                   ? new Date(Date.now() + item.product.warrantyMonths * 30 * 24 * 3600 * 1000)
                   : null,
               },
             });
             await this.prisma.main.serialUnitHistory.create({
-              data: { serialUnitId: unit.id, status: "DI_GUDANG", warehouseId: receiving.warehouseId, changedById: receiving.receiverId, note: `Penerimaan ${receiving.number}` },
+              data: { serialUnitId: unit.id, status: "DI_GUDANG", warehouseId: effectiveWhId, changedById: receiving.receiverId, note: `Penerimaan ${receiving.number}` },
             });
             await this.stock.applyMovement({
               date: receiving.date,
               type: "IN",
               category: "PENERIMAAN_SUPPLIER",
               productId: item.productId,
-              toWarehouseId: receiving.warehouseId,
+              toWarehouseId: effectiveWhId,
               qty: 1,
               receivingId: receiving.id,
               serialUnitId: unit.id,
@@ -367,7 +446,7 @@ export class ReceivingsService {
               type: "IN",
               category: "PENERIMAAN_SUPPLIER",
               productId: item.productId,
-              toWarehouseId: receiving.warehouseId,
+              toWarehouseId: effectiveWhId,
               qty: nonSerial,
               receivingId: receiving.id,
               createdById: receiving.receiverId,
@@ -379,7 +458,7 @@ export class ReceivingsService {
             type: "IN",
             category: "PENERIMAAN_SUPPLIER",
             productId: item.productId,
-            toWarehouseId: receiving.warehouseId,
+            toWarehouseId: effectiveWhId,
             qty: item.qtyReceived,
             receivingId: receiving.id,
             createdById: receiving.receiverId,
@@ -454,10 +533,12 @@ export class ReceivingsService {
             },
           });
           if (po.requestId) {
+            const effectiveDo = receiving.receiptFileId ?? receiving.photoFileId;
             await this.prisma.main.purchaseRequest.updateMany({
-              where: { id: po.requestId, status: { in: ["PO_DIBUAT", "DISETUJUI", "DIKIRIM"] } },
-              data: { status: "DITERIMA" },
+              where: { id: po.requestId, status: { in: ["PO_DIBUAT", "DISETUJUI", "DIBAYAR", "DIKIRIM"] } },
+              data: { status: "DITERIMA", ...(effectiveDo ? { doFileId: effectiveDo } : {}) },
             });
+            this.notifications.dataChange("purchase-requests", "status", po.requestId);
           }
           await this.notifications.notify({
             roles: ["PROCUREMENT"],
@@ -473,6 +554,42 @@ export class ReceivingsService {
         where: { id },
         data: { status: "DITERIMA" },
       });
+    }
+
+    // Sinkronisasi status & DO File ke Purchase Request terkait (untuk penerimaan ritel / request langsung)
+    const effectiveDoFile = receiving.receiptFileId ?? receiving.photoFileId;
+    const reqIdsToNotify = new Set<number>();
+
+    if (receiving.conditionNote) {
+      const match = receiving.conditionNote.match(/Ref Request:\s*([^\s—]+)/);
+      const reqNumber = match?.[1];
+      if (reqNumber) {
+        await this.prisma.main.purchaseRequest.updateMany({
+          where: { number: reqNumber },
+          data: {
+            status: "DITERIMA",
+            ...(effectiveDoFile ? { doFileId: effectiveDoFile } : {}),
+          },
+        });
+        const matchedPr = await this.prisma.main.purchaseRequest.findFirst({ where: { number: reqNumber } });
+        if (matchedPr) reqIdsToNotify.add(matchedPr.id);
+      }
+    }
+    const directReqId = (receiving as any).requestId ?? (receiving as any).request?.id;
+    if (directReqId) {
+      await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: Number(directReqId) },
+        data: {
+          status: "DITERIMA",
+          ...(effectiveDoFile ? { doFileId: effectiveDoFile } : {}),
+        },
+      });
+      reqIdsToNotify.add(Number(directReqId));
+    }
+
+    for (const rId of reqIdsToNotify) {
+      this.notifications.dataChange("purchase-requests", "update", rId);
+      this.notifications.dataChange("purchase-requests", "status", rId);
     }
 
     const receiver = await this.prisma.main.user.findUnique({ where: { id: receiving.receiverId } });

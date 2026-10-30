@@ -27,6 +27,42 @@ export class ClientPoService {
     return `client-po:meta:${id}`;
   }
 
+  private migrationDone = false;
+  private async ensurePoMigration() {
+    if (this.migrationDone) return;
+    this.migrationDone = true;
+    try {
+      await this.prisma.main.$executeRawUnsafe(`
+        INSERT INTO \`SupplierPO\` (\`number\`, \`supplierId\`, \`total\`, \`date\`, \`paymentTerms\`, \`status\`, \`shipmentStatus\`, \`fileId\`, \`createdById\`, \`createdAt\`, \`updatedAt\`)
+        SELECT 
+          c.number,
+          COALESCE(c.supplierId, (SELECT id FROM \`Supplier\` WHERE status = 'AKTIF' ORDER BY id ASC LIMIT 1), (SELECT id FROM \`Supplier\` ORDER BY id ASC LIMIT 1)),
+          c.amount,
+          c.date,
+          'Tempo / Utang',
+          'DI_SUPPLIER',
+          'DI_SUPPLIER',
+          c.fileId,
+          (SELECT id FROM \`User\` WHERE role IN ('ADMIN', 'BOS', 'PROCUREMENT', 'FINANCE') ORDER BY id ASC LIMIT 1),
+          c.createdAt,
+          c.updatedAt
+        FROM \`ClientPO\` c
+        WHERE (c.number LIKE 'PO/%' OR c.number LIKE 'POD/%' OR c.number LIKE 'PO-%')
+          AND c.number NOT IN (SELECT number FROM \`SupplierPO\`)
+      `).catch(() => {});
+      await this.prisma.main.$executeRawUnsafe(`
+        UPDATE \`InvoiceOut\` 
+        SET \`clientPoId\` = NULL 
+        WHERE \`clientPoId\` IN (
+          SELECT id FROM (SELECT id FROM \`ClientPO\` WHERE number LIKE 'PO/%' OR number LIKE 'POD/%' OR number LIKE 'PO-%') as tmp
+        )
+      `).catch(() => {});
+      await this.prisma.main.$executeRawUnsafe(`
+        DELETE FROM \`ClientPO\` WHERE number LIKE 'PO/%' OR number LIKE 'POD/%' OR number LIKE 'PO-%'
+      `).catch(() => {});
+    } catch {}
+  }
+
   private defaultSoNumber(id: number, date?: Date | null): string {
     const d = date ? new Date(date) : new Date();
     const yyyy = d.getFullYear();
@@ -112,6 +148,7 @@ export class ClientPoService {
   }
 
   async list(q: PageQuery & { customerId?: number; from?: string; to?: string }) {
+    await this.ensurePoMigration();
     const where = {
       ...(q.customerId ? { customerId: q.customerId } : {}),
       ...(q.from || q.to
