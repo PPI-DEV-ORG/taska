@@ -669,7 +669,7 @@ function CreateInvoiceForm({
           }!`
         );
         if (isPurchase && selectedSupplierPoId) {
-          pushHistory("supplier-pos", Number(selectedSupplierPoId), `Invoice Pembelian ${nomor} (${rupiah(currentTotal)}) dibuat`);
+          pushHistory("supplier-pos", selectedSupplierPoId, `Invoice Pembelian ${nomor} (${rupiah(currentTotal)}) dibuat`);
         }
         if (activePo?.id) {
           pushHistory("po-client", activePo.id, `Invoice ${nomor} (${rupiah(currentTotal)}) dibuat`);
