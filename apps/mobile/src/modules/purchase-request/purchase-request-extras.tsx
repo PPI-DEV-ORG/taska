@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { CheckCircle2, AlertTriangle, Truck, PackageCheck, XCircle, Clock, Check, FileText, Plus, DollarSign, UploadCloud } from "lucide-react-native";
+import { CheckCircle2, AlertTriangle, Truck, PackageCheck, XCircle, Clock, Check, FileText, Plus, DollarSign, UploadCloud, ExternalLink } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,7 +13,9 @@ import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { toEnum } from "@/services/adapters";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
+import { StatusBadge } from "@/components/taska/status-badge";
+import { Input } from "@/components/ui/input";
 
 export function PurchaseRequestExtras({
   row,
@@ -29,6 +31,11 @@ export function PurchaseRequestExtras({
   const [confirmSendOpen, setConfirmSendOpen] = React.useState(false);
   const [confirmReceiveOpen, setConfirmReceiveOpen] = React.useState(false);
   const [payModalOpen, setPayModalOpen] = React.useState(false);
+  const [createPoOpen, setCreatePoOpen] = React.useState(false);
+  const [poSupplierId, setPoSupplierId] = React.useState<string>("");
+  const [poPaymentTerms, setPoPaymentTerms] = React.useState<string>("Utang / Tempo (Net 30)");
+  const [poEta, setPoEta] = React.useState<string>("");
+  const [poTotal, setPoTotal] = React.useState<string>("");
   const [paymentProofFileId, setPaymentProofFileId] = React.useState<number | null>(null);
   const [selectedFundingSource, setSelectedFundingSource] = React.useState<string>("1000.01");
   const [doFileId, setDoFileId] = React.useState<number | null>(null);
@@ -53,7 +60,8 @@ export function PurchaseRequestExtras({
   // 4 Kategori Alur Dokumen:
   const isStockTake = procSource === "GUDANG"; // Flow 1: Ambil Stok Gudang untuk Project
   const isRetailCash = procSource === "RETAIL" && payMethod === "KAS"; // Flow 2: Pembelian Ritel Tunai/Lunas (Stok atau Project)
-  const isRetailDebt = procSource === "RETAIL" && payMethod !== "KAS"; // Flow 3: Pembelian Ritel Tempo/Hutang (Stok atau Project)
+  const isDebt = !isStockTake && payMethod !== "KAS";
+  const isRetailDebt = (procSource === "RETAIL" || !procSource) && payMethod !== "KAS"; // Flow 3: Pembelian Ritel Tempo/Hutang (Stok atau Project)
   const isSupplierPo = procSource === "SUPPLIER"; // Flow 4: Pengadaan via PO Supplier Formal
   const isRetailOrPurchase = !isStockTake;
 
@@ -69,17 +77,81 @@ export function PurchaseRequestExtras({
   const isCekStok = effectiveRaw === "CEK_STOK";
   const isDisetujui = effectiveRaw === "DISETUJUI";
   const isPaid =
+    localStatus === "LUNAS" ||
+    localStatus === "DIBAYAR" ||
     effectiveRaw === "DIBAYAR" ||
+    row.status === "Lunas" ||
+    row.status === "Dibayar" ||
     row.paymentStatus === "DIBAYAR" ||
-    !!row.paymentProofFileId;
-  const isDikirim = effectiveRaw === "DIKIRIM";
-  const isDiterima = effectiveRaw === "DITERIMA";
+    !!row.paymentProofFileId ||
+    !!row.paymentProofFile ||
+    String(row.otherNote || "").includes("[DIBAYAR");
+  const isDikirim =
+    effectiveRaw === "DIKIRIM" ||
+    row.status === "Dikirim" ||
+    localStatus === "DIKIRIM";
+  const isDiterima =
+    effectiveRaw === "DITERIMA" ||
+    row.status === "Diterima" ||
+    row.status === "Diterima (Belum Lunas)" ||
+    row.status === "Lunas" ||
+    (isDebt && isPaid);
   const isDitolak = effectiveRaw === "DITOLAK";
 
+  const linkedPo = React.useMemo(() => {
+    const prSuffix = String(row.nomor || "").replace(/^(?:PNJ|REQ|PR)\//i, "");
+    const fromList = (data["supplier-pos"] ?? []).find(
+      (sp: Row) =>
+        (sp.requestId && String(sp.requestId) === String(row.id)) ||
+        (row.nomor && sp.request && String(sp.request).toLowerCase() === String(row.nomor).toLowerCase()) ||
+        (row.nomor && String(sp.nomor).includes(row.nomor)) ||
+        (prSuffix && sp.nomor && String(sp.nomor).replace(/^(?:POD|PO-S|PO)\//i, "") === prSuffix) ||
+        (Number(sp.total) === Number(row.estimasi) && sp.supplier && row.supplier && String(sp.supplier).toLowerCase() === String(row.supplier).toLowerCase()),
+    );
+    if (fromList) return fromList;
+    if (Array.isArray(row.supplierPOs) && row.supplierPOs.length > 0) {
+      const p = row.supplierPOs[0];
+      return {
+        id: String(p.id),
+        nomor: p.number || `PO/${p.id}`,
+        status: p.status,
+        shipmentStatus: p.shipmentStatus,
+        total: p.total,
+        supplier: p.supplier?.name || row.supplier || "-",
+      };
+    }
+    if (row.supplierPo) {
+      return {
+        id: String(row.supplierPo.id),
+        nomor: row.supplierPo.number || `PO/${row.supplierPo.id}`,
+        status: row.supplierPo.status,
+        shipmentStatus: row.supplierPo.shipmentStatus,
+        total: row.supplierPo.total,
+        supplier: row.supplierPo.supplier?.name || row.supplier || "-",
+      };
+    }
+    return null;
+  }, [data, row.id, row.nomor, row.supplierPOs, row.supplierPo, row.estimasi, row.supplier]);
+
+  const isPoDibuat =
+    effectiveRaw === "PO_DIBUAT" ||
+    row.status === "PO dibuat" ||
+    localStatus === "PO_DIBUAT" ||
+    !!linkedPo;
   const isApproved =
-    isDisetujui || isPaid || isDikirim || isDiterima || row.approval?.status === "Disetujui";
+    isDisetujui ||
+    isPoDibuat ||
+    isPaid ||
+    isDikirim ||
+    isDiterima ||
+    row.approval?.status === "Disetujui";
   const isStockChecked = isCekStok || isApproved || isDikirim || isDiterima;
-  const isDispatched = isDikirim || isDiterima;
+  const isDispatched =
+    isDikirim ||
+    isDiterima ||
+    isPaid ||
+    linkedPo?.shipmentStatus === "DIKIRIM" ||
+    linkedPo?.shipmentStatus === "SAMPAI";
 
   const items: any[] = Array.isArray(row.items) ? row.items : [];
   const stockInfo: any[] = Array.isArray(row.stock) ? row.stock : [];
@@ -103,14 +175,6 @@ export function PurchaseRequestExtras({
     });
   }, [items, stockInfo]);
 
-  const linkedPo = React.useMemo(() => {
-    return (data["supplier-pos"] ?? []).find(
-      (sp: Row) =>
-        (sp.requestId && String(sp.requestId) === String(row.id)) ||
-        (row.nomor && sp.request && String(sp.request).toLowerCase() === String(row.nomor).toLowerCase()),
-    );
-  }, [data, row.id, row.nomor]);
-
   const linkedInvoices = React.useMemo(() => {
     if (!linkedPo) return [];
     return (data.invoiceIn ?? []).filter(
@@ -118,38 +182,85 @@ export function PurchaseRequestExtras({
     );
   }, [data.invoiceIn, linkedPo]);
 
-  async function handleCreatePoFromRequest() {
+  const linkedReceivings = React.useMemo(() => {
+    return (data.receiving ?? []).filter(
+      (rc: Row) =>
+        (rc.requestId && String(rc.requestId) === String(row.id)) ||
+        (linkedPo && String(rc.supplierPoId) === String(linkedPo.id)) ||
+        (row.nomor && rc.requestNumber === row.nomor),
+    );
+  }, [data.receiving, row.id, linkedPo, row.nomor]);
+
+  function handleOpenCreatePo() {
+    const suppliersList = data.suppliers ?? [];
+    const matchedSupplier = suppliersList.find(
+      (s: Row) =>
+        (row.supplierId && String(s.id) === String(row.supplierId)) ||
+        (row.supplier && String(s.nama || s.name).toLowerCase() === String(row.supplier).toLowerCase())
+    ) ?? suppliersList[0];
+
+    setPoSupplierId(matchedSupplier?.id ? String(matchedSupplier.id) : "");
+    setPoPaymentTerms(
+      row.paymentMethod === "KAS"
+        ? "Tunai / Kas"
+        : row.paymentMethod === "NET14"
+        ? "Net 14 Hari"
+        : "Utang / Tempo (Net 30)"
+    );
+    const defaultEta = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0] || "";
+    setPoEta(defaultEta);
+    setPoTotal(String(row.estimasi || ""));
+    setCreatePoOpen(true);
+  }
+
+  async function handleSubmitCreatePo() {
+    const suppliersList = data.suppliers ?? [];
+    const targetSupplier =
+      suppliersList.find((s: Row) => String(s.id) === String(poSupplierId)) ??
+      suppliersList.find((s: Row) => (s.nama || s.name) === poSupplierId) ??
+      suppliersList[0];
+    const supplierName = targetSupplier?.nama ?? targetSupplier?.name ?? row.supplier ?? "Supplier Utama";
+    const supplierId = targetSupplier?.id ? Number(targetSupplier.id) : (row.supplierId ? Number(row.supplierId) : undefined);
+
+    const reqItems = Array.isArray(row.items) && row.items.length
+      ? row.items.map((i: any) => ({
+          productId: i.productId || i.product?.id ? Number(i.productId || i.product?.id) : undefined,
+          customName: i.customName || undefined,
+          customUnit: i.customUnit || undefined,
+          qty: Number(i.qty) || 1,
+          price: Number(i.unitCost || i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
+        }))
+      : undefined;
+
     setLoading(true);
     try {
-      const firstSuppId = data.suppliers?.[0]?.id ? String(data.suppliers[0].id) : undefined;
-      const targetSupplier = row.supplier && row.supplier !== "-" ? row.supplier : (data.suppliers?.[0]?.nama ?? "Supplier Utama");
-      const targetSupplierId = row.supplierId || firstSuppId;
-      const reqItems = Array.isArray(row.items) && row.items.length
-        ? row.items.map((i: any) => ({
-            productId: i.productId || i.product?.id ? Number(i.productId || i.product?.id) : undefined,
-            customName: i.customName || undefined,
-            customUnit: i.customUnit || undefined,
-            qty: Number(i.qty) || 1,
-            price: Number(i.unitCost || i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
-          }))
-        : undefined;
-
       const created = await addRow("supplier-pos", {
-        supplier: targetSupplier,
-        supplierId: targetSupplierId,
+        supplier: supplierName,
+        supplierId: supplierId,
         request: row.nomor,
-        requestId: row.id,
-        projectId: row.projectId,
+        requestId: row.id != null ? Number(row.id) : undefined,
+        projectId: row.projectId != null ? Number(row.projectId) : undefined,
         project: row.project,
-        paymentTerms: row.paymentMethod === "KAS" ? "Kas / Tunai" : "Tempo / Utang",
-        item: row.item,
+        payment: poPaymentTerms,
+        paymentTerms: poPaymentTerms,
+        item: row.item || row.tujuan || "Barang Request",
         items: reqItems,
-        total: row.estimasi || 0,
-        status: "Draft",
+        total: Number(poTotal) || row.estimasi || 0,
+        eta: poEta || undefined,
+        status: isPaid ? "Lunas" : isDiterima ? "Sampai" : isDikirim ? "Dikirim" : "Menunggu persetujuan",
       });
       if (created) {
-        toast(`PO / SO Supplier untuk request ${row.nomor} berhasil dibuat`);
-        router.push(`/supplier-pos/${created.id}` as any);
+        setCreatePoOpen(false);
+        setLocalStatus("PO_DIBUAT");
+        const curStatus = String(row.status || "").toLowerCase();
+        if (!["diterima", "lunas", "dikirim"].includes(curStatus)) {
+          try {
+            await setStatus("purchase-requests", row.id, "PO dibuat");
+          } catch {}
+        }
+        toast(`PO Supplier untuk request ${row.nomor} berhasil dibuat dan terhubung!`);
+        if (onRefresh) await onRefresh();
+        await reload();
       }
     } catch (e: any) {
       toast(e?.message ?? "Gagal membuat PO Supplier", "danger");
@@ -224,13 +335,19 @@ export function PurchaseRequestExtras({
     }
     setLoading(true);
     try {
-      setLocalStatus("DIBAYAR");
+      setLocalStatus("LUNAS");
       await setStatus("purchase-requests", row.id, "Dibayar", undefined, {
         paymentProofFileId,
         fundingSource: selectedFundingSource,
+        paymentStatus: "DIBAYAR",
       });
+      if (linkedPo?.id) {
+        try {
+          await patchRow("supplier-pos", String(linkedPo.id), { status: "Lunas", isPaid: true });
+        } catch {}
+      }
       setPayModalOpen(false);
-      toast("Request berhasil ditandai telah dibayar. Jurnal akuntansi telah tercatat!");
+      toast("Request & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!");
       if (onRefresh) await onRefresh();
       await reload();
     } catch (e: any) {
@@ -247,14 +364,18 @@ export function PurchaseRequestExtras({
       await setStatus("purchase-requests", row.id, "Dikirim");
       if (linkedPo?.id) {
         try {
-          await patchRow("supplier-pos", linkedPo.id, { pengiriman: "Dikirim" });
-          await setStatus("supplier-pos", linkedPo.id, "Dikirim");
+          await patchRow("supplier-pos", String(linkedPo.id), {
+            pengiriman: "Dikirim",
+            shipmentStatus: "DIKIRIM",
+            status: "DISETUJUI",
+          });
+          await setStatus("supplier-pos", String(linkedPo.id), "Dikirim");
         } catch {}
       }
       setConfirmSendOpen(false);
       toast(
         isSupplierPo
-          ? "Barang PO Supplier ditandai dikirim. Status PO dan Request Barang telah diperbarui!"
+          ? "Barang PO Supplier ditandai dikirim. Status PO dan Request Barang telah disinkronkan!"
           : isRetailOrPurchase
           ? "Barang pengadaan ditandai dikirim. Data Penerimaan di Gudang otomatis dibuat!"
           : "Barang berhasil diserahkan/dikirim dari Gudang"
@@ -275,12 +396,16 @@ export function PurchaseRequestExtras({
       await setStatus("purchase-requests", row.id, "Diterima", undefined, doFileId ? { doFileId } : undefined);
       if (linkedPo?.id) {
         try {
-          await patchRow("supplier-pos", linkedPo.id, { pengiriman: "Sampai" });
-          await setStatus("supplier-pos", linkedPo.id, "Sampai");
+          await patchRow("supplier-pos", String(linkedPo.id), {
+            pengiriman: "Sampai",
+            shipmentStatus: "SAMPAI",
+            status: "DISETUJUI",
+          });
+          await setStatus("supplier-pos", String(linkedPo.id), "Sampai");
         } catch {}
       }
       setConfirmReceiveOpen(false);
-      toast("Penerimaan barang telah dikonfirmasi");
+      toast("Penerimaan barang telah dikonfirmasi dan status PO telah disinkronkan!");
       if (onRefresh) await onRefresh();
       await reload();
     } catch (e: any) {
@@ -325,10 +450,10 @@ export function PurchaseRequestExtras({
     // Flow 4: Pengadaan via PO Supplier Formal
     return [
       { label: "Diajukan", done: true, current: isDiajukan },
-      { label: "Disetujui", done: isApproved, current: isDisetujui && !linkedPo },
-      { label: "PO Dibuat", done: !!linkedPo || effectiveRaw === "PO_DIBUAT", current: !!linkedPo && linkedPo.shipmentStatus !== "SAMPAI" },
-      { label: "Dikirim Supplier", done: linkedPo?.shipmentStatus === "DIKIRIM" || linkedPo?.shipmentStatus === "SAMPAI" || isDiterima, current: linkedPo?.shipmentStatus === "DIKIRIM" },
-      { label: "Diterima Gudang", done: isDiterima || linkedPo?.shipmentStatus === "SAMPAI", current: isDiterima || linkedPo?.shipmentStatus === "SAMPAI" },
+      { label: "Disetujui", done: isApproved || isPoDibuat || isDispatched || isDiterima || isPaid, current: isDisetujui && !isPoDibuat && !isDispatched && !isDiterima && !isPaid },
+      { label: "PO Dibuat", done: isPoDibuat || isDispatched || isDiterima || isPaid, current: isPoDibuat && !isDispatched && !isDiterima && !isPaid },
+      { label: "Dikirim Supplier", done: isDispatched || isDiterima || isPaid, current: isDikirim && !isDiterima && !isPaid },
+      { label: isPaid ? "Selesai (Lunas)" : "Diterima Gudang", done: isDiterima || isPaid, current: isDiterima || isPaid },
     ];
   }, [
     isStockTake,
@@ -339,6 +464,7 @@ export function PurchaseRequestExtras({
     isCekStok,
     isApproved,
     isDisetujui,
+    isPoDibuat,
     isDispatched,
     isDikirim,
     isDiterima,
@@ -416,36 +542,49 @@ export function PurchaseRequestExtras({
           </View>
         </View>
       ) : isDiterima ? (
-        isRetailDebt && !isPaid ? (
-          <View className="bg-amber-500/15 border border-amber-500/40 rounded-xl p-4 flex-row items-center gap-3">
-            <Clock size={22} color={colors.warning} />
-            <View className="flex-1">
-              <Text className="text-amber-800 dark:text-amber-400 font-bold text-base">
-                Barang Telah Diterima (Belum Lunas)
-              </Text>
-              <Text className="text-amber-900/90 dark:text-amber-300/80 text-xs mt-0.5">
-                Barang & nota bon tempo telah diterima di gudang (stok bertambah & tercatat Hutang Usaha 210102). Menunggu pelunasan hutang oleh Finance.
-              </Text>
+        isDebt && !isPaid ? (
+          <View className="bg-amber-500/15 border border-amber-500/40 rounded-xl p-4 flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <View className="flex-row items-center gap-3 flex-1">
+              <Clock size={22} color={colors.warning} />
+              <View className="flex-1">
+                <Text className="text-amber-800 dark:text-amber-400 font-bold text-base">
+                  Barang Telah Diterima (Belum Lunas)
+                </Text>
+                <Text className="text-amber-900/90 dark:text-amber-300/80 text-xs mt-0.5">
+                  Barang & nota bon tempo telah diterima di gudang (stok bertambah & tercatat Hutang Usaha 210102). Menunggu pelunasan hutang oleh Finance.
+                </Text>
+              </View>
             </View>
+            {isFinance ? (
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 mt-2 sm:mt-0"
+                onPress={() => setPayModalOpen(true)}
+                disabled={loading}
+              >
+                <DollarSign size={14} color="#fff" />
+                <Text className="text-xs font-semibold text-white">Unggah Bukti Bayar / Pelunasan</Text>
+              </Button>
+            ) : null}
           </View>
         ) : (
           <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
             <CheckCircle2 size={22} color="#10b981" />
             <View className="flex-1">
               <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">
-                {isStockTake ? "Barang Selesai Diterima di Proyek" : isRetailDebt ? "Pengadaan Selesai & Lunas" : "Barang Selesai Diterima di Gudang"}
+                {isStockTake ? "Barang Selesai Diterima di Proyek" : isDebt ? "Pengadaan Selesai & Lunas" : "Barang Selesai Diterima di Gudang"}
               </Text>
               <Text className="text-muted-foreground text-xs mt-0.5">
                 {isStockTake
                   ? `Barang dari gudang telah diterima oleh tim proyek (${row.pemohon || "User"}). Seluruh unit serial terpasang di proyek.`
-                  : isRetailDebt
-                  ? "Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance."
+                  : isDebt
+                  ? "Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance (Saldo Hutang Usaha 210102 Rp 0)."
                   : "Barang telah diterima di gudang, stok tercatat bertambah, dan proses pengadaan telah tuntas."}
               </Text>
             </View>
           </View>
         )
-      ) : isPaid && isRetailDebt ? (
+      ) : isPaid && isDebt ? (
         <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
           <CheckCircle2 size={22} color="#10b981" />
           <View className="flex-1">
@@ -453,7 +592,7 @@ export function PurchaseRequestExtras({
               Pengadaan Selesai & Lunas
             </Text>
             <Text className="text-muted-foreground text-xs mt-0.5">
-              Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance.
+              Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance (Saldo Hutang Usaha 210102 Rp 0).
             </Text>
           </View>
         </View>
@@ -505,6 +644,29 @@ export function PurchaseRequestExtras({
             </Text>
           </View>
         </View>
+      ) : isPoDibuat ? (
+        <View className="bg-sky-500/15 border border-sky-500/40 rounded-xl p-4 flex-row items-center justify-between gap-3">
+          <View className="flex-1 flex-row items-center gap-3">
+            <Truck size={22} color="#0284c7" />
+            <View className="flex-1">
+              <Text className="text-sky-800 dark:text-sky-300 font-bold text-base">
+                PO Supplier Telah Diterbitkan {linkedPo?.nomor ? `(${linkedPo.nomor})` : ""}
+              </Text>
+              <Text className="text-muted-foreground text-xs mt-0.5">
+                PO pembelian ke supplier telah berhasil diterbitkan. Setelah supplier mengirim barang, klik &quot;Tandai Barang Dikirim&quot; agar status terupdate dan draf penerimaan otomatis siap di Gudang.
+              </Text>
+            </View>
+          </View>
+          <Button
+            size="sm"
+            onPress={() => setConfirmSendOpen(true)}
+            disabled={loading}
+            className="bg-sky-600 hover:bg-sky-700"
+          >
+            <Truck size={14} color="#fff" />
+            <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
+          </Button>
+        </View>
       ) : isDisetujui ? (
         <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
           <CheckCircle2 size={22} color="#10b981" />
@@ -532,6 +694,108 @@ export function PurchaseRequestExtras({
           </View>
         </View>
       ) : null}
+
+      {/* ─── PURCHASE ORDER (PO) SUPPLIER SHORTCUT & DETAIL ─── */}
+      {!isStockTake && (
+        <Panel
+          title="Purchase Order (PO) Supplier"
+          subtitle={
+            linkedPo
+              ? `Terhubung dengan ${linkedPo.nomor}`
+              : "Penerbitan PO resmi ke supplier/vendor untuk pengadaan barang ini"
+          }
+        >
+          {linkedPo ? (
+            <View className="bg-panel/50 border border-border/80 rounded-xl p-3.5 gap-2.5">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <FileText size={18} color={colors.primary} />
+                  <Text className="font-bold text-base text-foreground">
+                    {linkedPo.nomor}
+                  </Text>
+                </View>
+                <StatusBadge status={linkedPo.status || "Menunggu persetujuan"} />
+              </View>
+
+              <View className="flex-row flex-wrap items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border/50 gap-2">
+                <View className="flex-row items-center gap-1.5">
+                  <Text className="text-xs text-muted-foreground">Supplier:</Text>
+                  <Text className="text-xs font-semibold text-foreground">
+                    {linkedPo.supplier || row.supplier || "-"}
+                  </Text>
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                  <Text className="text-xs text-muted-foreground">Total Nilai PO:</Text>
+                  <Text className="text-xs font-bold text-primary">
+                    Rp {Number(linkedPo.total || row.estimasi || 0).toLocaleString("id-ID")}
+                  </Text>
+                </View>
+              </View>
+
+              <View className="flex-row flex-wrap items-center gap-2 pt-2">
+                <Button
+                  size="sm"
+                  className="bg-primary hover:bg-primary/90"
+                  onPress={() => router.push(`/supplier-pos/${linkedPo.id}` as any)}
+                >
+                  <ExternalLink size={14} color="#fff" />
+                  <Text className="text-xs font-semibold text-white">
+                    Buka Detail PO Supplier
+                  </Text>
+                </Button>
+                {linkedInvoices.length > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => router.push(`/invoices` as any)}
+                  >
+                    <FileText size={14} color={colors.text} />
+                    <Text className="text-xs">
+                      Invoice Masuk ({linkedInvoices.length}): {linkedInvoices[0]?.nomor}
+                    </Text>
+                  </Button>
+                ) : null}
+                {linkedReceivings[0] ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => router.push(`/receiving/${linkedReceivings[0]?.id}` as any)}
+                  >
+                    <PackageCheck size={14} color={colors.success} />
+                    <Text className="text-xs font-semibold text-emerald-600">
+                      Penerimaan Gudang: {linkedReceivings[0]?.nomor}
+                    </Text>
+                  </Button>
+                ) : null}
+              </View>
+            </View>
+          ) : (
+            <View className="bg-panel/50 border border-dashed border-border/90 rounded-xl p-4 gap-3 items-start sm:flex-row sm:items-center sm:justify-between">
+              <View className="flex-1 gap-1">
+                <Text className="font-semibold text-foreground text-sm">
+                  Belum Ada PO Supplier Terbit
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Buat Purchase Order (PO) resmi ke supplier untuk memesan barang ini. PO akan otomatis terhubung secara permanen dengan request ini.
+                </Text>
+              </View>
+              {!isDitolak ? (
+                <Button
+                  size="sm"
+                  className="bg-primary hover:bg-primary/90"
+                  onPress={handleOpenCreatePo}
+                  disabled={loading}
+                >
+                  <Plus size={15} color="#fff" />
+                  <Text className="text-xs font-semibold text-white">
+                    + Buat PO Supplier
+                  </Text>
+                </Button>
+              ) : null}
+            </View>
+          )}
+        </Panel>
+      )}
 
       {/* ─── SKEMA AKUNTANSI & KETERKAITAN DOKUMEN (PO/SO & INVOICE) ─── */}
       <Panel
@@ -585,10 +849,12 @@ export function PurchaseRequestExtras({
               <Text className="text-xs font-bold text-warning">
                 {isStockTake
                   ? "[1200] Persediaan Barang Dagang (Stok Gudang Berkurang — Tanpa Kas/Utang)"
-                  : row.fundingSource === "1000.02" || /mandiri|bank/i.test(String(row.fundingSource || ""))
-                  ? "[1000.02] Bank Mandiri PT GMP (Pengeluaran Transfer)"
+                  : isPaid
+                  ? `${row.fundingSource === "1000.02" || /mandiri|bank/i.test(String(row.fundingSource || "")) ? "[1000.02] Bank Mandiri PT GMP" : "[1000.01] Kas Kecil / Tunai"} (Pelunasan: Saldo Hutang 210102 Rp 0)`
                   : isRetailCash
-                  ? "[1000.01] Kas Kecil / Tunai (Pengeluaran Kas)"
+                  ? row.fundingSource === "1000.02" || /mandiri|bank/i.test(String(row.fundingSource || ""))
+                    ? "[1000.02] Bank Mandiri PT GMP (Pengeluaran Transfer)"
+                    : "[1000.01] Kas Kecil / Tunai (Pengeluaran Kas)"
                   : "[210102] Hutang Usaha (Nota Bon Toko / Supplier)"}
               </Text>
             </View>
@@ -619,12 +885,24 @@ export function PurchaseRequestExtras({
                     </Text>
                   </Button>
                 ) : null}
+                {linkedReceivings[0] ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => router.push(`/receiving/${linkedReceivings[0]?.id}` as any)}
+                  >
+                    <PackageCheck size={14} color={colors.success} />
+                    <Text className="text-xs font-semibold text-emerald-600">
+                      Penerimaan Gudang: {linkedReceivings[0]?.nomor}
+                    </Text>
+                  </Button>
+                ) : null}
               </View>
             ) : isSupplierPo && (isProcurement || isGudang) && !isDitolak ? (
-              <Button size="sm" variant="outline" onPress={handleCreatePoFromRequest} disabled={loading}>
+              <Button size="sm" variant="outline" onPress={handleOpenCreatePo} disabled={loading}>
                 <Plus size={14} color={colors.primary} />
                 <Text className="text-xs font-semibold text-primary">
-                  Terbitkan PO / SO & Hubungkan ke Invoice Masuk
+                  Buat PO Supplier
                 </Text>
               </Button>
             ) : null}
@@ -736,7 +1014,7 @@ export function PurchaseRequestExtras({
         >
           <View className="flex-row flex-wrap items-center gap-2.5 pt-1">
             {/* 1. Persetujuan Request */}
-            {isApproved ? (
+            {(isApproved || isPoDibuat || isDispatched || isDiterima || isPaid) ? (
               <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
                 <CheckCircle2 size={15} color="#10b981" />
                 <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
@@ -805,15 +1083,15 @@ export function PurchaseRequestExtras({
             )}
 
             {/* 4. Pembayaran Ritel Tempo / Pelunasan Hutang (Flow 3) */}
-            {isRetailDebt && (
+            {isDebt && (
               isPaid ? (
                 <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
                   <CheckCircle2 size={15} color="#10b981" />
                   <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    ✓ Hutang Telah Dilunasi
+                    ✓ Hutang Telah Dilunasi (Lunas)
                   </Text>
                 </View>
-              ) : isApproved && isFinance && !isDitolak ? (
+              ) : isFinance && !isDitolak ? (
                 <Button
                   size="sm"
                   className="bg-emerald-600 hover:bg-emerald-700"
@@ -821,7 +1099,7 @@ export function PurchaseRequestExtras({
                   disabled={loading}
                 >
                   <DollarSign size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Pelunasan Hutang Toko</Text>
+                  <Text className="text-xs font-semibold text-white">Unggah Bukti Bayar & Pelunasan Hutang</Text>
                 </Button>
               ) : null
             )}
@@ -865,25 +1143,39 @@ export function PurchaseRequestExtras({
                   <Truck size={14} color="#fff" />
                   <Text className="text-xs font-semibold">Tandai Barang Dikirim (Auto Penerimaan)</Text>
                 </Button>
-              ) : // Supplier PO: Procurement atau Gudang tandai barang dikirim
-              (isSupplierPo && isApproved && (isProcurement || isGudang)) ? (
+              ) : // Supplier PO: Tandai barang dikirim setelah PO dibuat / disetujui
+              (isSupplierPo && (isPoDibuat || isApproved)) ? (
                 <Button
                   size="sm"
+                  className="bg-sky-600 hover:bg-sky-700"
                   onPress={() => setConfirmSendOpen(true)}
                   disabled={loading}
                 >
                   <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold">Tandai Barang Dikirim</Text>
+                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
                 </Button>
               ) : null
             ) : null}
 
-            {/* 6. Terbitkan PO Supplier Formal (Flow 4) */}
-            {isSupplierPo && !linkedPo && isApproved && !isDitolak && (isProcurement || isGudang) && (
-              <Button size="sm" variant="outline" onPress={handleCreatePoFromRequest} disabled={loading}>
-                <Plus size={14} color={colors.primary} />
-                <Text className="text-xs font-semibold text-primary">
-                  Terbitkan PO Supplier (Resmi)
+            {/* Konfirmasi Penerimaan Barang di Gudang */}
+            {isDispatched && !isDiterima && !isDitolak ? (
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700"
+                onPress={() => setConfirmReceiveOpen(true)}
+                disabled={loading}
+              >
+                <PackageCheck size={14} color="#fff" />
+                <Text className="text-xs font-semibold text-white">Konfirmasi Terima Barang</Text>
+              </Button>
+            ) : null}
+
+            {/* 6. Terbitkan PO Supplier Formal */}
+            {!isStockTake && !linkedPo && !isPoDibuat && !isDitolak && isApproved && (
+              <Button size="sm" className="bg-primary hover:bg-primary/90" onPress={handleOpenCreatePo} disabled={loading}>
+                <Plus size={14} color="#fff" />
+                <Text className="text-xs font-semibold text-white">
+                  Buat PO Supplier
                 </Text>
               </Button>
             )}
@@ -896,7 +1188,7 @@ export function PurchaseRequestExtras({
                   ✗ Request Telah Ditolak
                 </Text>
               </View>
-            ) : !isDiterima && !isDispatched ? (
+            ) : !isDiterima && !isDispatched && !isPoDibuat ? (
               <Button
                 variant="destructive"
                 size="sm"
@@ -1063,6 +1355,96 @@ export function PurchaseRequestExtras({
             </Button>
             <Button variant="destructive" onPress={handleReject} disabled={loading}>
               <Text className="text-white font-semibold">{loading ? "Memproses..." : "Tolak Request"}</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Buat PO Supplier dari Request Barang */}
+      <Dialog open={createPoOpen} onOpenChange={setCreatePoOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Buat Purchase Order (PO) Supplier</DialogTitle>
+            <DialogDescription>
+              Relasi PO ke request {row.nomor} dan proyek akan otomatis terhubung secara permanen.
+            </DialogDescription>
+          </DialogHeader>
+
+          <View className="py-2 gap-3">
+            {/* Info Relasi Otomatis */}
+            <View className="bg-panel/60 border border-border/80 rounded-xl p-3 gap-1">
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Request Asal:</Text>
+                <Text className="text-xs font-semibold text-primary">{row.nomor}</Text>
+              </View>
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Proyek / Alokasi:</Text>
+                <Text className="text-xs font-semibold text-foreground">{row.project || "Stok Gudang"}</Text>
+              </View>
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Barang Diminta:</Text>
+                <Text className="text-xs font-semibold text-foreground flex-1 text-right ml-2" numberOfLines={1}>{row.item || row.tujuan || "-"}</Text>
+              </View>
+            </View>
+
+            <FormField label="Pilih Supplier" required hint="Pemasok / vendor tujuan pemesanan">
+              <SearchableSelect
+                value={
+                  (data.suppliers ?? []).find((s: Row) => String(s.id) === String(poSupplierId))?.nama ??
+                  (data.suppliers ?? []).find((s: Row) => String(s.id) === String(poSupplierId))?.name ??
+                  row.supplier ??
+                  ""
+                }
+                options={(data.suppliers ?? []).map((s: Row) => s.nama ?? s.name ?? `Supplier #${s.id}`)}
+                onChange={(val) => {
+                  const found = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
+                  if (found) setPoSupplierId(String(found.id));
+                }}
+                placeholder="Pilih supplier..."
+              />
+            </FormField>
+
+            <FormField label="Syarat Pembayaran" required hint="Termin pembayaran ke supplier">
+              <SearchableSelect
+                value={poPaymentTerms}
+                options={[
+                  "Utang / Tempo (Net 30)",
+                  "Utang / Tempo (Net 14)",
+                  "Tunai / Kas",
+                  "Termin DP & Pelunasan",
+                ]}
+                onChange={setPoPaymentTerms}
+                placeholder="Pilih syarat pembayaran..."
+              />
+            </FormField>
+
+            <FormField label="Perkiraan Tiba (ETA)" hint="Tanggal perkiraan pengiriman barang sampai di gudang/lokasi">
+              <DatePicker
+                value={poEta}
+                onChange={setPoEta}
+                placeholder="Pilih tanggal tiba..."
+              />
+            </FormField>
+
+            <FormField label="Total Nilai PO (Rp)" required hint="Nominal tagihan estimasi PO">
+              <Input
+                value={poTotal}
+                onChangeText={setPoTotal}
+                keyboardType="numeric"
+                placeholder="Contoh: 10000000"
+              />
+            </FormField>
+          </View>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onPress={() => setCreatePoOpen(false)} disabled={loading}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleSubmitCreatePo} disabled={loading} className="bg-primary">
+              <Check size={14} color="#fff" />
+              <Text className="text-white font-semibold">
+                {loading ? "Menyimpan..." : "Simpan & Buat PO"}
+              </Text>
             </Button>
           </DialogFooter>
         </DialogContent>

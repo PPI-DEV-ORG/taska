@@ -1062,7 +1062,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await api("PATCH", `/surveys/${id}`, { status: statusEnumFor("surveys", status), notes: note });
       } else if (module === "supplier-pos") {
         const enumVal = statusEnumFor("supplier-pos", status);
-        if (["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"].includes(enumVal)) {
+        if (status === "Lunas" || enumVal === "LUNAS") {
+          await api("POST", `/supplier-pos/${id}/status`, { status: "LUNAS", note });
+        } else if (["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"].includes(enumVal)) {
           await api("POST", `/supplier-pos/${id}/status`, { status: enumVal, note });
         } else {
           await api("POST", `/supplier-pos/${id}/shipment`, { shipmentStatus: enumVal });

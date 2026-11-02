@@ -623,20 +623,11 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       if (qHasInvoice || row.status === "Ditolak" || row.status === "Kedaluwarsa") return false;
     }
     if (moduleKey === "purchase-requests") {
+      if (a.label === "Buat PO supplier") return false;
       if (a.label === "Teruskan ke Gudang") {
         if (user?.role === "gudang") return false;
         const st = String(row?.rawStatus || (row?.status ? toEnum("purchase-requests", row.status) : "") || "").toUpperCase();
         if (st && st !== "DIAJUKAN") return false;
-      }
-      if (a.label === "Buat PO supplier") {
-        const hasSupplierPo = (data["supplier-pos"] ?? []).some(
-          (sp: Row) =>
-            (sp.requestId && String(sp.requestId) === String(row.id)) ||
-            (row.nomor && sp.request && String(sp.request).toLowerCase() === String(row.nomor).toLowerCase())
-        );
-        const st = String(row?.status ?? "");
-        const rawSt = String(row?.rawStatus ?? "").toUpperCase();
-        if (hasSupplierPo || ["PO dibuat", "Menunggu barang", "Selesai", "Ditolak", "Dibatalkan", "Stok tersedia"].includes(st) || ["PO_DIBUAT", "SELESAI", "DITOLAK", "DIBATALKAN"].includes(rawSt)) return false;
       }
     }
     if (moduleKey === "surveys" && a.label === "Laporkan biaya survey") {

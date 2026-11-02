@@ -210,6 +210,14 @@ REVERSE.projectType = {
   Support: "SUPPORT",
   Lainnya: "OTHER",
 };
+REVERSE["supplier-pos"] = {
+  ...REVERSE["supplier-pos"],
+  "Sampai": "SAMPAI",
+  "Sampai (Belum Lunas)": "SAMPAI",
+  "Lunas": "LUNAS",
+  "Dikirim": "DIKIRIM",
+  "Di Supplier": "DI_SUPPLIER",
+};
 
 export function toLabel(map: string, v: string | null | undefined): string {
   if (v == null) return "-";
@@ -794,6 +802,8 @@ export function adaptRow(module: string, raw: any): Row {
         rejectReason: raw.rejectReason,
         items: Array.isArray(raw.items) ? raw.items : [],
         stock: Array.isArray(raw.stock) ? raw.stock : [],
+        supplierPOs: Array.isArray(raw.supplierPOs) ? raw.supplierPOs : [],
+        supplierPo: Array.isArray(raw.supplierPOs) && raw.supplierPOs[0] ? raw.supplierPOs[0] : (raw.supplierPo ?? null),
         approval: raw.approval ? adaptApproval(raw.approval) : undefined,
       };
     }
@@ -810,6 +820,14 @@ export function adaptRow(module: string, raw: any): Row {
       const effPayMethod =
         raw.request?.paymentMethod ||
         (/kas|tunai|cash/i.test(String(raw.paymentTerms || "")) ? "KAS" : "UTANG");
+      const isPaid =
+        Boolean(raw.isPaid) ||
+        raw.paymentStatus === "DIBAYAR" ||
+        raw.request?.status === "DIBAYAR" ||
+        raw.request?.status === "LUNAS" ||
+        raw.request?.paymentStatus === "DIBAYAR" ||
+        !!raw.request?.paymentProofFileId ||
+        Boolean(String(raw.request?.otherNote || "").includes("[DIBAYAR"));
 
       return {
         ...base,
@@ -823,16 +841,22 @@ export function adaptRow(module: string, raw: any): Row {
         total: n(raw.total),
         persetujuan: toLabel("supplier-pos", raw.status),
         pengiriman: toLabel("supplier-pos", raw.shipmentStatus),
-        status: raw.status === "MENUNGGU_PERSETUJUAN"
-          ? "Menunggu persetujuan"
-          : raw.status === "DITOLAK" || raw.status === "DIBATALKAN"
-            ? toLabel("supplier-pos", raw.status)
-            : raw.shipmentStatus === "SAMPAI" && effPayMethod !== "KAS" && !raw.isPaid
-              ? "Sampai (Belum Lunas)"
-              : toLabel("supplier-pos", raw.shipmentStatus),
+        status: raw.status === "DITOLAK" || raw.status === "DIBATALKAN"
+          ? toLabel("supplier-pos", raw.status)
+          : isPaid
+            ? "Lunas"
+            : raw.shipmentStatus === "SAMPAI"
+              ? (effPayMethod !== "KAS" ? "Sampai (Belum Lunas)" : "Sampai")
+              : raw.shipmentStatus === "DIKIRIM"
+                ? "Dikirim"
+                : raw.status === "MENUNGGU_PERSETUJUAN"
+                  ? "Menunggu persetujuan"
+                  : toLabel("supplier-pos", raw.shipmentStatus || raw.status),
+        isPaid,
         item: displayItem,
         itemsSummary: itemSummary || displayItem,
         items: rawItems,
+        receivings: Array.isArray(raw.receivings) ? raw.receivings : [],
         request: raw.request?.number ?? "-",
         requestId: idOf(raw.request),
         project: effProjName || "-",
@@ -855,7 +879,7 @@ export function adaptRow(module: string, raw: any): Row {
         ...base,
         nomor: raw.number ?? "",
         po: raw.supplierPo?.number ?? "-",
-        supplierPoId: idOf(raw.supplierPo),
+        supplierPoId: idOf(raw.supplierPo) ?? (raw.supplierPoId != null ? String(raw.supplierPoId) : null),
         requestId: idOf(raw.request) ?? (raw.requestId != null ? String(raw.requestId) : null),
         requestNumber: effReqNum,
         request: effReqNum,
@@ -2714,6 +2738,8 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
       }));
     }
   } else if (module === "supplier-pos") {
+    if (patch.requestId !== undefined) out.requestId = patch.requestId ? Number(patch.requestId) : null;
+    if (patch.projectId !== undefined) out.projectId = patch.projectId ? Number(patch.projectId) : null;
     if (patch.supplierId !== undefined && patch.supplierId !== "" && patch.supplierId !== null) {
       out.supplierId = Number(patch.supplierId);
     } else if (patch.supplier !== undefined) {

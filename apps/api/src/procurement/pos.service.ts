@@ -161,7 +161,7 @@ export class PosService {
         where,
         include: {
           supplier: { select: { id: true, name: true } },
-          request: { select: { id: true, number: true, purpose: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
+          request: { select: { id: true, number: true, purpose: true, status: true, paymentStatus: true, paymentProofFileId: true, otherNote: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
           project: { select: { id: true, name: true } },
           creator: { select: { id: true, name: true } },
           items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
@@ -177,25 +177,69 @@ export class PosService {
       this.prisma.main.supplierPO.count({ where }),
     ]);
     const metaMap = await this.getMetaMap(items.map((r) => r.id));
-    const enriched = items.map((r) => {
-      const m = metaMap.get(r.id) ?? {};
-      const recWithDo = (r.receivings ?? []).find((rc) => rc.receiptFileId || rc.photoFileId);
-      const fallbackDoFileId = recWithDo?.receiptFileId ?? recWithDo?.photoFileId ?? null;
-      const rawNum = String(r.number || "");
-      const normalizedNumber = rawNum.replace(/^(?:POD|PO-S)\//i, "PO/");
-      if (normalizedNumber !== rawNum && normalizedNumber) {
-        void this.prisma.main.supplierPO
-          .update({ where: { id: r.id }, data: { number: normalizedNumber } })
-          .catch(() => {});
-      }
-      return {
-        ...r,
-        number: normalizedNumber || r.number,
-        doFileId: r.doFileId ?? fallbackDoFileId,
-        supplierSoNumber: m.supplierSoNumber ? String(m.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
-        soFileId: m.soFileId ?? null,
-      };
-    });
+    const enriched = await Promise.all(
+      items.map(async (r) => {
+        const m = metaMap.get(r.id) ?? {};
+        const recWithDo = (r.receivings ?? []).find((rc) => rc.receiptFileId || rc.photoFileId);
+        const fallbackDoFileId = recWithDo?.receiptFileId ?? recWithDo?.photoFileId ?? null;
+        const rawNum = String(r.number || "");
+        const normalizedNumber = rawNum.replace(/^(?:POD|PO-S)\//i, "PO/");
+        if (normalizedNumber !== rawNum && normalizedNumber) {
+          void this.prisma.main.supplierPO
+            .update({ where: { id: r.id }, data: { number: normalizedNumber } })
+            .catch(() => {});
+        }
+
+        let linkedReq = r.request;
+        if (!r.requestId) {
+          const suffix = (normalizedNumber || rawNum).replace(/^(?:POD|PO-S|PO)\//i, "");
+          const matchedPr = await this.prisma.main.purchaseRequest.findFirst({
+            where: {
+              OR: [
+                { number: `PNJ/${suffix}` },
+                { number: { endsWith: suffix } },
+              ],
+            },
+            select: {
+              id: true,
+              number: true,
+              purpose: true,
+              status: true,
+              paymentStatus: true,
+              paymentProofFileId: true,
+              otherNote: true,
+              costType: true,
+              procurementSource: true,
+              paymentMethod: true,
+              projectId: true,
+            },
+          });
+          if (matchedPr) {
+            r.requestId = matchedPr.id;
+            linkedReq = matchedPr;
+            void this.prisma.main.supplierPO
+              .update({ where: { id: r.id }, data: { requestId: matchedPr.id } })
+              .catch(() => {});
+          }
+        }
+
+        const isPrPaid =
+          (linkedReq as any)?.status === "DIBAYAR" ||
+          (linkedReq as any)?.paymentStatus === "DIBAYAR" ||
+          !!(linkedReq as any)?.paymentProofFileId ||
+          Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR"));
+        return {
+          ...r,
+          requestId: r.requestId,
+          request: linkedReq,
+          number: normalizedNumber || r.number,
+          doFileId: r.doFileId ?? fallbackDoFileId,
+          supplierSoNumber: m.supplierSoNumber ? String(m.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
+          soFileId: m.soFileId ?? null,
+          isPaid: isPrPaid,
+        };
+      })
+    );
     return paginate(enriched, total, q);
   }
 
@@ -205,7 +249,7 @@ export class PosService {
       include: {
         supplier: true,
         creator: { select: { id: true, name: true } },
-        request: { select: { id: true, number: true, purpose: true, status: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
+        request: { select: { id: true, number: true, purpose: true, status: true, paymentStatus: true, paymentProofFileId: true, otherNote: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
         project: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
         receivings: {
@@ -230,12 +274,52 @@ export class PosService {
         .update({ where: { id: row.id }, data: { number: normalizedNumber } })
         .catch(() => {});
     }
+    let linkedReq = row.request;
+    if (!row.requestId) {
+      const suffix = (normalizedNumber || rawNum).replace(/^(?:POD|PO-S|PO)\//i, "");
+      const matchedPr = await this.prisma.main.purchaseRequest.findFirst({
+        where: {
+          OR: [
+            { number: `PNJ/${suffix}` },
+            { number: { endsWith: suffix } },
+          ],
+        },
+        select: {
+          id: true,
+          number: true,
+          purpose: true,
+          status: true,
+          paymentStatus: true,
+          paymentProofFileId: true,
+          otherNote: true,
+          costType: true,
+          procurementSource: true,
+          paymentMethod: true,
+          projectId: true,
+        },
+      });
+      if (matchedPr) {
+        row.requestId = matchedPr.id;
+        linkedReq = matchedPr as any;
+        void this.prisma.main.supplierPO
+          .update({ where: { id: row.id }, data: { requestId: matchedPr.id } })
+          .catch(() => {});
+      }
+    }
+    const isPrPaid =
+      (linkedReq as any)?.status === "DIBAYAR" ||
+      (linkedReq as any)?.paymentStatus === "DIBAYAR" ||
+      !!(linkedReq as any)?.paymentProofFileId ||
+      Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR"));
     return {
       ...row,
+      requestId: row.requestId,
+      request: linkedReq,
       number: normalizedNumber || row.number,
       doFileId: row.doFileId ?? fallbackDoFileId,
       supplierSoNumber: meta.supplierSoNumber ? String(meta.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
       soFileId: meta.soFileId ?? null,
+      isPaid: isPrPaid,
       approval,
     };
   }
@@ -344,6 +428,16 @@ export class PosService {
       requestedBy: user,
       href: `/procurement/po/${row.id}`,
     });
+
+    if (dto.requestId) {
+      await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: dto.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
+        data: { status: "PO_DIBUAT" },
+      }).catch(() => {});
+      this.notifications.dataChange("purchase-requests", "status", dto.requestId);
+      this.notifications.dataChange("purchase-requests", "update", dto.requestId);
+    }
+
     this.notifications.dataChange("supplier-pos", "create", row.id);
     return row;
   }
@@ -408,18 +502,32 @@ export class PosService {
     });
 
     // Sinkronisasi status pengiriman ke Purchase Request terkait
-    if (shipmentStatus === "DIKIRIM" && row.requestId) {
+    let reqId = row.requestId;
+    if (!reqId) {
+      const suffix = String(row.number || "").replace(/^(?:POD|PO-S|PO)\//i, "");
+      const matchedPr = await this.prisma.main.purchaseRequest.findFirst({
+        where: {
+          OR: [{ number: `PNJ/${suffix}` }, { number: { endsWith: suffix } }],
+        },
+        select: { id: true },
+      });
+      if (matchedPr) {
+        reqId = matchedPr.id;
+        void this.prisma.main.supplierPO.update({ where: { id: row.id }, data: { requestId: matchedPr.id } }).catch(() => {});
+      }
+    }
+    if (shipmentStatus === "DIKIRIM" && reqId) {
       await this.prisma.main.purchaseRequest.updateMany({
-        where: { id: row.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
+        where: { id: reqId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
         data: { status: "DIKIRIM" },
       }).catch(() => {});
-      this.notifications.dataChange("purchase-requests", "status", row.requestId);
-    } else if (shipmentStatus === "SAMPAI" && row.requestId) {
+      this.notifications.dataChange("purchase-requests", "status", reqId);
+    } else if (shipmentStatus === "SAMPAI" && reqId) {
       await this.prisma.main.purchaseRequest.updateMany({
-        where: { id: row.requestId, status: { notIn: ["DIBATALKAN"] } },
+        where: { id: reqId, status: { notIn: ["DIBATALKAN"] } },
         data: { status: "DITERIMA" },
       }).catch(() => {});
-      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+      this.notifications.dataChange("purchase-requests", "status", reqId);
     }
     if (dto.doFileId) {
       await this.prisma.main.receiving
@@ -452,27 +560,61 @@ export class PosService {
     const shipmentStatuses = ["BELUM_DIKIRIM", "DIKIRIM", "DALAM_PERJALANAN", "SAMPAI", "DI_SUPPLIER"];
     const isShipment = shipmentStatuses.includes(status);
     const effShipment = status === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : status === "DALAM_PERJALANAN" ? "DIKIRIM" : status;
-    const data = isShipment
-      ? { shipmentStatus: effShipment as never, ...(effShipment === "SAMPAI" ? { arrivedAt: new Date() } : {}) }
-      : { status: status as never };
+    const isLunas = status === "LUNAS" || status === "DIBAYAR" || status === "SELESAI";
+
+    let data: any = {};
+    if (isLunas) {
+      data = {
+        status: "DISETUJUI",
+        shipmentStatus: "SAMPAI",
+        arrivedAt: row.arrivedAt || new Date(),
+      };
+    } else if (isShipment) {
+      data = {
+        shipmentStatus: effShipment as never,
+        ...(effShipment === "SAMPAI" ? { arrivedAt: row.arrivedAt || new Date() } : {}),
+        ...(effShipment === "DIKIRIM" || effShipment === "SAMPAI" ? { status: "DISETUJUI" } : {}),
+      };
+    } else {
+      data = { status: status as never };
+    }
+
     const updated = await this.prisma.main.supplierPO.update({
       where: { id },
       data,
       include: { supplier: { select: { id: true, name: true } } },
     });
 
-    if (isShipment && effShipment === "DIKIRIM" && row.requestId) {
-      await this.prisma.main.purchaseRequest.updateMany({
-        where: { id: row.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
-        data: { status: "DIKIRIM" },
-      }).catch(() => {});
-      this.notifications.dataChange("purchase-requests", "status", row.requestId);
-    } else if (isShipment && effShipment === "SAMPAI" && row.requestId) {
-      await this.prisma.main.purchaseRequest.updateMany({
-        where: { id: row.requestId, status: { notIn: ["DIBATALKAN"] } },
-        data: { status: "DITERIMA" },
-      }).catch(() => {});
-      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+    if (row.requestId) {
+      if (isLunas) {
+        await this.prisma.main.purchaseRequest.updateMany({
+          where: { id: row.requestId },
+          data: {
+            status: "DITERIMA",
+            paymentStatus: "DIBAYAR",
+          },
+        }).catch(() => {});
+        this.notifications.dataChange("purchase-requests", "status", row.requestId);
+        this.notifications.dataChange("purchase-requests", "update", row.requestId);
+      } else if (isShipment && effShipment === "DIKIRIM") {
+        await this.prisma.main.purchaseRequest.updateMany({
+          where: { id: row.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
+          data: { status: "DIKIRIM" },
+        }).catch(() => {});
+        this.notifications.dataChange("purchase-requests", "status", row.requestId);
+        this.notifications.dataChange("purchase-requests", "update", row.requestId);
+      } else if (isShipment && effShipment === "SAMPAI") {
+        await this.prisma.main.purchaseRequest.updateMany({
+          where: { id: row.requestId, status: { notIn: ["DIBATALKAN"] } },
+          data: { status: "DITERIMA" },
+        }).catch(() => {});
+        this.notifications.dataChange("purchase-requests", "status", row.requestId);
+        this.notifications.dataChange("purchase-requests", "update", row.requestId);
+      }
+    }
+
+    if (isShipment && effShipment === "DIKIRIM") {
+      await this.ensureReceivingCreated(id, user, (row as any).doFileId);
     }
 
     this.notifications.dataChange("supplier-pos", "status", updated.id);
@@ -501,8 +643,9 @@ export class PosService {
       where: { id },
       data: {
         shipmentStatus: effShipment as never,
+        ...(effShipment === "DIKIRIM" || effShipment === "SAMPAI" ? { status: "DISETUJUI" } : {}),
         ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
-        ...(effShipment === "SAMPAI" ? { arrivedAt: new Date() } : {}),
+        ...(effShipment === "SAMPAI" ? { arrivedAt: row.arrivedAt || new Date() } : {}),
       },
       include: { supplier: { select: { id: true, name: true } } },
     });
@@ -522,18 +665,39 @@ export class PosService {
       });
     }
 
-    if (effShipment === "DIKIRIM" && row.requestId) {
+    let reqId = row.requestId;
+    if (!reqId) {
+      const suffix = String(row.number || "").replace(/^(?:POD|PO-S|PO)\//i, "");
+      const matchedPr = await this.prisma.main.purchaseRequest.findFirst({
+        where: {
+          OR: [{ number: `PNJ/${suffix}` }, { number: { endsWith: suffix } }],
+        },
+        select: { id: true },
+      });
+      if (matchedPr) {
+        reqId = matchedPr.id;
+        void this.prisma.main.supplierPO.update({ where: { id: row.id }, data: { requestId: matchedPr.id } }).catch(() => {});
+      }
+    }
+
+    if (effShipment === "DIKIRIM" && reqId) {
       await this.prisma.main.purchaseRequest.updateMany({
-        where: { id: row.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
+        where: { id: reqId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
         data: { status: "DIKIRIM" },
       }).catch(() => {});
-      this.notifications.dataChange("purchase-requests", "status", row.requestId);
-    } else if (effShipment === "SAMPAI" && row.requestId) {
+      this.notifications.dataChange("purchase-requests", "status", reqId);
+      this.notifications.dataChange("purchase-requests", "update", reqId);
+    } else if (effShipment === "SAMPAI" && reqId) {
       await this.prisma.main.purchaseRequest.updateMany({
-        where: { id: row.requestId, status: { notIn: ["DIBATALKAN"] } },
+        where: { id: reqId, status: { notIn: ["DIBATALKAN"] } },
         data: { status: "DITERIMA" },
       }).catch(() => {});
-      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+      this.notifications.dataChange("purchase-requests", "status", reqId);
+      this.notifications.dataChange("purchase-requests", "update", reqId);
+    }
+
+    if (effShipment === "DIKIRIM") {
+      await this.ensureReceivingCreated(id, user, dto.doFileId ?? row.doFileId);
     }
 
     this.notifications.dataChange("supplier-pos", "status", updated.id);
@@ -584,6 +748,72 @@ export class PosService {
     });
     this.notifications.dataChange("supplier-pos", "status", updated.id);
     return updated;
+  }
+
+  private async ensureReceivingCreated(poId: number, user: RequestUser, doFileId?: number | null) {
+    try {
+      const row = await this.prisma.main.supplierPO.findUnique({
+        where: { id: poId },
+        include: { items: true, supplier: true },
+      });
+      if (!row) return;
+
+      const existingRec = await this.prisma.main.receiving.findFirst({
+        where: {
+          OR: [
+            { supplierPoId: poId },
+            ...(row.requestId ? [{ requestId: row.requestId }] : []),
+            { conditionNote: { contains: row.number } },
+          ],
+        },
+      });
+      if (!existingRec) {
+        const recNumber = await this.docnum.next("penerimaan");
+        const defaultWh =
+          (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
+          (await this.prisma.main.warehouse.findFirst());
+
+        const recItems: any[] = [];
+        for (const it of row.items) {
+          if (it.productId) {
+            recItems.push({
+              productId: it.productId,
+              qtyOrdered: it.qty,
+              qtyReceived: it.qty,
+              note: it.customName ? `Item PO: ${it.customName}` : undefined,
+            });
+          }
+        }
+
+        const createdRec = await this.prisma.main.receiving.create({
+          data: {
+            number: recNumber,
+            supplierPoId: poId,
+            requestId: row.requestId ?? null,
+            supplierName: row.supplier?.name || "Supplier",
+            warehouseId: defaultWh?.id ?? null,
+            projectId: row.projectId ?? null,
+            date: new Date(),
+            receiverId: user.id,
+            status: "MENUNGGU",
+            conditionNote: `Pengiriman PO Supplier ${row.number}`,
+            receiptFileId: doFileId ?? row.doFileId ?? null,
+            items: {
+              create: recItems,
+            },
+          },
+        });
+        this.notifications.dataChange("receiving", "create", createdRec.id);
+        await this.notifications.notify({
+          roles: ["GUDANG"],
+          kind: "STOK",
+          text: `Penerimaan baru ${recNumber} otomatis dibuat untuk PO ${row.number}. Cek fisik barang saat tiba.`,
+          href: `/receivings/${createdRec.id}`,
+        });
+      }
+    } catch (e) {
+      console.warn(`Gagal membuat otomatis penerimaan untuk PO ${poId}:`, (e as Error).message);
+    }
   }
 
   async remove(id: number, user: RequestUser) {
