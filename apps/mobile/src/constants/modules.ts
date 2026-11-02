@@ -813,6 +813,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "productsTested", label: "Perangkat / Produk yang Diuji", type: "textarea", placeholder: "Daftar tipe kamera, NVR, software..." },
       { key: "deskripsi", label: "Deskripsi / Catatan Tambahan", type: "textarea" },
     ],
+    createRoles: ["pm", "sales", "teknisi", "se"],
     emptyText: "Belum ada laporan POC.",
   },
   "visit-reports": {
@@ -870,6 +871,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "tujuan", label: "Tujuan Kunjungan", type: "textarea", placeholder: "Maksud dan target utama pertemuan..." },
       { key: "deskripsi", label: "Deskripsi / Catatan Singkat", type: "textarea" },
     ],
+    createRoles: ["pm", "sales", "teknisi", "se"],
     emptyText: "Belum ada riwayat kunjungan.",
   },
 };
