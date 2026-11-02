@@ -39,6 +39,7 @@ import { ProjectExtras } from "@/modules/project/project-extras";
 import { InvoiceExtras } from "@/modules/invoice/invoice-extras";
 import { SupplierPoExtras } from "@/modules/supplier-po/supplier-po-extras";
 import { PurchaseRequestExtras } from "@/modules/purchase-request/purchase-request-extras";
+import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { printOrderDocument } from "@/lib/order-print";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 
@@ -458,17 +459,6 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   // Terbitkan Invoice Keluar dari SO state
   const [createInvOpen, setCreateInvOpen] = React.useState(false);
-  const [invFlowMode, setInvFlowMode] = React.useState<"LUNAS" | "TEMPO" | "DP" | "PELUNASAN">("LUNAS");
-  const [invPayMethod, setInvPayMethod] = React.useState<"TRANSFER" | "TUNAI">("TRANSFER");
-  const [invDpPaidNow, setInvDpPaidNow] = React.useState(true);
-  const [invDpPercent, setInvDpPercent] = React.useState("50");
-  const [invCustomAmount, setInvCustomAmount] = React.useState("");
-  const [invDueDate, setInvDueDate] = React.useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 14);
-    return d.toISOString().slice(0, 10);
-  });
-  const [creatingInv, setCreatingInv] = React.useState(false);
 
   const saveItems = async (newItems: any[], updateAmount = true) => {
     setSaving(true);
@@ -639,97 +629,6 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       toast(e?.message || "Gagal membuat Delivery Order", "danger");
     } finally {
       setCreatingDo(false);
-    }
-  };
-
-  const handleCreateInvoiceOutFromSo = async () => {
-    const baseDeal = Number(row.nilai || itemsTotal || 0);
-    const remaining = Math.max(0, baseDeal - Number(row.totalInvoice || 0));
-    let dpp = baseDeal;
-    if (invCustomAmount.trim()) {
-      dpp = Number(String(invCustomAmount).replace(/\D/g, "")) || 0;
-    } else if (invFlowMode === "DP") {
-      const pct = Number(invDpPercent) || 50;
-      dpp = Math.round(baseDeal * (pct / 100));
-    } else if (invFlowMode === "PELUNASAN") {
-      dpp = remaining > 0 ? remaining : baseDeal;
-    }
-    if (dpp <= 0) {
-      toast("Nominal invoice harus lebih dari 0", "danger");
-      return;
-    }
-
-    setCreatingInv(true);
-    try {
-      const todayIso = new Date().toISOString().slice(0, 10);
-      const ppn = Math.round(dpp * 0.11);
-      const total = dpp + ppn;
-      const jenisLabel = invFlowMode === "DP" ? "DP" : "Pelunasan";
-
-      const matchedCust = (data.customers ?? []).find(
-        (c: any) =>
-          (row.customerId && Number(c.id) === Number(row.customerId)) ||
-          (row.customer && row.customer !== "-" && (c.nama === row.customer || c.name === row.customer))
-      );
-      const custId = matchedCust?.id
-        ? Number(matchedCust.id)
-        : row.customerId && !Number.isNaN(Number(row.customerId))
-          ? Number(row.customerId)
-          : data.customers?.[0]?.id
-            ? Number(data.customers[0].id)
-            : undefined;
-      const cleanPoId = row.id && !String(row.id).startsWith("offline-") && !Number.isNaN(Number(row.id)) ? Number(row.id) : undefined;
-
-      const createdInv = await addRow("invoices", {
-        customerId: custId,
-        customer: row.customer && row.customer !== "-" ? row.customer : matchedCust?.nama || matchedCust?.name || "Pelanggan Ritel",
-        clientPoId: cleanPoId,
-        po: row.nomor || row.nomorSo || row.nomorPoClient,
-        projectId: linkedProjects[0]?.id ? Number(linkedProjects[0].id) : undefined,
-        project: linkedProjects[0]?.nama,
-        quotationId: row.quotationId ? Number(row.quotationId) : linkedQuotation?.id ? Number(linkedQuotation.id) : undefined,
-        quotation: row.penawaran && row.penawaran !== "-" ? row.penawaran : linkedQuotation?.nomor || undefined,
-        jenis: jenisLabel,
-        nilai: dpp,
-        ppn,
-        total,
-        discount: effectiveDiscount > 0 ? effectiveDiscount : undefined,
-        tanggal: todayIso,
-        jatuhTempo: invFlowMode === "LUNAS" ? todayIso : invDueDate,
-        items: currentItems.length > 0 ? currentItems : undefined,
-        catatan:
-          invFlowMode === "LUNAS"
-            ? `Nota / Invoice Lunas (${invPayMethod}) atas SO ${row.nomorSo || row.nomor}`
-            : invFlowMode === "TEMPO"
-              ? `Invoice Tempo atas SO ${row.nomorSo || row.nomor} (Jatuh tempo ${invDueDate})`
-              : invFlowMode === "DP"
-                ? `Invoice DP (${invDpPercent}%) atas SO ${row.nomorSo || row.nomor}`
-                : `Invoice Pelunasan atas SO ${row.nomorSo || row.nomor}`,
-      });
-
-      if (createdInv?.id && !String(createdInv.id).startsWith("offline-")) {
-        const shouldPayImmediately = invFlowMode === "LUNAS" || (invFlowMode === "DP" && invDpPaidNow);
-        if (shouldPayImmediately) {
-          await api("POST", `/invoices/${createdInv.id}/payments`, {
-            amount: total,
-            date: todayIso,
-            method: invPayMethod,
-            reference: `LUNAS-SO-${row.nomorSo || row.nomor || createdInv.id}`,
-          }).catch(() => {});
-          toast(`Invoice ${jenisLabel} (${rupiah(total)}) berhasil diterbitkan & langsung tercatat LUNAS (${invPayMethod})`);
-        } else {
-          await api("POST", `/invoices/${createdInv.id}/status`, { status: "SENT" }).catch(() => {});
-          toast(`Invoice ${invFlowMode === "TEMPO" ? "Tempo" : jenisLabel} berhasil diterbitkan (Jatuh tempo: ${invDueDate})`);
-        }
-      }
-      setCreateInvOpen(false);
-      setInvCustomAmount("");
-      await reload();
-      await onRefresh?.();
-    } catch (e: any) {
-      toast(e?.message || "Gagal menerbitkan invoice", "danger");
-    } finally {
-      setCreatingInv(false);
     }
   };
 
@@ -1047,11 +946,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                 size="sm"
                 variant="outline"
                 className="h-7 px-2 flex-row items-center gap-1"
-                onPress={() => {
-                  setInvFlowMode("PELUNASAN");
-                  setInvCustomAmount(formatThousands(Math.max(0, sisa)));
-                  setCreateInvOpen(true);
-                }}
+                onPress={() => setCreateInvOpen(true)}
               >
                 <Plus size={12} color={colors.primary} />
                 <Text className="text-[11px] text-primary font-semibold">Buat Inv Pelunasan</Text>
@@ -1060,11 +955,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             <Button
               size="sm"
               className="h-7 px-2.5 flex-row items-center gap-1"
-              onPress={() => {
-                setInvFlowMode(linkedInvoices.some((i: Row) => i.jenis === "DP") && sisa > 0 ? "PELUNASAN" : "LUNAS");
-                setInvCustomAmount("");
-                setCreateInvOpen(true);
-              }}
+              onPress={() => setCreateInvOpen(true)}
             >
               <Plus size={12} color="#fff" />
               <Text className="text-[11px] text-white">Terbitkan Invoice Keluar</Text>
@@ -1290,100 +1181,16 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Terbitkan Invoice Keluar dari SO (Lunas Walk-in / Tempo / DP / Pelunasan) */}
-      <Dialog open={createInvOpen} onOpenChange={setCreateInvOpen}>
-        <DialogContent className="max-w-md w-[92vw] sm:w-full">
-          <DialogHeader>
-            <DialogTitle>Terbitkan Invoice Keluar ({row.nomorSo || row.nomor})</DialogTitle>
-          </DialogHeader>
-          <View className="gap-3 py-2">
-            <FormField label="Pilih Skema Pembayaran (Sesuai Alur Ritel / Project)" required>
-              <View className="flex-row flex-wrap gap-1.5">
-                {[
-                  { id: "LUNAS" as const, label: "Langsung Lunas (Nota / Walk-in)" },
-                  { id: "TEMPO" as const, label: "Pembayaran Tempo" },
-                  { id: "DP" as const, label: "Invoice DP" },
-                  { id: "PELUNASAN" as const, label: "Invoice Pelunasan" },
-                ].map((opt) => (
-                  <Button
-                    key={opt.id}
-                    size="sm"
-                    variant={invFlowMode === opt.id ? "default" : "outline"}
-                    onPress={() => setInvFlowMode(opt.id)}
-                    className="flex-1 min-w-[140px] h-9"
-                  >
-                    <Text className="text-xs font-semibold">{opt.label}</Text>
-                  </Button>
-                ))}
-              </View>
-            </FormField>
-
-            {invFlowMode === "DP" ? (
-              <FormField label="Persentase DP (%)">
-                <Input value={invDpPercent} onChangeText={setInvDpPercent} keyboardType="numeric" placeholder="50" />
-              </FormField>
-            ) : null}
-
-            <FormField label="Nominal DPP Sebelum PPN (Rp) (Kosongkan untuk otomatis dari SO)">
-              <Input
-                value={invCustomAmount}
-                onChangeText={(v) => setInvCustomAmount(formatThousands(v))}
-                keyboardType="numeric"
-                placeholder={`Otomatis: ${rupiah(
-                  invFlowMode === "DP"
-                    ? Math.round(Number(row.nilai || itemsTotal || 0) * ((Number(invDpPercent) || 50) / 100))
-                    : invFlowMode === "PELUNASAN" && sisa > 0
-                      ? sisa
-                      : Number(row.nilai || itemsTotal || 0)
-                )}`}
-              />
-            </FormField>
-
-            {invFlowMode === "LUNAS" || (invFlowMode === "DP" && invDpPaidNow) ? (
-              <FormField label="Metode Pembayaran (Tunai / Transfer)">
-                <View className="flex-row gap-2">
-                  <Button
-                    size="sm"
-                    variant={invPayMethod === "TRANSFER" ? "default" : "outline"}
-                    onPress={() => setInvPayMethod("TRANSFER")}
-                    className="flex-1"
-                  >
-                    <Text className="text-xs">Transfer Bank</Text>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={invPayMethod === "TUNAI" ? "default" : "outline"}
-                    onPress={() => setInvPayMethod("TUNAI")}
-                    className="flex-1"
-                  >
-                    <Text className="text-xs">Tunai / Kas</Text>
-                  </Button>
-                </View>
-              </FormField>
-            ) : null}
-
-            {invFlowMode === "TEMPO" || invFlowMode === "PELUNASAN" || (invFlowMode === "DP" && !invDpPaidNow) ? (
-              <FormField label="Tanggal Jatuh Tempo (Notif ke Finance saat jatuh tempo)" required>
-                <DatePicker value={invDueDate} onChange={setInvDueDate} />
-              </FormField>
-            ) : null}
-          </View>
-          <DialogFooter>
-            <Button variant="outline" onPress={() => setCreateInvOpen(false)}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleCreateInvoiceOutFromSo} disabled={creatingInv}>
-              <Text className="text-white">
-                {creatingInv
-                  ? "Menerbitkan..."
-                  : invFlowMode === "LUNAS"
-                    ? "Terbitkan & Lunas Sekarang"
-                    : "Terbitkan Invoice Keluar"}
-              </Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Modal Terbitkan Invoice Keluar Lengkap dari SO */}
+      <CreateInvoiceDialog
+        open={createInvOpen}
+        onOpenChange={setCreateInvOpen}
+        initialPo={row}
+        onSuccess={async () => {
+          await reload();
+          await onRefresh?.();
+        }}
+      />
     </>
   );
 }

@@ -1399,7 +1399,7 @@ model DeliveryNote {
   receiveById  Int?
   receivedAt   DateTime?
   scanFileId   Int?
-  reportText   String?
+  reportText   String?        @db.Text
   reportFileId Int?
   reportAt     DateTime?
   createdAt    DateTime       @default(now())
