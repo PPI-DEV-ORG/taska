@@ -94,6 +94,11 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [expenseTransferNote, setExpenseTransferNote] = React.useState("");
   const [submittingExpense, setSubmittingExpense] = React.useState(false);
   const expenseFileHandle = React.useRef<FileUploaderHandle | null>(null);
+  const [deliveryDocOpen, setDeliveryDocOpen] = React.useState(false);
+  const [deliveryDocFileId, setDeliveryDocFileId] = React.useState<number | null>(null);
+  const [deliveryDocReport, setDeliveryDocReport] = React.useState("");
+  const [deliveryDocTargetStatus, setDeliveryDocTargetStatus] = React.useState<"Dikirim" | "Diterima">("Dikirim");
+  const [submittingDeliveryDoc, setSubmittingDeliveryDoc] = React.useState(false);
 
   const editableFields: CreateField[] = React.useMemo(() => {
     if (!def) return [];
@@ -581,6 +586,12 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       toast("Invoice berhasil dikirim ke customer");
       handleRefresh();
       return;
+    } else if (moduleKey === "delivery-notes" && (a.label.toLowerCase().includes("upload") || a.label.toLowerCase().includes("laporan") || a.label.toLowerCase().includes("surat jalan"))) {
+      setDeliveryDocFileId(row.scanFileId || row.fileId || null);
+      setDeliveryDocReport(row.reportText || "");
+      setDeliveryDocTargetStatus(row.status === "Diterima" ? "Diterima" : "Dikirim");
+      setDeliveryDocOpen(true);
+      return;
     }
     if (a.status) {
       await setStatus(moduleKey, id, a.status);
@@ -635,6 +646,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       const biaya = Number(row.biaya || 0);
       if (st === "Selesai" || st === "Dibatalkan" || biaya > 0) return false;
     }
+    if (moduleKey === "delivery-notes") {
+      const st = String(row.status ?? "");
+      if (st === "Dibatalkan") return false;
+    }
     return true;
   });
 
@@ -653,6 +668,78 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       return;
     }
     run(a);
+  }
+
+  async function handleSaveDeliveryDoc() {
+    if (!deliveryDocFileId && !deliveryDocReport.trim()) {
+      toast("Lampirkan file surat jalan / bukti pengiriman atau isi laporan terlebih dahulu", "danger");
+      return;
+    }
+    setSubmittingDeliveryDoc(true);
+    try {
+      const patchPayload: Record<string, any> = {};
+      if (deliveryDocFileId) {
+        patchPayload.scanFileId = deliveryDocFileId;
+        patchPayload.fileId = deliveryDocFileId;
+        patchPayload.reportFileId = deliveryDocFileId;
+      }
+      if (deliveryDocReport.trim()) {
+        patchPayload.reportText = deliveryDocReport.trim();
+      }
+      if (Object.keys(patchPayload).length > 0) {
+        await patchRow("delivery-notes", id, patchPayload).catch(() => {});
+      }
+
+      const hasGoods = row.withGoods !== undefined ? Boolean(row.withGoods) : (row.barang && row.barang !== "-");
+      if (hasGoods) {
+        const itemsPayload = (Array.isArray(row.items) ? row.items : [])
+          .map((i: any) => ({
+            productId: Number(i.productId ?? i.product?.id),
+            qty: Number(i.qty) || 1,
+            serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+            note: i.note ? String(i.note) : undefined,
+          }))
+          .filter((i: any) => !Number.isNaN(i.productId) && i.productId > 0);
+
+        const serialsPayload = Array.isArray(row.snList) ? row.snList : [];
+
+        await api("POST", `/delivery-notes/${id}/goods`, {
+          items: itemsPayload,
+          serials: serialsPayload,
+        }).catch((e: any) => {
+          console.warn("Goods dispatch note:", e?.message);
+        });
+      }
+
+      const targetStatus = deliveryDocTargetStatus === "Diterima" ? "Diterima" : "Dikirim";
+      await setStatus("delivery-notes", id, targetStatus);
+
+      if (deliveryDocFileId) {
+        const matchedSo = (data["po-client"] ?? []).find(
+          (so: Row) =>
+            (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
+            (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo)) ||
+            (so.customer && so.customer !== "-" && String(row.tujuan || "").toLowerCase().includes(String(so.customer).toLowerCase()))
+        );
+        if (matchedSo?.id) {
+          await patchRow("po-client", matchedSo.id, { doFileId: deliveryDocFileId }).catch(() => {});
+        }
+      }
+
+      const path = PATHS[moduleKey];
+      if (path) {
+        const fresh = await api<any>("GET", `${path}/${id}`).catch(() => null);
+        if (fresh) setRemoteRow(adaptRow(moduleKey, fresh));
+      }
+      handleRefresh();
+
+      toast(`Dokumen surat jalan disimpan, barang ditandai ${targetStatus} & stok inventory berkurang!`);
+      setDeliveryDocOpen(false);
+    } catch (err: any) {
+      toast(err?.message || "Gagal memproses dokumen surat jalan", "danger");
+    } finally {
+      setSubmittingDeliveryDoc(false);
+    }
   }
 
   return (
@@ -1188,6 +1275,70 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           setRejectExpenseOpen(false);
         }}
       />
+
+      <Dialog open={deliveryDocOpen} onOpenChange={setDeliveryDocOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upload Surat Jalan & Dokumen Pengiriman</DialogTitle>
+            <DialogDescription>
+              Unggah file fisik surat jalan / DO bertanda tangan atau dokumentasi serah terima. Menyimpan ini akan memotong stok barang dari inventory dan memperbarui status pengiriman.
+            </DialogDescription>
+          </DialogHeader>
+
+          <View className="gap-3 py-2">
+            <FileUploader
+              label="File Surat Jalan / DO Bertanda Tangan (Gambar / PDF)"
+              kind="semua"
+              accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+              allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
+              category="surat-jalan"
+              autoFlush
+              onUploaded={(fid) => setDeliveryDocFileId(fid)}
+            />
+
+            <View className="gap-1">
+              <Text className="text-xs text-muted-foreground font-medium">Laporan Hasil / Catatan Pengiriman</Text>
+              <Textarea
+                value={deliveryDocReport}
+                onChangeText={setDeliveryDocReport}
+                placeholder="Contoh: Barang telah diserahkan ke klien/security dalam kondisi baik..."
+                numberOfLines={3}
+              />
+            </View>
+
+            <View className="gap-1.5">
+              <Text className="text-xs text-muted-foreground font-medium">Ubah Status Surat Jalan Menjadi</Text>
+              <View className="flex-row gap-2">
+                <Button
+                  variant={deliveryDocTargetStatus === "Dikirim" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => setDeliveryDocTargetStatus("Dikirim")}
+                  className="flex-1 h-8"
+                >
+                  <Text className="text-xs">Dikirim (Barang Keluar)</Text>
+                </Button>
+                <Button
+                  variant={deliveryDocTargetStatus === "Diterima" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => setDeliveryDocTargetStatus("Diterima")}
+                  className="flex-1 h-8"
+                >
+                  <Text className="text-xs">Diterima (Selesai)</Text>
+                </Button>
+              </View>
+            </View>
+          </View>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onPress={() => setDeliveryDocOpen(false)} disabled={submittingDeliveryDoc}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={handleSaveDeliveryDoc} disabled={submittingDeliveryDoc}>
+              <Text>{submittingDeliveryDoc ? "Menyimpan & Potong Stok..." : "Simpan & Proses Pengiriman"}</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

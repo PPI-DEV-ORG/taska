@@ -528,7 +528,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "barang", label: "Barang yang dibawa", type: "text", placeholder: "Kosongkan atau '-' jika tanpa barang" },
     ],
     createRoles: ALL,
-    actions: [{ label: "Upload laporan hasil", toast: "Laporan hasil disimpan" }],
+    actions: [{ label: "Upload dokumen / laporan hasil", toast: "Surat jalan & pengiriman berhasil diproses" }],
     docs: ["File DO / Surat Jalan Bertanda Tangan Kedua Pihak (Gambar / PDF)", "Laporan hasil dan dokumentasi"],
     emptyText: "Belum ada surat jalan. Buat surat jalan setiap kali keluar untuk urusan kerja.",
     confirmStatuses: ["Dibatalkan"],
