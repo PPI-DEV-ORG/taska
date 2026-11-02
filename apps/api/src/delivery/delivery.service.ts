@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -17,7 +17,7 @@ import type {
 } from "./dto.js";
 
 @Injectable()
-export class DeliveryService {
+export class DeliveryService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly approvals: ApprovalsService,
@@ -28,6 +28,12 @@ export class DeliveryService {
     private readonly settings: SettingsService,
   ) {
     this.approvals.onChange("SURAT_JALAN", (entityId, status) => this.onApproval(entityId, status));
+  }
+
+  async onModuleInit() {
+    await this.prisma.main
+      .$executeRawUnsafe("ALTER TABLE `DeliveryNote` MODIFY COLUMN `reportText` LONGTEXT NULL")
+      .catch(() => {});
   }
 
   private async onApproval(entityId: number, status: "MENUNGGU" | "DISETUJUI" | "DITOLAK") {
@@ -60,44 +66,62 @@ export class DeliveryService {
     }
 
     const scanFileId = dto.scanFileId ?? dto.fileId;
-    const row = await this.prisma.main.deliveryNote.create({
-      data: {
-        number,
-        creatorId: user.id,
-        withGoods,
-        date,
-        status: dto.status ?? "PENDING",
-        reportText: dto.reportText,
-        reportFileId: dto.reportFileId,
-        scanFileId,
-        locations: {
-          create: locations.map((l) => ({
-            destination: l.destination || "-",
-            reason: l.reason || "Dinas luar",
-            projectId: l.projectId ?? null,
-          })),
-        },
-        items: dto.items?.length
-          ? {
-              create: dto.items.map((i) => ({
-                productId: i.productId,
-                qty: i.qty ?? 1,
-                serials: i.serials ?? null,
-                note: i.note ?? null,
-              })),
-            }
-          : undefined,
+    const createData = {
+      number,
+      creatorId: user.id,
+      withGoods,
+      date,
+      status: (dto.status ?? "PENDING") as any,
+      reportText: dto.reportText,
+      reportFileId: dto.reportFileId,
+      scanFileId,
+      locations: {
+        create: locations.map((l) => ({
+          destination: l.destination || "-",
+          reason: l.reason || "Dinas luar",
+          projectId: l.projectId ?? null,
+        })),
       },
-      include: {
-        creator: { select: { name: true, role: true } },
-        locations: { include: { project: { select: { name: true } } } },
-        items: {
-          include: {
-            product: { select: { id: true, name: true, sku: true, unit: true, hasSerial: true, brand: true } },
-          },
+      items: dto.items?.length
+        ? {
+            create: dto.items.map((i) => ({
+              productId: i.productId,
+              qty: i.qty ?? 1,
+              serials: i.serials ?? null,
+              note: i.note ?? null,
+            })),
+          }
+        : undefined,
+    };
+    const includeSelect = {
+      creator: { select: { name: true, role: true } },
+      locations: { include: { project: { select: { name: true } } } },
+      items: {
+        include: {
+          product: { select: { id: true, name: true, sku: true, unit: true, hasSerial: true, brand: true } },
         },
       },
-    });
+    };
+
+    let row;
+    try {
+      row = await this.prisma.main.deliveryNote.create({
+        data: createData,
+        include: includeSelect,
+      });
+    } catch (err: any) {
+      if (err?.code === "P2000" || err?.message?.includes("reportText") || err?.message?.includes("too long")) {
+        await this.prisma.main
+          .$executeRawUnsafe("ALTER TABLE `DeliveryNote` MODIFY COLUMN `reportText` LONGTEXT NULL")
+          .catch(() => {});
+        row = await this.prisma.main.deliveryNote.create({
+          data: createData,
+          include: includeSelect,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     if (scanFileId) {
       await this.prisma.main.file.update({

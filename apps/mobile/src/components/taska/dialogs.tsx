@@ -989,63 +989,7 @@ export function FormDialog({
       } else {
         const saved = await addRow(targetKey!, row);
         if (saved) {
-          if (targetKey === "po-client" && soPaymentFlow === "WALK_IN") {
-            const now = new Date();
-            const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
-            const seq = String((data.invoices?.length || 0) + 1).padStart(3, "0");
-            const invNo = `INV/${ym}/NOTA-${seq}`;
-            const grandAmt = Number(row.nilai || 0);
-            const todayStr = toIsoDate(now);
-            const matchedCust = (data.customers ?? []).find(
-              (c: any) =>
-                (row.customer && (c.nama === row.customer || c.name === row.customer)) ||
-                (row.customerId && Number(c.id) === Number(row.customerId))
-            );
-            const custId = matchedCust?.id
-              ? Number(matchedCust.id)
-              : row.customerId && !Number.isNaN(Number(row.customerId))
-                ? Number(row.customerId)
-                : data.customers?.[0]?.id
-                  ? Number(data.customers[0].id)
-                  : undefined;
-            const cleanSavedPoId = saved?.id && !String(saved.id).startsWith("offline-") && !Number.isNaN(Number(saved.id))
-              ? Number(saved.id)
-              : undefined;
-            const createdInv = await addRow("invoices", {
-              nomor: invNo,
-              customerId: custId,
-              customer: row.customer || matchedCust?.nama || matchedCust?.name || "Walk-in Customer",
-              clientPoId: cleanSavedPoId,
-              po: saved?.nomorSo || saved?.nomor || row.nomor,
-              quotation: row.penawaran && row.penawaran !== "-" ? row.penawaran : undefined,
-              jenis: "Pelunasan",
-              nilai: grandAmt,
-              dpp: grandAmt,
-              ppn: 0,
-              pph: 0,
-              total: grandAmt,
-              tipePpn: "No PPN (Tanpa PPN)",
-              ppnMode: "none",
-              pphMode: "none",
-              tanggal: todayStr,
-              jatuhTempo: todayStr,
-              status: "Lunas",
-              terbayar: grandAmt,
-              catatan: `Nota Penjualan Langsung (Walk-in · ${soPaymentMethod}) — Ref SO: ${saved?.nomorSo || saved?.nomor || row.nomor}`,
-            });
-            if (createdInv?.id && grandAmt > 0 && !String(createdInv.id).startsWith("offline-")) {
-              await api("POST", `/invoices/${createdInv.id}/payments`, {
-                amount: grandAmt,
-                method: soPaymentMethod,
-                date: todayStr,
-                reference: `NOTA-${saved?.nomorSo || saved?.nomor || row.nomor}`,
-              }).catch(() => {});
-              await refreshModule("invoices").catch(() => {});
-            }
-            toast(`SO / Nota & Invoice Keluar (${invNo}) berhasil dibuat dengan status Lunas (${soPaymentMethod})`);
-          } else {
-            toast(`${effectiveDef?.singular ?? def.singular} berhasil dibuat`);
-          }
+          toast(`${effectiveDef?.singular ?? def.singular} berhasil dibuat`);
           if (isOrderModule) {
             void refreshModule("po-client");
             void refreshModule("supplier-pos");
@@ -1116,23 +1060,10 @@ export function FormDialog({
                     </Button>
                   </View>
                   {soPaymentFlow === "WALK_IN" ? (
-                    <View className="flex-row items-center justify-between bg-success/10 border border-success/30 rounded-lg p-2.5 gap-2">
-                      <Text className="text-[11px] text-foreground flex-1">
-                        Otomatis menerbitkan Invoice Keluar / Nota dengan status <Text className="font-bold text-success">LUNAS</Text>:
+                    <View className="bg-muted/40 border border-border/60 rounded-lg p-2.5">
+                      <Text className="text-[11px] text-muted-foreground">
+                        Penjualan langsung / kasir (Walk-in). SO tersimpan tanpa otomatis membuat invoice. Invoice lengkap dengan PPN, diskon &amp; status pelunasan dapat dibuat secara mandiri di detail SO melalui tombol &quot;+ Terbitkan Invoice Keluar&quot;.
                       </Text>
-                      <View className="flex-row gap-1">
-                        {(["TRANSFER", "TUNAI"] as const).map((m) => (
-                          <Button
-                            key={m}
-                            size="sm"
-                            variant={soPaymentMethod === m ? "default" : "outline"}
-                            onPress={() => setSoPaymentMethod(m)}
-                            className="h-7 px-2.5"
-                          >
-                            <Text className="text-[11px] font-semibold">{m}</Text>
-                          </Button>
-                        ))}
-                      </View>
                     </View>
                   ) : null}
                 </View>
