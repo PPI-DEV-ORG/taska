@@ -1,7 +1,7 @@
 import * as React from "react";
-import { View } from "react-native";
+import { View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
-import { Plus, RefreshCw } from "lucide-react-native";
+import { Plus, RefreshCw, ChevronDown, ChevronUp } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -28,6 +28,7 @@ export function StockDetailDialog({
   onOpenReplacement,
 }: StockDetailDialogProps) {
   const router = useRouter();
+  const [showShipped, setShowShipped] = React.useState(false);
 
   return (
     <Dialog open={!!selectedDetail} onOpenChange={(v) => !v && onClose()}>
@@ -46,6 +47,9 @@ export function StockDetailDialog({
           const p = selectedDetail.data;
           const whBreakdown = stockSummary.filter((s) => String(s.productId) === String(p.id));
           const pSerials = serials.filter((s) => String(s.productId) === String(p.id));
+          const isShipped = (s: any) => String(s.status || "").toLowerCase().includes("kirim");
+          const activeSerials = pSerials.filter((s) => !isShipped(s));
+          const shippedSerials = pSerials.filter((s) => isShipped(s));
           return (
             <View className="gap-4 py-2">
               <View className="flex-row items-center justify-between border-b border-border pb-3">
@@ -104,7 +108,7 @@ export function StockDetailDialog({
                 <View className="gap-2">
                   <View className="flex-row items-center justify-between">
                     <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      Daftar Unit per-SN ({pSerials.length} Unit)
+                      Daftar Unit di Gudang ({activeSerials.length} Unit)
                     </Text>
                     <Button
                       size="sm"
@@ -115,9 +119,9 @@ export function StockDetailDialog({
                       <Text className="text-xs">+ Tambah Unit SN</Text>
                     </Button>
                   </View>
-                  {pSerials.length > 0 ? (
+                  {activeSerials.length > 0 ? (
                     <View className="bg-card border-border max-h-56 divide-y divide-border overflow-y-auto rounded-lg border">
-                      {pSerials.map((s: any, idx: number) => (
+                      {activeSerials.map((s: any, idx: number) => (
                         <View key={s.id} className="flex-row items-center justify-between p-2.5">
                           <View className="flex-1 pr-2">
                             <Text className="font-mono text-xs font-semibold text-foreground">
@@ -133,8 +137,52 @@ export function StockDetailDialog({
                     </View>
                   ) : (
                     <Text className="text-xs italic text-muted-foreground">
-                      Belum ada unit Serial Number terdaftar untuk produk ini. Klik &quot;+ Tambah Unit SN&quot; untuk mendaftarkan unit per-SN.
+                      {shippedSerials.length > 0
+                        ? "Semua unit SN saat ini telah terkirim."
+                        : "Belum ada unit Serial Number terdaftar untuk produk ini. Klik \"+ Tambah Unit SN\" untuk mendaftarkan unit per-SN."}
                     </Text>
+                  )}
+
+                  {/* Dropdown Unit SN yang Telah Terkirim */}
+                  {shippedSerials.length > 0 && (
+                    <View className="mt-2 pt-2 border-t border-border">
+                      <Pressable
+                        onPress={() => setShowShipped((prev) => !prev)}
+                        className="flex-row items-center justify-between py-2 px-3 rounded-lg bg-muted/40 hover:bg-muted/70 active:bg-muted"
+                      >
+                        <Text className="text-xs font-semibold text-muted-foreground">
+                          Unit Telah Terkirim ({shippedSerials.length} Unit)
+                        </Text>
+                        <View className="flex-row items-center gap-1">
+                          <Text className="text-[11px] text-muted-foreground">
+                            {showShipped ? "Sembunyikan" : "Tampilkan"}
+                          </Text>
+                          {showShipped ? (
+                            <ChevronUp size={14} color={colors.mutedForeground} />
+                          ) : (
+                            <ChevronDown size={14} color={colors.mutedForeground} />
+                          )}
+                        </View>
+                      </Pressable>
+
+                      {showShipped && (
+                        <View className="bg-card/70 border-border max-h-56 divide-y divide-border overflow-y-auto rounded-lg border mt-2">
+                          {shippedSerials.map((s: any, idx: number) => (
+                            <View key={s.id} className="flex-row items-center justify-between p-2.5 bg-muted/15">
+                              <View className="flex-1 pr-2">
+                                <Text className="font-mono text-xs font-semibold text-foreground">
+                                  #{idx + 1} • {s.sn}
+                                </Text>
+                                <Text className="text-[10px] text-muted-foreground">
+                                  {s.project && s.project !== "-" ? `Tujuan / Project: ${s.project}` : "Status: Dikirim"}
+                                </Text>
+                              </View>
+                              <StatusBadge status={s.status ?? "Dikirim"} />
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
                   )}
                 </View>
               )}
