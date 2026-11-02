@@ -59,9 +59,10 @@ export function PurchaseRequestExtras({
 
   // 4 Kategori Alur Dokumen:
   const isStockTake = procSource === "GUDANG"; // Flow 1: Ambil Stok Gudang untuk Project
-  const isRetailCash = procSource === "RETAIL" && payMethod === "KAS"; // Flow 2: Pembelian Ritel Tunai/Lunas (Stok atau Project)
-  const isDebt = !isStockTake && payMethod !== "KAS";
-  const isRetailDebt = (procSource === "RETAIL" || !procSource) && payMethod !== "KAS"; // Flow 3: Pembelian Ritel Tempo/Hutang (Stok atau Project)
+  const isCash = payMethod === "KAS" || payMethod === "TUNAI" || payMethod === "CASH" || payMethod.includes("KAS") || payMethod.includes("TUNAI");
+  const isDebt = !isStockTake && !isCash;
+  const isRetailCash = procSource === "RETAIL" && isCash; // Flow 2: Pembelian Ritel Tunai/Lunas (Stok atau Project)
+  const isRetailDebt = (procSource === "RETAIL" || !procSource) && !isStockTake && isDebt; // Flow 3: Pembelian Ritel Tempo/Hutang (Stok atau Project)
   const isSupplierPo = procSource === "SUPPLIER"; // Flow 4: Pengadaan via PO Supplier Formal
   const isRetailOrPurchase = !isStockTake;
 
@@ -94,8 +95,7 @@ export function PurchaseRequestExtras({
     effectiveRaw === "DITERIMA" ||
     row.status === "Diterima" ||
     row.status === "Diterima (Belum Lunas)" ||
-    row.status === "Lunas" ||
-    (isDebt && isPaid);
+    (isDebt && (row.status === "Lunas" || localStatus === "LUNAS"));
   const isDitolak = effectiveRaw === "DITOLAK";
 
   const linkedPo = React.useMemo(() => {
@@ -149,7 +149,6 @@ export function PurchaseRequestExtras({
   const isDispatched =
     isDikirim ||
     isDiterima ||
-    isPaid ||
     linkedPo?.shipmentStatus === "DIKIRIM" ||
     linkedPo?.shipmentStatus === "SAMPAI";
 
@@ -335,8 +334,9 @@ export function PurchaseRequestExtras({
     }
     setLoading(true);
     try {
-      setLocalStatus("LUNAS");
-      await setStatus("purchase-requests", row.id, "Dibayar", undefined, {
+      const nextStatus = isDebt ? "Lunas" : "Dibayar";
+      setLocalStatus(isDebt ? "LUNAS" : "DIBAYAR");
+      await setStatus("purchase-requests", row.id, nextStatus, undefined, {
         paymentProofFileId,
         fundingSource: selectedFundingSource,
         paymentStatus: "DIBAYAR",
@@ -347,7 +347,11 @@ export function PurchaseRequestExtras({
         } catch {}
       }
       setPayModalOpen(false);
-      toast("Request & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!");
+      toast(
+        isDebt
+          ? "Request & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!"
+          : "Pembayaran kas berhasil dicatat. Status request menjadi Dibayar. Procurement dapat menandai barang dikirim."
+      );
       if (onRefresh) await onRefresh();
       await reload();
     } catch (e: any) {
@@ -431,9 +435,9 @@ export function PurchaseRequestExtras({
       // Flow 2: Pembelian Ritel Tunai / Kas (Disetujui -> Dibayar Kas -> Dikirim -> Diterima)
       return [
         { label: "Diajukan", done: true, current: isDiajukan },
-        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPaid },
-        { label: "Dibayar (Kas)", done: isPaid, current: effectiveRaw === "DIBAYAR" },
-        { label: "Dikirim Toko", done: isDispatched, current: isDikirim },
+        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPaid && !isDispatched && !isDiterima },
+        { label: "Dibayar (Kas)", done: isPaid, current: (effectiveRaw === "DIBAYAR" || isPaid) && !isDispatched && !isDiterima },
+        { label: "Dikirim Toko", done: isDispatched, current: isDikirim && !isDiterima },
         { label: "Diterima Gudang", done: isDiterima, current: isDiterima },
       ];
     }
@@ -442,18 +446,28 @@ export function PurchaseRequestExtras({
       return [
         { label: "Diajukan", done: true, current: isDiajukan },
         { label: "Disetujui", done: isApproved, current: isDisetujui && !isDikirim && !isDiterima && !isPaid },
-        { label: "Dikirim Toko", done: isDispatched, current: isDikirim },
+        { label: "Dikirim Toko", done: isDispatched, current: isDikirim && !isDiterima && !isPaid },
         { label: "Diterima (Hutang)", done: isDiterima || isPaid, current: isDiterima && !isPaid },
         { label: "Lunas", done: isPaid, current: isPaid },
       ];
     }
     // Flow 4: Pengadaan via PO Supplier Formal
+    if (isSupplierPo && !isDebt) {
+      return [
+        { label: "Diajukan", done: true, current: isDiajukan },
+        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPaid && !isDispatched && !isDiterima },
+        { label: "Dibayar (Kas)", done: isPaid, current: (effectiveRaw === "DIBAYAR" || isPaid) && !isDispatched && !isDiterima },
+        { label: "Dikirim Supplier", done: isDispatched, current: isDikirim && !isDiterima },
+        { label: "Diterima Gudang", done: isDiterima, current: isDiterima },
+      ];
+    }
     return [
       { label: "Diajukan", done: true, current: isDiajukan },
-      { label: "Disetujui", done: isApproved || isPoDibuat || isDispatched || isDiterima || isPaid, current: isDisetujui && !isPoDibuat && !isDispatched && !isDiterima && !isPaid },
+      { label: "Disetujui", done: isApproved, current: isDisetujui && !isPoDibuat && !isDispatched && !isDiterima && !isPaid },
       { label: "PO Dibuat", done: isPoDibuat || isDispatched || isDiterima || isPaid, current: isPoDibuat && !isDispatched && !isDiterima && !isPaid },
-      { label: "Dikirim Supplier", done: isDispatched || isDiterima || isPaid, current: isDikirim && !isDiterima && !isPaid },
-      { label: isPaid ? "Selesai (Lunas)" : "Diterima Gudang", done: isDiterima || isPaid, current: isDiterima || isPaid },
+      { label: "Dikirim Supplier", done: isDispatched, current: isDikirim && !isDiterima && !isPaid },
+      { label: "Diterima (Hutang)", done: isDiterima || isPaid, current: isDiterima && !isPaid },
+      { label: "Lunas", done: isPaid, current: isPaid },
     ];
   }, [
     isStockTake,
@@ -625,14 +639,27 @@ export function PurchaseRequestExtras({
           ) : null}
         </View>
       ) : isRetailCash && (effectiveRaw === "DIBAYAR" || isPaid) ? (
-        <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
-          <CheckCircle2 size={22} color="#10b981" />
-          <View className="flex-1">
-            <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">Telah Dibayar oleh Finance (Masuk Jurnal Kas)</Text>
-            <Text className="text-muted-foreground text-xs mt-0.5">
-              Bukti bayar telah diunggah & tercatat di akuntansi ({isProject ? "HPP Project 5101" : "Persediaan 1200"}). Menunggu Procurement menandai &quot;Barang Dikirim&quot; agar draf Penerimaan Gudang terbuat.
-            </Text>
+        <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <View className="flex-1 flex-row items-center gap-3">
+            <CheckCircle2 size={22} color="#10b981" />
+            <View className="flex-1">
+              <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">Telah Dibayar oleh Finance (Status: Dibayar)</Text>
+              <Text className="text-muted-foreground text-xs mt-0.5">
+                Bukti bayar telah diunggah & tercatat di akuntansi ({isProject ? "HPP Project 5101" : "Persediaan 1200"}). Menunggu Procurement menandai &quot;Barang Dikirim&quot; agar data Penerimaan Gudang otomatis dibuat.
+              </Text>
+            </View>
           </View>
+          {(isProcurement || isGudang) ? (
+            <Button
+              size="sm"
+              onPress={() => setConfirmSendOpen(true)}
+              disabled={loading}
+              className="bg-indigo-600 hover:bg-indigo-700"
+            >
+              <Truck size={14} color="#fff" />
+              <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
+            </Button>
+          ) : null}
         </View>
       ) : isRetailDebt && isPaid ? (
         <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
@@ -1060,8 +1087,8 @@ export function PurchaseRequestExtras({
               ) : null
             )}
 
-            {/* 3. Pembayaran Ritel Tunai (Flow 2: Bayar di Muka sebelum Kirim) */}
-            {isRetailCash && (
+            {/* 3. Pembayaran Tunai / Kas (Bayar di Muka sebelum Kirim) */}
+            {(!isStockTake && !isDebt) && (
               isPaid ? (
                 <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
                   <CheckCircle2 size={15} color="#10b981" />
@@ -1082,7 +1109,7 @@ export function PurchaseRequestExtras({
               ) : null
             )}
 
-            {/* 4. Pembayaran Ritel Tempo / Pelunasan Hutang (Flow 3) */}
+            {/* 4. Pembayaran Tempo / Pelunasan Hutang (Bayar setelah Barang Sampai) */}
             {isDebt && (
               isPaid ? (
                 <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
@@ -1091,7 +1118,7 @@ export function PurchaseRequestExtras({
                     ✓ Hutang Telah Dilunasi (Lunas)
                   </Text>
                 </View>
-              ) : isFinance && !isDitolak ? (
+              ) : isDiterima && isFinance && !isDitolak ? (
                 <Button
                   size="sm"
                   className="bg-emerald-600 hover:bg-emerald-700"
@@ -1129,9 +1156,10 @@ export function PurchaseRequestExtras({
                   size="sm"
                   onPress={() => setConfirmSendOpen(true)}
                   disabled={loading}
+                  className="bg-indigo-600 hover:bg-indigo-700"
                 >
                   <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold">Tandai Barang Dikirim (Auto Penerimaan)</Text>
+                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim (Auto Penerimaan)</Text>
                 </Button>
               ) : // Retail Debt: Procurement kirim barang segera setelah approved (bayar tempo belakangan)
               (isRetailDebt && isApproved && (isProcurement || isGudang)) ? (
@@ -1139,12 +1167,13 @@ export function PurchaseRequestExtras({
                   size="sm"
                   onPress={() => setConfirmSendOpen(true)}
                   disabled={loading}
+                  className="bg-indigo-600 hover:bg-indigo-700"
                 >
                   <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold">Tandai Barang Dikirim (Auto Penerimaan)</Text>
+                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim (Auto Penerimaan)</Text>
                 </Button>
               ) : // Supplier PO: Tandai barang dikirim setelah PO dibuat / disetujui
-              (isSupplierPo && (isPoDibuat || isApproved)) ? (
+              (isSupplierPo && (isDebt ? (isPoDibuat || isApproved) : isPaid) && (isProcurement || isGudang)) ? (
                 <Button
                   size="sm"
                   className="bg-sky-600 hover:bg-sky-700"
@@ -1171,7 +1200,7 @@ export function PurchaseRequestExtras({
             ) : null}
 
             {/* 6. Terbitkan PO Supplier Formal */}
-            {!isStockTake && !linkedPo && !isPoDibuat && !isDitolak && isApproved && (
+            {isSupplierPo && !linkedPo && !isPoDibuat && !isDitolak && isApproved && (
               <Button size="sm" className="bg-primary hover:bg-primary/90" onPress={handleOpenCreatePo} disabled={loading}>
                 <Plus size={14} color="#fff" />
                 <Text className="text-xs font-semibold text-white">
@@ -1188,7 +1217,7 @@ export function PurchaseRequestExtras({
                   ✗ Request Telah Ditolak
                 </Text>
               </View>
-            ) : !isDiterima && !isDispatched && !isPoDibuat ? (
+            ) : !isDiterima && !isDispatched && !isPoDibuat && !isPaid ? (
               <Button
                 variant="destructive"
                 size="sm"
