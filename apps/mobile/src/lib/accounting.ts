@@ -535,10 +535,16 @@ export function computeFinancialStatements(
     const nomor = normStr(po.nomor, `PO-${po.id}`);
     const tanggal = normStr(po.tanggal, "2026-02-01");
     const supplier = normStr(po.supplier, "Supplier");
+    const poSuffix = normStr(po.nomor).replace(/^(?:POD|PO-S|PO)\//i, "");
     const linkedPr = purchaseRequests.find(
       (pr: any) =>
         (po.requestId && String(pr.id) === String(po.requestId)) ||
-        (po.request && po.request !== "-" && normStr(pr.nomor).toLowerCase() === normStr(po.request).toLowerCase())
+        (po.request && po.request !== "-" && normStr(pr.nomor).toLowerCase() === normStr(po.request).toLowerCase()) ||
+        (pr.supplierPo && (String(pr.supplierPo.id) === String(po.id) || pr.supplierPo.number === po.nomor)) ||
+        (Array.isArray(pr.supplierPOs) && pr.supplierPOs.some((sp: any) => String(sp.id) === String(po.id) || sp.number === po.nomor)) ||
+        (po.nomor && String(pr.otherNote || "").includes(po.nomor)) ||
+        (poSuffix && pr.nomor && normStr(pr.nomor).replace(/^(?:PNJ|REQ|PR)\//i, "") === poSuffix) ||
+        (toNum(po.total) === toNum(pr.estimasi) && po.supplier && pr.supplier && normStr(po.supplier).toLowerCase() === normStr(pr.supplier).toLowerCase())
     );
     const hasValidProjectName =
       po.project &&
@@ -560,8 +566,32 @@ export function computeFinancialStatements(
     const isKasDirect =
       String(po.paymentMethod || linkedPr?.paymentMethod || "").toUpperCase() === "KAS" ||
       /kas|tunai|cash/i.test(String(po.paymentTerms || ""));
-    const isPaidOrComplete =
-      isKasDirect || statusLower === "selesai" || statusLower === "lunas" || statusLower === "dibayar";
+    const isPrPaid =
+      Boolean(po.isPaid) ||
+      statusLower === "lunas" ||
+      statusLower === "selesai" ||
+      statusLower === "dibayar" ||
+      statusLower.includes("lunas") ||
+      (linkedPr && (
+        normStr(linkedPr.status).toLowerCase() === "lunas" ||
+        normStr(linkedPr.status).toLowerCase() === "dibayar" ||
+        normStr(linkedPr.paymentStatus).toLowerCase() === "dibayar" ||
+        Boolean(linkedPr.isPaid) ||
+        !!linkedPr.paymentProofFileId ||
+        !!linkedPr.paymentProofFile ||
+        Boolean(String(linkedPr.otherNote || "").includes("[DIBAYAR"))
+      ));
+    const isPaidOrComplete = isKasDirect || Boolean(isPrPaid);
+
+    const poFundingSource =
+      po.fundingSource ||
+      linkedPr?.fundingSource ||
+      "1000.01";
+    const poFundingCode =
+      poFundingSource === "1000.02" || /mandiri|bank/i.test(String(poFundingSource))
+        ? "1000.02"
+        : (activeCoa[poFundingSource]?.code || "1000.01");
+    const poFundingLabel = activeCoa[poFundingCode]?.name || "Kas/Bank";
 
     const debitAccountCode = isProjectPo ? "5101" : "1200";
     const debitDesc = isProjectPo
@@ -582,8 +612,8 @@ export function computeFinancialStatements(
             kredit: 0,
           },
           {
-            kodeAkun: "1000.01",
-            keterangan: `Pengeluaran Kas/Bank Tunai Pembelian PO ${nomor} ke ${supplier}`,
+            kodeAkun: poFundingCode,
+            keterangan: `Pengeluaran ${poFundingLabel} Pembelian PO ${nomor} ke ${supplier}`,
             debit: 0,
             kredit: total,
           },
@@ -613,8 +643,8 @@ export function computeFinancialStatements(
               kredit: 0,
             },
             {
-              kodeAkun: "1000.01",
-              keterangan: `Pengeluaran Kas/Bank Pelunasan PO ${nomor} ke ${supplier}`,
+              kodeAkun: poFundingCode,
+              keterangan: `Pengeluaran ${poFundingLabel} Pelunasan PO ${nomor} ke ${supplier}`,
               debit: 0,
               kredit: total,
             },
@@ -627,7 +657,12 @@ export function computeFinancialStatements(
   // 2b. Request Barang (Ambil Stok Gudang untuk Project & Pembelian Ritel Tunai / Tempo)
   for (const pr of purchaseRequests) {
     const stLower = normStr(pr.status).toLowerCase();
-    const isApprovedOrDone = ["disetujui", "dibayar", "dikirim", "diterima", "selesai"].includes(stLower);
+    const rawStUpper = String(pr.rawStatus || "").toUpperCase();
+    const isApprovedOrDone =
+      ["disetujui", "dibayar", "dikirim", "diterima", "selesai", "lunas"].includes(stLower) ||
+      stLower.includes("diterima") ||
+      stLower.includes("lunas") ||
+      ["DISETUJUI", "DIBAYAR", "DIKIRIM", "DITERIMA"].includes(rawStUpper);
     if (!isApprovedOrDone) continue;
 
     const hasPo = supplierPos.some(
@@ -673,8 +708,8 @@ export function computeFinancialStatements(
       continue;
     }
 
-    // ─── Flow 2 & 3: Pembelian Ritel (Tunai vs Hutang/Tempo) ───
-    const isRetailSource = procSource === "RETAIL" || !procSource;
+    // ─── Flow 2 & 3: Pembelian Ritel / Non-PO (Tunai vs Hutang/Tempo) ───
+    const isRetailSource = procSource === "RETAIL" || !procSource || procSource === "SUPPLIER";
     if (!isRetailSource) continue;
 
     const isKasPr = String(pr.paymentMethod || "").toUpperCase() === "KAS";
@@ -682,7 +717,10 @@ export function computeFinancialStatements(
       String(pr.paymentStatus || "").toUpperCase() === "DIBAYAR" ||
       !!pr.paymentProofFileId ||
       !!pr.buktiPembayaran ||
-      stLower === "dibayar";
+      stLower === "dibayar" ||
+      stLower === "lunas" ||
+      stLower.includes("lunas") ||
+      (pr.otherNote as string)?.includes("[DIBAYAR");
 
     const prFundingCode =
       pr.fundingSource === "1000.02" || /mandiri|bank/i.test(String(pr.fundingSource || ""))
@@ -719,7 +757,12 @@ export function computeFinancialStatements(
       ]);
     } else {
       // Pembelian Ritel Hutang / Tempo / Nota Bon Toko
-      const isDispatchedOrReceived = ["dikirim", "diterima", "selesai"].includes(stLower);
+      const isDispatchedOrReceived =
+        ["dikirim", "diterima", "selesai", "lunas"].includes(stLower) ||
+        stLower.includes("diterima") ||
+        stLower.includes("dikirim") ||
+        stLower.includes("lunas") ||
+        ["DIKIRIM", "DITERIMA"].includes(rawStUpper);
 
       // Tahap 1: Pengakuan Hutang saat barang & nota bon dikirim/diterima
       if (isDispatchedOrReceived || isPaid) {

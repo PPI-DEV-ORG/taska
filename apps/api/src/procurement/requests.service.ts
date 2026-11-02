@@ -85,6 +85,16 @@ export class RequestsService {
           task: { select: { id: true, name: true } },
           supplier: { select: { id: true, name: true } },
           items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
+          supplierPOs: {
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              shipmentStatus: true,
+              total: true,
+              supplierId: true,
+            },
+          },
           _count: { select: { supplierPOs: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "createdAt"),
@@ -104,7 +114,16 @@ export class RequestsService {
         task: { select: { id: true, name: true } },
         supplier: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true } } } },
-        supplierPOs: { select: { id: true, number: true, status: true, total: true } },
+        supplierPOs: {
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            shipmentStatus: true,
+            total: true,
+            supplier: { select: { id: true, name: true } },
+          },
+        },
       },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
@@ -331,7 +350,13 @@ export class RequestsService {
   async setStatus(id: number, dto: RequestStatusDto, user: RequestUser) {
     const row = await this.prisma.main.purchaseRequest.findUnique({
       where: { id },
-      include: { items: true, project: { select: { id: true, name: true, picId: true } }, requester: true },
+      include: {
+        items: true,
+        project: { select: { id: true, name: true, picId: true } },
+        requester: true,
+        supplier: true,
+        supplierPOs: { select: { id: true, number: true, status: true, total: true, supplierId: true } },
+      },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
 
@@ -475,16 +500,22 @@ export class RequestsService {
       }
     }
 
-    const isMarkingPaid = dto.status === "DIBAYAR" || !!dto.paymentProofFileId;
+    const isMarkingPaid = dto.status === "DIBAYAR" || (dto as any).status === "Lunas" || !!dto.paymentProofFileId;
     const paidTag = dto.fundingSource
       ? `[DIBAYAR:${dto.fundingSource}]`
       : "[DIBAYAR]";
+    const targetStatus =
+      row.status === "DITERIMA" && (dto.status === "DIBAYAR" || (dto as any).status === "Lunas")
+        ? "DITERIMA"
+        : (dto.status === "Lunas" ? "DIBAYAR" : dto.status);
+
     let updated: any;
     try {
       updated = await this.prisma.main.purchaseRequest.update({
         where: { id },
         data: {
-          status: dto.status as never,
+          status: targetStatus as never,
+          paymentStatus: isMarkingPaid ? "DIBAYAR" : ((dto as any).paymentStatus ?? row.paymentStatus),
           rejectReason: dto.reason ?? row.rejectReason,
           ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
           ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
@@ -495,12 +526,13 @@ export class RequestsService {
         include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
       });
     } catch (err: any) {
-      if (dto.status === "DIBAYAR") {
+      if (dto.status === "DIBAYAR" || (dto as any).status === "Lunas") {
         // Fallback bila MySQL enum belum di-alter ke DIBAYAR
         updated = await this.prisma.main.purchaseRequest.update({
           where: { id },
           data: {
-            status: "DISETUJUI" as never,
+            status: (row.status === "DITERIMA" ? "DITERIMA" : "DISETUJUI") as never,
+            paymentStatus: isMarkingPaid ? "DIBAYAR" : ((dto as any).paymentStatus ?? row.paymentStatus),
             rejectReason: dto.reason ?? row.rejectReason,
             ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
             ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
@@ -529,12 +561,28 @@ export class RequestsService {
         .catch(() => {});
     }
 
+    const reqSuffix = String(row.number || "").replace(/^(?:PNJ|REQ|PR)\//i, "");
+    if (reqSuffix) {
+      try {
+        await this.prisma.main.supplierPO.updateMany({
+          where: {
+            requestId: null,
+            OR: [
+              { number: `PO/${reqSuffix}` },
+              { number: { endsWith: reqSuffix } },
+            ],
+          },
+          data: { requestId: id },
+        });
+      } catch {}
+    }
+
     // Sinkronisasi status pengiriman ke Supplier PO terkait
     if (dto.status === "DIKIRIM") {
       try {
         await this.prisma.main.supplierPO.updateMany({
           where: { requestId: id, shipmentStatus: { notIn: ["DIKIRIM", "SAMPAI"] } },
-          data: { shipmentStatus: "DIKIRIM" },
+          data: { shipmentStatus: "DIKIRIM", status: "DISETUJUI" },
         });
         const linkedPos = await this.prisma.main.supplierPO.findMany({
           where: { requestId: id },
@@ -550,7 +598,7 @@ export class RequestsService {
       try {
         await this.prisma.main.supplierPO.updateMany({
           where: { requestId: id, shipmentStatus: { not: "SAMPAI" } },
-          data: { shipmentStatus: "SAMPAI", arrivedAt: new Date() },
+          data: { shipmentStatus: "SAMPAI", status: "DISETUJUI", arrivedAt: new Date() },
         });
         const linkedPos = await this.prisma.main.supplierPO.findMany({
           where: { requestId: id },
@@ -564,14 +612,40 @@ export class RequestsService {
       }
     }
 
-    // Bila pengadaan/pembelian ritel ditandai DIKIRIM oleh Procurement: otomatis buat data Penerimaan di Gudang
-    if (dto.status === "DIKIRIM" && row.procurementSource === "RETAIL") {
+    // Sinkronisasi status lunas ke Supplier PO terkait
+    if (isMarkingPaid) {
       try {
+        await this.prisma.main.supplierPO.updateMany({
+          where: { requestId: id },
+          data: { status: "DISETUJUI", shipmentStatus: "SAMPAI" },
+        });
+        const linkedPos = await this.prisma.main.supplierPO.findMany({
+          where: { requestId: id },
+          select: { id: true },
+        });
+        for (const p of linkedPos) {
+          this.notifications.dataChange("supplier-pos", "update", p.id);
+          this.notifications.dataChange("supplier-pos", "status", p.id);
+        }
+      } catch (err) {
+        console.warn(`Gagal sinkronisasi Lunas ke supplierPO request ${id}:`, (err as Error).message);
+      }
+    }
+
+    // Bila pengadaan (ritel atau PO supplier) ditandai DIKIRIM: otomatis buat data Penerimaan di Gudang
+    if (dto.status === "DIKIRIM" && isPurchase) {
+      try {
+        const linkedPo = row.supplierPOs?.[0] || await this.prisma.main.supplierPO.findFirst({
+          where: { requestId: row.id },
+          select: { id: true, number: true, supplierId: true },
+        });
+
         const existingRec = await this.prisma.main.receiving.findFirst({
           where: {
             OR: [
               { requestId: row.id },
               { conditionNote: { contains: row.number } },
+              ...(linkedPo?.id ? [{ supplierPoId: linkedPo.id }] : []),
             ],
           },
         });
@@ -616,23 +690,33 @@ export class RequestsService {
                 productId: pId,
                 qtyOrdered: itemQty,
                 qtyReceived: itemQty,
-                note: it.customName ? `Item Ritel: ${it.customName}` : undefined,
+                note: it.customName ? `Item: ${it.customName}` : undefined,
               });
             }
+          }
+
+          let supplierName = (row as any).supplier?.name;
+          if (!supplierName && linkedPo?.supplierId) {
+            const supp = await this.prisma.main.supplier.findUnique({ where: { id: linkedPo.supplierId } });
+            supplierName = supp?.name;
+          }
+          if (!supplierName) {
+            supplierName = row.procurementSource === "RETAIL" ? "Pembelian Ritel / Toko" : "Supplier";
           }
 
           const createdRec = await this.prisma.main.receiving.create({
             data: {
               number: recNumber,
               requestId: row.id,
-              supplierName: (row as any).supplier?.name || "Pembelian Ritel / Toko",
+              supplierPoId: linkedPo?.id ?? null,
+              supplierName: supplierName,
               warehouseId: defaultWh?.id ?? null,
               projectId: row.projectId ?? null,
               date: new Date(),
               receiverId: user.id,
               status: "MENUNGGU",
-              conditionNote: `Ref Request: ${row.number} — ${row.purpose}`,
-              receiptFileId: row.evidenceFileId ?? null,
+              conditionNote: `Ref Request: ${row.number} — ${row.purpose}${linkedPo ? ` (PO: ${linkedPo.number})` : ""}`,
+              receiptFileId: row.evidenceFileId ?? (row as any).doFileId ?? null,
               items: {
                 create: recItems,
               },

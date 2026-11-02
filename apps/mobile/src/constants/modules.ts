@@ -417,7 +417,6 @@ export const MODULES: Record<string, ModuleDef> = {
     createRoles: ["pm", "procurement", "finance", "gudang", "teknisi", "admin", "super_admin", "bos"],
     actions: [
       { label: "Teruskan ke Gudang", status: "Cek stok", toast: "Request diteruskan ke Gudang untuk cek ketersediaan stok" },
-      { label: "Buat PO supplier", toast: "PO supplier dibuat, menunggu persetujuan", to: () => "/supplier-pos" },
     ],
     docs: ["Bukti permintaan (WA, email, atau BOQ)", "Bukti Pembayaran / Transfer", "Surat Jalan / Delivery Order (DO)"],
     emptyText: "Belum ada request barang. Buat request untuk project atau stok.",
@@ -446,7 +445,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Pengiriman", key: "pengiriman", fmt: "status" },
     ],
     statusKey: "status",
-    statuses: ["Menunggu persetujuan", "Disetujui", "Di Supplier", "Dikirim", "Sampai", "Sampai (Belum Lunas)", "Terlambat"],
+    statuses: ["Menunggu persetujuan", "Disetujui", "Di Supplier", "Dikirim", "Sampai", "Sampai (Belum Lunas)", "Lunas", "Terlambat"],
     titleOf: (r) => `${r.nomor}${r.nomorSoSupplier && r.nomorSoSupplier !== "-" ? ` (SO: ${r.nomorSoSupplier})` : ""}`,
     subtitleOf: (r) => r.supplier,
     search: ["nomor", "nomorSoSupplier", "supplier", "item"],

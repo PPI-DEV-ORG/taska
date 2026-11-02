@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Linking } from "react-native";
+import { View, Linking, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { CheckCircle2, Circle, ExternalLink, PackageCheck, Plus, Printer, RotateCcw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -29,16 +29,60 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   const router = useRouter();
   const { user, patchRow, setStatus, addRow, toast, data, reload } = useApp();
   const steps = ["Di Supplier", "Dikirim", "Sampai"];
-  const cur = steps.indexOf(row.pengiriman);
+  const cur =
+    row.pengiriman === "Sampai"
+      ? 2
+      : row.pengiriman === "Dikirim" || row.pengiriman === "Dalam Perjalanan"
+      ? 1
+      : 0;
   const showPrice = PRICE_ROLES.includes(user!.role);
 
   const supplierInvoices: Row[] = (data.invoiceIn ?? []).filter(
     (inv: Row) => String(inv.supplierPoId) === String(row.id) || inv.po === row.nomor
   );
 
-  const linkedReceivings: Row[] = (data.receiving ?? []).filter(
-    (rc: Row) => String(rc.supplierPoId) === String(row.id) || (row.nomor && rc.po === row.nomor)
-  );
+  const poSuffix = String(row.nomor || "").replace(/^(?:POD|PO-S|PO)\//i, "");
+  const linkedReceivings: Row[] = React.useMemo(() => {
+    const list: Row[] = [];
+    const seen = new Set<string>();
+
+    const addRc = (rc: any) => {
+      if (!rc || !rc.id) return;
+      const key = String(rc.id);
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push(rc);
+    };
+
+    (data.receiving ?? []).forEach((rc: Row) => {
+      if (
+        String(rc.supplierPoId) === String(row.id) ||
+        (row.nomor && rc.po === row.nomor) ||
+        (row.requestId && String(rc.requestId) === String(row.requestId)) ||
+        (rc.conditionNote && row.nomor && rc.conditionNote.includes(row.nomor)) ||
+        (poSuffix && rc.conditionNote && rc.conditionNote.includes(poSuffix))
+      ) {
+        addRc(rc);
+      }
+    });
+
+    if (Array.isArray(row.receivings)) {
+      row.receivings.forEach((r: any) => {
+        addRc({
+          id: String(r.id),
+          nomor: r.number || `RCV/${r.id}`,
+          status: r.status,
+          tanggal: r.date ? new Date(r.date).toISOString().slice(0, 10) : "-",
+          item: row.item || "Barang PO",
+          receiptFileId: r.receiptFileId,
+          photoFileId: r.photoFileId,
+        });
+      });
+    }
+
+    return list;
+  }, [data.receiving, row.id, row.nomor, row.requestId, row.receivings, poSuffix, row.item]);
+  const primaryReceiving = linkedReceivings[0] ?? null;
   const recWithDo = linkedReceivings.find((rc: any) => rc.receiptFileId || rc.photoFileId || rc.fileId);
   const effectiveDoFileId = row.doFileId || recWithDo?.receiptFileId || recWithDo?.photoFileId || recWithDo?.fileId || null;
 
@@ -109,9 +153,40 @@ export function SupplierPoExtras({ row }: { row: Row }) {
     }
   }
 
-  function go(s: string) {
-    patchRow("supplier-pos", row.id, { pengiriman: s });
-    setStatus("supplier-pos", row.id, s);
+  async function go(s: string) {
+    try {
+      await patchRow("supplier-pos", String(row.id), {
+        pengiriman: s,
+        shipmentStatus: s === "Di Supplier" ? "DI_SUPPLIER" : s === "Dikirim" ? "DIKIRIM" : "SAMPAI",
+      });
+      await setStatus("supplier-pos", String(row.id), s);
+
+      // Sinkronkan otomatis ke Purchase Request terkait
+      const poSuffix = String(row.nomor || "").replace(/^(?:POD|PO-S|PO)\//i, "");
+      const linkedPrId = row.requestId
+        ? String(row.requestId)
+        : (data["purchase-requests"] ?? []).find(
+            (pr: Row) =>
+              (pr.supplierPo && (String(pr.supplierPo.id) === String(row.id) || pr.supplierPo.number === row.nomor)) ||
+              (Array.isArray(pr.supplierPOs) && pr.supplierPOs.some((sp: any) => String(sp.id) === String(row.id) || sp.number === row.nomor)) ||
+              (row.request && row.request !== "-" && String(pr.nomor).toLowerCase() === String(row.request).toLowerCase()) ||
+              (row.nomor && String(pr.otherNote || "").includes(row.nomor)) ||
+              (poSuffix && pr.nomor && String(pr.nomor).replace(/^(?:PNJ|REQ|PR)\//i, "") === poSuffix) ||
+              (Number(row.total) === Number(pr.estimasi) && row.supplier && pr.supplier && String(row.supplier).toLowerCase() === String(pr.supplier).toLowerCase())
+          )?.id;
+
+      if (linkedPrId) {
+        const prStatus = s === "Dikirim" ? "Dikirim" : s === "Sampai" ? "Diterima" : undefined;
+        if (prStatus) {
+          await patchRow("purchase-requests", String(linkedPrId), { status: prStatus });
+          await setStatus("purchase-requests", String(linkedPrId), prStatus);
+        }
+      }
+      toast(`Status pengiriman PO dan Request Barang berhasil disinkronkan ke ${s}!`);
+      await reload();
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengubah status pengiriman", "danger");
+    }
   }
 
   async function handleCreateInvoiceIn() {
@@ -283,27 +358,47 @@ export function SupplierPoExtras({ row }: { row: Row }) {
                     <Text className="text-[11px]">Buka File DO</Text>
                   </Button>
                 ) : null}
-                <Button
-                  size="sm"
-                  className="h-7 px-2.5 flex-row items-center gap-1"
-                  onPress={() => router.push("/receiving/new" as any)}
-                >
-                  <PackageCheck size={12} color="#fff" />
-                  <Text className="text-[11px] text-white">Terima di Gudang & Upload DO</Text>
-                </Button>
+                {primaryReceiving ? (
+                  <Button
+                    size="sm"
+                    className="h-7 px-2.5 flex-row items-center gap-1 bg-emerald-600 hover:bg-emerald-700"
+                    onPress={() => router.push(`/receiving/${primaryReceiving.id}` as any)}
+                  >
+                    <PackageCheck size={12} color="#fff" />
+                    <Text className="text-[11px] font-semibold text-white">
+                      Buka Penerimaan ({primaryReceiving.nomor})
+                    </Text>
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="h-7 px-2.5 flex-row items-center gap-1"
+                    onPress={() => router.push("/receiving/new" as any)}
+                  >
+                    <PackageCheck size={12} color="#fff" />
+                    <Text className="text-[11px] text-white">Terima di Gudang & Upload DO</Text>
+                  </Button>
+                )}
               </View>
             </View>
             {linkedReceivings.length > 0 ? (
               <View className="mt-1 gap-1">
                 {linkedReceivings.map((rc: Row) => (
-                  <View key={rc.id} className="flex-row items-center justify-between bg-card/70 border border-border/60 rounded-lg px-2.5 py-1.5">
-                    <Text className="text-xs text-foreground">
-                      <Text className="font-semibold">{rc.nomor}</Text> · {rc.tanggal} · {rc.item}
-                    </Text>
+                  <Pressable
+                    key={rc.id}
+                    className="flex-row items-center justify-between bg-card/70 border border-border/60 rounded-lg px-2.5 py-1.5 hover:bg-card active:opacity-80"
+                    onPress={() => router.push(`/receiving/${rc.id}` as any)}
+                  >
+                    <View className="flex-row items-center gap-2 flex-1">
+                      <PackageCheck size={14} color={colors.primary} />
+                      <Text className="text-xs text-foreground">
+                        <Text className="font-semibold text-primary">{rc.nomor}</Text> · {rc.tanggal} · {rc.item}
+                      </Text>
+                    </View>
                     <Button size="sm" variant="ghost" className="h-6 px-2" onPress={() => router.push(`/receiving/${rc.id}` as any)}>
-                      <Text className="text-[11px] text-primary">Detail Penerimaan</Text>
+                      <Text className="text-[11px] text-primary font-semibold">Buka Data Penerimaan →</Text>
                     </Button>
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             ) : (
