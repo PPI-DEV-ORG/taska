@@ -477,7 +477,7 @@ export class VisitsService {
 
   private checkEditPermission(report: any, user: RequestUser) {
     const role = (user.role || "").toUpperCase();
-    if (["SUPER_ADMIN", "ADMIN", "BOS", "PM"].includes(role)) return true;
+    if (["SUPER_ADMIN", "ADMIN", "BOS", "PM", "SALES"].includes(role)) return true;
     if (report.ownerId === user.id || report.createdById === user.id) return true;
     throw new ForbiddenException("Anda tidak memiliki izin mengedit laporan kunjungan ini");
   }

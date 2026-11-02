@@ -31,6 +31,8 @@ const CREATE: Record<string, Role[]> = {
   customers: ["sales", "pm", "finance"],
   suppliers: ["procurement"],
   users: ["bos", "admin"],
+  "poc-reports": ["pm", "sales", "teknisi", "se"],
+  "visit-reports": ["pm", "sales", "teknisi", "se"],
 };
 
 export function canCreate(def: ModuleDef, role: Role) {
@@ -56,6 +58,8 @@ const DELETE: Record<string, Role[]> = {
   "delivery-notes": ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin"],
   expenses: ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin"],
   "damage-reports": ["gudang", "sales", "procurement", "finance", "pm", "admin"],
+  "poc-reports": ["pm", "sales", "teknisi", "se", "admin"],
+  "visit-reports": ["pm", "sales", "teknisi", "se", "admin"],
 };
 
 export function canDelete(def: ModuleDef, role: Role) {
