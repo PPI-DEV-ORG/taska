@@ -55,12 +55,21 @@ export class SettingsService {
     return [...rows, ...defaults];
   }
 
-  async set(key: string, value: string, user: RequestUser) {
+  async set(key: string, value: string, user: RequestUser, description?: string) {
     this.cache.delete(key);
     return this.prisma.main.systemSetting.upsert({
       where: { key },
-      update: { value, updatedById: user.id },
-      create: { key, value, updatedById: user.id },
+      update: {
+        value,
+        updatedById: user.id,
+        ...(description !== undefined ? { description } : {}),
+      },
+      create: {
+        key,
+        value,
+        updatedById: user.id,
+        ...(description !== undefined ? { description } : {}),
+      },
     });
   }
 }

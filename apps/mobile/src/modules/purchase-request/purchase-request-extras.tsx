@@ -23,7 +23,7 @@ export function PurchaseRequestExtras({
   onRefresh?: () => Promise<void> | void;
 }) {
   const router = useRouter();
-  const { user, data, addRow, setStatus, decide, toast, reload } = useApp();
+  const { user, data, addRow, patchRow, setStatus, decide, toast, reload } = useApp();
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [rejectReason, setRejectReason] = React.useState("");
   const [confirmSendOpen, setConfirmSendOpen] = React.useState(false);
@@ -245,9 +245,17 @@ export function PurchaseRequestExtras({
     try {
       setLocalStatus("DIKIRIM");
       await setStatus("purchase-requests", row.id, "Dikirim");
+      if (linkedPo?.id) {
+        try {
+          await patchRow("supplier-pos", linkedPo.id, { pengiriman: "Dikirim" });
+          await setStatus("supplier-pos", linkedPo.id, "Dikirim");
+        } catch {}
+      }
       setConfirmSendOpen(false);
       toast(
-        isRetailOrPurchase
+        isSupplierPo
+          ? "Barang PO Supplier ditandai dikirim. Status PO dan Request Barang telah diperbarui!"
+          : isRetailOrPurchase
           ? "Barang pengadaan ditandai dikirim. Data Penerimaan di Gudang otomatis dibuat!"
           : "Barang berhasil diserahkan/dikirim dari Gudang"
       );
@@ -265,6 +273,12 @@ export function PurchaseRequestExtras({
     try {
       setLocalStatus("DITERIMA");
       await setStatus("purchase-requests", row.id, "Diterima", undefined, doFileId ? { doFileId } : undefined);
+      if (linkedPo?.id) {
+        try {
+          await patchRow("supplier-pos", linkedPo.id, { pengiriman: "Sampai" });
+          await setStatus("supplier-pos", linkedPo.id, "Sampai");
+        } catch {}
+      }
       setConfirmReceiveOpen(false);
       toast("Penerimaan barang telah dikonfirmasi");
       if (onRefresh) await onRefresh();
@@ -304,8 +318,8 @@ export function PurchaseRequestExtras({
         { label: "Diajukan", done: true, current: isDiajukan },
         { label: "Disetujui", done: isApproved, current: isDisetujui && !isDikirim && !isDiterima && !isPaid },
         { label: "Dikirim Toko", done: isDispatched, current: isDikirim },
-        { label: "Diterima (Hutang)", done: isDiterima, current: isDiterima && !isPaid },
-        { label: "Pelunasan", done: isPaid, current: isPaid },
+        { label: "Diterima (Hutang)", done: isDiterima || isPaid, current: isDiterima && !isPaid },
+        { label: "Lunas", done: isPaid, current: isPaid },
       ];
     }
     // Flow 4: Pengadaan via PO Supplier Formal
@@ -402,18 +416,44 @@ export function PurchaseRequestExtras({
           </View>
         </View>
       ) : isDiterima ? (
+        isRetailDebt && !isPaid ? (
+          <View className="bg-amber-500/15 border border-amber-500/40 rounded-xl p-4 flex-row items-center gap-3">
+            <Clock size={22} color={colors.warning} />
+            <View className="flex-1">
+              <Text className="text-amber-800 dark:text-amber-400 font-bold text-base">
+                Barang Telah Diterima (Belum Lunas)
+              </Text>
+              <Text className="text-amber-900/90 dark:text-amber-300/80 text-xs mt-0.5">
+                Barang & nota bon tempo telah diterima di gudang (stok bertambah & tercatat Hutang Usaha 210102). Menunggu pelunasan hutang oleh Finance.
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
+            <CheckCircle2 size={22} color="#10b981" />
+            <View className="flex-1">
+              <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">
+                {isStockTake ? "Barang Selesai Diterima di Proyek" : isRetailDebt ? "Pengadaan Selesai & Lunas" : "Barang Selesai Diterima di Gudang"}
+              </Text>
+              <Text className="text-muted-foreground text-xs mt-0.5">
+                {isStockTake
+                  ? `Barang dari gudang telah diterima oleh tim proyek (${row.pemohon || "User"}). Seluruh unit serial terpasang di proyek.`
+                  : isRetailDebt
+                  ? "Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance."
+                  : "Barang telah diterima di gudang, stok tercatat bertambah, dan proses pengadaan telah tuntas."}
+              </Text>
+            </View>
+          </View>
+        )
+      ) : isPaid && isRetailDebt ? (
         <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
           <CheckCircle2 size={22} color="#10b981" />
           <View className="flex-1">
             <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">
-              {isStockTake ? "Barang Selesai Diterima di Proyek" : "Barang Selesai Diterima di Gudang"}
+              Pengadaan Selesai & Lunas
             </Text>
             <Text className="text-muted-foreground text-xs mt-0.5">
-              {isStockTake
-                ? `Barang dari gudang telah diterima oleh tim proyek (${row.pemohon || "User"}). Seluruh unit serial terpasang di proyek.`
-                : isRetailDebt && !isPaid
-                ? "Barang & nota bon tempo telah diterima di gudang (stok bertambah & tercatat Hutang Usaha 210102). Menunggu pelunasan hutang oleh Finance."
-                : "Barang telah diterima di gudang, stok tercatat bertambah, dan proses pengadaan telah tuntas."}
+              Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance.
             </Text>
           </View>
         </View>
@@ -825,6 +865,16 @@ export function PurchaseRequestExtras({
                   <Truck size={14} color="#fff" />
                   <Text className="text-xs font-semibold">Tandai Barang Dikirim (Auto Penerimaan)</Text>
                 </Button>
+              ) : // Supplier PO: Procurement atau Gudang tandai barang dikirim
+              (isSupplierPo && isApproved && (isProcurement || isGudang)) ? (
+                <Button
+                  size="sm"
+                  onPress={() => setConfirmSendOpen(true)}
+                  disabled={loading}
+                >
+                  <Truck size={14} color="#fff" />
+                  <Text className="text-xs font-semibold">Tandai Barang Dikirim</Text>
+                </Button>
               ) : null
             ) : null}
 
@@ -871,6 +921,8 @@ export function PurchaseRequestExtras({
             <DialogDescription>
               {isStockTake
                 ? `Stok barang di gudang akan otomatis dipotong dan dialokasikan ke proyek ${row.project || ""}. Notifikasi akan dikirim ke pemohon (${row.pemohon || "User"}) untuk konfirmasi penerimaan di lokasi.`
+                : isSupplierPo
+                ? "Status PO Supplier dan Request Barang akan berubah menjadi 'Dikirim'. Tim Gudang dapat bersiap mengecek fisik saat barang tiba."
                 : "Status akan berubah menjadi 'Dikirim' dan data Penerimaan di Gudang akan otomatis dibuat. Petugas Gudang dapat mengecek fisik barang dan mencatat SN saat barang tiba."}
             </DialogDescription>
           </DialogHeader>

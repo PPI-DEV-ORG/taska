@@ -529,6 +529,41 @@ export class RequestsService {
         .catch(() => {});
     }
 
+    // Sinkronisasi status pengiriman ke Supplier PO terkait
+    if (dto.status === "DIKIRIM") {
+      try {
+        await this.prisma.main.supplierPO.updateMany({
+          where: { requestId: id, shipmentStatus: { notIn: ["DIKIRIM", "SAMPAI"] } },
+          data: { shipmentStatus: "DIKIRIM" },
+        });
+        const linkedPos = await this.prisma.main.supplierPO.findMany({
+          where: { requestId: id },
+          select: { id: true },
+        });
+        for (const p of linkedPos) {
+          this.notifications.dataChange("supplier-pos", "status", p.id);
+        }
+      } catch (err) {
+        console.warn(`Gagal sinkronisasi DIKIRIM ke supplierPO request ${id}:`, (err as Error).message);
+      }
+    } else if (dto.status === "DITERIMA") {
+      try {
+        await this.prisma.main.supplierPO.updateMany({
+          where: { requestId: id, shipmentStatus: { not: "SAMPAI" } },
+          data: { shipmentStatus: "SAMPAI", arrivedAt: new Date() },
+        });
+        const linkedPos = await this.prisma.main.supplierPO.findMany({
+          where: { requestId: id },
+          select: { id: true },
+        });
+        for (const p of linkedPos) {
+          this.notifications.dataChange("supplier-pos", "status", p.id);
+        }
+      } catch (err) {
+        console.warn(`Gagal sinkronisasi SAMPAI ke supplierPO request ${id}:`, (err as Error).message);
+      }
+    }
+
     // Bila pengadaan/pembelian ritel ditandai DIKIRIM oleh Procurement: otomatis buat data Penerimaan di Gudang
     if (dto.status === "DIKIRIM" && row.procurementSource === "RETAIL") {
       try {
