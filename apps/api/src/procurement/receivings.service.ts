@@ -206,14 +206,35 @@ export class ReceivingsService {
     });
     if (effectiveDoFileId) await this.attachFile(effectiveDoFileId, "receiving", receiving.id).catch(() => {});
     if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", receiving.id).catch(() => {});
-    if (po?.id && effectiveDoFileId) {
-      await this.prisma.main.supplierPO
-        .update({
-          where: { id: po.id },
-          data: { doFileId: effectiveDoFileId },
-        })
-        .catch(() => {});
-      this.notifications.dataChange("supplier-pos", "update", po.id);
+    if (po?.id) {
+      const poPatch: any = {};
+      if (effectiveDoFileId) poPatch.doFileId = effectiveDoFileId;
+      if (initialStatus === "DITERIMA") {
+        poPatch.shipmentStatus = "SAMPAI";
+        poPatch.arrivedAt = new Date();
+      }
+      if (Object.keys(poPatch).length > 0) {
+        await this.prisma.main.supplierPO
+          .update({
+            where: { id: po.id },
+            data: poPatch,
+          })
+          .catch(() => {});
+        this.notifications.dataChange("supplier-pos", "update", po.id);
+        this.notifications.dataChange("supplier-pos", "status", po.id);
+      }
+      if (po.requestId && initialStatus === "DITERIMA") {
+        await this.prisma.main.purchaseRequest
+          .updateMany({
+            where: { id: po.requestId, status: { notIn: ["DIBATALKAN"] } },
+            data: {
+              status: "DITERIMA",
+              ...(effectiveDoFileId ? { doFileId: effectiveDoFileId } : {}),
+            },
+          })
+          .catch(() => {});
+        this.notifications.dataChange("purchase-requests", "status", po.requestId);
+      }
     }
 
     if (dto.requestId) {
@@ -228,6 +249,29 @@ export class ReceivingsService {
           })
           .catch(() => {});
         this.notifications.dataChange("purchase-requests", "update", dto.requestId);
+        this.notifications.dataChange("purchase-requests", "status", dto.requestId);
+      }
+
+      // Sinkronisasi status SAMPAI ke PO Supplier jika request barang ini memiliki PO terkait
+      if (initialStatus === "DITERIMA") {
+        await this.prisma.main.supplierPO
+          .updateMany({
+            where: { requestId: dto.requestId, shipmentStatus: { not: "SAMPAI" } },
+            data: {
+              shipmentStatus: "SAMPAI",
+              arrivedAt: new Date(),
+              ...(effectiveDoFileId ? { doFileId: effectiveDoFileId } : {}),
+            },
+          })
+          .catch(() => {});
+        const linkedPos = await this.prisma.main.supplierPO.findMany({
+          where: { requestId: dto.requestId },
+          select: { id: true },
+        });
+        for (const p of linkedPos) {
+          this.notifications.dataChange("supplier-pos", "status", p.id);
+          this.notifications.dataChange("supplier-pos", "update", p.id);
+        }
       }
     }
 
@@ -590,6 +634,28 @@ export class ReceivingsService {
     for (const rId of reqIdsToNotify) {
       this.notifications.dataChange("purchase-requests", "update", rId);
       this.notifications.dataChange("purchase-requests", "status", rId);
+
+      // Sinkronisasi status pengiriman SAMPAI ke PO Supplier yang terhubung ke Request ini
+      try {
+        await this.prisma.main.supplierPO.updateMany({
+          where: { requestId: rId, shipmentStatus: { not: "SAMPAI" } },
+          data: {
+            shipmentStatus: "SAMPAI",
+            arrivedAt: new Date(),
+            ...(effectiveDoFile ? { doFileId: effectiveDoFile } : {}),
+          },
+        });
+        const pos = await this.prisma.main.supplierPO.findMany({
+          where: { requestId: rId },
+          select: { id: true },
+        });
+        for (const p of pos) {
+          this.notifications.dataChange("supplier-pos", "status", p.id);
+          this.notifications.dataChange("supplier-pos", "update", p.id);
+        }
+      } catch (e) {
+        console.warn(`Gagal sinkronisasi SAMPAI ke PO supplier dari request ${rId}:`, (e as Error).message);
+      }
     }
 
     const receiver = await this.prisma.main.user.findUnique({ where: { id: receiving.receiverId } });

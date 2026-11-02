@@ -29,7 +29,7 @@ type SourceType = "DRAFT" | "REQUEST" | "PO" | "DIRECT";
 export default function NewReceivingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ receivingId?: string; requestId?: string; poId?: string }>();
-  const { data, user, addRow, patchRow, toast } = useApp();
+  const { data, user, addRow, patchRow, setStatus, toast } = useApp();
 
   const pos = data["supplier-pos"] || [];
   const warehouses = data.warehouses || [];
@@ -488,13 +488,20 @@ export default function NewReceivingScreen() {
         }).catch(() => {});
       }
 
-      // Update PO Supplier jika ada relasi
-      if (selectedDraft.supplierPoId && String(selectedDraft.supplierPoId) !== "-") {
-        await patchRow("supplier-pos", String(selectedDraft.supplierPoId), {
-          status: "Sampai",
+      // Update PO Supplier jika ada relasi langsung atau via request
+      const draftPoId =
+        selectedDraft.supplierPoId && String(selectedDraft.supplierPoId) !== "-"
+          ? String(selectedDraft.supplierPoId)
+          : (effReqId
+              ? (data["supplier-pos"] ?? []).find((p) => String(p.requestId) === String(effReqId))?.id
+              : undefined);
+
+      if (draftPoId) {
+        await patchRow("supplier-pos", String(draftPoId), {
           pengiriman: "Sampai",
           ...(effectiveFileId ? { doFileId: effectiveFileId } : {}),
         }).catch(() => {});
+        await setStatus("supplier-pos", String(draftPoId), "Sampai").catch(() => {});
       }
 
       toast("Penerimaan barang berhasil diproses! Stok bertambah dan dokumen diperbarui.");
@@ -528,6 +535,18 @@ export default function NewReceivingScreen() {
         ...(fileId ? { doFileId: fileId } : {}),
       }).catch(() => {});
 
+      // Update PO Supplier jika request ini memiliki PO terkait
+      const linkedPo = (data["supplier-pos"] ?? []).find(
+        (p) => String(p.requestId) === String(selectedReq.id) || p.request === selectedReq.nomor
+      );
+      if (linkedPo?.id) {
+        await patchRow("supplier-pos", String(linkedPo.id), {
+          pengiriman: "Sampai",
+          ...(fileId ? { doFileId: fileId } : {}),
+        }).catch(() => {});
+        await setStatus("supplier-pos", String(linkedPo.id), "Sampai").catch(() => {});
+      }
+
       toast("Penerimaan dari Request Barang berhasil disimpan & stok bertambah!");
       router.replace("/stock");
       return;
@@ -556,10 +575,19 @@ export default function NewReceivingScreen() {
     await addRow("receiving", row);
     if (sourceType === "PO" && po?.id) {
       await patchRow("supplier-pos", String(po.id), {
-        ...(fileId ? { doFileId: fileId } : {}),
         pengiriman: "Sampai",
-        status: "Sampai",
+        ...(fileId ? { doFileId: fileId } : {}),
       }).catch(() => {});
+      await setStatus("supplier-pos", String(po.id), "Sampai").catch(() => {});
+
+      // Sinkronisasi ke Request Barang jika PO ini terhubung ke Request
+      const targetReqId = po.requestId || (po.request && (data["purchase-requests"] ?? []).find((r) => r.nomor === po.request)?.id);
+      if (targetReqId) {
+        await patchRow("purchase-requests", String(targetReqId), {
+          status: "DITERIMA",
+          ...(fileId ? { doFileId: fileId } : {}),
+        }).catch(() => {});
+      }
     }
 
     toast("Penerimaan barang berhasil disimpan, stok bertambah & DO terhubung ke PO");

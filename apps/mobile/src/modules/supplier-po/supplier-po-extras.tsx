@@ -110,7 +110,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   }
 
   function go(s: string) {
-    patchRow("supplier-pos", row.id, { pengiriman: s, status: s });
+    patchRow("supplier-pos", row.id, { pengiriman: s });
     setStatus("supplier-pos", row.id, s);
   }
 

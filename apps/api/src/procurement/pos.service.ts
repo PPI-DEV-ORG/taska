@@ -366,6 +366,23 @@ export class PosService {
       });
     }
 
+    const poStatusValues = ["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"];
+    const shipmentStatusValues = ["DI_SUPPLIER", "DIKIRIM", "SAMPAI", "BELUM_DIKIRIM", "DALAM_PERJALANAN"];
+    let poStatus: any = undefined;
+    let shipmentStatus: any = dto.shipmentStatus ?? undefined;
+
+    if (dto.status) {
+      if (poStatusValues.includes(dto.status)) {
+        poStatus = dto.status;
+      } else if (shipmentStatusValues.includes(dto.status)) {
+        if (!shipmentStatus) {
+          shipmentStatus = dto.status === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : dto.status === "DALAM_PERJALANAN" ? "DIKIRIM" : dto.status;
+        }
+      }
+    }
+    if (shipmentStatus === "BELUM_DIKIRIM") shipmentStatus = "DI_SUPPLIER";
+    if (shipmentStatus === "DALAM_PERJALANAN") shipmentStatus = "DIKIRIM";
+
     const updated = await this.prisma.main.supplierPO.update({
       where: { id },
       data: {
@@ -377,8 +394,8 @@ export class PosService {
         ...(dto.eta !== undefined ? { eta: dto.eta ? new Date(dto.eta) : null } : {}),
         ...(dto.paymentTerms !== undefined ? { paymentTerms: dto.paymentTerms } : {}),
         ...(dto.total !== undefined ? { total: dto.total } : {}),
-        ...(dto.status ? { status: dto.status as any } : {}),
-        ...(dto.shipmentStatus ? { shipmentStatus: dto.shipmentStatus } : {}),
+        ...(poStatus ? { status: poStatus } : {}),
+        ...(shipmentStatus ? { shipmentStatus, ...(shipmentStatus === "SAMPAI" ? { arrivedAt: new Date() } : {}) } : {}),
         ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
         ...(dto.doFileId !== undefined ? { doFileId: dto.doFileId } : {}),
       },
@@ -389,6 +406,21 @@ export class PosService {
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
       },
     });
+
+    // Sinkronisasi status pengiriman ke Purchase Request terkait
+    if (shipmentStatus === "DIKIRIM" && row.requestId) {
+      await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: row.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
+        data: { status: "DIKIRIM" },
+      }).catch(() => {});
+      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+    } else if (shipmentStatus === "SAMPAI" && row.requestId) {
+      await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: row.requestId, status: { notIn: ["DIBATALKAN"] } },
+        data: { status: "DITERIMA" },
+      }).catch(() => {});
+      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+    }
     if (dto.doFileId) {
       await this.prisma.main.receiving
         .updateMany({
@@ -417,15 +449,32 @@ export class PosService {
   async setStatus(id: number, status: string, user: RequestUser) {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
-    const shipmentStatuses = ["BELUM_DIKIRIM", "DIKIRIM", "DALAM_PERJALANAN", "SAMPAI"];
-    const data = shipmentStatuses.includes(status)
-      ? { shipmentStatus: status as never, ...(status === "SAMPAI" ? { arrivedAt: new Date() } : {}) }
+    const shipmentStatuses = ["BELUM_DIKIRIM", "DIKIRIM", "DALAM_PERJALANAN", "SAMPAI", "DI_SUPPLIER"];
+    const isShipment = shipmentStatuses.includes(status);
+    const effShipment = status === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : status === "DALAM_PERJALANAN" ? "DIKIRIM" : status;
+    const data = isShipment
+      ? { shipmentStatus: effShipment as never, ...(effShipment === "SAMPAI" ? { arrivedAt: new Date() } : {}) }
       : { status: status as never };
     const updated = await this.prisma.main.supplierPO.update({
       where: { id },
       data,
       include: { supplier: { select: { id: true, name: true } } },
     });
+
+    if (isShipment && effShipment === "DIKIRIM" && row.requestId) {
+      await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: row.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
+        data: { status: "DIKIRIM" },
+      }).catch(() => {});
+      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+    } else if (isShipment && effShipment === "SAMPAI" && row.requestId) {
+      await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: row.requestId, status: { notIn: ["DIBATALKAN"] } },
+        data: { status: "DITERIMA" },
+      }).catch(() => {});
+      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+    }
+
     this.notifications.dataChange("supplier-pos", "status", updated.id);
     return updated;
   }
@@ -441,12 +490,19 @@ export class PosService {
       }).catch(() => {});
     }
 
+    const rawShipment = String(dto.shipmentStatus);
+    const effShipment: "DI_SUPPLIER" | "DIKIRIM" | "SAMPAI" =
+      rawShipment === "BELUM_DIKIRIM"
+        ? "DI_SUPPLIER"
+        : rawShipment === "DALAM_PERJALANAN"
+        ? "DIKIRIM"
+        : dto.shipmentStatus;
     const updated = await this.prisma.main.supplierPO.update({
       where: { id },
       data: {
-        shipmentStatus: dto.shipmentStatus,
+        shipmentStatus: effShipment as never,
         ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
-        ...(dto.shipmentStatus === "SAMPAI" ? { arrivedAt: new Date() } : {}),
+        ...(effShipment === "SAMPAI" ? { arrivedAt: new Date() } : {}),
       },
       include: { supplier: { select: { id: true, name: true } } },
     });
@@ -465,6 +521,21 @@ export class PosService {
         href: `/procurement/po/${id}`,
       });
     }
+
+    if (effShipment === "DIKIRIM" && row.requestId) {
+      await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: row.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
+        data: { status: "DIKIRIM" },
+      }).catch(() => {});
+      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+    } else if (effShipment === "SAMPAI" && row.requestId) {
+      await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: row.requestId, status: { notIn: ["DIBATALKAN"] } },
+        data: { status: "DITERIMA" },
+      }).catch(() => {});
+      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+    }
+
     this.notifications.dataChange("supplier-pos", "status", updated.id);
     return updated;
   }

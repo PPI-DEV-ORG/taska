@@ -17,7 +17,7 @@ import { Line } from "@/modules/shared/line";
 
 export function ReceivingExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { data, addRow, patchRow, toast } = useApp();
+  const { data, addRow, patchRow, setStatus, toast } = useApp();
   const [issueOpen, setIssueOpen] = React.useState(false);
   const [issueType, setIssueType] = React.useState<"Rusak Fisik" | "Cacat Fungsi" | "Salah Tipe" | "Kurang Kuantitas">("Rusak Fisik");
   const [issueItem, setIssueItem] = React.useState<string>(row.item ? (String(row.item).split(",")[0] ?? "") : "");
@@ -177,13 +177,20 @@ export function ReceivingExtras({ row }: { row: Row }) {
         }).catch(() => {});
       }
 
-      // Update Supplier PO jika ada relasi
-      if (row.supplierPoId && String(row.supplierPoId) !== "-") {
-        await patchRow("supplier-pos", String(row.supplierPoId), {
-          status: "Sampai",
+      // Update Supplier PO jika ada relasi langsung atau via Request
+      const targetPoId =
+        row.supplierPoId && String(row.supplierPoId) !== "-"
+          ? String(row.supplierPoId)
+          : effReqId
+          ? (data["supplier-pos"] ?? []).find((p: Row) => String(p.requestId) === String(effReqId))?.id
+          : undefined;
+
+      if (targetPoId) {
+        await patchRow("supplier-pos", String(targetPoId), {
           pengiriman: "Sampai",
           ...(effectiveFileId ? { doFileId: effectiveFileId } : {}),
         }).catch(() => {});
+        await setStatus("supplier-pos", String(targetPoId), "Sampai").catch(() => {});
       }
 
       setProcessOpen(false);

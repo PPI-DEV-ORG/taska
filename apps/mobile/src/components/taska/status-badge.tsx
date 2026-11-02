@@ -19,6 +19,7 @@ add("warning", Clock, [
   "Dibayar sebagian", "Diterima sebagian", "Pending", "PENDING", "Diminta", "Belum dikirim", "Belum lunas", "Dijadwalkan",
   "Di Supplier", "TODO", "Diproses", "Revisi", "Prospecting", "Ditunda", "Reserved", "Menunggu Bos", "Planned",
   "UNPAID", "unpaid", "PARTIAL", "partial",
+  "Diterima (Belum Lunas)", "Sampai (Belum Lunas)", "Belum Dibayar", "Menunggu Pembayaran",
   "Pending Evaluation", "On Hold", "Partial Success",
 ]);
 add("danger", AlertTriangle, ["Terlambat", "Kedaluwarsa", "Rusak", "Kurang", "Salah barang", "BLOCKED", "OVERDUE", "overdue"]);

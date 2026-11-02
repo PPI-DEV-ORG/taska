@@ -156,7 +156,14 @@ REVERSE["supplier-pos"] = {
   "Dalam Perjalanan": "DIKIRIM",
   "Dikirim": "DIKIRIM",
   "Sampai": "SAMPAI",
+  "Sampai (Belum Lunas)": "SAMPAI",
   "Belum Dikirim": "DI_SUPPLIER",
+};
+REVERSE["purchase-requests"] = {
+  ...REVERSE["purchase-requests"],
+  "Diterima (Belum Lunas)": "DITERIMA",
+  "Lunas": "DIBAYAR",
+  "Selesai": "DITERIMA",
 };
 REVERSE["delivery-notes"] = {
   ...REVERSE["delivery-notes"],
@@ -726,6 +733,28 @@ export function adaptRow(module: string, raw: any): Row {
       const prSource = String(raw.procurementSource || "SUPPLIER").toUpperCase();
       const prPay = String(raw.paymentMethod || "UTANG").toUpperCase();
       const isProj = raw.costType === "PROJECT" || !!(raw.projectId || raw.project);
+      const isInternalStock = prSource === "GUDANG";
+      const isDebt = !isInternalStock && prPay !== "KAS";
+      const isPaid =
+        raw.status === "DIBAYAR" ||
+        raw.paymentStatus === "DIBAYAR" ||
+        !!raw.paymentProofFileId ||
+        !!raw.paymentProofFile ||
+        (raw.otherNote as string)?.includes("[DIBAYAR");
+
+      const displayStatus = (() => {
+        if (raw.status === "DITERIMA") {
+          if (isDebt) {
+            return isPaid ? "Lunas" : "Diterima (Belum Lunas)";
+          }
+          return "Diterima";
+        }
+        if (raw.status === "DIBAYAR") {
+          return isDebt ? "Lunas" : "Dibayar";
+        }
+        return toLabel("purchase-requests", raw.status);
+      })();
+
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -735,7 +764,7 @@ export function adaptRow(module: string, raw: any): Row {
         costType: raw.costType ?? (isProj ? "PROJECT" : "STOK"),
         jenisBiaya: toLabel("costType", raw.costType),
         procurementSource: prSource,
-        sumberPengadaan: prSource === "RETAIL" ? "Beli Ritel / Toko" : "Supplier / PO",
+        sumberPengadaan: prSource === "RETAIL" ? "Beli Ritel / Toko" : prSource === "GUDANG" ? "Ambil Stok Gudang" : "Supplier / PO",
         paymentMethod: prPay,
         metodePembayaran: prPay === "KAS" ? "Kas / Tunai" : "Utang / Tempo",
         alokasiAkuntansi: isProj ? "5101 — HPP Project" : "1200 — Aset Persediaan Barang",
@@ -750,7 +779,7 @@ export function adaptRow(module: string, raw: any): Row {
           .join(", ") || raw.purpose || "-",
         estimasi: n(raw.estimatedCost),
         rawStatus: raw.status,
-        status: toLabel("purchase-requests", raw.status),
+        status: displayStatus,
         tujuan: raw.purpose ?? "",
         supplier: nameOf(raw.supplier) || "-",
         supplierId: idOf(raw.supplier),
@@ -760,8 +789,8 @@ export function adaptRow(module: string, raw: any): Row {
         paymentProofFileId: raw.paymentProofFileId ?? (raw.paymentProofFile?.id ?? null),
         paymentProofFile: raw.paymentProofFile ?? null,
         fundingSource: raw.fundingSource || (raw.otherNote?.match(/\[DIBAYAR:([^\]]+)\]/)?.[1] ?? null),
-        paymentStatus: raw.paymentStatus || (raw.status === "DIBAYAR" || raw.status === "DIKIRIM" || raw.status === "DITERIMA" ? "DIBAYAR" : "BELUM_DIBAYAR"),
-        isPaid: raw.status === "DIBAYAR" || raw.status === "DIKIRIM" || raw.status === "DITERIMA" || raw.paymentStatus === "DIBAYAR" || !!raw.paymentProofFileId || !!raw.paymentProofFile,
+        paymentStatus: isPaid ? "DIBAYAR" : "BELUM_DIBAYAR",
+        isPaid,
         rejectReason: raw.rejectReason,
         items: Array.isArray(raw.items) ? raw.items : [],
         stock: Array.isArray(raw.stock) ? raw.stock : [],
@@ -798,7 +827,9 @@ export function adaptRow(module: string, raw: any): Row {
           ? "Menunggu persetujuan"
           : raw.status === "DITOLAK" || raw.status === "DIBATALKAN"
             ? toLabel("supplier-pos", raw.status)
-            : toLabel("supplier-pos", raw.shipmentStatus),
+            : raw.shipmentStatus === "SAMPAI" && effPayMethod !== "KAS" && !raw.isPaid
+              ? "Sampai (Belum Lunas)"
+              : toLabel("supplier-pos", raw.shipmentStatus),
         item: displayItem,
         itemsSummary: itemSummary || displayItem,
         items: rawItems,
@@ -2545,10 +2576,20 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.items !== undefined) out.items = patch.items;
   } else if (module === "supplier-pos") {
     if (patch.nomorSoSupplier !== undefined) out.supplierSoNumber = patch.nomorSoSupplier;
-    if (patch.status !== undefined) out.status = toEnum("supplier-pos", patch.status) || patch.status;
+    const poStatusList = ["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"];
+    const shipStatusList = ["DI_SUPPLIER", "DIKIRIM", "SAMPAI", "BELUM_DIKIRIM", "DALAM_PERJALANAN"];
+    if (patch.status !== undefined) {
+      const mapped = toEnum("supplier-pos", patch.status) || patch.status;
+      if (poStatusList.includes(mapped)) {
+        out.status = mapped;
+      } else if (shipStatusList.includes(mapped)) {
+        out.shipmentStatus = mapped === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : mapped === "DALAM_PERJALANAN" ? "DIKIRIM" : mapped;
+      }
+    }
     if (patch.pengiriman !== undefined || patch.shipmentStatus !== undefined) {
       const shipVal = patch.pengiriman ?? patch.shipmentStatus;
-      out.shipmentStatus = toEnum("supplier-pos", shipVal) || shipVal;
+      const mappedShip = toEnum("supplier-pos", shipVal) || shipVal;
+      out.shipmentStatus = mappedShip === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : mappedShip === "DALAM_PERJALANAN" ? "DIKIRIM" : mappedShip;
     }
   } else if (module === "invoices") {
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
