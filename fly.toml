@@ -1,0 +1,27 @@
+# fly.toml app configuration file
+app = "taska-api"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Pre-deploy command: otomatis sinkronkan schema db sebelum instance baru start
+  release_command = "pnpm --filter api exec prisma db push"
+
+[env]
+  PORT = "3000"
+  UPLOAD_DIR = "/app/apps/api/uploads"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
