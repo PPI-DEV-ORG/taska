@@ -172,7 +172,7 @@ export const PERMISSIONS: Record<string, Table> = {
     requests: "LCU",
     procurement: "LCUA",
     receiving: "LCUA",
-    stock: "LCUD",
+    stock: "LCUDA",
     delivery: "LCUA",
     expenses: "LCU",
     pocReports: "LCU",

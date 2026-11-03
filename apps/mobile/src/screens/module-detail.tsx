@@ -103,18 +103,6 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [quickCustomerKey, setQuickCustomerKey] = React.useState<string | null>(null);
   const [quickSupplierKey, setQuickSupplierKey] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
-    if (approveExpenseOpen) {
-      if (row?.paymentMethod && /bank/i.test(String(row.paymentMethod))) {
-        setExpenseFundSource("Bank");
-      } else if (row?.paymentMethod && /kas/i.test(String(row.paymentMethod))) {
-        setExpenseFundSource("Kas Kecil");
-      } else {
-        setExpenseFundSource("Kas Kecil");
-      }
-    }
-  }, [approveExpenseOpen, row?.paymentMethod]);
-
   const editableFields: CreateField[] = React.useMemo(() => {
     if (!def) return [];
     let raw = def.createFields?.length
@@ -462,6 +450,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     approval.canApprove !== false &&
     (moduleKey !== "opname" ||
       user?.role === "procurement" ||
+      user?.role === "finance" ||
+      user?.role === "bos" ||
       user?.role === "super_admin" ||
       user?.role === "admin");
   const isExpenseFinanceActionable = moduleKey === "expenses" && isFinanceOrBos && status !== "Ditolak" && status !== "Dibayar";
@@ -833,7 +823,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 <Button variant="outline" onPress={() => setRejectExpenseOpen(true)}>
                   <Text className="text-danger font-medium">Tolak</Text>
                 </Button>
-                <Button onPress={() => setApproveExpenseOpen(true)}>
+                <Button
+                  onPress={() => {
+                    setExpenseFundSource(
+                      row?.paymentMethod && /bank/i.test(String(row.paymentMethod)) ? "Bank" : "Kas Kecil"
+                    );
+                    setApproveExpenseOpen(true);
+                  }}
+                >
                   <Check size={15} color={colors.background} className="mr-1.5" />
                   <Text>Setujui & Bayar</Text>
                 </Button>
@@ -848,6 +845,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 ? `${approval!.nilai} SKU selisih`
                 : moduleKey === "surveys"
                 ? "Persetujuan Permintaan Survey"
+                : moduleKey === "delivery-notes"
+                ? "Persetujuan Surat Jalan"
                 : undefined
             }
             financeOk={(approval as any).financeOk}
@@ -1240,7 +1239,17 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         onConfirm={(r) => pending && setStatus(moduleKey, id, pending, r)}
       />
 
-      <Dialog open={approveExpenseOpen} onOpenChange={setApproveExpenseOpen}>
+      <Dialog
+        open={approveExpenseOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setExpenseFundSource(
+              row?.paymentMethod && /bank/i.test(String(row.paymentMethod)) ? "Bank" : "Kas Kecil"
+            );
+          }
+          setApproveExpenseOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Setujui & Bayar Reimbursement</DialogTitle>
