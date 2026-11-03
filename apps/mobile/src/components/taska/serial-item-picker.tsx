@@ -340,18 +340,58 @@ export function SerialItemPickerModal({
     const newSelected = new Set(selectedSerialIds);
 
     for (const token of tokens) {
-      const match = productSerials.find(
+      let match = productSerials.find(
         (s) => String(s.sn || "").trim().toUpperCase() === token
       );
 
       if (!match) {
         const anyMatch = serials.find((s) => String(s.sn || "").trim().toUpperCase() === token);
         if (anyMatch) {
-          notFoundTokens.push(`${token} (milik ${anyMatch.produk || anyMatch.sku || "produk lain"})`);
+          if (!selectedProductId || selectedProductId !== String(anyMatch.productId)) {
+            setSelectedProductId(String(anyMatch.productId));
+            const prod = products.find((p) => Number(p.id) === Number(anyMatch.productId));
+            if (prod) {
+              setCustomItemLabel(prod.nama);
+              setGoodsUnit(prod.satuan || "Unit");
+              setGoodsPrice(String(prod.hargaJual || prod.harga || ""));
+            }
+          }
+          match = anyMatch;
         } else {
-          notFoundTokens.push(token);
+          const prodMatch = products.find(
+            (p) =>
+              String(p.sku || "").trim().toUpperCase() === token ||
+              String(p.kode || "").trim().toUpperCase() === token
+          );
+          if (prodMatch) {
+            setSelectedProductId(String(prodMatch.id));
+            setCustomItemLabel(prodMatch.nama);
+            setGoodsUnit(prodMatch.satuan || "Unit");
+            setGoodsPrice(String(prodMatch.hargaJual || prodMatch.harga || ""));
+            if (prodMatch.berSN) {
+              const avail = serials.find(
+                (s) =>
+                  String(s.productId) === String(prodMatch.id) &&
+                  !existingSns.has(String(s.sn).trim().toUpperCase()) &&
+                  !newSelected.has(Number(s.id)) &&
+                  (s.rawStatus === "DI_GUDANG" || s.rawStatus === "RESERVED" || s.status === "Di gudang" || s.status === "Reserved")
+              );
+              if (avail) {
+                match = avail;
+              } else {
+                unavailableTokens.push(`${token} (Semua SN Di Gudang sudah terpakai)`);
+                continue;
+              }
+            } else {
+              setGoodsQty((prev) => String((Number(prev) || 1) + 1));
+              addedCount++;
+              continue;
+            }
+          } else {
+            notFoundTokens.push(token);
+            continue;
+          }
         }
-        continue;
       }
 
       const matchId = Number(match.id);
@@ -710,6 +750,91 @@ export function SerialItemPickerModal({
               </View>
             ) : (
               <View className="gap-3.5">
+                {/* Scanner Barcode Langsung (Tanpa perlu pilih produk dahulu) */}
+                <View className="p-3 rounded-xl border border-primary/40 bg-primary/5 gap-2.5">
+                  <View className="flex-row items-center justify-between flex-wrap gap-2">
+                    <View className="flex-row items-center gap-1.5">
+                      <ScanLine size={16} color={colors.primary} />
+                      <Text className="text-xs font-bold text-primary">
+                        Scan Barcode / SN Langsung (Auto-Pilih Produk)
+                      </Text>
+                    </View>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2.5 flex-row items-center gap-1 bg-background"
+                      onPress={() => setMultiScanModalOpen(true)}
+                    >
+                      <ClipboardList size={12} color={colors.text} />
+                      <Text className="text-[11px] font-medium">📋 Paste / Multi-Scan Banyak SN</Text>
+                    </Button>
+                  </View>
+
+                  <View className="flex-row items-center gap-2">
+                    <View className="flex-1 bg-background border border-border focus:border-primary rounded-lg flex-row items-center px-2.5 h-10">
+                      <ScanLine size={15} color={colors.muted} style={{ marginRight: 6 }} />
+                      <TextInput
+                        ref={scanInputRef}
+                        value={scanInput}
+                        onChangeText={setScanInput}
+                        onSubmitEditing={() => processScannedText(scanInput)}
+                        placeholder="Scan barcode SN / ketik SN langsung lalu Enter..."
+                        placeholderTextColor={colors.muted}
+                        autoCapitalize="characters"
+                        autoCorrect={false}
+                        returnKeyType="done"
+                        blurOnSubmit={false}
+                        style={{ flex: 1, color: colors.text, fontSize: 13, outlineStyle: "none" } as any}
+                      />
+                      {scanInput.trim().length > 0 && (
+                        <Pressable onPress={() => setScanInput("")} hitSlop={8} className="p-1">
+                          <Text className="text-xs text-muted-foreground font-bold">✕</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                    <Button
+                      size="sm"
+                      className="h-10 px-3.5 bg-primary"
+                      disabled={!scanInput.trim()}
+                      onPress={() => processScannedText(scanInput)}
+                    >
+                      <Text className="text-xs text-white font-semibold">Scan / Select</Text>
+                    </Button>
+                  </View>
+
+                  {scanFeedback && (
+                    <View
+                      className={`flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${
+                        scanFeedback.type === "success"
+                          ? "bg-emerald-500/10 border-emerald-500/30"
+                          : scanFeedback.type === "warning"
+                          ? "bg-amber-500/10 border-amber-500/30"
+                          : "bg-danger/10 border-danger/30"
+                      }`}
+                    >
+                      {scanFeedback.type === "success" ? (
+                        <CheckCircle2 size={13} color={colors.success} />
+                      ) : (
+                        <AlertCircle size={13} color={scanFeedback.type === "warning" ? colors.warning : colors.danger} />
+                      )}
+                      <Text
+                        className={`text-xs flex-1 ${
+                          scanFeedback.type === "success"
+                            ? "text-emerald-700 dark:text-emerald-300 font-medium"
+                            : scanFeedback.type === "warning"
+                            ? "text-amber-700 dark:text-amber-300 font-medium"
+                            : "text-danger font-medium"
+                        }`}
+                      >
+                        {scanFeedback.message}
+                      </Text>
+                      <Pressable onPress={() => setScanFeedback(null)} hitSlop={6}>
+                        <Text className="text-[11px] text-muted-foreground font-bold">✕</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+
                 <FormField label="Pilih Produk dari Master Stok" required>
                   <SearchableSelect
                     value={selectedProduct ? `${selectedProduct.nama} (${selectedProduct.sku})` : ""}
@@ -854,91 +979,6 @@ export function SerialItemPickerModal({
                               </Text>
                             </Pressable>
                           </View>
-                        </View>
-
-                        {/* Scanner Barcode & Multi-Scan Input Box */}
-                        <View className="p-3 rounded-xl border border-primary/40 bg-primary/5 gap-2.5">
-                          <View className="flex-row items-center justify-between flex-wrap gap-2">
-                            <View className="flex-row items-center gap-1.5">
-                              <ScanLine size={16} color={colors.primary} />
-                              <Text className="text-xs font-bold text-primary">
-                                Scanner Barcode / Multi-Scan SN Gudang
-                              </Text>
-                            </View>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2.5 flex-row items-center gap-1 bg-background"
-                              onPress={() => setMultiScanModalOpen(true)}
-                            >
-                              <ClipboardList size={12} color={colors.text} />
-                              <Text className="text-[11px] font-medium">📋 Paste / Multi-Scan Banyak SN</Text>
-                            </Button>
-                          </View>
-
-                          <View className="flex-row items-center gap-2">
-                            <View className="flex-1 bg-background border border-border focus:border-primary rounded-lg flex-row items-center px-2.5 h-10">
-                              <ScanLine size={15} color={colors.muted} style={{ marginRight: 6 }} />
-                              <TextInput
-                                ref={scanInputRef}
-                                value={scanInput}
-                                onChangeText={setScanInput}
-                                onSubmitEditing={() => processScannedText(scanInput)}
-                                placeholder="Arahkan scanner barcode / ketik SN lalu Enter..."
-                                placeholderTextColor={colors.muted}
-                                autoCapitalize="characters"
-                                autoCorrect={false}
-                                returnKeyType="done"
-                                blurOnSubmit={false}
-                                style={{ flex: 1, color: colors.text, fontSize: 13, outlineStyle: "none" } as any}
-                              />
-                              {scanInput.trim().length > 0 && (
-                                <Pressable onPress={() => setScanInput("")} hitSlop={8} className="p-1">
-                                  <Text className="text-xs text-muted-foreground font-bold">✕</Text>
-                                </Pressable>
-                              )}
-                            </View>
-                            <Button
-                              size="sm"
-                              className="h-10 px-3.5 bg-primary"
-                              disabled={!scanInput.trim()}
-                              onPress={() => processScannedText(scanInput)}
-                            >
-                              <Text className="text-xs text-white font-semibold">Scan / Select</Text>
-                            </Button>
-                          </View>
-
-                          {scanFeedback && (
-                            <View
-                              className={`flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${
-                                scanFeedback.type === "success"
-                                  ? "bg-emerald-500/10 border-emerald-500/30"
-                                  : scanFeedback.type === "warning"
-                                  ? "bg-amber-500/10 border-amber-500/30"
-                                  : "bg-danger/10 border-danger/30"
-                              }`}
-                            >
-                              {scanFeedback.type === "success" ? (
-                                <CheckCircle2 size={13} color={colors.success} />
-                              ) : (
-                                <AlertCircle size={13} color={scanFeedback.type === "warning" ? colors.warning : colors.danger} />
-                              )}
-                              <Text
-                                className={`text-xs flex-1 ${
-                                  scanFeedback.type === "success"
-                                    ? "text-emerald-700 dark:text-emerald-300 font-medium"
-                                    : scanFeedback.type === "warning"
-                                    ? "text-amber-700 dark:text-amber-300 font-medium"
-                                    : "text-danger font-medium"
-                                }`}
-                              >
-                                {scanFeedback.message}
-                              </Text>
-                              <Pressable onPress={() => setScanFeedback(null)} hitSlop={6}>
-                                <Text className="text-[11px] text-muted-foreground font-bold">✕</Text>
-                              </Pressable>
-                            </View>
-                          )}
                         </View>
 
                         <View className="flex-row items-end gap-2 flex-wrap">
