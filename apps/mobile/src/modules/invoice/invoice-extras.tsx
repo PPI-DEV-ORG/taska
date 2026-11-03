@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Linking, Pressable } from "react-native";
-import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown, Printer, RotateCcw, Trash2 } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown, Printer, RotateCcw, Trash2, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,8 @@ export function InvoiceExtras({
   const [isSavingRetur, setIsSavingRetur] = React.useState(false);
 
   const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [showAllItems, setShowAllItems] = React.useState(false);
+  const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
   const items: QuotationItem[] = Array.isArray(row.items) ? row.items : [];
 
   async function handleAddItems(newItems: QuotationItem[]) {
@@ -112,6 +114,31 @@ export function InvoiceExtras({
     });
     await reload();
     toast("Barang berhasil dihapus dari invoice");
+  }
+
+  async function handleDeleteSelectedItems() {
+    if (selectedItemIndices.length === 0) return;
+    const count = selectedItemIndices.length;
+    const updated = items.filter((_, i) => !selectedItemIndices.includes(i));
+    const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
+    const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
+    const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
+    const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
+    const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
+    const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
+    const total = Math.max(0, (isInclude ? newAmount : dpp + ppn) - pph);
+
+    await patchRow("invoices", row.id, {
+      items: updated,
+      nilai: dpp,
+      amount: dpp,
+      ppn,
+      pph,
+      total,
+    });
+    setSelectedItemIndices([]);
+    await reload();
+    toast(`${count} barang berhasil dihapus dari invoice`);
   }
 
   async function handleUpdateItemPph(idx: number, newPphMode: PphMode) {
@@ -405,8 +432,56 @@ export function InvoiceExtras({
 
         {items.length > 0 ? (
           <View className="gap-2 pt-1">
+            {selectedItemIndices.length > 0 && (
+              <View className="flex-row items-center justify-between p-2.5 bg-danger/10 border border-danger/30 rounded-lg">
+                <Text className="text-xs font-semibold text-danger">
+                  {selectedItemIndices.length} barang dipilih
+                </Text>
+                <View className="flex-row items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onPress={() => setSelectedItemIndices([])}
+                  >
+                    <Text className="text-xs text-muted-foreground">Batal</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 px-2.5 bg-danger flex-row items-center gap-1"
+                    onPress={handleDeleteSelectedItems}
+                  >
+                    <Trash2 size={12} color="#fff" />
+                    <Text className="text-xs text-white font-semibold">Hapus Terpilih ({selectedItemIndices.length})</Text>
+                  </Button>
+                </View>
+              </View>
+            )}
             <View className="border border-border/80 rounded-xl overflow-hidden bg-card">
-              <View className="flex-row bg-muted/60 p-2.5 border-b border-border/70">
+              <View className="flex-row items-center bg-muted/60 p-2.5 border-b border-border/70">
+                <Pressable
+                  onPress={() => {
+                    if (selectedItemIndices.length === items.length) {
+                      setSelectedItemIndices([]);
+                    } else {
+                      setSelectedItemIndices(items.map((_, i) => i));
+                    }
+                  }}
+                  hitSlop={6}
+                  className="mr-2"
+                >
+                  <View
+                    className={`w-4 h-4 rounded border items-center justify-center ${
+                      selectedItemIndices.length === items.length && items.length > 0
+                        ? "bg-primary border-primary"
+                        : "border-border/80 bg-background"
+                    }`}
+                  >
+                    {selectedItemIndices.length === items.length && items.length > 0 && (
+                      <Check size={11} color="#ffffff" />
+                    )}
+                  </View>
+                </Pressable>
                 <Text className="text-[11px] font-bold text-muted-foreground w-8">No</Text>
                 <Text className="text-[11px] font-bold text-muted-foreground flex-1">Nama Barang / SKU</Text>
                 <Text className="text-[11px] font-bold text-muted-foreground w-16 text-center">Qty</Text>
@@ -414,17 +489,35 @@ export function InvoiceExtras({
                 <Text className="text-[11px] font-bold text-muted-foreground w-28 text-right">Subtotal (Rp)</Text>
                 <Text className="text-[11px] font-bold text-muted-foreground w-12 text-center">Aksi</Text>
               </View>
-              {items.map((it, idx) => {
+              {(showAllItems ? items : items.slice(0, 10)).map((it, idx) => {
                 const itemPrice = Number(it.harga ?? it.price ?? 0);
                 const sub = (Number(it.qty) || 1) * itemPrice;
                 const snText = Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0
                   ? it.serialNumbers.join(", ")
                   : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
+                const isSelected = selectedItemIndices.includes(idx);
 
                 const itemPph = calcItemPph(it);
                 return (
-                  <View key={it.id || idx} className="p-2.5 border-b border-border/40 last:border-b-0 gap-1.5">
+                  <View key={it.id || idx} className={`p-2.5 border-b border-border/40 last:border-b-0 gap-1.5 ${isSelected ? "bg-primary/10" : ""}`}>
                     <View className="flex-row items-center">
+                      <Pressable
+                        onPress={() => {
+                          setSelectedItemIndices((prev) =>
+                            prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+                          );
+                        }}
+                        hitSlop={6}
+                        className="mr-2"
+                      >
+                        <View
+                          className={`w-4 h-4 rounded border items-center justify-center ${
+                            isSelected ? "bg-primary border-primary" : "border-border/80 bg-background"
+                          }`}
+                        >
+                          {isSelected && <Check size={11} color="#ffffff" />}
+                        </View>
+                      </Pressable>
                       <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
                       <View className="flex-1 mr-2">
                         <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
@@ -470,6 +563,20 @@ export function InvoiceExtras({
                   </View>
                 );
               })}
+              {items.length > 10 && (
+                <View className="p-2 border-t border-border/60 bg-muted/20 items-center">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-3 flex-row items-center gap-1.5"
+                    onPress={() => setShowAllItems((v) => !v)}
+                  >
+                    <Text className="text-xs font-semibold text-primary">
+                      {showAllItems ? "Sembunyikan" : `Lihat Semua (${items.length} item)`}
+                    </Text>
+                  </Button>
+                </View>
+              )}
             </View>
           </View>
         ) : (

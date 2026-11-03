@@ -20,6 +20,8 @@ import { printOrderDocument } from "@/lib/order-print";
 
 export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promise<void> | void }) {
   const { user, data, setStatus, patchRow, toast } = useApp();
+  const [showAllItems, setShowAllItems] = React.useState(false);
+  const [imgError, setImgError] = React.useState(false);
   const [handoverOpen, setHandoverOpen] = React.useState(false);
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
@@ -140,7 +142,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
               <Printer size={13} color={colors.text} />
               <Text className="text-xs">Buat / Cetak PDF DO</Text>
             </Button>
-            {(user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang") && !isDelivered ? (
+            {(user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang" || user?.role === "finance" || user?.role === "procurement") && !isDelivered ? (
               <>
                 {hasGoods && row.status !== "Dikirim" && row.status !== "DIKIRIM" && (
                   <Button
@@ -194,10 +196,24 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
           <View className="gap-3">
             {Array.isArray(row.items) && row.items.length > 0 ? (
               <View className="gap-2">
-                <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Daftar Barang Surat Jalan ({row.items.length} item)
-                </Text>
-                {row.items.map((it: any, idx: number) => {
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Daftar Barang Surat Jalan ({row.items.length} item)
+                  </Text>
+                  {row.items.length > 10 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2"
+                      onPress={() => setShowAllItems((v) => !v)}
+                    >
+                      <Text className="text-xs text-primary font-medium">
+                        {showAllItems ? "Sembunyikan" : `Lihat Semua (${row.items.length})`}
+                      </Text>
+                    </Button>
+                  )}
+                </View>
+                {(showAllItems ? row.items : row.items.slice(0, 10)).map((it: any, idx: number) => {
                   const prod = it.product;
                   return (
                     <View
@@ -227,12 +243,24 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
                     </View>
                   );
                 })}
+                {!showAllItems && row.items.length > 10 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-1 h-8"
+                    onPress={() => setShowAllItems(true)}
+                  >
+                    <Text className="text-xs font-medium">
+                      Lihat Semua ({row.items.length} barang)
+                    </Text>
+                  </Button>
+                )}
               </View>
             ) : (
               <Line left={row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional"} sub="Barang ber-SN wajib di-scan sebelum berangkat" />
             )}
 
-            {(user?.role === "super_admin" || user?.role === "gudang" || user?.role === "bos") && !isDelivered ? (
+            {(user?.role === "super_admin" || user?.role === "gudang" || user?.role === "bos" || user?.role === "finance" || user?.role === "procurement") && !isDelivered ? (
               <View className="mt-2 pt-2 border-t border-border/50 gap-2">
                 <Text className="text-xs font-semibold text-foreground">Pemindaian Serial Number (Khusus Barang ber-SN):</Text>
                 <ScanInput
@@ -251,7 +279,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         title="Laporan Hasil Kunjungan & Serah Terima Lapangan"
         subtitle="Dokumentasi penerimaan barang di lokasi klien beserta tanda tangan atau foto bukti."
         right={
-          !isDelivered && (user!.role === "super_admin" || user!.role === "teknisi" || user!.role === "pm" || user!.role === "bos") ? (
+          !isDelivered && (user!.role === "super_admin" || user!.role === "teknisi" || user!.role === "pm" || user!.role === "bos" || user!.role === "finance" || user!.role === "procurement") ? (
             <Button size="sm" onPress={() => setHandoverOpen(true)} className="flex-row items-center gap-1">
               <CheckCircle2 size={14} color={colors.background} />
               <Text className="text-xs">Catat Tanda Terima</Text>
@@ -276,47 +304,87 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
               ) : null}
             </View>
 
-            {(row.scanFileId || row.fileId) ? (
-              <View className="mt-2 pt-2.5 border-t border-success/20 gap-1.5">
-                <Text className="text-[11px] text-muted-foreground font-medium">Foto Bukti Tanda Terima / Scan Surat Jalan:</Text>
-                <View className="rounded-xl border border-border bg-panel overflow-hidden max-w-sm">
-                  <Pressable onPress={() => setPreviewOpen(true)} className="relative group bg-muted/10 items-center justify-center">
-                    <Image
-                      source={{ uri: `${apiBase()}/files/${row.scanFileId || row.fileId}` }}
-                      style={{ width: "100%", height: 160 }}
-                      resizeMode="contain"
-                    />
-                    <View className="absolute inset-0 bg-black/0 hover:bg-black/10 items-center justify-center transition-colors">
-                      <View className="bg-black/60 rounded-full px-2.5 py-1 flex-row items-center gap-1 opacity-90">
-                        <Eye size={12} color="#ffffff" />
-                        <Text className="text-white text-[11px] font-medium">Klik perbesar</Text>
+            {(row.scanFileId || row.fileId) ? (() => {
+              const fileId = row.scanFileId || row.fileId;
+              const scanFile = (row as any).scanFile;
+              const mimeType = (row as any).scanFileMimeType || scanFile?.mimeType || "";
+              const originalName = (row as any).scanFileName || scanFile?.originalName || "";
+              const isPdf = mimeType === "application/pdf" || /\.pdf$/i.test(originalName);
+              const isImage = !imgError && (mimeType.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif)$/i.test(originalName) || (!isPdf && !mimeType));
+              const displayName = originalName || (isPdf ? `surat-jalan-${row.nomor || row.id}.pdf` : `bukti-tanda-terima-${row.id}.jpg`);
+              const fileUrl = `${apiBase()}/files/${fileId}`;
+
+              const handleOpenFile = () => {
+                if (typeof window !== "undefined") window.open(fileUrl, "_blank");
+                else Linking.openURL(fileUrl).catch(() => {});
+              };
+
+              return (
+                <View className="mt-2 pt-2.5 border-t border-success/20 gap-1.5">
+                  <Text className="text-[11px] text-muted-foreground font-medium">Dokumen Bukti Tanda Terima / Scan Surat Jalan:</Text>
+                  {isImage ? (
+                    <View className="rounded-xl border border-border bg-panel overflow-hidden max-w-sm">
+                      <Pressable onPress={() => setPreviewOpen(true)} className="relative group bg-muted/10 items-center justify-center">
+                        <Image
+                          source={{ uri: fileUrl }}
+                          style={{ width: "100%", height: 160 }}
+                          resizeMode="contain"
+                          onError={() => setImgError(true)}
+                        />
+                        <View className="absolute inset-0 bg-black/0 hover:bg-black/10 items-center justify-center transition-colors">
+                          <View className="bg-black/60 rounded-full px-2.5 py-1 flex-row items-center gap-1 opacity-90">
+                            <Eye size={12} color="#ffffff" />
+                            <Text className="text-white text-[11px] font-medium">Klik perbesar</Text>
+                          </View>
+                        </View>
+                      </Pressable>
+                      <View className="flex-row items-center justify-between px-3 py-1.5 border-t border-border bg-panel/90">
+                        <View className="flex-row items-center gap-1.5 flex-1 mr-2">
+                          <ImageIcon size={13} color={colors.primary} />
+                          <Text className="text-xs text-foreground truncate" numberOfLines={1}>
+                            {displayName}
+                          </Text>
+                        </View>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2"
+                          onPress={handleOpenFile}
+                        >
+                          <ExternalLink size={12} color={colors.textSecondary} className="mr-1" />
+                          <Text className="text-[11px] text-muted-foreground">Buka</Text>
+                        </Button>
                       </View>
                     </View>
-                  </Pressable>
-                  <View className="flex-row items-center justify-between px-3 py-1.5 border-t border-border bg-panel/90">
-                    <View className="flex-row items-center gap-1.5 flex-1 mr-2">
-                      <ImageIcon size={13} color={colors.primary} />
-                      <Text className="text-xs text-foreground truncate" numberOfLines={1}>
-                        bukti-tanda-terima-{row.id}.jpg
-                      </Text>
+                  ) : (
+                    <View className="flex-row items-center justify-between p-3 rounded-xl border border-border bg-panel max-w-md">
+                      <View className="flex-row items-center gap-3 flex-1 mr-3">
+                        <View className="w-9 h-9 rounded-lg bg-primary/10 items-center justify-center shrink-0">
+                          <FileText size={18} color={colors.primary} />
+                        </View>
+                        <View className="flex-1">
+                          <Text className="text-xs font-medium text-foreground truncate" numberOfLines={1}>
+                            {displayName}
+                          </Text>
+                          <Text className="text-[11px] text-muted-foreground mt-0.5">
+                            Dokumen PDF Surat Jalan
+                          </Text>
+                        </View>
+                      </View>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5"
+                        onPress={handleOpenFile}
+                      >
+                        <ExternalLink size={12} color={colors.textSecondary} className="mr-1" />
+                        <Text className="text-xs">Buka PDF</Text>
+                      </Button>
                     </View>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2"
-                      onPress={() => {
-                        const url = `${apiBase()}/files/${row.scanFileId || row.fileId}`;
-                        if (typeof window !== "undefined") window.open(url, "_blank");
-                        else Linking.openURL(url).catch(() => {});
-                      }}
-                    >
-                      <ExternalLink size={12} color={colors.textSecondary} className="mr-1" />
-                      <Text className="text-[11px] text-muted-foreground">Buka</Text>
-                    </Button>
-                  </View>
+                  )}
                 </View>
-              </View>
-            ) : null}
+              );
+            })() : null}
           </View>
         ) : (
           <View className="gap-2">
@@ -396,38 +464,57 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         </DialogContent>
       </Dialog>
 
-      {row.scanFileId || row.fileId ? (
-        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[92vh]">
-            <DialogHeader>
-              <DialogTitle>Foto Bukti Serah Terima Lapangan</DialogTitle>
-            </DialogHeader>
-            <View className="items-center justify-center bg-black/5 rounded-xl overflow-hidden p-1 my-2">
-              <Image
-                source={{ uri: `${apiBase()}/files/${row.scanFileId || row.fileId}` }}
-                style={{ width: "100%", height: 380 }}
-                resizeMode="contain"
-              />
-            </View>
-            <DialogFooter className="flex-row items-center justify-between gap-2">
-              <Text className="text-xs text-muted-foreground truncate flex-1" numberOfLines={1}>
-                bukti-tanda-terima-{row.id}.jpg
-              </Text>
-              <Button
-                size="sm"
-                onPress={() => {
-                  const url = `${apiBase()}/files/${row.scanFileId || row.fileId}`;
-                  if (typeof window !== "undefined") window.open(url, "_blank");
-                  else Linking.openURL(url).catch(() => {});
-                }}
-              >
-                <Download size={14} color={colors.background} className="mr-1.5" />
-                <Text>Unduh / Buka File</Text>
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      ) : null}
+      {row.scanFileId || row.fileId ? (() => {
+        const fileId = row.scanFileId || row.fileId;
+        const scanFile = (row as any).scanFile;
+        const mimeType = (row as any).scanFileMimeType || scanFile?.mimeType || "";
+        const originalName = (row as any).scanFileName || scanFile?.originalName || "";
+        const isPdf = mimeType === "application/pdf" || /\.pdf$/i.test(originalName);
+        const displayName = originalName || (isPdf ? `surat-jalan-${row.nomor || row.id}.pdf` : `bukti-tanda-terima-${row.id}.jpg`);
+        const fileUrl = `${apiBase()}/files/${fileId}`;
+
+        const handleOpenFile = () => {
+          if (typeof window !== "undefined") window.open(fileUrl, "_blank");
+          else Linking.openURL(fileUrl).catch(() => {});
+        };
+
+        return (
+          <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+            <DialogContent className="sm:max-w-2xl max-h-[92vh]">
+              <DialogHeader>
+                <DialogTitle>{isPdf ? "Dokumen Surat Jalan" : "Foto Bukti Serah Terima Lapangan"}</DialogTitle>
+              </DialogHeader>
+              <View className="items-center justify-center bg-black/5 rounded-xl overflow-hidden p-4 my-2">
+                {isPdf ? (
+                  <View className="items-center justify-center py-8 gap-3">
+                    <FileText size={48} color={colors.primary} />
+                    <Text className="text-sm font-semibold text-foreground text-center">{displayName}</Text>
+                    <Text className="text-xs text-muted-foreground text-center">Format dokumen: PDF</Text>
+                  </View>
+                ) : (
+                  <Image
+                    source={{ uri: fileUrl }}
+                    style={{ width: "100%", height: 380 }}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
+              <DialogFooter className="flex-row items-center justify-between gap-2">
+                <Text className="text-xs text-muted-foreground truncate flex-1" numberOfLines={1}>
+                  {displayName}
+                </Text>
+                <Button
+                  size="sm"
+                  onPress={handleOpenFile}
+                >
+                  <Download size={14} color={colors.background} className="mr-1.5" />
+                  <Text>{isPdf ? "Buka / Unduh PDF" : "Unduh / Buka File"}</Text>
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })() : null}
     </>
   );
 }

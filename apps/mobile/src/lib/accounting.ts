@@ -354,6 +354,39 @@ function resolveExpenseCoaCode(kategori: string, alasan: string): string {
   return "6202.07";
 }
 
+export function formatJournalDateTime(rawDate?: any, rawCreatedAt?: any): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  const candidate = rawCreatedAt || rawDate;
+  if (candidate) {
+    const d = new Date(candidate);
+    if (!isNaN(d.getTime())) {
+      const isDateOnly = typeof candidate === "string" && candidate.trim().length <= 10;
+      if (!isDateOnly) {
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+    }
+  }
+
+  if (rawDate && rawCreatedAt) {
+    const cd = new Date(rawCreatedAt);
+    if (!isNaN(cd.getTime())) {
+      const dateStr = String(rawDate).slice(0, 10);
+      return `${dateStr} ${pad(cd.getHours())}:${pad(cd.getMinutes())}`;
+    }
+  }
+
+  if (rawDate) {
+    const dateStr = String(rawDate).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return `${dateStr} 00:00`;
+    }
+    return String(rawDate);
+  }
+
+  return "2026-02-01 00:00";
+}
+
 export function computeFinancialStatements(
   data: Record<string, any[]>,
   manualJournals: ManualJournal[] = [],
@@ -422,7 +455,7 @@ export function computeFinancialStatements(
   // 1. Journal Entries from Client Invoices (Accrual + Cash Receipt)
   for (const inv of invoices) {
     const nomor = normStr(inv.nomor, `INV-${inv.id}`);
-    const tanggal = normStr(inv.tanggal, "2026-02-01");
+    const tanggal = formatJournalDateTime(inv.tanggal || inv.date, inv.createdAt);
     const customer = normStr(inv.customer, "Pelanggan");
     const project = normStr(inv.project, "-");
     const pph = toNum(inv.pph);
@@ -471,10 +504,21 @@ export function computeFinancialStatements(
     }
 
     if (terbayar > 0) {
+      const matchAcc =
+        String(inv.catatan || "").match(/\[AKUN:([^\]]+)\]/)?.[1] ||
+        (Array.isArray(inv._payments) && inv._payments[0]?.reference?.match(/\[(1000\.\d+)\]/)?.[1]);
+      const payMethodStr = String(inv._payments?.[0]?.method || (inv.catatan || "")).toUpperCase();
+      const targetKasCode = matchAcc
+        ? matchAcc
+        : payMethodStr.includes("TUNAI") || payMethodStr.includes("KAS")
+          ? "1000.01"
+          : "1000.02";
+      const targetKasLabel = activeCoa[targetKasCode]?.name || (targetKasCode === "1000.01" ? "Kas Kecil" : "Bank Mandiri PT GMP");
+
       pushJournalPair(tanggal, `${nomor}/PAY`, "Pembayaran Invoice", project, [
         {
-          kodeAkun: "1000.01",
-          keterangan: `Penerimaan Pembayaran Kas/Bank ${nomor} dari ${customer}`,
+          kodeAkun: targetKasCode,
+          keterangan: `Penerimaan Pembayaran (${targetKasLabel}) ${nomor} dari ${customer}`,
           debit: terbayar,
           kredit: 0,
         },
@@ -533,7 +577,7 @@ export function computeFinancialStatements(
 
   for (const po of supplierPos) {
     const nomor = normStr(po.nomor, `PO-${po.id}`);
-    const tanggal = normStr(po.tanggal, "2026-02-01");
+    const tanggal = formatJournalDateTime(po.tanggal || po.date, po.createdAt);
     const supplier = normStr(po.supplier, "Supplier");
     const poSuffix = normStr(po.nomor).replace(/^(?:POD|PO-S|PO)\//i, "");
     const linkedPr = purchaseRequests.find(
@@ -571,7 +615,7 @@ export function computeFinancialStatements(
       statusLower === "lunas" ||
       statusLower === "selesai" ||
       statusLower === "dibayar" ||
-      statusLower.includes("lunas") ||
+      (statusLower.includes("lunas") && !statusLower.includes("belum")) ||
       (linkedPr && (
         normStr(linkedPr.status).toLowerCase() === "lunas" ||
         normStr(linkedPr.status).toLowerCase() === "dibayar" ||
@@ -661,7 +705,7 @@ export function computeFinancialStatements(
     const isApprovedOrDone =
       ["disetujui", "dibayar", "dikirim", "diterima", "selesai", "lunas"].includes(stLower) ||
       stLower.includes("diterima") ||
-      stLower.includes("lunas") ||
+      (stLower.includes("lunas") && !stLower.includes("belum")) ||
       ["DISETUJUI", "DIBAYAR", "DIKIRIM", "DITERIMA"].includes(rawStUpper);
     if (!isApprovedOrDone) continue;
 
@@ -676,7 +720,7 @@ export function computeFinancialStatements(
     if (totalPr <= 0) continue;
 
     const nomorPr = normStr(pr.nomor, `PR-${pr.id}`);
-    const tanggalPr = normStr(pr.tanggal, "2026-02-01");
+    const tanggalPr = formatJournalDateTime(pr.tanggal || pr.date, pr.createdAt);
     const isProjectPr =
       String(pr.costType || "").toUpperCase() === "PROJECT" ||
       !!(pr.projectId || (pr.project && pr.project !== "-"));
@@ -719,7 +763,7 @@ export function computeFinancialStatements(
       !!pr.buktiPembayaran ||
       stLower === "dibayar" ||
       stLower === "lunas" ||
-      stLower.includes("lunas") ||
+      (stLower.includes("lunas") && !stLower.includes("belum")) ||
       (pr.otherNote as string)?.includes("[DIBAYAR");
 
     const prFundingCode =
@@ -812,7 +856,7 @@ export function computeFinancialStatements(
   // 3. Journal Entries from Operational Expenses (Accrual + Reimbursement Payout)
   for (const ex of expenses) {
     const refNo = `EXP-${String(ex.id).padStart(3, "0")}`;
-    const tanggal = normStr(ex.tanggal, "2026-02-01");
+    const tanggal = formatJournalDateTime(ex.tanggal || ex.date, ex.createdAt);
     const pelapor = normStr(ex.pelapor, "Staf");
     const kategori = normStr(ex.kategori, "Operasional");
     const project = normStr(ex.project, "Operasional Umum");
@@ -874,7 +918,7 @@ export function computeFinancialStatements(
   // 3b. Manual Journals (Entri Jurnal Penyesuaian Manual)
   for (const mj of manualJournals) {
     const jNo = mj.journalNo || `JM-${String(seq++).padStart(4, "0")}`;
-    const tanggal = normStr(mj.tanggal, "2026-02-01");
+    const tanggal = formatJournalDateTime(mj.tanggal, mj.createdAt);
     const refNo = normStr(mj.refNo, "-");
     const project = normStr(mj.project, "-");
 
@@ -905,7 +949,7 @@ export function computeFinancialStatements(
   );
   for (const p of payrollSlips) {
     const slipNo = normStr(p.nomor, `PAY-${p.period}-${p.userId || p.id}`);
-    const tanggal = normStr(p.paidAt ? String(p.paidAt).slice(0, 10) : p.tanggal, `${p.period}-28`);
+    const tanggal = formatJournalDateTime(p.paidAt ? String(p.paidAt) : p.tanggal, p.createdAt);
     const karyawan = normStr(p.userName || p.user?.name, `Karyawan #${p.userId}`);
     const gross = toNum(p.grossSalary || p.gross);
     const pph21 = toNum(p.pph21);
@@ -1314,8 +1358,22 @@ export function computeFinancialStatements(
   const totalEkuitas = modalKerjaAwal + labaBerjalan;
   const totalPasiva = totalKewajiban + totalEkuitas;
 
+  const sortedJournalLines = [...journalLines].sort((a, b) => {
+    // 1. Tanggal terbaru paling atas
+    const dateCmp = (b.tanggal || "").localeCompare(a.tanggal || "");
+    if (dateCmp !== 0) return dateCmp;
+
+    // 2. Nomor jurnal terbaru paling atas
+    if (a.journalNo !== b.journalNo) {
+      return b.journalNo.localeCompare(a.journalNo, undefined, { numeric: true });
+    }
+
+    // 3. Di dalam jurnal yang sama, baris debit tetap di atas baris kredit
+    return a.id.localeCompare(b.id, undefined, { numeric: true });
+  });
+
   return {
-    journalLines,
+    journalLines: sortedJournalLines,
     totalDebit,
     totalKredit,
     isJournalBalanced: totalDebit === totalKredit,

@@ -82,27 +82,45 @@ export function DataTable({
   rows,
   onRowPress,
   selectedId,
-  selectable = false,
+  selectable = true,
+  selectedIds: controlledSelectedIds,
   onSelectionChange,
   pageSize = DEFAULT_PAGE_SIZE,
   renderActions,
   actionsWidth,
+  onBulkDelete,
+  bulkActions,
 }: {
   columns: Col[];
   rows: Row[];
   onRowPress?: (r: Row) => void;
   selectedId?: string;
   selectable?: boolean;
+  selectedIds?: string[];
   onSelectionChange?: (selectedIds: string[]) => void;
   pageSize?: number;
   renderActions?: (r: Row) => React.ReactNode;
   actionsWidth?: number;
+  onBulkDelete?: (selectedIds: string[]) => void;
+  bulkActions?: (selectedIds: string[], clearSelection: () => void) => React.ReactNode;
 }) {
   const { isMobile } = useBreakpoint();
   const effectiveActionsWidth = actionsWidth ?? (renderActions ? 136 : 64);
   const [currentPage, setCurrentPage] = React.useState(1);
   const [limit, setLimit] = React.useState<number>(() => (pageSize === 8 ? 10 : pageSize));
-  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [internalSelectedIds, setInternalSelectedIds] = React.useState<string[]>([]);
+  const selectedIds = controlledSelectedIds !== undefined ? controlledSelectedIds : internalSelectedIds;
+
+  const updateSelectedIds = React.useCallback(
+    (newIds: string[]) => {
+      if (controlledSelectedIds === undefined) {
+        setInternalSelectedIds(newIds);
+      }
+      onSelectionChange?.(newIds);
+    },
+    [controlledSelectedIds, onSelectionChange]
+  );
+
   const [sortKey, setSortKey] = React.useState<string | null>(null);
   const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("asc");
 
@@ -135,22 +153,23 @@ export function DataTable({
   const currentRows = sortedRows.slice(startIndex, startIndex + limit);
 
   function handleSelectAll() {
-    if (selectedIds.length === currentRows.length && currentRows.length > 0) {
-      setSelectedIds([]);
-      onSelectionChange?.([]);
+    const currentPageIds = currentRows.map((r) => String(r.id));
+    const allPageSelected = currentPageIds.length > 0 && currentPageIds.every((id) => selectedIds.includes(id));
+    if (allPageSelected) {
+      const next = selectedIds.filter((id) => !currentPageIds.includes(id));
+      updateSelectedIds(next);
     } else {
-      const ids = currentRows.map((r) => r.id);
-      setSelectedIds(ids);
-      onSelectionChange?.(ids);
+      const next = Array.from(new Set([...selectedIds, ...currentPageIds]));
+      updateSelectedIds(next);
     }
   }
 
-  function handleToggleRow(id: string) {
-    const next = selectedIds.includes(id)
-      ? selectedIds.filter((x) => x !== id)
-      : [...selectedIds, id];
-    setSelectedIds(next);
-    onSelectionChange?.(next);
+  function handleToggleRow(id: string | number) {
+    const sid = String(id);
+    const next = selectedIds.includes(sid)
+      ? selectedIds.filter((x) => x !== sid)
+      : [...selectedIds, sid];
+    updateSelectedIds(next);
   }
 
   function handleSort(key: string) {
@@ -166,10 +185,44 @@ export function DataTable({
     }
   }
 
-  const allSelected = currentRows.length > 0 && currentRows.every((r) => selectedIds.includes(r.id));
+  const allSelected = currentRows.length > 0 && currentRows.every((r) => selectedIds.includes(String(r.id)));
 
   return (
     <View className="bg-card border-border/80 w-full overflow-hidden rounded-2xl border shadow-sm">
+      {selectable && selectedIds.length > 0 ? (
+        <View className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex-row flex-wrap items-center justify-between gap-2">
+          <View className="flex-row items-center gap-2">
+            <View className="bg-primary size-5 rounded-full items-center justify-center">
+              <Text className="text-[11px] font-bold text-white">{selectedIds.length}</Text>
+            </View>
+            <Text className="text-xs font-semibold text-foreground">
+              {selectedIds.length} data terpilih
+            </Text>
+          </View>
+          <View className="flex-row items-center gap-2">
+            {onBulkDelete ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-8 px-2.5 flex-row items-center gap-1.5 bg-danger"
+                onPress={() => onBulkDelete(selectedIds)}
+              >
+                <Trash2 size={13} color="#ffffff" />
+                <Text className="text-xs font-semibold text-white">Hapus Terpilih ({selectedIds.length})</Text>
+              </Button>
+            ) : null}
+            {bulkActions ? bulkActions(selectedIds, () => updateSelectedIds([])) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 px-2.5"
+              onPress={() => updateSelectedIds([])}
+            >
+              <Text className="text-xs">Batalkan</Text>
+            </Button>
+          </View>
+        </View>
+      ) : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={isMobile}
@@ -223,7 +276,7 @@ export function DataTable({
           {currentRows.map((r, rowIdx) => {
             if (!r) return null;
             const rowKey = r.id != null ? `${r.id}-${r.direction ?? ""}-${rowIdx}` : `row-${rowIdx}`;
-            const isRowSelected = (selectedIds && selectedIds.includes(r.id)) || selectedId === r.id;
+            const isRowSelected = (selectedIds && selectedIds.includes(String(r.id))) || selectedId === String(r.id);
             return (
               <Pressable
                 key={rowKey}
@@ -243,7 +296,7 @@ export function DataTable({
                     }}
                   >
                     <Checkbox
-                      checked={selectedIds.includes(r.id)}
+                      checked={selectedIds.includes(String(r.id))}
                       onCheckedChange={() => handleToggleRow(r.id)}
                     />
                   </View>

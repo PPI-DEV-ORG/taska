@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } from "@/components/taska/basics";
-import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands } from "@/components/taska/dialogs";
+import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
 import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { ModuleExtras, isPoPurchaseRow } from "@/screens/module-extras";
+import { ModuleExtras } from "@/screens/module-extras";
 import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
 import { QuotationPpnField } from "@/modules/quotation/quotation-ppn-field";
 import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
@@ -99,6 +99,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [deliveryDocReport, setDeliveryDocReport] = React.useState("");
   const [deliveryDocTargetStatus, setDeliveryDocTargetStatus] = React.useState<"Dikirim" | "Diterima">("Dikirim");
   const [submittingDeliveryDoc, setSubmittingDeliveryDoc] = React.useState(false);
+  const [quickCustomerKey, setQuickCustomerKey] = React.useState<string | null>(null);
+  const [quickSupplierKey, setQuickSupplierKey] = React.useState<string | null>(null);
 
   const editableFields: CreateField[] = React.useMemo(() => {
     if (!def) return [];
@@ -487,6 +489,35 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         selesai: row.targetSelesai || row.closing || getTodayIso(),
         status: "Berjalan",
       });
+    } else if (a.label === "Buat Sales Order (SO)") {
+      const matchedQuo =
+        leadQuotation ||
+        (data.quotations ?? []).find(
+          (quot: Row) =>
+            (quot.leadId && String(quot.leadId) === String(row.id)) ||
+            (quot.lead && row.nama && quot.lead.trim().toLowerCase() === row.nama.trim().toLowerCase())
+        );
+      const quoItems = Array.isArray(matchedQuo?.items) ? matchedQuo.items : [];
+      const amount = Number(matchedQuo?.totalAfterDisc || matchedQuo?.total || row.nilai || 0);
+      const custName = row.perusahaan || row.customer || matchedQuo?.customer || "-";
+
+      const createdSo = await addRow("po-client", {
+        customer: custName,
+        customerId: row.customerId ? Number(row.customerId) : matchedQuo?.customerId ? Number(matchedQuo.customerId) : undefined,
+        penawaran: matchedQuo?.nomor ? `${matchedQuo.nomor} - ${custName}` : "-",
+        quotationId: matchedQuo?.id ? Number(matchedQuo.id) : undefined,
+        nilai: amount,
+        tanggal: getTodayIso(),
+        catatan: `[lead:${row.id}] Dibuat dari Lead: ${row.nama}${row.need ? ` — ${row.need}` : ""}`,
+        items: quoItems,
+        docMode: "SO",
+      });
+
+      if (createdSo?.id) {
+        toast("Sales Order (SO) berhasil dibuat!");
+        router.push(`/po-client/${createdSo.id}` as any);
+      }
+      return;
     } else if (a.label === "Buat PO supplier") {
       const firstSuppId = data.suppliers?.[0]?.id ? String(data.suppliers[0].id) : undefined;
       const targetSupplier = row.supplier || (data.suppliers?.[0]?.nama ?? "Supplier Utama");
@@ -605,6 +636,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (isLead) {
       if (a.label === "Download template penawaran" && !canOfferLead) return false;
       if (a.label === "Jadikan project" && row.status === "Lost") return false;
+      if (a.label === "Buat Sales Order (SO)" && row.status === "Lost") return false;
     }
     if (moduleKey === "invoices") {
       const rawStatusUpper = String(row.rawStatus || "").toUpperCase();
@@ -681,7 +713,6 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       if (deliveryDocFileId) {
         patchPayload.scanFileId = deliveryDocFileId;
         patchPayload.fileId = deliveryDocFileId;
-        patchPayload.reportFileId = deliveryDocFileId;
       }
       if (deliveryDocReport.trim()) {
         patchPayload.reportText = deliveryDocReport.trim();
@@ -914,6 +945,18 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                         {f.type === "select" ? (
                           <SearchableSelect
                             value={getFieldValue(f)}
+                            onAddNew={
+                              (f.key === "customer" || f.key === "perusahaan" || f.key === "customerId" || String(f.label || "").toLowerCase().includes("customer"))
+                                ? () => setQuickCustomerKey(f.key)
+                                : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
+                                ? () => setQuickSupplierKey(f.key)
+                                : undefined
+                            }
+                            addNewLabel={
+                              (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
+                                ? "+ Tambah Supplier Baru"
+                                : "+ Tambah Customer Baru"
+                            }
                             onChange={(v) => setFieldValue(f.key, v)}
                             options={getDynamicOptions(f, data, def.key, fallbackUsers) ?? []}
                             placeholder={`Pilih ${f.label.toLowerCase()}`}
@@ -1339,6 +1382,27 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <QuickAddCustomerDialog
+        open={!!quickCustomerKey}
+        onOpenChange={(op) => { if (!op) setQuickCustomerKey(null); }}
+        onSuccess={(newCust) => {
+          if (quickCustomerKey) {
+            setFieldValue(quickCustomerKey, newCust.nama);
+            setQuickCustomerKey(null);
+          }
+        }}
+      />
+      <QuickAddSupplierDialog
+        open={!!quickSupplierKey}
+        onOpenChange={(op) => { if (!op) setQuickSupplierKey(null); }}
+        onSuccess={(newSupp) => {
+          if (quickSupplierKey) {
+            setFieldValue(quickSupplierKey, newSupp.nama);
+            setQuickSupplierKey(null);
+          }
+        }}
+      />
     </>
   );
 }

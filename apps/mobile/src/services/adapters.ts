@@ -80,7 +80,7 @@ const MAPS: Record<string, Record<string, string>> = {
     NEGOTIATION: "Negosiasi", REVISION: "Revisi", EXPIRED: "Kedaluwarsa",
   },
   surveys: { DIMINTA: "Diminta", DIJADWALKAN: "Dijadwalkan", BERJALAN: "Berjalan", SELESAI: "Selesai", BATAL: "Dibatalkan" },
-  "po-client": { DITERIMA: "Diterima", DIBATALKAN: "Dibatalkan" },
+  "po-client": { DITERIMA: "Diterima", LUNAS: "Lunas", DIBATALKAN: "Dibatalkan" },
   invoices: { DRAFT: "Belum dikirim", SENT: "Terkirim", PARTIAL: "Dibayar sebagian", PAID: "Lunas", OVERDUE: "Terlambat", BATAL: "Dibatalkan" },
   projects: {
     DIRENCANAKAN: "Direncanakan", BERJALAN: "Berjalan", DITUNDA: "Ditunda",
@@ -331,6 +331,12 @@ export function adaptRow(module: string, raw: any): Row {
       const sepiDays = latestFu
         ? Math.max(0, Math.floor((Date.now() - new Date(latestFu).getTime()) / 86_400_000))
         : 0;
+      const jenisMatch = raw.need?.match(/\[JENIS:(BARANG|PROYEK)\]/i);
+      const cleanNeed = raw.need ? raw.need.replace(/\[JENIS:(BARANG|PROYEK)\]\s*/gi, "") : "";
+      const jenisTransaksi = jenisMatch
+        ? (jenisMatch[1].toUpperCase() === "BARANG" ? "Penjualan Barang" : "Proyek (Instalasi & Jasa)")
+        : (/barang|retail|perangkat/i.test(raw.name ?? "") ? "Penjualan Barang" : "Proyek (Instalasi & Jasa)");
+
       return {
         ...base,
         nama: raw.name ?? "",
@@ -341,11 +347,12 @@ export function adaptRow(module: string, raw: any): Row {
         closing: d(raw.targetClosing),
         pemilik: nameOf(raw.owner),
         status: toLabel("leads", raw.stage),
+        jenisTransaksi,
         sepi: sepiDays,
         tipe: toLabel("clientType", raw.clientType),
         kontak: raw.contactName ?? "",
         alasanLost: raw.lostNote ?? nameOf(raw.lostReason),
-        need: raw.need ?? "",
+        need: cleanNeed,
         customerId: idOf(raw.customer),
         sourceId: idOf(raw.source),
         ownerId: raw.owner?.id != null ? String(raw.owner.id) : null,
@@ -543,7 +550,16 @@ export function adaptRow(module: string, raw: any): Row {
         nilai: n(raw.amount),
         totalInvoice: n(raw.invoices?.reduce?.((a: number, b: any) => a + n(b.total), 0) ?? 0),
         tanggal: d(raw.date),
-        status: toLabel("po-client", "DITERIMA"),
+        status: (raw.paymentStatus === "LUNAS" || (n(raw.invoices?.reduce?.((a: number, b: any) => a + n(b.total), 0) ?? 0) >= n(raw.amount) && n(raw.amount) > 0))
+          ? "Lunas"
+          : toLabel("po-client", "DITERIMA"),
+        paymentStatus: raw.paymentStatus || ((n(raw.invoices?.reduce?.((a: number, b: any) => a + n(b.total), 0) ?? 0) >= n(raw.amount) && n(raw.amount) > 0) ? "LUNAS" : "BELUM_LUNAS"),
+        settlementType: raw.settlementType ?? null,
+        paymentProofFileId: raw.paymentProofFileId ?? null,
+        paymentProofFile: raw.paymentProofFile ?? null,
+        coaAccount: raw.coaAccount ?? null,
+        settledAt: raw.settledAt ?? null,
+        goodsDispatched: raw.goodsDispatched ?? false,
         fileId: raw.fileId ?? raw.file?.id ?? null,
         file: raw.file ?? null,
         soFileId: raw.soFileId ?? raw.soFile?.id ?? null,
@@ -767,6 +783,9 @@ export function adaptRow(module: string, raw: any): Row {
         ...base,
         nomor: raw.number ?? "",
         tanggal: d(raw.date),
+        dueDate: d(raw.dueDate),
+        rawDueDate: raw.dueDate,
+        jatuhTempo: d(raw.dueDate),
         project: nameOf(raw.project) || "-",
         projectId: idOf(raw.project) ?? (raw.projectId != null ? String(raw.projectId) : null),
         costType: raw.costType ?? (isProj ? "PROJECT" : "STOK"),
@@ -932,6 +951,9 @@ export function adaptRow(module: string, raw: any): Row {
         ...base,
         nomor: raw.number ?? "",
         tanggal: d(raw.date),
+        dueDate: d(raw.dueDate),
+        rawDueDate: raw.dueDate,
+        jatuhTempo: d(raw.dueDate),
         tujuan: loc?.destination ?? "-",
         alasan: loc?.reason ?? "-",
         project: nameOf(loc?.project) ?? "-",
@@ -949,6 +971,12 @@ export function adaptRow(module: string, raw: any): Row {
         scanFileId: raw.scanFileId ?? raw.signedFileId ?? null,
         signedFileId: raw.scanFileId ?? raw.signedFileId ?? null,
         reportFileId: raw.reportFileId ?? null,
+        scanFile: raw.scanFile ?? null,
+        reportFile: raw.reportFile ?? null,
+        scanFileMimeType: raw.scanFile?.mimeType ?? null,
+        scanFileName: raw.scanFile?.originalName ?? null,
+        reportFileMimeType: raw.reportFile?.mimeType ?? null,
+        reportFileName: raw.reportFile?.originalName ?? null,
         penerimaNama,
         penerimaJabatan,
         penerimaKontak,
@@ -1614,7 +1642,13 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
   const num = (v: any) => Number(String(v ?? 0).replace(/[^\d.-]/g, "")) || 0;
   const today = new Date().toISOString().slice(0, 10);
   switch (module) {
-    case "leads":
+    case "leads": {
+      const isBarang = row.jenisTransaksi === "Penjualan Barang" || /barang|retail/i.test(row.jenisTransaksi || "");
+      const tag = isBarang ? "[JENIS:BARANG] " : "[JENIS:PROYEK] ";
+      const baseNeed = row.need || row.catatan || "";
+      const cleanedBase = baseNeed.replace(/\[JENIS:(BARANG|PROYEK)\]\s*/gi, "");
+      const fullNeed = `${tag}${cleanedBase}`.trim();
+
       return {
         name: row.nama ?? row.name ?? "Lead Baru",
         customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.perusahaan ?? row.customer),
@@ -1624,11 +1658,12 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         probability: num(row.peluang ?? row.probability) || 20,
         targetClosing: row.closing || row.targetClosing || undefined,
         contactName: row.kontak && row.kontak !== "-" ? row.kontak : undefined,
-        need: row.need || row.catatan || undefined,
+        need: fullNeed || undefined,
         ownerId: row.ownerId != null && row.ownerId !== "" ? Number(row.ownerId) : findId(db?.users, row.pemilik),
         stage: row.status ? (toEnum("leads", row.status) || "PROSPECTING") : "PROSPECTING",
         fileId: row.fileId != null && row.fileId !== "" ? Number(row.fileId) : undefined,
       };
+    }
     case "quotations": {
       const tot = num(row.total ?? row.nilai);
       const disc = num(row.disc ?? row.discount);
@@ -1788,6 +1823,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         number: numVal,
         soNumber: mode !== "PO" ? (row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : undefined) : undefined,
         poClientNumber: mode !== "SO" ? (row.nomorPoClient && row.nomorPoClient !== "-" ? row.nomorPoClient : undefined) : undefined,
+        docMode: mode,
         customerId:
           row.customerId != null && row.customerId !== "" && row.customerId !== "-"
             ? Number(row.customerId)
@@ -2307,7 +2343,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   ],
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "boqFileId", "notes", "memberIds"],
   tasks: ["name", "description", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
-  "po-client": ["number", "soNumber", "poClientNumber", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes"],
+  "po-client": ["number", "soNumber", "poClientNumber", "docMode", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes"],
   invoices: [
     "number",
     "clientPoId",
@@ -2347,7 +2383,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "paymentMethod", "costCenterId", "receiptFileId", "paidFileId",
   ],
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
-  "purchase-requests": ["date", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "fundingSource", "status", "items"],
+  "purchase-requests": ["date", "dueDate", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "fundingSource", "status", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "requestId", "date", "conditionNote", "receiptFileId", "photoFileId", "status", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],

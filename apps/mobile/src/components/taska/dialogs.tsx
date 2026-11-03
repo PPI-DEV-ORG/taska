@@ -1,6 +1,8 @@
 import * as React from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Search, FileDown, X } from "lucide-react-native";
+import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Search, FileDown, X, Plus } from "lucide-react-native";
+import { QuickAddCustomerDialog } from "./quick-add-customer-dialog";
+import { QuickAddSupplierDialog } from "./quick-add-supplier-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +20,8 @@ import { pphRateFor, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/mod
 import { MODULES, type CreateField, type ModuleDef, type Row } from "@/constants/modules";
 
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
+export { QuickAddCustomerDialog } from "./quick-add-customer-dialog";
+export { QuickAddSupplierDialog } from "./quick-add-supplier-dialog";
 export function formatThousands(raw: any): string {
   if (raw == null || raw === "") return "";
   const digits = String(raw).replace(/\D/g, "");
@@ -319,24 +323,64 @@ export function ConfirmDialog({
 }
 
 export function SearchableSelect({
-  value, onChange, options, placeholder = "Pilih", error,
-}: { value?: string; onChange: (v: string) => void; options: string[]; placeholder?: string; error?: boolean }) {
+  value,
+  onChange,
+  options,
+  placeholder = "Pilih",
+  error,
+  onAddNew,
+  addNewLabel,
+}: {
+  value?: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder?: string;
+  error?: boolean;
+  onAddNew?: () => void;
+  addNewLabel?: string;
+}) {
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
   const list = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
   const displayLabel = options.find((o) => o === value || (value && value !== "-" && (o.startsWith(`${value} -`) || o.startsWith(`${value} ·`) || o.startsWith(`${value} (`)))) || value;
   return (
     <>
-      <Pressable
-        onPress={() => { setQ(""); setOpen(true); }}
-        className={cn("bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3", error && "border-danger")}
-      >
-        <Text className={cn("text-base md:text-sm", !value && "text-muted-foreground")} numberOfLines={1}>{displayLabel || placeholder}</Text>
-        <ChevronDown size={16} color={colors.muted} />
-      </Pressable>
+      <View className="flex-row items-center gap-1.5 w-full">
+        <Pressable
+          onPress={() => { setQ(""); setOpen(true); }}
+          className={cn("bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3 flex-1", error && "border-danger")}
+        >
+          <Text className={cn("text-base md:text-sm", !value && "text-muted-foreground")} numberOfLines={1}>{displayLabel || placeholder}</Text>
+          <ChevronDown size={16} color={colors.muted} />
+        </Pressable>
+        {onAddNew ? (
+          <Button
+            variant="outline"
+            size="icon"
+            onPress={onAddNew}
+            className="h-11 w-11 shrink-0 border-primary/40 bg-primary/10 hover:bg-primary/20 active:bg-primary/30"
+          >
+            <Plus size={18} color={colors.primary} />
+          </Button>
+        ) : null}
+      </View>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>{placeholder}</DialogTitle></DialogHeader>
+          {onAddNew ? (
+            <Pressable
+              onPress={() => {
+                setOpen(false);
+                onAddNew();
+              }}
+              className="flex-row items-center gap-2 px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/30 active:bg-primary/20 mb-1"
+            >
+              <Plus size={16} color={colors.primary} />
+              <Text className="text-sm font-semibold text-primary">
+                {addNewLabel || "+ Tambah Baru"}
+              </Text>
+            </Pressable>
+          ) : null}
           {options.length > 6 ? (
             <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-lg border px-3">
               <Search size={16} color={colors.muted} />
@@ -469,6 +513,14 @@ function FileField({
     [fieldKey, onCount],
   );
   const effectiveKind = kind ?? (/foto|gambar|image|nota/i.test(label) ? "foto" : "dokumen");
+  const isPrdOrSpk = /prd|spk|spesifikasi/i.test(label);
+  const allowedExtensions = isPrdOrSpk
+    ? ["pdf", "docx", "doc", "md", "markdown", "txt"]
+    : undefined;
+  const accept = isPrdOrSpk
+    ? ".pdf,.docx,.doc,.md,.markdown,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/markdown,text/plain"
+    : undefined;
+
   return (
     <FileUploader
       label={label}
@@ -477,6 +529,9 @@ function FileField({
       required={required}
       onChange={handleCount}
       handleRef={handleRef}
+      allowedExtensions={allowedExtensions}
+      accept={accept}
+      hint={isPrdOrSpk ? "Mendukung dokumen PDF, Word (DOCX/DOC), atau Markdown (MD/TXT) maks 15 MB" : undefined}
     />
   );
 }
@@ -685,6 +740,8 @@ export function FormDialog({
   const [fallbackProjects, setFallbackProjects] = React.useState<any[]>([]);
   const [fallbackSupplierPos, setFallbackSupplierPos] = React.useState<any[]>([]);
   const [fallbackSerials, setFallbackSerials] = React.useState<any[]>([]);
+  const [quickCustomerKey, setQuickCustomerKey] = React.useState<string | null>(null);
+  const [quickSupplierKey, setQuickSupplierKey] = React.useState<string | null>(null);
   const fileHandles = React.useRef<(FileUploaderHandle | null)[]>([]);
   const fileHandleAt = (i: number) => (h: FileUploaderHandle | null) => { fileHandles.current[i] = h; };
 
@@ -736,7 +793,7 @@ export function FormDialog({
         })
         .catch(() => {});
     }
-  }, [open, data.users, data.projects, data["supplier-pos"], data.serials, def?.key]);
+  }, [open, data, def?.key]);
 
   const isOrderModule = mode === "create" && (def?.key === "po-client" || def?.key === "supplier-pos");
   const [orderDocMode, setOrderDocMode] = React.useState<"SO" | "PO">(def?.key === "supplier-pos" ? "PO" : "SO");
@@ -853,15 +910,13 @@ export function FormDialog({
       row.docMode = "SO";
       row.supplier = undefined;
       row.supplierId = undefined;
-      const now = new Date(row.tanggal || new Date().toISOString());
-      const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const seq = String((data["po-client"]?.length || 0) + 1).padStart(3, "0");
       if (!row.nomorSo?.trim() && !row.nomor?.trim()) {
-        row.nomor = `SO/${ym}/${seq}`;
+        row.nomor = undefined;
+        row.nomorSo = undefined;
       } else {
         row.nomor = (row.nomorSo?.trim() || row.nomor?.trim())!;
+        row.nomorSo = row.nomor;
       }
-      row.nomorSo = row.nomor;
       if (row.customer) {
         const cleanCust = (String(row.customer).split(" - ")[0] ?? "").trim();
         const cust = (data.customers ?? []).find(
@@ -962,7 +1017,13 @@ export function FormDialog({
       row.total = tot;
       row.grandTotal = row.totalAfterDisc;
     }
-    const uploadedIds = await Promise.all(fileHandles.current.map((h) => h?.flush() ?? Promise.resolve(null)));
+    let uploadedIds: (number | null)[] = [];
+    try {
+      uploadedIds = await Promise.all(fileHandles.current.map((h) => h?.flush() ?? Promise.resolve(null)));
+    } catch (err: any) {
+      toast(err?.message || "Gagal mengunggah file lampiran. Periksa format dan ukuran file.", "danger");
+      return;
+    }
     fields.forEach((f, idx) => {
       const fid = uploadedIds[idx];
       if (f.type === "file" && fid != null) {
@@ -1316,6 +1377,18 @@ export function FormDialog({
                   <View className="gap-1.5">
                     <SearchableSelect
                       value={vals[f.key]}
+                      onAddNew={
+                        (f.key === "customer" || f.key === "perusahaan" || f.key === "customerId" || String(f.label || "").toLowerCase().includes("customer"))
+                          ? () => setQuickCustomerKey(f.key)
+                          : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
+                          ? () => setQuickSupplierKey(f.key)
+                          : undefined
+                      }
+                      addNewLabel={
+                        (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
+                          ? "+ Tambah Supplier Baru"
+                          : "+ Tambah Customer Baru"
+                      }
                       onChange={(v) => {
                         if (def?.key === "po-client" && f.key === "penawaran") {
                           const selNo = v.split(" - ")[0]?.trim() || v;
@@ -1499,6 +1572,26 @@ export function FormDialog({
           <Button variant="outline" onPress={() => onOpenChange(false)}><Text>Batal</Text></Button>
           <Button onPress={submit}><Text>{submitLabel ?? "Simpan"}</Text></Button>
         </DialogFooter>
+        <QuickAddCustomerDialog
+          open={!!quickCustomerKey}
+          onOpenChange={(op) => { if (!op) setQuickCustomerKey(null); }}
+          onSuccess={(newCust) => {
+            if (quickCustomerKey) {
+              setVals((s) => ({ ...s, [quickCustomerKey]: newCust.nama }));
+              setQuickCustomerKey(null);
+            }
+          }}
+        />
+        <QuickAddSupplierDialog
+          open={!!quickSupplierKey}
+          onOpenChange={(op) => { if (!op) setQuickSupplierKey(null); }}
+          onSuccess={(newSupp) => {
+            if (quickSupplierKey) {
+              setVals((s) => ({ ...s, [quickSupplierKey]: newSupp.nama }));
+              setQuickSupplierKey(null);
+            }
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

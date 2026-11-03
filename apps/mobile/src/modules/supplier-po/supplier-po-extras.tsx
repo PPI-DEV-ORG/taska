@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View, Linking, Pressable } from "react-native";
 import { useRouter } from "expo-router";
-import { CheckCircle2, Circle, ExternalLink, PackageCheck, Plus, Printer, RotateCcw } from "lucide-react-native";
+import { CheckCircle2, Circle, ExternalLink, PackageCheck, Plus, Printer, RotateCcw, Trash2, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,31 @@ const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
 export function SupplierPoExtras({ row }: { row: Row }) {
   const router = useRouter();
   const { user, patchRow, setStatus, addRow, toast, data, reload } = useApp();
+  const [showAllPoItems, setShowAllPoItems] = React.useState(false);
+  const [selectedPoItemIndices, setSelectedPoItemIndices] = React.useState<number[]>([]);
+
+  const handleDeleteSelectedPoItems = async () => {
+    if (selectedPoItemIndices.length === 0) return;
+    const count = selectedPoItemIndices.length;
+    if (Array.isArray(row.items) && row.items.length > 0) {
+      const updated = row.items.filter((_: any, i: number) => !selectedPoItemIndices.includes(i));
+      const newTotal = updated.reduce((s: number, it: any) => s + Number(it.price ? it.price * (it.qty || 1) : 0), 0);
+      await patchRow("supplier-pos", row.id, {
+        items: updated,
+        total: newTotal,
+        nilai: newTotal,
+      });
+    } else if (row.item && row.item !== "-") {
+      const splitted = String(row.item).split(", ");
+      const updated = splitted.filter((_: any, i: number) => !selectedPoItemIndices.includes(i));
+      await patchRow("supplier-pos", row.id, {
+        item: updated.length > 0 ? updated.join(", ") : "-",
+      });
+    }
+    setSelectedPoItemIndices([]);
+    await reload();
+    toast(`${count} barang berhasil dihapus dari PO`);
+  };
   const steps = ["Di Supplier", "Dikirim", "Sampai"];
   const cur =
     row.pengiriman === "Sampai"
@@ -430,36 +455,159 @@ export function SupplierPoExtras({ row }: { row: Row }) {
           </Button>
         ) : null}
       </Panel>
-      <Panel title="Barang di PO ini">
+      <Panel
+        title={`Barang di PO ini (${Array.isArray(row.items) && row.items.length > 0 ? row.items.length : (row.item && row.item !== "-" ? String(row.item).split(", ").length : 0)})`}
+        right={
+          <View className="flex-row items-center gap-1.5 flex-wrap">
+            {selectedPoItemIndices.length > 0 && (
+              <Button
+                size="sm"
+                className="h-7 px-2.5 flex-row items-center gap-1 bg-danger hover:bg-danger/90"
+                onPress={handleDeleteSelectedPoItems}
+              >
+                <Trash2 size={12} color="#fff" />
+                <Text className="text-[11px] text-white font-semibold">
+                  Hapus ({selectedPoItemIndices.length})
+                </Text>
+              </Button>
+            )}
+            {((Array.isArray(row.items) && row.items.length > 0) || (row.item && row.item !== "-")) && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 flex-row items-center gap-1"
+                onPress={() => {
+                  const totalCount = Array.isArray(row.items) && row.items.length > 0
+                    ? row.items.length
+                    : String(row.item || "").split(", ").length;
+                  if (selectedPoItemIndices.length === totalCount) {
+                    setSelectedPoItemIndices([]);
+                  } else {
+                    setSelectedPoItemIndices(Array.from({ length: totalCount }, (_, i) => i));
+                  }
+                }}
+              >
+                <Text className="text-[11px]">
+                  {selectedPoItemIndices.length > 0 && selectedPoItemIndices.length === (Array.isArray(row.items) ? row.items.length : String(row.item || "").split(", ").length)
+                    ? "Batal Semua"
+                    : "Pilih Semua"}
+                </Text>
+              </Button>
+            )}
+          </View>
+        }
+      >
         {Array.isArray(row.items) && row.items.length > 0 ? (
-          row.items.map((it: any, idx: number) => {
-            const prodName = it.product?.name || it.customName || it.productName || it.name || it.product?.sku || `Barang #${idx + 1}`;
-            const qtyText = `${it.qty || 1} ${it.product?.unit || it.customUnit || it.unit || "Unit"}`;
-            const itemTotal = Number(it.price ? it.price * (it.qty || 1) : 0);
-            return (
-              <Line
-                key={it.id || idx}
-                left={`${prodName} (${qtyText})`}
-                right={
-                  showPrice ? (
+          <>
+            {(showAllPoItems ? row.items : row.items.slice(0, 10)).map((it: any, idx: number) => {
+              const prodName = it.product?.name || it.customName || it.productName || it.name || it.product?.sku || `Barang #${idx + 1}`;
+              const qtyText = `${it.qty || 1} ${it.product?.unit || it.customUnit || it.unit || "Unit"}`;
+              const itemTotal = Number(it.price ? it.price * (it.qty || 1) : 0);
+              const isSelected = selectedPoItemIndices.includes(idx);
+              return (
+                <View
+                  key={it.id || idx}
+                  className={`flex-row items-center justify-between py-2 border-b border-border/40 last:border-b-0 px-2 rounded-lg ${
+                    isSelected ? "bg-primary/10" : ""
+                  }`}
+                >
+                  <View className="flex-row items-center gap-2 flex-1">
+                    <Pressable
+                      onPress={() => {
+                        setSelectedPoItemIndices((prev) =>
+                          prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+                        );
+                      }}
+                      hitSlop={6}
+                      className="p-1"
+                    >
+                      <View
+                        className={`w-4 h-4 rounded border items-center justify-center ${
+                          isSelected ? "bg-primary border-primary" : "border-border/80 bg-background"
+                        }`}
+                      >
+                        {isSelected && <Check size={11} color="#ffffff" />}
+                      </View>
+                    </Pressable>
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-foreground">{prodName}</Text>
+                      <Text className="text-xs text-muted-foreground">{qtyText}</Text>
+                    </View>
+                  </View>
+                  {showPrice ? (
                     <Text className="text-sm font-semibold">
                       {itemTotal > 0 ? rupiah(itemTotal) : <Text className="text-muted-foreground text-xs font-normal">Harga beli tampil</Text>}
                     </Text>
-                  ) : undefined
-                }
-              />
-            );
-          })
+                  ) : null}
+                </View>
+              );
+            })}
+            {row.items.length > 10 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 border border-border/60 rounded-lg flex-row items-center justify-center gap-1.5 mt-2"
+                onPress={() => setShowAllPoItems((v) => !v)}
+              >
+                <Text className="text-xs font-semibold text-primary">
+                  {showAllPoItems ? "Sembunyikan" : `Lihat Semua (${row.items.length} item)`}
+                </Text>
+              </Button>
+            )}
+          </>
         ) : row.item && row.item !== "-" ? (
-          String(row.item)
-            .split(", ")
-            .map((it) => (
-              <Line
-                key={it}
-                left={it}
-                right={showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : undefined}
-              />
-            ))
+          (() => {
+            const splitted = String(row.item).split(", ");
+            return (
+              <>
+                {(showAllPoItems ? splitted : splitted.slice(0, 10)).map((it, idx) => {
+                  const isSelected = selectedPoItemIndices.includes(idx);
+                  return (
+                    <View
+                      key={it}
+                      className={`flex-row items-center justify-between py-2 border-b border-border/40 last:border-b-0 px-2 rounded-lg ${
+                        isSelected ? "bg-primary/10" : ""
+                      }`}
+                    >
+                      <View className="flex-row items-center gap-2 flex-1">
+                        <Pressable
+                          onPress={() => {
+                            setSelectedPoItemIndices((prev) =>
+                              prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+                            );
+                          }}
+                          hitSlop={6}
+                          className="p-1"
+                        >
+                          <View
+                            className={`w-4 h-4 rounded border items-center justify-center ${
+                              isSelected ? "bg-primary border-primary" : "border-border/80 bg-background"
+                            }`}
+                          >
+                            {isSelected && <Check size={11} color="#ffffff" />}
+                          </View>
+                        </Pressable>
+                        <Text className="text-sm font-medium text-foreground flex-1">{it}</Text>
+                      </View>
+                      {showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : null}
+                    </View>
+                  );
+                })}
+                {splitted.length > 10 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 border border-border/60 rounded-lg flex-row items-center justify-center gap-1.5 mt-2"
+                    onPress={() => setShowAllPoItems((v) => !v)}
+                  >
+                    <Text className="text-xs font-semibold text-primary">
+                      {showAllPoItems ? "Sembunyikan" : `Lihat Semua (${splitted.length} item)`}
+                    </Text>
+                  </Button>
+                )}
+              </>
+            );
+          })()
         ) : (
           <Text className="text-muted-foreground text-xs py-1">Belum ada rincian barang di PO ini.</Text>
         )}

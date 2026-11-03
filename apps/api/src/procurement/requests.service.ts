@@ -201,10 +201,20 @@ export class RequestsService {
     const number = await this.docnum.next("permintaan");
     const estimated = items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0);
 
+    const reqDate = dto.date ? new Date(dto.date) : new Date();
+    let dueDate: Date | null = null;
+    if (dto.dueDate) {
+      dueDate = new Date(dto.dueDate);
+    } else if ((dto.paymentMethod ?? "UTANG") === "UTANG") {
+      dueDate = new Date(reqDate);
+      dueDate.setMonth(dueDate.getMonth() + 1);
+    }
+
     const row = await this.prisma.main.purchaseRequest.create({
       data: {
         number,
-        date: dto.date ? new Date(dto.date) : new Date(),
+        date: reqDate,
+        dueDate,
         requesterId: user.id,
         costType,
         procurementSource: dto.procurementSource ?? "SUPPLIER",
@@ -292,6 +302,7 @@ export class RequestsService {
         ...(dto.costType ? { costType: dto.costType } : {}),
         ...(dto.procurementSource !== undefined ? { procurementSource: dto.procurementSource } : {}),
         ...(dto.paymentMethod !== undefined ? { paymentMethod: dto.paymentMethod } : {}),
+        ...(dto.dueDate !== undefined ? { dueDate: dto.dueDate ? new Date(dto.dueDate) : null } : {}),
         ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
         ...(dto.taskId !== undefined ? { taskId: dto.taskId } : {}),
         ...(dto.supplierId !== undefined ? { supplierId: dto.supplierId } : {}),

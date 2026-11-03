@@ -28,6 +28,7 @@ export type ResolvedDocItem = {
   emptyHint?: string;
   category?: string;
   accept?: string;
+  allowedExtensions?: string[];
 };
 
 export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row): ResolvedDocItem {
@@ -178,7 +179,9 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
 
   if (moduleKey === "delivery-notes") {
     const scanId = (row as any).scanFileId ?? (row as any).signedFileId ?? (row as any).fileId ?? null;
-    if (/scan|surat|tanda tangan|pendukung|do|delivery/i.test(labelLower)) {
+    const isScanDoc = /scan|surat|tanda tangan|pendukung|\bdo\b|delivery/i.test(labelLower) && !/laporan|hasil/i.test(labelLower);
+    if (isScanDoc) {
+      const scanFile = (row as any).scanFile;
       return {
         label: docLabel,
         fieldKey: "scanFileId",
@@ -186,11 +189,15 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         category: "surat-jalan",
         accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
         fileId: scanId,
-        fileName: scanId ? `do-surat-jalan-ttd-${row.id}` : null,
+        fileName: (row as any).scanFileName ?? scanFile?.originalName ?? (scanId ? `do-surat-jalan-ttd-${row.id}` : null),
+        mimeType: (row as any).scanFileMimeType ?? scanFile?.mimeType,
+        fileSize: scanFile?.size,
+        isImage: scanFile?.mimeType ? scanFile.mimeType.startsWith("image/") : false,
         emptyHint: "Belum ada file DO / surat jalan bertanda tangan kedua pihak (Gambar / PDF)",
       };
     }
     const reportId = (row as any).reportFileId ?? null;
+    const reportFile = (row as any).reportFile;
     return {
       label: docLabel,
       fieldKey: "reportFileId",
@@ -198,7 +205,10 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
       category: "surat-jalan",
       fileId: reportId,
-      fileName: reportId ? `laporan-hasil-${row.id}` : null,
+      fileName: (row as any).reportFileName ?? reportFile?.originalName ?? (reportId ? `laporan-hasil-${row.id}` : null),
+      mimeType: (row as any).reportFileMimeType ?? reportFile?.mimeType,
+      fileSize: reportFile?.size,
+      isImage: reportFile?.mimeType ? reportFile.mimeType.startsWith("image/") : false,
       emptyHint: "Belum ada laporan hasil dan dokumentasi",
     };
   }
@@ -248,6 +258,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         fieldKey: "doFileId",
         kind: "semua",
         accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
+        allowedExtensions: ["pdf", "jpg", "jpeg", "png", "webp"],
         fileId: doFileId,
         fileName: doFile?.originalName ?? (doFileId ? `do-tertandatangan-${row.id}` : null),
         mimeType: doFile?.mimeType,
@@ -263,6 +274,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         fieldKey: "soFileId",
         kind: "semua",
         accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx",
+        allowedExtensions: ["pdf", "jpg", "jpeg", "png", "webp", "xlsx", "docx"],
         fileId: soFileId,
         fileName: soFile?.originalName ?? (soFileId ? `sales-order-${row.id}` : null),
         mimeType: soFile?.mimeType,
@@ -277,6 +289,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       fieldKey: "fileId",
       kind: "semua",
       accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx",
+      allowedExtensions: ["pdf", "jpg", "jpeg", "png", "webp", "xlsx", "docx"],
       fileId,
       fileName: file?.originalName ?? (fileId ? `po-customer-${row.id}` : null),
       mimeType: file?.mimeType,
@@ -293,6 +306,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         label: docLabel,
         fieldKey: "boqFileId",
         kind: "dokumen",
+        allowedExtensions: ["pdf", "xlsx"],
         fileId,
         fileName: fileMeta?.originalName ?? (fileId ? `boq-${row.id}` : null),
         mimeType: fileMeta?.mimeType,
@@ -306,9 +320,11 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         label: docLabel,
         fieldKey: "prdFileId",
         kind: "dokumen",
+        accept: ".pdf,.docx,.doc,.md,.markdown,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/markdown,text/plain",
+        allowedExtensions: ["pdf", "docx", "doc", "md", "markdown", "txt"],
         fileId,
-        fileName: fileId ? `prd-spesifikasi-${row.id}.pdf` : null,
-        emptyHint: "Belum ada dokumen PRD / spesifikasi teknis",
+        fileName: fileId ? `prd-spesifikasi-${row.id}` : null,
+        emptyHint: "Belum ada dokumen PRD / spesifikasi teknis (PDF, DOCX, MD, TXT)",
       };
     }
     if (/bahp/i.test(labelLower)) {
@@ -317,6 +333,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         label: docLabel,
         fieldKey: "bahpFileId",
         kind: "dokumen",
+        allowedExtensions: ["pdf"],
         fileId,
         fileName: fileId ? `bahp-${row.id}.pdf` : null,
         emptyHint: "Belum ada dokumen Berita Acara Hasil Pekerjaan (BAHP)",
@@ -328,6 +345,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         label: docLabel,
         fieldKey: "bastFileId",
         kind: "dokumen",
+        allowedExtensions: ["pdf"],
         fileId,
         fileName: fileId ? `bast-${row.id}.pdf` : null,
         emptyHint: "Belum ada dokumen Berita Acara Serah Terima (BAST)",
@@ -340,6 +358,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         fieldKey: "doFileId",
         kind: "semua",
         accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
+        allowedExtensions: ["pdf", "jpg", "jpeg", "png", "webp"],
         fileId,
         fileName: fileId ? `do-surat-jalan-${row.id}` : null,
         emptyHint: "Belum ada file Delivery Order (DO) bertandatangan (Gambar / PDF)",

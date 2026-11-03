@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query } from "@nestjs/common";
 import { ClientPoService } from "./client-po.service.js";
-import { ClientPoDto, FinanceListQuery } from "./dto.js";
+import { ClientPoDirectSettlementDto, ClientPoDto, FinanceListQuery } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
@@ -42,6 +42,16 @@ export class ClientPoController {
   @Require("financeOut", "U")
   patch(@Param("id", ParseIntPipe) id: number, @Body() dto: ClientPoDto, @CurrentUser() user: RequestUser) {
     return this.service.update(id, dto, user);
+  }
+
+  @Post(":id/direct-settlement")
+  @Require("financeOut", "U")
+  directSettlement(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: ClientPoDirectSettlementDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.directSettlement(id, dto, user);
   }
 
   @Delete(":id")

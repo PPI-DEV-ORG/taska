@@ -77,6 +77,8 @@ export function QuotationExtras({
 
   const items: QuotationItem[] = Array.isArray(row.items) ? row.items : [];
   const totalItemsPph = items.reduce((acc, it) => acc + calcItemPph(it), 0);
+  const [showAllItems, setShowAllItems] = React.useState(false);
+  const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
 
   const [pickerOpen, setPickerOpen] = React.useState(false);
 
@@ -259,6 +261,28 @@ export function QuotationExtras({
     toast("Barang berhasil dihapus");
   }
 
+  async function handleDeleteSelectedItems() {
+    if (selectedItemIndices.length === 0) return;
+    const count = selectedItemIndices.length;
+    const updated = items.filter((_, i) => !selectedItemIndices.includes(i));
+    const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
+    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
+
+    await patchRow("quotations", row.id, {
+      items: updated,
+      total: newTotal,
+      nilai: newTotal,
+      dpp,
+      ppn,
+      pph,
+      totalAfterDisc,
+    });
+    setSelectedItemIndices([]);
+    await reload();
+    await onRefresh?.();
+    toast(`${count} barang berhasil dihapus dari Penawaran`);
+  }
+
   async function handleUpdateItemPph(idx: number, newPphMode: PphMode) {
     const updated = items.map((it, i) =>
       i === idx ? { ...it, pphMode: newPphMode, tipePph: pphModeToTipe(newPphMode) } : it
@@ -396,8 +420,56 @@ export function QuotationExtras({
 
         {items.length > 0 ? (
           <View className="gap-2 pt-1">
+            {selectedItemIndices.length > 0 && (
+              <View className="flex-row items-center justify-between p-2.5 bg-danger/10 border border-danger/30 rounded-lg">
+                <Text className="text-xs font-semibold text-danger">
+                  {selectedItemIndices.length} barang dipilih
+                </Text>
+                <View className="flex-row items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onPress={() => setSelectedItemIndices([])}
+                  >
+                    <Text className="text-xs text-muted-foreground">Batal</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 px-2.5 bg-danger flex-row items-center gap-1"
+                    onPress={handleDeleteSelectedItems}
+                  >
+                    <Trash2 size={12} color="#fff" />
+                    <Text className="text-xs text-white font-semibold">Hapus Terpilih ({selectedItemIndices.length})</Text>
+                  </Button>
+                </View>
+              </View>
+            )}
             <View className="border border-border/80 rounded-xl overflow-hidden bg-card">
-              <View className="flex-row bg-muted/60 p-2.5 border-b border-border/70">
+              <View className="flex-row items-center bg-muted/60 p-2.5 border-b border-border/70">
+                <Pressable
+                  onPress={() => {
+                    if (selectedItemIndices.length === items.length) {
+                      setSelectedItemIndices([]);
+                    } else {
+                      setSelectedItemIndices(items.map((_, i) => i));
+                    }
+                  }}
+                  hitSlop={6}
+                  className="mr-2"
+                >
+                  <View
+                    className={`w-4 h-4 rounded border items-center justify-center ${
+                      selectedItemIndices.length === items.length && items.length > 0
+                        ? "bg-primary border-primary"
+                        : "border-border/80 bg-background"
+                    }`}
+                  >
+                    {selectedItemIndices.length === items.length && items.length > 0 && (
+                      <Check size={11} color="#ffffff" />
+                    )}
+                  </View>
+                </Pressable>
                 <Text className="text-[11px] font-bold text-muted-foreground w-8">No</Text>
                 <Text className="text-[11px] font-bold text-muted-foreground flex-1">Nama Barang / SKU</Text>
                 <Text className="text-[11px] font-bold text-muted-foreground w-16 text-center">Qty</Text>
@@ -405,17 +477,35 @@ export function QuotationExtras({
                 <Text className="text-[11px] font-bold text-muted-foreground w-28 text-right">Subtotal (Rp)</Text>
                 <Text className="text-[11px] font-bold text-muted-foreground w-12 text-center">Aksi</Text>
               </View>
-              {items.map((it, idx) => {
+              {(showAllItems ? items : items.slice(0, 10)).map((it, idx) => {
                 const itemPrice = Number(it.harga ?? it.price ?? 0);
                 const sub = (Number(it.qty) || 1) * itemPrice;
                 const snText = Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0
                   ? it.serialNumbers.join(", ")
                   : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
+                const isSelected = selectedItemIndices.includes(idx);
 
                 const itemPph = calcItemPph(it);
                 return (
-                  <View key={it.id || idx} className="p-2.5 border-b border-border/40 last:border-b-0 gap-1.5">
+                  <View key={it.id || idx} className={`p-2.5 border-b border-border/40 last:border-b-0 gap-1.5 ${isSelected ? "bg-primary/10" : ""}`}>
                     <View className="flex-row items-center">
+                      <Pressable
+                        onPress={() => {
+                          setSelectedItemIndices((prev) =>
+                            prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+                          );
+                        }}
+                        hitSlop={6}
+                        className="mr-2"
+                      >
+                        <View
+                          className={`w-4 h-4 rounded border items-center justify-center ${
+                            isSelected ? "bg-primary border-primary" : "border-border/80 bg-background"
+                          }`}
+                        >
+                          {isSelected && <Check size={11} color="#ffffff" />}
+                        </View>
+                      </Pressable>
                       <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
                       <View className="flex-1 mr-2">
                         <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
@@ -461,6 +551,20 @@ export function QuotationExtras({
                   </View>
                 );
               })}
+              {items.length > 10 && (
+                <View className="p-2 border-t border-border/60 bg-muted/20 items-center">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-3 flex-row items-center gap-1.5"
+                    onPress={() => setShowAllItems((v) => !v)}
+                  >
+                    <Text className="text-xs font-semibold text-primary">
+                      {showAllItems ? "Sembunyikan" : `Lihat Semua (${items.length} item)`}
+                    </Text>
+                  </Button>
+                </View>
+              )}
             </View>
 
             {/* Ringkasan Kalkulasi Akumulasi Pajak & Total */}

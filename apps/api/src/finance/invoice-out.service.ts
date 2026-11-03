@@ -515,9 +515,20 @@ export class InvoiceOutService {
   }
 
   async create(dto: InvoiceOutDto, user: RequestUser) {
-    const number = dto.number?.trim() || (await this.docnum.next("invoiceOut"));
-    const dup = await this.prisma.main.invoiceOut.findFirst({ where: { number } });
-    if (dup) throw new BadRequestException(`Nomor ${number} sudah dipakai`);
+    let number = dto.number?.trim();
+    if (number) {
+      const dup = await this.prisma.main.invoiceOut.findFirst({ where: { number } });
+      if (dup) {
+        const isAutoPattern = /^INV\/\d{4}\/\d{2}\/\d+(\/\d+)?$/i.test(number);
+        if (isAutoPattern) {
+          number = await this.docnum.next("invoiceOut", dto.date ? new Date(dto.date) : new Date());
+        } else {
+          throw new BadRequestException(`Nomor ${number} sudah dipakai`);
+        }
+      }
+    } else {
+      number = await this.docnum.next("invoiceOut", dto.date ? new Date(dto.date) : new Date());
+    }
 
     const customer = dto.customerId
       ? await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } })

@@ -64,19 +64,52 @@ export class DocumentNumberService {
     return applyFormat(format, year, month, seq);
   }
 
-  /** Nomor berikutnya: mengunci inkrement per jenis dokumen per bulan. */
+  private async existsInDb(docType: DocType, candidate: string): Promise<boolean> {
+    try {
+      switch (docType) {
+        case "penawaran":
+          return Boolean(await this.prisma.main.quotation.findFirst({ where: { number: candidate } }));
+        case "clientPO":
+          return Boolean(await this.prisma.main.clientPO.findFirst({ where: { number: candidate } }));
+        case "permintaan":
+          return Boolean(await this.prisma.main.purchaseRequest.findFirst({ where: { number: candidate } }));
+        case "pesanan":
+          return Boolean(await this.prisma.main.supplierPO.findFirst({ where: { number: candidate } }));
+        case "suratJalan":
+          return Boolean(await this.prisma.main.deliveryNote.findFirst({ where: { number: candidate } }));
+        case "penerimaan":
+          return Boolean(await this.prisma.main.receiving.findFirst({ where: { number: candidate } }));
+        case "invoiceOut":
+          return Boolean(await this.prisma.main.invoiceOut.findFirst({ where: { number: candidate } }));
+        case "invoiceIn":
+          return Boolean(await this.prisma.main.invoiceIn.findFirst({ where: { number: candidate } }));
+        case "proyek":
+          return Boolean(await this.prisma.main.project.findFirst({ where: { name: candidate } }));
+        default:
+          return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  /** Nomor berikutnya: mengunci inkrement per jenis dokumen per bulan dan mencegah nomor kembar di database. */
   async next(docType: DocType, at: Date = new Date()): Promise<string> {
     const year = at.getFullYear();
     const month = at.getMonth() + 1;
     const period = `${year}-${pad(month, 2)}`;
 
-    const row = await this.prisma.main.documentNumber.upsert({
-      where: { docType_period: { docType, period } },
-      update: { seq: { increment: 1 } },
-      create: { docType, period, seq: 1 },
-    });
+    let candidate: string;
+    do {
+      const row = await this.prisma.main.documentNumber.upsert({
+        where: { docType_period: { docType, period } },
+        update: { seq: { increment: 1 } },
+        create: { docType, period, seq: 1 },
+      });
+      candidate = await this.format(docType, year, month, row.seq);
+    } while (await this.existsInDb(docType, candidate));
 
-    return this.format(docType, year, month, row.seq);
+    return candidate;
   }
 
   /** Saran nomor (tanpa mengunci) untuk tampilan form. */
@@ -87,7 +120,13 @@ export class DocumentNumberService {
     const row = await this.prisma.main.documentNumber.findUnique({
       where: { docType_period: { docType, period } },
     });
-    return this.format(docType, year, month, (row?.seq ?? 0) + 1);
+    let seq = (row?.seq ?? 0) + 1;
+    let candidate = await this.format(docType, year, month, seq);
+    while (await this.existsInDb(docType, candidate)) {
+      seq++;
+      candidate = await this.format(docType, year, month, seq);
+    }
+    return candidate;
   }
 
   /** Validasi nomor manual: unik per jenis dokumen (PRD: sistem menjaga keunikan). */

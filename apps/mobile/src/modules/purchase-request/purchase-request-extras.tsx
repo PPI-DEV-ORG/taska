@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { CheckCircle2, AlertTriangle, Truck, PackageCheck, XCircle, Clock, Check, FileText, Plus, DollarSign, UploadCloud, ExternalLink } from "lucide-react-native";
+import { CheckCircle2, AlertTriangle, Truck, PackageCheck, XCircle, Clock, Check, FileText, Plus, DollarSign, ExternalLink, Calendar } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,7 +13,7 @@ import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { toEnum } from "@/services/adapters";
-import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
+import { SearchableSelect, DatePicker, QuickAddSupplierDialog } from "@/components/taska/dialogs";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { Input } from "@/components/ui/input";
 
@@ -32,6 +32,7 @@ export function PurchaseRequestExtras({
   const [confirmReceiveOpen, setConfirmReceiveOpen] = React.useState(false);
   const [payModalOpen, setPayModalOpen] = React.useState(false);
   const [createPoOpen, setCreatePoOpen] = React.useState(false);
+  const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
   const [poSupplierId, setPoSupplierId] = React.useState<string>("");
   const [poPaymentTerms, setPoPaymentTerms] = React.useState<string>("Utang / Tempo (Net 30)");
   const [poEta, setPoEta] = React.useState<string>("");
@@ -152,8 +153,8 @@ export function PurchaseRequestExtras({
     linkedPo?.shipmentStatus === "DIKIRIM" ||
     linkedPo?.shipmentStatus === "SAMPAI";
 
-  const items: any[] = Array.isArray(row.items) ? row.items : [];
-  const stockInfo: any[] = Array.isArray(row.stock) ? row.stock : [];
+  const items: any[] = React.useMemo(() => (Array.isArray(row.items) ? row.items : []), [row.items]);
+  const stockInfo: any[] = React.useMemo(() => (Array.isArray(row.stock) ? row.stock : []), [row.stock]);
   const approval = row.approval;
   const isPendingApproval = approval?.status === "Menunggu" && !isApproved;
 
@@ -473,6 +474,8 @@ export function PurchaseRequestExtras({
     isStockTake,
     isRetailCash,
     isRetailDebt,
+    isDebt,
+    isSupplierPo,
     isDiajukan,
     isStockChecked,
     isCekStok,
@@ -484,7 +487,6 @@ export function PurchaseRequestExtras({
     isDiterima,
     isPaid,
     effectiveRaw,
-    linkedPo,
   ]);
 
   return (
@@ -567,6 +569,14 @@ export function PurchaseRequestExtras({
                 <Text className="text-amber-900/90 dark:text-amber-300/80 text-xs mt-0.5">
                   Barang & nota bon tempo telah diterima di gudang (stok bertambah & tercatat Hutang Usaha 210102). Menunggu pelunasan hutang oleh Finance.
                 </Text>
+                {row.dueDate || row.jatuhTempo ? (
+                  <View className="mt-1.5 flex-row items-center gap-1.5 bg-amber-500/20 px-2 py-0.5 rounded self-start">
+                    <Calendar size={13} color={colors.warning} />
+                    <Text className="text-xs font-semibold text-amber-950 dark:text-amber-200">
+                      Jatuh Tempo: {row.dueDate || row.jatuhTempo}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </View>
             {isFinance ? (
@@ -1283,10 +1293,14 @@ export function PurchaseRequestExtras({
             </DialogDescription>
           </DialogHeader>
           <View className="py-2 gap-3">
-            <FormField label="Dokumen Surat Jalan / Delivery Order (DO) / Foto Nota" hint="Lampirkan foto surat jalan DO atau bukti serah terima (opsional)">
+            <FormField label="Dokumen Surat Jalan / Delivery Order (DO) / Foto Nota" hint="Lampirkan foto surat jalan DO, dokumen PDF, atau bukti serah terima (opsional)">
               <FileUploader
-                label="Unggah Dokumen DO / Nota"
-                kind="dokumen"
+                label="Unggah Dokumen DO / Nota (Foto atau PDF)"
+                kind="semua"
+                accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+                allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
+                category="purchase-request-do"
+                hint="Mendukung foto/gambar (JPG, PNG) atau dokumen (PDF)"
                 autoFlush={true}
                 onUploaded={(id) => setDoFileId(id)}
               />
@@ -1340,10 +1354,14 @@ export function PurchaseRequestExtras({
               />
             </FormField>
 
-            <FormField label="Bukti Pembayaran / Struk Kas / Transfer" hint="Wajib dilampirkan sebagai bukti sah pencatatan kas keluar">
+            <FormField label="Bukti Pembayaran / Struk Kas / Transfer" hint="Wajib dilampirkan sebagai bukti sah pencatatan kas keluar (bisa PDF atau Foto/Gambar)">
               <FileUploader
-                label="Unggah Bukti Bayar"
-                kind="dokumen"
+                label="Unggah Bukti Bayar (Foto atau PDF)"
+                kind="semua"
+                accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+                allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
+                category="bukti-bayar"
+                hint="Mendukung foto/screenshot bukti transfer (JPG, PNG) atau dokumen (PDF)"
                 autoFlush={true}
                 onUploaded={(id) => setPaymentProofFileId(id)}
               />
@@ -1429,6 +1447,8 @@ export function PurchaseRequestExtras({
                   const found = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
                   if (found) setPoSupplierId(String(found.id));
                 }}
+                onAddNew={() => setQuickSupplierOpen(true)}
+                addNewLabel="+ Tambah Supplier Baru"
                 placeholder="Pilih supplier..."
               />
             </FormField>
@@ -1478,6 +1498,14 @@ export function PurchaseRequestExtras({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <QuickAddSupplierDialog
+        open={quickSupplierOpen}
+        onOpenChange={setQuickSupplierOpen}
+        onSuccess={(newSupp) => {
+          setPoSupplierId(String(newSupp.id));
+        }}
+      />
     </>
   );
 }
