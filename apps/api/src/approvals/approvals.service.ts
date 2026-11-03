@@ -21,7 +21,7 @@ function plan(kind: ApprovalKind, needsBos: boolean): Group[] {
     case "PENERIMAAN":
       return [{ roles: ["GUDANG"], mode: "all" }, { roles: ["PROCUREMENT"], mode: "all" }];
     case "OPNAME":
-      return [{ roles: ["PROCUREMENT"], mode: "all" }];
+      return [{ roles: ["PROCUREMENT", "FINANCE", "BOS"], mode: "any" }];
     case "PERMINTAAN_SURVEY":
       return [{ roles: ["PM", "BOS", "FINANCE"], mode: "any" }];
     case "SURAT_JALAN":
@@ -246,7 +246,14 @@ export class ApprovalsService {
     if (r.requestedById === user.id) return false;
 
     if (r.kind === "OPNAME") {
-      return user.role === "PROCUREMENT";
+      return (
+        user.role === "PROCUREMENT" ||
+        user.role === "FINANCE" ||
+        user.role === "BOS"
+      );
+    }
+    if (r.kind === "SURAT_JALAN") {
+      return user.role === "FINANCE" || user.role === "BOS";
     }
     if (r.kind === "PENERIMAAN") {
       return user.role === "GUDANG" || user.role === "PROCUREMENT";
@@ -344,7 +351,10 @@ export class ApprovalsService {
           : pendingSteps.filter(
               (s) =>
                 s.approverRole === (user.role as Role) ||
-                (r.kind === "OPNAME" && user.role === "PROCUREMENT") ||
+                (r.kind === "SURAT_JALAN" &&
+                  (user.role === "FINANCE" || user.role === "BOS")) ||
+                (r.kind === "OPNAME" &&
+                  (user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS")) ||
                 (r.kind === "PERMINTAAN_SURVEY" &&
                   (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")) ||
                 (r.kind === "PURCHASE_REQUEST" &&
@@ -392,17 +402,39 @@ export class ApprovalsService {
     if (
       approval.kind === "OPNAME" &&
       user.role !== "PROCUREMENT" &&
+      user.role !== "FINANCE" &&
+      user.role !== "BOS" &&
       user.role !== "SUPER_ADMIN" &&
       user.role !== "ADMIN"
     ) {
-      throw new ForbiddenException("Opname hanya dapat disetujui oleh Procurement");
+      throw new ForbiddenException("Opname hanya dapat disetujui oleh Procurement, Finance, atau Bos");
+    }
+    if (
+      approval.kind === "SURAT_JALAN" &&
+      user.role !== "FINANCE" &&
+      user.role !== "BOS" &&
+      user.role !== "SUPER_ADMIN" &&
+      user.role !== "ADMIN"
+    ) {
+      throw new ForbiddenException("Surat Jalan hanya dapat disetujui oleh Finance atau Bos");
     }
 
     const pending = approval.steps.filter((s) => s.status === "MENUNGGU");
     let step =
       pending.find((s) => s.approverRole === (user.role as Role)) ??
       (user.role === "SUPER_ADMIN" || user.role === "ADMIN" ? pending[0] : undefined);
-    if (!step && approval.kind === "OPNAME" && user.role === "PROCUREMENT") {
+    if (
+      !step &&
+      approval.kind === "OPNAME" &&
+      (user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS")
+    ) {
+      step = pending[0];
+    }
+    if (
+      !step &&
+      approval.kind === "SURAT_JALAN" &&
+      (user.role === "FINANCE" || user.role === "BOS")
+    ) {
       step = pending[0];
     }
     if (
@@ -421,11 +453,11 @@ export class ApprovalsService {
     }
     if (!step) throw new ForbiddenException(`Peran ${user.role} bukan penyetuju dokumen ini`);
 
-    if (approval.kind === "OPNAME") {
+    if (approval.kind === "OPNAME" || approval.kind === "SURAT_JALAN") {
       await this.prisma.main.approvalStep.updateMany({
         where: { approvalId, status: "MENUNGGU" },
         data: {
-          approverRole: "PROCUREMENT",
+          approverRole: user.role as Role,
           status: approve ? "DISETUJUI" : "DITOLAK",
           decidedById: user.id,
           decidedAt: new Date(),

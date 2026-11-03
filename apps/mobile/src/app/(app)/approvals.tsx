@@ -41,19 +41,23 @@ export default function ApprovalsScreen() {
       if (a.requestedById && userId && String(a.requestedById) === String(userId)) return false;
 
       if (role === "finance") {
-        if (a.module === "opname" || a.module === "receiving") return false;
+        if (a.module === "receiving") return false;
         if (Array.isArray(a.steps) && a.steps.length > 0) {
-          const isSurveyOrPr = a.module === "surveys" || a.module === "purchase-requests";
+          const canFinanceAny =
+            a.module === "surveys" ||
+            a.module === "purchase-requests" ||
+            a.module === "delivery-notes" ||
+            a.module === "opname";
           if (a.status === "Menunggu") {
             const hasPendingForFinance = a.steps.some(
               (st: any) =>
                 st.status === "MENUNGGU" &&
-                (st.approverRole === "FINANCE" || isSurveyOrPr),
+                (st.approverRole === "FINANCE" || canFinanceAny),
             );
             if (!hasPendingForFinance) return false;
           } else {
             const hasFinanceStep = a.steps.some(
-              (st: any) => st.approverRole === "FINANCE" || isSurveyOrPr,
+              (st: any) => st.approverRole === "FINANCE" || canFinanceAny,
             );
             if (!hasFinanceStep) return false;
           }
