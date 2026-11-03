@@ -178,6 +178,16 @@ export class QuotationsController {
     return this.service.addVersion(id, dto, user);
   }
 
+  @Delete(":id/versions/:versionId")
+  @Require("quotations", "U")
+  deleteVersion(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("versionId", ParseIntPipe) versionId: number,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.deleteVersion(id, versionId, user);
+  }
+
   @Delete(":id")
   @Require("quotations", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {

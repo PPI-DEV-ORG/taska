@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View, ScrollView, Pressable } from "react-native";
 import { useRouter } from "expo-router";
-import { Printer, Plus, Check, CheckCircle2, Circle, ExternalLink, RefreshCw, Package, Edit2, Trash2 } from "lucide-react-native";
+import { Printer, Plus, Check, CheckCircle2, Circle, ExternalLink, RefreshCw, Package, Edit2, Trash2, FileCheck, FileText, Upload } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { useApp } from "@/store/app-store";
-import { api, downloadDocumentationPdf } from "@/services/api";
+import { api, apiBase, downloadDocumentationPdf } from "@/services/api";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -73,6 +74,20 @@ export function ProjectExtras({ row }: { row: Row }) {
   const [customBoqQty, setCustomBoqQty] = React.useState("1");
   const [customBoqPphMode, setCustomBoqPphMode] = React.useState("none");
   const [bastOpen, setBastOpen] = React.useState(false);
+  const [bastMode, setBastMode] = React.useState<"generate" | "upload">("generate");
+  const [bastNumber, setBastNumber] = React.useState("");
+  const [bastDate, setBastDate] = React.useState("");
+  const [bastP1Name, setBastP1Name] = React.useState("");
+  const [bastP1Title, setBastP1Title] = React.useState("Project Manager");
+  const [bastP2Company, setBastP2Company] = React.useState("");
+  const [bastP2Name, setBastP2Name] = React.useState("");
+  const [bastP2Title, setBastP2Title] = React.useState("Penanggung Jawab Proyek");
+  const [bastStatement, setBastStatement] = React.useState("");
+  const [bastNotes, setBastNotes] = React.useState("");
+  const [bastItems, setBastItems] = React.useState<{ name: string; qty: number; unit: string }[]>([]);
+  const [isGeneratingBast, setIsGeneratingBast] = React.useState(false);
+  const bastUploaderRef = React.useRef<FileUploaderHandle | null>(null);
+
   const [requirements, setRequirements] = React.useState<
     {
       id: string;
@@ -113,12 +128,16 @@ export function ProjectExtras({ row }: { row: Row }) {
   const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "sales", "admin"].includes(normalizedRole);
   const linkedQuotation = React.useMemo(() => {
     const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
+    const cleanProjName = String(row.nama || "").replace(/^Project\s+/i, "").trim().toLowerCase();
     return (data.quotations ?? []).find(
       (q: Row) =>
         (row.quotationId && String(q.id) === String(row.quotationId)) ||
-        (cleanQuoNum && cleanQuoNum !== "-" && String(q.nomor || "").toLowerCase() === cleanQuoNum),
+        (cleanQuoNum && cleanQuoNum !== "-" && String(q.nomor || "").toLowerCase() === cleanQuoNum) ||
+        (row.leadId && String(q.leadId) === String(row.leadId)) ||
+        (cleanProjName && (q.lead?.toLowerCase()?.includes(cleanProjName) || q.subject?.toLowerCase()?.includes(cleanProjName))) ||
+        (row.customer && row.customer !== "-" && q.customer === row.customer),
     );
-  }, [data.quotations, row.quotationId, row.penawaran]);
+  }, [data.quotations, row.quotationId, row.penawaran, row.leadId, row.nama, row.customer]);
 
   const linkedSurveys = React.useMemo(() => {
     return (data.surveys ?? []).filter(
@@ -138,14 +157,47 @@ export function ProjectExtras({ row }: { row: Row }) {
     );
   }, [data, linkedQuotation, row.customer]);
 
-  const projectInvoices = (data.invoices || []).filter(
-    (i: any) =>
-      i.direction !== "in" &&
-      i.status !== "Batal" &&
-      (String(i.projectId) === String(row.id) ||
-        (i.project && i.project === row.nama) ||
-        (linkedQuotation && String(i.quotationId) === String(linkedQuotation.id))),
-  );
+  const rawProjectInvoices = Array.isArray(row._invoices) ? row._invoices : [];
+  const projectInvoices = React.useMemo(() => {
+    const list = [...(data.invoices || [])];
+    const map = new Map<string, any>();
+    const cleanProjName = String(row.nama || "").replace(/^Project\s+/i, "").trim().toLowerCase();
+
+    for (const inv of list) {
+      if (inv.direction === "in" || inv.status === "Batal") continue;
+      const isMatched =
+        (row.id && String(inv.projectId) === String(row.id)) ||
+        (inv.project && inv.project === row.nama) ||
+        (linkedQuotation && (String(inv.quotationId) === String(linkedQuotation.id) || (inv.quotation && inv.quotation === linkedQuotation.nomor))) ||
+        (row.leadId && String(inv.leadId) === String(row.leadId)) ||
+        (cleanProjName && (inv.catatan?.toLowerCase()?.includes(cleanProjName) || inv.project?.toLowerCase()?.includes(cleanProjName)));
+
+      if (isMatched) {
+        map.set(String(inv.id), inv);
+      }
+    }
+    for (const inv of rawProjectInvoices) {
+      if (!map.has(String(inv.id))) {
+        map.set(String(inv.id), {
+          id: String(inv.id),
+          nomor: inv.number,
+          total: Number(inv.total || 0),
+          nilai: Number(inv.total || 0),
+          terbayar: Number(inv.paidAmount || 0),
+          status: inv.status === "PAID" ? "Lunas" : inv.status,
+          jatuhTempo: inv.dueDate,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [data.invoices, row.id, row.nama, row.leadId, linkedQuotation, rawProjectInvoices]);
+
+  const isAllInvoicesPaid =
+    row.pembayaran === "Lunas" ||
+    row.paymentStatus === "LUNAS" ||
+    (projectInvoices.length > 0 &&
+      projectInvoices.every((i: any) => i.status === "Lunas" || Number(i.terbayar) >= Number(i.total)));
+
   const revenue = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
   const projectPos = (data["supplier-pos"] || []).filter(
     (po: any) => String(po.projectId) === String(row.id) && po.status !== "Ditolak" && po.status !== "DIBATALKAN"
@@ -435,6 +487,96 @@ export function ProjectExtras({ row }: { row: Row }) {
       toast("Jasa BOQ berhasil dihapus");
     } catch (e: any) {
       toast(e?.message ?? "Gagal menghapus jasa BOQ", "danger");
+    }
+  }
+
+  const prevBastOpenRef = React.useRef(false);
+  React.useEffect(() => {
+    if (bastOpen && !prevBastOpenRef.current) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      setBastNumber(`BAST-P${row.id}-${todayStr.replace(/-/g, "")}`);
+      setBastDate(todayStr);
+      setBastP1Name(row.pm || user?.name || "Project Manager");
+      setBastP1Title("Project Manager");
+      setBastP2Company(row.customer || "Customer");
+      setBastP2Name(row.picClient || "Penanggung Jawab Proyek");
+      setBastP2Title("Penanggung Jawab Proyek");
+      setBastStatement(
+        "Dengan ini kedua belah pihak menyatakan bahwa seluruh pekerjaan pengadaan, instalasi, dan integrasi perangkat untuk proyek di atas telah diselesaikan dengan baik, telah diuji coba secara bersama-sama, dan dinyatakan berfungsi normal sesuai spesifikasi teknis yang disepakati."
+      );
+      setBastNotes(
+        "Garansi pemeliharaan dan perangkat berlaku sesuai ketentuan kontrak yang disepakati kedua belah pihak."
+      );
+      const initialItems = requirements.length > 0
+        ? requirements.map((r) => ({
+            name: r.produk || "Barang / Material",
+            qty: Number(r.neededQty || 1),
+            unit: r.unit || "unit",
+          }))
+        : [
+            {
+              name: `Pekerjaan ${row.nama || "Proyek"}`,
+              qty: 1,
+              unit: "Lot",
+            },
+          ];
+      setBastItems(initialItems);
+      setBastMode("generate");
+    }
+    prevBastOpenRef.current = bastOpen;
+  }, [bastOpen]);
+
+  async function handleGenerateBast() {
+    setIsGeneratingBast(true);
+    try {
+      const res = await api<any>("POST", `/projects/${row.id}/generate-bast`, {
+        number: bastNumber.trim(),
+        date: bastDate,
+        party1Company: "PT GHINA MULTI PRIMA",
+        party1Name: bastP1Name.trim(),
+        party1Title: bastP1Title.trim(),
+        party2Company: bastP2Company.trim(),
+        party2Name: bastP2Name.trim(),
+        party2Title: bastP2Title.trim(),
+        statement: bastStatement.trim(),
+        items: bastItems.filter((it) => it.name.trim()).map((it) => ({
+          name: it.name.trim(),
+          qty: Math.max(1, Number(it.qty) || 1),
+          unit: it.unit?.trim() || "unit",
+        })),
+        notes: bastNotes.trim(),
+      });
+      if (res?.fileId) {
+        toast("Dokumen BAST resmi berhasil dibuat & tersimpan di Tab Dokumen!");
+        setBastOpen(false);
+        if (typeof window !== "undefined") {
+          window.open(`${apiBase()}/files/${res.fileId}/download`, "_blank");
+        }
+        await reload();
+      }
+    } catch (err: any) {
+      toast(err?.message || "Gagal meng-generate BAST", "danger");
+    } finally {
+      setIsGeneratingBast(false);
+    }
+  }
+
+  async function handleSaveManualBast() {
+    setIsGeneratingBast(true);
+    try {
+      const fileId = await bastUploaderRef.current?.flush();
+      if (!fileId) {
+        toast("Silakan pilih/unggah file dokumen BAST terlebih dahulu", "danger");
+        return;
+      }
+      await patchRow("projects", row.id, { bastFileId: fileId });
+      toast("Dokumen BAST manual berhasil disimpan & terhubung ke Tab Dokumen!");
+      setBastOpen(false);
+      await reload();
+    } catch (err: any) {
+      toast(err?.message || "Gagal menyimpan dokumen BAST", "danger");
+    } finally {
+      setIsGeneratingBast(false);
     }
   }
 
@@ -762,7 +904,7 @@ export function ProjectExtras({ row }: { row: Row }) {
         }
       >
         <Line left="Status Pekerjaan Fisik" right={<StatusBadge status={row.status || "Berjalan"} />} />
-        <Line left="Status Pembayaran Termin" right={<StatusBadge status={row.pembayaran || "Belum lunas"} />} />
+        <Line left="Status Pembayaran Termin" right={<StatusBadge status={isAllInvoicesPaid ? "Lunas" : row.pembayaran || "Belum lunas"} />} />
         <Text className="text-xs text-muted-foreground mt-2 leading-relaxed">
           Setelah seluruh item pekerjaan diuji coba dan disetujui klien, cetak draf BAST resmi untuk ditandatangani kedua belah pihak.
         </Text>
@@ -1106,62 +1248,273 @@ export function ProjectExtras({ row }: { row: Row }) {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Preview & Cetak BAST */}
+      {/* Modal Buat & Edit Draf BAST / Upload Manual */}
       <Dialog open={bastOpen} onOpenChange={setBastOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+        <DialogContent className="sm:max-w-3xl max-h-[92vh]">
           <DialogHeader>
             <DialogTitle>Berita Acara Serah Terima (BAST)</DialogTitle>
           </DialogHeader>
-          <ScrollView className="py-2 gap-4">
-            <View className="bg-panel border-border/80 rounded-xl border p-4 gap-2">
-              <Text className="font-bold text-sm tracking-wide">PT GHINA MULTI PRIMA</Text>
-              <Text className="text-xs text-muted-foreground">BERITA ACARA SERAH TERIMA PEKERJAAN (BAST)</Text>
-              <View className="border-border border-t pt-2 gap-1 mt-1">
-                <Text className="text-xs font-semibold">Nama Proyek: {row.nama}</Text>
-                <Text className="text-xs text-muted-foreground">Pihak Pertama (Penyedia): PT Ghina Multi Prima</Text>
-                <Text className="text-xs text-muted-foreground">Pihak Kedua (Klien): {row.customer}</Text>
-                <Text className="text-xs text-muted-foreground">Project Manager: {row.pm}</Text>
-                <Text className="text-xs text-muted-foreground">Tanggal: {new Date().toISOString().slice(0, 10)}</Text>
-              </View>
-            </View>
 
-            <View className="border-border border rounded-xl p-3 gap-1.5">
-              <Text className="text-xs font-semibold">Pernyataan Serah Terima:</Text>
-              <Text className="text-xs leading-relaxed text-muted-foreground">
-                Dengan ini kedua belah pihak menyatakan bahwa pekerjaan pengadaan, instalasi, dan integrasi perangkat untuk proyek di atas telah diselesaikan dengan baik, telah diuji coba secara bersama-sama, dan dinyatakan berfungsi normal sesuai spesifikasi teknis yang disepakati.
+          {/* Tab Pilihan: Buat Draf (Edit Isi) vs Upload Manual */}
+          <View className="flex-row p-1 bg-muted/40 rounded-lg gap-1">
+            <Button
+              size="sm"
+              variant={bastMode === "generate" ? "default" : "ghost"}
+              className="flex-1 h-8"
+              onPress={() => setBastMode("generate")}
+            >
+              <FileText size={13} className="mr-1.5" />
+              <Text className="text-xs font-semibold">Buat Draf BAST (Edit Isi)</Text>
+            </Button>
+            <Button
+              size="sm"
+              variant={bastMode === "upload" ? "default" : "ghost"}
+              className="flex-1 h-8"
+              onPress={() => setBastMode("upload")}
+            >
+              <Upload size={13} className="mr-1.5" />
+              <Text className="text-xs font-semibold">Upload File Manual</Text>
+            </Button>
+          </View>
+
+          {bastMode === "generate" ? (
+            <ScrollView className="py-2 gap-4 max-h-[68vh]">
+              {/* Form Pengaturan Dokumen BAST */}
+              <View className="bg-card border border-border rounded-xl p-3.5 gap-3">
+                <Text className="font-semibold text-xs text-foreground">Data & Konfigurasi Dokumen BAST</Text>
+                
+                <View className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  <View className="gap-1">
+                    <Text className="text-[11px] text-muted-foreground font-medium">Nomor Dokumen BAST</Text>
+                    <Input
+                      value={bastNumber}
+                      onChangeText={setBastNumber}
+                      placeholder="Contoh: BAST/2026/11/001"
+                      className="h-8 text-xs"
+                    />
+                  </View>
+                  <View className="gap-1">
+                    <Text className="text-[11px] text-muted-foreground font-medium">Tanggal Dokumen (YYYY-MM-DD)</Text>
+                    <Input
+                      value={bastDate}
+                      onChangeText={setBastDate}
+                      placeholder="2026-11-03"
+                      className="h-8 text-xs"
+                    />
+                  </View>
+                </View>
+
+                {/* Pihak Pertama (Penyedia) */}
+                <View className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1 border-t border-border/60">
+                  <View className="gap-1">
+                    <Text className="text-[11px] text-muted-foreground font-medium">PIC Pihak Pertama (PT GMP)</Text>
+                    <Input
+                      value={bastP1Name}
+                      onChangeText={setBastP1Name}
+                      placeholder="Nama Project Manager"
+                      className="h-8 text-xs"
+                    />
+                  </View>
+                  <View className="gap-1">
+                    <Text className="text-[11px] text-muted-foreground font-medium">Jabatan Pihak Pertama</Text>
+                    <Input
+                      value={bastP1Title}
+                      onChangeText={setBastP1Title}
+                      placeholder="Project Manager"
+                      className="h-8 text-xs"
+                    />
+                  </View>
+                </View>
+
+                {/* Pihak Kedua (Klien) */}
+                <View className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1 border-t border-border/60">
+                  <View className="gap-1">
+                    <Text className="text-[11px] text-muted-foreground font-medium">Nama Perusahaan Klien</Text>
+                    <Input
+                      value={bastP2Company}
+                      onChangeText={setBastP2Company}
+                      placeholder="Nama Klien"
+                      className="h-8 text-xs"
+                    />
+                  </View>
+                  <View className="gap-1">
+                    <Text className="text-[11px] text-muted-foreground font-medium">Nama PIC Klien</Text>
+                    <Input
+                      value={bastP2Name}
+                      onChangeText={setBastP2Name}
+                      placeholder="Nama Penanggung Jawab"
+                      className="h-8 text-xs"
+                    />
+                  </View>
+                  <View className="gap-1">
+                    <Text className="text-[11px] text-muted-foreground font-medium">Jabatan PIC Klien</Text>
+                    <Input
+                      value={bastP2Title}
+                      onChangeText={setBastP2Title}
+                      placeholder="Penanggung Jawab Proyek"
+                      className="h-8 text-xs"
+                    />
+                  </View>
+                </View>
+
+                {/* Pernyataan Serah Terima */}
+                <View className="gap-1 pt-1 border-t border-border/60">
+                  <Text className="text-[11px] text-muted-foreground font-medium">Isi Pernyataan Serah Terima</Text>
+                  <Input
+                    value={bastStatement}
+                    onChangeText={setBastStatement}
+                    multiline
+                    numberOfLines={3}
+                    placeholder="Teks pernyataan serah terima..."
+                    className="text-xs min-h-[64px]"
+                  />
+                </View>
+
+                {/* Rincian Material & Pekerjaan */}
+                <View className="gap-2 pt-1 border-t border-border/60">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-[11px] text-muted-foreground font-medium">Daftar Barang & Pekerjaan BAST ({bastItems.length} Item)</Text>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2"
+                      onPress={() => setBastItems((prev) => [...prev, { name: "", qty: 1, unit: "unit" }])}
+                    >
+                      <Plus size={12} color={colors.text} className="mr-1" />
+                      <Text className="text-[11px]">+ Tambah Item</Text>
+                    </Button>
+                  </View>
+
+                  {bastItems.map((item, idx) => (
+                    <View key={idx} className="flex-row items-center gap-1.5">
+                      <View className="flex-1">
+                        <Input
+                          value={item.name}
+                          onChangeText={(v) => {
+                            setBastItems((prev) => prev.map((it, i) => (i === idx ? { ...it, name: v } : it)));
+                          }}
+                          placeholder="Nama barang / lingkup pekerjaan..."
+                          className="h-8 text-xs"
+                        />
+                      </View>
+                      <View className="w-16">
+                        <Input
+                          value={item.qty === 0 ? "" : String(item.qty)}
+                          onChangeText={(v) => {
+                            const val = v.replace(/[^0-9]/g, "");
+                            setBastItems((prev) => prev.map((it, i) => (i === idx ? { ...it, qty: val === "" ? 0 : Number(val) } : it)));
+                          }}
+                          keyboardType="numeric"
+                          placeholder="Qty"
+                          className="h-8 text-xs text-center"
+                        />
+                      </View>
+                      <View className="w-20">
+                        <Input
+                          value={item.unit}
+                          onChangeText={(v) => {
+                            setBastItems((prev) => prev.map((it, i) => (i === idx ? { ...it, unit: v } : it)));
+                          }}
+                          placeholder="Satuan"
+                          className="h-8 text-xs text-center"
+                        />
+                      </View>
+                      {bastItems.length > 1 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          onPress={() => setBastItems((prev) => prev.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 size={13} color={colors.danger} />
+                        </Button>
+                      )}
+                    </View>
+                  ))}
+                </View>
+
+                {/* Catatan / Garansi */}
+                <View className="gap-1 pt-1 border-t border-border/60">
+                  <Text className="text-[11px] text-muted-foreground font-medium">Catatan Tambahan / Klausul Garansi</Text>
+                  <Input
+                    value={bastNotes}
+                    onChangeText={setBastNotes}
+                    placeholder="Ketentuan garansi atau pemeliharaan..."
+                    className="h-8 text-xs"
+                  />
+                </View>
+              </View>
+
+              {/* Preview Format Surat BAST */}
+              <View className="bg-panel border-border/80 rounded-xl border p-4 gap-2">
+                <Text className="font-bold text-sm tracking-wide text-center">PT GHINA MULTI PRIMA</Text>
+                <Text className="text-xs text-muted-foreground text-center">BERITA ACARA SERAH TERIMA PEKERJAAN (BAST)</Text>
+                <View className="border-border border-t pt-2 gap-1 mt-1">
+                  <Text className="text-xs font-semibold">Nomor: {bastNumber || "-"}</Text>
+                  <Text className="text-xs font-semibold">Nama Proyek: {row.nama}</Text>
+                  <Text className="text-xs text-muted-foreground">Pihak Pertama (Penyedia): PT Ghina Multi Prima ({bastP1Name || "-"})</Text>
+                  <Text className="text-xs text-muted-foreground">Pihak Kedua (Klien): {bastP2Company || "-"} ({bastP2Name || "-"})</Text>
+                  <Text className="text-xs text-muted-foreground">Tanggal: {bastDate || "-"}</Text>
+                </View>
+
+                <View className="border-border border rounded-lg p-2.5 my-1">
+                  <Text className="text-xs leading-relaxed text-muted-foreground">{bastStatement || "-"}</Text>
+                </View>
+
+                <View className="border-border border-t pt-4 flex-row justify-between">
+                  <View className="items-center w-40">
+                    <Text className="text-[11px] text-muted-foreground">Pihak Pertama</Text>
+                    <View className="h-12" />
+                    <Text className="text-xs font-semibold">{bastP1Name || "Project Manager"}</Text>
+                    <Text className="text-[10px] text-muted-foreground">{bastP1Title || "PT Ghina Multi Prima"}</Text>
+                  </View>
+                  <View className="items-center w-40">
+                    <Text className="text-[11px] text-muted-foreground">Pihak Kedua</Text>
+                    <View className="h-12" />
+                    <Text className="text-xs font-semibold">{bastP2Name || "Penanggung Jawab"}</Text>
+                    <Text className="text-[10px] text-muted-foreground">{bastP2Title || bastP2Company}</Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          ) : (
+            <View className="py-4 gap-3">
+              <Text className="text-xs text-muted-foreground leading-relaxed">
+                Lampirkan file dokumen BAST yang sudah ditandatangani basah / hasil scan (PDF, DOCX, JPG, PNG). File akan otomatis terpasang di Tab Dokumen bagian BAST.
               </Text>
+              <FileUploader
+                label="Unggah File Dokumen BAST Resmi (PDF, DOCX, JPG, PNG)"
+                kind="dokumen"
+                handleRef={(h) => {
+                  bastUploaderRef.current = h;
+                }}
+              />
             </View>
+          )}
 
-            <View className="border-border border rounded-xl p-3 gap-2">
-              <Text className="text-xs font-semibold">Rincian Material Project:</Text>
-              {requirements.map((m, idx) => (
-                <Text key={m.id} className="text-xs text-muted-foreground">{idx + 1}. {m.produk} — {m.neededQty} unit</Text>
-              ))}
-            </View>
-
-            <View className="border-border border-t pt-4 flex-row justify-between">
-              <View className="items-center w-40">
-                <Text className="text-[11px] text-muted-foreground">Pihak Pertama</Text>
-                <View className="h-14" />
-                <Text className="text-xs font-semibold">{row.pm || "Project Manager"}</Text>
-                <Text className="text-[10px] text-muted-foreground">PT Ghina Multi Prima</Text>
-              </View>
-              <View className="items-center w-40">
-                <Text className="text-[11px] text-muted-foreground">Pihak Kedua</Text>
-                <View className="h-14" />
-                <Text className="text-xs font-semibold">{row.customer}</Text>
-                <Text className="text-[10px] text-muted-foreground">Penanggung Jawab Proyek</Text>
-              </View>
-            </View>
-          </ScrollView>
-          <DialogFooter>
-            <Button variant="outline" onPress={() => setBastOpen(false)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onPress={() => setBastOpen(false)} disabled={isGeneratingBast}>
               <Text>Tutup</Text>
             </Button>
-            <Button onPress={handlePrintBast} className="flex-row items-center gap-1.5">
-              <Printer size={14} color={colors.background} />
-              <Text>Cetak / Simpan BAST</Text>
-            </Button>
+            {bastMode === "generate" ? (
+              <Button
+                onPress={handleGenerateBast}
+                disabled={isGeneratingBast}
+                className="flex-row items-center gap-1.5"
+              >
+                <Printer size={14} color={colors.background} />
+                <Text>{isGeneratingBast ? "Menyimpan & Generate..." : "Simpan & Generate Dokumen BAST"}</Text>
+              </Button>
+            ) : (
+              <Button
+                onPress={handleSaveManualBast}
+                disabled={isGeneratingBast}
+                className="flex-row items-center gap-1.5"
+              >
+                <Check size={14} color={colors.background} />
+                <Text>{isGeneratingBast ? "Menyimpan..." : "Simpan File BAST Manual"}</Text>
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

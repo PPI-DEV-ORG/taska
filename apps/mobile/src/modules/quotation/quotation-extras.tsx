@@ -173,13 +173,41 @@ export function QuotationExtras({
   }, [row.totalAfterDisc, row.total, row.nilai]);
 
   const pdfFiles = React.useMemo(() => {
-    const list = Array.isArray(row.files) ? row.files : [];
+    const list: any[] = Array.isArray(row.files) ? [...row.files] : [];
+    const seenIds = new Set(list.map((f: any) => Number(f.id)));
+
+    for (const v of apiVersions) {
+      if (v.fileId && !seenIds.has(Number(v.fileId))) {
+        const fName = String(v.file || "").toLowerCase();
+        if (fName.endsWith(".pdf") || !fName.includes(".")) {
+          list.push({
+            id: v.fileId,
+            originalName: v.file || `Versi-${v.v}.pdf`,
+            mimeType: "application/pdf",
+            createdAt: v.date,
+          });
+          seenIds.add(Number(v.fileId));
+        }
+      }
+    }
+
     return list.filter((f: any) => {
       const name = String(f.originalName || "").toLowerCase();
       const mime = String(f.mimeType || "").toLowerCase();
       return name.endsWith(".pdf") || mime === "application/pdf";
     });
-  }, [row.files]);
+  }, [row.files, apiVersions]);
+
+  async function handleDeleteVersion(versionId: string, versionNum: number) {
+    try {
+      await api("DELETE", `/quotations/${row.id}/versions/${versionId}`);
+      await onRefresh?.();
+      await reload();
+      toast(`Versi ${versionNum} penawaran berhasil dihapus`);
+    } catch (e: any) {
+      toast(e?.message || "Gagal menghapus versi", "danger");
+    }
+  }
 
   async function handleDeletePdf(fileId: number, fileName: string) {
     try {
@@ -629,33 +657,122 @@ export function QuotationExtras({
       />
 
       {/* Dokumen Penawaran Manual */}
-      <Panel
-        title="Dokumen Penawaran Manual"
-        subtitle="Upload dokumen file penawaran manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke penawaran ini."
-      >
-        <FileUploader
-          label="Pilih atau Tarik File Dokumen Penawaran Manual (PDF / Excel)"
-          kind="dokumen"
-          category="penawaran"
-          autoFlush
-          onFilePicked={async (file) => {
-            try {
-              const uploadedId = await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
-              if (!uploadedId) throw new Error("Gagal mengunggah file ke server");
-              await patchRow("quotations", row.id, {
-                fileUploaded: true,
-                fileName: file.name,
-                latestFileId: uploadedId,
-              });
-              await onRefresh?.();
-              await reload();
-              toast(`File "${file.name}" berhasil diunggah!`);
-            } catch (e: any) {
-              toast(e?.message || "Gagal mengunggah file", "danger");
-            }
-          }}
-        />
-      </Panel>
+      {(() => {
+        const latestVersionWithFile = [...apiVersions].reverse().find((v) => v.fileId);
+        const activeManualFileId = row.latestFileId || row.fileId || latestVersionWithFile?.fileId || null;
+        const activeManualFileName = row.latestFileName || latestVersionWithFile?.file || (activeManualFileId ? row.fileName : null);
+        const activeManualVersionNum = latestVersionWithFile?.v || (row.versi && Number(row.versi) > 0 ? Number(row.versi) : 1);
+
+        return (
+          <Panel
+            title="Dokumen Penawaran Manual"
+            subtitle="Upload dokumen file penawaran manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke penawaran ini."
+          >
+            {activeManualFileId ? (
+              <View className="mb-3 p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2.5 flex-1 mr-2">
+                  <View className="p-2 bg-primary/10 rounded-lg">
+                    <FileText size={20} color={colors.primary} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
+                      {activeManualFileName || `Dokumen-Penawaran-${row.nomor}`}
+                    </Text>
+                    <Text className="text-[11px] text-muted-foreground mt-0.5">
+                      Tersimpan sebagai Revisi Versi {activeManualVersionNum}
+                    </Text>
+                  </View>
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => {
+                      const url = `${apiBase()}/files/${activeManualFileId}`;
+                      if (typeof window !== "undefined") {
+                        window.open(url, "_blank");
+                      } else {
+                        Linking.openURL(url).catch(() => {});
+                      }
+                    }}
+                    className="h-8 px-2.5 flex-row items-center gap-1"
+                  >
+                    <FileText size={12} color={colors.primary} />
+                    <Text className="text-xs font-medium">Buka File</Text>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={async () => {
+                      try {
+                        if (activeManualFileId) {
+                          await api("DELETE", `/files/${activeManualFileId}`).catch(() => {});
+                        }
+                        await api("PATCH", `/quotations/${row.id}`, { fileId: null }).catch(() => {});
+                        await patchRow("quotations", row.id, {
+                          latestFileId: null,
+                          latestFileName: null,
+                          fileName: "",
+                          fileUploaded: false,
+                          fileStatus: "Belum diupload",
+                        });
+                        await reload();
+                        await onRefresh?.();
+                        toast("Dokumen penawaran berhasil dihapus");
+                      } catch {
+                        toast("Gagal menghapus dokumen", "danger");
+                      }
+                    }}
+                    className="h-8 px-2.5 flex-row items-center gap-1 border-danger/40 hover:bg-danger/10"
+                  >
+                    <Trash2 size={12} color={colors.danger} />
+                    <Text className="text-xs font-medium text-danger">Hapus File</Text>
+                  </Button>
+                </View>
+              </View>
+            ) : null}
+
+            <FileUploader
+              label={activeManualFileId ? "Ganti / Unggah File Revisi Baru (PDF / Excel)" : "Pilih atau Tarik File Dokumen Penawaran Manual (PDF / Excel)"}
+              kind="dokumen"
+              category="penawaran"
+              autoFlush
+              onFilePicked={async (file) => {
+                try {
+                  const uploadedId = await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
+                  if (!uploadedId) throw new Error("Gagal mengunggah file ke server");
+
+                  const targetVerNum = apiVersions.length === 0 ? 1 : nextVersionNum;
+                  await api("POST", `/quotations/${row.id}/versions`, {
+                    total: Number(row.total || row.nilai || 0),
+                    ppn: Number(row.ppn || 0),
+                    discount: Number(row.disc || 0),
+                    pph: Number(row.pph || 0),
+                    grandTotal: Number(row.totalAfterDisc || row.total || row.nilai || 0),
+                    note: `Dokumen Penawaran Manual: ${file.name}`,
+                    fileId: uploadedId,
+                  });
+
+                  await patchRow("quotations", row.id, {
+                    fileUploaded: true,
+                    fileName: file.name,
+                    latestFileId: uploadedId,
+                    latestFileName: file.name,
+                    fileId: uploadedId,
+                    status: "Draft",
+                  });
+
+                  await onRefresh?.();
+                  await reload();
+                  toast(`File "${file.name}" berhasil diunggah sebagai Versi ${targetVerNum}!`);
+                } catch (e: any) {
+                  toast(e?.message || "Gagal mengunggah file", "danger");
+                }
+              }}
+            />
+          </Panel>
+        );
+      })()}
 
       <Panel
         title="Riwayat Versi"
@@ -690,62 +807,87 @@ export function QuotationExtras({
                       </Text>
                       <StatusBadge status={ver.v === row.versi ? row.status : ((ver as any).status || "Ditolak")} />
                     </View>
-                  <Text className="text-xs text-muted-foreground mt-0.5">
-                    {ver.reason ? `${ver.reason} · ` : ""}{ver.date || "-"}
-                  </Text>
+                    <Text className="text-xs text-muted-foreground mt-0.5">
+                      {ver.reason ? `${ver.reason} · ` : ""}{ver.date || "-"}
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-sm font-bold text-primary">
+                      {rupiah(ver.totalAfterDisc || ver.total)}
+                    </Text>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onPress={() => handleDeleteVersion(ver.id, ver.v)}
+                      className="h-7 w-7 p-0 items-center justify-center text-danger hover:bg-danger/10"
+                    >
+                      <Trash2 size={13} color={colors.danger} />
+                    </Button>
+                  </View>
                 </View>
-                <Text className="text-sm font-bold text-primary">
-                  {rupiah(ver.totalAfterDisc || ver.total)}
-                </Text>
-              </View>
 
               <View className="flex-row items-center gap-2 pt-1 border-t border-border/40">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onPress={() => {
-                    if (ver.fileId) {
+                {ver.fileId ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => {
                       const url = `${apiBase()}/files/${ver.fileId}`;
                       if (typeof window !== "undefined") {
                         window.open(url, "_blank");
                       } else {
                         Linking.openURL(url).catch(() => {});
                       }
-                    } else {
-                      downloadQuotationTemplate({
-                        quotationId: row.id,
-                        customer: row.customer,
-                        lead: row.lead,
-                        nomor: row.nomor,
-                        signer: row.pemilik,
-                      });
-                    }
-                    toast(`Mengunduh file Excel v${ver.v} (.xlsx)`);
-                  }}
-                  className="flex-row items-center gap-1 h-8 px-2.5"
-                >
-                  <FileDown size={13} color={colors.text} />
-                  <Text className="text-xs">Unduh Excel (.xlsx)</Text>
-                </Button>
+                      toast(`Membuka dokumen v${ver.v}`);
+                    }}
+                    className="flex-row items-center gap-1.5 h-8 px-2.5 bg-primary/10 border-primary"
+                  >
+                    <FileDown size={13} color={colors.primary} />
+                    <Text className="text-xs font-semibold text-primary" numberOfLines={1}>
+                      Buka Dokumen Revisi {ver.file ? `(${ver.file})` : `(v${ver.v})`}
+                    </Text>
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onPress={() => {
+                        downloadQuotationTemplate({
+                          quotationId: row.id,
+                          customer: row.customer,
+                          lead: row.lead,
+                          nomor: row.nomor,
+                          signer: row.pemilik,
+                        });
+                        toast(`Mengunduh file Excel v${ver.v} (.xlsx)`);
+                      }}
+                      className="flex-row items-center gap-1 h-8 px-2.5"
+                    >
+                      <FileDown size={13} color={colors.text} />
+                      <Text className="text-xs">Unduh Excel (.xlsx)</Text>
+                    </Button>
 
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onPress={() => {
-                    downloadQuotationPdf({
-                      quotationId: row.id,
-                      customer: row.customer,
-                      lead: row.lead,
-                      nomor: row.nomor,
-                      signer: row.pemilik,
-                    });
-                    toast(`Mengunduh file PDF resmi v${ver.v}`);
-                  }}
-                  className="flex-row items-center gap-1 h-8 px-2.5"
-                >
-                  <FileText size={13} color={colors.text} />
-                  <Text className="text-xs">Unduh PDF (Client)</Text>
-                </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onPress={() => {
+                        downloadQuotationPdf({
+                          quotationId: row.id,
+                          customer: row.customer,
+                          lead: row.lead,
+                          nomor: row.nomor,
+                          signer: row.pemilik,
+                        });
+                        toast(`Mengunduh file PDF resmi v${ver.v}`);
+                      }}
+                      className="flex-row items-center gap-1 h-8 px-2.5"
+                    >
+                      <FileText size={13} color={colors.text} />
+                      <Text className="text-xs">Unduh PDF (Client)</Text>
+                    </Button>
+                  </>
+                )}
               </View>
             </View>
           )))}

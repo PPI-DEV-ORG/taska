@@ -380,7 +380,12 @@ export class ApprovalsService {
     });
     if (!approval) throw new NotFoundException("Dokumen tidak ditemukan");
 
-    if (approval.status !== "MENUNGGU") throw new ConflictException("Dokumen sudah diputuskan");
+    if (approval.status !== "MENUNGGU") {
+      if ((approval.status === "DISETUJUI" && approve) || (approval.status === "DITOLAK" && !approve)) {
+        return approval;
+      }
+      throw new ConflictException("Dokumen sudah diputuskan");
+    }
     if (user.role !== "SUPER_ADMIN" && approval.requestedById === user.id) {
       throw new ForbiddenException("Pembuat dokumen tidak boleh menyetujui dokumennya sendiri");
     }

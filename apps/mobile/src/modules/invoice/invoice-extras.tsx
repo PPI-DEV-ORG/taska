@@ -603,8 +603,53 @@ export function InvoiceExtras({
         title="Dokumen Faktur Manual"
         subtitle="Upload dokumen file invoice / penagihan manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke invoice ini."
       >
+        {row.fileId ? (
+          <View className="mb-3 p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2.5 flex-1 mr-2">
+              <View className="p-2 bg-primary/10 rounded-lg">
+                <FileText size={20} color={colors.primary} />
+              </View>
+              <View className="flex-1">
+                <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
+                  {row.fileName || (row as any).file?.originalName || `Dokumen-Invoice-${row.nomor}.pdf`}
+                </Text>
+                <Text className="text-[11px] text-muted-foreground mt-0.5">
+                  File invoice manual tersimpan
+                </Text>
+              </View>
+            </View>
+            <View className="flex-row items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => openFileUrl(row.fileId)}
+                className="h-8 px-2.5 flex-row items-center gap-1"
+              >
+                <FileText size={12} color={colors.primary} />
+                <Text className="text-xs font-medium">Buka File</Text>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onPress={async () => {
+                  try {
+                    await patchRow("invoices", row.id, { fileId: null, fileName: null });
+                    await reload();
+                    toast("File dokumen invoice berhasil dihapus");
+                  } catch {
+                    toast("Gagal menghapus file", "danger");
+                  }
+                }}
+                className="h-8 px-2"
+              >
+                <Trash2 size={13} color={colors.danger} />
+              </Button>
+            </View>
+          </View>
+        ) : null}
+
         <FileUploader
-          label="Pilih atau Tarik File Invoice Manual (PDF / Excel)"
+          label={row.fileId ? "Ganti File Invoice Manual (PDF / Excel)" : "Pilih atau Tarik File Invoice Manual (PDF / Excel)"}
           kind="dokumen"
           category="invoice"
           autoFlush

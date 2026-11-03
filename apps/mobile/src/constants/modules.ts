@@ -551,6 +551,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Tanggal", key: "tanggal", fmt: "date" }, { label: "Pelapor", key: "pelapor" },
       { label: "Kategori", key: "kategori" }, { label: "Nominal", key: "nominal", fmt: "rupiah" },
       { label: "Sumber Dana", key: "sumberDana" },
+      { label: "Metode / Kas Bayar", key: "paymentMethod" },
       { label: "Project", key: "project" }, { label: "Survey", key: "survey" }, { label: "POC / Demo", key: "pocReport" }, { label: "Kunjungan / Meeting", key: "visitReport" },
       { label: "Alasan", key: "alasan" },
     ],

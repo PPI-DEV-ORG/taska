@@ -82,6 +82,9 @@ export class ProjectDto {
   @IsOptional() @IsInt()
   quotationId?: number;
 
+  @IsOptional() @IsInt()
+  leadId?: number;
+
   @IsOptional() @IsDateString()
   startDate?: string;
 
@@ -296,4 +299,39 @@ export class TaskStatusDto {
 
   @IsOptional() @IsString()
   note?: string;
+}
+
+export class GenerateBastDto {
+  @IsOptional() @IsString()
+  number?: string;
+
+  @IsOptional() @IsString()
+  date?: string;
+
+  @IsOptional() @IsString()
+  party1Company?: string;
+
+  @IsOptional() @IsString()
+  party1Name?: string;
+
+  @IsOptional() @IsString()
+  party1Title?: string;
+
+  @IsOptional() @IsString()
+  party2Company?: string;
+
+  @IsOptional() @IsString()
+  party2Name?: string;
+
+  @IsOptional() @IsString()
+  party2Title?: string;
+
+  @IsOptional() @IsString()
+  statement?: string;
+
+  @IsOptional() @IsArray()
+  items?: { name: string; qty: number; unit?: string }[];
+
+  @IsOptional() @IsString()
+  notes?: string;
 }

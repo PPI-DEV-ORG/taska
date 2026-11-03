@@ -361,12 +361,23 @@ export class ExpensesService {
       }).catch(() => {});
     }
 
+    const isPaid = Boolean(dto.paidFileId || dto.status === "DIBAYAR");
     const updated = await this.prisma.main.expense.update({
       where: { id },
       data: {
         status: dto.status,
         ...(dto.reason ? { rejectReason: dto.reason } : {}),
-        ...(dto.paidFileId ? { paidFileId: dto.paidFileId, paidAt: new Date() } : dto.status === "DIBAYAR" ? { paidAt: new Date() } : {}),
+        ...(dto.paidFileId ? { paidFileId: dto.paidFileId } : {}),
+        ...(isPaid
+          ? {
+              paidAt: new Date(),
+              paidById: user.id,
+              paidAmount: row.amount,
+              reimbursementStatus: row.fundingSource === "TALANGAN_PRIBADI" ? "DIBAYAR" : undefined,
+            }
+          : {}),
+        ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
+        ...(dto.fundingSource ? { fundingSource: dto.fundingSource } : {}),
       },
       include: { reporter: { select: { id: true, name: true } } },
     });

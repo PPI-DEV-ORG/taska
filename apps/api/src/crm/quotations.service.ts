@@ -256,7 +256,32 @@ export class QuotationsService {
       this.prisma.main.quotation.count({ where }),
     ]);
     const metaMap = await this.getMetaMap(rows.map((r) => r.id));
-    const items = rows.map((r) => this.shape(r, metaMap.get(r.id)));
+    const qIds = rows.map((r) => r.id);
+    const versionFileIds = rows.flatMap((r: any) => (r.versions ?? []).map((v: any) => v.fileId)).filter((fid: any): fid is number => typeof fid === "number" && fid > 0);
+    const files = qIds.length
+      ? await this.prisma.main.file.findMany({
+          where: {
+            OR: [
+              { refType: { in: ["quotation", "quotations", "penawaran"] }, refId: { in: qIds.map(String) } },
+              ...(versionFileIds.length ? [{ id: { in: versionFileIds } }] : []),
+            ],
+          },
+          select: { id: true, originalName: true, mimeType: true, size: true, kind: true, createdAt: true, refId: true },
+          orderBy: { id: "desc" },
+        })
+      : [];
+    const fileGroup = new Map<number, any[]>();
+    for (const f of files) {
+      const qId = Number(f.refId);
+      if (qId) {
+        if (!fileGroup.has(qId)) fileGroup.set(qId, []);
+        fileGroup.get(qId)!.push(f);
+      }
+    }
+    const items = rows.map((r) => ({
+      ...this.shape(r, metaMap.get(r.id)),
+      files: fileGroup.get(r.id) ?? [],
+    }));
     return paginate(items, total, q);
   }
 
@@ -274,8 +299,8 @@ export class QuotationsService {
     });
     if (!row) throw new NotFoundException("Penawaran tidak ditemukan");
     const versionFileIds = (row.versions ?? [])
-      .map((v) => v.fileId)
-      .filter((fid): fid is number => typeof fid === "number" && fid > 0);
+      .map((v: any) => v.fileId)
+      .filter((fid: any): fid is number => typeof fid === "number" && fid > 0);
     const [approval, files, metaMap] = await Promise.all([
       Promise.resolve(null),
       this.prisma.main.file.findMany({
@@ -373,36 +398,35 @@ export class QuotationsService {
       },
     });
 
-    if (
-      items.length > 0 ||
-      total > 0 ||
-      dto?.subject ||
-      dto?.notesList ||
-      dto?.kopText ||
-      dto?.customerAddress ||
-      dto?.signerName ||
-      dto?.signerTitle
-    ) {
-      await this.generateAndAttachExcel(
+    await this.saveMeta(
+      row.id,
+      {
+        items,
+        subject: dto?.subject,
+        intro: dto?.intro,
+        notes: dto?.notesList,
+        city: dto?.city,
+        kopText: dto?.kopText,
+        customerAddress: dto?.customerAddress,
+        signerName: dto?.signerName,
+        signerTitle: dto?.signerTitle,
+        pph,
+        pphMode: dto?.pphMode ?? (pph > 0 ? "pph23" : "none"),
+        tipePph: dto?.tipePph ?? (pph > 0 ? "PPh 23" : "Tanpa PPh"),
+      },
+      user?.id,
+    );
+
+    if (dto?.fileId) {
+      const f = await this.attachFile(row.id, dto.fileId);
+      await this.saveMeta(
         row.id,
         {
-          items,
-          subject: dto?.subject,
-          intro: dto?.intro,
-          notes: dto?.notesList,
-          city: dto?.city,
-          kopText: dto?.kopText,
-          customerAddress: dto?.customerAddress,
-          signerName: dto?.signerName,
-          signerTitle: dto?.signerTitle,
-          pph,
-          pphMode: dto?.pphMode ?? (pph > 0 ? "pph23" : "none"),
-          tipePph: dto?.tipePph ?? (pph > 0 ? "PPh 23" : "Tanpa PPh"),
+          latestFileId: dto.fileId,
+          ...(f?.originalName ? { latestFileName: f.originalName } : {}),
         },
-        user,
+        user?.id,
       );
-    } else if (dto?.fileId) {
-      await this.attachFile(row.id, dto.fileId);
     }
 
     if (items.length > 0) {
@@ -526,11 +550,60 @@ export class QuotationsService {
           ...(dto.pph !== undefined || pph !== undefined ? { pph: dto.pph ?? pph } : {}),
           ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
           ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
-          ...(f ? { latestFileId: f.id, latestFileName: f.originalName } : {}),
+          latestFileId: dto.fileId,
+          ...(f?.originalName ? { latestFileName: f.originalName } : {}),
         },
         user.id,
       );
-    } else if (
+
+      // Pastikan ada versi yang mengikat fileId ini
+      const vCount = await this.prisma.main.quotationVersion.count({ where: { quotationId: id } });
+      if (vCount === 0) {
+        await this.prisma.main.quotationVersion.create({
+          data: {
+            quotationId: id,
+            version: 1,
+            fileId: dto.fileId,
+            total,
+            ppn,
+            discount,
+            grandTotal,
+            note: `Dokumen Penawaran Manual: ${f?.originalName || "File"}`,
+            createdById: user.id,
+          },
+        });
+        await this.prisma.main.quotation.update({
+          where: { id },
+          data: { currentVersion: 1 },
+        });
+      } else {
+        const latestVer = await this.prisma.main.quotationVersion.findFirst({
+          where: { quotationId: id },
+          orderBy: { version: "desc" },
+        });
+        if (latestVer && !latestVer.fileId) {
+          await this.prisma.main.quotationVersion.update({
+            where: { id: latestVer.id },
+            data: { fileId: dto.fileId },
+          });
+        }
+      }
+    } else if (dto.fileId === null) {
+      await this.saveMeta(
+        id,
+        {
+          latestFileId: null,
+          latestFileName: null,
+        },
+        user.id,
+      );
+      await this.prisma.main.quotationVersion.updateMany({
+        where: { quotationId: id },
+        data: { fileId: null },
+      }).catch(() => {});
+    }
+
+    if (
       items !== undefined ||
       dto.total !== undefined ||
       dto.discount !== undefined ||
@@ -546,7 +619,7 @@ export class QuotationsService {
       dto.pphMode !== undefined ||
       dto.tipePph !== undefined
     ) {
-      await this.generateAndAttachExcel(
+      await this.saveMeta(
         id,
         {
           items: activeItems,
@@ -562,7 +635,7 @@ export class QuotationsService {
           pphMode: dto.pphMode ?? (existingMeta as any)?.pphMode,
           tipePph: dto.tipePph ?? (existingMeta as any)?.tipePph,
         } as any,
-        user,
+        user.id,
       );
     }
 
@@ -1064,6 +1137,38 @@ export class QuotationsService {
   /** Revisi = versi baru, riwayat tidak boleh hilang (PRD #14). */
   async addVersion(id: number, dto: VersionDto, user: RequestUser) {
     const row = await this.getEditable(id, user);
+
+    // Jika versi 1 sudah ada tapi belum memiliki fileId dan belum ada versi 2+, update fileId di versi 1
+    const v1WithoutFile = await this.prisma.main.quotationVersion.findFirst({
+      where: { quotationId: id, version: 1, fileId: null },
+    });
+    const totalVersions = await this.prisma.main.quotationVersion.count({ where: { quotationId: id } });
+
+    if (totalVersions === 1 && v1WithoutFile && dto.fileId) {
+      await this.prisma.main.quotationVersion.update({
+        where: { id: v1WithoutFile.id },
+        data: {
+          fileId: dto.fileId,
+          total: dto.total ?? row.total,
+          ppn: dto.ppn ?? row.ppn,
+          discount: dto.discount ?? row.discount,
+          grandTotal: dto.grandTotal ?? row.grandTotal,
+          note: dto.note?.trim() ? `[STATUS:Menunggu] ${dto.note.trim()}` : v1WithoutFile.note,
+        },
+      });
+      const f = await this.attachFile(id, dto.fileId);
+      await this.saveMeta(
+        id,
+        {
+          latestFileId: dto.fileId,
+          ...(f?.originalName ? { latestFileName: f.originalName } : {}),
+        },
+        user.id,
+      );
+      this.notifications.dataChange("quotations", "update", id);
+      return this.get(id);
+    }
+
     const version = (row.currentVersion || 0) + 1;
 
     // Bekukan status versi sebelumnya jika ada
@@ -1104,7 +1209,17 @@ export class QuotationsService {
       },
       include: { versions: { orderBy: { version: "desc" } } },
     });
-    if (dto.fileId) await this.attachFile(id, dto.fileId);
+    if (dto.fileId) {
+      const f = await this.attachFile(id, dto.fileId);
+      await this.saveMeta(
+        id,
+        {
+          latestFileId: dto.fileId,
+          ...(f?.originalName ? { latestFileName: f.originalName } : {}),
+        },
+        user.id,
+      );
+    }
     await this.audit.log({
       actor: user,
       action: "REVISI_PENAWARAN",
@@ -1114,6 +1229,56 @@ export class QuotationsService {
     });
     this.notifications.dataChange("quotations", "update", id);
     return updated;
+  }
+
+  async deleteVersion(id: number, versionId: number, user: RequestUser) {
+    await this.getEditable(id, user);
+    const ver = await this.prisma.main.quotationVersion.findFirst({
+      where: { id: versionId, quotationId: id },
+    });
+    if (!ver) throw new NotFoundException("Versi penawaran tidak ditemukan");
+
+    if (ver.fileId) {
+      await this.prisma.main.file.delete({ where: { id: ver.fileId } }).catch(() => {});
+    }
+
+    await this.prisma.main.quotationVersion.delete({ where: { id: versionId } });
+
+    const remaining = await this.prisma.main.quotationVersion.findMany({
+      where: { quotationId: id },
+      orderBy: { version: "desc" },
+    });
+
+    const maxVer = remaining[0];
+    await this.prisma.main.quotation.update({
+      where: { id },
+      data: {
+        currentVersion: maxVer ? maxVer.version : 0,
+        total: maxVer ? maxVer.total : 0,
+        ppn: maxVer ? maxVer.ppn : 0,
+        discount: maxVer ? maxVer.discount : 0,
+        grandTotal: maxVer ? maxVer.grandTotal : 0,
+      },
+    });
+
+    await this.saveMeta(
+      id,
+      {
+        latestFileId: maxVer?.fileId ?? null,
+      },
+      user.id,
+    );
+
+    await this.audit.log({
+      actor: user,
+      action: "HAPUS_REVISI_PENAWARAN",
+      entityType: "quotation",
+      entityId: id,
+      detail: `Menghapus versi ${ver.version} (ID: ${ver.id})`,
+    });
+
+    this.notifications.dataChange("quotations", "update", id);
+    return this.get(id);
   }
 
   async remove(id: number, user: RequestUser) {

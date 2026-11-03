@@ -135,30 +135,30 @@ export default function LeadsScreen() {
                         const qRow = (data.quotations ?? []).find(
                           (q) => (q.leadId && q.leadId === l.id) || (q.lead && q.lead.toLowerCase() === l.nama.toLowerCase())
                         );
+                        if (!qRow) {
+                          return (
+                            <View className="border-border/60 border-t pt-2">
+                              <Text className="text-muted-foreground text-[11px] italic">
+                                Penawaran belum dibuat
+                              </Text>
+                            </View>
+                          );
+                        }
                         return (
                           <View className="border-border/60 border-t pt-2 gap-1.5">
                             <Pressable
-                              onPress={() => {
-                                if (qRow) {
-                                  router.push(`/quotations/${qRow.id}` as any);
-                                } else {
-                                  toast("Draf penawaran otomatis dibuat!");
-                                  void createQuotationFromLead(l).then((newQ) => {
-                                    if (newQ) router.push(`/quotations/${newQ.id}` as any);
-                                  });
-                                }
-                              }}
+                              onPress={() => router.push(`/quotations/${qRow.id}` as any)}
                               className="bg-primary/10 border-primary/25 active:bg-primary/20 flex-row items-center justify-between rounded-md border px-2.5 py-1.5"
                             >
                               <View className="flex-row items-center gap-1.5 flex-1 mr-1">
                                 <FileText size={13} color={colors.primary} />
                                 <Text className="text-primary text-[11px] font-semibold" numberOfLines={1}>
-                                  {qRow ? qRow.nomor : "Buat Penawaran"}
+                                  {qRow.nomor}
                                 </Text>
                               </View>
                               <View className="bg-primary/20 rounded px-1.5 py-0.5">
                                 <Text className="text-[10px] font-bold text-primary">
-                                  {qRow ? qRow.status : "Auto"}
+                                  {qRow.status}
                                 </Text>
                               </View>
                             </Pressable>

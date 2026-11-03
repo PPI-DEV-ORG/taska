@@ -7,8 +7,10 @@ import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import type { Project } from "../generated/prisma/client.js";
-import { AssignDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
+import { AssignDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
 import { StockService } from "../stock/stock.service.js";
+import { UploadService } from "../upload/upload.service.js";
+import { renderPdf } from "../common/pdf.js";
 
 const MANAGER_ROLES = ["PM", "ADMIN", "BOS", "SUPER_ADMIN"];
 const MEMBER_ROLES = ["PM", "SE", "TEKNISI", "SUPER_ADMIN"];
@@ -21,6 +23,7 @@ export class ProjectsService {
     private readonly notifications: NotificationsService,
     private readonly reservations: ReservationsService,
     private readonly stock: StockService,
+    private readonly upload: UploadService,
   ) {}
 
   private async access(project: Project, user: RequestUser, forWrite = false) {
@@ -37,7 +40,92 @@ export class ProjectsService {
     }
   }
 
+  async linkProjectInvoices(projectId: number) {
+    const project = await this.prisma.main.project.findUnique({
+      where: { id: projectId },
+      include: {
+        quotation: {
+          include: {
+            clientPOs: { select: { id: true } },
+            lead: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!project) return;
+
+    let quotation = project.quotation;
+    if (!quotation && project.customerId) {
+      const cleanName = project.name.replace(/^Project\s+/i, "").trim();
+      const quoteFilters: any[] = [{ customerId: project.customerId }];
+
+      if (cleanName) {
+        quoteFilters.push(
+          { lead: { name: { contains: cleanName } } },
+          { number: { contains: cleanName } },
+        );
+      }
+
+      const q = await this.prisma.main.quotation.findFirst({
+        where: { OR: quoteFilters },
+        include: {
+          clientPOs: { select: { id: true } },
+          lead: { select: { id: true, name: true } },
+        },
+        orderBy: { id: "desc" },
+      });
+
+      if (q) {
+        quotation = q;
+        await this.prisma.main.project
+          .update({
+            where: { id: projectId },
+            data: { quotationId: q.id },
+          })
+          .catch(() => {});
+      }
+    }
+
+    const orConditions: any[] = [];
+    if (quotation) {
+      if (quotation.clientPOs?.length) {
+        orConditions.push({ clientPoId: { in: quotation.clientPOs.map((p) => p.id) } });
+      }
+      if (quotation.leadId) {
+        orConditions.push({ description: { contains: `[lead:${quotation.leadId}]` } });
+      }
+      if (quotation.number) {
+        orConditions.push({ description: { contains: quotation.number } });
+      }
+    }
+
+    const cleanProjName = project.name.replace(/^Project\s+/i, "").trim();
+    if (cleanProjName) {
+      orConditions.push({ description: { contains: cleanProjName } });
+    }
+    if (project.customerId && cleanProjName) {
+      orConditions.push({
+        customerId: project.customerId,
+        description: { contains: cleanProjName },
+      });
+    }
+
+    if (orConditions.length) {
+      await this.prisma.main.invoiceOut
+        .updateMany({
+          where: {
+            projectId: null,
+            OR: orConditions,
+          },
+          data: { projectId },
+        })
+        .catch(() => {});
+    }
+  }
+
   private async syncPayment(projectId: number): Promise<Project> {
+    await this.linkProjectInvoices(projectId);
+
     const invoices = await this.prisma.main.invoiceOut.findMany({
       where: { projectId, status: { not: "BATAL" } },
       select: { total: true, paidAmount: true, status: true },
@@ -224,13 +312,36 @@ export class ProjectsService {
       memberIds = users.map((u) => u.id);
     }
 
+    let quotationId = dto.quotationId;
+    if (!quotationId && dto.leadId) {
+      const q = await this.prisma.main.quotation.findFirst({
+        where: { leadId: dto.leadId },
+        orderBy: { id: "desc" },
+      });
+      if (q) quotationId = q.id;
+    }
+    if (!quotationId && customerId) {
+      const cleanName = (dto.name || "").replace(/^Project\s+/i, "").trim();
+      const q = await this.prisma.main.quotation.findFirst({
+        where: {
+          customerId,
+          OR: [
+            ...(cleanName ? [{ lead: { name: { contains: cleanName } } }] : []),
+            ...(cleanName ? [{ number: { contains: cleanName } }] : []),
+          ],
+        },
+        orderBy: { id: "desc" },
+      });
+      if (q) quotationId = q.id;
+    }
+
     const project = await this.prisma.main.project.create({
       data: {
         name: dto.name || "Project Baru",
         type,
         customerId,
         picId,
-        quotationId: dto.quotationId,
+        quotationId: quotationId ?? undefined,
         startDate: dto.startDate ? new Date(dto.startDate) : new Date(),
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
         status: dto.status ?? "BERJALAN",
@@ -246,6 +357,8 @@ export class ProjectsService {
       },
     });
     if (dto.prdFileId) await this.attachFile(dto.prdFileId, "project", project.id);
+    await this.linkProjectInvoices(project.id);
+    await this.syncPayment(project.id).catch(() => {});
 
     await this.audit.log({
       actor: user,
@@ -378,6 +491,8 @@ export class ProjectsService {
         console.warn("Gagal auto-sync BOQ penawaran ke proyek:", err);
       });
     }
+    await this.linkProjectInvoices(id);
+    await this.syncPayment(id).catch(() => {});
     return updated;
   }
 
@@ -1050,6 +1165,195 @@ export class ProjectsService {
     this.notifications.dataChange("projects", "update", projectId);
 
     return { success: true, returned: returnedItems };
+  }
+
+  async generateBast(id: number, dto: GenerateBastDto, user: RequestUser) {
+    const project = await this.prisma.main.project.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        pic: true,
+        requirements: {
+          include: { product: true },
+          orderBy: { id: "asc" },
+        },
+      },
+    });
+    if (!project) throw new NotFoundException("Project tidak ditemukan");
+    await this.access(project, user, true);
+
+    const docNumber = dto.number?.trim() || `BAST-${project.id}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+    const docDate = dto.date ? new Date(dto.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const p1Comp = dto.party1Company?.trim() || "PT GHINA MULTI PRIMA";
+    const p1Name = dto.party1Name?.trim() || project.pic?.name || user.name || "Project Manager";
+    const p1Title = dto.party1Title?.trim() || "Project Manager";
+    const p2Comp = dto.party2Company?.trim() || project.customer?.name || "Customer";
+    const p2Name = dto.party2Name?.trim() || "Penanggung Jawab Proyek";
+    const p2Title = dto.party2Title?.trim() || "Penanggung Jawab Proyek";
+    const statement = dto.statement?.trim() ||
+      "Dengan ini kedua belah pihak menyatakan bahwa seluruh pekerjaan pengadaan, instalasi, dan integrasi perangkat untuk proyek di atas telah diselesaikan dengan baik, telah diuji coba secara bersama-sama, dan dinyatakan berfungsi normal sesuai spesifikasi teknis yang disepakati.";
+    const notes = dto.notes?.trim() || "Garansi pemeliharaan dan perangkat berlaku sesuai ketentuan kontrak yang disepakati kedua belah pihak.";
+
+    const items = (dto.items && dto.items.length)
+      ? dto.items
+      : project.requirements.map((r) => ({
+          name: r.product?.name || "Barang",
+          qty: Number(r.qty || 1),
+          unit: r.product?.unit || "unit",
+        }));
+
+    const tableBody: any[] = [
+      [
+        { text: "No", style: "tableHeader", alignment: "center", bold: true, fillColor: "#f3f4f6" },
+        { text: "Deskripsi Pekerjaan / Barang", style: "tableHeader", bold: true, fillColor: "#f3f4f6" },
+        { text: "Jumlah", style: "tableHeader", alignment: "center", bold: true, fillColor: "#f3f4f6" },
+        { text: "Satuan", style: "tableHeader", alignment: "center", bold: true, fillColor: "#f3f4f6" },
+      ],
+    ];
+
+    items.forEach((it, idx) => {
+      tableBody.push([
+        { text: String(idx + 1), alignment: "center" },
+        { text: it.name },
+        { text: String(it.qty), alignment: "center" },
+        { text: it.unit || "unit", alignment: "center" },
+      ]);
+    });
+
+    const docDefinition: any = {
+      pageSize: "A4",
+      pageMargins: [40, 40, 40, 40],
+      content: [
+        { text: p1Comp.toUpperCase(), fontSize: 14, bold: true, alignment: "center" },
+        { text: "BERITA ACARA SERAH TERIMA PEKERJAAN (BAST)", fontSize: 12, bold: true, alignment: "center", margin: [0, 4, 0, 15] },
+        {
+          canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, lineColor: "#9ca3af" }],
+          margin: [0, 0, 0, 15],
+        },
+        {
+          columns: [
+            { width: 110, text: "Nomor BAST", bold: true, fontSize: 10 },
+            { width: "*", text: `: ${docNumber}`, fontSize: 10 },
+          ],
+          margin: [0, 2, 0, 2],
+        },
+        {
+          columns: [
+            { width: 110, text: "Tanggal", bold: true, fontSize: 10 },
+            { width: "*", text: `: ${docDate}`, fontSize: 10 },
+          ],
+          margin: [0, 2, 0, 2],
+        },
+        {
+          columns: [
+            { width: 110, text: "Nama Proyek", bold: true, fontSize: 10 },
+            { width: "*", text: `: ${project.name}`, fontSize: 10 },
+          ],
+          margin: [0, 2, 0, 2],
+        },
+        {
+          columns: [
+            { width: 110, text: "Pihak Pertama (Penyedia)", bold: true, fontSize: 10 },
+            { width: "*", text: `: ${p1Comp} (PIC: ${p1Name})`, fontSize: 10 },
+          ],
+          margin: [0, 2, 0, 2],
+        },
+        {
+          columns: [
+            { width: 110, text: "Pihak Kedua (Klien)", bold: true, fontSize: 10 },
+            { width: "*", text: `: ${p2Comp} (PIC: ${p2Name})`, fontSize: 10 },
+          ],
+          margin: [0, 2, 0, 15],
+        },
+        {
+          text: "Pernyataan Serah Terima:",
+          bold: true,
+          fontSize: 10,
+          margin: [0, 0, 0, 4],
+        },
+        {
+          text: statement,
+          fontSize: 10,
+          lineHeight: 1.4,
+          margin: [0, 0, 0, 15],
+        },
+        {
+          text: "Rincian Barang & Pekerjaan yang Diserahterimakan:",
+          bold: true,
+          fontSize: 10,
+          margin: [0, 0, 0, 6],
+        },
+        {
+          table: {
+            headerRows: 1,
+            widths: [30, "*", 60, 60],
+            body: tableBody,
+          },
+          layout: "lightHorizontalLines",
+          margin: [0, 0, 0, 15],
+        },
+        ...(notes
+          ? [
+              { text: "Catatan Tambahan & Ketentuan:", bold: true, fontSize: 10, margin: [0, 0, 0, 4] },
+              { text: notes, fontSize: 10, lineHeight: 1.3, margin: [0, 0, 0, 20] },
+            ]
+          : []),
+        {
+          columns: [
+            {
+              width: "*",
+              alignment: "center",
+              stack: [
+                { text: "Pihak Pertama (Penyedia)", fontSize: 10, color: "#4b5563" },
+                { text: p1Comp, bold: true, fontSize: 10, margin: [0, 2, 0, 45] },
+                { text: p1Name, bold: true, fontSize: 10, decoration: "underline" },
+                { text: p1Title, fontSize: 9, color: "#6b7280" },
+              ],
+            },
+            {
+              width: "*",
+              alignment: "center",
+              stack: [
+                { text: "Pihak Kedua (Klien)", fontSize: 10, color: "#4b5563" },
+                { text: p2Comp, bold: true, fontSize: 10, margin: [0, 2, 0, 45] },
+                { text: p2Name, bold: true, fontSize: 10, decoration: "underline" },
+                { text: p2Title, fontSize: 9, color: "#6b7280" },
+              ],
+            },
+          ],
+          margin: [0, 20, 0, 0],
+        },
+      ],
+      defaultStyle: {
+        font: "Helvetica",
+      },
+    };
+
+    const pdfBuffer = await renderPdf(docDefinition);
+    const fileName = `BAST-${project.name.replace(/[^\w-]/g, "_")}-${docNumber.replace(/[^\w-]/g, "_")}.pdf`;
+    const saved = await this.upload.saveNamed(pdfBuffer, "dokumen", fileName, user, "project", String(id));
+
+    await this.prisma.main.project.update({
+      where: { id },
+      data: { bastFileId: saved.id },
+    });
+
+    await this.audit.log({
+      actor: user,
+      action: "GENERATE_BAST",
+      entityType: "project",
+      entityId: id,
+      detail: `Generate Dokumen BAST resmi: ${docNumber}`,
+    });
+
+    this.notifications.dataChange("projects", "update", id);
+
+    return {
+      fileId: saved.id,
+      file: saved,
+      url: saved.url,
+      number: docNumber,
+    };
   }
 
   private async attachFile(fileId: number, refType: string, refId: number) {
