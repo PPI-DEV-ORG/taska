@@ -16,6 +16,20 @@ export const MAX_FILE_SIZE_BYTES: Record<"foto" | "dokumen" | "video", number> =
   video: 25 * 1024 * 1024,    // 25 MB
 };
 
+export const DEFAULT_ALLOWED_EXTENSIONS: Record<UploadKind, string[]> = {
+  foto: ["png", "jpg", "jpeg", "webp", "gif", "heic", "heif"],
+  dokumen: [
+    "pdf", "docx", "doc", "xlsx", "xls", "csv", "md", "markdown", "txt", "zip",
+    "png", "jpg", "jpeg", "webp"
+  ],
+  video: ["mp4", "mkv", "mov", "avi"],
+  semua: [
+    "png", "jpg", "jpeg", "webp", "gif", "heic", "heif",
+    "pdf", "docx", "doc", "xlsx", "xls", "csv", "md", "markdown", "txt", "zip",
+    "mp4", "mkv", "mov", "avi"
+  ],
+};
+
 // staged = file dipilih tapi belum diunggah ke server; di-flush saat Simpan.
 export type StagedFile = {
   id: number; // id sementara (lokal) untuk key & remove
@@ -27,17 +41,17 @@ export type StagedFile = {
 };
 
 const LIMIT: Record<UploadKind, string> = {
-  foto: "Foto png, jpg, jpeg maksimal 5 MB",
-  dokumen: "Dokumen pdf, docx, xlsx maksimal 15 MB",
+  foto: "Foto png, jpg, jpeg, webp maksimal 5 MB",
+  dokumen: "Dokumen pdf, docx, md, txt, xlsx maksimal 15 MB",
   video: "Video maksimal 25 MB (sekitar 5 menit)",
-  semua: "Foto png/jpg/jpeg ≤ 5 MB · dokumen pdf/docx/xlsx ≤ 15 MB · video ≤ 25 MB",
+  semua: "Foto ≤ 5 MB · dokumen (pdf, docx, md, txt, xlsx) ≤ 15 MB · video ≤ 25 MB",
 };
 
 const ACCEPT: Record<Exclude<UploadKind, "semua">, string> = {
   foto: "image/*,image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp,.heic,.heif",
   dokumen:
-    ".xlsx,.xls,.pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip",
-  video: "video/*,video/mp4,video/x-matroska",
+    ".pdf,.docx,.doc,.xlsx,.xls,.csv,.md,.markdown,.txt,.zip,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/markdown,text/plain,application/zip,image/*",
+  video: "video/*,video/mp4,video/x-matroska,video/quicktime",
 };
 
 function toUploadKind(kind: UploadKind): "foto" | "dokumen" | "video" {
@@ -106,13 +120,14 @@ export function FileUploader({
     const fileName = f.name || "file";
     const ext = (fileName.split(".").pop() || "").toLowerCase();
 
-    if (allowedExtensions && allowedExtensions.length > 0) {
-      const match = allowedExtensions.some((allowed) => {
-        const clean = allowed.replace(/^\./, "").toLowerCase();
-        return ext === clean;
-      });
+    const allowed = allowedExtensions && allowedExtensions.length > 0
+      ? allowedExtensions.map((e) => e.replace(/^\./, "").toLowerCase())
+      : DEFAULT_ALLOWED_EXTENSIONS[kind];
+
+    if (allowed && allowed.length > 0) {
+      const match = allowed.includes(ext);
       if (!match) {
-        toast(`Format file tidak didukung. Hanya file ${allowedExtensions.join(", ")} yang diperbolehkan.`, "danger");
+        toast(`Format file (.${ext || "unknown"}) tidak didukung. Hanya file ${allowed.map((e) => `.${e}`).join(", ")} yang diperbolehkan.`, "danger");
         return false;
       }
     }

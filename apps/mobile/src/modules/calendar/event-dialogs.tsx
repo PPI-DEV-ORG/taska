@@ -9,7 +9,7 @@ import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FormField, Panel, Timeline } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect } from "@/components/taska/dialogs";
+import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { tanggal } from "@/lib/format";
@@ -80,6 +80,8 @@ export function EventFormDialog({
   const [leadLabel, setLeadLabel] = React.useState("");
   const [invoiceLabel, setInvoiceLabel] = React.useState("");
   const [supplierLabel, setSupplierLabel] = React.useState("");
+  const [quickCustomerOpen, setQuickCustomerOpen] = React.useState(false);
+  const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
 
   const customerMap = React.useMemo(
     () => (data.customers ?? []).map((c: any) => ({ id: Number(c.id), label: String(c.company || c.name || "") })).filter((x: any) => x.label && Number.isFinite(x.id)),
@@ -370,7 +372,14 @@ export function EventFormDialog({
               <View className="flex-row gap-3">
                 <View className="flex-1">
                   <FormField label="Customer">
-                    <SearchableSelect value={customerLabel} onChange={(v) => setCustomerLabel(v === customerLabel ? "" : v)} options={customerMap.map((x) => x.label)} placeholder="Pilih customer" />
+                    <SearchableSelect
+                      value={customerLabel}
+                      onAddNew={() => setQuickCustomerOpen(true)}
+                      addNewLabel="+ Tambah Customer Baru"
+                      onChange={(v) => setCustomerLabel(v === customerLabel ? "" : v)}
+                      options={customerMap.map((x) => x.label)}
+                      placeholder="Pilih customer"
+                    />
                   </FormField>
                 </View>
                 <View className="flex-1">
@@ -392,7 +401,14 @@ export function EventFormDialog({
                 </View>
               </View>
               <FormField label="Vendor / Supplier">
-                <SearchableSelect value={supplierLabel} onChange={(v) => setSupplierLabel(v === supplierLabel ? "" : v)} options={supplierMap.map((x) => x.label)} placeholder="Pilih supplier" />
+                <SearchableSelect
+                  value={supplierLabel}
+                  onChange={(v) => setSupplierLabel(v === supplierLabel ? "" : v)}
+                  options={supplierMap.map((x) => x.label)}
+                  placeholder="Pilih supplier"
+                  onAddNew={() => setQuickSupplierOpen(true)}
+                  addNewLabel="+ Tambah Supplier Baru"
+                />
               </FormField>
             </View>
             <FormField label="Deskripsi / catatan">
@@ -409,6 +425,20 @@ export function EventFormDialog({
           <Button variant="outline" onPress={() => onOpenChange(false)}><Text>Batal</Text></Button>
           <Button onPress={save} disabled={saving || loading}><Text>{saving ? "Menyimpan..." : "Simpan"}</Text></Button>
         </DialogFooter>
+        <QuickAddCustomerDialog
+          open={quickCustomerOpen}
+          onOpenChange={setQuickCustomerOpen}
+          onSuccess={(newCust) => {
+            setCustomerLabel(String(newCust.company || newCust.name || newCust.nama));
+          }}
+        />
+        <QuickAddSupplierDialog
+          open={quickSupplierOpen}
+          onOpenChange={setQuickSupplierOpen}
+          onSuccess={(newSupp) => {
+            setSupplierLabel(String(newSupp.name || newSupp.nama));
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

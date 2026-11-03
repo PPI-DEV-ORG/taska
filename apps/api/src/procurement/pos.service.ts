@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -344,8 +344,20 @@ export class PosService {
       }
     }
 
-    const number = dto.number?.trim() || (await this.docnum.next("pesanan"));
-    await this.docnum.assertUnique(number, async (v) => !!(await this.prisma.main.supplierPO.findFirst({ where: { number: v } })));
+    let number = dto.number?.trim();
+    if (number) {
+      const dup = await this.prisma.main.supplierPO.findFirst({ where: { number } });
+      if (dup) {
+        const isAutoPattern = /^(PO|POD|PO-S)\/\d{4}\/\d{2}\/\d+$/i.test(number);
+        if (isAutoPattern) {
+          number = await this.docnum.next("pesanan", dto.date ? new Date(dto.date) : new Date());
+        } else {
+          throw new ConflictException(`Nomor ${number} sudah dipakai`);
+        }
+      }
+    } else {
+      number = await this.docnum.next("pesanan", dto.date ? new Date(dto.date) : new Date());
+    }
     const total = dto.total ?? items.reduce((s, i) => s + i.qty * i.price, 0);
 
     const row = await this.prisma.main.supplierPO.create({

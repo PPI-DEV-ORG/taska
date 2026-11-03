@@ -85,6 +85,20 @@ export class ClientPoDto {
   notes?: string;
 }
 
+export class ClientPoDirectSettlementDto {
+  @IsString()
+  coaAccount!: string;
+
+  @IsOptional() @IsInt()
+  fileId?: number;
+
+  @IsOptional() @IsString()
+  notes?: string;
+
+  @IsOptional() @IsDateString()
+  date?: string;
+}
+
 export class InvoiceOutDto {
   @IsOptional() @IsString()
   number?: string;

@@ -22,6 +22,9 @@ const CONTENT_TYPE: Record<string, string> = {
   csv: "text/csv",
   doc: "application/msword",
   zip: "application/zip",
+  md: "text/markdown",
+  markdown: "text/markdown",
+  txt: "text/plain",
   mp4: "video/mp4",
   mkv: "video/x-matroska",
 };
@@ -96,12 +99,14 @@ export class UploadService {
     refId?: string,
   ) {
     const max = await this.settings.getNumber(`upload.maksimal.${kind}`);
-    let ext = validateUpload(buffer, kind, max);
+    let ext = validateUpload(buffer, kind, max, originalName);
     if (originalName) {
       const lower = originalName.toLowerCase();
       if (lower.endsWith(".xlsx")) ext = "xlsx";
       else if (lower.endsWith(".xls")) ext = "xls";
       else if (lower.endsWith(".csv")) ext = "csv";
+      else if (lower.endsWith(".md") || lower.endsWith(".markdown")) ext = "md";
+      else if (lower.endsWith(".txt")) ext = "txt";
     }
 
     const folder = resolveUploadFolder(refType, originalName, ext, kind);

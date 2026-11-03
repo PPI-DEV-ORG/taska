@@ -148,7 +148,7 @@ export function JournalTab({
             <View className="min-w-full w-full gap-0.5">
               <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
                 <Text className="w-[85px] text-xs font-bold">No. Jurnal</Text>
-                <Text className="w-[90px] text-xs font-bold">Tanggal</Text>
+                <Text className="w-[130px] text-xs font-bold">Tanggal & Waktu</Text>
                 <Text className="w-[125px] text-xs font-bold">Referensi</Text>
                 <Text className="w-[75px] text-xs font-bold">Akun</Text>
                 <Text className="w-[220px] text-xs font-bold">Nama Akun</Text>
@@ -172,7 +172,7 @@ export function JournalTab({
                       <Text className="w-[85px] text-xs font-mono text-muted-foreground">
                         {line.journalNo}
                       </Text>
-                      <Text className="w-[90px] text-xs font-mono text-muted-foreground">
+                      <Text className="w-[130px] text-xs font-mono text-muted-foreground">
                         {line.tanggal}
                       </Text>
                       <Text className="w-[125px] text-xs font-semibold font-mono" numberOfLines={1}>

@@ -1040,7 +1040,7 @@ model ProjectRequirement {
   product     Product           @relation(fields: [productId], references: [id])
   qty         Int
   reservedQty Int               @default(0)
-  serials     String?           @db.Text
+  serials     String?           @db.LongText
   status      RequirementStatus @default(DIBUTUHKAN)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -1074,6 +1074,7 @@ model PurchaseRequest {
   doFileId          Int?
   paymentProofFileId Int?
   paymentStatus     String?       @default("BELUM_DIBAYAR")
+  dueDate           DateTime?     @db.Date
   status            PrStatus      @default(DIAJUKAN)
   rejectReason      String?
   createdAt         DateTime      @default(now())
@@ -1087,6 +1088,7 @@ model PurchaseRequest {
   @@index([status])
   @@index([projectId])
   @@index([date])
+  @@index([dueDate])
 }
 
 model PurchaseRequestItem {
@@ -1099,7 +1101,7 @@ model PurchaseRequestItem {
   customUnit String?
   qty        Int
   unitCost   Decimal         @default(0) @db.Decimal(18, 2)
-  serials    String?         @db.Text
+  serials    String?         @db.LongText
 
   @@index([requestId])
 }
@@ -1167,7 +1169,7 @@ model Receiving {
   receiverId    Int
   receiver      User            @relation(fields: [receiverId], references: [id])
   status        ReceivingStatus @default(MENUNGGU)
-  conditionNote String?
+  conditionNote String?         @db.Text
   receiptFileId Int?
   photoFileId   Int?
   createdAt     DateTime        @default(now())
@@ -1190,8 +1192,8 @@ model ReceivingItem {
   product     Product   @relation(fields: [productId], references: [id])
   qtyOrdered  Int
   qtyReceived Int       @default(0)
-  serials     String?
-  note        String?
+  serials     String?   @db.LongText
+  note        String?   @db.Text
 
   @@index([receivingId])
 }
@@ -1399,7 +1401,7 @@ model DeliveryNote {
   receiveById  Int?
   receivedAt   DateTime?
   scanFileId   Int?
-  reportText   String?        @db.Text
+  reportText   String?        @db.LongText
   reportFileId Int?
   reportAt     DateTime?
   createdAt    DateTime       @default(now())
@@ -1434,7 +1436,7 @@ model DeliveryNoteItem {
   productId      Int
   product        Product      @relation(fields: [productId], references: [id])
   qty            Int          @default(1)
-  serials        String?      @db.Text
+  serials        String?      @db.LongText
   note           String?
 
   @@index([deliveryNoteId])

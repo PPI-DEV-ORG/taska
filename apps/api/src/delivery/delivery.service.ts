@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -56,13 +56,19 @@ export class DeliveryService implements OnModuleInit {
     const withGoods = dto.withGoods === true || dto.withGoods === "true";
     const date = dto.date ? new Date(dto.date) : new Date();
 
-    const number =
-      dto.number?.trim() ||
-      (await this.docnum.next("suratJalan", date));
-    if (dto.number?.trim()) {
-      await this.docnum.assertUnique(number, async (v) =>
-        Boolean(await this.prisma.main.deliveryNote.findUnique({ where: { number: v } })),
-      );
+    let number = dto.number?.trim();
+    if (number) {
+      const dup = await this.prisma.main.deliveryNote.findUnique({ where: { number } });
+      if (dup) {
+        const isAutoPattern = /^SJN\/\d{4}\/\d{2}\/\d+$/i.test(number);
+        if (isAutoPattern) {
+          number = await this.docnum.next("suratJalan", date);
+        } else {
+          throw new ConflictException(`Nomor ${number} sudah dipakai`);
+        }
+      }
+    } else {
+      number = await this.docnum.next("suratJalan", date);
     }
 
     const scanFileId = dto.scanFileId ?? dto.fileId;
@@ -203,15 +209,19 @@ export class DeliveryService implements OnModuleInit {
 
     if (dto.scanFileId || dto.fileId) {
       const fid = dto.scanFileId ?? dto.fileId;
+      const fileRow = await this.prisma.main.file.findUnique({ where: { id: Number(fid) } }).catch(() => null);
+      const isImg = fileRow?.mimeType?.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif)$/i.test(fileRow?.originalName || "");
       await this.prisma.main.file.update({
         where: { id: Number(fid) },
-        data: { refType: "delivery-note", refId: String(id), kind: "FOTO" },
+        data: { refType: "delivery-note", refId: String(id), kind: isImg ? "FOTO" : "DOKUMEN" },
       }).catch(() => {});
     }
     if (dto.reportFileId) {
+      const fileRow = await this.prisma.main.file.findUnique({ where: { id: Number(dto.reportFileId) } }).catch(() => null);
+      const isImg = fileRow?.mimeType?.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif)$/i.test(fileRow?.originalName || "");
       await this.prisma.main.file.update({
         where: { id: Number(dto.reportFileId) },
-        data: { refType: "delivery-note-report", refId: String(id), kind: "DOKUMEN" },
+        data: { refType: "delivery-note-report", refId: String(id), kind: isImg ? "FOTO" : "DOKUMEN" },
       }).catch(() => {});
     }
 
@@ -275,7 +285,22 @@ export class DeliveryService implements OnModuleInit {
       },
     });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
-    return { ...row, approval: await this.approvals.getFor("SURAT_JALAN", id) };
+    const [scanFile, reportFile, approval] = await Promise.all([
+      row.scanFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: row.scanFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true, kind: true },
+          }).catch(() => null)
+        : null,
+      row.reportFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: row.reportFileId },
+            select: { id: true, originalName: true, mimeType: true, size: true, kind: true },
+          }).catch(() => null)
+        : null,
+      this.approvals.getFor("SURAT_JALAN", id),
+    ]);
+    return { ...row, scanFile, reportFile, approval };
   }
 
   private async assertApproved(id: number) {

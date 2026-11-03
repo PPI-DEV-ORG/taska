@@ -4,8 +4,10 @@ import { useRouter } from "expo-router";
 import {
   AlertTriangle,
   CheckCircle2,
+  FileCheck,
   FileText,
   ArrowRight,
+  Package,
   Plus,
   Edit3,
   Phone,
@@ -85,6 +87,35 @@ export function LeadExtras({ row }: { row: Row }) {
       return false;
     });
   }, [data.invoices, leadQuotations, relProjects, row.nama]);
+
+  const isPenjualanBarang =
+    row.jenisTransaksi === "Penjualan Barang" ||
+    /barang|retail|perangkat/i.test(String(row.jenisTransaksi || ""));
+
+  const leadSos = React.useMemo(() => {
+    const qIds = new Set(leadQuotations.map((q) => String(q.id)));
+    const qNums = new Set(
+      leadQuotations
+        .map((q) => String(q.nomor || "").trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const leadName = String(row.nama || "").trim().toLowerCase();
+    const custName = String(row.perusahaan || "").trim().toLowerCase();
+
+    return (data["po-client"] ?? []).filter((so: Row) => {
+      if (so.leadId && String(so.leadId) === String(row.id)) return true;
+      if (so.quotationId && qIds.has(String(so.quotationId))) return true;
+      const quoPrefix = (String(so.penawaran || "").split(" - ")[0] || "").trim().toLowerCase();
+      if (quoPrefix && qNums.has(quoPrefix)) return true;
+      const cat = String(so.catatan || "").toLowerCase();
+      if (cat.includes(`[lead:${row.id}]`)) return true;
+      if (leadName && cat.includes(leadName)) return true;
+      if (custName && String(so.customer || "").trim().toLowerCase() === custName && isPenjualanBarang) {
+        return true;
+      }
+      return false;
+    });
+  }, [data, leadQuotations, row.id, row.nama, row.perusahaan, isPenjualanBarang]);
 
   const isFinanceOrAdmin = ["finance", "admin", "super_admin", "bos"].includes(
     (user?.role || "").toLowerCase()
@@ -206,11 +237,102 @@ export function LeadExtras({ row }: { row: Row }) {
     router.push("/leads");
   }
 
+  async function handleCreateClientPo() {
+    try {
+      const matchedQuo = leadQuotations.find((q: any) => q.status === "Disetujui" || q.status === "Won") || leadQuotations[0];
+      const quoItems = Array.isArray(matchedQuo?.items) ? matchedQuo.items : [];
+      const amount = Number(matchedQuo?.totalAfterDisc || matchedQuo?.total || row.nilai || 0);
+
+      const createdSo = await addRow("po-client", {
+        customer: row.perusahaan || matchedQuo?.customer || "-",
+        customerId: row.customerId ? Number(row.customerId) : matchedQuo?.customerId ? Number(matchedQuo.customerId) : undefined,
+        penawaran: matchedQuo?.nomor ? `${matchedQuo.nomor} - ${row.perusahaan || matchedQuo?.customer || ""}` : "-",
+        quotationId: matchedQuo?.id ? Number(matchedQuo.id) : undefined,
+        nilai: amount,
+        tanggal: new Date().toISOString().slice(0, 10),
+        catatan: `[lead:${row.id}] Dibuat dari Lead: ${row.nama}${row.need ? ` — ${row.need}` : ""}`,
+        items: quoItems,
+        docMode: "SO",
+      });
+
+      if (createdSo?.id) {
+        await reload();
+        toast("Sales Order (SO) berhasil dibuat!");
+        router.push(`/po-client/${createdSo.id}` as any);
+      }
+    } catch (err: any) {
+      toast(err?.message || "Gagal membuat Sales Order", "danger");
+    }
+  }
+
   return (
     <>
-      {row.status === "Won" || relProjects.length > 0 ? (
+      {/* Panel Sales Order (SO) Terkait - Khusus jika Penjualan Barang atau sudah ada SO */}
+      {row.status === "Won" || leadSos.length > 0 || isPenjualanBarang ? (
         <Panel
-          title="Project Terkait"
+          title={`Sales Order (SO) & Pesanan Barang (${leadSos.length})`}
+          subtitle="Peluang penjualan barang yang berhasil (Won) dapat langsung dilanjutkan ke penerbitan Sales Order (SO) untuk customer."
+          right={
+            <Button
+              size="sm"
+              onPress={handleCreateClientPo}
+              className="bg-emerald-600 hover:bg-emerald-700 flex-row items-center gap-1.5"
+            >
+              <FileCheck size={14} color="#fff" />
+              <Text className="text-xs text-white font-semibold">Buat Sales Order (SO)</Text>
+            </Button>
+          }
+        >
+          {leadSos.length === 0 ? (
+            <View className="py-2 gap-1.5">
+              <Text className="text-xs text-muted-foreground">
+                Belum ada Sales Order (SO) untuk lead ini. Klik tombol &quot;Buat Sales Order (SO)&quot; untuk membuat pesanan ke customer. Data customer dan barang dari penawaran otomatis disalin.
+              </Text>
+            </View>
+          ) : (
+            <View className="gap-2">
+              {leadSos.map((so: Row) => (
+                <View
+                  key={so.id}
+                  className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80"
+                >
+                  <View className="flex-1 mr-2">
+                    <View className="flex-row items-center gap-2">
+                      <Text className="text-xs font-bold text-foreground">
+                        {so.nomorSo && so.nomorSo !== "-" ? so.nomorSo : so.nomor || `SO #${so.id}`}
+                      </Text>
+                      {so.nomorPoClient && so.nomorPoClient !== "-" ? (
+                        <Text className="text-[11px] text-muted-foreground">
+                          (PO: {so.nomorPoClient})
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Text className="text-[11px] text-muted-foreground mt-0.5">
+                      Nilai: <Text className="font-semibold text-foreground">{rupiah(so.nilai || 0)}</Text> · Tanggal: {so.tanggal || "-"}
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <StatusBadge status={so.status || "Diterima"} />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2.5"
+                      onPress={() => router.push(`/po-client/${so.id}` as any)}
+                    >
+                      <Text className="text-xs">Buka SO</Text>
+                    </Button>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </Panel>
+      ) : null}
+
+      {/* Panel Project Terkait - Untuk Proyek atau bila ada project terhubung */}
+      {(!isPenjualanBarang && (row.status === "Won" || relProjects.length > 0)) || relProjects.length > 0 ? (
+        <Panel
+          title={`Project Terkait (${relProjects.length})`}
           subtitle="Prospek yang berhasil (Won) dapat langsung dilanjutkan ke pengerjaan Project."
           right={
             <Button size="sm" onPress={handleCreateProject} className="flex-row items-center gap-1">
@@ -266,6 +388,7 @@ export function LeadExtras({ row }: { row: Row }) {
         }
       >
         <Line left="Sales Penanggung Jawab" right={<Text className="font-semibold text-primary">{row.pemilik || "-"}</Text>} />
+        <Line left="Jenis Transaksi / Peluang" right={<Text className="font-semibold text-foreground">{row.jenisTransaksi || "Proyek (Instalasi & Jasa)"}</Text>} />
         <Line left="Tipe Pelanggan" right={<Text className="font-medium">{row.tipe || "End user"}</Text>} />
         <Line left="Kontak Person Klien" right={<Text className="text-muted-foreground">{row.kontak || "-"}</Text>} />
       </Panel>

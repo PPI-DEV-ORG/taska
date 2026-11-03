@@ -15,7 +15,7 @@ const SIGNATURES: Array<{ ext: string; kind: "foto" | "dokumen" | "video" | "lai
 
 const ALLOWED: Record<"foto" | "dokumen" | "video", string[]> = {
   foto: ["png", "jpg", "webp"],
-  dokumen: ["pdf", "docx", "zip", "ole", "png", "jpg", "webp"],
+  dokumen: ["pdf", "docx", "doc", "zip", "ole", "png", "jpg", "webp", "md", "markdown", "txt", "xlsx", "xls", "csv"],
   video: ["mp4", "mkv"],
 };
 
@@ -30,12 +30,40 @@ export function sniffFile(buffer: Buffer): { ext: string; kind: string } | null 
  * Validasi ukuran + tipe isi file (PRD #19).
  * @param desired "foto" | "dokumen" | "video" — kategori yang diminta endpoint.
  */
-export function validateUpload(buffer: Buffer, desired: "foto" | "dokumen" | "video", maxBytes: number): string {
+export function validateUpload(
+  buffer: Buffer,
+  desired: "foto" | "dokumen" | "video",
+  maxBytes: number,
+  originalName?: string,
+): string {
   if (buffer.length > maxBytes) {
     throw new BadRequestException(`Ukuran file melebihi batas ${(maxBytes / 1024 / 1024).toFixed(0)} MB`);
   }
+
+  // Khusus dokumen berbasis teks / markdown / csv
+  if (desired === "dokumen" && originalName) {
+    const lower = originalName.toLowerCase();
+    if (lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".txt")) {
+      const isPlainText = !buffer.subarray(0, Math.min(buffer.length, 1024)).includes(0x00);
+      if (isPlainText) {
+        return lower.endsWith(".txt") ? "txt" : "md";
+      }
+    }
+    if (lower.endsWith(".csv")) {
+      return "csv";
+    }
+  }
+
   const sniffed = sniffFile(buffer);
-  if (!sniffed) throw new BadRequestException("Isi file bukan format yang dikenali");
+  if (!sniffed) {
+    if (desired === "dokumen" && originalName) {
+      const lower = originalName.toLowerCase();
+      if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "md";
+      if (lower.endsWith(".txt")) return "txt";
+      if (lower.endsWith(".csv")) return "csv";
+    }
+    throw new BadRequestException("Isi file bukan format yang dikenali");
+  }
   if (!ALLOWED[desired].includes(sniffed.ext)) {
     throw new BadRequestException(`File bukan kategori ${desired}`);
   }

@@ -81,6 +81,9 @@ export class RequestDto {
   @IsOptional() @IsString()
   paymentMethod?: string;
 
+  @IsOptional() @IsDateString()
+  dueDate?: string;
+
   @IsOptional() @IsInt()
   projectId?: number;
 

@@ -737,9 +737,9 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // 8. Finance: Accounts Receivable (InvoiceOut) & Accounts Payable (InvoiceIn)
-    if (all || FINANCE_ROLES.includes(role)) {
-      const [invoicesOut, invoicesIn] = await Promise.all([
+    // 8. Finance: Accounts Receivable (InvoiceOut) & Accounts Payable (InvoiceIn, PurchaseRequest Utang)
+    if (all || FINANCE_ROLES.includes(role) || PROCUREMENT_ROLES.includes(role)) {
+      const [invoicesOut, invoicesIn, prsDebt] = await Promise.all([
         this.db.invoiceOut.findMany({
           where: { dueDate: { gte: from, lte: to }, status: { notIn: ["PAID", "BATAL", "DRAFT"] } },
           include: { customer: { select: { name: true } } },
@@ -747,6 +747,19 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         this.db.invoiceIn.findMany({
           where: { dueDate: { gte: from, lte: to }, status: { notIn: ["PAID", "BATAL"] } },
           include: { supplier: { select: { name: true } }, supplierPo: { select: { id: true, number: true } } },
+        }),
+        this.db.purchaseRequest.findMany({
+          where: {
+            dueDate: { gte: from, lte: to },
+            paymentMethod: "UTANG",
+            paymentStatus: { not: "DIBAYAR" },
+            status: { notIn: ["DITOLAK"] },
+          },
+          include: {
+            supplier: { select: { name: true } },
+            requester: { select: { id: true, name: true, role: true } },
+            project: { select: { name: true } },
+          },
         }),
       ]);
       for (const i of invoicesOut) {
@@ -772,6 +785,19 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           picId: null, picName: "Finance", picRole: "FINANCE",
           routePath: bill.supplierPoId ? `/supplier-pos/${bill.supplierPoId}` : "/accounting",
           isOverdue: overdueOf(bill.dueDate, "NOT_STARTED", true),
+          editable: false,
+        });
+      }
+      for (const pr of prsDebt) {
+        items.push({
+          key: `pr-debt-${pr.id}`, sourceModule: "purchase-requests", sourceId: pr.id,
+          title: `Jatuh tempo utang request barang ${pr.number}`,
+          subtitle: [pr.supplier?.name, pr.purpose].filter(Boolean).join(" · ") || `Utang Pembelian ${pr.number}`,
+          category: "FINANCE", start: iso(pr.dueDate)!, end: null,
+          occurrenceDate: wibDateKey(pr.dueDate), isAllDay: true,
+          status: "NOT_STARTED", priority: "HIGH",
+          picId: pr.requester?.id ?? null, picName: pr.requester?.name ?? "Finance", picRole: pr.requester?.role ?? "FINANCE",
+          routePath: `/purchase-requests/${pr.id}`, isOverdue: overdueOf(pr.dueDate, "NOT_STARTED", true),
           editable: false,
         });
       }

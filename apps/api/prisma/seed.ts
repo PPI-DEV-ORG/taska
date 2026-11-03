@@ -60,6 +60,14 @@ async function main() {
     "ALTER TABLE `FollowUp` ADD COLUMN `pocReportId` INT NULL",
     "ALTER TABLE `FollowUp` ADD COLUMN `visitReportId` INT NULL",
     "CREATE TABLE IF NOT EXISTS `CoaAccount` (`id` INT NOT NULL AUTO_INCREMENT, `code` VARCHAR(64) NOT NULL, `name` VARCHAR(191) NOT NULL, `category` VARCHAR(191) NOT NULL, `normalBalance` VARCHAR(32) NOT NULL DEFAULT 'DEBIT', `type` VARCHAR(64) NULL, `parentCode` VARCHAR(64) NULL, `status` VARCHAR(32) NOT NULL DEFAULT 'AKTIF', `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY (`id`), UNIQUE INDEX `CoaAccount_code_key` (`code`), INDEX `CoaAccount_parentCode_idx` (`parentCode`), INDEX `CoaAccount_category_idx` (`category`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
+    "ALTER TABLE `PurchaseRequest` ADD COLUMN `dueDate` DATE NULL",
+    "ALTER TABLE `ProjectRequirement` MODIFY COLUMN `serials` LONGTEXT NULL",
+    "ALTER TABLE `PurchaseRequestItem` MODIFY COLUMN `serials` LONGTEXT NULL",
+    "ALTER TABLE `Receiving` MODIFY COLUMN `conditionNote` TEXT NULL",
+    "ALTER TABLE `ReceivingItem` MODIFY COLUMN `serials` LONGTEXT NULL",
+    "ALTER TABLE `ReceivingItem` MODIFY COLUMN `note` TEXT NULL",
+    "ALTER TABLE `DeliveryNote` MODIFY COLUMN `reportText` LONGTEXT NULL",
+    "ALTER TABLE `DeliveryNoteItem` MODIFY COLUMN `serials` LONGTEXT NULL",
   ];
   for (const sql of schemaPatches) {
     await prisma.$executeRawUnsafe(sql).catch(() => {});

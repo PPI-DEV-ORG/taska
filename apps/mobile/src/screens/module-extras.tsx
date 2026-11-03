@@ -1,13 +1,17 @@
 import * as React from "react";
-import { View } from "react-native";
+import { View, ScrollView, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import {
   AlertTriangle,
+  Banknote,
   CheckCircle2,
+  Check,
+  CheckSquare,
   DownloadCloud,
   Edit2,
   ExternalLink,
   Package,
+  Paperclip,
   Plus,
   Printer,
   RefreshCw,
@@ -20,12 +24,13 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Text } from "@/components/ui/text";
 import { Panel, Cell, FormField } from "@/components/taska/basics";
 import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
-import { FileUploader } from "@/components/taska/file-uploader";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api } from "@/services/api";
+import { api, apiOrigin } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal, formatThousands } from "@/lib/format";
+import { CHART_OF_ACCOUNTS, loadCustomCoa, loadDeletedCoaCodes } from "@/lib/accounting";
 import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 import { LeadExtras } from "@/modules/lead/lead-extras";
@@ -56,7 +61,7 @@ function SupplierExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   const [newTagPrice, setNewTagPrice] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
-  const tags: Array<{ id?: number; itemName: string; price?: number | null }> = Array.isArray(row.tags) ? row.tags : [];
+  const tags: { id?: number; itemName: string; price?: number | null }[] = Array.isArray(row.tags) ? row.tags : [];
   const isPkp = row.taxStatus === "PKP" || row.jenisUsaha === "PKP";
 
   async function handleAddTag() {
@@ -436,6 +441,9 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
           : 0;
 
   // Dialog state
+  const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
+  const [showAllItems, setShowAllItems] = React.useState(false);
+  const [showAllDoItems, setShowAllDoItems] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [itemDialogOpen, setItemDialogOpen] = React.useState(false);
   const [editingIndex, setEditingIndex] = React.useState<number | null>(null);
@@ -459,6 +467,82 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   // Terbitkan Invoice Keluar dari SO state
   const [createInvOpen, setCreateInvOpen] = React.useState(false);
+
+  // Pembayaran Langsung (Nota Kontan) state
+  const [directPayOpen, setDirectPayOpen] = React.useState(false);
+  const [directCoaAccount, setDirectCoaAccount] = React.useState("1000.01");
+  const [directPayFileId, setDirectPayFileId] = React.useState<number | null>(null);
+  const [directPayNotes, setDirectPayNotes] = React.useState("");
+  const [directSettling, setDirectSettling] = React.useState(false);
+
+  const kasBankAccounts = React.useMemo(() => {
+    const custom = loadCustomCoa();
+    const deleted = new Set(loadDeletedCoaCodes());
+    const merged: Record<string, { code: string; name: string }> = {};
+
+    Object.values(CHART_OF_ACCOUNTS).forEach((acc) => {
+      if (
+        !deleted.has(acc.code) &&
+        acc.category === "Aset Lancar" &&
+        (acc.code === "1000.01" || acc.code === "1000.02" || acc.parentCode === "1000" || acc.type === "cash/bank")
+      ) {
+        merged[acc.code] = { code: acc.code, name: acc.name };
+      }
+    });
+
+    custom.forEach((acc) => {
+      if (
+        !deleted.has(acc.code) &&
+        (acc.parentCode === "1000" || acc.code.startsWith("1000.") || acc.type === "cash/bank")
+      ) {
+        merged[acc.code] = { code: acc.code, name: acc.name };
+      }
+    });
+
+    const list = Object.values(merged);
+    if (list.length === 0) {
+      return [
+        { code: "1000.01", name: "Kas Kecil [1000.01]" },
+        { code: "1000.02", name: "Bank Mandiri PT GMP [1000.02]" },
+      ];
+    }
+    return list.map((a) => ({
+      code: a.code,
+      name: `${a.name} [${a.code}]`,
+    }));
+  }, []);
+
+  const isLunas =
+    row.paymentStatus === "LUNAS" ||
+    row.status === "Lunas" ||
+    (Number(row.totalInvoice) >= Number(row.nilai) && Number(row.nilai) > 0);
+
+  const handleDirectSettlement = async () => {
+    if (!directCoaAccount) {
+      toast("Pilih akun kas / bank penerima", "danger");
+      return;
+    }
+    if (!directPayFileId) {
+      toast("Wajib unggah bukti nota pembayaran / transfer", "danger");
+      return;
+    }
+    setDirectSettling(true);
+    try {
+      await api("POST", `/client-po/${row.id}/direct-settlement`, {
+        coaAccount: directCoaAccount,
+        fileId: directPayFileId,
+        notes: directPayNotes.trim() || undefined,
+      });
+      setDirectPayOpen(false);
+      await reload();
+      await onRefresh?.();
+      toast("Transaksi penjualan langsung berhasil! Stok keluar & SO lunas.", "success");
+    } catch (err: any) {
+      toast(err?.message || "Gagal memproses transaksi langsung", "danger");
+    } finally {
+      setDirectSettling(false);
+    }
+  };
 
   const saveItems = async (newItems: any[], updateAmount = true) => {
     setSaving(true);
@@ -543,7 +627,25 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   const handleDeleteItem = async (idx: number) => {
     const updated = currentItems.filter((_, i) => i !== idx);
+    setSelectedItemIndices((prev) => prev.filter((i) => i !== idx).map((i) => (i > idx ? i - 1 : i)));
     await saveItems(updated, true);
+  };
+
+  const handleDeleteSelectedItems = async () => {
+    if (selectedItemIndices.length === 0) return;
+    const count = selectedItemIndices.length;
+    const updated = currentItems.filter((_, i) => !selectedItemIndices.includes(i));
+    setSelectedItemIndices([]);
+    await saveItems(updated, true);
+    toast(`${count} barang berhasil dihapus dari SO`);
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedItemIndices.length === currentItems.length) {
+      setSelectedItemIndices([]);
+    } else {
+      setSelectedItemIndices(currentItems.map((_, i) => i));
+    }
   };
 
   const pullFromQuotation = async () => {
@@ -639,6 +741,47 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   return (
     <>
+      {isLunas ? (
+        <View className="bg-emerald-500/10 border-emerald-500/30 rounded-xl border p-3.5 gap-2">
+          <View className="flex-row items-center justify-between flex-wrap gap-2">
+            <View className="flex-row items-center gap-2">
+              <CheckCircle2 size={18} color={colors.success} />
+              <Text className="text-sm font-bold text-foreground">
+                SO Lunas & Selesai (Nota Kontan Langsung)
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-1.5">
+              <StatusBadge status="Lunas" />
+              <StatusBadge status="Barang Terkirim" />
+            </View>
+          </View>
+          <Text className="text-xs text-muted-foreground">
+            Seluruh barang pesanan telah otomatis dikeluarkan dari stok gudang dan pembayaran telah diakui pada akun{" "}
+            <Text className="font-semibold text-foreground">
+              {row.coaAccount ? `[${row.coaAccount}]` : "Kas / Bank"}
+            </Text>
+            {row.settledAt ? ` pada tanggal ${tanggal(row.settledAt)}.` : "."}
+          </Text>
+          {row.paymentProofFile ? (
+            <View className="mt-1 flex-row items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2.5 flex-row items-center gap-1.5"
+                onPress={() => {
+                  if (typeof window !== "undefined" && row.paymentProofFile?.id) {
+                    window.open?.(`${apiOrigin()}/uploads/${row.paymentProofFile.id}`, "_blank");
+                  }
+                }}
+              >
+                <Paperclip size={12} color={colors.text} />
+                <Text className="text-[11px] font-medium">Lihat Bukti Nota / Transfer</Text>
+              </Button>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       {row.totalInvoice > row.nilai ? (
         <View className="bg-warning/15 flex-row items-center gap-2 rounded-xl p-3">
           <AlertTriangle size={16} color={colors.warning} />
@@ -652,12 +795,24 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         title="Alur Keterkaitan Dokumen: PO Customer ↔ Sales Order (SO) Kita"
         subtitle="Sisi Penjualan (Sales) & Pembelian (Procurement): Dokumen PO dan SO saling melengkapi alur pengadaan & penagihan"
         right={
-          linkedQuotation ? (
-            <Button size="sm" variant="outline" onPress={() => router.push(`/quotations/${linkedQuotation.id}` as any)}>
-              <ExternalLink size={13} color={colors.text} />
-              <Text className="text-xs">Penawaran ({linkedQuotation.nomor})</Text>
-            </Button>
-          ) : undefined
+          <View className="flex-row items-center gap-1.5 flex-wrap">
+            {!isLunas ? (
+              <Button
+                size="sm"
+                className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 flex-row items-center gap-1.5"
+                onPress={() => setDirectPayOpen(true)}
+              >
+                <Banknote size={14} color="#fff" />
+                <Text className="text-xs font-semibold text-white">Pembayaran Langsung (Nota Kontan)</Text>
+              </Button>
+            ) : null}
+            {linkedQuotation ? (
+              <Button size="sm" variant="outline" onPress={() => router.push(`/quotations/${linkedQuotation.id}` as any)}>
+                <ExternalLink size={13} color={colors.text} />
+                <Text className="text-xs">Penawaran ({linkedQuotation.nomor})</Text>
+              </Button>
+            ) : undefined}
+          </View>
         }
       >
         <View className="gap-2.5">
@@ -752,6 +907,31 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         subtitle="Rincian pesanan yang tertera pada dokumen PO & Sales Order (SO)"
         right={
           <View className="flex-row items-center gap-1.5 flex-wrap">
+            {selectedItemIndices.length > 0 ? (
+              <Button
+                size="sm"
+                className="h-7 px-2.5 flex-row items-center gap-1 bg-danger hover:bg-danger/90"
+                onPress={handleDeleteSelectedItems}
+              >
+                <Trash2 size={12} color="#fff" />
+                <Text className="text-[11px] text-white font-semibold">
+                  Hapus ({selectedItemIndices.length})
+                </Text>
+              </Button>
+            ) : null}
+            {currentItems.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 flex-row items-center gap-1"
+                onPress={handleToggleSelectAll}
+              >
+                <CheckSquare size={12} color={colors.text} />
+                <Text className="text-[11px]">
+                  {selectedItemIndices.length === currentItems.length ? "Batal Semua" : "Pilih Semua"}
+                </Text>
+              </Button>
+            ) : null}
             {quoItems.length > 0 ? (
               <Button size="sm" variant="outline" className="h-7 px-2 flex-row items-center gap-1" onPress={pullFromQuotation}>
                 <DownloadCloud size={12} color={colors.text} />
@@ -794,19 +974,39 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
           </View>
         ) : (
           <View className="gap-2">
-            {currentItems.map((it, idx) => {
+            {(showAllItems ? currentItems : currentItems.slice(0, 10)).map((it, idx) => {
               const name = getItemName(it);
               const qty = getItemQty(it);
               const unit = getItemUnit(it);
               const price = getItemPrice(it);
               const sub = qty * price;
               const sn = getItemSn(it);
+              const isSelected = selectedItemIndices.includes(idx);
 
               return (
                 <View
                   key={idx}
-                  className="flex-row items-center justify-between p-2.5 rounded-lg border border-border/70 bg-card/50 gap-2"
+                  className={`flex-row items-center justify-between p-2.5 rounded-lg border gap-2 ${
+                    isSelected ? "border-primary bg-primary/10" : "border-border/70 bg-card/50"
+                  }`}
                 >
+                  <Pressable
+                    onPress={() => {
+                      setSelectedItemIndices((prev) =>
+                        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+                      );
+                    }}
+                    hitSlop={8}
+                    className="p-1 mr-0.5"
+                  >
+                    <View
+                      className={`w-4 h-4 rounded border items-center justify-center ${
+                        isSelected ? "bg-primary border-primary" : "border-border/80 bg-background"
+                      }`}
+                    >
+                      {isSelected && <Check size={11} color="#ffffff" />}
+                    </View>
+                  </Pressable>
                   <View className="flex-1 min-w-0">
                     <View className="flex-row items-center gap-1.5 flex-wrap">
                       <Text className="text-xs font-semibold text-foreground">{name}</Text>
@@ -850,6 +1050,19 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                 </View>
               );
             })}
+
+            {currentItems.length > 10 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 border border-border/60 rounded-lg flex-row items-center justify-center gap-1.5"
+                onPress={() => setShowAllItems((v) => !v)}
+              >
+                <Text className="text-xs font-semibold text-primary">
+                  {showAllItems ? "Sembunyikan" : `Lihat Semua (${currentItems.length} item)`}
+                </Text>
+              </Button>
+            )}
 
             <View className="mt-2 pt-2 border-t border-border/60 gap-1.5">
               <View className="flex-row justify-between items-center">
@@ -1158,12 +1371,30 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                   Belum ada rincian item di SO (tetap bisa dibuat DO pengiriman umum).
                 </Text>
               ) : (
-                currentItems.map((it, i) => (
-                  <Text key={i} className="text-xs text-muted-foreground">
-                    • {getItemName(it)} × {getItemQty(it)} {getItemUnit(it)}
-                    {getItemSn(it) ? ` (SN: ${getItemSn(it)})` : ""}
-                  </Text>
-                ))
+                <>
+                  <ScrollView nestedScrollEnabled style={{ maxHeight: 200 }} showsVerticalScrollIndicator={true}>
+                    <View className="gap-1">
+                      {(showAllDoItems ? currentItems : currentItems.slice(0, 10)).map((it, i) => (
+                        <Text key={i} className="text-xs text-muted-foreground">
+                          • {getItemName(it)} × {getItemQty(it)} {getItemUnit(it)}
+                          {getItemSn(it) ? ` (SN: ${getItemSn(it)})` : ""}
+                        </Text>
+                      ))}
+                    </View>
+                  </ScrollView>
+                  {currentItems.length > 10 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 border border-border/60 rounded-md mt-1 self-start px-2.5"
+                      onPress={() => setShowAllDoItems((v) => !v)}
+                    >
+                      <Text className="text-[11px] font-semibold text-primary">
+                        {showAllDoItems ? "Sembunyikan" : `Lihat semua (${currentItems.length} item)`}
+                      </Text>
+                    </Button>
+                  )}
+                </>
               )}
               <Text className="text-[11px] text-primary mt-1">
                 Saat Surat Jalan di-approve lalu statusnya diubah menjadi &quot;Dikirim&quot;, stok gudang akan otomatis berkurang.
@@ -1191,6 +1422,120 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
           await onRefresh?.();
         }}
       />
+
+      {/* Dialog Selesaikan Pembayaran Langsung / Nota Kontan */}
+      <Dialog open={directPayOpen} onOpenChange={setDirectPayOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex-row items-center gap-2">
+              <Banknote size={18} color={colors.success} />
+              <Text className="text-base font-bold text-foreground">
+                Pembayaran Langsung (Nota Kontan)
+              </Text>
+            </DialogTitle>
+          </DialogHeader>
+
+          <View className="gap-3 py-1">
+            <View className="bg-muted/40 p-3 rounded-xl border border-border/70 gap-1.5">
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Nomor SO</Text>
+                <Text className="text-xs font-bold text-foreground">
+                  {row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : row.nomor || `SO #${row.id}`}
+                </Text>
+              </View>
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Customer</Text>
+                <Text className="text-xs font-semibold text-foreground">
+                  {row.customer && row.customer !== "-" ? row.customer : "Customer Umum"}
+                </Text>
+              </View>
+              <View className="flex-row justify-between items-center pt-1 border-t border-border/50">
+                <Text className="text-xs font-bold text-foreground">Total Pembayaran</Text>
+                <Text className="text-sm font-bold text-primary">
+                  {rupiah(row.nilai || itemsTotal)}
+                </Text>
+              </View>
+              <View className="flex-row justify-between items-center">
+                <Text className="text-[11px] text-muted-foreground">Barang Keluar dari Stok</Text>
+                <Text className="text-[11px] font-semibold text-foreground">
+                  {currentItems.length} item ({currentItems.reduce((acc, it) => acc + getItemQty(it), 0)} unit)
+                </Text>
+              </View>
+            </View>
+
+            <FormField
+              label="Pilih Akun Kas / Bank (CoA)"
+              required
+              hint="Rekening penerimaan uang (Debit Kas/Bank)"
+            >
+              <SearchableSelect
+                value={
+                  kasBankAccounts.find((a) => a.code === directCoaAccount)?.name ||
+                  `Kas Kecil [1000.01]`
+                }
+                options={kasBankAccounts.map((a) => a.name)}
+                onChange={(val) => {
+                  const match = kasBankAccounts.find((a) => a.name === val);
+                  if (match) setDirectCoaAccount(match.code);
+                }}
+                placeholder="Pilih akun Kas atau Bank..."
+              />
+            </FormField>
+
+            <FormField
+              label="Unggah Nota Pembayaran / Bukti Kas / Transfer"
+              required
+              hint="Wajib dilampirkan sebagai bukti sah pembayaran langsung (Foto atau PDF)"
+            >
+              <FileUploader
+                label="Unggah Bukti Nota / Transfer"
+                kind="semua"
+                accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+                allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
+                category="nota-so"
+                hint="Mendukung foto nota/struk/transfer atau dokumen PDF"
+                autoFlush={true}
+                onUploaded={(id) => setDirectPayFileId(id)}
+              />
+            </FormField>
+
+            <FormField label="Catatan Tambahan (Opsional)">
+              <Input
+                value={directPayNotes}
+                onChangeText={setDirectPayNotes}
+                placeholder="Contoh: Dibayar tunai di kasir / transfer via Mandiri"
+              />
+            </FormField>
+
+            <View className="bg-primary/5 p-2.5 rounded-lg border border-primary/20 flex-row items-center gap-2">
+              <CheckCircle2 size={16} color={colors.primary} />
+              <Text className="text-[11px] text-foreground flex-1">
+                Barang pesanan langsung dikeluarkan dari gudang & status SO otomatis lunas. Anda tidak perlu membuat Surat Jalan atau Invoice terpisah.
+              </Text>
+            </View>
+          </View>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onPress={() => setDirectPayOpen(false)}
+              disabled={directSettling}
+            >
+              <Text>Batal</Text>
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 flex-row items-center gap-1.5"
+              onPress={handleDirectSettlement}
+              disabled={directSettling || !directPayFileId || !directCoaAccount}
+            >
+              <CheckCircle2 size={14} color="#fff" />
+              <Text className="text-white font-semibold">
+                {directSettling ? "Menyimpan..." : "Simpan & Keluarkan Barang"}
+              </Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -1223,8 +1568,7 @@ export function ModuleExtras({
   invoicePayOpen?: boolean;
   onInvoicePayOpenChange?: (open: boolean) => void;
 }) {
-  const router = useRouter();
-  const { user, data } = useApp();
+  const { data } = useApp();
 
   if (moduleKey === "leads") {
     return <LeadExtras row={row} />;

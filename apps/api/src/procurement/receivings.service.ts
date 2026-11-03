@@ -176,6 +176,10 @@ export class ReceivingsService {
     const isDirectApproved = dto.status === "DITERIMA" || ["GUDANG", "SUPER_ADMIN", "ADMIN"].includes(user.role);
     const initialStatus = isDirectApproved ? "DITERIMA" : ((dto.status as any) ?? "MENUNGGU");
 
+    if (initialStatus === "DITERIMA" && preparedItems.length) {
+      await this.validateSerials(preparedItems);
+    }
+
     const effectiveDoFileId = dto.receiptFileId ?? dto.photoFileId;
 
     const receiving = await this.prisma.main.receiving.create({
@@ -305,6 +309,13 @@ export class ReceivingsService {
     const row = await this.prisma.main.receiving.findUnique({ where: { id }, include: { items: true } });
     if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
 
+    // Validasi serial number terlebih dahulu sebelum mengubah data apapun di DB
+    const willBeReceived = (dto.status ?? row.status) === "DITERIMA";
+    if (willBeReceived) {
+      const itemsToValidate = dto.items && dto.items.length ? dto.items : row.items;
+      await this.validateSerials(itemsToValidate, id);
+    }
+
     let preparedItems: any[] | undefined = undefined;
     if (dto.items && dto.items.length) {
       preparedItems = [];
@@ -386,8 +397,9 @@ export class ReceivingsService {
       }
     }
 
-    // Jika status diubah menjadi DITERIMA dan sebelumnya masih MENUNGGU, catat stok & serial unit
-    if (dto.status === "DITERIMA" && row.status === "MENUNGGU") {
+    // Jika status diubah menjadi DITERIMA dan sebelumnya masih MENUNGGU atau stok belum tercatat, catat stok & serial unit
+    const alreadyPosted = (await this.prisma.main.stockMovement.count({ where: { receivingId: id } })) > 0;
+    if (dto.status === "DITERIMA" && (!alreadyPosted || row.status === "MENUNGGU")) {
       await this.postStock(id);
     }
 
@@ -396,9 +408,13 @@ export class ReceivingsService {
   }
 
   async setStatus(id: number, status: string, user: RequestUser) {
-    const row = await this.prisma.main.receiving.findUnique({ where: { id } });
+    const row = await this.prisma.main.receiving.findUnique({ where: { id }, include: { items: true } });
     if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
-    if (status === "DITERIMA" && row.status === "MENUNGGU") {
+    if (status === "DITERIMA") {
+      await this.validateSerials(row.items, id);
+    }
+    const alreadyPosted = (await this.prisma.main.stockMovement.count({ where: { receivingId: id } })) > 0;
+    if (status === "DITERIMA" && (!alreadyPosted || row.status === "MENUNGGU")) {
       await this.postStock(id);
       return this.get(id);
     }
@@ -436,6 +452,59 @@ export class ReceivingsService {
     return { id, deleted: true };
   }
 
+  private async validateSerials(
+    items: { productId?: number; serials?: string | null; qtyReceived?: number }[],
+    receivingId?: number,
+  ) {
+    const allSerials: string[] = [];
+    for (const it of items) {
+      if (!it.productId) continue;
+      const parsed = parseSerials(it.serials ?? undefined);
+      allSerials.push(...parsed);
+    }
+
+    if (allSerials.length === 0) return;
+
+    // 1. Cek duplikat di dalam daftar payload input
+    const seen = new Set<string>();
+    const dupes = new Set<string>();
+    for (const sn of allSerials) {
+      if (seen.has(sn)) dupes.add(sn);
+      else seen.add(sn);
+    }
+    if (dupes.size > 0) {
+      throw new BadRequestException(
+        `Terdapat nomor serial duplikat dalam daftar input: ${Array.from(dupes).slice(0, 5).join(", ")}`,
+      );
+    }
+
+    // 2. Cek apakah nomor serial sudah terdaftar di database
+    const existing = await this.prisma.main.serialUnit.findMany({
+      where: { sn: { in: allSerials } },
+      select: { id: true, sn: true, status: true },
+    });
+
+    if (existing.length > 0) {
+      let conflicting = existing;
+      if (receivingId) {
+        const movements = await this.prisma.main.stockMovement.findMany({
+          where: {
+            receivingId,
+            serialUnitId: { in: existing.map((u) => u.id) },
+          },
+          select: { serialUnitId: true },
+        });
+        const processedIds = new Set(movements.map((m) => m.serialUnitId));
+        conflicting = existing.filter((u) => !processedIds.has(u.id));
+      }
+      if (conflicting.length > 0) {
+        throw new BadRequestException(
+          `Nomor serial sudah terdaftar di sistem: ${conflicting.map((u) => u.sn).slice(0, 5).join(", ")}`,
+        );
+      }
+    }
+  }
+
   /** Setelah disetujui Gudang & Procurement: catat stok masuk (PRD #8). */
   private async postStock(id: number) {
     const receiving = await this.prisma.main.receiving.findUnique({
@@ -456,33 +525,114 @@ export class ReceivingsService {
       const serials = parseSerials(item.serials ?? undefined);
       if (effectiveWhId) {
         if (item.product.hasSerial && serials.length) {
-          for (const sn of serials) {
-            const unit = await this.prisma.main.serialUnit.create({
-              data: {
-                sn,
-                productId: item.productId,
-                status: "DI_GUDANG",
-                warehouseId: effectiveWhId,
-                warrantyEndsAt: item.product.warrantyMonths
-                  ? new Date(Date.now() + item.product.warrantyMonths * 30 * 24 * 3600 * 1000)
-                  : null,
-              },
-            });
-            await this.prisma.main.serialUnitHistory.create({
-              data: { serialUnitId: unit.id, status: "DI_GUDANG", warehouseId: effectiveWhId, changedById: receiving.receiverId, note: `Penerimaan ${receiving.number}` },
-            });
-            await this.stock.applyMovement({
-              date: receiving.date,
-              type: "IN",
-              category: "PENERIMAAN_SUPPLIER",
-              productId: item.productId,
-              toWarehouseId: effectiveWhId,
-              qty: 1,
-              receivingId: receiving.id,
-              serialUnitId: unit.id,
-              createdById: receiving.receiverId,
+          const seen = new Set<string>();
+          const dupesInList: string[] = [];
+          for (const s of serials) {
+            if (seen.has(s)) dupesInList.push(s);
+            else seen.add(s);
+          }
+          if (dupesInList.length > 0) {
+            throw new BadRequestException(
+              `Terdapat nomor serial duplikat dalam daftar input: ${dupesInList.slice(0, 5).join(", ")}`,
+            );
+          }
+
+          // Cek movement yang sudah pernah dipost untuk penerimaan ini
+          const processedMovements = await this.prisma.main.stockMovement.findMany({
+            where: { receivingId: receiving.id, productId: item.productId, serialUnitId: { not: null } },
+            select: { serialUnitId: true },
+          });
+          const processedUnitIds = new Set(processedMovements.map((m) => m.serialUnitId));
+
+          // Cek serial unit yang sudah ada di database
+          const existingUnits = await this.prisma.main.serialUnit.findMany({
+            where: { sn: { in: serials } },
+            select: { id: true, sn: true, status: true },
+          });
+          const existingMap = new Map(existingUnits.map((u) => [u.sn, u]));
+
+          // Pastikan serial yang sudah ada hanya yang sudah diproses pada penerimaan ini
+          for (const u of existingUnits) {
+            if (!processedUnitIds.has(u.id)) {
+              throw new BadRequestException(
+                `Serial number "${u.sn}" sudah terdaftar di sistem (Unit ID #${u.id}, Status: ${u.status}). Gunakan serial number yang unik.`,
+              );
+            }
+          }
+
+          // Bulk create serial unit baru yang belum ada di database
+          const toCreateSns = serials.filter((sn) => !existingMap.has(sn));
+          const warrantyEndsAt = item.product.warrantyMonths
+            ? new Date(Date.now() + item.product.warrantyMonths * 30 * 24 * 3600 * 1000)
+            : null;
+
+          if (toCreateSns.length > 0) {
+            const CHUNK_SIZE = 250;
+            for (let i = 0; i < toCreateSns.length; i += CHUNK_SIZE) {
+              const chunk = toCreateSns.slice(i, i + CHUNK_SIZE);
+              await this.prisma.main.serialUnit.createMany({
+                data: chunk.map((sn) => ({
+                  sn,
+                  productId: item.productId,
+                  status: "DI_GUDANG" as const,
+                  warehouseId: effectiveWhId,
+                  warrantyEndsAt,
+                })),
+              });
+            }
+          }
+
+          // Ambil semua unit record yang bersangkutan
+          const allUnits = await this.prisma.main.serialUnit.findMany({
+            where: { sn: { in: serials } },
+            select: { id: true, sn: true },
+          });
+          const newUnitsToProcess = allUnits.filter((u) => !processedUnitIds.has(u.id));
+
+          if (newUnitsToProcess.length > 0) {
+            const CHUNK_SIZE = 250;
+
+            // Batch insert history
+            for (let i = 0; i < newUnitsToProcess.length; i += CHUNK_SIZE) {
+              const chunk = newUnitsToProcess.slice(i, i + CHUNK_SIZE);
+              await this.prisma.main.serialUnitHistory.createMany({
+                data: chunk.map((u) => ({
+                  serialUnitId: u.id,
+                  status: "DI_GUDANG" as const,
+                  warehouseId: effectiveWhId,
+                  changedById: receiving.receiverId,
+                  note: `Penerimaan ${receiving.number}`,
+                })),
+              });
+            }
+
+            // Batch insert stock movement per serial unit
+            for (let i = 0; i < newUnitsToProcess.length; i += CHUNK_SIZE) {
+              const chunk = newUnitsToProcess.slice(i, i + CHUNK_SIZE);
+              await this.prisma.main.stockMovement.createMany({
+                data: chunk.map((u) => ({
+                  date: receiving.date,
+                  type: "IN" as const,
+                  category: "PENERIMAAN_SUPPLIER" as const,
+                  productId: item.productId,
+                  toWarehouseId: effectiveWhId,
+                  qty: 1,
+                  receivingId: receiving.id,
+                  serialUnitId: u.id,
+                  createdById: receiving.receiverId,
+                })),
+              });
+            }
+
+            // Update StockBalance sekaligus untuk seluruh batch unit ber-SN
+            const currentBal = await this.stock.balanceOf(item.productId, effectiveWhId);
+            await this.prisma.main.stockBalance.upsert({
+              where: { productId_warehouseId: { productId: item.productId, warehouseId: effectiveWhId } },
+              create: { productId: item.productId, warehouseId: effectiveWhId, qty: currentBal + newUnitsToProcess.length },
+              update: { qty: { increment: newUnitsToProcess.length } },
             });
           }
+
           const nonSerial = item.qtyReceived - serials.length;
           if (nonSerial > 0) {
             await this.stock.applyMovement({
@@ -520,21 +670,39 @@ export class ReceivingsService {
           reason: `Pembelian langsung ${receiving.number}`,
           createdById: receiving.receiverId,
         });
-        for (const sn of serials) {
-          const unit = await this.prisma.main.serialUnit.create({
-            data: {
-              sn,
-              productId: item.productId,
-              status: "TERPASANG",
-              projectId: receiving.projectId,
-              warrantyEndsAt: item.product.warrantyMonths
-                ? new Date(Date.now() + item.product.warrantyMonths * 30 * 24 * 3600 * 1000)
-                : null,
-            },
+        if (serials.length > 0) {
+          const warrantyEndsAt = item.product.warrantyMonths
+            ? new Date(Date.now() + item.product.warrantyMonths * 30 * 24 * 3600 * 1000)
+            : null;
+          const CHUNK_SIZE = 250;
+          for (let i = 0; i < serials.length; i += CHUNK_SIZE) {
+            const chunk = serials.slice(i, i + CHUNK_SIZE);
+            await this.prisma.main.serialUnit.createMany({
+              data: chunk.map((sn) => ({
+                sn,
+                productId: item.productId,
+                status: "TERPASANG" as const,
+                projectId: receiving.projectId,
+                warrantyEndsAt,
+              })),
+            });
+          }
+          const createdUnits = await this.prisma.main.serialUnit.findMany({
+            where: { sn: { in: serials } },
+            select: { id: true },
           });
-          await this.prisma.main.serialUnitHistory.create({
-            data: { serialUnitId: unit.id, status: "TERPASANG", projectId: receiving.projectId, changedById: receiving.receiverId, note: `Barang terpakai ${receiving.number}` },
-          });
+          for (let i = 0; i < createdUnits.length; i += CHUNK_SIZE) {
+            const chunk = createdUnits.slice(i, i + CHUNK_SIZE);
+            await this.prisma.main.serialUnitHistory.createMany({
+              data: chunk.map((u) => ({
+                serialUnitId: u.id,
+                status: "TERPASANG" as const,
+                projectId: receiving.projectId,
+                changedById: receiving.receiverId,
+                note: `Barang terpakai ${receiving.number}`,
+              })),
+            });
+          }
         }
       }
     }

@@ -1,13 +1,13 @@
 import * as React from "react";
 import { View, ScrollView, Platform, Pressable } from "react-native";
-import { Upload, CheckCircle2, FileDown, Package, Trash2 } from "lucide-react-native";
+import { Upload, CheckCircle2, FileDown, Package, Trash2, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { useApp } from "@/store/app-store";
@@ -18,6 +18,7 @@ import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
+import { CHART_OF_ACCOUNTS, loadCustomCoa, loadDeletedCoaCodes } from "@/lib/accounting";
 import {
   type PphMode,
   type PpnMode,
@@ -45,10 +46,24 @@ function generateInvoiceNumber(
   currentScheme: "sekaligus" | "dp" | "termin",
   existingInvoices: Row[],
   totalInvoiceCount: number,
+  allInvoices?: Row[],
 ): string {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, "0");
-  const count = totalInvoiceCount + 1;
+
+  let maxSeq = 0;
+  const prefix = `INV/${year}/${month}/`;
+  for (const inv of (allInvoices || [])) {
+    const num = String(inv.nomor || inv.number || "");
+    if (num.startsWith(prefix)) {
+      const parts = num.slice(prefix.length).split("/");
+      const seq = parseInt(parts[0] ?? "", 10);
+      if (!isNaN(seq) && seq > maxSeq) {
+        maxSeq = seq;
+      }
+    }
+  }
+  const count = Math.max(maxSeq + 1, totalInvoiceCount + 1);
   const baseSeq = String(count).padStart(3, "0");
 
   if (isLanjut) {
@@ -251,7 +266,46 @@ function CreateInvoiceForm({
     if (defaultDirectSale || defaultDirectPurchase || isInitialPoWalkin) return "PAID";
     return "UNPAID";
   });
+  const [paymentAccountCode, setPaymentAccountCode] = React.useState<string>("1000.02");
   const [paymentMethod, setPaymentMethod] = React.useState<"TRANSFER" | "TUNAI">("TRANSFER");
+
+  const kasBankOptions = React.useMemo(() => {
+    const custom = loadCustomCoa();
+    const deleted = new Set(loadDeletedCoaCodes());
+    const merged: Record<string, { code: string; name: string }> = {};
+
+    Object.values(CHART_OF_ACCOUNTS).forEach((acc) => {
+      if (
+        !deleted.has(acc.code) &&
+        acc.category === "Aset Lancar" &&
+        (acc.code === "1000.01" || acc.code === "1000.02" || acc.parentCode === "1000" || acc.type === "cash/bank")
+      ) {
+        merged[acc.code] = { code: acc.code, name: acc.name };
+      }
+    });
+
+    custom.forEach((acc) => {
+      if (
+        !deleted.has(acc.code) &&
+        (acc.parentCode === "1000" || acc.code.startsWith("1000.") || acc.type === "cash/bank")
+      ) {
+        merged[acc.code] = { code: acc.code, name: acc.name };
+      }
+    });
+
+    const list = Object.values(merged);
+    if (list.length === 0) {
+      return [
+        { code: "1000.02", name: "Bank Mandiri PT GMP [1000.02]", rawName: "Bank Mandiri PT GMP" },
+        { code: "1000.01", name: "Kas Kecil [1000.01]", rawName: "Kas Kecil" },
+      ];
+    }
+    return list.map((a) => ({
+      code: a.code,
+      name: `${a.name} [${a.code}]`,
+      rawName: a.name,
+    }));
+  }, []);
 
   // Items
   const [items, setItems] = React.useState<QuotationItem[]>(() => {
@@ -336,6 +390,7 @@ function CreateInvoiceForm({
       scheme,
       relatedExistingInvoices,
       data.invoices?.length || 0,
+      data.invoices,
     ),
   );
 
@@ -378,6 +433,10 @@ function CreateInvoiceForm({
     }
     return "";
   });
+  const [quickCustomerOpen, setQuickCustomerOpen] = React.useState(false);
+  const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
+  const [showAllItems, setShowAllItems] = React.useState(false);
+  const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
 
   const effectiveDiscount = Number(String(customDiscount).replace(/\D/g, "")) || 0;
 
@@ -418,13 +477,13 @@ function CreateInvoiceForm({
   // Switch mode handler
   function handleSwitchMode(newMode: "baru" | "lanjut") {
     setMode(newMode);
-    setNomor(generateInvoiceNumber(newMode === "lanjut", scheme, relatedExistingInvoices, data.invoices?.length || 0));
+    setNomor(generateInvoiceNumber(newMode === "lanjut", scheme, relatedExistingInvoices, data.invoices?.length || 0, data.invoices));
   }
 
   // Switch scheme handler
   function handleSwitchScheme(newScheme: "sekaligus" | "dp" | "termin") {
     setScheme(newScheme);
-    setNomor(generateInvoiceNumber(mode === "lanjut", newScheme, relatedExistingInvoices, data.invoices?.length || 0));
+    setNomor(generateInvoiceNumber(mode === "lanjut", newScheme, relatedExistingInvoices, data.invoices?.length || 0, data.invoices));
   }
 
   // Select quotation handler
@@ -606,7 +665,7 @@ function CreateInvoiceForm({
     const isPaidNow = paymentStatus === "PAID";
     try {
       const created = await addRow("invoices", {
-        nomor: nomor.trim(),
+        nomor: nomor.trim() || undefined,
         customer: custName,
         customerId: isPurchase ? undefined : (selectedCustomerId || (customerObj?.id ? String(customerObj.id) : undefined)),
         supplierId: isPurchase ? (selectedSupplierId ? Number(selectedSupplierId) : undefined) : undefined,
@@ -649,7 +708,7 @@ function CreateInvoiceForm({
         status: isPaidNow ? "Lunas" : "Belum dikirim",
         terbayar: isPaidNow ? currentTotal : 0,
         catatan: isPaidNow
-          ? `${fullCatatan} (${isPurchase ? "Pembelian Langsung - Lunas" : "Lunas Langsung"} - ${paymentMethod})`
+          ? `${fullCatatan} (${isPurchase ? "Pembelian Langsung - Lunas" : "Lunas Langsung"} - ${paymentMethod} [AKUN:${paymentAccountCode}])`
           : fullCatatan,
         fileId: fileId || undefined,
       });
@@ -660,12 +719,13 @@ function CreateInvoiceForm({
             amount: currentTotal,
             date: tanggal,
             method: paymentMethod,
-            reference: `LUNAS-${nomor.trim()}`,
+            reference: `LUNAS-${nomor.trim()} [${paymentAccountCode}]`,
           }).catch(() => {});
         }
+        const accLabel = kasBankOptions.find((o) => o.code === paymentAccountCode)?.rawName || paymentMethod;
         toast(
           `Invoice ${nomor} (${invoiceType}) berhasil dibuat${
-            isPaidNow ? ` & langsung Lunas (${paymentMethod})` : ""
+            isPaidNow ? ` & langsung Lunas (${accLabel})` : ""
           }!`
         );
         if (isPurchase && selectedSupplierPoId) {
@@ -881,6 +941,8 @@ function CreateInvoiceForm({
                     if (match) setSelectedSupplierId(String(match.id));
                     else setSelectedSupplierId("");
                   }}
+                  onAddNew={() => setQuickSupplierOpen(true)}
+                  addNewLabel="+ Tambah Supplier Baru"
                   options={Array.from(new Set([customSupplierName, ...(data.suppliers ?? []).map((s: Row) => s.nama || s.name)])).filter(Boolean)}
                   placeholder="Cari & pilih supplier..."
                 />
@@ -925,6 +987,8 @@ function CreateInvoiceForm({
                     (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama ||
                     ""
                   }
+                  onAddNew={() => setQuickCustomerOpen(true)}
+                  addNewLabel="+ Tambah Customer Baru"
                   onChange={(val) => {
                     setCustomCustomerName(val);
                     const match = (data.customers ?? []).find((c: Row) => c.nama === val);
@@ -1079,6 +1143,8 @@ function CreateInvoiceForm({
                   customCustomerName ||
                   (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama || ""
                 }
+                onAddNew={() => setQuickCustomerOpen(true)}
+                addNewLabel="+ Tambah Customer Baru"
                 onChange={(val) => {
                   setCustomCustomerName(val);
                   const match = (data.customers ?? []).find((c: Row) => c.nama === val);
@@ -1217,8 +1283,8 @@ function CreateInvoiceForm({
 
         {/* Form Fields */}
         <View className="gap-3 mb-4">
-          <FormField label="Nomor Invoice" required>
-            <Input value={nomor} onChangeText={setNomor} placeholder="INV/2026/10/001" />
+          <FormField label="Nomor Invoice (Kosongkan untuk otomatis)">
+            <Input value={nomor} onChangeText={setNomor} placeholder="Otomatis oleh sistem" />
           </FormField>
 
           <View className="flex-row gap-2">
@@ -1256,23 +1322,76 @@ function CreateInvoiceForm({
                   Barang ber-SN pada daftar ini otomatis di-reserve untuk Invoice ini.
                 </Text>
               </View>
-              <Button size="sm" variant="outline" onPress={() => setPickerOpen(true)}>
-                <Package size={13} color={colors.primary} />
-                <Text className="text-xs text-primary font-semibold">+ Pilih Stok & SN / Jasa</Text>
-              </Button>
+              <View className="flex-row items-center gap-1.5 flex-wrap">
+                {selectedItemIndices.length > 0 && (
+                  <Button
+                    size="sm"
+                    className="h-7 px-2.5 bg-danger flex-row items-center gap-1"
+                    onPress={() => {
+                      setItems((prev) => prev.filter((_, i) => !selectedItemIndices.includes(i)));
+                      setSelectedItemIndices([]);
+                    }}
+                  >
+                    <Trash2 size={12} color="#fff" />
+                    <Text className="text-xs text-white font-semibold">
+                      Hapus ({selectedItemIndices.length})
+                    </Text>
+                  </Button>
+                )}
+                {items.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2"
+                    onPress={() => {
+                      if (selectedItemIndices.length === items.length) {
+                        setSelectedItemIndices([]);
+                      } else {
+                        setSelectedItemIndices(items.map((_, i) => i));
+                      }
+                    }}
+                  >
+                    <Text className="text-xs">
+                      {selectedItemIndices.length === items.length ? "Batal Semua" : "Pilih Semua"}
+                    </Text>
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" onPress={() => setPickerOpen(true)}>
+                  <Package size={13} color={colors.primary} />
+                  <Text className="text-xs text-primary font-semibold">+ Pilih Stok & SN / Jasa</Text>
+                </Button>
+              </View>
             </View>
             {items.length > 0 ? (
               <View className="gap-2 mt-1">
-                {items.map((it, idx) => {
+                {(showAllItems ? items : items.slice(0, 10)).map((it, idx) => {
                   const itPph = calcItemPph(it);
                   const itemPrice = Number(it.harga || it.price || 0);
                   const sub = (Number(it.qty) || 1) * itemPrice;
+                  const isSelected = selectedItemIndices.includes(idx);
                   return (
                     <View
                       key={it.id || idx}
-                      className="py-2 border-b border-border/40 gap-1.5"
+                      className={`py-2 px-2 rounded-lg border-b border-border/40 gap-1.5 ${isSelected ? "bg-primary/10" : ""}`}
                     >
                       <View className="flex-row justify-between items-center gap-2">
+                        <Pressable
+                          onPress={() => {
+                            setSelectedItemIndices((prev) =>
+                              prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+                            );
+                          }}
+                          hitSlop={6}
+                          className="mr-1"
+                        >
+                          <View
+                            className={`w-4 h-4 rounded border items-center justify-center ${
+                              isSelected ? "bg-primary border-primary" : "border-border/80 bg-background"
+                            }`}
+                          >
+                            {isSelected && <Check size={11} color="#ffffff" />}
+                          </View>
+                        </Pressable>
                         <View className="flex-1 mr-1">
                           <Text className="text-xs font-medium">{it.item}</Text>
                           <View className="flex-row flex-wrap items-center gap-1.5 mt-0.5">
@@ -1333,6 +1452,18 @@ function CreateInvoiceForm({
                     </View>
                   );
                 })}
+                {items.length > 10 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 border border-border/60 rounded-lg flex-row items-center justify-center gap-1.5 mt-1"
+                    onPress={() => setShowAllItems((v) => !v)}
+                  >
+                    <Text className="text-xs font-semibold text-primary">
+                      {showAllItems ? "Sembunyikan" : `Lihat Semua (${items.length} item)`}
+                    </Text>
+                  </Button>
+                )}
                 <View className="flex-row justify-between pt-1">
                   <Text className="text-xs font-semibold text-muted-foreground">Subtotal Rincian Barang:</Text>
                   <Text className="text-xs font-bold text-primary">{rupiah(grossDealDpp)}</Text>
@@ -1420,25 +1551,28 @@ function CreateInvoiceForm({
             </FormField>
 
             {paymentStatus === "PAID" ? (
-              <FormField label="Metode Pembayaran Langsung">
-                <View className="flex-row gap-2">
-                  <Button
-                    variant={paymentMethod === "TRANSFER" ? "default" : "outline"}
-                    size="sm"
-                    onPress={() => setPaymentMethod("TRANSFER")}
-                    className="flex-1 h-8"
-                  >
-                    <Text className="text-xs">Transfer Bank</Text>
-                  </Button>
-                  <Button
-                    variant={paymentMethod === "TUNAI" ? "default" : "outline"}
-                    size="sm"
-                    onPress={() => setPaymentMethod("TUNAI")}
-                    className="flex-1 h-8"
-                  >
-                    <Text className="text-xs">Tunai / Kasir</Text>
-                  </Button>
-                </View>
+              <FormField
+                label="Pilih Akun Kas / Bank Penerimaan"
+                required
+                hint="Pilih rekening bank atau kas kecil tempat pembayaran invoice ini masuk"
+              >
+                <SearchableSelect
+                  value={
+                    kasBankOptions.find((o) => o.code === paymentAccountCode)?.name ||
+                    kasBankOptions[0]?.name ||
+                    ""
+                  }
+                  options={kasBankOptions.map((o) => o.name)}
+                  onChange={(val) => {
+                    const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
+                    if (match) {
+                      setPaymentAccountCode(match.code);
+                      const isTunai = match.code === "1000.01" || /kas/i.test(match.rawName);
+                      setPaymentMethod(isTunai ? "TUNAI" : "TRANSFER");
+                    }
+                  }}
+                  placeholder="Pilih rekening kas / bank..."
+                />
               </FormField>
             ) : null}
           </View>
@@ -1613,6 +1747,24 @@ function CreateInvoiceForm({
           if (valid.length > 0) {
             setItems((prev) => [...prev, ...valid]);
           }
+        }}
+      />
+
+      <QuickAddCustomerDialog
+        open={quickCustomerOpen}
+        onOpenChange={setQuickCustomerOpen}
+        onSuccess={(newCust) => {
+          setSelectedCustomerId(String(newCust.id));
+          setCustomCustomerName(newCust.nama);
+        }}
+      />
+
+      <QuickAddSupplierDialog
+        open={quickSupplierOpen}
+        onOpenChange={setQuickSupplierOpen}
+        onSuccess={(newSupp) => {
+          setSelectedSupplierId(String(newSupp.id));
+          setCustomSupplierName(newSupp.nama);
         }}
       />
     </DialogContent>

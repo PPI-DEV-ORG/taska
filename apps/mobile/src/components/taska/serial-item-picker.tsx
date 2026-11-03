@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable, ScrollView } from "react-native";
+import { View, Pressable, ScrollView, Platform, TextInput } from "react-native";
 import {
   Package,
   Wrench,
@@ -9,6 +9,10 @@ import {
   RefreshCw,
   TriangleAlert,
   Info,
+  ScanLine,
+  ClipboardList,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +34,23 @@ import { colors } from "@/tokens";
 import { formatThousands } from "@/lib/format";
 import { pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import type { QuotationItem } from "@/modules/quotation/types";
+
+function playScanBeep(ok: boolean) {
+  if (Platform.OS !== "web") return;
+  try {
+    const AC = (globalThis as any).AudioContext || (globalThis as any).webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = ok ? 880 : 220;
+    g.gain.value = 0.05;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 0.12);
+  } catch {}
+}
 
 type Props = {
   open: boolean;
@@ -72,6 +93,16 @@ export function SerialItemPickerModal({
   // Quick batch register modal inside picker
   const [batchRegisterOpen, setBatchRegisterOpen] = React.useState(false);
   const [fallbackSerials, setFallbackSerials] = React.useState<any[]>([]);
+
+  // Scanner barcode & multi-scan states
+  const [scanInput, setScanInput] = React.useState("");
+  const [scanFeedback, setScanFeedback] = React.useState<{
+    type: "success" | "warning" | "error";
+    message: string;
+  } | null>(null);
+  const [multiScanModalOpen, setMultiScanModalOpen] = React.useState(false);
+  const [multiScanText, setMultiScanText] = React.useState("");
+  const scanInputRef = React.useRef<TextInput>(null);
 
   const handleClose = () => {
     setGoodsPphMode("none");
@@ -256,6 +287,9 @@ export function SerialItemPickerModal({
     if (!found) return;
     setSelectedProductId(String(found.id));
     setSelectedSerialIds([]);
+    setScanInput("");
+    setScanFeedback(null);
+    setMultiScanText("");
     setGoodsUnit(found.satuan || "Unit");
     const rawPrice = found.hargaBeli ?? found.purchasePrice ?? found.price ?? found.harga ?? 0;
     setGoodsPrice(rawPrice > 0 ? formatThousands(rawPrice) : "");
@@ -290,6 +324,135 @@ export function SerialItemPickerModal({
       toast(`${picked.length} unit SN dipilih otomatis secara FIFO.`);
     }
   };
+
+  const processScannedText = (rawText: string) => {
+    const tokens = rawText
+      .split(/[\r\n,;\s]+/)
+      .map((t) => t.trim().toUpperCase())
+      .filter((t) => t.length > 0);
+
+    if (tokens.length === 0) return;
+
+    let addedCount = 0;
+    let alreadySelectedCount = 0;
+    const notFoundTokens: string[] = [];
+    const unavailableTokens: string[] = [];
+    const newSelected = new Set(selectedSerialIds);
+
+    for (const token of tokens) {
+      const match = productSerials.find(
+        (s) => String(s.sn || "").trim().toUpperCase() === token
+      );
+
+      if (!match) {
+        const anyMatch = serials.find((s) => String(s.sn || "").trim().toUpperCase() === token);
+        if (anyMatch) {
+          notFoundTokens.push(`${token} (milik ${anyMatch.produk || anyMatch.sku || "produk lain"})`);
+        } else {
+          notFoundTokens.push(token);
+        }
+        continue;
+      }
+
+      const matchId = Number(match.id);
+      if (newSelected.has(matchId)) {
+        alreadySelectedCount++;
+        continue;
+      }
+
+      const cleanSn = String(match.sn || "").trim().toUpperCase();
+      if (existingSns.has(cleanSn)) {
+        unavailableTokens.push(`${cleanSn} (sudah di dokumen)`);
+        continue;
+      }
+
+      const avail = getSerialAvailability(match);
+      if (!avail.selectable) {
+        unavailableTokens.push(`${cleanSn} (${avail.badge})`);
+        continue;
+      }
+
+      newSelected.add(matchId);
+      addedCount++;
+    }
+
+    if (addedCount > 0) {
+      setSelectedSerialIds(Array.from(newSelected));
+      playScanBeep(true);
+      let msg = `✓ ${addedCount} unit SN berhasil diselect.`;
+      if (alreadySelectedCount > 0) msg += ` (${alreadySelectedCount} sudah terpilih)`;
+      if (notFoundTokens.length > 0) msg += ` (${notFoundTokens.length} tidak cocok)`;
+      setScanFeedback({ type: "success", message: msg });
+    } else if (alreadySelectedCount > 0 && notFoundTokens.length === 0 && unavailableTokens.length === 0) {
+      playScanBeep(false);
+      setScanFeedback({
+        type: "warning",
+        message: `Semua SN yang discan sudah terpilih (${alreadySelectedCount} unit).`,
+      });
+    } else {
+      playScanBeep(false);
+      const errors = [...notFoundTokens, ...unavailableTokens];
+      setScanFeedback({
+        type: "error",
+        message: `Gagal select: ${errors.slice(0, 3).join(", ")}${errors.length > 3 ? ` (+${errors.length - 3} lainnya)` : ""}`,
+      });
+    }
+
+    setScanInput("");
+    setTimeout(() => {
+      scanInputRef.current?.focus();
+    }, 50);
+  };
+
+  const multiScanAnalysis = React.useMemo(() => {
+    if (!multiScanText.trim() || !selectedProduct) return null;
+    const tokens = multiScanText
+      .split(/[\r\n,;\s]+/)
+      .map((t) => t.trim().toUpperCase())
+      .filter((t) => t.length > 0);
+
+    const uniqueTokens = Array.from(new Set(tokens));
+    const matchedAvailable: number[] = [];
+    const alreadySelected: number[] = [];
+    const unavailable: string[] = [];
+    const notFound: string[] = [];
+
+    const currentSelectedSet = new Set(selectedSerialIds);
+
+    for (const token of uniqueTokens) {
+      const match = productSerials.find(
+        (s) => String(s.sn || "").trim().toUpperCase() === token
+      );
+      if (!match) {
+        notFound.push(token);
+        continue;
+      }
+      const matchId = Number(match.id);
+      if (currentSelectedSet.has(matchId)) {
+        alreadySelected.push(matchId);
+        continue;
+      }
+      const cleanSn = String(match.sn || "").trim().toUpperCase();
+      if (existingSns.has(cleanSn)) {
+        unavailable.push(`${cleanSn} (sudah di dokumen)`);
+        continue;
+      }
+      const avail = getSerialAvailability(match);
+      if (!avail.selectable) {
+        unavailable.push(`${cleanSn} (${avail.badge})`);
+        continue;
+      }
+      matchedAvailable.push(matchId);
+    }
+
+    return {
+      tokens: uniqueTokens,
+      matchedAvailable,
+      alreadySelected,
+      unavailable,
+      notFound,
+    };
+  }, [multiScanText, selectedProduct, productSerials, selectedSerialIds, existingSns, getSerialAvailability]);
 
   const handleConfirmAdd = () => {
     if (tab === "SERVICE") {
@@ -693,10 +856,95 @@ export function SerialItemPickerModal({
                           </View>
                         </View>
 
+                        {/* Scanner Barcode & Multi-Scan Input Box */}
+                        <View className="p-3 rounded-xl border border-primary/40 bg-primary/5 gap-2.5">
+                          <View className="flex-row items-center justify-between flex-wrap gap-2">
+                            <View className="flex-row items-center gap-1.5">
+                              <ScanLine size={16} color={colors.primary} />
+                              <Text className="text-xs font-bold text-primary">
+                                Scanner Barcode / Multi-Scan SN Gudang
+                              </Text>
+                            </View>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2.5 flex-row items-center gap-1 bg-background"
+                              onPress={() => setMultiScanModalOpen(true)}
+                            >
+                              <ClipboardList size={12} color={colors.text} />
+                              <Text className="text-[11px] font-medium">📋 Paste / Multi-Scan Banyak SN</Text>
+                            </Button>
+                          </View>
+
+                          <View className="flex-row items-center gap-2">
+                            <View className="flex-1 bg-background border border-border focus:border-primary rounded-lg flex-row items-center px-2.5 h-10">
+                              <ScanLine size={15} color={colors.muted} style={{ marginRight: 6 }} />
+                              <TextInput
+                                ref={scanInputRef}
+                                value={scanInput}
+                                onChangeText={setScanInput}
+                                onSubmitEditing={() => processScannedText(scanInput)}
+                                placeholder="Arahkan scanner barcode / ketik SN lalu Enter..."
+                                placeholderTextColor={colors.muted}
+                                autoCapitalize="characters"
+                                autoCorrect={false}
+                                returnKeyType="done"
+                                blurOnSubmit={false}
+                                style={{ flex: 1, color: colors.text, fontSize: 13, outlineStyle: "none" } as any}
+                              />
+                              {scanInput.trim().length > 0 && (
+                                <Pressable onPress={() => setScanInput("")} hitSlop={8} className="p-1">
+                                  <Text className="text-xs text-muted-foreground font-bold">✕</Text>
+                                </Pressable>
+                              )}
+                            </View>
+                            <Button
+                              size="sm"
+                              className="h-10 px-3.5 bg-primary"
+                              disabled={!scanInput.trim()}
+                              onPress={() => processScannedText(scanInput)}
+                            >
+                              <Text className="text-xs text-white font-semibold">Scan / Select</Text>
+                            </Button>
+                          </View>
+
+                          {scanFeedback && (
+                            <View
+                              className={`flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${
+                                scanFeedback.type === "success"
+                                  ? "bg-emerald-500/10 border-emerald-500/30"
+                                  : scanFeedback.type === "warning"
+                                  ? "bg-amber-500/10 border-amber-500/30"
+                                  : "bg-danger/10 border-danger/30"
+                              }`}
+                            >
+                              {scanFeedback.type === "success" ? (
+                                <CheckCircle2 size={13} color={colors.success} />
+                              ) : (
+                                <AlertCircle size={13} color={scanFeedback.type === "warning" ? colors.warning : colors.danger} />
+                              )}
+                              <Text
+                                className={`text-xs flex-1 ${
+                                  scanFeedback.type === "success"
+                                    ? "text-emerald-700 dark:text-emerald-300 font-medium"
+                                    : scanFeedback.type === "warning"
+                                    ? "text-amber-700 dark:text-amber-300 font-medium"
+                                    : "text-danger font-medium"
+                                }`}
+                              >
+                                {scanFeedback.message}
+                              </Text>
+                              <Pressable onPress={() => setScanFeedback(null)} hitSlop={6}>
+                                <Text className="text-[11px] text-muted-foreground font-bold">✕</Text>
+                              </Pressable>
+                            </View>
+                          )}
+                        </View>
+
                         <View className="flex-row items-end gap-2 flex-wrap">
                           <View className="flex-1 min-w-[160px]">
                             <FormField
-                              label={`Daftar Unit SN (${availableFifoSerials.length} Di Gudang dari ${productSerials.length} unit)`}
+                              label={`Daftar Unit SN (${selectedSerialIds.length > 0 ? `${selectedSerialIds.length} Terpilih · ` : ""}${availableFifoSerials.length} Di Gudang dari ${productSerials.length} unit)`}
                             >
                               <Input
                                 value={snSearch}
@@ -832,6 +1080,99 @@ export function SerialItemPickerModal({
           }}
         />
       )}
+
+      {/* Dialog Multi-Scan / Paste SN Sekaligus */}
+      <Dialog open={multiScanModalOpen} onOpenChange={setMultiScanModalOpen}>
+        <DialogContent className="max-w-md w-full">
+          <DialogHeader>
+            <DialogTitle className="flex-row items-center gap-2">
+              <ScanLine size={18} color={colors.primary} />
+              <Text className="text-base font-bold text-foreground">
+                Multi-Scan / Paste Daftar SN Sekaligus
+              </Text>
+            </DialogTitle>
+          </DialogHeader>
+          <View className="gap-3 py-2">
+            <Text className="text-xs text-muted-foreground">
+              Scan barcode satu per satu secara beruntun (scanner otomatis enter), atau paste daftar SN yang disalin dari dokumen/catatan fisik:
+            </Text>
+            <Textarea
+              value={multiScanText}
+              onChangeText={setMultiScanText}
+              placeholder={`Contoh:\nUNV-0001\nUNV-0002\nUNV-0003`}
+              numberOfLines={6}
+              style={{ minHeight: 120, fontFamily: "monospace", fontSize: 12 }}
+            />
+            {multiScanAnalysis && (
+              <View className="bg-panel/70 border border-border/80 rounded-lg p-2.5 gap-2">
+                <View className="flex-row items-center gap-1.5 flex-wrap">
+                  <View className="bg-primary/10 px-2 py-0.5 rounded">
+                    <Text className="text-[11px] font-bold text-primary">
+                      {multiScanAnalysis.tokens.length} Total SN
+                    </Text>
+                  </View>
+                  <View className="bg-emerald-500/10 px-2 py-0.5 rounded">
+                    <Text className="text-[11px] font-bold text-emerald-600">
+                      {multiScanAnalysis.matchedAvailable.length} Cocok & Siap Select
+                    </Text>
+                  </View>
+                  {multiScanAnalysis.alreadySelected.length > 0 && (
+                    <View className="bg-muted px-2 py-0.5 rounded">
+                      <Text className="text-[11px] text-muted-foreground">
+                        {multiScanAnalysis.alreadySelected.length} Sudah terpilih
+                      </Text>
+                    </View>
+                  )}
+                  {multiScanAnalysis.notFound.length > 0 && (
+                    <View className="bg-danger/10 px-2 py-0.5 rounded">
+                      <Text className="text-[11px] font-bold text-danger">
+                        {multiScanAnalysis.notFound.length} Tidak ada di stok
+                      </Text>
+                    </View>
+                  )}
+                  {multiScanAnalysis.unavailable.length > 0 && (
+                    <View className="bg-amber-500/10 px-2 py-0.5 rounded">
+                      <Text className="text-[11px] font-bold text-amber-600">
+                        {multiScanAnalysis.unavailable.length} Tidak tersedia
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {multiScanAnalysis.matchedAvailable.length > 0 && (
+                  <Text className="text-[11px] text-emerald-600 font-medium">
+                    ✓ Klik &quot;Terapkan Selection&quot; untuk langsung memilih semua unit ini.
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+          <DialogFooter className="flex-row justify-end gap-2">
+            <Button variant="outline" onPress={() => setMultiScanModalOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button
+              className="bg-primary"
+              disabled={!multiScanAnalysis || multiScanAnalysis.matchedAvailable.length === 0}
+              onPress={() => {
+                if (multiScanAnalysis && multiScanAnalysis.matchedAvailable.length > 0) {
+                  const newSet = new Set(selectedSerialIds);
+                  multiScanAnalysis.matchedAvailable.forEach((id) => newSet.add(id));
+                  setSelectedSerialIds(Array.from(newSet));
+                  playScanBeep(true);
+                  toast(`${multiScanAnalysis.matchedAvailable.length} unit SN berhasil diselect.`);
+                  setMultiScanText("");
+                  setMultiScanModalOpen(false);
+                }
+              }}
+            >
+              <Text className="text-white font-semibold">
+                Terapkan Selection ({multiScanAnalysis?.matchedAvailable.length ?? 0} SN)
+              </Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

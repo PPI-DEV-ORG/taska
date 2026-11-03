@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View } from "react-native";
+import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronRight, Plus, Trash2, CreditCard } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,6 @@ import {
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
-import { isPoPurchaseRow } from "@/screens/module-extras";
 import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
@@ -55,7 +54,7 @@ const DELETE: Record<string, Role[]> = {
   "purchase-requests": ["pm", "procurement", "finance", "gudang", "admin"],
   "supplier-pos": ["procurement", "finance", "admin"],
   receiving: ["gudang", "procurement", "admin"],
-  "delivery-notes": ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin"],
+  "delivery-notes": ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin", "bos"],
   expenses: ["sales", "pm", "teknisi", "procurement", "finance", "gudang", "se", "admin"],
   "damage-reports": ["gudang", "sales", "procurement", "finance", "pm", "admin"],
   "poc-reports": ["pm", "sales", "teknisi", "se", "admin"],
@@ -63,7 +62,7 @@ const DELETE: Record<string, Role[]> = {
 };
 
 export function canDelete(def: ModuleDef, role: Role) {
-  if (role === "super_admin") return true;
+  if (role === "super_admin" || role === "bos") return true;
   return (DELETE[def.key] ?? []).includes(role);
 }
 
@@ -95,7 +94,7 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
     case "surveys":
       return ["teknisi", "se"].includes(role) ? rows.filter((r) => mine(r.tim)) : rows;
     case "delivery-notes":
-      return ["super_admin", "bos", "admin", "finance", "gudang"].includes(role) ? rows : rows.filter((r) => r.pembuat === u.name);
+      return ["super_admin", "bos", "admin", "finance", "procurement", "gudang"].includes(role) ? rows : rows.filter((r) => r.pembuat === u.name);
     case "expenses":
       return ["super_admin", "bos", "admin", "finance"].includes(role)
         ? rows
@@ -113,6 +112,10 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   const [dateFilter, setDateFilter] = React.useState("");
   const [open, setOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
+  const [selection, setSelection] = React.useState<{ scope: string; ids: string[] }>({ scope: "", ids: [] });
+  const selectionScope = `${def.key}|${status}|${q}|${dateFilter}`;
+  const selectedRowIds = selection.scope === selectionScope ? selection.ids : [];
+  const [bulkConfirmOpen, setBulkConfirmOpen] = React.useState(false);
 
   const fetchedRef = React.useRef<string | null>(null);
   React.useEffect(() => {
@@ -415,6 +418,10 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
 
   const isMasterOrSub = ["customers", "suppliers", "users"].includes(def.key);
 
+  function toast(arg0: string) {
+    Alert.alert("Berhasil", arg0);
+  }
+
   return (
     <>
       <PageHeader
@@ -531,6 +538,10 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
               router.push(`/${def.key}/${r.id}` as any);
             }
           }}
+          selectable={true}
+          selectedIds={selectedRowIds}
+          onSelectionChange={(ids) => setSelection({ scope: selectionScope, ids })}
+          onBulkDelete={deleteAllowed ? () => setBulkConfirmOpen(true) : undefined}
           actionsWidth={deleteAllowed ? 104 : 64}
           renderActions={deleteAllowed ? (r) => (
             <>
@@ -589,6 +600,35 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           void deleteRow(targetModule, targetId).then((ok) => {
             if (ok) setDeleteTarget(null);
           });
+        }}
+      />
+      <ConfirmDialog
+        open={bulkConfirmOpen && selectedRowIds.length > 0}
+        onOpenChange={(v) => !v && setBulkConfirmOpen(false)}
+        title={`Hapus ${selectedRowIds.length} ${def.singular.toLowerCase()}?`}
+        description={`Sebanyak ${selectedRowIds.length} data ${def.singular.toLowerCase()} yang dipilih akan dihapus permanen dari server. Tindakan ini tidak dapat dibatalkan.`}
+        confirmLabel={`Ya, hapus ${selectedRowIds.length} data`}
+        destructive
+        onConfirm={async () => {
+          if (!selectedRowIds.length) return;
+          const idsToDelete = [...selectedRowIds];
+          let successCount = 0;
+          for (const id of idsToDelete) {
+            const targetRow = rows.find((r) => String(r.id) === String(id));
+            const targetModule =
+              (def.key === "invoices" || def.key === "supplier-pos") && targetRow?.direction === "in"
+                ? "invoiceIn"
+                : def.key;
+            const targetId =
+              targetRow?.direction === "in" && (targetRow as any).rawId
+                ? (targetRow as any).rawId
+                : id;
+            const ok = await deleteRow(targetModule, targetId);
+            if (ok) successCount++;
+          }
+          setSelection({ scope: selectionScope, ids: [] });
+          setBulkConfirmOpen(false);
+          toast(`${successCount} ${def.singular.toLowerCase()} berhasil dihapus`);
         }}
       />
 

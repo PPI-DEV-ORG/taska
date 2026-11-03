@@ -1,11 +1,12 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
-import { ClientPoDto } from "./dto.js";
+import { StockService } from "../stock/stock.service.js";
+import { ClientPoDirectSettlementDto, ClientPoDto } from "./dto.js";
 
 type ClientPoMeta = {
   soNumber?: string | null;
@@ -13,6 +14,12 @@ type ClientPoMeta = {
   docMode?: "SO" | "PO" | "BOTH";
   soFileId?: number | null;
   items?: any[];
+  paymentStatus?: "LUNAS" | "BELUM_LUNAS";
+  settlementType?: "LANGSUNG" | "TEMPO";
+  paymentProofFileId?: number | null;
+  coaAccount?: string | null;
+  settledAt?: string | null;
+  goodsDispatched?: boolean;
 };
 
 @Injectable()
@@ -21,6 +28,7 @@ export class ClientPoService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly docnum: DocumentNumberService,
+    private readonly stock: StockService,
   ) {}
 
   private metaKey(id: number) {
@@ -134,6 +142,12 @@ export class ClientPoService {
 
     const file = row.fileId ? fileMap.get(row.fileId) ?? null : null;
     const soFile = meta.soFileId ? fileMap.get(Number(meta.soFileId)) ?? null : null;
+    const paymentProofFile = meta.paymentProofFileId ? fileMap.get(Number(meta.paymentProofFileId)) ?? null : null;
+
+    const isLunas =
+      meta.paymentStatus === "LUNAS" ||
+      (Array.isArray(row.invoices) &&
+        row.invoices.some((i: any) => i.status === "PAID" && Number(i.total) > 0));
 
     return {
       ...row,
@@ -142,6 +156,13 @@ export class ClientPoService {
       docMode: meta.docMode || (soNumber !== "-" && poClientNumber !== "-" ? "BOTH" : soNumber !== "-" ? "SO" : "PO"),
       soFileId: meta.soFileId ?? null,
       items: Array.isArray(meta.items) ? meta.items : [],
+      paymentStatus: isLunas ? "LUNAS" : meta.paymentStatus || "BELUM_LUNAS",
+      settlementType: meta.settlementType ?? null,
+      paymentProofFileId: meta.paymentProofFileId ?? null,
+      paymentProofFile,
+      coaAccount: meta.coaAccount ?? null,
+      settledAt: meta.settledAt ?? null,
+      goodsDispatched: meta.goodsDispatched ?? false,
       file,
       soFile,
     };
@@ -192,6 +213,7 @@ export class ClientPoService {
       if (r.fileId) fileIds.add(r.fileId);
       const m = metaMap.get(r.id);
       if (m?.soFileId) fileIds.add(Number(m.soFileId));
+      if (m?.paymentProofFileId) fileIds.add(Number(m.paymentProofFileId));
     }
     const files = fileIds.size
       ? await this.prisma.main.file.findMany({ where: { id: { in: Array.from(fileIds) } } })
@@ -215,7 +237,7 @@ export class ClientPoService {
     if (!row) throw new NotFoundException("Sales Order / PO client tidak ditemukan");
     const metaMap = await this.getMetaMap([id]);
     const meta = metaMap.get(id) ?? {};
-    const fileIds = [row.fileId, meta.soFileId].filter((x): x is number => typeof x === "number" && x > 0);
+    const fileIds = [row.fileId, meta.soFileId, meta.paymentProofFileId].filter((x): x is number => typeof x === "number" && x > 0);
     const files = fileIds.length
       ? await this.prisma.main.file.findMany({ where: { id: { in: fileIds } } })
       : [];
@@ -231,29 +253,35 @@ export class ClientPoService {
       dto.docMode === "SO" ||
       (/^SO[\-\/]/i.test(dto.number || dto.soNumber || "") && !dto.poClientNumber);
 
-    let primaryNumber: string;
-    if (isPoMode) {
-      primaryNumber =
-        dto.poClientNumber?.trim() ||
-        dto.number?.trim() ||
-        `PO/${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, "0")}/${Date.now().toString().slice(-3)}`;
-    } else if (isSoMode) {
-      primaryNumber =
-        dto.soNumber?.trim() ||
-        dto.number?.trim() ||
-        `SO/${new Date().getFullYear()}/${String(new Date().getMonth() + 1).padStart(2, "0")}/${Date.now().toString().slice(-3)}`;
-    } else {
-      primaryNumber =
-        dto.number?.trim() ||
-        dto.soNumber?.trim() ||
-        dto.poClientNumber?.trim() ||
-        (await this.docnum.next("clientPO"));
-    }
-
-    await this.docnum.assertUnique(
-      primaryNumber,
-      async (v) => !!(await this.prisma.main.clientPO.findFirst({ where: { number: v } })),
+    const date = dto.date ? new Date(dto.date) : new Date();
+    const manualNumber = (
+      (isPoMode ? dto.poClientNumber?.trim() : dto.soNumber?.trim()) ||
+      dto.number?.trim() ||
+      ""
     );
+
+    let primaryNumber: string;
+    if (manualNumber) {
+      const dup = await this.prisma.main.clientPO.findFirst({ where: { number: manualNumber } });
+      if (dup) {
+        const isAutoPattern = /^(SO|PO)\/\d{4}\/\d{2}\/\d+$/i.test(manualNumber);
+        if (isAutoPattern) {
+          primaryNumber = isPoMode
+            ? `PO/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}/${Date.now().toString().slice(-4)}`
+            : await this.docnum.next("clientPO", date);
+        } else {
+          throw new ConflictException(`Nomor ${manualNumber} sudah dipakai`);
+        }
+      } else {
+        primaryNumber = manualNumber;
+      }
+    } else if (isPoMode) {
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, "0");
+      primaryNumber = `PO/${yyyy}/${mm}/${Date.now().toString().slice(-4)}`;
+    } else {
+      primaryNumber = await this.docnum.next("clientPO", date);
+    }
 
     const customer = dto.customerId
       ? await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } })
@@ -289,7 +317,6 @@ export class ClientPoService {
       }
     }
     const amount = calculatedAmount ?? 0;
-    const date = dto.date ? new Date(dto.date) : new Date();
 
     const row = await this.prisma.main.clientPO.create({
       data: {
@@ -443,6 +470,283 @@ export class ClientPoService {
       detail: `${row.number} dihapus`,
     });
     return { id, deleted: true };
+  }
+
+  async directSettlement(id: number, dto: ClientPoDirectSettlementDto, user: RequestUser) {
+    const row = await this.get(id);
+    const settlementDate = dto.date ? new Date(dto.date) : new Date();
+
+    let items = Array.isArray(row.items) ? row.items : [];
+    if (!items.length && row.quotationId) {
+      try {
+        const qMeta = await this.prisma.main.systemSetting.findUnique({
+          where: { key: `quotation.meta.${row.quotationId}` },
+        });
+        if (qMeta?.value) {
+          const parsed = JSON.parse(qMeta.value);
+          if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+            items = parsed.items;
+          }
+        }
+      } catch {}
+    }
+
+    // 1. Eksekusi Pengeluaran Barang / Stok (Barang Keluar)
+    const dispatchedSerialProductQty = new Map<number, number>();
+
+    const itemSerials = items
+      .flatMap((it: any) => {
+        if (it.sn) return String(it.sn).split(",");
+        if (Array.isArray(it.serialNumbers)) return it.serialNumbers;
+        if (typeof it.serialNumbers === "string" && it.serialNumbers) return it.serialNumbers.split(",");
+        const m = String(it.item || it.name || "").match(/\(SN:\s*([^\)]+)\)/i);
+        return m?.[1] ? [m[1]] : [];
+      })
+      .map((s: string) => String(s).trim())
+      .filter(Boolean);
+
+    const serialList: string[] = Array.from(new Set(itemSerials));
+    if (serialList.length > 0) {
+      const units = await this.prisma.main.serialUnit.findMany({
+        where: { sn: { in: serialList } },
+      });
+      for (const u of units) {
+        if ((u.status === "DI_GUDANG" || u.status === "RESERVED") && u.warehouseId) {
+          await this.stock.applyMovement({
+            date: settlementDate,
+            type: "OUT",
+            category: "KELUAR_SURAT_JALAN",
+            productId: u.productId,
+            fromWarehouseId: u.warehouseId,
+            qty: 1,
+            serialUnitId: u.id,
+            reason: `Penjualan Langsung / Nota Kontan SO ${row.number}`,
+            createdById: user.id,
+          });
+          await this.prisma.main.serialUnit.update({
+            where: { id: u.id },
+            data: { status: "DIKIRIM", warehouseId: null },
+          });
+          await this.prisma.main.stockReservation.updateMany({
+            where: { serialUnitId: u.id, releasedAt: null },
+            data: { releasedAt: new Date() },
+          });
+          await this.prisma.main.serialUnitHistory.create({
+            data: {
+              serialUnitId: u.id,
+              status: "DIKIRIM",
+              warehouseId: u.warehouseId,
+              note: `Keluar Penjualan Langsung / Nota Kontan SO ${row.number}`,
+              changedById: user.id,
+            },
+          });
+          dispatchedSerialProductQty.set(u.productId, (dispatchedSerialProductQty.get(u.productId) ?? 0) + 1);
+        }
+      }
+    }
+
+    for (const item of items) {
+      let productId = Number(item.productId);
+      if (!productId) {
+        const rawName = String(item.item || item.name || item.nama || "").split(" (")[0].trim().toLowerCase();
+        const matched = await this.prisma.main.product.findFirst({
+          where: {
+            OR: [
+              { name: { equals: rawName } },
+              { sku: { equals: rawName } },
+            ],
+          },
+        });
+        if (matched) productId = matched.id;
+      }
+      if (!productId) continue;
+
+      const product = await this.prisma.main.product.findUnique({ where: { id: productId } });
+      if (!product) continue;
+
+      const alreadyOut = dispatchedSerialProductQty.get(productId) ?? 0;
+      const totalItemQty = Number(item.qty || 1);
+      const remainingQty = Math.max(0, totalItemQty - alreadyOut);
+      if (remainingQty <= 0) continue;
+
+      if (product.hasSerial) {
+        const autoUnits = await this.prisma.main.serialUnit.findMany({
+          where: {
+            productId,
+            status: { in: ["DI_GUDANG", "RESERVED"] },
+            warehouseId: { not: null },
+          },
+          take: remainingQty,
+        });
+        for (const u of autoUnits) {
+          if (!u.warehouseId) continue;
+          await this.stock.applyMovement({
+            date: settlementDate,
+            type: "OUT",
+            category: "KELUAR_SURAT_JALAN",
+            productId: u.productId,
+            fromWarehouseId: u.warehouseId,
+            qty: 1,
+            serialUnitId: u.id,
+            reason: `Penjualan Langsung / Nota Kontan SO ${row.number}`,
+            createdById: user.id,
+          });
+          await this.prisma.main.serialUnit.update({
+            where: { id: u.id },
+            data: { status: "DIKIRIM", warehouseId: null },
+          });
+          await this.prisma.main.stockReservation.updateMany({
+            where: { serialUnitId: u.id, releasedAt: null },
+            data: { releasedAt: new Date() },
+          });
+          await this.prisma.main.serialUnitHistory.create({
+            data: {
+              serialUnitId: u.id,
+              status: "DIKIRIM",
+              warehouseId: u.warehouseId,
+              note: `Keluar Penjualan Langsung / Nota Kontan SO ${row.number}`,
+              changedById: user.id,
+            },
+          });
+        }
+        dispatchedSerialProductQty.set(productId, alreadyOut + autoUnits.length);
+      } else {
+        const balance =
+          (await this.prisma.main.stockBalance.findFirst({
+            where: { productId, qty: { gte: remainingQty } },
+          })) ??
+          (await this.prisma.main.stockBalance.findFirst({
+            where: { productId, qty: { gt: 0 } },
+          }));
+        const defaultWh =
+          (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
+          (await this.prisma.main.warehouse.findFirst());
+        const warehouseId = balance?.warehouseId ?? defaultWh?.id;
+
+        if (warehouseId) {
+          await this.stock.applyMovement({
+            date: settlementDate,
+            type: "OUT",
+            category: "KELUAR_SURAT_JALAN",
+            productId,
+            fromWarehouseId: warehouseId,
+            qty: remainingQty,
+            reason: `Penjualan Langsung / Nota Kontan SO ${row.number}`,
+            createdById: user.id,
+          });
+        }
+      }
+    }
+
+    // 2. Sinkronkan Invoice Lunas Otomatis (Under the hood agar akuntansi & jurnal sinkron)
+    const existingPaidInvoice = row.invoices?.find((i: any) => i.status === "PAID");
+    if (!existingPaidInvoice) {
+      const cust = row.customerId
+        ? await this.prisma.main.customer.findUnique({ where: { id: row.customerId } })
+        : (await this.prisma.main.customer.findFirst());
+      if (cust) {
+        const invNumber = await this.docnum.next("invoiceOut", settlementDate);
+        const inv = await this.prisma.main.invoiceOut.create({
+          data: {
+            number: invNumber,
+            clientPoId: row.id,
+            customerId: cust.id,
+            description: `[AKUN:${dto.coaAccount}] Pembayaran Langsung / Nota Kontan SO ${row.number}${dto.notes ? ` — ${dto.notes}` : ""}`,
+            type: "PELUNASAN",
+            amount: row.amount,
+            total: row.amount,
+            paidAmount: row.amount,
+            date: settlementDate,
+            dueDate: settlementDate,
+            status: "PAID",
+            fileId: dto.fileId ?? null,
+          },
+        });
+        if (items.length > 0) {
+          await this.prisma.main.systemSetting.upsert({
+            where: { key: `invoice.items.${inv.id}` },
+            update: { value: JSON.stringify(items) },
+            create: { key: `invoice.items.${inv.id}`, value: JSON.stringify(items) },
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // 3. Sinkronkan Delivery Note Otomatis (Under the hood agar status pengiriman terekam selesai)
+    const dnNumber = await this.docnum.next("suratJalan", settlementDate);
+    const partyName = row.customer?.name ?? (row.supplier?.name ? `${row.supplier.name} (Supplier)` : "Pelanggan");
+    const mappedDnItems = items
+      .map((it: any) => {
+        const sn = it.sn || (Array.isArray(it.serialNumbers) ? it.serialNumbers.join(",") : "");
+        return {
+          productId: Number(it.productId) || 1,
+          qty: Number(it.qty) || 1,
+          serials: sn || undefined,
+          note: it.item || it.name || it.productName || "Barang",
+        };
+      })
+      .filter((x: any) => x.productId > 0);
+
+    await this.prisma.main.deliveryNote.create({
+      data: {
+        number: dnNumber,
+        creatorId: user.id,
+        withGoods: true,
+        date: settlementDate,
+        status: "DITERIMA",
+        receiveById: user.id,
+        receivedAt: settlementDate,
+        reportText: `Penyerahan barang langsung di tempat (Nota Kontan) untuk Sales Order ${row.number}`,
+        scanFileId: dto.fileId ?? null,
+        locations: {
+          create: [
+            {
+              destination: partyName,
+              reason: `Penjualan Langsung / Nota Kontan SO ${row.number}`,
+            },
+          ],
+        },
+        items: mappedDnItems.length > 0
+          ? {
+              create: mappedDnItems.map((mi: any) => ({
+                productId: mi.productId,
+                qty: mi.qty,
+                serials: mi.serials ?? null,
+                note: mi.note ?? null,
+              })),
+            }
+          : undefined,
+      },
+    }).catch(() => {});
+
+    // 4. Update Meta SO
+    await this.saveMeta(row.id, {
+      paymentStatus: "LUNAS",
+      settlementType: "LANGSUNG",
+      paymentProofFileId: dto.fileId ?? null,
+      coaAccount: dto.coaAccount,
+      settledAt: settlementDate.toISOString(),
+      goodsDispatched: true,
+    });
+
+    if (dto.fileId) {
+      await this.prisma.main.file
+        .update({
+          where: { id: dto.fileId },
+          data: { refType: "clientPoNota", refId: String(row.id) },
+        })
+        .catch(() => {});
+    }
+
+    await this.audit.log({
+      actor: user,
+      action: "LUNAS_PO_CLIENT_LANGSUNG",
+      entityType: "client-po",
+      entityId: row.id,
+      detail: `${row.number} diselesaikan via Nota Kontan Langsung (Akun: ${dto.coaAccount}) Rp${row.amount}`,
+    });
+
+    return this.get(row.id);
   }
 
   suggestNumber() {

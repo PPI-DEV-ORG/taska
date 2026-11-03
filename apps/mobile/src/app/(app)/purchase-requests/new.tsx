@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { Stepper } from "@/components/taska/stepper";
-import { SearchableSelect, MultiSelect, formatThousands } from "@/components/taska/dialogs";
+import { SearchableSelect, MultiSelect, formatThousands, QuickAddSupplierDialog } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import type { Row } from "@/constants/modules";
@@ -87,8 +87,8 @@ export default function NewPurchaseRequestScreen() {
   const params = useLocalSearchParams<{ projectId?: string }>();
   const { data, user, addRow, toast } = useApp();
 
-  const products: Row[] = data.products ?? [];
-  const projects: Row[] = data.projects ?? [];
+  const products: Row[] = React.useMemo(() => data.products ?? [], [data.products]);
+  const projects: Row[] = React.useMemo(() => data.projects ?? [], [data.projects]);
   const suppliers: Row[] = data.suppliers ?? [];
   const stockSummary: any[] = data.stockSummary ?? [];
   const serials: Row[] = data.serials ?? [];
@@ -112,7 +112,13 @@ export default function NewPurchaseRequestScreen() {
 
   const [projectId, setProjectId] = React.useState(initialProj);
   const [supplierName, setSupplierName] = React.useState("");
+  const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
   const [paymentMethod, setPaymentMethod] = React.useState<"KAS" | "UTANG">("UTANG");
+  const [dueDate, setDueDate] = React.useState<string>(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    return d.toISOString().slice(0, 10);
+  });
   const [otherDesc, setOtherDesc] = React.useState("");
 
   // Step 2: Master items start EMPTY (fixes pre-selected Konektor RJ45 bug)
@@ -274,6 +280,7 @@ export default function NewPurchaseRequestScreen() {
         costType: COST_TYPE_MAP[costType] || costType.toUpperCase(),
         procurementSource,
         paymentMethod,
+        dueDate: paymentMethod === "UTANG" ? (dueDate || undefined) : undefined,
         supplier: supplierName || undefined,
         supplierId: matchedSupplier?.id ? String(matchedSupplier.id) : undefined,
         otherNote: costType === "Lainnya" || costType === "Internal" ? otherDesc : undefined,
@@ -360,6 +367,8 @@ export default function NewPurchaseRequestScreen() {
                   <SearchableSelect
                     value={supplierName}
                     onChange={setSupplierName}
+                    onAddNew={() => setQuickSupplierOpen(true)}
+                    addNewLabel="+ Tambah Supplier Baru"
                     options={["-", ...suppliers.map((s) => String(s.nama))]}
                     placeholder="Pilih supplier (opsional)..."
                   />
@@ -399,6 +408,20 @@ export default function NewPurchaseRequestScreen() {
                     </Pressable>
                   </View>
                 </FormField>
+
+                {paymentMethod === "UTANG" && (
+                  <FormField
+                    label="Tanggal Jatuh Tempo Utang"
+                    required
+                    hint="Batas waktu pelunasan utang ke toko/supplier (default 1 bulan). Pengingat akan muncul di kalender."
+                  >
+                    <Input
+                      keyboardType="numbers-and-punctuation"
+                      value={dueDate}
+                      onChangeText={(v) => setDueDate(v)}
+                    />
+                  </FormField>
+                )}
               </>
             ) : (
               <View className="bg-primary/10 border border-primary/30 rounded-xl p-3">
@@ -773,6 +796,12 @@ export default function NewPurchaseRequestScreen() {
                   {paymentMethod === "KAS" ? "Kas / Tunai (Kredit Kas)" : "Utang / Tempo (Kredit Hutang Usaha)"}
                 </Text>
               </View>
+              {paymentMethod === "UTANG" && dueDate ? (
+                <View className="flex-row justify-between">
+                  <Text className="text-muted-foreground text-sm">Jatuh Tempo Utang:</Text>
+                  <Text className="text-sm font-semibold text-danger">{dueDate}</Text>
+                </View>
+              ) : null}
               {costType === "Project" ? (
                 <View className="flex-row justify-between">
                   <Text className="text-muted-foreground text-sm">Project:</Text>
@@ -812,9 +841,12 @@ export default function NewPurchaseRequestScreen() {
             </View>
 
             <FileUploader
-              label="Lampirkan Bukti Permintaan / Nota Ritel (Chat WA / Email / BOQ / Struk)"
-              kind="foto"
+              label="Lampirkan Bukti Permintaan / Nota Ritel (Foto, PDF, BOQ, atau Struk)"
+              kind="semua"
+              accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+              allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
               category="request-barang"
+              hint="Format gambar (JPG, PNG) atau dokumen (PDF, BOQ)"
               handleRef={(h) => { fileHandle.current = h; }}
             />
 
@@ -831,6 +863,14 @@ export default function NewPurchaseRequestScreen() {
           </View>
         </Panel>
       )}
+
+      <QuickAddSupplierDialog
+        open={quickSupplierOpen}
+        onOpenChange={setQuickSupplierOpen}
+        onSuccess={(newSupp) => {
+          setSupplierName(newSupp.nama);
+        }}
+      />
     </View>
   );
 }
