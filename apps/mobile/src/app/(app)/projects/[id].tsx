@@ -81,17 +81,31 @@ export default function ProjectDetailScreen() {
     return () => {
       active = false;
     };
-  }, [id, storeProject?.boqFileId, storeProject?.progres, storeProject?.status, storeProject?.bastFileId]);
+  }, [
+    id,
+    storeProject?.boqFileId,
+    storeProject?.prdFileId,
+    storeProject?.bahpFileId,
+    storeProject?.bastFileId,
+    storeProject?.doFileId,
+    storeProject?.progres,
+    storeProject?.status,
+  ]);
   const baseProject = storeProject ?? remoteDetail;
   const project = baseProject
     ? {
         ...baseProject,
         ...(remoteDetail ?? {}),
-        nama: String(remoteDetail?.nama || baseProject.nama || remoteDetail?.name || baseProject.name || ""),
-        name: String(remoteDetail?.name || baseProject.name || remoteDetail?.nama || baseProject.nama || ""),
+        prdFileId: remoteDetail?.prdFileId ?? storeProject?.prdFileId ?? null,
+        bahpFileId: remoteDetail?.bahpFileId ?? storeProject?.bahpFileId ?? null,
+        bastFileId: remoteDetail?.bastFileId ?? storeProject?.bastFileId ?? null,
+        doFileId: remoteDetail?.doFileId ?? storeProject?.doFileId ?? null,
+        boqFileId: remoteDetail?.boqFileId ?? storeProject?.boqFileId ?? null,
+        nama: String(remoteDetail?.nama || remoteDetail?.name || baseProject.nama || baseProject.name || ""),
+        name: String(remoteDetail?.name || remoteDetail?.nama || baseProject.name || baseProject.nama || ""),
         status: remoteDetail?.status || baseProject.status || (baseProject.status ? toLabel("projects", baseProject.status) : "Berjalan"),
-        pembayaran: remoteDetail?.pembayaran || baseProject.pembayaran || (baseProject.paymentStatus ? toLabel("paymentStatus", baseProject.paymentStatus) : "Belum lunas"),
-        paymentStatus: remoteDetail?.paymentStatus || baseProject.paymentStatus || remoteDetail?.pembayaran || baseProject.pembayaran || "Belum lunas",
+        pembayaran: remoteDetail?.pembayaran || (remoteDetail?.paymentStatus ? toLabel("paymentStatus", remoteDetail.paymentStatus) : null) || baseProject.pembayaran || (baseProject.paymentStatus ? toLabel("paymentStatus", baseProject.paymentStatus) : "Belum lunas"),
+        paymentStatus: remoteDetail?.paymentStatus || remoteDetail?.pembayaran || baseProject.paymentStatus || baseProject.pembayaran || "Belum lunas",
         jenis: remoteDetail?.jenis || baseProject.jenis || (baseProject.type ? toLabel("projectType", baseProject.type) : "Customer"),
         type: remoteDetail?.type || baseProject.type || remoteDetail?.jenis || baseProject.jenis || "CUSTOMER",
         customer: typeof (remoteDetail?.customer ?? baseProject.customer) === "object"
@@ -107,6 +121,11 @@ export default function ProjectDetailScreen() {
         quotationid: remoteDetail?.quotationid ?? baseProject.quotationid ?? remoteDetail?.quotationId ?? baseProject.quotationId ?? (remoteDetail?.quotation?.id ? String(remoteDetail.quotation.id) : (baseProject.quotation?.id ? String(baseProject.quotation.id) : null)),
         stages: remoteDetail?.stages ?? baseProject.stages ?? null,
         boqFile: remoteDetail?.boqFile ?? baseProject.boqFile ?? null,
+        prdFile: remoteDetail?.prdFile ?? baseProject.prdFile ?? null,
+        bahpFile: remoteDetail?.bahpFile ?? baseProject.bahpFile ?? null,
+        bastFile: remoteDetail?.bastFile ?? baseProject.bastFile ?? null,
+        doFile: remoteDetail?.doFile ?? baseProject.doFile ?? null,
+        _invoices: remoteDetail?._invoices ?? (baseProject as any)?._invoices ?? [],
       }
     : undefined;
   const currentProgress = project
@@ -186,13 +205,16 @@ export default function ProjectDetailScreen() {
 
   const canViewFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
 
-  const projectInvoices = (data.invoices ?? []).filter(
-    (i: any) =>
-      (String(i.projectId) === String(project.id) || (pName && i.project === pName)) &&
-      i.status !== "Batal" &&
-      i.status !== "BATAL"
-  );
-  const revenue = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
+  const remoteInvoices: any[] = (project as any)?._invoices ?? (remoteDetail as any)?._invoices ?? [];
+  const projectInvoices = (remoteInvoices.length > 0)
+    ? remoteInvoices
+    : (data.invoices ?? []).filter(
+        (i: any) =>
+          (String(i.projectId) === String(project.id) || (pName && i.project === pName)) &&
+          i.status !== "Batal" &&
+          i.status !== "BATAL"
+      );
+  const revenue = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.total || i.nilai || i.amount || 0), 0);
 
   const projectPos = (data["supplier-pos"] ?? []).filter(
     (po: any) =>
@@ -234,7 +256,16 @@ export default function ProjectDetailScreen() {
     toast("Laporan Untung-Rugi (P&L) proyek berhasil diunduh");
   }
 
-  const isLunas = project.pembayaran === "Lunas" || String(project.paymentStatus).toUpperCase() === "LUNAS";
+  const isLunas =
+    project.pembayaran === "Lunas" ||
+    String(project.paymentStatus).toUpperCase() === "LUNAS" ||
+    (projectInvoices.length > 0 &&
+      projectInvoices.every(
+        (i: any) =>
+          (Number(i.paidAmount ?? i.dibayar ?? 0) >= Number(i.total ?? i.nilai ?? 0) && Number(i.total ?? i.nilai ?? 0) > 0) ||
+          i.status === "PAID" ||
+          i.status === "Lunas"
+      ));
   const hasProgressChanged = liveProgress !== currentProgress;
 
   function toggleTask(taskId: string, currentStatus: string) {
@@ -806,7 +837,12 @@ export default function ProjectDetailScreen() {
               row={project}
               onUploadFile={async (fieldKey, fileId, item) => {
                 try {
+                  setRemoteDetail((prev) => (prev ? { ...prev, [fieldKey]: fileId } : prev));
                   await patchRow("projects", project.id, { [fieldKey]: fileId });
+                  const refreshed = await api<any>("GET", `/projects/${id}`).catch(() => null);
+                  if (refreshed) {
+                    setRemoteDetail(adaptRow("projects", refreshed));
+                  }
                   toast(`${item.label} berhasil diperbarui`);
                 } catch (err: any) {
                   toast(err?.message || "Gagal memperbarui file", "danger");

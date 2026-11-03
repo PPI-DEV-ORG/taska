@@ -128,8 +128,9 @@ export function FollowUpPanel({
       return;
     }
 
+    const targetDate = fuStatus === "TERJADWAL" && fuNextAction ? fuNextAction : (fuDate || new Date().toISOString().slice(0, 10));
     const payload: Record<string, any> = {
-      date: fuDate || new Date().toISOString().slice(0, 10),
+      date: targetDate,
       method: fuMethod,
       notes: fuNote.trim(),
       nextDate: fuNextAction || undefined,

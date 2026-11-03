@@ -4,9 +4,10 @@ import { TasksService } from "./tasks.service.js";
 import { ProjectsController } from "./projects.controller.js";
 import { ProjectTasksController, TasksController } from "./tasks.controller.js";
 import { StockModule } from "../stock/stock.module.js";
+import { UploadModule } from "../upload/upload.module.js";
 
 @Module({
-  imports: [StockModule],
+  imports: [StockModule, UploadModule],
   providers: [ProjectsService, TasksService],
   controllers: [ProjectsController, ProjectTasksController, TasksController],
   exports: [ProjectsService],

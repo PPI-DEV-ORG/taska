@@ -7,7 +7,6 @@ import {
   FileCheck,
   FileText,
   ArrowRight,
-  Package,
   Plus,
   Edit3,
   Phone,
@@ -122,7 +121,6 @@ export function LeadExtras({ row }: { row: Row }) {
   );
 
   const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
-  const isQualify = ["Qualification", "Proposal", "Negotiation", "Won"].includes(row.status);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
 
   // Follow-up state
@@ -178,9 +176,10 @@ export function LeadExtras({ row }: { row: Row }) {
       toast("Catatan follow-up tidak boleh kosong", "danger");
       return;
     }
+    const targetDate = fuStatus === "TERJADWAL" && fuNextAction ? fuNextAction : (fuDate || new Date().toISOString().slice(0, 10));
     const created = await addRow("followups", {
       leadId: row.id,
-      date: fuDate || new Date().toISOString().slice(0, 10),
+      date: targetDate,
       method: fuMethod,
       notes: fuNote.trim(),
       nextDate: fuNextAction || undefined,

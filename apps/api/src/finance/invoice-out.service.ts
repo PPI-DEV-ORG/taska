@@ -265,6 +265,15 @@ export class InvoiceOutService {
       } catch {}
     }
 
+    const fileIds = rows.map((r) => r.fileId).filter((fid): fid is number => typeof fid === "number" && fid > 0);
+    const files = fileIds.length
+      ? await this.prisma.main.file.findMany({
+          where: { id: { in: fileIds } },
+          select: { id: true, originalName: true, size: true, mimeType: true },
+        })
+      : [];
+    const fileMap = new Map(files.map((f) => [f.id, f]));
+
     const items = await Promise.all(
       rows.map(async (r) => {
         const synced = await this.sync(r);
@@ -275,8 +284,11 @@ export class InvoiceOutService {
           const m = r.description.match(/(?:QUO|PNW)[-\w\/]+/i);
           if (m) qNum = m[0];
         }
+        const f = r.fileId ? fileMap.get(r.fileId) ?? null : null;
         return {
           ...synced,
+          file: f,
+          fileName: f?.originalName ?? null,
           quotationId: qId,
           quotation: qNum,
           discount: meta.discount,
@@ -378,9 +390,29 @@ export class InvoiceOutService {
         })
       : null;
 
+    let quoteFile: any = null;
+    if (!file && quoteMeta?.latestFileId) {
+      quoteFile = await this.prisma.main.file.findUnique({
+        where: { id: Number(quoteMeta.latestFileId) },
+        select: { id: true, originalName: true, size: true, mimeType: true },
+      }).catch(() => null);
+    }
+
+    const effectiveFile = file || quoteFile || null;
+    const isPdf =
+      effectiveFile?.originalName?.toLowerCase().endsWith(".pdf") ||
+      effectiveFile?.mimeType === "application/pdf";
+    const effectiveExt = isPdf ? "pdf" : "xlsx";
+    const effectiveFileName =
+      file?.originalName ??
+      quoteMeta?.latestFileName ??
+      quoteFile?.originalName ??
+      (effectiveFile ? `Invoice-${row.number.replace(/\//g, "-")}.${effectiveExt}` : null);
+
     const synced = await this.sync(row);
     return {
       ...synced,
+      file,
       pph: Number(meta.pph ?? 0),
       pphMode: meta.pphMode ?? "none",
       tipePph: meta.tipePph ?? "Tanpa PPh",
@@ -406,8 +438,8 @@ export class InvoiceOutService {
       customerAddress: meta.customerAddress ?? quoteMeta?.customerAddress ?? row.customer?.address ?? "Di Tempat",
       signerName: meta.signerName ?? "Finance",
       signerTitle: meta.signerTitle ?? "Finance & Accounting",
-      fileName: file?.originalName ?? `Invoice-${row.number.replace(/\//g, "-")}.xlsx`,
-      fileUploaded: !!row.fileId,
+      fileName: effectiveFileName,
+      fileUploaded: !!(row.fileId || quoteMeta?.latestFileId),
       stockConflictFlag: Boolean(meta.stockConflictFlag),
       stockConflictMessage: meta.stockConflictMessage ?? null,
       autoSwapLogs: Array.isArray(meta.autoSwapLogs) ? meta.autoSwapLogs : [],

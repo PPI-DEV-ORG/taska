@@ -351,4 +351,10 @@ export class ExpenseStatusDto {
 
   @IsOptional() @IsInt()
   paidFileId?: number;
+
+  @IsOptional() @IsString()
+  paymentMethod?: string;
+
+  @IsOptional() @IsString()
+  fundingSource?: string;
 }

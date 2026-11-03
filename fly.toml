@@ -1,13 +1,14 @@
 # fly.toml app configuration file
-app = "taska-api"
+app = "taska-3zwqeq"
 primary_region = "sin"
 
 [build]
   dockerfile = "Dockerfile"
 
 [deploy]
-  # Pre-deploy command: otomatis sinkronkan schema db sebelum instance baru start
-  release_command = "pnpm --filter api exec prisma db push"
+  # Sinkronkan schema sebelum instance baru start.
+  release_command = "pnpm --filter api exec prisma db push --config prisma7.config.ts"
+  release_command_timeout = "10m"
 
 [env]
   PORT = "3000"

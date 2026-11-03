@@ -310,7 +310,7 @@ export async function uploadMasterImport(
   type: MasterImportType;
   total: number;
   imported: number;
-  failed: Array<{ row: number; error: string; data: Record<string, any> }>;
+  failed: { row: number; error: string; data: Record<string, any> }[];
 }> {
   if (file.blob && file.blob.size > 15 * 1024 * 1024) {
     throw new Error("Ukuran file melebihi batas maksimal 15 MB");

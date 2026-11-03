@@ -11,7 +11,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { ProjectsService } from "./projects.service.js";
-import { AssignDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
+import { AssignDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
@@ -138,5 +138,15 @@ export class ProjectsController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.returnMaterials(id, dto, user);
+  }
+
+  @Post(":id/generate-bast")
+  @Require("projects", "U")
+  generateBast(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: GenerateBastDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.generateBast(id, dto, user);
   }
 }

@@ -632,13 +632,20 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
             ? `Penawaran ${f.quotation?.number ?? ""}`
             : f.lead?.name ?? "Prospek";
 
-      if (f.date && f.date >= from && f.date <= to) {
+      const isScheduledForNext =
+        f.status === "TERJADWAL" &&
+        f.nextDate &&
+        wibDateKey(f.nextDate) !== wibDateKey(f.date);
+
+      if (f.date && f.date >= from && f.date <= to && !isScheduledForNext) {
         const status = f.status === "TERJADWAL" ? "NOT_STARTED" : normStatus(f.status);
         items.push({
           key: `followup-${f.id}`,
           sourceModule,
           sourceId,
-          title: `Follow-up ${refLabel} (${f.method})`,
+          title: f.status === "TERJADWAL"
+            ? `Jadwal Follow-up: ${refLabel} (${f.method})`
+            : `Follow-up ${refLabel} (${f.method})`,
           subtitle: f.notes,
           category,
           start: iso(f.date)!,
@@ -646,7 +653,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           occurrenceDate: wibDateKey(f.date),
           isAllDay: true,
           status,
-          priority: "MEDIUM",
+          priority: f.status === "TERJADWAL" ? "HIGH" : "MEDIUM",
           picId: owner?.id ?? null,
           picName: owner?.name ?? null,
           picRole: owner?.role ?? null,
@@ -667,7 +674,9 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           key: `followup-${f.id}-next`,
           sourceModule,
           sourceId,
-          title: `Jadwal Follow-up Berikutnya: ${refLabel} (${f.method})`,
+          title: f.status === "TERJADWAL"
+            ? `Jadwal Follow-up: ${refLabel} (${f.method})`
+            : `Jadwal Follow-up Berikutnya: ${refLabel} (${f.method})`,
           subtitle: f.notes ? `Tindak lanjut dari catatan: ${f.notes}` : null,
           category,
           start: iso(f.nextDate)!,

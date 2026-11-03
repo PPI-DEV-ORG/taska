@@ -92,6 +92,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [approveExpenseOpen, setApproveExpenseOpen] = React.useState(false);
   const [rejectExpenseOpen, setRejectExpenseOpen] = React.useState(false);
   const [expenseTransferNote, setExpenseTransferNote] = React.useState("");
+  const [expenseFundSource, setExpenseFundSource] = React.useState<string>("Kas Kecil");
   const [submittingExpense, setSubmittingExpense] = React.useState(false);
   const expenseFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const [deliveryDocOpen, setDeliveryDocOpen] = React.useState(false);
@@ -101,6 +102,18 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [submittingDeliveryDoc, setSubmittingDeliveryDoc] = React.useState(false);
   const [quickCustomerKey, setQuickCustomerKey] = React.useState<string | null>(null);
   const [quickSupplierKey, setQuickSupplierKey] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (approveExpenseOpen) {
+      if (row?.paymentMethod && /bank/i.test(String(row.paymentMethod))) {
+        setExpenseFundSource("Bank");
+      } else if (row?.paymentMethod && /kas/i.test(String(row.paymentMethod))) {
+        setExpenseFundSource("Kas Kecil");
+      } else {
+        setExpenseFundSource("Kas Kecil");
+      }
+    }
+  }, [approveExpenseOpen, row?.paymentMethod]);
 
   const editableFields: CreateField[] = React.useMemo(() => {
     if (!def) return [];
@@ -1237,6 +1250,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           </DialogHeader>
 
           <View className="gap-3 py-2">
+            <FormField label="Sumber Dana (Kas Kecil / Bank)" required>
+              <SearchableSelect
+                value={expenseFundSource}
+                options={["Kas Kecil", "Bank"]}
+                onChange={setExpenseFundSource}
+                placeholder="Pilih sumber dana..."
+              />
+            </FormField>
+
             <FormField label="Bukti Transfer Reimbursement (Opsional)">
               <FileUploader
                 label="Upload Bukti Transfer Bank / E-Wallet (JPG, PNG, PDF)"
@@ -1265,10 +1287,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 try {
                   const paidFileId = (await expenseFileHandle.current?.flush()) ?? undefined;
                   const targetStatus = paidFileId ? "Dibayar" : "Disetujui";
-                  await setStatus("expenses", id, targetStatus, expenseTransferNote.trim() || undefined, { paidFileId });
-                  if (approval) {
-                    await decide(approval.id, "Disetujui", expenseTransferNote.trim() || undefined).catch(() => {});
-                  }
+                  await setStatus("expenses", id, targetStatus, expenseTransferNote.trim() || undefined, {
+                    paidFileId,
+                    paymentMethod: expenseFundSource,
+                  });
                   const path = PATHS[moduleKey];
                   if (path) {
                     const fresh = await api<any>("GET", `${path}/${id}`).catch(() => null);
@@ -1306,9 +1328,6 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
             return;
           }
           await setStatus("expenses", id, "Ditolak", reason.trim());
-          if (approval) {
-            await decide(approval.id, "Ditolak", reason.trim()).catch(() => {});
-          }
           const path = PATHS[moduleKey];
           if (path) {
             const fresh = await api<any>("GET", `${path}/${id}`).catch(() => null);

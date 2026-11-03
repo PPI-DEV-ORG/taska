@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Image, Pressable, Linking } from "react-native";
-import { Eye, ExternalLink, Download, FileText, Image as ImageIcon, FileX, Clock, Upload } from "lucide-react-native";
+import { Eye, ExternalLink, Download, FileText, Image as ImageIcon, Clock, Upload } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -316,6 +316,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
     }
     if (/prd|spesifikasi/i.test(labelLower)) {
       const fileId = (row as any).prdFileId ?? null;
+      const fileMeta = (row as any).prdFile;
       return {
         label: docLabel,
         fieldKey: "prdFileId",
@@ -323,36 +324,45 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         accept: ".pdf,.docx,.doc,.md,.markdown,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/markdown,text/plain",
         allowedExtensions: ["pdf", "docx", "doc", "md", "markdown", "txt"],
         fileId,
-        fileName: fileId ? `prd-spesifikasi-${row.id}` : null,
+        fileName: fileMeta?.originalName ?? (fileId ? `prd-spesifikasi-${row.id}` : null),
+        fileSize: fileMeta?.size,
+        mimeType: fileMeta?.mimeType,
         emptyHint: "Belum ada dokumen PRD / spesifikasi teknis (PDF, DOCX, MD, TXT)",
       };
     }
     if (/bahp/i.test(labelLower)) {
       const fileId = (row as any).bahpFileId ?? null;
+      const fileMeta = (row as any).bahpFile;
       return {
         label: docLabel,
         fieldKey: "bahpFileId",
         kind: "dokumen",
         allowedExtensions: ["pdf"],
         fileId,
-        fileName: fileId ? `bahp-${row.id}.pdf` : null,
+        fileName: fileMeta?.originalName ?? (fileId ? `bahp-${row.id}.pdf` : null),
+        fileSize: fileMeta?.size,
+        mimeType: fileMeta?.mimeType,
         emptyHint: "Belum ada dokumen Berita Acara Hasil Pekerjaan (BAHP)",
       };
     }
     if (/bast/i.test(labelLower)) {
       const fileId = (row as any).bastFileId ?? null;
+      const fileMeta = (row as any).bastFile;
       return {
         label: docLabel,
         fieldKey: "bastFileId",
         kind: "dokumen",
         allowedExtensions: ["pdf"],
         fileId,
-        fileName: fileId ? `bast-${row.id}.pdf` : null,
+        fileName: fileMeta?.originalName ?? (fileId ? `bast-${row.id}.pdf` : null),
+        fileSize: fileMeta?.size,
+        mimeType: fileMeta?.mimeType,
         emptyHint: "Belum ada dokumen Berita Acara Serah Terima (BAST)",
       };
     }
     if (/do|delivery|surat jalan/i.test(labelLower)) {
       const fileId = (row as any).doFileId ?? null;
+      const fileMeta = (row as any).doFile;
       return {
         label: docLabel,
         fieldKey: "doFileId",
@@ -360,7 +370,9 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp",
         allowedExtensions: ["pdf", "jpg", "jpeg", "png", "webp"],
         fileId,
-        fileName: fileId ? `do-surat-jalan-${row.id}` : null,
+        fileName: fileMeta?.originalName ?? (fileId ? `do-surat-jalan-${row.id}` : null),
+        fileSize: fileMeta?.size,
+        mimeType: fileMeta?.mimeType,
         emptyHint: "Belum ada file Delivery Order (DO) bertandatangan (Gambar / PDF)",
       };
     }

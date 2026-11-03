@@ -20,7 +20,7 @@ COPY --from=deps /app/apps/mobile/node_modules ./apps/mobile/node_modules
 COPY . .
 
 # Generate Prisma Client & Build NestJS API
-RUN pnpm --filter api exec prisma generate
+RUN pnpm --filter api exec prisma generate --config prisma7.config.ts
 RUN pnpm --filter api build
 
 # ---- Runner Stage ----
@@ -38,6 +38,7 @@ COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
+COPY --from=builder /app/apps/api/prisma7.config.ts ./apps/api/prisma7.config.ts
 COPY --from=builder /app/apps/api/src/generated ./apps/api/src/generated
 
 RUN mkdir -p /app/apps/api/uploads

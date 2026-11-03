@@ -375,16 +375,18 @@ export function adaptRow(module: string, raw: any): Row {
       };
     }
     case "quotations": {
-      const hasFile =
-        Boolean(raw.latestFileId) ||
-        (Array.isArray(raw.items) && raw.items.length > 0) ||
-        n(raw._count?.versions) > 0 ||
-        (raw.versions?.length ?? 0) > 0 ||
-        n(raw.total) > 0;
-      const defaultXlsxName = raw.number
-        ? `Penawaran-${String(raw.number).replace(/\//g, "-")}.xlsx`
-        : "Penawaran.xlsx";
-      const fName = raw.latestFileName || (hasFile ? defaultXlsxName : "");
+      const hasFile = Boolean(
+        raw.latestFileId ||
+        raw.fileId ||
+        (Array.isArray(raw.versions) && raw.versions.some((v: any) => v.fileId))
+      );
+      const fObj = (raw.files ?? []).find((f: any) => f.id === raw.latestFileId || f.id === raw.fileId);
+      const isPdf =
+        fObj?.originalName?.toLowerCase().endsWith(".pdf") ||
+        fObj?.mimeType === "application/pdf" ||
+        String(raw.latestFileName || "").toLowerCase().endsWith(".pdf");
+      const ext = isPdf ? "pdf" : "xlsx";
+      const fName = raw.latestFileName || fObj?.originalName || (hasFile ? (raw.fileName || (raw.number ? `Penawaran-${String(raw.number).replace(/\//g, "-")}.${ext}` : `Penawaran.${ext}`)) : "");
         const qRawTot = n(raw.total);
         const qRawDisc = n(raw.discount);
         const qRawNet = Math.max(0, qRawTot - qRawDisc);
@@ -450,6 +452,7 @@ export function adaptRow(module: string, raw: any): Row {
         fileName: fName,
         fileStatus: hasFile ? fName : "Belum diupload",
         fileUploaded: hasFile,
+        files: Array.isArray(raw.files) ? raw.files : [],
         stage: raw.lead?.stage ?? null,
         stockConflictFlag: !!raw.stockConflictFlag,
         stockConflictMessage: raw.stockConflictMessage ?? null,
@@ -471,6 +474,13 @@ export function adaptRow(module: string, raw: any): Row {
           } else {
             vStatus = toLabel("quotations", raw.status) || "Menunggu";
           }
+          const fObj = (raw.files ?? []).find((f: any) => f.id === v.fileId);
+          const isVerPdf =
+            fObj?.originalName?.toLowerCase().endsWith(".pdf") ||
+            fObj?.mimeType === "application/pdf" ||
+            String(v.file || "").toLowerCase().endsWith(".pdf");
+          const verExt = isVerPdf ? "pdf" : "xlsx";
+          const vFileName = v.file || fObj?.originalName || (v.fileId ? `Penawaran-${String(raw.number || "").replace(/\//g, "-")}-v${v.version}.${verExt}` : "-");
           return {
             id: String(v.id),
             v: n(v.version),
@@ -485,10 +495,9 @@ export function adaptRow(module: string, raw: any): Row {
                 : (n(v.grandTotal) || (n(v.total) - n(v.discount) + n(v.ppn))),
             date: d(v.createdAt),
             reason: vReason,
-            file: v.fileId ? `Penawaran-${String(raw.number || "").replace(/\//g, "-")}-v${v.version}.xlsx` : "-",
+            file: vFileName,
           };
         }),
-        files: Array.isArray(raw.files) ? raw.files : [],
       };
     }
     case "surveys": {
@@ -659,6 +668,8 @@ export function adaptRow(module: string, raw: any): Row {
         projectId: idOf(raw.project),
         project: nameOf(raw.project) ?? "",
         fileId: raw.fileId ?? null,
+        file: raw.file ?? null,
+        fileName: raw.fileName ?? raw.file?.originalName ?? null,
         _payments: (raw.payments ?? []).map((p: any) => ({
           id: String(p.id),
           amount: n(p.amount),
@@ -680,7 +691,6 @@ export function adaptRow(module: string, raw: any): Row {
         signerTitle: raw.signerTitle ?? undefined,
         dpLabel: raw.dpLabel ?? undefined,
         dpAmount: raw.dpAmount != null ? n(raw.dpAmount) : undefined,
-        fileName: raw.fileName ?? undefined,
         fileUploaded: !!(raw.fileId || raw.fileUploaded),
         stockConflictFlag: !!raw.stockConflictFlag,
         stockConflictMessage: raw.stockConflictMessage ?? null,
@@ -731,9 +741,14 @@ export function adaptRow(module: string, raw: any): Row {
         bastFileId: raw.bastFileId ?? null,
         doFileId: raw.doFileId ?? null,
         boqFileId: raw.boqFileId ?? null,
+        prdFile: raw.prdFile ?? null,
+        bahpFile: raw.bahpFile ?? null,
+        bastFile: raw.bastFile ?? null,
+        doFile: raw.doFile ?? null,
         boqFile: raw.boqFile ?? null,
         stages: raw.stages ?? null,
         _members: (raw.members ?? []).map((m: any) => ({ id: String(m.userId), name: nameOf(m.user), role: roleToUi(m.user?.role) })),
+        _invoices: Array.isArray(raw.invoices) ? raw.invoices : [],
       };
     }
     case "tasks":
@@ -1800,7 +1815,11 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         status: "BERJALAN",
         progress: num(row.progres ?? row.progress),
         picId: row.pmId != null && row.pmId !== "" ? Number(row.pmId) : findId(db?.users, row.pm),
-        prdFileId: row.prdFileId ?? (row.fileId ? Number(row.fileId) : undefined),
+        prdFileId: row.prdFileId != null && row.prdFileId !== "" ? Number(row.prdFileId) : (row.fileId ? Number(row.fileId) : undefined),
+        bahpFileId: row.bahpFileId != null && row.bahpFileId !== "" ? Number(row.bahpFileId) : undefined,
+        bastFileId: row.bastFileId != null && row.bastFileId !== "" ? Number(row.bastFileId) : undefined,
+        doFileId: row.doFileId != null && row.doFileId !== "" ? Number(row.doFileId) : undefined,
+        boqFileId: row.boqFileId != null && row.boqFileId !== "" ? Number(row.boqFileId) : undefined,
         memberIds: resolveMemberIds(row, db),
       };
     }
@@ -2527,6 +2546,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
           : "PERUSAHAAN";
     }
     if (patch.fundingSource !== undefined) out.fundingSource = patch.fundingSource;
+    if (patch.paymentMethod !== undefined) out.paymentMethod = patch.paymentMethod;
     if (patch.costCenter !== undefined) out.costCenterId = findId(db?.costCenters, patch.costCenter);
   }
 
@@ -2611,6 +2631,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
     if (Array.isArray(patch.memberIds)) out.memberIds = patch.memberIds;
     else if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);
+    if (patch.prdFileId !== undefined) out.prdFileId = patch.prdFileId ? Number(patch.prdFileId) : null;
+    if (patch.bahpFileId !== undefined) out.bahpFileId = patch.bahpFileId ? Number(patch.bahpFileId) : null;
+    if (patch.bastFileId !== undefined) out.bastFileId = patch.bastFileId ? Number(patch.bastFileId) : null;
+    if (patch.doFileId !== undefined) out.doFileId = patch.doFileId ? Number(patch.doFileId) : null;
+    if (patch.boqFileId !== undefined) out.boqFileId = patch.boqFileId ? Number(patch.boqFileId) : null;
   } else if (module === "tasks") {
     if (patch.pic !== undefined) out.assigneeId = findId(db?.users, patch.pic);
     if (patch.tenggat !== undefined) out.dueDate = patch.tenggat;
