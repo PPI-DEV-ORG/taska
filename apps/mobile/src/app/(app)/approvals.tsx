@@ -38,7 +38,11 @@ export default function ApprovalsScreen() {
     return approvals.filter((a) => {
       if (role === "super_admin" || role === "admin") return true;
       if (a.canApprove === false) return false;
-      if (a.requestedById && userId && String(a.requestedById) === String(userId)) return false;
+      if (a.requestedById && userId && String(a.requestedById) === String(userId)) {
+        if (!(role === "finance" && a.module === "supplier-pos")) {
+          return false;
+        }
+      }
 
       if (role === "finance") {
         if (a.module === "receiving") return false;

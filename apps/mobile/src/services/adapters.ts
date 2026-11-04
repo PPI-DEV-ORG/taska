@@ -607,19 +607,27 @@ export function adaptRow(module: string, raw: any): Row {
         "";
       const totNum = n(raw.total);
       const paidNum = n(raw.paidAmount);
-      const isDp = raw.type === "DP" || toLabel("invoiceType", raw.type) === "DP" || String(raw.number || "").includes("/DP/");
       const isSelfPaid = raw.status === "PAID" || toLabel("invoices", raw.status) === "Lunas" || (totNum > 0 && paidNum >= totNum);
-      const isPartial = isDp ? (paidNum > 0 || isSelfPaid) : (!isSelfPaid && paidNum > 0);
-      const isPaid = isDp ? false : isSelfPaid;
+      const isDpOrTermin =
+        raw.type === "DP" ||
+        raw.type === "TERMIN" ||
+        String(raw.number || "").includes("/DP/") ||
+        String(raw.number || "").includes("/TRM/") ||
+        /INV\/\d{4}\/\d{2}\/\d+\/1$/i.test(String(raw.number || ""));
 
       let displayStatus = toLabel("invoices", raw.status);
       if (raw.status !== "BATAL" && displayStatus !== "Dibatalkan") {
-        if (isPaid) {
+        if (raw.status === "PAID") {
           displayStatus = "Lunas";
-        } else if (isPartial) {
+        } else if (raw.status === "PARTIAL" || (isDpOrTermin && isSelfPaid)) {
+          displayStatus = "Dibayar sebagian";
+        } else if (isSelfPaid) {
+          displayStatus = "Lunas";
+        } else if (paidNum > 0) {
           displayStatus = "Dibayar sebagian";
         }
       }
+      const isPartial = displayStatus === "Dibayar sebagian";
 
       const rawAmt = n(raw.amount);
       const rawPpn = n(raw.ppn);

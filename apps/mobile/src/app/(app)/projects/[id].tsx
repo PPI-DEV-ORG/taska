@@ -370,6 +370,7 @@ export default function ProjectDetailScreen() {
               ]}
               row={{
                 ...project,
+                pembayaran: isLunas ? "Lunas" : project.pembayaran,
                 progres: project.status === "Selesai" ? 100 : (project.progres ?? 0),
               }}
             />

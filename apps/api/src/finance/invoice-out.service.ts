@@ -418,7 +418,9 @@ export class InvoiceOutService {
       pph: Number(meta.pph ?? 0),
       pphMode: meta.pphMode ?? "none",
       tipePph: meta.tipePph ?? "Tanpa PPh",
-      items: meta.items ?? quoteMeta?.items ?? [],
+      items: meta.items ?? (meta.isContinuation ? [] : (quoteMeta?.items ?? [])),
+      isContinuation: Boolean(meta.isContinuation),
+      parentInvoiceId: meta.parentInvoiceId ?? null,
       discount: Number(meta.discount ?? quoteMeta?.discount ?? quoteMeta?.disc ?? relatedQuote?.discount ?? 0),
       quotationId: meta.quotationId ?? relatedQuote?.id ?? undefined,
       quotation: meta.quotation ?? relatedQuote?.number ?? (row.description ? row.description.match(/(?:QUO|PNW)[-\w\/]+/i)?.[0] : undefined),
@@ -583,11 +585,41 @@ export class InvoiceOutService {
       description = `${description} ${leadTag}`;
     }
 
+    let projectId = dto.projectId;
+    if (!projectId && dto.parentInvoiceId) {
+      const parentInv = await this.prisma.main.invoiceOut.findUnique({
+        where: { id: dto.parentInvoiceId },
+        select: { projectId: true },
+      });
+      if (parentInv?.projectId) projectId = parentInv.projectId;
+    }
+    if (!projectId && dto.quotationId) {
+      const proj = await this.prisma.main.project.findFirst({
+        where: { quotationId: dto.quotationId },
+        select: { id: true },
+      });
+      if (proj?.id) projectId = proj.id;
+    }
+
+    const isContinuation =
+      Boolean(dto.isContinuation) ||
+      Boolean(dto.parentInvoiceId) ||
+      dto.items?.some((it: any) => it.isContinuation);
+
+    let initialStatus = dto.status ?? "DRAFT";
+    if (
+      initialStatus === "PAID" &&
+      !isContinuation &&
+      (dto.type === "DP" || /dp/i.test(dto.type || "") || /^\d+$/.test(number.split("/").pop() || ""))
+    ) {
+      initialStatus = "PARTIAL";
+    }
+
     const row = await this.prisma.main.invoiceOut.create({
       data: {
         number,
         clientPoId: dto.clientPoId,
-        projectId: dto.projectId,
+        projectId,
         customerId: customer?.id ?? null,
         description,
         type: dto.type ?? "TERMIN",
@@ -597,7 +629,7 @@ export class InvoiceOutService {
         paidAmount: dto.paidAmount ?? (dto.status === "PAID" ? total : 0),
         date,
         dueDate,
-        status: dto.status ?? "DRAFT",
+        status: initialStatus,
         fileId: dto.fileId,
       },
       include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
@@ -618,6 +650,7 @@ export class InvoiceOutService {
     });
 
     // Jika dto.items tidak dikirim atau hanya berisi teks referensi penawaran, tarik daftar barang & SN asli dari Penawaran
+    // PENTING: Invoice lanjutan/termin/pelunasan TIDAK boleh menarik ulang barang & SN fisik dari Penawaran
     let resolvedItems = this.normalizeInvoiceItems(dto.items ?? []);
     const quoteItems = this.normalizeInvoiceItems(relatedInfo.quoteMeta?.items ?? []);
     const isJustQuotationReference =
@@ -627,7 +660,7 @@ export class InvoiceOutService {
       (!resolvedItems[0].serialNumbers || resolvedItems[0].serialNumbers.length === 0) &&
       /(?:penawaran|quo|pnw)/i.test(resolvedItems[0].item);
 
-    if ((resolvedItems.length === 0 || isJustQuotationReference) && quoteItems.length > 0) {
+    if (!isContinuation && (resolvedItems.length === 0 || isJustQuotationReference) && quoteItems.length > 0) {
       resolvedItems = quoteItems;
     }
 
@@ -637,6 +670,8 @@ export class InvoiceOutService {
     if (
       resolvedItems.length > 0 ||
       dto.items !== undefined ||
+      isContinuation ||
+      dto.parentInvoiceId !== undefined ||
       dto.discount !== undefined ||
       effectiveQuotationId !== undefined ||
       effectiveQuotationNum !== undefined ||
@@ -658,6 +693,8 @@ export class InvoiceOutService {
       await this.saveMeta(row.id, {
         ...(dto.customer ? { customerName: dto.customer } : {}),
         ...(resolvedItems.length > 0 || dto.items !== undefined ? { items: resolvedItems } : {}),
+        ...(isContinuation ? { isContinuation: true } : {}),
+        ...(dto.parentInvoiceId ? { parentInvoiceId: dto.parentInvoiceId } : {}),
         ...(dto.discount !== undefined
           ? { discount: dto.discount }
           : relatedInfo.quoteMeta?.discount !== undefined
@@ -683,7 +720,8 @@ export class InvoiceOutService {
     }
 
     // Reserve SN untuk invoice ini & cek apakah ada SN yang sudah terkunci oleh Invoice Lunas lain
-    if (resolvedItems.length > 0) {
+    // PENTING: Invoice lanjutan/termin/pelunasan TIDAK boleh mereserve atau mengambil SN baru!
+    if (!isContinuation && resolvedItems.length > 0) {
       await this.checkAndSwapAgainstAlreadyPaidInvoices(row, resolvedItems, user).catch(() => {});
       const latestMeta = (await this.getMeta(row.id)) || {};
       const finalItems = Array.isArray(latestMeta.items) ? latestMeta.items : resolvedItems;
@@ -818,9 +856,11 @@ export class InvoiceOutService {
       });
     }
 
+    const meta = (await this.getMeta(id)) || {};
+    const isContinuation = Boolean(dto.isContinuation ?? meta.isContinuation ?? meta.parentInvoiceId);
     if (dto.status === "BATAL") {
       await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
-    } else if (normalizedItems !== undefined) {
+    } else if (!isContinuation && normalizedItems !== undefined) {
       await this.reservations
         .syncDocumentReservations({
           invoiceId: id,
@@ -912,6 +952,7 @@ export class InvoiceOutService {
 
   private async assertStockAvailabilityForInvoice(invoice: InvoiceOut) {
     const meta = (await this.getMeta(invoice.id)) || {};
+    if (meta.isContinuation) return;
     let items: any[] = Array.isArray(meta.items) ? meta.items : [];
     if (!items.length) {
       const related = await this.resolveRelatedQuotationAndMeta({
@@ -1055,11 +1096,43 @@ export class InvoiceOutService {
     if (isNowPaid) {
       await this.assertStockAvailabilityForInvoice(row);
     }
+
+    let targetStatus = isNowPaid ? "PAID" : row.status;
+    if (isNowPaid && (row.type === "DP" || row.type === "TERMIN")) {
+      const match = row.number.match(/^(INV\/\d{4}\/\d{2}\/\d+)(?:\/(\d+))?$/i);
+      const basePrefix = match ? match[1] : null;
+      const termNum = match?.[2] ? Number(match[2]) : 1;
+      let hasPaidPelunasan = false;
+      if (basePrefix || row.projectId) {
+        const paidSubsequent = await this.prisma.main.invoiceOut.findFirst({
+          where: {
+            id: { not: row.id },
+            status: "PAID",
+            OR: [
+              ...(basePrefix ? [{ number: { startsWith: basePrefix } }] : []),
+              ...(row.projectId ? [{ projectId: row.projectId }] : []),
+            ],
+            type: { in: ["PELUNASAN", "TERMIN"] },
+          },
+        });
+        if (paidSubsequent) {
+          const subMatch = paidSubsequent.number.match(/\/(\d+)$/);
+          const subTermNum = subMatch ? Number(subMatch[1]) : 1;
+          if (paidSubsequent.type === "PELUNASAN" || subTermNum > termNum || /pelunasan/i.test(paidSubsequent.description || "")) {
+            hasPaidPelunasan = true;
+          }
+        }
+      }
+      if (!hasPaidPelunasan) {
+        targetStatus = "PARTIAL";
+      }
+    }
+
     const updated = await this.prisma.main.invoiceOut.update({
       where: { id },
       data: {
         paidAmount: paid,
-        ...(isNowPaid ? { status: "PAID" } : {}),
+        status: targetStatus,
       },
       include: { customer: true, payments: { orderBy: { date: "desc" } } },
     });
@@ -1254,16 +1327,17 @@ export class InvoiceOutService {
     });
     const paidQuoteId = relatedInfo.quotationId;
 
-    let paidItems: any[] = Array.isArray(paidMeta.items) && paidMeta.items.length > 0
-      ? paidMeta.items
-      : Array.isArray(relatedInfo.quoteMeta?.items)
-        ? relatedInfo.quoteMeta.items
-        : [];
+    let paidItems: any[] =
+      Array.isArray(paidMeta.items) && paidMeta.items.length > 0 && !paidMeta.isContinuation
+        ? paidMeta.items
+        : Array.isArray(relatedInfo.quoteMeta?.items)
+          ? relatedInfo.quoteMeta.items
+          : [];
 
     if (paidItems.length === 0) {
       for (const sib of siblings) {
         const sibMeta = (await this.getMeta(sib.id)) || {};
-        if (Array.isArray(sibMeta.items) && sibMeta.items.length > 0) {
+        if (Array.isArray(sibMeta.items) && sibMeta.items.length > 0 && !sibMeta.isContinuation) {
           paidItems = sibMeta.items;
           break;
         }

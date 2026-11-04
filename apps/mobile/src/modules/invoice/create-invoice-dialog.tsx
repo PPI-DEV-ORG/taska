@@ -1,6 +1,6 @@
 import * as React from "react";
-import { View, ScrollView, Platform, Pressable } from "react-native";
-import { Upload, CheckCircle2, FileDown, Package, Trash2, Check } from "lucide-react-native";
+import { View, ScrollView, Pressable } from "react-native";
+import { FileDown, Package, Trash2, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -259,7 +259,6 @@ function CreateInvoiceForm({
     return "";
   });
   const [fileId, setFileId] = React.useState<number | null>(null);
-  const [fileName, setFileName] = React.useState<string>("");
 
   // Payment Status (Belum Bayar vs Langsung Lunas)
   const [paymentStatus, setPaymentStatus] = React.useState<"UNPAID" | "PAID">(() => {
@@ -307,8 +306,76 @@ function CreateInvoiceForm({
     }));
   }, []);
 
+  // Candidates for continuing existing invoices
+  const continuableInvoiceOptions = React.useMemo(() => {
+    return (data.invoices ?? [])
+      .filter((inv: Row) => {
+        const st = String(inv.status || "").toUpperCase();
+        if (st === "BATAL" || st === "DIBATALKAN") return false;
+        return true;
+      })
+      .map((inv: Row) => {
+        const invNum = inv.nomor || inv.number || `INV #${inv.id}`;
+        const cust = inv.customer || "-";
+        const jenis = inv.jenis || (String(inv.type || "").toUpperCase() === "DP" ? "DP" : "Invoice");
+        const amountStr = rupiah(inv.total || inv.nilai || 0);
+        return {
+          id: String(inv.id),
+          label: `${invNum} — ${cust} — ${jenis} (${amountStr})`,
+          nomor: invNum,
+          customer: cust,
+          raw: inv,
+        };
+      });
+  }, [data.invoices]);
+
+  const [selectedParentInvoiceId, setSelectedParentInvoiceId] = React.useState<string>(() => {
+    if (initialPo) {
+      const match = (data.invoices ?? []).find(
+        (inv: Row) =>
+          String(inv.clientPoId) === String(initialPo.id) ||
+          (initialPo.nomor && (inv.po === initialPo.nomor || inv.nomorSo === initialPo.nomor)) ||
+          (initialPo.nomorSo && (inv.po === initialPo.nomorSo || inv.nomorSo === initialPo.nomorSo)),
+      );
+      if (match) return String(match.id);
+    }
+    if (initialQuotation) {
+      const match = (data.invoices ?? []).find(
+        (inv: Row) =>
+          String(inv.quotationId) === String(initialQuotation.id) ||
+          inv.quotation === initialQuotation.nomor,
+      );
+      if (match) return String(match.id);
+    }
+    return "";
+  });
+
+  const selectedParentInvoice = React.useMemo(() => {
+    if (!selectedParentInvoiceId) return null;
+    return (data.invoices ?? []).find((inv: Row) => String(inv.id) === String(selectedParentInvoiceId)) || null;
+  }, [data.invoices, selectedParentInvoiceId]);
+
   // Items
   const [items, setItems] = React.useState<QuotationItem[]>(() => {
+    // If starting in lanjut mode, items should be empty so no physical items/cameras are selected!
+    if (initialPo) {
+      const hasExisting = (data.invoices ?? []).some(
+        (inv: Row) =>
+          String(inv.clientPoId) === String(initialPo.id) ||
+          (initialPo.nomor && (inv.po === initialPo.nomor || String(inv.catatan || "").includes(initialPo.nomor))) ||
+          (initialPo.nomorSo && (inv.po === initialPo.nomorSo || String(inv.catatan || "").includes(initialPo.nomorSo))),
+      );
+      if (hasExisting) return [];
+    }
+    if (initialQuotation) {
+      const hasExisting = (data.invoices ?? []).some(
+        (inv: Row) =>
+          String(inv.quotationId) === String(initialQuotation.id) ||
+          inv.quotation === initialQuotation.nomor ||
+          String(inv.catatan || "").includes(initialQuotation.nomor),
+      );
+      if (hasExisting) return [];
+    }
     if (Array.isArray(initialPo?.items) && initialPo.items.length > 0) {
       return initialPo.items;
     }
@@ -343,28 +410,99 @@ function CreateInvoiceForm({
 
   // Active quotation & PO & Lead objects
   const activeQuotation = React.useMemo(() => {
+    if (mode === "lanjut") {
+      if (!selectedParentInvoice) return null;
+      if (selectedParentInvoice.quotationId) {
+        return (data.quotations ?? []).find((q: Row) => String(q.id) === String(selectedParentInvoice.quotationId)) || null;
+      }
+      if (selectedParentInvoice.quotation) {
+        return (data.quotations ?? []).find((q: Row) => q.nomor === selectedParentInvoice.quotation) || null;
+      }
+      return null;
+    }
     if (selectedQuotationId) {
       return (data.quotations ?? []).find((q: Row) => String(q.id) === String(selectedQuotationId)) || null;
     }
+    if (selectedParentInvoice?.quotationId) {
+      return (data.quotations ?? []).find((q: Row) => String(q.id) === String(selectedParentInvoice.quotationId)) || null;
+    }
+    if (selectedParentInvoice?.quotation) {
+      return (data.quotations ?? []).find((q: Row) => q.nomor === selectedParentInvoice.quotation) || null;
+    }
     return initialQuotation || null;
-  }, [data, selectedQuotationId, initialQuotation]);
+  }, [mode, data, selectedQuotationId, initialQuotation, selectedParentInvoice]);
 
   const activePo = React.useMemo(() => {
+    if (mode === "lanjut") {
+      if (!selectedParentInvoice) return null;
+      if (selectedParentInvoice.clientPoId) {
+        return (data["po-client"] ?? []).find((p: Row) => String(p.id) === String(selectedParentInvoice.clientPoId)) || null;
+      }
+      if (selectedParentInvoice.po) {
+        return (data["po-client"] ?? []).find((p: Row) => p.nomor === selectedParentInvoice.po || p.nomorSo === selectedParentInvoice.po) || null;
+      }
+      return null;
+    }
     if (selectedPoId) {
       return (data["po-client"] ?? []).find((p: Row) => String(p.id) === String(selectedPoId)) || initialPo || null;
     }
+    if (selectedParentInvoice?.clientPoId) {
+      return (data["po-client"] ?? []).find((p: Row) => String(p.id) === String(selectedParentInvoice.clientPoId)) || null;
+    }
+    if (selectedParentInvoice?.po) {
+      return (data["po-client"] ?? []).find((p: Row) => p.nomor === selectedParentInvoice.po || p.nomorSo === selectedParentInvoice.po) || null;
+    }
     return initialPo || null;
-  }, [data, selectedPoId, initialPo]);
+  }, [mode, data, selectedPoId, initialPo, selectedParentInvoice]);
 
   const activeLead = React.useMemo(() => {
+    if (mode === "lanjut") {
+      if (!selectedParentInvoice) return null;
+      if (selectedParentInvoice.leadId) {
+        return (data.leads ?? []).find((l: Row) => String(l.id) === String(selectedParentInvoice.leadId)) || null;
+      }
+      return null;
+    }
     if (selectedLeadId) {
       return (data.leads ?? []).find((l: Row) => String(l.id) === String(selectedLeadId)) || null;
     }
     return initialLead || null;
-  }, [data, selectedLeadId, initialLead]);
+  }, [mode, data, selectedLeadId, initialLead, selectedParentInvoice]);
 
-  // Existing invoices related to active quotation, PO, or Lead
+  // Existing invoices related to active quotation, PO, Lead, or selected Parent Invoice
   const relatedExistingInvoices = React.useMemo(() => {
+    if (mode === "lanjut") {
+      if (!selectedParentInvoice) return [];
+      const parentId = String(selectedParentInvoice.id);
+      const rootParentId = selectedParentInvoice.parentInvoiceId ? String(selectedParentInvoice.parentInvoiceId) : parentId;
+      const parentNum = selectedParentInvoice.nomor || selectedParentInvoice.number;
+      const matchPrefix = parentNum ? String(parentNum).match(/^(INV\/\d{4}\/\d{2}\/\d+)/i)?.[1] : null;
+
+      const parentPoId = selectedParentInvoice.clientPoId;
+      const parentQuoteId = selectedParentInvoice.quotationId;
+
+      return (data.invoices ?? []).filter((inv: Row) => {
+        const st = String(inv.status || "").toUpperCase();
+        if (st === "BATAL" || st === "DIBATALKAN") return false;
+
+        // 1. Same ID
+        if (String(inv.id) === parentId) return true;
+
+        // 2. Parent / sibling chain linkage
+        if (inv.parentInvoiceId && (String(inv.parentInvoiceId) === parentId || String(inv.parentInvoiceId) === rootParentId)) return true;
+        if (String(inv.id) === rootParentId) return true;
+
+        // 3. Same invoice base numbering prefix (e.g. INV/2026/11/005/1 and INV/2026/11/005/2)
+        if (matchPrefix && String(inv.nomor || inv.number || "").startsWith(matchPrefix)) return true;
+
+        // 4. Same exact client PO / Quotation ID if defined on parent invoice
+        if (parentPoId && String(inv.clientPoId) === String(parentPoId)) return true;
+        if (parentQuoteId && String(inv.quotationId) === String(parentQuoteId)) return true;
+
+        return false;
+      });
+    }
+
     const qNomor = activeQuotation?.nomor;
     const qId = activeQuotation?.id;
     const poNum = activePo?.nomor || activePo?.number || activePo?.nomorSo;
@@ -373,15 +511,18 @@ function CreateInvoiceForm({
     const leadName = activeLead?.nama ? String(activeLead.nama).trim().toLowerCase() : "";
 
     return (data.invoices ?? []).filter((inv: Row) => {
-      if (qId && (String(inv.quotationId) === String(qId) || (qNomor && String(inv.catatan || "").includes(qNomor)))) return true;
-      if (qNomor && (inv.quotation === qNomor || String(inv.po || "").includes(qNomor))) return true;
+      const st = String(inv.status || "").toUpperCase();
+      if (st === "BATAL" || st === "DIBATALKAN") return false;
+
+      if (qId && String(inv.quotationId) === String(qId)) return true;
+      if (qNomor && inv.quotation === qNomor) return true;
       if (poId && String(inv.clientPoId) === String(poId)) return true;
-      if (poNum && (inv.po === poNum || String(inv.catatan || "").includes(poNum))) return true;
-      if (leadId && (String(inv.leadId) === String(leadId) || String(inv.catatan || "").includes(`[lead:${leadId}]`))) return true;
-      if (leadName && String(inv.catatan || "").toLowerCase().includes(leadName)) return true;
+      if (poNum && (inv.po === poNum || inv.nomorSo === poNum)) return true;
+      if (leadId && String(inv.leadId) === String(leadId)) return true;
+      if (leadName && String(inv.customer || "").trim().toLowerCase() === leadName) return true;
       return false;
     });
-  }, [data, activeQuotation, activePo, activeLead]);
+  }, [mode, selectedParentInvoice, data.invoices, activeQuotation, activePo, activeLead]);
 
   // Invoice Number
   const [nomor, setNomor] = React.useState<string>(() =>
@@ -403,23 +544,38 @@ function CreateInvoiceForm({
       activeQuotation?.discount ??
       activePo?.discount ??
       activePo?.disc ??
+      selectedParentInvoice?.discount ??
       (data.quotations ?? []).find((q: Row) => String(q.id) === String(activePo?.quotationId))?.disc ??
       (data.quotations ?? []).find((q: Row) => String(q.id) === String(activePo?.quotationId))?.discount ??
       0;
     return Number(String(rawDisc).replace(/\D/g, "")) || 0;
-  }, [activeQuotation, activePo, data.quotations]);
+  }, [activeQuotation, activePo, selectedParentInvoice, data.quotations]);
 
   // Total gross items / amount before discount
   const grossDealDpp = React.useMemo(() => {
-    if (items.length > 0) {
+    if (mode === "baru" && items.length > 0) {
       return items.reduce((acc, curr) => acc + (Number(curr.qty) || 1) * (Number(curr.harga) || Number((curr as any).price) || 0), 0);
     }
-    if (sourceType === "po" && activePo?.nilai) return Number(activePo.nilai);
     if (activeQuotation?.total) return Number(activeQuotation.total);
     if (activeQuotation?.nilai) return Number(activeQuotation.nilai);
+    if (activeQuotation?.items && Array.isArray(activeQuotation.items) && activeQuotation.items.length > 0) {
+      return activeQuotation.items.reduce((acc: number, curr: any) => acc + (Number(curr.qty) || 1) * (Number(curr.harga) || Number(curr.price) || 0), 0);
+    }
+    if (sourceType === "po" && activePo?.nilai) return Number(activePo.nilai);
+    if (activePo?.items && Array.isArray(activePo.items) && activePo.items.length > 0) {
+      return activePo.items.reduce((acc: number, curr: any) => acc + (Number(curr.qty) || 1) * (Number(curr.harga) || Number(curr.price) || 0), 0);
+    }
+    if (selectedParentInvoice?.nilai) {
+      const pctMatch = String(selectedParentInvoice.dpLabel || selectedParentInvoice.catatan || selectedParentInvoice.description || "").match(/(\d+)%/);
+      const pct = pctMatch ? Number(pctMatch[1]) : 0;
+      if (pct > 0 && pct < 100) {
+        return Math.round((Number(selectedParentInvoice.nilai) / pct) * 100);
+      }
+      return Number(selectedParentInvoice.nilai);
+    }
     if (activeLead?.nilai) return Number(activeLead.nilai);
     return Number(String(customDpp).replace(/\D/g, "")) || 0;
-  }, [items, sourceType, activePo, activeQuotation, activeLead, customDpp]);
+  }, [items, mode, activeQuotation, activePo, activeLead, customDpp, selectedParentInvoice, sourceType]);
 
   const [customDiscount, setCustomDiscount] = React.useState<string>(() =>
     quotationDisc > 0 ? formatThousands(quotationDisc) : "",
@@ -469,15 +625,129 @@ function CreateInvoiceForm({
 
   // Submitting & File extracting
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
-  const [isExtracting, setIsExtracting] = React.useState<boolean>(false);
   const [pickerOpen, setPickerOpen] = React.useState<boolean>(false);
   const [pphMode, setPphMode] = React.useState<PphMode>(() => (activeQuotation?.pphMode as PphMode) || "none");
-  const fileInputRef = React.useRef<any>(null);
+
+  // Select parent invoice handler (Mode Lanjut)
+  function handleSelectParentInvoice(invoiceId: string) {
+    setSelectedParentInvoiceId(invoiceId);
+    const parent = (data.invoices ?? []).find((inv: Row) => String(inv.id) === String(invoiceId));
+    if (!parent) return;
+
+    if (parent.customerId) {
+      setSelectedCustomerId(String(parent.customerId));
+    } else {
+      setSelectedCustomerId("");
+    }
+    if (parent.customer) {
+      setCustomCustomerName(String(parent.customer));
+    } else {
+      setCustomCustomerName("");
+    }
+
+    let matchedQuote: Row | null = null;
+    if (parent.quotationId) {
+      setSelectedQuotationId(String(parent.quotationId));
+      matchedQuote = (data.quotations ?? []).find((x: Row) => String(x.id) === String(parent.quotationId)) || null;
+    } else if (parent.quotation) {
+      matchedQuote = (data.quotations ?? []).find((x: Row) => x.nomor === parent.quotation) || null;
+      setSelectedQuotationId(matchedQuote ? String(matchedQuote.id) : "");
+    } else {
+      setSelectedQuotationId("");
+    }
+
+    if (matchedQuote) {
+      if (matchedQuote.tipePpn || matchedQuote.ppnMode) setPpnMode(getInitialPpnMode(matchedQuote));
+      if (matchedQuote.pphMode) setPphMode(matchedQuote.pphMode as PphMode);
+      if (matchedQuote.discount || matchedQuote.disc) setCustomDiscount(formatThousands(matchedQuote.discount || matchedQuote.disc));
+      if (matchedQuote.customerId) setSelectedCustomerId(String(matchedQuote.customerId));
+    }
+
+    if (parent.clientPoId) {
+      setSelectedPoId(String(parent.clientPoId));
+    } else if (parent.po) {
+      const matchedPo = (data["po-client"] ?? []).find((p: Row) => p.nomor === parent.po || p.nomorSo === parent.po);
+      setSelectedPoId(matchedPo ? String(matchedPo.id) : "");
+    } else {
+      setSelectedPoId("");
+    }
+
+    if (parent.leadId) {
+      setSelectedLeadId(String(parent.leadId));
+    } else {
+      setSelectedLeadId("");
+    }
+
+    if (parent.ppnMode) setPpnMode(parent.ppnMode as PpnMode);
+    else if (parent.tipePpn) setPpnMode(getInitialPpnMode(parent));
+
+    if (parent.pphMode) setPphMode(parent.pphMode as PphMode);
+    if (parent.discount) setCustomDiscount(formatThousands(parent.discount));
+
+    // Clear items in lanjut mode so no physical items/cameras are selected!
+    setItems([]);
+
+    // Calculate siblings specifically for this parent to get the correct next invoice number
+    const parentId = String(parent.id);
+    const rootParentId = parent.parentInvoiceId ? String(parent.parentInvoiceId) : parentId;
+    const parentNum = parent.nomor || parent.number;
+    const matchPrefix = parentNum ? String(parentNum).match(/^(INV\/\d{4}\/\d{2}\/\d+)/i)?.[1] : null;
+    const parentPoId = parent.clientPoId;
+    const parentQuoteId = parent.quotationId;
+
+    const siblings = (data.invoices ?? []).filter((inv: Row) => {
+      const st = String(inv.status || "").toUpperCase();
+      if (st === "BATAL" || st === "DIBATALKAN") return false;
+      if (String(inv.id) === parentId) return true;
+      if (inv.parentInvoiceId && (String(inv.parentInvoiceId) === parentId || String(inv.parentInvoiceId) === rootParentId)) return true;
+      if (String(inv.id) === rootParentId) return true;
+      if (matchPrefix && String(inv.nomor || inv.number || "").startsWith(matchPrefix)) return true;
+      if (parentPoId && String(inv.clientPoId) === String(parentPoId)) return true;
+      if (parentQuoteId && String(inv.quotationId) === String(parentQuoteId)) return true;
+      return false;
+    });
+
+    setNomor(generateInvoiceNumber(true, scheme, siblings, data.invoices?.length || 0, data.invoices));
+  }
 
   // Switch mode handler
   function handleSwitchMode(newMode: "baru" | "lanjut") {
     setMode(newMode);
-    setNomor(generateInvoiceNumber(newMode === "lanjut", scheme, relatedExistingInvoices, data.invoices?.length || 0, data.invoices));
+    if (newMode === "lanjut") {
+      setItems([]);
+      let candidateId = selectedParentInvoiceId;
+      if (!candidateId) {
+        if (initialPo) {
+          const match = (data.invoices ?? []).find(
+            (inv: Row) =>
+              String(inv.clientPoId) === String(initialPo.id) ||
+              (initialPo.nomor && inv.po === initialPo.nomor) ||
+              (initialPo.nomorSo && (inv.po === initialPo.nomorSo || inv.nomorSo === initialPo.nomorSo))
+          );
+          if (match) candidateId = String(match.id);
+        }
+        if (!candidateId && initialQuotation) {
+          const match = (data.invoices ?? []).find(
+            (inv: Row) =>
+              String(inv.quotationId) === String(initialQuotation.id) ||
+              inv.quotation === initialQuotation.nomor
+          );
+          if (match) candidateId = String(match.id);
+        }
+      }
+      if (candidateId) {
+        handleSelectParentInvoice(candidateId);
+      } else {
+        setSelectedParentInvoiceId("");
+      }
+    } else {
+      if (activeQuotation?.items && Array.isArray(activeQuotation.items)) {
+        setItems(activeQuotation.items);
+      } else if (activePo?.items && Array.isArray(activePo.items)) {
+        setItems(activePo.items);
+      }
+      setNomor(generateInvoiceNumber(false, scheme, relatedExistingInvoices, data.invoices?.length || 0, data.invoices));
+    }
   }
 
   // Switch scheme handler
@@ -492,10 +762,14 @@ function CreateInvoiceForm({
     if (q.customerId) setSelectedCustomerId(String(q.customerId));
     if (q.pphMode) setPphMode(q.pphMode as PphMode);
     if (q.tipePpn || q.ppnMode) setPpnMode(getInitialPpnMode(q));
-    if (Array.isArray(q.items) && q.items.length > 0) {
-      setItems(q.items);
-    } else if (q.nilai) {
-      setCustomDpp(formatThousands(q.nilai));
+    if (mode === "baru") {
+      if (Array.isArray(q.items) && q.items.length > 0) {
+        setItems(q.items);
+      } else if (q.nilai) {
+        setCustomDpp(formatThousands(q.nilai));
+      }
+    } else {
+      setItems([]);
     }
     if (q.catatan) {
       setCatatan(q.catatan);
@@ -555,47 +829,6 @@ function CreateInvoiceForm({
     const total = Math.max(0, (isIncludePpn ? rawBase : effectiveDpp + ppn) - pph);
     return { currentDpp: effectiveDpp, currentPpn: ppn, currentPph: pph, currentTotal: total, calculatedPct: pct };
   }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode, items]);
-
-  // Handle file extraction
-  async function handleExtractFile(file: any) {
-    if (!file) return;
-    setIsExtracting(true);
-    try {
-      const fd = new FormData();
-      if (Platform.OS === "web") {
-        fd.append("file", file);
-      } else {
-        fd.append("file", {
-          uri: file.uri,
-          name: file.name || "invoice.xlsx",
-          type: file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        } as any);
-      }
-
-      const res = await api<any>("POST", "/invoices/extract-file", undefined, { form: fd });
-      if (res) {
-        if (res.fileId) setFileId(res.fileId);
-        if (res.filename) setFileName(res.filename);
-        if (res.items && Array.isArray(res.items) && res.items.length > 0) {
-          setItems(res.items);
-        } else if (res.amount) {
-          setCustomDpp(formatThousands(res.amount));
-        }
-        if (res.notes) setCatatan(res.notes);
-        if (res.customerName) {
-          const matchCust = (data.customers ?? []).find(
-            (c: Row) => c.nama?.toLowerCase() === res.customerName?.toLowerCase(),
-          );
-          if (matchCust) setSelectedCustomerId(String(matchCust.id));
-        }
-        toast("Data file invoice berhasil diekstrak");
-      }
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal mengekstrak file invoice", "danger");
-    } finally {
-      setIsExtracting(false);
-    }
-  }
 
   // Handle Submit
   async function handleSubmit() {
@@ -671,14 +904,24 @@ function CreateInvoiceForm({
         supplierId: isPurchase ? (selectedSupplierId ? Number(selectedSupplierId) : undefined) : undefined,
         supplier: isPurchase ? custName : undefined,
         supplierPoId: isPurchase && selectedSupplierPoId ? Number(selectedSupplierPoId) : undefined,
+        projectId: mode === "lanjut" && selectedParentInvoice?.projectId
+          ? Number(selectedParentInvoice.projectId)
+          : (activeQuotation?.projectId ? Number(activeQuotation.projectId) : undefined),
+        project: mode === "lanjut" && selectedParentInvoice?.project
+          ? selectedParentInvoice.project
+          : (activeQuotation?.project || undefined),
         leadId: activeLead?.id ? String(activeLead.id) : undefined,
         lead: activeLead?.nama || undefined,
-        quotationId: activeQuotation?.id ? String(activeQuotation.id) : undefined,
-        quotation: activeQuotation?.nomor || undefined,
-        clientPoId: activePo?.id ? String(activePo.id) : undefined,
+        quotationId: activeQuotation?.id
+          ? String(activeQuotation.id)
+          : (mode === "lanjut" && selectedParentInvoice?.quotationId ? String(selectedParentInvoice.quotationId) : undefined),
+        quotation: activeQuotation?.nomor || (mode === "lanjut" ? selectedParentInvoice?.quotation : undefined) || undefined,
+        clientPoId: activePo?.id
+          ? String(activePo.id)
+          : (mode === "lanjut" && selectedParentInvoice?.clientPoId ? String(selectedParentInvoice.clientPoId) : undefined),
         po: isPurchase
           ? suppPoObj?.nomor || suppPoObj?.number || undefined
-          : activePo?.nomor || activePo?.nomorSo || activePo?.number || undefined,
+          : activePo?.nomor || activePo?.nomorSo || activePo?.number || (mode === "lanjut" ? selectedParentInvoice?.po : undefined) || undefined,
         jenis: invoiceType,
         nilai: currentDpp,
         discount: effectiveDiscount > 0 ? effectiveDiscount : undefined,
@@ -689,7 +932,21 @@ function CreateInvoiceForm({
         pphMode,
         tipePph: pphModeToTipe(pphMode),
         total: currentTotal,
-        items: items.length > 0 ? items : undefined,
+        items: mode === "lanjut"
+          ? [
+              {
+                item: termDesc,
+                qty: 1,
+                satuan: "paket",
+                harga: currentDpp,
+                total: currentDpp,
+                isContinuation: true,
+                kind: "SERVICE",
+              },
+            ]
+          : items.length > 0 ? items : undefined,
+        isContinuation: mode === "lanjut",
+        parentInvoiceId: mode === "lanjut" && selectedParentInvoiceId ? Number(selectedParentInvoiceId) : undefined,
         dpLabel: calculatedPct < 100 ? `${invoiceType} (${calculatedPct}%)` : undefined,
         dpAmount: calculatedPct < 100 ? currentDpp : undefined,
         subject: isPurchase
@@ -770,6 +1027,10 @@ function CreateInvoiceForm({
             <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-warning/15 text-warning">
               Pembelian Langsung
             </Text>
+          ) : mode === "lanjut" && selectedParentInvoice ? (
+            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
+              Acuan: {selectedParentInvoice.nomor || selectedParentInvoice.number}
+            </Text>
           ) : activePo ? (
             <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
               SO: {activePo.nomorSo || activePo.nomor}
@@ -811,181 +1072,344 @@ function CreateInvoiceForm({
           </Button>
         </View>
 
-        {/* Section: Extract from File */}
-        <View className="mb-4 p-3 rounded-xl border border-dashed border-border bg-card/60">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 mr-2">
-              <Text className="text-xs font-semibold text-foreground">Ekstrak Data dari File Excel / PDF</Text>
-              <Text className="text-[11px] text-muted-foreground">
-                Upload file invoice/penawaran (.xlsx / .pdf) untuk mengisi otomatis barang & total.
+        {/* Source Link Section or Continuation Invoice Selector */}
+        {mode === "lanjut" ? (
+          <View className="mb-4 p-3 rounded-xl bg-card border border-primary/30 gap-2.5">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-xs font-bold text-foreground">
+                Lanjutkan Tagihan dari Invoice Sebelumnya
               </Text>
+              <StatusBadge status="Lanjutan" />
             </View>
-            {Platform.OS === "web" ? (
-              <>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept=".xlsx,.xls,.pdf"
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleExtractFile(f);
-                  }}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onPress={() => fileInputRef.current?.click()}
-                  disabled={isExtracting}
-                  className="flex-row items-center gap-1.5 h-8"
-                >
-                  <Upload size={13} color={colors.primary} />
-                  <Text className="text-xs font-semibold text-primary">
-                    {isExtracting ? "Mengekstrak..." : "Upload & Ekstrak"}
+            <FormField label="Pilih Invoice DP / Termin Acuan" required hint="Pilih invoice sebelumnya yang ingin dilanjutkan pembayarannya">
+              <SearchableSelect
+                value={
+                  continuableInvoiceOptions.find((o) => o.id === selectedParentInvoiceId)?.label || ""
+                }
+                onChange={(val: string) => {
+                  const opt = continuableInvoiceOptions.find((o) => o.label === val);
+                  if (opt) handleSelectParentInvoice(opt.id);
+                }}
+                options={continuableInvoiceOptions.map((o) => o.label)}
+                placeholder="Cari nomor invoice / nama customer..."
+              />
+            </FormField>
+            {selectedParentInvoice ? (
+              <View className="gap-1 mt-1 p-2.5 rounded-lg bg-panel/70 border border-border/50 text-xs">
+                <View className="flex-row justify-between">
+                  <Text className="text-[11px] text-muted-foreground">Customer:</Text>
+                  <Text className="text-[11px] font-semibold text-foreground">
+                    {selectedParentInvoice.customer || customCustomerName || "-"}
                   </Text>
-                </Button>
-              </>
+                </View>
+                {(activeQuotation?.nomor || selectedParentInvoice.quotation) ? (
+                  <View className="flex-row justify-between">
+                    <Text className="text-[11px] text-muted-foreground">Penawaran:</Text>
+                    <Text className="text-[11px] font-mono font-medium text-primary">
+                      {activeQuotation?.nomor || selectedParentInvoice.quotation}
+                    </Text>
+                  </View>
+                ) : null}
+                {(activePo?.nomor || activePo?.nomorSo || selectedParentInvoice.po) ? (
+                  <View className="flex-row justify-between">
+                    <Text className="text-[11px] text-muted-foreground">PO / SO Client:</Text>
+                    <Text className="text-[11px] font-mono font-medium text-primary">
+                      {activePo?.nomor || activePo?.nomorSo || selectedParentInvoice.po}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
             ) : null}
           </View>
-          {fileName ? (
-            <View className="flex-row items-center gap-1.5 mt-2 bg-success/10 px-2 py-1 rounded">
-              <CheckCircle2 size={13} color={colors.success} />
-              <Text className="text-[11px] text-success font-medium flex-1" numberOfLines={1}>
-                File terlampir: {fileName}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Source Link Section */}
-        <View className="mb-4 gap-2">
-          <FormField label="Tautkan Invoice Ke / Jenis Transaksi" required>
-            <View className="flex-row flex-wrap gap-1.5">
-              <Button
-                variant={sourceType === "direct_sale" ? "default" : "outline"}
-                size="sm"
-                onPress={() => {
-                  setSourceType("direct_sale");
-                  setScheme("sekaligus");
-                  setPaymentStatus("PAID");
-                  if (!catatan) setCatatan("Nota Penjualan Langsung (Walk-in)");
-                }}
-                className="flex-1 min-w-[125px] h-8 px-2"
-              >
-                <Text className="text-xs font-semibold">Invoice Langsung</Text>
-              </Button>
-              <Button
-                variant={sourceType === "direct_purchase" ? "default" : "outline"}
-                size="sm"
-                onPress={() => {
-                  setSourceType("direct_purchase");
-                  setScheme("sekaligus");
-                  setPaymentStatus("PAID");
-                  if (!catatan) setCatatan("Invoice Pembelian Langsung");
-                }}
-                className="flex-1 min-w-[140px] h-8 px-2"
-              >
-                <Text className="text-xs font-semibold">Pembelian Langsung</Text>
-              </Button>
-              <Button
-                variant={sourceType === "po" ? "default" : "outline"}
-                size="sm"
-                onPress={() => {
-                  setSourceType("po");
-                  setScheme("sekaligus");
-                }}
-                className="flex-1 min-w-[120px] h-8 px-2"
-              >
-                <Text className="text-xs font-semibold">PO Client (SO)</Text>
-              </Button>
-              <Button
-                variant={sourceType === "quotation" ? "default" : "outline"}
-                size="sm"
-                onPress={() => setSourceType("quotation")}
-                className="flex-1 min-w-[95px] h-8 px-2"
-              >
-                <Text className="text-xs font-semibold">Penawaran</Text>
-              </Button>
-              <Button
-                variant={sourceType === "lead" ? "default" : "outline"}
-                size="sm"
-                onPress={() => setSourceType("lead")}
-                className="flex-1 min-w-[95px] h-8 px-2"
-              >
-                <Text className="text-xs font-semibold">Lead / Prospek</Text>
-              </Button>
-              <Button
-                variant={sourceType === "customer" ? "default" : "outline"}
-                size="sm"
-                onPress={() => setSourceType("customer")}
-                className="flex-1 min-w-[85px] h-8 px-2"
-              >
-                <Text className="text-xs font-semibold">Customer</Text>
-              </Button>
-            </View>
-          </FormField>
-
-          {sourceType === "direct_purchase" ? (
-            <View className="gap-2 p-2.5 rounded-lg border border-border bg-card/60">
-              <FormField label="Pilih Supplier / Tempat Pembelian Langsung" required>
-                <SearchableSelect
-                  value={
-                    customSupplierName ||
-                    (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.nama ||
-                    (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.name ||
-                    ""
-                  }
-                  onChange={(val) => {
-                    setCustomSupplierName(val);
-                    const match = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
-                    if (match) setSelectedSupplierId(String(match.id));
-                    else setSelectedSupplierId("");
+        ) : (
+          <View className="mb-4 gap-2">
+            <FormField label="Tautkan Invoice Ke / Jenis Transaksi" required>
+              <View className="flex-row flex-wrap gap-1.5">
+                <Button
+                  variant={sourceType === "direct_sale" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => {
+                    setSourceType("direct_sale");
+                    setScheme("sekaligus");
+                    setPaymentStatus("PAID");
+                    if (!catatan) setCatatan("Nota Penjualan Langsung (Walk-in)");
                   }}
-                  onAddNew={() => setQuickSupplierOpen(true)}
-                  addNewLabel="+ Tambah Supplier Baru"
-                  options={Array.from(new Set([customSupplierName, ...(data.suppliers ?? []).map((s: Row) => s.nama || s.name)])).filter(Boolean)}
-                  placeholder="Cari & pilih supplier..."
-                />
-              </FormField>
+                  className="flex-1 min-w-[125px] h-8 px-2"
+                >
+                  <Text className="text-xs font-semibold">Invoice Langsung</Text>
+                </Button>
+                <Button
+                  variant={sourceType === "direct_purchase" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => {
+                    setSourceType("direct_purchase");
+                    setScheme("sekaligus");
+                    setPaymentStatus("PAID");
+                    if (!catatan) setCatatan("Invoice Pembelian Langsung");
+                  }}
+                  className="flex-1 min-w-[140px] h-8 px-2"
+                >
+                  <Text className="text-xs font-semibold">Pembelian Langsung</Text>
+                </Button>
+                <Button
+                  variant={sourceType === "po" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => {
+                    setSourceType("po");
+                    setScheme("sekaligus");
+                  }}
+                  className="flex-1 min-w-[120px] h-8 px-2"
+                >
+                  <Text className="text-xs font-semibold">PO Client (SO)</Text>
+                </Button>
+                <Button
+                  variant={sourceType === "quotation" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => setSourceType("quotation")}
+                  className="flex-1 min-w-[95px] h-8 px-2"
+                >
+                  <Text className="text-xs font-semibold">Penawaran</Text>
+                </Button>
+                <Button
+                  variant={sourceType === "lead" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => setSourceType("lead")}
+                  className="flex-1 min-w-[95px] h-8 px-2"
+                >
+                  <Text className="text-xs font-semibold">Lead / Prospek</Text>
+                </Button>
+                <Button
+                  variant={sourceType === "customer" ? "default" : "outline"}
+                  size="sm"
+                  onPress={() => setSourceType("customer")}
+                  className="flex-1 min-w-[85px] h-8 px-2"
+                >
+                  <Text className="text-xs font-semibold">Customer</Text>
+                </Button>
+              </View>
+            </FormField>
 
-              <FormField label="PO Supplier Terkait (Opsional)">
+            {sourceType === "direct_purchase" ? (
+              <View className="gap-2 p-2.5 rounded-lg border border-border bg-card/60">
+                <FormField label="Pilih Supplier / Tempat Pembelian Langsung" required>
+                  <SearchableSelect
+                    value={
+                      customSupplierName ||
+                      (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.nama ||
+                      (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.name ||
+                      ""
+                    }
+                    onChange={(val) => {
+                      setCustomSupplierName(val);
+                      const match = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
+                      if (match) setSelectedSupplierId(String(match.id));
+                      else setSelectedSupplierId("");
+                    }}
+                    onAddNew={() => setQuickSupplierOpen(true)}
+                    addNewLabel="+ Tambah Supplier Baru"
+                    options={Array.from(new Set([customSupplierName, ...(data.suppliers ?? []).map((s: Row) => s.nama || s.name)])).filter(Boolean)}
+                    placeholder="Cari & pilih supplier..."
+                  />
+                </FormField>
+
+                <FormField label="PO Supplier Terkait (Opsional)">
+                  <SearchableSelect
+                    value={
+                      (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.nomor ||
+                      (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.number ||
+                      ""
+                    }
+                    onChange={(val) => {
+                      const selNo = val.split(" - ")[0]?.trim() || val;
+                      const match = (data["supplier-pos"] ?? []).find(
+                        (p: Row) => (p.nomor || p.number) === selNo,
+                      );
+                      if (match) {
+                        setSelectedSupplierPoId(String(match.id));
+                        if (match.supplierId) setSelectedSupplierId(String(match.supplierId));
+                        if (match.supplier) setCustomSupplierName(match.supplier);
+                        if (Array.isArray(match.items) && match.items.length > 0) {
+                          setItems(match.items);
+                        } else if (match.total || match.nilai) {
+                          setCustomDpp(formatThousands(match.total || match.nilai));
+                        }
+                      }
+                    }}
+                    options={(data["supplier-pos"] ?? []).map(
+                      (p: Row) => `${p.nomor || p.number} - ${p.supplier || "-"}`,
+                    )}
+                    placeholder="Pilih PO Supplier jika ada..."
+                  />
+                </FormField>
+              </View>
+            ) : sourceType === "direct_sale" ? (
+              <View className="gap-2 p-2.5 rounded-lg border border-border bg-card/60">
+                <FormField label="Customer (Opsional: Kosongkan untuk Pelanggan Langsung / Walk-in)">
+                  <SearchableSelect
+                    value={
+                      customCustomerName ||
+                      (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama ||
+                      ""
+                    }
+                    onAddNew={() => setQuickCustomerOpen(true)}
+                    addNewLabel="+ Tambah Customer Baru"
+                    onChange={(val) => {
+                      setCustomCustomerName(val);
+                      const match = (data.customers ?? []).find((c: Row) => c.nama === val);
+                      if (match) setSelectedCustomerId(String(match.id));
+                      else setSelectedCustomerId("");
+                    }}
+                    options={Array.from(new Set([customCustomerName, "Pelanggan Langsung (Walk-in)", ...(data.customers ?? []).map((c: Row) => c.nama)])).filter(Boolean)}
+                    placeholder="Pelanggan Langsung (Walk-in) / Cari customer..."
+                  />
+                </FormField>
+              </View>
+            ) : sourceType === "quotation" ? (
+              <FormField label="Pilih Penawaran Terkait" required>
                 <SearchableSelect
                   value={
-                    (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.nomor ||
-                    (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.number ||
-                    ""
+                    activeQuotation
+                      ? `${activeQuotation.nomor} - ${activeQuotation.customer || "-"} - ${activeQuotation.lead || "-"}`
+                      : ""
                   }
                   onChange={(val) => {
                     const selNo = val.split(" - ")[0]?.trim() || val;
-                    const match = (data["supplier-pos"] ?? []).find(
-                      (p: Row) => (p.nomor || p.number) === selNo,
+                    const match = (data.quotations ?? []).find((q: Row) => q.nomor === selNo);
+                    if (match) handleSelectQuotation(match);
+                  }}
+                  options={(data.quotations ?? []).map(
+                    (q: Row) => `${q.nomor} - ${q.customer || "-"} - ${q.lead || "-"}`,
+                  )}
+                  placeholder="Cari & pilih penawaran..."
+                />
+                {activeQuotation ? (
+                  <View className="flex-row flex-wrap items-center gap-2 mt-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onPress={() => {
+                        downloadQuotationPdf({
+                          quotationId: activeQuotation.id,
+                          customer: activeQuotation.customer,
+                          lead: activeQuotation.lead,
+                          nomor: activeQuotation.nomor,
+                          signer: activeQuotation.pemilik,
+                        });
+                        toast("File PDF penawaran sedang diunduh");
+                      }}
+                      className="h-8 px-2.5 flex-row items-center gap-1.5"
+                    >
+                      <FileDown size={13} color={colors.text} />
+                      <Text className="text-xs">Download PDF Penawaran</Text>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onPress={() => {
+                        downloadQuotationTemplate({
+                          quotationId: activeQuotation.id,
+                          customer: activeQuotation.customer,
+                          lead: activeQuotation.lead,
+                          nomor: activeQuotation.nomor,
+                          signer: activeQuotation.pemilik,
+                        });
+                        toast("File Excel penawaran (.xlsx) sedang diunduh");
+                      }}
+                      className="h-8 px-2.5 flex-row items-center gap-1.5"
+                    >
+                      <FileDown size={13} color={colors.text} />
+                      <Text className="text-xs">Download Excel Penawaran (.xlsx)</Text>
+                    </Button>
+                  </View>
+                ) : null}
+              </FormField>
+            ) : sourceType === "po" ? (
+              <FormField label="Pilih PO Client (Sales Order) Terkait" required>
+                <SearchableSelect
+                  value={
+                    activePo
+                      ? `${activePo.nomorSo || activePo.nomor || activePo.number} - ${activePo.customer || "-"}`
+                      : ""
+                  }
+                  onChange={(val) => {
+                    const selNo = val.split(" - ")[0]?.trim() || val;
+                    const match = (data["po-client"] ?? []).find(
+                      (p: Row) => (p.nomorSo || p.nomor || p.number) === selNo,
                     );
                     if (match) {
-                      setSelectedSupplierPoId(String(match.id));
-                      if (match.supplierId) setSelectedSupplierId(String(match.supplierId));
-                      if (match.supplier) setCustomSupplierName(match.supplier);
-                      if (Array.isArray(match.items) && match.items.length > 0) {
-                        setItems(match.items);
-                      } else if (match.total || match.nilai) {
-                        setCustomDpp(formatThousands(match.total || match.nilai));
+                      setSelectedPoId(String(match.id));
+                      if (match.customer && match.customer !== "-") {
+                        setCustomCustomerName(match.customer);
+                      }
+                      if (match.customerId) setSelectedCustomerId(String(match.customerId));
+                      if (match.customer && match.customer !== "-") {
+                        const cMatch = (data.customers ?? []).find(
+                          (c: Row) =>
+                            c.nama?.toLowerCase() === String(match.customer).toLowerCase() ||
+                            c.name?.toLowerCase() === String(match.customer).toLowerCase(),
+                        );
+                        if (cMatch) setSelectedCustomerId(String(cMatch.id));
+                      }
+                      if (mode === "baru") {
+                        if (Array.isArray(match.items) && match.items.length > 0) {
+                          setItems(match.items);
+                        } else if (match.quotationId) {
+                          setSelectedQuotationId(String(match.quotationId));
+                          const linkedQ = (data.quotations ?? []).find(
+                            (q: Row) => String(q.id) === String(match.quotationId),
+                          );
+                          if (linkedQ && Array.isArray(linkedQ.items) && linkedQ.items.length > 0) {
+                            setItems(linkedQ.items);
+                          }
+                        } else if (match.nilai) {
+                          setCustomDpp(formatThousands(match.nilai));
+                        }
+                      } else {
+                        setItems([]);
+                      }
+                      if (match.tipePpn || match.ppnMode) {
+                        setPpnMode(getInitialPpnMode(match));
+                      }
+                      if (match.discount || match.disc) {
+                        setCustomDiscount(formatThousands(match.discount || match.disc));
                       }
                     }
                   }}
-                  options={(data["supplier-pos"] ?? []).map(
-                    (p: Row) => `${p.nomor || p.number} - ${p.supplier || "-"}`,
+                  options={(data["po-client"] ?? []).map(
+                    (p: Row) => `${p.nomorSo || p.nomor || p.number} - ${p.customer || "-"}`,
                   )}
-                  placeholder="Pilih PO Supplier jika ada..."
+                  placeholder="Cari & pilih PO client..."
                 />
               </FormField>
-            </View>
-          ) : sourceType === "direct_sale" ? (
-            <View className="gap-2 p-2.5 rounded-lg border border-border bg-card/60">
-              <FormField label="Customer (Opsional: Kosongkan untuk Pelanggan Langsung / Walk-in)">
+            ) : sourceType === "lead" ? (
+              <FormField label="Pilih Lead / Prospek Terkait" required>
+                <SearchableSelect
+                  value={
+                    activeLead
+                      ? `${activeLead.nama} - ${activeLead.perusahaan || activeLead.customer || "-"}`
+                      : ""
+                  }
+                  onChange={(val) => {
+                    const selName = val.split(" - ")[0]?.trim() || val;
+                    const match = (data.leads ?? []).find(
+                      (l: Row) => l.nama === selName || `${l.nama} - ${l.perusahaan || l.customer || "-"}` === val,
+                    );
+                    if (match) handleSelectLead(match);
+                  }}
+                  options={(data.leads ?? []).map(
+                    (l: Row) => `${l.nama} - ${l.perusahaan || l.customer || "-"}`,
+                  )}
+                  placeholder="Cari & pilih lead / prospek..."
+                />
+              </FormField>
+            ) : null}
+
+            {sourceType !== "direct_purchase" && sourceType !== "direct_sale" ? (
+              <FormField label="Customer" required>
                 <SearchableSelect
                   value={
                     customCustomerName ||
-                    (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama ||
-                    ""
+                    (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama || ""
                   }
                   onAddNew={() => setQuickCustomerOpen(true)}
                   addNewLabel="+ Tambah Customer Baru"
@@ -995,168 +1419,13 @@ function CreateInvoiceForm({
                     if (match) setSelectedCustomerId(String(match.id));
                     else setSelectedCustomerId("");
                   }}
-                  options={Array.from(new Set([customCustomerName, "Pelanggan Langsung (Walk-in)", ...(data.customers ?? []).map((c: Row) => c.nama)])).filter(Boolean)}
-                  placeholder="Pelanggan Langsung (Walk-in) / Cari customer..."
+                  options={Array.from(new Set([customCustomerName, ...(data.customers ?? []).map((c: Row) => c.nama)])).filter(Boolean)}
+                  placeholder="Cari & pilih customer..."
                 />
               </FormField>
-            </View>
-          ) : sourceType === "quotation" ? (
-            <FormField label="Pilih Penawaran Terkait" required>
-              <SearchableSelect
-                value={
-                  activeQuotation
-                    ? `${activeQuotation.nomor} - ${activeQuotation.customer || "-"} - ${activeQuotation.lead || "-"}`
-                    : ""
-                }
-                onChange={(val) => {
-                  const selNo = val.split(" - ")[0]?.trim() || val;
-                  const match = (data.quotations ?? []).find((q: Row) => q.nomor === selNo);
-                  if (match) handleSelectQuotation(match);
-                }}
-                options={(data.quotations ?? []).map(
-                  (q: Row) => `${q.nomor} - ${q.customer || "-"} - ${q.lead || "-"}`,
-                )}
-                placeholder="Cari & pilih penawaran..."
-              />
-              {activeQuotation ? (
-                <View className="flex-row flex-wrap items-center gap-2 mt-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onPress={() => {
-                      downloadQuotationPdf({
-                        quotationId: activeQuotation.id,
-                        customer: activeQuotation.customer,
-                        lead: activeQuotation.lead,
-                        nomor: activeQuotation.nomor,
-                        signer: activeQuotation.pemilik,
-                      });
-                      toast("File PDF penawaran sedang diunduh");
-                    }}
-                    className="h-8 px-2.5 flex-row items-center gap-1.5"
-                  >
-                    <FileDown size={13} color={colors.text} />
-                    <Text className="text-xs">Download PDF Penawaran</Text>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onPress={() => {
-                      downloadQuotationTemplate({
-                        quotationId: activeQuotation.id,
-                        customer: activeQuotation.customer,
-                        lead: activeQuotation.lead,
-                        nomor: activeQuotation.nomor,
-                        signer: activeQuotation.pemilik,
-                      });
-                      toast("File Excel penawaran (.xlsx) sedang diunduh");
-                    }}
-                    className="h-8 px-2.5 flex-row items-center gap-1.5"
-                  >
-                    <FileDown size={13} color={colors.text} />
-                    <Text className="text-xs">Download Excel Penawaran (.xlsx)</Text>
-                  </Button>
-                </View>
-              ) : null}
-            </FormField>
-          ) : sourceType === "po" ? (
-            <FormField label="Pilih PO Client (Sales Order) Terkait" required>
-              <SearchableSelect
-                value={
-                  activePo
-                    ? `${activePo.nomorSo || activePo.nomor || activePo.number} - ${activePo.customer || "-"}`
-                    : ""
-                }
-                onChange={(val) => {
-                  const selNo = val.split(" - ")[0]?.trim() || val;
-                  const match = (data["po-client"] ?? []).find(
-                    (p: Row) => (p.nomorSo || p.nomor || p.number) === selNo,
-                  );
-                  if (match) {
-                    setSelectedPoId(String(match.id));
-                    if (match.customer && match.customer !== "-") {
-                      setCustomCustomerName(match.customer);
-                    }
-                    if (match.customerId) setSelectedCustomerId(String(match.customerId));
-                    if (match.customer && match.customer !== "-") {
-                      const cMatch = (data.customers ?? []).find(
-                        (c: Row) =>
-                          c.nama?.toLowerCase() === String(match.customer).toLowerCase() ||
-                          c.name?.toLowerCase() === String(match.customer).toLowerCase(),
-                      );
-                      if (cMatch) setSelectedCustomerId(String(cMatch.id));
-                    }
-                    if (Array.isArray(match.items) && match.items.length > 0) {
-                      setItems(match.items);
-                    } else if (match.quotationId) {
-                      setSelectedQuotationId(String(match.quotationId));
-                      const linkedQ = (data.quotations ?? []).find(
-                        (q: Row) => String(q.id) === String(match.quotationId),
-                      );
-                      if (linkedQ && Array.isArray(linkedQ.items) && linkedQ.items.length > 0) {
-                        setItems(linkedQ.items);
-                      }
-                    } else if (match.nilai) {
-                      setCustomDpp(formatThousands(match.nilai));
-                    }
-                    if (match.tipePpn || match.ppnMode) {
-                      setPpnMode(getInitialPpnMode(match));
-                    }
-                    if (match.discount || match.disc) {
-                      setCustomDiscount(formatThousands(match.discount || match.disc));
-                    }
-                  }
-                }}
-                options={(data["po-client"] ?? []).map(
-                  (p: Row) => `${p.nomorSo || p.nomor || p.number} - ${p.customer || "-"}`,
-                )}
-                placeholder="Cari & pilih PO client..."
-              />
-            </FormField>
-          ) : sourceType === "lead" ? (
-            <FormField label="Pilih Lead / Prospek Terkait" required>
-              <SearchableSelect
-                value={
-                  activeLead
-                    ? `${activeLead.nama} - ${activeLead.perusahaan || activeLead.customer || "-"}`
-                    : ""
-                }
-                onChange={(val) => {
-                  const selName = val.split(" - ")[0]?.trim() || val;
-                  const match = (data.leads ?? []).find(
-                    (l: Row) => l.nama === selName || `${l.nama} - ${l.perusahaan || l.customer || "-"}` === val,
-                  );
-                  if (match) handleSelectLead(match);
-                }}
-                options={(data.leads ?? []).map(
-                  (l: Row) => `${l.nama} - ${l.perusahaan || l.customer || "-"}`,
-                )}
-                placeholder="Cari & pilih lead / prospek..."
-              />
-            </FormField>
-          ) : null}
-
-          {sourceType !== "direct_purchase" && sourceType !== "direct_sale" ? (
-            <FormField label="Customer" required>
-              <SearchableSelect
-                value={
-                  customCustomerName ||
-                  (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama || ""
-                }
-                onAddNew={() => setQuickCustomerOpen(true)}
-                addNewLabel="+ Tambah Customer Baru"
-                onChange={(val) => {
-                  setCustomCustomerName(val);
-                  const match = (data.customers ?? []).find((c: Row) => c.nama === val);
-                  if (match) setSelectedCustomerId(String(match.id));
-                  else setSelectedCustomerId("");
-                }}
-                options={Array.from(new Set([customCustomerName, ...(data.customers ?? []).map((c: Row) => c.nama)])).filter(Boolean)}
-                placeholder="Cari & pilih customer..."
-              />
-            </FormField>
-          ) : null}
-        </View>
+            ) : null}
+          </View>
+        )}
 
         {/* Mode: Lanjutkan Termin / DP Sebelumnya info banner */}
         {mode === "lanjut" ? (
@@ -1300,7 +1569,7 @@ function CreateInvoiceForm({
             </View>
           </View>
 
-          {items.length === 0 ? (
+          {mode === "baru" && items.length === 0 ? (
             <FormField label="Nilai Kesepakatan / DPP Total (Rp)" required>
               <Input
                 value={customDpp}
@@ -1311,8 +1580,50 @@ function CreateInvoiceForm({
             </FormField>
           ) : null}
 
-          {/* List Barang / Items Table */}
-          <View className="gap-2 p-3 rounded-xl border border-border bg-card">
+          {/* List Barang / Items Section */}
+          {mode === "lanjut" ? (
+            <View className="p-4 rounded-xl border border-primary/20 bg-primary/5 gap-2.5">
+              <View className="flex-row items-center gap-2">
+                <Package size={16} color={colors.primary} />
+                <Text className="text-xs font-bold text-primary">
+                  Barang & Unit SN Tidak Perlu Dipilih Ulang
+                </Text>
+              </View>
+              <Text className="text-xs text-muted-foreground leading-relaxed">
+                Seluruh barang dan unit Serial Number (SN) fisik telah tercatat & di-reserve pada invoice pertama ({selectedParentInvoice?.nomor || "DP / Termin 1"}). Invoice lanjutan ({continuationType === "pelunasan" ? "Pelunasan" : `Termin ${terminNumber}`}) ini hanya menagih sisa pembayaran tanpa mengambil unit SN baru dari gudang.
+              </Text>
+              {activeQuotation?.items && activeQuotation.items.length > 0 ? (
+                <View className="mt-1 pt-2 border-t border-primary/10 flex-row items-center justify-between">
+                  <Text className="text-[11px] text-muted-foreground">
+                    Total barang dalam kontrak awal: {activeQuotation.items.length} item ({activeQuotation.items.reduce((acc: number, it: any) => acc + (Number(it.qty) || 1), 0)} unit)
+                  </Text>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2"
+                    onPress={() => setShowAllItems(!showAllItems)}
+                  >
+                    <Text className="text-[11px] text-primary font-medium">
+                      {showAllItems ? "Sembunyikan Rincian" : "Lihat Rincian Kontrak"}
+                    </Text>
+                  </Button>
+                </View>
+              ) : null}
+              {showAllItems && activeQuotation?.items ? (
+                <View className="gap-1 mt-1 bg-background/80 p-2 rounded-lg border border-border/50">
+                  {activeQuotation.items.map((it: any, i: number) => (
+                    <View key={i} className="flex-row justify-between py-1 border-b border-border/30">
+                      <Text className="text-[11px] text-foreground font-medium flex-1 mr-2">{it.item}</Text>
+                      <Text className="text-[11px] text-muted-foreground">
+                        {it.qty} {it.satuan || it.unit || "unit"} x {rupiah(it.harga || it.price || 0)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <View className="gap-2 p-3 rounded-xl border border-border bg-card">
             <View className="flex-row justify-between items-center flex-wrap gap-2">
               <View>
                 <Text className="text-xs font-bold text-foreground">
@@ -1475,57 +1786,69 @@ function CreateInvoiceForm({
               </Text>
             )}
           </View>
+        )}
 
           {/* Diskon Pemotongan (Persen & Nominal) */}
-          <View className="p-3 rounded-xl bg-card border border-border gap-2">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-xs font-semibold text-foreground">Diskon Pemotongan</Text>
-              {effectiveDiscount > 0 ? (
+          {mode === "lanjut" ? (
+            effectiveDiscount > 0 ? (
+              <View className="p-3 rounded-xl bg-card border border-border flex-row items-center justify-between">
+                <Text className="text-xs font-semibold text-foreground">Diskon Kontrak Awal</Text>
                 <Text className="text-xs font-semibold text-danger">
                   - {rupiah(effectiveDiscount)} {discPercent ? `(${discPercent}%)` : ""}
                 </Text>
-              ) : null}
-            </View>
-            <View className="flex-row items-center gap-2">
-              <View className="w-28 sm:w-36">
-                <FormField label="Diskon (%)">
-                  <Input
-                    value={discPercent}
-                    onChangeText={(p) => {
-                      const clean = p.replace(/[^0-9.]/g, "");
-                      setDiscPercent(clean);
-                      const pct = Number(clean) || 0;
-                      if (grossDealDpp > 0) {
-                        const calculated = Math.round(grossDealDpp * (pct / 100));
-                        setCustomDiscount(calculated > 0 ? formatThousands(calculated) : "");
-                      }
-                    }}
-                    keyboardType="numeric"
-                    placeholder="0%"
-                  />
-                </FormField>
               </View>
-              <View className="flex-1">
-                <FormField label="Diskon Nominal (Rp)">
-                  <Input
-                    value={customDiscount}
-                    onChangeText={(v) => {
-                      setCustomDiscount(formatThousands(v));
-                      const nom = Number(String(v).replace(/\D/g, "")) || 0;
-                      if (grossDealDpp > 0 && nom > 0) {
-                        const pct = Math.round((nom / grossDealDpp) * 100 * 10) / 10;
-                        setDiscPercent(String(pct));
-                      } else {
-                        setDiscPercent("");
-                      }
-                    }}
-                    keyboardType="numeric"
-                    placeholder="0 (Contoh: 100.000)"
-                  />
-                </FormField>
+            ) : null
+          ) : (
+            <View className="p-3 rounded-xl bg-card border border-border gap-2">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs font-semibold text-foreground">Diskon Pemotongan</Text>
+                {effectiveDiscount > 0 ? (
+                  <Text className="text-xs font-semibold text-danger">
+                    - {rupiah(effectiveDiscount)} {discPercent ? `(${discPercent}%)` : ""}
+                  </Text>
+                ) : null}
+              </View>
+              <View className="flex-row items-center gap-2">
+                <View className="w-28 sm:w-36">
+                  <FormField label="Diskon (%)">
+                    <Input
+                      value={discPercent}
+                      onChangeText={(p) => {
+                        const clean = p.replace(/[^0-9.]/g, "");
+                        setDiscPercent(clean);
+                        const pct = Number(clean) || 0;
+                        if (grossDealDpp > 0) {
+                          const calculated = Math.round(grossDealDpp * (pct / 100));
+                          setCustomDiscount(calculated > 0 ? formatThousands(calculated) : "");
+                        }
+                      }}
+                      keyboardType="numeric"
+                      placeholder="0%"
+                    />
+                  </FormField>
+                </View>
+                <View className="flex-1">
+                  <FormField label="Diskon Nominal (Rp)">
+                    <Input
+                      value={customDiscount}
+                      onChangeText={(v) => {
+                        setCustomDiscount(formatThousands(v));
+                        const nom = Number(String(v).replace(/\D/g, "")) || 0;
+                        if (grossDealDpp > 0 && nom > 0) {
+                          const pct = Math.round((nom / grossDealDpp) * 100 * 10) / 10;
+                          setDiscPercent(String(pct));
+                        } else {
+                          setDiscPercent("");
+                        }
+                      }}
+                      keyboardType="numeric"
+                      placeholder="0 (Contoh: 100.000)"
+                    />
+                  </FormField>
+                </View>
               </View>
             </View>
-          </View>
+          )}
 
           {/* Status Pembayaran */}
           <View className="p-3 rounded-xl bg-panel border border-border gap-2">

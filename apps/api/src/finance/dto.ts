@@ -1,6 +1,7 @@
 import { Transform, Type } from "class-transformer";
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -228,6 +229,12 @@ export class InvoiceOutDto {
 
   @IsOptional() @IsNumber()
   dpAmount?: number;
+
+  @IsOptional() @IsBoolean()
+  isContinuation?: boolean;
+
+  @IsOptional() @IsInt()
+  parentInvoiceId?: number;
 }
 
 export class InvoiceInDto {
