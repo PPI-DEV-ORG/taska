@@ -607,9 +607,10 @@ export function adaptRow(module: string, raw: any): Row {
         "";
       const totNum = n(raw.total);
       const paidNum = n(raw.paidAmount);
-      const isDp = raw.type === "DP" || toLabel("invoiceType", raw.type) === "DP";
-      const isPaid = raw.status === "PAID" || toLabel("invoices", raw.status) === "Lunas" || (totNum > 0 && paidNum >= totNum);
-      const isPartial = !isPaid && ((paidNum > 0 && paidNum < totNum) || (isDp && paidNum > 0));
+      const isDp = raw.type === "DP" || toLabel("invoiceType", raw.type) === "DP" || String(raw.number || "").includes("/DP/");
+      const isSelfPaid = raw.status === "PAID" || toLabel("invoices", raw.status) === "Lunas" || (totNum > 0 && paidNum >= totNum);
+      const isPartial = isDp ? (paidNum > 0 || isSelfPaid) : (!isSelfPaid && paidNum > 0);
+      const isPaid = isDp ? false : isSelfPaid;
 
       let displayStatus = toLabel("invoices", raw.status);
       if (raw.status !== "BATAL" && displayStatus !== "Dibatalkan") {
@@ -962,6 +963,13 @@ export function adaptRow(module: string, raw: any): Row {
           else if (!matchNama && !matchJabatan) catatanSerahTerima = raw.reportText;
         }
       }
+      const soIdMatch = String(loc?.reason || raw.reportText || "").match(/\[so:(\d+)\]/i);
+      const soNumMatch =
+        String(loc?.reason || raw.reportText || "").match(/\[soNum:([^\]]+)\]/i) ||
+        String(loc?.reason || raw.reportText || "").match(/\b(SO\/\d{4}\/\d{2}\/\d+)\b/i);
+      const resolvedSoId = raw.clientPoId ? String(raw.clientPoId) : (raw.soId ? String(raw.soId) : (soIdMatch ? soIdMatch[1] : undefined));
+      const resolvedSoNum = raw.soNumber || (soNumMatch ? soNumMatch[1] : undefined);
+
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -973,6 +981,9 @@ export function adaptRow(module: string, raw: any): Row {
         alasan: loc?.reason ?? "-",
         project: nameOf(loc?.project) ?? "-",
         projectId: idOf(loc?.project),
+        soId: resolvedSoId,
+        clientPoId: resolvedSoId,
+        soNumber: resolvedSoNum,
         pembuat: nameOf(raw.creator) ?? "",
         barang: (raw.items ?? []).map((i: any) => `${nameOf(i.product)} x ${n(i.qty)}`).join(", ") || (raw.withGoods ? (raw.reportText || "Membawa barang") : "-"),
         status: toLabel("delivery-notes", raw.status),
@@ -1308,7 +1319,7 @@ export function adaptRow(module: string, raw: any): Row {
         tipeSN: isJasa ? "Jasa (Non-Stok)" : raw.hasSerial ? "Barang Ber-SN" : "Barang Non-SN",
         berSN: isJasa ? false : !!raw.hasSerial,
         garansi: raw.warrantyMonths != null ? `${raw.warrantyMonths} bln` : "-",
-        min: n(raw.minStock), hargaBeli: n(raw.purchasePrice),
+        min: n(raw.minStock), minStock: n(raw.minStock), hargaBeli: n(raw.purchasePrice),
         kategori: nameOf(raw.category) ?? "",
         categoryId: idOf(raw.category),
         status: toLabel("users", raw.status),
@@ -2469,6 +2480,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.merk !== undefined) out.brand = patch.merk;
   if (patch.berSN !== undefined) out.hasSerial = !!patch.berSN;
   if (patch.min !== undefined) out.minStock = num(patch.min);
+  if (patch.minStock !== undefined) out.minStock = num(patch.minStock);
   if (patch.hargaBeli !== undefined) out.purchasePrice = num(patch.hargaBeli);
   if (patch.garansi !== undefined) out.warrantyMonths = parseInt(String(patch.garansi), 10) || undefined;
   if (patch.payment !== undefined) out.paymentTerms = patch.payment;
@@ -2767,6 +2779,19 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
       else if (patch.tagInput !== undefined) out.tags = parseTagInput(patch.tagInput);
     }
     if (module === "products") {
+      if (patch.hargaBeli !== undefined) out.purchasePrice = num(patch.hargaBeli);
+      delete out.hargaBeli;
+      delete out.nama;
+      delete out.kategori;
+      delete out.merk;
+      delete out.satuan;
+      delete out.berSN;
+      delete out.min;
+      delete out.deskripsi;
+      delete out.keterangan;
+      delete out.tipeSN;
+      delete out.jenisItem;
+      delete out.garansi;
       if (patch.kategori !== undefined) out.categoryId = findId(db?.productCategories, patch.kategori);
       if (patch.jenisItem !== undefined || patch.type !== undefined) {
         const isJasa = String(patch.type || patch.jenisItem || "").toUpperCase().includes("JASA");

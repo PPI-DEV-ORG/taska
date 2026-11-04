@@ -50,7 +50,10 @@ export class MovementsService {
   async summary(q: SummaryQuery) {
     const balances = await this.prisma.main.stockBalance.findMany({
       where: q.warehouseId ? { warehouseId: q.warehouseId } : {},
-      include: { product: { select: { name: true, sku: true, unit: true, minStock: true, hasSerial: true } } },
+      include: {
+        warehouse: { select: { id: true, name: true } },
+        product: { select: { name: true, sku: true, unit: true, minStock: true, hasSerial: true } },
+      },
       orderBy: { id: "asc" },
     });
     const moves = await this.prisma.main.stockMovement.groupBy({
@@ -93,6 +96,7 @@ export class MovementsService {
       return {
         productId: b.productId,
         warehouseId: b.warehouseId,
+        warehouseName: (b as any).warehouse?.name ?? `Gudang #${b.warehouseId}`,
         sku: b.product.sku,
         name: b.product.name,
         unit: b.product.unit,

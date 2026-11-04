@@ -672,9 +672,13 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   );
   const linkedDeliveryNotes = (data["delivery-notes"] ?? []).filter(
     (dn: Row) =>
-      linkedProjects.some((p: Row) => String(dn.projectId) === String(p.id) || dn.project === p.nama) ||
+      (dn.soId && String(dn.soId) === String(row.id)) ||
+      (dn.clientPoId && String(dn.clientPoId) === String(row.id)) ||
+      (row.id && String(dn.alasan || "").includes(`[so:${row.id}]`)) ||
       (row.nomor && String(dn.alasan || "").toLowerCase().includes(String(row.nomor).toLowerCase())) ||
       (row.nomorSo && row.nomorSo !== "-" && String(dn.alasan || "").toLowerCase().includes(String(row.nomorSo).toLowerCase())) ||
+      (dn.soNumber && ((row.nomorSo && dn.soNumber === row.nomorSo) || (row.nomor && dn.soNumber === row.nomor))) ||
+      linkedProjects.some((p: Row) => String(dn.projectId) === String(p.id) || dn.project === p.nama) ||
       (row.customer && row.customer !== "-" && String(dn.tujuan || "").toLowerCase().includes(String(row.customer).toLowerCase())),
   );
 

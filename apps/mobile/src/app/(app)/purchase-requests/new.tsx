@@ -80,6 +80,7 @@ interface CustomItemRow {
   qty: string;
   hargaBeli: string;
   berSN?: boolean;
+  isProjectConsumable?: boolean;
 }
 
 export default function NewPurchaseRequestScreen() {
@@ -136,6 +137,12 @@ export default function NewPurchaseRequestScreen() {
   const [newCustomPrice, setNewCustomPrice] = React.useState("");
   const [newCustomBerSN, setNewCustomBerSN] = React.useState(false);
 
+  // Step 2: Option C - Project consumables (Non-Master, Pakai Habis seperti Paku, Selotip, dll)
+  const [consumableName, setConsumableName] = React.useState("");
+  const [consumableUnit, setConsumableUnit] = React.useState("pcs");
+  const [consumableQty, setConsumableQty] = React.useState("1");
+  const [consumablePrice, setConsumablePrice] = React.useState("");
+
   const [tujuan, setTujuan] = React.useState("");
 
   const categoryOptions = React.useMemo(() => {
@@ -190,10 +197,11 @@ export default function NewPurchaseRequestScreen() {
     const unitPrice = Math.max(0, Number(ci.hargaBeli) || 0);
     return {
       isCustom: true,
+      isProjectConsumable: !!ci.isProjectConsumable,
       customId: ci.id,
       productId: undefined as number | undefined,
       nama: ci.nama,
-      merk: "Non-Master / Ritel",
+      merk: ci.isProjectConsumable ? "Khusus Project (Pakai Habis — Non-Master)" : "Non-Master / Ritel",
       satuan: ci.satuan || "unit",
       berSN: !!ci.berSN,
       availSns: [] as string[],
@@ -246,6 +254,30 @@ export default function NewPurchaseRequestScreen() {
     setNewCustomBerSN(false);
   }
 
+  function handleAddConsumableItem() {
+    const trimmed = consumableName.trim();
+    if (!trimmed) {
+      toast("Masukkan nama material pakai habis terlebih dahulu", "danger");
+      return;
+    }
+    setCustomItems((prev) => [
+      ...prev,
+      {
+        id: `CONS-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        nama: trimmed,
+        satuan: consumableUnit.trim() || "pcs",
+        qty: consumableQty.replace(/\D/g, "") || "1",
+        hargaBeli: consumablePrice.replace(/\D/g, "") || "0",
+        berSN: false,
+        isProjectConsumable: true,
+      },
+    ]);
+    setConsumableName("");
+    setConsumableUnit("pcs");
+    setConsumableQty("1");
+    setConsumablePrice("");
+  }
+
   async function submit() {
     if (selectedItems.length === 0) {
       toast("Pilih atau tambahkan minimal satu barang terlebih dahulu", "danger");
@@ -254,9 +286,12 @@ export default function NewPurchaseRequestScreen() {
     setBusy(true);
     try {
       const fileId = (await fileHandle.current?.flush()) ?? undefined;
-      const itemsPayload = selectedItems.map((it) => ({
+      const allConsumables = selectedItems.length > 0 && selectedItems.every((it: any) => it.isProjectConsumable);
+      const itemsPayload = selectedItems.map((it: any) => ({
         productId: it.productId,
-        customName: it.isCustom ? it.nama : undefined,
+        customName: it.isCustom
+          ? (it.isProjectConsumable ? `[PAKAI_HABIS] ${it.nama}` : it.nama)
+          : undefined,
         customUnit: it.isCustom ? it.satuan : undefined,
         hasSerial: it.berSN,
         qty: it.qty,
@@ -265,25 +300,34 @@ export default function NewPurchaseRequestScreen() {
       }));
       const itemDesc = selectedItems
         .map(
-          (it) =>
+          (it: any) =>
             `${it.nama} x ${it.qty}${it.satuan ? ` ${it.satuan}` : ""}${
               it.chosenSns.length > 0 ? ` (SN: ${it.chosenSns.join(", ")})` : ""
-            }`,
+            }${it.isProjectConsumable ? " [Pakai Habis]" : ""}`,
         )
         .join(", ");
 
       const matchedSupplier = suppliers.find((s) => s.nama === supplierName);
+      const matchedProj = projects.find((p) => p.nama === projectId || String(p.id) === String(projectId));
+
+      const tags: string[] = [];
+      if (allConsumables) tags.push("[ALL_CONSUMABLES]");
+      if (costType === "Lainnya" || costType === "Internal") {
+        if (otherDesc) tags.push(otherDesc);
+      }
+      const otherNotePayload = tags.length > 0 ? tags.join(" ") : undefined;
 
       await addRow("purchase-requests", {
         pemohon: user?.name || "Karyawan",
-        project: costType === "Project" ? projectId : "-",
+        project: costType === "Project" ? (matchedProj?.nama || projectId) : "-",
+        projectId: costType === "Project" && matchedProj ? Number(matchedProj.id) : undefined,
         costType: COST_TYPE_MAP[costType] || costType.toUpperCase(),
         procurementSource,
         paymentMethod,
         dueDate: paymentMethod === "UTANG" ? (dueDate || undefined) : undefined,
         supplier: supplierName || undefined,
         supplierId: matchedSupplier?.id ? String(matchedSupplier.id) : undefined,
-        otherNote: costType === "Lainnya" || costType === "Internal" ? otherDesc : undefined,
+        otherNote: otherNotePayload,
         purpose: tujuan || activeMode.label,
         item: itemDesc,
         items: itemsPayload,
@@ -584,6 +628,68 @@ export default function NewPurchaseRequestScreen() {
               </View>
             )}
 
+            {/* Bagian C: Barang Khusus Project (Tanpa Masuk Master — Pakai Habis seperti Paku, Selotip, dll) */}
+            {costType === "Project" && (
+              <View className="bg-amber-500/10 border-amber-500/30 rounded-xl border p-3.5 gap-3">
+                <View>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                      C. Barang Khusus Project (Tanpa Masuk Master — Pakai Habis)
+                    </Text>
+                    <View className="bg-amber-500/20 px-2 py-0.5 rounded">
+                      <Text className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                        Masuk Barang Tambahan Project
+                      </Text>
+                    </View>
+                  </View>
+                  <Text className="text-xs text-muted-foreground mt-0.5">
+                    Gunakan opsi ini untuk barang yang tidak dimasukkan ke master stok gudang, contoh paku, selotip, klem, dll yang dipakai untuk project ini saja. Alur tetap sama, setelah Finance menyetujui & upload bukti bayar, proses pengadaan selesai dan otomatis masuk ke daftar Barang Tambahan Project (Di Luar BOQ Awal).
+                  </Text>
+                </View>
+
+                <View className="flex-row flex-wrap gap-2 items-end">
+                  <View className="flex-1 min-w-[180px] gap-1">
+                    <Text className="text-xs text-muted-foreground">Nama Material Pakai Habis</Text>
+                    <Input
+                      value={consumableName}
+                      onChangeText={setConsumableName}
+                      placeholder="Contoh: Paku Beton 5cm, Selotip Hitam, Klem Pipa"
+                    />
+                  </View>
+                  <View className="w-20 gap-1">
+                    <Text className="text-xs text-muted-foreground">Qty</Text>
+                    <Input
+                      value={consumableQty}
+                      onChangeText={(v) => setConsumableQty(v.replace(/\D/g, ""))}
+                      keyboardType="numeric"
+                      placeholder="1"
+                    />
+                  </View>
+                  <View className="w-24 gap-1">
+                    <Text className="text-xs text-muted-foreground">Satuan</Text>
+                    <Input
+                      value={consumableUnit}
+                      onChangeText={setConsumableUnit}
+                      placeholder="pcs / roll / pak"
+                    />
+                  </View>
+                  <View className="w-36 gap-1">
+                    <Text className="text-xs text-muted-foreground">Harga Satuan (Rp)</Text>
+                    <Input
+                      value={formatThousands(consumablePrice)}
+                      onChangeText={(v) => setConsumablePrice(v.replace(/\D/g, ""))}
+                      keyboardType="numeric"
+                      placeholder="Contoh: 15.000"
+                    />
+                  </View>
+                  <Button size="sm" onPress={handleAddConsumableItem} className="h-10 px-3 bg-amber-600 hover:bg-amber-700">
+                    <Plus size={15} color="#fff" />
+                    <Text className="text-xs font-semibold text-white">Tambah Material</Text>
+                  </Button>
+                </View>
+              </View>
+            )}
+
             {selectedItems.length > 0 ? (
               <View className="gap-3 pt-1">
                 <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -604,7 +710,9 @@ export default function NewPurchaseRequestScreen() {
                           </Text>
                           <View
                             className={`rounded px-1.5 py-0.5 border ${
-                              item.isCustom
+                              (item as any).isProjectConsumable
+                                ? "bg-amber-500/20 border-amber-500/50"
+                                : item.isCustom
                                 ? "bg-amber-500/15 border-amber-500/40"
                                 : item.berSN
                                 ? "bg-primary/15 border-primary/40"
@@ -613,7 +721,9 @@ export default function NewPurchaseRequestScreen() {
                           >
                             <Text className="text-[10px] font-medium text-foreground">
                               {item.isCustom
-                                ? `Non-Master · ${item.berSN ? "Ber-SN" : "Non-SN"}`
+                                ? (item as any).isProjectConsumable
+                                  ? "Khusus Project · Pakai Habis"
+                                  : `Non-Master · ${item.berSN ? "Ber-SN" : "Non-SN"}`
                                 : item.berSN
                                 ? "Master · Ber-SN"
                                 : `Master · Non-SN`}

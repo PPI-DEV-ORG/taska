@@ -58,7 +58,11 @@ type Props = {
   onAddItems: (items: QuotationItem[]) => void;
   currentInvoiceId?: string | number | null;
   currentQuotationId?: string | number | null;
+  currentProjectId?: string | number | null;
+  allowedInvoiceIds?: (string | number)[] | Set<string>;
+  initialProductId?: string | number | null;
   existingItems?: any[];
+  mode?: "qty" | "serial";
 };
 
 export function SerialItemPickerModal({
@@ -67,12 +71,23 @@ export function SerialItemPickerModal({
   onAddItems,
   currentInvoiceId,
   currentQuotationId,
+  currentProjectId,
+  allowedInvoiceIds,
+  initialProductId,
   existingItems,
+  mode = "qty",
 }: Props) {
   const { data, reload, toast, refreshModule } = useApp();
 
   const [tab, setTab] = React.useState<"GOODS" | "SERVICE">("GOODS");
-  const [selectedProductId, setSelectedProductId] = React.useState<string>("");
+  const [selectedProductId, setSelectedProductId] = React.useState<string>(() => (initialProductId ? String(initialProductId) : ""));
+  const [prevInitialProductId, setPrevInitialProductId] = React.useState(initialProductId);
+  if (initialProductId !== prevInitialProductId) {
+    setPrevInitialProductId(initialProductId);
+    if (initialProductId) {
+      setSelectedProductId(String(initialProductId));
+    }
+  }
   const [snSearch, setSnSearch] = React.useState("");
   const [selectedSerialIds, setSelectedSerialIds] = React.useState<number[]>([]);
   const [splitMode, setSplitMode] = React.useState<"PER_SN" | "COMBINED">("PER_SN");
@@ -82,6 +97,21 @@ export function SerialItemPickerModal({
   const [goodsPrice, setGoodsPrice] = React.useState("");
   const [customItemLabel, setCustomItemLabel] = React.useState("");
   const [goodsPphMode, setGoodsPphMode] = React.useState<PphMode>("none");
+
+  const allowedInvSet = React.useMemo(() => {
+    const set = new Set<string>();
+    if (currentInvoiceId != null && String(currentInvoiceId).trim()) {
+      set.add(String(currentInvoiceId).toLowerCase());
+    }
+    if (allowedInvoiceIds) {
+      if (allowedInvoiceIds instanceof Set) {
+        allowedInvoiceIds.forEach((id) => set.add(String(id).toLowerCase()));
+      } else if (Array.isArray(allowedInvoiceIds)) {
+        allowedInvoiceIds.forEach((id) => set.add(String(id).toLowerCase()));
+      }
+    }
+    return set;
+  }, [currentInvoiceId, allowedInvoiceIds]);
 
   // Service tab states
   const [serviceName, setServiceName] = React.useState("");
@@ -159,6 +189,16 @@ export function SerialItemPickerModal({
 
     const list = serials
       .filter((s: any) => {
+        const rawSt = String(s.rawStatus || s.status || "").toUpperCase();
+        // Sembunyikan SN yang sudah dikirim atau terpasang
+        if (
+          rawSt === "DIKIRIM" ||
+          rawSt === "TERPASANG" ||
+          s.status === "Dikirim" ||
+          s.status === "Terpasang"
+        ) {
+          return false;
+        }
         const pIdMatch = s.productId != null && String(s.productId) === selId;
         const skuMatch = selSku && s.sku && String(s.sku).trim().toLowerCase() === selSku;
         const nameMatch = selName && s.produk && String(s.produk).trim().toLowerCase() === selName;
@@ -208,8 +248,43 @@ export function SerialItemPickerModal({
       const rawSt = String(snRow.rawStatus || snRow.status || "").toUpperCase();
       const activeRes: any[] = Array.isArray(snRow.reservations) ? snRow.reservations : [];
 
+      // Cek apakah direserve untuk dokumen ini (Project / SO / Invoice ini)
+      const isReservedForThisDoc = (() => {
+        if (currentProjectId != null) {
+          if (snRow.projectId != null && String(snRow.projectId) === String(currentProjectId)) return true;
+          if (activeRes.some((rv) => String(rv.projectId) === String(currentProjectId))) return true;
+          if (activeRes.some((rv) => rv.invoice?.projectId != null && String(rv.invoice.projectId) === String(currentProjectId))) return true;
+        }
+        if (currentQuotationId != null) {
+          if (activeRes.some((rv) => String(rv.quotationId) === String(currentQuotationId))) return true;
+          if (activeRes.some((rv) => rv.invoice?.quotationId != null && String(rv.invoice.quotationId) === String(currentQuotationId))) return true;
+        }
+        if (allowedInvSet.size > 0) {
+          for (const rv of activeRes) {
+            if (rv.invoiceId != null && allowedInvSet.has(String(rv.invoiceId))) return true;
+            const invNum = rv.invoice?.number ? String(rv.invoice.number).toLowerCase() : "";
+            if (invNum && allowedInvSet.has(invNum)) return true;
+          }
+          if (snRow.reservedFor && typeof snRow.reservedFor === "string") {
+            const lower = snRow.reservedFor.toLowerCase();
+            for (const invKey of Array.from(allowedInvSet)) {
+              if (lower.includes(invKey)) return true;
+            }
+          }
+        }
+        return false;
+      })();
+
+      if (isReservedForThisDoc) {
+        return {
+          selectable: true,
+          badge: "Direserve untuk Dokumen Ini",
+          tone: "Berjalan",
+        };
+      }
+
       const reservedByOtherInvoice = activeRes.find(
-        (rv) => rv.invoiceId != null && String(rv.invoiceId) !== String(currentInvoiceId ?? ""),
+        (rv) => rv.invoiceId != null,
       );
       if (reservedByOtherInvoice) {
         const invNo = reservedByOtherInvoice.invoice?.number || `#${reservedByOtherInvoice.invoiceId}`;
@@ -225,17 +300,6 @@ export function SerialItemPickerModal({
           selectable: false,
           badge: snRow.status || rawSt,
           tone: snRow.status || "Nonaktif",
-        };
-      }
-
-      const reservedByThisInvoice = activeRes.find(
-        (rv) => currentInvoiceId != null && String(rv.invoiceId) === String(currentInvoiceId),
-      );
-      if (reservedByThisInvoice) {
-        return {
-          selectable: true,
-          badge: "Direserve Invoice Ini",
-          tone: "Berjalan",
         };
       }
 
@@ -265,14 +329,17 @@ export function SerialItemPickerModal({
         tone: "Tersedia",
       };
     },
-    [currentInvoiceId, currentQuotationId, existingSns],
+    [currentProjectId, currentQuotationId, allowedInvSet, existingSns],
   );
 
   const availableFifoSerials = React.useMemo(() => {
     return productSerials.filter((s) => {
       const av = getSerialAvailability(s);
       const rawSt = String(s.rawStatus || "").toUpperCase();
-      return av.selectable && (rawSt === "DI_GUDANG" || s.status === "Di gudang");
+      return (
+        av.selectable &&
+        (rawSt === "DI_GUDANG" || s.status === "Di gudang" || av.badge?.includes("Direserve"))
+      );
     });
   }, [productSerials, getSerialAvailability]);
 
@@ -532,8 +599,9 @@ export function SerialItemPickerModal({
     const satuan = goodsUnit.trim() || selectedProduct.satuan || "Unit";
     const baseName = customItemLabel.trim() || selectedProduct.nama;
     const isSerialProduct = !!selectedProduct.berSN;
+    const isSerialSelectionActive = mode === "serial" && isSerialProduct;
 
-    if (isSerialProduct) {
+    if (isSerialSelectionActive) {
       if (selectedSerialIds.length === 0) {
         toast("Pilih minimal 1 Serial Number (SN) untuk barang ber-SN ini.", "danger");
         return;
@@ -600,7 +668,7 @@ export function SerialItemPickerModal({
           kind: "GOODS",
           productId: Number(selectedProduct.id),
           sku: selectedProduct.sku || undefined,
-          hasSerial: false,
+          hasSerial: isSerialProduct,
           pphMode: goodsPphMode,
           tipePph: pphModeToTipe(goodsPphMode),
         },
@@ -615,7 +683,11 @@ export function SerialItemPickerModal({
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="sm:max-w-2xl md:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Tambah Item (Stok Per-SN / Jasa Non-Barang)</DialogTitle>
+            <DialogTitle>
+              {mode === "serial"
+                ? "Pilih Unit SN Fisik (Surat Jalan)"
+                : "Tambah Item (Produk Master / Jasa)"}
+            </DialogTitle>
           </DialogHeader>
 
           <View className="gap-4 py-1">
@@ -633,7 +705,7 @@ export function SerialItemPickerModal({
                     tab === "GOODS" ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
-                  Ambil dari Data Stok & SN
+                  {mode === "serial" ? "Ambil dari Data Stok & SN" : "Ambil dari Master Data Stok"}
                 </Text>
               </Pressable>
               <Pressable
@@ -750,90 +822,92 @@ export function SerialItemPickerModal({
               </View>
             ) : (
               <View className="gap-3.5">
-                {/* Scanner Barcode Langsung (Tanpa perlu pilih produk dahulu) */}
-                <View className="p-3 rounded-xl border border-primary/40 bg-primary/5 gap-2.5">
-                  <View className="flex-row items-center justify-between flex-wrap gap-2">
-                    <View className="flex-row items-center gap-1.5">
-                      <ScanLine size={16} color={colors.primary} />
-                      <Text className="text-xs font-bold text-primary">
-                        Scan Barcode / SN Langsung (Auto-Pilih Produk)
-                      </Text>
+                {/* Scanner Barcode Langsung (Hanya saat Surat Jalan / Mode Serial) */}
+                {mode === "serial" ? (
+                  <View className="p-3 rounded-xl border border-primary/40 bg-primary/5 gap-2.5">
+                    <View className="flex-row items-center justify-between flex-wrap gap-2">
+                      <View className="flex-row items-center gap-1.5">
+                        <ScanLine size={16} color={colors.primary} />
+                        <Text className="text-xs font-bold text-primary">
+                          Scan Barcode / SN Langsung (Auto-Pilih Produk)
+                        </Text>
+                      </View>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5 flex-row items-center gap-1 bg-background"
+                        onPress={() => setMultiScanModalOpen(true)}
+                      >
+                        <ClipboardList size={12} color={colors.text} />
+                        <Text className="text-[11px] font-medium">📋 Paste / Multi-Scan Banyak SN</Text>
+                      </Button>
                     </View>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2.5 flex-row items-center gap-1 bg-background"
-                      onPress={() => setMultiScanModalOpen(true)}
-                    >
-                      <ClipboardList size={12} color={colors.text} />
-                      <Text className="text-[11px] font-medium">📋 Paste / Multi-Scan Banyak SN</Text>
-                    </Button>
-                  </View>
 
-                  <View className="flex-row items-center gap-2">
-                    <View className="flex-1 bg-background border border-border focus:border-primary rounded-lg flex-row items-center px-2.5 h-10">
-                      <ScanLine size={15} color={colors.muted} style={{ marginRight: 6 }} />
-                      <TextInput
-                        ref={scanInputRef}
-                        value={scanInput}
-                        onChangeText={setScanInput}
-                        onSubmitEditing={() => processScannedText(scanInput)}
-                        placeholder="Scan barcode SN / ketik SN langsung lalu Enter..."
-                        placeholderTextColor={colors.muted}
-                        autoCapitalize="characters"
-                        autoCorrect={false}
-                        returnKeyType="done"
-                        blurOnSubmit={false}
-                        style={{ flex: 1, color: colors.text, fontSize: 13, outlineStyle: "none" } as any}
-                      />
-                      {scanInput.trim().length > 0 && (
-                        <Pressable onPress={() => setScanInput("")} hitSlop={8} className="p-1">
-                          <Text className="text-xs text-muted-foreground font-bold">✕</Text>
-                        </Pressable>
-                      )}
+                    <View className="flex-row items-center gap-2">
+                      <View className="flex-1 bg-background border border-border focus:border-primary rounded-lg flex-row items-center px-2.5 h-10">
+                        <ScanLine size={15} color={colors.muted} style={{ marginRight: 6 }} />
+                        <TextInput
+                          ref={scanInputRef}
+                          value={scanInput}
+                          onChangeText={setScanInput}
+                          onSubmitEditing={() => processScannedText(scanInput)}
+                          placeholder="Scan barcode SN / ketik SN langsung lalu Enter..."
+                          placeholderTextColor={colors.muted}
+                          autoCapitalize="characters"
+                          autoCorrect={false}
+                          returnKeyType="done"
+                          blurOnSubmit={false}
+                          style={{ flex: 1, color: colors.text, fontSize: 13, outlineStyle: "none" } as any}
+                        />
+                        {scanInput.trim().length > 0 && (
+                          <Pressable onPress={() => setScanInput("")} hitSlop={8} className="p-1">
+                            <Text className="text-xs text-muted-foreground font-bold">✕</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                      <Button
+                        size="sm"
+                        className="h-10 px-3.5 bg-primary"
+                        disabled={!scanInput.trim()}
+                        onPress={() => processScannedText(scanInput)}
+                      >
+                        <Text className="text-xs text-white font-semibold">Scan / Select</Text>
+                      </Button>
                     </View>
-                    <Button
-                      size="sm"
-                      className="h-10 px-3.5 bg-primary"
-                      disabled={!scanInput.trim()}
-                      onPress={() => processScannedText(scanInput)}
-                    >
-                      <Text className="text-xs text-white font-semibold">Scan / Select</Text>
-                    </Button>
-                  </View>
 
-                  {scanFeedback && (
-                    <View
-                      className={`flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${
-                        scanFeedback.type === "success"
-                          ? "bg-emerald-500/10 border-emerald-500/30"
-                          : scanFeedback.type === "warning"
-                          ? "bg-amber-500/10 border-amber-500/30"
-                          : "bg-danger/10 border-danger/30"
-                      }`}
-                    >
-                      {scanFeedback.type === "success" ? (
-                        <CheckCircle2 size={13} color={colors.success} />
-                      ) : (
-                        <AlertCircle size={13} color={scanFeedback.type === "warning" ? colors.warning : colors.danger} />
-                      )}
-                      <Text
-                        className={`text-xs flex-1 ${
+                    {scanFeedback && (
+                      <View
+                        className={`flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${
                           scanFeedback.type === "success"
-                            ? "text-emerald-700 dark:text-emerald-300 font-medium"
+                            ? "bg-emerald-500/10 border-emerald-500/30"
                             : scanFeedback.type === "warning"
-                            ? "text-amber-700 dark:text-amber-300 font-medium"
-                            : "text-danger font-medium"
+                            ? "bg-amber-500/10 border-amber-500/30"
+                            : "bg-danger/10 border-danger/30"
                         }`}
                       >
-                        {scanFeedback.message}
-                      </Text>
-                      <Pressable onPress={() => setScanFeedback(null)} hitSlop={6}>
-                        <Text className="text-[11px] text-muted-foreground font-bold">✕</Text>
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
+                        {scanFeedback.type === "success" ? (
+                          <CheckCircle2 size={13} color={colors.success} />
+                        ) : (
+                          <AlertCircle size={13} color={scanFeedback.type === "warning" ? colors.warning : colors.danger} />
+                        )}
+                        <Text
+                          className={`text-xs flex-1 ${
+                            scanFeedback.type === "success"
+                              ? "text-emerald-700 dark:text-emerald-300 font-medium"
+                              : scanFeedback.type === "warning"
+                              ? "text-amber-700 dark:text-amber-300 font-medium"
+                              : "text-danger font-medium"
+                          }`}
+                        >
+                          {scanFeedback.message}
+                        </Text>
+                        <Pressable onPress={() => setScanFeedback(null)} hitSlop={6}>
+                          <Text className="text-[11px] text-muted-foreground font-bold">✕</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                ) : null}
 
                 <FormField label="Pilih Produk dari Master Stok" required>
                   <SearchableSelect
@@ -857,7 +931,7 @@ export function SerialItemPickerModal({
                           }
                         />
                       </View>
-                      {selectedProduct.berSN && (
+                      {mode === "serial" && selectedProduct.berSN && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -923,15 +997,24 @@ export function SerialItemPickerModal({
                       </View>
                     </View>
 
-                    {!selectedProduct.berSN ? (
-                      <View className="w-32">
-                        <FormField label="Jumlah (Qty)">
-                          <Input
-                            value={goodsQty}
-                            onChangeText={setGoodsQty}
-                            keyboardType="numeric"
-                          />
-                        </FormField>
+                    {mode !== "serial" || !selectedProduct.berSN ? (
+                      <View className="flex-row items-center gap-3 pt-1">
+                        <View className="w-32">
+                          <FormField label="Jumlah (Qty)" required>
+                            <Input
+                              value={goodsQty}
+                              onChangeText={setGoodsQty}
+                              keyboardType="numeric"
+                            />
+                          </FormField>
+                        </View>
+                        {selectedProduct.berSN ? (
+                          <View className="flex-1 p-2.5 rounded-lg bg-muted/40 border border-border">
+                            <Text className="text-xs text-muted-foreground">
+                              ℹ️ Barang Ber-SN. Unit SN fisik gudang dialokasikan saat penerbitan Surat Jalan.
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
                     ) : (
                       <View className="gap-3 pt-2 border-t border-border">
@@ -1093,7 +1176,7 @@ export function SerialItemPickerModal({
               <Text>
                 {tab === "SERVICE"
                   ? "Tambah Jasa / Non-Barang"
-                  : selectedProduct?.berSN
+                  : mode === "serial" && selectedProduct?.berSN
                   ? splitMode === "PER_SN"
                     ? `Tambah ${selectedSerialIds.length} Item per-SN`
                     : `Tambah 1 Baris (${selectedSerialIds.length} SN)`

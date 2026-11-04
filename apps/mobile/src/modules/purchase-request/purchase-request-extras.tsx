@@ -335,8 +335,11 @@ export function PurchaseRequestExtras({
     }
     setLoading(true);
     try {
-      const nextStatus = isDebt ? "Lunas" : "Dibayar";
-      setLocalStatus(isDebt ? "LUNAS" : "DIBAYAR");
+      const isProjectConsumableRequest =
+        isProject &&
+        (items.some((it: any) => it.customName) || String(row.otherNote || "").includes("[ALL_CONSUMABLES]"));
+      const nextStatus = isProjectConsumableRequest ? "Diterima" : (isDebt ? "Lunas" : "Dibayar");
+      setLocalStatus(isProjectConsumableRequest ? "DITERIMA" : (isDebt ? "LUNAS" : "DIBAYAR"));
       await setStatus("purchase-requests", row.id, nextStatus, undefined, {
         paymentProofFileId,
         fundingSource: selectedFundingSource,
@@ -349,9 +352,11 @@ export function PurchaseRequestExtras({
       }
       setPayModalOpen(false);
       toast(
-        isDebt
-          ? "Request & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!"
-          : "Pembayaran kas berhasil dicatat. Status request menjadi Dibayar. Procurement dapat menandai barang dikirim."
+        isProjectConsumableRequest
+          ? "Pembayaran dikonfirmasi! Material khusus project otomatis ditambahkan ke Barang Tambahan Project dan pengadaan selesai."
+          : (isDebt
+              ? "Request & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!"
+              : "Pembayaran kas berhasil dicatat. Status request menjadi Dibayar. Procurement dapat menandai barang dikirim.")
       );
       if (onRefresh) await onRefresh();
       await reload();
@@ -596,13 +601,21 @@ export function PurchaseRequestExtras({
             <CheckCircle2 size={22} color="#10b981" />
             <View className="flex-1">
               <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">
-                {isStockTake ? "Barang Selesai Diterima di Proyek" : isDebt ? "Pengadaan Selesai & Lunas" : "Barang Selesai Diterima di Gudang"}
+                {isStockTake
+                  ? "Barang Selesai Diterima di Proyek"
+                  : isDebt
+                  ? "Pengadaan Selesai & Lunas"
+                  : isProject && items.some((it: any) => it.customName)
+                  ? "Pengadaan Material Khusus Project Selesai"
+                  : "Barang Selesai Diterima di Gudang"}
               </Text>
               <Text className="text-muted-foreground text-xs mt-0.5">
                 {isStockTake
                   ? `Barang dari gudang telah diterima oleh tim proyek (${row.pemohon || "User"}). Seluruh unit serial terpasang di proyek.`
                   : isDebt
                   ? "Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance (Saldo Hutang Usaha 210102 Rp 0)."
+                  : isProject && items.some((it: any) => it.customName)
+                  ? `Material khusus project telah dibayar dan langsung dimasukkan ke BOQ Barang Tambahan Project ${row.project || ""}.`
                   : "Barang telah diterima di gudang, stok tercatat bertambah, dan proses pengadaan telah tuntas."}
               </Text>
             </View>

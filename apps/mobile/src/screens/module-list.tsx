@@ -209,6 +209,17 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       const pMap = new Map(pList.map((p) => [String(p.id), p]));
       const pNameMap = new Map(pList.map((p) => [String(p.nama).toLowerCase(), p]));
 
+      // Hitung total terbayar per rantai (quotation / project)
+      const chainPaidMap = new Map<string, number>();
+      for (const inv of (data.invoices ?? [])) {
+        if (inv.status === "BATAL" || inv.status === "Batal" || inv.status === "Dibatalkan") continue;
+        const qKey = inv.quotationId ? `q-${inv.quotationId}` : (inv.quotation && inv.quotation !== "-") ? `qn-${String(inv.quotation).toLowerCase()}` : null;
+        const pKey = inv.projectId ? `p-${inv.projectId}` : (inv.project && inv.project !== "-") ? `pn-${String(inv.project).toLowerCase()}` : null;
+        const paidVal = Number(inv.terbayar) || (inv.status === "PAID" || inv.status === "Lunas" ? Number(inv.total) : 0);
+        if (qKey) chainPaidMap.set(qKey, (chainPaidMap.get(qKey) ?? 0) + paidVal);
+        if (pKey) chainPaidMap.set(pKey, (chainPaidMap.get(pKey) ?? 0) + paidVal);
+      }
+
       const enrich = (r: Row) => {
         const matchedQ = qMap.get(String(r.quotationId)) || qNumMap.get(String(r.quotation || "").toLowerCase());
         const matchedP = pMap.get(String(r.projectId)) || pNameMap.get(String(r.project || "").toLowerCase());
@@ -217,12 +228,52 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         const proj = r.project || matchedP?.nama || "";
         const tot = Number(r.total) || 0;
         const paid = Number(r.terbayar) || 0;
-        const isDp = r.jenis === "DP" || String(r.type).toUpperCase() === "DP";
-        const isPaid = r.status === "Lunas" || r.status === "PAID" || (tot > 0 && paid >= tot);
-        const isPartial = !isPaid && ((paid > 0 && paid < tot) || (isDp && paid > 0));
-        const paymentNote = isPartial ? "dp setengah bayar setengah sebagian dp termin" : "";
-        const currentStatus = isPaid ? "Lunas" : isPartial ? "Dibayar sebagian" : r.status;
-        return { ...r, lead, quotation: quote, project: proj, paymentNote, status: currentStatus };
+        const isDpOrTermin =
+          r.jenis === "DP" ||
+          r.jenis === "Termin" ||
+          String(r.type).toUpperCase() === "DP" ||
+          String(r.type).toUpperCase() === "TERMIN" ||
+          String(r.nomor || "").includes("/DP/") ||
+          String(r.nomor || "").includes("/TRM/");
+
+        const qKey = r.quotationId ? `q-${r.quotationId}` : (quote && quote !== "-") ? `qn-${String(quote).toLowerCase()}` : null;
+        const pKey = r.projectId ? `p-${r.projectId}` : (proj && proj !== "-") ? `pn-${String(proj).toLowerCase()}` : null;
+        const chainPaid = Number((qKey ? chainPaidMap.get(qKey) : undefined) ?? (pKey ? chainPaidMap.get(pKey) : undefined) ?? paid) || 0;
+        const contractTotal = Number(matchedQ?.totalAfterDisc || matchedQ?.nilai || matchedP?.nilaiKontrak || tot);
+
+        let currentStatus = r.status;
+        let isPartial = false;
+        let isPaid = false;
+
+        if (r.status === "BATAL" || r.status === "Batal" || r.status === "Dibatalkan") {
+          currentStatus = "Dibatalkan";
+        } else if (isDpOrTermin) {
+          if (paid > 0 || r.status === "PAID" || r.status === "Lunas") {
+            if (contractTotal > 0 && chainPaid < contractTotal) {
+              isPartial = true;
+              currentStatus = "Dibayar sebagian";
+            } else {
+              isPaid = true;
+              currentStatus = "Lunas";
+            }
+          } else {
+            currentStatus = r.status === "DRAFT" ? "Belum dikirim" : "Belum lunas";
+          }
+        } else {
+          if (tot > 0 && paid >= tot) {
+            isPaid = true;
+            currentStatus = "Lunas";
+          } else if (paid > 0 && paid < tot) {
+            isPartial = true;
+            currentStatus = "Dibayar sebagian";
+          } else if (r.status === "PAID" || r.status === "Lunas") {
+            isPaid = true;
+            currentStatus = "Lunas";
+          }
+        }
+
+        const paymentNote = isPartial ? "dp setengah bayar sebagian termin" : "";
+        return { ...r, lead, quotation: quote, project: proj, paymentNote, status: currentStatus, isPartial, isPaid };
       };
 
       const invOut = (data.invoices ?? []).map((r) =>
@@ -284,19 +335,16 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       .filter((r) => {
         if (!status) return true;
         if (def.key === "invoices") {
-          const tot = Number(r.total) || 0;
-          const paid = Number(r.terbayar) || 0;
-          const isDp = r.jenis === "DP" || String(r.type).toUpperCase() === "DP";
-          const isPaid = r[def.statusKey] === "Lunas" || r[def.statusKey] === "PAID" || (tot > 0 && paid >= tot);
-          const isPartial = !isPaid && ((paid > 0 && paid < tot) || (isDp && paid > 0));
+          const isPartial = r.status === "Dibayar sebagian" || r.isPartial === true || r[def.statusKey] === "PARTIAL";
+          const isPaid = r.status === "Lunas" || r.isPaid === true || r[def.statusKey] === "PAID";
           if (status === "Dibayar sebagian") {
-            return isPartial || (!isPaid && (r[def.statusKey] === "Dibayar sebagian" || r[def.statusKey] === "PARTIAL"));
+            return isPartial;
           }
           if (status === "Lunas") {
             return isPaid;
           }
           if (status === "Belum lunas") {
-            return !isPaid && r[def.statusKey] !== "BATAL" && r[def.statusKey] !== "Dibatalkan" && r[def.statusKey] !== "Batal";
+            return !isPaid && !isPartial && r[def.statusKey] !== "BATAL" && r[def.statusKey] !== "Dibatalkan" && r[def.statusKey] !== "Batal";
           }
         }
         return r[def.statusKey] === status;

@@ -50,20 +50,43 @@ export function MasterBarangView({
   const [barangSN, setBarangSN] = React.useState("Ya (Serial Number)");
   const [batchSnOpen, setBatchSnOpen] = React.useState(false);
 
-  // Edit Harga Dialog State
+  // Edit Harga & Min Stok Dialog State
   const [editPriceOpen, setEditPriceOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<any>(null);
   const [editHargaVal, setEditHargaVal] = React.useState("");
+  const [editMinStokVal, setEditMinStokVal] = React.useState("");
   const [isSavingPrice, setIsSavingPrice] = React.useState(false);
 
   const isSuper = user?.role === "super_admin";
   const canAddBarang = isSuper || user?.role === "gudang" || user?.role === "bos" || user?.role === "admin" || user?.role === "procurement";
   const canEditPrice = isSuper || user?.role === "procurement" || user?.role === "finance" || user?.role === "pm" || user?.role === "bos" || user?.role === "admin" || user?.role === "gudang";
 
+  const stockSummary: any[] = React.useMemo(() => data.stockSummary ?? [], [data.stockSummary]);
+  const serials: any[] = React.useMemo(() => data.serials ?? [], [data.serials]);
+
+  const getProductStock = React.useCallback(
+    (product: any): number => {
+      if (product.type === "JASA") return 0;
+      if (product.berSN) {
+        return serials.filter(
+          (s: any) =>
+            (String(s.productId) === String(product.id) || s.produk === product.nama) &&
+            (s.rawStatus === "DI_GUDANG" || s.rawStatus === "RESERVED" || s.status === "Di gudang" || s.status === "Reserved"),
+        ).length;
+      }
+      return stockSummary
+        .filter((s: any) => String(s.productId) === String(product.id))
+        .reduce((acc: number, cur: any) => acc + Number(cur.saldo ?? cur.qty ?? 0), 0);
+    },
+    [serials, stockSummary],
+  );
+
   function handleOpenEditPrice(product: any) {
     setEditingProduct(product);
     const currPrice = product.hargaBeli ?? product.purchasePrice ?? 0;
+    const currMin = product.minStock ?? product.min ?? 0;
     setEditHargaVal(currPrice > 0 ? String(currPrice) : "");
+    setEditMinStokVal(String(currMin));
     setEditPriceOpen(true);
   }
 
@@ -72,15 +95,18 @@ export function MasterBarangView({
     setIsSavingPrice(true);
     try {
       const cleanPrice = Number(editHargaVal.replace(/\D/g, "")) || 0;
+      const cleanMin = Number(editMinStokVal.replace(/\D/g, "")) || 0;
       await patchRow("products", editingProduct.id, {
         hargaBeli: cleanPrice,
         purchasePrice: cleanPrice,
+        min: cleanMin,
+        minStock: cleanMin,
       });
-      toast(`Harga untuk "${editingProduct.nama || editingProduct.sku}" berhasil diperbarui`);
+      toast(`Harga & Stok Minimum untuk "${editingProduct.nama || editingProduct.sku}" berhasil diperbarui`);
       setEditPriceOpen(false);
       setEditingProduct(null);
     } catch (err: any) {
-      toast(err?.message || "Gagal mengubah harga", "danger");
+      toast(err?.message || "Gagal mengubah data barang", "danger");
     } finally {
       setIsSavingPrice(false);
     }
@@ -128,12 +154,21 @@ export function MasterBarangView({
     toast("Master barang berhasil ditambahkan");
   }
 
+  const masterProducts = React.useMemo(() => {
+    return (data.products || []).filter(
+      (p: any) =>
+        p.type !== "NON_MASTER" &&
+        !String(p.sku ?? "").startsWith("SKU-PR-") &&
+        !String(p.deskripsi ?? p.description ?? "").includes("Non-Master")
+    );
+  }, [data.products]);
+
   return (
     <View className="gap-5">
       <PageHeader
         back
         title="Master Barang & Jasa (SN / Non-SN)"
-        subtitle={`${data.products?.length || 0} barang & jasa terdaftar (Dikelola Gudang)`}
+        subtitle={`${masterProducts.length} barang & jasa terdaftar (Dikelola Gudang)`}
         action={
           <View className="flex-row gap-2">
             <Button variant="outline" size="sm" onPress={onBack}>
@@ -168,18 +203,25 @@ export function MasterBarangView({
           { key: "merk", label: "Merk / Brand", flex: 1 },
           { key: "sku", label: "SKU / Kode", flex: 1 },
           { key: "kategori", label: "Kategori", flex: 1 },
-          { key: "satuan", label: "Satuan", flex: 0.8 },
-          { key: "hargaDisplay", label: "Harga Beli", flex: 1.2 },
-          { key: "garansi", label: "Garansi", flex: 1 },
-          { key: "tipeSN", label: "Tipe Item", flex: 1.1 },
+          { key: "satuan", label: "Satuan", flex: 0.7 },
+          { key: "hargaDisplay", label: "Harga Beli", flex: 1.1 },
+          { key: "stokDisplay", label: "Stok Fisik", flex: 0.9 },
+          { key: "minDisplay", label: "Min Stok", flex: 0.8 },
+          { key: "tipeSN", label: "Tipe Item", flex: 1 },
         ]}
-        rows={(data.products || []).map((p: any) => {
+        rows={masterProducts.map((p: any) => {
           const rawPrice = Number(p.hargaBeli ?? p.purchasePrice ?? 0);
+          const minVal = Number(p.minStock ?? p.min ?? 0);
+          const currStock = getProductStock(p);
+          const isJasa = p.type === "JASA";
           return {
             ...p,
             merk: p.merk || p.brand || "-",
             hargaDisplay: rawPrice > 0 ? rupiah(rawPrice) : "-",
-            tipeSN: p.type === "JASA" ? "Jasa (Non-Stok)" : p.berSN ? "Barang Ber-SN" : "Barang Non-SN",
+            stokNum: currStock,
+            stokDisplay: isJasa ? "-" : `${currStock} ${p.satuan || "unit"}`,
+            minDisplay: isJasa ? "-" : `${minVal} ${p.satuan || "unit"}`,
+            tipeSN: isJasa ? "Jasa (Non-Stok)" : p.berSN ? "Barang Ber-SN" : "Barang Non-SN",
           };
         })}
         pageSize={8}
@@ -305,11 +347,11 @@ export function MasterBarangView({
         </DialogContent>
       </Dialog>
 
-      {/* Modal Edit Harga Barang / Jasa */}
+      {/* Modal Edit Harga & Minimal Stok Barang / Jasa */}
       <Dialog open={editPriceOpen} onOpenChange={setEditPriceOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit Harga Barang / Jasa</DialogTitle>
+            <DialogTitle>Edit Harga & Minimal Stok</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
             <View className="bg-muted/40 p-3 rounded-lg border border-border/60 gap-1">
@@ -322,7 +364,7 @@ export function MasterBarangView({
               </Text>
             </View>
 
-            <FormField label="Harga Beli / Standar (Rp)" required>
+            <FormField label="Harga Beli / Acuan (Rp)" required>
               <Input
                 value={editHargaVal ? formatThousands(editHargaVal) : ""}
                 onChangeText={(v) => setEditHargaVal(v.replace(/\D/g, ""))}
@@ -331,13 +373,27 @@ export function MasterBarangView({
                 autoFocus
               />
             </FormField>
+
+            {editingProduct?.type !== "JASA" && (
+              <FormField
+                label="Stok Minimum Peringatan (Unit)"
+                hint="Bila saldo stok di gudang berada di bawah angka ini, sistem menandai peringatan stok rendah"
+              >
+                <Input
+                  value={editMinStokVal}
+                  onChangeText={(v) => setEditMinStokVal(v.replace(/\D/g, ""))}
+                  keyboardType="numeric"
+                  placeholder="Contoh: 5"
+                />
+              </FormField>
+            )}
           </View>
           <DialogFooter>
             <Button variant="outline" onPress={() => setEditPriceOpen(false)} disabled={isSavingPrice}>
               <Text>Batal</Text>
             </Button>
             <Button onPress={handleSavePrice} disabled={isSavingPrice}>
-              <Text>{isSavingPrice ? "Menyimpan..." : "Simpan Harga"}</Text>
+              <Text>{isSavingPrice ? "Menyimpan..." : "Simpan Perubahan"}</Text>
             </Button>
           </DialogFooter>
         </DialogContent>

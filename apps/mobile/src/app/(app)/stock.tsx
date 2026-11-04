@@ -99,14 +99,21 @@ export default function StockScreen() {
   }
 
   const filteredProducts = React.useMemo(() => {
-    let list = !searchQuery.trim()
-      ? products
-      : products.filter(
-          (p) =>
-            String(p.nama ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-            String(p.sku ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-            String(p.kategori ?? "").toLowerCase().includes(searchQuery.toLowerCase())
-        );
+    let list = products.filter(
+      (p) =>
+        p.type !== "NON_MASTER" &&
+        !String(p.sku ?? "").startsWith("SKU-PR-") &&
+        !String(p.deskripsi ?? p.description ?? "").includes("Non-Master")
+    );
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (p) =>
+          String(p.nama ?? "").toLowerCase().includes(q) ||
+          String(p.sku ?? "").toLowerCase().includes(q) ||
+          String(p.kategori ?? "").toLowerCase().includes(q)
+      );
+    }
     if (itemFilter === "sn") {
       list = list.filter((p) => p.type !== "JASA" && !!p.berSN);
     } else if (itemFilter === "non-sn") {

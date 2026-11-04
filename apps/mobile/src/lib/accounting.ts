@@ -466,41 +466,81 @@ export function computeFinancialStatements(
     const isLunas = normStr(inv.status).toLowerCase() === "lunas";
     const terbayar = isLunas ? Math.max(toNum(inv.terbayar), total) : Math.min(total, toNum(inv.terbayar));
 
+    const isDp = inv.jenis === "DP" || String(inv.type).toUpperCase() === "DP" || String(nomor).includes("/DP/");
+
     if (total > 0 || pph > 0) {
-      pushJournalPair(tanggal, nomor, "Invoice Client", project, [
-        {
-          kodeAkun: "110302",
-          keterangan: `Tagihan Piutang Invoice ${nomor} — ${customer}`,
-          debit: total,
-          kredit: 0,
-        },
-        ...(pph > 0
-          ? [
-              {
-                kodeAkun: "1105",
-                keterangan: `Uang Muka PPh (${tipePph || "Dipotong Pelanggan"}) atas ${nomor}`,
-                debit: pph,
-                kredit: 0,
-              },
-            ]
-          : []),
-        {
-          kodeAkun: "4000.01",
-          keterangan: `Pendapatan Penjualan Proyek (${customer}) — ${nomor}`,
-          debit: 0,
-          kredit: dpp,
-        },
-        ...(ppn > 0
-          ? [
-              {
-                kodeAkun: "2100",
-                keterangan: `PPN Keluaran atas ${nomor}`,
-                debit: 0,
-                kredit: ppn,
-              },
-            ]
-          : []),
-      ]);
+      if (isDp) {
+        // Tagihan Uang Muka (DP) Penjualan: Piutang (Debit 110302) vs Uang Muka Penjualan (Kredit 210202)
+        pushJournalPair(tanggal, nomor, "Invoice Client", project, [
+          {
+            kodeAkun: "110302",
+            keterangan: `Tagihan Uang Muka (DP) Invoice ${nomor} — ${customer}`,
+            debit: total,
+            kredit: 0,
+          },
+          ...(pph > 0
+            ? [
+                {
+                  kodeAkun: "1105",
+                  keterangan: `Uang Muka PPh (${tipePph || "Dipotong Pelanggan"}) atas ${nomor}`,
+                  debit: pph,
+                  kredit: 0,
+                },
+              ]
+            : []),
+          {
+            kodeAkun: "210202",
+            keterangan: `Uang Muka Penjualan (Advance Sales) — ${nomor}`,
+            debit: 0,
+            kredit: dpp,
+          },
+          ...(ppn > 0
+            ? [
+                {
+                  kodeAkun: "2100",
+                  keterangan: `PPN Keluaran atas Uang Muka ${nomor}`,
+                  debit: 0,
+                  kredit: ppn,
+                },
+              ]
+            : []),
+        ]);
+      } else {
+        pushJournalPair(tanggal, nomor, "Invoice Client", project, [
+          {
+            kodeAkun: "110302",
+            keterangan: `Tagihan Piutang Invoice ${nomor} — ${customer}`,
+            debit: total,
+            kredit: 0,
+          },
+          ...(pph > 0
+            ? [
+                {
+                  kodeAkun: "1105",
+                  keterangan: `Uang Muka PPh (${tipePph || "Dipotong Pelanggan"}) atas ${nomor}`,
+                  debit: pph,
+                  kredit: 0,
+                },
+              ]
+            : []),
+          {
+            kodeAkun: "4000.01",
+            keterangan: `Pendapatan Penjualan Proyek (${customer}) — ${nomor}`,
+            debit: 0,
+            kredit: dpp,
+          },
+          ...(ppn > 0
+            ? [
+                {
+                  kodeAkun: "2100",
+                  keterangan: `PPN Keluaran atas ${nomor}`,
+                  debit: 0,
+                  kredit: ppn,
+                },
+              ]
+            : []),
+        ]);
+      }
     }
 
     if (terbayar > 0) {

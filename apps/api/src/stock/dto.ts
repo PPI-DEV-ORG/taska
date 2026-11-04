@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Max,
   Min,
   MinLength,
   ValidateNested,
@@ -70,6 +71,9 @@ export class TransferDto {
 }
 
 export class SerialListQuery extends PageQuery {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(5000)
+  override limit = 1000;
+
   @IsOptional() @IsString()
   sn?: string;
 

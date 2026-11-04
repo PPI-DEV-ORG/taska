@@ -34,6 +34,7 @@ export class RequestsService {
         where: { id: entityId },
         data: { status: "DISETUJUI" },
       });
+      await this.syncConsumablesToProject(entityId);
     } else if (status === "DITOLAK") {
       await this.prisma.main.purchaseRequest.update({
         where: { id: entityId },
@@ -354,7 +355,47 @@ export class RequestsService {
         })
         .catch(() => {});
     }
+
+    if (
+      dto.status === "DISETUJUI" ||
+      dto.status === "DIBAYAR" ||
+      dto.status === "DITERIMA" ||
+      (dto as any).status === "Lunas" ||
+      dto.paymentProofFileId ||
+      dto.paymentStatus === "DIBAYAR"
+    ) {
+      await this.syncConsumablesToProject(id);
+    }
+
     return updated;
+  }
+
+  /** Sinkronisasi material non-master / pakai habis project (tidak disimpan ke master product) */
+  async syncConsumablesToProject(prId: number) {
+    try {
+      const nonMasterProds = await this.prisma.main.product.findMany({
+        where: {
+          OR: [
+            { sku: { startsWith: "SKU-PR-" } },
+            { description: { contains: "Non-Master" } },
+            { type: "NON_MASTER" },
+          ],
+        },
+        select: { id: true },
+      });
+      if (nonMasterProds.length > 0) {
+        const ids = nonMasterProds.map((p) => p.id);
+        await this.prisma.main.projectRequirement.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.stockReservation.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.purchaseRequestItem.updateMany({ where: { productId: { in: ids } }, data: { productId: null } }).catch(() => {});
+        await this.prisma.main.stockBalance.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.stockMovement.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.serialUnit.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.product.deleteMany({ where: { id: { in: ids } } }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn(`Gagal sinkron PR #${prId} consumables ke project:`, (e as Error).message);
+    }
   }
 
   /** Gudang & Procurement memproses request (cek stok, serahkan barang, konfirmasi terima, tolak). */
@@ -511,12 +552,28 @@ export class RequestsService {
       }
     }
 
-    const isMarkingPaid = dto.status === "DIBAYAR" || (dto as any).status === "Lunas" || !!dto.paymentProofFileId;
+    const isMarkingPaid =
+      dto.status === "DIBAYAR" ||
+      (dto as any).status === "Lunas" ||
+      dto.status === "DISETUJUI" ||
+      dto.status === "DITERIMA" ||
+      !!dto.paymentProofFileId ||
+      dto.paymentStatus === "DIBAYAR";
     const paidTag = dto.fundingSource
       ? `[DIBAYAR:${dto.fundingSource}]`
       : "[DIBAYAR]";
+
+    const allConsumables = row.items.length > 0 && row.items.every((it) => !!it.customName);
+
+    // Jika request barang project dibayar / disetujui / diterima, masukkan barang non-master/pakai habis ke Project Requirement (Barang Tambahan Project)
+    if (isMarkingPaid && row.projectId) {
+      await this.syncConsumablesToProject(id);
+    }
+
     const targetStatus =
-      row.status === "DITERIMA" && (dto.status === "DIBAYAR" || (dto as any).status === "Lunas")
+      (allConsumables || row.otherNote?.includes("[ALL_CONSUMABLES]")) && isMarkingPaid
+        ? "DITERIMA"
+        : row.status === "DITERIMA" && (dto.status === "DIBAYAR" || (dto as any).status === "Lunas")
         ? "DITERIMA"
         : (dto.status === "Lunas" ? "DIBAYAR" : dto.status);
 

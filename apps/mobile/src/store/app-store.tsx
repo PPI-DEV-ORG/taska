@@ -216,7 +216,8 @@ async function fetchList(module: string): Promise<Row[]> {
   const path = PATHS[module];
   if (!path) return [];
   try {
-    const res = await api<Page<any>>("GET", `${path}?limit=200`);
+    const limit = module === "serials" ? 1000 : 200;
+    const res = await api<Page<any>>("GET", `${path}?limit=${limit}`);
     const rows = adaptRows(module, res.items);
     if (rows.length > 0 || (module !== "users" && module !== "tasks")) return rows;
   } catch {}

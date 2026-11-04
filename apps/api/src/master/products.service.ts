@@ -5,7 +5,7 @@ import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { ProductDto } from "./dto.js";
 
-const PRICE_ROLES = new Set(["PROCUREMENT", "FINANCE", "PM", "BOS", "ADMIN", "SUPER_ADMIN"]);
+const PRICE_ROLES = new Set(["PROCUREMENT", "FINANCE", "PM", "BOS", "ADMIN", "SUPER_ADMIN", "GUDANG"]);
 const INCLUDE = { category: { select: { id: true, name: true } } } as const;
 
 type Row = Awaited<ReturnType<PrismaService["main"]["product"]["findFirst"]>> & {
@@ -31,14 +31,49 @@ export class ProductsService {
     return new Map<number, number>(balances.map((b) => [b.productId, b._sum?.qty ?? 0]));
   }
 
+  async cleanupNonMasterProducts() {
+    try {
+      const nonMasterProds = await this.prisma.main.product.findMany({
+        where: {
+          OR: [
+            { sku: { startsWith: "SKU-PR-" } },
+            { description: { contains: "Non-Master" } },
+            { type: "NON_MASTER" },
+          ],
+        },
+        select: { id: true },
+      });
+      if (nonMasterProds.length > 0) {
+        const ids = nonMasterProds.map((p) => p.id);
+        await this.prisma.main.projectRequirement.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.stockReservation.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.purchaseRequestItem.updateMany({ where: { productId: { in: ids } }, data: { productId: null } }).catch(() => {});
+        await this.prisma.main.stockBalance.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.stockMovement.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.serialUnit.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.product.deleteMany({ where: { id: { in: ids } } }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("cleanupNonMasterProducts error:", (e as Error).message);
+    }
+  }
+
   async list(q: PageQuery & { status?: string; categoryId?: number; brand?: string }, user: RequestUser) {
+    // Bersihkan item non-master dari tabel master product agar tidak pernah tersimpan di master inventory
+    await this.cleanupNonMasterProducts();
+
     const where = searchWhere(
       q,
       [["sku", "contains"], ["name", "contains"], ["type", "contains"], ["brand", "contains"]],
       {
-        ...(q.status ? { status: q.status as "AKTIF" | "NONAKTIF" } : {}),
+        ...(q.status && q.status !== "ALL"
+          ? { status: q.status as "AKTIF" | "NONAKTIF" }
+          : q.status === "ALL"
+          ? {}
+          : { status: "AKTIF" }),
         ...(q.categoryId ? { categoryId: q.categoryId } : {}),
         ...(q.brand ? { brand: { contains: q.brand } } : {}),
+        NOT: { sku: { startsWith: "SKU-PR-" } },
       },
     );
     const [rows, total] = await Promise.all([
@@ -61,8 +96,12 @@ export class ProductsService {
   }
 
   async options(user: RequestUser) {
+    await this.cleanupNonMasterProducts();
     const rows = await this.prisma.main.product.findMany({
-      where: { status: "AKTIF" },
+      where: {
+        status: "AKTIF",
+        NOT: { sku: { startsWith: "SKU-PR-" } },
+      },
       include: INCLUDE,
       orderBy: { name: "asc" },
     });
@@ -85,6 +124,10 @@ export class ProductsService {
   }
 
   async create(dto: ProductDto) {
+    if (dto.hargaBeli !== undefined && dto.purchasePrice === undefined) {
+      dto.purchasePrice = dto.hargaBeli;
+    }
+    delete (dto as any).hargaBeli;
     const sku = dto.sku || `SKU-${Date.now()}`;
     const exists = await this.prisma.main.product.findUnique({ where: { sku } });
     if (exists) throw new ConflictException(`SKU ${sku} sudah dipakai`);
@@ -102,8 +145,16 @@ export class ProductsService {
   async update(id: number, dto: ProductDto, user: RequestUser) {
     const row = await this.prisma.main.product.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Barang tidak ditemukan");
+    if (dto.hargaBeli !== undefined && dto.purchasePrice === undefined) {
+      dto.purchasePrice = dto.hargaBeli;
+    }
+    delete (dto as any).hargaBeli;
+    if (dto.min !== undefined && dto.minStock === undefined) {
+      dto.minStock = dto.min;
+    }
+    delete (dto as any).min;
     if (dto.purchasePrice !== undefined && !PRICE_ROLES.has(user.role)) {
-      throw new ConflictException("Harga beli hanya untuk Procurement, Finance, PM, dan Bos");
+      throw new ConflictException("Harga beli hanya untuk Procurement, Finance, PM, Bos, dan Gudang");
     }
     if (dto.sku && dto.sku !== row.sku) {
       const dup = await this.prisma.main.product.findUnique({ where: { sku: dto.sku } });
@@ -115,24 +166,43 @@ export class ProductsService {
   async remove(id: number) {
     const row = await this.prisma.main.product.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Barang tidak ditemukan");
-    const [balances, serials, requirements, movements] = await Promise.all([
-      this.prisma.main.stockBalance.count({ where: { productId: id, qty: { gt: 0 } } }),
-      this.prisma.main.serialUnit.count({ where: { productId: id } }),
-      this.prisma.main.projectRequirement.count({ where: { productId: id } }),
-      this.prisma.main.stockMovement.count({ where: { productId: id } }),
-    ]);
-    const used = [
-      { label: "saldo stok", count: balances },
-      { label: "unit serial", count: serials },
-      { label: "kebutuhan project", count: requirements },
-      { label: "riwayat mutasi stok", count: movements },
-    ].filter((b) => b.count > 0);
-    if (used.length) {
+
+    // Cek saldo fisik di gudang
+    const balanceSum = await this.prisma.main.stockBalance.aggregate({
+      where: { productId: id },
+      _sum: { qty: true },
+    });
+    const physicalBalance = balanceSum._sum.qty ?? 0;
+
+    // Cek unit serial yang berstatus aktif di gudang atau di-reserve
+    const activeSerials = await this.prisma.main.serialUnit.count({
+      where: {
+        productId: id,
+        status: { in: ["DI_GUDANG", "RESERVED"] },
+      },
+    });
+
+    const currentStock = physicalBalance + (row.hasSerial ? activeSerials : 0);
+    if (currentStock > 0) {
       throw new ConflictException(
-        `Barang masih dipakai oleh ${used.map((b) => `${b.count} ${b.label}`).join(", ")}`,
+        `Barang tidak dapat dihapus karena masih memiliki stok aktif di gudang (${currentStock} ${row.unit}). Kosongkan stok terlebih dahulu.`,
       );
     }
-    await this.prisma.main.product.delete({ where: { id } });
-    return { id, deleted: true };
+
+    // Jika stok sudah 0, bersihkan reservasi / saldo 0
+    await this.prisma.main.stockReservation.deleteMany({ where: { productId: id } }).catch(() => {});
+    await this.prisma.main.stockBalance.deleteMany({ where: { productId: id, qty: { lte: 0 } } }).catch(() => {});
+
+    try {
+      await this.prisma.main.product.delete({ where: { id } });
+      return { id, deleted: true };
+    } catch {
+      // Jika foreign key database memblokir hard delete karena riwayat transaksi, nonaktifkan barang
+      await this.prisma.main.product.update({
+        where: { id },
+        data: { status: "NONAKTIF" },
+      });
+      return { id, deleted: true, status: "NONAKTIF" };
+    }
   }
 }

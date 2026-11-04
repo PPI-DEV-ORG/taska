@@ -1,6 +1,7 @@
 import * as React from "react";
 import { View, Image, Pressable, Linking } from "react-native";
-import { CheckCircle2, Download, ExternalLink, Eye, FileText, Image as ImageIcon, Printer } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { CheckCircle2, Download, ExternalLink, Eye, FileText, Image as ImageIcon, Printer, ShoppingCart } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ import { Line } from "@/modules/shared/line";
 import { printOrderDocument } from "@/lib/order-print";
 
 export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promise<void> | void }) {
+  const router = useRouter();
   const { user, data, setStatus, patchRow, toast } = useApp();
   const [showAllItems, setShowAllItems] = React.useState(false);
   const [imgError, setImgError] = React.useState(false);
@@ -38,6 +40,17 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
   const [scannedSns, setScannedSns] = React.useState<string[]>(
     Array.isArray(row.snList) ? row.snList : [],
   );
+
+  const matchedSo = React.useMemo(() => {
+    return (data["po-client"] ?? []).find(
+      (so: Row) =>
+        (row.soId && String(so.id) === String(row.soId)) ||
+        (row.clientPoId && String(so.id) === String(row.clientPoId)) ||
+        (so.id && String(row.alasan || "").includes(`[so:${so.id}]`)) ||
+        (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
+        (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo))
+    );
+  }, [data["po-client"], row.soId, row.clientPoId, row.alasan]);
 
   if (
     previousRecipient.name !== row.penerimaNama ||
@@ -128,6 +141,32 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
 
   return (
     <>
+      {matchedSo ? (
+        <View className="p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between mb-4">
+          <View className="flex-row items-center gap-2.5 flex-1 pr-2">
+            <View className="size-8 rounded-lg bg-primary/10 items-center justify-center">
+              <ShoppingCart size={16} color={colors.primary} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-xs font-bold text-foreground">
+                Terkait Sales Order: {matchedSo.nomorSo || matchedSo.nomor || `SO #${matchedSo.id}`}
+              </Text>
+              <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                {matchedSo.customer || "Customer"} · Nilai: Rp{(Number(matchedSo.nilai || matchedSo.amount || 0)).toLocaleString("id-ID")}
+              </Text>
+            </View>
+          </View>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 px-3"
+            onPress={() => router.push(`/po-client/${matchedSo.id}` as any)}
+          >
+            <Text className="text-xs">Buka SO</Text>
+          </Button>
+        </View>
+      ) : null}
+
       <Panel
         title="Barang yang Dibawa & Dokumen Delivery Order (DO)"
         subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN (Stok otomatis berkurang saat status Dikirim)" : "Surat jalan penugasan tanpa barang"}

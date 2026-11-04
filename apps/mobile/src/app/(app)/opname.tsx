@@ -70,9 +70,9 @@ export default function StockOpnameScreen() {
     }
   }
 
-  const [selectedWarehouseId, setSelectedWarehouseId] = React.useState<string>(
-    warehouses[1]?.id ?? warehouses[0]?.id ?? ""
-  );
+  const [selectedWarehouseIdOverride, setSelectedWarehouseId] = React.useState<string | null>(null);
+  const selectedWarehouseId = selectedWarehouseIdOverride ?? String(warehouses[0]?.id ?? "");
+
   const [counts, setCounts] = React.useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = React.useState("");
   const [categoryFilter, setCategoryFilter] = React.useState("Semua");
@@ -80,7 +80,7 @@ export default function StockOpnameScreen() {
   const [reason, setReason] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
-  const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
+  const selectedWarehouse = warehouses.find((w) => String(w.id) === String(selectedWarehouseId));
 
   const availableCategories = React.useMemo(() => {
     return ["Semua", ...Array.from(new Set(products.map((p) => p.kategori).filter(Boolean)))];
@@ -198,7 +198,7 @@ export default function StockOpnameScreen() {
               <Chip
                 key={w.id}
                 label={String(w.nama)}
-                active={selectedWarehouseId === w.id}
+                active={String(selectedWarehouseId) === String(w.id)}
                 onPress={() => setSelectedWarehouseId(String(w.id))}
               />
             ))}
@@ -292,7 +292,7 @@ export default function StockOpnameScreen() {
 
           <Panel
             title={`Perhitungan Fisik: ${selectedWarehouse ? String(selectedWarehouse.nama) : "-"}`}
-            subtitle={`Menampilkan ${filteredProducts.length} dari ${products.length} barang di gudang`}
+            subtitle={`Menampilkan ${filteredProducts.length} barang. Stok sistem yang ditampilkan adalah saldo di ${selectedWarehouse ? String(selectedWarehouse.nama) : "gudang terpilih"}.`}
           >
             <View className="gap-2">
               {filteredProducts.map((p) => {

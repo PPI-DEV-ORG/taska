@@ -29,7 +29,7 @@ export class ProjectsService {
   private async access(project: Project, user: RequestUser, forWrite = false) {
     const allowed =
       MANAGER_ROLES.includes(user.role) ||
-      ["FINANCE", "SALES", "PROCUREMENT"].includes(user.role) ||
+      ["FINANCE", "SALES", "PROCUREMENT", "GUDANG", "TEKNISI", "SE"].includes(user.role) ||
       project.picId === user.id ||
       (await this.prisma.main.projectMember.findUnique({
         where: { projectId_userId: { projectId: project.id, userId: user.id } },
@@ -159,7 +159,7 @@ export class ProjectsService {
   }
 
   async list(q: ProjectListQuery, user: RequestUser) {
-    const scope = ["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "SALES", "PROCUREMENT"].includes(user.role)
+    const scope = ["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "SALES", "PROCUREMENT", "GUDANG", "TEKNISI", "SE", "PM"].includes(user.role)
       ? {}
       : { OR: [{ picId: user.id }, { members: { some: { userId: user.id } } }] };
     const where = {
@@ -667,6 +667,31 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user);
 
+    // 1. Bersihkan produk temporary / non-master dari database master agar tidak pernah masuk ke inventory
+    try {
+      const nonMasterProds = await this.prisma.main.product.findMany({
+        where: {
+          OR: [
+            { sku: { startsWith: "SKU-PR-" } },
+            { description: { contains: "Non-Master" } },
+            { type: "NON_MASTER" },
+          ],
+        },
+        select: { id: true },
+      });
+      if (nonMasterProds.length > 0) {
+        const ids = nonMasterProds.map((p) => p.id);
+        await this.prisma.main.projectRequirement.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.stockReservation.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.purchaseRequestItem.updateMany({ where: { productId: { in: ids } }, data: { productId: null } }).catch(() => {});
+        await this.prisma.main.stockBalance.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.stockMovement.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.serialUnit.deleteMany({ where: { productId: { in: ids } } }).catch(() => {});
+        await this.prisma.main.product.deleteMany({ where: { id: { in: ids } } }).catch(() => {});
+      }
+    } catch {}
+
+    // 2. Ambil kebutuhan barang reguler / katalog master
     let rows = await this.prisma.main.projectRequirement.findMany({
       where: { projectId },
       include: {
@@ -686,18 +711,159 @@ export class ProjectsService {
       orderBy: { id: "asc" },
     });
 
+    // Cari penawaran terkait project untuk menentukan item mana yang merupakan BOQ kontrak awal penawaran vs item tambahan di luar BOQ
+    let quotationId = project.quotationId;
+    if (!quotationId && project.customerId) {
+      const q = await this.prisma.main.quotation.findFirst({
+        where: { customerId: project.customerId },
+        orderBy: { id: "desc" },
+      });
+      if (q) {
+        quotationId = q.id;
+        await this.prisma.main.project
+          .update({ where: { id: projectId }, data: { quotationId: q.id } })
+          .catch(() => {});
+      }
+    }
+
+    const contractProductIds = new Set<number>();
+    const contractSkus = new Set<string>();
+    const contractNames = new Set<string>();
+
+    if (quotationId) {
+      const metaSetting = await this.prisma.main.systemSetting.findUnique({
+        where: { key: `quotation.meta.${quotationId}` },
+      });
+      if (metaSetting?.value) {
+        try {
+          const parsed = JSON.parse(metaSetting.value);
+          const qItems = Array.isArray(parsed?.items) ? parsed.items : [];
+          for (const it of qItems) {
+            if (it.productId) contractProductIds.add(Number(it.productId));
+            if (it.sku) contractSkus.add(String(it.sku).trim().toLowerCase());
+            const rawName = String(it.item || it.name || "");
+            const clean = rawName
+              .replace(/\s*\(SN:.*?\)/gi, "")
+              .replace(/\s*\[SN:.*?\]/gi, "")
+              .replace(/\s*\(SKU-.*?\)/gi, "")
+              .replace(/\s*#\d+/g, "")
+              .trim()
+              .toLowerCase();
+            if (clean) contractNames.add(clean);
+          }
+        } catch {}
+      }
+    }
+
+    const hasContractItems = contractProductIds.size > 0 || contractSkus.size > 0 || contractNames.size > 0;
+
     const withAvailability = await Promise.all(
       rows.map(async (r) => {
         const avail = await this.availableQty(r.productId, projectId);
+        const prodSku = (r.product?.sku || "").trim().toLowerCase();
+        const cleanProdName = (r.product?.name || "").trim().toLowerCase();
+
+        let isFromContract = false;
+        if (hasContractItems) {
+          isFromContract =
+            contractProductIds.has(r.productId) ||
+            (Boolean(prodSku) && contractSkus.has(prodSku)) ||
+            (Boolean(cleanProdName) && (
+              contractNames.has(cleanProdName) ||
+              Array.from(contractNames).some((cn) => cleanProdName.includes(cn) || cn.includes(cleanProdName))
+            ));
+        }
+
         return {
           ...r,
           neededQty: r.qty,
           shortageQty: Math.max(0, r.qty - r.reservedQty),
           availableQty: avail,
+          isExtra: hasContractItems ? !isFromContract : false,
         };
       }),
     );
-    return { items: withAvailability, total: withAvailability.length };
+
+    // 3. Gabungkan material non-master / pakai habis dari Purchase Request project secara virtual (tanpa disimpan ke master product)
+    const validStatuses: ("DISETUJUI" | "DIBAYAR" | "DITERIMA")[] = ["DISETUJUI", "DIBAYAR", "DITERIMA"];
+    const prs = await this.prisma.main.purchaseRequest.findMany({
+      where: {
+        projectId,
+        OR: [
+          { status: { in: validStatuses } },
+          { paymentStatus: "DIBAYAR" },
+          { paymentProofFileId: { not: null } },
+          { otherNote: { contains: "[DIBAYAR" } },
+        ],
+      },
+      include: { items: true },
+    });
+
+    const consumableTotals = new Map<string, {
+      name: string;
+      totalQty: number;
+      unit: string;
+      unitCost: number;
+      prNumbers: string[];
+      prItemIds: number[];
+    }>();
+
+    for (const pr of prs) {
+      for (const it of pr.items) {
+        if (it.customName) {
+          const cleanName = it.customName.replace(/\[PAKAI_HABIS\]|\[CONSUMABLE\]/gi, "").trim();
+          if (!cleanName) continue;
+          const key = cleanName.toLowerCase();
+          const existing = consumableTotals.get(key) || {
+            name: cleanName,
+            totalQty: 0,
+            unit: it.customUnit || "pcs",
+            unitCost: Number(it.unitCost || 0),
+            prNumbers: [],
+            prItemIds: [],
+          };
+          existing.totalQty += it.qty;
+          if (it.customUnit) existing.unit = it.customUnit;
+          if (Number(it.unitCost || 0) > 0) existing.unitCost = Number(it.unitCost || 0);
+          if (!existing.prNumbers.includes(pr.number)) existing.prNumbers.push(pr.number);
+          existing.prItemIds.push(it.id);
+          consumableTotals.set(key, existing);
+        }
+      }
+    }
+
+    const consumableItems: any[] = [];
+    let virtualId = -1000;
+    for (const [_, entry] of consumableTotals) {
+      const assignedId = entry.prItemIds.length > 0 ? -entry.prItemIds[0] : virtualId--;
+      consumableItems.push({
+        id: assignedId,
+        projectId,
+        productId: null,
+        qty: entry.totalQty,
+        neededQty: entry.totalQty,
+        reservedQty: entry.totalQty,
+        shortageQty: 0,
+        availableQty: entry.totalQty,
+        costPrice: entry.unitCost,
+        unitPrice: entry.unitCost,
+        isExtra: true,
+        status: `Tersedia & Di-reserve (${entry.totalQty})`,
+        product: {
+          id: null,
+          sku: "-",
+          name: entry.name,
+          unit: entry.unit,
+          hasSerial: false,
+          purchasePrice: entry.unitCost,
+          description: `Material Khusus Proyek (Pakai Habis / Non-Master)`,
+          category: { id: 0, name: "Material Proyek" },
+        },
+      });
+    }
+
+    const combined = [...withAvailability, ...consumableItems];
+    return { items: combined, total: combined.length };
   }
 
   /** Ketersediaan = saldo gudang − reserve aktif proyek lain. */
@@ -782,8 +948,14 @@ export class ProjectsService {
     let productId = dto.productId;
     if (!productId && dto.name) {
       let prod = await this.prisma.main.product.findFirst({
-        where: { name: { equals: dto.name.trim(), mode: "insensitive" } },
+        where: { name: dto.name.trim() },
       });
+      const effectiveCost = dto.costPrice !== undefined ? Number(dto.costPrice) : (dto.price !== undefined ? Number(dto.price) : 0);
+      const descParts: string[] = [];
+      if (dto.pphMode) descParts.push(`PPH:${dto.pphMode}`);
+      if (dto.sellingPrice !== undefined) descParts.push(`SELL:${dto.sellingPrice}`);
+      const descStr = descParts.length > 0 ? descParts.join(";") : null;
+
       if (!prod) {
         const sku = `SKU-BOQ-${Date.now().toString(36).toUpperCase()}`;
         prod = await this.prisma.main.product.create({
@@ -791,17 +963,17 @@ export class ProjectsService {
             sku,
             name: dto.name.trim(),
             unit: dto.unit || "unit",
-            purchasePrice: dto.price ? Number(dto.price) : 0,
-            description: dto.pphMode ? `PPH:${dto.pphMode}` : null,
+            purchasePrice: effectiveCost,
+            description: descStr,
             type: "BARANG",
           },
         });
-      } else if ((dto.price && Number(prod.purchasePrice) === 0) || dto.pphMode) {
+      } else if (effectiveCost > 0 || descStr) {
         await this.prisma.main.product.update({
           where: { id: prod.id },
           data: {
-            ...(dto.price ? { purchasePrice: Number(dto.price) } : {}),
-            ...(dto.pphMode ? { description: `PPH:${dto.pphMode}` } : {}),
+            ...(effectiveCost > 0 ? { purchasePrice: effectiveCost } : {}),
+            ...(descStr ? { description: descStr } : {}),
           },
         });
       }
@@ -811,6 +983,15 @@ export class ProjectsService {
 
     const product = await this.prisma.main.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException("Barang tidak ditemukan");
+    if (Number(product.purchasePrice) === 0 && (dto.costPrice || dto.price)) {
+      const effectiveCost = Number(dto.costPrice ?? dto.price ?? 0);
+      if (effectiveCost > 0) {
+        await this.prisma.main.product.update({
+          where: { id: productId },
+          data: { purchasePrice: effectiveCost },
+        }).catch(() => {});
+      }
+    }
     if (dto.taskId) {
       const task = await this.prisma.main.task.findUnique({ where: { id: dto.taskId } });
       if (!task || task.projectId !== projectId) throw new BadRequestException("Task bukan milik project ini");
@@ -850,20 +1031,46 @@ export class ProjectsService {
   }
 
   async updateRequirement(projectId: number, id: number, dto: RequirementDto, user: RequestUser) {
+    if (id < 0) {
+      const prItemId = Math.abs(id);
+      const prItem = await this.prisma.main.purchaseRequestItem.findUnique({
+        where: { id: prItemId },
+        include: { request: true },
+      });
+      if (prItem && prItem.request.projectId === projectId) {
+        const effectiveCost = dto.costPrice !== undefined ? Number(dto.costPrice) : (dto.price !== undefined ? Number(dto.price) : undefined);
+        await this.prisma.main.purchaseRequestItem.update({
+          where: { id: prItemId },
+          data: {
+            ...(dto.qty ? { qty: dto.qty } : {}),
+            ...(dto.name ? { customName: dto.name.trim() } : {}),
+            ...(dto.unit ? { customUnit: dto.unit.trim() } : {}),
+            ...(effectiveCost !== undefined ? { unitCost: effectiveCost } : {}),
+          },
+        });
+      }
+      return { id, ...dto, product: { id: null, name: dto.name, unit: dto.unit } };
+    }
     const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user, true);
     const row = await this.prisma.main.projectRequirement.findUnique({ where: { id } });
     if (!row || row.projectId !== projectId) throw new NotFoundException("Kebutuhan tidak ditemukan");
 
-    if (dto.name || dto.unit || dto.price !== undefined || dto.pphMode !== undefined) {
+    if (dto.name || dto.unit || dto.price !== undefined || dto.costPrice !== undefined || dto.sellingPrice !== undefined || dto.pphMode !== undefined) {
+      const effectiveCost = dto.costPrice !== undefined ? Number(dto.costPrice) : (dto.price !== undefined ? Number(dto.price) : undefined);
+      const descParts: string[] = [];
+      if (dto.pphMode) descParts.push(`PPH:${dto.pphMode}`);
+      if (dto.sellingPrice !== undefined) descParts.push(`SELL:${dto.sellingPrice}`);
+      const descStr = descParts.length > 0 ? descParts.join(";") : undefined;
+
       await this.prisma.main.product.update({
         where: { id: row.productId },
         data: {
           ...(dto.name ? { name: dto.name.trim() } : {}),
           ...(dto.unit ? { unit: dto.unit.trim() } : {}),
-          ...(dto.price !== undefined ? { purchasePrice: Number(dto.price) } : {}),
-          ...(dto.pphMode !== undefined ? { description: dto.pphMode ? `PPH:${dto.pphMode}` : null } : {}),
+          ...(effectiveCost !== undefined ? { purchasePrice: effectiveCost } : {}),
+          ...(descStr !== undefined ? { description: descStr } : {}),
         },
       });
     }
@@ -893,6 +1100,44 @@ export class ProjectsService {
   }
 
   async removeRequirement(projectId: number, id: number, user: RequestUser) {
+    if (id < 0) {
+      const prItemId = Math.abs(id);
+      const prItem = await this.prisma.main.purchaseRequestItem.findUnique({
+        where: { id: prItemId },
+        include: { request: true },
+      });
+      if (prItem && prItem.request.projectId === projectId) {
+        const cleanName = (prItem.customName || "").replace(/\[PAKAI_HABIS\]|\[CONSUMABLE\]/gi, "").trim();
+        const matchingItems = await this.prisma.main.purchaseRequestItem.findMany({
+          where: {
+            request: { projectId },
+            customName: { contains: cleanName },
+          },
+        });
+
+        for (const item of matchingItems) {
+          const otherItemsCount = await this.prisma.main.purchaseRequestItem.count({
+            where: { requestId: item.requestId, NOT: { id: item.id } },
+          });
+          if (otherItemsCount === 0) {
+            await this.prisma.main.approval.deleteMany({
+              where: { kind: "PURCHASE_REQUEST", entityId: item.requestId },
+            }).catch(() => {});
+            await this.prisma.main.purchaseRequestItem.deleteMany({
+              where: { requestId: item.requestId },
+            }).catch(() => {});
+            await this.prisma.main.purchaseRequest.delete({
+              where: { id: item.requestId },
+            }).catch(() => {});
+          } else {
+            await this.prisma.main.purchaseRequestItem.delete({
+              where: { id: item.id },
+            }).catch(() => {});
+          }
+        }
+      }
+      return { id, deleted: true };
+    }
     const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user, true);
