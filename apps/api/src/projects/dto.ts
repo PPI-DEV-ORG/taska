@@ -323,6 +323,12 @@ export class GenerateBastDto {
   @IsOptional() @IsString()
   party1Title?: string;
 
+  @IsOptional() @IsInt()
+  logoFileId?: number;
+
+  @IsOptional() @IsString()
+  logoBase64?: string;
+
   @IsOptional() @IsString()
   party2Company?: string;
 
