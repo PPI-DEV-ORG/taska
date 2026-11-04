@@ -79,7 +79,11 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
   const router = useRouter();
   const { user, logout, data } = useApp();
   const { items, active } = useNav();
-  const recentProjects = data.projects.slice(0, 3);
+  const recentProjects = React.useMemo(() => {
+    return (data.projects ?? [])
+      .filter((p): p is any => Boolean(p && typeof p === "object" && (p.id || p.nama || p.name)))
+      .slice(0, 3);
+  }, [data.projects]);
   const dotColors = [colors.primary, colors.info, colors.warning];
 
   return (
@@ -129,18 +133,23 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
               <Text className="text-[10px] font-bold tracking-wider text-muted-foreground/70 uppercase px-3 py-1.5">
                 Recent Projects
               </Text>
-              {recentProjects.map((p, idx) => (
-                <Pressable
-                  key={p.id}
-                  onPress={() => router.push(`/projects/${p.id}` as any)}
-                  className="flex-row items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-panel/50 active:bg-panel"
-                >
-                  <View className="size-2 rounded-full" style={{ backgroundColor: dotColors[idx] ?? colors.primary }} />
-                  <Text className="text-text-secondary text-xs font-medium flex-1" numberOfLines={1}>
-                    {p.nama}
-                  </Text>
-                </Pressable>
-              ))}
+              {recentProjects.map((p, idx) => {
+                if (!p) return null;
+                const pId = p.id != null ? String(p.id) : `proj-${idx}`;
+                const pName = p.nama || p.name || `Project #${pId}`;
+                return (
+                  <Pressable
+                    key={pId}
+                    onPress={() => router.push(`/projects/${pId}` as any)}
+                    className="flex-row items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-panel/50 active:bg-panel"
+                  >
+                    <View className="size-2 rounded-full" style={{ backgroundColor: dotColors[idx] ?? colors.primary }} />
+                    <Text className="text-text-secondary text-xs font-medium flex-1" numberOfLines={1}>
+                      {pName}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           ) : null}
         </ScrollView>
@@ -213,12 +222,15 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
     const s = q.trim().toLowerCase();
     if (s.length < 2) return [];
     const out: { id: string; type: string; title: string; href: string }[] = [];
-    data.leads.forEach((r) => r.nama.toLowerCase().includes(s) && out.push({ id: r.id, type: "Lead", title: r.nama, href: `/leads/${r.id}` }));
-    data.projects.forEach((r) => r.nama.toLowerCase().includes(s) && out.push({ id: r.id, type: "Project", title: r.nama, href: `/projects/${r.id}` }));
-    data.quotations.forEach((r) => r.nomor.toLowerCase().includes(s) && out.push({ id: r.id, type: "Penawaran", title: r.nomor, href: `/quotations/${r.id}` }));
-    data.invoices.forEach((r) => r.nomor.toLowerCase().includes(s) && out.push({ id: r.id, type: "Invoice", title: r.nomor, href: `/invoices/${r.id}` }));
-    data["delivery-notes"].forEach((r) => r.nomor.toLowerCase().includes(s) && out.push({ id: r.id, type: "Surat jalan", title: r.nomor, href: `/delivery-notes/${r.id}` }));
-    (data.serials ?? []).forEach((r) => String(r.sn).toLowerCase().includes(s) && out.push({ id: r.id, type: "SN", title: `${r.sn} · ${r.produk}`, href: "/stock" }));
+    (data.leads ?? []).forEach((r) => r?.nama && r.nama.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Lead", title: r.nama, href: `/leads/${r.id}` }));
+    (data.projects ?? []).forEach((r) => {
+      const title = r?.nama || r?.name;
+      if (r && title && title.toLowerCase().includes(s)) out.push({ id: String(r.id), type: "Project", title, href: `/projects/${r.id}` });
+    });
+    (data.quotations ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Penawaran", title: r.nomor, href: `/quotations/${r.id}` }));
+    (data.invoices ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Invoice", title: r.nomor, href: `/invoices/${r.id}` }));
+    (data["delivery-notes"] ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Surat jalan", title: r.nomor, href: `/delivery-notes/${r.id}` }));
+    (data.serials ?? []).forEach((r) => String(r?.sn || "").toLowerCase().includes(s) && out.push({ id: String(r.id), type: "SN", title: `${r.sn} · ${r.produk}`, href: "/stock" }));
     return out.slice(0, 8);
   }, [q, data]);
   return (

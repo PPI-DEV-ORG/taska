@@ -19,8 +19,8 @@ export function ProjectOverviewCard({
   disableNavigation?: boolean;
 }) {
   const router = useRouter();
-  const activeOnly = projects.filter(
-    (p) => p.status !== "Selesai" && p.status !== "SELESAI",
+  const activeOnly = (projects ?? []).filter(
+    (p) => p && p.status !== "Selesai" && p.status !== "SELESAI",
   );
   return (
     <Panel

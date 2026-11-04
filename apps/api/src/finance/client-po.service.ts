@@ -638,9 +638,15 @@ export class ClientPoService {
       }
     }
 
-    // 2. Sinkronkan Invoice Lunas Otomatis (Under the hood agar akuntansi & jurnal sinkron)
-    const existingPaidInvoice = row.invoices?.find((i: any) => i.status === "PAID");
-    if (!existingPaidInvoice) {
+    // 2. Sinkronkan Invoice Lunas Otomatis (Hanya untuk Penjualan Langsung / Nota Kontan yang belum memiliki invoice)
+    const hasExistingInvoices =
+      (row.invoices && row.invoices.length > 0) ||
+      (row.quotationId &&
+        (await this.prisma.main.invoiceOut.count({
+          where: { quotationId: row.quotationId, status: { not: "BATAL" } },
+        })) > 0);
+
+    if (!hasExistingInvoices && !row.projectId) {
       const cust = row.customerId
         ? await this.prisma.main.customer.findUnique({ where: { id: row.customerId } })
         : (await this.prisma.main.customer.findFirst());

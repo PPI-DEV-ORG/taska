@@ -175,6 +175,12 @@ export class RequirementDto {
   @IsOptional() @Type(() => Number) @IsNumber()
   price?: number;
 
+  @IsOptional() @Type(() => Number) @IsNumber()
+  costPrice?: number;
+
+  @IsOptional() @Type(() => Number) @IsNumber()
+  sellingPrice?: number;
+
   @IsOptional() @IsInt()
   taskId?: number;
 

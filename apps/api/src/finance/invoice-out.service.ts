@@ -907,6 +907,60 @@ export class InvoiceOutService {
     return candidates;
   }
 
+  private async assertStockAvailabilityForInvoice(invoice: InvoiceOut) {
+    const meta = (await this.getMeta(invoice.id)) || {};
+    let items: any[] = Array.isArray(meta.items) ? meta.items : [];
+    if (!items.length) {
+      const related = await this.resolveRelatedQuotationAndMeta({
+        quotationId: meta.quotationId,
+        quotationNumber: meta.quotation,
+        clientPoId: invoice.clientPoId,
+        projectId: invoice.projectId,
+        description: invoice.description,
+      });
+      if (Array.isArray(related.quoteMeta?.items) && related.quoteMeta.items.length > 0) {
+        items = related.quoteMeta.items;
+      }
+    }
+    if (!items.length) return;
+
+    for (const it of items) {
+      const prodId = Number(it.productId);
+      if (!prodId || Number.isNaN(prodId)) continue;
+      const needed = Number(it.qty || 1);
+
+      const balanceAgg = await this.prisma.main.stockBalance.aggregate({
+        where: { productId: prodId },
+        _sum: { qty: true },
+      });
+      const physicalStock = balanceAgg._sum.qty ?? 0;
+
+      const reservedAgg = await this.prisma.main.stockReservation.aggregate({
+        where: {
+          productId: prodId,
+          releasedAt: null,
+          invoice: { status: "PAID", id: { not: invoice.id } },
+          ...(invoice.projectId ? { NOT: { projectId: invoice.projectId } } : {}),
+        },
+        _sum: { qty: true },
+      });
+      const reservedStock = reservedAgg._sum.qty ?? 0;
+      const available = physicalStock - reservedStock;
+
+      if (available < needed) {
+        const prod = await this.prisma.main.product.findUnique({
+          where: { id: prodId },
+          select: { name: true, unit: true },
+        });
+        const prodName = prod?.name || it.item || it.name || "Barang";
+        const unit = prod?.unit || "unit";
+        throw new BadRequestException(
+          `Stok gudang tidak mencukupi untuk "${prodName}" (Sisa stok tersedia: ${Math.max(0, available)} ${unit}, Dibutuhkan: ${needed} ${unit}). Stok fisik telah dialokasikan ke dokumen/invoice lain yang lunas lebih dulu. Harap buat PR/pengadaan stok terlebih dahulu sebelum menyelesaikan pembayaran invoice ini.`
+        );
+      }
+    }
+  }
+
   private async syncRelatedInvoicesOnPaid(invoice: InvoiceOut, user: RequestUser) {
     const isPelunasan =
       invoice.type === "PELUNASAN" ||
@@ -995,6 +1049,9 @@ export class InvoiceOutService {
     const payments = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
     const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
     const isNowPaid = paid >= Number(row.total) && Number(row.total) > 0;
+    if (isNowPaid) {
+      await this.assertStockAvailabilityForInvoice(row);
+    }
     const updated = await this.prisma.main.invoiceOut.update({
       where: { id },
       data: {
@@ -1039,6 +1096,9 @@ export class InvoiceOutService {
     }
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
+    if (status === "PAID") {
+      await this.assertStockAvailabilityForInvoice(row);
+    }
     const updated = await this.prisma.main.invoiceOut.update({
       where: { id },
       data: {

@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { useApp } from "@/store/app-store";
+import { api } from "@/services/api";
+import { adaptRows } from "@/services/adapters";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 import type { DetailTarget } from "../types";
@@ -15,6 +18,7 @@ interface StockDetailDialogProps {
   onClose: () => void;
   stockSummary: any[];
   serials: any[];
+  warehouses?: any[];
   onOpenBatchSn: (productId: string) => void;
   onOpenReplacement: (sn: string) => void;
 }
@@ -24,11 +28,29 @@ export function StockDetailDialog({
   onClose,
   stockSummary,
   serials,
+  warehouses: propWarehouses,
   onOpenBatchSn,
   onOpenReplacement,
 }: StockDetailDialogProps) {
   const router = useRouter();
+  const { data } = useApp();
+  const warehouses = propWarehouses ?? data.warehouses ?? [];
   const [showShipped, setShowShipped] = React.useState(false);
+  const [showInstalled, setShowInstalled] = React.useState(false);
+  const [showDamaged, setShowDamaged] = React.useState(false);
+  const [productSerials, setProductSerials] = React.useState<{ productId: string; rows: any[] } | null>(null);
+
+  React.useEffect(() => {
+    if (selectedDetail?.type === "product" && selectedDetail.data?.id) {
+      const pid = String(selectedDetail.data.id);
+      api<any>("GET", `/serials?productId=${pid}&limit=500`)
+        .then((res) => {
+          const items = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+          setProductSerials({ productId: pid, rows: adaptRows("serials", items) });
+        })
+        .catch(() => {});
+    }
+  }, [selectedDetail]);
 
   return (
     <Dialog open={!!selectedDetail} onOpenChange={(v) => !v && onClose()}>
@@ -46,10 +68,38 @@ export function StockDetailDialog({
         {selectedDetail?.type === "product" && (() => {
           const p = selectedDetail.data;
           const whBreakdown = stockSummary.filter((s) => String(s.productId) === String(p.id));
-          const pSerials = serials.filter((s) => String(s.productId) === String(p.id));
-          const isShipped = (s: any) => String(s.status || "").toLowerCase().includes("kirim");
-          const activeSerials = pSerials.filter((s) => !isShipped(s));
-          const shippedSerials = pSerials.filter((s) => isShipped(s));
+          const currentProductSerials = productSerials?.productId === String(p.id) ? productSerials.rows : null;
+          const pSerials = (currentProductSerials ?? serials).filter((s) => String(s.productId) === String(p.id));
+
+          const isInstalled = (s: any) =>
+            s.rawStatus === "TERPASANG" ||
+            String(s.status || "").toLowerCase().includes("pasang");
+
+          const isShipped = (s: any) =>
+            s.rawStatus === "DIKIRIM" ||
+            String(s.status || "").toLowerCase().includes("kirim");
+
+          const isDamaged = (s: any) =>
+            s.rawStatus === "RUSAK" ||
+            s.rawStatus === "RETUR" ||
+            s.rawStatus === "DIGANTI" ||
+            String(s.status || "").toLowerCase().includes("rusak") ||
+            String(s.status || "").toLowerCase().includes("retur");
+
+          const inWarehouseSerials = pSerials.filter(
+            (s) => !isInstalled(s) && !isShipped(s) && !isDamaged(s),
+          );
+          const freeSerials = inWarehouseSerials.filter(
+            (s) => s.rawStatus !== "RESERVED" && (!s.project || s.project === "-"),
+          );
+          const reservedSerials = inWarehouseSerials.filter(
+            (s) => s.rawStatus === "RESERVED" || (s.project && s.project !== "-"),
+          );
+
+          const installedSerials = pSerials.filter(isInstalled);
+          const shippedSerials = pSerials.filter(isShipped);
+          const damagedSerials = pSerials.filter(isDamaged);
+
           return (
             <View className="gap-4 py-2">
               <View className="flex-row items-center justify-between border-b border-border pb-3">
@@ -62,8 +112,13 @@ export function StockDetailDialog({
 
               <View className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <View className="bg-card border-border rounded-lg border p-3">
-                  <Text className="text-[11px] text-muted-foreground">Total Stok</Text>
+                  <Text className="text-[11px] text-muted-foreground">Total Stok Gudang</Text>
                   <Text className="text-base font-bold text-foreground">{p.totalDisplay ?? "0"}</Text>
+                  {p.berSN && (
+                    <Text className="text-[10px] text-muted-foreground mt-0.5">
+                      {freeSerials.length} bebas • {reservedSerials.length} di-reserve
+                    </Text>
+                  )}
                 </View>
                 <View className="bg-card border-border rounded-lg border p-3">
                   <Text className="text-[11px] text-muted-foreground">Batas Minimal</Text>
@@ -88,15 +143,34 @@ export function StockDetailDialog({
 
               {/* Sebaran Stok per Gudang */}
               <View className="gap-2">
-                <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Sebaran Stok di Gudang</Text>
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Sebaran Stok per Gudang
+                  </Text>
+                  <Text className="text-[10px] text-muted-foreground">
+                    *Opname dihitung per masing-masing gudang
+                  </Text>
+                </View>
                 {whBreakdown.length > 0 ? (
                   <View className="bg-card border-border divide-y divide-border rounded-lg border">
-                    {whBreakdown.map((wh) => (
-                      <View key={wh.warehouseId} className="flex-row items-center justify-between p-3">
-                        <Text className="text-sm font-medium text-foreground">{wh.warehouseName}</Text>
-                        <Text className="text-sm font-bold text-primary">{wh.saldo} {p.satuan ?? ""}</Text>
-                      </View>
-                    ))}
+                    {whBreakdown.map((wh) => {
+                      const whObj = warehouses.find((w: any) => String(w.id) === String(wh.warehouseId));
+                      const whName = wh.warehouseName || whObj?.nama || whObj?.name || `Gudang #${wh.warehouseId}`;
+                      return (
+                        <View key={wh.warehouseId} className="flex-row items-center justify-between p-3">
+                          <View className="gap-0.5">
+                            <Text className="text-sm font-semibold text-foreground">{whName}</Text>
+                            <Text className="text-[11px] text-muted-foreground">
+                              {whObj?.kota ? `Lokasi: ${whObj.kota}` : `ID Gudang: ${wh.warehouseId}`}
+                            </Text>
+                          </View>
+                          <View className="items-end">
+                            <Text className="text-sm font-bold text-primary">{wh.saldo} {p.satuan ?? ""}</Text>
+                            <Text className="text-[10px] text-muted-foreground">Saldo Fisik</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 ) : (
                   <Text className="text-xs italic text-muted-foreground">Belum ada rincian gudang.</Text>
@@ -107,9 +181,14 @@ export function StockDetailDialog({
               {p.berSN && (
                 <View className="gap-2">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      Daftar Unit di Gudang ({activeSerials.length} Unit)
-                    </Text>
+                    <View>
+                      <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        Daftar Unit Fisik di Gudang ({inWarehouseSerials.length} Unit)
+                      </Text>
+                      <Text className="text-[10px] text-muted-foreground">
+                        {freeSerials.length} unit bebas • {reservedSerials.length} unit di-reserve untuk proyek
+                      </Text>
+                    </View>
                     <Button
                       size="sm"
                       variant="outline"
@@ -119,28 +198,76 @@ export function StockDetailDialog({
                       <Text className="text-xs">+ Tambah Unit SN</Text>
                     </Button>
                   </View>
-                  {activeSerials.length > 0 ? (
+                  {inWarehouseSerials.length > 0 ? (
                     <View className="bg-card border-border max-h-56 divide-y divide-border overflow-y-auto rounded-lg border">
-                      {activeSerials.map((s: any, idx: number) => (
-                        <View key={s.id} className="flex-row items-center justify-between p-2.5">
-                          <View className="flex-1 pr-2">
-                            <Text className="font-mono text-xs font-semibold text-foreground">
-                              #{idx + 1} • {s.sn}
-                            </Text>
-                            <Text className="text-[10px] text-muted-foreground">
-                              Lokasi: {s.gudang} • {s.project && s.project !== "-" ? s.project : "Stok Bebas (Di Gudang)"}
-                            </Text>
+                      {inWarehouseSerials.map((s: any, idx: number) => {
+                        const isRes = s.rawStatus === "RESERVED" || (s.project && s.project !== "-");
+                        return (
+                          <View key={s.id} className="flex-row items-center justify-between p-2.5">
+                            <View className="flex-1 pr-2">
+                              <Text className="font-mono text-xs font-semibold text-foreground">
+                                #{idx + 1} • {s.sn}
+                              </Text>
+                              <Text className="text-[10px] text-muted-foreground">
+                                Lokasi: {s.gudang || "-"} • {isRes ? `Di-reserve: ${s.project}` : "Stok Bebas (Tersedia)"}
+                              </Text>
+                            </View>
+                            <StatusBadge status={isRes ? "Reserved" : (s.status ?? "Tersedia")} />
                           </View>
-                          <StatusBadge status={s.status ?? "Tersedia"} />
-                        </View>
-                      ))}
+                        );
+                      })}
                     </View>
                   ) : (
                     <Text className="text-xs italic text-muted-foreground">
-                      {shippedSerials.length > 0
-                        ? "Semua unit SN saat ini telah terkirim."
-                        : "Belum ada unit Serial Number terdaftar untuk produk ini. Klik \"+ Tambah Unit SN\" untuk mendaftarkan unit per-SN."}
+                      Tidak ada unit SN yang sedang berada di gudang saat ini.
                     </Text>
+                  )}
+
+                  {/* Section Unit Terpasang di Proyek (Dipisah tersendiri) */}
+                  {installedSerials.length > 0 && (
+                    <View className="mt-2 pt-2 border-t border-border">
+                      <Pressable
+                        onPress={() => setShowInstalled((prev) => !prev)}
+                        className="flex-row items-center justify-between py-2 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15"
+                      >
+                        <View>
+                          <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                            Unit Terpasang di Proyek ({installedSerials.length} Unit)
+                          </Text>
+                          <Text className="text-[10px] text-muted-foreground">
+                            Sudah diserahkan & terpasang di lokasi proyek customer
+                          </Text>
+                        </View>
+                        <View className="flex-row items-center gap-1">
+                          <Text className="text-[11px] text-muted-foreground">
+                            {showInstalled ? "Sembunyikan" : "Tampilkan"}
+                          </Text>
+                          {showInstalled ? (
+                            <ChevronUp size={14} color={colors.mutedForeground} />
+                          ) : (
+                            <ChevronDown size={14} color={colors.mutedForeground} />
+                          )}
+                        </View>
+                      </Pressable>
+
+                      {showInstalled && (
+                        <View className="bg-card/70 border-border max-h-56 divide-y divide-border overflow-y-auto rounded-lg border mt-2">
+                          {installedSerials.map((s: any, idx: number) => (
+                            <View key={s.id} className="flex-row items-center justify-between p-2.5 bg-muted/15">
+                              <View className="flex-1 pr-2">
+                                <Text className="font-mono text-xs font-semibold text-foreground">
+                                  #{idx + 1} • {s.sn}
+                                </Text>
+                                <Text className="text-[10px] text-muted-foreground">
+                                  Proyek: {s.project && s.project !== "-" ? s.project : "Proyek Klien"}
+                                </Text>
+                              </View>
+                              <StatusBadge status="Terpasang" />
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
                   )}
 
                   {/* Dropdown Unit SN yang Telah Terkirim */}
@@ -184,6 +311,48 @@ export function StockDetailDialog({
                       )}
                     </View>
                   )}
+
+                  {/* Dropdown Unit SN Rusak / Retur */}
+                  {damagedSerials.length > 0 && (
+                    <View className="mt-2 pt-2 border-t border-border">
+                      <Pressable
+                        onPress={() => setShowDamaged((prev) => !prev)}
+                        className="flex-row items-center justify-between py-2 px-3 rounded-lg bg-destructive/10 border border-destructive/20 hover:bg-destructive/15"
+                      >
+                        <Text className="text-xs font-semibold text-destructive">
+                          Unit Rusak / Retur / RMA ({damagedSerials.length} Unit)
+                        </Text>
+                        <View className="flex-row items-center gap-1">
+                          <Text className="text-[11px] text-muted-foreground">
+                            {showDamaged ? "Sembunyikan" : "Tampilkan"}
+                          </Text>
+                          {showDamaged ? (
+                            <ChevronUp size={14} color={colors.mutedForeground} />
+                          ) : (
+                            <ChevronDown size={14} color={colors.mutedForeground} />
+                          )}
+                        </View>
+                      </Pressable>
+
+                      {showDamaged && (
+                        <View className="bg-card/70 border-border max-h-56 divide-y divide-border overflow-y-auto rounded-lg border mt-2">
+                          {damagedSerials.map((s: any, idx: number) => (
+                            <View key={s.id} className="flex-row items-center justify-between p-2.5 bg-muted/15">
+                              <View className="flex-1 pr-2">
+                                <Text className="font-mono text-xs font-semibold text-foreground">
+                                  #{idx + 1} • {s.sn}
+                                </Text>
+                                <Text className="text-[10px] text-muted-foreground">
+                                  Status: {s.status}
+                                </Text>
+                              </View>
+                              <StatusBadge status={s.status ?? "Rusak"} />
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -217,7 +386,13 @@ export function StockDetailDialog({
         {selectedDetail?.type === "warehouse_product" && (() => {
           const wp = selectedDetail.data;
           const wpSerials = serials.filter(
-            (s) => String(s.productId) === String(wp.id) && s.gudang === wp.gudang
+            (s) =>
+              String(s.productId) === String(wp.id) &&
+              s.gudang === wp.gudang &&
+              s.rawStatus !== "TERPASANG" &&
+              s.rawStatus !== "DIKIRIM" &&
+              !String(s.status || "").toLowerCase().includes("pasang") &&
+              !String(s.status || "").toLowerCase().includes("kirim")
           );
           return (
             <View className="gap-4 py-2">

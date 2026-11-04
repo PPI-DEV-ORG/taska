@@ -479,19 +479,23 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           ? row.nama
           : `Project ${row.nama}`
         : `Project ${custName}`;
-      addRow("projects", {
+      await addRow("projects", {
         nama: projName,
         customer: custName,
         perusahaan: custName,
         customerId: row.customerId,
         quotationId: leadQuotation?.id ? Number(leadQuotation.id) : undefined,
         penawaran: leadQuotation?.nomor,
+        lead: row.nama,
+        leadId: row.id,
         jenis: "Customer",
         pm: data.users?.find((u: any) => u.role === "pm")?.nama || "Dimas Prasetyo",
         mulai: getTodayIso(),
         selesai: row.targetSelesai || row.closing || getTodayIso(),
         status: "Berjalan",
       });
+      toast("Project baru berhasil dibuat");
+      router.push("/leads");
     } else if (a.label === "Buat Sales Order (SO)") {
       const matchedQuo =
         leadQuotation ||

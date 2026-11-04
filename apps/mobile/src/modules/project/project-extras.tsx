@@ -69,6 +69,7 @@ export function ProjectExtras({ row }: { row: Row }) {
   const [isSyncingBoq, setIsSyncingBoq] = React.useState(false);
   const [customBoqOpen, setCustomBoqOpen] = React.useState(false);
   const [customBoqName, setCustomBoqName] = React.useState("");
+  const [customBoqCostPrice, setCustomBoqCostPrice] = React.useState("");
   const [customBoqPrice, setCustomBoqPrice] = React.useState("");
   const [customBoqUnit, setCustomBoqUnit] = React.useState("pcs");
   const [customBoqQty, setCustomBoqQty] = React.useState("1");
@@ -98,10 +99,12 @@ export function ProjectExtras({ row }: { row: Row }) {
       neededQty: number;
       reservedQty: number;
       shortageQty: number;
+      costPrice: number;
       unitPrice: number;
       unit?: string;
       pphMode?: string;
       status: string;
+      isExtra?: boolean;
       serials?: string[];
     }[]
   >([]);
@@ -112,6 +115,7 @@ export function ProjectExtras({ row }: { row: Row }) {
   const [editReqName, setEditReqName] = React.useState("");
   const [editReqQty, setEditReqQty] = React.useState("1");
   const [editReqUnit, setEditReqUnit] = React.useState("unit");
+  const [editReqCostPrice, setEditReqCostPrice] = React.useState("");
   const [editReqPrice, setEditReqPrice] = React.useState("");
   const [editReqPphMode, setEditReqPphMode] = React.useState("none");
 
@@ -125,7 +129,11 @@ export function ProjectExtras({ row }: { row: Row }) {
   const [editServicePphMode, setEditServicePphMode] = React.useState("none");
 
   const normalizedRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
+  const canViewBoqPricing = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
   const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "sales", "admin"].includes(normalizedRole);
+
+  const [quotationDetail, setQuotationDetail] = React.useState<any>(null);
+
   const linkedQuotation = React.useMemo(() => {
     const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
     const cleanProjName = String(row.nama || "").replace(/^Project\s+/i, "").trim().toLowerCase();
@@ -138,6 +146,24 @@ export function ProjectExtras({ row }: { row: Row }) {
         (row.customer && row.customer !== "-" && q.customer === row.customer),
     );
   }, [data.quotations, row.quotationId, row.penawaran, row.leadId, row.nama, row.customer]);
+
+  const activeQuotation = quotationDetail || linkedQuotation;
+
+  React.useEffect(() => {
+    const qId = row.quotationId || linkedQuotation?.id;
+    if (!qId) return;
+    let active = true;
+    api<any>("GET", `/quotations/${qId}`)
+      .then((res) => {
+        if (active && res) {
+          setQuotationDetail(res);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [row.quotationId, linkedQuotation?.id]);
 
   const linkedSurveys = React.useMemo(() => {
     return (data.surveys ?? []).filter(
@@ -198,14 +224,22 @@ export function ProjectExtras({ row }: { row: Row }) {
     (projectInvoices.length > 0 &&
       projectInvoices.every((i: any) => i.status === "Lunas" || Number(i.terbayar) >= Number(i.total)));
 
-  const revenue = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
+  const revenueFromInvoices = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
+  const revenueFromQuote = Number(linkedQuotation?.totalAfterDisc || linkedQuotation?.nilai || 0);
+  const revenue = revenueFromInvoices > 0 ? revenueFromInvoices : revenueFromQuote;
   const projectPos = (data["supplier-pos"] || []).filter(
     (po: any) => String(po.projectId) === String(row.id) && po.status !== "Ditolak" && po.status !== "DIBATALKAN"
   );
   const poCost = projectPos.reduce((sum: number, po: any) => sum + Number(po.total || 0), 0);
   const projectExpenses = useProjectExpenses(row.id, row.nama);
   const expenseCost = projectExpenses.reduce((sum: number, e: any) => sum + Number(e.nominal || 0), 0);
-  const totalCost = poCost + expenseCost;
+  const extraItemsCost = requirements
+    .filter((r) => r.isExtra)
+    .reduce((sum, r) => sum + r.neededQty * (r.costPrice || r.unitPrice || 0), 0);
+  const contractItemsCost = requirements
+    .filter((r) => !r.isExtra)
+    .reduce((sum, r) => sum + r.neededQty * (r.costPrice || 0), 0);
+  const totalCost = poCost > 0 ? (poCost + expenseCost + extraItemsCost) : (contractItemsCost + expenseCost + extraItemsCost);
   const netProfit = revenue - totalCost;
   const marginPct = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(1) : "0.0";
 
@@ -214,7 +248,10 @@ export function ProjectExtras({ row }: { row: Row }) {
       const needed = Number(r.neededQty ?? r.qty ?? 0);
       const reserved = Number(r.reservedQty ?? 0);
       const shortage = Number(r.shortageQty ?? Math.max(0, needed - reserved));
-      const unitPrice = Number(r.product?.purchasePrice ?? 0);
+      const costPrice = Number(r.costPrice ?? r.product?.purchasePrice ?? 0);
+      const matchedProd = (data.products || []).find((p: any) => String(p.id) === String(r.product?.id));
+      const fallbackCost = Number(matchedProd?.hargaBeli ?? matchedProd?.purchasePrice ?? 0);
+      const effectiveCost = costPrice > 0 ? costPrice : fallbackCost;
       let parsedSerials: string[] = [];
       if (r.serials) {
         try {
@@ -227,15 +264,45 @@ export function ProjectExtras({ row }: { row: Row }) {
             .filter(Boolean);
         }
       }
-      const snNote = parsedSerials.length > 0 ? ` · SN: ${parsedSerials.join(", ")}` : "";
       const desc = r.product?.description || "";
-      const pphMatch = desc.match(/^PPH:(.+)$/);
-      const matchedQuoItem = Array.isArray(linkedQuotation?.items)
-        ? linkedQuotation.items.find((qi: any) =>
-            (qi.productId && String(qi.productId) === String(r.product?.id)) ||
-            String(qi.item || qi.name || "").toLowerCase() === String(r.product?.name || "").toLowerCase()
-          )
-        : null;
+      const pphMatch = desc.match(/PPH:([^;]+)/);
+      const sellMatch = desc.match(/SELL:([^;]+)/);
+
+      const allQuoItems: any[] =
+        Array.isArray(activeQuotation?.items) && activeQuotation.items.length > 0
+          ? activeQuotation.items
+          : Array.isArray(linkedQuotation?.items)
+          ? linkedQuotation.items
+          : [];
+
+      const matchedQuoItem = allQuoItems.find((qi: any) => {
+        if (qi.productId && r.product?.id && String(qi.productId) === String(r.product.id)) {
+          return true;
+        }
+        if (
+          qi.sku &&
+          r.product?.sku &&
+          String(qi.sku).trim().toLowerCase() === String(r.product.sku).trim().toLowerCase()
+        ) {
+          return true;
+        }
+        const cleanQi = String(qi.item || qi.name || qi.nama || "")
+          .replace(/\s*\(SN:.*?\)/gi, "")
+          .replace(/\s*\[SN:.*?\]/gi, "")
+          .replace(/\s*\(SKU-.*?\)/gi, "")
+          .replace(/\s*#\d+/g, "")
+          .trim()
+          .toLowerCase();
+        const cleanProd = String(r.product?.name || r.produk || "").trim().toLowerCase();
+        if (cleanQi && cleanProd) {
+          if (cleanQi === cleanProd) return true;
+          if (cleanQi.includes(cleanProd) || cleanProd.includes(cleanQi)) return true;
+        }
+        return false;
+      });
+
+      const isExtra = r.isExtra !== undefined ? Boolean(r.isExtra) : !matchedQuoItem;
+      const sellingPrice = sellMatch ? Number(sellMatch[1]) : Number(matchedQuoItem?.harga || matchedQuoItem?.price || effectiveCost);
       const pphMode = pphMatch ? pphMatch[1] : (matchedQuoItem?.pphMode || "none");
       return {
         id: String(r.id),
@@ -248,15 +315,17 @@ export function ProjectExtras({ row }: { row: Row }) {
         neededQty: needed,
         reservedQty: reserved,
         shortageQty: shortage,
-        unitPrice,
+        costPrice: effectiveCost,
+        unitPrice: sellingPrice,
+        isExtra,
         serials: parsedSerials,
         status:
-          (shortage > 0
+          shortage > 0
             ? `Reserved ${reserved} · Kurang ${shortage} (Masuk PR Procurement)`
-            : `Tersedia & Di-reserve (${reserved})`) + snNote,
+            : `Tersedia & Di-reserve (${reserved})`,
       };
     });
-  }, [linkedQuotation]);
+  }, [activeQuotation, linkedQuotation, data.products]);
 
   const loadRequirements = React.useCallback(async () => {
     try {
@@ -290,12 +359,15 @@ export function ProjectExtras({ row }: { row: Row }) {
             String(p.nama || "").toLowerCase() === String(it.item || "").toLowerCase(),
         );
         const q = Number(it.qty) || 1;
-        const priceNum = Number(it.price ?? it.harga ?? prod?.purchasePrice ?? 0);
+        const buyPrice = Number(prod?.hargaBeli ?? prod?.purchasePrice ?? it.harga ?? 0);
+        const sellPrice = Number(it.price ?? it.harga ?? buyPrice);
         await api("POST", `/projects/${row.id}/requirements`, {
           productId: prod ? Number(prod.id) : (it.productId ? Number(it.productId) : undefined),
           name: !prod && !it.productId ? it.item : undefined,
           unit: it.unit || it.satuan || prod?.unit || "unit",
-          price: priceNum,
+          costPrice: buyPrice,
+          price: buyPrice,
+          sellingPrice: sellPrice,
           qty: q,
           serials: Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? it.serialNumbers : undefined,
         });
@@ -316,18 +388,22 @@ export function ProjectExtras({ row }: { row: Row }) {
       return;
     }
     const q = Math.max(1, Math.round(Number(customBoqQty) || 1));
-    const priceNum = Number(customBoqPrice.replace(/\D/g, "")) || 0;
+    const costPriceNum = Number(customBoqCostPrice.replace(/\D/g, "")) || 0;
+    const priceNum = Number(customBoqPrice.replace(/\D/g, "")) || costPriceNum;
     try {
       await api("POST", `/projects/${row.id}/requirements`, {
         name: customBoqName.trim(),
         unit: customBoqUnit.trim() || "pcs",
-        price: priceNum,
+        costPrice: costPriceNum,
+        price: costPriceNum,
+        sellingPrice: priceNum,
         qty: q,
         pphMode: customBoqPphMode,
       });
       await loadRequirements();
       await reload();
       setCustomBoqName("");
+      setCustomBoqCostPrice("");
       setCustomBoqPrice("");
       setCustomBoqQty("1");
       setCustomBoqPphMode("none");
@@ -339,41 +415,43 @@ export function ProjectExtras({ row }: { row: Row }) {
   }
 
   async function handleSyncBoqFromQuotation() {
-    if (!linkedQuotation) {
+    const q = activeQuotation || linkedQuotation;
+    if (!q) {
       toast("Belum ada penawaran yang terhubung ke project ini", "danger");
-      return;
-    }
-    const qItems: any[] = Array.isArray(linkedQuotation.items) ? linkedQuotation.items : [];
-    if (qItems.length === 0) {
-      toast("Penawaran terkait belum memiliki rincian item BOQ", "danger");
       return;
     }
     setIsSyncingBoq(true);
     try {
-      let addedCount = 0;
-      for (const it of qItems) {
-        const prod = products.find(
-          (p) =>
-            (it.productId && String(p.id) === String(it.productId)) ||
-            String(p.nama || "").toLowerCase() === String(it.name || it.nama || "").toLowerCase(),
-        );
-        if (!prod || prod.type === "JASA") continue;
-        const sn = it.serialNumber || it.sn;
-        await api("POST", `/projects/${row.id}/requirements`, {
-          productId: Number(prod.id),
-          qty: sn ? 1 : Math.max(1, Number(it.qty) || 1),
-          serials: sn ? [String(sn)] : undefined,
-          pphMode: it.pphMode,
-        });
-        addedCount++;
+      const targetQId = Number(q.id);
+      let res: any;
+      if (targetQId) {
+        res = await api<any>("POST", `/projects/${row.id}/sync-quotation`, { quotationId: targetQId }).catch(() => null);
+      }
+      if (!res || !res.imported) {
+        // Fallback: sync manual items dari quotation bila API sync-quotation tidak mengembalikan hasil
+        const itemsToSync: any[] = Array.isArray(q.items) ? q.items : [];
+        let addedCount = 0;
+        for (const it of itemsToSync) {
+          const prod = products.find(
+            (p) =>
+              (it.productId && String(p.id) === String(it.productId)) ||
+              (it.sku && p.sku && String(p.sku).trim().toLowerCase() === String(it.sku).trim().toLowerCase()) ||
+              String(p.nama || "").toLowerCase() === String(it.name || it.nama || it.item || "").replace(/\s*\(SN:.*$/i, "").trim().toLowerCase(),
+          );
+          if (!prod || prod.type === "JASA") continue;
+          const sn = it.serialNumber || it.sn;
+          await api("POST", `/projects/${row.id}/requirements`, {
+            productId: Number(prod.id),
+            qty: sn ? 1 : Math.max(1, Number(it.qty) || 1),
+            serials: sn ? [String(sn)] : undefined,
+            pphMode: it.pphMode,
+          }).catch(() => {});
+          addedCount++;
+        }
       }
       await loadRequirements();
       await reload();
-      toast(
-        addedCount > 0
-          ? `${addedCount} item BOQ dari Penawaran ${linkedQuotation.nomor} berhasil disinkronkan ke Project`
-          : "Tidak ada item barang fisik baru untuk disinkronkan",
-      );
+      toast(`BOQ dari Penawaran ${q.nomor || q.number || ""} berhasil disinkronkan ke Project`);
     } catch (e: any) {
       toast(e?.message ?? "Gagal menyinkronkan BOQ dari penawaran", "danger");
     } finally {
@@ -386,6 +464,7 @@ export function ProjectExtras({ row }: { row: Row }) {
     setEditReqName(m.produk || "");
     setEditReqQty(String(m.neededQty || 1));
     setEditReqUnit(m.unit || "unit");
+    setEditReqCostPrice(m.costPrice ? formatThousands(m.costPrice) : "");
     setEditReqPrice(m.unitPrice ? formatThousands(m.unitPrice) : "");
     setEditReqPphMode(m.pphMode || "none");
     setEditReqOpen(true);
@@ -394,13 +473,16 @@ export function ProjectExtras({ row }: { row: Row }) {
   async function handleSaveEditRequirement() {
     if (!editingReq) return;
     const q = Math.max(1, Math.round(Number(editReqQty) || 1));
-    const priceNum = Number(String(editReqPrice).replace(/\D/g, "")) || 0;
+    const costPriceNum = Number(String(editReqCostPrice).replace(/\D/g, "")) || 0;
+    const priceNum = Number(String(editReqPrice).replace(/\D/g, "")) || costPriceNum;
     try {
       await api("PUT", `/projects/${row.id}/requirements/${editingReq.id}`, {
         name: editReqName.trim() || undefined,
         qty: q,
         unit: editReqUnit.trim() || "unit",
-        price: priceNum,
+        costPrice: costPriceNum,
+        price: costPriceNum,
+        sellingPrice: priceNum,
         pphMode: editReqPphMode,
       });
       await loadRequirements();
@@ -591,16 +673,28 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
   }
 
-  const qItems: any[] = Array.isArray(linkedQuotation?.items) ? linkedQuotation.items : [];
+  const qItems: any[] =
+    Array.isArray(activeQuotation?.items) && activeQuotation.items.length > 0
+      ? activeQuotation.items
+      : Array.isArray(linkedQuotation?.items)
+      ? linkedQuotation.items
+      : [];
   const quoServices = qItems.filter(
-    (it: any) => it.itemType === "CUSTOM" || (!it.productId && !it.serialNumber && !it.sn)
+    (it: any) => it.itemType === "CUSTOM" || (!it.productId && !it.serialNumber && !it.sn) || it.kind === "SERVICE"
   );
 
+  const contractRequirements = React.useMemo(() => requirements.filter((m) => !m.isExtra), [requirements]);
+  const extraRequirements = React.useMemo(() => requirements.filter((m) => m.isExtra), [requirements]);
+
   const boqTotalValue = React.useMemo(() => {
-    const matVal = requirements.reduce((acc, m) => acc + m.neededQty * (m.unitPrice || 0), 0);
-    const svcVal = quoServices.reduce((acc, s) => acc + (Number(s.qty) || 1) * (Number(s.price) || 0), 0);
+    const matVal = contractRequirements.reduce((acc, m) => acc + m.neededQty * (m.unitPrice || 0), 0);
+    const svcVal = quoServices.reduce((acc, s) => acc + (Number(s.qty) || 1) * (Number(s.price || s.harga) || 0), 0);
     return matVal + svcVal;
-  }, [requirements, quoServices]);
+  }, [contractRequirements, quoServices]);
+
+  const extraTotalValue = React.useMemo(() => {
+    return extraRequirements.reduce((acc, m) => acc + m.neededQty * (m.unitPrice || 0), 0);
+  }, [extraRequirements]);
 
   // Sumber kebenaran: tahapan dari server (sama untuk semua role); fallback ke hitungan lokal.
   const st = (row as any).stages as
@@ -645,34 +739,25 @@ export function ProjectExtras({ row }: { row: Row }) {
         </View>
       </Panel>
 
+      {/* 1. BOQ Kontrak Awal dari Penawaran Resmi (Read-Only) */}
       <Panel
         title="1. BOQ (Bill of Quantities) & Reservasi Material Project"
-        subtitle="Daftar seluruh kebutuhan barang (Ber-SN & Non-SN) serta jasa instalasi project. Stok yang tersedia otomatis di-reserve dan kekurangan masuk ke PR Procurement."
+        subtitle="Daftar seluruh kebutuhan barang serta jasa instalasi dari penawaran resmi (Read-Only)."
         right={
-          <View className="flex-row flex-wrap items-center gap-1.5">
-            {linkedQuotation ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onPress={handleSyncBoqFromQuotation}
-                disabled={isSyncingBoq}
-                className="flex-row items-center gap-1"
-              >
-                <RefreshCw size={13} color={colors.primary} />
-                <Text className="text-xs text-primary font-semibold">
-                  {isSyncingBoq ? "Menyinkronkan..." : "Sinkron BOQ dari Penawaran"}
-                </Text>
-              </Button>
-            ) : null}
-            <Button size="sm" variant="outline" onPress={() => setCustomBoqOpen(true)} className="flex-row items-center gap-1">
-              <Plus size={14} color={colors.text} />
-              <Text className="text-xs">+ Item Kustom</Text>
+          activeQuotation || linkedQuotation ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={handleSyncBoqFromQuotation}
+              disabled={isSyncingBoq}
+              className="flex-row items-center gap-1"
+            >
+              <RefreshCw size={13} color={colors.primary} />
+              <Text className="text-xs text-primary font-semibold">
+                {isSyncingBoq ? "Menyinkronkan..." : "Sinkron BOQ dari Penawaran"}
+              </Text>
             </Button>
-            <Button size="sm" variant="default" onPress={() => setPickerOpen(true)} className="flex-row items-center gap-1 bg-primary">
-              <Package size={14} color="#fff" />
-              <Text className="text-xs text-white font-medium">+ Pilih Stok & SN / Jasa</Text>
-            </Button>
-          </View>
+          ) : undefined
         }
       >
         <View className="gap-2">
@@ -684,23 +769,89 @@ export function ProjectExtras({ row }: { row: Row }) {
               toast("Dokumen BOQ berhasil diunggah");
             }}
           />
-          {requirements.length === 0 && quoServices.length === 0 ? (
+          {contractRequirements.length === 0 && quoServices.length === 0 ? (
             <Text className="text-muted-foreground text-xs py-2">
-              Belum ada item BOQ untuk project ini. Klik &quot;Tambah Item BOQ&quot; atau &quot;Sinkron BOQ dari Penawaran&quot;.
+              Belum ada item BOQ kontrak untuk project ini. Klik &quot;Sinkron BOQ dari Penawaran&quot;.
             </Text>
           ) : (
             <>
-              {requirements.map((m) => (
+              {contractRequirements.map((m) => (
                 <Line
                   key={m.id}
                   left={m.produk}
                   sub={`${m.sku ? `SKU: ${m.sku} · ` : ""}${m.kategori ? `Kategori: ${m.kategori} · ` : ""}${m.pphMode && m.pphMode !== "none" ? `PPh: ${m.pphMode.toUpperCase()} · ` : ""}${m.status}`}
                   right={
+                    <View className="items-end">
+                      <Text className="font-semibold text-sm">{m.neededQty} {m.unit || "unit"}</Text>
+                      {canViewBoqPricing && m.unitPrice > 0 ? (
+                        <Text className="text-muted-foreground text-[11px]">{rupiah(m.neededQty * m.unitPrice)}</Text>
+                      ) : null}
+                    </View>
+                  }
+                />
+              ))}
+              {quoServices.map((sv: any, idx: number) => (
+                <Line
+                  key={`svc-${idx}`}
+                  left={`${sv.name || sv.nama || sv.item || "Jasa Instalasi"} (Jasa / Pekerjaan)`}
+                  sub={`Dari Penawaran ${linkedQuotation?.nomor || ""} · ${sv.qty || 1} ${sv.unit || sv.satuan || "Lot"}${sv.pphMode && sv.pphMode !== "none" ? ` · PPh: ${sv.pphMode.toUpperCase()}` : ""}`}
+                  right={
+                    <View className="items-end">
+                      <Text className="font-semibold text-sm">{sv.qty || 1} {sv.unit || sv.satuan || "Lot"}</Text>
+                      {canViewBoqPricing ? (
+                        <Text className="text-muted-foreground text-[11px]">{rupiah((Number(sv.qty) || 1) * (Number(sv.price || sv.harga) || 0))}</Text>
+                      ) : null}
+                    </View>
+                  }
+                />
+              ))}
+              {canViewBoqPricing && boqTotalValue > 0 ? (
+                <Line
+                  left="Total Estimasi Nilai BOQ Kontrak Awal"
+                  right={<Text className="text-sm font-bold text-primary">{rupiah(boqTotalValue)}</Text>}
+                />
+              ) : null}
+            </>
+          )}
+        </View>
+      </Panel>
+
+      {/* 1.B Barang & Jasa Tambahan di Luar BOQ Awal */}
+      <Panel
+        title="Barang & Jasa Tambahan (Di Luar BOQ Awal)"
+        subtitle="Daftar material, barang ritel, dan jasa tambahan yang diajukan di luar penawaran kontrak awal. Beban modal masuk ke P&L project."
+        right={
+          <Button
+            size="sm"
+            variant="default"
+            onPress={() => setPickerOpen(true)}
+            className="flex-row items-center gap-1 bg-primary"
+          >
+            <Package size={14} color="#fff" />
+            <Text className="text-xs text-white font-medium">+ Pilih Stok & Jasa</Text>
+          </Button>
+        }
+      >
+        <View className="gap-2">
+          {extraRequirements.length === 0 ? (
+            <Text className="text-muted-foreground text-xs py-2">
+              Belum ada barang atau jasa tambahan di luar BOQ awal untuk project ini.
+            </Text>
+          ) : (
+            <>
+              {extraRequirements.map((m) => (
+                <Line
+                  key={m.id}
+                  left={`${m.produk} · Tambahan`}
+                  sub={`${m.sku ? `SKU: ${m.sku} · ` : ""}${m.kategori ? `Kategori: ${m.kategori} · ` : ""}${m.pphMode && m.pphMode !== "none" ? `PPh: ${m.pphMode.toUpperCase()} · ` : ""}${m.status}`}
+                  right={
                     <View className="flex-row items-center gap-3">
                       <View className="items-end">
                         <Text className="font-semibold text-sm">{m.neededQty} {m.unit || "unit"}</Text>
-                        {m.unitPrice > 0 ? (
-                          <Text className="text-muted-foreground text-[11px]">{rupiah(m.neededQty * m.unitPrice)}</Text>
+                        {canViewBoqPricing && (m.costPrice > 0 || m.unitPrice > 0) ? (
+                          <Text className="text-muted-foreground text-[11px]">
+                            {m.costPrice > 0 ? `Modal: ${rupiah(m.neededQty * m.costPrice)}` : rupiah(m.neededQty * m.unitPrice)}
+                          </Text>
                         ) : null}
                       </View>
                       <View className="flex-row items-center gap-1">
@@ -725,42 +876,10 @@ export function ProjectExtras({ row }: { row: Row }) {
                   }
                 />
               ))}
-              {quoServices.map((sv: any, idx: number) => (
+              {canViewBoqPricing && (extraTotalValue > 0 || extraItemsCost > 0) ? (
                 <Line
-                  key={`svc-${idx}`}
-                  left={`${sv.name || sv.nama || sv.item || "Jasa Instalasi"} (Jasa / Pekerjaan)`}
-                  sub={`Dari Penawaran ${linkedQuotation?.nomor || ""} · ${sv.qty || 1} ${sv.unit || sv.satuan || "Lot"}${sv.pphMode && sv.pphMode !== "none" ? ` · PPh: ${sv.pphMode.toUpperCase()}` : ""}`}
-                  right={
-                    <View className="flex-row items-center gap-3">
-                      <View className="items-end">
-                        <Text className="font-semibold text-sm">{rupiah((Number(sv.qty) || 1) * (Number(sv.price || sv.harga) || 0))}</Text>
-                      </View>
-                      <View className="flex-row items-center gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          onPress={() => openEditService(sv, idx)}
-                        >
-                          <Edit2 size={13} color={colors.text} />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          onPress={() => handleDeleteService(idx)}
-                        >
-                          <Trash2 size={13} color={colors.danger} />
-                        </Button>
-                      </View>
-                    </View>
-                  }
-                />
-              ))}
-              {boqTotalValue > 0 ? (
-                <Line
-                  left="Total Estimasi Nilai BOQ (Material + Jasa)"
-                  right={<Text className="text-sm font-bold text-primary">{rupiah(boqTotalValue)}</Text>}
+                  left="Total Beban Modal Barang Tambahan"
+                  right={<Text className="text-sm font-bold text-amber-600 dark:text-amber-400">{rupiah(extraItemsCost > 0 ? extraItemsCost : extraTotalValue)}</Text>}
                 />
               ) : null}
             </>
@@ -931,7 +1050,7 @@ export function ProjectExtras({ row }: { row: Row }) {
           }
         >
           <View className="gap-4">
-            <View className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <View className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               <View className="p-3 rounded-lg bg-card/60 border border-border">
                 <Text className="text-xs text-muted-foreground">Pendapatan (DPP Invoice)</Text>
                 <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
@@ -941,6 +1060,11 @@ export function ProjectExtras({ row }: { row: Row }) {
                 <Text className="text-xs text-muted-foreground">Beban PO Supplier</Text>
                 <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
                 <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Beban Tambahan (Di Luar BOQ)</Text>
+                <Text className="text-base font-bold mt-1 text-rose-500">{rupiah(extraItemsCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">{extraRequirements.length} item tambahan</Text>
               </View>
               <View className="p-3 rounded-lg bg-card/60 border border-border">
                 <Text className="text-xs text-muted-foreground">Biaya Operasional & Reimburse</Text>
@@ -954,6 +1078,54 @@ export function ProjectExtras({ row }: { row: Row }) {
                 </Text>
                 <Text className="text-[10px] text-muted-foreground mt-0.5">Total Beban: {rupiah(totalCost)}</Text>
               </View>
+            </View>
+
+            {/* Rincian Material & Jasa Tambahan di Luar BOQ */}
+            <View className="gap-2 pt-2 border-t border-border mt-1">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs font-semibold text-foreground">
+                  Rincian Material & Jasa Tambahan di Luar BOQ ({extraRequirements.length} item)
+                </Text>
+                {extraItemsCost > 0 ? (
+                  <Text className="text-xs font-bold text-rose-500">
+                    Total Beban: {rupiah(extraItemsCost)}
+                  </Text>
+                ) : null}
+              </View>
+              {extraRequirements.length === 0 ? (
+                <Text className="text-xs text-muted-foreground py-2">
+                  Belum ada barang atau jasa tambahan di luar BOQ untuk project ini.
+                </Text>
+              ) : (
+                <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                  {extraRequirements.map((it) => {
+                    const itemExpense = it.neededQty * (it.costPrice || it.unitPrice || 0);
+                    return (
+                      <View key={it.id} className="p-3 flex-row items-center justify-between bg-card/30">
+                        <View className="flex-1 pr-2">
+                          <View className="flex-row items-center gap-2 flex-wrap">
+                            <Text className="text-sm font-semibold text-foreground">
+                              {it.produk}
+                            </Text>
+                            <View className="bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5">
+                              <Text className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                Di Luar BOQ Awal
+                              </Text>
+                            </View>
+                          </View>
+                          <Text className="text-xs text-muted-foreground mt-1">
+                            {it.neededQty} {it.unit || "unit"} {it.costPrice > 0 ? `• Modal: ${rupiah(it.costPrice)} / ${it.unit || "unit"}` : ""}
+                            {it.sku ? ` • SKU: ${it.sku}` : ""}
+                          </Text>
+                        </View>
+                        <Text className="text-sm font-bold text-rose-500">
+                          {rupiah(itemExpense)}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
 
             {/* Rincian Operasional & Reimbursement */}
@@ -1008,6 +1180,9 @@ export function ProjectExtras({ row }: { row: Row }) {
       <SerialItemPickerModal
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
+        currentProjectId={row.id}
+        currentQuotationId={linkedQuotation?.id}
+        allowedInvoiceIds={projectInvoices.map((i: any) => String(i.id || i.nomor))}
         onAddItems={handleAddBoqFromPicker}
       />
 
@@ -1027,9 +1202,18 @@ export function ProjectExtras({ row }: { row: Row }) {
               />
             </View>
 
-            <View className="flex-row gap-2">
-              <View className="flex-1 gap-1">
-                <Text className="text-xs text-muted-foreground font-medium">Estimasi Harga Satuan (Rp)</Text>
+            <View className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <View className="gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Harga Modal / Beli (Rp)</Text>
+                <Input
+                  value={customBoqCostPrice ? formatThousands(customBoqCostPrice) : ""}
+                  onChangeText={(v) => setCustomBoqCostPrice(formatThousands(v))}
+                  keyboardType="numeric"
+                  placeholder="Contoh: 15.000"
+                />
+              </View>
+              <View className="gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Harga Jual ke Klien (Rp)</Text>
                 <Input
                   value={customBoqPrice ? formatThousands(customBoqPrice) : ""}
                   onChangeText={(v) => setCustomBoqPrice(formatThousands(v))}
@@ -1037,7 +1221,19 @@ export function ProjectExtras({ row }: { row: Row }) {
                   placeholder="Contoh: 25.000"
                 />
               </View>
-              <View className="w-24 gap-1">
+            </View>
+
+            <View className="flex-row gap-2">
+              <View className="flex-1 gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Jumlah yang Dibutuhkan (Qty)</Text>
+                <Input
+                  value={customBoqQty}
+                  onChangeText={setCustomBoqQty}
+                  placeholder="1"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View className="w-28 gap-1">
                 <Text className="text-xs text-muted-foreground font-medium">Satuan</Text>
                 <Input
                   value={customBoqUnit}
@@ -1045,16 +1241,6 @@ export function ProjectExtras({ row }: { row: Row }) {
                   placeholder="pcs / batang"
                 />
               </View>
-            </View>
-
-            <View className="gap-1">
-              <Text className="text-xs text-muted-foreground font-medium">Jumlah yang Dibutuhkan (Qty)</Text>
-              <Input
-                value={customBoqQty}
-                onChangeText={setCustomBoqQty}
-                placeholder="1"
-                keyboardType="numeric"
-              />
             </View>
 
             <View className="gap-1.5 pt-1">
@@ -1106,9 +1292,18 @@ export function ProjectExtras({ row }: { row: Row }) {
               />
             </View>
 
-            <View className="flex-row gap-2">
-              <View className="flex-1 gap-1">
-                <Text className="text-xs text-muted-foreground font-medium">Estimasi Harga Satuan (Rp)</Text>
+            <View className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <View className="gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Harga Modal / Beli (Rp)</Text>
+                <Input
+                  value={editReqCostPrice ? formatThousands(editReqCostPrice) : ""}
+                  onChangeText={(v) => setEditReqCostPrice(formatThousands(v))}
+                  keyboardType="numeric"
+                  placeholder="0"
+                />
+              </View>
+              <View className="gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Harga Jual ke Klien (Rp)</Text>
                 <Input
                   value={editReqPrice ? formatThousands(editReqPrice) : ""}
                   onChangeText={(v) => setEditReqPrice(formatThousands(v))}
@@ -1116,7 +1311,19 @@ export function ProjectExtras({ row }: { row: Row }) {
                   placeholder="0"
                 />
               </View>
-              <View className="w-24 gap-1">
+            </View>
+
+            <View className="flex-row gap-2">
+              <View className="flex-1 gap-1">
+                <Text className="text-xs text-muted-foreground font-medium">Jumlah yang Dibutuhkan (Qty)</Text>
+                <Input
+                  value={editReqQty}
+                  onChangeText={setEditReqQty}
+                  placeholder="1"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View className="w-28 gap-1">
                 <Text className="text-xs text-muted-foreground font-medium">Satuan</Text>
                 <Input
                   value={editReqUnit}
@@ -1124,16 +1331,6 @@ export function ProjectExtras({ row }: { row: Row }) {
                   placeholder="unit / pcs"
                 />
               </View>
-            </View>
-
-            <View className="gap-1">
-              <Text className="text-xs text-muted-foreground font-medium">Jumlah yang Dibutuhkan (Qty)</Text>
-              <Input
-                value={editReqQty}
-                onChangeText={setEditReqQty}
-                placeholder="1"
-                keyboardType="numeric"
-              />
             </View>
 
             <View className="gap-1.5 pt-1">

@@ -142,11 +142,17 @@ export class ProductDto {
   @IsOptional() @IsInt() @Min(0)
   minStock?: number;
 
+  @IsOptional() @IsInt()
+  min?: number;
+
   @IsOptional() @IsInt() @Min(0)
   warrantyMonths?: number;
 
   @IsOptional() @IsNumber()
   purchasePrice?: number;
+
+  @IsOptional() @IsNumber()
+  hargaBeli?: number;
 
   @Transform(({ value }) => normalizeActiveStatus(value))
   @IsOptional() @IsIn(["AKTIF", "NONAKTIF"])

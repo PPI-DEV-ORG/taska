@@ -55,21 +55,36 @@ export default function MasterDataScreen() {
 
   function deleteActions(module: string, singular: string, canDelete: boolean) {
     if (!canDelete) return undefined;
-    const render = (row: any) => (
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-8 rounded-lg hover:bg-danger/10"
-        onPress={() => setDeleteTarget({
-          module,
-          id: String(row.id),
-          label: String(row.nama ?? row.name ?? row.sku ?? row.nomor ?? row.id),
-          singular,
-        })}
-      >
-        <Trash2 size={15} color={colors.danger} />
-      </Button>
-    );
+    const render = (row: any) => {
+      const isProduct = module === "products";
+      const stock = Number(row.stokNum ?? row.stock ?? 0);
+      const hasStock = isProduct && stock > 0;
+
+      return (
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`size-8 rounded-lg ${hasStock ? "opacity-35" : "hover:bg-danger/10"}`}
+          onPress={() => {
+            if (hasStock) {
+              toast(
+                `Barang "${row.nama ?? row.name ?? row.sku}" masih memiliki stok fisik (${stock} ${row.satuan || "unit"}). Hanya barang dengan stok 0 yang dapat dihapus.`,
+                "warning",
+              );
+              return;
+            }
+            setDeleteTarget({
+              module,
+              id: String(row.id),
+              label: String(row.nama ?? row.name ?? row.sku ?? row.nomor ?? row.id),
+              singular,
+            });
+          }}
+        >
+          <Trash2 size={15} color={hasStock ? colors.muted : colors.danger} />
+        </Button>
+      );
+    };
     render.displayName = `Delete${module}`;
     return render;
   }

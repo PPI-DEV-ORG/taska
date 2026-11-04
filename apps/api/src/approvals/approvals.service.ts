@@ -457,7 +457,6 @@ export class ApprovalsService {
       await this.prisma.main.approvalStep.updateMany({
         where: { approvalId, status: "MENUNGGU" },
         data: {
-          approverRole: user.role as Role,
           status: approve ? "DISETUJUI" : "DITOLAK",
           decidedById: user.id,
           decidedAt: new Date(),

@@ -24,7 +24,75 @@ export class SerialsService {
     private readonly stock: StockService,
   ) {}
 
+  /** Pastikan unit SN di DB sinkron dengan saldo fisik di StockBalance untuk produk serialized */
+  async ensureSerialsForProduct(productId: number) {
+    try {
+      const product = await this.prisma.main.product.findUnique({
+        where: { id: productId },
+        include: { category: true },
+      });
+      if (!product || !product.hasSerial) return;
+
+      const balances = await this.prisma.main.stockBalance.findMany({
+        where: { productId, qty: { gt: 0 } },
+      });
+
+      for (const b of balances) {
+        const existingCount = await this.prisma.main.serialUnit.count({
+          where: {
+            productId,
+            warehouseId: b.warehouseId,
+            status: { in: ["DI_GUDANG", "RESERVED"] },
+          },
+        });
+
+        const missingCount = b.qty - existingCount;
+        if (missingCount > 0) {
+          const brandOrPrefix =
+            product.brand ||
+            product.category?.prefix ||
+            (product.name.match(/\b([A-Z]{3,})\b/)?.[1]) ||
+            "SN";
+          const now = new Date();
+          const warrantyEndsAt = product.warrantyMonths
+            ? new Date(now.getFullYear(), now.getMonth() + product.warrantyMonths, now.getDate())
+            : null;
+
+          for (let i = 0; i < missingCount; i++) {
+            let candidate = "";
+            let exists = true;
+            let attempts = 0;
+            while (exists && attempts < 30) {
+              attempts++;
+              const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+              candidate = `${brandOrPrefix}-${randomSuffix}`;
+              const found = await this.prisma.main.serialUnit.findUnique({ where: { sn: candidate } });
+              exists = Boolean(found);
+            }
+            if (candidate) {
+              await this.prisma.main.serialUnit.create({
+                data: {
+                  sn: candidate,
+                  productId,
+                  status: "DI_GUDANG",
+                  warehouseId: b.warehouseId,
+                  warrantyEndsAt,
+                },
+              }).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`Gagal memastikan serials untuk produk #${productId}:`, (e as Error).message);
+    }
+  }
+
   async list(q: SerialListQuery) {
+    if (q.productId) {
+      await this.ensureSerialsForProduct(q.productId);
+    }
+
     const where = {
       ...(q.sn ? { sn: { contains: q.sn } } : {}),
       ...(q.status ? { status: q.status as SerialStatus } : {}),
