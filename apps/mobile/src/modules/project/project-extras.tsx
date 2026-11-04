@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView, Pressable } from "react-native";
+import { View, ScrollView, Pressable, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { Printer, Plus, Check, CheckCircle2, Circle, ExternalLink, RefreshCw, Package, Edit2, Trash2, FileCheck, FileText, Upload } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -78,8 +78,10 @@ export function ProjectExtras({ row }: { row: Row }) {
   const [bastMode, setBastMode] = React.useState<"generate" | "upload">("generate");
   const [bastNumber, setBastNumber] = React.useState("");
   const [bastDate, setBastDate] = React.useState("");
+  const [bastP1Company, setBastP1Company] = React.useState("PT GHINA MULTI PRIMA");
   const [bastP1Name, setBastP1Name] = React.useState("");
   const [bastP1Title, setBastP1Title] = React.useState("Project Manager");
+  const [bastLogoFileId, setBastLogoFileId] = React.useState<number | null>(null);
   const [bastP2Company, setBastP2Company] = React.useState("");
   const [bastP2Name, setBastP2Name] = React.useState("");
   const [bastP2Title, setBastP2Title] = React.useState("Penanggung Jawab Proyek");
@@ -88,6 +90,7 @@ export function ProjectExtras({ row }: { row: Row }) {
   const [bastItems, setBastItems] = React.useState<{ name: string; qty: number; unit: string }[]>([]);
   const [isGeneratingBast, setIsGeneratingBast] = React.useState(false);
   const bastUploaderRef = React.useRef<FileUploaderHandle | null>(null);
+  const bastLogoUploaderRef = React.useRef<FileUploaderHandle | null>(null);
 
   const [requirements, setRequirements] = React.useState<
     {
@@ -430,7 +433,6 @@ export function ProjectExtras({ row }: { row: Row }) {
       if (!res || !res.imported) {
         // Fallback: sync manual items dari quotation bila API sync-quotation tidak mengembalikan hasil
         const itemsToSync: any[] = Array.isArray(q.items) ? q.items : [];
-        let addedCount = 0;
         for (const it of itemsToSync) {
           const prod = products.find(
             (p) =>
@@ -446,7 +448,6 @@ export function ProjectExtras({ row }: { row: Row }) {
             serials: sn ? [String(sn)] : undefined,
             pphMode: it.pphMode,
           }).catch(() => {});
-          addedCount++;
         }
       }
       await loadRequirements();
@@ -506,15 +507,6 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
   }
 
-  function openEditService(sv: any, idx: number) {
-    setEditingServiceIdx(idx);
-    setEditServiceName(sv.name || sv.nama || sv.item || "Jasa Instalasi");
-    setEditServiceQty(String(sv.qty || 1));
-    setEditServiceUnit(sv.unit || sv.satuan || "Lot");
-    setEditServicePrice(sv.price || sv.harga ? formatThousands(sv.price || sv.harga) : "");
-    setEditServicePphMode(sv.pphMode || "none");
-    setEditServiceOpen(true);
-  }
 
   async function handleSaveEditService() {
     if (editingServiceIdx === null || !linkedQuotation) return;
@@ -552,25 +544,6 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
   }
 
-  async function handleDeleteService(idx: number) {
-    if (!linkedQuotation) return;
-    const qItems = [...(Array.isArray(linkedQuotation.items) ? linkedQuotation.items : [])];
-    const targetService = quoServices[idx];
-    if (!targetService) return;
-    const realIdx = qItems.findIndex(
-      (it) => it === targetService || (it.item === targetService.item && it.id === targetService.id)
-    );
-    if (realIdx === -1) return;
-
-    qItems.splice(realIdx, 1);
-    try {
-      await patchRow("quotations", linkedQuotation.id, { items: qItems });
-      await reload();
-      toast("Jasa BOQ berhasil dihapus");
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal menghapus jasa BOQ", "danger");
-    }
-  }
 
   const prevBastOpenRef = React.useRef(false);
   React.useEffect(() => {
@@ -578,6 +551,7 @@ export function ProjectExtras({ row }: { row: Row }) {
       const todayStr = new Date().toISOString().slice(0, 10);
       setBastNumber(`BAST-P${row.id}-${todayStr.replace(/-/g, "")}`);
       setBastDate(todayStr);
+      setBastP1Company("PT GHINA MULTI PRIMA");
       setBastP1Name(row.pm || user?.name || "Project Manager");
       setBastP1Title("Project Manager");
       setBastP2Company(row.customer || "Customer");
@@ -604,6 +578,18 @@ export function ProjectExtras({ row }: { row: Row }) {
           ];
       setBastItems(initialItems);
       setBastMode("generate");
+
+      api<any>("GET", `/settings/project.bast.${row.id}`)
+        .then((res) => {
+          const val = res?.value;
+          if (val) {
+            if (val.party1Company) setBastP1Company(val.party1Company);
+            if (val.party1Name) setBastP1Name(val.party1Name);
+            if (val.party1Title) setBastP1Title(val.party1Title);
+            if (val.logoFileId) setBastLogoFileId(Number(val.logoFileId));
+          }
+        })
+        .catch(() => {});
     }
     prevBastOpenRef.current = bastOpen;
   }, [bastOpen]);
@@ -611,10 +597,18 @@ export function ProjectExtras({ row }: { row: Row }) {
   async function handleGenerateBast() {
     setIsGeneratingBast(true);
     try {
+      let logoFileId = bastLogoFileId;
+      if (bastLogoUploaderRef.current?.hasStaged()) {
+        try {
+          const flushed = await bastLogoUploaderRef.current.flush();
+          if (flushed) logoFileId = Number(flushed);
+        } catch {}
+      }
+
       const res = await api<any>("POST", `/projects/${row.id}/generate-bast`, {
         number: bastNumber.trim(),
         date: bastDate,
-        party1Company: "PT GHINA MULTI PRIMA",
+        party1Company: bastP1Company.trim() || "PT GHINA MULTI PRIMA",
         party1Name: bastP1Name.trim(),
         party1Title: bastP1Title.trim(),
         party2Company: bastP2Company.trim(),
@@ -627,6 +621,7 @@ export function ProjectExtras({ row }: { row: Row }) {
           unit: it.unit?.trim() || "unit",
         })),
         notes: bastNotes.trim(),
+        logoFileId: logoFileId ? Number(logoFileId) : undefined,
       });
       if (res?.fileId) {
         toast("Dokumen BAST resmi berhasil dibuat & tersimpan di Tab Dokumen!");
@@ -1501,24 +1496,72 @@ export function ProjectExtras({ row }: { row: Row }) {
                   </View>
                 </View>
 
-                {/* Pihak Pertama (Penyedia) */}
-                <View className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1 border-t border-border/60">
-                  <View className="gap-1">
-                    <Text className="text-[11px] text-muted-foreground font-medium">PIC Pihak Pertama (PT GMP)</Text>
-                    <Input
-                      value={bastP1Name}
-                      onChangeText={setBastP1Name}
-                      placeholder="Nama Project Manager"
-                      className="h-8 text-xs"
-                    />
+                {/* Pihak Pertama (Penyedia) & Logo Header */}
+                <View className="space-y-2 pt-1 border-t border-border/60">
+                  <View className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                    <View className="gap-1">
+                      <Text className="text-[11px] text-muted-foreground font-medium">Nama Perusahaan Kita (Header)</Text>
+                      <Input
+                        value={bastP1Company}
+                        onChangeText={setBastP1Company}
+                        placeholder="PT GHINA MULTI PRIMA"
+                        className="h-8 text-xs"
+                      />
+                    </View>
+                    <View className="gap-1">
+                      <Text className="text-[11px] text-muted-foreground font-medium">PIC Pihak Pertama</Text>
+                      <Input
+                        value={bastP1Name}
+                        onChangeText={setBastP1Name}
+                        placeholder="Nama Project Manager"
+                        className="h-8 text-xs"
+                      />
+                    </View>
+                    <View className="gap-1">
+                      <Text className="text-[11px] text-muted-foreground font-medium">Jabatan Pihak Pertama</Text>
+                      <Input
+                        value={bastP1Title}
+                        onChangeText={setBastP1Title}
+                        placeholder="Project Manager"
+                        className="h-8 text-xs"
+                      />
+                    </View>
                   </View>
-                  <View className="gap-1">
-                    <Text className="text-[11px] text-muted-foreground font-medium">Jabatan Pihak Pertama</Text>
-                    <Input
-                      value={bastP1Title}
-                      onChangeText={setBastP1Title}
-                      placeholder="Project Manager"
-                      className="h-8 text-xs"
+
+                  <View className="gap-1.5 pt-1">
+                    <Text className="text-[11px] text-muted-foreground font-medium">Logo Perusahaan (Kiri Header BAST)</Text>
+                    {bastLogoFileId ? (
+                      <View className="flex-row items-center gap-3 p-2 bg-muted/40 rounded-lg border border-border">
+                        <Image
+                          source={{ uri: `${apiBase()}/files/${bastLogoFileId}/download` }}
+                          style={{ width: 64, height: 40 }}
+                          resizeMode="contain"
+                        />
+                        <View className="flex-1">
+                          <Text className="text-xs font-medium">Logo Perusahaan Aktif</Text>
+                          <Text className="text-[10px] text-muted-foreground">ID File: {bastLogoFileId}</Text>
+                        </View>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onPress={() => setBastLogoFileId(null)}
+                          className="h-7 px-2"
+                        >
+                          <Trash2 size={13} color={colors.danger} />
+                          <Text className="text-xs text-destructive ml-1">Hapus</Text>
+                        </Button>
+                      </View>
+                    ) : null}
+                    <FileUploader
+                      label={bastLogoFileId ? "Ganti Logo Perusahaan (PNG/JPG)" : "Unggah Logo Perusahaan (PNG/JPG)"}
+                      kind="foto"
+                      category="bast-logo"
+                      handleRef={(h) => {
+                        bastLogoUploaderRef.current = h;
+                      }}
+                      onUploaded={(fId) => {
+                        if (fId) setBastLogoFileId(Number(fId));
+                      }}
                     />
                   </View>
                 </View>

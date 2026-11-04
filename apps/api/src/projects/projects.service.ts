@@ -1461,14 +1461,54 @@ export class ProjectsService {
       ]);
     });
 
+    let logoImage: string | undefined;
+    if (dto.logoFileId) {
+      try {
+        const file = await this.upload.read(dto.logoFileId);
+        if (file?.buffer) {
+          const mime = file.contentType || "image/png";
+          logoImage = `data:${mime};base64,${file.buffer.toString("base64")}`;
+        }
+      } catch {}
+    } else if (dto.logoBase64) {
+      logoImage = dto.logoBase64;
+    }
+
+    const headerElement = logoImage
+      ? {
+          columns: [
+            {
+              width: 85,
+              image: logoImage,
+              fit: [80, 50],
+              alignment: "left",
+            },
+            {
+              width: "*",
+              stack: [
+                { text: p1Comp.toUpperCase(), fontSize: 13, bold: true, alignment: "right" },
+                { text: "BERITA ACARA SERAH TERIMA PEKERJAAN (BAST)", fontSize: 10, bold: true, color: "#374151", alignment: "right", margin: [0, 4, 0, 0] },
+              ],
+              margin: [10, 4, 0, 0],
+            },
+          ],
+          margin: [0, 0, 0, 8],
+        }
+      : {
+          stack: [
+            { text: p1Comp.toUpperCase(), fontSize: 14, bold: true, alignment: "center" },
+            { text: "BERITA ACARA SERAH TERIMA PEKERJAAN (BAST)", fontSize: 11, bold: true, alignment: "center", margin: [0, 4, 0, 8] },
+          ],
+          margin: [0, 0, 0, 8],
+        };
+
     const docDefinition: any = {
       pageSize: "A4",
       pageMargins: [40, 40, 40, 40],
       content: [
-        { text: p1Comp.toUpperCase(), fontSize: 14, bold: true, alignment: "center" },
-        { text: "BERITA ACARA SERAH TERIMA PEKERJAAN (BAST)", fontSize: 12, bold: true, alignment: "center", margin: [0, 4, 0, 15] },
+        headerElement,
         {
-          canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, lineColor: "#9ca3af" }],
+          canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1.5, lineColor: "#1f2937" }],
           margin: [0, 0, 0, 15],
         },
         {
@@ -1578,6 +1618,27 @@ export class ProjectsService {
       where: { id },
       data: { bastFileId: saved.id },
     });
+
+    await this.prisma.main.systemSetting.upsert({
+      where: { key: `project.bast.${id}` },
+      update: {
+        value: JSON.stringify({
+          party1Company: p1Comp,
+          party1Name: p1Name,
+          party1Title: p1Title,
+          logoFileId: dto.logoFileId ?? null,
+        }),
+      },
+      create: {
+        key: `project.bast.${id}`,
+        value: JSON.stringify({
+          party1Company: p1Comp,
+          party1Name: p1Name,
+          party1Title: p1Title,
+          logoFileId: dto.logoFileId ?? null,
+        }),
+      },
+    }).catch(() => {});
 
     await this.audit.log({
       actor: user,

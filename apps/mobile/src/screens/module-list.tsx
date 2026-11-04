@@ -16,6 +16,7 @@ import {
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import { CreateSupplierPoDialog } from "@/modules/supplier-po/create-po-dialog";
 import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
@@ -247,8 +248,11 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
 
         if (r.status === "BATAL" || r.status === "Batal" || r.status === "Dibatalkan") {
           currentStatus = "Dibatalkan";
+        } else if (r.status === "PAID") {
+          isPaid = true;
+          currentStatus = "Lunas";
         } else if (isDpOrTermin) {
-          if (paid > 0 || r.status === "PAID" || r.status === "Lunas") {
+          if (paid > 0 || r.status === "PARTIAL" || r.status === "Dibayar sebagian") {
             if (contractTotal > 0 && chainPaid < contractTotal) {
               isPartial = true;
               currentStatus = "Dibayar sebagian";
@@ -260,15 +264,16 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             currentStatus = r.status === "DRAFT" ? "Belum dikirim" : "Belum lunas";
           }
         } else {
-          if (tot > 0 && paid >= tot) {
+          if ((tot > 0 && paid >= tot) || r.status === "Lunas") {
             isPaid = true;
             currentStatus = "Lunas";
           } else if (paid > 0 && paid < tot) {
             isPartial = true;
             currentStatus = "Dibayar sebagian";
-          } else if (r.status === "PAID" || r.status === "Lunas") {
-            isPaid = true;
-            currentStatus = "Lunas";
+          } else if (r.status === "DRAFT" || r.status === "Belum dikirim") {
+            currentStatus = "Belum dikirim";
+          } else {
+            currentStatus = "Belum lunas";
           }
         }
 
@@ -625,6 +630,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       )}
       {def.key === "invoices" ? (
         <CreateInvoiceDialog open={open} onOpenChange={setOpen} />
+      ) : def.key === "supplier-pos" ? (
+        <CreateSupplierPoDialog open={open} onOpenChange={setOpen} />
       ) : def.createFields ? (
         <FormDialog def={def} open={open} onOpenChange={setOpen} />
       ) : null}

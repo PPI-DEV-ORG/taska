@@ -344,6 +344,43 @@ export class PosService {
       }
     }
 
+    const resolvedItems: any[] = [];
+    for (const i of items) {
+      let prodId = i.productId ? Number(i.productId) : null;
+      if (!prodId && (i.customName || (i as any).name)) {
+        const prodName = String(i.customName || (i as any).name).trim();
+        const existing = await this.prisma.main.product.findFirst({
+          where: { name: { equals: prodName } },
+        });
+        if (existing) {
+          prodId = existing.id;
+        } else {
+          const newSku = (i as any).sku || `SKU-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          const createdProd = await this.prisma.main.product.create({
+            data: {
+              name: prodName,
+              sku: newSku,
+              unit: i.customUnit || (i as any).unit || "unit",
+              hasSerial: Boolean((i as any).hasSerial ?? (i as any).berSN),
+              categoryId: (i as any).categoryId ? Number((i as any).categoryId) : null,
+              purchasePrice: Number(i.price) || 0,
+              price: Number((i as any).sellPrice || i.price) || 0,
+              minStock: 0,
+            },
+          });
+          prodId = createdProd.id;
+          this.notifications.dataChange("products", "create", createdProd.id);
+        }
+      }
+      resolvedItems.push({
+        productId: prodId,
+        customName: i.customName ?? (i as any).name ?? null,
+        customUnit: i.customUnit ?? (i as any).unit ?? null,
+        qty: Number(i.qty) || 1,
+        price: Number(i.price) || 0,
+      });
+    }
+
     let number = dto.number?.trim();
     if (number) {
       const dup = await this.prisma.main.supplierPO.findFirst({ where: { number } });
@@ -358,7 +395,7 @@ export class PosService {
     } else {
       number = await this.docnum.next("pesanan", dto.date ? new Date(dto.date) : new Date());
     }
-    const total = dto.total ?? items.reduce((s, i) => s + i.qty * i.price, 0);
+    const total = dto.total ?? resolvedItems.reduce((s, i) => s + i.qty * i.price, 0);
 
     const row = await this.prisma.main.supplierPO.create({
       data: {
@@ -376,7 +413,7 @@ export class PosService {
         doFileId: dto.doFileId,
         createdById: user.id,
         items: {
-          create: items.map((i) => ({
+          create: resolvedItems.map((i) => ({
             productId: i.productId ?? null,
             customName: i.customName ?? null,
             customUnit: i.customUnit ?? null,
@@ -787,9 +824,14 @@ export class PosService {
 
         const recItems: any[] = [];
         for (const it of row.items) {
-          if (it.productId) {
+          let pId = it.productId;
+          if (!pId && it.customName) {
+            const matched = await this.prisma.main.product.findFirst({ where: { name: it.customName } });
+            if (matched) pId = matched.id;
+          }
+          if (pId) {
             recItems.push({
-              productId: it.productId,
+              productId: pId,
               qtyOrdered: it.qty,
               qtyReceived: it.qty,
               note: it.customName ? `Item PO: ${it.customName}` : undefined,

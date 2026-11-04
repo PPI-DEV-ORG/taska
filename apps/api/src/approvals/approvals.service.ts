@@ -243,7 +243,11 @@ export class ApprovalsService {
   private canRoleApprove(user: RequestUser | undefined, r: ApprovalWithSteps, evaluatedStatus: ApprovalStatus): boolean {
     if (!user) return true;
     if (user.role === "SUPER_ADMIN" || user.role === "ADMIN") return true;
-    if (r.requestedById === user.id) return false;
+    if (r.requestedById === user.id) {
+      if (!(user.role === "FINANCE" && r.kind === "SUPPLIER_PO")) {
+        return false;
+      }
+    }
 
     if (r.kind === "OPNAME") {
       return (
@@ -340,7 +344,13 @@ export class ApprovalsService {
 
     const items: unknown[] = [];
     for (const r of rows) {
-      if (user.role !== "SUPER_ADMIN" && r.requestedById === user.id) continue;
+      if (
+        user.role !== "SUPER_ADMIN" &&
+        r.requestedById === user.id &&
+        !(user.role === "FINANCE" && r.kind === "SUPPLIER_PO")
+      ) {
+        continue;
+      }
       const status = await this.evaluate(r, threshold);
       if (status !== "MENUNGGU") continue;
       if (!this.canRoleApprove(user, r, status)) continue;
@@ -396,7 +406,11 @@ export class ApprovalsService {
       }
       throw new ConflictException("Dokumen sudah diputuskan");
     }
-    if (user.role !== "SUPER_ADMIN" && approval.requestedById === user.id) {
+    if (
+      user.role !== "SUPER_ADMIN" &&
+      approval.requestedById === user.id &&
+      !(user.role === "FINANCE" && approval.kind === "SUPPLIER_PO")
+    ) {
       throw new ForbiddenException("Pembuat dokumen tidak boleh menyetujui dokumennya sendiri");
     }
     if (
