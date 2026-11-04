@@ -1710,7 +1710,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       const pph = row.pph != null ? num(row.pph) : 0;
       grand = Math.max(0, grand - pph);
       return {
-        leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : findId(db?.leads, row.lead),
+        leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : (findId(db?.leads, row.lead) ?? null),
         customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.customer ?? row.perusahaan),
         total: tot,
         ppn,

@@ -752,8 +752,8 @@ model SurveyMember {
 model Quotation {
   id             Int             @id @default(autoincrement())
   number         String          @unique
-  leadId         Int
-  lead           Lead            @relation(fields: [leadId], references: [id])
+  leadId         Int?
+  lead           Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
   customerId     Int?
   customer       Customer?       @relation(fields: [customerId], references: [id])
   ownerId        Int
