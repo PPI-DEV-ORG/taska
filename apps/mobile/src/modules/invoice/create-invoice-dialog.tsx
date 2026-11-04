@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView, Pressable } from "react-native";
+import { View, ScrollView, Pressable, Platform } from "react-native";
 import { FileDown, Package, Trash2, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -306,12 +306,46 @@ function CreateInvoiceForm({
     }));
   }, []);
 
-  // Candidates for continuing existing invoices
+  // Candidates for continuing existing invoices: exclude already fully paid or settled invoices
   const continuableInvoiceOptions = React.useMemo(() => {
-    return (data.invoices ?? [])
+    const allInvoices = data.invoices ?? [];
+
+    return allInvoices
       .filter((inv: Row) => {
         const st = String(inv.status || "").toUpperCase();
-        if (st === "BATAL" || st === "DIBATALKAN") return false;
+        const displaySt = String(inv.status || "");
+        if (st === "BATAL" || st === "DIBATALKAN" || displaySt === "Dibatalkan") return false;
+
+        // 1. Jangan tampilkan invoice yang sudah Lunas
+        if (st === "PAID" || st === "LUNAS" || displaySt.toLowerCase() === "lunas") return false;
+
+        // 2. Jangan tampilkan jika jenisnya sudah Pelunasan
+        const jenis = String(inv.jenis || inv.type || "");
+        if (/pelunasan/i.test(jenis)) return false;
+
+        // 3. Cek apakah ada invoice pelunasan yang sudah lunas untuk rantai penawaran / PO yang sama
+        const poId = inv.clientPoId;
+        const qId = inv.quotationId;
+        const invId = String(inv.id);
+
+        const hasPaidPelunasan = allInvoices.some((other: Row) => {
+          if (String(other.id) === invId) return false;
+          const otherJenis = String(other.jenis || other.type || "");
+          const otherSt = String(other.status || "").toUpperCase();
+          const otherDisplaySt = String(other.status || "");
+          const isLunas = otherSt === "PAID" || otherSt === "LUNAS" || otherDisplaySt.toLowerCase() === "lunas";
+          const isPelunasan = /pelunasan/i.test(otherJenis);
+
+          if (isPelunasan && isLunas) {
+            if (poId && String(other.clientPoId) === String(poId)) return true;
+            if (qId && String(other.quotationId) === String(qId)) return true;
+            if (other.parentInvoiceId && String(other.parentInvoiceId) === invId) return true;
+          }
+          return false;
+        });
+
+        if (hasPaidPelunasan) return false;
+
         return true;
       })
       .map((inv: Row) => {
@@ -331,21 +365,21 @@ function CreateInvoiceForm({
 
   const [selectedParentInvoiceId, setSelectedParentInvoiceId] = React.useState<string>(() => {
     if (initialPo) {
-      const match = (data.invoices ?? []).find(
-        (inv: Row) =>
-          String(inv.clientPoId) === String(initialPo.id) ||
-          (initialPo.nomor && (inv.po === initialPo.nomor || inv.nomorSo === initialPo.nomor)) ||
-          (initialPo.nomorSo && (inv.po === initialPo.nomorSo || inv.nomorSo === initialPo.nomorSo)),
+      const match = continuableInvoiceOptions.find(
+        (o) =>
+          String(o.raw.clientPoId) === String(initialPo.id) ||
+          (initialPo.nomor && (o.raw.po === initialPo.nomor || o.raw.nomorSo === initialPo.nomor)) ||
+          (initialPo.nomorSo && (o.raw.po === initialPo.nomorSo || o.raw.nomorSo === initialPo.nomorSo)),
       );
-      if (match) return String(match.id);
+      if (match) return match.id;
     }
     if (initialQuotation) {
-      const match = (data.invoices ?? []).find(
-        (inv: Row) =>
-          String(inv.quotationId) === String(initialQuotation.id) ||
-          inv.quotation === initialQuotation.nomor,
+      const match = continuableInvoiceOptions.find(
+        (o) =>
+          String(o.raw.quotationId) === String(initialQuotation.id) ||
+          o.raw.quotation === initialQuotation.nomor,
       );
-      if (match) return String(match.id);
+      if (match) return match.id;
     }
     return "";
   });
@@ -715,24 +749,26 @@ function CreateInvoiceForm({
     setMode(newMode);
     if (newMode === "lanjut") {
       setItems([]);
-      let candidateId = selectedParentInvoiceId;
+      let candidateId = continuableInvoiceOptions.some((o) => o.id === selectedParentInvoiceId)
+        ? selectedParentInvoiceId
+        : "";
       if (!candidateId) {
         if (initialPo) {
-          const match = (data.invoices ?? []).find(
-            (inv: Row) =>
-              String(inv.clientPoId) === String(initialPo.id) ||
-              (initialPo.nomor && inv.po === initialPo.nomor) ||
-              (initialPo.nomorSo && (inv.po === initialPo.nomorSo || inv.nomorSo === initialPo.nomorSo))
+          const match = continuableInvoiceOptions.find(
+            (o) =>
+              String(o.raw.clientPoId) === String(initialPo.id) ||
+              (initialPo.nomor && (o.raw.po === initialPo.nomor || o.raw.nomorSo === initialPo.nomor)) ||
+              (initialPo.nomorSo && (o.raw.po === initialPo.nomorSo || o.raw.nomorSo === initialPo.nomorSo))
           );
-          if (match) candidateId = String(match.id);
+          if (match) candidateId = match.id;
         }
         if (!candidateId && initialQuotation) {
-          const match = (data.invoices ?? []).find(
-            (inv: Row) =>
-              String(inv.quotationId) === String(initialQuotation.id) ||
-              inv.quotation === initialQuotation.nomor
+          const match = continuableInvoiceOptions.find(
+            (o) =>
+              String(o.raw.quotationId) === String(initialQuotation.id) ||
+              o.raw.quotation === initialQuotation.nomor
           );
-          if (match) candidateId = String(match.id);
+          if (match) candidateId = match.id;
         }
       }
       if (candidateId) {
@@ -1009,7 +1045,12 @@ function CreateInvoiceForm({
   }
 
   return (
-    <DialogContent className="w-[96vw] max-w-4xl max-h-[92vh]">
+    <DialogContent
+      className="w-[94vw] max-w-4xl max-h-[92vh]"
+      style={Platform.select({
+        web: { width: "min(94vw, 860px)", maxWidth: "860px" } as any,
+      })}
+    >
       <DialogHeader>
         <DialogTitle className="flex-row items-center gap-2">
           <Text className="text-base font-bold">
@@ -1081,18 +1122,30 @@ function CreateInvoiceForm({
               </Text>
               <StatusBadge status="Lanjutan" />
             </View>
-            <FormField label="Pilih Invoice DP / Termin Acuan" required hint="Pilih invoice sebelumnya yang ingin dilanjutkan pembayarannya">
-              <SearchableSelect
-                value={
-                  continuableInvoiceOptions.find((o) => o.id === selectedParentInvoiceId)?.label || ""
-                }
-                onChange={(val: string) => {
-                  const opt = continuableInvoiceOptions.find((o) => o.label === val);
-                  if (opt) handleSelectParentInvoice(opt.id);
-                }}
-                options={continuableInvoiceOptions.map((o) => o.label)}
-                placeholder="Cari nomor invoice / nama customer..."
-              />
+            <FormField label="Pilih Invoice DP / Termin Acuan" required hint="Cari & pilih invoice DP/Termin yang masih memiliki sisa tagihan">
+              {continuableInvoiceOptions.length === 0 ? (
+                <View className="p-3 rounded-lg bg-panel border border-dashed border-border/80">
+                  <Text className="text-xs text-muted-foreground text-center">
+                    Tidak ada invoice DP / Termin aktif yang belum lunas. Semua invoice sebelumnya sudah lunas atau dibatalkan.
+                  </Text>
+                </View>
+              ) : (
+                <SearchableSelect
+                  value={
+                    continuableInvoiceOptions.find((o) => o.id === selectedParentInvoiceId)?.label || ""
+                  }
+                  onChange={(val: string) => {
+                    const opt = continuableInvoiceOptions.find((o) => o.label === val);
+                    if (opt) handleSelectParentInvoice(opt.id);
+                  }}
+                  options={continuableInvoiceOptions.map((o) => o.label)}
+                  placeholder="Ketik untuk mencari nomor invoice / nama customer..."
+                  dialogClassName="w-[94vw] sm:max-w-2xl md:max-w-3xl"
+                  dialogStyle={Platform.select({
+                    web: { width: "min(94vw, 780px)", maxWidth: "780px" } as any,
+                  })}
+                />
+              )}
             </FormField>
             {selectedParentInvoice ? (
               <View className="gap-1 mt-1 p-2.5 rounded-lg bg-panel/70 border border-border/50 text-xs">

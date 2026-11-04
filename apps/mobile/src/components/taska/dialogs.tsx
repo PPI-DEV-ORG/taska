@@ -330,6 +330,8 @@ export function SearchableSelect({
   error,
   onAddNew,
   addNewLabel,
+  dialogClassName,
+  dialogStyle,
 }: {
   value?: string;
   onChange: (v: string) => void;
@@ -338,6 +340,8 @@ export function SearchableSelect({
   error?: boolean;
   onAddNew?: () => void;
   addNewLabel?: string;
+  dialogClassName?: string;
+  dialogStyle?: any;
 }) {
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -365,7 +369,10 @@ export function SearchableSelect({
         ) : null}
       </View>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          className={cn("sm:max-w-md", dialogClassName)}
+          style={dialogStyle}
+        >
           <DialogHeader><DialogTitle>{placeholder}</DialogTitle></DialogHeader>
           {onAddNew ? (
             <Pressable
@@ -381,17 +388,16 @@ export function SearchableSelect({
               </Text>
             </Pressable>
           ) : null}
-          {options.length > 6 ? (
-            <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-lg border px-3">
-              <Search size={16} color={colors.muted} />
-              <Input
-                value={q}
-                onChangeText={setQ}
-                placeholder="Cari"
-                className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
-              />
-            </View>
-          ) : null}
+          <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-lg border px-3 mb-2">
+            <Search size={16} color={colors.muted} />
+            <Input
+              value={q}
+              onChangeText={setQ}
+              placeholder="Cari..."
+              autoFocus
+              className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
+            />
+          </View>
           <ScrollView style={{ maxHeight: 320 }}>
             {list.map((o) => {
               const isSelected = o === value || (value && value !== "-" && (o.startsWith(`${value} -`) || o.startsWith(`${value} ·`) || o.startsWith(`${value} (`)));
