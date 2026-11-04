@@ -295,11 +295,7 @@ export class ProjectsService {
     const pic = await this.prisma.main.user.findUnique({ where: { id: picId } });
     if (!pic) throw new NotFoundException("PIC tidak ditemukan");
 
-    let customerId = dto.customerId;
-    if (type === "CUSTOMER" && !customerId) {
-      const firstCust = await this.prisma.main.customer.findFirst();
-      customerId = firstCust?.id;
-    }
+    const customerId = dto.customerId;
     if (customerId) {
       const customer = await this.prisma.main.customer.findUnique({ where: { id: customerId } });
       if (!customer) throw new NotFoundException("Customer tidak ditemukan");

@@ -77,9 +77,11 @@ export class InvoiceOutService {
     if (status !== row.status) {
       await this.prisma.main.invoiceOut.update({ where: { id: row.id }, data: { status } });
       if (status === "OVERDUE") {
-        const cust = await this.prisma.main.customer
-          .findUnique({ where: { id: row.customerId }, select: { name: true } })
-          .catch(() => null);
+        const cust = row.customerId
+          ? await this.prisma.main.customer
+              .findUnique({ where: { id: row.customerId }, select: { name: true } })
+              .catch(() => null)
+          : null;
         const sisa = Math.max(0, Number(row.total) - Number(row.paidAmount));
         await this.notifications
           .notify({
@@ -564,8 +566,8 @@ export class InvoiceOutService {
 
     const customer = dto.customerId
       ? await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } })
-      : await this.prisma.main.customer.findFirst();
-    if (!customer) throw new NotFoundException("Customer tidak ditemukan");
+      : null;
+    if (dto.customerId && !customer) throw new NotFoundException("Customer tidak ditemukan");
 
     const amount = dto.amount ?? 0;
     const ppn = dto.ppn ?? 0;
@@ -586,7 +588,7 @@ export class InvoiceOutService {
         number,
         clientPoId: dto.clientPoId,
         projectId: dto.projectId,
-        customerId: customer.id,
+        customerId: customer?.id ?? null,
         description,
         type: dto.type ?? "TERMIN",
         amount,
@@ -654,6 +656,7 @@ export class InvoiceOutService {
       dto.tipePph !== undefined
     ) {
       await this.saveMeta(row.id, {
+        ...(dto.customer ? { customerName: dto.customer } : {}),
         ...(resolvedItems.length > 0 || dto.items !== undefined ? { items: resolvedItems } : {}),
         ...(dto.discount !== undefined
           ? { discount: dto.discount }
@@ -702,7 +705,7 @@ export class InvoiceOutService {
       action: "BUAT_INVOICE_KELUAR",
       entityType: "invoice-out",
       entityId: row.id,
-      detail: `${number} total Rp${total} — ${customer.name}`,
+      detail: `${number} total Rp${total}${customer ? ` — ${customer.name}` : dto.customer ? ` — ${dto.customer}` : " — Pelanggan Langsung (Walk-in)"}`,
     });
     await this.syncProjectPayment(row.projectId);
     const synced = await this.sync(row);
@@ -714,7 +717,7 @@ export class InvoiceOutService {
         roles: ["FINANCE", "BOS", "SALES"],
         kind: "APPROVAL",
         title: "Invoice Penjualan Baru",
-        text: `Invoice ${number} dibuat untuk ${customer.name} senilai Rp${Number(total).toLocaleString("id-ID")}`,
+        text: `Invoice ${number} dibuat${customer ? ` untuk ${customer.name}` : dto.customer ? ` untuk ${dto.customer}` : ""} senilai Rp${Number(total).toLocaleString("id-ID")}`,
         href: `/invoices/${row.id}`,
       })
       .catch(() => {});
@@ -748,7 +751,7 @@ export class InvoiceOutService {
         ...(dto.number ? { number: dto.number } : {}),
         clientPoId: dto.clientPoId !== undefined ? dto.clientPoId : row.clientPoId,
         projectId: dto.projectId !== undefined ? dto.projectId : row.projectId,
-        customerId: dto.customerId ?? row.customerId,
+        customerId: dto.customerId !== undefined ? dto.customerId : row.customerId,
         description: dto.description !== undefined ? dto.description : row.description,
         type: dto.type ?? row.type,
         amount,

@@ -830,8 +830,8 @@ model InvoiceOut {
   clientPo    ClientPO?        @relation(fields: [clientPoId], references: [id])
   projectId   Int?
   project     Project?         @relation(fields: [projectId], references: [id])
-  customerId  Int
-  customer    Customer         @relation(fields: [customerId], references: [id])
+  customerId  Int?
+  customer    Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
   description String?
   type        InvoiceType      @default(TERMIN)
   amount      Decimal          @db.Decimal(18, 2)
