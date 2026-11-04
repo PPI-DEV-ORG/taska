@@ -1403,6 +1403,17 @@ export function FormDialog({
                               customer: quote.customer || s.customer || "",
                             } : {}),
                           }));
+                        } else if (def?.key === "quotations" && f.key === "lead") {
+                          const selName = (v.split(" · ")[0] ?? v).trim().toLowerCase();
+                          const lead = (v === "-" || !v) ? null : (data.leads ?? []).find(
+                            (l: any) => l.nama?.toLowerCase() === selName || l.name?.toLowerCase() === selName
+                          );
+                          const cust = lead?.perusahaan || lead?.customer || "";
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: v,
+                            ...(cust && (!s.customer || s.customer === "-") ? { customer: cust } : {}),
+                          }));
                         } else if (def?.key === "projects" && f.key === "lead") {
                           const selName = (v.split(" · ")[0] ?? v).trim().toLowerCase();
                           const lead = v === "-" ? null : (data.leads ?? []).find(

@@ -226,8 +226,10 @@ export class SurveyStatusDto {
 }
 
 export class QuotationDto {
-  @IsOptional() @IsInt()
-  leadId?: number;
+  @IsOptional()
+  @ValidateIf((o) => o.leadId != null && o.leadId !== "")
+  @IsInt()
+  leadId?: number | null;
 
   @IsOptional() @IsInt()
   customerId?: number;

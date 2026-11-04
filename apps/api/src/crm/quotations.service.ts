@@ -342,15 +342,17 @@ export class QuotationsService {
   }
 
   /** Baris penawaran untuk lead (dibuat otomatis saat Qualification atau manual). */
-  async createForLead(leadId: number | undefined, user: RequestUser, dto?: QuotationDto) {
+  async createForLead(leadId: number | null | undefined, user: RequestUser, dto?: QuotationDto) {
     const lead = leadId
       ? await this.prisma.main.lead.findUnique({ where: { id: leadId } })
-      : await this.prisma.main.lead.findFirst({ orderBy: { id: "desc" } });
-    if (!lead) throw new NotFoundException("Lead tidak ditemukan");
+      : null;
+    if (leadId && !lead) throw new NotFoundException("Lead tidak ditemukan");
 
-    const existing = await this.prisma.main.quotation.findFirst({ where: { leadId: lead.id } });
-    if (existing && !dto?.total && !dto?.grandTotal && (!dto?.items || dto.items.length === 0)) {
-      return this.get(existing.id);
+    if (lead) {
+      const existing = await this.prisma.main.quotation.findFirst({ where: { leadId: lead.id } });
+      if (existing && !dto?.total && !dto?.grandTotal && (!dto?.items || dto.items.length === 0)) {
+        return this.get(existing.id);
+      }
     }
 
     const number = await this.docnum.next("penawaran");
@@ -360,7 +362,7 @@ export class QuotationsService {
           .map((it, idx) => this.normalizeItem(it, idx))
       : [];
     const itemsSum = items.reduce((s, it) => s + it.qty * it.harga, 0);
-    const total = itemsSum > 0 ? itemsSum : (dto?.total ?? dto?.grandTotal ?? Number(lead.estimatedValue || 0));
+    const total = itemsSum > 0 ? itemsSum : (dto?.total ?? dto?.grandTotal ?? (lead ? Number(lead.estimatedValue || 0) : 0));
     const discount = dto?.discount ?? 0;
     const netBeforeTax = Math.max(0, total - discount);
     const ppn = dto?.ppn !== undefined ? dto.ppn : Math.round(netBeforeTax * 0.11);
@@ -380,9 +382,9 @@ export class QuotationsService {
     const row = await this.prisma.main.quotation.create({
       data: {
         number,
-        leadId: lead.id,
-        customerId: dto?.customerId ?? lead.customerId,
-        ownerId: lead.owner_id,
+        leadId: lead ? lead.id : null,
+        customerId: dto?.customerId ?? lead?.customerId ?? null,
+        ownerId: lead ? lead.owner_id : user.id,
         total,
         ppn,
         discount,
@@ -446,10 +448,10 @@ export class QuotationsService {
       action: "BUAT_PENAWARAN",
       entityType: "quotation",
       entityId: row.id,
-      detail: `${row.number} — ${lead.name}`,
+      detail: lead ? `${row.number} — ${lead.name}` : row.number,
     });
     this.notifications.dataChange("quotations", "create", row.id);
-    this.notifications.dataChange("leads", "update", lead.id);
+    if (lead) this.notifications.dataChange("leads", "update", lead.id);
     return this.get(row.id);
   }
 
@@ -500,6 +502,7 @@ export class QuotationsService {
 
     const data = {
       ...(dto.customerId !== undefined ? { customerId: dto.customerId } : {}),
+      ...(dto.leadId !== undefined ? { leadId: dto.leadId } : {}),
       ...(dto.validUntil !== undefined ? { validUntil: dto.validUntil && String(dto.validUntil).trim() !== "" ? new Date(dto.validUntil) : null } : {}),
       total,
       ppn,
