@@ -649,15 +649,14 @@ export class ClientPoService {
     if (!hasExistingInvoices && !row.projectId) {
       const cust = row.customerId
         ? await this.prisma.main.customer.findUnique({ where: { id: row.customerId } })
-        : (await this.prisma.main.customer.findFirst());
-      if (cust) {
-        const invNumber = await this.docnum.next("invoiceOut", settlementDate);
-        const inv = await this.prisma.main.invoiceOut.create({
-          data: {
-            number: invNumber,
-            clientPoId: row.id,
-            customerId: cust.id,
-            description: `[AKUN:${dto.coaAccount}] Pembayaran Langsung / Nota Kontan SO ${row.number}${dto.notes ? ` — ${dto.notes}` : ""}`,
+        : null;
+      const invNumber = await this.docnum.next("invoiceOut", settlementDate);
+      const inv = await this.prisma.main.invoiceOut.create({
+        data: {
+          number: invNumber,
+          clientPoId: row.id,
+          customerId: cust?.id ?? null,
+          description: `[AKUN:${dto.coaAccount}] Pembayaran Langsung / Nota Kontan SO ${row.number}${dto.notes ? ` — ${dto.notes}` : ""}`,
             type: "PELUNASAN",
             amount: row.amount,
             total: row.amount,
@@ -675,7 +674,6 @@ export class ClientPoService {
             create: { key: `invoice.items.${inv.id}`, value: JSON.stringify(items) },
           }).catch(() => {});
         }
-      }
     }
 
     // 3. Sinkronkan Delivery Note Otomatis (Under the hood agar status pengiriman terekam selesai)

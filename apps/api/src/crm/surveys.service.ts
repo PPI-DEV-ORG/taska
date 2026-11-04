@@ -123,10 +123,10 @@ export class SurveysService {
     if (!["SUPER_ADMIN", "SALES", "PM", "ADMIN", "BOS", "TEKNISI", "SE"].includes(user.role)) {
       throw new ForbiddenException("Peran Anda tidak boleh membuat permintaan survey");
     }
-    const lead = dto.leadId
-      ? await this.assertLeadExists(dto.leadId)
-      : await this.prisma.main.lead.findFirst({ orderBy: { id: "desc" } });
-    if (!lead) throw new NotFoundException("Lead tidak ditemukan");
+    if (!dto.leadId) {
+      throw new BadRequestException("Lead wajib dipilih untuk membuat survey");
+    }
+    const lead = await this.assertLeadExists(dto.leadId);
 
     const isSales = user.role === "SALES";
     const location = dto.location || "-";

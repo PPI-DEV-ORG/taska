@@ -650,7 +650,7 @@ export function adaptRow(module: string, raw: any): Row {
         lead: leadName,
         leadId: leadId ? String(leadId) : null,
         paymentNote: isPartial ? "dp setengah bayar sebagian dp termin" : "",
-        customer: nameOf(raw.customer) ?? "",
+        customer: nameOf(raw.customer) || raw.customerName || (raw.customerId ? "" : "Pelanggan Langsung (Walk-in)"),
         customerId: idOf(raw.customer),
         jenis: toLabel("invoiceType", raw.type),
         catatan: (raw.description || "").replace(/\[by:\d+\]/g, "").replace(/\[lead:\d+\]/g, "").trim(),
@@ -1738,7 +1738,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       const leadId =
         row.leadId != null && row.leadId !== ""
           ? Number(row.leadId)
-          : findId(db?.leads, row.lead) ?? (db?.leads?.[0]?.id != null ? Number(db.leads[0].id) : undefined);
+          : (findId(db?.leads, row.lead) ?? undefined);
       return {
         leadId,
         location: row.lokasi || row.location || "-",
@@ -1890,7 +1890,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         customerId:
           row.customerId != null && row.customerId !== ""
             ? Number(row.customerId)
-            : findId(db?.customers, row.customer) ?? (db?.customers?.[0]?.id != null ? Number(db.customers[0].id) : undefined),
+            : (row.customer && !/walk-?in/i.test(String(row.customer)) ? (findId(db?.customers, row.customer) ?? null) : null),
+        customer: row.customer || undefined,
         clientPoId: row.clientPoId != null && row.clientPoId !== "" ? Number(row.clientPoId) : findId(db?.["po-client"], row.po),
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
         leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : undefined,
@@ -1976,7 +1977,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         supplierId:
           row.supplierId != null && row.supplierId !== ""
             ? Number(row.supplierId)
-            : findId(db?.suppliers, row.supplier) ?? (db?.suppliers?.[0]?.id != null ? Number(db.suppliers[0].id) : undefined),
+            : (findId(db?.suppliers, row.supplier) ?? undefined),
         requestId: row.requestId != null && row.requestId !== "" ? Number(row.requestId) : findId(db?.["purchase-requests"], row.request),
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
         date: row.tanggal || row.date || today,
@@ -2310,7 +2311,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       const suppId =
         row.supplierId != null && row.supplierId !== ""
           ? Number(row.supplierId)
-          : findId(db?.suppliers, row.supplier) ?? (db?.suppliers?.[0]?.id != null ? Number(db.suppliers[0].id) : 1);
+          : (findId(db?.suppliers, row.supplier) ?? undefined);
       const poId =
         row.supplierPoId != null && row.supplierPoId !== ""
           ? Number(row.supplierPoId)

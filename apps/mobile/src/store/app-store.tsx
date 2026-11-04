@@ -891,7 +891,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (module: string, row: Record<string, any>): Promise<Row | null> => {
       let path = PATHS[module];
       if (module === "tasks") {
-        const pid = row.projectId ?? data.projects.find((p) => p.nama === row.project)?.id ?? data.projects[0]?.id;
+        const pid = row.projectId ?? data.projects.find((p) => p.nama === row.project)?.id;
         if (!pid) {
           toast("Project belum dipilih untuk tugas ini", "danger");
           return null;
@@ -1107,8 +1107,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (item.module === "tasks") {
             const pid =
               item.payload.projectId ??
-              data.projects.find((p) => p.nama === item.payload.project)?.id ??
-              data.projects[0]?.id;
+              data.projects.find((p) => p.nama === item.payload.project)?.id;
             if (pid) path = `/projects/${pid}/tasks`;
           }
           if (!path && item.kind !== "status") continue;

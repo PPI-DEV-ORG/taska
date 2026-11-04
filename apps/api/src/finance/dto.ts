@@ -9,6 +9,7 @@ import {
   IsString,
   Min,
   MinLength,
+  ValidateIf,
 } from "class-validator";
 import { PageQuery } from "../common/dto/page-query.js";
 
@@ -57,8 +58,13 @@ export class ClientPoDto {
   @IsOptional() @IsString()
   docMode?: "SO" | "PO" | "BOTH";
 
-  @IsOptional() @IsInt()
-  customerId?: number;
+  @IsOptional()
+  @ValidateIf((o: any) => o.customerId != null && o.customerId !== "")
+  @IsInt()
+  customerId?: number | null;
+
+  @IsOptional() @IsString()
+  customer?: string;
 
   @IsOptional() @IsInt()
   supplierId?: number;
@@ -121,8 +127,13 @@ export class InvoiceOutDto {
   @IsOptional() @IsInt()
   projectId?: number;
 
-  @IsOptional() @IsInt()
-  customerId?: number;
+  @IsOptional()
+  @ValidateIf((o: any) => o.customerId != null && o.customerId !== "")
+  @IsInt()
+  customerId?: number | null;
+
+  @IsOptional() @IsString()
+  customer?: string;
 
   @IsOptional() @IsString()
   description?: string;
