@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronRight, Plus, Trash2, CreditCard } from "lucide-react-native";
+import { ChevronRight, Plus, Trash2, CreditCard, Pencil } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { EmptyState, PageHeader, Chip } from "@/components/taska/basics";
@@ -13,10 +13,12 @@ import { colors } from "@/tokens";
 import {
   SupplierInvoiceDetailDialog,
   SupplierInvoicePayDialog,
+  SupplierInvoiceEditDialog,
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { CreateSupplierPoDialog } from "@/modules/supplier-po/create-po-dialog";
+import { CreateSalesOrderDialog } from "@/modules/sales-order/create-so-dialog";
 import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
@@ -134,6 +136,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   const [damageTab, setDamageTab] = React.useState<"all" | "kerusakan" | "retur-sales" | "retur-purchase">("all");
   const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
   const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
+  const [supplierEditTarget, setSupplierEditTarget] = React.useState<Row | null>(null);
   const [paymentTermsOpen, setPaymentTermsOpen] = React.useState(false);
 
   const clientReceipts = React.useMemo(() => {
@@ -629,9 +632,15 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         />
       )}
       {def.key === "invoices" ? (
-        <CreateInvoiceDialog open={open} onOpenChange={setOpen} />
+        <CreateInvoiceDialog
+          open={open}
+          onOpenChange={setOpen}
+          defaultDirectPurchase={invoiceTab === "in"}
+        />
       ) : def.key === "supplier-pos" ? (
         <CreateSupplierPoDialog open={open} onOpenChange={setOpen} />
+      ) : def.key === "po-client" ? (
+        <CreateSalesOrderDialog open={open} onOpenChange={setOpen} />
       ) : def.createFields ? (
         <FormDialog def={def} open={open} onOpenChange={setOpen} />
       ) : null}
@@ -692,8 +701,19 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         onOpenChange={(v) => !v && setSelectedSupplierInvoice(null)}
         invoice={selectedSupplierInvoice}
         canPay={user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin"}
+        canEdit={user?.role === "super_admin" || user?.role === "finance" || user?.role === "procurement" || user?.role === "admin"}
         onPayPress={(inv) => setSupplierPayTarget(inv)}
+        onEditPress={(inv) => setSupplierEditTarget(inv)}
         onOpenPo={(poId) => router.push(`/supplier-pos/${poId}` as any)}
+      />
+
+      <SupplierInvoiceEditDialog
+        open={!!supplierEditTarget}
+        onOpenChange={(v) => !v && setSupplierEditTarget(null)}
+        invoice={supplierEditTarget}
+        onSuccess={() => {
+          setSelectedSupplierInvoice(null);
+        }}
       />
 
       <SupplierInvoicePayDialog

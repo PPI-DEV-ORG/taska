@@ -287,7 +287,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Tanggal SO", key: "tanggal", fmt: "date" },
       { label: "Catatan", key: "catatan" },
     ],
-    statusKey: "status", statuses: ["Diterima", "Lunas"],
+    statusKey: "status", statuses: ["Pending", "Lunas sebagian", "Lunas"],
     titleOf: (r) => {
       if (r.nomor && r.nomorPoClient && r.nomorPoClient !== "-") {
         return `${r.nomor} · PO: ${r.nomorPoClient}`;

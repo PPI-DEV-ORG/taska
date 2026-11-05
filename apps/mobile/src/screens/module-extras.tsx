@@ -47,6 +47,7 @@ import { PurchaseRequestExtras } from "@/modules/purchase-request/purchase-reque
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { printOrderDocument } from "@/lib/order-print";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
+import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 
 // Re-export agar import lama dari "@/screens/module-extras" tetap valid.
 export { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
@@ -412,7 +413,19 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     ? row.items
     : (quoItems.length > 0 ? quoItems : (invoiceItems.length > 0 ? invoiceItems : []));
 
-  const getItemName = (it: any) => it.item || it.name || it.nama || it.productName || "Barang / Jasa";
+  const getItemName = (it: any) => {
+    if (!it) return "Barang / Jasa";
+    if (it.item && it.item !== "Barang / Jasa") return it.item;
+    if (it.name && it.name !== "Barang / Jasa") return it.name;
+    if (it.nama && it.nama !== "Barang / Jasa") return it.nama;
+    if (it.customName) return it.customName;
+    if (it.productName) return it.productName;
+    if (it.productId) {
+      const matchP = (data.products ?? []).find((p: Row) => String(p.id) === String(it.productId));
+      if (matchP?.nama || matchP?.name) return matchP.nama || matchP.name;
+    }
+    return it.item || it.name || it.nama || "Barang / Jasa";
+  };
   const getItemQty = (it: any) => Number(it.qty) || 1;
   const getItemUnit = (it: any) => it.satuan || it.unit || "Unit";
   const getItemPrice = (it: any) => Number(it.harga ?? it.price ?? 0);
@@ -452,6 +465,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   const [itemSatuan, setItemSatuan] = React.useState("Unit");
   const [itemHarga, setItemHarga] = React.useState("0");
   const [itemSn, setItemSn] = React.useState("");
+  const [itemPphMode, setItemPphMode] = React.useState<PphMode>("none");
   const [saving, setSaving] = React.useState(false);
 
   // Buat Delivery Order (DO) / Surat Jalan dari SO state
@@ -514,8 +528,10 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   const isLunas =
     row.paymentStatus === "LUNAS" ||
-    row.status === "Lunas" ||
-    (Number(row.totalInvoice) >= Number(row.nilai) && Number(row.nilai) > 0);
+    row.status === "Lunas";
+  const isLunasSebagian =
+    !isLunas &&
+    (row.paymentStatus === "LUNAS_SEBAGIAN" || row.status === "Lunas sebagian");
 
   const handleDirectSettlement = async () => {
     if (!directCoaAccount) {
@@ -536,7 +552,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       setDirectPayOpen(false);
       await reload();
       await onRefresh?.();
-      toast("Transaksi penjualan langsung berhasil! Stok keluar & SO lunas.", "success");
+      toast("Transaksi pembayaran langsung berhasil! SO lunas & Surat Jalan dibuat untuk tim Gudang.", "success");
     } catch (err: any) {
       toast(err?.message || "Gagal memproses transaksi langsung", "danger");
     } finally {
@@ -551,8 +567,18 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       if (updateAmount) {
         const sum = newItems.reduce((acc, it) => acc + getItemQty(it) * getItemPrice(it), 0);
         if (sum > 0) {
-          patchPayload.nilai = sum;
-          patchPayload.amount = sum;
+          const currentPpnMode = row.ppnMode || (Number(row.ppn || 0) > 0 ? "exclude" : "none");
+          const isInclude = currentPpnMode === "include";
+          const dpp = isInclude ? Math.round(sum / 1.11) : sum;
+          const ppn = currentPpnMode === "none" ? 0 : isInclude ? Math.max(0, sum - dpp) : Math.round(sum * 0.11);
+          const pph = newItems.reduce((acc, it) => acc + calcItemPph(it), 0);
+          const total = Math.max(0, (isInclude ? sum : sum + ppn) - pph);
+
+          patchPayload.nilai = dpp;
+          patchPayload.amount = dpp;
+          patchPayload.ppn = ppn;
+          patchPayload.pph = pph;
+          patchPayload.total = total;
         }
       }
       await patchRow("po-client", row.id, patchPayload);
@@ -572,6 +598,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     setItemSatuan("Unit");
     setItemHarga("0");
     setItemSn("");
+    setItemPphMode("none");
     setItemDialogOpen(true);
   };
 
@@ -583,6 +610,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     setItemSatuan(getItemUnit(target));
     setItemHarga(formatThousands(getItemPrice(target)));
     setItemSn(getItemSn(target));
+    setItemPphMode(target?.pphMode || "none");
     setItemDialogOpen(true);
   };
 
@@ -595,10 +623,16 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     const harga = parseFloat(String(itemHarga).replace(/\D/g, "")) || 0;
     const newItemObj = {
       item: itemName.trim(),
+      name: itemName.trim(),
       qty,
       satuan: itemSatuan.trim() || "Unit",
+      unit: itemSatuan.trim() || "Unit",
       harga,
+      price: harga,
       sn: itemSn.trim() || undefined,
+      pphMode: itemPphMode,
+      tipePph: pphModeToTipe(itemPphMode),
+      pph: calcItemPph({ qty, price: harga, pphMode: itemPphMode }),
     };
 
     const targetSn = getItemSn(newItemObj);
@@ -664,7 +698,8 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     await saveItems(invoiceItems, true);
   };
 
-  const sisa = row.nilai - row.totalInvoice;
+  const effectiveOrderTotal = Number(row.total) || (Number(row.nilai || 0) + Number(row.ppn || 0) - Number(row.pph || 0));
+  const sisa = effectiveOrderTotal - Number(row.totalInvoice || 0);
   const linkedProjects = (data.projects ?? []).filter(
     (p: Row) =>
       (linkedQuotation && String(p.quotationId) === String(linkedQuotation.id)) ||
@@ -683,10 +718,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   );
 
   const handleCreateDoFromSo = async () => {
-    if (!doTujuan.trim()) {
-      toast("Lokasi / tujuan pengiriman wajib diisi", "danger");
-      return;
-    }
+    const targetTujuan = doTujuan.trim() || (row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Customer");
     setCreatingDo(true);
     try {
       const productsList = (data.products ?? []) as any[];
@@ -710,26 +742,33 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         })
         .filter((x) => x.productId > 0);
 
+      const soNum = row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : (row.nomor || `SO #${row.id}`);
       const barangSummary =
         currentItems.length > 0
           ? currentItems.map((it) => `${getItemName(it)} x ${getItemQty(it)} ${getItemUnit(it)}`).join(", ")
-          : `Barang pesanan SO ${row.nomorSo || row.nomor}`;
+          : `Barang pesanan SO ${soNum}`;
+      const baseAlasan = doAlasan.trim() || `Pengiriman Barang SO ${soNum}`;
+      const finalAlasan = baseAlasan.includes("[so:") ? baseAlasan : `${baseAlasan} [so:${row.id}]`;
 
       const createdDn = await addRow("delivery-notes", {
         tanggal: doTanggal,
-        tujuan: doTujuan.trim(),
-        alasan: doAlasan.trim() || `Pengiriman Barang SO ${row.nomorSo || row.nomor}`,
+        tujuan: targetTujuan,
+        alasan: finalAlasan,
+        soId: Number(row.id),
+        clientPoId: Number(row.id),
+        soNumber: soNum,
         projectId: linkedProjects[0]?.id ? Number(linkedProjects[0].id) : undefined,
         project: linkedProjects[0]?.nama || "-",
         withGoods: true,
         barang: barangSummary,
+        status: "Pending",
         items: mappedItems.length > 0 ? mappedItems : undefined,
       });
       if (createdDn) {
         setCreateDoOpen(false);
         await reload();
         await onRefresh?.();
-        toast("Delivery Order (DO) / Surat Jalan berhasil dibuat dari barang SO ini");
+        toast("Surat Jalan (DO) berstatus Pending berhasil dibuat untuk tim Gudang");
       }
     } catch (e: any) {
       toast(e?.message || "Gagal membuat Delivery Order", "danger");
@@ -751,20 +790,27 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             <View className="flex-row items-center gap-2">
               <CheckCircle2 size={18} color={colors.success} />
               <Text className="text-sm font-bold text-foreground">
-                SO Lunas & Selesai (Nota Kontan Langsung)
+                {row.settlementType === "LANGSUNG"
+                  ? "SO Lunas (Nota Kontan Langsung)"
+                  : "SO Lunas (Seluruh Invoice Terbayar)"}
               </Text>
             </View>
             <View className="flex-row items-center gap-1.5">
               <StatusBadge status="Lunas" />
-              <StatusBadge status="Barang Terkirim" />
             </View>
           </View>
           <Text className="text-xs text-muted-foreground">
-            Seluruh barang pesanan telah otomatis dikeluarkan dari stok gudang dan pembayaran telah diakui pada akun{" "}
-            <Text className="font-semibold text-foreground">
-              {row.coaAccount ? `[${row.coaAccount}]` : "Kas / Bank"}
-            </Text>
-            {row.settledAt ? ` pada tanggal ${tanggal(row.settledAt)}.` : "."}
+            {row.settlementType === "LANGSUNG" ? (
+              <>
+                Pembayaran telah diakui lunas pada akun{" "}
+                <Text className="font-semibold text-foreground">
+                  {row.coaAccount ? `[${row.coaAccount}]` : "Kas / Bank"}
+                </Text>
+                {row.settledAt ? ` pada tanggal ${tanggal(row.settledAt)}.` : "."}
+              </>
+            ) : (
+              "Seluruh tagihan invoice pada Sales Order ini telah dibayar lunas."
+            )}
           </Text>
           {row.paymentProofFile ? (
             <View className="mt-1 flex-row items-center gap-2">
@@ -784,9 +830,26 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             </View>
           ) : null}
         </View>
+      ) : isLunasSebagian ? (
+        <View className="bg-amber-500/10 border-amber-500/30 rounded-xl border p-3.5 gap-2">
+          <View className="flex-row items-center justify-between flex-wrap gap-2">
+            <View className="flex-row items-center gap-2">
+              <AlertTriangle size={18} color={colors.warning} />
+              <Text className="text-sm font-bold text-foreground">
+                SO Lunas Sebagian (Termin / DP)
+              </Text>
+            </View>
+            <StatusBadge status="Lunas sebagian" />
+          </View>
+          <Text className="text-xs text-muted-foreground">
+            Sebagian tagihan (DP / Termin) telah dibayar sebesar{" "}
+            <Text className="font-semibold text-foreground">{rupiah(row.terbayar || 0)}</Text> dari total{" "}
+            <Text className="font-semibold text-foreground">{rupiah(effectiveOrderTotal)}</Text>. Status SO akan otomatis menjadi Lunas saat invoice pelunasan dibayar.
+          </Text>
+        </View>
       ) : null}
 
-      {row.totalInvoice > row.nilai ? (
+      {row.totalInvoice > effectiveOrderTotal && effectiveOrderTotal > 0 ? (
         <View className="bg-warning/15 flex-row items-center gap-2 rounded-xl p-3">
           <AlertTriangle size={16} color={colors.warning} />
           <Text className="text-warning flex-1 text-sm">
@@ -900,7 +963,20 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         </View>
 
         <View className="mt-3 pt-2 border-t border-border/60">
-          <Line left="Total Nilai Pesanan (PO / SO)" right={<Text className="text-sm font-semibold">{rupiah(row.nilai)}</Text>} />
+          {Number(row.ppn || 0) > 0 || Number(row.pph || 0) > 0 ? (
+            <>
+              <Line left="Harga Sebelum PPN (DPP)" right={<Text className="text-sm font-medium">{rupiah(row.nilai)}</Text>} />
+              {Number(row.ppn || 0) > 0 ? (
+                <Line left={row.tipePpn || "PPN 11%"} right={<Text className="text-sm font-medium text-primary">{rupiah(row.ppn)}</Text>} />
+              ) : null}
+              {Number(row.pph || 0) > 0 ? (
+                <Line left={`Pemotongan ${row.tipePph || "PPh"}`} right={<Text className="text-sm font-semibold text-danger">- {rupiah(row.pph)}</Text>} />
+              ) : null}
+              <Line left="Total Tagihan (Inc. PPN)" right={<Text className="text-sm font-bold">{rupiah(effectiveOrderTotal)}</Text>} />
+            </>
+          ) : (
+            <Line left="Total Nilai Pesanan (PO / SO)" right={<Text className="text-sm font-semibold">{rupiah(row.total || row.nilai)}</Text>} />
+          )}
           <Line left="Total Faktur / Invoice Terbit" right={<Text className="text-sm font-medium">{rupiah(row.totalInvoice)}</Text>} />
           <Line left="Sisa Belum Ditagih" right={<Text className="text-sm font-medium text-primary">{rupiah(Math.max(0, sisa))}</Text>} />
         </View>
@@ -1026,6 +1102,11 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                     <Text className="text-[11px] text-muted-foreground mt-0.5">
                       {price > 0 ? `${rupiah(price)} / ${unit}` : "Harga belum ditentukan"}
                     </Text>
+                    {it.pphMode && it.pphMode !== "none" ? (
+                      <Text className="text-[10px] text-danger font-medium mt-0.5">
+                        Potongan {it.tipePph || it.pphMode} (-{rupiah(calcItemPph(it))})
+                      </Text>
+                    ) : null}
                   </View>
 
                   <View className="shrink-0 items-end gap-1">
@@ -1070,7 +1151,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
             <View className="mt-2 pt-2 border-t border-border/60 gap-1.5">
               <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-muted-foreground">Subtotal Rincian Item</Text>
+                <Text className="text-xs text-muted-foreground">Subtotal Rincian Item (DPP)</Text>
                 <Text className="text-xs font-semibold text-foreground">{rupiah(itemsTotal)}</Text>
               </View>
               {effectiveDiscount > 0 && (
@@ -1079,10 +1160,22 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                   <Text className="text-xs font-semibold text-danger">-{rupiah(effectiveDiscount)}</Text>
                 </View>
               )}
+              {Number(row.ppn || 0) > 0 && (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-primary font-medium">{row.tipePpn || "PPN 11%"}</Text>
+                  <Text className="text-xs font-semibold text-primary">+{rupiah(row.ppn)}</Text>
+                </View>
+              )}
+              {Number(row.pph || 0) > 0 && (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-danger font-medium">Pemotongan {row.tipePph || "PPh"}</Text>
+                  <Text className="text-xs font-semibold text-danger">-{rupiah(row.pph)}</Text>
+                </View>
+              )}
               <View className="flex-row justify-between items-center pt-1 border-t border-border/40">
-                <Text className="text-xs font-bold text-foreground">Total Nilai SO (Setelah Diskon)</Text>
+                <Text className="text-xs font-bold text-foreground">Total Nilai SO</Text>
                 <Text className="text-xs font-bold text-primary">
-                  {rupiah(Number(row.nilai) || Math.max(0, itemsTotal - effectiveDiscount))}
+                  {rupiah(effectiveOrderTotal || Math.max(0, itemsTotal - effectiveDiscount))}
                 </Text>
               </View>
             </View>
@@ -1118,14 +1211,13 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             <Button
               size="sm"
               className="h-7 px-2.5 flex-row items-center gap-1"
-              onPress={() => {
-                setDoTujuan(row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Customer");
-                setDoAlasan(`Pengiriman Barang Sales Order ${row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : row.nomor || ""}`);
-                setCreateDoOpen(true);
-              }}
+              onPress={handleCreateDoFromSo}
+              disabled={creatingDo}
             >
               <Plus size={12} color="#fff" />
-              <Text className="text-[11px] text-white">Buat Surat Jalan (DO)</Text>
+              <Text className="text-[11px] text-white">
+                {creatingDo ? "Membuat DO..." : "Buat Surat Jalan (DO)"}
+              </Text>
             </Button>
           </View>
         }
@@ -1143,6 +1235,16 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               right={
                 <View className="flex-row items-center gap-2">
                   <Cell fmt="status" value={dn.status} />
+                  {dn.status === "Pending" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-primary/50"
+                      onPress={() => router.push(`/delivery-notes/new?id=${dn.id}&soId=${row.id}` as any)}
+                    >
+                      <Text className="text-xs text-primary font-semibold">Edit & Scan SN</Text>
+                    </Button>
+                  ) : null}
                   <Button size="sm" variant="outline" onPress={() => router.push(`/delivery-notes/${dn.id}` as any)}>
                     <Text className="text-xs">Buka & Kirim DO</Text>
                   </Button>
@@ -1298,6 +1400,18 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               />
             </FormField>
 
+            <FormField label="PPh Barang / Jasa (Opsional)" hint="Pilih pemotongan PPh jika ada">
+              <SearchableSelect
+                value={pphModeToTipe(itemPphMode)}
+                options={PPH_MODE_OPTIONS.map((o) => o.label)}
+                onChange={(lbl) => {
+                  const m = PPH_MODE_OPTIONS.find((o) => o.label === lbl);
+                  setItemPphMode(m?.id || "none");
+                }}
+                placeholder="Tanpa PPh"
+              />
+            </FormField>
+
             <FormField label="Serial Number (SN) / Keterangan (Opsional)">
               <Input
                 value={itemSn}
@@ -1409,6 +1523,16 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             <Button variant="outline" onPress={() => setCreateDoOpen(false)}>
               <Text>Batal</Text>
             </Button>
+            <Button
+              variant="outline"
+              className="border-primary/50"
+              onPress={() => {
+                setCreateDoOpen(false);
+                router.push(`/delivery-notes/new?soId=${row.id}` as any);
+              }}
+            >
+              <Text className="text-primary font-semibold">Buka Form Penuh & Scan SN</Text>
+            </Button>
             <Button onPress={handleCreateDoFromSo} disabled={creatingDo}>
               <Text className="text-white">{creatingDo ? "Membuat DO..." : "Simpan & Buat DO"}</Text>
             </Button>
@@ -1514,7 +1638,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             <View className="bg-primary/5 p-2.5 rounded-lg border border-primary/20 flex-row items-center gap-2">
               <CheckCircle2 size={16} color={colors.primary} />
               <Text className="text-[11px] text-foreground flex-1">
-                Barang pesanan langsung dikeluarkan dari gudang & status SO otomatis lunas. Anda tidak perlu membuat Surat Jalan atau Invoice terpisah.
+                SO otomatis ditandai Lunas & sistem otomatis membuat Surat Jalan (status Pending) dengan daftar item SO agar staf Gudang dapat memilih unit fisik SN dan memproses pengiriman.
               </Text>
             </View>
           </View>
@@ -1534,7 +1658,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             >
               <CheckCircle2 size={14} color="#fff" />
               <Text className="text-white font-semibold">
-                {directSettling ? "Menyimpan..." : "Simpan & Keluarkan Barang"}
+                {directSettling ? "Menyimpan..." : "Simpan & Buat Surat Jalan"}
               </Text>
             </Button>
           </DialogFooter>
@@ -1606,6 +1730,7 @@ export function ModuleExtras({
     return (
       <InvoiceExtras
         row={row}
+        onRefresh={onRefresh}
         payOpen={invoicePayOpen}
         onPayOpenChange={onInvoicePayOpenChange}
       />

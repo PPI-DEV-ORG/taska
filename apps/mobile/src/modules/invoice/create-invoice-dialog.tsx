@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
 import { DatePicker, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
+import { FileUploader } from "@/components/taska/file-uploader";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { useApp } from "@/store/app-store";
@@ -156,8 +157,9 @@ function CreateInvoiceForm({
     );
   }, [initialPo]);
 
-  // Mode: "baru" vs "lanjut"
-  const [mode, setMode] = React.useState<"baru" | "lanjut">(() => {
+  // Mode: "baru" (Invoice Keluar Baru) vs "lanjut" (Lanjutkan Termin/DP) vs "masuk" (Invoice Masuk / Tagihan)
+  const [mode, setMode] = React.useState<"baru" | "lanjut" | "masuk">(() => {
+    if (defaultDirectPurchase) return "masuk";
     if (initialPo) {
       const hasExisting = (data.invoices ?? []).some(
         (inv: Row) =>
@@ -179,7 +181,7 @@ function CreateInvoiceForm({
     return "baru";
   });
 
-  // Source selection: direct_sale, direct_purchase, quotation, po, lead, or customer
+  // Source selection for Invoice Keluar: po, quotation, direct_sale, lead, or customer
   const [sourceType, setSourceType] = React.useState<InvoiceSourceType>(() => {
     if (defaultDirectPurchase) return "direct_purchase";
     if (defaultDirectSale) return "direct_sale";
@@ -204,10 +206,37 @@ function CreateInvoiceForm({
     initialLead?.id ? String(initialLead.id) : "",
   );
 
-  // Supplier & PO Supplier state for direct_purchase
+  // Supplier & PO Supplier state for direct_purchase (Invoice Masuk Langsung)
   const [selectedSupplierId, setSelectedSupplierId] = React.useState<string>("");
   const [selectedSupplierPoId, setSelectedSupplierPoId] = React.useState<string>("");
   const [customSupplierName, setCustomSupplierName] = React.useState<string>("");
+  const [purchaseCategoryCode, setPurchaseCategoryCode] = React.useState<string>("6202.01");
+
+  const invoiceInCategoryOptions = React.useMemo(
+    () => [
+      { code: "6202.01", label: "Tagihan Listrik / PLN [6202.01 - Biaya Listrik]", category: "Tagihan Listrik" },
+      { code: "6202.03", label: "Tagihan Internet / WiFi / Telepon [6202.03 - Biaya Telekomunikasi]", category: "Tagihan Internet & Telekomunikasi" },
+      { code: "6202.02", label: "Tagihan Air / PDAM [6202.02 - Biaya Air]", category: "Tagihan Air / PDAM" },
+      { code: "6203.01", label: "Sewa / Pemeliharaan Gedung & Kantor [6203.01]", category: "Pemeliharaan Gedung & Kantor" },
+      { code: "6203.02", label: "Servis Kendaraan / BBM / Operasional Lapangan [6203.02]", category: "Operasional Kendaraan" },
+      { code: "6202.06", label: "Pembelian ATK & Perlengkapan Kantor [6202.06]", category: "ATK & Perlengkapan Kantor" },
+      { code: "6202.07", label: "Tagihan Jasa / Operasional Umum Lainnya [6202.07]", category: "Tagihan Operasional Lainnya" },
+      { code: "1200", label: "Pembelian Barang Stok / Persediaan Gudang [1200]", category: "Tagihan Supplier (Stok)" },
+      { code: "5101", label: "Tagihan Subkon / Material Proyek [5101 - HPP Project]", category: "Tagihan Proyek" },
+    ],
+    []
+  );
+
+  const sourceTypeOptions = React.useMemo(
+    () => [
+      { value: "po" as InvoiceSourceType, label: "PO Client / Sales Order (SO)" },
+      { value: "quotation" as InvoiceSourceType, label: "Penawaran (Quotation)" },
+      { value: "direct_sale" as InvoiceSourceType, label: "Invoice Penjualan Langsung (Walk-in)" },
+      { value: "lead" as InvoiceSourceType, label: "Lead / Prospek" },
+      { value: "customer" as InvoiceSourceType, label: "Customer Langsung" },
+    ],
+    []
+  );
 
   // Customer state
   const [customCustomerName, setCustomCustomerName] = React.useState<string>(() => {
@@ -259,6 +288,7 @@ function CreateInvoiceForm({
     return "";
   });
   const [fileId, setFileId] = React.useState<number | null>(null);
+  const [paymentFileId, setPaymentFileId] = React.useState<number | null>(null);
 
   // Payment Status (Belum Bayar vs Langsung Lunas)
   const [paymentStatus, setPaymentStatus] = React.useState<"UNPAID" | "PAID">(() => {
@@ -559,15 +589,21 @@ function CreateInvoiceForm({
   }, [mode, selectedParentInvoice, data.invoices, activeQuotation, activePo, activeLead]);
 
   // Invoice Number
-  const [nomor, setNomor] = React.useState<string>(() =>
-    generateInvoiceNumber(
+  const [nomor, setNomor] = React.useState<string>(() => {
+    if (defaultDirectPurchase) {
+      const now = new Date();
+      const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const nextIdx = String((data.invoiceIn?.length || 0) + 1).padStart(3, "0");
+      return `INV-IN/${ym}/${nextIdx}`;
+    }
+    return generateInvoiceNumber(
       mode === "lanjut",
       scheme,
       relatedExistingInvoices,
       data.invoices?.length || 0,
       data.invoices,
-    ),
-  );
+    );
+  });
 
   const terminNumber = relatedExistingInvoices.length + 1;
 
@@ -587,6 +623,12 @@ function CreateInvoiceForm({
 
   // Total gross items / amount before discount
   const grossDealDpp = React.useMemo(() => {
+    if (mode === "masuk") {
+      if (items.length > 0) {
+        return items.reduce((acc, curr) => acc + (Number(curr.qty) || 1) * (Number(curr.harga) || Number((curr as any).price) || 0), 0);
+      }
+      return Number(String(customDpp).replace(/\D/g, "")) || 0;
+    }
     if (mode === "baru" && items.length > 0) {
       return items.reduce((acc, curr) => acc + (Number(curr.qty) || 1) * (Number(curr.harga) || Number((curr as any).price) || 0), 0);
     }
@@ -745,9 +787,22 @@ function CreateInvoiceForm({
   }
 
   // Switch mode handler
-  function handleSwitchMode(newMode: "baru" | "lanjut") {
+  function handleSwitchMode(newMode: "baru" | "lanjut" | "masuk") {
     setMode(newMode);
-    if (newMode === "lanjut") {
+    if (newMode === "masuk") {
+      setSourceType("direct_purchase");
+      setScheme("sekaligus");
+      setItems([]);
+      setPaymentStatus("PAID");
+      const now = new Date();
+      const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const nextIdx = String((data.invoiceIn?.length || 0) + 1).padStart(3, "0");
+      setNomor(`INV-IN/${ym}/${nextIdx}`);
+      if (!catatan || catatan === "Nota Penjualan Langsung (Walk-in)" || catatan.startsWith("Invoice untuk")) {
+        setCatatan("Tagihan Operasional / Invoice Masuk");
+      }
+    } else if (newMode === "lanjut") {
+      if (sourceType === "direct_purchase") setSourceType("po");
       setItems([]);
       let candidateId = continuableInvoiceOptions.some((o) => o.id === selectedParentInvoiceId)
         ? selectedParentInvoiceId
@@ -777,6 +832,7 @@ function CreateInvoiceForm({
         setSelectedParentInvoiceId("");
       }
     } else {
+      if (sourceType === "direct_purchase") setSourceType("po");
       if (activeQuotation?.items && Array.isArray(activeQuotation.items)) {
         setItems(activeQuotation.items);
       } else if (activePo?.items && Array.isArray(activePo.items)) {
@@ -836,7 +892,10 @@ function CreateInvoiceForm({
     let dpp = 0;
     let pct = 100;
 
-    if (mode === "baru") {
+    if (mode === "masuk") {
+      pct = 100;
+      dpp = dealDpp;
+    } else if (mode === "baru") {
       if (scheme === "dp") {
         pct = Number(dpPercent) || 50;
         dpp = Math.round(dealDpp * (pct / 100));
@@ -877,21 +936,22 @@ function CreateInvoiceForm({
       return;
     }
 
-    const isPurchase = sourceType === "direct_purchase";
+    const isPurchase = mode === "masuk" || sourceType === "direct_purchase";
     const supplierObj = (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId));
     const suppPoObj = (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId));
     const customerObj = (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId));
 
+    const validCustStr = (v?: string | null) => (v && v !== "-" ? v : null);
     const custName = isPurchase
       ? customSupplierName || supplierObj?.nama || supplierObj?.name || "Supplier Pembelian Langsung"
-      : customCustomerName ||
-        customerObj?.nama ||
+      : validCustStr(customCustomerName) ||
+        validCustStr(customerObj?.nama) ||
         (sourceType === "direct_sale" ? "Pelanggan Langsung (Walk-in)" : null) ||
-        activeQuotation?.customer ||
-        activePo?.customer ||
-        activeLead?.perusahaan ||
-        activeLead?.nama ||
-        "Pelanggan Langsung (Walk-in)";
+        validCustStr(activeQuotation?.customer) ||
+        validCustStr(activePo?.customer) ||
+        validCustStr(activeLead?.perusahaan) ||
+        validCustStr(activeLead?.nama) ||
+        (sourceType === "direct_sale" ? "Pelanggan Langsung (Walk-in)" : "Pelanggan Umum");
 
     const invoiceType =
       mode === "lanjut"
@@ -933,6 +993,65 @@ function CreateInvoiceForm({
     setIsSubmitting(true);
     const isPaidNow = paymentStatus === "PAID";
     try {
+      if (isPurchase) {
+        const selectedCatOpt =
+          invoiceInCategoryOptions.find((o) => o.code === purchaseCategoryCode) ||
+          invoiceInCategoryOptions[0]!;
+        const accLabel =
+          kasBankOptions.find((o) => o.code === paymentAccountCode)?.rawName || paymentMethod;
+        const createdIn = await addRow("invoiceIn", {
+          nomor: nomor.trim() || undefined,
+          supplierId: selectedSupplierId ? Number(selectedSupplierId) : undefined,
+          supplier: custName,
+          supplierPoId: selectedSupplierPoId ? Number(selectedSupplierPoId) : undefined,
+          po: suppPoObj?.nomor || suppPoObj?.number || undefined,
+          category: selectedCatOpt.category,
+          debitAccount: purchaseCategoryCode,
+          nilai: currentDpp,
+          ppn: currentPpn,
+          pph: currentPph,
+          pphMode,
+          tipePph: pphModeToTipe(pphMode),
+          total: currentTotal,
+          tanggal,
+          jatuhTempo: isPaidNow ? tanggal : jatuhTempo,
+          status: isPaidNow ? "Lunas" : "Belum dibayar",
+          terbayar: isPaidNow ? currentTotal : 0,
+          paid: isPaidNow,
+          paymentMethod,
+          coaAccount: paymentAccountCode,
+          paymentReference: isPaidNow
+            ? `LUNAS-${nomor.trim()} [AKUN:${paymentAccountCode}]`
+            : undefined,
+          catatan: isPaidNow
+            ? `${fullCatatan} (Lunas via ${accLabel} [AKUN:${paymentAccountCode}])`
+            : fullCatatan,
+          items: items.length > 0 ? items : undefined,
+          fileId: fileId || undefined,
+          paymentFileId: isPaidNow && paymentFileId ? paymentFileId : undefined,
+          transferFileId: isPaidNow && paymentFileId ? paymentFileId : undefined,
+        });
+
+        if (createdIn) {
+          toast(
+            `Invoice Masuk ${nomor} (${selectedCatOpt.category}) berhasil disimpan${
+              isPaidNow ? ` & langsung Lunas (${accLabel})` : ""
+            }!`
+          );
+          if (selectedSupplierPoId) {
+            pushHistory(
+              "supplier-pos",
+              selectedSupplierPoId,
+              `Invoice Masuk ${nomor} (${rupiah(currentTotal)}) dibuat`
+            );
+          }
+          onClose();
+          await reload();
+          await onSuccess?.();
+        }
+        return;
+      }
+
       const created = await addRow("invoices", {
         nomor: nomor.trim() || undefined,
         customer: custName,
@@ -1013,6 +1132,7 @@ function CreateInvoiceForm({
             date: tanggal,
             method: paymentMethod,
             reference: `LUNAS-${nomor.trim()} [${paymentAccountCode}]`,
+            fileId: paymentFileId || undefined,
           }).catch(() => {});
         }
         const accLabel = kasBankOptions.find((o) => o.code === paymentAccountCode)?.rawName || paymentMethod;
@@ -1054,19 +1174,19 @@ function CreateInvoiceForm({
       <DialogHeader>
         <DialogTitle className="flex-row items-center gap-2">
           <Text className="text-base font-bold">
-            {sourceType === "direct_purchase"
-              ? "Faktur Pembelian Langsung"
+            {mode === "masuk"
+              ? "Buat Invoice Masuk (Tagihan / Pembelian)"
               : sourceType === "direct_sale"
               ? "Invoice Penjualan Langsung"
-              : "Buat Invoice Penagihan"}
+              : "Buat Invoice Penagihan (Invoice Keluar)"}
           </Text>
-          {sourceType === "direct_sale" ? (
+          {mode === "masuk" ? (
+            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-warning/15 text-warning">
+              Invoice Masuk
+            </Text>
+          ) : sourceType === "direct_sale" ? (
             <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-success/15 text-success">
               Penjualan Langsung
-            </Text>
-          ) : sourceType === "direct_purchase" ? (
-            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-warning/15 text-warning">
-              Pembelian Langsung
             </Text>
           ) : mode === "lanjut" && selectedParentInvoice ? (
             <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
@@ -1089,32 +1209,166 @@ function CreateInvoiceForm({
       </DialogHeader>
 
       <ScrollView className="max-h-[80vh] px-1" showsVerticalScrollIndicator={false}>
-        {/* Mode Switcher */}
-        <View className="flex-row rounded-lg bg-panel p-1 border border-border mb-4">
+        {/* Mode Switcher (3 Tab: Invoice Keluar Baru | Lanjutkan Termin / DP | Invoice Masuk) */}
+        <View className="flex-row flex-wrap rounded-lg bg-panel p-1 border border-border mb-4 gap-1">
           <Button
             variant={mode === "baru" ? "default" : "ghost"}
             size="sm"
             onPress={() => handleSwitchMode("baru")}
-            className="flex-1 h-8"
+            className="flex-1 min-w-[160px] h-8"
           >
             <Text className={`text-xs font-semibold ${mode === "baru" ? "text-primary-foreground" : "text-muted-foreground"}`}>
-              Invoice Baru (Mulai Awal / DP / Penuh)
+              Invoice Keluar Baru
             </Text>
           </Button>
           <Button
             variant={mode === "lanjut" ? "default" : "ghost"}
             size="sm"
             onPress={() => handleSwitchMode("lanjut")}
-            className="flex-1 h-8"
+            className="flex-1 min-w-[160px] h-8"
           >
             <Text className={`text-xs font-semibold ${mode === "lanjut" ? "text-primary-foreground" : "text-muted-foreground"}`}>
-              Lanjutkan Termin / DP Sebelumnya
+              Lanjutkan Termin / DP
+            </Text>
+          </Button>
+          <Button
+            variant={mode === "masuk" ? "default" : "ghost"}
+            size="sm"
+            onPress={() => handleSwitchMode("masuk")}
+            className="flex-1 min-w-[170px] h-8"
+          >
+            <Text className={`text-xs font-semibold ${mode === "masuk" ? "text-primary-foreground" : "text-muted-foreground"}`}>
+              Invoice Masuk (Tagihan / Beli)
             </Text>
           </Button>
         </View>
 
-        {/* Source Link Section or Continuation Invoice Selector */}
-        {mode === "lanjut" ? (
+        {/* Source Link Section or Continuation Invoice Selector or Invoice Masuk Section */}
+        {mode === "masuk" ? (
+          <View className="mb-4 gap-2.5 p-3.5 rounded-xl border border-warning/40 bg-warning/5">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-xs font-bold text-foreground">
+                Detail Tagihan / Invoice Masuk (Listrik, Internet, Operasional, atau Supplier)
+              </Text>
+              <StatusBadge status="Invoice Masuk" />
+            </View>
+
+            <FormField
+              label="Kategori Tagihan / Akun Beban (COA)"
+              required
+              hint="Otomatis dijurnal ke akun beban/persediaan terkait di Laporan & COA"
+            >
+              <SearchableSelect
+                value={
+                  invoiceInCategoryOptions.find((o) => o.code === purchaseCategoryCode)?.label ||
+                  invoiceInCategoryOptions[0]?.label || ""
+                }
+                onChange={(val) => {
+                  const found = invoiceInCategoryOptions.find((o) => o.label === val);
+                  if (found) {
+                    setPurchaseCategoryCode(found.code);
+                    if (found.code === "6202.01") {
+                      if (!customSupplierName || customSupplierName.includes("IndiHome") || customSupplierName.includes("PDAM")) {
+                        setCustomSupplierName("PLN (Tagihan Listrik)");
+                      }
+                      setCatatan("Tagihan Listrik PLN");
+                    } else if (found.code === "6202.03") {
+                      if (!customSupplierName || customSupplierName.includes("PLN") || customSupplierName.includes("PDAM")) {
+                        setCustomSupplierName("Telkom IndiHome (Internet)");
+                      }
+                      setCatatan("Tagihan Internet & Telekomunikasi");
+                    } else if (found.code === "6202.02") {
+                      if (!customSupplierName || customSupplierName.includes("PLN") || customSupplierName.includes("IndiHome")) {
+                        setCustomSupplierName("PDAM (Tagihan Air)");
+                      }
+                      setCatatan("Tagihan Air PDAM");
+                    }
+                  }
+                }}
+                options={invoiceInCategoryOptions.map((o) => o.label)}
+                placeholder="Pilih kategori tagihan / akun COA..."
+              />
+            </FormField>
+
+            <FormField
+              label="Pihak Penagih / Penyedia Layanan / Supplier"
+              required
+              hint="Pilih dari daftar atau ketik manual nama penagih (misal: PLN, Telkom IndiHome, Biznet)"
+            >
+              <View className="gap-1.5">
+                <SearchableSelect
+                  value={
+                    customSupplierName ||
+                    (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.nama ||
+                    (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.name ||
+                    ""
+                  }
+                  onChange={(val) => {
+                    setCustomSupplierName(val);
+                    const match = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
+                    if (match) setSelectedSupplierId(String(match.id));
+                    else setSelectedSupplierId("");
+                  }}
+                  onAddNew={() => setQuickSupplierOpen(true)}
+                  addNewLabel="+ Tambah Supplier Baru"
+                  options={Array.from(
+                    new Set([
+                      customSupplierName,
+                      "PLN (Tagihan Listrik)",
+                      "Telkom IndiHome (Internet)",
+                      "Biznet Networks (Internet)",
+                      "PDAM (Tagihan Air)",
+                      "Pengelola Gedung / Sewa Kantor",
+                      ...(data.suppliers ?? []).map((s: Row) => s.nama || s.name),
+                    ])
+                  ).filter(Boolean)}
+                  placeholder="Pilih penyedia tagihan / supplier..."
+                />
+                <Input
+                  value={customSupplierName}
+                  onChangeText={(val) => {
+                    setCustomSupplierName(val);
+                    const match = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
+                    if (match) setSelectedSupplierId(String(match.id));
+                    else setSelectedSupplierId("");
+                  }}
+                  placeholder="Atau ketik manual nama penagih (contoh: PLN, IndiHome, Toko ABC)..."
+                />
+              </View>
+            </FormField>
+
+            <FormField label="PO Supplier Terkait (Opsional — Kosongkan untuk Tagihan Listrik / Internet / Non-PO)">
+              <SearchableSelect
+                value={
+                  (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.nomor ||
+                  (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.number ||
+                  ""
+                }
+                onChange={(val) => {
+                  const selNo = val.split(" - ")[0]?.trim() || val;
+                  const match = (data["supplier-pos"] ?? []).find(
+                    (p: Row) => (p.nomor || p.number) === selNo,
+                  );
+                  if (match) {
+                    setSelectedSupplierPoId(String(match.id));
+                    setPurchaseCategoryCode("1200");
+                    if (match.supplierId) setSelectedSupplierId(String(match.supplierId));
+                    if (match.supplier) setCustomSupplierName(match.supplier);
+                    if (Array.isArray(match.items) && match.items.length > 0) {
+                      setItems(match.items);
+                    } else if (match.total || match.nilai) {
+                      setCustomDpp(formatThousands(match.total || match.nilai));
+                    }
+                  }
+                }}
+                options={(data["supplier-pos"] ?? []).map(
+                  (p: Row) => `${p.nomor || p.number} - ${p.supplier || "-"}`,
+                )}
+                placeholder="Kosongkan jika bukan dari PO Supplier..."
+              />
+            </FormField>
+          </View>
+        ) : mode === "lanjut" ? (
           <View className="mb-4 p-3 rounded-xl bg-card border border-primary/30 gap-2.5">
             <View className="flex-row items-center justify-between">
               <Text className="text-xs font-bold text-foreground">
@@ -1177,125 +1431,33 @@ function CreateInvoiceForm({
         ) : (
           <View className="mb-4 gap-2">
             <FormField label="Tautkan Invoice Ke / Jenis Transaksi" required>
-              <View className="flex-row flex-wrap gap-1.5">
-                <Button
-                  variant={sourceType === "direct_sale" ? "default" : "outline"}
-                  size="sm"
-                  onPress={() => {
-                    setSourceType("direct_sale");
+              <SearchableSelect
+                value={
+                  sourceTypeOptions.find((o) => o.value === sourceType)?.label ||
+                  sourceTypeOptions[0]?.label ||
+                  ""
+                }
+                onChange={(val) => {
+                  const found = sourceTypeOptions.find((o) => o.label === val);
+                  if (!found) return;
+                  const nextType = found.value;
+                  setSourceType(nextType);
+                  if (nextType === "direct_sale") {
                     setScheme("sekaligus");
                     setPaymentStatus("PAID");
-                    if (!catatan) setCatatan("Nota Penjualan Langsung (Walk-in)");
-                  }}
-                  className="flex-1 min-w-[125px] h-8 px-2"
-                >
-                  <Text className="text-xs font-semibold">Invoice Langsung</Text>
-                </Button>
-                <Button
-                  variant={sourceType === "direct_purchase" ? "default" : "outline"}
-                  size="sm"
-                  onPress={() => {
-                    setSourceType("direct_purchase");
+                    if (!catatan || catatan.startsWith("Invoice ") || catatan.startsWith("Tagihan ")) {
+                      setCatatan("Nota Penjualan Langsung (Walk-in)");
+                    }
+                  } else if (nextType === "po") {
                     setScheme("sekaligus");
-                    setPaymentStatus("PAID");
-                    if (!catatan) setCatatan("Invoice Pembelian Langsung");
-                  }}
-                  className="flex-1 min-w-[140px] h-8 px-2"
-                >
-                  <Text className="text-xs font-semibold">Pembelian Langsung</Text>
-                </Button>
-                <Button
-                  variant={sourceType === "po" ? "default" : "outline"}
-                  size="sm"
-                  onPress={() => {
-                    setSourceType("po");
-                    setScheme("sekaligus");
-                  }}
-                  className="flex-1 min-w-[120px] h-8 px-2"
-                >
-                  <Text className="text-xs font-semibold">PO Client (SO)</Text>
-                </Button>
-                <Button
-                  variant={sourceType === "quotation" ? "default" : "outline"}
-                  size="sm"
-                  onPress={() => setSourceType("quotation")}
-                  className="flex-1 min-w-[95px] h-8 px-2"
-                >
-                  <Text className="text-xs font-semibold">Penawaran</Text>
-                </Button>
-                <Button
-                  variant={sourceType === "lead" ? "default" : "outline"}
-                  size="sm"
-                  onPress={() => setSourceType("lead")}
-                  className="flex-1 min-w-[95px] h-8 px-2"
-                >
-                  <Text className="text-xs font-semibold">Lead / Prospek</Text>
-                </Button>
-                <Button
-                  variant={sourceType === "customer" ? "default" : "outline"}
-                  size="sm"
-                  onPress={() => setSourceType("customer")}
-                  className="flex-1 min-w-[85px] h-8 px-2"
-                >
-                  <Text className="text-xs font-semibold">Customer</Text>
-                </Button>
-              </View>
+                  }
+                }}
+                options={sourceTypeOptions.map((o) => o.label)}
+                placeholder="Pilih jenis transaksi invoice..."
+              />
             </FormField>
 
-            {sourceType === "direct_purchase" ? (
-              <View className="gap-2 p-2.5 rounded-lg border border-border bg-card/60">
-                <FormField label="Pilih Supplier / Tempat Pembelian Langsung" required>
-                  <SearchableSelect
-                    value={
-                      customSupplierName ||
-                      (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.nama ||
-                      (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.name ||
-                      ""
-                    }
-                    onChange={(val) => {
-                      setCustomSupplierName(val);
-                      const match = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
-                      if (match) setSelectedSupplierId(String(match.id));
-                      else setSelectedSupplierId("");
-                    }}
-                    onAddNew={() => setQuickSupplierOpen(true)}
-                    addNewLabel="+ Tambah Supplier Baru"
-                    options={Array.from(new Set([customSupplierName, ...(data.suppliers ?? []).map((s: Row) => s.nama || s.name)])).filter(Boolean)}
-                    placeholder="Cari & pilih supplier..."
-                  />
-                </FormField>
-
-                <FormField label="PO Supplier Terkait (Opsional)">
-                  <SearchableSelect
-                    value={
-                      (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.nomor ||
-                      (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.number ||
-                      ""
-                    }
-                    onChange={(val) => {
-                      const selNo = val.split(" - ")[0]?.trim() || val;
-                      const match = (data["supplier-pos"] ?? []).find(
-                        (p: Row) => (p.nomor || p.number) === selNo,
-                      );
-                      if (match) {
-                        setSelectedSupplierPoId(String(match.id));
-                        if (match.supplierId) setSelectedSupplierId(String(match.supplierId));
-                        if (match.supplier) setCustomSupplierName(match.supplier);
-                        if (Array.isArray(match.items) && match.items.length > 0) {
-                          setItems(match.items);
-                        } else if (match.total || match.nilai) {
-                          setCustomDpp(formatThousands(match.total || match.nilai));
-                        }
-                      }
-                    }}
-                    options={(data["supplier-pos"] ?? []).map(
-                      (p: Row) => `${p.nomor || p.number} - ${p.supplier || "-"}`,
-                    )}
-                    placeholder="Pilih PO Supplier jika ada..."
-                  />
-                </FormField>
-              </View>
-            ) : sourceType === "direct_sale" ? (
+            {sourceType === "direct_sale" ? (
               <View className="gap-2 p-2.5 rounded-lg border border-border bg-card/60">
                 <FormField label="Customer (Opsional: Kosongkan untuk Pelanggan Langsung / Walk-in)">
                   <SearchableSelect
@@ -1549,7 +1711,7 @@ function CreateInvoiceForm({
               ) : null}
             </View>
           </View>
-        ) : (
+        ) : mode === "baru" ? (
           /* Mode Baru Scheme */
           <View className="mb-4 p-3 rounded-xl bg-panel border border-border gap-2">
             <FormField label="Skema Pembayaran" required>
@@ -1601,17 +1763,27 @@ function CreateInvoiceForm({
               </FormField>
             ) : null}
           </View>
-        )}
+        ) : null}
 
         {/* Form Fields */}
         <View className="gap-3 mb-4">
-          <FormField label="Nomor Invoice (Kosongkan untuk otomatis)">
-            <Input value={nomor} onChangeText={setNomor} placeholder="Otomatis oleh sistem" />
+          <FormField
+            label={
+              mode === "masuk"
+                ? "Nomor Invoice Masuk / No. Tagihan (Kosongkan untuk otomatis)"
+                : "Nomor Invoice (Kosongkan untuk otomatis)"
+            }
+          >
+            <Input
+              value={nomor}
+              onChangeText={setNomor}
+              placeholder={mode === "masuk" ? "Contoh: INV-IN/2026/11/001 atau No. Tagihan PLN/IndiHome" : "Otomatis oleh sistem"}
+            />
           </FormField>
 
           <View className="flex-row gap-2">
             <View className="flex-1">
-              <FormField label="Tanggal Terbit" required>
+              <FormField label={mode === "masuk" ? "Tanggal Tagihan" : "Tanggal Terbit"} required>
                 <DatePicker value={tanggal} onChange={setTanggal} />
               </FormField>
             </View>
@@ -1622,8 +1794,15 @@ function CreateInvoiceForm({
             </View>
           </View>
 
-          {mode === "baru" && items.length === 0 ? (
-            <FormField label="Nilai Kesepakatan / DPP Total (Rp)" required>
+          {(mode === "baru" || mode === "masuk") && items.length === 0 ? (
+            <FormField
+              label={
+                mode === "masuk"
+                  ? "Nominal Tagihan / Nilai DPP (Rp)"
+                  : "Nilai Kesepakatan / DPP Total (Rp)"
+              }
+              required
+            >
               <Input
                 value={customDpp}
                 onChangeText={(v) => setCustomDpp(formatThousands(v))}
@@ -1633,8 +1812,38 @@ function CreateInvoiceForm({
             </FormField>
           ) : null}
 
-          {/* List Barang / Items Section */}
-          {mode === "lanjut" ? (
+          {/* List Barang / Items Section (Only for Invoice Keluar, or if Invoice Masuk has PO items) */}
+          {mode === "masuk" ? (
+            items.length > 0 ? (
+              <View className="gap-2 p-3 rounded-xl border border-border bg-card">
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs font-bold text-foreground">
+                    Rincian Item dari PO Supplier ({items.length} Item)
+                  </Text>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2"
+                    onPress={() => setItems([])}
+                  >
+                    <Text className="text-xs text-danger">Hapus Rincian Item</Text>
+                  </Button>
+                </View>
+                {items.map((it, idx) => {
+                  const itemPrice = Number(it.harga || it.price || 0);
+                  const sub = (Number(it.qty) || 1) * itemPrice;
+                  return (
+                    <View key={it.id || idx} className="flex-row justify-between py-1.5 border-b border-border/40">
+                      <Text className="text-xs font-medium flex-1 mr-2">
+                        {it.item} ({it.qty} {it.satuan || it.unit || "unit"} x {rupiah(itemPrice)})
+                      </Text>
+                      <Text className="text-xs font-semibold">{rupiah(sub)}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null
+          ) : mode === "lanjut" ? (
             <View className="p-4 rounded-xl border border-primary/20 bg-primary/5 gap-2.5">
               <View className="flex-row items-center gap-2">
                 <Package size={16} color={colors.primary} />
@@ -1905,7 +2114,13 @@ function CreateInvoiceForm({
 
           {/* Status Pembayaran */}
           <View className="p-3 rounded-xl bg-panel border border-border gap-2">
-            <FormField label="Status Pembayaran Saat Terbit">
+            <FormField
+              label={
+                mode === "masuk"
+                  ? "Status Pembayaran Tagihan Masuk"
+                  : "Status Pembayaran Saat Terbit"
+              }
+            >
               <View className="flex-row gap-2">
                 <Button
                   variant={paymentStatus === "UNPAID" ? "default" : "outline"}
@@ -1913,7 +2128,11 @@ function CreateInvoiceForm({
                   onPress={() => setPaymentStatus("UNPAID")}
                   className="flex-1 h-8"
                 >
-                  <Text className="text-xs">Belum Bayar (Tagihan / Tempo)</Text>
+                  <Text className="text-xs">
+                    {mode === "masuk"
+                      ? "Belum Dibayar (Hutang / Tempo)"
+                      : "Belum Bayar (Tagihan / Tempo)"}
+                  </Text>
                 </Button>
                 <Button
                   variant={paymentStatus === "PAID" ? "default" : "outline"}
@@ -1921,49 +2140,117 @@ function CreateInvoiceForm({
                   onPress={() => setPaymentStatus("PAID")}
                   className="flex-1 h-8"
                 >
-                  <Text className="text-xs">Langsung Lunas (Kas / Bank)</Text>
+                  <Text className="text-xs">
+                    {mode === "masuk"
+                      ? "Langsung Dibayar / Lunas (Kas / Bank)"
+                      : "Langsung Lunas (Kas / Bank)"}
+                  </Text>
                 </Button>
               </View>
             </FormField>
 
             {paymentStatus === "PAID" ? (
-              <FormField
-                label="Pilih Akun Kas / Bank Penerimaan"
-                required
-                hint="Pilih rekening bank atau kas kecil tempat pembayaran invoice ini masuk"
-              >
-                <SearchableSelect
-                  value={
-                    kasBankOptions.find((o) => o.code === paymentAccountCode)?.name ||
-                    kasBankOptions[0]?.name ||
-                    ""
+              <View className="gap-2.5">
+                <FormField
+                  label={
+                    mode === "masuk"
+                      ? "Pilih Akun Kas / Bank Pembayaran (Sumber Dana)"
+                      : "Pilih Akun Kas / Bank Penerimaan"
                   }
-                  options={kasBankOptions.map((o) => o.name)}
-                  onChange={(val) => {
-                    const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
-                    if (match) {
-                      setPaymentAccountCode(match.code);
-                      const isTunai = match.code === "1000.01" || /kas/i.test(match.rawName);
-                      setPaymentMethod(isTunai ? "TUNAI" : "TRANSFER");
+                  required
+                  hint={
+                    mode === "masuk"
+                      ? "Pilih rekening bank atau kas kecil yang digunakan untuk membayar tagihan ini"
+                      : "Pilih rekening bank atau kas kecil tempat pembayaran invoice ini masuk"
+                  }
+                >
+                  <SearchableSelect
+                    value={
+                      kasBankOptions.find((o) => o.code === paymentAccountCode)?.name ||
+                      kasBankOptions[0]?.name ||
+                      ""
                     }
-                  }}
-                  placeholder="Pilih rekening kas / bank..."
-                />
-              </FormField>
+                    options={kasBankOptions.map((o) => o.name)}
+                    onChange={(val) => {
+                      const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
+                      if (match) {
+                        setPaymentAccountCode(match.code);
+                        const isTunai = match.code === "1000.01" || /kas/i.test(match.rawName);
+                        setPaymentMethod(isTunai ? "TUNAI" : "TRANSFER");
+                      }
+                    }}
+                    placeholder="Pilih rekening kas / bank..."
+                  />
+                </FormField>
+
+                <FormField
+                  label="Upload Bukti Pembayaran / Transfer (Opsional)"
+                  hint="Lampirkan foto / PDF bukti transfer bank atau struk pelunasan"
+                >
+                  <FileUploader
+                    label="Pilih File Foto / PDF Bukti Pembayaran"
+                    kind="semua"
+                    category="invoice"
+                    autoFlush
+                    onUploaded={(id: number | null) => setPaymentFileId(id)}
+                  />
+                </FormField>
+              </View>
             ) : null}
           </View>
 
-          <FormField label="Catatan / Keterangan Invoice">
+          <FormField
+            label={
+              mode === "masuk"
+                ? "Upload Dokumen Invoice Masuk / Tagihan (Opsional)"
+                : "Upload Dokumen Pendukung Invoice (Opsional)"
+            }
+            hint={
+              mode === "masuk"
+                ? "Lampirkan file PDF / foto tagihan (misal: Tagihan PLN, IndiHome, atau Faktur Supplier)"
+                : "Lampirkan dokumen pendukung bila ada"
+            }
+          >
+            <FileUploader
+              label={
+                mode === "masuk"
+                  ? "Pilih File PDF / Foto Tagihan Masuk"
+                  : "Pilih File Dokumen Invoice"
+              }
+              kind="semua"
+              category="invoice"
+              autoFlush
+              onUploaded={(id: number | null) => setFileId(id)}
+            />
+          </FormField>
+
+          <FormField
+            label={
+              mode === "masuk"
+                ? "Catatan / Keterangan Tagihan Masuk"
+                : "Catatan / Keterangan Invoice"
+            }
+          >
             <Textarea
               value={catatan}
               onChangeText={setCatatan}
-              placeholder="Catatan tambahan untuk invoice ini..."
+              placeholder={
+                mode === "masuk"
+                  ? "Contoh: Tagihan Internet IndiHome Bulan November 2026 / ID Pelanggan..."
+                  : "Catatan tambahan untuk invoice ini..."
+              }
             />
           </FormField>
 
           {/* Ketentuan PPN */}
           <View className="w-full sm:w-1/2 px-2 py-2">
-            <FormField label="Ketentuan PPN (Pajak Pertambahan Nilai)">
+            <FormField
+              label={
+                mode === "masuk"
+                  ? "Ketentuan PPN Masukan (Pajak Pertambahan Nilai)"
+                  : "Ketentuan PPN (Pajak Pertambahan Nilai)"
+              }
+            >
               <View className="gap-2">
                 <View className="flex-row flex-wrap gap-1.5">
                   {PPN_MODE_OPTIONS.map((opt) => (
@@ -2086,7 +2373,13 @@ function CreateInvoiceForm({
           <Text>Batal</Text>
         </Button>
         <Button onPress={handleSubmit} disabled={isSubmitting}>
-          <Text>{isSubmitting ? "Menyimpan..." : "Simpan & Buat Invoice"}</Text>
+          <Text>
+            {isSubmitting
+              ? "Menyimpan..."
+              : mode === "masuk"
+              ? "Simpan Invoice Masuk"
+              : "Simpan & Buat Invoice"}
+          </Text>
         </Button>
       </DialogFooter>
 

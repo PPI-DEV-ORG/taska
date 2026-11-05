@@ -111,6 +111,22 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
                   </Text>
                 </View>
               ) : null}
+
+              {(fin.balanceSheet.assets.ppnMasukan || 0) > 0 ? (
+                <View className="border-border/50 border-t pt-2 flex-row justify-between items-center py-1">
+                  <View className="gap-0.5">
+                    <Text className="text-sm font-medium">
+                      [1600] PPN Masukan (Kredit Pajak Masukan)
+                    </Text>
+                    <Text className="text-xs text-text-secondary">
+                      Kredit pajak PPN 11% atas pembelian PO supplier & pengadaan barang
+                    </Text>
+                  </View>
+                  <Text className="text-sm font-bold font-mono text-primary">
+                    {rupiah(fin.balanceSheet.assets.ppnMasukan)}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-row justify-between items-center">
@@ -201,6 +217,81 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
           </View>
         </Panel>
       </View>
+
+      {/* REKAPITULASI PPN DJP (SPT MASA PPN) */}
+      {(() => {
+        const ppnKeluaran = fin.balanceSheet.liabilities.hutangPpnKeluaran || 0;
+        const ppnMasukan = fin.balanceSheet.assets.ppnMasukan || 0;
+        const selisih = ppnKeluaran - ppnMasukan;
+        return (
+          <Panel
+            title="Rekapitulasi PPN & Posisi Pajak DJP (SPT Masa PPN)"
+            subtitle="Perhitungan kompensasi PPN Keluaran (Penjualan/Invoice) dikurangi PPN Masukan (Pembelian PO/Retail)"
+          >
+            <View className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <View className="bg-panel/50 border-border rounded-lg border p-3 gap-1">
+                <Text className="text-xs text-text-secondary font-medium uppercase tracking-wider">
+                  [2102] PPN Keluaran (Penjualan)
+                </Text>
+                <Text className="text-base font-bold font-mono text-warning">
+                  {rupiah(ppnKeluaran)}
+                </Text>
+                <Text className="text-[11px] text-text-secondary">
+                  Titipan PPN 11% dipungut dari klien atas invoice penjualan
+                </Text>
+              </View>
+
+              <View className="bg-panel/50 border-border rounded-lg border p-3 gap-1">
+                <Text className="text-xs text-text-secondary font-medium uppercase tracking-wider">
+                  [1600] PPN Masukan (Pembelian)
+                </Text>
+                <Text className="text-base font-bold font-mono text-primary">
+                  {rupiah(ppnMasukan)}
+                </Text>
+                <Text className="text-[11px] text-text-secondary">
+                  Kredit pajak PPN 11% dibayar atas PO supplier & pengadaan barang
+                </Text>
+              </View>
+
+              <View
+                className={`rounded-lg border p-3 gap-1 ${
+                  selisih > 0
+                    ? "bg-warning/10 border-warning/40"
+                    : selisih < 0
+                    ? "bg-success/10 border-success/40"
+                    : "bg-panel/50 border-border"
+                }`}
+              >
+                <Text className="text-xs font-semibold uppercase tracking-wider">
+                  {selisih > 0
+                    ? "PPN Kurang Bayar (Setor Kas Negara)"
+                    : selisih < 0
+                    ? "PPN Lebih Bayar (Kompensasi)"
+                    : "PPN Nihil"}
+                </Text>
+                <Text
+                  className={`text-base font-bold font-mono ${
+                    selisih > 0
+                      ? "text-warning"
+                      : selisih < 0
+                      ? "text-success"
+                      : "text-text-secondary"
+                  }`}
+                >
+                  {rupiah(Math.abs(selisih))}
+                </Text>
+                <Text className="text-[11px] text-text-secondary">
+                  {selisih > 0
+                    ? "Kewajiban disetor ke kas negara sebelum pelaporan SPT Masa PPN"
+                    : selisih < 0
+                    ? "Saldo lebih bayar dapat dikompensasi ke masa pajak berikutnya"
+                    : "Pajak masukan sama dengan pajak keluaran"}
+                </Text>
+              </View>
+            </View>
+          </Panel>
+        );
+      })()}
     </View>
   );
 }

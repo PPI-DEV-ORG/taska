@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Pressable, Platform, TextInput } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Check, Info, Trash2, Package, ScanLine, Plus, CheckCircle2, AlertCircle } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,35 +36,143 @@ function playScanBeep(ok: boolean) {
 
 export default function NewDeliveryNoteScreen() {
   const router = useRouter();
-  const { data, user, addRow, toast, refreshModule, pushHistory } = useApp();
-  const fileHandle = React.useRef<FileUploaderHandle | null>(null);
+  const searchParams = useLocalSearchParams<{ id?: string; soId?: string }>();
+  const editId = searchParams?.id ? String(searchParams.id) : null;
+  const initialSoId = searchParams?.soId ? String(searchParams.soId) : null;
 
-  const [tanggalSj, setTanggalSj] = React.useState(new Date().toISOString().slice(0, 10));
-  const [tujuan, setTujuan] = React.useState("");
-  const [alasan, setAlasan] = React.useState("");
-  const [selectedProject, setSelectedProject] = React.useState("-");
-  const [selectedSoOption, setSelectedSoOption] = React.useState("-");
-  const [hasGoods, setHasGoods] = React.useState(false);
-  const [items, setItems] = React.useState<QuotationItem[]>([]);
-  const [checklistRequirements, setChecklistRequirements] = React.useState<
-    {
-      productId?: number;
-      name: string;
-      sku?: string;
-      targetQty: number;
-      unit: string;
-    }[]
-  >([]);
+  const { data, user, addRow, patchRow, toast, refreshModule, pushHistory, reload } = useApp();
+  const fileHandle = React.useRef<FileUploaderHandle | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const deliveryNotes = data["delivery-notes"];
+  const poClientList = data["po-client"];
+
+  const initialExistingDn = React.useMemo(() => {
+    if (!editId) return null;
+    return (deliveryNotes ?? []).find(
+      (dn: Row) => String(dn.id) === editId || String(dn.nomor) === editId
+    ) ?? null;
+  }, [editId, deliveryNotes]);
+
+  const initialMatchSo = React.useMemo(() => {
+    const rawReason = String(initialExistingDn?.alasan || initialExistingDn?.reportText || "");
+    const tagSoId = rawReason.match(/\[so:(\d+)\]/i)?.[1] || "";
+    const tagSoNum = rawReason.match(/\b(SO[\-\/][^\s\)\]]+)\b/i)?.[1] || "";
+    const targetSoId =
+      initialSoId ||
+      (initialExistingDn
+        ? String(initialExistingDn.soId || initialExistingDn.clientPoId || tagSoId || "")
+        : "");
+    const targetSoNum = initialExistingDn ? String(initialExistingDn.soNumber || tagSoNum || "") : "";
+    if (!targetSoId && !targetSoNum) return null;
+    return (
+      (poClientList ?? []).find(
+        (so: Row) =>
+          (targetSoId && String(so.id) === targetSoId) ||
+          (targetSoNum &&
+            (String(so.nomorSo || "").toLowerCase() === targetSoNum.toLowerCase() ||
+              String(so.nomor || "").toLowerCase() === targetSoNum.toLowerCase()))
+      ) ?? null
+    );
+  }, [initialSoId, initialExistingDn, poClientList]);
+
+  const [tanggalSj, setTanggalSj] = React.useState(() => initialExistingDn?.tanggal || new Date().toISOString().slice(0, 10));
+  const [tujuanState, setTujuan] = React.useState<string | null>(null);
+  const tujuan = tujuanState ?? (initialExistingDn?.tujuan || initialMatchSo?.customer || "");
+  const [alasanState, setAlasan] = React.useState<string | null>(null);
+  const alasan =
+    alasanState ??
+    (initialExistingDn?.alasan ||
+      (initialMatchSo
+        ? `Pengiriman Barang SO ${initialMatchSo.nomorSo || initialMatchSo.nomor || initialMatchSo.id}`
+        : ""));
+  const [selectedProject, setSelectedProject] = React.useState(() => (initialExistingDn?.project && initialExistingDn.project !== "-") ? initialExistingDn.project : "-");
+  const [selectedSoOptionState, setSelectedSoOption] = React.useState<string | null>(null);
+  const selectedSoOption = React.useMemo(() => {
+    if (selectedSoOptionState !== null) return selectedSoOptionState;
+    if (initialMatchSo) {
+      const soNum = (initialMatchSo.nomorSo && initialMatchSo.nomorSo !== "-") ? initialMatchSo.nomorSo : (initialMatchSo.nomor || `SO #${initialMatchSo.id}`);
+      const cust = initialMatchSo.customer && initialMatchSo.customer !== "-" ? ` — ${initialMatchSo.customer}` : "";
+      const count = Array.isArray(initialMatchSo.items) && initialMatchSo.items.length > 0 ? ` (${initialMatchSo.items.length} item)` : "";
+      return `${soNum}${cust}${count}`;
+    }
+    return "-";
+  }, [selectedSoOptionState, initialMatchSo]);
+  const [hasGoodsState, setHasGoods] = React.useState<boolean | null>(null);
+  const hasGoods =
+    hasGoodsState ??
+    Boolean(
+      initialExistingDn?.withGoods ||
+        (Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0) ||
+        (Array.isArray(initialMatchSo?.items) && initialMatchSo.items.length > 0)
+    );
+  const [items, setItems] = React.useState<QuotationItem[]>(() => {
+    // Jika edit Surat Jalan yang SUDAH memiliki scan/pilihan unit fisik, muat unit fisik yang sudah ter-scan
+    if (Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0) {
+      const hasAnyScanned = initialExistingDn.items.some((it: any) => it.serials || (Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0));
+      if (hasAnyScanned) {
+        return initialExistingDn.items.map((it: any, idx: number) => {
+          const itemName = String(it.note || it.name || it.item || it.product?.name || "Barang");
+          const u = String(it.unit || it.satuan || it.product?.unit || "unit");
+          const p = Number(it.price || it.harga || 0);
+          return {
+            id: it.id ? String(it.id) : `dn-item-${idx}`,
+            item: itemName,
+            name: itemName,
+            satuan: u,
+            unit: u,
+            qty: Number(it.qty) || 1,
+            harga: p,
+            price: p,
+            productId: it.productId ? Number(it.productId) : it.product?.id ? Number(it.product.id) : undefined,
+            serialNumbers: it.serials ? String(it.serials).split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+          };
+        });
+      }
+    }
+    // Jika dari SO / belum ada unit serial yang dipilih, biarkan items kosong agar masuk ke "Target Kebutuhan Pengiriman"
+    return [];
+  });
+  const [checklistRequirementsState, setChecklistRequirements] = React.useState<
+    | {
+        productId?: number;
+        name: string;
+        sku?: string;
+        targetQty: number;
+        unit: string;
+      }[]
+    | null
+  >(null);
+  const checklistRequirements = React.useMemo(() => {
+    if (checklistRequirementsState !== null) return checklistRequirementsState;
+    const sourceItems =
+      Array.isArray(initialMatchSo?.items) && initialMatchSo.items.length > 0
+        ? initialMatchSo.items
+        : Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0
+          ? initialExistingDn.items
+          : [];
+    if (sourceItems.length > 0) {
+      return sourceItems.map((it: any) => ({
+        productId: it.productId ? Number(it.productId) : it.product?.id ? Number(it.product.id) : undefined,
+        name: it.customName || it.item || it.name || it.nama || it.product?.name || "Barang",
+        sku: it.sku || it.product?.sku,
+        targetQty: Number(it.qty || 1),
+        unit: it.customUnit || it.satuan || it.unit || it.product?.unit || "unit",
+      }));
+    }
+    return [];
+  }, [checklistRequirementsState, initialMatchSo, initialExistingDn]);
   const [pickerFilterProductId, setPickerFilterProductId] = React.useState<number | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [showAllItems, setShowAllItems] = React.useState(false);
+  const didFetchInitRef = React.useRef(false);
 
   React.useEffect(() => {
+    if (didFetchInitRef.current) return;
+    didFetchInitRef.current = true;
+    void refreshModule("po-client");
     if (!data.projects || data.projects.length === 0) {
       void refreshModule("projects");
-    }
-    if (!data["po-client"] || data["po-client"].length === 0) {
-      void refreshModule("po-client");
     }
     if (!data.serials || data.serials.length === 0) {
       void refreshModule("serials");
@@ -72,17 +180,13 @@ export default function NewDeliveryNoteScreen() {
     if (!data.products || data.products.length === 0) {
       void refreshModule("products");
     }
-  }, []);
+  }, [data.products, data.projects, data.serials, refreshModule]);
 
   const poClient = data["po-client"];
 
   const soList = React.useMemo(() => {
     const list = poClient ?? [];
-    return list.filter((so: Row) => {
-      if (so.isSupplierPo) return false;
-      if (so.docMode === "PO" && (!so.nomorSo || so.nomorSo === "-")) return false;
-      return true;
-    });
+    return list.filter((so: Row) => !so.isSupplierPo);
   }, [poClient]);
 
   const selectedSo = React.useMemo(() => {
@@ -405,7 +509,8 @@ export default function NewDeliveryNoteScreen() {
     }, 50);
   }
 
-  async function submit() {
+  async function submit(targetStatus?: "Pending" | "Dikirim") {
+    if (submitting) return;
     if (!tujuan.trim()) {
       toast("Tujuan wajib diisi", "danger");
       return;
@@ -419,10 +524,12 @@ export default function NewDeliveryNoteScreen() {
       return;
     }
 
+    setSubmitting(true);
     let fileId: number | undefined;
     try {
       fileId = (await fileHandle.current?.flush()) ?? undefined;
     } catch {
+      setSubmitting(false);
       return;
     }
 
@@ -458,43 +565,111 @@ export default function NewDeliveryNoteScreen() {
       ? (cleanAlasan.includes("[so:") ? cleanAlasan : `${cleanAlasan || `Pengiriman Barang SO ${soNum}`}${soTag}`)
       : cleanAlasan;
 
-    const row = {
-      nomor: `SJ/${new Date().getFullYear()}/${Math.floor(Math.random() * 800) + 100}`,
-      tanggal: tanggalSj,
-      tujuan,
-      alasan: finalAlasan,
-      project: activeProject?.nama || (selectedProject !== "-" ? selectedProject : "-"),
-      projectId: activeProject?.id ? Number(activeProject.id) : undefined,
-      soId: selectedSo?.id ? Number(selectedSo.id) : undefined,
-      soNumber: soNum,
-      clientPoId: selectedSo?.id ? Number(selectedSo.id) : undefined,
-      pembuat: user?.name || "Karyawan",
-      barang: hasGoods && items.length > 0 ? itemsSummary : "-",
-      withGoods: hasGoods && items.length > 0,
-      reportText: hasGoods && items.length > 0 ? itemsSummary : undefined,
-      items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
-      status: "Pending",
-      persetujuan: "Menunggu persetujuan",
-      fileId,
-      scanFileId: fileId ? Number(fileId) : undefined,
-    };
+    const willShip = targetStatus === "Dikirim";
 
-    await addRow("delivery-notes", row);
-    if (selectedSo?.id) {
-      pushHistory("po-client", String(selectedSo.id), `Surat jalan ${row.nomor} dibuat untuk pengiriman barang`);
+    try {
+      if (editId) {
+        const nextStatus = willShip
+          ? "Dikirim"
+          : (targetStatus === "Pending" ? "Pending" : (initialExistingDn?.status || "Pending"));
+
+        await patchRow("delivery-notes", editId, {
+          tanggal: tanggalSj,
+          tujuan,
+          alasan: finalAlasan,
+          project: activeProject?.nama || (selectedProject !== "-" ? selectedProject : "-"),
+          projectId: activeProject?.id ? Number(activeProject.id) : undefined,
+          soId: selectedSo?.id ? Number(selectedSo.id) : undefined,
+          soNumber: soNum,
+          clientPoId: selectedSo?.id ? Number(selectedSo.id) : undefined,
+          barang: hasGoods && items.length > 0 ? itemsSummary : "-",
+          withGoods: hasGoods && items.length > 0,
+          reportText: hasGoods && items.length > 0 ? itemsSummary : undefined,
+          items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
+          status: nextStatus,
+          ...(fileId ? { fileId, scanFileId: Number(fileId) } : {}),
+        });
+
+        if (willShip) {
+          const allSerials = itemsList
+            .flatMap((i) => (i.serials ? i.serials.split(",") : []))
+            .map((s) => s.trim())
+            .filter(Boolean);
+          await api("POST", `/delivery-notes/${editId}/goods`, {
+            items: itemsList,
+            serials: allSerials,
+          }).catch((err) => {
+            console.warn("prepareGoods error:", err);
+          });
+          await patchRow("delivery-notes", editId, { status: "Dikirim" }).catch(() => {});
+          toast("Surat jalan diperbarui & barang berhasil dikirim (stok berkurang)!");
+        } else {
+          toast("Surat jalan berhasil diperbarui!");
+        }
+
+        await refreshModule("delivery-notes");
+        await refreshModule("stock");
+        await reload();
+        router.replace(`/delivery-notes/${editId}` as any);
+        return;
+      }
+
+      const row = {
+        nomor: `SJ/${new Date().getFullYear()}/${Math.floor(Math.random() * 800) + 100}`,
+        tanggal: tanggalSj,
+        tujuan,
+        alasan: finalAlasan,
+        project: activeProject?.nama || (selectedProject !== "-" ? selectedProject : "-"),
+        projectId: activeProject?.id ? Number(activeProject.id) : undefined,
+        soId: selectedSo?.id ? Number(selectedSo.id) : undefined,
+        soNumber: soNum,
+        clientPoId: selectedSo?.id ? Number(selectedSo.id) : undefined,
+        pembuat: user?.name || "Karyawan",
+        barang: hasGoods && items.length > 0 ? itemsSummary : "-",
+        withGoods: hasGoods && items.length > 0,
+        reportText: hasGoods && items.length > 0 ? itemsSummary : undefined,
+        items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
+        status: willShip ? "Dikirim" : "Pending",
+        persetujuan: "Menunggu persetujuan",
+        fileId,
+        scanFileId: fileId ? Number(fileId) : undefined,
+      };
+
+      const created = await addRow("delivery-notes", row);
+      const newId = (created as any)?.id;
+      if (willShip && newId) {
+        const allSerials = itemsList
+          .flatMap((i) => (i.serials ? i.serials.split(",") : []))
+          .map((s) => s.trim())
+          .filter(Boolean);
+        await api("POST", `/delivery-notes/${newId}/goods`, {
+          items: itemsList,
+          serials: allSerials,
+        }).catch(() => {});
+        await patchRow("delivery-notes", String(newId), { status: "Dikirim" }).catch(() => {});
+      }
+
+      if (selectedSo?.id) {
+        pushHistory("po-client", String(selectedSo.id), `Surat jalan ${row.nomor} dibuat untuk pengiriman barang`);
+      }
+      if (activeProject?.id) {
+        pushHistory("projects", String(activeProject.id), `Surat jalan ${row.nomor} dibuat`);
+      }
+      await refreshModule("delivery-notes");
+      await refreshModule("stock");
+      await reload();
+      router.replace("/delivery-notes");
+    } finally {
+      setSubmitting(false);
     }
-    if (activeProject?.id) {
-      pushHistory("projects", String(activeProject.id), `Surat jalan ${row.nomor} dibuat`);
-    }
-    router.replace("/delivery-notes");
   }
 
   return (
     <View className="max-w-2xl self-center w-full gap-5">
       <PageHeader
         back
-        title="Buat Surat Jalan"
-        subtitle="Untuk setiap aktivitas tugas kerja ke luar kantor"
+        title={editId ? "Edit / Teruskan Surat Jalan" : "Buat Surat Jalan"}
+        subtitle={editId ? "Lengkapi nomor SN barang & upload dokumen fisik DO sebelum diberangkatkan" : "Untuk setiap aktivitas tugas kerja ke luar kantor"}
       />
 
       <View className="bg-panel/40 border-border flex-row items-center gap-2 rounded-xl border p-3">
@@ -925,10 +1100,35 @@ export default function NewDeliveryNoteScreen() {
         />
       </Panel>
 
-      <Button size="lg" onPress={submit}>
-        <Check size={18} color={colors.background} />
-        <Text>Ajukan Surat Jalan</Text>
-      </Button>
+      {editId ? (
+        <View className="flex-row items-center gap-3">
+          <Button
+            size="lg"
+            variant="outline"
+            className="flex-1 border-neutral-300"
+            onPress={() => submit("Pending")}
+            disabled={submitting}
+          >
+            <Text className="text-neutral-700 font-medium">Simpan Draf (Pending)</Text>
+          </Button>
+          <Button
+            size="lg"
+            className="flex-1 bg-primary"
+            onPress={() => submit("Dikirim")}
+            disabled={submitting}
+          >
+            <Check size={18} color="#ffffff" />
+            <Text className="font-semibold text-white">
+              {submitting ? "Memproses..." : "Simpan & Kirim Barang"}
+            </Text>
+          </Button>
+        </View>
+      ) : (
+        <Button size="lg" onPress={() => submit("Pending")} disabled={submitting}>
+          <Check size={18} color={colors.background} />
+          <Text>{submitting ? "Memproses..." : "Ajukan Surat Jalan"}</Text>
+        </Button>
+      )}
     </View>
   );
 }

@@ -9,5 +9,6 @@ export interface ReportCardItem {
   stat: string;
   badge?: string;
   isEfaktur?: boolean;
+  efakturType?: "keluaran" | "masukan";
 }
 

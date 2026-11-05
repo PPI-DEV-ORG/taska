@@ -83,7 +83,12 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   }, [moduleKey, id, refreshIndex]);
 
   const row = React.useMemo(() => {
-    return remoteRow ? { ...remoteRow, ...rowFromStore } : rowFromStore;
+    if (!remoteRow) return rowFromStore;
+    if (!rowFromStore) return remoteRow;
+    return {
+      ...rowFromStore,
+      ...remoteRow,
+    };
   }, [remoteRow, rowFromStore]);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
@@ -459,6 +464,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   function pick(s: string) {
     setMenu(false);
     if (s === status) return;
+    if (
+      moduleKey === "invoices" &&
+      s === "Lunas" &&
+      Number(row?.total || 0) > 0 &&
+      Number(row?.terbayar || 0) < Number(row?.total || 0)
+    ) {
+      setInvoicePayOpen(true);
+      return;
+    }
     if (def?.confirmStatuses?.includes(s)) setPending(s);
     else void setStatus(moduleKey, id, s).then(() => handleRefresh());
   }

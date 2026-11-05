@@ -96,6 +96,27 @@ export class ClientPoDto {
 
   @IsOptional() @IsString()
   projectName?: string;
+
+  @IsOptional() @IsNumber()
+  ppn?: number;
+
+  @IsOptional() @IsString()
+  tipePpn?: string;
+
+  @IsOptional() @IsString()
+  ppnMode?: string;
+
+  @IsOptional() @IsNumber()
+  pph?: number;
+
+  @IsOptional() @IsString()
+  tipePph?: string;
+
+  @IsOptional() @IsString()
+  pphMode?: string;
+
+  @IsOptional() @IsNumber()
+  total?: number;
 }
 
 export class ClientPoDirectSettlementDto {
@@ -200,6 +221,12 @@ export class InvoiceOutDto {
   @IsOptional() @IsInt()
   fileId?: number;
 
+  @IsOptional() @IsInt()
+  paidFileId?: number;
+
+  @IsOptional() @IsInt()
+  paymentFileId?: number;
+
   @IsOptional() @IsArray()
   items?: any[];
 
@@ -247,8 +274,11 @@ export class InvoiceInDto {
   @IsOptional() @IsString()
   number?: string;
 
-  @IsInt()
-  supplierId!: number;
+  @IsOptional() @IsInt()
+  supplierId?: number;
+
+  @IsOptional() @IsString()
+  supplierName?: string;
 
   @IsOptional() @IsInt()
   supplierPoId?: number;
@@ -279,6 +309,18 @@ export class InvoiceInDto {
 
   @IsOptional()
   data?: any;
+
+  @IsOptional() @IsString()
+  notes?: string;
+
+  @IsOptional() @IsString()
+  category?: string;
+
+  @IsOptional() @IsString()
+  debitAccount?: string;
+
+  @IsOptional() @IsArray()
+  items?: any[];
 
   @IsOptional() @IsInt()
   fileId?: number;

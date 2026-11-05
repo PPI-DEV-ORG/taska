@@ -21,6 +21,7 @@ import { getKasBankAccounts } from "@/lib/accounting";
 
 import {
   SupplierInvoiceDetailDialog,
+  SupplierInvoiceEditDialog,
   SupplierInvoicePayDialog,
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
 
@@ -132,6 +133,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
 
   const [selectedDetailInv, setSelectedDetailInv] = React.useState<Row | null>(null);
+  const [editTargetInv, setEditTargetInv] = React.useState<Row | null>(null);
   const [payTargetInv, setPayTargetInv] = React.useState<Row | null>(null);
 
   const [returOpen, setReturOpen] = React.useState(false);
@@ -269,6 +271,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   }
 
   const canPay = user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
+  const canEdit = user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin" || user?.role === "procurement";
   const hasPoFile = !!row.fileId;
   const hasSoFile = !!row.soFileId;
   const hasDoFile = !!effectiveDoFileId;
@@ -974,7 +977,18 @@ export function SupplierPoExtras({ row }: { row: Row }) {
         onOpenChange={(v) => !v && setSelectedDetailInv(null)}
         invoice={selectedDetailInv}
         canPay={canPay}
+        canEdit={canEdit}
         onPayPress={(inv) => setPayTargetInv(inv)}
+        onEditPress={(inv) => setEditTargetInv(inv)}
+      />
+
+      <SupplierInvoiceEditDialog
+        open={!!editTargetInv}
+        onOpenChange={(v) => !v && setEditTargetInv(null)}
+        invoice={editTargetInv}
+        onSuccess={() => {
+          setSelectedDetailInv(null);
+        }}
       />
 
       <SupplierInvoicePayDialog

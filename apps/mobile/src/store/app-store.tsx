@@ -916,7 +916,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         void refreshModule(module);
         if (module === "leads") void refreshModule("quotations");
         if (module === "followups") void refreshModule("leads");
-        if (module === "invoices") void refreshModule("projects");
+        if (module === "invoices") {
+          void refreshModule("projects");
+          void refreshModule("po-client");
+        }
         return adapted;
       } catch (e: any) {
         if (isNetworkError(e)) {
@@ -1299,6 +1302,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await refreshModule(module);
       if (module === "invoices") {
         await refreshModule("projects");
+        await refreshModule("po-client");
       }
     },
     [data.leads, offline, enqueueOfflineStatus, executeRemoteStatus, pushHistory, toast, refreshModule, createQuotationFromLead],

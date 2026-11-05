@@ -8,12 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
-import { ScanInput } from "@/components/taska/scan-input";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { tanggal } from "@/lib/format";
-import { api, apiBase } from "@/services/api";
+import { apiBase } from "@/services/api";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
@@ -37,12 +36,11 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
   });
   const [handoverNotes, setHandoverNotes] = React.useState("");
   const [handoverFileId, setHandoverFileId] = React.useState<number | null>(null);
-  const [scannedSns, setScannedSns] = React.useState<string[]>(
-    Array.isArray(row.snList) ? row.snList : [],
-  );
 
+
+  const poClientList = data["po-client"];
   const matchedSo = React.useMemo(() => {
-    return (data["po-client"] ?? []).find(
+    return (poClientList ?? []).find(
       (so: Row) =>
         (row.soId && String(so.id) === String(row.soId)) ||
         (row.clientPoId && String(so.id) === String(row.clientPoId)) ||
@@ -50,7 +48,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
         (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo))
     );
-  }, [data["po-client"], row.soId, row.clientPoId, row.alasan]);
+  }, [poClientList, row.soId, row.clientPoId, row.alasan]);
 
   if (
     previousRecipient.name !== row.penerimaNama ||
@@ -172,6 +170,16 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN (Stok otomatis berkurang saat status Dikirim)" : "Surat jalan penugasan tanpa barang"}
         right={
           <View className="flex-row items-center gap-2 flex-wrap">
+            {row.status === "Pending" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={() => router.push(`/delivery-notes/new?id=${row.id}${matchedSo?.id ? `&soId=${matchedSo.id}` : ""}` as any)}
+                className="flex-row items-center gap-1 border-primary/50"
+              >
+                <Text className="text-xs text-primary font-semibold">Edit / Scan SN Form</Text>
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
@@ -182,49 +190,20 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
               <Text className="text-xs">Buat / Cetak PDF DO</Text>
             </Button>
             {(user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang" || user?.role === "finance" || user?.role === "procurement") && !isDelivered ? (
-              <>
-                {hasGoods && row.status !== "Dikirim" && row.status !== "DIKIRIM" && (
-                  <Button
-                    size="sm"
-                    onPress={async () => {
-                      try {
-                        await api("POST", `/delivery-notes/${row.id}/goods`, {
-                          items: (Array.isArray(row.items) ? row.items : [])
-                            .map((i: any) => ({
-                              productId: Number(i.productId ?? i.product?.id),
-                              qty: Number(i.qty) || 1,
-                              serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
-                              note: i.note ? String(i.note) : undefined,
-                            }))
-                            .filter((i: any) => !Number.isNaN(i.productId) && i.productId > 0),
-                          serials: scannedSns.length > 0 ? scannedSns : Array.isArray(row.snList) ? row.snList : [],
-                        });
-                        await patchRow("delivery-notes", row.id, { status: "Dikirim" });
-                        toast("Barang berhasil dikeluarkan dari gudang, stok berkurang & status diubah ke Dikirim");
-                        await onRefresh?.();
-                      } catch (e: any) {
-                        toast(e?.message ?? "Gagal memproses pengeluaran barang", "danger");
-                      }
-                    }}
-                  >
-                    <Text className="text-xs">Kirim Barang (Potong Stok)</Text>
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onPress={() => {
-                    const next = !hasGoods;
-                    patchRow("delivery-notes", row.id, {
-                      withGoods: next,
-                      barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
-                    });
-                    toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
-                  }}
-                >
-                  <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
-                </Button>
-              </>
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => {
+                  const next = !hasGoods;
+                  patchRow("delivery-notes", row.id, {
+                    withGoods: next,
+                    barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
+                  });
+                  toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
+                }}
+              >
+                <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
+              </Button>
             ) : null}
           </View>
         }
@@ -254,24 +233,35 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
                 </View>
                 {(showAllItems ? row.items : row.items.slice(0, 10)).map((it: any, idx: number) => {
                   const prod = it.product;
+                  const snText = Array.isArray(it.serials)
+                    ? it.serials.filter(Boolean).join(", ")
+                    : it.serials
+                      ? String(it.serials).trim()
+                      : "";
                   return (
                     <View
                       key={it.id ?? idx}
                       className="p-3 bg-panel/40 border border-border/70 rounded-xl flex-row items-center justify-between"
                     >
                       <View className="flex-1 pr-2">
-                        <View className="flex-row items-center gap-2">
+                        <View className="flex-row items-center gap-2 flex-wrap">
                           <Text className="text-sm font-semibold text-foreground">
-                            {prod?.name ?? it.name ?? "Barang"}
+                            {prod?.name ?? it.name ?? it.note ?? "Barang"}
                           </Text>
                           {prod?.brand ? (
                             <View className="bg-panel border border-border/60 rounded px-1.5 py-0.5">
                               <Text className="text-[10px] font-medium text-muted-foreground">{prod.brand}</Text>
                             </View>
                           ) : null}
+                          {snText ? (
+                            <View className="bg-primary/10 border border-primary/30 rounded px-2 py-0.5">
+                              <Text className="text-[11px] font-semibold text-primary">SN: {snText}</Text>
+                            </View>
+                          ) : null}
                         </View>
                         <Text className="text-xs text-muted-foreground mt-0.5">
                           Tipe: {prod?.hasSerial ? "Lacak Serial Number (SN)" : "Barang Curah / Tanpa SN"}
+                          {snText ? ` · Nomor Seri: ${snText}` : prod?.hasSerial ? " · Belum ada SN terinput" : ""}
                         </Text>
                       </View>
                       <View className="items-end">
@@ -296,20 +286,8 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
                 )}
               </View>
             ) : (
-              <Line left={row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional"} sub="Barang ber-SN wajib di-scan sebelum berangkat" />
+              <Line left={row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional"} sub="Daftar barang operasional surat jalan" />
             )}
-
-            {(user?.role === "super_admin" || user?.role === "gudang" || user?.role === "bos" || user?.role === "finance" || user?.role === "procurement") && !isDelivered ? (
-              <View className="mt-2 pt-2 border-t border-border/50 gap-2">
-                <Text className="text-xs font-semibold text-foreground">Pemindaian Serial Number (Khusus Barang ber-SN):</Text>
-                <ScanInput
-                  existing={Array.isArray(row.snList) ? row.snList : []}
-                  onResult={(scans) => {
-                    setScannedSns(scans.filter((s) => s.ok).map((s) => s.sn));
-                  }}
-                />
-              </View>
-            ) : null}
           </View>
         )}
       </Panel>

@@ -121,7 +121,9 @@ export interface JournalLine {
   refNo: string;
   sumber:
     | "Invoice Client"
+    | "Invoice Masuk"
     | "Pembayaran Invoice"
+    | "Penjualan Langsung (Kas)"
     | "HPP Penjualan Retail"
     | "PO Supplier"
     | "Pelunasan PO"
@@ -315,6 +317,7 @@ export interface CashFlowItem {
     | "Arus Kas Masuk (Pelanggan)"
     | "Arus Kas Keluar (Supplier PO)"
     | "Arus Kas Keluar (Biaya Operasional)"
+    | "Arus Kas Keluar (Invoice Masuk)"
     | "Arus Kas Keluar (Gaji Karyawan)";
   pihak: string;
   project: string;
@@ -460,6 +463,7 @@ export function computeFinancialStatements(
   const products = (data?.products || []).filter(Boolean);
   const stock = (data?.stock || []).filter(Boolean);
   const projects = (data?.projects || []).filter(Boolean);
+  const deliveryNotes = (data?.["delivery-notes"] || []).filter(Boolean);
 
   const journalLines: JournalLine[] = [];
   let seq = 1;
@@ -506,9 +510,63 @@ export function computeFinancialStatements(
     const terbayar = isLunas ? Math.max(toNum(inv.terbayar), total) : Math.min(total, toNum(inv.terbayar));
 
     const isDp = inv.jenis === "DP" || String(inv.type).toUpperCase() === "DP" || String(nomor).includes("/DP/");
+    const isDirectCashSale =
+      isLunas &&
+      (String(inv.description || "").includes("Pembayaran Langsung / Nota Kontan") ||
+        String(inv.catatan || "").includes("Pembayaran Langsung") ||
+        String(inv.catatan || "").includes("Nota Kontan") ||
+        String(inv.catatan || "").includes("Penjualan Langsung (Walk-in)"));
 
     if (total > 0 || pph > 0) {
-      if (isDp) {
+      if (isDirectCashSale) {
+        // Penjualan Langsung / Nota Kontan (Walk-in): 1 Jurnal Kas Langsung (Debit Kas/Bank vs Kredit Pendapatan & PPN)
+        const matchAcc =
+          String(inv.description || "").match(/\[AKUN:([^\]]+)\]/)?.[1] ||
+          String(inv.catatan || "").match(/\[AKUN:([^\]]+)\]/)?.[1] ||
+          (Array.isArray(inv._payments) && inv._payments[0]?.reference?.match(/\[(1000\.\d+)\]/)?.[1]);
+        const payMethodStr = String(inv._payments?.[0]?.method || (inv.catatan || "")).toUpperCase();
+        const targetKasCode = matchAcc
+          ? matchAcc
+          : payMethodStr.includes("TUNAI") || payMethodStr.includes("KAS")
+            ? "1000.01"
+            : "1000.02";
+        const targetKasLabel = activeCoa[targetKasCode]?.name || (targetKasCode === "1000.01" ? "Kas Kecil" : "Bank Mandiri PT GMP");
+
+        pushJournalPair(tanggal, nomor, "Penjualan Langsung (Kas)", project, [
+          {
+            kodeAkun: targetKasCode,
+            keterangan: `Penerimaan Penjualan Langsung (${targetKasLabel}) ${nomor} dari ${customer}`,
+            debit: total,
+            kredit: 0,
+          },
+          ...(pph > 0
+            ? [
+                {
+                  kodeAkun: "1105",
+                  keterangan: `Uang Muka PPh (${tipePph || "Dipotong Pelanggan"}) atas ${nomor}`,
+                  debit: pph,
+                  kredit: 0,
+                },
+              ]
+            : []),
+          {
+            kodeAkun: "4000.01",
+            keterangan: `Pendapatan Penjualan Langsung (${customer}) — ${nomor}`,
+            debit: 0,
+            kredit: dpp,
+          },
+          ...(ppn > 0
+            ? [
+                {
+                  kodeAkun: "2100",
+                  keterangan: `PPN Keluaran atas ${nomor}`,
+                  debit: 0,
+                  kredit: ppn,
+                },
+              ]
+            : []),
+        ]);
+      } else if (isDp) {
         // Tagihan Uang Muka (DP) Penjualan: Piutang (Debit 110302) vs Uang Muka Penjualan (Kredit 210202)
         pushJournalPair(tanggal, nomor, "Invoice Client", project, [
           {
@@ -582,7 +640,7 @@ export function computeFinancialStatements(
       }
     }
 
-    if (terbayar > 0) {
+    if (terbayar > 0 && !isDirectCashSale) {
       const matchAcc =
         String(inv.catatan || "").match(/\[AKUN:([^\]]+)\]/)?.[1] ||
         (Array.isArray(inv._payments) && inv._payments[0]?.reference?.match(/\[(1000\.\d+)\]/)?.[1]);
@@ -610,9 +668,30 @@ export function computeFinancialStatements(
       ]);
     }
 
-    // Jika Invoice Penjualan Retail (tanpa Project), catat HPP Retail (Debit 5102) & pengurangan Aset Persediaan (Kredit 1200)
+    // Catat HPP (Debit 5102) & pengurangan Aset Persediaan (Kredit 1200) HANYA jika barang sudah dikirim lewat Surat Jalan (Dikirim / Diterima)
     const isRetailInv = !inv.projectId && (!inv.project || inv.project === "-");
-    if (isRetailInv && Array.isArray(inv.items) && inv.items.length > 0) {
+    const hasShippedDeliveryNote = deliveryNotes.some((dn: any) => {
+      const dnStatus = normStr(dn.status).toLowerCase();
+      if (dnStatus !== "dikirim" && dnStatus !== "diterima") return false;
+      if (inv.clientPoId && (String(dn.soId) === String(inv.clientPoId) || String(dn.clientPoId) === String(inv.clientPoId))) {
+        return true;
+      }
+      if (inv.clientPoId && String(dn.alasan || "").includes(`[so:${inv.clientPoId}]`)) {
+        return true;
+      }
+      if (inv.po && inv.po !== "-") {
+        const poLower = String(inv.po).toLowerCase();
+        if (
+          String(dn.soNumber || "").toLowerCase() === poLower ||
+          String(dn.alasan || "").toLowerCase().includes(poLower) ||
+          String(dn.reportText || "").toLowerCase().includes(poLower)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
+    if (isRetailInv && hasShippedDeliveryNote && Array.isArray(inv.items) && inv.items.length > 0) {
       const retailCost = inv.items.reduce((acc: number, it: any) => {
         const qty = Math.max(1, toNum(it.qty || 1));
         const prodMatch = products.find(
@@ -863,7 +942,7 @@ export function computeFinancialStatements(
     // Kasus 3: PO bertempo yang belum ada invoice supplier -> TIDAK dijurnal (sesuai standar akuntansi)
   }
 
-  // 2b. Standalone Supplier Invoices (Tagihan Supplier tanpa PO)
+  // 2b. Standalone Supplier Invoices / Invoice Masuk Langsung (Tagihan Listrik, Internet, Operasional, atau Supplier tanpa PO)
   const standaloneInvoices = (data?.invoiceIn || []).filter(
     (inv: any) =>
       inv &&
@@ -874,15 +953,18 @@ export function computeFinancialStatements(
       )
   );
 
+  const standaloneOpexList: Array<{ kategori: string; nominal: number }> = [];
+  let cashOutStandaloneInvoices = 0;
+
   for (const inv of standaloneInvoices) {
     const invDppRaw = toNum(inv.nilai ?? inv.amount);
     const invPpn = toNum(inv.ppn);
     const invTot = toNum(inv.total) || (invDppRaw + invPpn);
     const invDpp = invDppRaw > 0 ? invDppRaw : (invTot > 0 && invPpn > 0 ? Math.max(0, invTot - invPpn) : invTot);
     const invPaid = toNum(inv.paidAmount ?? inv.terbayar);
-    const invNumber = normStr(inv.nomor || inv.number, `INV-SUP-${inv.id}`);
+    const invNumber = normStr(inv.nomor || inv.number, `INV-IN-${inv.id}`);
     const invDate = formatJournalDateTime(inv.tanggal || inv.date, inv.createdAt);
-    const supplier = normStr(inv.supplier, "Supplier");
+    const supplier = normStr(inv.supplier, "Supplier / Vendor");
 
     let invCoa = String(inv.coaAccount || "").trim();
     const pmts: any[] = inv.payments || inv._payments || [];
@@ -902,11 +984,43 @@ export function computeFinancialStatements(
       inv.status === "Lunas" ||
       (invPaid >= invTot && invTot > 0);
 
+    // Resolve debit account (Expense / COGS / Inventory)
+    const rawDebitAcc = String(inv.debitAccount || "").trim();
+    const textHint = `${inv.category || ""} ${inv.jenis || ""} ${inv.catatan || ""} ${supplier}`.toLowerCase();
+    let debitCode = activeCoa[rawDebitAcc]?.code || "";
+    if (!debitCode) {
+      if (/listrik|pln|token/.test(textHint)) debitCode = "6202.01";
+      else if (/internet|wifi|indihome|biznet|telkom|telepon|pulsa|komunikasi/.test(textHint)) debitCode = "6202.03";
+      else if (/air|pdam|pam/.test(textHint)) debitCode = "6202.02";
+      else if (/atk|alat tulis|kertas|printer/.test(textHint)) debitCode = "6202.06";
+      else if (/gedung|sewa|kantor|kebersihan|keamanan/.test(textHint)) debitCode = "6203.01";
+      else if (/kendaraan|servis|oli|bengkel|bensin|bbm|tol|parkir/.test(textHint)) debitCode = "6203.02";
+      else if (/iklan|promosi|marketing/.test(textHint)) debitCode = "6101";
+      else if (/proyek|project/.test(textHint)) debitCode = "5101";
+      else if (/operasional|tagihan|beban|biaya|jasa/.test(textHint)) debitCode = "6202.07";
+      else debitCode = "1200";
+    }
+    const debitAccName = activeCoa[debitCode]?.name || "Persediaan / Beban Operasional";
+    const invCategoryLabel = normStr(
+      inv.category && inv.category !== "Tagihan Supplier" ? inv.category : debitAccName,
+      debitAccName
+    );
+    const invSumber = debitCode.startsWith("6") || debitCode.startsWith("7") ? "Invoice Masuk" : "PO Supplier";
+    const invProjLabel = debitCode.startsWith("6") || debitCode.startsWith("7") ? "Operasional Umum" : "Stok Gudang / Retail";
+
     if (invTot > 0) {
+      if (debitCode === "5101") {
+        cogsProjectTotal += invDpp;
+      } else if (debitCode === "5102") {
+        cogsRetailTotal += invDpp;
+      } else if (debitCode.startsWith("6") || debitCode.startsWith("7")) {
+        standaloneOpexList.push({ kategori: invCategoryLabel, nominal: invDpp });
+      }
+
       const invoiceDebits = [
         {
-          kodeAkun: "1200",
-          keterangan: `Pembelian Persediaan Barang atas Invoice ${invNumber} — ${supplier}`,
+          kodeAkun: debitCode,
+          keterangan: `${debitAccName} — Invoice Masuk ${invNumber} (${supplier})`,
           debit: invDpp,
           kredit: 0,
         },
@@ -919,11 +1033,11 @@ export function computeFinancialStatements(
           kredit: 0,
         });
       }
-      pushJournalPair(invDate, invNumber, "PO Supplier", "Stok Gudang / Retail", [
+      pushJournalPair(invDate, invNumber, invSumber, invProjLabel, [
         ...invoiceDebits,
         {
           kodeAkun: "210102",
-          keterangan: `Hutang Usaha Supplier atas Invoice ${invNumber} (${supplier})`,
+          keterangan: `Hutang Usaha / Tagihan Masuk ${invNumber} (${supplier})`,
           debit: 0,
           kredit: invTot,
         },
@@ -933,11 +1047,12 @@ export function computeFinancialStatements(
         for (const p of pmts) {
           const pAmt = toNum(p.amount);
           if (pAmt > 0) {
+            cashOutStandaloneInvoices += pAmt;
             const pDate = formatJournalDateTime(p.date || inv.tanggal || inv.date, p.createdAt || inv.createdAt || invDate);
-            pushJournalPair(pDate, `${invNumber}/PAY`, "Pelunasan PO", "Stok Gudang / Retail", [
+            pushJournalPair(pDate, `${invNumber}/PAY`, "Pelunasan PO", invProjLabel, [
               {
                 kodeAkun: "210102",
-                keterangan: `Penyelesaian Hutang Invoice ${invNumber} — ${supplier}`,
+                keterangan: `Penyelesaian Hutang Invoice Masuk ${invNumber} — ${supplier}`,
                 debit: pAmt,
                 kredit: 0,
               },
@@ -952,10 +1067,11 @@ export function computeFinancialStatements(
         }
       } else if (isInvPaid) {
         const payAmt = invPaid > 0 ? invPaid : invTot;
-        pushJournalPair(invDate, `${invNumber}/SETTLE`, "Pelunasan PO", "Stok Gudang / Retail", [
+        cashOutStandaloneInvoices += payAmt;
+        pushJournalPair(invDate, `${invNumber}/SETTLE`, "Pelunasan PO", invProjLabel, [
           {
             kodeAkun: "210102",
-            keterangan: `Penyelesaian Hutang Invoice ${invNumber} — ${supplier}`,
+            keterangan: `Penyelesaian Hutang Invoice Masuk ${invNumber} — ${supplier}`,
             debit: payAmt,
             kredit: 0,
           },
@@ -1371,12 +1487,23 @@ export function computeFinancialStatements(
 
   const opexMap = new Map<string, { nominal: number; count: number }>();
   let opexTotal = 0;
+  let expensesTableTotal = 0;
   for (const ex of expenses) {
     const kat = normStr(ex.kategori, "Operasional Lainnya");
     const nom = toNum(ex.nominal);
     opexTotal += nom;
+    expensesTableTotal += nom;
     const prev = opexMap.get(kat) || { nominal: 0, count: 0 };
     opexMap.set(kat, { nominal: prev.nominal + nom, count: prev.count + 1 });
+  }
+  for (const sop of standaloneOpexList) {
+    const kat = normStr(sop.kategori, "Tagihan Operasional");
+    const nom = toNum(sop.nominal);
+    if (nom > 0) {
+      opexTotal += nom;
+      const prev = opexMap.get(kat) || { nominal: 0, count: 0 };
+      opexMap.set(kat, { nominal: prev.nominal + nom, count: prev.count + 1 });
+    }
   }
 
   const opexByCategory = Array.from(opexMap.entries())
@@ -1520,7 +1647,29 @@ export function computeFinancialStatements(
       });
     }
   }
-  cashOutSuppliers += cashOutDirectRetail;
+  cashOutSuppliers += cashOutDirectRetail + cashOutStandaloneInvoices;
+  for (const inv of standaloneInvoices) {
+    const invTot = toNum(inv.total) || (toNum(inv.nilai ?? inv.amount) + toNum(inv.ppn));
+    const invPaid = toNum(inv.paidAmount ?? inv.terbayar);
+    const isInvPaid =
+      inv.status === "PAID" ||
+      inv.status === "Lunas" ||
+      (invPaid >= invTot && invTot > 0);
+    const paidAmt = isInvPaid ? (invPaid > 0 ? invPaid : invTot) : invPaid;
+    if (paidAmt > 0) {
+      cashFlowItems.push({
+        id: `CF-INVIN-${inv.id || inv.nomor}`,
+        tanggal: normStr(inv.tanggal || inv.date, "2026-02-01"),
+        refNo: normStr(inv.nomor || inv.number),
+        kategori: "Arus Kas Keluar (Invoice Masuk)",
+        pihak: normStr(inv.supplier, "Vendor / Tagihan"),
+        project: normStr(inv.category, "Operasional / Tagihan"),
+        keterangan: `Pembayaran Invoice Masuk ${normStr(inv.nomor || inv.number)} — ${normStr(inv.supplier)}`,
+        masuk: 0,
+        keluar: paidAmt,
+      });
+    }
+  }
 
   for (const ex of expenses) {
     const isDibayar = normStr(ex.status).toLowerCase() === "dibayar";
@@ -1599,7 +1748,7 @@ export function computeFinancialStatements(
   const netInvPurchases = inv1200Lines.reduce((s, l) => s + l.debit - l.kredit, 0);
   const initialPhysicalStock = persediaanBarang;
   persediaanBarang = Math.max(0, initialPhysicalStock + netInvPurchases);
-  const hutangReimbursement = Math.max(0, opexTotal - cashOutExpenses);
+  const hutangReimbursement = Math.max(0, expensesTableTotal - cashOutExpenses);
   const hutangPpnKeluaran = ppnKeluaran;
 
   // Working capital reserve covers initial warehouse inventory + base treasury buffer if netCashFlow < 0

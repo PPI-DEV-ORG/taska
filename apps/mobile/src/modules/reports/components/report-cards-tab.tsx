@@ -11,12 +11,14 @@ interface ReportCardsTabProps {
   cards: ReportCardItem[];
   onDownload: (type: string, title: string, format: DownloadFormat) => void;
   onDownloadEfaktur: () => void;
+  onDownloadEfakturMasukan?: () => void;
 }
 
 export function ReportCardsTab({
   cards,
   onDownload,
   onDownloadEfaktur,
+  onDownloadEfakturMasukan,
 }: ReportCardsTabProps) {
   return (
     <View className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
@@ -41,10 +43,14 @@ export function ReportCardsTab({
               <Button
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-2"
-                onPress={onDownloadEfaktur}
+                onPress={rc.efakturType === "masukan" ? (onDownloadEfakturMasukan || onDownloadEfaktur) : onDownloadEfaktur}
               >
                 <FileSpreadsheet size={15} color={colors.background} />
-                <Text className="text-xs font-semibold">Download CSV E-Faktur DJP</Text>
+                <Text className="text-xs font-semibold">
+                  {rc.efakturType === "masukan"
+                    ? "Download CSV E-Faktur (Pajak Masukan)"
+                    : "Download CSV E-Faktur (Pajak Keluaran)"}
+                </Text>
               </Button>
             </View>
           ) : (

@@ -17,7 +17,7 @@ import { computeFinancialStatements } from "@/lib/accounting";
 import { useLocalSearchParams } from "expo-router";
 
 import type { ReportTab, ReportCardItem, DownloadFormat } from "@/modules/reports/types";
-import { downloadReport, downloadEfakturCsv } from "@/modules/reports/lib/export-helpers";
+import { downloadReport, downloadEfakturCsv, downloadEfakturMasukanCsv } from "@/modules/reports/lib/export-helpers";
 import { PnlTab } from "@/modules/reports/components/pnl-tab";
 import { BalanceSheetTab } from "@/modules/reports/components/balance-sheet-tab";
 import { CashFlowTab } from "@/modules/reports/components/cash-flow-tab";
@@ -98,8 +98,8 @@ export default function ReportsScreen() {
         {
           type: "balance-sheet",
           title: "Laporan Neraca (Balance Sheet)",
-          desc: "Posisi keuangan perusahaan: Aset Lancar (Kas, Piutang, Persediaan) terhadap Kewajiban (Hutang PO, Reimbursement, PPN) dan Ekuitas.",
-          stat: `Total Aset: ${rupiah(fin.balanceSheet.assets.totalAsetLancar)} · Status: ${fin.balanceSheet.isBalanced ? "SEIMBANG" : "Perlu Rekonsiliasi"}`,
+          desc: "Posisi keuangan perusahaan: Aset Lancar (Kas, Piutang, Persediaan, PPN Masukan) terhadap Kewajiban (Hutang PO, Reimbursement, PPN) dan Ekuitas.",
+          stat: `Total Aset: ${rupiah(fin.balanceSheet.assets.totalAsetLancar)} · PPN Masukan: ${rupiah(fin.balanceSheet.assets.ppnMasukan || 0)} · Status: ${fin.balanceSheet.isBalanced ? "SEIMBANG" : "Perlu Rekonsiliasi"}`,
           badge: "Legal & Neraca",
         },
         {
@@ -123,6 +123,16 @@ export default function ReportsScreen() {
           stat: `${invCount} Invoice Siap Ekspor · PPN Keluaran: ${rupiah(fin.incomeStatement.ppnKeluaran)}`,
           badge: "Pajak DJP",
           isEfaktur: true,
+          efakturType: "keluaran",
+        },
+        {
+          type: "efaktur-masukan",
+          title: "Export CSV E-Faktur DJP (Pajak Masukan)",
+          desc: "Ekspor data faktur pajak masukan dari PO supplier & pengadaan barang untuk kredit pajak SPT Masa aplikasi e-Faktur DJP.",
+          stat: `PPN Masukan: ${rupiah(fin.balanceSheet.assets.ppnMasukan || 0)} · Kredit Pajak Pembelian`,
+          badge: "Pajak DJP",
+          isEfaktur: true,
+          efakturType: "masukan",
         },
       );
     }
@@ -196,6 +206,14 @@ export default function ReportsScreen() {
 
   function handleDownloadEfaktur() {
     downloadEfakturCsv({
+      data,
+      canAccessFinancials,
+      toast,
+    });
+  }
+
+  function handleDownloadEfakturMasukan() {
+    downloadEfakturMasukanCsv({
       data,
       canAccessFinancials,
       toast,
@@ -282,6 +300,7 @@ export default function ReportsScreen() {
           cards={reportCards}
           onDownload={handleDownload}
           onDownloadEfaktur={handleDownloadEfaktur}
+          onDownloadEfakturMasukan={handleDownloadEfakturMasukan}
         />
       )}
     </View>
