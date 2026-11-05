@@ -666,6 +666,7 @@ export class ClientPoService {
         pphMode: effectivePphMode,
         paidFileId: dto.fileId ?? null,
         total: effectiveTotal,
+        ...(items.length > 0 ? { items } : {}),
       };
       await this.prisma.main.systemSetting.upsert({
         where: { key: `invoice:meta:${inv.id}` },

@@ -464,6 +464,7 @@ export function computeFinancialStatements(
   const stock = (data?.stock || []).filter(Boolean);
   const projects = (data?.projects || []).filter(Boolean);
   const deliveryNotes = (data?.["delivery-notes"] || []).filter(Boolean);
+  const poClients = (data?.["po-client"] || []).filter(Boolean);
 
   const journalLines: JournalLine[] = [];
   let seq = 1;
@@ -670,7 +671,10 @@ export function computeFinancialStatements(
 
     // Catat HPP (Debit 5102) & pengurangan Aset Persediaan (Kredit 1200) HANYA jika barang sudah dikirim lewat Surat Jalan (Dikirim / Diterima)
     const isRetailInv = !inv.projectId && (!inv.project || inv.project === "-");
-    const hasShippedDeliveryNote = deliveryNotes.some((dn: any) => {
+    const catSoMatch = String(inv.catatan || "").match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
+    const invSoNum = (inv.po && inv.po !== "-" ? String(inv.po) : (catSoMatch?.[1] || "")).toLowerCase();
+
+    const shippedDn = deliveryNotes.find((dn: any) => {
       const dnStatus = normStr(dn.status).toLowerCase();
       if (dnStatus !== "dikirim" && dnStatus !== "diterima") return false;
       if (inv.clientPoId && (String(dn.soId) === String(inv.clientPoId) || String(dn.clientPoId) === String(inv.clientPoId))) {
@@ -679,29 +683,47 @@ export function computeFinancialStatements(
       if (inv.clientPoId && String(dn.alasan || "").includes(`[so:${inv.clientPoId}]`)) {
         return true;
       }
-      if (inv.po && inv.po !== "-") {
-        const poLower = String(inv.po).toLowerCase();
+      if (invSoNum) {
         if (
-          String(dn.soNumber || "").toLowerCase() === poLower ||
-          String(dn.alasan || "").toLowerCase().includes(poLower) ||
-          String(dn.reportText || "").toLowerCase().includes(poLower)
+          String(dn.soNumber || "").toLowerCase() === invSoNum ||
+          String(dn.alasan || "").toLowerCase().includes(invSoNum) ||
+          String(dn.reportText || "").toLowerCase().includes(invSoNum)
         ) {
           return true;
         }
       }
       return false;
     });
-    if (isRetailInv && hasShippedDeliveryNote && Array.isArray(inv.items) && inv.items.length > 0) {
-      const retailCost = inv.items.reduce((acc: number, it: any) => {
+
+    const linkedSo = poClients.find((so: any) => {
+      if (inv.clientPoId && String(so.id) === String(inv.clientPoId)) return true;
+      if (invSoNum) {
+        const sNum = String(so.nomorSo && so.nomorSo !== "-" ? so.nomorSo : (so.nomor || "")).toLowerCase();
+        if (sNum && sNum === invSoNum) return true;
+      }
+      return false;
+    });
+
+    const effectiveInvItems =
+      Array.isArray(inv.items) && inv.items.length > 0
+        ? inv.items
+        : Array.isArray(linkedSo?.items) && linkedSo.items.length > 0
+          ? linkedSo.items
+          : Array.isArray(shippedDn?.items) && shippedDn.items.length > 0
+            ? shippedDn.items
+            : [];
+
+    if (isRetailInv && shippedDn && effectiveInvItems.length > 0) {
+      const retailCost = effectiveInvItems.reduce((acc: number, it: any) => {
         const qty = Math.max(1, toNum(it.qty || 1));
         const prodMatch = products.find(
           (p: any) =>
             (it.productId && String(p.id) === String(it.productId)) ||
-            normStr(p.nama || p.name).toLowerCase() === normStr(it.name || it.nama || it.product?.name).toLowerCase()
+            normStr(p.nama || p.name).toLowerCase() === normStr(it.name || it.nama || it.item || it.product?.name).toLowerCase()
         );
         const unitCost =
-          toNum(it.purchasePrice || it.hargaBeli || prodMatch?.hargaBeli || prodMatch?.purchasePrice) ||
-          Math.round(toNum(it.price || it.harga) * 0.7);
+          toNum(it.purchasePrice || it.hargaBeli || it.product?.purchasePrice || prodMatch?.hargaBeli || prodMatch?.purchasePrice) ||
+          Math.round(toNum(it.price || it.harga || it.product?.sellPrice) * 0.7);
         return acc + qty * unitCost;
       }, 0);
 

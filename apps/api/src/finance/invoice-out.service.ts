@@ -256,14 +256,29 @@ export class InvoiceOutService {
     const invoiceIds = rows.map((r) => r.id);
     const metaSettings = await this.prisma.main.systemSetting.findMany({
       where: {
-        key: { in: invoiceIds.map((id) => this.metaKey(id)) },
+        key: {
+          in: [
+            ...invoiceIds.map((id) => this.metaKey(id)),
+            ...invoiceIds.map((id) => `invoice.items.${id}`),
+          ],
+        },
       },
     });
     const metaMap = new Map<number, any>();
     for (const s of metaSettings) {
       try {
-        const id = Number(s.key.replace("invoice:meta:", ""));
-        metaMap.set(id, JSON.parse(s.value));
+        if (s.key.startsWith("invoice:meta:")) {
+          const id = Number(s.key.replace("invoice:meta:", ""));
+          const prev = metaMap.get(id) || {};
+          metaMap.set(id, { ...prev, ...JSON.parse(s.value) });
+        } else if (s.key.startsWith("invoice.items.")) {
+          const id = Number(s.key.replace("invoice.items.", ""));
+          const prev = metaMap.get(id) || {};
+          const parsedItems = JSON.parse(s.value);
+          if (!Array.isArray(prev.items) && Array.isArray(parsedItems)) {
+            metaMap.set(id, { ...prev, items: parsedItems });
+          }
+        }
       } catch {}
     }
 

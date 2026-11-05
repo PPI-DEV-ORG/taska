@@ -276,6 +276,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "nilai", label: "Nilai Pesanan", fmt: "rupiah" },
       { key: "totalInvoice", label: "Total Invoice", fmt: "rupiah" },
       { key: "tanggal", label: "Tanggal", fmt: "date" },
+      { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
       { label: "Nomor SO", key: "nomor" },
