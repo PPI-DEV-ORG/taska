@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Panel, Cell } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import { RecordClientPoDialog } from "@/modules/project/record-client-po-dialog";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, downloadDocumentationPdf } from "@/services/api";
@@ -136,6 +137,7 @@ export function ProjectExtras({ row }: { row: Row }) {
   const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "sales", "admin"].includes(normalizedRole);
 
   const [quotationDetail, setQuotationDetail] = React.useState<any>(null);
+  const [recordClientPoOpen, setRecordClientPoOpen] = React.useState(false);
 
   const linkedQuotation = React.useMemo(() => {
     const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
@@ -180,11 +182,14 @@ export function ProjectExtras({ row }: { row: Row }) {
   const linkedClientPos = React.useMemo(() => {
     return (data["po-client"] ?? []).filter(
       (po: Row) =>
+        (po.projectId && String(po.projectId) === String(row.id)) ||
+        (po.catatan && String(po.catatan).includes(`[project:${row.id}]`)) ||
         (linkedQuotation && String(po.quotationId) === String(linkedQuotation.id)) ||
+        (row.quotationId && String(po.quotationId) === String(row.quotationId)) ||
         (linkedQuotation && String(po.penawaran || "").toLowerCase().includes(String(linkedQuotation.nomor || "").toLowerCase())) ||
         (row.customer && row.customer !== "-" && po.customer === row.customer),
     );
-  }, [data, linkedQuotation, row.customer]);
+  }, [data, linkedQuotation, row.id, row.quotationId, row.customer]);
 
   const rawProjectInvoices = Array.isArray(row._invoices) ? row._invoices : [];
   const projectInvoices = React.useMemo(() => {
@@ -943,12 +948,18 @@ export function ProjectExtras({ row }: { row: Row }) {
           }
           right={
             linkedClientPos[0] ? (
-              <Button size="sm" variant="outline" onPress={() => router.push(`/po-client/${linkedClientPos[0]!.id}` as any)}>
-                <ExternalLink size={12} color={colors.text} />
-                <Text className="text-xs">Buka SO / PO Client</Text>
-              </Button>
+              <View className="flex-row items-center gap-1.5">
+                <Button size="sm" variant="outline" onPress={() => router.push(`/po-client/${linkedClientPos[0]!.id}` as any)}>
+                  <ExternalLink size={12} color={colors.text} />
+                  <Text className="text-xs">Buka SO / PO Client</Text>
+                </Button>
+                <Button size="sm" variant="outline" onPress={() => setRecordClientPoOpen(true)}>
+                  <Plus size={12} color={colors.text} />
+                  <Text className="text-xs">Catat PO</Text>
+                </Button>
+              </View>
             ) : (
-              <Button size="sm" variant="outline" onPress={() => router.push("/po-client" as any)}>
+              <Button size="sm" variant="outline" onPress={() => setRecordClientPoOpen(true)}>
                 <Text className="text-xs">Catat PO Client</Text>
               </Button>
             )
@@ -1759,6 +1770,13 @@ export function ProjectExtras({ row }: { row: Row }) {
         </DialogContent>
       </Dialog>
       <CreateInvoiceDialog open={createInvOpen} onOpenChange={setCreateInvOpen} />
+      <RecordClientPoDialog
+        open={recordClientPoOpen}
+        onOpenChange={setRecordClientPoOpen}
+        project={row}
+        activeQuotation={activeQuotation}
+        requirements={requirements}
+      />
     </>
   );
 }

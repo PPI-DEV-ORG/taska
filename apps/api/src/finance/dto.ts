@@ -90,6 +90,12 @@ export class ClientPoDto {
 
   @IsOptional() @IsString()
   notes?: string;
+
+  @IsOptional() @IsInt()
+  projectId?: number;
+
+  @IsOptional() @IsString()
+  projectName?: string;
 }
 
 export class ClientPoDirectSettlementDto {
