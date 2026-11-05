@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { InvoiceIn, Role } from "../generated/prisma/client.js";
@@ -18,6 +19,7 @@ export class InvoiceInService {
     private readonly audit: AuditService,
     private readonly docnum: DocumentNumberService,
     private readonly approvals: ApprovalsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private compute(row: InvoiceIn): StatusFilter {
@@ -36,6 +38,31 @@ export class InvoiceInService {
       await this.prisma.main.invoiceIn.update({ where: { id: row.id }, data: { status } });
     }
     return { ...row, status };
+  }
+
+  private async syncLinkedRequest(supplierPoId?: number | null, payFileId?: number | null) {
+    if (!supplierPoId) return;
+    try {
+      const po = await this.prisma.main.supplierPO.findUnique({
+        where: { id: supplierPoId },
+        select: { id: true, requestId: true, shipmentStatus: true },
+      });
+      if (po?.requestId) {
+        await this.prisma.main.purchaseRequest.updateMany({
+          where: { id: po.requestId },
+          data: {
+            paymentStatus: "DIBAYAR",
+            status: po.shipmentStatus === "SAMPAI" ? "DITERIMA" : undefined,
+            ...(payFileId ? { paymentProofFileId: payFileId } : {}),
+            otherNote: "[DIBAYAR DARI PO SUPPLIER]",
+          },
+        });
+        this.notifications.dataChange("purchase-requests", "update", po.requestId);
+        this.notifications.dataChange("purchase-requests", "status", po.requestId);
+      }
+    } catch (e) {
+      console.warn("Gagal sinkron pelunasan ke purchase-request:", e);
+    }
   }
 
   private where(q: PageQuery & { status?: string; supplierId?: number }) {
@@ -166,6 +193,10 @@ export class InvoiceInService {
       }).catch(() => {});
     }
 
+    if (isPaid) {
+      await this.syncLinkedRequest(row.supplierPoId, payFileId);
+    }
+
     await this.audit.log({
       actor: user,
       action: isPaid ? "BUAT_DAN_LUNASI_INVOICE_MASUK" : "BUAT_INVOICE_MASUK",
@@ -198,6 +229,7 @@ export class InvoiceInService {
         data: { refType: "invoiceIn", refId: String(id) },
       }).catch(() => {});
     }
+
     await this.audit.log({
       actor: user,
       action: "UBAH_INVOICE_MASUK",
@@ -214,6 +246,7 @@ export class InvoiceInService {
     await this.prisma.main.payment.deleteMany({ where: { invoiceInId: id } });
     await this.prisma.main.approval.deleteMany({ where: { kind: "INVOICE_IN", entityId: id } });
     await this.prisma.main.invoiceIn.delete({ where: { id } });
+
     await this.audit.log({
       actor: user,
       action: "HAPUS_INVOICE_MASUK",
@@ -278,6 +311,10 @@ export class InvoiceInService {
       include: { supplier: true, payments: { orderBy: { date: "desc" } } },
     });
 
+    if (paid >= Number(row.total) && Number(row.total) > 0) {
+      await this.syncLinkedRequest(row.supplierPoId, dto.fileId ?? row.transferFileId);
+    }
+
     await this.audit.log({
       actor: user,
       action: "BAYAR_INVOICE_MASUK",
@@ -295,6 +332,7 @@ export class InvoiceInService {
     const row = await this.prisma.main.invoiceIn.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice supplier tidak ditemukan");
     const updated = await this.prisma.main.invoiceIn.update({ where: { id }, data: { status: status as never } });
+
     await this.audit.log({
       actor: user,
       action: "UBAH_STATUS_INVOICE_MASUK",

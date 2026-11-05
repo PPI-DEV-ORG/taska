@@ -75,30 +75,6 @@ export function PurchaseRequestExtras({
     "DIAJUKAN"
   ).toUpperCase();
 
-  const isDiajukan = effectiveRaw === "DIAJUKAN";
-  const isCekStok = effectiveRaw === "CEK_STOK";
-  const isDisetujui = effectiveRaw === "DISETUJUI";
-  const isPaid =
-    localStatus === "LUNAS" ||
-    localStatus === "DIBAYAR" ||
-    effectiveRaw === "DIBAYAR" ||
-    row.status === "Lunas" ||
-    row.status === "Dibayar" ||
-    row.paymentStatus === "DIBAYAR" ||
-    !!row.paymentProofFileId ||
-    !!row.paymentProofFile ||
-    String(row.otherNote || "").includes("[DIBAYAR");
-  const isDikirim =
-    effectiveRaw === "DIKIRIM" ||
-    row.status === "Dikirim" ||
-    localStatus === "DIKIRIM";
-  const isDiterima =
-    effectiveRaw === "DITERIMA" ||
-    row.status === "Diterima" ||
-    row.status === "Diterima (Belum Lunas)" ||
-    (isDebt && (row.status === "Lunas" || localStatus === "LUNAS"));
-  const isDitolak = effectiveRaw === "DITOLAK";
-
   const linkedPo = React.useMemo(() => {
     const prSuffix = String(row.nomor || "").replace(/^(?:PNJ|REQ|PR)\//i, "");
     const fromList = (data["supplier-pos"] ?? []).find(
@@ -119,6 +95,8 @@ export function PurchaseRequestExtras({
         shipmentStatus: p.shipmentStatus,
         total: p.total,
         supplier: p.supplier?.name || row.supplier || "-",
+        isPaid: p.isPaid,
+        invoiceIns: p.invoiceIns,
       };
     }
     if (row.supplierPo) {
@@ -129,10 +107,53 @@ export function PurchaseRequestExtras({
         shipmentStatus: row.supplierPo.shipmentStatus,
         total: row.supplierPo.total,
         supplier: row.supplierPo.supplier?.name || row.supplier || "-",
+        isPaid: row.supplierPo.isPaid,
+        invoiceIns: row.supplierPo.invoiceIns,
       };
     }
     return null;
   }, [data, row.id, row.nomor, row.supplierPOs, row.supplierPo, row.estimasi, row.supplier]);
+
+  const isPoPaid = React.useMemo(() => {
+    if (Boolean(row.isPaid)) return true;
+    if (!linkedPo) return false;
+    if (linkedPo.isPaid || linkedPo.status === "Lunas" || linkedPo.status === "LUNAS" || linkedPo.status === "DIBAYAR") return true;
+    const invs = (data.invoiceIn ?? []).filter(
+      (inv: Row) => String(inv.supplierPoId) === String(linkedPo.id) || (linkedPo.nomor && inv.po === linkedPo.nomor)
+    );
+    if (invs.some((inv: Row) => inv.status === "PAID" || inv.status === "Lunas" || (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0))) {
+      return true;
+    }
+    if (Array.isArray(linkedPo.invoiceIns) && linkedPo.invoiceIns.some((inv: any) => inv.status === "PAID" || (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0))) {
+      return true;
+    }
+    return false;
+  }, [row.isPaid, linkedPo, data.invoiceIn]);
+
+  const isDiajukan = effectiveRaw === "DIAJUKAN";
+  const isCekStok = effectiveRaw === "CEK_STOK";
+  const isDisetujui = effectiveRaw === "DISETUJUI";
+  const isPaid =
+    isPoPaid ||
+    localStatus === "LUNAS" ||
+    localStatus === "DIBAYAR" ||
+    effectiveRaw === "DIBAYAR" ||
+    row.status === "Lunas" ||
+    row.status === "Dibayar" ||
+    row.paymentStatus === "DIBAYAR" ||
+    !!row.paymentProofFileId ||
+    !!row.paymentProofFile ||
+    String(row.otherNote || "").includes("[DIBAYAR");
+  const isDikirim =
+    effectiveRaw === "DIKIRIM" ||
+    row.status === "Dikirim" ||
+    localStatus === "DIKIRIM";
+  const isDiterima =
+    effectiveRaw === "DITERIMA" ||
+    row.status === "Diterima" ||
+    row.status === "Diterima (Belum Lunas)" ||
+    (isDebt && (row.status === "Lunas" || localStatus === "LUNAS"));
+  const isDitolak = effectiveRaw === "DITOLAK";
 
   const isPoDibuat =
     effectiveRaw === "PO_DIBUAT" ||
@@ -584,7 +605,17 @@ export function PurchaseRequestExtras({
                 ) : null}
               </View>
             </View>
-            {isFinance ? (
+            {linkedPo ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2 sm:mt-0"
+                onPress={() => router.push(`/supplier-pos` as any)}
+              >
+                <FileText size={14} color={colors.text} />
+                <Text className="text-xs">Buka PO {linkedPo.nomor}</Text>
+              </Button>
+            ) : isFinance ? (
               <Button
                 size="sm"
                 className="bg-emerald-600 hover:bg-emerald-700 mt-2 sm:mt-0"

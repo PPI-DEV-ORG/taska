@@ -263,6 +263,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       setInvPayProofFileId(null);
       void refreshModule("invoiceIn");
       void refreshModule("supplier-pos");
+      void refreshModule("purchase-requests");
       await reload();
     }
   }

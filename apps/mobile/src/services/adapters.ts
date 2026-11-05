@@ -785,7 +785,19 @@ export function adaptRow(module: string, raw: any): Row {
       const isProj = raw.costType === "PROJECT" || !!(raw.projectId || raw.project);
       const isInternalStock = prSource === "GUDANG";
       const isDebt = !isInternalStock && prPay !== "KAS";
+      const rawPos = Array.isArray(raw.supplierPOs) ? raw.supplierPOs : (raw.supplierPo ? [raw.supplierPo] : []);
+      const isPoPaid = rawPos.some((po: any) =>
+        po.isPaid ||
+        po.status === "Lunas" ||
+        po.status === "LUNAS" ||
+        po.status === "DIBAYAR" ||
+        (Array.isArray(po.invoiceIns) && po.invoiceIns.some((inv: any) =>
+          inv.status === "PAID" ||
+          (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0)
+        ))
+      );
       const isPaid =
+        isPoPaid ||
         raw.status === "DIBAYAR" ||
         raw.paymentStatus === "DIBAYAR" ||
         !!raw.paymentProofFileId ||
