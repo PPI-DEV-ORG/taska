@@ -117,6 +117,9 @@ export class RequestDto {
   @IsOptional() @IsInt()
   evidenceFileId?: number;
 
+  @IsOptional() @IsNumber()
+  estimatedCost?: number;
+
   @IsOptional() @Type(() => Number) @IsInt()
   doFileId?: number;
 

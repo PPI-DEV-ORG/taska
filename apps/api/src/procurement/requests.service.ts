@@ -200,7 +200,13 @@ export class RequestsService {
     }
 
     const number = await this.docnum.next("permintaan");
-    const estimated = items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0);
+    const rawItemsSum = items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0);
+    const hasPpnExclude = String(otherNote || "").includes("[PPN:exclude]");
+    const estimated = dto.estimatedCost != null && Number(dto.estimatedCost) > 0
+      ? Number(dto.estimatedCost)
+      : hasPpnExclude
+      ? Math.round(rawItemsSum * 1.11)
+      : rawItemsSum;
 
     const reqDate = dto.date ? new Date(dto.date) : new Date();
     let dueDate: Date | null = null;
@@ -317,7 +323,12 @@ export class RequestsService {
         ...(dto.status ? { status: dto.status as any } : {}),
         ...(dto.items?.length
           ? {
-              estimatedCost: dto.items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0),
+              estimatedCost:
+                dto.estimatedCost != null && Number(dto.estimatedCost) > 0
+                  ? Number(dto.estimatedCost)
+                  : String(dto.otherNote ?? row.otherNote ?? "").includes("[PPN:exclude]")
+                  ? Math.round(dto.items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0) * 1.11)
+                  : dto.items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0),
               items: {
                 deleteMany: {},
                 create: dto.items.map((i) => ({

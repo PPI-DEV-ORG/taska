@@ -1052,12 +1052,45 @@ export function computeFinancialStatements(
           : (activeCoa[pr.fundingSource]?.code || "1000.01");
     const prFundingLabel = activeCoa[prFundingCode]?.name || "Kas Kecil";
 
+    const ppnMode = String(
+      pr.ppnMode ||
+      (pr.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] ?? "none")
+    ).toLowerCase();
+
+    let dppPr = totalPr;
+    let ppnPr = 0;
+    let effTotalPr = totalPr;
+
+    if (ppnMode === "exclude") {
+      const itemsSum = Array.isArray(pr.items) && pr.items.length > 0
+        ? pr.items.reduce((s: number, i: any) => s + (Number(i.qty) || 1) * (Number(i.unitCost ?? i.price) || 0), 0)
+        : 0;
+
+      if (itemsSum > 0 && Math.abs(totalPr - Math.round(itemsSum * 1.11)) <= 1) {
+        dppPr = itemsSum;
+        ppnPr = totalPr - dppPr;
+        effTotalPr = totalPr;
+      } else if (itemsSum > 0 && Math.abs(totalPr - itemsSum) <= 1) {
+        dppPr = itemsSum;
+        ppnPr = Math.round(itemsSum * 0.11);
+        effTotalPr = dppPr + ppnPr;
+      } else {
+        dppPr = Math.round(totalPr / 1.11);
+        ppnPr = totalPr - dppPr;
+        effTotalPr = totalPr;
+      }
+    } else if (ppnMode === "include") {
+      effTotalPr = totalPr;
+      dppPr = Math.round(totalPr / 1.11);
+      ppnPr = Math.max(0, totalPr - dppPr);
+    }
+
     if (isKasPr) {
       // Pembelian Ritel Tunai / Lunas: Jurnal Kas Keluar tercatat saat ditandai Dibayar
       if (!isPaid && !["dibayar", "dikirim", "diterima", "selesai"].includes(stLower)) continue;
 
-      if (isProjectPr) cogsProjectTotal += totalPr;
-      cashOutDirectRetail += totalPr;
+      if (isProjectPr) cogsProjectTotal += dppPr;
+      cashOutDirectRetail += effTotalPr;
 
       const debitDesc = isProjectPr
         ? `HPP Project Beli Ritel Tunai ${nomorPr} (${normStr(pr.item, pr.tujuan)})`
@@ -1067,14 +1100,24 @@ export function computeFinancialStatements(
         {
           kodeAkun: debitCode,
           keterangan: debitDesc,
-          debit: totalPr,
+          debit: dppPr,
           kredit: 0,
         },
+        ...(ppnPr > 0
+          ? [
+              {
+                kodeAkun: "1600",
+                keterangan: `PPN Masukan (11%) Beli Ritel ${nomorPr}`,
+                debit: ppnPr,
+                kredit: 0,
+              },
+            ]
+          : []),
         {
           kodeAkun: prFundingCode,
           keterangan: `Pengeluaran ${prFundingLabel} Beli Ritel ${nomorPr}`,
           debit: 0,
-          kredit: totalPr,
+          kredit: effTotalPr,
         },
       ]);
     } else {
@@ -1088,7 +1131,7 @@ export function computeFinancialStatements(
 
       // Tahap 1: Pengakuan Hutang saat barang & nota bon dikirim/diterima
       if (isDispatchedOrReceived || isPaid) {
-        if (isProjectPr) cogsProjectTotal += totalPr;
+        if (isProjectPr) cogsProjectTotal += dppPr;
 
         const debitDesc = isProjectPr
           ? `HPP Project Beli Ritel Tempo ${nomorPr} (${normStr(pr.item, pr.tujuan)})`
@@ -1098,33 +1141,43 @@ export function computeFinancialStatements(
           {
             kodeAkun: debitCode,
             keterangan: debitDesc,
-            debit: totalPr,
+            debit: dppPr,
             kredit: 0,
           },
+          ...(ppnPr > 0
+            ? [
+                {
+                  kodeAkun: "1600",
+                  keterangan: `PPN Masukan (11%) Beli Ritel ${nomorPr}`,
+                  debit: ppnPr,
+                  kredit: 0,
+                },
+              ]
+            : []),
           {
             kodeAkun: "210102",
             keterangan: `Hutang Usaha Toko Ritel ${nomorPr} (${normStr(pr.supplier, "Toko")})`,
             debit: 0,
-            kredit: totalPr,
+            kredit: effTotalPr,
           },
         ]);
       }
 
       // Tahap 2: Pelunasan Hutang saat Finance bayar
       if (isPaid) {
-        cashOutDirectRetail += totalPr;
+        cashOutDirectRetail += effTotalPr;
         pushJournalPair(tanggalPr, nomorPr, "Request Barang / Ritel", projectLabel, [
           {
             kodeAkun: "210102",
             keterangan: `Pelunasan Hutang Toko Ritel ${nomorPr}`,
-            debit: totalPr,
+            debit: effTotalPr,
             kredit: 0,
           },
           {
             kodeAkun: prFundingCode,
             keterangan: `Pengeluaran ${prFundingLabel} Pelunasan Hutang ${nomorPr}`,
             debit: 0,
-            kredit: totalPr,
+            kredit: effTotalPr,
           },
         ]);
       }
