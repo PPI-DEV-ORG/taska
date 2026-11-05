@@ -575,6 +575,8 @@ export function adaptRow(module: string, raw: any): Row {
         soFile: raw.soFile ?? null,
         items: Array.isArray(raw.items) ? raw.items : [],
         catatan: raw.notes ?? raw.catatan ?? "",
+        projectId: raw.projectId ?? null,
+        projectName: raw.projectName ?? null,
       };
     }
     case "invoices": {
@@ -1886,6 +1888,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         soFileId: row.soFileId ? Number(row.soFileId) : undefined,
         items: Array.isArray(row.items) ? row.items : undefined,
         notes: row.catatan || row.notes || undefined,
+        projectId: row.projectId ? Number(row.projectId) : undefined,
+        projectName: row.projectName || undefined,
       };
     }
     case "invoices": {
@@ -2382,7 +2386,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   ],
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "boqFileId", "notes", "memberIds"],
   tasks: ["name", "description", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
-  "po-client": ["number", "soNumber", "poClientNumber", "docMode", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes"],
+  "po-client": ["number", "soNumber", "poClientNumber", "docMode", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes", "projectId", "projectName"],
   invoices: [
     "number",
     "clientPoId",

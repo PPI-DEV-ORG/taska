@@ -20,6 +20,8 @@ type ClientPoMeta = {
   coaAccount?: string | null;
   settledAt?: string | null;
   goodsDispatched?: boolean;
+  projectId?: number | null;
+  projectName?: string | null;
 };
 
 @Injectable()
@@ -154,6 +156,8 @@ export class ClientPoService {
       soNumber: soNumber || "-",
       poClientNumber: poClientNumber || "-",
       docMode: meta.docMode || (soNumber !== "-" && poClientNumber !== "-" ? "BOTH" : soNumber !== "-" ? "SO" : "PO"),
+      projectId: meta.projectId ?? null,
+      projectName: meta.projectName ?? null,
       soFileId: meta.soFileId ?? null,
       items: Array.isArray(meta.items) ? meta.items : [],
       paymentStatus: isLunas ? "LUNAS" : meta.paymentStatus || "BELUM_LUNAS",
@@ -359,6 +363,8 @@ export class ClientPoService {
       poClientNumber,
       docMode,
       items,
+      ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
+      ...(dto.projectName !== undefined ? { projectName: dto.projectName } : {}),
       ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
     });
 
