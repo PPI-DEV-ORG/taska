@@ -98,6 +98,41 @@ export class InvoiceInService {
     };
   }
 
+  private metaKey(id: number) {
+    return `invoice-in:meta:${id}`;
+  }
+
+  private async getMetaMap(ids: number[]): Promise<Map<number, any>> {
+    const map = new Map<number, any>();
+    if (!ids.length) return map;
+    const rows = await this.prisma.main.systemSetting.findMany({
+      where: { key: { in: ids.map((id) => this.metaKey(id)) } },
+    });
+    for (const r of rows) {
+      try {
+        const id = Number(r.key.replace("invoice-in:meta:", ""));
+        map.set(id, JSON.parse(r.value));
+      } catch {}
+    }
+    return map;
+  }
+
+  private async saveMeta(id: number, patch: Record<string, any>) {
+    const key = this.metaKey(id);
+    let existing: Record<string, any> = {};
+    try {
+      const cur = await this.prisma.main.systemSetting.findUnique({ where: { key } });
+      if (cur?.value) existing = JSON.parse(cur.value);
+    } catch {}
+    const merged = { ...existing, ...patch };
+    await this.prisma.main.systemSetting.upsert({
+      where: { key },
+      update: { value: JSON.stringify(merged) },
+      create: { key, value: JSON.stringify(merged) },
+    }).catch(() => {});
+    return merged;
+  }
+
   async list(q: PageQuery & { status?: string; supplierId?: number }) {
     const where = this.where(q);
     const [rows, total] = await Promise.all([
@@ -114,7 +149,43 @@ export class InvoiceInService {
       }),
       this.prisma.main.invoiceIn.count({ where }),
     ]);
-    const items = await Promise.all(rows.map((r) => this.sync(r)));
+    const synced = await Promise.all(rows.map((r) => this.sync(r)));
+    const metaMap = await this.getMetaMap(synced.map((r) => r.id));
+
+    const fileIds = new Set<number>();
+    for (const r of synced) {
+      const m = metaMap.get(r.id) || {};
+      const fid = r.fileId ?? m.fileId;
+      const tfid = r.transferFileId ?? m.transferFileId ?? m.paymentFileId;
+      if (typeof fid === "number" && fid > 0) fileIds.add(fid);
+      if (typeof tfid === "number" && tfid > 0) fileIds.add(tfid);
+      for (const p of (r as any).payments ?? []) {
+        if (typeof p.fileId === "number" && p.fileId > 0) fileIds.add(p.fileId);
+      }
+    }
+    const files = fileIds.size
+      ? await this.prisma.main.file.findMany({
+          where: { id: { in: Array.from(fileIds) } },
+          select: { id: true, originalName: true, size: true, mimeType: true },
+        })
+      : [];
+    const fileMap = new Map(files.map((f) => [f.id, f]));
+
+    const items = synced.map((r) => {
+      const m = metaMap.get(r.id) || {};
+      const paymentWithFile = ((r as any).payments ?? []).find((p: any) => p.fileId);
+      const effectiveFileId = r.fileId ?? m.fileId ?? null;
+      const effectiveTransferFileId =
+        r.transferFileId ?? m.transferFileId ?? m.paymentFileId ?? paymentWithFile?.fileId ?? null;
+      return {
+        ...r,
+        ...m,
+        fileId: effectiveFileId,
+        file: effectiveFileId ? fileMap.get(Number(effectiveFileId)) ?? null : null,
+        transferFileId: effectiveTransferFileId,
+        transferFile: effectiveTransferFileId ? fileMap.get(Number(effectiveTransferFileId)) ?? null : null,
+      };
+    });
     return paginate(items, total, q);
   }
 
@@ -124,13 +195,77 @@ export class InvoiceInService {
       include: { supplier: true, supplierPo: true, payments: { orderBy: { date: "desc" } } },
     });
     if (!row) throw new NotFoundException("Invoice supplier tidak ditemukan");
-    const approval = await this.approvals.getFor("INVOICE_IN", id);
-    return { ...(await this.sync(row)), approval };
+    const [synced, approval, metaMap] = await Promise.all([
+      this.sync(row),
+      this.approvals.getFor("INVOICE_IN", id),
+      this.getMetaMap([id]),
+    ]);
+    const m = metaMap.get(id) || {};
+    const paymentWithFile = ((synced as any).payments ?? []).find((p: any) => p.fileId);
+    const effectiveFileId = synced.fileId ?? m.fileId ?? null;
+    const effectiveTransferFileId =
+      synced.transferFileId ?? m.transferFileId ?? m.paymentFileId ?? paymentWithFile?.fileId ?? null;
+    const [file, transferFile] = await Promise.all([
+      effectiveFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: Number(effectiveFileId) },
+            select: { id: true, originalName: true, size: true, mimeType: true },
+          })
+        : null,
+      effectiveTransferFileId
+        ? this.prisma.main.file.findUnique({
+            where: { id: Number(effectiveTransferFileId) },
+            select: { id: true, originalName: true, size: true, mimeType: true },
+          })
+        : null,
+    ]);
+    return {
+      ...synced,
+      ...m,
+      fileId: effectiveFileId,
+      file,
+      transferFileId: effectiveTransferFileId,
+      transferFile,
+      approval,
+    };
   }
 
   async create(dto: InvoiceInDto, user: RequestUser) {
-    const supplier = await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } });
-    if (!supplier) throw new NotFoundException("Supplier tidak ditemukan");
+    let supplier = dto.supplierId
+      ? await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } })
+      : null;
+
+    if (!supplier && dto.supplierName?.trim()) {
+      const cleanName = dto.supplierName.trim();
+      supplier = await this.prisma.main.supplier.findFirst({
+        where: { name: cleanName },
+      });
+      if (!supplier) {
+        supplier = await this.prisma.main.supplier.create({
+          data: {
+            name: cleanName,
+            status: "AKTIF",
+            notes: dto.category ? `Vendor Tagihan: ${dto.category}` : "Vendor Tagihan Masuk Langsung",
+          },
+        });
+      }
+    }
+
+    if (!supplier) {
+      supplier = await this.prisma.main.supplier.findFirst({
+        where: { name: "Vendor / Tagihan Operasional" },
+      });
+      if (!supplier) {
+        supplier = await this.prisma.main.supplier.create({
+          data: {
+            name: "Vendor / Tagihan Operasional",
+            status: "AKTIF",
+            notes: "Vendor default untuk tagihan operasional masuk langsung",
+          },
+        });
+      }
+    }
+
     const number = dto.number?.trim() || null;
     if (number) {
       const dup = await this.prisma.main.invoiceIn.findFirst({ where: { number } });
@@ -143,7 +278,7 @@ export class InvoiceInService {
     const row = await this.prisma.main.invoiceIn.create({
       data: {
         number,
-        supplierId: dto.supplierId,
+        supplierId: supplier.id,
         supplierPoId: dto.supplierPoId,
         amount: dto.amount,
         ppn: dto.ppn ?? 0,
@@ -155,6 +290,20 @@ export class InvoiceInService {
         transferFileId: payFileId,
       },
       include: { supplier: true },
+    });
+
+    const meta = await this.saveMeta(row.id, {
+      notes: dto.notes || undefined,
+      category: dto.category || undefined,
+      debitAccount: dto.debitAccount || undefined,
+      date: dto.date || undefined,
+      items: dto.items || undefined,
+      coaAccount: dto.coaAccount || undefined,
+      pph: dto.pph || undefined,
+      pphMode: dto.pphMode || undefined,
+      tipePph: dto.tipePph || undefined,
+      ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
+      ...(payFileId !== undefined ? { transferFileId: payFileId, paymentFileId: payFileId } : {}),
     });
     if (dto.fileId) {
       await this.prisma.main.file.update({
@@ -218,29 +367,73 @@ export class InvoiceInService {
       entityId: row.id,
       detail: `total Rp${dto.total} — ${supplier.name}${isPaid ? " (Langsung Lunas)" : ""}`,
     });
-    return this.sync(row);
+    return { ...(await this.sync(row)), ...meta };
   }
 
   async update(id: number, dto: InvoiceInDto, user: RequestUser) {
     const row = await this.prisma.main.invoiceIn.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice supplier tidak ditemukan");
+
+    let resolvedSupplierId = dto.supplierId;
+    if (!resolvedSupplierId && dto.supplierName?.trim()) {
+      const cleanName = dto.supplierName.trim();
+      let supp = await this.prisma.main.supplier.findFirst({ where: { name: cleanName } });
+      if (!supp) {
+        supp = await this.prisma.main.supplier.create({
+          data: {
+            name: cleanName,
+            status: "AKTIF",
+            notes: dto.category ? `Vendor Tagihan: ${dto.category}` : "Vendor Tagihan Masuk Langsung",
+          },
+        });
+      }
+      resolvedSupplierId = supp.id;
+    }
+
+    const payFileId = dto.paymentFileId ?? dto.transferFileId;
+
     const updated = await this.prisma.main.invoiceIn.update({
       where: { id },
       data: {
         ...(dto.number !== undefined ? { number: dto.number } : {}),
-        ...(dto.supplierId !== undefined ? { supplierId: dto.supplierId } : {}),
+        ...(resolvedSupplierId !== undefined ? { supplierId: resolvedSupplierId } : {}),
         ...(dto.supplierPoId !== undefined ? { supplierPoId: dto.supplierPoId } : {}),
         ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
         ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
         ...(dto.total !== undefined ? { total: dto.total } : {}),
         ...(dto.dueDate ? { dueDate: new Date(dto.dueDate) } : {}),
+        ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
+        ...(payFileId !== undefined ? { transferFileId: payFileId } : {}),
       },
-      include: { supplier: true },
+      include: { supplier: true, supplierPo: true, payments: { orderBy: { date: "desc" } } },
+    });
+    const meta = await this.saveMeta(id, {
+      ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+      ...(dto.category !== undefined ? { category: dto.category } : {}),
+      ...(dto.debitAccount !== undefined ? { debitAccount: dto.debitAccount } : {}),
+      ...(dto.date !== undefined ? { date: dto.date } : {}),
+      ...(dto.items !== undefined ? { items: dto.items } : {}),
+      ...(dto.coaAccount !== undefined ? { coaAccount: dto.coaAccount } : {}),
+      ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
+      ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
+      ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+      ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
+      ...(payFileId !== undefined ? { transferFileId: payFileId, paymentFileId: payFileId } : {}),
     });
     if (dto.fileId) {
       await this.prisma.main.file.update({
         where: { id: dto.fileId },
         data: { refType: "invoiceIn", refId: String(id) },
+      }).catch(() => {});
+    }
+    if (payFileId) {
+      await this.prisma.main.file.update({
+        where: { id: payFileId },
+        data: { refType: "payment", refId: `in-${id}` },
+      }).catch(() => {});
+      await this.prisma.main.payment.updateMany({
+        where: { invoiceInId: id },
+        data: { fileId: payFileId },
       }).catch(() => {});
     }
 
@@ -251,7 +444,7 @@ export class InvoiceInService {
       entityId: id,
       detail: updated.number ?? `invoice #${id}`,
     });
-    return this.sync(updated);
+    return this.get(id);
   }
 
   async remove(id: number, user: RequestUser) {

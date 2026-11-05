@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Linking, Pressable } from "react-native";
-import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, FileDown, Printer, RotateCcw, Trash2, Check } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -16,8 +16,6 @@ import { rupiah, formatThousands } from "@/lib/format";
 import { buildEfakturCsv } from "@/lib/efaktur";
 import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
-import { downloadInvoiceExcel } from "@/modules/invoice/invoice-files";
-import { InvoiceTemplateGenerator } from "@/modules/invoice/invoice-template-generator";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
@@ -26,10 +24,12 @@ export function InvoiceExtras({
   row,
   payOpen: externalPayOpen,
   onPayOpenChange: externalOnPayOpenChange,
+  onRefresh,
 }: {
   row: Row;
   payOpen?: boolean;
   onPayOpenChange?: (open: boolean) => void;
+  onRefresh?: () => Promise<void> | void;
 }) {
   const { user, toast, reload, data, patchRow, setStatus, addRow } = useApp();
   const [receiptPreview, setReceiptPreview] = React.useState<{
@@ -250,8 +250,31 @@ export function InvoiceExtras({
   const [payFileId, setPayFileId] = React.useState<number | null>(null);
   const [isSubmittingPay, setIsSubmittingPay] = React.useState(false);
 
-  const payments: { id: string; amount: number; date: string; method: string; reference: string; fileId?: number | null }[] =
-    Array.isArray(row._payments) ? row._payments : [];
+  const payments: {
+    id: string;
+    amount: number;
+    date: string;
+    method: string;
+    reference: string;
+    fileId?: number | null;
+    file?: any;
+    fileName?: string | null;
+  }[] = Array.isArray(row._payments) ? row._payments : [];
+
+  const effectivePaidFileId =
+    Number(row.paidFileId || (row as any).paymentFileId || 0) ||
+    Number(payments.find((p) => p.fileId)?.fileId || 0) ||
+    null;
+
+  const effectivePaidFileObj =
+    (row as any).paidFile ||
+    payments.find((p) => p.file)?.file ||
+    null;
+
+  const effectivePaidFileName =
+    effectivePaidFileObj?.originalName ||
+    payments.find((p) => p.fileName)?.fileName ||
+    (effectivePaidFileId ? `Bukti-Pembayaran-${row.nomor}.pdf` : null);
 
   function openPayModal() {
     setPayAmount(formatThousands(Math.max(0, Number(row.total || 0) - Number(row.terbayar || 0))));
@@ -283,6 +306,7 @@ export function InvoiceExtras({
       setPayRef("");
       setPayFileId(null);
       await reload();
+      await onRefresh?.();
     } catch (e: any) {
       toast(e?.message ?? "Gagal mencatat pembayaran", "danger");
     } finally {
@@ -380,7 +404,7 @@ export function InvoiceExtras({
             <Line left="Nilai Sebelum PPN" right={<Text className="text-sm font-medium">{rupiah(row.nilai || 0)}</Text>} />
             <Line
               left={row.ppnMode === "none" || String(row.tipePpn || "").includes("No") || String(row.tipePpn || "").includes("Tanpa") ? "PPN (Tanpa PPN)" : "PPN (11%)"}
-              right={<Text className="text-sm font-medium">{rupiah(row.ppn || 0)}</Text>}
+              right={<Text className="text-sm font-medium">{rupiah(row.ppn || (Number(row.total || 0) > Number(row.nilai || 0) ? Number(row.total || 0) - Number(row.nilai || 0) : 0))}</Text>}
             />
             {Number(row.pph || 0) > 0 ? (
               <Line
@@ -407,6 +431,24 @@ export function InvoiceExtras({
                 <FileText size={13} color={colors.primary} />
                 <Text className="text-xs text-primary font-semibold">Buka File Invoice</Text>
                 <ExternalLink size={11} color={colors.primary} />
+              </Button>
+            }
+          />
+        ) : null}
+        {effectivePaidFileId ? (
+          <Line
+            left="Bukti Pembayaran Customer"
+            sub={effectivePaidFileName || "Lampiran bukti transfer / pelunasan invoice"}
+            right={
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => openFileUrl(effectivePaidFileId)}
+                className="flex-row items-center gap-1.5 h-8 px-2.5"
+              >
+                <Paperclip size={13} color={colors.success} />
+                <Text className="text-xs text-success font-semibold">Lihat Bukti Pembayaran</Text>
+                <ExternalLink size={11} color={colors.success} />
               </Button>
             }
           />
@@ -635,6 +677,7 @@ export function InvoiceExtras({
                   try {
                     await patchRow("invoices", row.id, { fileId: null, fileName: null });
                     await reload();
+                    await onRefresh?.();
                     toast("File dokumen invoice berhasil dihapus");
                   } catch {
                     toast("Gagal menghapus file", "danger");
@@ -663,9 +706,133 @@ export function InvoiceExtras({
                 fileId: uploadedId,
               });
               await reload();
+              await onRefresh?.();
               toast(`File "${file.name}" berhasil diunggah!`);
             } catch (e: any) {
               toast(e?.message || "Gagal mengunggah file", "danger");
+            }
+          }}
+        />
+      </Panel>
+
+      {/* Bukti Pembayaran / Transfer Customer */}
+      <Panel
+        title="Bukti Pembayaran / Transfer Customer"
+        subtitle="Lampiran bukti transfer / pembayaran customer saat invoice ditandai dibayar atau lunas."
+      >
+        {(() => {
+          const paymentProofs = payments.filter((p) => p.fileId);
+          if (paymentProofs.length > 0) {
+            return (
+              <View className="gap-2.5 mb-3">
+                {paymentProofs.map((p, idx) => {
+                  const fName =
+                    p.file?.originalName ||
+                    p.fileName ||
+                    effectivePaidFileName ||
+                    `Bukti-Pembayaran-${row.nomor}-${idx + 1}.pdf`;
+                  return (
+                    <View
+                      key={p.id || idx}
+                      className="p-3 bg-panel border border-success/40 rounded-xl flex-row items-center justify-between gap-2"
+                    >
+                      <View className="flex-row items-center gap-2.5 flex-1 mr-2">
+                        <View className="p-2 bg-success/10 rounded-lg">
+                          <CheckCircle2 size={20} color={colors.success} />
+                        </View>
+                        <View className="flex-1">
+                          <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
+                            {fName}
+                          </Text>
+                          <Text className="text-[11px] text-muted-foreground mt-0.5">
+                            {rupiah(p.amount)} · {p.date} · {p.method}
+                            {p.reference && p.reference !== "-" ? ` (${p.reference})` : ""}
+                          </Text>
+                        </View>
+                      </View>
+                      <View className="flex-row items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onPress={() => openFileUrl(p.fileId)}
+                          className="h-8 px-2.5 flex-row items-center gap-1.5"
+                        >
+                          <ExternalLink size={12} color={colors.primary} />
+                          <Text className="text-xs font-semibold text-primary">Lihat Bukti Pembayaran</Text>
+                        </Button>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          }
+
+          if (effectivePaidFileId) {
+            return (
+              <View className="mb-3 p-3 bg-panel border border-success/40 rounded-xl flex-row items-center justify-between gap-2">
+                <View className="flex-row items-center gap-2.5 flex-1 mr-2">
+                  <View className="p-2 bg-success/10 rounded-lg">
+                    <CheckCircle2 size={20} color={colors.success} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
+                      {effectivePaidFileName || `Bukti-Pembayaran-${row.nomor}.pdf`}
+                    </Text>
+                    <Text className="text-[11px] text-muted-foreground mt-0.5">
+                      Bukti pembayaran tersimpan (File ID: #{effectivePaidFileId})
+                    </Text>
+                  </View>
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => openFileUrl(effectivePaidFileId)}
+                    className="h-8 px-2.5 flex-row items-center gap-1.5"
+                  >
+                    <ExternalLink size={12} color={colors.primary} />
+                    <Text className="text-xs font-semibold text-primary">Lihat Bukti Pembayaran</Text>
+                  </Button>
+                </View>
+              </View>
+            );
+          }
+
+          return (
+            <View className="mb-3 p-3 rounded-xl border border-dashed border-border/80 bg-muted/20">
+              <Text className="text-xs text-muted-foreground italic">
+                Belum ada file bukti pembayaran / transfer yang dilampirkan.
+              </Text>
+            </View>
+          );
+        })()}
+
+        <FileUploader
+          label={
+            effectivePaidFileId
+              ? "Upload / Ganti Bukti Pembayaran (JPG / PNG / PDF)"
+              : "Upload Bukti Pembayaran / Transfer Customer (JPG / PNG / PDF)"
+          }
+          kind="foto"
+          category="foto-struk"
+          autoFlush
+          onFilePicked={async (file) => {
+            try {
+              const uploadedId = await uploadFile(file, "foto", "foto-struk", {
+                refType: "invoice-payment",
+                refId: row.id,
+              });
+              if (!uploadedId) throw new Error("Gagal mengunggah bukti pembayaran ke server");
+              await patchRow("invoices", row.id, {
+                paidFileId: uploadedId,
+                paymentFileId: uploadedId,
+              });
+              await reload();
+              await onRefresh?.();
+              toast(`Bukti pembayaran "${file.name}" berhasil disimpan!`);
+            } catch (e: any) {
+              toast(e?.message || "Gagal mengunggah bukti pembayaran", "danger");
             }
           }}
         />

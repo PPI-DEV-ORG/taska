@@ -80,7 +80,7 @@ const MAPS: Record<string, Record<string, string>> = {
     NEGOTIATION: "Negosiasi", REVISION: "Revisi", EXPIRED: "Kedaluwarsa",
   },
   surveys: { DIMINTA: "Diminta", DIJADWALKAN: "Dijadwalkan", BERJALAN: "Berjalan", SELESAI: "Selesai", BATAL: "Dibatalkan" },
-  "po-client": { DITERIMA: "Diterima", LUNAS: "Lunas", DIBATALKAN: "Dibatalkan" },
+  "po-client": { PENDING: "Pending", DITERIMA: "Pending", LUNAS_SEBAGIAN: "Lunas sebagian", LUNAS: "Lunas", DIBATALKAN: "Dibatalkan" },
   invoices: { DRAFT: "Belum dikirim", SENT: "Terkirim", PARTIAL: "Dibayar sebagian", PAID: "Lunas", OVERDUE: "Terlambat", BATAL: "Dibatalkan" },
   projects: {
     DIRENCANAKAN: "Direncanakan", BERJALAN: "Berjalan", DITUNDA: "Ditunda",
@@ -544,6 +544,39 @@ export function adaptRow(module: string, raw: any): Row {
       const poNum = raw.poClientNumber && raw.poClientNumber !== "-" ? normOrderNum(raw.poClientNumber) : (isNumberPo ? normRawNumber : "-");
       const primaryDoc = (normRawNumber && normRawNumber !== "-") ? normRawNumber : (soNum !== "-" ? soNum : poNum !== "-" ? poNum : "");
 
+      const effectiveTotal =
+        n(raw.total) ||
+        (n(raw.ppn) || n(raw.pph) ? n(raw.amount) + n(raw.ppn) - n(raw.pph) : n(raw.amount));
+      const activeInvs = Array.isArray(raw.invoices)
+        ? raw.invoices.filter((b: any) => b.status !== "BATAL")
+        : [];
+      const totalInvoiceVal = activeInvs.reduce((a: number, b: any) => a + n(b.total), 0);
+      const totalPaidVal = activeInvs.reduce(
+        (a: number, b: any) => a + n(b.paidAmount ?? (b.status === "PAID" ? b.total : 0)),
+        0,
+      );
+      const hasPaidPelunasan = activeInvs.some(
+        (b: any) => b.status === "PAID" && b.type === "PELUNASAN" && n(b.total) > 0,
+      );
+      const allInvoicesPaid =
+        activeInvs.length > 0 &&
+        activeInvs.every((b: any) => b.status === "PAID" && n(b.total) > 0) &&
+        totalPaidVal >= effectiveTotal &&
+        effectiveTotal > 0;
+      const isDirectSettled =
+        raw.paymentStatus === "LUNAS" &&
+        !!(raw.settledAt || raw.paymentProofFileId || raw.settlementType === "LANGSUNG");
+      const isSoLunas = isDirectSettled || hasPaidPelunasan || allInvoicesPaid || raw.paymentStatus === "LUNAS";
+      const isSoPartial =
+        !isSoLunas &&
+        (raw.paymentStatus === "LUNAS_SEBAGIAN" ||
+          totalPaidVal > 0 ||
+          activeInvs.some(
+            (b: any) => (b.status === "PAID" || b.status === "PARTIAL") && n(b.total) > 0,
+          ));
+      const soStatusLabel = isSoLunas ? "Lunas" : isSoPartial ? "Lunas sebagian" : "Pending";
+      const soPaymentStatus = isSoLunas ? "LUNAS" : isSoPartial ? "LUNAS_SEBAGIAN" : "PENDING";
+
       return {
         ...base,
         nomor: primaryDoc,
@@ -557,12 +590,18 @@ export function adaptRow(module: string, raw: any): Row {
         penawaran: raw.quotation?.number ?? "-",
         quotationId: idOf(raw.quotation),
         nilai: n(raw.amount),
-        totalInvoice: n(raw.invoices?.reduce?.((a: number, b: any) => a + n(b.total), 0) ?? 0),
+        ppn: n(raw.ppn),
+        tipePpn: raw.tipePpn ?? (n(raw.ppn) > 0 ? "PPN 11%" : "Non PPN"),
+        ppnMode: raw.ppnMode ?? (n(raw.ppn) > 0 ? "exclude" : "none"),
+        pph: n(raw.pph),
+        tipePph: raw.tipePph ?? (n(raw.pph) > 0 ? "PPh" : "Tanpa PPh"),
+        pphMode: raw.pphMode ?? (n(raw.pph) > 0 ? "pph23" : "none"),
+        total: effectiveTotal,
+        totalInvoice: totalInvoiceVal,
+        terbayar: isDirectSettled ? effectiveTotal : totalPaidVal,
         tanggal: d(raw.date),
-        status: (raw.paymentStatus === "LUNAS" || (n(raw.invoices?.reduce?.((a: number, b: any) => a + n(b.total), 0) ?? 0) >= n(raw.amount) && n(raw.amount) > 0))
-          ? "Lunas"
-          : toLabel("po-client", "DITERIMA"),
-        paymentStatus: raw.paymentStatus || ((n(raw.invoices?.reduce?.((a: number, b: any) => a + n(b.total), 0) ?? 0) >= n(raw.amount) && n(raw.amount) > 0) ? "LUNAS" : "BELUM_LUNAS"),
+        status: soStatusLabel,
+        paymentStatus: soPaymentStatus,
         settlementType: raw.settlementType ?? null,
         paymentProofFileId: raw.paymentProofFileId ?? null,
         paymentProofFile: raw.paymentProofFile ?? null,
@@ -642,6 +681,9 @@ export function adaptRow(module: string, raw: any): Row {
       if (raw.ppnMode === "include" || String(raw.tipePpn || "").includes("Include")) {
         invPpnMode = "include";
         invTipePpn = "Include PPN (Sudah termasuk)";
+      } else if (raw.ppnMode === "exclude" || String(raw.tipePpn || "").includes("Exclude") || rawPpn > 0 || (totNum > rawAmt && rawAmt > 0)) {
+        invPpnMode = "exclude";
+        invTipePpn = "Exclude PPN (11%)";
       } else if (raw.ppnMode === "none" || String(raw.tipePpn || "").includes("No") || String(raw.tipePpn || "").includes("Tanpa") || (rawPpn === 0 && totNum > 0)) {
         invPpnMode = "none";
         invTipePpn = "No PPN (Tanpa PPN)";
@@ -660,12 +702,19 @@ export function adaptRow(module: string, raw: any): Row {
         lead: leadName,
         leadId: leadId ? String(leadId) : null,
         paymentNote: isPartial ? "dp setengah bayar sebagian dp termin" : "",
-        customer: nameOf(raw.customer) || raw.customerName || (raw.customerId ? "" : "Pelanggan Langsung (Walk-in)"),
+        customer:
+          nameOf(raw.customer) ||
+          (raw.customerName && raw.customerName !== "-" ? raw.customerName : "") ||
+          (raw.customerId
+            ? ""
+            : /nota kontan|pembayaran langsung|walk-?in/i.test(String(raw.description || ""))
+              ? "Pelanggan Langsung (Walk-in)"
+              : "Pelanggan Umum"),
         customerId: idOf(raw.customer),
         jenis: toLabel("invoiceType", raw.type),
         catatan: (raw.description || "").replace(/\[by:\d+\]/g, "").replace(/\[lead:\d+\]/g, "").trim(),
         nilai: rawAmt,
-        ppn: rawPpn,
+        ppn: rawPpn || (invPpnMode === "exclude" ? Math.round(rawAmt * 0.11) : invPpnMode === "include" ? Math.max(0, totNum - Math.round(totNum / 1.11)) : 0),
         pph: rawPph,
         pphMode: invPphMode,
         tipePph: invTipePph,
@@ -681,6 +730,8 @@ export function adaptRow(module: string, raw: any): Row {
         fileId: raw.fileId ?? null,
         file: raw.file ?? null,
         fileName: raw.fileName ?? raw.file?.originalName ?? null,
+        paidFileId: raw.paidFileId ?? (raw.payments ?? []).find((p: any) => p.fileId)?.fileId ?? null,
+        paidFile: raw.paidFile ?? null,
         _payments: (raw.payments ?? []).map((p: any) => ({
           id: String(p.id),
           amount: n(p.amount),
@@ -688,6 +739,8 @@ export function adaptRow(module: string, raw: any): Row {
           method: p.method ?? "TRANSFER",
           reference: p.reference ?? "-",
           fileId: p.fileId ?? null,
+          file: p.file ?? null,
+          fileName: p.file?.originalName ?? null,
         })),
         discount: raw.discount != null ? n(raw.discount) : undefined,
         items: Array.isArray(raw.items) ? raw.items : [],
@@ -1013,7 +1066,7 @@ export function adaptRow(module: string, raw: any): Row {
       const soIdMatch = String(loc?.reason || raw.reportText || "").match(/\[so:(\d+)\]/i);
       const soNumMatch =
         String(loc?.reason || raw.reportText || "").match(/\[soNum:([^\]]+)\]/i) ||
-        String(loc?.reason || raw.reportText || "").match(/\b(SO\/\d{4}\/\d{2}\/\d+)\b/i);
+        String(loc?.reason || raw.reportText || "").match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
       const resolvedSoId = raw.clientPoId ? String(raw.clientPoId) : (raw.soId ? String(raw.soId) : (soIdMatch ? soIdMatch[1] : undefined));
       const resolvedSoNum = raw.soNumber || (soNumMatch ? soNumMatch[1] : undefined);
 
@@ -1503,15 +1556,23 @@ export function adaptRow(module: string, raw: any): Row {
       return {
         ...base,
         nomor: raw.number ?? "",
-        customer: suppName ? `${suppName} (Supplier)` : "Supplier",
+        customer: suppName ? (raw.category ? `${suppName} (${raw.category})` : `${suppName} (Supplier)`) : "Supplier / Vendor",
         supplier: suppName,
         supplierId: idOf(raw.supplier),
         po: raw.supplierPo?.number ?? "-",
         supplierPoId: idOf(raw.supplierPo),
-        jenis: "Tagihan Supplier",
+        jenis: raw.category || (raw.supplierPo ? "Tagihan Supplier" : "Invoice Masuk Langsung"),
+        category: raw.category ?? "",
+        debitAccount: raw.debitAccount ?? "",
+        coaAccount: raw.coaAccount ?? "",
+        catatan: raw.notes ?? "",
+        items: raw.items ?? [],
         direction: "in",
         nilai: n(raw.amount),
         ppn: n(raw.ppn),
+        pph: n(raw.pph),
+        pphMode: raw.pphMode ?? "none",
+        tipePph: raw.tipePph ?? "",
         total: n(raw.total),
         terbayar: n(raw.paidAmount),
         tanggal: d(raw.date || raw.createdAt),
@@ -1519,7 +1580,8 @@ export function adaptRow(module: string, raw: any): Row {
         status: displayStatus,
         fileId: raw.fileId ?? raw.file?.id ?? null,
         file: raw.file ?? null,
-        transferFileId: raw.transferFileId ?? null,
+        transferFileId: raw.transferFileId ?? (raw.payments ?? []).find((p: any) => p.fileId)?.fileId ?? null,
+        transferFile: raw.transferFile ?? null,
         _payments: (raw.payments ?? []).map((p: any) => ({
           id: String(p.id),
           amount: n(p.amount),
@@ -1914,6 +1976,13 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
               ? findId(db?.suppliers, row.supplier)
               : undefined,
         amount: num(row.nilai ?? row.amount),
+        ppn: num(row.ppn),
+        tipePpn: row.tipePpn || undefined,
+        ppnMode: row.ppnMode || undefined,
+        pph: num(row.pph),
+        tipePph: row.tipePph || undefined,
+        pphMode: row.pphMode || undefined,
+        total: num(row.total || (num(row.nilai ?? row.amount) + num(row.ppn) - num(row.pph))),
         date: row.tanggal || row.date || today,
         quotationId:
           row.quotationId != null && row.quotationId !== "" && row.quotationId !== "-"
@@ -1939,7 +2008,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         customerId:
           row.customerId != null && row.customerId !== ""
             ? Number(row.customerId)
-            : (row.customer && !/walk-?in/i.test(String(row.customer)) ? (findId(db?.customers, row.customer) ?? null) : null),
+            : (row.customer && !/walk-?in|pelanggan umum/i.test(String(row.customer)) ? (findId(db?.customers, row.customer) ?? null) : null),
         customer: row.customer || undefined,
         clientPoId: row.clientPoId != null && row.clientPoId !== "" ? Number(row.clientPoId) : findId(db?.["po-client"], row.po),
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
@@ -2357,24 +2426,35 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     case "invoiceIn": {
       const amt = num(row.nilai ?? row.amount);
       const ppn = row.ppn != null ? num(row.ppn) : Math.round(amt * 0.11);
-      const tot = num(row.total) || amt + ppn;
+      const pph = row.pph != null ? num(row.pph) : 0;
+      const tot = num(row.total) || Math.max(0, amt + ppn - pph);
       const suppId =
         row.supplierId != null && row.supplierId !== ""
           ? Number(row.supplierId)
           : (findId(db?.suppliers, row.supplier) ?? undefined);
+      const suppName = String(row.supplier || row.customer || "").trim() || undefined;
       const poId =
         row.supplierPoId != null && row.supplierPoId !== ""
           ? Number(row.supplierPoId)
           : findId(db?.["supplier-pos"], row.po);
       const dueStr = row.jatuhTempo || row.dueDate || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
       return {
-        number: row.nomor || row.number || `INV-SUP-${Date.now().toString().slice(-5)}`,
+        number: row.nomor || row.number || `INV-IN-${Date.now().toString().slice(-5)}`,
         supplierId: suppId,
+        supplierName: suppName,
         supplierPoId: poId || undefined,
         amount: amt,
         ppn,
+        pph,
+        pphMode: row.pphMode || undefined,
+        tipePph: row.tipePph || undefined,
         total: tot,
+        date: row.tanggal || row.date || today,
         dueDate: dueStr && /^\d{4}-\d{2}-\d{2}/.test(dueStr) ? dueStr : new Date().toISOString().slice(0, 10),
+        notes: row.catatan || row.notes || undefined,
+        category: row.category || row.jenis || undefined,
+        debitAccount: row.debitAccount || undefined,
+        items: Array.isArray(row.items) && row.items.length > 0 ? row.items : undefined,
         fileId: row.fileId ? Number(row.fileId) : undefined,
         transferFileId: row.transferFileId ? Number(row.transferFileId) : (row.paymentFileId ? Number(row.paymentFileId) : undefined),
         paid: !!row.paid,
@@ -2418,6 +2498,8 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "notes",
     "status",
     "fileId",
+    "paidFileId",
+    "paymentFileId",
     "items",
     "subject",
     "intro",
@@ -2430,7 +2512,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   ],
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "boqFileId", "notes", "memberIds"],
   tasks: ["name", "description", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
-  "po-client": ["number", "soNumber", "poClientNumber", "docMode", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes", "projectId", "projectName"],
+  "po-client": ["number", "soNumber", "poClientNumber", "docMode", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes", "projectId", "projectName", "ppn", "tipePpn", "ppnMode", "pph", "tipePph", "pphMode", "total"],
   invoices: [
     "number",
     "clientPoId",
@@ -2451,6 +2533,8 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "dueDate",
     "status",
     "fileId",
+    "paidFileId",
+    "paymentFileId",
     "items",
     "subject",
     "intro",
@@ -2472,9 +2556,9 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
   "purchase-requests": ["date", "dueDate", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "fundingSource", "status", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "requestId", "date", "conditionNote", "receiptFileId", "photoFileId", "status", "items"],
-  "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
+  "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText", "status"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],
-  invoiceIn: ["number", "supplierId", "supplierPoId", "amount", "ppn", "total", "dueDate", "fileId", "transferFileId", "paid", "paymentMethod", "paymentReference", "coaAccount", "paymentFileId"],
+  invoiceIn: ["number", "supplierId", "supplierName", "supplierPoId", "amount", "ppn", "pph", "pphMode", "tipePph", "total", "date", "dueDate", "notes", "category", "debitAccount", "items", "fileId", "transferFileId", "paid", "paymentMethod", "paymentReference", "coaAccount", "paymentFileId"],
   followups: ["method", "notes", "date", "nextDate", "status"],
   "poc-reports": [
     "title", "description", "type", "date", "endDate", "location", "status", "resultStatus",
@@ -2776,7 +2860,26 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.signerTitle !== undefined) out.signerTitle = patch.signerTitle;
     if (patch.dpLabel !== undefined) out.dpLabel = patch.dpLabel;
     if (patch.dpAmount !== undefined) out.dpAmount = num(patch.dpAmount);
+  } else if (module === "invoiceIn") {
+    if (patch.nilai !== undefined) out.amount = num(patch.nilai);
+    if (patch.amount !== undefined) out.amount = num(patch.amount);
+    if (patch.ppn !== undefined) out.ppn = num(patch.ppn);
+    if (patch.pph !== undefined) out.pph = num(patch.pph);
+    if (patch.total !== undefined) out.total = num(patch.total);
+    if (patch.jatuhTempo !== undefined) out.dueDate = patch.jatuhTempo;
+    if (patch.supplier !== undefined) {
+      out.supplierName = String(patch.supplier).trim();
+      const foundSupp = findId(db?.suppliers, patch.supplier);
+      if (foundSupp !== undefined) out.supplierId = foundSupp;
+    }
+    if (patch.supplierId !== undefined) out.supplierId = patch.supplierId ? Number(patch.supplierId) : undefined;
+    if (patch.supplierPoId !== undefined) out.supplierPoId = patch.supplierPoId ? Number(patch.supplierPoId) : undefined;
+    if (patch.transferFileId !== undefined) out.transferFileId = patch.transferFileId ? Number(patch.transferFileId) : undefined;
+    if (patch.paymentFileId !== undefined) out.paymentFileId = patch.paymentFileId ? Number(patch.paymentFileId) : undefined;
   } else if (module === "delivery-notes") {
+    if (patch.status !== undefined) {
+      out.status = toEnum("delivery-notes", patch.status) || patch.status;
+    }
     if (patch.penerimaNama || patch.catatanSerahTerima || patch.penerimaJabatan || patch.penerimaKontak) {
       out.reportText = [
         patch.penerimaNama ? `Penerima: ${patch.penerimaNama}` : "",

@@ -801,42 +801,15 @@ export function FormDialog({
     }
   }, [open, data, def?.key]);
 
-  const isOrderModule = mode === "create" && (def?.key === "po-client" || def?.key === "supplier-pos");
-  const [orderDocMode, setOrderDocMode] = React.useState<"SO" | "PO">(def?.key === "supplier-pos" ? "PO" : "SO");
-
-  const effectiveDef = isOrderModule
-    ? orderDocMode === "PO"
-      ? MODULES["supplier-pos"]
-      : MODULES["po-client"]
-    : def;
-  const targetKey = effectiveDef?.key ?? def?.key;
+  const isSoCreate = mode === "create" && def?.key === "po-client";
+  const effectiveDef = def;
+  const targetKey = def?.key;
   const fields = customFields ?? effectiveDef?.createFields ?? [];
-
-  function handleOrderModeChange(nextMode: "SO" | "PO") {
-    setOrderDocMode(nextMode);
-    const targetModule = nextMode === "PO" ? MODULES["supplier-pos"] : MODULES["po-client"];
-    const targetFields = targetModule?.createFields ?? [];
-    const init: Record<string, string> = {};
-    const today = toIsoDate(new Date());
-    targetFields.forEach((f) => {
-      if (f.defaultValue != null) {
-        init[f.key] = String(f.defaultValue);
-      } else if (f.type === "date" && (targetModule?.defaults?.[f.key] || f.required)) {
-        init[f.key] = today;
-      }
-    });
-    setVals(init);
-    setErrs({});
-    fileHandles.current = [];
-  }
 
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
-      const initialMode = def?.key === "supplier-pos" ? "PO" : "SO";
-      setOrderDocMode(initialMode);
-      const initDef = isOrderModule ? (initialMode === "PO" ? MODULES["supplier-pos"] : MODULES["po-client"]) : def;
-      const initFields = customFields ?? initDef?.createFields ?? [];
+      const initFields = customFields ?? def?.createFields ?? [];
       if (mode === "edit" && initialRow) {
         const init: Record<string, string> = {};
         initFields.forEach((f) => {
@@ -856,7 +829,7 @@ export function FormDialog({
         initFields.forEach((f) => {
           if (f.defaultValue != null) {
             init[f.key] = String(f.defaultValue);
-          } else if (f.type === "date" && (initDef?.defaults?.[f.key] || f.required)) {
+          } else if (f.type === "date" && (def?.defaults?.[f.key] || f.required)) {
             init[f.key] = today;
           }
         });
@@ -1057,9 +1030,8 @@ export function FormDialog({
         const saved = await addRow(targetKey!, row);
         if (saved) {
           toast(`${effectiveDef?.singular ?? def.singular} berhasil dibuat`);
-          if (isOrderModule) {
+          if (def?.key === "po-client") {
             void refreshModule("po-client");
-            void refreshModule("supplier-pos");
           }
           handleOpenChange(false);
         }
@@ -1075,64 +1047,34 @@ export function FormDialog({
           </DialogTitle>
         </DialogHeader>
         <ScrollView style={{ maxHeight: 520 }} contentContainerClassName="gap-4 pb-1">
-          {isOrderModule ? (
-            <View className="bg-panel border-border/80 rounded-xl border p-3 gap-2.5">
+          {isSoCreate ? (
+            <View className="bg-panel border-border/80 rounded-xl border p-3 gap-2">
               <Text className="text-xs font-bold text-foreground">
-                Pilih Tipe Dokumen yang Ingin Dibuat:
+                Alur Penjualan & Pembayaran Customer:
               </Text>
               <View className="flex-row flex-wrap gap-1.5">
                 <Button
                   size="sm"
-                  variant={orderDocMode === "SO" ? "default" : "outline"}
-                  onPress={() => handleOrderModeChange("SO")}
-                  className="flex-1 min-w-[140px] h-9 px-2.5"
+                  variant={soPaymentFlow === "REGULER" ? "default" : "outline"}
+                  onPress={() => setSoPaymentFlow("REGULER")}
+                  className="flex-1 min-w-[160px] h-8 px-2.5"
                 >
-                  <Text className="text-xs font-semibold">Buat SO (Penjualan Customer)</Text>
+                  <Text className="text-xs font-semibold">Reguler / PO Client (Tempo / DP)</Text>
                 </Button>
                 <Button
                   size="sm"
-                  variant={orderDocMode === "PO" ? "default" : "outline"}
-                  onPress={() => handleOrderModeChange("PO")}
-                  className="flex-1 min-w-[140px] h-9 px-2.5"
+                  variant={soPaymentFlow === "WALK_IN" ? "default" : "outline"}
+                  onPress={() => setSoPaymentFlow("WALK_IN")}
+                  className="flex-1 min-w-[160px] h-8 px-2.5"
                 >
-                  <Text className="text-xs font-semibold">Buat PO (Pembelian Supplier)</Text>
+                  <Text className="text-xs font-semibold">Datang Langsung / Nota (Langsung Lunas)</Text>
                 </Button>
               </View>
-              <Text className="text-[11px] text-muted-foreground leading-relaxed">
-                {orderDocMode === "SO"
-                  ? "Sisi Penjualan: Menerbitkan Sales Order (SO) untuk Customer dan mencatat nomor/file PO dari Customer. Data otomatis masuk ke tabel SO (Sales Order)."
-                  : "Sisi Pembelian: Menerbitkan Purchase Order (PO) untuk Supplier dan mencatat nomor/file SO dari Supplier. Data otomatis masuk ke tabel PO (Purchase Order)."}
-              </Text>
-              {orderDocMode === "SO" ? (
-                <View className="mt-1 pt-2.5 border-t border-border/60 gap-2">
-                  <Text className="text-xs font-bold text-foreground">
-                    Alur Penjualan & Pembayaran Customer:
+              {soPaymentFlow === "WALK_IN" ? (
+                <View className="bg-muted/40 border border-border/60 rounded-lg p-2.5">
+                  <Text className="text-[11px] text-muted-foreground">
+                    Penjualan langsung / kasir (Walk-in). SO tersimpan tanpa otomatis membuat invoice. Invoice lengkap dengan PPN, diskon &amp; status pelunasan dapat dibuat secara mandiri di detail SO melalui tombol &quot;+ Terbitkan Invoice Keluar&quot;.
                   </Text>
-                  <View className="flex-row flex-wrap gap-1.5">
-                    <Button
-                      size="sm"
-                      variant={soPaymentFlow === "REGULER" ? "default" : "outline"}
-                      onPress={() => setSoPaymentFlow("REGULER")}
-                      className="flex-1 min-w-[160px] h-8 px-2.5"
-                    >
-                      <Text className="text-xs font-semibold">Reguler / PO Client (Tempo / DP)</Text>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={soPaymentFlow === "WALK_IN" ? "default" : "outline"}
-                      onPress={() => setSoPaymentFlow("WALK_IN")}
-                      className="flex-1 min-w-[160px] h-8 px-2.5"
-                    >
-                      <Text className="text-xs font-semibold">Datang Langsung / Nota (Langsung Lunas)</Text>
-                    </Button>
-                  </View>
-                  {soPaymentFlow === "WALK_IN" ? (
-                    <View className="bg-muted/40 border border-border/60 rounded-lg p-2.5">
-                      <Text className="text-[11px] text-muted-foreground">
-                        Penjualan langsung / kasir (Walk-in). SO tersimpan tanpa otomatis membuat invoice. Invoice lengkap dengan PPN, diskon &amp; status pelunasan dapat dibuat secara mandiri di detail SO melalui tombol &quot;+ Terbitkan Invoice Keluar&quot;.
-                      </Text>
-                    </View>
-                  ) : null}
                 </View>
               ) : null}
             </View>

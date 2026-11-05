@@ -14,7 +14,7 @@ type ClientPoMeta = {
   docMode?: "SO" | "PO" | "BOTH";
   soFileId?: number | null;
   items?: any[];
-  paymentStatus?: "LUNAS" | "BELUM_LUNAS";
+  paymentStatus?: "LUNAS" | "LUNAS_SEBAGIAN" | "BELUM_LUNAS" | "PENDING";
   settlementType?: "LANGSUNG" | "TEMPO";
   paymentProofFileId?: number | null;
   coaAccount?: string | null;
@@ -22,6 +22,13 @@ type ClientPoMeta = {
   goodsDispatched?: boolean;
   projectId?: number | null;
   projectName?: string | null;
+  ppn?: number;
+  tipePpn?: string | null;
+  ppnMode?: string | null;
+  pph?: number;
+  tipePph?: string | null;
+  pphMode?: string | null;
+  total?: number;
 };
 
 @Injectable()
@@ -146,10 +153,44 @@ export class ClientPoService {
     const soFile = meta.soFileId ? fileMap.get(Number(meta.soFileId)) ?? null : null;
     const paymentProofFile = meta.paymentProofFileId ? fileMap.get(Number(meta.paymentProofFileId)) ?? null : null;
 
-    const isLunas =
-      meta.paymentStatus === "LUNAS" ||
-      (Array.isArray(row.invoices) &&
-        row.invoices.some((i: any) => i.status === "PAID" && Number(i.total) > 0));
+    const effectiveTotal =
+      meta.total ??
+      (meta.ppn || meta.pph
+        ? Number(row.amount || 0) + Number(meta.ppn ?? 0) - Number(meta.pph ?? 0)
+        : Number(row.amount || 0));
+
+    const activeInvoices = Array.isArray(row.invoices)
+      ? row.invoices.filter((i: any) => i.status !== "BATAL")
+      : [];
+    const totalPaid = activeInvoices.reduce((sum: number, i: any) => {
+      const p = Number(i.paidAmount ?? (i.status === "PAID" ? i.total : 0));
+      return sum + (Number.isFinite(p) ? p : 0);
+    }, 0);
+    const hasPaidPelunasan = activeInvoices.some(
+      (i: any) => i.status === "PAID" && i.type === "PELUNASAN" && Number(i.total) > 0,
+    );
+    const allInvoicesPaid =
+      activeInvoices.length > 0 &&
+      activeInvoices.every((i: any) => i.status === "PAID" && Number(i.total) > 0) &&
+      totalPaid >= effectiveTotal &&
+      effectiveTotal > 0;
+
+    const isDirectSettled =
+      meta.paymentStatus === "LUNAS" &&
+      !!(meta.settledAt || meta.paymentProofFileId || meta.settlementType === "LANGSUNG");
+    const isLunas = isDirectSettled || hasPaidPelunasan || allInvoicesPaid;
+    const isPartial =
+      !isLunas &&
+      (totalPaid > 0 ||
+        activeInvoices.some(
+          (i: any) => (i.status === "PAID" || i.status === "PARTIAL") && Number(i.total) > 0,
+        ));
+
+    const computedPaymentStatus: "LUNAS" | "LUNAS_SEBAGIAN" | "PENDING" = isLunas
+      ? "LUNAS"
+      : isPartial
+        ? "LUNAS_SEBAGIAN"
+        : "PENDING";
 
     return {
       ...row,
@@ -160,13 +201,21 @@ export class ClientPoService {
       projectName: meta.projectName ?? null,
       soFileId: meta.soFileId ?? null,
       items: Array.isArray(meta.items) ? meta.items : [],
-      paymentStatus: isLunas ? "LUNAS" : meta.paymentStatus || "BELUM_LUNAS",
+      paymentStatus: computedPaymentStatus,
+      paidAmount: isDirectSettled ? effectiveTotal : totalPaid,
       settlementType: meta.settlementType ?? null,
       paymentProofFileId: meta.paymentProofFileId ?? null,
       paymentProofFile,
       coaAccount: meta.coaAccount ?? null,
       settledAt: meta.settledAt ?? null,
       goodsDispatched: meta.goodsDispatched ?? false,
+      ppn: meta.ppn ?? 0,
+      tipePpn: meta.tipePpn ?? null,
+      ppnMode: meta.ppnMode ?? null,
+      pph: meta.pph ?? 0,
+      tipePph: meta.tipePph ?? null,
+      pphMode: meta.pphMode ?? null,
+      total: effectiveTotal,
       file,
       soFile,
     };
@@ -201,7 +250,7 @@ export class ClientPoService {
           customer: { select: { id: true, name: true } },
           supplier: { select: { id: true, name: true } },
           quotation: { select: { id: true, number: true } },
-          invoices: { select: { id: true, total: true, status: true } },
+          invoices: { select: { id: true, total: true, paidAmount: true, status: true, type: true } },
           _count: { select: { invoices: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
@@ -363,9 +412,17 @@ export class ClientPoService {
       poClientNumber,
       docMode,
       items,
+      paymentStatus: "PENDING",
       ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
       ...(dto.projectName !== undefined ? { projectName: dto.projectName } : {}),
       ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
+      ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
+      ...(dto.tipePpn !== undefined ? { tipePpn: dto.tipePpn } : {}),
+      ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
+      ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
+      ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+      ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
+      ...(dto.total !== undefined ? { total: dto.total } : {}),
     });
 
     if (dto.fileId) {
@@ -427,13 +484,31 @@ export class ClientPoService {
       dto.soNumber !== undefined ||
       dto.poClientNumber !== undefined ||
       dto.soFileId !== undefined ||
-      dto.items !== undefined
+      dto.items !== undefined ||
+      dto.projectId !== undefined ||
+      dto.projectName !== undefined ||
+      dto.ppn !== undefined ||
+      dto.tipePpn !== undefined ||
+      dto.ppnMode !== undefined ||
+      dto.pph !== undefined ||
+      dto.tipePph !== undefined ||
+      dto.pphMode !== undefined ||
+      dto.total !== undefined
     ) {
       await this.saveMeta(id, {
         ...(dto.soNumber !== undefined ? { soNumber: dto.soNumber } : {}),
         ...(dto.poClientNumber !== undefined ? { poClientNumber: dto.poClientNumber } : {}),
         ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
         ...(dto.items !== undefined ? { items: dto.items } : {}),
+        ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
+        ...(dto.projectName !== undefined ? { projectName: dto.projectName } : {}),
+        ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
+        ...(dto.tipePpn !== undefined ? { tipePpn: dto.tipePpn } : {}),
+        ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
+        ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
+        ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+        ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
+        ...(dto.total !== undefined ? { total: dto.total } : {}),
       });
     }
 
@@ -497,192 +572,7 @@ export class ClientPoService {
       } catch {}
     }
 
-    // 1. Eksekusi Pengeluaran Barang / Stok (Barang Keluar)
-    const dispatchedSerialProductQty = new Map<number, number>();
-
-    const itemSerials = items
-      .flatMap((it: any) => {
-        if (it.sn) return String(it.sn).split(",");
-        if (Array.isArray(it.serialNumbers)) return it.serialNumbers;
-        if (typeof it.serialNumbers === "string" && it.serialNumbers) return it.serialNumbers.split(",");
-        const m = String(it.item || it.name || "").match(/\(SN:\s*([^\)]+)\)/i);
-        return m?.[1] ? [m[1]] : [];
-      })
-      .map((s: string) => String(s).trim())
-      .filter(Boolean);
-
-    const serialList: string[] = Array.from(new Set(itemSerials));
-    if (serialList.length > 0) {
-      const units = await this.prisma.main.serialUnit.findMany({
-        where: { sn: { in: serialList } },
-      });
-      for (const u of units) {
-        if ((u.status === "DI_GUDANG" || u.status === "RESERVED") && u.warehouseId) {
-          await this.stock.applyMovement({
-            date: settlementDate,
-            type: "OUT",
-            category: "KELUAR_SURAT_JALAN",
-            productId: u.productId,
-            fromWarehouseId: u.warehouseId,
-            qty: 1,
-            serialUnitId: u.id,
-            reason: `Penjualan Langsung / Nota Kontan SO ${row.number}`,
-            createdById: user.id,
-          });
-          await this.prisma.main.serialUnit.update({
-            where: { id: u.id },
-            data: { status: "DIKIRIM", warehouseId: null },
-          });
-          await this.prisma.main.stockReservation.updateMany({
-            where: { serialUnitId: u.id, releasedAt: null },
-            data: { releasedAt: new Date() },
-          });
-          await this.prisma.main.serialUnitHistory.create({
-            data: {
-              serialUnitId: u.id,
-              status: "DIKIRIM",
-              warehouseId: u.warehouseId,
-              note: `Keluar Penjualan Langsung / Nota Kontan SO ${row.number}`,
-              changedById: user.id,
-            },
-          });
-          dispatchedSerialProductQty.set(u.productId, (dispatchedSerialProductQty.get(u.productId) ?? 0) + 1);
-        }
-      }
-    }
-
-    for (const item of items) {
-      let productId = Number(item.productId);
-      if (!productId) {
-        const rawName = String(item.item || item.name || item.nama || "").split(" (")[0].trim().toLowerCase();
-        const matched = await this.prisma.main.product.findFirst({
-          where: {
-            OR: [
-              { name: { equals: rawName } },
-              { sku: { equals: rawName } },
-            ],
-          },
-        });
-        if (matched) productId = matched.id;
-      }
-      if (!productId) continue;
-
-      const product = await this.prisma.main.product.findUnique({ where: { id: productId } });
-      if (!product) continue;
-
-      const alreadyOut = dispatchedSerialProductQty.get(productId) ?? 0;
-      const totalItemQty = Number(item.qty || 1);
-      const remainingQty = Math.max(0, totalItemQty - alreadyOut);
-      if (remainingQty <= 0) continue;
-
-      if (product.hasSerial) {
-        const autoUnits = await this.prisma.main.serialUnit.findMany({
-          where: {
-            productId,
-            status: { in: ["DI_GUDANG", "RESERVED"] },
-            warehouseId: { not: null },
-          },
-          take: remainingQty,
-        });
-        for (const u of autoUnits) {
-          if (!u.warehouseId) continue;
-          await this.stock.applyMovement({
-            date: settlementDate,
-            type: "OUT",
-            category: "KELUAR_SURAT_JALAN",
-            productId: u.productId,
-            fromWarehouseId: u.warehouseId,
-            qty: 1,
-            serialUnitId: u.id,
-            reason: `Penjualan Langsung / Nota Kontan SO ${row.number}`,
-            createdById: user.id,
-          });
-          await this.prisma.main.serialUnit.update({
-            where: { id: u.id },
-            data: { status: "DIKIRIM", warehouseId: null },
-          });
-          await this.prisma.main.stockReservation.updateMany({
-            where: { serialUnitId: u.id, releasedAt: null },
-            data: { releasedAt: new Date() },
-          });
-          await this.prisma.main.serialUnitHistory.create({
-            data: {
-              serialUnitId: u.id,
-              status: "DIKIRIM",
-              warehouseId: u.warehouseId,
-              note: `Keluar Penjualan Langsung / Nota Kontan SO ${row.number}`,
-              changedById: user.id,
-            },
-          });
-        }
-        dispatchedSerialProductQty.set(productId, alreadyOut + autoUnits.length);
-      } else {
-        const balance =
-          (await this.prisma.main.stockBalance.findFirst({
-            where: { productId, qty: { gte: remainingQty } },
-          })) ??
-          (await this.prisma.main.stockBalance.findFirst({
-            where: { productId, qty: { gt: 0 } },
-          }));
-        const defaultWh =
-          (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
-          (await this.prisma.main.warehouse.findFirst());
-        const warehouseId = balance?.warehouseId ?? defaultWh?.id;
-
-        if (warehouseId) {
-          await this.stock.applyMovement({
-            date: settlementDate,
-            type: "OUT",
-            category: "KELUAR_SURAT_JALAN",
-            productId,
-            fromWarehouseId: warehouseId,
-            qty: remainingQty,
-            reason: `Penjualan Langsung / Nota Kontan SO ${row.number}`,
-            createdById: user.id,
-          });
-        }
-      }
-    }
-
-    // 2. Sinkronkan Invoice Lunas Otomatis (Hanya untuk Penjualan Langsung / Nota Kontan yang belum memiliki invoice)
-    const hasExistingInvoices =
-      (row.invoices && row.invoices.length > 0) ||
-      (row.quotationId &&
-        (await this.prisma.main.invoiceOut.count({
-          where: { quotationId: row.quotationId, status: { not: "BATAL" } },
-        })) > 0);
-
-    if (!hasExistingInvoices && !row.projectId) {
-      const cust = row.customerId
-        ? await this.prisma.main.customer.findUnique({ where: { id: row.customerId } })
-        : null;
-      const invNumber = await this.docnum.next("invoiceOut", settlementDate);
-      const inv = await this.prisma.main.invoiceOut.create({
-        data: {
-          number: invNumber,
-          clientPoId: row.id,
-          customerId: cust?.id ?? null,
-          description: `[AKUN:${dto.coaAccount}] Pembayaran Langsung / Nota Kontan SO ${row.number}${dto.notes ? ` — ${dto.notes}` : ""}`,
-            type: "PELUNASAN",
-            amount: row.amount,
-            total: row.amount,
-            paidAmount: row.amount,
-            date: settlementDate,
-            dueDate: settlementDate,
-            status: "PAID",
-            fileId: dto.fileId ?? null,
-          },
-        });
-        if (items.length > 0) {
-          await this.prisma.main.systemSetting.upsert({
-            where: { key: `invoice.items.${inv.id}` },
-            update: { value: JSON.stringify(items) },
-            create: { key: `invoice.items.${inv.id}`, value: JSON.stringify(items) },
-          }).catch(() => {});
-        }
-    }
-
-    // 3. Sinkronkan Delivery Note Otomatis (Under the hood agar status pengiriman terekam selesai)
+    // 1. Catat Surat Jalan (Delivery Note) dengan status PENDING agar tim Gudang dapat mengalokasikan unit SN fisik & melakukan pengiriman
     const dnNumber = await this.docnum.next("suratJalan", settlementDate);
     const partyName = row.customer?.name ?? (row.supplier?.name ? `${row.supplier.name} (Supplier)` : "Pelanggan");
     const mappedDnItems = items
@@ -703,16 +593,14 @@ export class ClientPoService {
         creatorId: user.id,
         withGoods: true,
         date: settlementDate,
-        status: "DITERIMA",
-        receiveById: user.id,
-        receivedAt: settlementDate,
-        reportText: `Penyerahan barang langsung di tempat (Nota Kontan) untuk Sales Order ${row.number}`,
+        status: "PENDING",
+        reportText: `Penyerahan barang untuk Sales Order ${row.number} (Menunggu verifikasi barang & SN oleh Gudang)`,
         scanFileId: dto.fileId ?? null,
         locations: {
           create: [
             {
               destination: partyName,
-              reason: `Penjualan Langsung / Nota Kontan SO ${row.number}`,
+              reason: `Pengiriman Barang SO ${row.number} [so:${row.id}]`,
             },
           ],
         },
@@ -729,14 +617,100 @@ export class ClientPoService {
       },
     }).catch(() => {});
 
-    // 4. Update Meta SO
+    // 2. Sinkronkan Invoice Lunas Otomatis (Hanya untuk Penjualan Langsung / Nota Kontan yang belum memiliki invoice)
+    const hasExistingInvoices =
+      (row.invoices && row.invoices.length > 0) ||
+      (row.quotationId &&
+        (await this.prisma.main.invoiceOut.count({
+          where: { quotationId: row.quotationId, status: { not: "BATAL" } },
+        })) > 0);
+
+    if (!hasExistingInvoices && !row.projectId) {
+      const cust = row.customerId
+        ? await this.prisma.main.customer.findUnique({ where: { id: row.customerId } })
+        : null;
+      const invNumber = await this.docnum.next("invoiceOut", settlementDate);
+      const effectiveTotal = (row as any).total ?? (row as any).amount ?? 0;
+      const effectivePpn = (row as any).ppn ?? 0;
+      const effectiveTipePpn = (row as any).tipePpn ?? (effectivePpn > 0 ? "PPN 11%" : "Non PPN");
+      const effectivePpnMode = (row as any).ppnMode ?? (effectivePpn > 0 ? "exclude" : "none");
+      const effectivePph = (row as any).pph ?? 0;
+      const effectiveTipePph = (row as any).tipePph ?? (effectivePph > 0 ? "PPh" : "Tanpa PPh");
+      const effectivePphMode = (row as any).pphMode ?? "none";
+
+      const inv = await this.prisma.main.invoiceOut.create({
+        data: {
+          number: invNumber,
+          clientPoId: row.id,
+          customerId: cust?.id ?? null,
+          description: `[AKUN:${dto.coaAccount}] Pembayaran Langsung / Nota Kontan SO ${row.number}${dto.notes ? ` — ${dto.notes}` : ""}`,
+          type: "PELUNASAN",
+          amount: row.amount,
+          ppn: effectivePpn,
+          total: effectiveTotal,
+          paidAmount: effectiveTotal,
+          date: settlementDate,
+          dueDate: settlementDate,
+          status: "PAID",
+          fileId: dto.fileId ?? null,
+        },
+      });
+
+      // Simpan metadata invoice (PPN, paidFileId, items, dll)
+      const invMeta = {
+        ppn: effectivePpn,
+        tipePpn: effectiveTipePpn,
+        ppnMode: effectivePpnMode,
+        pph: effectivePph,
+        tipePph: effectiveTipePph,
+        pphMode: effectivePphMode,
+        paidFileId: dto.fileId ?? null,
+        total: effectiveTotal,
+        ...(items.length > 0 ? { items } : {}),
+      };
+      await this.prisma.main.systemSetting.upsert({
+        where: { key: `invoice:meta:${inv.id}` },
+        update: { value: JSON.stringify(invMeta) },
+        create: { key: `invoice:meta:${inv.id}`, value: JSON.stringify(invMeta) },
+      }).catch(() => {});
+      await this.prisma.main.systemSetting.upsert({
+        where: { key: `invoice.meta.${inv.id}` },
+        update: { value: JSON.stringify(invMeta) },
+        create: { key: `invoice.meta.${inv.id}`, value: JSON.stringify(invMeta) },
+      }).catch(() => {});
+
+      // Catat payment record pada invoice agar bukti bayar dan riwayat terdata lengkap
+      if (effectiveTotal > 0) {
+        await this.prisma.main.payment.create({
+          data: {
+            invoiceOutId: inv.id,
+            amount: effectiveTotal,
+            date: settlementDate,
+            method: "TRANSFER",
+            reference: `LUNAS-SO-${row.number} [${dto.coaAccount}]`,
+            fileId: dto.fileId ?? null,
+            createdById: user.id,
+          },
+        }).catch(() => {});
+      }
+
+      if (items.length > 0) {
+        await this.prisma.main.systemSetting.upsert({
+          where: { key: `invoice.items.${inv.id}` },
+          update: { value: JSON.stringify(items) },
+          create: { key: `invoice.items.${inv.id}`, value: JSON.stringify(items) },
+        }).catch(() => {});
+      }
+    }
+
+    // 3. Update Meta SO
     await this.saveMeta(row.id, {
       paymentStatus: "LUNAS",
       settlementType: "LANGSUNG",
       paymentProofFileId: dto.fileId ?? null,
       coaAccount: dto.coaAccount,
       settledAt: settlementDate.toISOString(),
-      goodsDispatched: true,
+      goodsDispatched: false,
     });
 
     if (dto.fileId) {

@@ -256,18 +256,43 @@ export class InvoiceOutService {
     const invoiceIds = rows.map((r) => r.id);
     const metaSettings = await this.prisma.main.systemSetting.findMany({
       where: {
-        key: { in: invoiceIds.map((id) => this.metaKey(id)) },
+        key: {
+          in: [
+            ...invoiceIds.map((id) => this.metaKey(id)),
+            ...invoiceIds.map((id) => `invoice.items.${id}`),
+          ],
+        },
       },
     });
     const metaMap = new Map<number, any>();
     for (const s of metaSettings) {
       try {
-        const id = Number(s.key.replace("invoice:meta:", ""));
-        metaMap.set(id, JSON.parse(s.value));
+        if (s.key.startsWith("invoice:meta:")) {
+          const id = Number(s.key.replace("invoice:meta:", ""));
+          const prev = metaMap.get(id) || {};
+          metaMap.set(id, { ...prev, ...JSON.parse(s.value) });
+        } else if (s.key.startsWith("invoice.items.")) {
+          const id = Number(s.key.replace("invoice.items.", ""));
+          const prev = metaMap.get(id) || {};
+          const parsedItems = JSON.parse(s.value);
+          if (!Array.isArray(prev.items) && Array.isArray(parsedItems)) {
+            metaMap.set(id, { ...prev, items: parsedItems });
+          }
+        }
       } catch {}
     }
 
-    const fileIds = rows.map((r) => r.fileId).filter((fid): fid is number => typeof fid === "number" && fid > 0);
+    const fileIdSet = new Set<number>();
+    for (const r of rows) {
+      if (typeof r.fileId === "number" && r.fileId > 0) fileIdSet.add(r.fileId);
+      const m = metaMap.get(r.id) || {};
+      const pf = m.paidFileId ?? m.paymentFileId;
+      if (typeof pf === "number" && pf > 0) fileIdSet.add(pf);
+      for (const p of r.payments ?? []) {
+        if (typeof p.fileId === "number" && p.fileId > 0) fileIdSet.add(p.fileId);
+      }
+    }
+    const fileIds = Array.from(fileIdSet);
     const files = fileIds.length
       ? await this.prisma.main.file.findMany({
           where: { id: { in: fileIds } },
@@ -280,6 +305,9 @@ export class InvoiceOutService {
       rows.map(async (r) => {
         const synced = await this.sync(r);
         const meta = metaMap.get(r.id) || {};
+        const effectivePpn = Number(meta.ppn !== undefined ? meta.ppn : synced.ppn);
+        const effectiveTipePpn = meta.tipePpn ?? (effectivePpn > 0 ? "Exclude PPN (11%)" : "No PPN (Tanpa PPN)");
+        const effectivePpnMode = meta.ppnMode ?? (effectivePpn > 0 ? "exclude" : "none");
         const qId = meta.quotationId ?? r.clientPo?.quotationId ?? r.project?.quotationId ?? undefined;
         let qNum = meta.quotation ?? r.clientPo?.quotation?.number ?? r.project?.quotation?.number ?? undefined;
         if (!qNum && r.description) {
@@ -287,10 +315,24 @@ export class InvoiceOutService {
           if (m) qNum = m[0];
         }
         const f = r.fileId ? fileMap.get(r.fileId) ?? null : null;
+        const paymentWithFile = (r.payments ?? []).find((p) => p.fileId);
+        const effectivePaidFileId = meta.paidFileId ?? meta.paymentFileId ?? paymentWithFile?.fileId ?? null;
+        const paidFile = effectivePaidFileId ? fileMap.get(Number(effectivePaidFileId)) ?? null : null;
+        const enrichedPayments = (r.payments ?? []).map((p) => ({
+          ...p,
+          file: p.fileId ? fileMap.get(p.fileId) ?? null : null,
+        }));
         return {
           ...synced,
+          ppn: effectivePpn,
+          tipePpn: effectiveTipePpn,
+          ppnMode: effectivePpnMode,
+          total: Number(meta.total !== undefined ? meta.total : synced.total),
+          payments: enrichedPayments,
           file: f,
           fileName: f?.originalName ?? null,
+          paidFileId: effectivePaidFileId,
+          paidFile,
           quotationId: qId,
           quotation: qNum,
           discount: meta.discount,
@@ -411,10 +453,45 @@ export class InvoiceOutService {
       quoteFile?.originalName ??
       (effectiveFile ? `Invoice-${row.number.replace(/\//g, "-")}.${effectiveExt}` : null);
 
+    const paymentFileIds = Array.from(
+      new Set(
+        [
+          ...(row.payments ?? []).map((p) => p.fileId),
+          meta.paidFileId,
+          meta.paymentFileId,
+        ].filter((fid): fid is number => typeof fid === "number" && fid > 0),
+      ),
+    );
+    const paymentFiles = paymentFileIds.length
+      ? await this.prisma.main.file.findMany({
+          where: { id: { in: paymentFileIds } },
+          select: { id: true, originalName: true, size: true, mimeType: true },
+        })
+      : [];
+    const paymentFileMap = new Map(paymentFiles.map((pf) => [pf.id, pf]));
+    const firstPayWithFile = (row.payments ?? []).find((p) => p.fileId);
+    const effectivePaidFileId = meta.paidFileId ?? meta.paymentFileId ?? firstPayWithFile?.fileId ?? null;
+    const paidFile = effectivePaidFileId ? paymentFileMap.get(Number(effectivePaidFileId)) ?? null : null;
+    const enrichedPayments = (row.payments ?? []).map((p) => ({
+      ...p,
+      file: p.fileId ? paymentFileMap.get(p.fileId) ?? null : null,
+    }));
+
     const synced = await this.sync(row);
+    const effectivePpn = Number(meta.ppn !== undefined ? meta.ppn : synced.ppn);
+    const effectiveTipePpn = meta.tipePpn ?? (effectivePpn > 0 ? "Exclude PPN (11%)" : "No PPN (Tanpa PPN)");
+    const effectivePpnMode = meta.ppnMode ?? (effectivePpn > 0 ? "exclude" : "none");
+
     return {
       ...synced,
+      ppn: effectivePpn,
+      tipePpn: effectiveTipePpn,
+      ppnMode: effectivePpnMode,
+      total: Number(meta.total !== undefined ? meta.total : synced.total),
+      payments: enrichedPayments,
       file,
+      paidFileId: effectivePaidFileId,
+      paidFile,
       pph: Number(meta.pph ?? 0),
       pphMode: meta.pphMode ?? "none",
       tipePph: meta.tipePph ?? "Tanpa PPh",
@@ -688,8 +765,11 @@ export class InvoiceOutService {
       dto.dpAmount !== undefined ||
       dto.pph !== undefined ||
       dto.pphMode !== undefined ||
-      dto.tipePph !== undefined
+      dto.tipePph !== undefined ||
+      dto.paidFileId !== undefined ||
+      dto.paymentFileId !== undefined
     ) {
+      const pfId = dto.paidFileId ?? dto.paymentFileId;
       await this.saveMeta(row.id, {
         ...(dto.customer ? { customerName: dto.customer } : {}),
         ...(resolvedItems.length > 0 || dto.items !== undefined ? { items: resolvedItems } : {}),
@@ -716,6 +796,7 @@ export class InvoiceOutService {
         ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
         ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
         ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+        ...(pfId !== undefined ? { paidFileId: pfId } : {}),
       });
     }
 
@@ -815,6 +896,18 @@ export class InvoiceOutService {
       normalizedItems !== undefined &&
       normalizedItems.every((it) => !it.outOfStockAutoSwap && (!it.hasSerial || (it.serialNumbers?.length ?? 0) >= (it.qty || 1)));
 
+    const pfId = dto.paidFileId !== undefined ? dto.paidFileId : dto.paymentFileId;
+    if (pfId) {
+      await this.prisma.main.file.update({
+        where: { id: pfId },
+        data: { refType: "payment", refId: String(id) },
+      }).catch(() => {});
+      await this.prisma.main.payment.updateMany({
+        where: { invoiceOutId: id },
+        data: { fileId: pfId },
+      }).catch(() => {});
+    }
+
     if (
       normalizedItems !== undefined ||
       dto.discount !== undefined ||
@@ -832,7 +925,8 @@ export class InvoiceOutService {
       dto.dpAmount !== undefined ||
       dto.pph !== undefined ||
       dto.pphMode !== undefined ||
-      dto.tipePph !== undefined
+      dto.tipePph !== undefined ||
+      pfId !== undefined
     ) {
       await this.saveMeta(id, {
         ...(normalizedItems !== undefined ? { items: normalizedItems } : {}),
@@ -853,6 +947,7 @@ export class InvoiceOutService {
         ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
         ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
         ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+        ...(pfId !== undefined ? { paidFileId: pfId } : {}),
       });
     }
 
@@ -1088,6 +1183,7 @@ export class InvoiceOutService {
         where: { id: dto.fileId },
         data: { refType: "payment", refId: String(id) },
       }).catch(() => {});
+      await this.saveMeta(id, { paidFileId: dto.fileId }).catch(() => {});
     }
 
     const payments = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });

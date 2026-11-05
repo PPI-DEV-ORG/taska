@@ -1,6 +1,6 @@
 import { apiBase, getAccess } from "@/services/api";
 import { generatePdfTable } from "@/lib/simple-pdf";
-import { buildEfakturCsv } from "@/lib/efaktur";
+import { buildEfakturCsv, buildEfakturMasukanCsv } from "@/lib/efaktur";
 import type { DownloadFormat } from "../types";
 
 export const FINANCIAL_TYPES = new Set([
@@ -50,6 +50,7 @@ export function generateCsvByType(type: string, title: string, fin: any, data: a
       `"1102","Piutang Usaha Pelanggan (Accounts Receivable)","ASET LANCAR (AKTIVA)","${bs.assets.piutangUsaha}"`,
       `"1103","Persediaan Barang Gudang (Inventory Valuation)","ASET LANCAR (AKTIVA)","${bs.assets.persediaanBarang}"`,
       `"1105","Uang Muka PPh / Pajak Dibayar Dimuka (Prepaid Tax)","ASET LANCAR (AKTIVA)","${bs.assets.uangMukaPph || 0}"`,
+      `"1600","PPN Masukan (Kredit Pajak Masukan / Input VAT)","ASET LANCAR (AKTIVA)","${bs.assets.ppnMasukan || 0}"`,
       `"=","TOTAL ASET (AKTIVA)","TOTAL AKTIVA","${bs.assets.totalAsetLancar}"`,
       `"2101","Hutang Usaha Supplier (Accounts Payable)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangSupplier}"`,
       `"2102","Hutang PPN Keluaran (Output VAT)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangPpnKeluaran}"`,
@@ -350,6 +351,44 @@ export function downloadEfakturCsv({
     toast("File CSV E-Faktur DJP berhasil diunduh!");
   } catch (e: any) {
     toast(e?.message ?? "Gagal mengekspor E-Faktur", "danger");
+  }
+}
+
+export function downloadEfakturMasukanCsv({
+  data,
+  canAccessFinancials,
+  toast,
+}: {
+  data: any;
+  canAccessFinancials: boolean;
+  toast: (msg: string, type?: "success" | "danger" | "info" | "warning") => void;
+}) {
+  if (!canAccessFinancials) {
+    toast("Akses ditolak: Ekspor E-Faktur hanya untuk Finance, Admin, Bos, dan Super Admin", "danger");
+    return;
+  }
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    toast("Mengunduh CSV E-Faktur DJP Pajak Masukan");
+    return;
+  }
+  try {
+    const csvContent = buildEfakturMasukanCsv(
+      data["supplier-pos"] ?? [],
+      data["purchase-requests"] ?? [],
+      data.suppliers ?? []
+    );
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `efaktur-pajak-masukan-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast("File CSV E-Faktur Pajak Masukan DJP berhasil diunduh!");
+  } catch (e: any) {
+    toast(e?.message ?? "Gagal mengekspor E-Faktur Pajak Masukan", "danger");
   }
 }
 

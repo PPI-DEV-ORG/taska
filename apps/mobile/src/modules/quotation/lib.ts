@@ -25,11 +25,20 @@ export function pphRateFor(mode: PphMode): number {
 
 export function getInitialPpnMode(row: Row | null | undefined): PpnMode {
   if (!row) return "exclude";
-  if (row.tipePpn === "Include PPN (Sudah termasuk)" || row.ppnMode === "include") return "include";
+  if (row.tipePpn === "Include PPN (Sudah termasuk)" || row.ppnMode === "include" || String(row.tipePpn || "").toLowerCase().includes("include")) return "include";
+  if (
+    row.ppnMode === "exclude" ||
+    String(row.tipePpn || "").toLowerCase().includes("exclude") ||
+    Number(row.ppn || 0) > 0 ||
+    (Number(row.total || 0) > Number(row.nilai || row.amount || 0) && Number(row.nilai || row.amount || 0) > 0)
+  )
+    return "exclude";
   if (
     row.tipePpn === "No PPN (Tanpa PPN)" ||
     row.ppnMode === "none" ||
-    (row.ppn === 0 && ((row.disc ?? 0) > 0 || (row.total ?? 0) > 0 || (row.nilai ?? 0) > 0))
+    String(row.tipePpn || "").toLowerCase().includes("no") ||
+    String(row.tipePpn || "").toLowerCase().includes("tanpa") ||
+    (Number(row.ppn || 0) === 0 && ((row.disc ?? 0) > 0 || (row.total ?? 0) > 0 || (row.nilai ?? 0) > 0))
   )
     return "none";
   return "exclude";

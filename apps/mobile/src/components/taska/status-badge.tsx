@@ -16,7 +16,7 @@ add("success", CheckCircle2, [
 ]);
 add("warning", Clock, [
   "Menunggu persetujuan", "Menunggu", "Menunggu penerimaan", "Dilaporkan", "Diajukan", "Cek stok", "Draft",
-  "Dibayar sebagian", "Diterima sebagian", "Pending", "PENDING", "Diminta", "Belum dikirim", "Belum lunas", "Dijadwalkan",
+  "Dibayar sebagian", "Lunas sebagian", "Diterima sebagian", "Pending", "PENDING", "Diminta", "Belum dikirim", "Belum lunas", "Dijadwalkan",
   "Di Supplier", "TODO", "Diproses", "Revisi", "Prospecting", "Ditunda", "Reserved", "Menunggu Bos", "Planned",
   "UNPAID", "unpaid", "PARTIAL", "partial",
   "Diterima (Belum Lunas)", "Sampai (Belum Lunas)", "Belum Dibayar", "Menunggu Pembayaran",

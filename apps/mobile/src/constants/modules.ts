@@ -276,6 +276,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "nilai", label: "Nilai Pesanan", fmt: "rupiah" },
       { key: "totalInvoice", label: "Total Invoice", fmt: "rupiah" },
       { key: "tanggal", label: "Tanggal", fmt: "date" },
+      { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
       { label: "Nomor SO", key: "nomor" },
@@ -287,7 +288,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Tanggal SO", key: "tanggal", fmt: "date" },
       { label: "Catatan", key: "catatan" },
     ],
-    statusKey: "status", statuses: ["Diterima", "Lunas"],
+    statusKey: "status", statuses: ["Pending", "Lunas sebagian", "Lunas"],
     titleOf: (r) => {
       if (r.nomor && r.nomorPoClient && r.nomorPoClient !== "-") {
         return `${r.nomor} · PO: ${r.nomorPoClient}`;
