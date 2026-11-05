@@ -156,7 +156,7 @@ REVERSE["supplier-pos"] = {
   "Dalam Perjalanan": "DIKIRIM",
   "Dikirim": "DIKIRIM",
   "Sampai": "SAMPAI",
-  "Sampai (Belum Lunas)": "SAMPAI",
+  "Sampai (Belum Lunas)": "SAMPAI_BELUM_LUNAS",
   "Belum Dikirim": "DI_SUPPLIER",
 };
 REVERSE["purchase-requests"] = {
@@ -213,7 +213,7 @@ REVERSE.projectType = {
 REVERSE["supplier-pos"] = {
   ...REVERSE["supplier-pos"],
   "Sampai": "SAMPAI",
-  "Sampai (Belum Lunas)": "SAMPAI",
+  "Sampai (Belum Lunas)": "SAMPAI_BELUM_LUNAS",
   "Lunas": "LUNAS",
   "Dikirim": "DIKIRIM",
   "Di Supplier": "DI_SUPPLIER",
@@ -877,7 +877,12 @@ export function adaptRow(module: string, raw: any): Row {
       const effPayMethod =
         raw.request?.paymentMethod ||
         (/kas|tunai|cash/i.test(String(raw.paymentTerms || "")) ? "KAS" : "UTANG");
+      const manualStatus = raw.manualStatus;
+      const isManualLunas = manualStatus === "LUNAS" || raw.status === "LUNAS";
+      const isManualBelumLunas = manualStatus === "SAMPAI_BELUM_LUNAS" || raw.status === "SAMPAI_BELUM_LUNAS";
+
       const isInvoicePaid =
+        !isManualBelumLunas &&
         Array.isArray(raw.invoiceIns) &&
         raw.invoiceIns.some(
           (inv: any) =>
@@ -886,14 +891,32 @@ export function adaptRow(module: string, raw: any): Row {
             (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0)
         );
       const isPaid =
-        Boolean(raw.isPaid) ||
-        isInvoicePaid ||
-        raw.paymentStatus === "DIBAYAR" ||
-        raw.request?.status === "DIBAYAR" ||
-        raw.request?.status === "LUNAS" ||
-        raw.request?.paymentStatus === "DIBAYAR" ||
-        !!raw.request?.paymentProofFileId ||
-        Boolean(String(raw.request?.otherNote || "").includes("[DIBAYAR"));
+        isManualLunas ||
+        (!isManualBelumLunas && (
+          Boolean(raw.isPaid) ||
+          isInvoicePaid ||
+          raw.paymentStatus === "DIBAYAR" ||
+          raw.request?.status === "DIBAYAR" ||
+          raw.request?.status === "LUNAS" ||
+          raw.request?.paymentStatus === "DIBAYAR" ||
+          !!raw.request?.paymentProofFileId ||
+          Boolean(String(raw.request?.otherNote || "").includes("[DIBAYAR"))
+        ));
+
+      const displayStatus =
+        raw.status === "DITOLAK" || raw.status === "DIBATALKAN"
+          ? toLabel("supplier-pos", raw.status)
+          : isManualBelumLunas
+            ? "Sampai (Belum Lunas)"
+            : isPaid
+              ? "Lunas"
+              : raw.shipmentStatus === "SAMPAI"
+                ? (effPayMethod !== "KAS" ? "Sampai (Belum Lunas)" : "Sampai")
+                : raw.shipmentStatus === "DIKIRIM"
+                  ? "Dikirim"
+                  : raw.status === "MENUNGGU_PERSETUJUAN"
+                    ? "Menunggu persetujuan"
+                    : toLabel("supplier-pos", raw.shipmentStatus || raw.status);
 
       return {
         ...base,
@@ -907,17 +930,8 @@ export function adaptRow(module: string, raw: any): Row {
         total: n(raw.total),
         persetujuan: toLabel("supplier-pos", raw.status),
         pengiriman: toLabel("supplier-pos", raw.shipmentStatus),
-        status: raw.status === "DITOLAK" || raw.status === "DIBATALKAN"
-          ? toLabel("supplier-pos", raw.status)
-          : isPaid
-            ? "Lunas"
-            : raw.shipmentStatus === "SAMPAI"
-              ? (effPayMethod !== "KAS" ? "Sampai (Belum Lunas)" : "Sampai")
-              : raw.shipmentStatus === "DIKIRIM"
-                ? "Dikirim"
-                : raw.status === "MENUNGGU_PERSETUJUAN"
-                  ? "Menunggu persetujuan"
-                  : toLabel("supplier-pos", raw.shipmentStatus || raw.status),
+        status: displayStatus,
+        manualStatus: manualStatus || null,
         isPaid,
         item: displayItem,
         itemsSummary: itemSummary || displayItem,

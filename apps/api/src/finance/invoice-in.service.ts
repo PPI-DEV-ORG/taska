@@ -60,6 +60,20 @@ export class InvoiceInService {
         this.notifications.dataChange("purchase-requests", "update", po.requestId);
         this.notifications.dataChange("purchase-requests", "status", po.requestId);
       }
+      const metaKey = `supplier-po:meta:${supplierPoId}`;
+      let meta: any = {};
+      try {
+        const cur = await this.prisma.main.systemSetting.findUnique({ where: { key: metaKey } });
+        if (cur?.value) meta = JSON.parse(cur.value);
+      } catch {}
+      delete meta.manualStatus;
+      await this.prisma.main.systemSetting.upsert({
+        where: { key: metaKey },
+        update: { value: JSON.stringify(meta) },
+        create: { key: metaKey, value: JSON.stringify(meta) },
+      }).catch(() => {});
+      this.notifications.dataChange("supplier-pos", "status", supplierPoId);
+      this.notifications.dataChange("supplier-pos", "update", supplierPoId);
     } catch (e) {
       console.warn("Gagal sinkron pelunasan ke purchase-request:", e);
     }
@@ -246,6 +260,11 @@ export class InvoiceInService {
     await this.prisma.main.payment.deleteMany({ where: { invoiceInId: id } });
     await this.prisma.main.approval.deleteMany({ where: { kind: "INVOICE_IN", entityId: id } });
     await this.prisma.main.invoiceIn.delete({ where: { id } });
+
+    if (row.supplierPoId) {
+      this.notifications.dataChange("supplier-pos", "status", row.supplierPoId);
+      this.notifications.dataChange("supplier-pos", "update", row.supplierPoId);
+    }
 
     await this.audit.log({
       actor: user,

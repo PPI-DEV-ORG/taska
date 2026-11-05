@@ -1065,6 +1065,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const enumVal = statusEnumFor("supplier-pos", status);
         if (status === "Lunas" || enumVal === "LUNAS") {
           await api("POST", `/supplier-pos/${id}/status`, { status: "LUNAS", note });
+        } else if (status === "Sampai (Belum Lunas)" || enumVal === "SAMPAI_BELUM_LUNAS") {
+          await api("POST", `/supplier-pos/${id}/status`, { status: "SAMPAI_BELUM_LUNAS", note });
         } else if (["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"].includes(enumVal)) {
           await api("POST", `/supplier-pos/${id}/status`, { status: enumVal, note });
         } else {
