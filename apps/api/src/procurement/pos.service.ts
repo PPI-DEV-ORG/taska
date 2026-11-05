@@ -67,8 +67,8 @@ export class PosService {
     return `supplier-po:meta:${id}`;
   }
 
-  private async getMetaMap(ids: number[]): Promise<Map<number, { supplierSoNumber?: string; soFileId?: number | null }>> {
-    const map = new Map<number, { supplierSoNumber?: string; soFileId?: number | null }>();
+  private async getMetaMap(ids: number[]): Promise<Map<number, { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null }>> {
+    const map = new Map<number, { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null }>();
     if (!ids.length) return map;
     const rows = await this.prisma.main.systemSetting.findMany({
       where: { key: { in: ids.map((id) => this.metaKey(id)) } },
@@ -82,9 +82,9 @@ export class PosService {
     return map;
   }
 
-  private async saveMeta(id: number, patch: { supplierSoNumber?: string; soFileId?: number | null }) {
+  private async saveMeta(id: number, patch: { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null }) {
     const key = this.metaKey(id);
-    let existing: { supplierSoNumber?: string; soFileId?: number | null } = {};
+    let existing: { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null } = {};
     try {
       const cur = await this.prisma.main.systemSetting.findUnique({ where: { key } });
       if (cur?.value) existing = JSON.parse(cur.value);
@@ -237,19 +237,24 @@ export class PosService {
           }
         }
 
+        const isManualLunas = m.manualStatus === "LUNAS";
+        const isManualBelumLunas = m.manualStatus === "SAMPAI_BELUM_LUNAS";
+
         const isPrPaid =
-          (linkedReq as any)?.status === "DIBAYAR" ||
+          !isManualBelumLunas &&
+          ((linkedReq as any)?.status === "DIBAYAR" ||
           (linkedReq as any)?.paymentStatus === "DIBAYAR" ||
           !!(linkedReq as any)?.paymentProofFileId ||
-          Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR"));
+          Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR")));
         const isInvoicePaid =
+          !isManualBelumLunas &&
           Array.isArray(r.invoiceIns) &&
           r.invoiceIns.some(
             (inv: any) =>
               inv.status === "PAID" ||
               (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0)
           );
-        const isPaid = isPrPaid || isInvoicePaid;
+        const isPaid = isManualLunas || (!isManualBelumLunas && (isPrPaid || isInvoicePaid));
         return {
           ...r,
           requestId: r.requestId,
@@ -258,6 +263,7 @@ export class PosService {
           doFileId: r.doFileId ?? fallbackDoFileId,
           supplierSoNumber: m.supplierSoNumber ? String(m.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
           soFileId: m.soFileId ?? null,
+          manualStatus: m.manualStatus ?? null,
           isPaid,
         };
       })
@@ -341,19 +347,24 @@ export class PosService {
           .catch(() => {});
       }
     }
+    const isManualLunas = meta.manualStatus === "LUNAS";
+    const isManualBelumLunas = meta.manualStatus === "SAMPAI_BELUM_LUNAS";
+
     const isPrPaid =
-      (linkedReq as any)?.status === "DIBAYAR" ||
+      !isManualBelumLunas &&
+      ((linkedReq as any)?.status === "DIBAYAR" ||
       (linkedReq as any)?.paymentStatus === "DIBAYAR" ||
       !!(linkedReq as any)?.paymentProofFileId ||
-      Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR"));
+      Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR")));
     const isInvoicePaid =
+      !isManualBelumLunas &&
       Array.isArray(row.invoiceIns) &&
       row.invoiceIns.some(
         (inv: any) =>
           inv.status === "PAID" ||
           (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0)
       );
-    const isPaid = isPrPaid || isInvoicePaid;
+    const isPaid = isManualLunas || (!isManualBelumLunas && (isPrPaid || isInvoicePaid));
     return {
       ...row,
       requestId: row.requestId,
@@ -362,6 +373,7 @@ export class PosService {
       doFileId: row.doFileId ?? fallbackDoFileId,
       supplierSoNumber: meta.supplierSoNumber ? String(meta.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
       soFileId: meta.soFileId ?? null,
+      manualStatus: meta.manualStatus ?? null,
       isPaid,
       approval,
     };
@@ -653,21 +665,32 @@ export class PosService {
     const isShipment = shipmentStatuses.includes(status);
     const effShipment = status === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : status === "DALAM_PERJALANAN" ? "DIKIRIM" : status;
     const isLunas = status === "LUNAS" || status === "DIBAYAR" || status === "SELESAI";
+    const isBelumLunas = status === "SAMPAI_BELUM_LUNAS" || status === "BELUM_LUNAS";
 
     let data: any = {};
     if (isLunas) {
+      await this.saveMeta(id, { manualStatus: "LUNAS" });
+      data = {
+        status: "DISETUJUI",
+        shipmentStatus: "SAMPAI",
+        arrivedAt: row.arrivedAt || new Date(),
+      };
+    } else if (isBelumLunas) {
+      await this.saveMeta(id, { manualStatus: "SAMPAI_BELUM_LUNAS" });
       data = {
         status: "DISETUJUI",
         shipmentStatus: "SAMPAI",
         arrivedAt: row.arrivedAt || new Date(),
       };
     } else if (isShipment) {
+      await this.saveMeta(id, { manualStatus: null });
       data = {
         shipmentStatus: effShipment as never,
         ...(effShipment === "SAMPAI" ? { arrivedAt: row.arrivedAt || new Date() } : {}),
         ...(effShipment === "DIKIRIM" || effShipment === "SAMPAI" ? { status: "DISETUJUI" } : {}),
       };
     } else {
+      await this.saveMeta(id, { manualStatus: null });
       data = { status: status as never };
     }
 
@@ -684,6 +707,16 @@ export class PosService {
           data: {
             status: "DITERIMA",
             paymentStatus: "DIBAYAR",
+          },
+        }).catch(() => {});
+        this.notifications.dataChange("purchase-requests", "status", row.requestId);
+        this.notifications.dataChange("purchase-requests", "update", row.requestId);
+      } else if (isBelumLunas) {
+        await this.prisma.main.purchaseRequest.updateMany({
+          where: { id: row.requestId },
+          data: {
+            status: "DITERIMA",
+            paymentStatus: "BELUM_DIBAYAR",
           },
         }).catch(() => {});
         this.notifications.dataChange("purchase-requests", "status", row.requestId);
@@ -710,7 +743,8 @@ export class PosService {
     }
 
     this.notifications.dataChange("supplier-pos", "status", updated.id);
-    return updated;
+    this.notifications.dataChange("supplier-pos", "update", updated.id);
+    return this.get(updated.id);
   }
 
   /** Tracking pengiriman diubah manual oleh Procurement (PRD). */
