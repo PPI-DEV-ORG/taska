@@ -40,7 +40,7 @@ import { CreateCoaDialog } from "@/modules/accounting/components/create-coa-dial
 
 export default function AccountingScreen() {
   const router = useRouter();
-  const { data, user, toast } = useApp();
+  const { data, user, toast, refreshModule } = useApp();
   const roleLower = (user?.role || "").toLowerCase();
   const canAccess = ["super_admin", "admin", "bos", "finance"].includes(roleLower);
 
@@ -117,6 +117,8 @@ export default function AccountingScreen() {
   const [newAccParentCode, setNewAccParentCode] = React.useState<string>("");
 
   React.useEffect(() => {
+    void refreshModule("invoiceIn");
+    void refreshModule("supplier-pos");
     let active = true;
     api<{ items?: any[] }>("GET", "/coa-accounts")
       .then((res) => {

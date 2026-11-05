@@ -212,6 +212,44 @@ export function saveDeletedCoaCodes(codes: string[]) {
   }
 }
 
+export function getKasBankAccounts(): { code: string; name: string; rawName: string }[] {
+  const custom = loadCustomCoa();
+  const deleted = new Set(loadDeletedCoaCodes());
+  const merged: Record<string, { code: string; name: string; rawName: string }> = {};
+
+  Object.values(CHART_OF_ACCOUNTS).forEach((acc) => {
+    if (
+      !deleted.has(acc.code) &&
+      acc.category === "Aset Lancar" &&
+      (acc.code === "1000.01" || acc.code === "1000.02" || acc.parentCode === "1000" || acc.type === "cash/bank")
+    ) {
+      merged[acc.code] = { code: acc.code, name: acc.name, rawName: acc.name };
+    }
+  });
+
+  custom.forEach((acc) => {
+    if (
+      !deleted.has(acc.code) &&
+      (acc.parentCode === "1000" || acc.code.startsWith("1000.") || acc.type === "cash/bank")
+    ) {
+      merged[acc.code] = { code: acc.code, name: acc.name, rawName: acc.name };
+    }
+  });
+
+  const list = Object.values(merged);
+  if (list.length === 0) {
+    return [
+      { code: "1000.02", name: "Bank Mandiri PT GMP [1000.02]", rawName: "Bank Mandiri PT GMP" },
+      { code: "1000.01", name: "Kas Kecil [1000.01]", rawName: "Kas Kecil" },
+    ];
+  }
+  return list.map((a) => ({
+    code: a.code,
+    name: `${a.name} [${a.code}]`,
+    rawName: a.name,
+  }));
+}
+
 export interface ProjectPnlRow {
   project: string;
   customer: string;
@@ -251,6 +289,7 @@ export interface BalanceSheetSummary {
     piutangUsaha: number;
     persediaanBarang: number;
     uangMukaPph: number;
+    ppnMasukan?: number;
     totalAsetLancar: number;
   };
   liabilities: {
@@ -650,90 +689,283 @@ export function computeFinancialStatements(
     const isKasDirect =
       String(po.paymentMethod || linkedPr?.paymentMethod || "").toUpperCase() === "KAS" ||
       /kas|tunai|cash/i.test(String(po.paymentTerms || ""));
-    const isPrPaid =
-      Boolean(po.isPaid) ||
-      statusLower === "lunas" ||
-      statusLower === "selesai" ||
-      statusLower === "dibayar" ||
-      (statusLower.includes("lunas") && !statusLower.includes("belum")) ||
-      (linkedPr && (
-        normStr(linkedPr.status).toLowerCase() === "lunas" ||
-        normStr(linkedPr.status).toLowerCase() === "dibayar" ||
-        normStr(linkedPr.paymentStatus).toLowerCase() === "dibayar" ||
-        Boolean(linkedPr.isPaid) ||
-        !!linkedPr.paymentProofFileId ||
-        !!linkedPr.paymentProofFile ||
-        Boolean(String(linkedPr.otherNote || "").includes("[DIBAYAR"))
-      ));
-    const isPaidOrComplete = isKasDirect || Boolean(isPrPaid);
 
-    const poFundingSource =
-      po.fundingSource ||
-      linkedPr?.fundingSource ||
-      "1000.01";
-    const poFundingCode =
-      poFundingSource === "1000.02" || /mandiri|bank/i.test(String(poFundingSource))
-        ? "1000.02"
-        : (activeCoa[poFundingSource]?.code || "1000.01");
-    const poFundingLabel = activeCoa[poFundingCode]?.name || "Kas/Bank";
+    // Standard Accounting (Accrual Basis):
+    // PO adalah komitmen pesanan dan BUKAN dokumen pembukuan.
+    // Jurnal pembelian baru dicatat jika ada Invoice Masuk dari Supplier atau pembelian kas langsung.
+    const invMap = new Map<string, any>();
+    (Array.isArray(po.invoiceIns) ? po.invoiceIns : []).forEach((inv: any) => {
+      if (inv?.id != null) invMap.set(String(inv.id), inv);
+    });
+    (data?.invoiceIn || []).forEach((inv: any) => {
+      const match =
+        (inv.supplierPoId && String(inv.supplierPoId) === String(po.id)) ||
+        (inv.po && normStr(inv.po).toLowerCase() === normStr(nomor).toLowerCase()) ||
+        (inv.po && normStr(inv.po).toLowerCase() === normStr(po.nomor).toLowerCase()) ||
+        (inv.po && normStr(inv.po).toLowerCase() === normStr(po.number).toLowerCase());
+      if (match && inv?.id != null) {
+        const idKey = String(inv.id);
+        const existing = invMap.get(idKey) || {};
+        invMap.set(idKey, { ...existing, ...inv });
+      }
+    });
+    const linkedInvoices = Array.from(invMap.values()).filter(
+      (inv: any) => !["batal", "dibatalkan"].includes(normStr(inv.status).toLowerCase())
+    );
 
     const debitAccountCode = isProjectPo ? "5101" : "1200";
-    const debitDesc = isProjectPo
-      ? `HPP Project Pengadaan PO ${nomor} — ${supplier} (${normStr(po.item, "Material Proyek")})`
-      : `Pembelian Aset Persediaan Stok/Retail PO ${nomor} — ${supplier} (${normStr(po.item, "Barang Stok")})`;
 
-    if (total > 0) {
-      if (isProjectPo) {
-        cogsProjectTotal += total;
+    // Kasus 1: Ada Invoice Masuk dari Supplier
+    if (linkedInvoices.length > 0) {
+      for (const inv of linkedInvoices) {
+        const invDppRaw = toNum(inv.nilai ?? inv.amount);
+        const invPpn = toNum(inv.ppn);
+        const invTot = toNum(inv.total) || (invDppRaw + invPpn);
+        const invDpp = invDppRaw > 0 ? invDppRaw : (invTot > 0 && invPpn > 0 ? Math.max(0, invTot - invPpn) : invTot);
+        const invPaid = toNum(inv.paidAmount ?? inv.terbayar);
+        const invNumber = normStr(inv.nomor || inv.number, nomor);
+        const invDate = formatJournalDateTime(inv.tanggal || inv.date || inv.dueDate, inv.createdAt || po.tanggal);
+
+        let invCoa = String(inv.coaAccount || "").trim();
+        const pmts: any[] = inv.payments || inv._payments || [];
+        for (const p of pmts) {
+          const match = (p.reference || "").match(/\[(?:AKUN|COA):([^\]]+)\]/i);
+          if (match?.[1]) {
+            invCoa = match[1].trim();
+            break;
+          }
+        }
+        const effFundingSource = invCoa || po.fundingSource || linkedPr?.fundingSource || "1000.01";
+        const effFundingCode =
+          activeCoa[effFundingSource]?.code ||
+          (effFundingSource === "1000.02" || /mandiri|bank/i.test(String(effFundingSource))
+            ? "1000.02"
+            : "1000.01");
+        const effFundingLabel = activeCoa[effFundingCode]?.name || "Kas/Bank";
+
+        const isInvPaid =
+          inv.status === "PAID" ||
+          inv.status === "Lunas" ||
+          (invPaid >= invTot && invTot > 0) ||
+          Boolean(po.isPaid) ||
+          statusLower === "lunas" ||
+          statusLower === "selesai";
+
+        if (invTot > 0) {
+          if (isProjectPo) {
+            cogsProjectTotal += invDpp;
+          }
+
+          // Tahap 1: Pengakuan Tagihan / Hutang Usaha (per tanggal Invoice Supplier)
+          const invoiceDebits: { kodeAkun: string; keterangan: string; debit: number; kredit: number }[] = [
+            {
+              kodeAkun: debitAccountCode,
+              keterangan: isProjectPo
+                ? `HPP Project Pengadaan PO ${nomor} (${invNumber}) — ${supplier}`
+                : `Pembelian Aset Persediaan Stok/Retail PO ${nomor} (${invNumber}) — ${supplier}`,
+              debit: invDpp,
+              kredit: 0,
+            },
+          ];
+
+          if (invPpn > 0) {
+            invoiceDebits.push({
+              kodeAkun: "1600",
+              keterangan: `PPN Masukan (11%) Invoice ${invNumber} atas PO ${nomor} (${supplier})`,
+              debit: invPpn,
+              kredit: 0,
+            });
+          }
+
+          pushJournalPair(invDate, `${nomor} (${invNumber})`, "PO Supplier", projectLabel, [
+            ...invoiceDebits,
+            {
+              kodeAkun: "210102",
+              keterangan: `Hutang Usaha Supplier atas Invoice ${invNumber} (${supplier})`,
+              debit: 0,
+              kredit: invTot,
+            },
+          ]);
+
+          // Tahap 2: Pelunasan Hutang (saat Invoice dibayar/lunas)
+          if (pmts.length > 0) {
+            for (const p of pmts) {
+              const pAmt = toNum(p.amount);
+              if (pAmt > 0) {
+                const pDate = formatJournalDateTime(p.date || inv.tanggal || inv.date || inv.dueDate, p.createdAt || inv.createdAt || invDate);
+                pushJournalPair(pDate, `${invNumber}/PAY`, "Pelunasan PO", projectLabel, [
+                  {
+                    kodeAkun: "210102",
+                    keterangan: `Penyelesaian Hutang Invoice ${invNumber} — ${supplier}`,
+                    debit: pAmt,
+                    kredit: 0,
+                  },
+                  {
+                    kodeAkun: effFundingCode,
+                    keterangan: `Pengeluaran ${effFundingLabel} Pembayaran Invoice ${invNumber} ke ${supplier}`,
+                    debit: 0,
+                    kredit: pAmt,
+                  },
+                ]);
+              }
+            }
+          } else if (isInvPaid) {
+            const payAmt = invPaid > 0 ? invPaid : invTot;
+            pushJournalPair(invDate, `${invNumber}/SETTLE`, "Pelunasan PO", projectLabel, [
+              {
+                kodeAkun: "210102",
+                keterangan: `Penyelesaian Hutang Invoice ${invNumber} — ${supplier}`,
+                debit: payAmt,
+                kredit: 0,
+              },
+              {
+                kodeAkun: effFundingCode,
+                keterangan: `Pengeluaran ${effFundingLabel} Pelunasan Invoice ${invNumber} ke ${supplier}`,
+                debit: 0,
+                kredit: payAmt,
+              },
+            ]);
+          }
+        }
       }
+    } else if (isKasDirect || Boolean(po.isPaid) || statusLower === "lunas" || statusLower === "dibayar") {
+      // Kasus 2: Pembelian Langsung Tunai / Kas tanpa invoice tempo terpisah
+      if (total > 0) {
+        if (isProjectPo) {
+          cogsProjectTotal += total;
+        }
+        const poFundingSource = po.fundingSource || linkedPr?.fundingSource || "1000.01";
+        const poFundingCode =
+          activeCoa[poFundingSource]?.code ||
+          (poFundingSource === "1000.02" || /mandiri|bank/i.test(String(poFundingSource))
+            ? "1000.02"
+            : "1000.01");
+        const poFundingLabel = activeCoa[poFundingCode]?.name || "Kas/Bank";
 
-      if (isKasDirect) {
         pushJournalPair(tanggal, nomor, "PO Supplier", projectLabel, [
           {
             kodeAkun: debitAccountCode,
-            keterangan: debitDesc,
+            keterangan: isProjectPo
+              ? `HPP Project Pengadaan PO ${nomor} — ${supplier}`
+              : `Pembelian Aset Persediaan Stok/Retail PO ${nomor} — ${supplier}`,
             debit: total,
             kredit: 0,
           },
           {
             kodeAkun: poFundingCode,
-            keterangan: `Pengeluaran ${poFundingLabel} Pembelian PO ${nomor} ke ${supplier}`,
+            keterangan: `Pengeluaran ${poFundingLabel} Pembelian Langsung PO ${nomor} ke ${supplier}`,
             debit: 0,
             kredit: total,
           },
         ]);
-      } else {
-        pushJournalPair(tanggal, nomor, "PO Supplier", projectLabel, [
+      }
+    }
+    // Kasus 3: PO bertempo yang belum ada invoice supplier -> TIDAK dijurnal (sesuai standar akuntansi)
+  }
+
+  // 2b. Standalone Supplier Invoices (Tagihan Supplier tanpa PO)
+  const standaloneInvoices = (data?.invoiceIn || []).filter(
+    (inv: any) =>
+      inv &&
+      !["batal", "dibatalkan"].includes(normStr(inv.status).toLowerCase()) &&
+      !supplierPos.some((po: any) =>
+        (inv.supplierPoId && String(inv.supplierPoId) === String(po.id)) ||
+        (inv.po && normStr(inv.po).toLowerCase() === normStr(po.nomor || po.number).toLowerCase())
+      )
+  );
+
+  for (const inv of standaloneInvoices) {
+    const invDppRaw = toNum(inv.nilai ?? inv.amount);
+    const invPpn = toNum(inv.ppn);
+    const invTot = toNum(inv.total) || (invDppRaw + invPpn);
+    const invDpp = invDppRaw > 0 ? invDppRaw : (invTot > 0 && invPpn > 0 ? Math.max(0, invTot - invPpn) : invTot);
+    const invPaid = toNum(inv.paidAmount ?? inv.terbayar);
+    const invNumber = normStr(inv.nomor || inv.number, `INV-SUP-${inv.id}`);
+    const invDate = formatJournalDateTime(inv.tanggal || inv.date, inv.createdAt);
+    const supplier = normStr(inv.supplier, "Supplier");
+
+    let invCoa = String(inv.coaAccount || "").trim();
+    const pmts: any[] = inv.payments || inv._payments || [];
+    for (const p of pmts) {
+      const match = (p.reference || "").match(/\[(?:AKUN|COA):([^\]]+)\]/i);
+      if (match?.[1]) {
+        invCoa = match[1].trim();
+        break;
+      }
+    }
+    const effFundingCode =
+      activeCoa[invCoa]?.code ||
+      (invCoa === "1000.02" || /mandiri|bank/i.test(invCoa) ? "1000.02" : "1000.01");
+    const effFundingLabel = activeCoa[effFundingCode]?.name || "Kas/Bank";
+    const isInvPaid =
+      inv.status === "PAID" ||
+      inv.status === "Lunas" ||
+      (invPaid >= invTot && invTot > 0);
+
+    if (invTot > 0) {
+      const invoiceDebits = [
+        {
+          kodeAkun: "1200",
+          keterangan: `Pembelian Persediaan Barang atas Invoice ${invNumber} — ${supplier}`,
+          debit: invDpp,
+          kredit: 0,
+        },
+      ];
+      if (invPpn > 0) {
+        invoiceDebits.push({
+          kodeAkun: "1600",
+          keterangan: `PPN Masukan (11%) Invoice ${invNumber} (${supplier})`,
+          debit: invPpn,
+          kredit: 0,
+        });
+      }
+      pushJournalPair(invDate, invNumber, "PO Supplier", "Stok Gudang / Retail", [
+        ...invoiceDebits,
+        {
+          kodeAkun: "210102",
+          keterangan: `Hutang Usaha Supplier atas Invoice ${invNumber} (${supplier})`,
+          debit: 0,
+          kredit: invTot,
+        },
+      ]);
+
+      if (pmts.length > 0) {
+        for (const p of pmts) {
+          const pAmt = toNum(p.amount);
+          if (pAmt > 0) {
+            const pDate = formatJournalDateTime(p.date || inv.tanggal || inv.date, p.createdAt || inv.createdAt || invDate);
+            pushJournalPair(pDate, `${invNumber}/PAY`, "Pelunasan PO", "Stok Gudang / Retail", [
+              {
+                kodeAkun: "210102",
+                keterangan: `Penyelesaian Hutang Invoice ${invNumber} — ${supplier}`,
+                debit: pAmt,
+                kredit: 0,
+              },
+              {
+                kodeAkun: effFundingCode,
+                keterangan: `Pengeluaran ${effFundingLabel} Pembayaran Invoice ${invNumber} ke ${supplier}`,
+                debit: 0,
+                kredit: pAmt,
+              },
+            ]);
+          }
+        }
+      } else if (isInvPaid) {
+        const payAmt = invPaid > 0 ? invPaid : invTot;
+        pushJournalPair(invDate, `${invNumber}/SETTLE`, "Pelunasan PO", "Stok Gudang / Retail", [
           {
-            kodeAkun: debitAccountCode,
-            keterangan: debitDesc,
-            debit: total,
+            kodeAkun: "210102",
+            keterangan: `Penyelesaian Hutang Invoice ${invNumber} — ${supplier}`,
+            debit: payAmt,
             kredit: 0,
           },
           {
-            kodeAkun: "210102",
-            keterangan: `Hutang Usaha Supplier atas ${nomor} (${supplier})`,
+            kodeAkun: effFundingCode,
+            keterangan: `Pengeluaran ${effFundingLabel} Pelunasan Invoice ${invNumber} ke ${supplier}`,
             debit: 0,
-            kredit: total,
+            kredit: payAmt,
           },
         ]);
-
-        if (isPaidOrComplete) {
-          pushJournalPair(tanggal, `${nomor}/SETTLE`, "Pelunasan PO", projectLabel, [
-            {
-              kodeAkun: "210102",
-              keterangan: `Penyelesaian Hutang PO Supplier ${nomor} — ${supplier}`,
-              debit: total,
-              kredit: 0,
-            },
-            {
-              kodeAkun: poFundingCode,
-              keterangan: `Pengeluaran ${poFundingLabel} Pelunasan PO ${nomor} ke ${supplier}`,
-              debit: 0,
-              kredit: total,
-            },
-          ]);
-        }
       }
     }
   }
@@ -749,10 +981,16 @@ export function computeFinancialStatements(
       ["DISETUJUI", "DIBAYAR", "DIKIRIM", "DITERIMA"].includes(rawStUpper);
     if (!isApprovedOrDone) continue;
 
+    const prSuffix = normStr(pr.nomor).replace(/^(?:PNJ|REQ|PR)\//i, "");
     const hasPo = supplierPos.some(
       (po: any) =>
         (po.requestId && String(po.requestId) === String(pr.id)) ||
-        (pr.nomor && po.request && normStr(po.request).toLowerCase() === normStr(pr.nomor).toLowerCase())
+        (pr.nomor && po.request && po.request !== "-" && normStr(po.request).toLowerCase() === normStr(pr.nomor).toLowerCase()) ||
+        (pr.supplierPo && (String(pr.supplierPo.id) === String(po.id) || pr.supplierPo.number === po.nomor)) ||
+        (Array.isArray(pr.supplierPOs) && pr.supplierPOs.some((sp: any) => String(sp.id) === String(po.id) || sp.number === po.nomor)) ||
+        (po.nomor && String(pr.otherNote || "").includes(po.nomor)) ||
+        (prSuffix && po.nomor && normStr(po.nomor).replace(/^(?:POD|PO-S|PO)\//i, "") === prSuffix) ||
+        (toNum(po.total) === toNum(pr.estimasi) && po.supplier && pr.supplier && normStr(po.supplier).toLowerCase() === normStr(pr.supplier).toLowerCase())
     );
     if (hasPo) continue;
 
@@ -1181,15 +1419,41 @@ export function computeFinancialStatements(
   }
 
   for (const po of supplierPos) {
+    const nomor = normStr(po.nomor || po.number);
     const statusLower = normStr(po.status).toLowerCase();
     const isKasDirect =
       String(po.paymentMethod || "").toUpperCase() === "KAS" ||
       /kas|tunai|cash/i.test(String(po.paymentTerms || ""));
+    const rawLinkedInvs = (
+      Array.isArray(po.invoiceIns) && po.invoiceIns.length > 0
+        ? po.invoiceIns
+        : (data?.invoiceIn || []).filter(
+            (inv: any) =>
+              (inv.supplierPoId && String(inv.supplierPoId) === String(po.id)) ||
+              (inv.po && normStr(inv.po).toLowerCase() === nomor.toLowerCase()) ||
+              (inv.po && normStr(inv.po).toLowerCase() === normStr(po.nomor).toLowerCase())
+          )
+    ).filter((i: any) => !["batal", "dibatalkan"].includes(normStr(i.status).toLowerCase()));
+
+    const hasPaidInvoice = rawLinkedInvs.some(
+      (inv: any) =>
+        inv.status === "PAID" ||
+        inv.status === "Lunas" ||
+        (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0)
+    );
     const isPaidOrComplete =
-      isKasDirect || statusLower === "selesai" || statusLower === "lunas" || statusLower === "dibayar";
-    const total = toNum(po.total);
-    if (isPaidOrComplete && total > 0) {
-      cashOutSuppliers += total;
+      Boolean(po.isPaid) ||
+      hasPaidInvoice ||
+      isKasDirect ||
+      statusLower === "selesai" ||
+      statusLower === "lunas" ||
+      statusLower === "dibayar";
+
+    const invTot = rawLinkedInvs.reduce((s: number, i: any) => s + toNum(i.total), 0);
+    const effTotal = invTot > 0 ? invTot : toNum(po.total);
+
+    if (isPaidOrComplete && effTotal > 0) {
+      cashOutSuppliers += effTotal;
       cashFlowItems.push({
         id: `CF-PO-${po.id || po.nomor}`,
         tanggal: normStr(po.tanggal, "2026-02-01"),
@@ -1199,7 +1463,7 @@ export function computeFinancialStatements(
         project: normStr(po.project, "Pengadaan Gudang"),
         keterangan: `Pembayaran PO Supplier ${normStr(po.nomor)} — ${normStr(po.item)}`,
         masuk: 0,
-        keluar: total,
+        keluar: effTotal,
       });
     }
   }
@@ -1393,7 +1657,11 @@ export function computeFinancialStatements(
     traverseCoa(root, 0);
   }
 
-  const totalAsetLancar = kasDanBank + piutangUsaha + persediaanBarang + uangMukaPph;
+  const ppnMasukanTotal = journalLines
+    .filter((l) => l.kodeAkun === "1600" || l.kodeAkun === "1104")
+    .reduce((s, l) => s + l.debit - l.kredit, 0);
+
+  const totalAsetLancar = kasDanBank + piutangUsaha + persediaanBarang + uangMukaPph + Math.max(0, ppnMasukanTotal);
   const totalKewajiban = hutangSupplier + hutangReimbursement + hutangPpnKeluaran;
   const totalEkuitas = modalKerjaAwal + labaBerjalan;
   const totalPasiva = totalKewajiban + totalEkuitas;
@@ -1440,6 +1708,7 @@ export function computeFinancialStatements(
         piutangUsaha,
         persediaanBarang,
         uangMukaPph,
+        ppnMasukan: Math.max(0, ppnMasukanTotal),
         totalAsetLancar,
       },
       liabilities: {

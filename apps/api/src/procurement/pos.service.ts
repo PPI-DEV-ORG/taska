@@ -169,6 +169,20 @@ export class PosService {
             select: { id: true, number: true, status: true, date: true, warehouseId: true, receiptFileId: true, photoFileId: true },
             orderBy: { id: "desc" },
           },
+          invoiceIns: {
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              amount: true,
+              ppn: true,
+              total: true,
+              paidAmount: true,
+              dueDate: true,
+              createdAt: true,
+              payments: { select: { id: true, method: true, reference: true, amount: true, date: true, createdAt: true } },
+            },
+          },
           _count: { select: { items: true, receivings: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
@@ -228,6 +242,14 @@ export class PosService {
           (linkedReq as any)?.paymentStatus === "DIBAYAR" ||
           !!(linkedReq as any)?.paymentProofFileId ||
           Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR"));
+        const isInvoicePaid =
+          Array.isArray(r.invoiceIns) &&
+          r.invoiceIns.some(
+            (inv: any) =>
+              inv.status === "PAID" ||
+              (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0)
+          );
+        const isPaid = isPrPaid || isInvoicePaid;
         return {
           ...r,
           requestId: r.requestId,
@@ -236,7 +258,7 @@ export class PosService {
           doFileId: r.doFileId ?? fallbackDoFileId,
           supplierSoNumber: m.supplierSoNumber ? String(m.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
           soFileId: m.soFileId ?? null,
-          isPaid: isPrPaid,
+          isPaid,
         };
       })
     );
@@ -256,7 +278,20 @@ export class PosService {
           select: { id: true, number: true, status: true, date: true, warehouseId: true, receiptFileId: true, photoFileId: true },
           orderBy: { id: "desc" },
         },
-        invoiceIns: { select: { id: true, number: true, status: true, total: true } },
+        invoiceIns: {
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            amount: true,
+            ppn: true,
+            total: true,
+            paidAmount: true,
+            dueDate: true,
+            createdAt: true,
+            payments: { select: { id: true, method: true, reference: true, amount: true, date: true, createdAt: true } },
+          },
+        },
       },
     });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
@@ -311,6 +346,14 @@ export class PosService {
       (linkedReq as any)?.paymentStatus === "DIBAYAR" ||
       !!(linkedReq as any)?.paymentProofFileId ||
       Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR"));
+    const isInvoicePaid =
+      Array.isArray(row.invoiceIns) &&
+      row.invoiceIns.some(
+        (inv: any) =>
+          inv.status === "PAID" ||
+          (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0)
+      );
+    const isPaid = isPrPaid || isInvoicePaid;
     return {
       ...row,
       requestId: row.requestId,
@@ -319,7 +362,7 @@ export class PosService {
       doFileId: row.doFileId ?? fallbackDoFileId,
       supplierSoNumber: meta.supplierSoNumber ? String(meta.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
       soFileId: meta.soFileId ?? null,
-      isPaid: isPrPaid,
+      isPaid,
       approval,
     };
   }

@@ -516,7 +516,11 @@ export class ReportsService {
       }),
       this.prisma.main.supplierPO.findMany({
         where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, ...this.dateRange(q, "date") },
-        include: { supplier: { select: { name: true } }, project: { select: { name: true } } },
+        include: {
+          supplier: { select: { name: true } },
+          project: { select: { name: true } },
+          invoiceIns: { select: { amount: true, ppn: true, total: true, paidAmount: true, status: true } },
+        },
         orderBy: { date: "asc" },
       }),
       this.prisma.main.expense.findMany({
@@ -588,7 +592,6 @@ export class ReportsService {
     }
 
     for (const po of supplierPos) {
-      const d = new Date(po.date).toLocaleDateString("id-ID");
       const sup = (po as any).supplier?.name ?? "Supplier";
       const isProjectPo = !!(po.projectId || (po as any).project?.name);
       const proj = (po as any).project?.name ?? (isProjectPo ? "Proyek" : "Stok Gudang / Retail");
@@ -596,29 +599,64 @@ export class ReportsService {
       const isKas = /kas|tunai|cash/i.test(String(po.paymentTerms || ""));
       const debitCode = isProjectPo ? "5101" : "1200";
       const debitName = isProjectPo ? "HPP Project (Pengadaan Proyek)" : "Persediaan Barang Dagang (Aset)";
-      const debitDesc = isProjectPo
-        ? `HPP Project Pengadaan PO ${po.number} — ${sup}`
-        : `Pembelian Aset Persediaan Stok/Retail PO ${po.number} — ${sup}`;
 
-      if (tot > 0) {
-        if (isKas) {
-          addLines(d, po.number, proj, [
-            { code: debitCode, name: debitName, desc: debitDesc, debit: tot, kredit: 0 },
-            { code: "1000.01", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas Tunai PO ${po.number} (${sup})`, debit: 0, kredit: tot },
-          ]);
-        } else {
-          addLines(d, po.number, proj, [
-            { code: debitCode, name: debitName, desc: debitDesc, debit: tot, kredit: 0 },
-            { code: "210102", name: "Hutang Usaha Supplier", desc: `Hutang PO ${po.number} (${sup})`, debit: 0, kredit: tot },
-          ]);
-          if (po.status === "DISETUJUI") {
-            addLines(d, `${po.number}/SETTLE`, proj, [
-              { code: "210102", name: "Hutang Usaha Supplier", desc: `Pelunasan Hutang PO ${po.number} — ${sup}`, debit: tot, kredit: 0 },
-              { code: "1000.01", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas PO ${po.number}`, debit: 0, kredit: tot },
+      const invs = ((po as any).invoiceIns || []).filter((i: any) => i.status !== "BATAL");
+
+      if (invs.length > 0) {
+        for (const inv of invs) {
+          const invDate = new Date(inv.date || po.date).toLocaleDateString("id-ID");
+          const invDppRaw = Number(inv.amount) || 0;
+          const invPpn = Number(inv.ppn) || 0;
+          const invTot = Number(inv.total) || (invDppRaw + invPpn);
+          const invDpp = invDppRaw > 0 ? invDppRaw : (invTot > 0 && invPpn > 0 ? Math.max(0, invTot - invPpn) : invTot);
+          const invPaid = Number(inv.paidAmount) || 0;
+          const isInvPaid = inv.status === "PAID" || (invPaid >= invTot && invTot > 0);
+          const invNum = inv.number || po.number;
+
+          if (invTot > 0) {
+            addLines(invDate, `${po.number} (${invNum})`, proj, [
+              {
+                code: debitCode,
+                name: debitName,
+                desc: isProjectPo
+                  ? `HPP Project Pengadaan PO ${po.number} (${invNum}) — ${sup}`
+                  : `Pembelian Aset Persediaan Stok/Retail PO ${po.number} (${invNum}) — ${sup}`,
+                debit: invDpp,
+                kredit: 0,
+              },
+              ...(invPpn > 0
+                ? [{ code: "1600", name: "PPN Masukan (Input VAT)", desc: `PPN Masukan 11% Invoice ${invNum} atas PO ${po.number} (${sup})`, debit: invPpn, kredit: 0 }]
+                : []),
+              { code: "210102", name: "Hutang Usaha Supplier", desc: `Hutang Usaha Supplier atas Invoice ${invNum} (${sup})`, debit: 0, kredit: invTot },
             ]);
+
+            if (isInvPaid) {
+              const payAmt = invPaid > 0 ? invPaid : invTot;
+              addLines(invDate, `${invNum}/SETTLE`, proj, [
+                { code: "210102", name: "Hutang Usaha Supplier", desc: `Pelunasan Hutang Invoice ${invNum} — ${sup}`, debit: payAmt, kredit: 0 },
+                { code: "1000.01", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas Pelunasan Invoice ${invNum} ke ${sup}`, debit: 0, kredit: payAmt },
+              ]);
+            }
           }
         }
+      } else if (isKas || po.status === "DISETUJUI") {
+        if (tot > 0) {
+          const d = new Date(po.date).toLocaleDateString("id-ID");
+          addLines(d, po.number, proj, [
+            {
+              code: debitCode,
+              name: debitName,
+              desc: isProjectPo
+                ? `HPP Project Pengadaan PO ${po.number} — ${sup}`
+                : `Pembelian Aset Persediaan Stok/Retail PO ${po.number} — ${sup}`,
+              debit: tot,
+              kredit: 0,
+            },
+            { code: "1000.01", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas Pembelian Tunai PO ${po.number} (${sup})`, debit: 0, kredit: tot },
+          ]);
+        }
       }
+      // PO bertempo yang belum ada invoice masuk tidak dijurnal
     }
 
     for (const ex of expenses) {

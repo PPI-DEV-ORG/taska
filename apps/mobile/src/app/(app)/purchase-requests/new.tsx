@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { Stepper } from "@/components/taska/stepper";
-import { SearchableSelect, MultiSelect, formatThousands, QuickAddSupplierDialog } from "@/components/taska/dialogs";
+import { SearchableSelect, MultiSelect, formatThousands, QuickAddSupplierDialog, DatePicker } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import type { Row } from "@/constants/modules";
@@ -459,10 +459,10 @@ export default function NewPurchaseRequestScreen() {
                     required
                     hint="Batas waktu pelunasan utang ke toko/supplier (default 1 bulan). Pengingat akan muncul di kalender."
                   >
-                    <Input
-                      keyboardType="numbers-and-punctuation"
+                    <DatePicker
                       value={dueDate}
-                      onChangeText={(v) => setDueDate(v)}
+                      onChange={(v) => setDueDate(v)}
+                      placeholder="Pilih tanggal jatuh tempo"
                     />
                   </FormField>
                 )}

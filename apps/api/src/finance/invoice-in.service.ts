@@ -5,7 +5,7 @@ import { DocumentNumberService } from "../document-number/document-number.servic
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
-import type { InvoiceIn } from "../generated/prisma/client.js";
+import type { InvoiceIn, Role } from "../generated/prisma/client.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { InvoiceInDto, PaymentDto } from "./dto.js";
 
@@ -96,6 +96,9 @@ export class InvoiceInService {
       if (dup) throw new BadRequestException(`Nomor ${number} sudah dipakai`);
     }
 
+    const isPaid = !!dto.paid;
+    const payFileId = dto.paymentFileId ?? dto.transferFileId;
+
     const row = await this.prisma.main.invoiceIn.create({
       data: {
         number,
@@ -105,8 +108,10 @@ export class InvoiceInService {
         ppn: dto.ppn ?? 0,
         total: dto.total,
         dueDate: new Date(dto.dueDate),
-        status: "UNPAID",
+        status: isPaid ? "PAID" : "UNPAID",
+        paidAmount: isPaid ? dto.total : 0,
         fileId: dto.fileId,
+        transferFileId: payFileId,
       },
       include: { supplier: true },
     });
@@ -116,21 +121,57 @@ export class InvoiceInService {
         data: { refType: "invoiceIn", refId: String(row.id) },
       }).catch(() => {});
     }
+    if (payFileId) {
+      await this.prisma.main.file.update({
+        where: { id: payFileId },
+        data: { refType: "payment", refId: `in-${row.id}` },
+      }).catch(() => {});
+    }
 
-    await this.approvals.request({
+    if (isPaid) {
+      const finalReference = dto.coaAccount
+        ? `[AKUN:${dto.coaAccount}] ${dto.paymentReference || `LUNAS-${number || row.id}`}`.trim()
+        : (dto.paymentReference || `LUNAS-${number || row.id}`);
+
+      await this.prisma.main.payment.create({
+        data: {
+          invoiceInId: row.id,
+          amount: dto.total,
+          date: dto.date ? new Date(dto.date) : new Date(),
+          method: (dto.paymentMethod as any) ?? "TRANSFER",
+          reference: finalReference,
+          fileId: payFileId,
+          createdById: user.id,
+        },
+      });
+    }
+
+    const approval = await this.approvals.request({
       kind: "INVOICE_IN",
       entityId: row.id,
       title: `Invoice supplier ${supplier.name}${number ? ` (${number})` : ""}`,
       amount: Number(dto.total),
       requestedBy: user,
       href: `/invoice-in/${row.id}`,
+      confirmRoles: isPaid ? [user.role as Role] : undefined,
     });
+    if (isPaid && approval.status === "MENUNGGU") {
+      await this.prisma.main.approval.update({
+        where: { id: approval.id },
+        data: { status: "DISETUJUI" },
+      }).catch(() => {});
+      await this.prisma.main.approvalStep.updateMany({
+        where: { approvalId: approval.id },
+        data: { status: "DISETUJUI", decidedById: user.id, decidedAt: new Date() },
+      }).catch(() => {});
+    }
+
     await this.audit.log({
       actor: user,
-      action: "BUAT_INVOICE_MASUK",
+      action: isPaid ? "BUAT_DAN_LUNASI_INVOICE_MASUK" : "BUAT_INVOICE_MASUK",
       entityType: "invoice-in",
       entityId: row.id,
-      detail: `total Rp${dto.total} — ${supplier.name}`,
+      detail: `total Rp${dto.total} — ${supplier.name}${isPaid ? " (Langsung Lunas)" : ""}`,
     });
     return this.sync(row);
   }
@@ -198,11 +239,18 @@ export class InvoiceInService {
     }
     const paymentsBefore = await this.prisma.main.payment.findMany({ where: { invoiceInId: id } });
     const paidBefore = paymentsBefore.reduce((s, p) => s + Number(p.amount), 0);
+    if (paidBefore >= Number(row.total) && Number(row.total) > 0) {
+      return this.sync(row);
+    }
     if (paidBefore + Number(dto.amount) > Number(row.total)) {
       throw new BadRequestException(
         `Total bayar melebihi tagihan invoice supplier (sisa Rp${Number(row.total) - paidBefore})`,
       );
     }
+
+    const finalReference = dto.coaAccount
+      ? (dto.reference?.includes(`[AKUN:`) ? dto.reference : `[AKUN:${dto.coaAccount}] ${dto.reference || ""}`.trim())
+      : dto.reference;
 
     await this.prisma.main.payment.create({
       data: {
@@ -210,7 +258,7 @@ export class InvoiceInService {
         amount: dto.amount,
         date: dto.date ? new Date(dto.date) : new Date(),
         method: dto.method ?? "TRANSFER",
-        reference: dto.reference,
+        reference: finalReference,
         fileId: dto.fileId,
         createdById: user.id,
       },

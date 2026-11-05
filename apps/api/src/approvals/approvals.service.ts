@@ -244,7 +244,7 @@ export class ApprovalsService {
     if (!user) return true;
     if (user.role === "SUPER_ADMIN" || user.role === "ADMIN") return true;
     if (r.requestedById === user.id) {
-      if (!(user.role === "FINANCE" && r.kind === "SUPPLIER_PO")) {
+      if (!(user.role === "FINANCE" && (r.kind === "SUPPLIER_PO" || r.kind === "INVOICE_IN"))) {
         return false;
       }
     }
@@ -409,7 +409,7 @@ export class ApprovalsService {
     if (
       user.role !== "SUPER_ADMIN" &&
       approval.requestedById === user.id &&
-      !(user.role === "FINANCE" && approval.kind === "SUPPLIER_PO")
+      !(user.role === "FINANCE" && (approval.kind === "SUPPLIER_PO" || approval.kind === "INVOICE_IN"))
     ) {
       throw new ForbiddenException("Pembuat dokumen tidak boleh menyetujui dokumennya sendiri");
     }

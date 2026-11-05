@@ -1,7 +1,7 @@
 import * as React from "react";
-import { View, Linking, Pressable } from "react-native";
+import { View, Linking, Pressable, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { CheckCircle2, Circle, ExternalLink, PackageCheck, Plus, Printer, RotateCcw, Trash2, Check } from "lucide-react-native";
+import { CheckCircle2, Circle, ExternalLink, PackageCheck, Plus, Printer, RotateCcw, Trash2, Check, Receipt, FileText } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 import { printOrderDocument } from "@/lib/order-print";
+import { getKasBankAccounts } from "@/lib/accounting";
 
 import {
   SupplierInvoiceDetailDialog,
@@ -27,7 +28,7 @@ const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
 
 export function SupplierPoExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { user, patchRow, setStatus, addRow, toast, data, reload } = useApp();
+  const { user, patchRow, setStatus, addRow, toast, data, reload, refreshModule } = useApp();
   const [showAllPoItems, setShowAllPoItems] = React.useState(false);
   const [selectedPoItemIndices, setSelectedPoItemIndices] = React.useState<number[]>([]);
 
@@ -124,7 +125,11 @@ export function SupplierPoExtras({ row }: { row: Row }) {
     row.paymentMethod === "KAS" ? "LUNAS" : "TEMPO"
   );
   const [invPayMethod, setInvPayMethod] = React.useState<"TRANSFER" | "TUNAI">("TRANSFER");
+  const [invCoaAccount, setInvCoaAccount] = React.useState<string>("1000.02");
   const [invFileId, setInvFileId] = React.useState<number | null>(null);
+  const [invPayProofFileId, setInvPayProofFileId] = React.useState<number | null>(null);
+
+  const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
 
   const [selectedDetailInv, setSelectedDetailInv] = React.useState<Row | null>(null);
   const [payTargetInv, setPayTargetInv] = React.useState<Row | null>(null);
@@ -218,6 +223,8 @@ export function SupplierPoExtras({ row }: { row: Row }) {
     const amt = Number(String(invAmount).replace(/\D/g, "")) || 0;
     const ppn = Math.round(amt * 0.11);
     const total = amt + ppn;
+    const isLunas = invPaymentScheme === "LUNAS";
+
     const created = await addRow("invoiceIn", {
       nomor: invNumber,
       supplierId: row.supplierId,
@@ -227,25 +234,35 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       nilai: amt,
       ppn,
       total,
-      jatuhTempo: invPaymentScheme === "LUNAS" ? invDate : invDue,
+      jatuhTempo: isLunas ? invDate : invDue,
       fileId: invFileId ?? undefined,
+      transferFileId: invPayProofFileId ?? undefined,
+      paid: isLunas,
+      paymentMethod: invPayMethod,
+      coaAccount: invCoaAccount,
+      paymentFileId: invPayProofFileId ?? undefined,
+      paymentReference: `[AKUN:${invCoaAccount}] LUNAS-${row.nomor || "PO"}`,
     });
     if (created) {
-      if (invPaymentScheme === "LUNAS" && created.id && !String(created.id).startsWith("offline-")) {
+      if (isLunas && created.id && !String(created.id).startsWith("offline-")) {
         const cleanId = String(created.id).replace(/^in-/, "");
         await api("POST", `/invoice-in/${cleanId}/payments`, {
           amount: total,
           date: invDate,
           method: invPayMethod,
-          reference: `LUNAS-${row.nomor || cleanId}`,
-          fileId: invFileId ?? undefined,
+          reference: `[AKUN:${invCoaAccount}] LUNAS-${row.nomor || cleanId}`,
+          coaAccount: invCoaAccount,
+          fileId: invPayProofFileId ?? undefined,
         }).catch(() => {});
-        toast("Invoice masuk & pelunasan langsung berhasil dicatat");
+        toast("Invoice masuk & pelunasan langsung berhasil dicatat (Lunas)");
       } else {
         toast("Invoice masuk (Tempo / Utang) berhasil dicatat");
       }
       setInvOpen(false);
       setInvFileId(null);
+      setInvPayProofFileId(null);
+      void refreshModule("invoiceIn");
+      void refreshModule("supplier-pos");
       await reload();
     }
   }
@@ -761,11 +778,23 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       </Dialog>
 
       <Dialog open={invOpen} onOpenChange={setInvOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Catat Invoice Masuk dari Supplier</DialogTitle>
+        <DialogContent className="max-w-2xl max-h-[90vh] p-0 overflow-hidden">
+          <DialogHeader className="p-4 border-b border-border/60">
+            <View className="flex-row items-center gap-2.5">
+              <View className="w-8 h-8 rounded-lg bg-primary/10 items-center justify-center">
+                <Receipt size={18} color={colors.primary} />
+              </View>
+              <View className="flex-1">
+                <DialogTitle>Catat Invoice Masuk dari Supplier</DialogTitle>
+                <Text className="text-xs text-muted-foreground mt-0.5">
+                  Catat tagihan invoice masuk dari supplier {row.supplier ? `(${row.supplier})` : ""} untuk PO {row.nomor}
+                </Text>
+              </View>
+            </View>
           </DialogHeader>
-          <View className="gap-3 py-2">
+
+          <ScrollView contentContainerClassName="p-4 gap-3.5" style={{ maxHeight: 560 }}>
+            {/* Skema Pembayaran */}
             <FormField label="Skema Pembayaran ke Supplier" required>
               <View className="flex-row gap-2">
                 <Button
@@ -786,56 +815,153 @@ export function SupplierPoExtras({ row }: { row: Row }) {
                 </Button>
               </View>
             </FormField>
+
+            {/* Metode & Akun COA saat Langsung Lunas */}
             {invPaymentScheme === "LUNAS" ? (
-              <FormField label="Metode Pembayaran Lunas">
-                <View className="flex-row gap-2">
-                  <Button
-                    size="sm"
-                    variant={invPayMethod === "TRANSFER" ? "default" : "outline"}
-                    onPress={() => setInvPayMethod("TRANSFER")}
-                    className="flex-1"
-                  >
-                    <Text className="text-xs">Transfer Bank</Text>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={invPayMethod === "TUNAI" ? "default" : "outline"}
-                    onPress={() => setInvPayMethod("TUNAI")}
-                    className="flex-1"
-                  >
-                    <Text className="text-xs">Kas / Tunai</Text>
-                  </Button>
+              <View className="flex-row flex-wrap gap-3">
+                <View className="flex-1 min-w-[240px]">
+                  <FormField label="Metode Pembayaran Lunas">
+                    <View className="flex-row gap-2">
+                      <Button
+                        size="sm"
+                        variant={invPayMethod === "TRANSFER" ? "default" : "outline"}
+                        onPress={() => {
+                          setInvPayMethod("TRANSFER");
+                          const firstBank = kasBankOptions.find(
+                            (o) => o.code !== "1000.01" && !/kas/i.test(o.rawName)
+                          );
+                          if (firstBank) setInvCoaAccount(firstBank.code);
+                        }}
+                        className="flex-1"
+                      >
+                        <Text className="text-xs">Transfer Bank</Text>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={invPayMethod === "TUNAI" ? "default" : "outline"}
+                        onPress={() => {
+                          setInvPayMethod("TUNAI");
+                          const cashAcc = kasBankOptions.find(
+                            (o) => o.code === "1000.01" || /kas/i.test(o.rawName)
+                          );
+                          if (cashAcc) setInvCoaAccount(cashAcc.code);
+                        }}
+                        className="flex-1"
+                      >
+                        <Text className="text-xs">Kas / Tunai</Text>
+                      </Button>
+                    </View>
+                  </FormField>
                 </View>
-              </FormField>
+
+                <View className="flex-1 min-w-[240px]">
+                  <FormField
+                    label="Pilih Akun Kas / Bank (CoA) Sumber Bayar *"
+                    hint="Rekening kas/bank yang dipotong (Kredit Kas/Bank)"
+                  >
+                    <SearchableSelect
+                      value={
+                        kasBankOptions.find((o) => o.code === invCoaAccount)?.name ||
+                        kasBankOptions[0]?.name ||
+                        ""
+                      }
+                      options={kasBankOptions.map((o) => o.name)}
+                      onChange={(val) => {
+                        const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
+                        if (match) {
+                          setInvCoaAccount(match.code);
+                          const isTunai = match.code === "1000.01" || /kas/i.test(match.rawName);
+                          setInvPayMethod(isTunai ? "TUNAI" : "TRANSFER");
+                        }
+                      }}
+                      placeholder="Pilih rekening kas / bank..."
+                    />
+                  </FormField>
+                </View>
+              </View>
             ) : null}
-            <FormField label="Nomor Invoice Supplier" required>
-              <Input value={invNumber} onChangeText={setInvNumber} />
-            </FormField>
-            <FormField label="Nilai DPP Sebelum PPN (Rp)" required>
-              <Input value={invAmount} onChangeText={setInvAmount} keyboardType="numeric" />
-            </FormField>
-            <FormField label="Tanggal Invoice" required>
-              <DatePicker value={invDate} onChange={setInvDate} />
-            </FormField>
-            {invPaymentScheme === "TEMPO" ? (
-              <FormField label="Jatuh Tempo" required>
-                <DatePicker value={invDue} onChange={setInvDue} />
-              </FormField>
-            ) : null}
-            <FileUploader
-              label="Upload File Invoice dari Supplier (Gambar / PDF)"
-              kind="semua"
-              accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
-              category="invoice"
-              autoFlush
-              onUploaded={(fileId) => setInvFileId(fileId)}
-            />
-          </View>
-          <DialogFooter>
-            <Button variant="outline" onPress={() => setInvOpen(false)}>
+
+            {/* Nomor Invoice & Nilai DPP */}
+            <View className="flex-row flex-wrap gap-3">
+              <View className="flex-1 min-w-[240px]">
+                <FormField label="Nomor Invoice Supplier" required>
+                  <Input value={invNumber} onChangeText={setInvNumber} placeholder="Contoh: INV-SUP/2026/001" />
+                </FormField>
+              </View>
+              <View className="flex-1 min-w-[240px]">
+                <FormField label="Nilai DPP Sebelum PPN (Rp)" required>
+                  <Input
+                    value={invAmount}
+                    onChangeText={(val) => setInvAmount(val)}
+                    keyboardType="numeric"
+                    placeholder="0"
+                  />
+                </FormField>
+              </View>
+            </View>
+
+            {/* Tanggal Invoice & Jatuh Tempo / Preview Total */}
+            <View className="flex-row flex-wrap gap-3">
+              <View className="flex-1 min-w-[240px]">
+                <FormField label="Tanggal Invoice *" hint="Tanggal terbit invoice supplier">
+                  <DatePicker value={invDate} onChange={setInvDate} />
+                </FormField>
+              </View>
+              <View className="flex-1 min-w-[240px]">
+                {invPaymentScheme === "TEMPO" ? (
+                  <FormField label="Jatuh Tempo *" hint="Batas waktu pembayaran ke supplier">
+                    <DatePicker value={invDue} onChange={setInvDue} />
+                  </FormField>
+                ) : (
+                  <FormField label="Total Tagihan (Termasuk PPN 11%)">
+                    <View className="h-10 px-3 justify-center rounded-lg border border-primary/30 bg-primary/5">
+                      <Text className="text-sm font-bold text-primary">
+                        {rupiah(
+                          Math.round(
+                            (Number(String(invAmount).replace(/\D/g, "")) || 0) * 1.11
+                          )
+                        )}
+                      </Text>
+                    </View>
+                  </FormField>
+                )}
+              </View>
+            </View>
+
+            {/* Upload Files Berdampingan / Samping-sampingan */}
+            <View className="flex-row flex-wrap gap-3 mt-1">
+              <View className="flex-1 min-w-[260px]">
+                <FileUploader
+                  label="File Invoice Supplier (Gambar/PDF) *"
+                  kind="semua"
+                  accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+                  category="invoice"
+                  autoFlush
+                  onUploaded={(fileId) => setInvFileId(fileId)}
+                  hint="File tagihan invoice resmi dari supplier"
+                />
+              </View>
+              {invPaymentScheme === "LUNAS" ? (
+                <View className="flex-1 min-w-[260px]">
+                  <FileUploader
+                    label="Bukti Bayar / Transfer (Gambar/PDF) *"
+                    kind="semua"
+                    accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+                    category="bukti-bayar-supplier"
+                    autoFlush
+                    onUploaded={(fileId) => setInvPayProofFileId(fileId)}
+                    hint="Bukti transfer bank atau struk kas pelunasan"
+                  />
+                </View>
+              ) : null}
+            </View>
+          </ScrollView>
+
+          <DialogFooter className="p-3 border-t border-border/60 flex-row items-center justify-end gap-2 bg-muted/20">
+            <Button variant="outline" size="sm" onPress={() => setInvOpen(false)}>
               <Text>Batal</Text>
             </Button>
-            <Button onPress={handleCreateInvoiceIn}>
+            <Button size="sm" onPress={handleCreateInvoiceIn}>
               <Text>{invPaymentScheme === "LUNAS" ? "Simpan & Tandai Lunas" : "Simpan Invoice Masuk"}</Text>
             </Button>
           </DialogFooter>
