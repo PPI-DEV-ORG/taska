@@ -854,6 +854,7 @@ export function adaptRow(module: string, raw: any): Row {
         paymentProofFileId: raw.paymentProofFileId ?? (raw.paymentProofFile?.id ?? null),
         paymentProofFile: raw.paymentProofFile ?? null,
         fundingSource: raw.fundingSource || (raw.otherNote?.match(/\[DIBAYAR:([^\]]+)\]/)?.[1] ?? null),
+        ppnMode: raw.ppnMode || (raw.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] ?? "none"),
         paymentStatus: isPaid ? "DIBAYAR" : "BELUM_DIBAYAR",
         isPaid,
         rejectReason: raw.rejectReason,
@@ -1987,6 +1988,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
         purpose: row.purpose || row.tujuan || row.item || "Kebutuhan operasional",
         otherNote: row.otherNote || row.catatan || undefined,
+        estimatedCost: row.estimasi != null ? num(row.estimasi) : undefined,
         evidenceFileId: row.evidenceFileId ?? (row.fileId ? Number(row.fileId) : undefined),
         items:
           Array.isArray(row.items) && row.items.length

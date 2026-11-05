@@ -939,6 +939,14 @@ export function PurchaseRequestExtras({
                   : "[210102] Hutang Usaha (Nota Bon Toko / Supplier)"}
               </Text>
             </View>
+            {row.ppnMode && row.ppnMode !== "none" ? (
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Skema Pajak (PPN):</Text>
+                <Text className="text-xs font-bold text-primary">
+                  {row.ppnMode === "include" ? "PPN Included (Sudah termasuk 11%)" : "PPN (11% Ditambahkan)"}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1">

@@ -213,8 +213,14 @@ export default function NewPurchaseRequestScreen() {
     };
   });
 
+  const [ppnMode, setPpnMode] = React.useState<"none" | "exclude" | "include">("none");
+
   const selectedItems = [...selectedMasterItems, ...mappedCustomItems];
-  const totalEstimatedCost = selectedItems.reduce((acc, it) => acc + it.subtotal, 0);
+  const itemsSubtotal = selectedItems.reduce((acc, it) => acc + it.subtotal, 0);
+
+  const dppCost = ppnMode === "include" ? Math.round(itemsSubtotal / 1.11) : itemsSubtotal;
+  const ppnCost = ppnMode === "none" ? 0 : ppnMode === "include" ? Math.max(0, itemsSubtotal - dppCost) : Math.round(itemsSubtotal * 0.11);
+  const totalEstimatedCost = ppnMode === "exclude" ? itemsSubtotal + ppnCost : itemsSubtotal;
 
   const isStockTakeMode = procurementSource === "GUDANG";
   const isProjectAlloc = costType === "Project";
@@ -315,6 +321,7 @@ export default function NewPurchaseRequestScreen() {
       if (costType === "Lainnya" || costType === "Internal") {
         if (otherDesc) tags.push(otherDesc);
       }
+      tags.push(`[PPN:${ppnMode}]`);
       const otherNotePayload = tags.length > 0 ? tags.join(" ") : undefined;
 
       await addRow("purchase-requests", {
@@ -332,6 +339,7 @@ export default function NewPurchaseRequestScreen() {
         item: itemDesc,
         items: itemsPayload,
         estimasi: totalEstimatedCost,
+        ppnMode,
         fileId,
         status: "Diajukan",
       });
@@ -839,13 +847,60 @@ export default function NewPurchaseRequestScreen() {
                   );
                 })}
 
-                {/* Total Kalkulasi Card */}
-                <View className="bg-primary/10 border-primary/30 rounded-xl border p-3.5 flex-row justify-between items-center mt-1">
-                  <View>
-                    <Text className="text-xs font-semibold text-primary">Total Estimasi Pengadaan</Text>
-                    <Text className="text-xs text-muted-foreground">{selectedItems.length} macam barang</Text>
+                {/* Pilihan Skema PPN */}
+                <View className="bg-panel/40 border-border/70 rounded-xl border p-3.5 gap-2 mt-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-xs font-semibold text-foreground">Skema Pajak (PPN)</Text>
+                    <Text className="text-[11px] text-muted-foreground">
+                      {ppnMode === "none"
+                        ? "Tanpa PPN (Non-PKP / Final)"
+                        : ppnMode === "exclude"
+                        ? "+11% PPN ditambahkan"
+                        : "Harga sudah termasuk PPN 11%"}
+                    </Text>
                   </View>
-                  <Text className="text-lg font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {[
+                      { id: "none", label: "No PPN" },
+                      { id: "exclude", label: "PPN (11%)" },
+                      { id: "include", label: "PPN Included" },
+                    ].map((opt) => (
+                      <Button
+                        key={opt.id}
+                        size="sm"
+                        variant={ppnMode === opt.id ? "default" : "outline"}
+                        onPress={() => setPpnMode(opt.id as any)}
+                        className="h-8 px-3"
+                      >
+                        <Text className="text-xs">{opt.label}</Text>
+                      </Button>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Total Kalkulasi Card */}
+                <View className="bg-primary/10 border-primary/30 rounded-xl border p-3.5 gap-2 mt-1">
+                  <View className="flex-row justify-between items-center">
+                    <View>
+                      <Text className="text-xs font-semibold text-primary">Total Estimasi Pengadaan</Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {selectedItems.length} macam barang
+                        {ppnMode === "exclude" ? " · Termasuk PPN 11%" : ppnMode === "include" ? " · PPN Included" : " · Non-PPN"}
+                      </Text>
+                    </View>
+                    <Text className="text-lg font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
+                  </View>
+
+                  {ppnMode !== "none" ? (
+                    <View className="border-t border-primary/20 pt-2 flex-row justify-between text-xs">
+                      <Text className="text-xs text-muted-foreground">
+                        DPP: <Text className="font-semibold text-foreground">{rupiah(dppCost)}</Text>
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        PPN Masukan (11%): <Text className="font-semibold text-primary">{rupiah(ppnCost)}</Text>
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
               </View>
             ) : (
@@ -922,9 +977,21 @@ export default function NewPurchaseRequestScreen() {
                 <Text className="text-muted-foreground text-sm">Pos Debit Akuntansi:</Text>
                 <Text className="text-sm font-semibold text-primary">{debitAccountLabel}</Text>
               </View>
+              {ppnMode !== "none" ? (
+                <View className="flex-row justify-between">
+                  <Text className="text-muted-foreground text-sm">Pos PPN Masukan:</Text>
+                  <Text className="text-sm font-semibold text-primary">[1600] Ppn masukan ({rupiah(ppnCost)})</Text>
+                </View>
+              ) : null}
               <View className="flex-row justify-between">
                 <Text className="text-muted-foreground text-sm">Pos Kredit Akuntansi:</Text>
                 <Text className="text-sm font-semibold text-warning">{creditAccountLabel}</Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text className="text-muted-foreground text-sm">Skema PPN:</Text>
+                <Text className="text-sm font-semibold">
+                  {ppnMode === "none" ? "No PPN" : ppnMode === "exclude" ? "PPN (11% Ditambahkan)" : "PPN Included (Sudah Termasuk)"}
+                </Text>
               </View>
 
               <View className="border-t border-border/60 my-1 pt-2 gap-1.5">
@@ -948,6 +1015,12 @@ export default function NewPurchaseRequestScreen() {
                 <Text className="text-sm font-bold text-foreground">Total Perkiraan Biaya:</Text>
                 <Text className="text-base font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
               </View>
+              {ppnMode !== "none" ? (
+                <View className="flex-row justify-between text-xs pt-0.5">
+                  <Text className="text-xs text-muted-foreground">DPP: {rupiah(dppCost)}</Text>
+                  <Text className="text-xs text-muted-foreground">PPN (11%): {rupiah(ppnCost)}</Text>
+                </View>
+              ) : null}
             </View>
 
             <FileUploader
