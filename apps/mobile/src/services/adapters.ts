@@ -865,8 +865,17 @@ export function adaptRow(module: string, raw: any): Row {
       const effPayMethod =
         raw.request?.paymentMethod ||
         (/kas|tunai|cash/i.test(String(raw.paymentTerms || "")) ? "KAS" : "UTANG");
+      const isInvoicePaid =
+        Array.isArray(raw.invoiceIns) &&
+        raw.invoiceIns.some(
+          (inv: any) =>
+            inv.status === "PAID" ||
+            inv.status === "Lunas" ||
+            (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0)
+        );
       const isPaid =
         Boolean(raw.isPaid) ||
+        isInvoicePaid ||
         raw.paymentStatus === "DIBAYAR" ||
         raw.request?.status === "DIBAYAR" ||
         raw.request?.status === "LUNAS" ||
@@ -915,6 +924,7 @@ export function adaptRow(module: string, raw: any): Row {
         fileId: raw.fileId ?? null,
         soFileId: raw.soFileId ?? null,
         doFileId: raw.doFileId ?? null,
+        invoiceIns: Array.isArray(raw.invoiceIns) ? raw.invoiceIns : [],
       };
     }
     case "receiving": {
@@ -2338,6 +2348,12 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         total: tot,
         dueDate: dueStr && /^\d{4}-\d{2}-\d{2}/.test(dueStr) ? dueStr : new Date().toISOString().slice(0, 10),
         fileId: row.fileId ? Number(row.fileId) : undefined,
+        transferFileId: row.transferFileId ? Number(row.transferFileId) : (row.paymentFileId ? Number(row.paymentFileId) : undefined),
+        paid: !!row.paid,
+        paymentMethod: row.paymentMethod || undefined,
+        paymentReference: row.paymentReference || undefined,
+        coaAccount: row.coaAccount || undefined,
+        paymentFileId: row.paymentFileId ? Number(row.paymentFileId) : (row.transferFileId ? Number(row.transferFileId) : undefined),
       };
     }
     default:
@@ -2430,7 +2446,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   receiving: ["supplierPoId", "warehouseId", "projectId", "requestId", "date", "conditionNote", "receiptFileId", "photoFileId", "status", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText"],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],
-  invoiceIn: ["number", "supplierId", "supplierPoId", "amount", "ppn", "total", "dueDate", "fileId"],
+  invoiceIn: ["number", "supplierId", "supplierPoId", "amount", "ppn", "total", "dueDate", "fileId", "transferFileId", "paid", "paymentMethod", "paymentReference", "coaAccount", "paymentFileId"],
   followups: ["method", "notes", "date", "nextDate", "status"],
   "poc-reports": [
     "title", "description", "type", "date", "endDate", "location", "status", "resultStatus",

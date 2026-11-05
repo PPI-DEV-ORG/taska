@@ -24,10 +24,11 @@ import {
 } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, formatThousands } from "@/components/taska/dialogs";
+import { DatePicker, formatThousands, SearchableSelect } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase } from "@/services/api";
+import { getKasBankAccounts } from "@/lib/accounting";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -252,9 +253,12 @@ function SupplierInvoicePayForm({
   const [amount, setAmount] = React.useState(() => formatThousands(String(sisa || 0)));
   const [date, setDate] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [method, setMethod] = React.useState<"TRANSFER" | "TUNAI" | "GIRO" | "LAINNYA">("TRANSFER");
+  const [coaAccount, setCoaAccount] = React.useState<string>("1000.02");
   const [reference, setReference] = React.useState(() => `TRF-${invoice.nomor || invoice.id}`);
   const [fileId, setFileId] = React.useState<number | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+
+  const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
 
   async function handleSubmit() {
     const numAmt = Number(String(amount).replace(/\D/g, "")) || 0;
@@ -273,7 +277,8 @@ function SupplierInvoicePayForm({
         amount: numAmt,
         date: date || new Date().toISOString().slice(0, 10),
         method,
-        reference: reference.trim() || undefined,
+        reference: `[AKUN:${coaAccount}] ${reference.trim()}`,
+        coaAccount,
         fileId: fileId ?? undefined,
       });
       toast(`Pembayaran supplier ${rupiah(numAmt)} berhasil dicatat`);
@@ -329,13 +334,46 @@ function SupplierInvoicePayForm({
                 key={m}
                 size="sm"
                 variant={method === m ? "default" : "outline"}
-                onPress={() => setMethod(m)}
+                onPress={() => {
+                  setMethod(m);
+                  if (m === "TUNAI") {
+                    const cashAcc = kasBankOptions.find((o) => o.code === "1000.01" || /kas/i.test(o.rawName));
+                    if (cashAcc) setCoaAccount(cashAcc.code);
+                  } else {
+                    const firstBank = kasBankOptions.find((o) => o.code !== "1000.01" && !/kas/i.test(o.rawName));
+                    if (firstBank) setCoaAccount(firstBank.code);
+                  }
+                }}
                 className="flex-1"
               >
                 <Text className={method === m ? "text-primary-foreground text-xs" : "text-xs"}>{m}</Text>
               </Button>
             ))}
           </View>
+        </FormField>
+
+        <FormField
+          label="Pilih Akun Kas / Bank (CoA) Sumber Bayar"
+          required
+          hint="Rekening kas atau bank yang dipotong untuk pembayaran ini"
+        >
+          <SearchableSelect
+            value={
+              kasBankOptions.find((o) => o.code === coaAccount)?.name ||
+              kasBankOptions[0]?.name ||
+              ""
+            }
+            options={kasBankOptions.map((o) => o.name)}
+            onChange={(val) => {
+              const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
+              if (match) {
+                setCoaAccount(match.code);
+                const isTunai = match.code === "1000.01" || /kas/i.test(match.rawName);
+                setMethod(isTunai ? "TUNAI" : "TRANSFER");
+              }
+            }}
+            placeholder="Pilih rekening kas / bank..."
+          />
         </FormField>
 
         <FormField label="Nomor Referensi / Catatan Transfer">

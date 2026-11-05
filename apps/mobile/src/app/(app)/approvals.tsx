@@ -39,7 +39,7 @@ export default function ApprovalsScreen() {
       if (role === "super_admin" || role === "admin") return true;
       if (a.canApprove === false) return false;
       if (a.requestedById && userId && String(a.requestedById) === String(userId)) {
-        if (!(role === "finance" && a.module === "supplier-pos")) {
+        if (!(role === "finance" && (a.module === "supplier-pos" || a.module === "invoice-in"))) {
           return false;
         }
       }

@@ -285,6 +285,21 @@ export class InvoiceInDto {
 
   @IsOptional() @IsInt()
   transferFileId?: number;
+
+  @IsOptional() @IsBoolean()
+  paid?: boolean;
+
+  @IsOptional() @IsString()
+  paymentMethod?: string;
+
+  @IsOptional() @IsString()
+  paymentReference?: string;
+
+  @IsOptional() @IsString()
+  coaAccount?: string;
+
+  @IsOptional() @IsInt()
+  paymentFileId?: number;
 }
 
 export class PaymentDto {
@@ -299,6 +314,9 @@ export class PaymentDto {
 
   @IsOptional() @IsString()
   reference?: string;
+
+  @IsOptional() @IsString()
+  coaAccount?: string;
 
   @IsOptional() @IsInt()
   fileId?: number;
