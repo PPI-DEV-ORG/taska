@@ -94,26 +94,86 @@ export function calcItemPph(item: { qty?: number; harga?: number; price?: number
 export function calcQuotationFinancials(
   nilaiRaw: unknown,
   discRaw: unknown,
-  ppnMode: PpnMode = "exclude",
+  ppnMode: PpnMode,
   pphMode: PphMode = "none",
-  items?: Array<{ qty?: number; harga?: number; price?: number; pphMode?: PphMode }>
+  items: any[] = []
 ) {
   const totNum = Number(String(nilaiRaw).replace(/\D/g, "")) || 0;
   const discNum = Number(String(discRaw).replace(/\D/g, "")) || 0;
   const netBeforeTax = Math.max(0, totNum - discNum);
+
   const isInclude = ppnMode === "include";
   const dpp = isInclude ? Math.round(netBeforeTax / 1.11) : netBeforeTax;
   const ppn = ppnMode === "none" ? 0 : isInclude ? Math.max(0, netBeforeTax - dpp) : Math.round(netBeforeTax * 0.11);
 
-  // Jika ada items, hitung PPh per-item
-  let pph = 0;
-  if (Array.isArray(items) && items.length > 0) {
-    pph = items.reduce((acc, it) => acc + calcItemPph(it), 0);
-  } else {
-    const pphRate = pphRateFor(pphMode);
-    pph = Math.round(dpp * pphRate);
+  const itemPph = (items || []).reduce((acc: number, it: any) => acc + calcItemPph(it), 0);
+  const pph = items && items.length > 0 ? itemPph : Math.round(dpp * pphRateFor(pphMode));
+  const totalAfterDisc = Math.max(0, (isInclude ? netBeforeTax : netBeforeTax + ppn) - pph);
+
+  return { totNum, discNum, dpp, ppn, pph, totalAfterDisc };
+}
+
+export function isServiceItem(it: any): boolean {
+  if (!it) return false;
+  const name = String(it.item || it.name || it.title || "").trim().toLowerCase();
+  const unit = String(it.unit || it.satuan || "").trim().toLowerCase();
+  const code = String(it.kodeAkun || it.accountCode || "").trim();
+  if (it.tipe === "JASA" || it.type === "SERVICE" || it.type === "JASA" || it.itemType === "JASA" || it.kind === "SERVICE") return true;
+  if (name.startsWith("[jasa]") || name.startsWith("jasa ") || name.includes("ongkos kirim") || name.includes("ongkir")) return true;
+  if (name.includes("instalasi") || name.includes("pemasangan") || name.includes("setting") || name.includes("konfigurasi") || name.includes("maintenance") || name.includes("training") || name.includes("transportasi")) return true;
+  if (unit === "paket" || unit === "ls" || unit === "lot" || unit === "titik" || unit === "jam" || unit === "hari") return true;
+  if (code === "4000.02" || code === "5103") return true;
+  return false;
+}
+
+export function getItemAvailableStock(
+  item: any,
+  products: any[] = [],
+  serials: any[] = [],
+  stockSummary: any[] = []
+): { availableStock: number; isService: boolean; isOutOfStock: boolean; matchedProduct: any } {
+  if (isServiceItem(item)) {
+    return { availableStock: 999999, isService: true, isOutOfStock: false, matchedProduct: null };
   }
 
-  const totalAfterDisc = Math.max(0, (isInclude ? netBeforeTax : netBeforeTax + ppn) - pph);
-  return { totNum, discNum, dpp, ppn, pph, totalAfterDisc };
+  const rawName = String(item.item || item.name || item.title || "").trim();
+  const cleanName = rawName.replace(/\(SN:[^)]+\)/i, "").trim().toLowerCase();
+  const prodId = item.productId ? String(item.productId) : null;
+
+  const matched = (products || []).find((p) => {
+    if (prodId && String(p.id) === prodId) return true;
+    const pName = String(p.nama || p.name || "").trim().toLowerCase();
+    const pSku = String(p.sku || "").trim().toLowerCase();
+    return (cleanName && pName === cleanName) || (cleanName && pSku && pSku === cleanName);
+  });
+
+  if (!matched && !prodId) {
+    // Jika tidak terdaftar di master produk sama sekali, anggap non-stok/kustom
+    return { availableStock: 0, isService: false, isOutOfStock: false, matchedProduct: null };
+  }
+
+  const p = matched || { id: prodId };
+  let stock = 0;
+
+  if (p.berSN || p.hasSerial) {
+    stock = (serials || []).filter(
+      (s: any) =>
+        (String(s.productId) === String(p.id) || (p.nama && s.produk === p.nama) || (p.name && s.produk === p.name)) &&
+        (s.rawStatus === "DI_GUDANG" || s.status === "Di gudang")
+    ).length;
+  } else {
+    const sum = (stockSummary || [])
+      .filter((s: any) => String(s.productId) === String(p.id))
+      .reduce((acc: number, cur: any) => acc + Number(cur.saldo ?? cur.qty ?? cur.stok ?? 0), 0);
+    if (sum > 0) {
+      stock = sum;
+    } else {
+      stock = Number(p.stok ?? p.stock ?? p.tersedia ?? 0);
+    }
+  }
+
+  const reqQty = Number(item.qty) || 1;
+  const isOutOfStock = stock < reqQty;
+
+  return { availableStock: stock, isService: false, isOutOfStock, matchedProduct: p };
 }

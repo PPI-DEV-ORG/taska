@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronRight, Plus, Trash2, CreditCard, Pencil } from "lucide-react-native";
+import { ChevronRight, Plus, Trash2, CreditCard } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { EmptyState, PageHeader, Chip } from "@/components/taska/basics";
@@ -17,6 +17,13 @@ import {
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import {
+  buildInvoiceChainIndex,
+  getInvoiceChainState,
+  invoicePaidAmount,
+  isCancelledInvoice,
+  isDpOrTerminInvoice,
+} from "@/modules/invoice/invoice-chain";
 import { CreateSupplierPoDialog } from "@/modules/supplier-po/create-po-dialog";
 import { CreateSalesOrderDialog } from "@/modules/sales-order/create-so-dialog";
 import { compareDesc } from "@/lib/format";
@@ -212,17 +219,9 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       const qNumMap = new Map(qList.map((q) => [String(q.nomor).toLowerCase(), q]));
       const pMap = new Map(pList.map((p) => [String(p.id), p]));
       const pNameMap = new Map(pList.map((p) => [String(p.nama).toLowerCase(), p]));
-
-      // Hitung total terbayar per rantai (quotation / project)
-      const chainPaidMap = new Map<string, number>();
-      for (const inv of (data.invoices ?? [])) {
-        if (inv.status === "BATAL" || inv.status === "Batal" || inv.status === "Dibatalkan") continue;
-        const qKey = inv.quotationId ? `q-${inv.quotationId}` : (inv.quotation && inv.quotation !== "-") ? `qn-${String(inv.quotation).toLowerCase()}` : null;
-        const pKey = inv.projectId ? `p-${inv.projectId}` : (inv.project && inv.project !== "-") ? `pn-${String(inv.project).toLowerCase()}` : null;
-        const paidVal = Number(inv.terbayar) || (inv.status === "PAID" || inv.status === "Lunas" ? Number(inv.total) : 0);
-        if (qKey) chainPaidMap.set(qKey, (chainPaidMap.get(qKey) ?? 0) + paidVal);
-        if (pKey) chainPaidMap.set(pKey, (chainPaidMap.get(pKey) ?? 0) + paidVal);
-      }
+      const allInvoices = data.invoices ?? [];
+      const clientPoList = data["po-client"] ?? [];
+      const chainIndex = buildInvoiceChainIndex(allInvoices, qList, pList, clientPoList);
 
       const enrich = (r: Row) => {
         const matchedQ = qMap.get(String(r.quotationId)) || qNumMap.get(String(r.quotation || "").toLowerCase());
@@ -231,25 +230,27 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         const quote = r.quotation || matchedQ?.nomor || matchedP?.penawaran || "";
         const proj = r.project || matchedP?.nama || "";
         const tot = Number(r.total) || 0;
-        const paid = Number(r.terbayar) || 0;
-        const isDpOrTermin =
-          r.jenis === "DP" ||
-          r.jenis === "Termin" ||
-          String(r.type).toUpperCase() === "DP" ||
-          String(r.type).toUpperCase() === "TERMIN" ||
-          String(r.nomor || "").includes("/DP/") ||
-          String(r.nomor || "").includes("/TRM/");
+        const paid = invoicePaidAmount(r);
+        const isDpOrTermin = isDpOrTerminInvoice(r);
 
-        const qKey = r.quotationId ? `q-${r.quotationId}` : (quote && quote !== "-") ? `qn-${String(quote).toLowerCase()}` : null;
-        const pKey = r.projectId ? `p-${r.projectId}` : (proj && proj !== "-") ? `pn-${String(proj).toLowerCase()}` : null;
-        const chainPaid = Number((qKey ? chainPaidMap.get(qKey) : undefined) ?? (pKey ? chainPaidMap.get(pKey) : undefined) ?? paid) || 0;
-        const contractTotal = Number(matchedQ?.totalAfterDisc || matchedQ?.nilai || matchedP?.nilaiKontrak || tot);
+        // Status tabel memakai status rantai kontrak, sama seperti dropdown
+        // "Lanjutkan Termin / DP" di dialog create invoice.
+        const chain = getInvoiceChainState(
+          r,
+          allInvoices,
+          qList,
+          pList,
+          clientPoList,
+          chainIndex,
+        );
+        const chainPaid = chain.contractKnown ? chain.paidTotal : paid;
+        const contractTotal = chain.contractKnown ? chain.contractTotal : tot;
 
         let currentStatus = r.status;
         let isPartial = false;
         let isPaid = false;
 
-        if (r.status === "BATAL" || r.status === "Batal" || r.status === "Dibatalkan") {
+        if (isCancelledInvoice(r)) {
           currentStatus = "Dibatalkan";
         } else if (r.status === "PAID") {
           isPaid = true;

@@ -1,12 +1,11 @@
 import * as React from "react";
-import { View, Pressable, Linking, ScrollView } from "react-native";
+import { View, Pressable, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import {
   AlertTriangle,
   CheckCircle2,
   FileDown,
   Plus,
-  Minus,
   Receipt,
   Check,
   ArrowRight,
@@ -20,10 +19,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, formatThousands } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, uploadFile, uploadQuotationExcel } from "@/services/api";
+import { api, apiBase, uploadFile } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -31,12 +29,11 @@ import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quota
 import { type QuotationItem } from "@/modules/quotation/types";
 import {
   PPH_MODE_OPTIONS,
-  pphRateFor,
   pphModeToTipe,
-  getInitialPphMode,
   type PphMode,
   calcItemPph,
   calcQuotationFinancials,
+  getItemAvailableStock,
 } from "@/modules/quotation/lib";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
@@ -50,8 +47,8 @@ export function QuotationExtras({
   onRefresh?: () => Promise<void> | void;
 }) {
   const router = useRouter();
-  const { user, patchRow, toast, reload, data, addRow, setStatus, pushHistory } = useApp();
-  const apiVersions: {
+  const { user, patchRow, toast, reload, data, setStatus } = useApp();
+  const apiVersions = React.useMemo((): {
     id: string;
     v: number;
     status?: string;
@@ -63,7 +60,7 @@ export function QuotationExtras({
     reason: string;
     file: string;
     fileId?: number | null;
-  }[] = Array.isArray(row._versions) ? row._versions : [];
+  }[] => (Array.isArray(row._versions) ? row._versions : []), [row._versions]);
 
   const maxVer = apiVersions.reduce((max, v) => Math.max(max, v.v || 0), Number(row.versi || 0));
   const nextVersionNum = maxVer + 1;
@@ -84,25 +81,8 @@ export function QuotationExtras({
 
   // Revisi state
   const [revisiOpen, setRevisiOpen] = React.useState(false);
-  const [revisiTotal, setRevisiTotal] = React.useState(String(row.total || row.nilai || "0"));
-  const [revisiDiscType, setRevisiDiscType] = React.useState<"nominal" | "percent">("nominal");
-  const [revisiDisc, setRevisiDisc] = React.useState(String(row.disc || "0"));
-  const [revisiDiscPercent, setRevisiDiscPercent] = React.useState("0");
   const [revisiReason, setRevisiReason] = React.useState("");
-  const [revisiPpnMode, setRevisiPpnMode] = React.useState<"exclude" | "include" | "none">(ppnMode);
   const [revisiFileId, setRevisiFileId] = React.useState<number | null>(null);
-
-  const revTotNum = Number(revisiTotal.replace(/\D/g, "")) || 0;
-  const revDiscPercentNum = Number(revisiDiscPercent.replace(/\D/g, "")) || 0;
-  const revDiscNum = revisiDiscType === "percent"
-    ? Math.round(revTotNum * (revDiscPercentNum / 100))
-    : (Number(revisiDisc.replace(/\D/g, "")) || 0);
-  const revNet = Math.max(0, revTotNum - revDiscNum);
-  const isRevInclude = revisiPpnMode === "include";
-  const revDpp = isRevInclude ? Math.round(revNet / 1.11) : revNet;
-  const revPpn = revisiPpnMode === "none" ? 0 : isRevInclude ? Math.max(0, revNet - revDpp) : Math.round(revNet * 0.11);
-  const revPph = totalItemsPph;
-  const revAfterDisc = Math.max(0, (revisiPpnMode === "exclude" ? revNet + revPpn : revNet) - revPph);
 
   async function handleCreateRevision() {
     const finalTotal = totNum;
@@ -175,10 +155,6 @@ export function QuotationExtras({
     });
   }, [data.invoices, row.id, row.nomor, relatedProject]);
 
-  const dealAmount = React.useMemo(() => {
-    const raw = row.totalAfterDisc || row.total || row.nilai || 0;
-    return typeof raw === "number" ? raw : Number(String(raw).replace(/\D/g, "")) || 0;
-  }, [row.totalAfterDisc, row.total, row.nilai]);
 
   const pdfFiles = React.useMemo(() => {
     const list: any[] = Array.isArray(row.files) ? [...row.files] : [];
@@ -233,7 +209,6 @@ export function QuotationExtras({
   const netBeforeTax = Math.max(0, totNum - discNum);
   const calcPpn = ppnMode === "exclude" ? Math.round(netBeforeTax * 0.11) : 0;
   const calcTotalAfterDisc = ppnMode === "exclude" ? netBeforeTax + calcPpn : netBeforeTax;
-  const baseDealDpp = netBeforeTax || dealAmount || 0;
 
   const canCreateInvoice = ["finance", "admin", "super_admin", "bos"].includes(
     (user?.role || "").toLowerCase()
@@ -430,7 +405,7 @@ export function QuotationExtras({
             <View className="bg-warning/10 border-warning/30 flex-row items-center gap-2 rounded-xl border p-3 mt-1">
               <AlertTriangle size={16} color={colors.warning} />
               <Text className="text-warning text-xs flex-1">
-                Status masih <b>Not Yet</b>. Anda bisa <b>Edit Item / Jasa di aplikasi</b> atau <b>Upload File Excel (.xlsx)</b> hasil editan manual agar sistem otomatis membaca nilainya dan mengubah status menjadi <b>Done</b>.
+                Status masih <Text className="font-bold">Not Yet</Text>. Anda bisa <Text className="font-bold">Edit Item / Jasa di aplikasi</Text> atau <Text className="font-bold">Upload File Excel (.xlsx)</Text> hasil editan manual agar sistem otomatis membaca nilainya dan mengubah status menjadi <Text className="font-bold">Done</Text>.
               </Text>
             </View>
           )}
@@ -522,6 +497,8 @@ export function QuotationExtras({
                 const isSelected = selectedItemIndices.includes(idx);
 
                 const itemPph = calcItemPph(it);
+                const stockInfo = getItemAvailableStock(it, data.products, data.serials, data.stockSummary);
+                const isOutOfStock = stockInfo.isOutOfStock;
                 return (
                   <View key={it.id || idx} className={`p-2.5 border-b border-border/40 last:border-b-0 gap-1.5 ${isSelected ? "bg-primary/10" : ""}`}>
                     <View className="flex-row items-center">
@@ -544,7 +521,21 @@ export function QuotationExtras({
                       </Pressable>
                       <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
                       <View className="flex-1 mr-2">
-                        <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
+                        <Text
+                          className={`text-xs font-semibold ${
+                            isOutOfStock ? "text-danger underline decoration-danger" : "text-foreground"
+                          }`}
+                        >
+                          {it.item}
+                        </Text>
+                        {isOutOfStock ? (
+                          <View className="flex-row items-center gap-1 mt-0.5">
+                            <AlertTriangle size={11} color={colors.danger} />
+                            <Text className="text-[10px] font-bold text-danger">
+                              Stok barang di gudang kosong (Sisa: {stockInfo.availableStock} unit)
+                            </Text>
+                          </View>
+                        ) : null}
                         {snText ? (
                           <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
                         ) : null}
@@ -1074,6 +1065,22 @@ export function QuotationExtras({
                         size="sm"
                         className="h-8 px-2.5 bg-success"
                         onPress={async () => {
+                          const invItems = Array.isArray(inv.items) ? inv.items : [];
+                          const outOfStockItems = invItems
+                            .map((it: any) => ({
+                              it,
+                              stock: getItemAvailableStock(it, data.products, data.serials, data.stockSummary),
+                            }))
+                            .filter((res: any) => res.stock.isOutOfStock);
+
+                          if (outOfStockItems.length > 0) {
+                            const names = outOfStockItems.map((o: any) => o.it.item).join(", ");
+                            const confirmProceed = typeof window !== "undefined"
+                              ? window.confirm(`Peringatan: Stok barang di gudang kosong / tidak mencukupi untuk item berikut:\n- ${names}\n\nApakah Anda tetap ingin menandai invoice ini sebagai Lunas?`)
+                              : true;
+                            if (!confirmProceed) return;
+                          }
+
                           try {
                             await setStatus("invoices", String(inv.id), "Lunas");
                             toast(`Invoice ${inv.nomor} berhasil dilunasi & status Project tersinkronkan!`);

@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Linking, Pressable } from "react-native";
-import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check, Truck } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check, Truck, AlertTriangle } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -19,7 +19,7 @@ import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { type QuotationItem } from "@/modules/quotation/types";
-import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
+import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode, getItemAvailableStock } from "@/modules/quotation/lib";
 import { getKasBankAccounts } from "@/lib/accounting";
 
 export function InvoiceExtras({
@@ -54,7 +54,10 @@ export function InvoiceExtras({
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [showAllItems, setShowAllItems] = React.useState(false);
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
-  const items: QuotationItem[] = Array.isArray(row.items) ? row.items : [];
+  const items: QuotationItem[] = React.useMemo(
+    () => (Array.isArray(row.items) ? row.items : []),
+    [row.items],
+  );
 
   async function handleAddItems(newItems: QuotationItem[]) {
     const existingSnSet = new Set<string>();
@@ -328,6 +331,25 @@ export function InvoiceExtras({
       toast("Bukti transfer / pembayaran wajib diunggah sebelum menyimpan", "danger");
       return;
     }
+
+    const willBePaid = amt >= sisa;
+    if (willBePaid) {
+      const outOfStockItems = items
+        .map((it: any) => ({
+          it,
+          stock: getItemAvailableStock(it, data.products, data.serials, data.stockSummary),
+        }))
+        .filter((res: any) => res.stock.isOutOfStock);
+
+      if (outOfStockItems.length > 0) {
+        const names = outOfStockItems.map((o: any) => o.it.item).join(", ");
+        const confirmProceed = typeof window !== "undefined"
+          ? window.confirm(`Peringatan: Stok barang di gudang kosong / tidak mencukupi untuk item berikut:\n- ${names}\n\nApakah Anda yakin ingin tetap mencatat pelunasan invoice ini?`)
+          : true;
+        if (!confirmProceed) return;
+      }
+    }
+
     setIsSubmittingPay(true);
     try {
       await api("POST", `/invoices/${row.id}/payments`, {
@@ -588,6 +610,8 @@ export function InvoiceExtras({
                 const isSelected = selectedItemIndices.includes(idx);
 
                 const itemPph = calcItemPph(it);
+                const stockInfo = getItemAvailableStock(it, data.products, data.serials, data.stockSummary);
+                const isOutOfStock = stockInfo.isOutOfStock;
                 return (
                   <View key={it.id || idx} className={`p-2.5 border-b border-border/40 last:border-b-0 gap-1.5 ${isSelected ? "bg-primary/10" : ""}`}>
                     <View className="flex-row items-center">
@@ -610,7 +634,21 @@ export function InvoiceExtras({
                       </Pressable>
                       <Text className="text-xs text-muted-foreground w-8 font-mono">{idx + 1}</Text>
                       <View className="flex-1 mr-2">
-                        <Text className="text-xs font-semibold text-foreground">{it.item}</Text>
+                        <Text
+                          className={`text-xs font-semibold ${
+                            isOutOfStock ? "text-danger underline decoration-danger" : "text-foreground"
+                          }`}
+                        >
+                          {it.item}
+                        </Text>
+                        {isOutOfStock ? (
+                          <View className="flex-row items-center gap-1 mt-0.5">
+                            <AlertTriangle size={11} color={colors.danger} />
+                            <Text className="text-[10px] font-bold text-danger">
+                              Stok barang di gudang kosong (Sisa: {stockInfo.availableStock} unit)
+                            </Text>
+                          </View>
+                        ) : null}
                         {snText ? (
                           <Text className="text-[10px] text-primary font-mono mt-0.5">SN: {snText}</Text>
                         ) : null}

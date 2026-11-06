@@ -18,6 +18,11 @@ import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
+import {
+  collectContinuableInvoices,
+  invoiceAmount,
+  invoicePaidAmount,
+} from "@/modules/invoice/invoice-chain";
 import { CHART_OF_ACCOUNTS, loadCustomCoa, loadDeletedCoaCodes } from "@/lib/accounting";
 import {
   type PphMode,
@@ -336,62 +341,41 @@ function CreateInvoiceForm({
     }));
   }, []);
 
-  // Candidates for continuing existing invoices: exclude already fully paid or settled invoices
+  // Kandidat untuk melanjutkan invoice: status rantai kontrak, bukan hanya
+  // status invoice. Invoice DP/Termin yang sudah lunas tetap muncul selama
+  // kontraknya masih punya sisa yang belum ditagih.
+  const clientPos = data["po-client"];
   const continuableInvoiceOptions = React.useMemo(() => {
     const allInvoices = data.invoices ?? [];
+    const quotations = data.quotations ?? [];
+    const projects = data.projects ?? [];
+    const clientPoList = clientPos ?? [];
 
-    return allInvoices
-      .filter((inv: Row) => {
-        const st = String(inv.status || "").toUpperCase();
-        const displaySt = String(inv.status || "");
-        if (st === "BATAL" || st === "DIBATALKAN" || displaySt === "Dibatalkan") return false;
-
-        // 1. Jangan tampilkan invoice yang sudah Lunas
-        if (st === "PAID" || st === "LUNAS" || displaySt.toLowerCase() === "lunas") return false;
-
-        // 2. Jangan tampilkan jika jenisnya sudah Pelunasan
-        const jenis = String(inv.jenis || inv.type || "");
-        if (/pelunasan/i.test(jenis)) return false;
-
-        // 3. Cek apakah ada invoice pelunasan yang sudah lunas untuk rantai penawaran / PO yang sama
-        const poId = inv.clientPoId;
-        const qId = inv.quotationId;
-        const invId = String(inv.id);
-
-        const hasPaidPelunasan = allInvoices.some((other: Row) => {
-          if (String(other.id) === invId) return false;
-          const otherJenis = String(other.jenis || other.type || "");
-          const otherSt = String(other.status || "").toUpperCase();
-          const otherDisplaySt = String(other.status || "");
-          const isLunas = otherSt === "PAID" || otherSt === "LUNAS" || otherDisplaySt.toLowerCase() === "lunas";
-          const isPelunasan = /pelunasan/i.test(otherJenis);
-
-          if (isPelunasan && isLunas) {
-            if (poId && String(other.clientPoId) === String(poId)) return true;
-            if (qId && String(other.quotationId) === String(qId)) return true;
-            if (other.parentInvoiceId && String(other.parentInvoiceId) === invId) return true;
-          }
-          return false;
-        });
-
-        if (hasPaidPelunasan) return false;
-
-        return true;
-      })
-      .map((inv: Row) => {
+    return collectContinuableInvoices(allInvoices, quotations, projects, clientPoList).map(
+      ({ invoice: inv, chain }) => {
         const invNum = inv.nomor || inv.number || `INV #${inv.id}`;
         const cust = inv.customer || "-";
         const jenis = inv.jenis || (String(inv.type || "").toUpperCase() === "DP" ? "DP" : "Invoice");
-        const amountStr = rupiah(inv.total || inv.nilai || 0);
+        const amountStr = rupiah(invoiceAmount(inv));
+        const outstanding = Math.max(0, invoiceAmount(inv) - invoicePaidAmount(inv));
+        const remainingLabel =
+          outstanding > 0
+            ? ` · Sisa ${rupiah(outstanding)}`
+            : chain.remainingToBill > 0
+              ? ` · Sisa kontrak ${rupiah(chain.remainingToBill)}`
+              : "";
+
         return {
           id: String(inv.id),
-          label: `${invNum} — ${cust} — ${jenis} (${amountStr})`,
+          label: `${invNum} — ${cust} — ${jenis} (${amountStr})${remainingLabel}`,
           nomor: invNum,
           customer: cust,
           raw: inv,
+          chain,
         };
-      });
-  }, [data.invoices]);
+      },
+    );
+  }, [data.invoices, data.quotations, data.projects, clientPos]);
 
   const [selectedParentInvoiceId, setSelectedParentInvoiceId] = React.useState<string>(() => {
     if (initialPo) {
@@ -418,6 +402,11 @@ function CreateInvoiceForm({
     if (!selectedParentInvoiceId) return null;
     return (data.invoices ?? []).find((inv: Row) => String(inv.id) === String(selectedParentInvoiceId)) || null;
   }, [data.invoices, selectedParentInvoiceId]);
+
+  const selectedParentChain = React.useMemo(
+    () => continuableInvoiceOptions.find((o) => o.id === selectedParentInvoiceId)?.chain ?? null,
+    [continuableInvoiceOptions, selectedParentInvoiceId],
+  );
 
   // Items
   const [items, setItems] = React.useState<QuotationItem[]>(() => {
@@ -1470,11 +1459,11 @@ function CreateInvoiceForm({
               </Text>
               <StatusBadge status="Lanjutan" />
             </View>
-            <FormField label="Pilih Invoice DP / Termin Acuan" required hint="Cari & pilih invoice DP/Termin yang masih memiliki sisa tagihan">
+            <FormField label="Pilih Invoice DP / Termin Acuan" required hint="Cari & pilih invoice DP/Termin yang masih memiliki sisa tagihan atau sisa kontrak">
               {continuableInvoiceOptions.length === 0 ? (
                 <View className="p-3 rounded-lg bg-panel border border-dashed border-border/80">
                   <Text className="text-xs text-muted-foreground text-center">
-                    Tidak ada invoice DP / Termin aktif yang belum lunas. Semua invoice sebelumnya sudah lunas atau dibatalkan.
+                    Tidak ada invoice DP / Termin aktif yang masih memiliki sisa tagihan atau sisa kontrak. Semua invoice sudah lunas atau dibatalkan.
                   </Text>
                 </View>
               ) : (
@@ -1516,6 +1505,14 @@ function CreateInvoiceForm({
                     <Text className="text-[11px] text-muted-foreground">PO / SO Client:</Text>
                     <Text className="text-[11px] font-mono font-medium text-primary">
                       {activePo?.nomor || activePo?.nomorSo || selectedParentInvoice.po}
+                    </Text>
+                  </View>
+                ) : null}
+                {selectedParentChain && selectedParentChain.remainingToBill > 0 ? (
+                  <View className="flex-row justify-between">
+                    <Text className="text-[11px] text-muted-foreground">Sisa kontrak:</Text>
+                    <Text className="text-[11px] font-semibold text-warning">
+                      {rupiah(selectedParentChain.remainingToBill)}
                     </Text>
                   </View>
                 ) : null}
