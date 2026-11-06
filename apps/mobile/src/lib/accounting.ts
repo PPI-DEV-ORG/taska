@@ -430,6 +430,15 @@ export function formatJournalDateTime(rawDate?: any, rawCreatedAt?: any): string
   return "2026-02-01 00:00";
 }
 
+function isServiceItem(it: any): boolean {
+  if (!it) return false;
+  if (it.itemType === "JASA" || it.kind === "SERVICE" || it.isJasa) return true;
+  if (it.isNonInventory && !it.productId) return true;
+  const name = String(it.customName || it.item || it.name || it.nama || it.product?.name || "").trim();
+  if (/^\[(JASA)\]/i.test(name)) return true;
+  return false;
+}
+
 export function computeFinancialStatements(
   data: Record<string, any[]>,
   manualJournals: ManualJournal[] = [],
@@ -519,6 +528,48 @@ export function computeFinancialStatements(
         String(inv.catatan || "").includes("Nota Kontan") ||
         String(inv.catatan || "").includes("Penjualan Langsung (Walk-in)"));
 
+    const catSoMatch = String(inv.catatan || "").match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
+    const invSoNum = (inv.po && inv.po !== "-" ? String(inv.po) : (catSoMatch?.[1] || "")).toLowerCase();
+
+    const linkedSo = poClients.find((so: any) => {
+      if (inv.clientPoId && String(so.id) === String(inv.clientPoId)) return true;
+      if (invSoNum) {
+        const sNum = String(so.nomorSo && so.nomorSo !== "-" ? so.nomorSo : (so.nomor || "")).toLowerCase();
+        if (sNum && sNum === invSoNum) return true;
+      }
+      return false;
+    });
+
+    const sourceInvItems =
+      Array.isArray(inv.items) && inv.items.length > 0
+        ? inv.items
+        : Array.isArray(linkedSo?.items) && linkedSo.items.length > 0
+          ? linkedSo.items
+          : [];
+
+    let invJasaDpp = 0;
+    if (sourceInvItems.length > 0) {
+      invJasaDpp = sourceInvItems.reduce((s: number, it: any) => {
+        const isJasa =
+          isServiceItem(it) ||
+          (it.pphMode && it.pphMode !== "none") ||
+          Number(it.pph) > 0 ||
+          it.itemType === "JASA" ||
+          it.kind === "SERVICE";
+        return isJasa ? s + (Number(it.qty) || 1) * Number(it.price || it.harga || 0) : s;
+      }, 0);
+    }
+    if (invJasaDpp === 0 && pph > 0) {
+      const pphRate = tipePph.includes("23") ? 0.02 : tipePph.includes("4") ? 0.0175 : tipePph.includes("21") ? 0.025 : 0.02;
+      invJasaDpp = Math.min(dpp, Math.round(pph / pphRate));
+    }
+
+    let effJasaDpp = Math.min(dpp, Math.max(0, invJasaDpp));
+    let effBarangDpp = Math.max(0, dpp - effJasaDpp);
+    if (effBarangDpp === 0 && effJasaDpp === 0 && dpp > 0) {
+      effBarangDpp = dpp;
+    }
+
     if (total > 0 || pph > 0) {
       if (isDirectCashSale) {
         // Penjualan Langsung / Nota Kontan (Walk-in): 1 Jurnal Kas Langsung (Debit Kas/Bank vs Kredit Pendapatan & PPN)
@@ -551,12 +602,26 @@ export function computeFinancialStatements(
                 },
               ]
             : []),
-          {
-            kodeAkun: "4000.01",
-            keterangan: `Pendapatan Penjualan Langsung (${customer}) — ${nomor}`,
-            debit: 0,
-            kredit: dpp,
-          },
+          ...(effBarangDpp > 0
+            ? [
+                {
+                  kodeAkun: "4000.01",
+                  keterangan: `Pendapatan Penjualan Langsung (${customer}) — ${nomor}`,
+                  debit: 0,
+                  kredit: effBarangDpp,
+                },
+              ]
+            : []),
+          ...(effJasaDpp > 0
+            ? [
+                {
+                  kodeAkun: "4000.02",
+                  keterangan: `Pendapatan Jasa Langsung (${customer}) — ${nomor}`,
+                  debit: 0,
+                  kredit: effJasaDpp,
+                },
+              ]
+            : []),
           ...(ppn > 0
             ? [
                 {
@@ -622,12 +687,26 @@ export function computeFinancialStatements(
                 },
               ]
             : []),
-          {
-            kodeAkun: "4000.01",
-            keterangan: `Pendapatan Penjualan Proyek (${customer}) — ${nomor}`,
-            debit: 0,
-            kredit: dpp,
-          },
+          ...(effBarangDpp > 0
+            ? [
+                {
+                  kodeAkun: "4000.01",
+                  keterangan: `Pendapatan Penjualan Barang (${customer}) — ${nomor}`,
+                  debit: 0,
+                  kredit: effBarangDpp,
+                },
+              ]
+            : []),
+          ...(effJasaDpp > 0
+            ? [
+                {
+                  kodeAkun: "4000.02",
+                  keterangan: `Pendapatan Jasa (${customer}) — ${nomor}`,
+                  debit: 0,
+                  kredit: effJasaDpp,
+                },
+              ]
+            : []),
           ...(ppn > 0
             ? [
                 {
@@ -643,37 +722,78 @@ export function computeFinancialStatements(
     }
 
     if (terbayar > 0 && !isDirectCashSale) {
-      const matchAcc =
-        String(inv.catatan || "").match(/\[AKUN:([^\]]+)\]/)?.[1] ||
-        (Array.isArray(inv._payments) && inv._payments[0]?.reference?.match(/\[(1000\.\d+)\]/)?.[1]);
-      const payMethodStr = String(inv._payments?.[0]?.method || (inv.catatan || "")).toUpperCase();
-      const targetKasCode = matchAcc
-        ? matchAcc
-        : payMethodStr.includes("TUNAI") || payMethodStr.includes("KAS")
-          ? "1000.01"
-          : "1000.02";
-      const targetKasLabel = activeCoa[targetKasCode]?.name || (targetKasCode === "1000.01" ? "Kas Kecil" : "Bank Mandiri PT GMP");
+      const pmts: any[] = (Array.isArray(inv.payments) && inv.payments.length > 0)
+        ? inv.payments
+        : (Array.isArray(inv._payments) && inv._payments.length > 0)
+        ? inv._payments
+        : [];
 
-      pushJournalPair(tanggal, `${nomor}/PAY`, "Pembayaran Invoice", project, [
-        {
-          kodeAkun: targetKasCode,
-          keterangan: `Penerimaan Pembayaran (${targetKasLabel}) ${nomor} dari ${customer}`,
-          debit: terbayar,
-          kredit: 0,
-        },
-        {
-          kodeAkun: "110302",
-          keterangan: `Pelunasan Piutang Usaha ${nomor} (${customer})`,
-          debit: 0,
-          kredit: terbayar,
-        },
-      ]);
+      if (pmts.length > 0) {
+        pmts.forEach((p: any, pIdx: number) => {
+          const pAmt = toNum(p.amount);
+          if (pAmt <= 0) return;
+          const pDate = formatJournalDateTime(p.date || inv.tanggal, p.createdAt || inv.createdAt);
+          const pMatchAcc =
+            (p.reference || "").match(/\[(?:AKUN|COA):([^\]]+)\]/i)?.[1]?.trim() ||
+            (p.reference || "").match(/\[(1000\.\d+)\]/)?.[1]?.trim() ||
+            String(inv.coaAccount || "").trim() ||
+            String(inv.catatan || "").match(/\[AKUN:([^\]]+)\]/)?.[1]?.trim();
+          const pMethodStr = String(p.method || "").toUpperCase();
+          const targetKasCode = pMatchAcc
+            ? pMatchAcc
+            : pMethodStr.includes("TUNAI") || pMethodStr.includes("KAS")
+              ? "1000.01"
+              : "1000.02";
+          const targetKasLabel = activeCoa[targetKasCode]?.name || (targetKasCode === "1000.01" ? "Kas Kecil" : "Bank Mandiri PT GMP");
+          const refSuffix = pmts.length > 1 ? `-${pIdx + 1}` : "";
+          const cleanRef = (p.reference || "").replace(/\[AKUN:[^\]]+\]\s*/gi, "").trim();
+
+          pushJournalPair(pDate, `${nomor}/PAY${refSuffix}`, "Pembayaran Invoice", project, [
+            {
+              kodeAkun: targetKasCode,
+              keterangan: `Penerimaan Pembayaran (${targetKasLabel}) ${nomor} dari ${customer}${cleanRef ? ` — Ref: ${cleanRef}` : ""}`,
+              debit: pAmt,
+              kredit: 0,
+            },
+            {
+              kodeAkun: "110302",
+              keterangan: `Pelunasan Piutang Usaha ${nomor} (${customer})`,
+              debit: 0,
+              kredit: pAmt,
+            },
+          ]);
+        });
+      } else {
+        const matchAcc =
+          String(inv.coaAccount || "").trim() ||
+          String(inv.catatan || "").match(/\[AKUN:([^\]]+)\]/)?.[1]?.trim();
+        const payMethodStr = String(inv.catatan || "").toUpperCase();
+        const targetKasCode = matchAcc
+          ? matchAcc
+          : payMethodStr.includes("TUNAI") || payMethodStr.includes("KAS")
+            ? "1000.01"
+            : "1000.02";
+        const targetKasLabel = activeCoa[targetKasCode]?.name || (targetKasCode === "1000.01" ? "Kas Kecil" : "Bank Mandiri PT GMP");
+
+        pushJournalPair(tanggal, `${nomor}/PAY`, "Pembayaran Invoice", project, [
+          {
+            kodeAkun: targetKasCode,
+            keterangan: `Penerimaan Pembayaran (${targetKasLabel}) ${nomor} dari ${customer}`,
+            debit: terbayar,
+            kredit: 0,
+          },
+          {
+            kodeAkun: "110302",
+            keterangan: `Pelunasan Piutang Usaha ${nomor} (${customer})`,
+            debit: 0,
+            kredit: terbayar,
+          },
+        ]);
+      }
     }
 
     // Catat HPP (Debit 5102) & pengurangan Aset Persediaan (Kredit 1200) HANYA jika barang sudah dikirim lewat Surat Jalan (Dikirim / Diterima)
     const isRetailInv = !inv.projectId && (!inv.project || inv.project === "-");
-    const catSoMatch = String(inv.catatan || "").match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
-    const invSoNum = (inv.po && inv.po !== "-" ? String(inv.po) : (catSoMatch?.[1] || "")).toLowerCase();
 
     const shippedDn = deliveryNotes.find((dn: any) => {
       const dnStatus = normStr(dn.status).toLowerCase();
@@ -696,26 +816,16 @@ export function computeFinancialStatements(
       return false;
     });
 
-    const linkedSo = poClients.find((so: any) => {
-      if (inv.clientPoId && String(so.id) === String(inv.clientPoId)) return true;
-      if (invSoNum) {
-        const sNum = String(so.nomorSo && so.nomorSo !== "-" ? so.nomorSo : (so.nomor || "")).toLowerCase();
-        if (sNum && sNum === invSoNum) return true;
-      }
-      return false;
-    });
-
     const effectiveInvItems =
-      Array.isArray(inv.items) && inv.items.length > 0
-        ? inv.items
-        : Array.isArray(linkedSo?.items) && linkedSo.items.length > 0
-          ? linkedSo.items
-          : Array.isArray(shippedDn?.items) && shippedDn.items.length > 0
-            ? shippedDn.items
-            : [];
+      sourceInvItems.length > 0
+        ? sourceInvItems
+        : Array.isArray(shippedDn?.items) && shippedDn.items.length > 0
+          ? shippedDn.items
+          : [];
 
     if (isRetailInv && shippedDn && effectiveInvItems.length > 0) {
-      const retailCost = effectiveInvItems.reduce((acc: number, it: any) => {
+      const physicalInvItems = effectiveInvItems.filter((it: any) => !isServiceItem(it));
+      const retailCost = physicalInvItems.reduce((acc: number, it: any) => {
         const qty = Math.max(1, toNum(it.qty || 1));
         const prodMatch = products.find(
           (p: any) =>

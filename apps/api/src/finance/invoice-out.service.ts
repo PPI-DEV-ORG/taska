@@ -1167,17 +1167,24 @@ export class InvoiceOutService {
       );
     }
 
+    const finalReference = dto.coaAccount
+      ? (dto.reference?.includes(`[AKUN:`) ? dto.reference : `[AKUN:${dto.coaAccount}] ${dto.reference || ""}`.trim())
+      : dto.reference;
+
     await this.prisma.main.payment.create({
       data: {
         invoiceOutId: id,
         amount: dto.amount,
         date: dto.date ? new Date(dto.date) : new Date(),
         method: dto.method ?? "TRANSFER",
-        reference: dto.reference,
+        reference: finalReference,
         fileId: dto.fileId,
         createdById: user.id,
       },
     });
+    if (dto.coaAccount) {
+      await this.saveMeta(id, { coaAccount: dto.coaAccount }).catch(() => {});
+    }
     if (dto.fileId) {
       await this.prisma.main.file.update({
         where: { id: dto.fileId },

@@ -1040,6 +1040,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               amount: sisa,
               date: new Date().toISOString().slice(0, 10),
               method: "TRANSFER",
+              coaAccount: inv.coaAccount || "1000.02",
             });
           }
           await api("POST", `/invoices/${id}/status`, { status: "PAID", note });

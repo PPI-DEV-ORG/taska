@@ -34,6 +34,15 @@ function playScanBeep(ok: boolean) {
   } catch {}
 }
 
+function isServiceItem(it: any): boolean {
+  if (!it) return false;
+  if (it.itemType === "JASA" || it.kind === "SERVICE" || it.isJasa) return true;
+  if (it.isNonInventory && !it.productId) return true;
+  const name = String(it.customName || it.item || it.name || it.nama || it.product?.name || it.note || "").trim();
+  if (/^\[(JASA)\]/i.test(name)) return true;
+  return false;
+}
+
 export default function NewDeliveryNoteScreen() {
   const router = useRouter();
   const searchParams = useLocalSearchParams<{ id?: string; soId?: string }>();
@@ -93,7 +102,8 @@ export default function NewDeliveryNoteScreen() {
     if (initialMatchSo) {
       const soNum = (initialMatchSo.nomorSo && initialMatchSo.nomorSo !== "-") ? initialMatchSo.nomorSo : (initialMatchSo.nomor || `SO #${initialMatchSo.id}`);
       const cust = initialMatchSo.customer && initialMatchSo.customer !== "-" ? ` — ${initialMatchSo.customer}` : "";
-      const count = Array.isArray(initialMatchSo.items) && initialMatchSo.items.length > 0 ? ` (${initialMatchSo.items.length} item)` : "";
+      const physicalCount = (Array.isArray(initialMatchSo.items) ? initialMatchSo.items : []).filter((it: any) => !isServiceItem(it)).length;
+      const count = physicalCount > 0 ? ` (${physicalCount} barang)` : "";
       return `${soNum}${cust}${count}`;
     }
     return "-";
@@ -103,15 +113,16 @@ export default function NewDeliveryNoteScreen() {
     hasGoodsState ??
     Boolean(
       initialExistingDn?.withGoods ||
-        (Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0) ||
-        (Array.isArray(initialMatchSo?.items) && initialMatchSo.items.length > 0)
+        (Array.isArray(initialExistingDn?.items) && initialExistingDn.items.filter((it: any) => !isServiceItem(it)).length > 0) ||
+        (Array.isArray(initialMatchSo?.items) && initialMatchSo.items.filter((it: any) => !isServiceItem(it)).length > 0)
     );
   const [items, setItems] = React.useState<QuotationItem[]>(() => {
     // Jika edit Surat Jalan yang SUDAH memiliki scan/pilihan unit fisik, muat unit fisik yang sudah ter-scan
     if (Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0) {
-      const hasAnyScanned = initialExistingDn.items.some((it: any) => it.serials || (Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0));
+      const physicalExisting = initialExistingDn.items.filter((it: any) => !isServiceItem(it));
+      const hasAnyScanned = physicalExisting.some((it: any) => it.serials || (Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0));
       if (hasAnyScanned) {
-        return initialExistingDn.items.map((it: any, idx: number) => {
+        return physicalExisting.map((it: any, idx: number) => {
           const itemName = String(it.note || it.name || it.item || it.product?.name || "Barang");
           const u = String(it.unit || it.satuan || it.product?.unit || "unit");
           const p = Number(it.price || it.harga || 0);
@@ -145,12 +156,13 @@ export default function NewDeliveryNoteScreen() {
   >(null);
   const checklistRequirements = React.useMemo(() => {
     if (checklistRequirementsState !== null) return checklistRequirementsState;
-    const sourceItems =
+    const rawItems =
       Array.isArray(initialMatchSo?.items) && initialMatchSo.items.length > 0
         ? initialMatchSo.items
         : Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0
           ? initialExistingDn.items
           : [];
+    const sourceItems = rawItems.filter((it: any) => !isServiceItem(it));
     if (sourceItems.length > 0) {
       return sourceItems.map((it: any) => ({
         productId: it.productId ? Number(it.productId) : it.product?.id ? Number(it.product.id) : undefined,
@@ -205,7 +217,8 @@ export default function NewDeliveryNoteScreen() {
       ...soList.map((so: Row) => {
         const soNum = (so.nomorSo && so.nomorSo !== "-") ? so.nomorSo : (so.nomor || `SO #${so.id}`);
         const cust = so.customer && so.customer !== "-" ? ` — ${so.customer}` : "";
-        const count = Array.isArray(so.items) && so.items.length > 0 ? ` (${so.items.length} item)` : "";
+        const physicalCount = (Array.isArray(so.items) ? so.items : []).filter((it: any) => !isServiceItem(it)).length;
+        const count = physicalCount > 0 ? ` (${physicalCount} barang)` : "";
         return `${soNum}${cust}${count}`;
       }),
     ];
@@ -290,9 +303,10 @@ export default function NewDeliveryNoteScreen() {
           setSelectedProject(`${name}${cust}`);
         }
       }
-      if (Array.isArray(match.items) && match.items.length > 0) {
+      const physicalMatchItems = (Array.isArray(match.items) ? match.items : []).filter((it: any) => !isServiceItem(it));
+      if (physicalMatchItems.length > 0) {
         setHasGoods(true);
-        const checklist = match.items.map((it: any) => ({
+        const checklist = physicalMatchItems.map((it: any) => ({
           productId: it.productId ? Number(it.productId) : undefined,
           name: it.item || it.name || "Barang",
           sku: it.sku,
@@ -300,8 +314,10 @@ export default function NewDeliveryNoteScreen() {
           unit: it.satuan || it.unit || "unit",
         }));
         setChecklistRequirements(checklist);
-        toast(`Target kebutuhan (${checklist.length} item) dari Sales Order dimuat`);
+        toast(`Target kebutuhan (${checklist.length} barang) dari Sales Order dimuat`);
         setTimeout(() => scanInputRef.current?.focus(), 150);
+      } else {
+        setChecklistRequirements([]);
       }
     }
   }
@@ -542,7 +558,7 @@ export default function NewDeliveryNoteScreen() {
       .join(", ");
 
     const itemsList = items
-      .filter((it) => it.productId || it.kind === "GOODS")
+      .filter((it) => (it.productId || it.kind === "GOODS") && !isServiceItem(it))
       .map((it) => {
         const sns = Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0 ? it.serialNumbers : [];
         return {

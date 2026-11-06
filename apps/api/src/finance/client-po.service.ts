@@ -576,6 +576,12 @@ export class ClientPoService {
     const dnNumber = await this.docnum.next("suratJalan", settlementDate);
     const partyName = row.customer?.name ?? (row.supplier?.name ? `${row.supplier.name} (Supplier)` : "Pelanggan");
     const mappedDnItems = items
+      .filter(
+        (it: any) =>
+          it.itemType !== "JASA" &&
+          !it.isNonInventory &&
+          !/^\[JASA\]/i.test(String(it.customName || it.name || it.item || "")),
+      )
       .map((it: any) => {
         const sn = it.sn || (Array.isArray(it.serialNumbers) ? it.serialNumbers.join(",") : "");
         return {
