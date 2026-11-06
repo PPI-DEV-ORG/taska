@@ -1008,6 +1008,110 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         href: "/calendar",
       });
     }
+
+    // 3. Notifikasi Jatuh Tempo Harian Finance (Jam 10:00 WIB)
+    // Mengecek piutang invoice client, tagihan invoice supplier, dan utang PR yang jatuh tempo hari ini
+    await this.fireDailyFinanceDueNotifications(now);
+  }
+
+  private async fireDailyFinanceDueNotifications(now: Date) {
+    // Hitung waktu WIB (UTC+7)
+    const wibMs = now.getTime() + 7 * 3600_000;
+    const wibDate = new Date(wibMs);
+    const hourWib = wibDate.getUTCHours();
+
+    // Hanya berjalan di jam 10:00 WIB ke atas (10:00 - 23:59)
+    if (hourWib < 10) return;
+
+    const todayWibStr = wibDate.toISOString().slice(0, 10); // YYYY-MM-DD
+    const settingKey = `notif_finance_due_daily_${todayWibStr}`;
+
+    // Cek apakah notifikasi hari ini sudah pernah dikirim
+    const alreadySent = await this.db.systemSetting.findUnique({
+      where: { key: settingKey },
+    });
+    if (alreadySent) return;
+
+    // Kunci eksekusi hari ini agar tidak duplikat antar interval
+    await this.db.systemSetting.upsert({
+      where: { key: settingKey },
+      create: { key: settingKey, value: now.toISOString(), description: `Sent at ${now.toISOString()}` },
+      update: {},
+    });
+
+    // Rentang hari ini dalam UTC berdasarkan tanggal WIB
+    const startOfDayWibInUtc = new Date(Date.UTC(wibDate.getUTCFullYear(), wibDate.getUTCMonth(), wibDate.getUTCDate()) - 7 * 3600_000);
+    const endOfDayWibInUtc = new Date(startOfDayWibInUtc.getTime() + 24 * 3600_000 - 1);
+
+    try {
+      const [dueInvoicesOut, dueInvoicesIn, duePrsDebt] = await Promise.all([
+        this.db.invoiceOut.findMany({
+          where: {
+            dueDate: { gte: startOfDayWibInUtc, lte: endOfDayWibInUtc },
+            status: { notIn: ["PAID", "BATAL", "DRAFT"] },
+          },
+          include: { customer: { select: { name: true } } },
+        }),
+        this.db.invoiceIn.findMany({
+          where: {
+            dueDate: { gte: startOfDayWibInUtc, lte: endOfDayWibInUtc },
+            status: { notIn: ["PAID", "BATAL"] },
+          },
+          include: { supplier: { select: { name: true } }, supplierPo: { select: { id: true, number: true } } },
+        }),
+        this.db.purchaseRequest.findMany({
+          where: {
+            dueDate: { gte: startOfDayWibInUtc, lte: endOfDayWibInUtc },
+            paymentMethod: "UTANG",
+            paymentStatus: { not: "DIBAYAR" },
+            status: { notIn: ["DITOLAK"] },
+          },
+          include: { supplier: { select: { name: true } } },
+        }),
+      ]);
+
+      // Kirim notifikasi untuk Invoice Out (Piutang)
+      for (const inv of dueInvoicesOut) {
+        const custName = inv.customer?.name ? ` (${inv.customer.name})` : "";
+        const sisa = Math.max(0, Number(inv.total) - Number(inv.paidAmount));
+        await this.notifications.notify({
+          roles: ["FINANCE" as any, "BOS" as any],
+          kind: "APPROVAL" as any,
+          title: "Jatuh Tempo Hari Ini: Piutang Invoice",
+          text: `Invoice ${inv.number}${custName} jatuh tempo hari ini! Sisa tagihan Rp ${sisa.toLocaleString("id-ID")}.`,
+          href: `/invoices/${inv.id}`,
+        }).catch(() => undefined);
+      }
+
+      // Kirim notifikasi untuk Invoice In (Hutang Supplier)
+      for (const bill of dueInvoicesIn) {
+        const suppName = bill.supplier?.name ? ` (${bill.supplier.name})` : "";
+        const poNum = bill.supplierPo?.number ? ` PO ${bill.supplierPo.number}` : "";
+        const sisa = Math.max(0, Number(bill.total || 0) - Number(bill.paidAmount || 0));
+        await this.notifications.notify({
+          roles: ["FINANCE" as any, "BOS" as any],
+          kind: "APPROVAL" as any,
+          title: "Jatuh Tempo Hari Ini: Tagihan Supplier",
+          text: `Tagihan supplier ${bill.number || poNum || `#${bill.id}`}${suppName} jatuh tempo hari ini! Sisa pembayaran Rp ${sisa.toLocaleString("id-ID")}.`,
+          href: bill.supplierPoId ? `/supplier-pos/${bill.supplierPoId}` : "/accounting",
+        }).catch(() => undefined);
+      }
+
+      // Kirim notifikasi untuk Utang PR
+      for (const pr of duePrsDebt) {
+        const suppName = pr.supplier?.name ? ` (${pr.supplier.name})` : "";
+        await this.notifications.notify({
+          roles: ["FINANCE" as any, "BOS" as any],
+          kind: "APPROVAL" as any,
+          title: "Jatuh Tempo Hari Ini: Utang Request Barang",
+          text: `Utang pembelian request ${pr.number}${suppName} jatuh tempo hari ini.`,
+          href: `/requests/${pr.id}`,
+        }).catch(() => undefined);
+      }
+    } catch (err) {
+      // rollback key jika terjadi error agar bisa mencoba kembali
+      await this.db.systemSetting.delete({ where: { key: settingKey } }).catch(() => undefined);
+    }
   }
 
   // ───────────────────────────── CRUD agenda manual ─────────────────────────────
