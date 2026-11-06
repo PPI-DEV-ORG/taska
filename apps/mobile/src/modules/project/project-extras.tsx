@@ -632,7 +632,7 @@ export function ProjectExtras({ row }: { row: Row }) {
         toast("Dokumen BAST resmi berhasil dibuat & tersimpan di Tab Dokumen!");
         setBastOpen(false);
         if (typeof window !== "undefined") {
-          window.open(`${apiBase()}/files/${res.fileId}/download`, "_blank");
+          window.open(`${apiBase()}/files/${res.fileId}`, "_blank");
         }
         await reload();
       }
@@ -1544,7 +1544,7 @@ export function ProjectExtras({ row }: { row: Row }) {
                     {bastLogoFileId ? (
                       <View className="flex-row items-center gap-3 p-2 bg-muted/40 rounded-lg border border-border">
                         <Image
-                          source={{ uri: `${apiBase()}/files/${bastLogoFileId}/download` }}
+                          source={{ uri: `${apiBase()}/files/${bastLogoFileId}` }}
                           style={{ width: 64, height: 40 }}
                           resizeMode="contain"
                         />
