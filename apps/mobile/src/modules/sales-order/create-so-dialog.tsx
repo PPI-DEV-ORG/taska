@@ -25,7 +25,8 @@ import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
-import { PPH_MODE_OPTIONS, calcItemPph, pphModeToTipe, type PphMode, getInitialPpnMode } from "@/modules/quotation/lib";
+import { PPH_MODE_OPTIONS, calcItemPph, pphModeToTipe, pphRateFor, type PphMode, getInitialPpnMode } from "@/modules/quotation/lib";
+import { getKasBankAccounts } from "@/lib/accounting";
 import type { Row } from "@/constants/modules";
 
 export interface SoItemEntry {
@@ -39,6 +40,8 @@ export interface SoItemEntry {
   categoryName?: string;
   qty: number;
   price: number;
+  itemType?: "JASA" | "BARANG";
+  isNonInventory?: boolean;
   pphMode?: PphMode;
   tipePph?: string;
   isNewItem?: boolean;
@@ -108,12 +111,18 @@ function CreateSalesOrderForm({
   const [masterPphMode, setMasterPphMode] = React.useState<PphMode>("none");
 
   // Custom / non-master product inputs
+  const [newNonInvType, setNewNonInvType] = React.useState<"JASA" | "NON_STOK">("JASA");
   const [newName, setNewName] = React.useState<string>("");
-  const [newUnit, setNewUnit] = React.useState<string>("unit");
+  const [newUnit, setNewUnit] = React.useState<string>("paket");
   const [newQty, setNewQty] = React.useState<string>("1");
   const [newPrice, setNewPrice] = React.useState<string>("");
   const [newHasSerial, setNewHasSerial] = React.useState<boolean>(false);
-  const [newPphMode, setNewPphMode] = React.useState<PphMode>("none");
+  const [newPphMode, setNewPphMode] = React.useState<PphMode>("pph23");
+
+  // Walk-in payment inputs
+  const [walkinCoaAccount, setWalkinCoaAccount] = React.useState<string>("1000.01");
+  const [walkinPayMethod, setWalkinPayMethod] = React.useState<"TRANSFER" | "TUNAI">("TUNAI");
+  const walkinFileHandleRef = React.useRef<FileUploaderHandle | null>(null);
 
   // Tax Scheme: Non PPN, PPN 11% Exclude, PPN Included
   const [ppnMode, setPpnMode] = React.useState<"none" | "exclude" | "include">("exclude");
@@ -361,25 +370,29 @@ function CreateSalesOrderForm({
     }
     const p = Number(String(newPrice).replace(/\D/g, "")) || 0;
 
+    const isJasa = newNonInvType === "JASA";
+    const displayName = isJasa && !/^\[JASA\]/i.test(trimmedName) ? `[JASA] ${trimmedName}` : trimmedName;
+
     const newItem: SoItemEntry = {
       id: `custom-${Date.now()}-${Math.random()}`,
-      name: trimmedName,
-      unit: newUnit.trim() || "unit",
-      hasSerial: newHasSerial,
+      name: displayName,
+      unit: newUnit.trim() || (isJasa ? "paket" : "unit"),
+      hasSerial: isJasa ? false : newHasSerial,
       qty: q,
       price: p,
-      pphMode: newPphMode,
-      tipePph: pphModeToTipe(newPphMode),
+      itemType: isJasa ? "JASA" : "BARANG",
+      isNonInventory: true,
+      pphMode: isJasa ? newPphMode : "none",
+      tipePph: isJasa ? pphModeToTipe(newPphMode) : "Tanpa PPh",
       isNewItem: true,
     };
 
     setItems((prev) => [...prev, newItem]);
     setNewName("");
-    setNewUnit("unit");
+    setNewUnit(isJasa ? "paket" : "unit");
     setNewQty("1");
     setNewPrice("");
     setNewHasSerial(false);
-    setNewPphMode("none");
   }
 
   function handleRemoveItem(id: string) {
@@ -434,7 +447,8 @@ function CreateSalesOrderForm({
       for (const item of items) {
         let finalProdId = item.productId;
 
-        if (item.isNewItem || !finalProdId) {
+        // Hanya daftarkan ke master produk jika BUKAN jasa dan bukan non-inventory
+        if ((item.isNewItem || !finalProdId) && item.itemType !== "JASA" && !item.isNonInventory) {
           const autoSku = `SKU-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 100)}`;
           const createdProduct = await addRow("products", {
             nama: item.name,
@@ -471,6 +485,8 @@ function CreateSalesOrderForm({
           harga: item.price,
           hasSerial: item.hasSerial,
           berSN: item.hasSerial,
+          itemType: item.itemType || (item.pphMode && item.pphMode !== "none" ? "JASA" : "BARANG"),
+          isNonInventory: item.isNonInventory ?? (item.itemType === "JASA"),
           pphMode: item.pphMode || "none",
           tipePph: item.tipePph || pphModeToTipe(item.pphMode || "none"),
           pph: calcItemPph(item),
@@ -514,7 +530,22 @@ function CreateSalesOrderForm({
       const created = await addRow("po-client", payload);
 
       if (created) {
-        toast(`Sales Order ${created.nomor || effectiveSoNumber || ""} berhasil diterbitkan!`);
+        if (paymentFlow === "WALK_IN" && created.id) {
+          let walkinUploadedFileId: number | null = null;
+          if (walkinFileHandleRef.current) {
+            try {
+              walkinUploadedFileId = await walkinFileHandleRef.current.flush();
+            } catch {}
+          }
+          await api("POST", `/client-po/${created.id}/direct-settlement`, {
+            coaAccount: walkinCoaAccount,
+            fileId: walkinUploadedFileId || uploadedFileId || undefined,
+            notes: `Pembayaran Walk-in Langsung Lunas (${walkinPayMethod}) SO ${created.nomor || effectiveSoNumber}`,
+          }).catch(() => {});
+          toast(`Sales Order ${created.nomor || effectiveSoNumber} & Invoice Lunas (Walk-in) berhasil dicatat!`);
+        } else {
+          toast(`Sales Order ${created.nomor || effectiveSoNumber || ""} berhasil diterbitkan!`);
+        }
         void pushHistory(
           "po-client",
           String(created.id),
@@ -586,8 +617,68 @@ function CreateSalesOrderForm({
           <Text className="text-[11px] text-muted-foreground leading-relaxed">
             {paymentFlow === "REGULER"
               ? "Sistem membuat Sales Order berstatus pesanan aktif untuk ditindaklanjuti dengan invoice termin/DP atau Surat Jalan gudang."
-              : "Penjualan langsung / kasir (Walk-in). SO langsung dapat dilunasi dan invoice keluar dibuat seketika saat transaksi."}
+              : "Penjualan langsung / kasir (Walk-in). SO langsung dilunasi dan invoice keluar dibuat seketika saat transaksi disimpan."}
           </Text>
+
+          {paymentFlow === "WALK_IN" ? (
+            <View className="mt-2 p-3 rounded-lg bg-card border border-border/80 gap-3">
+              <Text className="text-xs font-bold text-foreground">
+                Detail Penerimaan Kas / Bank Penjualan Walk-In:
+              </Text>
+              <View className="flex-col sm:flex-row gap-3">
+                <View className="w-full sm:w-48">
+                  <FormField label="Metode Bayar" hint="Penerimaan langsung">
+                    <View className="flex-row gap-1">
+                      <Button
+                        size="sm"
+                        variant={walkinPayMethod === "TUNAI" ? "default" : "outline"}
+                        onPress={() => {
+                          setWalkinPayMethod("TUNAI");
+                          setWalkinCoaAccount("1000.01");
+                        }}
+                        className="flex-1 h-8 px-2"
+                      >
+                        <Text className="text-xs">Tunai / Kas</Text>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={walkinPayMethod === "TRANSFER" ? "default" : "outline"}
+                        onPress={() => {
+                          setWalkinPayMethod("TRANSFER");
+                          setWalkinCoaAccount("1000.02");
+                        }}
+                        className="flex-1 h-8 px-2"
+                      >
+                        <Text className="text-xs">Transfer</Text>
+                      </Button>
+                    </View>
+                  </FormField>
+                </View>
+                <View className="flex-1">
+                  <FormField label="Pilih Akun Kas / Bank (CoA) Penerima *" hint="Rekening penampung uang masuk">
+                    <SearchableSelect
+                      value={getKasBankAccounts().find((a) => a.code === walkinCoaAccount)?.name || walkinCoaAccount}
+                      options={getKasBankAccounts().map((a) => a.name)}
+                      onChange={(lbl) => {
+                        const m = getKasBankAccounts().find((a) => a.name === lbl);
+                        if (m) setWalkinCoaAccount(m.code);
+                      }}
+                      placeholder="Pilih rekening Kas / Bank"
+                    />
+                  </FormField>
+                </View>
+              </View>
+              <FormField label="Upload Bukti Struk / Transfer (Opsional)" hint="Foto struk kasir atau bukti mutasi">
+                <FileUploader
+                  handleRef={(h) => (walkinFileHandleRef.current = h)}
+                  category="invoices"
+                  kind="semua"
+                  label="Bukti Bayar"
+                  allowedExtensions={["pdf", "png", "jpg", "jpeg"]}
+                />
+              </FormField>
+            </View>
+          ) : null}
         </View>
 
         {/* 2. Informasi Dokumen & Customer */}
@@ -840,23 +931,57 @@ function CreateSalesOrderForm({
               </View>
             ) : (
               <View className="gap-3 pt-1">
+                {/* Sub-pilihan jenis Item Non-Master */}
+                <View className="gap-1.5">
+                  <Text className="text-xs font-medium text-foreground">Jenis Item Non-Master:</Text>
+                  <View className="flex-row gap-2">
+                    <Button
+                      size="sm"
+                      variant={newNonInvType === "JASA" ? "default" : "outline"}
+                      onPress={() => {
+                        setNewNonInvType("JASA");
+                        setNewUnit("paket");
+                        setNewPphMode("pph23");
+                      }}
+                      className="h-8 px-3"
+                    >
+                      <Text className="text-xs">Jasa / Pekerjaan / Subkon</Text>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={newNonInvType === "NON_STOK" ? "default" : "outline"}
+                      onPress={() => {
+                        setNewNonInvType("NON_STOK");
+                        setNewUnit("unit");
+                        setNewPphMode("none");
+                      }}
+                      className="h-8 px-3"
+                    >
+                      <Text className="text-xs">Barang Non-Stok / Pakai Habis</Text>
+                    </Button>
+                  </View>
+                </View>
+
                 <View className="flex-col sm:flex-row gap-3">
                   <View className="flex-1">
-                    <FormField label="Nama Barang / Uraian Jasa *" hint="Deskripsi item yang dipesan">
+                    <FormField
+                      label={newNonInvType === "JASA" ? "Nama Jasa / Pekerjaan *" : "Nama Barang Non-Stok *"}
+                      hint={newNonInvType === "JASA" ? "Contoh: Jasa Pemasangan CCTV & Setting DVR (Tidak masuk master inventori)" : "Contoh: Kabel UTP Patch Cord 2m"}
+                    >
                       <Input
                         value={newName}
                         onChangeText={setNewName}
-                        placeholder="Contoh: Jasa Instalasi & Setting CCTV / Kabel Roll 50m"
+                        placeholder={newNonInvType === "JASA" ? "Contoh: Jasa Instalasi Jaringan & Setting" : "Contoh: Kabel Roll 50m / Konektor"}
                       />
                     </FormField>
                   </View>
 
                   <View className="w-full sm:w-28">
-                    <FormField label="Satuan" hint="Unit / Pcs / Lot">
+                    <FormField label="Satuan *" hint={newNonInvType === "JASA" ? "paket / titik / jam" : "unit / roll / m"}>
                       <Input
                         value={newUnit}
                         onChangeText={setNewUnit}
-                        placeholder="unit / m"
+                        placeholder={newNonInvType === "JASA" ? "paket" : "unit"}
                       />
                     </FormField>
                   </View>
@@ -864,7 +989,7 @@ function CreateSalesOrderForm({
 
                 <View className="flex-col sm:flex-row gap-3">
                   <View className="w-full sm:w-28">
-                    <FormField label="Jumlah (Qty)" hint="Kuantitas">
+                    <FormField label="Qty *" hint="Kuantitas">
                       <Input
                         value={newQty}
                         onChangeText={(v) => setNewQty(formatThousands(v))}
@@ -875,38 +1000,45 @@ function CreateSalesOrderForm({
                   </View>
 
                   <View className="flex-1">
-                    <FormField label="Harga Satuan (Rp)" hint="Harga jual per unit">
+                    <FormField
+                      label={newNonInvType === "JASA" ? "Biaya Jasa Satuan (Rp) *" : "Harga Jual Satuan (Rp) *"}
+                      hint="Harga jual satuan ke customer"
+                    >
                       <Input
                         value={newPrice}
                         onChangeText={(v) => setNewPrice(formatThousands(v))}
                         keyboardType="numeric"
-                        placeholder="Contoh: 750.000"
+                        placeholder="Contoh: 500.000"
                       />
                     </FormField>
                   </View>
                 </View>
 
-                <View className="flex-col sm:flex-row items-end gap-3 pt-1">
-                  <View className="flex-1 w-full">
-                    <FormField label="PPh Barang / Jasa (Opsional)" hint="Pilih pemotongan PPh jika ada">
-                      <SearchableSelect
-                        value={pphModeToTipe(newPphMode)}
-                        options={PPH_MODE_OPTIONS.map((o) => o.label)}
-                        onChange={(lbl) => {
-                          const m = PPH_MODE_OPTIONS.find((o) => o.label === lbl);
-                          setNewPphMode(m?.id || "none");
-                        }}
-                        placeholder="Tanpa PPh"
-                      />
-                    </FormField>
+                {newNonInvType === "JASA" ? (
+                  <View className="gap-1.5 bg-card/60 border border-border/80 rounded-lg p-3">
+                    <Text className="text-xs font-semibold text-foreground">Pemotongan PPh Jasa (Vendor / Customer):</Text>
+                    <Text className="text-[11px] text-muted-foreground">
+                      PPh dipotong dari biaya jasa ini oleh customer (PPh pasal 23/4(2)/21)
+                    </Text>
+                    <View className="flex-row gap-1.5 flex-wrap pt-1">
+                      {PPH_MODE_OPTIONS.map((opt) => (
+                        <Button
+                          key={opt.id}
+                          size="sm"
+                          variant={newPphMode === opt.id ? "default" : "outline"}
+                          onPress={() => setNewPphMode(opt.id)}
+                          className="h-7 px-2.5"
+                        >
+                          <Text className={`text-[11px] font-semibold ${newPphMode === opt.id ? "text-primary-foreground" : ""}`}>{opt.label}</Text>
+                        </Button>
+                      ))}
+                    </View>
                   </View>
-
+                ) : (
                   <Pressable
                     onPress={() => setNewHasSerial(!newHasSerial)}
-                    className={`h-10 flex-row items-center justify-center gap-2 px-3.5 rounded-lg border w-full sm:w-auto ${
-                      newHasSerial
-                        ? "bg-primary/10 border-primary"
-                        : "bg-panel border-border"
+                    className={`h-10 flex-row items-center gap-2 px-3.5 rounded-lg border self-start ${
+                      newHasSerial ? "bg-primary/10 border-primary" : "bg-panel border-border"
                     }`}
                   >
                     <View
@@ -916,17 +1048,17 @@ function CreateSalesOrderForm({
                     >
                       {newHasSerial ? <Text className="text-[10px] text-background">✓</Text> : null}
                     </View>
-                    <Text className="text-xs font-medium">Lacak SN</Text>
+                    <Text className="text-xs font-medium">Lacak SN untuk barang ini</Text>
                   </Pressable>
+                )}
 
-                  <Button
-                    onPress={handleAddCustomItem}
-                    className="h-10 px-5 flex-row items-center justify-center gap-1.5 w-full sm:w-auto"
-                  >
-                    <Plus size={15} color={colors.background} />
-                    <Text className="text-xs font-semibold">Tambah ke SO</Text>
-                  </Button>
-                </View>
+                <Button
+                  onPress={handleAddCustomItem}
+                  className="h-10 px-5 flex-row items-center justify-center gap-1.5 self-start"
+                >
+                  <Plus size={15} color={colors.background} />
+                  <Text className="text-xs font-semibold">{newNonInvType === "JASA" ? "+ Tambah Jasa" : "+ Tambah Barang"}</Text>
+                </Button>
               </View>
             )}
           </View>
@@ -1059,7 +1191,10 @@ function CreateSalesOrderForm({
 
             {totalPph > 0 && (
               <View className="flex-row justify-between items-center py-0.5">
-                <Text className="text-xs text-text-secondary">Potongan PPh</Text>
+                <View className="flex-row items-center gap-1.5">
+                  <Text className="text-xs text-text-secondary">Potongan PPh Jasa</Text>
+                  <Text className="text-[10px] text-danger font-medium">(Dihitung dari Item Jasa)</Text>
+                </View>
                 <Text className="text-xs font-mono font-medium text-danger">
                   - {rupiah(totalPph)}
                 </Text>

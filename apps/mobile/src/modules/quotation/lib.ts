@@ -54,13 +54,26 @@ export function ppnModeToTipe(mode: PpnMode): string {
 
 export function getInitialPphMode(row: Row | null | undefined): PphMode {
   if (!row) return "none";
-  if (row.pphMode) return row.pphMode as PphMode;
-  if (row.tipePph) {
+  if (row.pphMode && row.pphMode !== "none") return row.pphMode as PphMode;
+  if (row.tipePph && !String(row.tipePph).toLowerCase().includes("tanpa")) {
     const t = String(row.tipePph).toLowerCase();
     if (t.includes("23")) return "pph23";
     if (t.includes("4") || t.includes("konstruksi")) return "pph4_2";
     if (t.includes("21")) return "pph21";
     if (t.includes("22")) return "pph22";
+  }
+  if (Array.isArray(row.items)) {
+    for (const it of row.items) {
+      if (it.pphMode && it.pphMode !== "none") return it.pphMode as PphMode;
+      if (it.tipePph && !String(it.tipePph).toLowerCase().includes("tanpa")) {
+        const t = String(it.tipePph).toLowerCase();
+        if (t.includes("23")) return "pph23";
+        if (t.includes("4") || t.includes("konstruksi")) return "pph4_2";
+        if (t.includes("21")) return "pph21";
+        if (t.includes("22")) return "pph22";
+      }
+      if (Number(it.pph) > 0) return "pph23";
+    }
   }
   return "none";
 }

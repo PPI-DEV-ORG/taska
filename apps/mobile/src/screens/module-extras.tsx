@@ -621,15 +621,18 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     }
     const qty = parseFloat(itemQty) || 1;
     const harga = parseFloat(String(itemHarga).replace(/\D/g, "")) || 0;
+    const isJasa = itemPphMode !== "none" || /^\[JASA\]/i.test(itemName.trim());
     const newItemObj = {
       item: itemName.trim(),
       name: itemName.trim(),
       qty,
-      satuan: itemSatuan.trim() || "Unit",
-      unit: itemSatuan.trim() || "Unit",
+      satuan: itemSatuan.trim() || (isJasa ? "paket" : "Unit"),
+      unit: itemSatuan.trim() || (isJasa ? "paket" : "Unit"),
       harga,
       price: harga,
       sn: itemSn.trim() || undefined,
+      itemType: isJasa ? ("JASA" as const) : ("BARANG" as const),
+      isNonInventory: isJasa,
       pphMode: itemPphMode,
       tipePph: pphModeToTipe(itemPphMode),
       pph: calcItemPph({ qty, price: harga, pphMode: itemPphMode }),
@@ -1738,7 +1741,7 @@ export function ModuleExtras({
   }
 
   if (moduleKey === "supplier-pos") {
-    return <SupplierPoExtras row={row} />;
+    return <SupplierPoExtras row={row} onRefresh={onRefresh} />;
   }
 
   if (moduleKey === "purchase-requests") {

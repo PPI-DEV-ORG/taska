@@ -19,6 +19,7 @@ import { Line } from "@/modules/shared/line";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
+import { getKasBankAccounts } from "@/lib/accounting";
 
 export function InvoiceExtras({
   row,
@@ -243,6 +244,10 @@ export function InvoiceExtras({
     [isControlled, externalOnPayOpenChange]
   );
 
+  const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
+  const [payCoaAccount, setPayCoaAccount] = React.useState<string>(() => {
+    return kasBankOptions[0]?.code || "1000.02";
+  });
   const [payAmount, setPayAmount] = React.useState(formatThousands(sisa || row.total || 0));
   const [payDate, setPayDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [payMethod, setPayMethod] = React.useState<"TRANSFER" | "TUNAI" | "QRIS" | "LAINNYA">("TRANSFER");
@@ -279,6 +284,9 @@ export function InvoiceExtras({
   function openPayModal() {
     setPayAmount(formatThousands(Math.max(0, Number(row.total || 0) - Number(row.terbayar || 0))));
     setPayFileId(null);
+    setPayMethod("TRANSFER");
+    const defaultAcc = kasBankOptions.find((o) => o.code === "1000.02") || kasBankOptions[0];
+    if (defaultAcc) setPayCoaAccount(defaultAcc.code);
     setPayOpen(true);
   }
 
@@ -299,6 +307,7 @@ export function InvoiceExtras({
         date: payDate || new Date().toISOString().slice(0, 10),
         method: payMethod,
         reference: payRef.trim() || undefined,
+        coaAccount: payCoaAccount,
         fileId: payFileId,
       });
       toast(`Pembayaran ${rupiah(amt)} berhasil dicatat`);
@@ -1084,13 +1093,45 @@ export function InvoiceExtras({
                     key={m}
                     size="sm"
                     variant={payMethod === m ? "default" : "outline"}
-                    onPress={() => setPayMethod(m)}
+                    onPress={() => {
+                      setPayMethod(m);
+                      if (m === "TUNAI") {
+                        const cashAcc = kasBankOptions.find((o) => o.code === "1000.01" || /kas/i.test(o.rawName));
+                        if (cashAcc) setPayCoaAccount(cashAcc.code);
+                      } else {
+                        const bankAcc = kasBankOptions.find((o) => o.code === "1000.02" || /bank|mandiri/i.test(o.rawName));
+                        if (bankAcc) setPayCoaAccount(bankAcc.code);
+                      }
+                    }}
                     className="h-8 px-2.5"
                   >
                     <Text className="text-xs">{m}</Text>
                   </Button>
                 ))}
               </View>
+            </FormField>
+            <FormField
+              label="Pilih Akun Kas / Bank (CoA) Penerima *"
+              hint="Rekening kas atau bank penerima dana (Debit Kas/Bank)"
+              required
+            >
+              <SearchableSelect
+                value={
+                  kasBankOptions.find((o) => o.code === payCoaAccount)?.name ||
+                  kasBankOptions[0]?.name ||
+                  ""
+                }
+                options={kasBankOptions.map((o) => o.name)}
+                onChange={(val) => {
+                  const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
+                  if (match) {
+                    setPayCoaAccount(match.code);
+                    const isTunai = match.code === "1000.01" || /kas/i.test(match.rawName);
+                    setPayMethod(isTunai ? "TUNAI" : "TRANSFER");
+                  }
+                }}
+                placeholder="Pilih rekening kas / bank penerima..."
+              />
             </FormField>
             <FormField label="Nomor Referensi / Rekening">
               <Input value={payRef} onChangeText={setPayRef} placeholder="Contoh: TRF-BCA-992811" />

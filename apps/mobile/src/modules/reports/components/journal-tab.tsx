@@ -1,8 +1,9 @@
 import * as React from "react";
 import { View, ScrollView, Pressable } from "react-native";
-import { CheckCircle2, Search } from "lucide-react-native";
+import { CheckCircle2, Search, ChevronLeft, ChevronRight } from "lucide-react-native";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/taska/basics";
 import { DatePicker } from "@/components/taska/dialogs";
 import { rupiah } from "@/lib/format";
@@ -19,9 +20,15 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
   const [journalQuery, setJournalQuery] = React.useState("");
   const [journalDate, setJournalDate] = React.useState("");
   const [journalSourceFilter, setJournalSourceFilter] = React.useState<string>("Semua");
+  const [journalPage, setJournalPage] = React.useState(1);
+  const [journalPageSize, setJournalPageSize] = React.useState<number>(30);
+
+  const [coaQuery, setCoaQuery] = React.useState("");
+  const [coaPage, setCoaPage] = React.useState(1);
+  const [coaPageSize, setCoaPageSize] = React.useState<number>(20);
 
   const filteredJournal = React.useMemo(() => {
-    return fin.journalLines.filter((l: any) => {
+    return (fin.journalLines || []).filter((l: any) => {
       if (journalDate) {
         const target = journalDate.slice(0, 10);
         if (!l.tanggal?.startsWith(target)) return false;
@@ -49,17 +56,44 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
       if (journalQuery.trim()) {
         const q = journalQuery.toLowerCase();
         return (
-          l.journalNo.toLowerCase().includes(q) ||
-          l.refNo.toLowerCase().includes(q) ||
-          l.keterangan.toLowerCase().includes(q) ||
-          l.namaAkun.toLowerCase().includes(q) ||
-          l.kodeAkun.toLowerCase().includes(q) ||
-          l.project.toLowerCase().includes(q)
+          (l.journalNo || "").toLowerCase().includes(q) ||
+          (l.refNo || "").toLowerCase().includes(q) ||
+          (l.keterangan || "").toLowerCase().includes(q) ||
+          (l.namaAkun || "").toLowerCase().includes(q) ||
+          (l.kodeAkun || "").toLowerCase().includes(q) ||
+          (l.project || "").toLowerCase().includes(q)
         );
       }
       return true;
     });
   }, [fin.journalLines, journalQuery, journalDate, journalSourceFilter]);
+
+  const totalJournalPages = Math.max(1, Math.ceil(filteredJournal.length / journalPageSize));
+  const currentJournalPage = Math.min(Math.max(1, journalPage), totalJournalPages);
+  const pagedJournal = React.useMemo(() => {
+    const start = (currentJournalPage - 1) * journalPageSize;
+    return filteredJournal.slice(start, start + journalPageSize);
+  }, [filteredJournal, currentJournalPage, journalPageSize]);
+
+  const filteredCoa = React.useMemo(() => {
+    return (fin.coaBalances || []).filter((acc: any) => {
+      if (!acc) return false;
+      if (!coaQuery.trim()) return true;
+      const q = coaQuery.toLowerCase();
+      return (
+        (acc.code || "").toLowerCase().includes(q) ||
+        (acc.name || "").toLowerCase().includes(q) ||
+        (acc.category || "").toLowerCase().includes(q)
+      );
+    });
+  }, [fin.coaBalances, coaQuery]);
+
+  const totalCoaPages = Math.max(1, Math.ceil(filteredCoa.length / coaPageSize));
+  const currentCoaPage = Math.min(Math.max(1, coaPage), totalCoaPages);
+  const pagedCoa = React.useMemo(() => {
+    const start = (currentCoaPage - 1) * coaPageSize;
+    return filteredCoa.slice(start, start + coaPageSize);
+  }, [filteredCoa, currentCoaPage, coaPageSize]);
 
   return (
     <View className="gap-5 w-full">
@@ -82,93 +116,180 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
         title="Bagan Akun Standar & Neraca Saldo (Chart of Accounts / COA)"
         subtitle="Rekapitulasi mutasi debit, kredit, dan saldo akhir per kode akun akuntansi"
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator>
-          <View className="min-w-[820px] w-full gap-1">
-            <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
-              <Text className="w-[115px] text-xs font-bold">Kode</Text>
-              <Text className="flex-1 text-xs font-bold">Nama Akun (COA)</Text>
-              <Text className="w-[160px] text-xs font-bold">Kategori</Text>
-              <Text className="w-[90px] text-xs font-bold text-center">Saldo Normal</Text>
-              <Text className="w-[130px] text-xs font-bold text-right">Mutasi Debit</Text>
-              <Text className="w-[130px] text-xs font-bold text-right">Mutasi Kredit</Text>
-              <Text className="w-[140px] text-xs font-bold text-right">Saldo Akhir</Text>
-            </View>
-            {fin.coaBalances.map((acc: any) => {
-              const depth = Number(acc.depth || 0);
-              const isHeader = Boolean(acc.isHeader);
-              return (
-                <View
-                  key={`${acc.code}-${acc.name}`}
-                  className={`border-border/60 flex-row items-center border-b px-3 py-2 ${
-                    isHeader ? "bg-panel/60" : ""
-                  }`}
-                >
-                  <View
-                    style={{ paddingLeft: depth * 12 }}
-                    className="w-[115px] flex-row items-center gap-1"
-                  >
-                    {depth > 0 ? (
-                      <Text className="text-xs font-mono text-muted-foreground">↳</Text>
-                    ) : null}
-                    <Text
-                      className={`text-xs font-mono ${
-                        isHeader ? "font-bold text-primary" : "font-semibold text-primary/90"
+        <View className="gap-3">
+          <View className="flex-row items-center gap-2 max-w-sm bg-card border border-border/80 rounded-xl px-3 h-10 shadow-sm">
+            <Search size={15} color={colors.textSecondary} />
+            <Input
+              value={coaQuery}
+              onChangeText={(t) => {
+                setCoaQuery(t);
+                setCoaPage(1);
+              }}
+              placeholder="Cari kode akun, nama, atau kategori..."
+              className="flex-1 h-8 text-xs border-0 bg-transparent px-0 shadow-none"
+            />
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <View className="min-w-[820px] w-full gap-1">
+              <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
+                <Text className="w-[115px] text-xs font-bold">Kode</Text>
+                <Text className="flex-1 text-xs font-bold">Nama Akun (COA)</Text>
+                <Text className="w-[160px] text-xs font-bold">Kategori</Text>
+                <Text className="w-[90px] text-xs font-bold text-center">Saldo Normal</Text>
+                <Text className="w-[130px] text-xs font-bold text-right">Mutasi Debit</Text>
+                <Text className="w-[130px] text-xs font-bold text-right">Mutasi Kredit</Text>
+                <Text className="w-[140px] text-xs font-bold text-right">Saldo Akhir</Text>
+              </View>
+              {pagedCoa.length === 0 ? (
+                <View className="py-8 items-center justify-center">
+                  <Text className="text-xs text-text-secondary">Tidak ada data akun COA</Text>
+                </View>
+              ) : (
+                pagedCoa.map((acc: any) => {
+                  const depth = Number(acc.depth || 0);
+                  const isHeader = Boolean(acc.isHeader);
+                  return (
+                    <View
+                      key={`${acc.code}-${acc.name}`}
+                      className={`border-border/60 flex-row items-center border-b px-3 py-2 ${
+                        isHeader ? "bg-panel/60" : ""
                       }`}
                     >
-                      {acc.code}
-                    </Text>
-                  </View>
-                  <View
-                    style={{ paddingLeft: depth * 16 }}
-                    className="flex-1 flex-row items-center gap-2 pr-2"
-                  >
-                    {depth > 0 ? (
-                      <View className="w-1.5 h-1.5 rounded-full bg-primary/50" />
-                    ) : null}
-                    <Text
-                      className={`text-xs ${
-                        isHeader ? "font-bold text-foreground" : "font-medium text-foreground/90"
-                      }`}
-                    >
-                      {acc.name}
-                    </Text>
-                    {acc.parentCode ? (
-                      <View className="bg-muted/40 border-border/60 rounded border px-1.5 py-0.5">
-                        <Text className="text-[10px] text-muted-foreground font-mono">
-                          Sub {acc.parentCode}
+                      <View
+                        style={{ paddingLeft: depth * 12 }}
+                        className="w-[115px] flex-row items-center gap-1"
+                      >
+                        {depth > 0 ? (
+                          <Text className="text-xs font-mono text-muted-foreground">↳</Text>
+                        ) : null}
+                        <Text
+                          className={`text-xs font-mono ${
+                            isHeader ? "font-bold text-primary" : "font-semibold text-primary/90"
+                          }`}
+                        >
+                          {acc.code}
                         </Text>
                       </View>
-                    ) : null}
-                  </View>
-                  <Text className="w-[160px] text-xs text-text-secondary">{acc.category}</Text>
-                  <View className="w-[90px] items-center">
-                    <Pill
-                      label={acc.normalBalance}
-                      tone={acc.normalBalance === "DEBIT" ? "info" : "primary"}
-                    />
-                  </View>
-                  <Text
-                    className={`w-[130px] text-xs font-mono text-right ${
-                      isHeader ? "font-bold" : ""
-                    }`}
-                  >
-                    {rupiah(acc.totalDebit)}
-                  </Text>
-                  <Text
-                    className={`w-[130px] text-xs font-mono text-right ${
-                      isHeader ? "font-bold" : ""
-                    }`}
-                  >
-                    {rupiah(acc.totalKredit)}
-                  </Text>
-                  <Text className="w-[140px] text-xs font-bold font-mono text-right">
-                    {rupiah(acc.endingBalance)}
-                  </Text>
+                      <View
+                        style={{ paddingLeft: depth * 16 }}
+                        className="flex-1 flex-row items-center gap-2 pr-2"
+                      >
+                        {depth > 0 ? (
+                          <View className="w-1.5 h-1.5 rounded-full bg-primary/50" />
+                        ) : null}
+                        <Text
+                          className={`text-xs ${
+                            isHeader ? "font-bold text-foreground" : "font-medium text-foreground/90"
+                          }`}
+                        >
+                          {acc.name}
+                        </Text>
+                        {acc.parentCode ? (
+                          <View className="bg-muted/40 border-border/60 rounded border px-1.5 py-0.5">
+                            <Text className="text-[10px] text-muted-foreground font-mono">
+                              Sub {acc.parentCode}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text className="w-[160px] text-xs text-text-secondary">{acc.category}</Text>
+                      <View className="w-[90px] items-center">
+                        <Pill
+                          label={acc.normalBalance}
+                          tone={acc.normalBalance === "DEBIT" ? "info" : "primary"}
+                        />
+                      </View>
+                      <Text
+                        className={`w-[130px] text-xs font-mono text-right ${
+                          isHeader ? "font-bold" : ""
+                        }`}
+                      >
+                        {rupiah(acc.totalDebit)}
+                      </Text>
+                      <Text
+                        className={`w-[130px] text-xs font-mono text-right ${
+                          isHeader ? "font-bold" : ""
+                        }`}
+                      >
+                        {rupiah(acc.totalKredit)}
+                      </Text>
+                      <Text className="w-[140px] text-xs font-bold font-mono text-right">
+                        {rupiah(acc.endingBalance)}
+                      </Text>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          </ScrollView>
+
+          {/* Pagination Footer COA */}
+          {filteredCoa.length > 0 && (
+            <View className="border-border/60 bg-card/60 flex-row flex-wrap items-center justify-between border-t px-4 py-3 gap-2">
+              <View className="flex-row flex-wrap items-center gap-2">
+                <Text className="text-xs text-text-secondary">Tampilkan:</Text>
+                <View className="flex-row items-center gap-1">
+                  {([10, 20, 50, 100] as const).map((opt) => {
+                    const active = coaPageSize === opt;
+                    return (
+                      <Pressable
+                        key={opt}
+                        onPress={() => {
+                          setCoaPageSize(opt);
+                          setCoaPage(1);
+                        }}
+                        className={`h-7 px-2 items-center justify-center rounded-md border ${
+                          active
+                            ? "bg-primary/15 border-primary"
+                            : "bg-panel border-border/80"
+                        }`}
+                      >
+                        <Text
+                          className={`text-xs ${
+                            active ? "text-primary font-bold" : "text-text-secondary font-medium"
+                          }`}
+                        >
+                          {opt}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-              );
-            })}
-          </View>
-        </ScrollView>
+                <Text className="text-xs text-text-secondary">
+                  ({(currentCoaPage - 1) * coaPageSize + 1}-
+                  {Math.min(currentCoaPage * coaPageSize, filteredCoa.length)} dari{" "}
+                  {filteredCoa.length} akun)
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentCoaPage <= 1}
+                  onPress={() => setCoaPage((p) => Math.max(1, p - 1))}
+                  className="h-8 px-2.5 flex-row items-center gap-1"
+                >
+                  <ChevronLeft size={14} color={colors.text} />
+                  <Text className="text-xs font-semibold">Prev</Text>
+                </Button>
+                <Text className="text-xs font-medium px-2">
+                  Hal {currentCoaPage} / {totalCoaPages}
+                </Text>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentCoaPage >= totalCoaPages}
+                  onPress={() => setCoaPage((p) => Math.min(totalCoaPages, p + 1))}
+                  className="h-8 px-2.5 flex-row items-center gap-1"
+                >
+                  <Text className="text-xs font-semibold">Next</Text>
+                  <ChevronRight size={14} color={colors.text} />
+                </Button>
+              </View>
+            </View>
+          )}
+        </View>
       </Panel>
 
       <Panel
@@ -182,7 +303,10 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                 <Search size={15} color={colors.textSecondary} />
                 <Input
                   value={journalQuery}
-                  onChangeText={setJournalQuery}
+                  onChangeText={(t) => {
+                    setJournalQuery(t);
+                    setJournalPage(1);
+                  }}
                   placeholder="Cari nomor jurnal, referensi, akun, atau keterangan..."
                   className="flex-1 h-8 text-xs border-0 bg-transparent px-0 shadow-none"
                 />
@@ -190,7 +314,10 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
               <View className="w-full sm:w-auto">
                 <DatePicker
                   value={journalDate}
-                  onChange={setJournalDate}
+                  onChange={(d) => {
+                    setJournalDate(d);
+                    setJournalPage(1);
+                  }}
                   placeholder="Filter tanggal..."
                   clearable
                   className="h-10 min-w-[160px] max-w-[220px] rounded-xl bg-card border-border/80 shadow-sm px-3"
@@ -212,7 +339,10 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
               ].map((s) => (
                 <Pressable
                   key={s}
-                  onPress={() => setJournalSourceFilter(s)}
+                  onPress={() => {
+                    setJournalSourceFilter(s);
+                    setJournalPage(1);
+                  }}
                   className={
                     journalSourceFilter === s
                       ? "bg-primary/20 border-primary rounded-md border px-2.5 py-1"
@@ -245,46 +375,118 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                 <Text className="w-[125px] text-xs font-bold text-right">Debit (Rp)</Text>
                 <Text className="w-[125px] text-xs font-bold text-right">Kredit (Rp)</Text>
               </View>
-              {(filteredJournal || []).map((line: any) => {
-                if (!line) return null;
-                const isCredit = (line.kredit ?? 0) > 0 && (line.debit ?? 0) === 0;
-                return (
-                  <View
-                    key={line.id}
-                    className="border-border/50 flex-row items-center border-b px-3 py-2"
-                  >
-                    <Text className="w-[85px] text-xs font-mono text-text-secondary">
-                      {line.journalNo}
-                    </Text>
-                    <Text className="w-[130px] text-xs font-mono text-text-secondary">
-                      {line.tanggal}
-                    </Text>
-                    <Text className="w-[125px] text-xs font-semibold font-mono">
-                      {line.refNo}
-                    </Text>
-                    <Text className="w-[75px] text-xs font-bold font-mono text-primary">
-                      {line.kodeAkun}
-                    </Text>
-                    <Text
-                      className={`w-[210px] text-xs font-medium ${isCredit ? "pl-4 text-text-secondary" : ""}`}
-                      numberOfLines={1}
+              {pagedJournal.length === 0 ? (
+                <View className="py-8 items-center justify-center">
+                  <Text className="text-xs text-text-secondary">Tidak ada data jurnal</Text>
+                </View>
+              ) : (
+                pagedJournal.map((line: any) => {
+                  if (!line) return null;
+                  const isCredit = (line.kredit ?? 0) > 0 && (line.debit ?? 0) === 0;
+                  return (
+                    <View
+                      key={line.id}
+                      className="border-border/50 flex-row items-center border-b px-3 py-2"
                     >
-                      {line.namaAkun}
-                    </Text>
-                    <Text className="flex-1 text-xs text-text-secondary pr-3" numberOfLines={1}>
-                      {line.keterangan}
-                    </Text>
-                    <Text className="w-[125px] text-xs font-mono text-right font-semibold">
-                      {line.debit > 0 ? rupiah(line.debit) : "-"}
-                    </Text>
-                    <Text className="w-[125px] text-xs font-mono text-right font-semibold text-info">
-                      {line.kredit > 0 ? rupiah(line.kredit) : "-"}
-                    </Text>
-                  </View>
-                );
-              })}
+                      <Text className="w-[85px] text-xs font-mono text-text-secondary">
+                        {line.journalNo}
+                      </Text>
+                      <Text className="w-[130px] text-xs font-mono text-text-secondary">
+                        {line.tanggal}
+                      </Text>
+                      <Text className="w-[125px] text-xs font-semibold font-mono">
+                        {line.refNo}
+                      </Text>
+                      <Text className="w-[75px] text-xs font-bold font-mono text-primary">
+                        {line.kodeAkun}
+                      </Text>
+                      <Text
+                        className={`w-[210px] text-xs font-medium ${isCredit ? "pl-4 text-text-secondary" : ""}`}
+                        numberOfLines={1}
+                      >
+                        {line.namaAkun}
+                      </Text>
+                      <Text className="flex-1 text-xs text-text-secondary pr-3" numberOfLines={1}>
+                        {line.keterangan}
+                      </Text>
+                      <Text className="w-[125px] text-xs font-mono text-right font-semibold">
+                        {line.debit > 0 ? rupiah(line.debit) : "-"}
+                      </Text>
+                      <Text className="w-[125px] text-xs font-mono text-right font-semibold text-info">
+                        {line.kredit > 0 ? rupiah(line.kredit) : "-"}
+                      </Text>
+                    </View>
+                  );
+                })
+              )}
             </View>
           </ScrollView>
+
+          {/* Pagination Footer Jurnal Umum */}
+          {filteredJournal.length > 0 && (
+            <View className="border-border/60 bg-card/60 flex-row flex-wrap items-center justify-between border-t px-4 py-3 gap-2">
+              <View className="flex-row flex-wrap items-center gap-2">
+                <Text className="text-xs text-text-secondary">Tampilkan:</Text>
+                <View className="flex-row items-center gap-1">
+                  {([10, 20, 30, 50, 100] as const).map((opt) => {
+                    const active = journalPageSize === opt;
+                    return (
+                      <Pressable
+                        key={opt}
+                        onPress={() => {
+                          setJournalPageSize(opt);
+                          setJournalPage(1);
+                        }}
+                        className={`h-7 px-2 items-center justify-center rounded-md border ${
+                          active
+                            ? "bg-primary/15 border-primary"
+                            : "bg-panel border-border/80"
+                        }`}
+                      >
+                        <Text
+                          className={`text-xs ${
+                            active ? "text-primary font-bold" : "text-text-secondary font-medium"
+                          }`}
+                        >
+                          {opt}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text className="text-xs text-text-secondary">
+                  ({(currentJournalPage - 1) * journalPageSize + 1}-
+                  {Math.min(currentJournalPage * journalPageSize, filteredJournal.length)} dari{" "}
+                  {filteredJournal.length} baris)
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentJournalPage <= 1}
+                  onPress={() => setJournalPage((p) => Math.max(1, p - 1))}
+                  className="h-8 px-2.5 flex-row items-center gap-1"
+                >
+                  <ChevronLeft size={14} color={colors.text} />
+                  <Text className="text-xs font-semibold">Prev</Text>
+                </Button>
+                <Text className="text-xs font-medium px-2">
+                  Hal {currentJournalPage} / {totalJournalPages}
+                </Text>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentJournalPage >= totalJournalPages}
+                  onPress={() => setJournalPage((p) => Math.min(totalJournalPages, p + 1))}
+                  className="h-8 px-2.5 flex-row items-center gap-1"
+                >
+                  <Text className="text-xs font-semibold">Next</Text>
+                  <ChevronRight size={14} color={colors.text} />
+                </Button>
+              </View>
+            </View>
+          )}
         </View>
       </Panel>
     </View>

@@ -18,7 +18,6 @@ import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
-import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
 import { CHART_OF_ACCOUNTS, loadCustomCoa, loadDeletedCoaCodes } from "@/lib/accounting";
 import {
   type PphMode,
@@ -26,6 +25,7 @@ import {
   PPN_MODE_OPTIONS,
   PPH_MODE_OPTIONS,
   getInitialPpnMode,
+  getInitialPphMode,
   ppnModeToTipe,
   pphRateFor,
   pphModeToTipe,
@@ -689,8 +689,48 @@ function CreateInvoiceForm({
   const isNoPpn = ppnMode === "none";
   const isIncludePpn = ppnMode === "include";
 
+  const [pphMode, setPphMode] = React.useState<PphMode>(() => {
+    const poMode = getInitialPphMode(initialPo);
+    if (poMode !== "none") return poMode;
+    const qMode = getInitialPphMode(activeQuotation);
+    if (qMode !== "none") return qMode;
+    if (Array.isArray(initialPo?.items)) {
+      for (const it of initialPo.items) {
+        if (it.pphMode && it.pphMode !== "none") return it.pphMode as PphMode;
+      }
+    }
+    return "none";
+  });
+
+  const dealPph = React.useMemo(() => {
+    if (items.length > 0) {
+      const sum = items.reduce((acc, it) => acc + calcItemPph(it), 0);
+      if (sum > 0) return sum;
+    }
+    if (Array.isArray(activePo?.items) && activePo.items.length > 0) {
+      const sum = activePo.items.reduce((acc: number, it: any) => acc + calcItemPph(it), 0);
+      if (sum > 0) return sum;
+    }
+    if (Number(activePo?.pph) > 0) return Number(activePo?.pph);
+    if (Number(activeQuotation?.pph) > 0) return Number(activeQuotation?.pph);
+    const effRate = pphRateFor(pphMode);
+    if (effRate > 0) {
+      const sourceItems = items.length > 0 ? items : ((activePo?.items as any[]) || (activeQuotation?.items as any[]) || []);
+      const serviceDpp = sourceItems.reduce((acc: number, it: any) => {
+        const isJasa =
+          (it as any).itemType === "JASA" ||
+          !it.productId ||
+          /^\[(JASA)\]/i.test(String((it as any).customName || it.name || it.item || ""));
+        return isJasa ? acc + (Number(it.qty) || 1) * Number(it.harga ?? (it as any).price ?? 0) : acc;
+      }, 0);
+      if (serviceDpp > 0) return Math.round(serviceDpp * effRate);
+      return Math.round(dealDpp * effRate);
+    }
+    return 0;
+  }, [items, activePo, activeQuotation, pphMode, dealDpp]);
+
   const dealPpn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, dealDpp - Math.round(dealDpp / 1.11)) : Math.round(dealDpp * 0.11);
-  const dealGrandTotal = isNoPpn || isIncludePpn ? dealDpp : dealDpp + dealPpn;
+  const dealGrandTotal = Math.max(0, (isNoPpn || isIncludePpn ? dealDpp : dealDpp + dealPpn) - dealPph);
 
   // Total already billed in DPP
   const alreadyBilledDpp = React.useMemo(() => {
@@ -702,7 +742,6 @@ function CreateInvoiceForm({
   // Submitting & File extracting
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
   const [pickerOpen, setPickerOpen] = React.useState<boolean>(false);
-  const [pphMode, setPphMode] = React.useState<PphMode>(() => (activeQuotation?.pphMode as PphMode) || "none");
 
   // Select parent invoice handler (Mode Lanjut)
   function handleSelectParentInvoice(invoiceId: string) {
@@ -852,7 +891,9 @@ function CreateInvoiceForm({
   function handleSelectQuotation(q: Row) {
     setSelectedQuotationId(String(q.id));
     if (q.customerId) setSelectedCustomerId(String(q.customerId));
-    if (q.pphMode) setPphMode(q.pphMode as PphMode);
+    const detectedPph = getInitialPphMode(q);
+    if (detectedPph !== "none") setPphMode(detectedPph);
+    else if (q.pphMode) setPphMode(q.pphMode as PphMode);
     if (q.tipePpn || q.ppnMode) setPpnMode(getInitialPpnMode(q));
     if (mode === "baru") {
       if (Array.isArray(q.items) && q.items.length > 0) {
@@ -919,11 +960,55 @@ function CreateInvoiceForm({
     const rawBase = dpp;
     const effectiveDpp = isIncludePpn ? Math.round(rawBase / 1.11) : rawBase;
     const ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawBase - effectiveDpp) : Math.round(rawBase * 0.11);
+
+    // Cari porsi DPP Jasa yang terkena PPh dari item SO / penawaran
+    const sourceItems =
+      items.length > 0
+        ? items
+        : Array.isArray(activePo?.items) && activePo.items.length > 0
+        ? activePo.items
+        : Array.isArray(activeQuotation?.items) && activeQuotation.items.length > 0
+        ? activeQuotation.items
+        : [];
+
+    let totalServiceDpp = 0;
+    if (sourceItems.length > 0) {
+      totalServiceDpp = sourceItems.reduce((acc: number, it: any) => {
+        const isJasa =
+          !it.productId ||
+          it.productId === null ||
+          it.itemType === "JASA" ||
+          (it.pphMode && it.pphMode !== "none") ||
+          Number(it.pph) > 0 ||
+          /^\[(JASA)\]/i.test(String(it.customName || it.name || it.item || ""));
+        return isJasa ? acc + (Number(it.qty) || 1) * Number(it.harga ?? it.price ?? 0) : acc;
+      }, 0);
+    } else {
+      const refPph = Number(activePo?.pph ?? activeQuotation?.pph ?? 0);
+      const refPphMode = (activePo?.pphMode ?? activeQuotation?.pphMode ?? pphMode) as PphMode;
+      if (refPph > 0 && refPphMode !== "none") {
+        const rate = pphRateFor(refPphMode);
+        if (rate > 0) totalServiceDpp = Math.round(refPph / rate);
+      }
+    }
+
+    const effPphRate = pphRateFor(pphMode);
     const itemPphSum = items.reduce((acc, it) => acc + calcItemPph(it), 0);
-    const pph = items.length > 0 ? itemPphSum : Math.round(effectiveDpp * pphRateFor(pphMode));
+    let pph = 0;
+    if (itemPphSum > 0) {
+      pph = pct === 100 ? itemPphSum : Math.round(itemPphSum * (pct / 100));
+    } else if (effPphRate > 0) {
+      if (totalServiceDpp > 0) {
+        const invoiceServiceDpp = Math.min(effectiveDpp, Math.round(totalServiceDpp * (pct / 100)));
+        pph = Math.round(invoiceServiceDpp * effPphRate);
+      } else {
+        pph = Math.round(effectiveDpp * effPphRate);
+      }
+    }
+
     const total = Math.max(0, (isIncludePpn ? rawBase : effectiveDpp + ppn) - pph);
     return { currentDpp: effectiveDpp, currentPpn: ppn, currentPph: pph, currentTotal: total, calculatedPct: pct };
-  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode, items]);
+  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode, items, activePo, activeQuotation]);
 
   // Handle Submit
   async function handleSubmit() {
@@ -992,6 +1077,12 @@ function CreateInvoiceForm({
 
     setIsSubmitting(true);
     const isPaidNow = paymentStatus === "PAID";
+    const effectiveInvoicePphMode: PphMode =
+      pphMode !== "none"
+        ? pphMode
+        : items.find((it: any) => it.pphMode && it.pphMode !== "none")?.pphMode ||
+          activePo?.pphMode ||
+          (currentPph > 0 ? "pph23" : "none");
     try {
       if (isPurchase) {
         const selectedCatOpt =
@@ -1010,8 +1101,8 @@ function CreateInvoiceForm({
           nilai: currentDpp,
           ppn: currentPpn,
           pph: currentPph,
-          pphMode,
-          tipePph: pphModeToTipe(pphMode),
+          pphMode: effectiveInvoicePphMode,
+          tipePph: pphModeToTipe(effectiveInvoicePphMode),
           total: currentTotal,
           tanggal,
           jatuhTempo: isPaidNow ? tanggal : jatuhTempo,
@@ -1084,8 +1175,8 @@ function CreateInvoiceForm({
         ppnMode,
         ppn: currentPpn,
         pph: currentPph,
-        pphMode,
-        tipePph: pphModeToTipe(pphMode),
+        pphMode: effectiveInvoicePphMode,
+        tipePph: pphModeToTipe(effectiveInvoicePphMode),
         total: currentTotal,
         items: mode === "lanjut"
           ? [
@@ -1351,13 +1442,16 @@ function CreateInvoiceForm({
                   );
                   if (match) {
                     setSelectedSupplierPoId(String(match.id));
-                    setPurchaseCategoryCode("1200");
+                    setPurchaseCategoryCode(match.projectId || (match.project && match.project !== "-") ? "5101" : "1200");
                     if (match.supplierId) setSelectedSupplierId(String(match.supplierId));
                     if (match.supplier) setCustomSupplierName(match.supplier);
+                    if (match.ppnMode === "exclude" || match.ppnMode === "include" || match.ppnMode === "none") {
+                      setPpnMode(match.ppnMode as PpnMode);
+                    }
                     if (Array.isArray(match.items) && match.items.length > 0) {
                       setItems(match.items);
-                    } else if (match.total || match.nilai) {
-                      setCustomDpp(formatThousands(match.total || match.nilai));
+                    } else if (match.dpp || match.total || match.nilai) {
+                      setCustomDpp(formatThousands(match.dpp || match.total || match.nilai));
                     }
                   }
                 }}
@@ -1584,6 +1678,12 @@ function CreateInvoiceForm({
                       }
                       if (match.tipePpn || match.ppnMode) {
                         setPpnMode(getInitialPpnMode(match));
+                      }
+                      const detectedPph = getInitialPphMode(match);
+                      if (detectedPph !== "none") {
+                        setPphMode(detectedPph);
+                      } else if (match.pphMode && match.pphMode !== "none") {
+                        setPphMode(match.pphMode as PphMode);
                       }
                       if (match.discount || match.disc) {
                         setCustomDiscount(formatThousands(match.discount || match.disc));
@@ -1981,7 +2081,7 @@ function CreateInvoiceForm({
                         <View className="items-end gap-0.5">
                           <Text className="text-xs font-semibold">{rupiah(sub)}</Text>
                           {itPph > 0 ? (
-                            <Text className="text-[10px] text-danger font-medium">PPh: -{rupiah(itPph)}</Text>
+                            <Text className="text-[10px] text-danger font-medium">{it.tipePph || "PPh"}: -{rupiah(itPph)}</Text>
                           ) : null}
                         </View>
                         <Button
@@ -2008,6 +2108,9 @@ function CreateInvoiceForm({
                                     i === idx ? { ...item, pphMode: opt.id, tipePph: opt.label } : item
                                   )
                                 );
+                                if (opt.id !== "none") {
+                                  setPphMode(opt.id);
+                                }
                               }}
                               className={`px-2 py-0.5 rounded border ${
                                 active
@@ -2016,7 +2119,7 @@ function CreateInvoiceForm({
                               }`}
                             >
                               <Text className={`text-[10px] ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
-                                {opt.id === "none" ? "Non-PPh" : opt.label.split(" ")[0]}
+                                {opt.id === "none" ? "Non-PPh" : opt.label}
                               </Text>
                             </Pressable>
                           );
@@ -2291,13 +2394,6 @@ function CreateInvoiceForm({
               </View>
             </FormField>
           </View>
-
-          {/* PPh Selector */}
-          <QuotationPphField
-            mode={pphMode}
-            onChange={setPphMode}
-            pph={currentPph}
-          />
         </View>
 
         {/* Grand Total Summary Box */}
@@ -2324,6 +2420,24 @@ function CreateInvoiceForm({
             </Text>
             <Text className="text-xs font-medium">{rupiah(dealPpn)}</Text>
           </View>
+          {dealPph > 0 ? (
+            <View className="flex-row justify-between">
+              <Text className="text-xs text-amber-600 dark:text-amber-400">
+                Potongan PPh Kesepakatan (
+                {pphModeToTipe(
+                  pphMode !== "none"
+                    ? pphMode
+                    : items.find((it: any) => it.pphMode && it.pphMode !== "none")?.pphMode ||
+                      activePo?.pphMode ||
+                      "pph23"
+                )}
+                ):
+              </Text>
+              <Text className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                -{rupiah(dealPph)}
+              </Text>
+            </View>
+          ) : null}
           <View className="flex-row justify-between pb-1.5 border-b border-border">
             <Text className="text-xs font-semibold text-foreground">Grand Total Kesepakatan:</Text>
             <Text className="text-xs font-bold text-foreground">{rupiah(dealGrandTotal)}</Text>
@@ -2345,7 +2459,15 @@ function CreateInvoiceForm({
           {currentPph > 0 ? (
             <View className="flex-row justify-between">
               <Text className="text-xs text-amber-600 dark:text-amber-400">
-                Potongan PPh ({pphModeToTipe(pphMode)}):
+                Potongan PPh (
+                {pphModeToTipe(
+                  pphMode !== "none"
+                    ? pphMode
+                    : items.find((it: any) => it.pphMode && it.pphMode !== "none")?.pphMode ||
+                      activePo?.pphMode ||
+                      "pph23"
+                )}
+                ):
               </Text>
               <Text className="text-xs font-semibold text-amber-600 dark:text-amber-400">
                 -{rupiah(currentPph)}

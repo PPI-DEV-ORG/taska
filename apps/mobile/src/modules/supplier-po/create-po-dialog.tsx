@@ -10,6 +10,7 @@ import { SearchableSelect, DatePicker, QuickAddSupplierDialog, formatThousands }
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
+import { PPH_MODE_OPTIONS, pphRateFor, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
@@ -29,6 +30,10 @@ export interface PoItemEntry {
   price: number;
   sellPrice?: number;
   isNewItem?: boolean;
+  isNonInventory?: boolean;
+  itemType?: "JASA" | "NON_STOK" | "BARANG";
+  pphMode?: PphMode;
+  pph?: number;
 }
 
 function getTodayIso(): string {
@@ -125,7 +130,7 @@ function CreateSupplierPoForm({
   const [items, setItems] = React.useState<PoItemEntry[]>([]);
 
   // Item Picker Mode & State
-  const [addItemMode, setAddItemMode] = React.useState<"master" | "new">("master");
+  const [addItemMode, setAddItemMode] = React.useState<"master" | "new" | "service">("master");
   const [isAddingItem, setIsAddingItem] = React.useState<boolean>(true);
 
   // Master product picker state
@@ -141,6 +146,14 @@ function CreateSupplierPoForm({
   const [newQty, setNewQty] = React.useState<string>("1");
   const [newPrice, setNewPrice] = React.useState<string>("");
   const [newSellPrice, setNewSellPrice] = React.useState<string>("");
+
+  // Non-inventory / Service item state
+  const [serviceType, setServiceType] = React.useState<"JASA" | "NON_STOK">("JASA");
+  const [serviceName, setServiceName] = React.useState<string>("");
+  const [serviceUnit, setServiceUnit] = React.useState<string>("paket");
+  const [serviceQty, setServiceQty] = React.useState<string>("1");
+  const [servicePrice, setServicePrice] = React.useState<string>("");
+  const [servicePphMode, setServicePphMode] = React.useState<PphMode>("pph23");
 
   // Tax mode
   const [ppnMode, setPpnMode] = React.useState<"none" | "exclude" | "include">("none");
@@ -263,6 +276,43 @@ function CreateSupplierPoForm({
     setNewSellPrice("");
   }
 
+  // Add non-inventory / service item
+  function handleAddServiceItem() {
+    const trimmedName = serviceName.trim();
+    if (!trimmedName) {
+      toast(serviceType === "JASA" ? "Nama jasa / pekerjaan wajib diisi" : "Nama barang non-stok wajib diisi", "danger");
+      return;
+    }
+    const q = Number(String(serviceQty).replace(/\D/g, "")) || 0;
+    if (q <= 0) {
+      toast("Jumlah kuantitas (Qty) harus lebih dari 0", "danger");
+      return;
+    }
+    const p = Number(String(servicePrice).replace(/\D/g, "")) || 0;
+    const itemSubtotal = q * p;
+    const itemPphRate = serviceType === "JASA" ? pphRateFor(servicePphMode) : 0;
+    const itemPph = Math.round(itemSubtotal * itemPphRate);
+
+    const newItem: PoItemEntry = {
+      id: `service-${Date.now()}-${Math.random()}`,
+      name: trimmedName,
+      unit: serviceUnit.trim() || (serviceType === "JASA" ? "paket" : "unit"),
+      hasSerial: false,
+      qty: q,
+      price: p,
+      isNewItem: false,
+      isNonInventory: true,
+      itemType: serviceType,
+      pphMode: serviceType === "JASA" ? servicePphMode : "none",
+      pph: itemPph,
+    };
+
+    setItems((prev) => [...prev, newItem]);
+    setServiceName("");
+    setServiceQty("1");
+    setServicePrice("");
+  }
+
   // Remove item
   function handleRemoveItem(id: string) {
     setItems((prev) => prev.filter((i) => i.id !== id));
@@ -279,10 +329,18 @@ function CreateSupplierPoForm({
     return Math.round(subtotalDpp * 0.11);
   }, [subtotalDpp, ppnMode]);
 
-  const grandTotal = React.useMemo(() => {
-    if (ppnMode === "none" || ppnMode === "include") return subtotalDpp;
-    return subtotalDpp + ppnAmount;
+  const effectiveDpp = React.useMemo(() => {
+    return ppnMode === "include" ? Math.max(0, subtotalDpp - ppnAmount) : subtotalDpp;
   }, [subtotalDpp, ppnAmount, ppnMode]);
+
+  const totalPphJasa = React.useMemo(() => {
+    return items.reduce((sum, item) => sum + (item.pph || 0), 0);
+  }, [items]);
+
+  const grandTotal = React.useMemo(() => {
+    const baseWithPpn = ppnMode === "include" || ppnMode === "none" ? subtotalDpp : subtotalDpp + ppnAmount;
+    return Math.max(0, baseWithPpn - totalPphJasa);
+  }, [subtotalDpp, ppnAmount, ppnMode, totalPphJasa]);
 
   // Submit PO
   async function handleSubmit() {
@@ -303,11 +361,11 @@ function CreateSupplierPoForm({
     try {
       const finalItemsPayload: any[] = [];
 
-      // 1. Process items: If item is new, register to master products first!
+      // 1. Process items: If item is new & not non-inventory, register to master products first!
       for (const item of items) {
         let finalProdId = item.productId;
 
-        if (item.isNewItem || !finalProdId) {
+        if (!item.isNonInventory && (item.isNewItem || !finalProdId)) {
           const autoSku = `SKU-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 100)}`;
           const createdProduct = await addRow("products", {
             nama: item.name,
@@ -336,8 +394,15 @@ function CreateSupplierPoForm({
           qty: item.qty,
           price: item.price,
           hasSerial: item.hasSerial,
+          isNonInventory: item.isNonInventory,
+          itemType: item.itemType,
+          pphMode: item.pphMode,
+          pph: item.pph,
         });
       }
+
+      const primaryPphItem = items.find((it) => it.pphMode && it.pphMode !== "none");
+      const dominantPphMode: PphMode = primaryPphItem?.pphMode ?? "none";
 
       // 2. Submit Supplier PO
       const createdPo = await addRow("supplier-pos", {
@@ -352,6 +417,12 @@ function CreateSupplierPoForm({
         eta,
         projectId: projectId || undefined,
         total: grandTotal,
+        dpp: effectiveDpp,
+        ppn: ppnAmount,
+        ppnMode,
+        pph: totalPphJasa,
+        pphMode: dominantPphMode,
+        tipePph: pphModeToTipe(dominantPphMode),
         fileId: fileId || undefined,
         soFileId: soFileId || undefined,
         items: finalItemsPayload,
@@ -543,19 +614,35 @@ function CreateSupplierPoForm({
                       <View className="flex-1 min-w-0">
                         <View className="flex-row items-center gap-1.5 flex-wrap">
                           <Text className="text-xs font-bold text-foreground">{item.name}</Text>
-                          {item.isNewItem ? (
+                          {item.itemType === "JASA" ? (
+                            <Text className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-600 dark:text-purple-400">
+                              Jasa / Subkon
+                            </Text>
+                          ) : item.itemType === "NON_STOK" ? (
+                            <Text className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                              Non-Inventory
+                            </Text>
+                          ) : item.isNewItem ? (
                             <Text className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-primary/15 text-primary">
                               + Item Baru
                             </Text>
                           ) : null}
-                          <Text className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${
-                            item.hasSerial ? "bg-accent/20 text-accent-foreground" : "bg-muted text-muted-foreground"
-                          }`}>
-                            {item.hasSerial ? "Ber-SN" : "Non-SN"}
-                          </Text>
+                          {item.itemType === "JASA" && item.pphMode && item.pphMode !== "none" && (item.pph || 0) > 0 ? (
+                            <Text className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-danger/15 text-danger">
+                              Pot. {pphModeToTipe(item.pphMode)} (-{rupiah(item.pph || 0)})
+                            </Text>
+                          ) : null}
+                          {item.itemType !== "JASA" && item.itemType !== "NON_STOK" ? (
+                            <Text className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${
+                              item.hasSerial ? "bg-accent/20 text-accent-foreground" : "bg-muted text-muted-foreground"
+                            }`}>
+                              {item.hasSerial ? "Ber-SN" : "Non-SN"}
+                            </Text>
+                          ) : null}
                         </View>
                         <Text className="text-[11px] text-muted-foreground mt-0.5">
                           {item.sku ? `SKU: ${item.sku} · ` : ""}{item.qty} {item.unit} × {rupiah(item.price)}
+                          {item.pph && item.pph > 0 ? ` (Bersih: ${rupiah(item.qty * item.price - item.pph)})` : ""}
                         </Text>
                       </View>
 
@@ -597,7 +684,17 @@ function CreateSupplierPoForm({
                       className="h-6 px-2 text-[11px]"
                     >
                       <Text className={`text-[11px] font-semibold ${addItemMode === "new" ? "text-primary-foreground" : "text-muted-foreground"}`}>
-                        + Item Baru
+                        + Item Baru (Stok)
+                      </Text>
+                    </Button>
+                    <Button
+                      variant={addItemMode === "service" ? "default" : "ghost"}
+                      size="sm"
+                      onPress={() => setAddItemMode("service")}
+                      className="h-6 px-2 text-[11px]"
+                    >
+                      <Text className={`text-[11px] font-semibold ${addItemMode === "service" ? "text-primary-foreground" : "text-muted-foreground"}`}>
+                        + Jasa / Non-Stok
                       </Text>
                     </Button>
                   </View>
@@ -669,7 +766,7 @@ function CreateSupplierPoForm({
                       </View>
                     </View>
                   </View>
-                ) : (
+                ) : addItemMode === "new" ? (
                   <View className="gap-2.5">
                     <FormField label="Nama Barang Baru *" required hint="Nama item yang akan didaftarkan ke master barang">
                       <Input
@@ -775,6 +872,124 @@ function CreateSupplierPoForm({
                       </View>
                     </View>
                   </View>
+                ) : (
+                  <View className="gap-2.5">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-xs font-semibold text-foreground">Jenis Item Non-Inventory:</Text>
+                      <View className="flex-row gap-1">
+                        <Button
+                          variant={serviceType === "JASA" ? "default" : "outline"}
+                          size="sm"
+                          onPress={() => {
+                            setServiceType("JASA");
+                            setServiceUnit("paket");
+                            if (servicePphMode === "none") setServicePphMode("pph23");
+                          }}
+                          className="h-7 px-2.5"
+                        >
+                          <Text className={`text-[11px] font-semibold ${serviceType === "JASA" ? "text-primary-foreground" : ""}`}>
+                            Jasa / Pekerjaan / Subkon
+                          </Text>
+                        </Button>
+                        <Button
+                          variant={serviceType === "NON_STOK" ? "default" : "outline"}
+                          size="sm"
+                          onPress={() => {
+                            setServiceType("NON_STOK");
+                            setServiceUnit("unit");
+                          }}
+                          className="h-7 px-2.5"
+                        >
+                          <Text className={`text-[11px] font-semibold ${serviceType === "NON_STOK" ? "text-primary-foreground" : ""}`}>
+                            Barang Non-Stok / Pakai Habis
+                          </Text>
+                        </Button>
+                      </View>
+                    </View>
+
+                    <FormField
+                      label={serviceType === "JASA" ? "Nama Jasa / Pekerjaan *" : "Nama Barang Non-Stok *"}
+                      required
+                      hint={serviceType === "JASA" ? "Contoh: Jasa Pemasangan CCTV & Setting DVR (Tidak masuk master inventori)" : "Contoh: Biaya Ekspedisi / Lakban & Packing Custom"}
+                    >
+                      <Input
+                        value={serviceName}
+                        onChangeText={setServiceName}
+                        placeholder={serviceType === "JASA" ? "Contoh: Jasa Instalasi & Tarik Kabel" : "Contoh: Konsumsi Teknisi / Packing Kayu"}
+                      />
+                    </FormField>
+
+                    {/* Pemilihan PPh Khusus Item Jasa */}
+                    {serviceType === "JASA" ? (
+                      <View className="p-2.5 rounded-lg bg-card border border-border/70 gap-1.5">
+                        <View className="flex-row items-center justify-between flex-wrap gap-1">
+                          <Text className="text-xs font-semibold text-foreground">
+                            Ketentuan Potongan PPh atas Jasa ini:
+                          </Text>
+                          <Text className="text-[10px] text-muted-foreground">
+                            {PPH_MODE_OPTIONS.find((o) => o.id === servicePphMode)?.desc}
+                          </Text>
+                        </View>
+                        <View className="flex-row gap-1 flex-wrap">
+                          {PPH_MODE_OPTIONS.map((opt) => (
+                            <Button
+                              key={opt.id}
+                              variant={servicePphMode === opt.id ? "default" : "outline"}
+                              size="sm"
+                              onPress={() => setServicePphMode(opt.id)}
+                              className="h-7 px-2"
+                            >
+                              <Text className={`text-[11px] font-semibold ${servicePphMode === opt.id ? "text-primary-foreground" : ""}`}>
+                                {opt.label}
+                              </Text>
+                            </Button>
+                          ))}
+                        </View>
+                      </View>
+                    ) : null}
+
+                    <View className="flex-row gap-2">
+                      <View className="w-24">
+                        <FormField label="Qty *" required>
+                          <Input
+                            value={serviceQty}
+                            onChangeText={setServiceQty}
+                            keyboardType="numeric"
+                            placeholder="1"
+                          />
+                        </FormField>
+                      </View>
+                      <View className="w-28">
+                        <FormField label="Satuan" required>
+                          <Input
+                            value={serviceUnit}
+                            onChangeText={setServiceUnit}
+                            placeholder="paket, jasa, lot, kali..."
+                          />
+                        </FormField>
+                      </View>
+                      <View className="flex-1">
+                        <FormField label="Biaya Satuan (Rp) *" required>
+                          <Input
+                            value={servicePrice}
+                            onChangeText={(v) => setServicePrice(formatThousands(v))}
+                            keyboardType="numeric"
+                            placeholder="Contoh: 500.000"
+                          />
+                        </FormField>
+                      </View>
+                      <View className="justify-end pb-0.5">
+                        <Button
+                          size="sm"
+                          onPress={handleAddServiceItem}
+                          className="h-10 px-3 bg-primary"
+                        >
+                          <Plus size={14} color="#fff" />
+                          <Text className="text-white text-xs font-semibold ml-1">Tambah</Text>
+                        </Button>
+                      </View>
+                    </View>
+                  </View>
                 )}
               </View>
             </View>
@@ -783,7 +998,8 @@ function CreateSupplierPoForm({
             <View className="p-3 rounded-xl bg-card border border-border gap-2.5">
               <Text className="text-xs font-bold text-foreground">Pajak & Ringkasan Tagihan</Text>
 
-              <View className="flex-row items-center justify-between">
+              {/* PPN Selector */}
+              <View className="flex-row items-center justify-between flex-wrap gap-2">
                 <Text className="text-xs text-muted-foreground">Perlakuan PPN (11%):</Text>
                 <View className="flex-row gap-1">
                   <Button
@@ -821,8 +1037,14 @@ function CreateSupplierPoForm({
 
               <View className="border-t border-border/60 pt-2 gap-1.5 text-xs">
                 <View className="flex-row justify-between">
-                  <Text className="text-xs text-muted-foreground">Subtotal DPP ({items.length} item):</Text>
-                  <Text className="text-xs font-semibold text-foreground">{rupiah(subtotalDpp)}</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {ppnMode === "include"
+                      ? `DPP (Sebelum PPN · ${items.length} item):`
+                      : `Subtotal DPP (${items.length} item):`}
+                  </Text>
+                  <Text className="text-xs font-semibold text-foreground">
+                    {rupiah(effectiveDpp)}
+                  </Text>
                 </View>
                 {ppnMode !== "none" ? (
                   <View className="flex-row justify-between">
@@ -830,6 +1052,14 @@ function CreateSupplierPoForm({
                       PPN 11% ({ppnMode === "include" ? "Sudah Termasuk" : "Tambahan"}):
                     </Text>
                     <Text className="text-xs font-semibold text-foreground">{rupiah(ppnAmount)}</Text>
+                  </View>
+                ) : null}
+                {totalPphJasa > 0 ? (
+                  <View className="flex-row justify-between">
+                    <Text className="text-xs text-danger font-medium">
+                      Potongan PPh Jasa (Dihitung dari Item Jasa):
+                    </Text>
+                    <Text className="text-xs font-semibold text-danger">-{rupiah(totalPphJasa)}</Text>
                   </View>
                 ) : null}
                 <View className="flex-row justify-between border-t border-border pt-1.5 items-center">

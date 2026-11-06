@@ -88,6 +88,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     return {
       ...rowFromStore,
       ...remoteRow,
+      ...(rowFromStore.status ? { status: rowFromStore.status } : {}),
+      ...(rowFromStore.pengiriman ? { pengiriman: rowFromStore.pengiriman } : {}),
+      ...(rowFromStore.shipmentStatus ? { shipmentStatus: rowFromStore.shipmentStatus } : {}),
     };
   }, [remoteRow, rowFromStore]);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
