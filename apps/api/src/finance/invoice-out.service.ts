@@ -1167,6 +1167,11 @@ export class InvoiceOutService {
       );
     }
 
+    const isWillBePaid = paidBefore + Number(dto.amount) >= Number(row.total) && Number(row.total) > 0;
+    if (isWillBePaid) {
+      await this.assertStockAvailabilityForInvoice(row);
+    }
+
     const finalReference = dto.coaAccount
       ? (dto.reference?.includes(`[AKUN:`) ? dto.reference : `[AKUN:${dto.coaAccount}] ${dto.reference || ""}`.trim())
       : dto.reference;
@@ -1196,9 +1201,6 @@ export class InvoiceOutService {
     const payments = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
     const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
     const isNowPaid = paid >= Number(row.total) && Number(row.total) > 0;
-    if (isNowPaid) {
-      await this.assertStockAvailabilityForInvoice(row);
-    }
 
     let targetStatus = isNowPaid ? "PAID" : row.status;
     if (isNowPaid && (row.type === "DP" || row.type === "TERMIN")) {

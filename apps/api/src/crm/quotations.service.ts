@@ -1253,14 +1253,19 @@ export class QuotationsService {
     });
 
     const maxVer = remaining[0];
+    const currentQ = await this.prisma.main.quotation.findUnique({
+      where: { id },
+      select: { total: true, ppn: true, discount: true, grandTotal: true, currentVersion: true },
+    });
+
     await this.prisma.main.quotation.update({
       where: { id },
       data: {
-        currentVersion: maxVer ? maxVer.version : 0,
-        total: maxVer ? maxVer.total : 0,
-        ppn: maxVer ? maxVer.ppn : 0,
-        discount: maxVer ? maxVer.discount : 0,
-        grandTotal: maxVer ? maxVer.grandTotal : 0,
+        currentVersion: maxVer ? maxVer.version : (currentQ?.currentVersion ?? 0),
+        total: maxVer ? maxVer.total : (currentQ?.total ?? 0),
+        ppn: maxVer ? maxVer.ppn : (currentQ?.ppn ?? 0),
+        discount: maxVer ? maxVer.discount : (currentQ?.discount ?? 0),
+        grandTotal: maxVer ? maxVer.grandTotal : (currentQ?.grandTotal ?? 0),
       },
     });
 

@@ -105,13 +105,21 @@ export function QuotationExtras({
   const revAfterDisc = Math.max(0, (revisiPpnMode === "exclude" ? revNet + revPpn : revNet) - revPph);
 
   async function handleCreateRevision() {
+    const finalTotal = totNum;
+    const finalDisc = discNum;
+    const finalPpn = ppnMode === "none" ? 0 : (row.ppn ?? Math.round(netBeforeTax * 0.11));
+    const finalPph = totalItemsPph;
+    const finalGrandTotal = ppnMode === "exclude"
+      ? Math.max(0, calcTotalAfterDisc - finalPph)
+      : Math.max(0, netBeforeTax - finalPph);
+
     try {
       await api("POST", `/quotations/${row.id}/versions`, {
-        total: revTotNum,
-        ppn: revPpn,
-        discount: revDiscNum,
-        pph: revPph,
-        grandTotal: revAfterDisc,
+        total: finalTotal,
+        ppn: finalPpn,
+        discount: finalDisc,
+        pph: finalPph,
+        grandTotal: finalGrandTotal,
         note: revisiReason.trim() || `Revisi v${nextVersionNum}`,
         fileId: revisiFileId || undefined,
       });
@@ -121,14 +129,14 @@ export function QuotationExtras({
     } catch {
       await patchRow("quotations", row.id, {
         versi: nextVersionNum,
-        total: revTotNum,
-        nilai: revTotNum,
-        disc: revDiscNum,
-        ppn: revPpn,
-        pph: revPph,
-        totalAfterDisc: revAfterDisc,
-        ppnMode: revisiPpnMode,
-        tipePpn: revisiPpnMode === "exclude" ? "Exclude PPN (11%)" : revisiPpnMode === "include" ? "Include PPN (Sudah termasuk)" : "No PPN (Tanpa PPN)",
+        total: finalTotal,
+        nilai: finalTotal,
+        disc: finalDisc,
+        ppn: finalPpn,
+        pph: finalPph,
+        totalAfterDisc: finalGrandTotal,
+        ppnMode: ppnMode,
+        tipePpn: ppnMode === "exclude" ? "Exclude PPN (11%)" : ppnMode === "include" ? "Include PPN (Sudah termasuk)" : "No PPN (Tanpa PPN)",
         status: "Revisi",
         fileName: `Penawaran-${row.nomor.replace(/\//g, "-")}-v${nextVersionNum}.xlsx`,
         fileUploaded: true,
@@ -137,8 +145,8 @@ export function QuotationExtras({
       await onRefresh?.();
       toast(`Versi ${nextVersionNum} penawaran berhasil dibuat & berstatus Revisi`);
     }
-    setPpnMode(revisiPpnMode);
     setRevisiFileId(null);
+    setRevisiReason("");
     setRevisiOpen(false);
   }
 
@@ -1126,112 +1134,46 @@ export function QuotationExtras({
                 placeholder="Contoh: Permintaan potongan harga / penambahan perangkat"
               />
             </View>
-            <View className="gap-1">
-              <Text className="text-xs text-muted-foreground">Nilai baru sebelum disc (Rp)</Text>
-              <Input
-                value={formatThousands(revisiTotal)}
-                onChangeText={(v) => setRevisiTotal(v.replace(/\D/g, ""))}
-                placeholder="Nilai total"
-                keyboardType="numeric"
-              />
-            </View>
-            <View className="gap-1.5">
-              <View className="flex-row items-center justify-between">
-                <Text className="text-xs text-muted-foreground">Diskon Baru</Text>
-                <View className="flex-row gap-1">
-                  <Button
-                    size="sm"
-                    variant={revisiDiscType === "nominal" ? "default" : "outline"}
-                    onPress={() => setRevisiDiscType("nominal")}
-                    className="h-6 px-2"
-                  >
-                    <Text className="text-[10px]">Rp Nominal</Text>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={revisiDiscType === "percent" ? "default" : "outline"}
-                    onPress={() => setRevisiDiscType("percent")}
-                    className="h-6 px-2"
-                  >
-                    <Text className="text-[10px]">% Persen</Text>
-                  </Button>
-                </View>
+
+            <View className="bg-panel border-border/60 rounded-lg border p-3 gap-1.5">
+              <View className="flex-row justify-between">
+                <Text className="text-xs text-muted-foreground">Total Nilai Sebelum PPN:</Text>
+                <Text className="text-xs font-semibold text-foreground">{rupiah(totNum)}</Text>
               </View>
-              {revisiDiscType === "percent" ? (
-                <View className="flex-row items-center gap-2">
-                  <View className="flex-1">
-                    <Input
-                      value={revisiDiscPercent}
-                      onChangeText={(v) => setRevisiDiscPercent(v.replace(/\D/g, ""))}
-                      placeholder="Contoh: 10"
-                      keyboardType="numeric"
-                    />
-                  </View>
-                  <Text className="text-xs font-semibold text-muted-foreground">%</Text>
-                  <Text className="text-xs font-semibold text-primary">= {rupiah(revDiscNum)}</Text>
-                </View>
-              ) : (
-                <Input
-                  value={formatThousands(revisiDisc)}
-                  onChangeText={(v) => setRevisiDisc(v.replace(/\D/g, ""))}
-                  placeholder="Nilai diskon (Rp)"
-                  keyboardType="numeric"
-                />
-              )}
-            </View>
-            <View className="gap-1">
-              <Text className="text-xs text-muted-foreground">Tipe / Skema PPN Revisi</Text>
-              <View className="flex-row gap-1.5">
-                {[
-                  { id: "exclude", label: "Exclude PPN (11%)" },
-                  { id: "include", label: "Include PPN" },
-                  { id: "none", label: "No PPN" },
-                ].map((opt) => (
-                  <Button
-                    key={opt.id}
-                    size="sm"
-                    variant={revisiPpnMode === opt.id ? "default" : "outline"}
-                    onPress={() => setRevisiPpnMode(opt.id as any)}
-                    className="h-8 px-2.5"
-                  >
-                    <Text className="text-xs">{opt.label}</Text>
-                  </Button>
-                ))}
-              </View>
-            </View>
-            <View className="bg-panel border-border/60 rounded-lg border p-2.5 gap-1">
-              {revisiPpnMode === "include" ? (
-                <>
-                  <View className="flex-row justify-between">
-                    <Text className="text-[11px] text-muted-foreground">Harga Sebelum PPN (DPP):</Text>
-                    <Text className="text-[11px] font-medium text-foreground">{rupiah(revDpp)}</Text>
-                  </View>
-                  <View className="flex-row justify-between">
-                    <Text className="text-[11px] text-muted-foreground">PPN (11% Termasuk):</Text>
-                    <Text className="text-[11px] font-medium text-primary">{rupiah(revPpn)}</Text>
-                  </View>
-                </>
-              ) : (
+              {discNum > 0 ? (
                 <View className="flex-row justify-between">
-                  <Text className="text-[11px] text-muted-foreground">
-                    {revisiPpnMode === "none" ? "PPN: Tanpa PPN (Rp 0)" : "PPN (11%):"}
-                  </Text>
-                  {revisiPpnMode !== "none" && (
-                    <Text className="text-[11px] font-medium text-foreground">{rupiah(revPpn)}</Text>
-                  )}
-                </View>
-              )}
-              {revPph > 0 ? (
-                <View className="flex-row justify-between">
-                  <Text className="text-[11px] text-muted-foreground">Potongan PPh (Akumulasi Item):</Text>
-                  <Text className="text-[11px] font-medium text-danger">- {rupiah(revPph)}</Text>
+                  <Text className="text-xs text-muted-foreground">Diskon:</Text>
+                  <Text className="text-xs font-semibold text-danger">- {rupiah(discNum)}</Text>
                 </View>
               ) : null}
-              <View className="flex-row justify-between border-t border-border/40 pt-1 mt-0.5">
-                <Text className="text-xs font-semibold text-foreground">Preview Total Akhir v{nextVersionNum}:</Text>
-                <Text className="text-xs font-bold text-primary">{rupiah(revAfterDisc)}</Text>
+              <View className="flex-row justify-between">
+                <Text className="text-xs text-muted-foreground">Skema PPN:</Text>
+                <Text className="text-xs font-medium text-foreground">
+                  {ppnMode === "exclude"
+                    ? `Exclude PPN (11%): +${rupiah(row.ppn ?? Math.round(netBeforeTax * 0.11))}`
+                    : ppnMode === "include"
+                    ? `Include PPN (Sudah Termasuk ${rupiah(row.ppn ?? Math.max(0, netBeforeTax - Math.round(netBeforeTax / 1.11)))})`
+                    : "Tanpa PPN (Rp 0)"}
+                </Text>
+              </View>
+              {totalItemsPph > 0 ? (
+                <View className="flex-row justify-between">
+                  <Text className="text-xs text-muted-foreground">Potongan PPh:</Text>
+                  <Text className="text-xs font-semibold text-danger">- {rupiah(totalItemsPph)}</Text>
+                </View>
+              ) : null}
+              <View className="flex-row justify-between border-t border-border/40 pt-1.5 mt-0.5">
+                <Text className="text-xs font-bold text-foreground">Total Harga Penawaran:</Text>
+                <Text className="text-sm font-bold text-primary">
+                  {rupiah(
+                    ppnMode === "exclude"
+                      ? Math.max(0, calcTotalAfterDisc - totalItemsPph)
+                      : Math.max(0, netBeforeTax - totalItemsPph)
+                  )}
+                </Text>
               </View>
             </View>
+
             <FileUploader
               label="Upload File Revisi Baru (PDF / Excel)"
               kind="dokumen"

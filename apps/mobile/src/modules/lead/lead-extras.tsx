@@ -336,24 +336,29 @@ export function LeadExtras({ row }: { row: Row }) {
             }
             return (
               <View className="gap-2">
-                {relProjects.map((proj: Row) => (
-                  <View key={proj.id} className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80">
-                    <View className="flex-1 mr-2">
-                      <Text className="text-xs font-bold text-foreground">{proj.nama}</Text>
-                      <Text className="text-[11px] text-muted-foreground">
-                        PM: {proj.pm || "-"} · Status: {proj.status || "Berjalan"}
-                      </Text>
+                {relProjects.map((proj: Row, idx: number) => {
+                  if (!proj) return null;
+                  const projId = proj.id != null ? String(proj.id) : `proj-${idx}`;
+                  const projName = proj.nama || proj.name || `Project #${projId}`;
+                  return (
+                    <View key={projId} className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80">
+                      <View className="flex-1 mr-2">
+                        <Text className="text-xs font-bold text-foreground">{projName}</Text>
+                        <Text className="text-[11px] text-muted-foreground">
+                          PM: {proj.pm || "-"} · Status: {proj.status || "Berjalan"}
+                        </Text>
+                      </View>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5"
+                        onPress={() => router.push(`/projects/${projId}` as any)}
+                      >
+                        <Text className="text-xs">Buka Project</Text>
+                      </Button>
                     </View>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2.5"
-                      onPress={() => router.push(`/projects/${proj.id}` as any)}
-                    >
-                      <Text className="text-xs">Buka Project</Text>
-                    </Button>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             );
           })()}
