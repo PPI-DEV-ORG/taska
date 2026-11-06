@@ -51,6 +51,7 @@ export const PATHS: Record<string, string> = {
   "poc-reports": "/poc-reports",
   "visit-reports": "/visit-reports",
   "visit-activity-types": "/visit-activity-types",
+  payrollSlips: "/hr/payroll/slips",
 };
 
 // ─── status label maps (backend enum → UI label) ───
