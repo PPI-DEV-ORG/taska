@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect, formatThousands } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
+import { PPH_MODE_OPTIONS, pphRateFor, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import { Line } from "@/modules/shared/line";
 import { printOrderDocument } from "@/lib/order-print";
 import { getKasBankAccounts } from "@/lib/accounting";
@@ -27,7 +28,7 @@ import {
 
 const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
 
-export function SupplierPoExtras({ row }: { row: Row }) {
+export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void }) {
   const router = useRouter();
   const { user, patchRow, setStatus, addRow, toast, data, reload, refreshModule } = useApp();
   const [showAllPoItems, setShowAllPoItems] = React.useState(false);
@@ -53,13 +54,22 @@ export function SupplierPoExtras({ row }: { row: Row }) {
     }
     setSelectedPoItemIndices([]);
     await reload();
+    onRefresh?.();
     toast(`${count} barang berhasil dihapus dari PO`);
   };
+
+  const [currentShipment, setCurrentShipment] = React.useState<string>(() => row.pengiriman || "Di Supplier");
+  const [previousShipmentProp, setPreviousShipmentProp] = React.useState(row.pengiriman);
+  if (row.pengiriman !== previousShipmentProp) {
+    setPreviousShipmentProp(row.pengiriman);
+    if (row.pengiriman) setCurrentShipment(row.pengiriman);
+  }
+
   const steps = ["Di Supplier", "Dikirim", "Sampai"];
   const cur =
-    row.pengiriman === "Sampai"
+    currentShipment === "Sampai"
       ? 2
-      : row.pengiriman === "Dikirim" || row.pengiriman === "Dalam Perjalanan"
+      : currentShipment === "Dikirim" || currentShipment === "Dalam Perjalanan"
       ? 1
       : 0;
   const showPrice = PRICE_ROLES.includes(user!.role);
@@ -113,9 +123,93 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   const recWithDo = linkedReceivings.find((rc: any) => rc.receiptFileId || rc.photoFileId || rc.fileId);
   const effectiveDoFileId = row.doFileId || recWithDo?.receiptFileId || recWithDo?.photoFileId || recWithDo?.fileId || null;
 
+  const poItemsSubtotal = React.useMemo(() => {
+    if (Array.isArray(row.items) && row.items.length > 0) {
+      return row.items.reduce((s: number, it: any) => s + (Number(it.qty) || 1) * Number(it.price || 0), 0);
+    }
+    return Number(row.total || 0);
+  }, [row.items, row.total]);
+
+  const poTotalNum = Number(row.total || 0);
+  const effectivePoPpnMode: "none" | "exclude" | "include" = React.useMemo(() => {
+    if (row.ppnMode === "exclude" || row.ppnMode === "include" || row.ppnMode === "none") {
+      return row.ppnMode;
+    }
+    if (poItemsSubtotal > 0 && poTotalNum > poItemsSubtotal && Math.abs(poTotalNum - Math.round(poItemsSubtotal * 1.11)) <= 5) {
+      return "exclude";
+    }
+    return "none";
+  }, [row.ppnMode, poItemsSubtotal, poTotalNum]);
+
+  const effectivePoDpp = React.useMemo(() => {
+    if (row.dpp != null && Number(row.dpp) > 0) return Number(row.dpp);
+    if (effectivePoPpnMode === "exclude") {
+      return poItemsSubtotal > 0 ? poItemsSubtotal : Math.round(poTotalNum / 1.11);
+    }
+    if (effectivePoPpnMode === "include") {
+      return Math.round(poTotalNum / 1.11);
+    }
+    return poTotalNum;
+  }, [row.dpp, effectivePoPpnMode, poItemsSubtotal, poTotalNum]);
+
+  const effectivePoPpn = React.useMemo(() => {
+    if (row.ppn != null && Number(row.ppn) > 0) return Number(row.ppn);
+    if (effectivePoPpnMode === "exclude") {
+      return Math.max(0, poTotalNum > effectivePoDpp ? poTotalNum - effectivePoDpp : Math.round(effectivePoDpp * 0.11));
+    }
+    if (effectivePoPpnMode === "include") {
+      return Math.max(0, poTotalNum - effectivePoDpp);
+    }
+    return 0;
+  }, [row.ppn, effectivePoPpnMode, poTotalNum, effectivePoDpp]);
+
+  const effectivePoPphMode: PphMode = (row.pphMode as PphMode) || "none";
+  const poJasaDpp = React.useMemo(() => {
+    if (Array.isArray(row.items) && row.items.length > 0) {
+      const nonProdItemsSum = row.items.reduce((s: number, it: any) => {
+        const isJasa =
+          !it.productId ||
+          it.productId === null ||
+          it.itemType === "JASA" ||
+          (it.pphMode && it.pphMode !== "none") ||
+          (Number(it.pph) > 0) ||
+          /^\[(JASA)\]/i.test(String(it.customName || it.name || ""));
+        return isJasa ? s + (Number(it.qty) || 1) * Number(it.price || 0) : s;
+      }, 0);
+      if (nonProdItemsSum > 0) return nonProdItemsSum;
+    }
+    if (row.pph != null && Number(row.pph) > 0 && effectivePoPphMode !== "none") {
+      const rate = pphRateFor(effectivePoPphMode);
+      if (rate > 0) return Math.round(Number(row.pph) / rate);
+    }
+    return 0;
+  }, [row.items, row.pph, effectivePoPphMode]);
+
+  const effectivePoPph = React.useMemo(() => {
+    if (row.pph != null && Number(row.pph) > 0) return Number(row.pph);
+    if (effectivePoPphMode !== "none") {
+      return poJasaDpp > 0 ? Math.round(poJasaDpp * pphRateFor(effectivePoPphMode)) : 0;
+    }
+    return 0;
+  }, [row.pph, effectivePoPphMode, poJasaDpp]);
+
+  const effectivePoGrandTotal = React.useMemo(() => {
+    if (effectivePoPpnMode === "exclude") {
+      return Math.max(0, effectivePoDpp + effectivePoPpn - effectivePoPph);
+    }
+    return poTotalNum;
+  }, [effectivePoPpnMode, effectivePoDpp, effectivePoPpn, effectivePoPph, poTotalNum]);
+
   const [invOpen, setInvOpen] = React.useState(false);
   const [invNumber, setInvNumber] = React.useState(`INV-SUP-${row.nomor || row.id}`);
-  const [invAmount, setInvAmount] = React.useState(String(row.total || 0));
+  const [invAmount, setInvAmount] = React.useState(() => formatThousands(String(effectivePoDpp || 0)));
+  const [invPpnMode, setInvPpnMode] = React.useState<"none" | "exclude" | "include">(() =>
+    effectivePoPpnMode === "none" ? "none" : "exclude"
+  );
+  const [invPphMode, setInvPphMode] = React.useState<PphMode>(() => effectivePoPphMode);
+  const [invJasaDpp, setInvJasaDpp] = React.useState<string>(() =>
+    formatThousands(String(poJasaDpp || (effectivePoPph > 0 && effectivePoPphMode !== "none" ? Math.round(effectivePoPph / pphRateFor(effectivePoPphMode)) : 0)))
+  );
   const [invDate, setInvDate] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [invDue, setInvDue] = React.useState(() => {
     const d = new Date();
@@ -129,6 +223,29 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   const [invCoaAccount, setInvCoaAccount] = React.useState<string>("1000.02");
   const [invFileId, setInvFileId] = React.useState<number | null>(null);
   const [invPayProofFileId, setInvPayProofFileId] = React.useState<number | null>(null);
+
+  function handleOpenInvoiceModal() {
+    setInvNumber(`INV-SUP-${row.nomor || row.id}`);
+    setInvPphMode(effectivePoPphMode);
+    const defJasa =
+      poJasaDpp > 0
+        ? poJasaDpp
+        : (effectivePoPph > 0 && effectivePoPphMode !== "none"
+            ? Math.round(effectivePoPph / pphRateFor(effectivePoPphMode))
+            : 0);
+    setInvJasaDpp(defJasa > 0 ? formatThousands(String(defJasa)) : "");
+    if (effectivePoPpnMode === "include") {
+      setInvAmount(formatThousands(String(effectivePoGrandTotal || 0)));
+      setInvPpnMode("include");
+    } else if (effectivePoPpnMode === "exclude") {
+      setInvAmount(formatThousands(String(effectivePoDpp || 0)));
+      setInvPpnMode("exclude");
+    } else {
+      setInvAmount(formatThousands(String(effectivePoGrandTotal || 0)));
+      setInvPpnMode("none");
+    }
+    setInvOpen(true);
+  }
 
   const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
 
@@ -186,6 +303,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
   }
 
   async function go(s: string) {
+    setCurrentShipment(s);
     try {
       await patchRow("supplier-pos", String(row.id), {
         pengiriman: s,
@@ -216,15 +334,47 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       }
       toast(`Status pengiriman PO dan Request Barang berhasil disinkronkan ke ${s}!`);
       await reload();
+      onRefresh?.();
     } catch (e: any) {
+      setCurrentShipment(row.pengiriman || "Di Supplier");
       toast(e?.message ?? "Gagal mengubah status pengiriman", "danger");
     }
   }
 
+  const rawInvInput = Number(String(invAmount).replace(/\D/g, "")) || 0;
+  const rawJasaInput = Number(String(invJasaDpp).replace(/\D/g, "")) || 0;
+  const calcInvDpp = invPpnMode === "include" ? Math.round(rawInvInput / 1.11) : rawInvInput;
+  const calcInvPpn =
+    invPpnMode === "none"
+      ? 0
+      : invPpnMode === "include"
+        ? Math.max(0, rawInvInput - calcInvDpp)
+        : Math.round(rawInvInput * 0.11);
+
+  // PPh dihitung KHUSUS dari DPP Jasa
+  const effJasaDpp = rawJasaInput > 0
+    ? rawJasaInput
+    : (poJasaDpp > 0 ? poJasaDpp : (effectivePoPph > 0 && effectivePoPphMode !== "none" ? Math.round(effectivePoPph / pphRateFor(effectivePoPphMode)) : 0));
+
+  const calcInvPph =
+    invPphMode === "none"
+      ? 0
+      : effJasaDpp > 0
+        ? Math.round(effJasaDpp * pphRateFor(invPphMode))
+        : (row.pph != null && Number(row.pph) > 0 && invPphMode === effectivePoPphMode)
+          ? Number(row.pph)
+          : 0;
+
+  const calcInvTotal = Math.max(
+    0,
+    (invPpnMode === "include" ? rawInvInput : calcInvDpp + calcInvPpn) - calcInvPph
+  );
+
   async function handleCreateInvoiceIn() {
-    const amt = Number(String(invAmount).replace(/\D/g, "")) || 0;
-    const ppn = Math.round(amt * 0.11);
-    const total = amt + ppn;
+    const amt = calcInvDpp;
+    const ppn = calcInvPpn;
+    const pph = calcInvPph;
+    const total = calcInvTotal;
     const isLunas = invPaymentScheme === "LUNAS";
 
     const created = await addRow("invoiceIn", {
@@ -235,6 +385,9 @@ export function SupplierPoExtras({ row }: { row: Row }) {
       po: row.nomor,
       nilai: amt,
       ppn,
+      pph,
+      pphMode: invPphMode,
+      tipePph: pphModeToTipe(invPphMode),
       total,
       jatuhTempo: isLunas ? invDate : invDue,
       fileId: invFileId ?? undefined,
@@ -633,7 +786,47 @@ export function SupplierPoExtras({ row }: { row: Row }) {
           <Text className="text-muted-foreground text-xs py-1">Belum ada rincian barang di PO ini.</Text>
         )}
         {showPrice ? (
-          <Line left="Total harga beli" right={<Text className="text-sm font-bold text-primary">{rupiah(row.total)}</Text>} />
+          <View className="mt-2 pt-2 border-t border-border/50 gap-1">
+            {effectivePoPpnMode !== "none" ? (
+              <>
+                <View className="flex-row items-center justify-between py-0.5">
+                  <Text className="text-xs text-muted-foreground">
+                    {effectivePoPpnMode === "include" ? "DPP (Sebelum PPN 11%)" : "Subtotal Harga Barang (DPP)"}
+                  </Text>
+                  <Text className="text-xs font-medium text-foreground">{rupiah(effectivePoDpp)}</Text>
+                </View>
+                <View className="flex-row items-center justify-between py-0.5">
+                  <Text className="text-xs text-muted-foreground">
+                    PPN 11% ({effectivePoPpnMode === "include" ? "Include PPN" : "Exclude PPN +11%"})
+                  </Text>
+                  <Text className="text-xs font-medium text-foreground">{rupiah(effectivePoPpn)}</Text>
+                </View>
+              </>
+            ) : (
+              <View className="flex-row items-center justify-between py-0.5">
+                <Text className="text-xs text-muted-foreground">Ketentuan Pajak</Text>
+                <Text className="text-xs text-muted-foreground">Tanpa PPN (Non-PPN)</Text>
+              </View>
+            )}
+            {effectivePoPph > 0 ? (
+              <View className="flex-row items-center justify-between py-0.5">
+                <Text className="text-xs text-danger font-medium">
+                  Potongan {pphModeToTipe(effectivePoPphMode)}
+                </Text>
+                <Text className="text-xs font-medium text-danger">-{rupiah(effectivePoPph)}</Text>
+              </View>
+            ) : null}
+            <Line
+              left={
+                effectivePoPpnMode === "exclude"
+                  ? "Total harga beli (Termasuk PPN 11%)"
+                  : effectivePoPpnMode === "include"
+                    ? "Total harga beli (Include PPN 11%)"
+                    : "Total harga beli"
+              }
+              right={<Text className="text-sm font-bold text-primary">{rupiah(effectivePoGrandTotal)}</Text>}
+            />
+          </View>
         ) : null}
         <Text className="text-muted-foreground mt-2 text-[13px]">Penerimaan sebagian diperbolehkan di Gudang.</Text>
       </Panel>
@@ -643,7 +836,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
           title="Invoice Masuk & Pembayaran ke Supplier"
           subtitle="Tagihan dari supplier atas PO ini beserta status pelunasan oleh Finance."
           right={
-            <Button size="sm" variant="outline" onPress={() => setInvOpen(true)} className="flex-row items-center gap-1">
+            <Button size="sm" variant="outline" onPress={handleOpenInvoiceModal} className="flex-row items-center gap-1">
               <Plus size={14} color={colors.text} />
               <Text className="text-xs">Catat Invoice Masuk</Text>
             </Button>
@@ -885,7 +1078,7 @@ export function SupplierPoExtras({ row }: { row: Row }) {
               </View>
             ) : null}
 
-            {/* Nomor Invoice & Nilai DPP */}
+            {/* Nomor Invoice & Nilai DPP / Tagihan */}
             <View className="flex-row flex-wrap gap-3">
               <View className="flex-1 min-w-[240px]">
                 <FormField label="Nomor Invoice Supplier" required>
@@ -893,10 +1086,19 @@ export function SupplierPoExtras({ row }: { row: Row }) {
                 </FormField>
               </View>
               <View className="flex-1 min-w-[240px]">
-                <FormField label="Nilai DPP Sebelum PPN (Rp)" required>
+                <FormField
+                  label={
+                    invPpnMode === "include"
+                      ? "Nominal Tagihan (Sudah Termasuk PPN)"
+                      : invPpnMode === "exclude"
+                        ? "Nilai DPP Sebelum PPN (Rp)"
+                        : "Nominal Tagihan (Tanpa PPN)"
+                  }
+                  required
+                >
                   <Input
                     value={invAmount}
-                    onChangeText={(val) => setInvAmount(val)}
+                    onChangeText={(val) => setInvAmount(formatThousands(val))}
                     keyboardType="numeric"
                     placeholder="0"
                   />
@@ -904,32 +1106,119 @@ export function SupplierPoExtras({ row }: { row: Row }) {
               </View>
             </View>
 
-            {/* Tanggal Invoice & Jatuh Tempo / Preview Total */}
+            {/* Ketentuan PPN & PPh Ringkasan Nominal */}
+            <View className="bg-panel rounded-xl border border-border p-3 gap-2.5">
+              <View className="flex-row items-center justify-between flex-wrap gap-2">
+                <Text className="text-xs font-semibold text-foreground">Ketentuan PPN Masukan (11%):</Text>
+                <View className="flex-row gap-1.5">
+                  {(
+                    [
+                      { id: "none", label: "Tanpa PPN" },
+                      { id: "exclude", label: "Exclude (+11%)" },
+                      { id: "include", label: "Include (11%)" },
+                    ] as const
+                  ).map((opt) => (
+                    <Button
+                      key={opt.id}
+                      size="sm"
+                      variant={invPpnMode === opt.id ? "default" : "outline"}
+                      onPress={() => {
+                        if (opt.id === "include" && invPpnMode !== "include") {
+                          setInvAmount(formatThousands(String(calcInvDpp + calcInvPpn || rawInvInput)));
+                        } else if (opt.id === "exclude" && invPpnMode === "include") {
+                          setInvAmount(formatThousands(String(calcInvDpp || rawInvInput)));
+                        }
+                        setInvPpnMode(opt.id);
+                      }}
+                      className="h-7 px-2.5"
+                    >
+                      <Text className="text-[11px] font-semibold">{opt.label}</Text>
+                    </Button>
+                  ))}
+                </View>
+              </View>
+
+              <View className="flex-row items-center justify-between flex-wrap gap-2 pt-2 border-t border-border/50">
+                <View>
+                  <Text className="text-xs font-semibold text-foreground">Pemotongan PPh (Jasa / Vendor):</Text>
+                  <Text className="text-[10px] text-muted-foreground">
+                    {PPH_MODE_OPTIONS.find((o) => o.id === invPphMode)?.desc}
+                  </Text>
+                </View>
+                <View className="flex-row gap-1 flex-wrap">
+                  {PPH_MODE_OPTIONS.map((opt) => (
+                    <Button
+                      key={opt.id}
+                      size="sm"
+                      variant={invPphMode === opt.id ? "default" : "outline"}
+                      onPress={() => setInvPphMode(opt.id)}
+                      className="h-7 px-2"
+                    >
+                      <Text className={`text-[11px] font-semibold ${opt.id === invPphMode ? "text-primary-foreground" : ""}`}>{opt.label}</Text>
+                    </Button>
+                  ))}
+                </View>
+              </View>
+
+              {invPphMode !== "none" ? (
+                <View className="bg-card/80 border border-border/80 rounded-lg p-2.5 flex-row items-center justify-between gap-3">
+                  <View className="flex-1">
+                    <Text className="text-xs font-semibold text-foreground">
+                      Nilai Jasa Kena PPh (DPP Jasa):
+                    </Text>
+                    <Text className="text-[10px] text-muted-foreground">
+                      PPh dipotong dari biaya jasa, bukan barang material fisik
+                    </Text>
+                  </View>
+                  <View className="w-36">
+                    <Input
+                      value={invJasaDpp}
+                      onChangeText={(v) => setInvJasaDpp(formatThousands(v))}
+                      keyboardType="numeric"
+                      placeholder="0"
+                    />
+                  </View>
+                </View>
+              ) : null}
+
+              <View className="border-t border-border/60 pt-2 gap-1">
+                <View className="flex-row justify-between">
+                  <Text className="text-xs text-muted-foreground">DPP (Masuk Persediaan/HPP/Beban):</Text>
+                  <Text className="text-xs font-semibold text-foreground">{rupiah(calcInvDpp)}</Text>
+                </View>
+                <View className="flex-row justify-between">
+                  <Text className="text-xs text-muted-foreground">PPN Masukan 11% (Akun 1600):</Text>
+                  <Text className="text-xs font-semibold text-foreground">{rupiah(calcInvPpn)}</Text>
+                </View>
+                {calcInvPph > 0 ? (
+                  <View className="flex-row justify-between">
+                    <Text className="text-xs text-danger font-medium">
+                      Potongan {pphModeToTipe(invPphMode)} ({pphRateFor(invPphMode) * 100}% dari Jasa {rupiah(effJasaDpp)}):
+                    </Text>
+                    <Text className="text-xs font-semibold text-danger">-{rupiah(calcInvPph)}</Text>
+                  </View>
+                ) : null}
+                <View className="flex-row justify-between pt-1 border-t border-border/60 items-center">
+                  <Text className="text-xs font-bold text-foreground">Total Tagihan Bersih (Hutang ke Supplier):</Text>
+                  <Text className="text-sm font-bold text-primary">{rupiah(calcInvTotal)}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Tanggal Invoice & Jatuh Tempo */}
             <View className="flex-row flex-wrap gap-3">
               <View className="flex-1 min-w-[240px]">
                 <FormField label="Tanggal Invoice *" hint="Tanggal terbit invoice supplier">
                   <DatePicker value={invDate} onChange={setInvDate} />
                 </FormField>
               </View>
-              <View className="flex-1 min-w-[240px]">
-                {invPaymentScheme === "TEMPO" ? (
+              {invPaymentScheme === "TEMPO" ? (
+                <View className="flex-1 min-w-[240px]">
                   <FormField label="Jatuh Tempo *" hint="Batas waktu pembayaran ke supplier">
                     <DatePicker value={invDue} onChange={setInvDue} />
                   </FormField>
-                ) : (
-                  <FormField label="Total Tagihan (Termasuk PPN 11%)">
-                    <View className="h-10 px-3 justify-center rounded-lg border border-primary/30 bg-primary/5">
-                      <Text className="text-sm font-bold text-primary">
-                        {rupiah(
-                          Math.round(
-                            (Number(String(invAmount).replace(/\D/g, "")) || 0) * 1.11
-                          )
-                        )}
-                      </Text>
-                    </View>
-                  </FormField>
-                )}
-              </View>
+                </View>
+              ) : null}
             </View>
 
             {/* Upload Files Berdampingan / Samping-sampingan */}

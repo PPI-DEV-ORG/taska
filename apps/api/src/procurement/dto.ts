@@ -210,6 +210,18 @@ export class PoItemDto {
   @IsOptional() @IsBoolean()
   hasSerial?: boolean;
 
+  @IsOptional() @IsBoolean()
+  isNonInventory?: boolean;
+
+  @IsOptional() @IsString()
+  itemType?: string;
+
+  @IsOptional() @IsString()
+  pphMode?: string;
+
+  @IsOptional() @IsNumber()
+  pph?: number;
+
   @IsInt() @Min(1)
   qty!: number;
 
@@ -246,6 +258,24 @@ export class PoDto {
 
   @IsOptional() @IsNumber() @Min(0)
   total?: number;
+
+  @IsOptional() @IsString()
+  ppnMode?: string;
+
+  @IsOptional() @IsNumber() @Min(0)
+  ppn?: number;
+
+  @IsOptional() @IsNumber() @Min(0)
+  dpp?: number;
+
+  @IsOptional() @IsString()
+  pphMode?: string;
+
+  @IsOptional() @IsString()
+  tipePph?: string;
+
+  @IsOptional() @IsNumber() @Min(0)
+  pph?: number;
 
   @IsOptional() @IsString()
   status?: string;

@@ -67,8 +67,8 @@ export class PosService {
     return `supplier-po:meta:${id}`;
   }
 
-  private async getMetaMap(ids: number[]): Promise<Map<number, { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null }>> {
-    const map = new Map<number, { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null }>();
+  private async getMetaMap(ids: number[]): Promise<Map<number, { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null; ppnMode?: string | null; ppn?: number | null; dpp?: number | null; pphMode?: string | null; tipePph?: string | null; pph?: number | null }>> {
+    const map = new Map<number, { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null; ppnMode?: string | null; ppn?: number | null; dpp?: number | null; pphMode?: string | null; tipePph?: string | null; pph?: number | null }>();
     if (!ids.length) return map;
     const rows = await this.prisma.main.systemSetting.findMany({
       where: { key: { in: ids.map((id) => this.metaKey(id)) } },
@@ -82,9 +82,9 @@ export class PosService {
     return map;
   }
 
-  private async saveMeta(id: number, patch: { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null }) {
+  private async saveMeta(id: number, patch: { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null; ppnMode?: string | null; ppn?: number | null; dpp?: number | null; pphMode?: string | null; tipePph?: string | null; pph?: number | null }) {
     const key = this.metaKey(id);
-    let existing: { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null } = {};
+    let existing: { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null; ppnMode?: string | null; ppn?: number | null; dpp?: number | null; pphMode?: string | null; tipePph?: string | null; pph?: number | null } = {};
     try {
       const cur = await this.prisma.main.systemSetting.findUnique({ where: { key } });
       if (cur?.value) existing = JSON.parse(cur.value);
@@ -264,6 +264,12 @@ export class PosService {
           supplierSoNumber: m.supplierSoNumber ? String(m.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
           soFileId: m.soFileId ?? null,
           manualStatus: m.manualStatus ?? null,
+          ppnMode: m.ppnMode ?? null,
+          ppn: m.ppn ?? null,
+          dpp: m.dpp ?? null,
+          pphMode: m.pphMode ?? null,
+          tipePph: m.tipePph ?? null,
+          pph: m.pph ?? null,
           isPaid,
         };
       })
@@ -374,6 +380,12 @@ export class PosService {
       supplierSoNumber: meta.supplierSoNumber ? String(meta.supplierSoNumber).replace(/^SO-S\//i, "SO/") : null,
       soFileId: meta.soFileId ?? null,
       manualStatus: meta.manualStatus ?? null,
+      ppnMode: meta.ppnMode ?? null,
+      ppn: meta.ppn ?? null,
+      dpp: meta.dpp ?? null,
+      pphMode: meta.pphMode ?? null,
+      tipePph: meta.tipePph ?? null,
+      pph: meta.pph ?? null,
       isPaid,
       approval,
     };
@@ -402,7 +414,13 @@ export class PosService {
     const resolvedItems: any[] = [];
     for (const i of items) {
       let prodId = i.productId ? Number(i.productId) : null;
-      if (!prodId && (i.customName || (i as any).name)) {
+      const isNonInv = Boolean(
+        (i as any).isNonInventory ||
+        (i as any).itemType === "JASA" ||
+        (i as any).itemType === "NON_STOK" ||
+        /^\[(JASA|NON[-_ ]?STOK)\]/i.test(String(i.customName || (i as any).name || ""))
+      );
+      if (!prodId && !isNonInv && (i.customName || (i as any).name)) {
         const prodName = String(i.customName || (i as any).name).trim();
         const existing = await this.prisma.main.product.findFirst({
           where: { name: { equals: prodName } },
@@ -504,10 +522,25 @@ export class PosService {
         .catch(() => {});
       this.notifications.dataChange("receiving", "update", row.id);
     }
-    if (dto.supplierSoNumber !== undefined || dto.soFileId !== undefined) {
+    if (
+      dto.supplierSoNumber !== undefined ||
+      dto.soFileId !== undefined ||
+      dto.ppnMode !== undefined ||
+      dto.ppn !== undefined ||
+      dto.dpp !== undefined ||
+      dto.pphMode !== undefined ||
+      dto.tipePph !== undefined ||
+      dto.pph !== undefined
+    ) {
       await this.saveMeta(row.id, {
         ...(dto.supplierSoNumber !== undefined ? { supplierSoNumber: dto.supplierSoNumber } : {}),
         ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
+        ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
+        ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
+        ...(dto.dpp !== undefined ? { dpp: dto.dpp } : {}),
+        ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
+        ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+        ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
       });
     }
 
@@ -642,10 +675,25 @@ export class PosService {
         .catch(() => {});
       this.notifications.dataChange("receiving", "update", row.id);
     }
-    if (dto.supplierSoNumber !== undefined || dto.soFileId !== undefined) {
+    if (
+      dto.supplierSoNumber !== undefined ||
+      dto.soFileId !== undefined ||
+      dto.ppnMode !== undefined ||
+      dto.ppn !== undefined ||
+      dto.dpp !== undefined ||
+      dto.pphMode !== undefined ||
+      dto.tipePph !== undefined ||
+      dto.pph !== undefined
+    ) {
       await this.saveMeta(id, {
         ...(dto.supplierSoNumber !== undefined ? { supplierSoNumber: dto.supplierSoNumber } : {}),
         ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
+        ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
+        ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
+        ...(dto.dpp !== undefined ? { dpp: dto.dpp } : {}),
+        ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
+        ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+        ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
       });
     }
     if (dto.soFileId) {

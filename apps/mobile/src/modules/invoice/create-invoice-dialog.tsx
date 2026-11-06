@@ -1351,13 +1351,16 @@ function CreateInvoiceForm({
                   );
                   if (match) {
                     setSelectedSupplierPoId(String(match.id));
-                    setPurchaseCategoryCode("1200");
+                    setPurchaseCategoryCode(match.projectId || (match.project && match.project !== "-") ? "5101" : "1200");
                     if (match.supplierId) setSelectedSupplierId(String(match.supplierId));
                     if (match.supplier) setCustomSupplierName(match.supplier);
+                    if (match.ppnMode === "exclude" || match.ppnMode === "include" || match.ppnMode === "none") {
+                      setPpnMode(match.ppnMode as PpnMode);
+                    }
                     if (Array.isArray(match.items) && match.items.length > 0) {
                       setItems(match.items);
-                    } else if (match.total || match.nilai) {
-                      setCustomDpp(formatThousands(match.total || match.nilai));
+                    } else if (match.dpp || match.total || match.nilai) {
+                      setCustomDpp(formatThousands(match.dpp || match.total || match.nilai));
                     }
                   }
                 }}

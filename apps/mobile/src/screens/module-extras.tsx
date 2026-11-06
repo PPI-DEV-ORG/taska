@@ -1738,7 +1738,7 @@ export function ModuleExtras({
   }
 
   if (moduleKey === "supplier-pos") {
-    return <SupplierPoExtras row={row} />;
+    return <SupplierPoExtras row={row} onRefresh={onRefresh} />;
   }
 
   if (moduleKey === "purchase-requests") {

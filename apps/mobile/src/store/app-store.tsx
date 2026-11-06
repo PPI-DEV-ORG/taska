@@ -1262,6 +1262,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
             return r;
           });
+        } else if (module === "supplier-pos") {
+          const isShipment = ["Di Supplier", "Dikirim", "Sampai", "Dalam Perjalanan"].includes(status);
+          updatedModuleList = updatedModuleList.map((r: any) => {
+            if (String(r.id) !== String(id)) return r;
+            const nextShipment = isShipment ? (status === "Dalam Perjalanan" ? "Dikirim" : status) : (r.pengiriman || "Di Supplier");
+            const nextDisplayStatus =
+              isShipment && nextShipment === "Sampai"
+                ? (r.paymentMethod !== "KAS" && !r.isPaid ? "Sampai (Belum Lunas)" : "Sampai")
+                : isShipment
+                ? nextShipment
+                : status;
+            return {
+              ...r,
+              [key]: nextDisplayStatus,
+              status: nextDisplayStatus,
+              ...(isShipment ? { pengiriman: nextShipment, shipmentStatus: statusEnumFor("supplier-pos", nextShipment) } : {}),
+              ...(extra ?? {}),
+            };
+          });
         } else {
           updatedModuleList = updatedModuleList.map((r: any) =>
             r.id === id

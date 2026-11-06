@@ -972,6 +972,41 @@ export function adaptRow(module: string, raw: any): Row {
                     ? "Menunggu persetujuan"
                     : toLabel("supplier-pos", raw.shipmentStatus || raw.status);
 
+      const poRawTotal = n(raw.total);
+      const poItemsSum = rawItems.reduce(
+        (sum: number, i: any) => sum + (n(i.qty) || 1) * n(i.price ?? i.unitCost),
+        0
+      );
+      const reqPpnMode = raw.request?.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] ?? null;
+      let poPpnMode: "none" | "exclude" | "include" = "none";
+      if (raw.ppnMode === "exclude" || raw.ppnMode === "include" || raw.ppnMode === "none") {
+        poPpnMode = raw.ppnMode;
+      } else if (reqPpnMode === "exclude" || reqPpnMode === "include") {
+        poPpnMode = reqPpnMode;
+      } else if (poItemsSum > 0 && poRawTotal > poItemsSum && Math.abs(poRawTotal - Math.round(poItemsSum * 1.11)) <= 5) {
+        poPpnMode = "exclude";
+      }
+
+      const poDpp =
+        raw.dpp != null && n(raw.dpp) > 0
+          ? n(raw.dpp)
+          : poPpnMode === "exclude"
+            ? (poItemsSum > 0 ? poItemsSum : Math.round(poRawTotal / 1.11))
+            : poPpnMode === "include"
+              ? Math.round(poRawTotal / 1.11)
+              : poRawTotal;
+      const poPpn =
+        raw.ppn != null && n(raw.ppn) >= 0 && raw.ppnMode
+          ? n(raw.ppn)
+          : poPpnMode === "exclude"
+            ? Math.max(0, poRawTotal > poDpp ? poRawTotal - poDpp : Math.round(poDpp * 0.11))
+            : poPpnMode === "include"
+              ? Math.max(0, poRawTotal - poDpp)
+              : 0;
+      const poPph = n(raw.pph);
+      const poPphMode = raw.pphMode || "none";
+      const poTipePph = raw.tipePph || "Tanpa PPh";
+
       return {
         ...base,
         nomor: String(raw.number ?? "").replace(/^(?:POD|PO-S)\//i, "PO/"),
@@ -981,7 +1016,13 @@ export function adaptRow(module: string, raw: any): Row {
         pembuat: nameOf(raw.creator) ?? "",
         tanggal: d(raw.date),
         eta: d(raw.eta),
-        total: n(raw.total),
+        total: poRawTotal,
+        dpp: poDpp,
+        ppn: poPpn,
+        ppnMode: poPpnMode,
+        pph: poPph,
+        pphMode: poPphMode,
+        tipePph: poTipePph,
         persetujuan: toLabel("supplier-pos", raw.status),
         pengiriman: toLabel("supplier-pos", raw.shipmentStatus),
         status: displayStatus,
@@ -2103,6 +2144,12 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         eta: row.eta || undefined,
         paymentTerms: row.payment || row.paymentTerms || undefined,
         total: num(row.total),
+        ppnMode: row.ppnMode || undefined,
+        ppn: row.ppn != null ? num(row.ppn) : undefined,
+        dpp: row.dpp != null ? num(row.dpp) : undefined,
+        pphMode: row.pphMode || undefined,
+        tipePph: row.tipePph || undefined,
+        pph: row.pph != null ? num(row.pph) : undefined,
         fileId: row.fileId ? Number(row.fileId) : undefined,
         soFileId: row.soFileId ? Number(row.soFileId) : undefined,
         items,
@@ -2553,7 +2600,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "deliveryNoteId", "pocReportId", "visitReportId", "fundingSource", "reimbursementStatus",
     "paymentMethod", "costCenterId", "receiptFileId", "paidFileId",
   ],
-  "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
+  "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "ppnMode", "ppn", "dpp", "pphMode", "tipePph", "pph", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
   "purchase-requests": ["date", "dueDate", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "fundingSource", "status", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "requestId", "date", "conditionNote", "receiptFileId", "photoFileId", "status", "items"],
   "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText", "status"],

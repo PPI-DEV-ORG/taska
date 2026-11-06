@@ -190,9 +190,19 @@ export function SupplierInvoiceDetailDialog({
               <Text className="text-xs text-muted-foreground">PPN (11%)</Text>
               <Text className="text-xs font-medium">{rupiah(displayInvoice.ppn || 0)}</Text>
             </View>
+            {Number(displayInvoice.pph || 0) > 0 ? (
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs text-danger font-medium">
+                  Potongan {displayInvoice.tipePph || "PPh"}
+                </Text>
+                <Text className="text-xs font-semibold text-danger">
+                  -{rupiah(displayInvoice.pph || 0)}
+                </Text>
+              </View>
+            ) : null}
             <View className="h-px bg-border my-0.5" />
             <View className="flex-row items-center justify-between">
-              <Text className="text-xs font-semibold">Total Tagihan</Text>
+              <Text className="text-xs font-semibold">Total Tagihan (Bersih)</Text>
               <Text className="text-sm font-bold text-foreground">{rupiah(total)}</Text>
             </View>
             <View className="flex-row items-center justify-between">
@@ -417,6 +427,7 @@ function SupplierInvoiceEditForm({
   const [submitting, setSubmitting] = React.useState(false);
 
   const rawBase = Number(String(dppStr).replace(/\D/g, "")) || 0;
+  const pphNum = Number(invoice.pph || 0);
   const effectiveDpp = ppnMode === "include" ? Math.round(rawBase / 1.11) : rawBase;
   const effectivePpn =
     ppnMode === "none"
@@ -424,7 +435,7 @@ function SupplierInvoiceEditForm({
       : ppnMode === "include"
       ? Math.max(0, rawBase - effectiveDpp)
       : Math.round(rawBase * 0.11);
-  const effectiveTotal = ppnMode === "include" ? rawBase : effectiveDpp + effectivePpn;
+  const effectiveTotal = Math.max(0, (ppnMode === "include" ? rawBase : effectiveDpp + effectivePpn) - pphNum);
 
   async function handleSave() {
     if (!nomor.trim()) {
@@ -464,6 +475,9 @@ function SupplierInvoiceEditForm({
         dueDate: jatuhTempo,
         amount: effectiveDpp,
         ppn: effectivePpn,
+        pph: pphNum,
+        pphMode: invoice.pphMode || undefined,
+        tipePph: invoice.tipePph || undefined,
         total: effectiveTotal,
         notes: catatan.trim(),
         fileId: finalFileId ?? undefined,
@@ -601,8 +615,16 @@ function SupplierInvoiceEditForm({
               <Text className="text-xs text-muted-foreground">PPN Masukan (11%):</Text>
               <Text className="text-xs font-medium">{rupiah(effectivePpn)}</Text>
             </View>
+            {pphNum > 0 ? (
+              <View className="flex-row justify-between">
+                <Text className="text-xs text-danger font-medium">
+                  Potongan {invoice.tipePph || "PPh"}:
+                </Text>
+                <Text className="text-xs font-semibold text-danger">-{rupiah(pphNum)}</Text>
+              </View>
+            ) : null}
             <View className="flex-row justify-between pt-1 border-t border-border">
-              <Text className="text-xs font-bold">Total Tagihan:</Text>
+              <Text className="text-xs font-bold">Total Tagihan (Bersih):</Text>
               <Text className="text-sm font-bold text-primary">{rupiah(effectiveTotal)}</Text>
             </View>
           </View>
@@ -793,101 +815,103 @@ function SupplierInvoicePayForm({
         </DialogDescription>
       </DialogHeader>
 
-      <View className="gap-3 py-2">
-        {/* Sisa badge */}
-        <View className="bg-panel rounded-xl border border-border p-3 flex-row items-center justify-between">
-          <View>
-            <Text className="text-xs text-muted-foreground">Total Tagihan</Text>
-            <Text className="text-xs font-semibold">{rupiah(total)}</Text>
+      <ScrollView className="max-h-[64vh] pr-1" showsVerticalScrollIndicator={false}>
+        <View className="gap-3 py-2">
+          {/* Sisa badge */}
+          <View className="bg-panel rounded-xl border border-border p-3 flex-row items-center justify-between">
+            <View>
+              <Text className="text-xs text-muted-foreground">Total Tagihan</Text>
+              <Text className="text-xs font-semibold">{rupiah(total)}</Text>
+            </View>
+            <View className="items-end">
+              <Text className="text-xs text-muted-foreground">Sisa yang Belum Dibayar</Text>
+              <Text className="text-sm font-bold text-danger">{rupiah(sisa)}</Text>
+            </View>
           </View>
-          <View className="items-end">
-            <Text className="text-xs text-muted-foreground">Sisa yang Belum Dibayar</Text>
-            <Text className="text-sm font-bold text-danger">{rupiah(sisa)}</Text>
-          </View>
-        </View>
 
-        <FormField label="Nominal Pembayaran (Rp)" required>
-          <Input
-            value={amount}
-            onChangeText={(t) => setAmount(formatThousands(t))}
-            keyboardType="numeric"
-            placeholder="0"
-          />
-        </FormField>
+          <FormField label="Nominal Pembayaran (Rp)" required>
+            <Input
+              value={amount}
+              onChangeText={(t) => setAmount(formatThousands(t))}
+              keyboardType="numeric"
+              placeholder="0"
+            />
+          </FormField>
 
-        <FormField label="Tanggal Pembayaran" required>
-          <DatePicker value={date} onChange={setDate} />
-        </FormField>
+          <FormField label="Tanggal Pembayaran" required>
+            <DatePicker value={date} onChange={setDate} />
+          </FormField>
 
-        <FormField label="Metode Pembayaran">
-          <View className="flex-row items-center gap-2">
-            {(["TRANSFER", "TUNAI", "GIRO"] as const).map((m) => (
-              <Button
-                key={m}
-                size="sm"
-                variant={method === m ? "default" : "outline"}
-                onPress={() => {
-                  setMethod(m);
-                  if (m === "TUNAI") {
-                    const cashAcc = kasBankOptions.find((o) => o.code === "1000.01" || /kas/i.test(o.rawName));
-                    if (cashAcc) setCoaAccount(cashAcc.code);
-                  } else {
-                    const firstBank = kasBankOptions.find((o) => o.code !== "1000.01" && !/kas/i.test(o.rawName));
-                    if (firstBank) setCoaAccount(firstBank.code);
-                  }
-                }}
-                className="flex-1"
-              >
-                <Text className={method === m ? "text-primary-foreground text-xs" : "text-xs"}>{m}</Text>
-              </Button>
-            ))}
-          </View>
-        </FormField>
+          <FormField label="Metode Pembayaran">
+            <View className="flex-row items-center gap-2">
+              {(["TRANSFER", "TUNAI", "GIRO"] as const).map((m) => (
+                <Button
+                  key={m}
+                  size="sm"
+                  variant={method === m ? "default" : "outline"}
+                  onPress={() => {
+                    setMethod(m);
+                    if (m === "TUNAI") {
+                      const cashAcc = kasBankOptions.find((o) => o.code === "1000.01" || /kas/i.test(o.rawName));
+                      if (cashAcc) setCoaAccount(cashAcc.code);
+                    } else {
+                      const firstBank = kasBankOptions.find((o) => o.code !== "1000.01" && !/kas/i.test(o.rawName));
+                      if (firstBank) setCoaAccount(firstBank.code);
+                    }
+                  }}
+                  className="flex-1"
+                >
+                  <Text className={method === m ? "text-primary-foreground text-xs" : "text-xs"}>{m}</Text>
+                </Button>
+              ))}
+            </View>
+          </FormField>
 
-        <FormField
-          label="Pilih Akun Kas / Bank (CoA) Sumber Bayar"
-          required
-          hint="Rekening kas atau bank yang dipotong untuk pembayaran ini"
-        >
-          <SearchableSelect
-            value={
-              kasBankOptions.find((o) => o.code === coaAccount)?.name ||
-              kasBankOptions[0]?.name ||
-              ""
-            }
-            options={kasBankOptions.map((o) => o.name)}
-            onChange={(val) => {
-              const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
-              if (match) {
-                setCoaAccount(match.code);
-                const isTunai = match.code === "1000.01" || /kas/i.test(match.rawName);
-                setMethod(isTunai ? "TUNAI" : "TRANSFER");
+          <FormField
+            label="Pilih Akun Kas / Bank (CoA) Sumber Bayar"
+            required
+            hint="Rekening kas atau bank yang dipotong untuk pembayaran ini"
+          >
+            <SearchableSelect
+              value={
+                kasBankOptions.find((o) => o.code === coaAccount)?.name ||
+                kasBankOptions[0]?.name ||
+                ""
               }
-            }}
-            placeholder="Pilih rekening kas / bank..."
-          />
-        </FormField>
+              options={kasBankOptions.map((o) => o.name)}
+              onChange={(val) => {
+                const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
+                if (match) {
+                  setCoaAccount(match.code);
+                  const isTunai = match.code === "1000.01" || /kas/i.test(match.rawName);
+                  setMethod(isTunai ? "TUNAI" : "TRANSFER");
+                }
+              }}
+              placeholder="Pilih rekening kas / bank..."
+            />
+          </FormField>
 
-        <FormField label="Nomor Referensi / Catatan Transfer">
-          <Input
-            value={reference}
-            onChangeText={setReference}
-            placeholder="Contoh: TRF-BCA-987213"
-          />
-        </FormField>
+          <FormField label="Nomor Referensi / Catatan Transfer">
+            <Input
+              value={reference}
+              onChangeText={setReference}
+              placeholder="Contoh: TRF-BCA-987213"
+            />
+          </FormField>
 
-        <FormField label="Bukti Transfer (Opsional)">
-          <FileUploader
-            label="Upload Foto / PDF Bukti Transfer Bank"
-            kind="semua"
-            category="invoice"
-            autoFlush
-            onUploaded={(id) => setFileId(id)}
-          />
-        </FormField>
-      </View>
+          <FormField label="Bukti Transfer (Opsional)">
+            <FileUploader
+              label="Upload Foto / PDF Bukti Transfer Bank"
+              kind="semua"
+              category="invoice"
+              autoFlush
+              onUploaded={(id) => setFileId(id)}
+            />
+          </FormField>
+        </View>
+      </ScrollView>
 
-      <DialogFooter className="flex-row items-center justify-end gap-2 pt-2">
+      <DialogFooter className="flex-row items-center justify-end gap-2 pt-3 border-t border-border/60 mt-1">
         <Button variant="outline" onPress={() => onOpenChange(false)} disabled={submitting}>
           <Text>Batal</Text>
         </Button>
@@ -918,7 +942,7 @@ export function SupplierInvoicePayDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[94vw] max-w-2xl max-h-[90vh]"
+        className="w-[94vw] max-w-2xl max-h-[88vh] overflow-hidden"
         style={Platform.select({
           web: { width: "min(94vw, 640px)", maxWidth: "640px" } as any,
         })}

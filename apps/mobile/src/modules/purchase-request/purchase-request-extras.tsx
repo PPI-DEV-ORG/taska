@@ -255,6 +255,16 @@ export function PurchaseRequestExtras({
 
     setLoading(true);
     try {
+      const targetTotal = Number(poTotal) || row.estimasi || 0;
+      const prPpnMode: "none" | "exclude" | "include" =
+        row.ppnMode === "exclude" || row.ppnMode === "include"
+          ? row.ppnMode
+          : ((row.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] as any) || "none");
+      const poDppVal =
+        prPpnMode === "none" ? targetTotal : Math.round(targetTotal / 1.11);
+      const poPpnVal =
+        prPpnMode === "none" ? 0 : Math.max(0, targetTotal - poDppVal);
+
       const created = await addRow("supplier-pos", {
         supplier: supplierName,
         supplierId: supplierId,
@@ -266,7 +276,10 @@ export function PurchaseRequestExtras({
         paymentTerms: poPaymentTerms,
         item: row.item || row.tujuan || "Barang Request",
         items: reqItems,
-        total: Number(poTotal) || row.estimasi || 0,
+        total: targetTotal,
+        dpp: poDppVal,
+        ppn: poPpnVal,
+        ppnMode: prPpnMode,
         eta: poEta || undefined,
         status: isPaid ? "Lunas" : isDiterima ? "Sampai" : isDikirim ? "Dikirim" : "Menunggu persetujuan",
       });
