@@ -34,6 +34,7 @@ import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
+import { getItemAvailableStock } from "@/modules/quotation/lib";
 
 export function LeadExtras({ row }: { row: Row }) {
   const router = useRouter();
@@ -641,6 +642,22 @@ export function LeadExtras({ row }: { row: Row }) {
                         size="sm"
                         className="h-8 px-2.5 bg-success"
                         onPress={async () => {
+                          const invItems = Array.isArray(inv.items) ? inv.items : [];
+                          const outOfStockItems = invItems
+                            .map((it: any) => ({
+                              it,
+                              stock: getItemAvailableStock(it, data.products, data.serials, data.stockSummary),
+                            }))
+                            .filter((res: any) => res.stock.isOutOfStock);
+
+                          if (outOfStockItems.length > 0) {
+                            const names = outOfStockItems.map((o: any) => o.it.item).join(", ");
+                            const confirmProceed = typeof window !== "undefined"
+                              ? window.confirm(`Peringatan: Stok barang di gudang kosong / tidak mencukupi untuk item berikut:\n- ${names}\n\nApakah Anda tetap ingin menandai invoice ini sebagai Lunas?`)
+                              : true;
+                            if (!confirmProceed) return;
+                          }
+
                           try {
                             await setStatus("invoices", String(inv.id), "Lunas");
                             toast(`Invoice ${inv.nomor} berhasil dilunasi!`);
