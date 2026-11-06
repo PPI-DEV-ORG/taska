@@ -45,9 +45,10 @@ function isServiceItem(it: any): boolean {
 
 export default function NewDeliveryNoteScreen() {
   const router = useRouter();
-  const searchParams = useLocalSearchParams<{ id?: string; soId?: string }>();
+  const searchParams = useLocalSearchParams<{ id?: string; soId?: string; invoiceId?: string }>();
   const editId = searchParams?.id ? String(searchParams.id) : null;
   const initialSoId = searchParams?.soId ? String(searchParams.soId) : null;
+  const initialInvoiceId = searchParams?.invoiceId ? String(searchParams.invoiceId) : null;
 
   const { data, user, addRow, patchRow, toast, refreshModule, pushHistory, reload } = useApp();
   const fileHandle = React.useRef<FileUploaderHandle | null>(null);
@@ -55,6 +56,7 @@ export default function NewDeliveryNoteScreen() {
 
   const deliveryNotes = data["delivery-notes"];
   const poClientList = data["po-client"];
+  const invoicesList = data.invoices;
 
   const initialExistingDn = React.useMemo(() => {
     if (!editId) return null;
@@ -62,6 +64,28 @@ export default function NewDeliveryNoteScreen() {
       (dn: Row) => String(dn.id) === editId || String(dn.nomor) === editId
     ) ?? null;
   }, [editId, deliveryNotes]);
+
+  const initialMatchInvoice = React.useMemo(() => {
+    const rawReason = String(initialExistingDn?.alasan || initialExistingDn?.reportText || "");
+    const tagInvId = rawReason.match(/\[inv:(\d+)\]/i)?.[1] || "";
+    const tagInvNum = rawReason.match(/\b(INV[\-\/][^\s\)\]]+)\b/i)?.[1] || "";
+    const targetInvId =
+      initialInvoiceId ||
+      (initialExistingDn
+        ? String(initialExistingDn.invoiceId || tagInvId || "")
+        : "");
+    const targetInvNum = initialExistingDn ? String(initialExistingDn.invoiceNumber || tagInvNum || "") : "";
+    if (!targetInvId && !targetInvNum) return null;
+    return (
+      (invoicesList ?? []).find(
+        (inv: Row) =>
+          (targetInvId && String(inv.id) === targetInvId) ||
+          (targetInvNum &&
+            (String(inv.nomor || "").toLowerCase() === targetInvNum.toLowerCase() ||
+              String(inv.number || "").toLowerCase() === targetInvNum.toLowerCase()))
+      ) ?? null
+    );
+  }, [initialInvoiceId, initialExistingDn, invoicesList]);
 
   const initialMatchSo = React.useMemo(() => {
     const rawReason = String(initialExistingDn?.alasan || initialExistingDn?.reportText || "");
@@ -87,13 +111,20 @@ export default function NewDeliveryNoteScreen() {
 
   const [tanggalSj, setTanggalSj] = React.useState(() => initialExistingDn?.tanggal || new Date().toISOString().slice(0, 10));
   const [tujuanState, setTujuan] = React.useState<string | null>(null);
-  const tujuan = tujuanState ?? (initialExistingDn?.tujuan || initialMatchSo?.customer || "");
+  const tujuan =
+    tujuanState ??
+    (initialExistingDn?.tujuan ||
+      initialMatchSo?.customer ||
+      initialMatchInvoice?.customer ||
+      "");
   const [alasanState, setAlasan] = React.useState<string | null>(null);
   const alasan =
     alasanState ??
     (initialExistingDn?.alasan ||
       (initialMatchSo
         ? `Pengiriman Barang SO ${initialMatchSo.nomorSo || initialMatchSo.nomor || initialMatchSo.id}`
+        : initialMatchInvoice
+        ? `Pengiriman Barang Invoice ${initialMatchInvoice.nomor || initialMatchInvoice.id}`
         : ""));
   const [selectedProject, setSelectedProject] = React.useState(() => (initialExistingDn?.project && initialExistingDn.project !== "-") ? initialExistingDn.project : "-");
   const [selectedSoOptionState, setSelectedSoOption] = React.useState<string | null>(null);
@@ -108,13 +139,28 @@ export default function NewDeliveryNoteScreen() {
     }
     return "-";
   }, [selectedSoOptionState, initialMatchSo]);
+
+  const [selectedInvoiceOptionState, setSelectedInvoiceOption] = React.useState<string | null>(null);
+  const selectedInvoiceOption = React.useMemo(() => {
+    if (selectedInvoiceOptionState !== null) return selectedInvoiceOptionState;
+    if (initialMatchInvoice) {
+      const invNum = initialMatchInvoice.nomor || `INV #${initialMatchInvoice.id}`;
+      const cust = initialMatchInvoice.customer && initialMatchInvoice.customer !== "-" ? ` — ${initialMatchInvoice.customer}` : "";
+      const physicalCount = (Array.isArray(initialMatchInvoice.items) ? initialMatchInvoice.items : []).filter((it: any) => !isServiceItem(it)).length;
+      const count = physicalCount > 0 ? ` (${physicalCount} barang)` : "";
+      return `${invNum}${cust}${count}`;
+    }
+    return "-";
+  }, [selectedInvoiceOptionState, initialMatchInvoice]);
+
   const [hasGoodsState, setHasGoods] = React.useState<boolean | null>(null);
   const hasGoods =
     hasGoodsState ??
     Boolean(
       initialExistingDn?.withGoods ||
         (Array.isArray(initialExistingDn?.items) && initialExistingDn.items.filter((it: any) => !isServiceItem(it)).length > 0) ||
-        (Array.isArray(initialMatchSo?.items) && initialMatchSo.items.filter((it: any) => !isServiceItem(it)).length > 0)
+        (Array.isArray(initialMatchSo?.items) && initialMatchSo.items.filter((it: any) => !isServiceItem(it)).length > 0) ||
+        (Array.isArray(initialMatchInvoice?.items) && initialMatchInvoice.items.filter((it: any) => !isServiceItem(it)).length > 0)
     );
   const [items, setItems] = React.useState<QuotationItem[]>(() => {
     // Jika edit Surat Jalan yang SUDAH memiliki scan/pilihan unit fisik, muat unit fisik yang sudah ter-scan
@@ -141,7 +187,6 @@ export default function NewDeliveryNoteScreen() {
         });
       }
     }
-    // Jika dari SO / belum ada unit serial yang dipilih, biarkan items kosong agar masuk ke "Target Kebutuhan Pengiriman"
     return [];
   });
   const [checklistRequirementsState, setChecklistRequirements] = React.useState<
@@ -159,9 +204,11 @@ export default function NewDeliveryNoteScreen() {
     const rawItems =
       Array.isArray(initialMatchSo?.items) && initialMatchSo.items.length > 0
         ? initialMatchSo.items
+        : Array.isArray(initialMatchInvoice?.items) && initialMatchInvoice.items.length > 0
+        ? initialMatchInvoice.items
         : Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0
-          ? initialExistingDn.items
-          : [];
+        ? initialExistingDn.items
+        : [];
     const sourceItems = rawItems.filter((it: any) => !isServiceItem(it));
     if (sourceItems.length > 0) {
       return sourceItems.map((it: any) => ({
@@ -223,6 +270,75 @@ export default function NewDeliveryNoteScreen() {
       }),
     ];
   }, [soList]);
+
+  const invoiceOptions = React.useMemo(() => {
+    const list = data.invoices ?? [];
+    return [
+      "-",
+      ...list.map((inv: Row) => {
+        const invNum = inv.nomor || `INV #${inv.id}`;
+        const cust = inv.customer && inv.customer !== "-" ? ` — ${inv.customer}` : "";
+        const physicalCount = (Array.isArray(inv.items) ? inv.items : []).filter((it: any) => !isServiceItem(it)).length;
+        const count = physicalCount > 0 ? ` (${physicalCount} barang)` : "";
+        const statusText = inv.status ? ` [${inv.status}]` : "";
+        return `${invNum}${cust}${statusText}${count}`;
+      }),
+    ];
+  }, [data.invoices]);
+
+  const selectedInvoice = React.useMemo(() => {
+    if (!selectedInvoiceOption || selectedInvoiceOption === "-") return null;
+    return (
+      (data.invoices ?? []).find((inv: Row) => {
+        const invNum = inv.nomor || `INV #${inv.id}`;
+        return selectedInvoiceOption.startsWith(invNum) || String(inv.id) === selectedInvoiceOption;
+      }) ?? null
+    );
+  }, [data.invoices, selectedInvoiceOption]);
+
+  function handleSelectInvoice(val: string) {
+    setSelectedInvoiceOption(val);
+    if (!val || val === "-") return;
+    const match = (data.invoices ?? []).find((inv: Row) => {
+      const invNum = inv.nomor || `INV #${inv.id}`;
+      return val.startsWith(invNum) || String(inv.id) === val;
+    });
+    if (match) {
+      if (!tujuan.trim() && match.customer && match.customer !== "-") {
+        setTujuan(match.customer);
+      }
+      const invNum = match.nomor || `INV #${match.id}`;
+      if (!alasan.trim() || alasan.startsWith("Pengiriman barang untuk") || alasan.startsWith("Pengiriman Barang")) {
+        setAlasan(`Pengiriman barang untuk Invoice ${invNum}`);
+      }
+      if (match.projectId || match.project) {
+        const projMatch = (data.projects ?? []).find(
+          (p: Row) => (match.projectId && String(p.id) === String(match.projectId)) || p.nama === match.project
+        );
+        if (projMatch) {
+          const name = String(projMatch.nama ?? projMatch.name ?? "").trim();
+          const cust = projMatch.customer && projMatch.customer !== "-" && !name.includes(projMatch.customer) ? ` (${projMatch.customer})` : "";
+          setSelectedProject(`${name}${cust}`);
+        }
+      }
+      const physicalMatchItems = (Array.isArray(match.items) ? match.items : []).filter((it: any) => !isServiceItem(it));
+      if (physicalMatchItems.length > 0) {
+        setHasGoods(true);
+        const checklist = physicalMatchItems.map((it: any) => ({
+          productId: it.productId ? Number(it.productId) : undefined,
+          name: it.item || it.name || "Barang",
+          sku: it.sku,
+          targetQty: Number(it.qty || 1),
+          unit: it.satuan || it.unit || "unit",
+        }));
+        setChecklistRequirements(checklist);
+        toast(`Target kebutuhan (${checklist.length} barang) dari Invoice dimuat`);
+        setTimeout(() => scanInputRef.current?.focus(), 150);
+      } else {
+        setChecklistRequirements([]);
+      }
+    }
+  }
 
   const projectOptions = React.useMemo(() => {
     const projects = Array.isArray(data.projects) ? data.projects : [];
@@ -575,11 +691,19 @@ export default function NewDeliveryNoteScreen() {
         ? selectedSo.nomorSo
         : (selectedSo.nomor || `SO #${selectedSo.id}`)
       : undefined;
+    const invNum = selectedInvoice
+      ? (selectedInvoice.nomor || `INV #${selectedInvoice.id}`)
+      : undefined;
     const soTag = selectedSo?.id ? ` [so:${selectedSo.id}]` : "";
+    const invTag = selectedInvoice?.id ? ` [inv:${selectedInvoice.id}] [invNum:${invNum}]` : "";
     const cleanAlasan = alasan.trim();
-    const finalAlasan = selectedSo
-      ? (cleanAlasan.includes("[so:") ? cleanAlasan : `${cleanAlasan || `Pengiriman Barang SO ${soNum}`}${soTag}`)
-      : cleanAlasan;
+    let finalAlasan = cleanAlasan;
+    if (selectedSo && !finalAlasan.includes("[so:")) {
+      finalAlasan = `${finalAlasan || `Pengiriman Barang SO ${soNum}`}${soTag}`;
+    }
+    if (selectedInvoice && !finalAlasan.includes("[inv:")) {
+      finalAlasan = `${finalAlasan || `Pengiriman Barang Invoice ${invNum}`}${invTag}`;
+    }
 
     const willShip = targetStatus === "Dikirim";
 
@@ -598,6 +722,8 @@ export default function NewDeliveryNoteScreen() {
           soId: selectedSo?.id ? Number(selectedSo.id) : undefined,
           soNumber: soNum,
           clientPoId: selectedSo?.id ? Number(selectedSo.id) : undefined,
+          invoiceId: selectedInvoice?.id ? Number(selectedInvoice.id) : undefined,
+          invoiceNumber: invNum,
           barang: hasGoods && items.length > 0 ? itemsSummary : "-",
           withGoods: hasGoods && items.length > 0,
           reportText: hasGoods && items.length > 0 ? itemsSummary : undefined,
@@ -640,6 +766,8 @@ export default function NewDeliveryNoteScreen() {
         soId: selectedSo?.id ? Number(selectedSo.id) : undefined,
         soNumber: soNum,
         clientPoId: selectedSo?.id ? Number(selectedSo.id) : undefined,
+        invoiceId: selectedInvoice?.id ? Number(selectedInvoice.id) : undefined,
+        invoiceNumber: invNum,
         pembuat: user?.name || "Karyawan",
         barang: hasGoods && items.length > 0 ? itemsSummary : "-",
         withGoods: hasGoods && items.length > 0,
@@ -667,6 +795,9 @@ export default function NewDeliveryNoteScreen() {
 
       if (selectedSo?.id) {
         pushHistory("po-client", String(selectedSo.id), `Surat jalan ${row.nomor} dibuat untuk pengiriman barang`);
+      }
+      if (selectedInvoice?.id) {
+        pushHistory("invoices", String(selectedInvoice.id), `Surat jalan ${row.nomor} dibuat untuk pengiriman barang`);
       }
       if (activeProject?.id) {
         pushHistory("projects", String(activeProject.id), `Surat jalan ${row.nomor} dibuat`);
@@ -727,6 +858,15 @@ export default function NewDeliveryNoteScreen() {
               onChange={handleSelectSo}
               options={soOptions}
               placeholder="Pilih Sales Order (SO) jika ada..."
+            />
+          </FormField>
+
+          <FormField label="Terkait Invoice Penjualan (Opsional)" hint="Pilih Invoice bila pengiriman langsung dari invoice lunas tanpa SO">
+            <SearchableSelect
+              value={selectedInvoiceOption}
+              onChange={handleSelectInvoice}
+              options={invoiceOptions}
+              placeholder="Pilih Invoice jika ada..."
             />
           </FormField>
 

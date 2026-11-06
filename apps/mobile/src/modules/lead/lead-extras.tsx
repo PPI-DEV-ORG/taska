@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   FileCheck,
   FileText,
+  FileSignature,
   ArrowRight,
   Plus,
   Edit3,
@@ -16,6 +17,7 @@ import {
   UserCheck,
   Check,
   Receipt,
+  Truck,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -37,20 +39,18 @@ export function LeadExtras({ row }: { row: Row }) {
   const router = useRouter();
   const { toast, data, addRow, patchRow, setStatus, pushHistory, user, reload, refreshModule, createQuotationFromLead } = useApp();
   
-  const leadQuotations = React.useMemo(() => {
-    return (data.quotations ?? []).filter(
-      (q: Row) =>
-        (q.leadId && String(q.leadId) === String(row.id)) ||
-        (q.lead && row.nama && q.lead.trim().toLowerCase() === row.nama.trim().toLowerCase())
-    );
-  }, [data.quotations, row.id, row.nama]);
+  const leadQuotations = React.useMemo(
+    () =>
+      (data.quotations ?? []).filter(
+        (q: Row) => q.leadId && String(q.leadId) === String(row.id),
+      ),
+    [data.quotations, row.id],
+  );
 
   const quotation =
     leadQuotations[0] ||
     (data.quotations ?? []).find(
-      (q) =>
-        (q.leadId && String(q.leadId) === String(row.id)) ||
-        (q.lead && q.lead.toLowerCase() === row.nama.toLowerCase())
+      (q) => q.leadId && String(q.leadId) === String(row.id)
     );
 
   const relProjects = React.useMemo(() => {
@@ -58,10 +58,9 @@ export function LeadExtras({ row }: { row: Row }) {
     return (data.projects ?? []).filter(
       (p: Row) =>
         (p.leadId && String(p.leadId) === String(row.id)) ||
-        (p.lead && row.nama && p.lead.trim().toLowerCase() === row.nama.trim().toLowerCase()) ||
         (p.quotationId && qIds.has(String(p.quotationId)))
     );
-  }, [data.projects, row.id, row.nama, leadQuotations]);
+  }, [data.projects, row.id, leadQuotations]);
 
   const leadInvoices = React.useMemo(() => {
     const qIds = new Set(leadQuotations.map((q) => String(q.id)));
@@ -69,23 +68,16 @@ export function LeadExtras({ row }: { row: Row }) {
       leadQuotations.map((q) => String(q.nomor || "").trim().toLowerCase()).filter(Boolean)
     );
     const pIds = new Set(relProjects.map((p) => String(p.id)));
-    const leadName = String(row.nama || "").trim().toLowerCase();
 
     return (data.invoices ?? []).filter((inv: Row) => {
       if (inv.leadId && String(inv.leadId) === String(row.id)) return true;
-      if (inv.lead && leadName && String(inv.lead).trim().toLowerCase() === leadName) return true;
       if (inv.quotationId && qIds.has(String(inv.quotationId))) return true;
       if (inv.quotation && qNums.has(String(inv.quotation).trim().toLowerCase())) return true;
       if (inv.projectId && pIds.has(String(inv.projectId))) return true;
-      const cat = String(inv.catatan || inv.description || "").toLowerCase();
-      if (String(inv.catatan || "").includes(`[lead:${row.id}]`)) return true;
-      if (leadName && cat.includes(leadName)) return true;
-      for (const qNum of qNums) {
-        if (cat.includes(qNum)) return true;
-      }
+      if (String(inv.catatan || inv.description || "").includes(`[lead:${row.id}]`)) return true;
       return false;
     });
-  }, [data.invoices, leadQuotations, relProjects, row.nama]);
+  }, [data.invoices, leadQuotations, relProjects, row.id]);
 
   const isPenjualanBarang =
     row.jenisTransaksi === "Penjualan Barang" ||
@@ -98,8 +90,6 @@ export function LeadExtras({ row }: { row: Row }) {
         .map((q) => String(q.nomor || "").trim().toLowerCase())
         .filter(Boolean)
     );
-    const leadName = String(row.nama || "").trim().toLowerCase();
-    const custName = String(row.perusahaan || "").trim().toLowerCase();
 
     return (data["po-client"] ?? []).filter((so: Row) => {
       if (so.leadId && String(so.leadId) === String(row.id)) return true;
@@ -108,13 +98,9 @@ export function LeadExtras({ row }: { row: Row }) {
       if (quoPrefix && qNums.has(quoPrefix)) return true;
       const cat = String(so.catatan || "").toLowerCase();
       if (cat.includes(`[lead:${row.id}]`)) return true;
-      if (leadName && cat.includes(leadName)) return true;
-      if (custName && String(so.customer || "").trim().toLowerCase() === custName && isPenjualanBarang) {
-        return true;
-      }
       return false;
     });
-  }, [data, leadQuotations, row.id, row.nama, row.perusahaan, isPenjualanBarang]);
+  }, [data, leadQuotations, row.id]);
 
   const isFinanceOrAdmin = ["finance", "admin", "super_admin", "bos"].includes(
     (user?.role || "").toLowerCase()
@@ -625,6 +611,26 @@ export function LeadExtras({ row }: { row: Row }) {
                     >
                       <Text className="text-xs">Buka Detail</Text>
                     </Button>
+                    {isPaid ? (
+                      (data["delivery-notes"] ?? []).some(
+                        (note: Row) => String(note.invoiceId) === String(inv.id),
+                      ) ? (
+                        <View className="flex-row items-center gap-1 px-2 py-1 bg-success/15 rounded-md">
+                          <Truck size={13} color={colors.success} />
+                          <Text className="text-xs text-success font-semibold">Surat Jalan Telah Dibuat</Text>
+                        </View>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 border-primary/60 flex-row items-center gap-1"
+                          onPress={() => router.push(`/delivery-notes/new?invoiceId=${inv.id}` as any)}
+                        >
+                          <Truck size={13} color={colors.primary} />
+                          <Text className="text-xs text-primary font-semibold">Buat Surat Jalan</Text>
+                        </Button>
+                      )
+                    ) : null}
                     {!isPaid ? (
                       <Button
                         size="sm"

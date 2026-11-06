@@ -1106,11 +1106,15 @@ export function adaptRow(module: string, raw: any): Row {
         }
       }
       const soIdMatch = String(loc?.reason || raw.reportText || "").match(/\[so:(\d+)\]/i);
+      const invIdMatch = String(loc?.reason || raw.reportText || "").match(/\[inv:(\d+)\]/i);
+      const invNumMatch = String(loc?.reason || raw.reportText || "").match(/\[invNum:([^\]]+)\]/i);
       const soNumMatch =
         String(loc?.reason || raw.reportText || "").match(/\[soNum:([^\]]+)\]/i) ||
         String(loc?.reason || raw.reportText || "").match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
       const resolvedSoId = raw.clientPoId ? String(raw.clientPoId) : (raw.soId ? String(raw.soId) : (soIdMatch ? soIdMatch[1] : undefined));
       const resolvedSoNum = raw.soNumber || (soNumMatch ? soNumMatch[1] : undefined);
+      const resolvedInvoiceId = raw.invoiceId ? String(raw.invoiceId) : (invIdMatch ? invIdMatch[1] : undefined);
+      const resolvedInvoiceNum = raw.invoiceNumber || (invNumMatch ? invNumMatch[1] : undefined);
 
       return {
         ...base,
@@ -1126,6 +1130,8 @@ export function adaptRow(module: string, raw: any): Row {
         soId: resolvedSoId,
         clientPoId: resolvedSoId,
         soNumber: resolvedSoNum,
+        invoiceId: resolvedInvoiceId,
+        invoiceNumber: resolvedInvoiceNum,
         pembuat: nameOf(raw.creator) ?? "",
         barang: (raw.items ?? []).map((i: any) => `${nameOf(i.product)} x ${n(i.qty)}`).join(", ") || (raw.withGoods ? (raw.reportText || "Membawa barang") : "-"),
         status: toLabel("delivery-notes", raw.status),

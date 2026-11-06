@@ -772,9 +772,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       if (deliveryDocFileId) {
         const matchedSo = (data["po-client"] ?? []).find(
           (so: Row) =>
-            (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
-            (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo)) ||
-            (so.customer && so.customer !== "-" && String(row.tujuan || "").toLowerCase().includes(String(so.customer).toLowerCase()))
+            (row.soId && String(so.id) === String(row.soId)) ||
+            (row.clientPoId && String(so.id) === String(row.clientPoId)) ||
+            (so.id && String(row.alasan || "").includes(`[so:${so.id}]`)) ||
+            (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo))
         );
         if (matchedSo?.id) {
           await patchRow("po-client", matchedSo.id, { doFileId: deliveryDocFileId }).catch(() => {});

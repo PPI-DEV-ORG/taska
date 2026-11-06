@@ -1,6 +1,7 @@
 import * as React from "react";
 import { View, Linking, Pressable } from "react-native";
-import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check, Truck } from "lucide-react-native";
+import { useRouter } from "expo-router";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ export function InvoiceExtras({
   onRefresh?: () => Promise<void> | void;
 }) {
   const { user, toast, reload, data, patchRow, setStatus, addRow } = useApp();
+  const router = useRouter();
   const [receiptPreview, setReceiptPreview] = React.useState<{
     id: string;
     amount: number;
@@ -244,6 +246,32 @@ export function InvoiceExtras({
     [isControlled, externalOnPayOpenChange]
   );
 
+  const hasPhysicalGoods = React.useMemo(() => {
+    return items.some((it) => (it.productId || it.kind === "GOODS") && !isServiceItem(it));
+  }, [items]);
+
+  const dnList = data["delivery-notes"];
+  const linkedDeliveryNotes = React.useMemo(() => {
+    return (dnList ?? []).filter((dn: Row) => {
+      if (dn.invoiceId && String(dn.invoiceId) === String(row.id)) return true;
+      if (String(dn.alasan || "").includes(`[inv:${row.id}]`)) return true;
+      if (row.nomor && String(dn.alasan || "").includes(`[invNum:${row.nomor}]`)) return true;
+      return false;
+    });
+  }, [dnList, row.id, row.nomor]);
+
+  function isServiceItem(it: any): boolean {
+    const name = String(it.item || it.name || "").trim().toLowerCase();
+    const unit = String(it.unit || it.satuan || "").trim().toLowerCase();
+    const code = String(it.kodeAkun || it.accountCode || "").trim();
+    if (it.tipe === "JASA" || it.type === "SERVICE" || it.itemType === "JASA") return true;
+    if (name.startsWith("[jasa]") || name.startsWith("jasa ") || name.includes("ongkos kirim") || name.includes("ongkir")) return true;
+    if (name.includes("instalasi") || name.includes("pemasangan") || name.includes("setting") || name.includes("konfigurasi") || name.includes("maintenance")) return true;
+    if (unit === "paket" || unit === "ls" || unit === "lot" || unit === "titik" || unit === "jam" || unit === "hari") return true;
+    if (code === "4000.02" || code === "5103") return true;
+    return false;
+  }
+
   const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
   const [payCoaAccount, setPayCoaAccount] = React.useState<string>(() => {
     return kasBankOptions[0]?.code || "1000.02";
@@ -385,6 +413,17 @@ export function InvoiceExtras({
               <Button variant="outline" size="sm" onPress={openPayModal} className="flex-row items-center gap-1">
                 <Plus size={13} color={colors.text} />
                 <Text className="text-xs">Catat Pembayaran</Text>
+              </Button>
+            ) : null}
+            {canManage && sisa === 0 && row.status === "Lunas" && hasPhysicalGoods ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-row items-center gap-1 border-primary/60"
+                onPress={() => router.push(`/delivery-notes/new?invoiceId=${row.id}` as any)}
+              >
+                <Truck size={13} color={colors.primary} />
+                <Text className="text-xs text-primary font-semibold">Buat Surat Jalan (DO)</Text>
               </Button>
             ) : null}
           </View>
@@ -648,6 +687,61 @@ export function InvoiceExtras({
         existingItems={items}
         onAddItems={handleAddItems}
       />
+
+    {/* Panel Surat Jalan / Pengiriman Barang dari Invoice */}
+      {hasPhysicalGoods && (
+        <Panel
+          title={`Surat Jalan / Pengiriman Barang (${linkedDeliveryNotes.length})`}
+          subtitle="Pengiriman barang fisik langsung dari Invoice tanpa memerlukan Sales Order."
+          right={
+            <Button
+              size="sm"
+              onPress={() => router.push(`/delivery-notes/new?invoiceId=${row.id}` as any)}
+              className="flex-row items-center gap-1.5 bg-primary"
+            >
+              <Truck size={14} color="#ffffff" />
+              <Text className="text-xs text-white font-semibold">Buat Surat Jalan</Text>
+            </Button>
+          }
+        >
+          {linkedDeliveryNotes.length === 0 ? (
+            <View className="py-2 gap-1.5">
+              <Text className="text-xs text-muted-foreground">
+                Belum ada Surat Jalan (DO) untuk invoice ini. Klik tombol &quot;Buat Surat Jalan&quot; untuk langsung mengantarkan barang fisik ke customer.
+              </Text>
+            </View>
+          ) : (
+            <View className="gap-2">
+              {linkedDeliveryNotes.map((dn: Row) => (
+                <View
+                  key={dn.id}
+                  className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80"
+                >
+                  <View className="flex-1 mr-2">
+                    <View className="flex-row items-center gap-2">
+                      <Text className="text-xs font-bold text-foreground">
+                        {dn.nomor || `SJ #${dn.id}`}
+                      </Text>
+                      <StatusBadge status={dn.status || "Pending"} />
+                    </View>
+                    <Text className="text-[11px] text-muted-foreground mt-0.5" numberOfLines={1}>
+                      Tujuan: {dn.tujuan || row.customer} · {dn.tanggal || "-"}
+                    </Text>
+                  </View>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2.5"
+                    onPress={() => router.push(`/delivery-notes/${dn.id}` as any)}
+                  >
+                    <Text className="text-xs">Detail</Text>
+                  </Button>
+                </View>
+              ))}
+            </View>
+          )}
+        </Panel>
+      )}
 
       {/* Dokumen Faktur Manual */}
       <Panel
