@@ -335,6 +335,7 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                 "Pembayaran Pengeluaran",
                 "Reimburse",
                 "Pembayaran Reimburse",
+                "Payroll & Gaji",
                 "Jurnal Manual",
               ].map((s) => (
                 <Pressable

@@ -209,12 +209,20 @@ const EAGER_MODULES = [
   "damage-reports", "customers", "suppliers", "warehouses", "products",
   "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
   "opname", "users", "audit-log", "serials", "movements", "reservations", "followups", "invoiceIn",
-  "poc-reports", "visit-reports", "visit-activity-types",
+  "poc-reports", "visit-reports", "visit-activity-types", "payrollSlips",
 ] as const;
 
 async function fetchList(module: string): Promise<Row[]> {
   const path = PATHS[module];
   if (!path) return [];
+  if (module === "payrollSlips") {
+    try {
+      const res = await api<any[]>("GET", "/hr/payroll/slips");
+      if (Array.isArray(res)) return res as unknown as Row[];
+      if ((res as any)?.items && Array.isArray((res as any).items)) return (res as any).items as unknown as Row[];
+    } catch {}
+    return [];
+  }
   try {
     const limit = module === "serials" ? 1000 : 200;
     const res = await api<Page<any>>("GET", `${path}?limit=${limit}`);

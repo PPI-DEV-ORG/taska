@@ -1698,6 +1698,16 @@ export function computeFinancialStatements(
     }
   }
 
+  // Include Payroll (Gaji & Tunjangan) in OPEX
+  for (const p of payrollSlips) {
+    const gross = toNum(p.grossSalary || p.gross);
+    if (gross > 0) {
+      opexTotal += gross;
+      const prev = opexMap.get("Gaji & Tunjangan Karyawan") || { nominal: 0, count: 0 };
+      opexMap.set("Gaji & Tunjangan Karyawan", { nominal: prev.nominal + gross, count: prev.count + 1 });
+    }
+  }
+
   const opexByCategory = Array.from(opexMap.entries())
     .map(([kategori, v]) => ({ kategori, nominal: v.nominal, count: v.count }))
     .sort((a, b) => b.nominal - a.nominal);
