@@ -196,7 +196,7 @@ export function ProjectExtras({ row }: { row: Row }) {
       if (inv.direction === "in" || inv.status === "Batal") continue;
       const isMatched =
         (row.id && String(inv.projectId) === String(row.id)) ||
-        (inv.project && inv.project === row.nama) ||
+        (!inv.projectId && inv.project && inv.project === row.nama) ||
         (linkedQuotation && (String(inv.quotationId) === String(linkedQuotation.id) || (inv.quotation && inv.quotation === linkedQuotation.nomor))) ||
         (row.leadId && String(inv.leadId) === String(row.leadId)) ||
         (inv.catatan && String(inv.catatan).includes(`[project:${row.id}]`));

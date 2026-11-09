@@ -139,7 +139,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   }, [def?.key, refreshModule]);
 
   const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "receipts" | "in">("all");
-  const [poTab, setPoTab] = React.useState<"po" | "faktur" | "pembayaran">("po");
+  const [poTab, setPoTab] = React.useState<"all" | "po_out" | "po_in" | "faktur" | "pembayaran">("all");
   const [damageTab, setDamageTab] = React.useState<"all" | "kerusakan" | "retur-sales" | "retur-purchase">("all");
   const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
   const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
@@ -306,6 +306,27 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         sourceRows = [...invOut, ...invIn];
       }
     } else if (def.key === "supplier-pos") {
+      const supplierPos = (data["supplier-pos"] ?? []).map((sp: Row) => ({
+        ...sp,
+        nomor: String(sp.nomor || "").replace(/^(?:POD|PO-S)\//i, "PO/"),
+        tipePo: "PO Keluar (Supplier)",
+        direction: "out",
+      }));
+
+      const clientPos = (data["po-client"] ?? []).map((so: Row) => ({
+        ...so,
+        id: String(so.id),
+        nomor: so.nomorPoClient && so.nomorPoClient !== "-" ? so.nomorPoClient : (so.nomor || `SO #${so.id}`),
+        nomorSoSupplier: so.nomorSo && so.nomorSo !== "-" ? so.nomorSo : (so.nomor || "-"),
+        supplier: so.customer || so.supplier || "-",
+        item: so.penawaran && so.penawaran !== "-" ? `Penawaran: ${so.penawaran}` : (so.nama || so.lead || "Pesanan Client"),
+        total: Number(so.total || so.nilai || 0),
+        eta: so.tanggal || "-",
+        status: so.status || "Pending",
+        tipePo: "PO Masuk (Client)",
+        direction: "client_po",
+      }));
+
       if (poTab === "faktur") {
         sourceRows = (data.invoiceIn ?? []).map((r: Row) => ({
           ...r,
@@ -321,11 +342,12 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         }));
       } else if (poTab === "pembayaran") {
         sourceRows = supplierPayments;
+      } else if (poTab === "po_out") {
+        sourceRows = supplierPos;
+      } else if (poTab === "po_in") {
+        sourceRows = clientPos;
       } else {
-        sourceRows = (data["supplier-pos"] ?? []).map((sp: Row) => ({
-          ...sp,
-          nomor: String(sp.nomor || "").replace(/^(?:POD|PO-S)\//i, "PO/"),
-        }));
+        sourceRows = [...supplierPos, ...clientPos];
       }
     } else if (def.key === "po-client") {
       sourceRows = data["po-client"] ?? [];
@@ -362,6 +384,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         if (!s) return true;
         const matchesField = def.search.some((k) => String(r[k] ?? "").toLowerCase().includes(s));
         if (matchesField) return true;
+        if (def.key === "supplier-pos" && String(r.tipePo ?? "").toLowerCase().includes(s)) return true;
         if (def.key === "suppliers" && Array.isArray(r.tags)) {
           return r.tags.some((t: any) => String(t.itemName || t.nama || "").toLowerCase().includes(s));
         }
@@ -446,6 +469,28 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         { key: "status", label: "Status", fmt: "status" as const, mobile: true },
       ];
     }
+    if (def.key === "supplier-pos" && poTab === "po_in") {
+      return [
+        { key: "nomor", label: "Nomor PO Client", primary: true, flex: 1.4 },
+        { key: "nomorSoSupplier", label: "Nomor SO", flex: 1.2 },
+        { key: "supplier", label: "Customer", flex: 1.6 },
+        { key: "item", label: "Penawaran / Ref", flex: 1.8 },
+        { key: "total", label: "Nilai Pesanan", fmt: "rupiah" as const },
+        { key: "eta", label: "Tanggal", fmt: "date" as const },
+        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
+      ];
+    }
+    if (def.key === "supplier-pos" && poTab === "all") {
+      return [
+        { key: "nomor", label: "Nomor PO / SO", primary: true, flex: 1.4 },
+        { key: "tipePo", label: "Tipe Arus", flex: 1.2 },
+        { key: "supplier", label: "Pihak Terkait", flex: 1.6 },
+        { key: "item", label: "Item / Referensi", flex: 1.8 },
+        { key: "total", label: "Total", fmt: "rupiah" as const },
+        { key: "eta", label: "Tanggal / ETA", fmt: "date" as const },
+        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
+      ];
+    }
     return def.columns;
   }, [def.key, def.columns, invoiceTab, poTab]);
 
@@ -463,7 +508,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       ) : null}
       <Button onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}>
         <Plus size={16} color={colors.background} />
-        <Text>{def.createLabel ?? `Tambah ${def.singular}`}</Text>
+        <Text>{def.key === "supplier-pos" && poTab === "po_in" ? "Buat PO Client (SO)" : (def.createLabel ?? `Tambah ${def.singular}`)}</Text>
       </Button>
     </View>
   ) : canManagePaymentTerms ? (
@@ -474,6 +519,15 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   ) : undefined;
 
   const isMasterOrSub = ["customers", "suppliers", "users"].includes(def.key);
+
+  const filterStatuses = React.useMemo(() => {
+    if (def.key === "supplier-pos") {
+      if (poTab === "po_in") return ["Pending", "Lunas sebagian", "Lunas"];
+      if (poTab === "faktur") return ["Belum lunas", "Dibayar sebagian", "Lunas"];
+      if (poTab === "all") return Array.from(new Set([...def.statuses, "Pending", "Lunas sebagian", "Lunas"]));
+    }
+    return def.statuses;
+  }, [def.key, def.statuses, poTab]);
 
   function toast(arg0: string) {
     Alert.alert("Berhasil", arg0);
@@ -515,12 +569,22 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       {def.key === "supplier-pos" ? (
         <View className="flex-row flex-wrap items-center gap-2 mb-3">
           <Chip
-            label="Pesanan Pembelian / PO"
-            active={poTab === "po"}
-            onPress={() => setPoTab("po")}
+            label={`Semua PO (${(data["supplier-pos"]?.length || 0) + (data["po-client"]?.length || 0)})`}
+            active={poTab === "all"}
+            onPress={() => setPoTab("all")}
           />
           <Chip
-            label={`Faktur Pembelian / Tagihan (${data.invoiceIn?.length || 0})`}
+            label={`PO Keluar (Supplier) (${data["supplier-pos"]?.length || 0})`}
+            active={poTab === "po_out"}
+            onPress={() => setPoTab("po_out")}
+          />
+          <Chip
+            label={`PO Masuk (Client) (${data["po-client"]?.length || 0})`}
+            active={poTab === "po_in"}
+            onPress={() => setPoTab("po_in")}
+          />
+          <Chip
+            label={`Faktur Pembelian (${data.invoiceIn?.length || 0})`}
             active={poTab === "faktur"}
             onPress={() => setPoTab("faktur")}
           />
@@ -558,7 +622,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       <FilterBar
         search={q}
         onSearch={setQ}
-        statuses={def.statuses}
+        statuses={filterStatuses}
         status={status}
         onStatus={setStatus}
         date={dateFilter}
@@ -591,6 +655,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
               setSelectedSupplierInvoice(r);
             } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
               router.push(`/invoices/${r.invoiceId}` as any);
+            } else if (def.key === "supplier-pos" && r.direction === "client_po") {
+              router.push(`/po-client/${r.id}` as any);
             } else {
               router.push(`/${def.key}/${r.id}` as any);
             }
@@ -611,6 +677,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
                     setSelectedSupplierInvoice(r);
                   } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
                     router.push(`/invoices/${r.invoiceId}` as any);
+                  } else if (def.key === "supplier-pos" && r.direction === "client_po") {
+                    router.push(`/po-client/${r.id}` as any);
                   } else {
                     router.push(`/${def.key}/${r.id}` as any);
                   }
@@ -639,7 +707,11 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           defaultDirectPurchase={invoiceTab === "in"}
         />
       ) : def.key === "supplier-pos" ? (
-        <CreateSupplierPoDialog open={open} onOpenChange={setOpen} />
+        poTab === "po_in" ? (
+          <CreateSalesOrderDialog open={open} onOpenChange={setOpen} />
+        ) : (
+          <CreateSupplierPoDialog open={open} onOpenChange={setOpen} />
+        )
       ) : def.key === "po-client" ? (
         <CreateSalesOrderDialog open={open} onOpenChange={setOpen} />
       ) : def.createFields ? (
@@ -657,6 +729,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           const targetModule =
             (def.key === "invoices" || def.key === "supplier-pos") && deleteTarget.direction === "in"
               ? "invoiceIn"
+              : def.key === "supplier-pos" && deleteTarget.direction === "client_po"
+              ? "po-client"
               : def.key;
           const targetId =
             deleteTarget.direction === "in" && (deleteTarget as any).rawId
@@ -683,6 +757,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             const targetModule =
               (def.key === "invoices" || def.key === "supplier-pos") && targetRow?.direction === "in"
                 ? "invoiceIn"
+                : def.key === "supplier-pos" && targetRow?.direction === "client_po"
+                ? "po-client"
                 : def.key;
             const targetId =
               targetRow?.direction === "in" && (targetRow as any).rawId

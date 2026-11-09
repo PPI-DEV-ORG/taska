@@ -672,8 +672,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       const proj = (data.projects ?? []).find(
         (p) =>
           (q && p.quotationId && String(p.quotationId) === String(q.id)) ||
-          (row.customerId && p.customerId && String(p.customerId) === String(row.customerId)) ||
-          (p.customer && p.customer.trim().toLowerCase() === custName.trim().toLowerCase())
+          (row.id && moduleKey === "leads" && p.leadId && String(p.leadId) === String(row.id))
       );
       let pId = proj ? String(proj.id) : undefined;
       let pName = proj ? proj.nama : undefined;

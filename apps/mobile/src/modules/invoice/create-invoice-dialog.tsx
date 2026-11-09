@@ -222,20 +222,22 @@ function CreateInvoiceForm({
   const [mode, setMode] = React.useState<"baru" | "lanjut" | "masuk">(() => {
     if (defaultDirectPurchase) return "masuk";
     if (initialPo) {
+      const poNum = String(initialPo.nomor || "").trim();
+      const soNum = String(initialPo.nomorSo || "").trim();
       const hasExisting = (data.invoices ?? []).some(
         (inv: Row) =>
-          String(inv.clientPoId) === String(initialPo.id) ||
-          (initialPo.nomor && (inv.po === initialPo.nomor || String(inv.catatan || "").includes(initialPo.nomor))) ||
-          (initialPo.nomorSo && (inv.po === initialPo.nomorSo || String(inv.catatan || "").includes(initialPo.nomorSo))),
+          (initialPo.id && String(inv.clientPoId) === String(initialPo.id)) ||
+          (poNum && poNum !== "-" && (inv.po === poNum || String(inv.catatan || "").includes(poNum))) ||
+          (soNum && soNum !== "-" && (inv.po === soNum || String(inv.catatan || "").includes(soNum))),
       );
       if (hasExisting) return "lanjut";
     }
     if (initialQuotation) {
+      const qNum = String(initialQuotation.nomor || "").trim();
       const hasExisting = (data.invoices ?? []).some(
         (inv: Row) =>
-          String(inv.quotationId) === String(initialQuotation.id) ||
-          inv.quotation === initialQuotation.nomor ||
-          String(inv.catatan || "").includes(initialQuotation.nomor),
+          (initialQuotation.id && String(inv.quotationId) === String(initialQuotation.id)) ||
+          (qNum && qNum !== "-" && (inv.quotation === qNum || String(inv.catatan || "").includes(qNum))),
       );
       if (hasExisting) return "lanjut";
     }
@@ -479,7 +481,7 @@ function CreateInvoiceForm({
       const match = continuableInvoiceOptions.find(
         (o) =>
           String(o.raw.quotationId) === String(initialQuotation.id) ||
-          o.raw.quotation === initialQuotation.nomor,
+          (initialQuotation.nomor && initialQuotation.nomor !== "-" && o.raw.quotation === initialQuotation.nomor),
       );
       if (match) return match.id;
     }
@@ -682,11 +684,10 @@ function CreateInvoiceForm({
       if (st === "BATAL" || st === "DIBATALKAN") return false;
 
       if (qId && String(inv.quotationId) === String(qId)) return true;
-      if (qNomor && inv.quotation === qNomor) return true;
+      if (qNomor && qNomor !== "-" && inv.quotation === qNomor) return true;
       if (poId && String(inv.clientPoId) === String(poId)) return true;
-      if (poNum && (inv.po === poNum || inv.nomorSo === poNum)) return true;
+      if (poNum && poNum !== "-" && (inv.po === poNum || inv.nomorSo === poNum)) return true;
       if (leadId && String(inv.leadId) === String(leadId)) return true;
-      if (leadName && String(inv.customer || "").trim().toLowerCase() === leadName) return true;
       return false;
     });
   }, [mode, selectedParentInvoice, selectedParentInvoiceIn, selectedSupplierPoId, data.invoices, data.invoiceIn, activeQuotation, activePo, activeLead]);
@@ -981,7 +982,7 @@ function CreateInvoiceForm({
           const match = continuableInvoiceOptions.find(
             (o) =>
               String(o.raw.quotationId) === String(initialQuotation.id) ||
-              o.raw.quotation === initialQuotation.nomor
+              (initialQuotation.nomor && initialQuotation.nomor !== "-" && o.raw.quotation === initialQuotation.nomor)
           );
           if (match) candidateId = match.id;
         }
