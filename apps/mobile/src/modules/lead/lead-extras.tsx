@@ -198,29 +198,44 @@ export function LeadExtras({ row }: { row: Row }) {
   }
 
   async function handleCreateProject() {
-    const custName = row.perusahaan || row.customer || "Klien";
-    const projName = row.nama
-      ? row.nama.toLowerCase().startsWith("project")
-        ? row.nama
-        : `Project ${row.nama}`
-      : `Project ${custName}`;
-    await addRow("projects", {
-      nama: projName,
-      customer: custName,
-      perusahaan: custName,
-      customerId: row.customerId,
-      quotationId: quotation?.id ? Number(quotation.id) : undefined,
-      penawaran: quotation?.nomor,
-      lead: row.nama,
-      leadId: row.id,
-      jenis: "Customer",
-      pm: data.users?.find((u: any) => u.role === "pm")?.nama || "Dimas Prasetyo",
-      mulai: new Date().toISOString().slice(0, 10),
-      selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
-      status: "Berjalan",
-    });
-    toast("Project baru berhasil dibuat");
-    router.push("/leads");
+    try {
+      const custName = (typeof row.perusahaan === "string" ? row.perusahaan : row.perusahaan?.name) ||
+        (typeof row.customer === "string" ? row.customer : row.customer?.name) ||
+        "Klien";
+      const leadName = typeof row.nama === "string" ? row.nama : (typeof row.name === "string" ? row.name : "");
+      const projName = leadName
+        ? leadName.toLowerCase().startsWith("project")
+          ? leadName
+          : `Project ${leadName}`
+        : `Project ${custName}`;
+      const pmUser = data.users?.find((u: any) => u.role === "pm" || u.roleLabel === "PM");
+      const pmName = pmUser?.nama || pmUser?.name || "Dimas Prasetyo";
+
+      const created = await addRow("projects", {
+        nama: projName,
+        customer: custName,
+        perusahaan: custName,
+        customerId: row.customerId ? Number(row.customerId) : undefined,
+        quotationId: quotation?.id ? Number(quotation.id) : undefined,
+        penawaran: quotation?.nomor,
+        lead: leadName,
+        leadId: row.id ? Number(row.id) : undefined,
+        jenis: "Customer",
+        pm: pmName,
+        mulai: new Date().toISOString().slice(0, 10),
+        selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
+        status: "Berjalan",
+      });
+      await reload();
+      toast("Project baru berhasil dibuat");
+      if (created?.id) {
+        router.push(`/projects/${created.id}` as any);
+      } else {
+        router.push("/leads");
+      }
+    } catch (err: any) {
+      toast(err?.message || "Gagal membuat project", "danger");
+    }
   }
 
   async function handleCreateClientPo() {
@@ -340,13 +355,24 @@ export function LeadExtras({ row }: { row: Row }) {
                 {relProjects.map((proj: Row, idx: number) => {
                   if (!proj) return null;
                   const projId = proj.id != null ? String(proj.id) : `proj-${idx}`;
-                  const projName = proj.nama || proj.name || `Project #${projId}`;
+                  const rawProjName = proj.nama || proj.name;
+                  const projName = typeof rawProjName === "string"
+                    ? rawProjName
+                    : (typeof rawProjName === "object" && rawProjName?.name
+                      ? String(rawProjName.name)
+                      : `Project #${projId}`);
+                  const pmText = typeof proj.pm === "string"
+                    ? proj.pm
+                    : (typeof proj.pm === "object" && proj.pm?.name ? String(proj.pm.name) : "-");
+                  const statusText = typeof proj.status === "string"
+                    ? proj.status
+                    : (typeof proj.status === "object" && proj.status?.name ? String(proj.status.name) : (proj.status || "Berjalan"));
                   return (
                     <View key={projId} className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80">
                       <View className="flex-1 mr-2">
-                        <Text className="text-xs font-bold text-foreground">{projName}</Text>
+                        <Text className="text-xs font-bold text-foreground">{String(projName)}</Text>
                         <Text className="text-[11px] text-muted-foreground">
-                          PM: {proj.pm || "-"} · Status: {proj.status || "Berjalan"}
+                          PM: {String(pmText)} · Status: {String(statusText)}
                         </Text>
                       </View>
                       <Button

@@ -203,7 +203,7 @@ export default function ProjectDetailScreen() {
       String(pr.project) === String(project.id)
   );
 
-  const canViewFinancials = ["super_admin", "bos", "finance"].includes(user?.role || "");
+  const canViewFinancials = ["super_admin", "admin", "bos", "finance", "pm"].includes(user?.role?.toLowerCase() || "");
 
   const remoteInvoices: any[] = (project as any)?._invoices ?? (remoteDetail as any)?._invoices ?? [];
   const projectInvoices = (remoteInvoices.length > 0)

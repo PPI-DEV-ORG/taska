@@ -780,23 +780,28 @@ export function adaptRow(module: string, raw: any): Row {
       const typeVal = toLabel("projectType", raw.type ?? raw.jenis);
       const custName = (typeof raw.customer === "string" ? raw.customer : (raw.customer?.name ?? raw.customer?.nama)) ?? nameOf(raw.customer) ?? "-";
       const qId = idOf(raw.quotation) ?? (raw.quotationId != null ? String(raw.quotationId) : (raw.quotationid != null ? String(raw.quotationid) : null));
+      const rawName = raw.name ?? raw.nama ?? "";
+      const safeName = typeof rawName === "string" ? rawName : (rawName?.name ?? rawName?.nama ?? "");
+      const rawPm = (typeof raw.pic === "string" ? raw.pic : (raw.pic?.name ?? raw.pic?.nama)) ?? nameOf(raw.pic) ?? raw.pm ?? "";
+      const safePm = typeof rawPm === "string" ? rawPm : (rawPm?.name ?? rawPm?.nama ?? "");
+      const safeStatus = typeof statusLabel === "string" ? statusLabel : "Berjalan";
 
       return {
         ...base,
-        nama: raw.name ?? raw.nama ?? "",
-        name: raw.name ?? raw.nama ?? "",
+        nama: safeName,
+        name: safeName,
         jenis: typeVal,
         type: raw.type ?? typeVal,
         customerId: idOf(raw.customer) ?? (raw.customerId != null ? String(raw.customerId) : null),
         customer: custName,
-        pm: (typeof raw.pic === "string" ? raw.pic : (raw.pic?.name ?? raw.pic?.nama)) ?? nameOf(raw.pic) ?? raw.pm ?? "",
+        pm: safePm,
         pmId: raw.pic?.id != null ? String(raw.pic.id) : (raw.picId != null ? String(raw.picId) : null),
         tim: (raw.members ?? []).map((m: any) => nameOf(m.user)).filter(Boolean).join(", ") || "-",
         progres: progressVal,
         progress: progressVal,
         pembayaran: paymentVal,
         paymentStatus: paymentVal,
-        status: statusLabel,
+        status: safeStatus,
         mulai: d(raw.startDate ?? raw.mulai),
         selesai: d(raw.endDate ?? raw.selesai),
         barang: "-",
@@ -1160,6 +1165,8 @@ export function adaptRow(module: string, raw: any): Row {
         penerimaKontak,
         catatanSerahTerima,
         tanggalDiterima: raw.receivedAt ? d(raw.receivedAt) : (raw.tanggalDiterima ? d(raw.tanggalDiterima) : null),
+        soDisplay: resolvedSoNum || (resolvedSoId ? `SO #${resolvedSoId}` : "-"),
+        invoiceDisplay: resolvedInvoiceNum || (resolvedInvoiceId ? `INV #${resolvedInvoiceId}` : "-"),
       };
     }
     case "expenses":

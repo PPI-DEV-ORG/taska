@@ -136,7 +136,8 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
               {recentProjects.map((p, idx) => {
                 if (!p) return null;
                 const pId = p.id != null ? String(p.id) : `proj-${idx}`;
-                const pName = p.nama || p.name || `Project #${pId}`;
+                const rawName = p.nama || p.name;
+                const pName = typeof rawName === "string" ? rawName : (typeof rawName === "object" && rawName?.name ? String(rawName.name) : `Project #${pId}`);
                 return (
                   <Pressable
                     key={pId}
@@ -145,7 +146,7 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
                   >
                     <View className="size-2 rounded-full" style={{ backgroundColor: dotColors[idx] ?? colors.primary }} />
                     <Text className="text-text-secondary text-xs font-medium flex-1" numberOfLines={1}>
-                      {pName}
+                      {String(pName)}
                     </Text>
                   </Pressable>
                 );

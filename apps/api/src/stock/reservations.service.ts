@@ -18,6 +18,15 @@ export class ReservationsService {
         productId,
         releasedAt: null,
         ...(excludeProjectId ? { NOT: { projectId: excludeProjectId } } : {}),
+        OR: [
+          { serialUnitId: null },
+          {
+            serialUnit: {
+              status: { in: ["DI_GUDANG", "RESERVED"] },
+              warehouseId: { not: null },
+            },
+          },
+        ],
       },
       _sum: { qty: true },
     });
@@ -255,6 +264,8 @@ export class ReservationsService {
       requestedIds.size > 0 || requestedSns.size > 0
         ? await this.prisma.main.serialUnit.findMany({
             where: {
+              status: { in: ["DI_GUDANG", "RESERVED"] },
+              warehouseId: { not: null },
               OR: [
                 ...(requestedIds.size > 0 ? [{ id: { in: Array.from(requestedIds) } }] : []),
                 ...(requestedSns.size > 0 ? [{ sn: { in: Array.from(requestedSns) } }] : []),

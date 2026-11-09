@@ -535,7 +535,10 @@ export const MODULES: Record<string, ModuleDef> = {
     ],
     fields: [
       { label: "Tujuan", key: "tujuan" }, { label: "Alasan", key: "alasan" },
-      { label: "Project", key: "project" }, { label: "Tanggal", key: "tanggal", fmt: "date" },
+      { label: "Project", key: "project" },
+      { label: "Sales Order (SO)", key: "soDisplay" },
+      { label: "Invoice Terkait", key: "invoiceDisplay" },
+      { label: "Tanggal", key: "tanggal", fmt: "date" },
       { label: "Pembawa", key: "pembuat" }, { label: "Barang", key: "barang" },
       { label: "Persetujuan", key: "persetujuan", fmt: "status" },
     ],

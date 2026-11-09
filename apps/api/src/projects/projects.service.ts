@@ -143,19 +143,13 @@ export class ProjectsService {
     });
   }
 
-  /** Rerata progres task (PRD: PM memantau progres). Jika project SELESAI, selalu 100%. */
+  /** Progres project ditentukan secara manual oleh PM. Jika project SELESAI, selalu 100%. */
   async recomputeProgress(projectId: number): Promise<Project> {
     const current = await this.prisma.main.project.findUniqueOrThrow({ where: { id: projectId } });
-    if (current.status === "SELESAI") {
-      if (current.progress === 100) return current;
+    if (current.status === "SELESAI" && current.progress !== 100) {
       return this.prisma.main.project.update({ where: { id: projectId }, data: { progress: 100 } });
     }
-    const tasks = await this.prisma.main.task.findMany({ where: { projectId }, select: { progress: true } });
-    const progress = tasks.length
-      ? Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length)
-      : current.progress;
-    if (current.progress === progress) return current;
-    return this.prisma.main.project.update({ where: { id: projectId }, data: { progress } });
+    return current;
   }
 
   async list(q: ProjectListQuery, user: RequestUser) {

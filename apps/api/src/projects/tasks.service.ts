@@ -77,11 +77,7 @@ export class TasksService {
     const where = isManager
       ? {}
       : {
-          OR: [
-            { assigneeId: user.id },
-            { project: { picId: user.id } },
-            { project: { members: { some: { userId: user.id } } } },
-          ],
+          assigneeId: user.id,
         };
     const rows = await this.prisma.main.task.findMany({
       where,

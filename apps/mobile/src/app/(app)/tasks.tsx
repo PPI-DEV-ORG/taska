@@ -22,7 +22,15 @@ export default function TasksScreen() {
   const [detailTask, setDetailTask] = React.useState<Row | null>(null);
 
   const s = q.trim().toLowerCase();
+  const isManager = ["super_admin", "admin", "bos", "pm"].includes(user?.role?.toLowerCase() || "");
   const tasks = data.tasks
+    .filter((t) => {
+      if (isManager) return true;
+      const userName = (user?.name || "").toLowerCase();
+      const pic = String(t.pic || "").toLowerCase();
+      const assigneeId = (t as any).assigneeId || (t as any).assignee?.id;
+      return (assigneeId && Number(assigneeId) === Number(user?.id)) || (pic && userName && pic.includes(userName));
+    })
     .filter((t) => !filterStatus || t.status === filterStatus)
     .filter((t) => !s || `${t.nama} ${t.project} ${t.pic}`.toLowerCase().includes(s))
     .sort(compareDesc);

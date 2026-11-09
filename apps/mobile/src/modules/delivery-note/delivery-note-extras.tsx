@@ -46,9 +46,24 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         (row.clientPoId && String(so.id) === String(row.clientPoId)) ||
         (so.id && String(row.alasan || "").includes(`[so:${so.id}]`)) ||
         (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
-        (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo))
+        (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo)) ||
+        (row.projectId && so.projectId && String(so.projectId) === String(row.projectId)) ||
+        (row.project && row.project !== "-" && so.project && so.project !== "-" && so.project === row.project)
     );
-  }, [poClientList, row.soId, row.clientPoId, row.alasan]);
+  }, [poClientList, row.soId, row.clientPoId, row.alasan, row.projectId, row.project]);
+
+  const invoicesList = data["invoices"] || [];
+  const matchedInvoice = React.useMemo(() => {
+    return (invoicesList ?? []).find(
+      (inv: Row) =>
+        (row.invoiceId && String(inv.id) === String(row.invoiceId)) ||
+        (row.invoiceNumber && String(inv.nomor || "").toLowerCase() === String(row.invoiceNumber).toLowerCase()) ||
+        (inv.id && String(row.alasan || "").includes(`[inv:${inv.id}]`)) ||
+        (matchedSo?.id && (String(inv.clientPoId) === String(matchedSo.id) || String(inv.soId) === String(matchedSo.id))) ||
+        (row.projectId && inv.projectId && String(inv.projectId) === String(row.projectId)) ||
+        (row.project && row.project !== "-" && inv.project && inv.project !== "-" && inv.project === row.project)
+    );
+  }, [invoicesList, row.invoiceId, row.invoiceNumber, row.alasan, row.projectId, row.project, matchedSo]);
 
   if (
     previousRecipient.name !== row.penerimaNama ||
@@ -142,7 +157,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
   return (
     <>
       {matchedSo ? (
-        <View className="p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between mb-4">
+        <View className="p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between mb-3">
           <View className="flex-row items-center gap-2.5 flex-1 pr-2">
             <View className="size-8 rounded-lg bg-primary/10 items-center justify-center">
               <ShoppingCart size={16} color={colors.primary} />
@@ -167,19 +182,45 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         </View>
       ) : null}
 
+      {matchedInvoice ? (
+        <View className="p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between mb-4">
+          <View className="flex-row items-center gap-2.5 flex-1 pr-2">
+            <View className="size-8 rounded-lg bg-success/10 items-center justify-center">
+              <FileText size={16} color={colors.success} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-xs font-bold text-foreground">
+                Terkait Invoice: {matchedInvoice.nomor || `INV #${matchedInvoice.id}`} ({matchedInvoice.status || "Status"})
+              </Text>
+              <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                {matchedInvoice.customer || "Customer"} · Total: Rp{(Number(matchedInvoice.total || matchedInvoice.nilai || 0)).toLocaleString("id-ID")}
+              </Text>
+            </View>
+          </View>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 px-3"
+            onPress={() => router.push(`/invoices/${matchedInvoice.id}` as any)}
+          >
+            <Text className="text-xs">Buka Invoice</Text>
+          </Button>
+        </View>
+      ) : null}
+
       <Panel
         title="Barang yang Dibawa & Dokumen Delivery Order (DO)"
         subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN (Stok otomatis berkurang saat status Dikirim)" : "Surat jalan penugasan tanpa barang"}
         right={
           <View className="flex-row items-center gap-2 flex-wrap">
-            {row.status === "Pending" ? (
+            {row.status === "Pending" || !row.status || row.status === "Menunggu persetujuan" ? (
               <Button
                 size="sm"
-                variant="outline"
+                variant="default"
                 onPress={() => router.push(`/delivery-notes/new?id=${row.id}${matchedSo?.id ? `&soId=${matchedSo.id}` : ""}` as any)}
-                className="flex-row items-center gap-1 border-primary/50"
+                className="flex-row items-center gap-1.5 bg-primary"
               >
-                <Text className="text-xs text-primary font-semibold">Edit / Scan SN Form</Text>
+                <Text className="text-xs text-primary-foreground font-semibold">Edit Surat Jalan & List Barang</Text>
               </Button>
             ) : null}
             <Button
