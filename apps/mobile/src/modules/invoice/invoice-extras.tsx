@@ -54,10 +54,21 @@ export function InvoiceExtras({
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [showAllItems, setShowAllItems] = React.useState(false);
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
-  const items: QuotationItem[] = React.useMemo(
-    () => (Array.isArray(row.items) ? row.items : []),
-    [row.items],
-  );
+  const [itemsOverride, setItemsOverride] = React.useState<{ rowItems: any; items: QuotationItem[] }>({
+    rowItems: row.items,
+    items: Array.isArray(row.items) ? row.items : [],
+  });
+
+  const items: QuotationItem[] =
+    itemsOverride.rowItems === row.items
+      ? itemsOverride.items
+      : Array.isArray(row.items)
+      ? row.items
+      : [];
+
+  const updateItems = React.useCallback((next: QuotationItem[]) => {
+    setItemsOverride({ rowItems: row.items, items: next });
+  }, [row.items]);
 
   async function handleAddItems(newItems: QuotationItem[]) {
     const existingSnSet = new Set<string>();
@@ -80,6 +91,7 @@ export function InvoiceExtras({
     });
 
     const updated = [...items, ...valid];
+    updateItems(updated);
     const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
     const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
     const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
@@ -97,11 +109,13 @@ export function InvoiceExtras({
       total,
     });
     await reload();
+    if (onRefresh) await onRefresh();
     toast(`Berhasil menambahkan ${valid.length} barang ke invoice! Stok ter-reserve.`);
   }
 
   async function handleDeleteItem(idx: number) {
     const updated = items.filter((_, i) => i !== idx);
+    updateItems(updated);
     const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
     const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
     const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
@@ -119,6 +133,7 @@ export function InvoiceExtras({
       total,
     });
     await reload();
+    if (onRefresh) await onRefresh();
     toast("Barang berhasil dihapus dari invoice");
   }
 
@@ -126,6 +141,7 @@ export function InvoiceExtras({
     if (selectedItemIndices.length === 0) return;
     const count = selectedItemIndices.length;
     const updated = items.filter((_, i) => !selectedItemIndices.includes(i));
+    updateItems(updated);
     const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
     const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
     const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
@@ -144,6 +160,7 @@ export function InvoiceExtras({
     });
     setSelectedItemIndices([]);
     await reload();
+    if (onRefresh) await onRefresh();
     toast(`${count} barang berhasil dihapus dari invoice`);
   }
 
@@ -151,6 +168,7 @@ export function InvoiceExtras({
     const updated = items.map((it, i) =>
       i === idx ? { ...it, pphMode: newPphMode, tipePph: pphModeToTipe(newPphMode) } : it
     );
+    updateItems(updated);
     const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
     const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
     const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
@@ -168,6 +186,7 @@ export function InvoiceExtras({
       total,
     });
     await reload();
+    if (onRefresh) await onRefresh();
   }
 
   const salesReturns = React.useMemo(() => {

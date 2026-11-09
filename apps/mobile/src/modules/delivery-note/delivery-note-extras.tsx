@@ -87,9 +87,11 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
       if (handoverFileId) {
         const matchedSo = (data["po-client"] ?? []).find(
           (so: Row) =>
+            (row.soId && String(so.id) === String(row.soId)) ||
+            (row.clientPoId && String(so.id) === String(row.clientPoId)) ||
             (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
             (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo)) ||
-            (so.customer && so.customer !== "-" && String(row.tujuan || "").toLowerCase().includes(String(so.customer).toLowerCase()))
+            (row.id && String(so.catatan || "").includes(`[do:${row.id}]`))
         );
         if (matchedSo?.id) {
           await patchRow("po-client", matchedSo.id, { doFileId: handoverFileId }).catch(() => {});

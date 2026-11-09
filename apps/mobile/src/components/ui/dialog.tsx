@@ -91,7 +91,11 @@ function DialogContent({
           )}
           style={[
             Platform.select({
-              web: { width: "clamp(340px, 90vw, 760px)" } as any,
+              web: {
+                width: className?.includes("max-w-") || className?.includes("w-")
+                  ? undefined
+                  : "clamp(340px, 90vw, 760px)",
+              } as any,
             }),
             style,
           ]}

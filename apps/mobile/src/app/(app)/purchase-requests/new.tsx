@@ -8,7 +8,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
 import { Stepper } from "@/components/taska/stepper";
-import { SearchableSelect, MultiSelect, formatThousands, QuickAddSupplierDialog, DatePicker } from "@/components/taska/dialogs";
+import {
+  SearchableSelect,
+  MultiSelect,
+  formatThousands,
+  QuickAddSupplierDialog,
+  DatePicker,
+  SupplierSelect,
+  findSupplierMatch,
+  cleanSupplierName,
+  ProjectSelect,
+  ProductSelect,
+} from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import type { Row } from "@/constants/modules";
@@ -313,7 +324,8 @@ export default function NewPurchaseRequestScreen() {
         )
         .join(", ");
 
-      const matchedSupplier = suppliers.find((s) => s.nama === supplierName);
+      const matchedSupplier = findSupplierMatch(suppliers, supplierName);
+      const supplierClean = matchedSupplier ? (matchedSupplier.nama || matchedSupplier.name) : cleanSupplierName(supplierName);
       const matchedProj = projects.find((p) => p.nama === projectId || String(p.id) === String(projectId));
 
       const tags: string[] = [];
@@ -332,7 +344,7 @@ export default function NewPurchaseRequestScreen() {
         procurementSource,
         paymentMethod,
         dueDate: paymentMethod === "UTANG" ? (dueDate || undefined) : undefined,
-        supplier: supplierName || undefined,
+        supplier: supplierClean || undefined,
         supplierId: matchedSupplier?.id ? String(matchedSupplier.id) : undefined,
         otherNote: otherNotePayload,
         purpose: tujuan || activeMode.label,
@@ -401,11 +413,13 @@ export default function NewPurchaseRequestScreen() {
 
             {costType === "Project" && (
               <FormField label="Pilih Project" required hint="Barang yang dibeli akan dialokasikan ke HPP Project ini">
-                <SearchableSelect
+                <ProjectSelect
                   value={projectId}
-                  onChange={setProjectId}
-                  options={projects.map((p) => String(p.nama))}
-                  placeholder="Pilih project terkait"
+                  allowClear={false}
+                  onChange={(p) => {
+                    setProjectId(p?.nama ? String(p.nama) : "");
+                  }}
+                  placeholder="Pilih project terkait..."
                 />
               </FormField>
             )}
@@ -416,12 +430,11 @@ export default function NewPurchaseRequestScreen() {
                   label="Supplier / Toko Ritel (Opsional)"
                   hint="Pilih supplier rekanan atau kosongkan jika beli langsung di toko ritel"
                 >
-                  <SearchableSelect
+                  <SupplierSelect
                     value={supplierName}
-                    onChange={setSupplierName}
+                    onChange={(val) => setSupplierName(val)}
                     onAddNew={() => setQuickSupplierOpen(true)}
                     addNewLabel="+ Tambah Supplier Baru"
-                    options={["-", ...suppliers.map((s) => String(s.nama))]}
                     placeholder="Pilih supplier (opsional)..."
                   />
                 </FormField>
@@ -529,33 +542,25 @@ export default function NewPurchaseRequestScreen() {
               <Text className="text-xs font-bold uppercase tracking-wider text-primary">
                 A. Pilih dari Master Barang (Ber-SN maupun Non-SN)
               </Text>
-              <FormField label="Filter Kategori Barang">
-                <SearchableSelect
-                  value={catFilter}
-                  onChange={setCatFilter}
-                  options={categoryOptions}
-                  placeholder="Pilih kategori barang"
-                />
-              </FormField>
-
               <FormField
-                label="Pilih Barang Master"
-                hint="Kosong secara default — pilih satu atau beberapa barang dari katalog Master"
+                label="Pilih Barang Master (Tabel Katalog)"
+                hint="Klik untuk membuka katalog master stok dan memilih satu atau beberapa barang"
               >
-                <MultiSelect
-                  values={selectedNames}
-                  onChange={(newNames) => {
-                    setSelectedNames(newNames);
-                    setItemQuantities((prev) => {
-                      const next = { ...prev };
-                      newNames.forEach((n) => {
-                        if (!next[n]) next[n] = "1";
-                      });
-                      return next;
+                <ProductSelect
+                  multiple
+                  selectedNames={selectedNames}
+                  onToggleMultiple={(prod) => {
+                    const name = String(prod.nama || prod.name);
+                    setSelectedNames((prev) => {
+                      if (prev.includes(name)) {
+                        return prev.filter((n) => n !== name);
+                      } else {
+                        setItemQuantities((qPrev) => ({ ...qPrev, [name]: qPrev[name] || "1" }));
+                        return [...prev, name];
+                      }
                     });
                   }}
-                  options={(catFilter === "Semua" ? products : products.filter((p) => String(p.kategori || "").trim().toLowerCase() === catFilter.toLowerCase())).map((p) => `${p.nama}`)}
-                  placeholder="Klik untuk memilih barang dari Master..."
+                  placeholder="Klik untuk membuka tabel katalog & memilih barang master..."
                 />
               </FormField>
             </View>

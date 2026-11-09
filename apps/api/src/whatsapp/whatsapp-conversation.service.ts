@@ -29,6 +29,7 @@ export type MatchedEntity = {
   isNewSurveyForLead?: boolean;
   isBrandNewLeadAndSurvey?: boolean;
   newTargetName?: string;
+  isExactMatch?: boolean;
 };
 
 export type SessionPhoto = {
@@ -434,24 +435,24 @@ export class WhatsappConversationService {
       session.activitiesList.push(matchRes.extractedDescription);
     }
 
-    if (matchRes.matches.length === 1) {
-      session.matchedEntity = matchRes.matches[0]!;
-      session.reportKind = session.matchedEntity.type;
+    const topMatch = matchRes.matches[0];
+    if (topMatch && topMatch.isExactMatch) {
+      session.matchedEntity = topMatch;
+      session.reportKind = topMatch.type;
       session.potentialMatches = undefined;
       await this.checkCompletenessAndFinalize(senderJid, session);
       return;
     }
 
-    if (matchRes.matches.length > 1) {
-      // Cek apakah match pertama memiliki skor jauh lebih spesifik atau apakah ada beberapa kandidat
-      session.potentialMatches = matchRes.matches.slice(0, 6);
+    if (matchRes.matches.length > 0) {
+      session.potentialMatches = matchRes.matches.slice(0, 5);
       session.pendingTargetName = parsed.targetQuery || undefined;
       session.state = "WAITING_TARGET";
       const optionsText = session.potentialMatches
         .map((m, i) => `${i + 1}. [${this.kindLabel(m.type)}] ${m.title}`)
         .join("\n");
       await session.replyFn?.(
-        `🔍 Ditemukan beberapa data yang cocok dengan *"${parsed.targetQuery || trimmed}"*:\n\n` +
+        `🔍 Ditemukan ${session.potentialMatches.length === 1 ? "data yang mungkin cocok" : "beberapa data"} dengan *"${parsed.targetQuery || trimmed}"*:\n\n` +
           `${optionsText}\n` +
           `0. Buat Data ${this.kindLabel(session.reportKind || "survey")} Baru untuk "${parsed.targetQuery || trimmed}"\n\n` +
           `Balas dengan *nomor pilihan (0-${session.potentialMatches.length})*:`,
@@ -651,20 +652,24 @@ export class WhatsappConversationService {
           let leadName = entity.newTargetName || entity.customerName || "Lead Survey Lapangan";
 
           if (!leadId) {
-            // Cari sekali lagi apakah ada customer dengan nama tersebut
-            const existingCustomer = await this.prisma.main.customer.findFirst({
-              where: {
-                OR: [
-                  { name: { contains: leadName } },
-                  { company: { contains: leadName } },
-                ],
-              },
-            });
+            let customerId: number | null = null;
+            // Hanya tautkan ke customer jika bukan request entitas baru dan nama persis sama
+            if (!entity.isBrandNewLeadAndSurvey && leadName && leadName.length >= 3) {
+              const existingCustomer = await this.prisma.main.customer.findFirst({
+                where: {
+                  OR: [
+                    { name: { equals: leadName, mode: "insensitive" } },
+                    { company: { equals: leadName, mode: "insensitive" } },
+                  ],
+                },
+              });
+              if (existingCustomer) customerId = existingCustomer.id;
+            }
 
             const newLead = await this.prisma.main.lead.create({
               data: {
                 name: leadName,
-                customerId: existingCustomer?.id ?? null,
+                customerId,
                 need: resultNotes,
                 owner_id: session.user.id,
                 stage: "QUALIFICATION",
@@ -1051,19 +1056,25 @@ export class WhatsappConversationService {
     preferredKind?: ReportKind,
   ): Promise<{ matches: MatchedEntity[]; extractedDescription?: string }> {
     const cleanQuery = targetQuery.trim();
+    const qLower = cleanQuery.toLowerCase();
     const tokens = cleanQuery
       .toLowerCase()
       .replace(/[^a-z0-9\s]/gi, " ")
       .split(/\s+/)
       .filter((w) => w.length >= 2 && !STOPWORDS.has(w));
 
+    const idMatch =
+      cleanQuery.match(/(?:#|id[:\s]*|survey[:\s]*#?|project[:\s]*#?|proyek[:\s]*#?|sj[:\s]*#?|dn[:\s]*#?|lead[:\s]*#?)\s*(\d+)/i) ||
+      cleanQuery.match(/^#?(\d+)$/);
+    const explicitId = idMatch ? Number(idMatch[1]) : null;
+
     const scoreText = (haystack: string): number => {
       if (!haystack) return 0;
       const h = haystack.toLowerCase();
-      const qLower = cleanQuery.toLowerCase();
       let score = 0;
-      if (qLower.length >= 3 && h.includes(qLower)) score += 100;
-      if (qLower.length >= 3 && qLower.includes(h) && h.length >= 4) score += 80;
+      if (qLower.length >= 3 && h === qLower) score += 300;
+      else if (qLower.length >= 3 && h.includes(qLower)) score += 100;
+      else if (qLower.length >= 3 && qLower.includes(h) && h.length >= 4) score += 80;
       for (const tok of tokens) {
         if (h.includes(tok)) {
           score += tok.length >= 4 ? 30 : 15;
@@ -1077,6 +1088,77 @@ export class WhatsappConversationService {
     };
 
     const scored: Array<{ entity: MatchedEntity; score: number; matchedName: string }> = [];
+
+    // ─── 0. Cek Eksplisit Berdasarkan ID (Prioritas Tertinggi) ───
+    if (explicitId) {
+      if (!preferredKind || preferredKind === "survey") {
+        const surveyById = await this.prisma.main.survey.findUnique({
+          where: { id: explicitId },
+          include: { lead: { include: { customer: true } } },
+        });
+        if (surveyById) {
+          scored.push({
+            score: 1000,
+            matchedName: surveyById.lead.name,
+            entity: {
+              type: "survey",
+              id: surveyById.id,
+              leadId: surveyById.leadId,
+              title: `Survey #${surveyById.id} — ${surveyById.lead.name} (${surveyById.lead.customer?.name || surveyById.location})`,
+              customerName: surveyById.lead.customer?.name || surveyById.lead.name,
+              location: surveyById.location,
+              need: surveyById.need || surveyById.lead.need || undefined,
+              isExactMatch: true,
+            },
+          });
+        }
+      }
+
+      if (!preferredKind || preferredKind === "project") {
+        const projById = await this.prisma.main.project.findUnique({
+          where: { id: explicitId },
+          include: { customer: true },
+        });
+        if (projById) {
+          scored.push({
+            score: 1000,
+            matchedName: projById.name,
+            entity: {
+              type: "project",
+              id: projById.id,
+              projectId: projById.id,
+              title: `Project #${projById.id} — ${projById.name} (${projById.customer?.name ?? "-"})`,
+              customerName: projById.customer?.name || undefined,
+              location: projById.customer?.address || projById.customer?.city || undefined,
+              isExactMatch: true,
+            },
+          });
+        }
+      }
+
+      if (!preferredKind || preferredKind === "delivery-note") {
+        const dnById = await this.prisma.main.deliveryNote.findUnique({
+          where: { id: explicitId },
+          include: { locations: { include: { project: { include: { customer: true } } } } },
+        });
+        if (dnById) {
+          const firstLoc = dnById.locations[0];
+          scored.push({
+            score: 1000,
+            matchedName: dnById.number,
+            entity: {
+              type: "delivery-note",
+              id: dnById.id,
+              projectId: firstLoc?.projectId ?? undefined,
+              title: `Surat Jalan ${dnById.number} — ${firstLoc?.destination || "-"}`,
+              customerName: firstLoc?.project?.customer?.name || firstLoc?.destination,
+              location: firstLoc?.destination,
+              isExactMatch: true,
+            },
+          });
+        }
+      }
+    }
 
     // ─── 1. Cari di Leads & Surveys (Jika preferredKind === "survey" atau belum ditentukan) ───
     if (!preferredKind || preferredKind === "survey") {
@@ -1102,13 +1184,18 @@ export class WhatsappConversationService {
         const sc = Math.max(
           scoreText(lead.name),
           scoreText(lead.customer?.name || ""),
-          scoreText( combinedLabel),
+          scoreText(combinedLabel),
         );
 
-        if (sc >= 20) {
+        const isExactLeadName =
+          lead.name.toLowerCase() === qLower ||
+          !!(lead.customer?.name && lead.customer.name.toLowerCase() === qLower);
+
+        if (sc >= 20 || isExactLeadName) {
+          const finalScore = isExactLeadName ? 500 : sc;
           if (latestSurvey) {
             scored.push({
-              score: sc + 10, // Prioritaskan Lead yang sudah punya jadwal/data Survey
+              score: finalScore + 10,
               matchedName: lead.name,
               entity: {
                 type: "survey",
@@ -1118,15 +1205,15 @@ export class WhatsappConversationService {
                 customerName: lead.customer?.name || lead.name,
                 location: latestSurvey.location,
                 need: latestSurvey.need || lead.need || undefined,
+                isExactMatch: isExactLeadName,
               },
             });
           } else {
-            // Lead ada, tetapi BELUM ada data Survey -> buat Survey baru untuk Lead ini (prioritaskan Lead pada tahap PROSPECTING / QUALIFICATION atau needsSurvey)
             const isSurveyStage =
               lead.stage === "PROSPECTING" || lead.stage === "QUALIFICATION" || lead.needsSurvey;
             const customerLoc = lead.customer?.address || lead.customer?.city || undefined;
             scored.push({
-              score: isSurveyStage ? sc + 5 : sc - 5,
+              score: isExactLeadName ? 480 : (isSurveyStage ? sc + 5 : sc - 5),
               matchedName: lead.name,
               entity: {
                 type: "survey",
@@ -1137,6 +1224,7 @@ export class WhatsappConversationService {
                 location: customerLoc,
                 need: lead.need || undefined,
                 isNewSurveyForLead: true,
+                isExactMatch: isExactLeadName,
               },
             });
           }
@@ -1188,9 +1276,13 @@ export class WhatsappConversationService {
           scoreText(p.customer?.name || ""),
           scoreText(p.quotation?.lead?.name || ""),
         );
-        if (sc >= 20) {
+        const isExactProjName =
+          p.name.toLowerCase() === qLower ||
+          (p.customer?.name && p.customer.name.toLowerCase() === qLower);
+
+        if (sc >= 20 || isExactProjName) {
           scored.push({
-            score: preferredKind === "project" ? sc + 15 : sc,
+            score: isExactProjName ? 500 : (preferredKind === "project" ? sc + 15 : sc),
             matchedName: p.name,
             entity: {
               type: "project",
@@ -1199,6 +1291,7 @@ export class WhatsappConversationService {
               title: `Project #${p.id} — ${p.name} (${p.customer?.name ?? "-"})`,
               customerName: p.customer?.name || undefined,
               location: p.customer?.address || p.customer?.city || undefined,
+              isExactMatch: Boolean(isExactProjName),
             },
           });
         }
@@ -1219,10 +1312,15 @@ export class WhatsappConversationService {
           .map((l) => `${l.destination} ${l.project?.name || ""} ${l.project?.customer?.name || ""}`)
           .join(" ");
         const sc = Math.max(scoreText(d.number), scoreText(destStr));
-        if (sc >= 20) {
+        const isExactDn =
+          d.number &&
+          (d.number.toLowerCase() === qLower ||
+            (d.number.length >= 6 && cleanQuery.toUpperCase().includes(d.number.toUpperCase())));
+
+        if (sc >= 20 || isExactDn) {
           const firstLoc = d.locations[0];
           scored.push({
-            score: preferredKind === "delivery-note" ? sc + 15 : sc,
+            score: isExactDn ? 1000 : (preferredKind === "delivery-note" ? sc + 15 : sc),
             matchedName: firstLoc?.destination || d.number,
             entity: {
               type: "delivery-note",
@@ -1231,6 +1329,7 @@ export class WhatsappConversationService {
               title: `Surat Jalan ${d.number} — ${firstLoc?.destination || "-"}`,
               customerName: firstLoc?.project?.customer?.name || firstLoc?.destination,
               location: firstLoc?.destination,
+              isExactMatch: Boolean(isExactDn),
             },
           });
         }
@@ -1239,8 +1338,8 @@ export class WhatsappConversationService {
 
     scored.sort((a, b) => b.score - a.score);
 
-    // Jika skor tertinggi jauh mengungguli kandidat lain (misal exact match), ambil kandidat terbaik tersebut
-    if (scored.length > 1 && scored[0]!.score >= 90 && scored[0]!.score - scored[1]!.score >= 35) {
+    // Jika skor tertinggi adalah EXACT match (ID tepat / No Dokumen tepat / Nama persis):
+    if (scored.length > 0 && scored[0]!.entity.isExactMatch) {
       const best = scored[0]!;
       return {
         matches: [best.entity],
@@ -1248,9 +1347,10 @@ export class WhatsappConversationService {
       };
     }
 
+    // Jika tidak ada exact match, ambil kandidat yang memiliki skor relevan
     const topScore = scored[0]?.score ?? 0;
     const filtered = scored
-      .filter((x) => x.score >= Math.max(20, topScore - 25))
+      .filter((x) => x.score >= Math.max(30, topScore - 20))
       .map((x) => x.entity);
 
     return {
@@ -1277,13 +1377,17 @@ export class WhatsappConversationService {
     const out: MatchedEntity[] = [];
 
     if (!kind || kind === "survey") {
-      const surveys = await this.prisma.main.survey.findMany({
-        where: { status: { in: ["DIMINTA", "DIJADWALKAN", "BERJALAN", "SELESAI"] } },
-        include: { lead: { include: { customer: true } }, members: true },
+      // Prioritaskan survey yang ditugaskan ke teknisi ini
+      const mySurveys = await this.prisma.main.survey.findMany({
+        where: {
+          members: { some: { userId } },
+          status: { in: ["DIMINTA", "DIJADWALKAN", "BERJALAN", "SELESAI"] },
+        },
+        include: { lead: { include: { customer: true } } },
         orderBy: { id: "desc" },
         take: 4,
       });
-      for (const s of surveys) {
+      for (const s of mySurveys) {
         out.push({
           type: "survey",
           id: s.id,
@@ -1293,6 +1397,29 @@ export class WhatsappConversationService {
           location: s.location,
           need: s.need || undefined,
         });
+      }
+
+      if (out.length < 4) {
+        const otherSurveys = await this.prisma.main.survey.findMany({
+          where: {
+            id: { notIn: out.map((o) => o.id) },
+            status: { in: ["DIMINTA", "DIJADWALKAN", "BERJALAN"] },
+          },
+          include: { lead: { include: { customer: true } } },
+          orderBy: { id: "desc" },
+          take: 4 - out.length,
+        });
+        for (const s of otherSurveys) {
+          out.push({
+            type: "survey",
+            id: s.id,
+            leadId: s.leadId,
+            title: `Survey #${s.id} — ${s.lead.name} (${s.lead.customer?.name || s.location})`,
+            customerName: s.lead.customer?.name || s.lead.name,
+            location: s.location,
+            need: s.need || undefined,
+          });
+        }
       }
 
       if (out.length < 4) {
@@ -1321,13 +1448,16 @@ export class WhatsappConversationService {
     }
 
     if (!kind || kind === "project") {
-      const projects = await this.prisma.main.project.findMany({
-        where: { status: { in: ["BERJALAN", "DITUNDA"] } },
+      const myProjects = await this.prisma.main.project.findMany({
+        where: {
+          members: { some: { userId } },
+          status: { in: ["BERJALAN", "DITUNDA"] },
+        },
         include: { customer: true },
         orderBy: { id: "desc" },
         take: 3,
       });
-      for (const p of projects) {
+      for (const p of myProjects) {
         out.push({
           type: "project",
           id: p.id,
@@ -1336,6 +1466,28 @@ export class WhatsappConversationService {
           customerName: p.customer?.name || undefined,
           location: p.customer?.address || p.customer?.city || undefined,
         });
+      }
+
+      if (out.length < 3) {
+        const otherProjects = await this.prisma.main.project.findMany({
+          where: {
+            id: { notIn: out.filter((o) => o.type === "project").map((o) => o.id) },
+            status: { in: ["BERJALAN", "DITUNDA"] },
+          },
+          include: { customer: true },
+          orderBy: { id: "desc" },
+          take: 3 - out.length,
+        });
+        for (const p of otherProjects) {
+          out.push({
+            type: "project",
+            id: p.id,
+            projectId: p.id,
+            title: `Project #${p.id} — ${p.name} (${p.customer?.name ?? "-"})`,
+            customerName: p.customer?.name || undefined,
+            location: p.customer?.address || p.customer?.city || undefined,
+          });
+        }
       }
     }
 

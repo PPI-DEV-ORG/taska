@@ -134,12 +134,20 @@ export function StockDetailDialog({
                 </View>
               </View>
 
-              {p.hargaBeli ? (
-                <View className="bg-card border-border rounded-lg border p-3">
-                  <Text className="text-[11px] text-muted-foreground">Estimasi Harga Beli / Modal</Text>
-                  <Text className="text-sm font-semibold text-foreground">{rupiah(p.hargaBeli)}</Text>
+              <View className="flex-col sm:flex-row gap-3">
+                {p.hargaBeli ? (
+                  <View className="flex-1 bg-card border-border rounded-lg border p-3">
+                    <Text className="text-[11px] text-muted-foreground">Estimasi Harga Beli / Modal</Text>
+                    <Text className="text-sm font-semibold text-foreground">{rupiah(p.hargaBeli)}</Text>
+                  </View>
+                ) : null}
+                <View className="flex-1 bg-card border-border rounded-lg border p-3">
+                  <Text className="text-[11px] text-muted-foreground">Harga Jual Acuan (Katalog)</Text>
+                  <Text className={`text-sm font-bold ${p.hargaJual || p.price ? "text-primary" : "text-muted-foreground"}`}>
+                    {p.hargaJual || p.price ? rupiah(p.hargaJual || p.price) : "Belum ditentukan"}
+                  </Text>
                 </View>
-              ) : null}
+              </View>
 
               {/* Sebaran Stok per Gudang */}
               <View className="gap-2">

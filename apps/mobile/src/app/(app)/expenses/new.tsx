@@ -7,7 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import {
+  DatePicker,
+  SearchableSelect,
+  ProjectSelect,
+  SurveySelect,
+  PocSelect,
+  VisitSelect,
+} from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { BOS_THRESHOLD, colors } from "@/tokens";
@@ -274,38 +281,50 @@ export default function NewExpenseScreen() {
           </FormField>
 
           <FormField label="Terkait Project (Opsional)">
-            <SearchableSelect
+            <ProjectSelect
               value={selectedProject}
-              onChange={setCustomProject}
-              options={["-", ...data.projects.map((p) => p.nama)]}
-              placeholder="Pilih project jika ada"
+              projectId={params.projectId}
+              allowClear={true}
+              placeholder="Pilih project jika ada..."
+              onChange={(proj) => {
+                setCustomProject(proj ? proj.nama : "-");
+              }}
             />
           </FormField>
 
           <FormField label="Terkait Survey (Opsional)">
-            <SearchableSelect
+            <SurveySelect
               value={selectedSurvey}
-              onChange={setCustomSurvey}
-              options={surveyOptions}
-              placeholder="Pilih survey jika ada"
+              surveyId={params.surveyId}
+              allowClear={true}
+              placeholder="Pilih survey jika ada..."
+              onChange={(s) => {
+                setCustomSurvey(s ? `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}` : "-");
+              }}
             />
           </FormField>
 
           <FormField label="Terkait Kegiatan POC / Demo (Opsional)">
-            <SearchableSelect
+            <PocSelect
               value={selectedPoc}
-              onChange={setCustomPoc}
-              options={pocOptions}
-              placeholder="Pilih kegiatan POC jika ada"
+              pocId={params.pocId || params.pocReportId}
+              allowClear={true}
+              placeholder="Pilih kegiatan POC jika ada..."
+              onChange={(p) => {
+                setCustomPoc(p ? `POC ${p.nomor || p.number} - ${p.judul || p.title}` : "-");
+              }}
             />
           </FormField>
 
           <FormField label="Terkait Kunjungan / Offline Meeting (Opsional)">
-            <SearchableSelect
+            <VisitSelect
               value={selectedVisit}
-              onChange={setCustomVisit}
-              options={visitOptions}
-              placeholder="Pilih aktivitas kunjungan jika ada"
+              visitId={params.visitId || params.visitReportId}
+              allowClear={true}
+              placeholder="Pilih aktivitas kunjungan jika ada..."
+              onChange={(v) => {
+                setCustomVisit(v ? `VISIT ${v.nomor || v.number} - ${v.judul || v.title}` : "-");
+              }}
             />
           </FormField>
 

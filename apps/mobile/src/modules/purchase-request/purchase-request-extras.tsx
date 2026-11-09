@@ -13,7 +13,7 @@ import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { toEnum } from "@/services/adapters";
-import { SearchableSelect, DatePicker, QuickAddSupplierDialog } from "@/components/taska/dialogs";
+import { SearchableSelect, DatePicker, QuickAddSupplierDialog, SupplierSelect } from "@/components/taska/dialogs";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { Input } from "@/components/ui/input";
 
@@ -82,8 +82,7 @@ export function PurchaseRequestExtras({
         (sp.requestId && String(sp.requestId) === String(row.id)) ||
         (row.nomor && sp.request && String(sp.request).toLowerCase() === String(row.nomor).toLowerCase()) ||
         (row.nomor && String(sp.nomor).includes(row.nomor)) ||
-        (prSuffix && sp.nomor && String(sp.nomor).replace(/^(?:POD|PO-S|PO)\//i, "") === prSuffix) ||
-        (Number(sp.total) === Number(row.estimasi) && sp.supplier && row.supplier && String(sp.supplier).toLowerCase() === String(row.supplier).toLowerCase()),
+        (prSuffix && sp.nomor && String(sp.nomor).replace(/^(?:POD|PO-S|PO)\//i, "") === prSuffix),
     );
     if (fromList) return fromList;
     if (Array.isArray(row.supplierPOs) && row.supplierPOs.length > 0) {
@@ -1500,17 +1499,23 @@ export function PurchaseRequestExtras({
             </View>
 
             <FormField label="Pilih Supplier" required hint="Pemasok / vendor tujuan pemesanan">
-              <SearchableSelect
+              <SupplierSelect
+                supplierId={poSupplierId}
                 value={
                   (data.suppliers ?? []).find((s: Row) => String(s.id) === String(poSupplierId))?.nama ??
                   (data.suppliers ?? []).find((s: Row) => String(s.id) === String(poSupplierId))?.name ??
                   row.supplier ??
                   ""
                 }
-                options={(data.suppliers ?? []).map((s: Row) => s.nama ?? s.name ?? `Supplier #${s.id}`)}
-                onChange={(val) => {
-                  const found = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
-                  if (found) setPoSupplierId(String(found.id));
+                onChange={(val, match) => {
+                  if (match) {
+                    setPoSupplierId(String(match.id));
+                    if (match.payment || match.paymentTerms) {
+                      setPoPaymentTerms(match.payment || match.paymentTerms);
+                    }
+                  } else {
+                    setPoSupplierId("");
+                  }
                 }}
                 onAddNew={() => setQuickSupplierOpen(true)}
                 addNewLabel="+ Tambah Supplier Baru"

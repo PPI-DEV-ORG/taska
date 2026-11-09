@@ -56,9 +56,19 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [remoteRow, setRemoteRow] = React.useState<Row | null>(null);
 
   const [refreshIndex, setRefreshIndex] = React.useState(0);
-  const handleRefresh = React.useCallback(() => {
+  const handleRefresh = React.useCallback(async () => {
     setRefreshIndex((i) => i + 1);
-  }, []);
+    const path = PATHS[moduleKey];
+    if (!path || !id || String(id).startsWith("offline-")) return;
+    try {
+      const res = await api<any>("GET", `${path}/${id}`);
+      if (res) {
+        const adapted = adaptRow(moduleKey, res);
+        setRemoteRow(adapted);
+      }
+    } catch {}
+    void loadHistory(moduleKey, id);
+  }, [moduleKey, id, loadHistory]);
 
   React.useEffect(() => {
     if (moduleKey && id && !String(id).startsWith("offline-")) {
@@ -88,6 +98,12 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     return {
       ...rowFromStore,
       ...remoteRow,
+      ...(rowFromStore.items !== undefined ? { items: rowFromStore.items } : {}),
+      ...(rowFromStore.total !== undefined ? { total: rowFromStore.total } : {}),
+      ...(rowFromStore.nilai !== undefined ? { nilai: rowFromStore.nilai } : {}),
+      ...(rowFromStore.amount !== undefined ? { amount: rowFromStore.amount } : {}),
+      ...(rowFromStore.ppn !== undefined ? { ppn: rowFromStore.ppn } : {}),
+      ...(rowFromStore.pph !== undefined ? { pph: rowFromStore.pph } : {}),
       ...(rowFromStore.status ? { status: rowFromStore.status } : {}),
       ...(rowFromStore.pengiriman ? { pengiriman: rowFromStore.pengiriman } : {}),
       ...(rowFromStore.shipmentStatus ? { shipmentStatus: rowFromStore.shipmentStatus } : {}),

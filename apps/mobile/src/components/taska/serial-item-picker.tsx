@@ -26,7 +26,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect, ProductSelect } from "@/components/taska/dialogs";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
@@ -910,10 +910,15 @@ export function SerialItemPickerModal({
                 ) : null}
 
                 <FormField label="Pilih Produk dari Master Stok" required>
-                  <SearchableSelect
-                    value={selectedProduct ? `${selectedProduct.nama} (${selectedProduct.sku})` : ""}
-                    options={products.filter((p) => p.type !== "JASA" && p.jenisItem !== "Jasa").map((p) => `${p.nama} (${p.sku})`)}
-                    onChange={handleSelectProduct}
+                  <ProductSelect
+                    productId={selectedProductId}
+                    onChange={(p) => {
+                      if (p) {
+                        handleSelectProduct(`${p.nama} (${p.sku})`);
+                      } else {
+                        setSelectedProductId("");
+                      }
+                    }}
                     placeholder="Cari / pilih kamera, NVR, perangkat, atau material..."
                   />
                 </FormField>

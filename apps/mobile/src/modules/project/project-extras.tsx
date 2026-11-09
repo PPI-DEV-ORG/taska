@@ -141,16 +141,13 @@ export function ProjectExtras({ row }: { row: Row }) {
 
   const linkedQuotation = React.useMemo(() => {
     const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
-    const cleanProjName = String(row.nama || "").replace(/^Project\s+/i, "").trim().toLowerCase();
     return (data.quotations ?? []).find(
       (q: Row) =>
         (row.quotationId && String(q.id) === String(row.quotationId)) ||
         (cleanQuoNum && cleanQuoNum !== "-" && String(q.nomor || "").toLowerCase() === cleanQuoNum) ||
-        (row.leadId && String(q.leadId) === String(row.leadId)) ||
-        (cleanProjName && (q.lead?.toLowerCase()?.includes(cleanProjName) || q.subject?.toLowerCase()?.includes(cleanProjName))) ||
-        (row.customer && row.customer !== "-" && q.customer === row.customer),
+        (row.leadId && String(q.leadId) === String(row.leadId)),
     );
-  }, [data.quotations, row.quotationId, row.penawaran, row.leadId, row.nama, row.customer]);
+  }, [data.quotations, row.quotationId, row.penawaran, row.leadId]);
 
   const activeQuotation = quotationDetail || linkedQuotation;
 
@@ -174,10 +171,9 @@ export function ProjectExtras({ row }: { row: Row }) {
     return (data.surveys ?? []).filter(
       (s: Row) =>
         (row.leadId && String(s.leadId) === String(row.leadId)) ||
-        (linkedQuotation?.leadId && String(s.leadId) === String(linkedQuotation.leadId)) ||
-        (row.customer && row.customer !== "-" && s.customer === row.customer),
+        (linkedQuotation?.leadId && String(s.leadId) === String(linkedQuotation.leadId)),
     );
-  }, [data.surveys, row.leadId, row.customer, linkedQuotation]);
+  }, [data.surveys, row.leadId, linkedQuotation]);
 
   const linkedClientPos = React.useMemo(() => {
     return (data["po-client"] ?? []).filter(
@@ -186,16 +182,14 @@ export function ProjectExtras({ row }: { row: Row }) {
         (po.catatan && String(po.catatan).includes(`[project:${row.id}]`)) ||
         (linkedQuotation && String(po.quotationId) === String(linkedQuotation.id)) ||
         (row.quotationId && String(po.quotationId) === String(row.quotationId)) ||
-        (linkedQuotation && String(po.penawaran || "").toLowerCase().includes(String(linkedQuotation.nomor || "").toLowerCase())) ||
-        (row.customer && row.customer !== "-" && po.customer === row.customer),
+        (linkedQuotation?.nomor && String(po.penawaran || "").toLowerCase().includes(String(linkedQuotation.nomor).toLowerCase())),
     );
-  }, [data, linkedQuotation, row.id, row.quotationId, row.customer]);
+  }, [data, linkedQuotation, row.id, row.quotationId]);
 
   const rawProjectInvoices = Array.isArray(row._invoices) ? row._invoices : [];
   const projectInvoices = React.useMemo(() => {
     const list = [...(data.invoices || [])];
     const map = new Map<string, any>();
-    const cleanProjName = String(row.nama || "").replace(/^Project\s+/i, "").trim().toLowerCase();
 
     for (const inv of list) {
       if (inv.direction === "in" || inv.status === "Batal") continue;
@@ -204,7 +198,7 @@ export function ProjectExtras({ row }: { row: Row }) {
         (inv.project && inv.project === row.nama) ||
         (linkedQuotation && (String(inv.quotationId) === String(linkedQuotation.id) || (inv.quotation && inv.quotation === linkedQuotation.nomor))) ||
         (row.leadId && String(inv.leadId) === String(row.leadId)) ||
-        (cleanProjName && (inv.catatan?.toLowerCase()?.includes(cleanProjName) || inv.project?.toLowerCase()?.includes(cleanProjName)));
+        (inv.catatan && String(inv.catatan).includes(`[project:${row.id}]`));
 
       if (isMatched) {
         map.set(String(inv.id), inv);

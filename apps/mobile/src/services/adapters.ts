@@ -1459,15 +1459,23 @@ export function adaptRow(module: string, raw: any): Row {
     case "products": {
       const pType = String(raw.type || "BARANG").toUpperCase() === "JASA" ? "JASA" : "BARANG";
       const isJasa = pType === "JASA";
+      const desc = String(raw.description ?? "");
+      const sellMatch = desc.match(/SELL:([^;]+)/);
+      const cleanDesc = desc.replace(/SELL:[^;]+;?/g, "").replace(/PPH:[^;]+;?/g, "").trim();
+      const parsedSellPrice = sellMatch ? Number(sellMatch[1]) : 0;
+      const effectiveSellPrice = parsedSellPrice > 0 ? parsedSellPrice : (Number(raw.price ?? raw.hargaJual ?? raw.harga ?? 0) || 0);
+
       return {
         ...base, sku: raw.sku ?? "", nama: raw.name ?? "", merk: raw.brand ?? "", brand: raw.brand ?? "",
-        deskripsi: raw.description ?? "", description: raw.description ?? "", satuan: raw.unit ?? "",
+        deskripsi: cleanDesc || raw.description || "", description: raw.description ?? "", satuan: raw.unit ?? "",
         type: pType,
         jenisItem: isJasa ? "Jasa" : "Barang",
         tipeSN: isJasa ? "Jasa (Non-Stok)" : raw.hasSerial ? "Barang Ber-SN" : "Barang Non-SN",
         berSN: isJasa ? false : !!raw.hasSerial,
         garansi: raw.warrantyMonths != null ? `${raw.warrantyMonths} bln` : "-",
         min: n(raw.minStock), minStock: n(raw.minStock), hargaBeli: n(raw.purchasePrice),
+        hargaJual: effectiveSellPrice,
+        price: effectiveSellPrice,
         kategori: nameOf(raw.category) ?? "",
         categoryId: idOf(raw.category),
         status: toLabel("users", raw.status),
@@ -1601,6 +1609,7 @@ export function adaptRow(module: string, raw: any): Row {
           displayStatus = "Dibayar sebagian";
         }
       }
+      const termOrType = raw.type || raw.jenis || (raw.notes && /DP|Termin|Pelunasan/i.test(raw.notes) ? raw.notes.match(/^(DP[^\.\n]*|Termin[^\.\n]*|Pelunasan[^\.\n]*)/i)?.[1] : undefined);
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -1609,7 +1618,8 @@ export function adaptRow(module: string, raw: any): Row {
         supplierId: idOf(raw.supplier),
         po: raw.supplierPo?.number ?? "-",
         supplierPoId: idOf(raw.supplierPo),
-        jenis: raw.category || (raw.supplierPo ? "Tagihan Supplier" : "Invoice Masuk Langsung"),
+        jenis: termOrType || raw.category || (raw.supplierPo ? "Tagihan Supplier" : "Invoice Masuk Langsung"),
+        type: raw.type || (termOrType ? "TERMIN" : "INVOICE_IN"),
         category: raw.category ?? "",
         debitAccount: raw.debitAccount ?? "",
         coaAccount: raw.coaAccount ?? "",
@@ -2433,12 +2443,21 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       const isJasa =
         String(row.type || row.jenisItem || "").toUpperCase().includes("JASA") ||
         String(row.tipeSN || "").toUpperCase().includes("JASA");
+      const sellPriceVal = num(row.hargaJual ?? row.price ?? row.sellPrice);
+      let desc = row.deskripsi || row.description || "";
+      if (sellPriceVal > 0) {
+        if (/SELL:[^;]+/i.test(desc)) {
+          desc = desc.replace(/SELL:[^;]+/i, `SELL:${sellPriceVal}`);
+        } else {
+          desc = desc.trim() ? `${desc};SELL:${sellPriceVal}` : `SELL:${sellPriceVal}`;
+        }
+      }
       return {
         sku: row.sku,
         name: row.nama ?? row.name,
         type: isJasa ? "JASA" : "BARANG",
         brand: row.merk || row.brand || undefined,
-        description: row.deskripsi || row.description || undefined,
+        description: desc || undefined,
         unit: row.satuan ?? row.unit ?? (isJasa ? "Jasa" : "Unit"),
         categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : findId(db?.productCategories, row.kategori),
         hasSerial: isJasa ? false : (row.berSN != null ? !!row.berSN : !!row.hasSerial),
@@ -2677,6 +2696,16 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.min !== undefined) out.minStock = num(patch.min);
   if (patch.minStock !== undefined) out.minStock = num(patch.minStock);
   if (patch.hargaBeli !== undefined) out.purchasePrice = num(patch.hargaBeli);
+  if (patch.hargaJual !== undefined && module === "products") {
+    const sellPriceVal = num(patch.hargaJual);
+    let desc = patch.deskripsi || patch.description || (db?.products ? (db.products.find((p: any) => p.id === patch.id || String(p.id) === String(patch.id))?.description ?? "") : "") || "";
+    if (/SELL:[^;]+/i.test(desc)) {
+      desc = desc.replace(/SELL:[^;]+/i, `SELL:${sellPriceVal}`);
+    } else {
+      desc = desc.trim() ? `${desc};SELL:${sellPriceVal}` : `SELL:${sellPriceVal}`;
+    }
+    out.description = desc;
+  }
   if (patch.garansi !== undefined) out.warrantyMonths = parseInt(String(patch.garansi), 10) || undefined;
   if (patch.payment !== undefined) out.paymentTerms = patch.payment;
 

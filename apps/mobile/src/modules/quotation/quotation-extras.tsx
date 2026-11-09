@@ -72,7 +72,22 @@ export function QuotationExtras({
       : "exclude"
   );
 
-  const items: QuotationItem[] = Array.isArray(row.items) ? row.items : [];
+  const [itemsOverride, setItemsOverride] = React.useState<{ rowItems: any; items: QuotationItem[] }>({
+    rowItems: row.items,
+    items: Array.isArray(row.items) ? row.items : [],
+  });
+
+  const items: QuotationItem[] =
+    itemsOverride.rowItems === row.items
+      ? itemsOverride.items
+      : Array.isArray(row.items)
+      ? row.items
+      : [];
+
+  const updateItems = React.useCallback((next: QuotationItem[]) => {
+    setItemsOverride({ rowItems: row.items, items: next });
+  }, [row.items]);
+
   const totalItemsPph = items.reduce((acc, it) => acc + calcItemPph(it), 0);
   const [showAllItems, setShowAllItems] = React.useState(false);
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
@@ -235,6 +250,7 @@ export function QuotationExtras({
     });
 
     const updated = [...items, ...valid];
+    updateItems(updated);
     const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
     const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
 
@@ -255,6 +271,7 @@ export function QuotationExtras({
 
   async function handleDeleteItem(idx: number) {
     const updated = items.filter((_, i) => i !== idx);
+    updateItems(updated);
     const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
     const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
 
@@ -276,6 +293,7 @@ export function QuotationExtras({
     if (selectedItemIndices.length === 0) return;
     const count = selectedItemIndices.length;
     const updated = items.filter((_, i) => !selectedItemIndices.includes(i));
+    updateItems(updated);
     const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
     const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
 
@@ -298,6 +316,7 @@ export function QuotationExtras({
     const updated = items.map((it, i) =>
       i === idx ? { ...it, pphMode: newPphMode, tipePph: pphModeToTipe(newPphMode) } : it
     );
+    updateItems(updated);
     const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
     const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
 

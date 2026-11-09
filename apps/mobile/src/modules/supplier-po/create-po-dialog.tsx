@@ -6,7 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/taska/basics";
-import { SearchableSelect, DatePicker, QuickAddSupplierDialog, formatThousands } from "@/components/taska/dialogs";
+import {
+  SearchableSelect,
+  DatePicker,
+  QuickAddSupplierDialog,
+  formatThousands,
+  SupplierSelect,
+  ProductSelect,
+  ProjectSelect,
+} from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
@@ -405,11 +413,18 @@ function CreateSupplierPoForm({
       const dominantPphMode: PphMode = primaryPphItem?.pphMode ?? "none";
 
       // 2. Submit Supplier PO
+      const matchSupp = (data.suppliers ?? []).find(
+        (s: Row) => String(s.id) === String(supplierId) || (s.nama || s.name) === supplierName
+      );
+      const cleanSuppName = matchSupp
+        ? String(matchSupp.nama || matchSupp.name || "")
+        : (supplierName ? String(supplierName).split(" - ")[0]?.trim() : undefined);
+
       const createdPo = await addRow("supplier-pos", {
         nomor: nomor.trim() || undefined,
         nomorSoSupplier: nomorSoSupplier.trim() || undefined,
         supplierId: supplierId || undefined,
-        supplier: supplierName || undefined,
+        supplier: cleanSuppName || undefined,
         payment: paymentTerms,
         paymentTerms,
         tanggal,
@@ -468,14 +483,11 @@ function CreateSupplierPoForm({
               <View className="flex-col sm:flex-row gap-3">
                 <View className="flex-1">
                   <FormField label="Pilih Supplier" required hint="Pemasok / vendor tujuan pemesanan">
-                    <SearchableSelect
+                    <SupplierSelect
                       value={supplierName}
-                      options={supplierOptions.map((s) => s.name)}
-                      onChange={(val) => {
+                      supplierId={supplierId}
+                      onChange={(val, match) => {
                         setSupplierName(val);
-                        const match = (data.suppliers ?? []).find(
-                          (s: Row) => (s.nama || s.name) === val || String(s.id) === String(val)
-                        );
                         if (match) {
                           setSupplierId(String(match.id));
                           const supTerm = match.payment || match.paymentTerms || match.syaratPembayaran;
@@ -575,12 +587,11 @@ function CreateSupplierPoForm({
               {/* Baris 4: Proyek Terkait */}
               <View>
                 <FormField label="Alokasi Proyek Terkait (Opsional)" hint="Jika pembelian barang ini khusus dialokasikan untuk proyek">
-                  <SearchableSelect
-                    value={projectOptions.find((p) => p.id === projectId)?.label || ""}
-                    options={projectOptions.map((p) => p.label)}
-                    onChange={(val) => {
-                      const match = projectOptions.find((p) => p.label === val);
-                      setProjectId(match ? match.id : "");
+                  <ProjectSelect
+                    projectId={projectId}
+                    allowClear={true}
+                    onChange={(p) => {
+                      setProjectId(p ? String(p.id) : "");
                     }}
                     placeholder="Pilih proyek jika ada..."
                   />
@@ -703,20 +714,11 @@ function CreateSupplierPoForm({
                 {addItemMode === "master" ? (
                   <View className="gap-2.5">
                     <FormField label="Pilih Produk dari Master Stok *" required>
-                      <SearchableSelect
-                        value={
-                          selectedProductObj
-                            ? `${selectedProductObj.nama || selectedProductObj.name} (${selectedProductObj.sku || "-"})`
-                            : ""
-                        }
-                        options={(data.products ?? []).map(
-                          (p: Row) => `${p.nama || p.name} (${p.sku || "-"})`
-                        )}
-                        onChange={(val) => {
-                          const match = (data.products ?? []).find(
-                            (p: Row) => `${p.nama || p.name} (${p.sku || "-"})` === val
-                          );
-                          if (match) handleSelectMasterProduct(String(match.id));
+                      <ProductSelect
+                        productId={selectedProductId}
+                        onChange={(p) => {
+                          if (p) handleSelectMasterProduct(String(p.id));
+                          else setSelectedProductId("");
                         }}
                         placeholder="Cari nama barang atau SKU master..."
                       />
