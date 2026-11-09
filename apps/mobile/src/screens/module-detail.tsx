@@ -902,6 +902,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 <Text className="text-danger">Hapus</Text>
               </Button>
             ) : null}
+            {moduleKey === "delivery-notes" && (status === "Pending" || !status || status === "Menunggu persetujuan") ? (
+              <Button
+                variant="outline"
+                className="border-primary/50"
+                onPress={() => router.push(`/delivery-notes/new?id=${id}` as any)}
+              >
+                <Text className="text-primary font-medium">Edit Surat Jalan & Barang</Text>
+              </Button>
+            ) : null}
             {def.statuses.length > 1 && !(isLead && (user?.role === "bos" || user?.role === "admin")) ? (
               <Button variant="outline" onPress={() => setMenu(true)}>
                 <Text>Ubah status</Text>
@@ -1307,6 +1316,32 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                             placeholder={`Tulis ${f.label.toLowerCase()}`}
                             className={cn(errs[f.key] && "border-danger")}
                           />
+                        ) : moduleKey === "delivery-notes" && f.key === "barang" ? (
+                          <View className="gap-2 p-3 bg-panel/60 rounded-xl border border-border">
+                            <View className="flex-row items-center justify-between">
+                              <Text className="text-xs text-muted-foreground font-medium">
+                                Barang Fisik & Serial Number
+                              </Text>
+                              {(status === "Pending" || !status || status === "Menunggu persetujuan") ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2.5 border-primary/60"
+                                  onPress={() => router.push(`/delivery-notes/new?id=${id}` as any)}
+                                >
+                                  <Text className="text-xs text-primary font-semibold">Buka Form Edit Barang</Text>
+                                </Button>
+                              ) : null}
+                            </View>
+                            <Text className="text-sm font-medium text-foreground">
+                              {row.barang && row.barang !== "-" ? row.barang : "Tanpa barang"}
+                            </Text>
+                            {Array.isArray(row.items) && row.items.length > 0 ? (
+                              <Text className="text-xs text-muted-foreground">
+                                Terdaftar {row.items.length} item barang di surat jalan ini.
+                              </Text>
+                            ) : null}
+                          </View>
                         ) : (
                           <Input
                             value={getFieldValue(f)}

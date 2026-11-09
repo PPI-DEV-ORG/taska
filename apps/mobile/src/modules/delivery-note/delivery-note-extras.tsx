@@ -172,14 +172,14 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN (Stok otomatis berkurang saat status Dikirim)" : "Surat jalan penugasan tanpa barang"}
         right={
           <View className="flex-row items-center gap-2 flex-wrap">
-            {row.status === "Pending" ? (
+            {row.status === "Pending" || !row.status || row.status === "Menunggu persetujuan" ? (
               <Button
                 size="sm"
-                variant="outline"
+                variant="default"
                 onPress={() => router.push(`/delivery-notes/new?id=${row.id}${matchedSo?.id ? `&soId=${matchedSo.id}` : ""}` as any)}
-                className="flex-row items-center gap-1 border-primary/50"
+                className="flex-row items-center gap-1.5 bg-primary"
               >
-                <Text className="text-xs text-primary font-semibold">Edit / Scan SN Form</Text>
+                <Text className="text-xs text-primary-foreground font-semibold">Edit Surat Jalan & List Barang</Text>
               </Button>
             ) : null}
             <Button

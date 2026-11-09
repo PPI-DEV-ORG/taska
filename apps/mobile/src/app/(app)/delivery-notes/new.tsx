@@ -16,6 +16,7 @@ import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import type { QuotationItem } from "@/modules/quotation/types";
 import { Row } from "@/constants/modules";
+import { adaptRow } from "@/services/adapters";
 
 function playScanBeep(ok: boolean) {
   if (Platform.OS !== "web") return;
@@ -45,8 +46,8 @@ function isServiceItem(it: any): boolean {
 
 export default function NewDeliveryNoteScreen() {
   const router = useRouter();
-  const searchParams = useLocalSearchParams<{ id?: string; soId?: string; invoiceId?: string }>();
-  const editId = searchParams?.id ? String(searchParams.id) : null;
+  const searchParams = useLocalSearchParams<{ id?: string; editId?: string; soId?: string; invoiceId?: string }>();
+  const editId = searchParams?.editId ? String(searchParams.editId) : searchParams?.id ? String(searchParams.id) : null;
   const initialSoId = searchParams?.soId ? String(searchParams.soId) : null;
   const initialInvoiceId = searchParams?.invoiceId ? String(searchParams.invoiceId) : null;
 
@@ -166,12 +167,17 @@ export default function NewDeliveryNoteScreen() {
     // Jika edit Surat Jalan yang SUDAH memiliki scan/pilihan unit fisik, muat unit fisik yang sudah ter-scan
     if (Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0) {
       const physicalExisting = initialExistingDn.items.filter((it: any) => !isServiceItem(it));
-      const hasAnyScanned = physicalExisting.some((it: any) => it.serials || (Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0));
-      if (hasAnyScanned) {
+      if (physicalExisting.length > 0) {
         return physicalExisting.map((it: any, idx: number) => {
           const itemName = String(it.note || it.name || it.item || it.product?.name || "Barang");
           const u = String(it.unit || it.satuan || it.product?.unit || "unit");
           const p = Number(it.price || it.harga || 0);
+          const rawSns = it.serialNumbers || it.serials;
+          const sns = Array.isArray(rawSns)
+            ? rawSns.map(String).map((s: string) => s.trim()).filter(Boolean)
+            : rawSns
+            ? String(rawSns).split(",").map((s: string) => s.trim()).filter(Boolean)
+            : [];
           return {
             id: it.id ? String(it.id) : `dn-item-${idx}`,
             item: itemName,
@@ -182,13 +188,58 @@ export default function NewDeliveryNoteScreen() {
             harga: p,
             price: p,
             productId: it.productId ? Number(it.productId) : it.product?.id ? Number(it.product.id) : undefined,
-            serialNumbers: it.serials ? String(it.serials).split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+            serialNumbers: sns,
           };
         });
       }
     }
     return [];
   });
+
+  React.useEffect(() => {
+    if (!editId) return;
+    api<any>("GET", `/delivery-notes/${editId}`)
+      .then((raw) => {
+        if (!raw) return;
+        const adapted = adaptRow("delivery-notes", raw);
+        if (adapted.tanggal) setTanggalSj(adapted.tanggal);
+        if (adapted.tujuan && adapted.tujuan !== "-") setTujuan(adapted.tujuan);
+        if (adapted.alasan && adapted.alasan !== "-") setAlasan(adapted.alasan);
+        if (adapted.project && adapted.project !== "-") setSelectedProject(adapted.project);
+        if (adapted.withGoods !== undefined) setHasGoods(Boolean(adapted.withGoods));
+        if (Array.isArray(adapted.items) && adapted.items.length > 0) {
+          const mapped = adapted.items
+            .filter((it: any) => !isServiceItem(it))
+            .map((it: any, idx: number) => {
+              const itemName = String(it.note || it.name || it.item || it.product?.name || "Barang");
+              const u = String(it.unit || it.satuan || it.product?.unit || "unit");
+              const p = Number(it.price || it.harga || 0);
+              const rawSns = it.serialNumbers || it.serials;
+              const sns = Array.isArray(rawSns)
+                ? rawSns.map(String).map((s: string) => s.trim()).filter(Boolean)
+                : rawSns
+                ? String(rawSns).split(",").map((s: string) => s.trim()).filter(Boolean)
+                : [];
+              return {
+                id: it.id ? String(it.id) : `dn-item-${idx}`,
+                item: itemName,
+                name: itemName,
+                satuan: u,
+                unit: u,
+                qty: Number(it.qty) || 1,
+                harga: p,
+                price: p,
+                productId: it.productId ? Number(it.productId) : it.product?.id ? Number(it.product.id) : undefined,
+                serialNumbers: sns,
+              };
+            });
+          if (mapped.length > 0) {
+            setItems(mapped);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [editId]);
   const [checklistRequirementsState, setChecklistRequirements] = React.useState<
     | {
         productId?: number;
