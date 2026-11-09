@@ -210,7 +210,7 @@ export default function ProjectDetailScreen() {
     ? remoteInvoices
     : (data.invoices ?? []).filter(
         (i: any) =>
-          (String(i.projectId) === String(project.id) || (pName && i.project === pName)) &&
+          (String(i.projectId) === String(project.id) || (!i.projectId && pName && i.project === pName)) &&
           i.status !== "Batal" &&
           i.status !== "BATAL"
       );
@@ -218,7 +218,7 @@ export default function ProjectDetailScreen() {
 
   const projectPos = (data["supplier-pos"] ?? []).filter(
     (po: any) =>
-      (String(po.projectId) === String(project.id) || (pName && po.project === pName)) &&
+      (String(po.projectId) === String(project.id) || (!po.projectId && pName && po.project === pName)) &&
       po.status !== "Ditolak" &&
       po.status !== "DIBATALKAN"
   );

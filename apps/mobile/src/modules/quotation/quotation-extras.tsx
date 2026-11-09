@@ -150,10 +150,10 @@ export function QuotationExtras({
     return (data.projects ?? []).find(
       (p: Row) =>
         (p.quotationId && String(p.quotationId) === String(row.id)) ||
-        (row.customerId && p.customerId && String(p.customerId) === String(row.customerId)) ||
-        (p.customer && row.customer && p.customer.trim().toLowerCase() === row.customer.trim().toLowerCase())
+        (row.nomor && row.nomor !== "-" && p.penawaran && String(p.penawaran).toLowerCase().includes(String(row.nomor).toLowerCase())) ||
+        (row.leadId && p.leadId && String(p.leadId) === String(row.leadId))
     );
-  }, [data.projects, row.id, row.customerId, row.customer]);
+  }, [data.projects, row.id, row.nomor, row.leadId]);
 
   const quotationInvoices = React.useMemo(() => {
     const qNomor = String(row.nomor || "").trim().toLowerCase();
@@ -162,9 +162,9 @@ export function QuotationExtras({
 
     return (data.invoices ?? []).filter((inv: Row) => {
       if (inv.quotationId && String(inv.quotationId) === qId) return true;
-      if (inv.quotation && String(inv.quotation).trim().toLowerCase() === qNomor) return true;
+      if (qNomor && qNomor !== "-" && inv.quotation && String(inv.quotation).trim().toLowerCase() === qNomor) return true;
       const cat = String(inv.catatan || inv.description || "").toLowerCase();
-      if (qNomor && cat.includes(qNomor)) return true;
+      if (qNomor && qNomor !== "-" && qNomor.length >= 3 && cat.includes(qNomor)) return true;
       if (projId && inv.projectId && String(inv.projectId) === projId) return true;
       return false;
     });
