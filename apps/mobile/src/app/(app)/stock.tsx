@@ -12,11 +12,11 @@ import { Button } from "@/components/ui/button";
 import { BatchSerialRegisterModal } from "@/components/taska/serial-item-picker";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Chip } from "@/components/taska/basics";
+import { PageHeader, Chip, EmptyState } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
 import { compareDesc } from "@/lib/format";
-import type { Row } from "@/constants/modules";
+import { NAV_BY_ROLE, type Role, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 
 import { STOCK_TABS, type StockTab, type DetailTarget } from "@/modules/stock/types";
@@ -33,6 +33,12 @@ import { StockAddItemDialog } from "@/modules/stock/components/stock-add-item-di
 export default function StockScreen() {
   const router = useRouter();
   const { user, data, toast, reload, refreshModule, addRow } = useApp();
+
+  const userRole = (user?.role || "").toLowerCase() as Role;
+  const isSuperOrAdmin = ["super_admin", "admin", "bos"].includes(userRole);
+  const navItems = userRole && NAV_BY_ROLE[userRole] ? NAV_BY_ROLE[userRole] : [];
+  const isAllowed = isSuperOrAdmin || navItems.some((n) => n.key === "stock" || n.href === "/stock");
+
   const canManageCatalog = ["super_admin", "admin", "bos", "gudang", "procurement", "finance"].includes(user?.role ?? "");
   const canManageStock = ["super_admin", "admin", "bos", "gudang", "procurement", "finance", "pm", "sales"].includes(user?.role ?? "");
 
@@ -167,6 +173,10 @@ export default function StockScreen() {
     const clean = searchQuery.trim().toUpperCase();
     return serials.find((s) => String(s.sn).toUpperCase() === clean);
   }, [serials, searchQuery]);
+
+  if (!isAllowed) {
+    return <EmptyState title="Akses Ditolak" text="Akun kamu tidak memiliki akses untuk membuka halaman ini." />;
+  }
 
   return (
     <View className="gap-4">

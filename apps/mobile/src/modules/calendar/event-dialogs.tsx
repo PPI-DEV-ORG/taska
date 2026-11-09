@@ -83,25 +83,35 @@ export function EventFormDialog({
   const [quickCustomerOpen, setQuickCustomerOpen] = React.useState(false);
   const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
 
+  const userRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
+  const isSuperOrAdmin = ["super_admin", "admin", "bos"].includes(userRole);
+
+  const canAccessCustomer = isSuperOrAdmin || ["sales", "finance"].includes(userRole);
+  const canAccessProject = isSuperOrAdmin || ["pm", "teknisi", "se", "sales"].includes(userRole);
+  const canAccessLead = isSuperOrAdmin || ["sales"].includes(userRole);
+  const canAccessInvoice = isSuperOrAdmin || ["finance", "sales"].includes(userRole);
+  const canAccessSupplier = isSuperOrAdmin || ["procurement", "gudang", "finance"].includes(userRole);
+  const hasAnyDocAccess = canAccessCustomer || canAccessProject || canAccessLead || canAccessInvoice || canAccessSupplier;
+
   const customerMap = React.useMemo(
-    () => (data.customers ?? []).map((c: any) => ({ id: Number(c.id), label: String(c.company || c.name || "") })).filter((x: any) => x.label && Number.isFinite(x.id)),
-    [data.customers],
+    () => canAccessCustomer ? (data.customers ?? []).map((c: any) => ({ id: Number(c.id), label: String(c.company || c.name || "") })).filter((x: any) => x.label && Number.isFinite(x.id)) : [],
+    [data.customers, canAccessCustomer],
   );
   const projectMap = React.useMemo(
-    () => (data.projects ?? []).map((p: any) => ({ id: Number(p.id), label: `${p.code || `#${p.id}`} - ${p.name || p.nama || ""}` })).filter((x: any) => x.label && Number.isFinite(x.id)),
-    [data.projects],
+    () => canAccessProject ? (data.projects ?? []).map((p: any) => ({ id: Number(p.id), label: `${p.code || `#${p.id}`} - ${p.name || p.nama || ""}` })).filter((x: any) => x.label && Number.isFinite(x.id)) : [],
+    [data.projects, canAccessProject],
   );
   const leadMap = React.useMemo(
-    () => (data.leads ?? []).map((l: any) => ({ id: Number(l.id), label: `${l.company || ""} (${l.pic || l.name || "-"})` })).filter((x: any) => x.label && Number.isFinite(x.id)),
-    [data.leads],
+    () => canAccessLead ? (data.leads ?? []).map((l: any) => ({ id: Number(l.id), label: `${l.company || l.customer || l.nama || ""} (${l.pic || l.name || "-"})` })).filter((x: any) => x.label && Number.isFinite(x.id)) : [],
+    [data.leads, canAccessLead],
   );
   const invoiceMap = React.useMemo(
-    () => (data.invoices ?? []).map((iv: any) => ({ id: Number(iv.id), label: `${iv.number || iv.no || `#${iv.id}`} - ${iv.customer || ""}` })).filter((x: any) => x.label && Number.isFinite(x.id)),
-    [data.invoices],
+    () => canAccessInvoice ? (data.invoices ?? []).map((iv: any) => ({ id: Number(iv.id), label: `${iv.number || iv.nomor || iv.no || `#${iv.id}`} - ${iv.customer || ""}` })).filter((x: any) => x.label && Number.isFinite(x.id)) : [],
+    [data.invoices, canAccessInvoice],
   );
   const supplierMap = React.useMemo(
-    () => (data.suppliers ?? []).map((s: any) => ({ id: Number(s.id), label: String(s.name || s.nama || "") })).filter((x: any) => x.label && Number.isFinite(x.id)),
-    [data.suppliers],
+    () => canAccessSupplier ? (data.suppliers ?? []).map((s: any) => ({ id: Number(s.id), label: String(s.name || s.nama || "") })).filter((x: any) => x.label && Number.isFinite(x.id)) : [],
+    [data.suppliers, canAccessSupplier],
   );
 
   const [prevFormKey, setPrevFormKey] = React.useState<string | null>(null);
@@ -367,50 +377,118 @@ export function EventFormDialog({
                 <View className="flex-1"><FormField label="Berulang sampai"><DatePicker value={until} onChange={setUntil} clearable /></FormField></View>
               ) : null}
             </View>
-            <View className="border-t border-border/60 pt-2 gap-3">
-              <Text className="text-xs font-semibold text-muted-foreground">Relasi Dokumen ERP (Opsional)</Text>
-              <View className="flex-row gap-3">
-                <View className="flex-1">
-                  <FormField label="Customer">
+            {hasAnyDocAccess ? (
+              <View className="border-t border-border/60 pt-2 gap-3">
+                <Text className="text-xs font-semibold text-muted-foreground">Relasi Dokumen ERP (Opsional)</Text>
+                
+                {canAccessCustomer || canAccessProject ? (
+                  canAccessCustomer && canAccessProject ? (
+                    <View className="flex-row gap-3">
+                      <View className="flex-1">
+                        <FormField label="Customer">
+                          <SearchableSelect
+                            value={customerLabel}
+                            onAddNew={() => setQuickCustomerOpen(true)}
+                            addNewLabel="+ Tambah Customer Baru"
+                            onChange={(v) => setCustomerLabel(v === customerLabel ? "" : v)}
+                            options={customerMap.map((x) => x.label)}
+                            placeholder="Pilih customer"
+                          />
+                        </FormField>
+                      </View>
+                      <View className="flex-1">
+                        <FormField label="Project">
+                          <SearchableSelect
+                            value={projectLabel}
+                            onChange={(v) => setProjectLabel(v === projectLabel ? "" : v)}
+                            options={projectMap.map((x) => x.label)}
+                            placeholder="Pilih project"
+                          />
+                        </FormField>
+                      </View>
+                    </View>
+                  ) : canAccessCustomer ? (
+                    <FormField label="Customer">
+                      <SearchableSelect
+                        value={customerLabel}
+                        onAddNew={() => setQuickCustomerOpen(true)}
+                        addNewLabel="+ Tambah Customer Baru"
+                        onChange={(v) => setCustomerLabel(v === customerLabel ? "" : v)}
+                        options={customerMap.map((x) => x.label)}
+                        placeholder="Pilih customer"
+                      />
+                    </FormField>
+                  ) : (
+                    <FormField label="Project">
+                      <SearchableSelect
+                        value={projectLabel}
+                        onChange={(v) => setProjectLabel(v === projectLabel ? "" : v)}
+                        options={projectMap.map((x) => x.label)}
+                        placeholder="Pilih project"
+                      />
+                    </FormField>
+                  )
+                ) : null}
+
+                {canAccessLead || canAccessInvoice ? (
+                  canAccessLead && canAccessInvoice ? (
+                    <View className="flex-row gap-3">
+                      <View className="flex-1">
+                        <FormField label="Lead / Prospek">
+                          <SearchableSelect
+                            value={leadLabel}
+                            onChange={(v) => setLeadLabel(v === leadLabel ? "" : v)}
+                            options={leadMap.map((x) => x.label)}
+                            placeholder="Pilih lead"
+                          />
+                        </FormField>
+                      </View>
+                      <View className="flex-1">
+                        <FormField label="Invoice">
+                          <SearchableSelect
+                            value={invoiceLabel}
+                            onChange={(v) => setInvoiceLabel(v === invoiceLabel ? "" : v)}
+                            options={invoiceMap.map((x) => x.label)}
+                            placeholder="Pilih invoice"
+                          />
+                        </FormField>
+                      </View>
+                    </View>
+                  ) : canAccessLead ? (
+                    <FormField label="Lead / Prospek">
+                      <SearchableSelect
+                        value={leadLabel}
+                        onChange={(v) => setLeadLabel(v === leadLabel ? "" : v)}
+                        options={leadMap.map((x) => x.label)}
+                        placeholder="Pilih lead"
+                      />
+                    </FormField>
+                  ) : (
+                    <FormField label="Invoice">
+                      <SearchableSelect
+                        value={invoiceLabel}
+                        onChange={(v) => setInvoiceLabel(v === invoiceLabel ? "" : v)}
+                        options={invoiceMap.map((x) => x.label)}
+                        placeholder="Pilih invoice"
+                      />
+                    </FormField>
+                  )
+                ) : null}
+
+                {canAccessSupplier ? (
+                  <FormField label="Vendor / Supplier">
                     <SearchableSelect
-                      value={customerLabel}
-                      onAddNew={() => setQuickCustomerOpen(true)}
-                      addNewLabel="+ Tambah Customer Baru"
-                      onChange={(v) => setCustomerLabel(v === customerLabel ? "" : v)}
-                      options={customerMap.map((x) => x.label)}
-                      placeholder="Pilih customer"
+                      value={supplierLabel}
+                      onChange={(v) => setSupplierLabel(v === supplierLabel ? "" : v)}
+                      options={supplierMap.map((x) => x.label)}
+                      placeholder="Pilih supplier"
+                      onAddNew={() => setQuickSupplierOpen(true)}
+                      addNewLabel="+ Tambah Supplier Baru"
                     />
                   </FormField>
-                </View>
-                <View className="flex-1">
-                  <FormField label="Project">
-                    <SearchableSelect value={projectLabel} onChange={(v) => setProjectLabel(v === projectLabel ? "" : v)} options={projectMap.map((x) => x.label)} placeholder="Pilih project" />
-                  </FormField>
-                </View>
+                ) : null}
               </View>
-              <View className="flex-row gap-3">
-                <View className="flex-1">
-                  <FormField label="Lead / Prospek">
-                    <SearchableSelect value={leadLabel} onChange={(v) => setLeadLabel(v === leadLabel ? "" : v)} options={leadMap.map((x) => x.label)} placeholder="Pilih lead" />
-                  </FormField>
-                </View>
-                <View className="flex-1">
-                  <FormField label="Invoice">
-                    <SearchableSelect value={invoiceLabel} onChange={(v) => setInvoiceLabel(v === invoiceLabel ? "" : v)} options={invoiceMap.map((x) => x.label)} placeholder="Pilih invoice" />
-                  </FormField>
-                </View>
-              </View>
-              <FormField label="Vendor / Supplier">
-                <SearchableSelect
-                  value={supplierLabel}
-                  onChange={(v) => setSupplierLabel(v === supplierLabel ? "" : v)}
-                  options={supplierMap.map((x) => x.label)}
-                  placeholder="Pilih supplier"
-                  onAddNew={() => setQuickSupplierOpen(true)}
-                  addNewLabel="+ Tambah Supplier Baru"
-                />
-              </FormField>
-            </View>
+            ) : null}
             <FormField label="Deskripsi / catatan">
               <Textarea value={description} onChangeText={setDescription} numberOfLines={3} />
             </FormField>

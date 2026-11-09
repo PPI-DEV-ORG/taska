@@ -217,23 +217,32 @@ function BottomTabs({ onMore }: { onMore: () => void }) {
 
 function SearchPanel({ onDone }: { onDone: () => void }) {
   const router = useRouter();
-  const { data } = useApp();
+  const { data, user } = useApp();
   const [q, setQ] = React.useState("");
   const res = React.useMemo(() => {
     const s = q.trim().toLowerCase();
     if (s.length < 2) return [];
+    const role = (user?.role || "").toLowerCase();
+    const isSales = role === "sales";
+    const isFinance = role === "finance";
     const out: { id: string; type: string; title: string; href: string }[] = [];
     (data.leads ?? []).forEach((r) => r?.nama && r.nama.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Lead", title: r.nama, href: `/leads/${r.id}` }));
     (data.projects ?? []).forEach((r) => {
       const title = r?.nama || r?.name;
       if (r && title && title.toLowerCase().includes(s)) out.push({ id: String(r.id), type: "Project", title, href: `/projects/${r.id}` });
     });
-    (data.quotations ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Penawaran", title: r.nomor, href: `/quotations/${r.id}` }));
-    (data.invoices ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Invoice", title: r.nomor, href: `/invoices/${r.id}` }));
+    if (!isFinance) {
+      (data.quotations ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Penawaran", title: r.nomor, href: `/quotations/${r.id}` }));
+    }
+    if (!isSales) {
+      (data.invoices ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Invoice", title: r.nomor, href: `/invoices/${r.id}` }));
+    }
     (data["delivery-notes"] ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Surat jalan", title: r.nomor, href: `/delivery-notes/${r.id}` }));
-    (data.serials ?? []).forEach((r) => String(r?.sn || "").toLowerCase().includes(s) && out.push({ id: String(r.id), type: "SN", title: `${r.sn} · ${r.produk}`, href: "/stock" }));
+    if (!isFinance) {
+      (data.serials ?? []).forEach((r) => String(r?.sn || "").toLowerCase().includes(s) && out.push({ id: String(r.id), type: "SN", title: `${r.sn} · ${r.produk}`, href: "/stock" }));
+    }
     return out.slice(0, 8);
-  }, [q, data]);
+  }, [q, data, user?.role]);
   return (
     <View className="gap-3">
       <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-lg border px-3">

@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Panel, Cell } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import { SupplierInvoiceDetailDialog } from "@/modules/supplier-po/supplier-invoice-dialogs";
 import { RecordClientPoDialog } from "@/modules/project/record-client-po-dialog";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { useApp } from "@/store/app-store";
@@ -133,12 +134,14 @@ export function ProjectExtras({ row }: { row: Row }) {
   const [editServicePphMode, setEditServicePphMode] = React.useState("none");
 
   const normalizedRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
+  const isSales = normalizedRole === "sales";
   const canViewBoqPricing = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
-  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "sales", "admin"].includes(normalizedRole);
+  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "admin"].includes(normalizedRole);
   const canManageInvoice = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
 
   const [quotationDetail, setQuotationDetail] = React.useState<any>(null);
   const [recordClientPoOpen, setRecordClientPoOpen] = React.useState(false);
+  const [selectedDetailInvoiceIn, setSelectedDetailInvoiceIn] = React.useState<Row | null>(null);
 
   const linkedQuotation = React.useMemo(() => {
     const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
@@ -149,6 +152,37 @@ export function ProjectExtras({ row }: { row: Row }) {
         (row.leadId && String(q.leadId) === String(row.leadId)),
     );
   }, [data.quotations, row.quotationId, row.penawaran, row.leadId]);
+
+  const linkedLead = React.useMemo(() => {
+    const lId = row.leadId || linkedQuotation?.leadId;
+    if (!lId) return null;
+    return (data.leads ?? []).find((l: Row) => String(l.id) === String(lId)) || null;
+  }, [data.leads, row.leadId, linkedQuotation?.leadId]);
+
+  const isHeldBySales = React.useMemo(() => {
+    if (!isSales) return true;
+    const userName = (user?.name || "").trim().toLowerCase();
+    const userId = String(user?.id || "");
+
+    if (userName && String(row.tim || "").toLowerCase().includes(userName)) return true;
+    if (Array.isArray(row._members) && row._members.some((m: any) => String(m.id) === userId || String(m.name || "").toLowerCase() === userName)) return true;
+
+    if (row.salesId && String(row.salesId) === userId) return true;
+    if (row.sales && String(row.sales).toLowerCase() === userName) return true;
+    if (row.createdById && String(row.createdById) === userId) return true;
+
+    if (linkedQuotation) {
+      if (linkedQuotation.ownerId && String(linkedQuotation.ownerId) === userId) return true;
+      if (linkedQuotation.pemilik && String(linkedQuotation.pemilik).toLowerCase() === userName) return true;
+    }
+
+    if (linkedLead) {
+      if ((linkedLead.owner_id || linkedLead.ownerId) && String(linkedLead.owner_id || linkedLead.ownerId) === userId) return true;
+      if (linkedLead.pemilik && String(linkedLead.pemilik).toLowerCase() === userName) return true;
+    }
+
+    return false;
+  }, [isSales, user, row, linkedQuotation, linkedLead]);
 
   const activeQuotation = quotationDetail || linkedQuotation;
 
@@ -220,6 +254,30 @@ export function ProjectExtras({ row }: { row: Row }) {
     }
     return Array.from(map.values());
   }, [data.invoices, row.id, row.nama, row.leadId, linkedQuotation, rawProjectInvoices]);
+
+  const supplierPosList = data["supplier-pos"];
+  const projectSupplierPos = React.useMemo(() => {
+    return (supplierPosList ?? []).filter(
+      (po: Row) =>
+        (po.projectId && String(po.projectId) === String(row.id)) ||
+        (!po.projectId && po.project && po.project === row.nama) ||
+        (po.catatan && String(po.catatan).includes(`[project:${row.id}]`))
+    );
+  }, [supplierPosList, row.id, row.nama]);
+
+  const projectPoIds = React.useMemo(() => new Set(projectSupplierPos.map((p) => String(p.id))), [projectSupplierPos]);
+  const projectPoNumbers = React.useMemo(() => new Set(projectSupplierPos.map((p) => String(p.nomor || "").trim().toLowerCase()).filter(Boolean)), [projectSupplierPos]);
+
+  const projectInvoiceIns = React.useMemo(() => {
+    return (data.invoiceIn ?? []).filter((inv: Row) => {
+      if (inv.status === "Batal" || inv.status === "BATAL") return false;
+      if (inv.projectId && String(inv.projectId) === String(row.id)) return true;
+      if (inv.supplierPoId && projectPoIds.has(String(inv.supplierPoId))) return true;
+      if (inv.po && inv.po !== "-" && projectPoNumbers.has(String(inv.po).trim().toLowerCase())) return true;
+      if (inv.catatan && String(inv.catatan).includes(`[project:${row.id}]`)) return true;
+      return false;
+    });
+  }, [data.invoiceIn, projectPoIds, projectPoNumbers, row.id]);
 
   const isAllInvoicesPaid =
     row.pembayaran === "Lunas" ||
@@ -982,10 +1040,10 @@ export function ProjectExtras({ row }: { row: Row }) {
           }
         />
 
-        {canManageInvoice ? (
+        {canManageInvoice && !isSales ? (
           <View className="mt-2 pt-2 border-t border-border/60 gap-1">
             <Text className="text-xs font-semibold text-foreground mb-1">
-              Daftar Invoice Project ({projectInvoices.length})
+              Daftar Invoice Keluar (Penjualan) ({projectInvoices.length})
             </Text>
             {projectInvoices.length === 0 ? (
               <Text className="text-muted-foreground text-xs">Belum ada invoice yang diterbitkan untuk project ini.</Text>
@@ -999,6 +1057,34 @@ export function ProjectExtras({ row }: { row: Row }) {
                     <View className="flex-row items-center gap-2">
                       <Cell fmt="status" value={inv.status} />
                       <Button size="sm" variant="outline" onPress={() => router.push(`/invoices/${inv.id}` as any)}>
+                        <Text className="text-xs">Buka</Text>
+                      </Button>
+                    </View>
+                  }
+                />
+              ))
+            )}
+          </View>
+        ) : null}
+
+        {/* Invoice Masuk (Supplier / Vendor) - Boleh dilihat Sales jika pegang project ini, atau oleh Finance/BOS/Admin */}
+        {(isSales ? isHeldBySales : canManageInvoice || canViewFinancials) ? (
+          <View className="mt-2 pt-2 border-t border-border/60 gap-1">
+            <Text className="text-xs font-semibold text-foreground mb-1">
+              Daftar Invoice Masuk (Vendor / Supplier) ({projectInvoiceIns.length})
+            </Text>
+            {projectInvoiceIns.length === 0 ? (
+              <Text className="text-muted-foreground text-xs">Belum ada invoice masuk (tagihan vendor) untuk project ini.</Text>
+            ) : (
+              projectInvoiceIns.map((inv: any) => (
+                <Line
+                  key={inv.id}
+                  left={`${inv.nomor || "Faktur Masuk"} · ${inv.supplier || "Supplier"}`}
+                  sub={`Total ${rupiah(inv.total)} · Terbayar ${rupiah(inv.terbayar || 0)}`}
+                  right={
+                    <View className="flex-row items-center gap-2">
+                      <Cell fmt="status" value={inv.status} />
+                      <Button size="sm" variant="outline" onPress={() => setSelectedDetailInvoiceIn(inv)}>
                         <Text className="text-xs">Buka</Text>
                       </Button>
                     </View>
@@ -1775,6 +1861,11 @@ export function ProjectExtras({ row }: { row: Row }) {
         project={row}
         activeQuotation={activeQuotation}
         requirements={requirements}
+      />
+      <SupplierInvoiceDetailDialog
+        open={!!selectedDetailInvoiceIn}
+        invoice={selectedDetailInvoiceIn}
+        onOpenChange={(open) => !open && setSelectedDetailInvoiceIn(null)}
       />
     </>
   );
