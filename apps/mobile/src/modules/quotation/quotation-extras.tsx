@@ -1018,6 +1018,7 @@ export function QuotationExtras({
       </Panel>
 
       {/* Panel Invoice & Penagihan */}
+      {user?.role !== "sales" ? (
       <Panel
         title="Invoice & Penagihan"
         subtitle="Kelola tagihan pembayaran untuk penawaran ini. Status pembayaran project akan otomatis sinkron."
@@ -1141,6 +1142,7 @@ export function QuotationExtras({
           </View>
         )}
       </Panel>
+      ) : null}
 
       {/* Modal Buat Revisi Baru */}
       <Dialog open={revisiOpen} onOpenChange={setRevisiOpen}>

@@ -584,6 +584,7 @@ export function LeadExtras({ row }: { row: Row }) {
       </Panel>
 
       {/* Panel Invoice Terkait */}
+      {user?.role !== "sales" ? (
       <Panel
         title="Invoice Terkait"
         subtitle="Kelola tagihan pembayaran untuk prospek atau penawaran ini."
@@ -724,6 +725,7 @@ export function LeadExtras({ row }: { row: Row }) {
           </View>
         )}
       </Panel>
+      ) : null}
 
       {/* Modal Catat Follow-up */}
       <Dialog open={fuOpen} onOpenChange={setFuOpen}>

@@ -141,6 +141,7 @@ function CreateSalesOrderForm({
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
 
   // Fetch suggested SO number
+  const poClients = data["po-client"];
   React.useEffect(() => {
     let isMounted = true;
     void (async () => {
@@ -153,7 +154,7 @@ function CreateSalesOrderForm({
         const d = new Date();
         const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const seq = String((data["po-client"]?.length || 0) + 1).padStart(3, "0");
+        const seq = String((poClients?.length || 0) + 1).padStart(3, "0");
         if (isMounted) {
           setSuggestedSoNumber(`SO/${yyyy}/${mm}/${seq}`);
         }
@@ -162,7 +163,7 @@ function CreateSalesOrderForm({
     return () => {
       isMounted = false;
     };
-  }, [data["po-client"]]);
+  }, [poClients]);
 
   // Customer options
   const customerOptions = React.useMemo(() => {

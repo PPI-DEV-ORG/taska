@@ -32,7 +32,7 @@ import {
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
 export { QuickAddCustomerDialog } from "./quick-add-customer-dialog";
 export { QuickAddSupplierDialog } from "./quick-add-supplier-dialog";
-export {
+import {
   SupplierSelect,
   formatSupplierLabel,
   getSupplierTagsText,
@@ -40,6 +40,13 @@ export {
   findSupplierMatch,
 } from "./supplier-select";
 export { ProductSelect } from "./product-select";
+export {
+  SupplierSelect,
+  formatSupplierLabel,
+  getSupplierTagsText,
+  cleanSupplierName,
+  findSupplierMatch,
+};
 export {
   PoClientSelect,
   QuotationSelect,
@@ -373,8 +380,8 @@ export function SearchableSelect({
 }) {
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
-  const list = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
-  const displayLabel = options.find((o) => o === value || (value && value !== "-" && (o.startsWith(`${value} -`) || o.startsWith(`${value} ·`) || o.startsWith(`${value} (`)))) || value;
+  const list = (options || []).filter((o) => typeof o === "string" && o.toLowerCase().includes(q.toLowerCase()));
+  const displayLabel = (options || []).find((o) => typeof o === "string" && (o === value || (value && value !== "-" && (o.startsWith(`${value} -`) || o.startsWith(`${value} ·`) || o.startsWith(`${value} (`))))) || value;
   return (
     <>
       <View className="flex-row items-center gap-1.5 w-full">
@@ -427,15 +434,16 @@ export function SearchableSelect({
             />
           </View>
           <ScrollView style={{ maxHeight: 320 }}>
-            {list.map((o) => {
-              const isSelected = o === value || (value && value !== "-" && (o.startsWith(`${value} -`) || o.startsWith(`${value} ·`) || o.startsWith(`${value} (`)));
+            {list.map((o, idx) => {
+              const str = String(o ?? "");
+              const isSelected = str === value || (value && value !== "-" && (str.startsWith(`${value} -`) || str.startsWith(`${value} ·`) || str.startsWith(`${value} (`)));
               return (
                 <Pressable
-                  key={o}
-                  onPress={() => { onChange(o); setOpen(false); }}
+                  key={`${str}-${idx}`}
+                  onPress={() => { onChange(str); setOpen(false); }}
                   className="active:bg-panel hover:bg-panel min-h-[44px] flex-row items-center justify-between rounded-lg px-3"
                 >
-                  <Text className={cn("flex-1 text-sm", isSelected && "font-semibold text-primary")}>{o}</Text>
+                  <Text className={cn("flex-1 text-sm", isSelected && "font-semibold text-primary")}>{str}</Text>
                   {isSelected ? <Check size={16} color={colors.primary} /> : null}
                 </Pressable>
               );

@@ -384,7 +384,7 @@ function DamageReportExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Pr
 
 function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promise<void> | void }) {
   const router = useRouter();
-  const { data, addRow, patchRow, reload, toast } = useApp();
+  const { data, user, addRow, patchRow, reload, toast } = useApp();
 
   const cleanQuoNum = String(row.penawaran || "").split(" - ")[0]?.trim().toLowerCase();
   const linkedQuotation = (data.quotations ?? []).find(
@@ -1271,6 +1271,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         )}
       </Panel>
 
+      {user?.role !== "sales" ? (
       <Panel
         title={`Faktur Penjualan / Invoice Keluar Terkait (${linkedInvoices.length})`}
         subtitle="Alur Penagihan SO: Bisa Langsung Lunas (Walk-in / Nota Tunai-Transfer), Pembayaran Tempo (Notif Finance saat Jatuh Tempo), atau DP → Pelunasan"
@@ -1318,6 +1319,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
           ))
         )}
       </Panel>
+      ) : null}
 
       {linkedProjects.length > 0 ? (
         <Panel title={`Project Terkait (${linkedProjects.length})`}>
