@@ -134,7 +134,7 @@ export function ProjectExtras({ row }: { row: Row }) {
 
   const normalizedRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
   const canViewBoqPricing = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
-  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
+  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "sales", "admin"].includes(normalizedRole);
   const canManageInvoice = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
 
   const [quotationDetail, setQuotationDetail] = React.useState<any>(null);
