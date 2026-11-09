@@ -615,7 +615,10 @@ export function adaptRow(module: string, raw: any): Row {
         soFile: raw.soFile ?? null,
         items: Array.isArray(raw.items) ? raw.items : [],
         catatan: raw.notes ?? raw.catatan ?? "",
-        projectId: raw.projectId ?? null,
+        lead: raw.quotation?.lead?.name ?? raw.lead?.name ?? "-",
+        leadId: raw.quotation?.leadId ?? idOf(raw.lead) ?? null,
+        project: nameOf(raw.project) || raw.projectName || "-",
+        projectId: raw.projectId ?? idOf(raw.project) ?? null,
         projectName: raw.projectName ?? null,
       };
     }
@@ -699,9 +702,12 @@ export function adaptRow(module: string, raw: any): Row {
         po: raw.clientPo?.number ?? "-",
         clientPoId: idOf(raw.clientPo),
         quotation: qNum ?? "",
+        penawaran: qNum ?? "",
         quotationId: qId ?? null,
         lead: leadName,
         leadId: leadId ? String(leadId) : null,
+        project: nameOf(raw.project) || (raw.projectName ? raw.projectName : "-"),
+        projectId: idOf(raw.project) ?? null,
         paymentNote: isPartial ? "dp setengah bayar sebagian dp termin" : "",
         customer:
           nameOf(raw.customer) ||
@@ -726,8 +732,6 @@ export function adaptRow(module: string, raw: any): Row {
         jatuhTempo: d(raw.dueDate),
         status: displayStatus,
         tanggal: d(raw.date),
-        projectId: idOf(raw.project),
-        project: nameOf(raw.project) ?? "",
         fileId: raw.fileId ?? null,
         file: raw.file ?? null,
         fileName: raw.fileName ?? raw.file?.originalName ?? null,
@@ -2831,6 +2835,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   } else if (module === "surveys") {
     if (patch.status !== undefined) out.status = toEnum("surveys", patch.status) || patch.status;
     if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);
+    if (patch.leadId !== undefined) out.leadId = patch.leadId ? Number(patch.leadId) : undefined;
+    if (patch.lead !== undefined) {
+      const lId = patch.lead && patch.lead !== "-" ? findId(db?.leads, patch.lead) : null;
+      if (lId) out.leadId = lId;
+    }
   } else if (module === "projects") {
     if (patch.jenis !== undefined) out.type = toEnum("projectType", patch.jenis);
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
@@ -2888,6 +2897,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.penawaran !== undefined) {
       out.quotationId = patch.penawaran && patch.penawaran !== "-" ? findId(db?.quotations, patch.penawaran) : null;
     }
+    if (patch.quotationId !== undefined) out.quotationId = patch.quotationId ? Number(patch.quotationId) : null;
+    if (patch.leadId !== undefined) out.leadId = patch.leadId ? Number(patch.leadId) : null;
+    if (patch.lead !== undefined) out.leadId = patch.lead && patch.lead !== "-" ? findId(db?.leads, patch.lead) : null;
+    if (patch.projectId !== undefined) out.projectId = patch.projectId ? Number(patch.projectId) : null;
+    if (patch.project !== undefined) out.projectId = patch.project && patch.project !== "-" ? findId(db?.projects, patch.project) : null;
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);
     if (patch.nomorSo !== undefined) out.soNumber = patch.nomorSo;
     if (patch.nomorPoClient !== undefined) {
@@ -2914,6 +2928,19 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
   } else if (module === "invoices") {
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.po !== undefined) {
+      out.clientPoId = patch.po && patch.po !== "-" ? findId(db?.["po-client"], patch.po) : null;
+    }
+    if (patch.clientPoId !== undefined) out.clientPoId = patch.clientPoId ? Number(patch.clientPoId) : null;
+    if (patch.penawaran !== undefined || patch.quotation !== undefined) {
+      const qVal = patch.penawaran ?? patch.quotation;
+      out.quotationId = qVal && qVal !== "-" ? findId(db?.quotations, qVal) : null;
+    }
+    if (patch.quotationId !== undefined) out.quotationId = patch.quotationId ? Number(patch.quotationId) : null;
+    if (patch.project !== undefined) {
+      out.projectId = patch.project && patch.project !== "-" ? findId(db?.projects, patch.project) : null;
+    }
+    if (patch.projectId !== undefined) out.projectId = patch.projectId ? Number(patch.projectId) : null;
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);
     if (patch.ppn !== undefined) out.ppn = num(patch.ppn);
     if (patch.pph !== undefined) out.pph = num(patch.pph);
@@ -3053,6 +3080,9 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.paymentProofFileId !== undefined) out.paymentProofFileId = patch.paymentProofFileId ? Number(patch.paymentProofFileId) : null;
     if (patch.fundingSource !== undefined) out.fundingSource = patch.fundingSource;
     if (patch.paymentStatus !== undefined) out.paymentStatus = patch.paymentStatus;
+    if (patch.jatuhTempo !== undefined || patch.dueDate !== undefined) {
+      out.dueDate = patch.jatuhTempo ?? patch.dueDate;
+    }
   } else if (module === "receiving") {
     if (patch.status !== undefined) out.status = toEnum("receiving", patch.status) || patch.status;
     if (patch.requestId !== undefined) out.requestId = patch.requestId ? Number(patch.requestId) : null;

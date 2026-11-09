@@ -470,6 +470,25 @@ export class PosService {
     }
     const total = dto.total ?? resolvedItems.reduce((s, i) => s + i.qty * i.price, 0);
 
+    let isAutoApprovedFromPr = false;
+    if (dto.requestId) {
+      const parentPr = await this.prisma.main.purchaseRequest.findUnique({
+        where: { id: dto.requestId },
+        select: { id: true, status: true },
+      });
+      if (
+        parentPr &&
+        ["DISETUJUI", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBAYAR"].includes(parentPr.status)
+      ) {
+        isAutoApprovedFromPr = true;
+      }
+    }
+
+    const targetStatus =
+      dto.status === "DISETUJUI" || isAutoApprovedFromPr
+        ? "DISETUJUI"
+        : ((dto.status as any) ?? "MENUNGGU_PERSETUJUAN");
+
     const row = await this.prisma.main.supplierPO.create({
       data: {
         number,
@@ -480,7 +499,7 @@ export class PosService {
         eta: dto.eta ? new Date(dto.eta) : undefined,
         paymentTerms: dto.paymentTerms,
         total,
-        status: (dto.status as any) ?? "MENUNGGU_PERSETUJUAN",
+        status: targetStatus,
         shipmentStatus: dto.shipmentStatus ?? "DI_SUPPLIER",
         fileId: dto.fileId,
         doFileId: dto.doFileId,
@@ -551,13 +570,15 @@ export class PosService {
       entityId: row.id,
       detail: `${number} — ${supplier.name} Rp${total}`,
     });
-    await this.notifications.notify({
-      roles: ["FINANCE"],
-      kind: "APPROVAL",
-      text: `PO supplier menunggu persetujuan: ${number} (Rp${total})`,
-      href: `/procurement/po/${row.id}`,
-    });
-    await this.approvals.request({
+    if (targetStatus !== "DISETUJUI") {
+      await this.notifications.notify({
+        roles: ["FINANCE"],
+        kind: "APPROVAL",
+        text: `PO supplier menunggu persetujuan: ${number} (Rp${total})`,
+        href: `/procurement/po/${row.id}`,
+      });
+    }
+    const approval = await this.approvals.request({
       kind: "SUPPLIER_PO",
       entityId: row.id,
       title: `PO supplier ${number}`,
@@ -565,6 +586,17 @@ export class PosService {
       requestedBy: user,
       href: `/procurement/po/${row.id}`,
     });
+    if (targetStatus === "DISETUJUI") {
+      await this.prisma.main.approval.update({
+        where: { id: approval.id },
+        data: { status: "DISETUJUI" },
+      }).catch(() => {});
+      await this.prisma.main.approvalStep.updateMany({
+        where: { approvalId: approval.id },
+        data: { status: "DISETUJUI", decidedById: user.id, decidedAt: new Date() },
+      }).catch(() => {});
+      this.notifications.dataChange("approvals", "update", approval.id);
+    }
 
     if (dto.requestId) {
       await this.prisma.main.purchaseRequest.updateMany({

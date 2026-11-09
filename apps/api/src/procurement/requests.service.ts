@@ -566,10 +566,8 @@ export class RequestsService {
     const isMarkingPaid =
       dto.status === "DIBAYAR" ||
       (dto as any).status === "Lunas" ||
-      dto.status === "DISETUJUI" ||
-      dto.status === "DITERIMA" ||
-      !!dto.paymentProofFileId ||
-      dto.paymentStatus === "DIBAYAR";
+      dto.paymentStatus === "DIBAYAR" ||
+      Boolean(dto.paymentProofFileId);
     const paidTag = dto.fundingSource
       ? `[DIBAYAR:${dto.fundingSource}]`
       : "[DIBAYAR]";
@@ -577,16 +575,29 @@ export class RequestsService {
     const allConsumables = row.items.length > 0 && row.items.every((it) => !!it.customName);
 
     // Jika request barang project dibayar / disetujui / diterima, masukkan barang non-master/pakai habis ke Project Requirement (Barang Tambahan Project)
-    if (isMarkingPaid && row.projectId) {
+    const shouldSyncConsumables =
+      isMarkingPaid ||
+      dto.status === "DISETUJUI" ||
+      dto.status === "DITERIMA" ||
+      row.status === "DISETUJUI" ||
+      row.status === "DITERIMA";
+
+    if (shouldSyncConsumables && row.projectId) {
       await this.syncConsumablesToProject(id);
     }
 
     const targetStatus =
-      (allConsumables || row.otherNote?.includes("[ALL_CONSUMABLES]")) && isMarkingPaid
-        ? "DITERIMA"
-        : row.status === "DITERIMA" && (dto.status === "DIBAYAR" || (dto as any).status === "Lunas")
+      row.status === "DITERIMA" && (dto.status === "DIBAYAR" || (dto as any).status === "Lunas")
         ? "DITERIMA"
         : (dto.status === "Lunas" ? "DIBAYAR" : dto.status);
+
+    // Bersihkan tag [DIBAYAR] bila status diubah ke DISETUJUI dan belum pernah ada bukti bayar
+    let cleanOtherNote = row.otherNote;
+    if (dto.status === "DISETUJUI" && !isMarkingPaid && !dto.paymentProofFileId && !row.paymentProofFileId) {
+      cleanOtherNote = row.otherNote
+        ? row.otherNote.replace(/\[DIBAYAR(?::[^\]]+)?\]\s*/g, "").trim() || null
+        : null;
+    }
 
     let updated: any;
     try {
@@ -594,12 +605,16 @@ export class RequestsService {
         where: { id },
         data: {
           status: targetStatus as never,
-          paymentStatus: isMarkingPaid ? "DIBAYAR" : ((dto as any).paymentStatus ?? row.paymentStatus),
+          paymentStatus: isMarkingPaid
+            ? "DIBAYAR"
+            : (dto as any).paymentStatus ?? (dto.status === "DISETUJUI" && !row.paymentProofFileId ? "BELUM_DIBAYAR" : row.paymentStatus),
           rejectReason: dto.reason ?? row.rejectReason,
           ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
           ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
           ...(isMarkingPaid && !row.otherNote?.includes("[DIBAYAR")
             ? { otherNote: row.otherNote ? `${paidTag} ${row.otherNote}` : paidTag }
+            : dto.status === "DISETUJUI" && !isMarkingPaid
+            ? { otherNote: cleanOtherNote }
             : {}),
         },
         include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
@@ -744,6 +759,7 @@ export class RequestsService {
               let p = await this.prisma.main.product.findFirst({
                 where: { name: { equals: it.customName } },
               });
+              let wasCreated = false;
               if (!p) {
                 // Deteksi apakah user menandai ber-SN atau nama barang mengindikasikan barang elektronik/kamera
                 const isSnItem = (it as any).hasSerial !== undefined
@@ -760,10 +776,18 @@ export class RequestsService {
                     status: "AKTIF",
                   },
                 });
+                wasCreated = true;
               }
               pId = p.id;
+              if (wasCreated) {
+                this.notifications.dataChange("products", "create", p.id);
+              }
             }
             if (pId) {
+              await this.prisma.main.purchaseRequestItem.update({
+                where: { id: it.id },
+                data: { productId: pId },
+              }).catch(() => {});
               const itemQty = Math.max(1, Number(it.qty) || 1);
               recItems.push({
                 productId: pId,
@@ -858,6 +882,45 @@ export class RequestsService {
         href: `/requests/${id}`,
       });
     }
+
+    if (dto.status === "DISETUJUI") {
+      try {
+        const apprv = await this.prisma.main.approval.findUnique({
+          where: { kind_entityId: { kind: "PURCHASE_REQUEST", entityId: id } },
+        });
+        if (apprv && apprv.status === "MENUNGGU") {
+          await this.prisma.main.approval.update({
+            where: { id: apprv.id },
+            data: { status: "DISETUJUI" },
+          });
+          await this.prisma.main.approvalStep.updateMany({
+            where: { approvalId: apprv.id, status: "MENUNGGU" },
+            data: { status: "DISETUJUI", decidedById: user.id, decidedAt: new Date() },
+          });
+          this.notifications.dataChange("approvals", "update", apprv.id);
+        }
+      } catch {}
+    } else if (dto.status === "DITOLAK") {
+      try {
+        const apprv = await this.prisma.main.approval.findUnique({
+          where: { kind_entityId: { kind: "PURCHASE_REQUEST", entityId: id } },
+        });
+        if (apprv && apprv.status === "MENUNGGU") {
+          await this.prisma.main.approval.update({
+            where: { id: apprv.id },
+            data: { status: "DITOLAK", reason: dto.reason ?? null },
+          });
+          await this.prisma.main.approvalStep.updateMany({
+            where: { approvalId: apprv.id, status: "MENUNGGU" },
+            data: { status: "DITOLAK", decidedById: user.id, decidedAt: new Date(), reason: dto.reason ?? null },
+          });
+          this.notifications.dataChange("approvals", "update", apprv.id);
+        }
+      } catch {}
+    }
+
+    this.notifications.dataChange("purchase-requests", "status", id);
+    this.notifications.dataChange("purchase-requests", "update", id);
 
     return updated;
   }

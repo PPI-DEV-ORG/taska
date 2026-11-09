@@ -10,7 +10,7 @@ import { Panel, FormField } from "@/components/taska/basics";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
-import { rupiah } from "@/lib/format";
+import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { toEnum } from "@/services/adapters";
 import { SearchableSelect, DatePicker, QuickAddSupplierDialog, SupplierSelect } from "@/components/taska/dialogs";
@@ -25,7 +25,7 @@ export function PurchaseRequestExtras({
   onRefresh?: () => Promise<void> | void;
 }) {
   const router = useRouter();
-  const { user, data, addRow, patchRow, setStatus, decide, toast, reload } = useApp();
+  const { user, data, addRow, patchRow, setStatus, decide, toast, reload, approvals } = useApp();
   const [rejectOpen, setRejectOpen] = React.useState(false);
   const [rejectReason, setRejectReason] = React.useState("");
   const [confirmSendOpen, setConfirmSendOpen] = React.useState(false);
@@ -175,7 +175,13 @@ export function PurchaseRequestExtras({
 
   const items: any[] = React.useMemo(() => (Array.isArray(row.items) ? row.items : []), [row.items]);
   const stockInfo: any[] = React.useMemo(() => (Array.isArray(row.stock) ? row.stock : []), [row.stock]);
-  const approval = row.approval;
+  const approval =
+    row.approval ??
+    approvals.find(
+      (a) =>
+        a.module === "purchase-requests" &&
+        String(a.refId) === String(row.id),
+    );
   const isPendingApproval = approval?.status === "Menunggu" && !isApproved;
 
   // Check if all items have sufficient warehouse stock
@@ -229,7 +235,7 @@ export function PurchaseRequestExtras({
     );
     const defaultEta = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0] || "";
     setPoEta(defaultEta);
-    setPoTotal(String(row.estimasi || ""));
+    setPoTotal(row.estimasi ? formatThousands(row.estimasi) : "");
     setCreatePoOpen(true);
   }
 
@@ -254,7 +260,8 @@ export function PurchaseRequestExtras({
 
     setLoading(true);
     try {
-      const targetTotal = Number(poTotal) || row.estimasi || 0;
+      const cleanPoTotal = Number(String(poTotal).replace(/\./g, "").replace(/,/g, ".")) || 0;
+      const targetTotal = cleanPoTotal || row.estimasi || 0;
       const prPpnMode: "none" | "exclude" | "include" =
         row.ppnMode === "exclude" || row.ppnMode === "include"
           ? row.ppnMode
@@ -280,7 +287,7 @@ export function PurchaseRequestExtras({
         ppn: poPpnVal,
         ppnMode: prPpnMode,
         eta: poEta || undefined,
-        status: isPaid ? "Lunas" : isDiterima ? "Sampai" : isDikirim ? "Dikirim" : "Menunggu persetujuan",
+        status: isPaid ? "Lunas" : isDiterima ? "Sampai" : isDikirim ? "Dikirim" : (isApproved ? "Disetujui" : "Menunggu persetujuan"),
       });
       if (created) {
         setCreatePoOpen(false);
@@ -308,8 +315,15 @@ export function PurchaseRequestExtras({
     setLoading(true);
     try {
       setLocalStatus("DISETUJUI");
-      if (approval?.id && isPendingApproval) {
-        try { await decide(approval.id, "Disetujui"); } catch {}
+      const apprv =
+        approval ??
+        approvals.find(
+          (a) =>
+            a.module === "purchase-requests" &&
+            String(a.refId) === String(row.id),
+        );
+      if (apprv?.id && (apprv.status === "Menunggu" || isPendingApproval)) {
+        try { await decide(apprv.id, "Disetujui"); } catch {}
       }
       await setStatus("purchase-requests", row.id, "Disetujui");
       toast("Request barang berhasil disetujui");
@@ -368,11 +382,8 @@ export function PurchaseRequestExtras({
     }
     setLoading(true);
     try {
-      const isProjectConsumableRequest =
-        isProject &&
-        (items.some((it: any) => it.customName) || String(row.otherNote || "").includes("[ALL_CONSUMABLES]"));
-      const nextStatus = isProjectConsumableRequest ? "Diterima" : (isDebt ? "Lunas" : "Dibayar");
-      setLocalStatus(isProjectConsumableRequest ? "DITERIMA" : (isDebt ? "LUNAS" : "DIBAYAR"));
+      const nextStatus = isDebt ? "Lunas" : "Dibayar";
+      setLocalStatus(isDebt ? "LUNAS" : "DIBAYAR");
       await setStatus("purchase-requests", row.id, nextStatus, undefined, {
         paymentProofFileId,
         fundingSource: selectedFundingSource,
@@ -385,11 +396,9 @@ export function PurchaseRequestExtras({
       }
       setPayModalOpen(false);
       toast(
-        isProjectConsumableRequest
-          ? "Pembayaran dikonfirmasi! Material khusus project otomatis ditambahkan ke Barang Tambahan Project dan pengadaan selesai."
-          : (isDebt
-              ? "Request & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!"
-              : "Pembayaran kas berhasil dicatat. Status request menjadi Dibayar. Procurement dapat menandai barang dikirim.")
+        isDebt
+          ? "Request & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!"
+          : "Pembayaran kas berhasil dicatat. Status request menjadi Dibayar. Procurement dapat menandai barang dikirim."
       );
       if (onRefresh) await onRefresh();
       await reload();
@@ -582,6 +591,23 @@ export function PurchaseRequestExtras({
             );
           })}
         </View>
+        {(row.dueDate || row.jatuhTempo) && (row.dueDate !== "-" && row.jatuhTempo !== "-") ? (
+          <View className="mt-3 pt-2.5 border-t border-border/60 flex-row flex-wrap items-center justify-between gap-2">
+            <View className="flex-row items-center gap-1.5">
+              <Calendar size={14} color={colors.warning} />
+              <Text className="text-xs text-muted-foreground font-medium">Jatuh Tempo Pembayaran:</Text>
+              <Text className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                {row.jatuhTempo || row.dueDate}
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-1">
+              <Clock size={13} color={colors.muted} />
+              <Text className="text-[11px] text-muted-foreground">
+                Metode: {row.metodePembayaran || "Tempo"}
+              </Text>
+            </View>
+          </View>
+        ) : null}
       </Panel>
 
       {/* ─── PROMINENT STATUS ALERT BANNER ─── */}
@@ -1548,9 +1574,9 @@ export function PurchaseRequestExtras({
             <FormField label="Total Nilai PO (Rp)" required hint="Nominal tagihan estimasi PO">
               <Input
                 value={poTotal}
-                onChangeText={setPoTotal}
+                onChangeText={(v) => setPoTotal(formatThousands(v))}
                 keyboardType="numeric"
-                placeholder="Contoh: 10000000"
+                placeholder="Contoh: 10.000.000"
               />
             </FormField>
           </View>

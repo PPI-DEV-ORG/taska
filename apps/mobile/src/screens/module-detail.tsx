@@ -7,6 +7,15 @@ import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } from "@/components/taska/basics";
 import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
+import {
+  LeadSelect,
+  ProjectSelect,
+  QuotationSelect,
+  PoClientSelect,
+  SurveySelect,
+  PocSelect,
+  VisitSelect,
+} from "@/components/taska/document-select";
 import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { ModuleExtras } from "@/screens/module-extras";
@@ -104,7 +113,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       ...(rowFromStore.amount !== undefined ? { amount: rowFromStore.amount } : {}),
       ...(rowFromStore.ppn !== undefined ? { ppn: rowFromStore.ppn } : {}),
       ...(rowFromStore.pph !== undefined ? { pph: rowFromStore.pph } : {}),
-      ...(rowFromStore.status ? { status: rowFromStore.status } : {}),
+      ...(rowFromStore.status ? { status: rowFromStore.status, rawStatus: toEnum(moduleKey, rowFromStore.status) || rowFromStore.status } : {}),
       ...(rowFromStore.pengiriman ? { pengiriman: rowFromStore.pengiriman } : {}),
       ...(rowFromStore.shipmentStatus ? { shipmentStatus: rowFromStore.shipmentStatus } : {}),
     };
@@ -159,8 +168,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       if (moduleKey === "supplier-pos" && f.key === "item" && rawVal) {
         rawVal = String(rawVal).replace(/\s*x\s*\d+.*$/, "").trim();
       }
-      if (moduleKey === "expenses" && (f.key === "pocReport" || f.key === "poc")) {
-        const pId = r.pocReportId;
+      if (f.key === "pocReport" || f.key === "poc" || f.key === "pocId" || f.key === "pocReportId") {
+        const pId = r.pocReportId ?? r.pocId;
         const pocList = (data?.["poc-reports"] ?? []);
         const match = pocList.find(
           (p: any) =>
@@ -175,19 +184,75 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           return `POC ${match.nomor || match.number} - ${match.judul || match.title}`;
         }
       }
-      if (moduleKey === "expenses" && f.key === "survey" && r.surveyId != null) {
-        const match = (data?.surveys ?? []).find((s: any) => String(s.id) === String(r.surveyId));
+      if (f.key === "survey" || f.key === "surveyId") {
+        const sId = r.surveyId;
+        const match = (data?.surveys ?? []).find(
+          (s: any) =>
+            (sId != null && String(s.id) === String(sId)) ||
+            (rawVal && rawVal !== "-" && (
+              String(s.id) === String(rawVal) ||
+              `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}` === rawVal
+            ))
+        );
         if (match) {
           return `Survey #${match.id} - ${match.lead || match.customer || match.lokasi || "Survey"}`;
         }
       }
-      if (moduleKey === "expenses" && f.key === "project" && r.projectId != null) {
-        const match = (data?.projects ?? []).find((p: any) => String(p.id) === String(r.projectId));
+      if (f.key === "project" || f.key === "projectId") {
+        const pId = r.projectId;
+        const match = (data?.projects ?? []).find(
+          (p: any) => (pId != null && String(p.id) === String(pId)) || (rawVal && rawVal !== "-" && (p.nama === rawVal || p.name === rawVal))
+        );
         if (match) {
-          return String(match.nama);
+          return String(match.nama || match.name);
         }
       }
-      if (f.key === "lead") {
+      if (f.key === "penawaran" || f.key === "quotation" || f.key === "quotationId") {
+        const qId = r.quotationId;
+        const match = (data?.quotations ?? []).find(
+          (q: any) =>
+            (qId != null && String(q.id) === String(qId)) ||
+            (rawVal && rawVal !== "-" && (
+              q.nomor === rawVal ||
+              q.number === rawVal ||
+              `${q.nomor} - ${q.customer || "-"} - ${q.lead || q.nama || "-"}` === rawVal
+            ))
+        );
+        if (match) {
+          return `${match.nomor || match.number} - ${match.customer || "-"} - ${match.lead || match.nama || "-"}`;
+        }
+      }
+      if (f.key === "po" || f.key === "clientPo" || f.key === "clientPoId") {
+        const poId = r.clientPoId;
+        const match = (data?.["po-client"] ?? []).find(
+          (p: any) =>
+            (poId != null && String(p.id) === String(poId)) ||
+            (rawVal && rawVal !== "-" && (
+              p.nomor === rawVal ||
+              p.nomorPoClient === rawVal ||
+              p.number === rawVal
+            ))
+        );
+        if (match) {
+          return match.nomor || match.number || match.nomorPoClient || "";
+        }
+      }
+      if (f.key === "visitReport" || f.key === "visit" || f.key === "visitId" || f.key === "visitReportId") {
+        const vId = r.visitReportId ?? r.visitId;
+        const match = (data?.["visit-reports"] ?? []).find(
+          (v: any) =>
+            (vId != null && String(v.id) === String(vId)) ||
+            (rawVal && rawVal !== "-" && (
+              v.nomor === rawVal ||
+              v.number === rawVal ||
+              `VISIT ${v.nomor || v.number} - ${v.judul || v.title}` === rawVal
+            ))
+        );
+        if (match) {
+          return `VISIT ${match.nomor || match.number} - ${match.judul || match.title}`;
+        }
+      }
+      if (f.key === "lead" || f.key === "leadId") {
         const lId = r.leadId;
         const match = (data?.leads ?? []).find(
           (l: any) =>
@@ -433,6 +498,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       }
       patch.supplier = cleanSupp;
     }
+
+    if (edits.leadId !== undefined) patch.leadId = edits.leadId;
+    if (edits.projectId !== undefined) patch.projectId = edits.projectId;
+    if (edits.quotationId !== undefined) patch.quotationId = edits.quotationId;
+    if (edits.clientPoId !== undefined) patch.clientPoId = edits.clientPoId;
+    if (edits.surveyId !== undefined) patch.surveyId = edits.surveyId;
+    if (edits.pocReportId !== undefined) patch.pocReportId = edits.pocReportId;
+    if (edits.visitReportId !== undefined) patch.visitReportId = edits.visitReportId;
 
     setSaving(true);
     try {
@@ -888,8 +961,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 : undefined
             }
             financeOk={(approval as any).financeOk}
-            onApprove={() => decide(approval!.id, "Disetujui")}
-            onReject={(r) => decide(approval!.id, "Ditolak", r)}
+            onApprove={async () => {
+              await decide(approval!.id, "Disetujui");
+              await handleRefresh();
+            }}
+            onReject={async (r) => {
+              await decide(approval!.id, "Ditolak", r);
+              await handleRefresh();
+            }}
           />
         ) : null}
 
@@ -993,25 +1072,165 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                         error={errs[f.key]}
                       >
                         {f.type === "select" ? (
-                          <SearchableSelect
-                            value={getFieldValue(f)}
-                            onAddNew={
-                              (f.key === "customer" || f.key === "perusahaan" || f.key === "customerId" || String(f.label || "").toLowerCase().includes("customer"))
-                                ? () => setQuickCustomerKey(f.key)
-                                : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
-                                ? () => setQuickSupplierKey(f.key)
-                                : undefined
-                            }
-                            addNewLabel={
-                              (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
-                                ? "+ Tambah Supplier Baru"
-                                : "+ Tambah Customer Baru"
-                            }
-                            onChange={(v) => setFieldValue(f.key, v)}
-                            options={getDynamicOptions(f, data, def.key, fallbackUsers) ?? []}
-                            placeholder={`Pilih ${f.label.toLowerCase()}`}
-                            error={!!errs[f.key]}
-                          />
+                          (f.key === "lead" || f.key === "leadId") ? (
+                            <LeadSelect
+                              value={getFieldValue(f)}
+                              leadId={edits.leadId ?? row.leadId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onChange={(lead) => {
+                                if (!lead) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("leadId", null);
+                                  return;
+                                }
+                                const name = lead.nama || lead.name || "";
+                                const comp = lead.perusahaan || lead.customer || "";
+                                const lbl = comp ? `${name} · ${comp}` : name;
+                                setFieldValue(f.key, lbl);
+                                setFieldValue("leadId", lead.id);
+                                if (lead.customer && (!edits.customer && !row.customer)) {
+                                  setFieldValue("customer", lead.customer);
+                                }
+                              }}
+                            />
+                          ) : (f.key === "project" || f.key === "projectId") ? (
+                            <ProjectSelect
+                              value={getFieldValue(f)}
+                              projectId={edits.projectId ?? row.projectId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onChange={(proj) => {
+                                if (!proj) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("projectId", null);
+                                  return;
+                                }
+                                setFieldValue(f.key, proj.nama || proj.name || "");
+                                setFieldValue("projectId", proj.id);
+                                if (proj.customer && (!edits.customer && !row.customer)) {
+                                  setFieldValue("customer", proj.customer);
+                                }
+                              }}
+                            />
+                          ) : (f.key === "penawaran" || f.key === "quotation" || f.key === "quotationId") ? (
+                            <QuotationSelect
+                              value={getFieldValue(f)}
+                              quotationId={edits.quotationId ?? row.quotationId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onChange={(quote) => {
+                                if (!quote) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("quotationId", null);
+                                  return;
+                                }
+                                const lbl = `${quote.nomor || quote.number} - ${quote.customer || "-"} - ${quote.lead || quote.nama || "-"}`;
+                                setFieldValue(f.key, lbl);
+                                setFieldValue("quotationId", quote.id);
+                                if (quote.customer && (!edits.customer && !row.customer)) {
+                                  setFieldValue("customer", quote.customer);
+                                }
+                              }}
+                            />
+                          ) : (f.key === "po" || f.key === "clientPo" || f.key === "clientPoId") ? (
+                            <PoClientSelect
+                              value={getFieldValue(f)}
+                              poId={edits.clientPoId ?? row.clientPoId}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onChange={(po) => {
+                                if (!po) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("clientPoId", null);
+                                  return;
+                                }
+                                const lbl = po.nomor || po.number || po.nomorPoClient || "";
+                                setFieldValue(f.key, lbl);
+                                setFieldValue("clientPoId", po.id);
+                                if (po.customer && (!edits.customer && !row.customer)) {
+                                  setFieldValue("customer", po.customer);
+                                }
+                              }}
+                            />
+                          ) : (f.key === "survey" || f.key === "surveyId") ? (
+                            <SurveySelect
+                              value={getFieldValue(f)}
+                              surveyId={edits.surveyId ?? row.surveyId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onChange={(survey) => {
+                                if (!survey) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("surveyId", null);
+                                  return;
+                                }
+                                const lbl = `Survey #${survey.id} - ${survey.lead || survey.customer || survey.lokasi || "Survey"}`;
+                                setFieldValue(f.key, lbl);
+                                setFieldValue("surveyId", survey.id);
+                              }}
+                            />
+                          ) : (f.key === "pocReport" || f.key === "poc" || f.key === "pocId" || f.key === "pocReportId") ? (
+                            <PocSelect
+                              value={getFieldValue(f)}
+                              pocId={edits.pocReportId ?? edits.pocId ?? row.pocReportId ?? row.pocId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onChange={(poc) => {
+                                if (!poc) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("pocReportId", null);
+                                  return;
+                                }
+                                const lbl = `POC ${poc.nomor || poc.number} - ${poc.judul || poc.title}`;
+                                setFieldValue(f.key, lbl);
+                                setFieldValue("pocReportId", poc.id);
+                              }}
+                            />
+                          ) : (f.key === "visitReport" || f.key === "visit" || f.key === "visitId" || f.key === "visitReportId") ? (
+                            <VisitSelect
+                              value={getFieldValue(f)}
+                              visitId={edits.visitReportId ?? edits.visitId ?? row.visitReportId ?? row.visitId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onChange={(visit) => {
+                                if (!visit) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("visitReportId", null);
+                                  return;
+                                }
+                                const lbl = `VISIT ${visit.nomor || visit.number} - ${visit.judul || visit.title}`;
+                                setFieldValue(f.key, lbl);
+                                setFieldValue("visitReportId", visit.id);
+                              }}
+                            />
+                          ) : (
+                            <SearchableSelect
+                              value={getFieldValue(f)}
+                              onAddNew={
+                                (f.key === "customer" || f.key === "perusahaan" || f.key === "customerId" || String(f.label || "").toLowerCase().includes("customer"))
+                                  ? () => setQuickCustomerKey(f.key)
+                                  : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
+                                  ? () => setQuickSupplierKey(f.key)
+                                  : undefined
+                              }
+                              addNewLabel={
+                                (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
+                                  ? "+ Tambah Supplier Baru"
+                                  : "+ Tambah Customer Baru"
+                              }
+                              onChange={(v) => setFieldValue(f.key, v)}
+                              options={getDynamicOptions(f, data, def.key, fallbackUsers) ?? []}
+                              placeholder={`Pilih ${f.label.toLowerCase()}`}
+                              error={!!errs[f.key]}
+                            />
+                          )
                         ) : f.type === "multiselect" ? (
                           <MultiSelect
                             values={(() => {
