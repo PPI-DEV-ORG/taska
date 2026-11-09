@@ -1074,12 +1074,36 @@ export class InvoiceOutService {
       });
       const physicalStock = balanceAgg._sum.qty ?? 0;
 
+      // Lepaskan reservasi usang yang unitnya sudah tidak di gudang (misal sudah DIKIRIM atau TERPASANG)
+      await this.prisma.main.stockReservation.updateMany({
+        where: {
+          productId: prodId,
+          releasedAt: null,
+          serialUnit: {
+            OR: [
+              { status: { in: ["DIKIRIM", "TERPASANG", "RUSAK", "RETUR"] } },
+              { warehouseId: null },
+            ],
+          },
+        },
+        data: { releasedAt: new Date() },
+      }).catch(() => {});
+
       const reservedAgg = await this.prisma.main.stockReservation.aggregate({
         where: {
           productId: prodId,
           releasedAt: null,
           invoice: { status: "PAID", id: { not: invoice.id } },
           ...(invoice.projectId ? { NOT: { projectId: invoice.projectId } } : {}),
+          OR: [
+            { serialUnitId: null },
+            {
+              serialUnit: {
+                status: { in: ["DI_GUDANG", "RESERVED"] },
+                warehouseId: { not: null },
+              },
+            },
+          ],
         },
         _sum: { qty: true },
       });

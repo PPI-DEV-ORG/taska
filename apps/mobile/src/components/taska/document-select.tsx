@@ -54,9 +54,10 @@ function formatDate(value: string | number | Date | null | undefined): string {
 export interface PoClientSelectProps {
   value?: string;
   poId?: string | number | null;
-  onChange: (po: Row) => void;
+  onChange: (po: Row | null) => void;
   placeholder?: string;
   error?: boolean;
+  allowClear?: boolean;
 }
 
 export function PoClientSelect({
@@ -65,6 +66,7 @@ export function PoClientSelect({
   onChange,
   placeholder = "Cari & pilih PO client (Sales Order)...",
   error,
+  allowClear = true,
 }: PoClientSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
@@ -110,7 +112,7 @@ export function PoClientSelect({
     });
   }, [poList, q]);
 
-  function handleSelect(p: Row) {
+  function handleSelect(p: Row | null) {
     onChange(p);
     setOpen(false);
   }
@@ -180,6 +182,18 @@ export function PoClientSelect({
 
                 {/* Rows */}
                 <ScrollView className="max-h-[50vh]" contentContainerClassName="divide-y divide-border/40">
+                  {allowClear && (
+                    <Pressable
+                      onPress={() => handleSelect(null)}
+                      className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
+                    >
+                      <Text className="text-xs font-medium text-muted-foreground">
+                        - Tanpa Sales Order (SO) -
+                      </Text>
+                      {(!poId && !value) && <Check size={16} color={colors.primary} />}
+                    </Pressable>
+                  )}
+
                   {filteredList.map((p) => {
                     const isSelected = selectedPo?.id === p.id;
                     const no = p.nomorSo || p.nomor || p.number || `SO #${p.id}`;
@@ -992,6 +1006,255 @@ export function ContinuableInvoiceSelect({
                       <Text className="text-sm font-semibold text-muted-foreground">
                         Tidak ada invoice acuan yang cocok dengan &quot;{q}&quot;
                       </Text>
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+            </ScrollView>
+          </View>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ==========================================
+// 4b. INVOICE (FAKTUR PENJUALAN) SELECT
+// ==========================================
+
+export interface InvoiceSelectProps {
+  value?: string;
+  invoiceId?: string | number | null;
+  onChange: (invoice: Row | null) => void;
+  placeholder?: string;
+  error?: boolean;
+  allowClear?: boolean;
+}
+
+export function InvoiceSelect({
+  value,
+  invoiceId,
+  onChange,
+  placeholder = "Cari & pilih invoice penjualan...",
+  error,
+  allowClear = true,
+}: InvoiceSelectProps) {
+  const { data } = useApp();
+  const [open, setOpen] = React.useState(false);
+  const [q, setQ] = React.useState("");
+
+  const invoices: Row[] = React.useMemo(() => {
+    return (data.invoices ?? []).filter((inv: Row) => inv.status !== "Batal" && inv.status !== "BATAL");
+  }, [data.invoices]);
+
+  const selectedInvoice = React.useMemo(() => {
+    if (invoiceId) {
+      const match = invoices.find((inv) => String(inv.id) === String(invoiceId));
+      if (match) return match;
+    }
+    if (value && value !== "-") {
+      const selNo = value.split(" — ")[0]?.split(" - ")[0]?.trim().toLowerCase();
+      return (
+        invoices.find((inv) => {
+          const no = String(inv.nomor || `INV #${inv.id}`).toLowerCase();
+          return no === selNo || `${no} - ${inv.customer || "-"}`.toLowerCase() === value.toLowerCase();
+        }) || null
+      );
+    }
+    return null;
+  }, [invoices, invoiceId, value]);
+
+  const displayLabel = React.useMemo(() => {
+    if (selectedInvoice) {
+      const no = selectedInvoice.nomor || `INV #${selectedInvoice.id}`;
+      return `${no} - ${selectedInvoice.customer || "-"}`;
+    }
+    return (value && value !== "-") ? value : "";
+  }, [selectedInvoice, value]);
+
+  const filteredList = React.useMemo(() => {
+    if (!q.trim()) return invoices;
+    const term = q.trim().toLowerCase();
+    return invoices.filter((inv) => {
+      const no = String(inv.nomor || `INV #${inv.id}`).toLowerCase();
+      const cust = String(inv.customer || "").toLowerCase();
+      const proj = String(inv.project || "").toLowerCase();
+      const note = String(inv.catatan || inv.notes || "").toLowerCase();
+      const jenis = String(inv.jenis || "").toLowerCase();
+      return no.includes(term) || cust.includes(term) || proj.includes(term) || note.includes(term) || jenis.includes(term);
+    });
+  }, [invoices, q]);
+
+  function handleSelect(inv: Row | null) {
+    onChange(inv);
+    setOpen(false);
+  }
+
+  return (
+    <>
+      <Pressable
+        onPress={() => {
+          setQ("");
+          setOpen(true);
+        }}
+        className={cn(
+          "bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3 w-full",
+          error && "border-danger"
+        )}
+      >
+        <View className="flex-1 mr-2 flex-row items-center gap-2">
+          <Receipt size={16} color={displayLabel ? colors.primary : colors.muted} />
+          <Text
+            className={cn("text-base md:text-sm flex-1", !displayLabel && "text-muted-foreground")}
+            numberOfLines={1}
+          >
+            {displayLabel || placeholder}
+          </Text>
+        </View>
+        <ChevronDown size={16} color={colors.muted} />
+      </Pressable>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          className="w-[96vw] max-w-5xl lg:max-w-6xl max-h-[90vh] p-4 sm:p-6"
+          style={Platform.select({ web: { width: "min(96vw, 1150px)", maxWidth: "1150px" } as any })}
+        >
+          <DialogHeader>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2">
+                <Receipt size={20} color={colors.primary} />
+                <DialogTitle>Pilih Invoice Penjualan</DialogTitle>
+              </View>
+            </View>
+          </DialogHeader>
+
+          {/* Search bar */}
+          <View className="bg-input border-border h-10 flex-row items-center gap-2 rounded-lg border px-3 mt-2">
+            <Search size={16} color={colors.muted} />
+            <Input
+              value={q}
+              onChangeText={setQ}
+              placeholder="Cari berdasarkan nomor invoice, customer, proyek, atau catatan..."
+              autoFocus
+              className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
+            />
+          </View>
+
+          {/* Table */}
+          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: "100%" }}>
+              <View className="flex-1 min-w-[760px]">
+                {/* Header */}
+                <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nomor Invoice & Jenis</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Customer & Proyek</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Total Tagihan</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2 text-center">Status Pembayaran</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
+                </View>
+
+                {/* Rows */}
+                <ScrollView className="max-h-[50vh]" contentContainerClassName="divide-y divide-border/40">
+                  {allowClear && (
+                    <Pressable
+                      onPress={() => handleSelect(null)}
+                      className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
+                    >
+                      <Text className="text-xs font-medium text-muted-foreground">
+                        - Tanpa Invoice Penjualan (Opsional) -
+                      </Text>
+                      {(!invoiceId && !value) && <Check size={16} color={colors.primary} />}
+                    </Pressable>
+                  )}
+
+                  {filteredList.map((inv) => {
+                    const isSelected = selectedInvoice?.id === inv.id;
+                    const no = inv.nomor || `INV #${inv.id}`;
+                    const tgl = inv.tanggal || inv.date || inv.createdAt || "";
+                    const totalVal = Number(inv.total || inv.nilai || 0);
+                    const terbayar = Number(inv.terbayar || 0);
+                    const sisa = Math.max(0, totalVal - terbayar);
+                    const itemCount = Array.isArray(inv.items) ? inv.items.length : 0;
+
+                    return (
+                      <Pressable
+                        key={inv.id}
+                        onPress={() => handleSelect(inv)}
+                        className={cn(
+                          "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
+                          isSelected && "bg-primary/10"
+                        )}
+                      >
+                        {/* Kolom 1 */}
+                        <View className="w-1/4 min-w-[180px]">
+                          <View className="flex-row items-center gap-1.5 flex-wrap">
+                            <Text className={cn("text-xs font-bold font-mono text-foreground", isSelected && "text-primary")}>
+                              {no}
+                            </Text>
+                            {inv.jenis ? (
+                              <View className="bg-primary/10 rounded px-1.5 py-0.5">
+                                <Text className="text-[10px] font-semibold text-primary">{inv.jenis}</Text>
+                              </View>
+                            ) : null}
+                          </View>
+                          {tgl ? (
+                            <View className="flex-row items-center gap-1 mt-0.5">
+                              <Calendar size={10} color={colors.muted} />
+                              <Text className="text-[11px] text-muted-foreground">{formatDate(tgl)}</Text>
+                            </View>
+                          ) : null}
+                          {itemCount > 0 ? (
+                            <Text className="text-[10px] text-muted-foreground mt-0.5">{itemCount} item barang/jasa</Text>
+                          ) : null}
+                        </View>
+
+                        {/* Kolom 2 */}
+                        <View className="w-1/4 min-w-[180px] px-2">
+                          <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
+                            {inv.customer || "-"}
+                          </Text>
+                          {inv.project && inv.project !== "-" ? (
+                            <Text className="text-[11px] text-muted-foreground mt-0.5" numberOfLines={1}>
+                              Proyek: {inv.project}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Kolom 3 */}
+                        <View className="w-36 text-right px-2 items-end">
+                          <Text className="text-xs font-bold text-foreground">
+                            {rupiah(totalVal)}
+                          </Text>
+                          {sisa > 0 && terbayar > 0 ? (
+                            <Text className="text-[10px] text-warning mt-0.5">
+                              Sisa: {rupiah(sisa)}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Kolom 4 */}
+                        <View className="flex-1 min-w-[140px] px-2 items-center justify-center">
+                          <StatusBadge status={inv.status || "Draf"} />
+                        </View>
+
+                        {/* Kolom 5 */}
+                        <View className="w-20 items-center justify-center">
+                          <Button
+                            size="sm"
+                            variant={isSelected ? "default" : "outline"}
+                            className="h-8 px-3"
+                            onPress={() => handleSelect(inv)}
+                          >
+                            <Text className="text-xs">{isSelected ? "Terpilih" : "Pilih"}</Text>
+                          </Button>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+
+                  {filteredList.length === 0 && (
+                    <View className="p-8 items-center justify-center">
+                      <Text className="text-xs text-muted-foreground">Tidak ada invoice yang sesuai pencarian.</Text>
                     </View>
                   )}
                 </ScrollView>

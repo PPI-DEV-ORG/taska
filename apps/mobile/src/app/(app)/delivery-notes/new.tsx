@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker } from "@/components/taska/dialogs";
+import { PoClientSelect, InvoiceSelect, ProjectSelect } from "@/components/taska/document-select";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
@@ -128,31 +129,8 @@ export default function NewDeliveryNoteScreen() {
         ? `Pengiriman Barang Invoice ${initialMatchInvoice.nomor || initialMatchInvoice.id}`
         : ""));
   const [selectedProject, setSelectedProject] = React.useState(() => (initialExistingDn?.project && initialExistingDn.project !== "-") ? initialExistingDn.project : "-");
-  const [selectedSoOptionState, setSelectedSoOption] = React.useState<string | null>(null);
-  const selectedSoOption = React.useMemo(() => {
-    if (selectedSoOptionState !== null) return selectedSoOptionState;
-    if (initialMatchSo) {
-      const soNum = (initialMatchSo.nomorSo && initialMatchSo.nomorSo !== "-") ? initialMatchSo.nomorSo : (initialMatchSo.nomor || `SO #${initialMatchSo.id}`);
-      const cust = initialMatchSo.customer && initialMatchSo.customer !== "-" ? ` — ${initialMatchSo.customer}` : "";
-      const physicalCount = (Array.isArray(initialMatchSo.items) ? initialMatchSo.items : []).filter((it: any) => !isServiceItem(it)).length;
-      const count = physicalCount > 0 ? ` (${physicalCount} barang)` : "";
-      return `${soNum}${cust}${count}`;
-    }
-    return "-";
-  }, [selectedSoOptionState, initialMatchSo]);
-
-  const [selectedInvoiceOptionState, setSelectedInvoiceOption] = React.useState<string | null>(null);
-  const selectedInvoiceOption = React.useMemo(() => {
-    if (selectedInvoiceOptionState !== null) return selectedInvoiceOptionState;
-    if (initialMatchInvoice) {
-      const invNum = initialMatchInvoice.nomor || `INV #${initialMatchInvoice.id}`;
-      const cust = initialMatchInvoice.customer && initialMatchInvoice.customer !== "-" ? ` — ${initialMatchInvoice.customer}` : "";
-      const physicalCount = (Array.isArray(initialMatchInvoice.items) ? initialMatchInvoice.items : []).filter((it: any) => !isServiceItem(it)).length;
-      const count = physicalCount > 0 ? ` (${physicalCount} barang)` : "";
-      return `${invNum}${cust}${count}`;
-    }
-    return "-";
-  }, [selectedInvoiceOptionState, initialMatchInvoice]);
+  const [selectedSoId, setSelectedSoId] = React.useState<string | number | null>(() => initialMatchSo?.id ?? initialExistingDn?.soId ?? initialExistingDn?.clientPoId ?? null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | number | null>(() => initialMatchInvoice?.id ?? initialExistingDn?.invoiceId ?? null);
 
   const [hasGoodsState, setHasGoods] = React.useState<boolean | null>(null);
   const hasGoods =
@@ -300,111 +278,53 @@ export default function NewDeliveryNoteScreen() {
   }, [poClient]);
 
   const selectedSo = React.useMemo(() => {
-    if (!selectedSoOption || selectedSoOption === "-") return null;
-    return (
-      soList.find((so: Row) => {
-        const soNum = (so.nomorSo && so.nomorSo !== "-") ? so.nomorSo : (so.nomor || `SO #${so.id}`);
-        return selectedSoOption.startsWith(soNum) || String(so.id) === selectedSoOption;
-      }) ?? null
-    );
-  }, [soList, selectedSoOption]);
-
-  const soOptions = React.useMemo(() => {
-    return [
-      "-",
-      ...soList.map((so: Row) => {
-        const soNum = (so.nomorSo && so.nomorSo !== "-") ? so.nomorSo : (so.nomor || `SO #${so.id}`);
-        const cust = so.customer && so.customer !== "-" ? ` — ${so.customer}` : "";
-        const physicalCount = (Array.isArray(so.items) ? so.items : []).filter((it: any) => !isServiceItem(it)).length;
-        const count = physicalCount > 0 ? ` (${physicalCount} barang)` : "";
-        return `${soNum}${cust}${count}`;
-      }),
-    ];
-  }, [soList]);
-
-  const invoiceOptions = React.useMemo(() => {
-    const list = data.invoices ?? [];
-    return [
-      "-",
-      ...list.map((inv: Row) => {
-        const invNum = inv.nomor || `INV #${inv.id}`;
-        const cust = inv.customer && inv.customer !== "-" ? ` — ${inv.customer}` : "";
-        const physicalCount = (Array.isArray(inv.items) ? inv.items : []).filter((it: any) => !isServiceItem(it)).length;
-        const count = physicalCount > 0 ? ` (${physicalCount} barang)` : "";
-        const statusText = inv.status ? ` [${inv.status}]` : "";
-        return `${invNum}${cust}${statusText}${count}`;
-      }),
-    ];
-  }, [data.invoices]);
+    if (!selectedSoId) return null;
+    return soList.find((so: Row) => String(so.id) === String(selectedSoId)) ?? null;
+  }, [soList, selectedSoId]);
 
   const selectedInvoice = React.useMemo(() => {
-    if (!selectedInvoiceOption || selectedInvoiceOption === "-") return null;
-    return (
-      (data.invoices ?? []).find((inv: Row) => {
-        const invNum = inv.nomor || `INV #${inv.id}`;
-        return selectedInvoiceOption.startsWith(invNum) || String(inv.id) === selectedInvoiceOption;
-      }) ?? null
-    );
-  }, [data.invoices, selectedInvoiceOption]);
+    if (!selectedInvoiceId) return null;
+    return (data.invoices ?? []).find((inv: Row) => String(inv.id) === String(selectedInvoiceId)) ?? null;
+  }, [data.invoices, selectedInvoiceId]);
 
-  function handleSelectInvoice(val: string) {
-    setSelectedInvoiceOption(val);
-    if (!val || val === "-") return;
-    const match = (data.invoices ?? []).find((inv: Row) => {
-      const invNum = inv.nomor || `INV #${inv.id}`;
-      return val.startsWith(invNum) || String(inv.id) === val;
-    });
-    if (match) {
-      if (!tujuan.trim() && match.customer && match.customer !== "-") {
-        setTujuan(match.customer);
-      }
-      const invNum = match.nomor || `INV #${match.id}`;
-      if (!alasan.trim() || alasan.startsWith("Pengiriman barang untuk") || alasan.startsWith("Pengiriman Barang")) {
-        setAlasan(`Pengiriman barang untuk Invoice ${invNum}`);
-      }
-      if (match.projectId || match.project) {
-        const projMatch = (data.projects ?? []).find(
-          (p: Row) => (match.projectId && String(p.id) === String(match.projectId)) || p.nama === match.project
-        );
-        if (projMatch) {
-          const name = String(projMatch.nama ?? projMatch.name ?? "").trim();
-          const cust = projMatch.customer && projMatch.customer !== "-" && !name.includes(projMatch.customer) ? ` (${projMatch.customer})` : "";
-          setSelectedProject(`${name}${cust}`);
-        }
-      }
-      const physicalMatchItems = (Array.isArray(match.items) ? match.items : []).filter((it: any) => !isServiceItem(it));
-      if (physicalMatchItems.length > 0) {
-        setHasGoods(true);
-        const checklist = physicalMatchItems.map((it: any) => ({
-          productId: it.productId ? Number(it.productId) : undefined,
-          name: it.item || it.name || "Barang",
-          sku: it.sku,
-          targetQty: Number(it.qty || 1),
-          unit: it.satuan || it.unit || "unit",
-        }));
-        setChecklistRequirements(checklist);
-        toast(`Target kebutuhan (${checklist.length} barang) dari Invoice dimuat`);
-        setTimeout(() => scanInputRef.current?.focus(), 150);
-      } else {
-        setChecklistRequirements([]);
+  function handleSelectInvoice(match: Row | null) {
+    if (!match) {
+      setSelectedInvoiceId(null);
+      return;
+    }
+    setSelectedInvoiceId(match.id);
+    if (!tujuan.trim() && match.customer && match.customer !== "-") {
+      setTujuan(match.customer);
+    }
+    const invNum = match.nomor || `INV #${match.id}`;
+    if (!alasan.trim() || alasan.startsWith("Pengiriman barang untuk") || alasan.startsWith("Pengiriman Barang")) {
+      setAlasan(`Pengiriman barang untuk Invoice ${invNum}`);
+    }
+    if (match.projectId || match.project) {
+      const projMatch = (data.projects ?? []).find(
+        (p: Row) => (match.projectId && String(p.id) === String(match.projectId)) || p.nama === match.project
+      );
+      if (projMatch) {
+        setSelectedProject(projMatch.nama || projMatch.name || "-");
       }
     }
+    const physicalMatchItems = (Array.isArray(match.items) ? match.items : []).filter((it: any) => !isServiceItem(it));
+    if (physicalMatchItems.length > 0) {
+      setHasGoods(true);
+      const checklist = physicalMatchItems.map((it: any) => ({
+        productId: it.productId ? Number(it.productId) : undefined,
+        name: it.item || it.name || "Barang",
+        sku: it.sku,
+        targetQty: Number(it.qty || 1),
+        unit: it.satuan || it.unit || "unit",
+      }));
+      setChecklistRequirements(checklist);
+      toast(`Target kebutuhan (${checklist.length} barang) dari Invoice dimuat`);
+      setTimeout(() => scanInputRef.current?.focus(), 150);
+    } else {
+      setChecklistRequirements([]);
+    }
   }
-
-  const projectOptions = React.useMemo(() => {
-    const projects = Array.isArray(data.projects) ? data.projects : [];
-    return [
-      "-",
-      ...projects
-        .map((p: any) => {
-          const name = String(p.nama ?? p.name ?? p.projectName ?? "").trim();
-          if (!name) return "";
-          const cust = p.customer && p.customer !== "-" && !name.includes(p.customer) ? ` (${p.customer})` : "";
-          return `${name}${cust}`;
-        })
-        .filter((name: string) => name.length > 0),
-    ];
-  }, [data.projects]);
 
   // Scanner barcode cepat
   const [scanInput, setScanInput] = React.useState("");
@@ -445,85 +365,76 @@ export default function NewDeliveryNoteScreen() {
     return Array.from(set);
   }, [activeProject, selectedSo, data.invoices]);
 
-  function handleSelectSo(val: string) {
-    setSelectedSoOption(val);
-    if (!val || val === "-") return;
-    const match = soList.find((so: Row) => {
-      const soNum = (so.nomorSo && so.nomorSo !== "-") ? so.nomorSo : (so.nomor || `SO #${so.id}`);
-      return val.startsWith(soNum) || String(so.id) === val;
-    });
-    if (match) {
-      if (!tujuan.trim() && match.customer && match.customer !== "-") {
-        setTujuan(match.customer);
+  function handleSelectSo(match: Row | null) {
+    if (!match) {
+      setSelectedSoId(null);
+      return;
+    }
+    setSelectedSoId(match.id);
+    if (!tujuan.trim() && match.customer && match.customer !== "-") {
+      setTujuan(match.customer);
+    }
+    const soNum = (match.nomorSo && match.nomorSo !== "-") ? match.nomorSo : (match.nomor || `SO #${match.id}`);
+    if (!alasan.trim() || alasan.startsWith("Pengiriman barang untuk Sales Order") || alasan.startsWith("Pengiriman Barang SO")) {
+      setAlasan(`Pengiriman barang untuk Sales Order ${soNum}`);
+    }
+    if (match.projectId || match.project) {
+      const projMatch = (data.projects ?? []).find(
+        (p: Row) => (match.projectId && String(p.id) === String(match.projectId)) || p.nama === match.project
+      );
+      if (projMatch) {
+        setSelectedProject(projMatch.nama || projMatch.name || "-");
       }
-      const soNum = (match.nomorSo && match.nomorSo !== "-") ? match.nomorSo : match.nomor;
-      if (!alasan.trim() || alasan.startsWith("Pengiriman barang untuk Sales Order")) {
-        setAlasan(`Pengiriman barang untuk Sales Order ${soNum}`);
-      }
-      if (match.projectId || match.project) {
-        const projMatch = (data.projects ?? []).find(
-          (p: Row) => (match.projectId && String(p.id) === String(match.projectId)) || p.nama === match.project
-        );
-        if (projMatch) {
-          const name = String(projMatch.nama ?? projMatch.name ?? "").trim();
-          const cust = projMatch.customer && projMatch.customer !== "-" && !name.includes(projMatch.customer) ? ` (${projMatch.customer})` : "";
-          setSelectedProject(`${name}${cust}`);
-        }
-      }
-      const physicalMatchItems = (Array.isArray(match.items) ? match.items : []).filter((it: any) => !isServiceItem(it));
-      if (physicalMatchItems.length > 0) {
-        setHasGoods(true);
-        const checklist = physicalMatchItems.map((it: any) => ({
-          productId: it.productId ? Number(it.productId) : undefined,
-          name: it.item || it.name || "Barang",
-          sku: it.sku,
-          targetQty: Number(it.qty || 1),
-          unit: it.satuan || it.unit || "unit",
-        }));
-        setChecklistRequirements(checklist);
-        toast(`Target kebutuhan (${checklist.length} barang) dari Sales Order dimuat`);
-        setTimeout(() => scanInputRef.current?.focus(), 150);
-      } else {
-        setChecklistRequirements([]);
-      }
+    }
+    const physicalMatchItems = (Array.isArray(match.items) ? match.items : []).filter((it: any) => !isServiceItem(it));
+    if (physicalMatchItems.length > 0) {
+      setHasGoods(true);
+      const checklist = physicalMatchItems.map((it: any) => ({
+        productId: it.productId ? Number(it.productId) : undefined,
+        name: it.item || it.name || "Barang",
+        sku: it.sku,
+        targetQty: Number(it.qty || 1),
+        unit: it.satuan || it.unit || "unit",
+      }));
+      setChecklistRequirements(checklist);
+      toast(`Target kebutuhan (${checklist.length} barang) dari Sales Order dimuat`);
+      setTimeout(() => scanInputRef.current?.focus(), 150);
+    } else {
+      setChecklistRequirements([]);
     }
   }
 
-  function handleSelectProject(val: string) {
-    setSelectedProject(val);
-    if (!val || val === "-") return;
-    const projMatch = (data.projects ?? []).find((p) => {
-      const name = String(p.nama ?? p.name ?? "").trim();
-      const cust = p.customer && p.customer !== "-" && !name.includes(p.customer) ? ` (${p.customer})` : "";
-      const opt = `${name}${cust}`;
-      return p.nama === val || opt === val || String(p.id) === val;
-    });
-    if (projMatch) {
-      if (!tujuan.trim() && projMatch.customer && projMatch.customer !== "-") {
-        setTujuan(projMatch.customer);
-      }
-      if (!alasan.trim() || alasan.startsWith("Pengiriman material untuk project")) {
-        setAlasan(`Pengiriman material untuk project ${projMatch.nama || projMatch.name}`);
-      }
-      api<any>("GET", `/projects/${projMatch.id}/requirements`)
-        .then((res) => {
-          const list = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
-          if (list.length > 0) {
-            setHasGoods(true);
-            const checklist = list.map((r: any) => ({
-              productId: r.product?.id ? Number(r.product.id) : r.productId ? Number(r.productId) : undefined,
-              name: r.product?.name || r.name || "Barang",
-              sku: r.product?.sku || r.sku,
-              targetQty: Number(r.neededQty ?? r.qty ?? 1),
-              unit: r.product?.unit || r.unit || "unit",
-            }));
-            setChecklistRequirements(checklist);
-            toast(`Target kebutuhan (${checklist.length} item) dari Project dimuat`);
-            setTimeout(() => scanInputRef.current?.focus(), 150);
-          }
-        })
-        .catch(() => {});
+  function handleSelectProject(projMatch: Row | null) {
+    if (!projMatch) {
+      setSelectedProject("-");
+      return;
     }
+    const name = String(projMatch.nama ?? projMatch.name ?? "").trim();
+    setSelectedProject(name || "-");
+    if (!tujuan.trim() && projMatch.customer && projMatch.customer !== "-") {
+      setTujuan(projMatch.customer);
+    }
+    if (!alasan.trim() || alasan.startsWith("Pengiriman material untuk project")) {
+      setAlasan(`Pengiriman material untuk project ${name}`);
+    }
+    api<any>("GET", `/projects/${projMatch.id}/requirements`)
+      .then((res) => {
+        const list = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+        if (list.length > 0) {
+          setHasGoods(true);
+          const checklist = list.map((r: any) => ({
+            productId: r.product?.id ? Number(r.product.id) : r.productId ? Number(r.productId) : undefined,
+            name: r.product?.name || r.name || "Barang",
+            sku: r.product?.sku || r.sku,
+            targetQty: Number(r.neededQty ?? r.qty ?? 1),
+            unit: r.product?.unit || r.unit || "unit",
+          }));
+          setChecklistRequirements(checklist);
+          toast(`Target kebutuhan (${checklist.length} item) dari Project dimuat`);
+          setTimeout(() => scanInputRef.current?.focus(), 150);
+        }
+      })
+      .catch(() => {});
   }
 
   function handleQuickScan(rawText: string) {
@@ -842,6 +753,9 @@ export default function NewDeliveryNoteScreen() {
           serials: allSerials,
         }).catch(() => {});
         await patchRow("delivery-notes", String(newId), { status: "Dikirim" }).catch(() => {});
+        toast("Surat jalan dibuat & barang langsung dikirim (stok berkurang)!");
+      } else {
+        toast("Surat jalan berhasil dibuat!");
       }
 
       if (selectedSo?.id) {
@@ -856,7 +770,11 @@ export default function NewDeliveryNoteScreen() {
       await refreshModule("delivery-notes");
       await refreshModule("stock");
       await reload();
-      router.replace("/delivery-notes");
+      if (newId) {
+        router.replace(`/delivery-notes/${newId}` as any);
+      } else {
+        router.replace("/delivery-notes");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -904,29 +822,32 @@ export default function NewDeliveryNoteScreen() {
           </FormField>
 
           <FormField label="Terkait Sales Order (SO) (Opsional)" hint="Pilih SO bila surat jalan ini untuk pengiriman pesanan penjualan barang">
-            <SearchableSelect
-              value={selectedSoOption}
+            <PoClientSelect
+              poId={selectedSo?.id}
+              value={selectedSo ? (selectedSo.nomorSo || selectedSo.nomor || `SO #${selectedSo.id}`) : undefined}
               onChange={handleSelectSo}
-              options={soOptions}
               placeholder="Pilih Sales Order (SO) jika ada..."
+              allowClear
             />
           </FormField>
 
           <FormField label="Terkait Invoice Penjualan (Opsional)" hint="Pilih Invoice bila pengiriman langsung dari invoice lunas tanpa SO">
-            <SearchableSelect
-              value={selectedInvoiceOption}
+            <InvoiceSelect
+              invoiceId={selectedInvoice?.id}
+              value={selectedInvoice ? (selectedInvoice.nomor || `INV #${selectedInvoice.id}`) : undefined}
               onChange={handleSelectInvoice}
-              options={invoiceOptions}
               placeholder="Pilih Invoice jika ada..."
+              allowClear
             />
           </FormField>
 
           <FormField label="Terkait Project (Opsional)" hint="Pilih project jika penugasan ini untuk pekerjaan proyek tertentu">
-            <SearchableSelect
-              value={selectedProject}
+            <ProjectSelect
+              projectId={activeProject?.id}
+              value={activeProject ? (activeProject.nama || activeProject.name) : (selectedProject !== "-" ? selectedProject : undefined)}
               onChange={handleSelectProject}
-              options={projectOptions}
               placeholder="Pilih project jika ada..."
+              allowClear
             />
           </FormField>
         </View>
@@ -1331,10 +1252,28 @@ export default function NewDeliveryNoteScreen() {
           </Button>
         </View>
       ) : (
-        <Button size="lg" onPress={() => submit("Pending")} disabled={submitting}>
-          <Check size={18} color={colors.background} />
-          <Text>{submitting ? "Memproses..." : "Ajukan Surat Jalan"}</Text>
-        </Button>
+        <View className="flex-row items-center gap-3">
+          <Button
+            size="lg"
+            variant="outline"
+            className="flex-1 border-neutral-300"
+            onPress={() => submit("Pending")}
+            disabled={submitting}
+          >
+            <Text className="text-neutral-700 font-medium">Simpan Draf (Pending)</Text>
+          </Button>
+          <Button
+            size="lg"
+            className="flex-1 bg-primary"
+            onPress={() => submit("Dikirim")}
+            disabled={submitting}
+          >
+            <Check size={18} color="#ffffff" />
+            <Text className="font-semibold text-white">
+              {submitting ? "Memproses..." : "Kirim Barang (Dikirim)"}
+            </Text>
+          </Button>
+        </View>
       )}
     </View>
   );

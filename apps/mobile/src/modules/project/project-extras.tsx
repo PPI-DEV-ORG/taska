@@ -134,7 +134,8 @@ export function ProjectExtras({ row }: { row: Row }) {
 
   const normalizedRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
   const canViewBoqPricing = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
-  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "sales", "admin"].includes(normalizedRole);
+  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
+  const canManageInvoice = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
 
   const [quotationDetail, setQuotationDetail] = React.useState<any>(null);
   const [recordClientPoOpen, setRecordClientPoOpen] = React.useState(false);
@@ -701,15 +702,17 @@ export function ProjectExtras({ row }: { row: Row }) {
     { key: "penawaran", label: "3. Penawaran Project", done: st ? st.penawaran : !!linkedQuotation, sub: linkedQuotation?.nomor || (st?.penawaran ? "Tertaut" : "Belum ada") },
     { key: "po", label: "4. PO Project", done: st ? st.po : linkedClientPos.length > 0 || projectPos.length > 0, sub: `${st?.counts.clientPos ?? linkedClientPos.length} SO · ${st?.counts.supplierPos ?? projectPos.length} PO` },
     { key: "progress", label: "5. Progress Project", done: st ? st.progress : Number(row.progres || 0) > 0, sub: `${row.progres ?? 0}%` },
-    { key: "invoice", label: "6. Invoice Project", done: st ? st.invoice : projectInvoices.length > 0, sub: `${st?.counts.invoices ?? projectInvoices.length} invoice` },
-    { key: "bast", label: "7. Penyelesaian / BAST", done: st ? st.bast : row.status === "Selesai" || !!row.bastFileId, sub: row.status === "Selesai" ? "Selesai" : "Menunggu" },
+    ...(canManageInvoice
+      ? [{ key: "invoice", label: "6. Invoice Project", done: st ? st.invoice : projectInvoices.length > 0, sub: `${st?.counts.invoices ?? projectInvoices.length} invoice` }]
+      : []),
+    { key: "bast", label: canManageInvoice ? "7. Penyelesaian / BAST" : "6. Penyelesaian / BAST", done: st ? st.bast : row.status === "Selesai" || !!row.bastFileId, sub: row.status === "Selesai" ? "Selesai" : "Menunggu" },
   ];
 
   return (
     <>
       <Panel
         title="Alur Terpadu Project (End-to-End)"
-        subtitle="Pantau kelengkapan 7 tahapan project mulai dari BOQ, Survey, Penawaran, PO, Progress, Invoice, hingga BAST"
+        subtitle={canManageInvoice ? "Pantau kelengkapan 7 tahapan project mulai dari BOQ, Survey, Penawaran, PO, Progress, Invoice, hingga BAST" : "Pantau kelengkapan tahapan project mulai dari BOQ, Survey, Penawaran, PO, Progress, hingga BAST"}
       >
         <View className="flex-row flex-wrap gap-2">
           {flowSteps.map((st) => (
@@ -882,10 +885,10 @@ export function ProjectExtras({ row }: { row: Row }) {
       </Panel>
 
       <Panel
-        title="2–6. Dokumen Komersial Project (Survey, Penawaran, PO & Invoice Project)"
+        title={canManageInvoice ? "2–6. Dokumen Komersial Project (Survey, Penawaran, PO & Invoice Project)" : "2–5. Dokumen Terkait Project (Survey, Penawaran & PO)"}
         subtitle="Integrasi dokumen komersial project dalam satu tampilan terpadu"
         right={
-          canViewFinancials ? (
+          canManageInvoice ? (
             <Button size="sm" onPress={() => setCreateInvOpen(true)} className="flex-row items-center gap-1 bg-primary">
               <Plus size={13} color={colors.background} />
               <Text className="text-xs text-primary-foreground font-semibold">Buat Invoice Project</Text>
@@ -979,30 +982,32 @@ export function ProjectExtras({ row }: { row: Row }) {
           }
         />
 
-        <View className="mt-2 pt-2 border-t border-border/60 gap-1">
-          <Text className="text-xs font-semibold text-foreground mb-1">
-            Daftar Invoice Project ({projectInvoices.length})
-          </Text>
-          {projectInvoices.length === 0 ? (
-            <Text className="text-muted-foreground text-xs">Belum ada invoice yang diterbitkan untuk project ini.</Text>
-          ) : (
-            projectInvoices.map((inv: any) => (
-              <Line
-                key={inv.id}
-                left={`${inv.nomor} (${inv.jenis})`}
-                sub={`Total ${rupiah(inv.total)} · Terbayar ${rupiah(inv.terbayar)}`}
-                right={
-                  <View className="flex-row items-center gap-2">
-                    <Cell fmt="status" value={inv.status} />
-                    <Button size="sm" variant="outline" onPress={() => router.push(`/invoices/${inv.id}` as any)}>
-                      <Text className="text-xs">Buka</Text>
-                    </Button>
-                  </View>
-                }
-              />
-            ))
-          )}
-        </View>
+        {canManageInvoice ? (
+          <View className="mt-2 pt-2 border-t border-border/60 gap-1">
+            <Text className="text-xs font-semibold text-foreground mb-1">
+              Daftar Invoice Project ({projectInvoices.length})
+            </Text>
+            {projectInvoices.length === 0 ? (
+              <Text className="text-muted-foreground text-xs">Belum ada invoice yang diterbitkan untuk project ini.</Text>
+            ) : (
+              projectInvoices.map((inv: any) => (
+                <Line
+                  key={inv.id}
+                  left={`${inv.nomor} (${inv.jenis})`}
+                  sub={`Total ${rupiah(inv.total)} · Terbayar ${rupiah(inv.terbayar)}`}
+                  right={
+                    <View className="flex-row items-center gap-2">
+                      <Cell fmt="status" value={inv.status} />
+                      <Button size="sm" variant="outline" onPress={() => router.push(`/invoices/${inv.id}` as any)}>
+                        <Text className="text-xs">Buka</Text>
+                      </Button>
+                    </View>
+                  }
+                />
+              ))
+            )}
+          </View>
+        ) : null}
       </Panel>
 
       <DocumentationPhotosPanel

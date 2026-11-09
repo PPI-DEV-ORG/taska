@@ -126,6 +126,9 @@ export interface JournalLine {
     | "Pembayaran Invoice"
     | "Penjualan Langsung (Kas)"
     | "HPP Penjualan Retail"
+    | "HPP Proyek"
+    | "HPP Penjualan / Pengeluaran Stok"
+    | "Surat Jalan (Barang Keluar)"
     | "PO Supplier"
     | "Pelunasan PO"
     | "Request Barang / Ritel"
@@ -506,6 +509,8 @@ export function computeFinancialStatements(
     });
   };
 
+  const processedDnIds = new Set<string>();
+
   // 1. Journal Entries from Client Invoices (Accrual + Cash Receipt)
   for (const inv of invoices) {
     const nomor = normStr(inv.nomor, `INV-${inv.id}`);
@@ -792,12 +797,15 @@ export function computeFinancialStatements(
       }
     }
 
-    // Catat HPP (Debit 5102) & pengurangan Aset Persediaan (Kredit 1200) HANYA jika barang sudah dikirim lewat Surat Jalan (Dikirim / Diterima)
-    const isRetailInv = !inv.projectId && (!inv.project || inv.project === "-");
+    // Catat HPP & pengurangan Aset Persediaan (Kredit 1200) jika barang sudah dikirim lewat Surat Jalan (Dikirim / Diterima)
+    const isProjectInv = Boolean(inv.projectId || (inv.project && inv.project !== "-"));
 
     const shippedDn = deliveryNotes.find((dn: any) => {
       const dnStatus = normStr(dn.status).toLowerCase();
       if (dnStatus !== "dikirim" && dnStatus !== "diterima") return false;
+      if (inv.id && dn.invoiceId && String(dn.invoiceId) === String(inv.id)) {
+        return true;
+      }
       if (inv.clientPoId && (String(dn.soId) === String(inv.clientPoId) || String(dn.clientPoId) === String(inv.clientPoId))) {
         return true;
       }
@@ -813,8 +821,24 @@ export function computeFinancialStatements(
           return true;
         }
       }
+      if (inv.projectId && dn.projectId && String(dn.projectId) === String(inv.projectId)) {
+        return true;
+      }
+      if (
+        inv.project &&
+        dn.project &&
+        inv.project !== "-" &&
+        dn.project !== "-" &&
+        normStr(dn.project).toLowerCase() === normStr(inv.project).toLowerCase()
+      ) {
+        return true;
+      }
       return false;
     });
+
+    if (shippedDn?.id) {
+      processedDnIds.add(String(shippedDn.id));
+    }
 
     const effectiveInvItems =
       sourceInvItems.length > 0
@@ -823,9 +847,9 @@ export function computeFinancialStatements(
           ? shippedDn.items
           : [];
 
-    if (isRetailInv && shippedDn && effectiveInvItems.length > 0) {
+    if (shippedDn && effectiveInvItems.length > 0) {
       const physicalInvItems = effectiveInvItems.filter((it: any) => !isServiceItem(it));
-      const retailCost = physicalInvItems.reduce((acc: number, it: any) => {
+      const goodsCost = physicalInvItems.reduce((acc: number, it: any) => {
         const qty = Math.max(1, toNum(it.qty || 1));
         const prodMatch = products.find(
           (p: any) =>
@@ -838,19 +862,99 @@ export function computeFinancialStatements(
         return acc + qty * unitCost;
       }, 0);
 
-      if (retailCost > 0) {
-        pushJournalPair(tanggal, `${nomor}/HPP`, "HPP Penjualan Retail", "Penjualan Retail", [
+      if (goodsCost > 0) {
+        if (isProjectInv) {
+          pushJournalPair(tanggal, `${nomor}/HPP`, "HPP Proyek", "Pengeluaran Barang Proyek", [
+            {
+              kodeAkun: "5101",
+              keterangan: `HPP Pengeluaran Barang Proyek atas Surat Jalan ${shippedDn.nomor || shippedDn.id} (Invoice ${nomor} - ${customer})`,
+              debit: goodsCost,
+              kredit: 0,
+            },
+            {
+              kodeAkun: "1200",
+              keterangan: `Pengurangan Persediaan Barang Gudang atas Pengiriman ke Proyek (SJ ${shippedDn.nomor || shippedDn.id})`,
+              debit: 0,
+              kredit: goodsCost,
+            },
+          ]);
+        } else {
+          pushJournalPair(tanggal, `${nomor}/HPP`, "HPP Penjualan Retail", "Penjualan Retail", [
+            {
+              kodeAkun: "5102",
+              keterangan: `HPP Penjualan Barang Retail atas Invoice ${nomor} (${customer})`,
+              debit: goodsCost,
+              kredit: 0,
+            },
+            {
+              kodeAkun: "1200",
+              keterangan: `Pengurangan Aset Persediaan Barang atas Penjualan Retail ${nomor}`,
+              debit: 0,
+              kredit: goodsCost,
+            },
+          ]);
+        }
+      }
+    }
+  }
+
+  // 1b. Catat HPP & Pengurangan Persediaan untuk Surat Jalan (Dikirim / Diterima) yang belum tercover di loop Invoice
+  for (const dn of deliveryNotes) {
+    if (processedDnIds.has(String(dn.id))) continue;
+    const dnStatus = normStr(dn.status).toLowerCase();
+    if (dnStatus !== "dikirim" && dnStatus !== "diterima") continue;
+
+    const dnItems = Array.isArray(dn.items) && dn.items.length > 0 ? dn.items : [];
+    if (dnItems.length === 0) continue;
+
+    const physicalDnItems = dnItems.filter((it: any) => !isServiceItem(it));
+    const goodsCost = physicalDnItems.reduce((acc: number, it: any) => {
+      const qty = Math.max(1, toNum(it.qty || 1));
+      const prodMatch = products.find(
+        (p: any) =>
+          (it.productId && String(p.id) === String(it.productId)) ||
+          normStr(p.nama || p.name).toLowerCase() === normStr(it.name || it.nama || it.item || it.product?.name).toLowerCase()
+      );
+      const unitCost =
+        toNum(it.purchasePrice || it.hargaBeli || it.product?.purchasePrice || prodMatch?.hargaBeli || prodMatch?.purchasePrice) ||
+        Math.round(toNum(it.price || it.harga || it.product?.sellPrice) * 0.7);
+      return acc + qty * unitCost;
+    }, 0);
+
+    if (goodsCost > 0) {
+      processedDnIds.add(String(dn.id));
+      const dnNomor = normStr(dn.nomor, `SJ-${dn.id}`);
+      const dnTanggal = formatJournalDateTime(dn.tanggal || dn.date, dn.createdAt);
+      const isProjectDn = Boolean(dn.projectId || (dn.project && dn.project !== "-"));
+
+      if (isProjectDn) {
+        pushJournalPair(dnTanggal, `${dnNomor}/HPP`, "HPP Proyek", "Pengeluaran Barang Proyek", [
           {
-            kodeAkun: "5102",
-            keterangan: `HPP Penjualan Barang Retail atas Invoice ${nomor} (${customer})`,
-            debit: retailCost,
+            kodeAkun: "5101",
+            keterangan: `HPP Pengeluaran Barang Proyek atas Surat Jalan ${dnNomor} (${dn.project || "Proyek"})`,
+            debit: goodsCost,
             kredit: 0,
           },
           {
             kodeAkun: "1200",
-            keterangan: `Pengurangan Aset Persediaan Barang atas Penjualan Retail ${nomor}`,
+            keterangan: `Pengurangan Persediaan Barang Gudang atas Pengiriman Surat Jalan ${dnNomor}`,
             debit: 0,
-            kredit: retailCost,
+            kredit: goodsCost,
+          },
+        ]);
+      } else {
+        pushJournalPair(dnTanggal, `${dnNomor}/HPP`, "HPP Penjualan / Pengeluaran Stok", "Pengeluaran Barang", [
+          {
+            kodeAkun: "5102",
+            keterangan: `HPP Pengeluaran Barang Stok Gudang atas Surat Jalan ${dnNomor} (${dn.tujuan || "Customer"})`,
+            debit: goodsCost,
+            kredit: 0,
+          },
+          {
+            kodeAkun: "1200",
+            keterangan: `Pengurangan Persediaan Barang Gudang atas Surat Jalan ${dnNomor}`,
+            debit: 0,
+            kredit: goodsCost,
           },
         ]);
       }
@@ -860,7 +964,9 @@ export function computeFinancialStatements(
   // 2. Journal Entries from Supplier POs & Direct Retail Purchase Requests
   // - Pengadaan untuk Project -> Debit 5101 (HPP Project) | Kredit 1000.01 (Kas) atau 210102 (Hutang Usaha)
   // - Pembelian untuk Retail / Stok Gudang -> Debit 1200 (Aset Persediaan Barang Dagang) | Kredit 1000.01 (Kas) atau 210102 (Hutang Usaha)
-  let cogsProjectTotal = 0;
+  let cogsProjectTotal = journalLines
+    .filter((l) => l.kodeAkun === "5101")
+    .reduce((s, l) => s + l.debit - l.kredit, 0);
   let cogsRetailTotal = journalLines
     .filter((l) => l.kodeAkun === "5102")
     .reduce((s, l) => s + l.debit - l.kredit, 0);

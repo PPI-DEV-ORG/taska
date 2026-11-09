@@ -1047,7 +1047,11 @@ function CreateInvoiceForm({
   }
 
   // Select PO / Sales Order handler
-  function handleSelectPo(match: Row) {
+  function handleSelectPo(match: Row | null) {
+    if (!match) {
+      setSelectedPoId("");
+      return;
+    }
     setSelectedPoId(String(match.id));
     if (match.customer && match.customer !== "-") {
       setCustomCustomerName(match.customer);
