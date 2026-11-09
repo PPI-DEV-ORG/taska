@@ -7,7 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
-import { DatePicker, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
+import {
+  DatePicker,
+  SearchableSelect,
+  QuickAddCustomerDialog,
+  QuickAddSupplierDialog,
+  SupplierSelect,
+  PoClientSelect,
+  QuotationSelect,
+  LeadSelect,
+  ContinuableInvoiceSelect,
+} from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
@@ -89,6 +99,52 @@ function generateInvoiceNumber(
     return `INV/${year}/${month}/${baseSeq}/1`;
   }
   return `INV/${year}/${month}/${baseSeq}`;
+}
+
+function generateInvoiceInNumber(
+  scheme: "sekaligus" | "dp" | "termin",
+  existingInvoices: Row[],
+  totalInvoiceInCount: number,
+  allInvoiceIn?: Row[],
+  continuationType?: "termin" | "pelunasan",
+): string {
+  const year = new Date().getFullYear();
+  const month = String(new Date().getMonth() + 1).padStart(2, "0");
+  const prefix = `INV-IN/${year}/${month}/`;
+
+  let maxSeq = 0;
+  for (const inv of allInvoiceIn || []) {
+    const num = String(inv.nomor || inv.number || "");
+    if (num.startsWith(prefix)) {
+      const parts = num.slice(prefix.length).split(/[/_-]/);
+      const seq = parseInt(parts[0] ?? "", 10);
+      if (!isNaN(seq) && seq > maxSeq) {
+        maxSeq = seq;
+      }
+    }
+  }
+  const count = Math.max(maxSeq + 1, totalInvoiceInCount + 1);
+  const baseSeq = String(count).padStart(3, "0");
+
+  if (existingInvoices.length > 0) {
+    const nextTermNum = existingInvoices.length + 1;
+    const lastInv = existingInvoices[existingInvoices.length - 1];
+    const lastNum = String(lastInv?.nomor || lastInv?.number || "");
+    const matchPrefix = lastNum.match(/^(INV-IN\/\d{4}\/\d{2}\/\d+)/i)?.[1];
+    const base = matchPrefix || `INV-IN/${year}/${month}/${baseSeq}`;
+    if (continuationType === "pelunasan") {
+      return `${base}/PELUNASAN`;
+    }
+    return `${base}/${nextTermNum}`;
+  }
+
+  if (scheme === "dp") {
+    return `INV-IN/${year}/${month}/${baseSeq}/DP`;
+  }
+  if (scheme === "termin") {
+    return `INV-IN/${year}/${month}/${baseSeq}/1`;
+  }
+  return `INV-IN/${year}/${month}/${baseSeq}`;
 }
 
 export function CreateInvoiceDialog({
@@ -214,8 +270,40 @@ function CreateInvoiceForm({
   // Supplier & PO Supplier state for direct_purchase (Invoice Masuk Langsung)
   const [selectedSupplierId, setSelectedSupplierId] = React.useState<string>("");
   const [selectedSupplierPoId, setSelectedSupplierPoId] = React.useState<string>("");
+  const [selectedParentInvoiceInId, setSelectedParentInvoiceInId] = React.useState<string>("");
   const [customSupplierName, setCustomSupplierName] = React.useState<string>("");
   const [purchaseCategoryCode, setPurchaseCategoryCode] = React.useState<string>("6202.01");
+
+  const selectedParentInvoiceIn = React.useMemo(() => {
+    if (!selectedParentInvoiceInId) return null;
+    return (data.invoiceIn ?? []).find((inv: Row) => String(inv.id) === String(selectedParentInvoiceInId)) || null;
+  }, [data.invoiceIn, selectedParentInvoiceInId]);
+
+  const continuableInvoiceInOptions: { id: string; label: string; raw: Row }[] = React.useMemo(() => {
+    return (data.invoiceIn ?? [])
+      .filter((inv: Row) => {
+        const st = String(inv.status || "").toUpperCase();
+        if (st === "BATAL" || st === "DIBATALKAN") return false;
+        const isPelunasan = /pelunasan/i.test(String(inv.jenis || inv.catatan || ""));
+        if (isPelunasan) return false;
+        const isDpOrTermin =
+          inv.type === "DP" ||
+          inv.type === "TERMIN" ||
+          /dp|termin/i.test(String(inv.jenis || inv.catatan || inv.nomor || ""));
+        return isDpOrTermin;
+      })
+      .map((inv: Row) => {
+        const invNum = inv.nomor || inv.number || `INV-IN #${inv.id}`;
+        const supp = inv.supplier || inv.customer || "-";
+        const total = Number(inv.total ?? inv.nilai ?? 0);
+        const termLabel = inv.jenis || (inv.type === "DP" ? "DP" : "Termin");
+        return {
+          id: String(inv.id),
+          label: `${invNum} (${termLabel}) - ${supp} - ${rupiah(total)}`,
+          raw: inv,
+        };
+      });
+  }, [data.invoiceIn]);
 
   const invoiceInCategoryOptions = React.useMemo(
     () => [
@@ -524,6 +612,32 @@ function CreateInvoiceForm({
 
   // Existing invoices related to active quotation, PO, Lead, or selected Parent Invoice
   const relatedExistingInvoices = React.useMemo(() => {
+    if (mode === "masuk") {
+      if (selectedParentInvoiceIn) {
+        const parentId = String(selectedParentInvoiceIn.id);
+        const suppPoId = selectedParentInvoiceIn.supplierPoId;
+        const parentNum = selectedParentInvoiceIn.nomor || selectedParentInvoiceIn.number;
+        const matchPrefix = parentNum ? String(parentNum).match(/^(INV-IN\/\d{4}\/\d{2}\/\d+)/i)?.[1] : null;
+
+        return (data.invoiceIn ?? []).filter((inv: Row) => {
+          const st = String(inv.status || "").toUpperCase();
+          if (st === "BATAL" || st === "DIBATALKAN") return false;
+          if (String(inv.id) === parentId) return true;
+          if (suppPoId && String(inv.supplierPoId) === String(suppPoId)) return true;
+          if (matchPrefix && String(inv.nomor || inv.number || "").startsWith(matchPrefix)) return true;
+          return false;
+        });
+      }
+      if (selectedSupplierPoId) {
+        return (data.invoiceIn ?? []).filter((inv: Row) => {
+          const st = String(inv.status || "").toUpperCase();
+          if (st === "BATAL" || st === "DIBATALKAN") return false;
+          return String(inv.supplierPoId) === String(selectedSupplierPoId);
+        });
+      }
+      return [];
+    }
+
     if (mode === "lanjut") {
       if (!selectedParentInvoice) return [];
       const parentId = String(selectedParentInvoice.id);
@@ -575,15 +689,17 @@ function CreateInvoiceForm({
       if (leadName && String(inv.customer || "").trim().toLowerCase() === leadName) return true;
       return false;
     });
-  }, [mode, selectedParentInvoice, data.invoices, activeQuotation, activePo, activeLead]);
+  }, [mode, selectedParentInvoice, selectedParentInvoiceIn, selectedSupplierPoId, data.invoices, data.invoiceIn, activeQuotation, activePo, activeLead]);
 
   // Invoice Number
   const [nomor, setNomor] = React.useState<string>(() => {
     if (defaultDirectPurchase) {
-      const now = new Date();
-      const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const nextIdx = String((data.invoiceIn?.length || 0) + 1).padStart(3, "0");
-      return `INV-IN/${ym}/${nextIdx}`;
+      return generateInvoiceInNumber(
+        "sekaligus",
+        [],
+        data.invoiceIn?.length || 0,
+        data.invoiceIn,
+      );
     }
     return generateInvoiceNumber(
       mode === "lanjut",
@@ -613,6 +729,18 @@ function CreateInvoiceForm({
   // Total gross items / amount before discount
   const grossDealDpp = React.useMemo(() => {
     if (mode === "masuk") {
+      if (selectedParentInvoiceIn) {
+        const pctMatch = String(selectedParentInvoiceIn.catatan || selectedParentInvoiceIn.notes || selectedParentInvoiceIn.dpLabel || "").match(/(\d+)%/);
+        const pct = pctMatch ? Number(pctMatch[1]) : 0;
+        if (pct > 0 && pct < 100 && selectedParentInvoiceIn.nilai) {
+          return Math.round((Number(selectedParentInvoiceIn.nilai) / pct) * 100);
+        }
+        if (selectedParentInvoiceIn.nilai) return Number(selectedParentInvoiceIn.nilai);
+      }
+      const suppPoObj = (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId));
+      if (suppPoObj?.total || suppPoObj?.nilai || suppPoObj?.dpp) {
+        return Number(suppPoObj.dpp || suppPoObj.total || suppPoObj.nilai);
+      }
       if (items.length > 0) {
         return items.reduce((acc, curr) => acc + (Number(curr.qty) || 1) * (Number(curr.harga) || Number((curr as any).price) || 0), 0);
       }
@@ -822,10 +950,14 @@ function CreateInvoiceForm({
       setScheme("sekaligus");
       setItems([]);
       setPaymentStatus("PAID");
-      const now = new Date();
-      const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const nextIdx = String((data.invoiceIn?.length || 0) + 1).padStart(3, "0");
-      setNomor(`INV-IN/${ym}/${nextIdx}`);
+      setNomor(
+        generateInvoiceInNumber(
+          "sekaligus",
+          relatedExistingInvoices,
+          data.invoiceIn?.length || 0,
+          data.invoiceIn,
+        ),
+      );
       if (!catatan || catatan === "Nota Penjualan Langsung (Walk-in)" || catatan.startsWith("Invoice untuk")) {
         setCatatan("Tagihan Operasional / Invoice Masuk");
       }
@@ -873,11 +1005,27 @@ function CreateInvoiceForm({
   // Switch scheme handler
   function handleSwitchScheme(newScheme: "sekaligus" | "dp" | "termin") {
     setScheme(newScheme);
+    if (mode === "masuk") {
+      setNomor(
+        generateInvoiceInNumber(
+          newScheme,
+          relatedExistingInvoices,
+          data.invoiceIn?.length || 0,
+          data.invoiceIn,
+          continuationType,
+        ),
+      );
+      return;
+    }
     setNomor(generateInvoiceNumber(mode === "lanjut", newScheme, relatedExistingInvoices, data.invoices?.length || 0, data.invoices));
   }
 
   // Select quotation handler
-  function handleSelectQuotation(q: Row) {
+  function handleSelectQuotation(q: Row | null) {
+    if (!q) {
+      setSelectedQuotationId("");
+      return;
+    }
     setSelectedQuotationId(String(q.id));
     if (q.customerId) setSelectedCustomerId(String(q.customerId));
     const detectedPph = getInitialPphMode(q);
@@ -898,8 +1046,58 @@ function CreateInvoiceForm({
     }
   }
 
+  // Select PO / Sales Order handler
+  function handleSelectPo(match: Row) {
+    setSelectedPoId(String(match.id));
+    if (match.customer && match.customer !== "-") {
+      setCustomCustomerName(match.customer);
+    }
+    if (match.customerId) setSelectedCustomerId(String(match.customerId));
+    if (match.customer && match.customer !== "-") {
+      const cMatch = (data.customers ?? []).find(
+        (c: Row) =>
+          c.nama?.toLowerCase() === String(match.customer).toLowerCase() ||
+          c.name?.toLowerCase() === String(match.customer).toLowerCase(),
+      );
+      if (cMatch) setSelectedCustomerId(String(cMatch.id));
+    }
+    if (mode === "baru") {
+      if (Array.isArray(match.items) && match.items.length > 0) {
+        setItems(match.items);
+      } else if (match.quotationId) {
+        setSelectedQuotationId(String(match.quotationId));
+        const linkedQ = (data.quotations ?? []).find(
+          (q: Row) => String(q.id) === String(match.quotationId),
+        );
+        if (linkedQ && Array.isArray(linkedQ.items) && linkedQ.items.length > 0) {
+          setItems(linkedQ.items);
+        }
+      } else if (match.nilai) {
+        setCustomDpp(formatThousands(match.nilai));
+      }
+    } else {
+      setItems([]);
+    }
+    if (match.tipePpn || match.ppnMode) {
+      setPpnMode(getInitialPpnMode(match));
+    }
+    const detectedPph = getInitialPphMode(match);
+    if (detectedPph !== "none") {
+      setPphMode(detectedPph);
+    } else if (match.pphMode && match.pphMode !== "none") {
+      setPphMode(match.pphMode as PphMode);
+    }
+    if (match.discount || match.disc) {
+      setCustomDiscount(formatThousands(match.discount || match.disc));
+    }
+  }
+
   // Select lead handler
-  function handleSelectLead(l: Row) {
+  function handleSelectLead(l: Row | null) {
+    if (!l) {
+      setSelectedLeadId("");
+      return;
+    }
     setSelectedLeadId(String(l.id));
     if (l.customerId) {
       setSelectedCustomerId(String(l.customerId));
@@ -923,8 +1121,24 @@ function CreateInvoiceForm({
     let pct = 100;
 
     if (mode === "masuk") {
-      pct = 100;
-      dpp = dealDpp;
+      if (relatedExistingInvoices.length > 0) {
+        if (continuationType === "pelunasan") {
+          dpp = remainingDpp;
+          pct = dealDpp > 0 ? Math.round((dpp / dealDpp) * 100) : 100;
+        } else {
+          pct = Number(terminPercent) || (dealDpp > 0 ? Math.round((remainingDpp / dealDpp) * 100) : 30);
+          dpp = Math.min(remainingDpp, Math.round(dealDpp * (pct / 100)));
+        }
+      } else if (scheme === "dp") {
+        pct = Number(dpPercent) || 50;
+        dpp = Math.round(dealDpp * (pct / 100));
+      } else if (scheme === "termin") {
+        pct = Number(terminPercent) || 30;
+        dpp = Math.round(dealDpp * (pct / 100));
+      } else {
+        pct = 100;
+        dpp = dealDpp;
+      }
     } else if (mode === "baru") {
       if (scheme === "dp") {
         pct = Number(dpPercent) || 50;
@@ -1028,7 +1242,7 @@ function CreateInvoiceForm({
         (sourceType === "direct_sale" ? "Pelanggan Langsung (Walk-in)" : "Pelanggan Umum");
 
     const invoiceType =
-      mode === "lanjut"
+      mode === "lanjut" || (mode === "masuk" && relatedExistingInvoices.length > 0)
         ? continuationType === "pelunasan" || remainingDpp - currentDpp <= 0
           ? "Pelunasan"
           : "Termin"
@@ -1049,7 +1263,7 @@ function CreateInvoiceForm({
           (activeLead ? `Lead ${activeLead.nama}` : "Invoice");
 
     const termDesc =
-      mode === "lanjut"
+      mode === "lanjut" || (mode === "masuk" && relatedExistingInvoices.length > 0)
         ? continuationType === "pelunasan"
           ? `Pelunasan (${calculatedPct}%) - ${refTitle}`
           : `Termin ${terminNumber} (${calculatedPct}%) - ${refTitle}`
@@ -1087,6 +1301,10 @@ function CreateInvoiceForm({
           po: suppPoObj?.nomor || suppPoObj?.number || undefined,
           category: selectedCatOpt.category,
           debitAccount: purchaseCategoryCode,
+          type: invoiceType.toUpperCase(),
+          jenis: invoiceType,
+          dpLabel: scheme === "dp" ? `DP ${calculatedPct}%` : undefined,
+          dpAmount: scheme === "dp" ? currentTotal : undefined,
           nilai: currentDpp,
           ppn: currentPpn,
           pph: currentPph,
@@ -1103,6 +1321,9 @@ function CreateInvoiceForm({
           paymentReference: isPaidNow
             ? `LUNAS-${nomor.trim()} [AKUN:${paymentAccountCode}]`
             : undefined,
+          notes: isPaidNow
+            ? `${fullCatatan} (Lunas via ${accLabel} [AKUN:${paymentAccountCode}])`
+            : fullCatatan,
           catatan: isPaidNow
             ? `${fullCatatan} (Lunas via ${accLabel} [AKUN:${paymentAccountCode}])`
             : fullCatatan,
@@ -1373,36 +1594,29 @@ function CreateInvoiceForm({
             <FormField
               label="Pihak Penagih / Penyedia Layanan / Supplier"
               required
-              hint="Pilih dari daftar atau ketik manual nama penagih (misal: PLN, Telkom IndiHome, Biznet)"
+              hint="Pilih dari daftar supplier rekanan atau ketik manual nama penagih (misal: PLN, Telkom IndiHome, Biznet)"
             >
               <View className="gap-1.5">
-                <SearchableSelect
+                <SupplierSelect
+                  supplierId={selectedSupplierId}
                   value={
                     customSupplierName ||
                     (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.nama ||
                     (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId))?.name ||
                     ""
                   }
-                  onChange={(val) => {
-                    setCustomSupplierName(val);
-                    const match = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
-                    if (match) setSelectedSupplierId(String(match.id));
-                    else setSelectedSupplierId("");
+                  onChange={(val, match) => {
+                    if (match) {
+                      setCustomSupplierName(match.nama || match.name);
+                      setSelectedSupplierId(String(match.id));
+                    } else {
+                      setCustomSupplierName(val === "-" ? "" : val);
+                      setSelectedSupplierId("");
+                    }
                   }}
                   onAddNew={() => setQuickSupplierOpen(true)}
                   addNewLabel="+ Tambah Supplier Baru"
-                  options={Array.from(
-                    new Set([
-                      customSupplierName,
-                      "PLN (Tagihan Listrik)",
-                      "Telkom IndiHome (Internet)",
-                      "Biznet Networks (Internet)",
-                      "PDAM (Tagihan Air)",
-                      "Pengelola Gedung / Sewa Kantor",
-                      ...(data.suppliers ?? []).map((s: Row) => s.nama || s.name),
-                    ])
-                  ).filter(Boolean)}
-                  placeholder="Pilih penyedia tagihan / supplier..."
+                  placeholder="Pilih supplier rekanan..."
                 />
                 <Input
                   value={customSupplierName}
@@ -1442,6 +1656,22 @@ function CreateInvoiceForm({
                     } else if (match.dpp || match.total || match.nilai) {
                       setCustomDpp(formatThousands(match.dpp || match.total || match.nilai));
                     }
+                    const poInvs = (data.invoiceIn ?? []).filter((inv: Row) => {
+                      const st = String(inv.status || "").toUpperCase();
+                      if (st === "BATAL" || st === "DIBATALKAN") return false;
+                      return String(inv.supplierPoId) === String(match.id);
+                    });
+                    if (poInvs.length > 0) {
+                      setScheme("termin");
+                      setContinuationType("pelunasan");
+                    } else {
+                      const poTerms = String(match.paymentTerms || match.payment || "");
+                      const dpMatch = poTerms.match(/DP\s*(\d+)%/i);
+                      if (dpMatch) {
+                        setScheme("dp");
+                        setDpPercent(dpMatch[1] || "50");
+                      }
+                    }
                   }
                 }}
                 options={(data["supplier-pos"] ?? []).map(
@@ -1450,6 +1680,37 @@ function CreateInvoiceForm({
                 placeholder="Kosongkan jika bukan dari PO Supplier..."
               />
             </FormField>
+
+            {continuableInvoiceInOptions.length > 0 ? (
+              <FormField label="Atau Lanjutkan dari Invoice Masuk DP / Termin Sebelumnya (Opsional)">
+                <SearchableSelect
+                  value={
+                    continuableInvoiceInOptions.find((o: { id: string; label: string; raw: Row }) => o.id === selectedParentInvoiceInId)?.label || ""
+                  }
+                  onChange={(val) => {
+                    const match = continuableInvoiceInOptions.find((o: { id: string; label: string; raw: Row }) => o.label === val);
+                    if (match) {
+                      setSelectedParentInvoiceInId(match.id);
+                      const inv = match.raw;
+                      if (inv.supplierId) setSelectedSupplierId(String(inv.supplierId));
+                      if (inv.supplier) setCustomSupplierName(inv.supplier);
+                      if (inv.supplierPoId) setSelectedSupplierPoId(String(inv.supplierPoId));
+                      if (inv.debitAccount) setPurchaseCategoryCode(inv.debitAccount);
+                      if (inv.category) {
+                        const matchCat = invoiceInCategoryOptions.find((c) => c.category === inv.category);
+                        if (matchCat) setPurchaseCategoryCode(matchCat.code);
+                      }
+                      setScheme("termin");
+                      setContinuationType("pelunasan");
+                    } else {
+                      setSelectedParentInvoiceInId("");
+                    }
+                  }}
+                  options={["-- Tidak ada (Invoice Baru) --", ...continuableInvoiceInOptions.map((o: { id: string; label: string; raw: Row }) => o.label)]}
+                  placeholder="Pilih invoice DP / Termin sebelumnya..."
+                />
+              </FormField>
+            ) : null}
           </View>
         ) : mode === "lanjut" ? (
           <View className="mb-4 p-3 rounded-xl bg-card border border-primary/30 gap-2.5">
@@ -1467,20 +1728,10 @@ function CreateInvoiceForm({
                   </Text>
                 </View>
               ) : (
-                <SearchableSelect
-                  value={
-                    continuableInvoiceOptions.find((o) => o.id === selectedParentInvoiceId)?.label || ""
-                  }
-                  onChange={(val: string) => {
-                    const opt = continuableInvoiceOptions.find((o) => o.label === val);
-                    if (opt) handleSelectParentInvoice(opt.id);
-                  }}
-                  options={continuableInvoiceOptions.map((o) => o.label)}
-                  placeholder="Ketik untuk mencari nomor invoice / nama customer..."
-                  dialogClassName="w-[94vw] sm:max-w-2xl md:max-w-3xl"
-                  dialogStyle={Platform.select({
-                    web: { width: "min(94vw, 780px)", maxWidth: "780px" } as any,
-                  })}
+                <ContinuableInvoiceSelect
+                  invoiceId={selectedParentInvoiceId}
+                  options={continuableInvoiceOptions}
+                  onChange={(selectedId) => handleSelectParentInvoice(selectedId)}
                 />
               )}
             </FormField>
@@ -1572,21 +1823,9 @@ function CreateInvoiceForm({
               </View>
             ) : sourceType === "quotation" ? (
               <FormField label="Pilih Penawaran Terkait" required>
-                <SearchableSelect
-                  value={
-                    activeQuotation
-                      ? `${activeQuotation.nomor} - ${activeQuotation.customer || "-"} - ${activeQuotation.lead || "-"}`
-                      : ""
-                  }
-                  onChange={(val) => {
-                    const selNo = val.split(" - ")[0]?.trim() || val;
-                    const match = (data.quotations ?? []).find((q: Row) => q.nomor === selNo);
-                    if (match) handleSelectQuotation(match);
-                  }}
-                  options={(data.quotations ?? []).map(
-                    (q: Row) => `${q.nomor} - ${q.customer || "-"} - ${q.lead || "-"}`,
-                  )}
-                  placeholder="Cari & pilih penawaran..."
+                <QuotationSelect
+                  quotationId={selectedQuotationId}
+                  onChange={handleSelectQuotation}
                 />
                 {activeQuotation ? (
                   <View className="flex-row flex-wrap items-center gap-2 mt-2">
@@ -1631,87 +1870,16 @@ function CreateInvoiceForm({
               </FormField>
             ) : sourceType === "po" ? (
               <FormField label="Pilih PO Client (Sales Order) Terkait" required>
-                <SearchableSelect
-                  value={
-                    activePo
-                      ? `${activePo.nomorSo || activePo.nomor || activePo.number} - ${activePo.customer || "-"}`
-                      : ""
-                  }
-                  onChange={(val) => {
-                    const selNo = val.split(" - ")[0]?.trim() || val;
-                    const match = (data["po-client"] ?? []).find(
-                      (p: Row) => (p.nomorSo || p.nomor || p.number) === selNo,
-                    );
-                    if (match) {
-                      setSelectedPoId(String(match.id));
-                      if (match.customer && match.customer !== "-") {
-                        setCustomCustomerName(match.customer);
-                      }
-                      if (match.customerId) setSelectedCustomerId(String(match.customerId));
-                      if (match.customer && match.customer !== "-") {
-                        const cMatch = (data.customers ?? []).find(
-                          (c: Row) =>
-                            c.nama?.toLowerCase() === String(match.customer).toLowerCase() ||
-                            c.name?.toLowerCase() === String(match.customer).toLowerCase(),
-                        );
-                        if (cMatch) setSelectedCustomerId(String(cMatch.id));
-                      }
-                      if (mode === "baru") {
-                        if (Array.isArray(match.items) && match.items.length > 0) {
-                          setItems(match.items);
-                        } else if (match.quotationId) {
-                          setSelectedQuotationId(String(match.quotationId));
-                          const linkedQ = (data.quotations ?? []).find(
-                            (q: Row) => String(q.id) === String(match.quotationId),
-                          );
-                          if (linkedQ && Array.isArray(linkedQ.items) && linkedQ.items.length > 0) {
-                            setItems(linkedQ.items);
-                          }
-                        } else if (match.nilai) {
-                          setCustomDpp(formatThousands(match.nilai));
-                        }
-                      } else {
-                        setItems([]);
-                      }
-                      if (match.tipePpn || match.ppnMode) {
-                        setPpnMode(getInitialPpnMode(match));
-                      }
-                      const detectedPph = getInitialPphMode(match);
-                      if (detectedPph !== "none") {
-                        setPphMode(detectedPph);
-                      } else if (match.pphMode && match.pphMode !== "none") {
-                        setPphMode(match.pphMode as PphMode);
-                      }
-                      if (match.discount || match.disc) {
-                        setCustomDiscount(formatThousands(match.discount || match.disc));
-                      }
-                    }
-                  }}
-                  options={(data["po-client"] ?? []).map(
-                    (p: Row) => `${p.nomorSo || p.nomor || p.number} - ${p.customer || "-"}`,
-                  )}
-                  placeholder="Cari & pilih PO client..."
+                <PoClientSelect
+                  poId={selectedPoId}
+                  onChange={handleSelectPo}
                 />
               </FormField>
             ) : sourceType === "lead" ? (
               <FormField label="Pilih Lead / Prospek Terkait" required>
-                <SearchableSelect
-                  value={
-                    activeLead
-                      ? `${activeLead.nama} - ${activeLead.perusahaan || activeLead.customer || "-"}`
-                      : ""
-                  }
-                  onChange={(val) => {
-                    const selName = val.split(" - ")[0]?.trim() || val;
-                    const match = (data.leads ?? []).find(
-                      (l: Row) => l.nama === selName || `${l.nama} - ${l.perusahaan || l.customer || "-"}` === val,
-                    );
-                    if (match) handleSelectLead(match);
-                  }}
-                  options={(data.leads ?? []).map(
-                    (l: Row) => `${l.nama} - ${l.perusahaan || l.customer || "-"}`,
-                  )}
-                  placeholder="Cari & pilih lead / prospek..."
+                <LeadSelect
+                  leadId={selectedLeadId}
+                  onChange={handleSelectLead}
                 />
               </FormField>
             ) : null}
@@ -1740,7 +1908,7 @@ function CreateInvoiceForm({
         )}
 
         {/* Mode: Lanjutkan Termin / DP Sebelumnya info banner */}
-        {mode === "lanjut" ? (
+        {mode === "lanjut" || (mode === "masuk" && relatedExistingInvoices.length > 0) ? (
           <View className="mb-4 p-3 rounded-xl bg-panel border border-border gap-2">
             <View className="flex-row items-center justify-between">
               <Text className="text-xs font-bold text-foreground">Riwayat Tagihan Sebelumnya</Text>
@@ -1779,7 +1947,20 @@ function CreateInvoiceForm({
                   <Button
                     variant={continuationType === "termin" ? "default" : "outline"}
                     size="sm"
-                    onPress={() => setContinuationType("termin")}
+                    onPress={() => {
+                      setContinuationType("termin");
+                      if (mode === "masuk") {
+                        setNomor(
+                          generateInvoiceInNumber(
+                            "termin",
+                            relatedExistingInvoices,
+                            data.invoiceIn?.length || 0,
+                            data.invoiceIn,
+                            "termin",
+                          ),
+                        );
+                      }
+                    }}
                     className="flex-1 h-8"
                   >
                     <Text className="text-xs">Termin {terminNumber}</Text>
@@ -1787,7 +1968,20 @@ function CreateInvoiceForm({
                   <Button
                     variant={continuationType === "pelunasan" ? "default" : "outline"}
                     size="sm"
-                    onPress={() => setContinuationType("pelunasan")}
+                    onPress={() => {
+                      setContinuationType("pelunasan");
+                      if (mode === "masuk") {
+                        setNomor(
+                          generateInvoiceInNumber(
+                            "termin",
+                            relatedExistingInvoices,
+                            data.invoiceIn?.length || 0,
+                            data.invoiceIn,
+                            "pelunasan",
+                          ),
+                        );
+                      }
+                    }}
                     className="flex-1 h-8"
                   >
                     <Text className="text-xs">Pelunasan (Sisa {rupiah(remainingDpp)})</Text>
@@ -1808,8 +2002,8 @@ function CreateInvoiceForm({
               ) : null}
             </View>
           </View>
-        ) : mode === "baru" ? (
-          /* Mode Baru Scheme */
+        ) : (mode === "baru" || (mode === "masuk" && relatedExistingInvoices.length === 0)) ? (
+          /* Mode Baru & Masuk Scheme */
           <View className="mb-4 p-3 rounded-xl bg-panel border border-border gap-2">
             <FormField label="Skema Pembayaran" required>
               <View className="flex-row gap-2">
@@ -1910,46 +2104,18 @@ function CreateInvoiceForm({
           ) : null}
 
           {/* List Barang / Items Section (Only for Invoice Keluar, or if Invoice Masuk has PO items) */}
-          {mode === "masuk" ? (
-            items.length > 0 ? (
-              <View className="gap-2 p-3 rounded-xl border border-border bg-card">
-                <View className="flex-row justify-between items-center">
-                  <Text className="text-xs font-bold text-foreground">
-                    Rincian Item dari PO Supplier ({items.length} Item)
-                  </Text>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2"
-                    onPress={() => setItems([])}
-                  >
-                    <Text className="text-xs text-danger">Hapus Rincian Item</Text>
-                  </Button>
-                </View>
-                {items.map((it, idx) => {
-                  const itemPrice = Number(it.harga || it.price || 0);
-                  const sub = (Number(it.qty) || 1) * itemPrice;
-                  return (
-                    <View key={it.id || idx} className="flex-row justify-between py-1.5 border-b border-border/40">
-                      <Text className="text-xs font-medium flex-1 mr-2">
-                        {it.item} ({it.qty} {it.satuan || it.unit || "unit"} x {rupiah(itemPrice)})
-                      </Text>
-                      <Text className="text-xs font-semibold">{rupiah(sub)}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            ) : null
-          ) : mode === "lanjut" ? (
+          {mode === "lanjut" || (mode === "masuk" && relatedExistingInvoices.length > 0) ? (
             <View className="p-4 rounded-xl border border-primary/20 bg-primary/5 gap-2.5">
               <View className="flex-row items-center gap-2">
                 <Package size={16} color={colors.primary} />
                 <Text className="text-xs font-bold text-primary">
-                  Barang & Unit SN Tidak Perlu Dipilih Ulang
+                  {mode === "masuk" ? "Rincian Tagihan Kelanjutan PO / Pembelian" : "Barang & Unit SN Tidak Perlu Dipilih Ulang"}
                 </Text>
               </View>
               <Text className="text-xs text-muted-foreground leading-relaxed">
-                Seluruh barang dan unit Serial Number (SN) fisik telah tercatat & di-reserve pada invoice pertama ({selectedParentInvoice?.nomor || "DP / Termin 1"}). Invoice lanjutan ({continuationType === "pelunasan" ? "Pelunasan" : `Termin ${terminNumber}`}) ini hanya menagih sisa pembayaran tanpa mengambil unit SN baru dari gudang.
+                {mode === "masuk"
+                  ? `Invoice lanjutan (${continuationType === "pelunasan" ? "Pelunasan" : `Termin ${terminNumber}`}) ini melanjutkan sisa tagihan dari invoice masuk sebelumnya tanpa perlu memasukkan ulang daftar barang.`
+                  : `Seluruh barang dan unit Serial Number (SN) fisik telah tercatat & di-reserve pada invoice pertama (${selectedParentInvoice?.nomor || "DP / Termin 1"}). Invoice lanjutan (${continuationType === "pelunasan" ? "Pelunasan" : `Termin ${terminNumber}`}) ini hanya menagih sisa pembayaran tanpa mengambil unit SN baru dari gudang.`}
               </Text>
               {activeQuotation?.items && activeQuotation.items.length > 0 ? (
                 <View className="mt-1 pt-2 border-t border-primary/10 flex-row items-center justify-between">
@@ -1981,6 +2147,36 @@ function CreateInvoiceForm({
                 </View>
               ) : null}
             </View>
+          ) : mode === "masuk" ? (
+            items.length > 0 ? (
+              <View className="gap-2 p-3 rounded-xl border border-border bg-card">
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs font-bold text-foreground">
+                    Rincian Item dari PO Supplier ({items.length} Item)
+                  </Text>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2"
+                    onPress={() => setItems([])}
+                  >
+                    <Text className="text-xs text-danger">Hapus Rincian Item</Text>
+                  </Button>
+                </View>
+                {items.map((it, idx) => {
+                  const itemPrice = Number(it.harga || it.price || 0);
+                  const sub = (Number(it.qty) || 1) * itemPrice;
+                  return (
+                    <View key={it.id || idx} className="flex-row justify-between py-1.5 border-b border-border/40">
+                      <Text className="text-xs font-medium flex-1 mr-2">
+                        {it.item} ({it.qty} {it.satuan || it.unit || "unit"} x {rupiah(itemPrice)})
+                      </Text>
+                      <Text className="text-xs font-semibold">{rupiah(sub)}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null
           ) : (
             <View className="gap-2 p-3 rounded-xl border border-border bg-card">
             <View className="flex-row justify-between items-center flex-wrap gap-2">

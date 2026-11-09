@@ -409,9 +409,23 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   const invWithItems = linkedInvoices.find((inv: any) => Array.isArray(inv.items) && inv.items.length > 0);
   const invoiceItems: any[] = invWithItems ? invWithItems.items : [];
 
-  const currentItems: any[] = Array.isArray(row.items) && row.items.length > 0
+  const baseItems: any[] = Array.isArray(row.items) && row.items.length > 0
     ? row.items
     : (quoItems.length > 0 ? quoItems : (invoiceItems.length > 0 ? invoiceItems : []));
+
+  const [itemsOverride, setItemsOverride] = React.useState<{ rowItems: any; items: any[] }>({
+    rowItems: row.items,
+    items: baseItems,
+  });
+
+  const currentItems: any[] =
+    itemsOverride.rowItems === row.items
+      ? itemsOverride.items
+      : baseItems;
+
+  const updateItems = React.useCallback((next: any[]) => {
+    setItemsOverride({ rowItems: row.items, items: next });
+  }, [row.items]);
 
   const getItemName = (it: any) => {
     if (!it) return "Barang / Jasa";
@@ -561,6 +575,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   };
 
   const saveItems = async (newItems: any[], updateAmount = true) => {
+    updateItems(newItems);
     setSaving(true);
     try {
       const patchPayload: Record<string, any> = { items: newItems };
@@ -582,6 +597,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         }
       }
       await patchRow("po-client", row.id, patchPayload);
+      await reload();
       await onRefresh?.();
       toast("Daftar barang / jasa berhasil diperbarui");
     } catch (err: any) {
@@ -705,8 +721,9 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   const sisa = effectiveOrderTotal - Number(row.totalInvoice || 0);
   const linkedProjects = (data.projects ?? []).filter(
     (p: Row) =>
+      (row.projectId && String(p.id) === String(row.projectId)) ||
       (linkedQuotation && String(p.quotationId) === String(linkedQuotation.id)) ||
-      (row.customer && p.customer === row.customer),
+      (p.catatan && String(p.catatan).includes(`[so:${row.id}]`)),
   );
   const linkedDeliveryNotes = (data["delivery-notes"] ?? []).filter(
     (dn: Row) =>

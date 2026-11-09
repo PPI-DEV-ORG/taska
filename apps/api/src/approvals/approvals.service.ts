@@ -408,6 +408,8 @@ export class ApprovalsService {
     }
     if (
       user.role !== "SUPER_ADMIN" &&
+      user.role !== "ADMIN" &&
+      user.role !== "BOS" &&
       approval.requestedById === user.id &&
       !(user.role === "FINANCE" && (approval.kind === "SUPPLIER_PO" || approval.kind === "INVOICE_IN"))
     ) {

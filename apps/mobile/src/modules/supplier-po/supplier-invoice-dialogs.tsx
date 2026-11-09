@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, formatThousands, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, formatThousands, SearchableSelect, SupplierSelect } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase } from "@/services/api";
@@ -524,26 +524,19 @@ function SupplierInvoiceEditForm({
 
           <FormField label="Pihak Penagih / Penyedia Layanan / Supplier" required>
             <View className="gap-1.5">
-              <SearchableSelect
+              <SupplierSelect
                 value={supplierName}
-                onChange={(val) => {
-                  setSupplierName(val);
-                  const match = (data.suppliers ?? []).find((s: Row) => (s.nama || s.name) === val);
-                  if (match) setSelectedSupplierId(String(match.id));
-                  else setSelectedSupplierId("");
+                supplierId={selectedSupplierId}
+                onChange={(val, match) => {
+                  if (match) {
+                    setSupplierName(match.nama || match.name);
+                    setSelectedSupplierId(String(match.id));
+                  } else {
+                    setSupplierName(val === "-" ? "" : val);
+                    setSelectedSupplierId("");
+                  }
                 }}
-                options={Array.from(
-                  new Set([
-                    supplierName,
-                    "PLN (Tagihan Listrik)",
-                    "Telkom IndiHome (Internet)",
-                    "Biznet Networks (Internet)",
-                    "PDAM (Tagihan Air)",
-                    "Pengelola Gedung / Sewa Kantor",
-                    ...(data.suppliers ?? []).map((s: Row) => s.nama || s.name),
-                  ])
-                ).filter(Boolean)}
-                placeholder="Pilih penyedia tagihan / supplier..."
+                placeholder="Pilih dari daftar supplier..."
               />
               <Input
                 value={supplierName}
@@ -553,7 +546,7 @@ function SupplierInvoiceEditForm({
                   if (match) setSelectedSupplierId(String(match.id));
                   else setSelectedSupplierId("");
                 }}
-                placeholder="Ketik manual nama penagih (contoh: PLN, IndiHome)..."
+                placeholder="Atau ketik manual nama penagih (contoh: PLN, IndiHome)..."
               />
             </View>
           </FormField>

@@ -878,8 +878,7 @@ export function computeFinancialStatements(
         (pr.supplierPo && (String(pr.supplierPo.id) === String(po.id) || pr.supplierPo.number === po.nomor)) ||
         (Array.isArray(pr.supplierPOs) && pr.supplierPOs.some((sp: any) => String(sp.id) === String(po.id) || sp.number === po.nomor)) ||
         (po.nomor && String(pr.otherNote || "").includes(po.nomor)) ||
-        (poSuffix && pr.nomor && normStr(pr.nomor).replace(/^(?:PNJ|REQ|PR)\//i, "") === poSuffix) ||
-        (toNum(po.total) === toNum(pr.estimasi) && po.supplier && pr.supplier && normStr(po.supplier).toLowerCase() === normStr(pr.supplier).toLowerCase())
+        (poSuffix && pr.nomor && normStr(pr.nomor).replace(/^(?:PNJ|REQ|PR)\//i, "") === poSuffix)
     );
     const hasValidProjectName =
       po.project &&
@@ -1294,8 +1293,7 @@ export function computeFinancialStatements(
         (pr.supplierPo && (String(pr.supplierPo.id) === String(po.id) || pr.supplierPo.number === po.nomor)) ||
         (Array.isArray(pr.supplierPOs) && pr.supplierPOs.some((sp: any) => String(sp.id) === String(po.id) || sp.number === po.nomor)) ||
         (po.nomor && String(pr.otherNote || "").includes(po.nomor)) ||
-        (prSuffix && po.nomor && normStr(po.nomor).replace(/^(?:POD|PO-S|PO)\//i, "") === prSuffix) ||
-        (toNum(po.total) === toNum(pr.estimasi) && po.supplier && pr.supplier && normStr(po.supplier).toLowerCase() === normStr(pr.supplier).toLowerCase())
+        (prSuffix && po.nomor && normStr(po.nomor).replace(/^(?:POD|PO-S|PO)\//i, "") === prSuffix)
     );
     if (hasPo) continue;
 

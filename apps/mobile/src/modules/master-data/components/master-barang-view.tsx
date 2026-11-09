@@ -45,6 +45,7 @@ export function MasterBarangView({
   const [barangSatuan, setBarangSatuan] = React.useState("unit");
   const [barangIsiUnit, setBarangIsiUnit] = React.useState("");
   const [barangHargaBeli, setBarangHargaBeli] = React.useState("");
+  const [barangHargaJual, setBarangHargaJual] = React.useState("");
   const [barangMinStok, setBarangMinStok] = React.useState("5");
   const [barangGaransi, setBarangGaransi] = React.useState("2 tahun");
   const [barangSN, setBarangSN] = React.useState("Ya (Serial Number)");
@@ -54,6 +55,7 @@ export function MasterBarangView({
   const [editPriceOpen, setEditPriceOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<any>(null);
   const [editHargaVal, setEditHargaVal] = React.useState("");
+  const [editHargaJualVal, setEditHargaJualVal] = React.useState("");
   const [editMinStokVal, setEditMinStokVal] = React.useState("");
   const [isSavingPrice, setIsSavingPrice] = React.useState(false);
 
@@ -84,8 +86,10 @@ export function MasterBarangView({
   function handleOpenEditPrice(product: any) {
     setEditingProduct(product);
     const currPrice = product.hargaBeli ?? product.purchasePrice ?? 0;
+    const currSellPrice = product.hargaJual ?? product.price ?? 0;
     const currMin = product.minStock ?? product.min ?? 0;
     setEditHargaVal(currPrice > 0 ? String(currPrice) : "");
+    setEditHargaJualVal(currSellPrice > 0 ? String(currSellPrice) : "");
     setEditMinStokVal(String(currMin));
     setEditPriceOpen(true);
   }
@@ -95,10 +99,13 @@ export function MasterBarangView({
     setIsSavingPrice(true);
     try {
       const cleanPrice = Number(editHargaVal.replace(/\D/g, "")) || 0;
+      const cleanSellPrice = Number(editHargaJualVal.replace(/\D/g, "")) || 0;
       const cleanMin = Number(editMinStokVal.replace(/\D/g, "")) || 0;
       await patchRow("products", editingProduct.id, {
         hargaBeli: cleanPrice,
         purchasePrice: cleanPrice,
+        hargaJual: cleanSellPrice,
+        price: cleanSellPrice,
         min: cleanMin,
         minStock: cleanMin,
       });
@@ -139,6 +146,8 @@ export function MasterBarangView({
       isiPerUnit: barangIsiUnit ? Number(barangIsiUnit) : undefined,
       satuanDasar: barangSatuan,
       hargaBeli: Number(barangHargaBeli.replace(/\D/g, "")) || 0,
+      hargaJual: Number(barangHargaJual.replace(/\D/g, "")) || 0,
+      price: Number(barangHargaJual.replace(/\D/g, "")) || 0,
       min: isJasa ? 0 : (Number(barangMinStok) || 0),
       garansi: isJasa ? "Tanpa garansi" : barangGaransi,
       berSN: isJasa ? false : barangSN.includes("Ya"),
@@ -150,6 +159,7 @@ export function MasterBarangView({
     setBarangSku("");
     setBarangIsiUnit("");
     setBarangHargaBeli("");
+    setBarangHargaJual("");
     setBarangMinStok("5");
     toast("Master barang berhasil ditambahkan");
   }
@@ -205,12 +215,14 @@ export function MasterBarangView({
           { key: "kategori", label: "Kategori", flex: 1 },
           { key: "satuan", label: "Satuan", flex: 0.7 },
           { key: "hargaDisplay", label: "Harga Beli", flex: 1.1 },
+          { key: "hargaJualDisplay", label: "Harga Jual", flex: 1.1 },
           { key: "stokDisplay", label: "Stok Fisik", flex: 0.9 },
           { key: "minDisplay", label: "Min Stok", flex: 0.8 },
           { key: "tipeSN", label: "Tipe Item", flex: 1 },
         ]}
         rows={masterProducts.map((p: any) => {
           const rawPrice = Number(p.hargaBeli ?? p.purchasePrice ?? 0);
+          const rawSellPrice = Number(p.hargaJual ?? p.price ?? 0);
           const minVal = Number(p.minStock ?? p.min ?? 0);
           const currStock = getProductStock(p);
           const isJasa = p.type === "JASA";
@@ -218,6 +230,7 @@ export function MasterBarangView({
             ...p,
             merk: p.merk || p.brand || "-",
             hargaDisplay: rawPrice > 0 ? rupiah(rawPrice) : "-",
+            hargaJualDisplay: rawSellPrice > 0 ? rupiah(rawSellPrice) : "-",
             stokNum: currStock,
             stokDisplay: isJasa ? "-" : `${currStock} ${p.satuan || "unit"}`,
             minDisplay: isJasa ? "-" : `${minVal} ${p.satuan || "unit"}`,
@@ -313,6 +326,14 @@ export function MasterBarangView({
                 placeholder="Contoh: 1.200.000"
               />
             </FormField>
+            <FormField label="Harga Jual Acuan (Rp)">
+              <Input
+                value={barangHargaJual ? formatThousands(barangHargaJual) : ""}
+                onChangeText={(v) => setBarangHargaJual(v.replace(/\D/g, ""))}
+                keyboardType="numeric"
+                placeholder="Contoh: 1.500.000"
+              />
+            </FormField>
             <FormField label="Stok Minimum Peringatan">
               <Input
                 value={barangMinStok}
@@ -371,6 +392,15 @@ export function MasterBarangView({
                 keyboardType="numeric"
                 placeholder="Contoh: 1.500.000"
                 autoFocus
+              />
+            </FormField>
+
+            <FormField label="Harga Jual Acuan (Rp)">
+              <Input
+                value={editHargaJualVal ? formatThousands(editHargaJualVal) : ""}
+                onChangeText={(v) => setEditHargaJualVal(v.replace(/\D/g, ""))}
+                keyboardType="numeric"
+                placeholder="Contoh: 1.800.000"
               />
             </FormField>
 

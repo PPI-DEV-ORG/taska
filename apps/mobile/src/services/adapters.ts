@@ -615,7 +615,10 @@ export function adaptRow(module: string, raw: any): Row {
         soFile: raw.soFile ?? null,
         items: Array.isArray(raw.items) ? raw.items : [],
         catatan: raw.notes ?? raw.catatan ?? "",
-        projectId: raw.projectId ?? null,
+        lead: raw.quotation?.lead?.name ?? raw.lead?.name ?? "-",
+        leadId: raw.quotation?.leadId ?? idOf(raw.lead) ?? null,
+        project: nameOf(raw.project) || raw.projectName || "-",
+        projectId: raw.projectId ?? idOf(raw.project) ?? null,
         projectName: raw.projectName ?? null,
       };
     }
@@ -699,9 +702,12 @@ export function adaptRow(module: string, raw: any): Row {
         po: raw.clientPo?.number ?? "-",
         clientPoId: idOf(raw.clientPo),
         quotation: qNum ?? "",
+        penawaran: qNum ?? "",
         quotationId: qId ?? null,
         lead: leadName,
         leadId: leadId ? String(leadId) : null,
+        project: nameOf(raw.project) || (raw.projectName ? raw.projectName : "-"),
+        projectId: idOf(raw.project) ?? null,
         paymentNote: isPartial ? "dp setengah bayar sebagian dp termin" : "",
         customer:
           nameOf(raw.customer) ||
@@ -726,8 +732,6 @@ export function adaptRow(module: string, raw: any): Row {
         jatuhTempo: d(raw.dueDate),
         status: displayStatus,
         tanggal: d(raw.date),
-        projectId: idOf(raw.project),
-        project: nameOf(raw.project) ?? "",
         fileId: raw.fileId ?? null,
         file: raw.file ?? null,
         fileName: raw.fileName ?? raw.file?.originalName ?? null,
@@ -1459,15 +1463,23 @@ export function adaptRow(module: string, raw: any): Row {
     case "products": {
       const pType = String(raw.type || "BARANG").toUpperCase() === "JASA" ? "JASA" : "BARANG";
       const isJasa = pType === "JASA";
+      const desc = String(raw.description ?? "");
+      const sellMatch = desc.match(/SELL:([^;]+)/);
+      const cleanDesc = desc.replace(/SELL:[^;]+;?/g, "").replace(/PPH:[^;]+;?/g, "").trim();
+      const parsedSellPrice = sellMatch ? Number(sellMatch[1]) : 0;
+      const effectiveSellPrice = parsedSellPrice > 0 ? parsedSellPrice : (Number(raw.price ?? raw.hargaJual ?? raw.harga ?? 0) || 0);
+
       return {
         ...base, sku: raw.sku ?? "", nama: raw.name ?? "", merk: raw.brand ?? "", brand: raw.brand ?? "",
-        deskripsi: raw.description ?? "", description: raw.description ?? "", satuan: raw.unit ?? "",
+        deskripsi: cleanDesc || raw.description || "", description: raw.description ?? "", satuan: raw.unit ?? "",
         type: pType,
         jenisItem: isJasa ? "Jasa" : "Barang",
         tipeSN: isJasa ? "Jasa (Non-Stok)" : raw.hasSerial ? "Barang Ber-SN" : "Barang Non-SN",
         berSN: isJasa ? false : !!raw.hasSerial,
         garansi: raw.warrantyMonths != null ? `${raw.warrantyMonths} bln` : "-",
         min: n(raw.minStock), minStock: n(raw.minStock), hargaBeli: n(raw.purchasePrice),
+        hargaJual: effectiveSellPrice,
+        price: effectiveSellPrice,
         kategori: nameOf(raw.category) ?? "",
         categoryId: idOf(raw.category),
         status: toLabel("users", raw.status),
@@ -1601,6 +1613,7 @@ export function adaptRow(module: string, raw: any): Row {
           displayStatus = "Dibayar sebagian";
         }
       }
+      const termOrType = raw.type || raw.jenis || (raw.notes && /DP|Termin|Pelunasan/i.test(raw.notes) ? raw.notes.match(/^(DP[^\.\n]*|Termin[^\.\n]*|Pelunasan[^\.\n]*)/i)?.[1] : undefined);
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -1609,7 +1622,8 @@ export function adaptRow(module: string, raw: any): Row {
         supplierId: idOf(raw.supplier),
         po: raw.supplierPo?.number ?? "-",
         supplierPoId: idOf(raw.supplierPo),
-        jenis: raw.category || (raw.supplierPo ? "Tagihan Supplier" : "Invoice Masuk Langsung"),
+        jenis: termOrType || raw.category || (raw.supplierPo ? "Tagihan Supplier" : "Invoice Masuk Langsung"),
+        type: raw.type || (termOrType ? "TERMIN" : "INVOICE_IN"),
         category: raw.category ?? "",
         debitAccount: raw.debitAccount ?? "",
         coaAccount: raw.coaAccount ?? "",
@@ -2433,12 +2447,21 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
       const isJasa =
         String(row.type || row.jenisItem || "").toUpperCase().includes("JASA") ||
         String(row.tipeSN || "").toUpperCase().includes("JASA");
+      const sellPriceVal = num(row.hargaJual ?? row.price ?? row.sellPrice);
+      let desc = row.deskripsi || row.description || "";
+      if (sellPriceVal > 0) {
+        if (/SELL:[^;]+/i.test(desc)) {
+          desc = desc.replace(/SELL:[^;]+/i, `SELL:${sellPriceVal}`);
+        } else {
+          desc = desc.trim() ? `${desc};SELL:${sellPriceVal}` : `SELL:${sellPriceVal}`;
+        }
+      }
       return {
         sku: row.sku,
         name: row.nama ?? row.name,
         type: isJasa ? "JASA" : "BARANG",
         brand: row.merk || row.brand || undefined,
-        description: row.deskripsi || row.description || undefined,
+        description: desc || undefined,
         unit: row.satuan ?? row.unit ?? (isJasa ? "Jasa" : "Unit"),
         categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : findId(db?.productCategories, row.kategori),
         hasSerial: isJasa ? false : (row.berSN != null ? !!row.berSN : !!row.hasSerial),
@@ -2677,6 +2700,16 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.min !== undefined) out.minStock = num(patch.min);
   if (patch.minStock !== undefined) out.minStock = num(patch.minStock);
   if (patch.hargaBeli !== undefined) out.purchasePrice = num(patch.hargaBeli);
+  if (patch.hargaJual !== undefined && module === "products") {
+    const sellPriceVal = num(patch.hargaJual);
+    let desc = patch.deskripsi || patch.description || (db?.products ? (db.products.find((p: any) => p.id === patch.id || String(p.id) === String(patch.id))?.description ?? "") : "") || "";
+    if (/SELL:[^;]+/i.test(desc)) {
+      desc = desc.replace(/SELL:[^;]+/i, `SELL:${sellPriceVal}`);
+    } else {
+      desc = desc.trim() ? `${desc};SELL:${sellPriceVal}` : `SELL:${sellPriceVal}`;
+    }
+    out.description = desc;
+  }
   if (patch.garansi !== undefined) out.warrantyMonths = parseInt(String(patch.garansi), 10) || undefined;
   if (patch.payment !== undefined) out.paymentTerms = patch.payment;
 
@@ -2802,6 +2835,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   } else if (module === "surveys") {
     if (patch.status !== undefined) out.status = toEnum("surveys", patch.status) || patch.status;
     if (patch.tim !== undefined) out.memberIds = resolveMemberIds(patch, db);
+    if (patch.leadId !== undefined) out.leadId = patch.leadId ? Number(patch.leadId) : undefined;
+    if (patch.lead !== undefined) {
+      const lId = patch.lead && patch.lead !== "-" ? findId(db?.leads, patch.lead) : null;
+      if (lId) out.leadId = lId;
+    }
   } else if (module === "projects") {
     if (patch.jenis !== undefined) out.type = toEnum("projectType", patch.jenis);
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
@@ -2859,6 +2897,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.penawaran !== undefined) {
       out.quotationId = patch.penawaran && patch.penawaran !== "-" ? findId(db?.quotations, patch.penawaran) : null;
     }
+    if (patch.quotationId !== undefined) out.quotationId = patch.quotationId ? Number(patch.quotationId) : null;
+    if (patch.leadId !== undefined) out.leadId = patch.leadId ? Number(patch.leadId) : null;
+    if (patch.lead !== undefined) out.leadId = patch.lead && patch.lead !== "-" ? findId(db?.leads, patch.lead) : null;
+    if (patch.projectId !== undefined) out.projectId = patch.projectId ? Number(patch.projectId) : null;
+    if (patch.project !== undefined) out.projectId = patch.project && patch.project !== "-" ? findId(db?.projects, patch.project) : null;
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);
     if (patch.nomorSo !== undefined) out.soNumber = patch.nomorSo;
     if (patch.nomorPoClient !== undefined) {
@@ -2885,6 +2928,19 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
   } else if (module === "invoices") {
     if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.po !== undefined) {
+      out.clientPoId = patch.po && patch.po !== "-" ? findId(db?.["po-client"], patch.po) : null;
+    }
+    if (patch.clientPoId !== undefined) out.clientPoId = patch.clientPoId ? Number(patch.clientPoId) : null;
+    if (patch.penawaran !== undefined || patch.quotation !== undefined) {
+      const qVal = patch.penawaran ?? patch.quotation;
+      out.quotationId = qVal && qVal !== "-" ? findId(db?.quotations, qVal) : null;
+    }
+    if (patch.quotationId !== undefined) out.quotationId = patch.quotationId ? Number(patch.quotationId) : null;
+    if (patch.project !== undefined) {
+      out.projectId = patch.project && patch.project !== "-" ? findId(db?.projects, patch.project) : null;
+    }
+    if (patch.projectId !== undefined) out.projectId = patch.projectId ? Number(patch.projectId) : null;
     if (patch.nilai !== undefined) out.amount = num(patch.nilai);
     if (patch.ppn !== undefined) out.ppn = num(patch.ppn);
     if (patch.pph !== undefined) out.pph = num(patch.pph);
@@ -3024,6 +3080,9 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.paymentProofFileId !== undefined) out.paymentProofFileId = patch.paymentProofFileId ? Number(patch.paymentProofFileId) : null;
     if (patch.fundingSource !== undefined) out.fundingSource = patch.fundingSource;
     if (patch.paymentStatus !== undefined) out.paymentStatus = patch.paymentStatus;
+    if (patch.jatuhTempo !== undefined || patch.dueDate !== undefined) {
+      out.dueDate = patch.jatuhTempo ?? patch.dueDate;
+    }
   } else if (module === "receiving") {
     if (patch.status !== undefined) out.status = toEnum("receiving", patch.status) || patch.status;
     if (patch.requestId !== undefined) out.requestId = patch.requestId ? Number(patch.requestId) : null;

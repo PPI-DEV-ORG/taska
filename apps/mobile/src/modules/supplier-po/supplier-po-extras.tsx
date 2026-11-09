@@ -224,8 +224,17 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   const [invFileId, setInvFileId] = React.useState<number | null>(null);
   const [invPayProofFileId, setInvPayProofFileId] = React.useState<number | null>(null);
 
+  const poAlreadyBilledDpp = React.useMemo(() => {
+    return supplierInvoices.reduce((acc, inv) => acc + (Number(inv.nilai ?? inv.amount ?? 0)), 0);
+  }, [supplierInvoices]);
+
+  const poRemainingDpp = Math.max(0, effectivePoDpp - poAlreadyBilledDpp);
+
+  const [invTagihanScheme, setInvTagihanScheme] = React.useState<"SEKALIGUS" | "DP" | "TERMIN" | "PELUNASAN">("SEKALIGUS");
+  const [invDpPercent, setInvDpPercent] = React.useState<string>("50");
+  const [invTerminPercent, setInvTerminPercent] = React.useState<string>("30");
+
   function handleOpenInvoiceModal() {
-    setInvNumber(`INV-SUP-${row.nomor || row.id}`);
     setInvPphMode(effectivePoPphMode);
     const defJasa =
       poJasaDpp > 0
@@ -234,17 +243,57 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             ? Math.round(effectivePoPph / pphRateFor(effectivePoPphMode))
             : 0);
     setInvJasaDpp(defJasa > 0 ? formatThousands(String(defJasa)) : "");
+
+    const terms = String(row.paymentTerms || row.payment || "");
+    const dpMatch = terms.match(/DP\s*(\d+)%/i);
+
+    if (supplierInvoices.length > 0) {
+      setInvTagihanScheme("PELUNASAN");
+      setInvAmount(formatThousands(String(poRemainingDpp)));
+      setInvNumber(`INV-SUP-${row.nomor || row.id}/PELUNASAN`);
+    } else if (dpMatch) {
+      const pct = dpMatch[1] || "50";
+      setInvTagihanScheme("DP");
+      setInvDpPercent(pct);
+      const dpAmt = Math.round(effectivePoDpp * (Number(pct) / 100));
+      setInvAmount(formatThousands(String(dpAmt)));
+      setInvNumber(`INV-SUP-${row.nomor || row.id}/DP`);
+    } else {
+      setInvTagihanScheme("SEKALIGUS");
+      setInvAmount(formatThousands(String(effectivePoDpp || 0)));
+      setInvNumber(`INV-SUP-${row.nomor || row.id}`);
+    }
+
     if (effectivePoPpnMode === "include") {
-      setInvAmount(formatThousands(String(effectivePoGrandTotal || 0)));
       setInvPpnMode("include");
     } else if (effectivePoPpnMode === "exclude") {
-      setInvAmount(formatThousands(String(effectivePoDpp || 0)));
       setInvPpnMode("exclude");
     } else {
-      setInvAmount(formatThousands(String(effectivePoGrandTotal || 0)));
       setInvPpnMode("none");
     }
     setInvOpen(true);
+  }
+
+  function handleSwitchTagihanScheme(newScheme: "SEKALIGUS" | "DP" | "TERMIN" | "PELUNASAN", customPct?: string) {
+    setInvTagihanScheme(newScheme);
+    if (newScheme === "SEKALIGUS") {
+      setInvAmount(formatThousands(String(effectivePoDpp)));
+      setInvNumber(`INV-SUP-${row.nomor || row.id}`);
+    } else if (newScheme === "DP") {
+      const pct = Number(customPct ?? invDpPercent) || 50;
+      setInvAmount(formatThousands(String(Math.round(effectivePoDpp * (pct / 100)))));
+      setInvNumber(`INV-SUP-${row.nomor || row.id}/DP`);
+    } else if (newScheme === "TERMIN") {
+      const pct = Number(customPct ?? invTerminPercent) || 30;
+      const termAmt = supplierInvoices.length > 0
+        ? Math.min(poRemainingDpp, Math.round(effectivePoDpp * (pct / 100)))
+        : Math.round(effectivePoDpp * (pct / 100));
+      setInvAmount(formatThousands(String(termAmt)));
+      setInvNumber(`INV-SUP-${row.nomor || row.id}/${supplierInvoices.length + 1}`);
+    } else if (newScheme === "PELUNASAN") {
+      setInvAmount(formatThousands(String(poRemainingDpp)));
+      setInvNumber(`INV-SUP-${row.nomor || row.id}/PELUNASAN`);
+    }
   }
 
   const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
@@ -321,8 +370,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
               (Array.isArray(pr.supplierPOs) && pr.supplierPOs.some((sp: any) => String(sp.id) === String(row.id) || sp.number === row.nomor)) ||
               (row.request && row.request !== "-" && String(pr.nomor).toLowerCase() === String(row.request).toLowerCase()) ||
               (row.nomor && String(pr.otherNote || "").includes(row.nomor)) ||
-              (poSuffix && pr.nomor && String(pr.nomor).replace(/^(?:PNJ|REQ|PR)\//i, "") === poSuffix) ||
-              (Number(row.total) === Number(pr.estimasi) && row.supplier && pr.supplier && String(row.supplier).toLowerCase() === String(pr.supplier).toLowerCase())
+              (poSuffix && pr.nomor && String(pr.nomor).replace(/^(?:PNJ|REQ|PR)\//i, "") === poSuffix)
           )?.id;
 
       if (linkedPrId) {
@@ -377,12 +425,36 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     const total = calcInvTotal;
     const isLunas = invPaymentScheme === "LUNAS";
 
+    const invoiceType =
+      invTagihanScheme === "DP"
+        ? "DP"
+        : invTagihanScheme === "TERMIN"
+        ? "Termin"
+        : invTagihanScheme === "PELUNASAN"
+        ? "Pelunasan"
+        : "Pelunasan";
+
+    const termDesc =
+      invTagihanScheme === "DP"
+        ? `DP (${invDpPercent}%) - PO ${row.nomor || ""}`
+        : invTagihanScheme === "TERMIN"
+        ? `Termin ${supplierInvoices.length + 1} (${invTerminPercent}%) - PO ${row.nomor || ""}`
+        : invTagihanScheme === "PELUNASAN" && supplierInvoices.length > 0
+        ? `Pelunasan - PO ${row.nomor || ""}`
+        : `Pembayaran Penuh - PO ${row.nomor || ""}`;
+
     const created = await addRow("invoiceIn", {
       nomor: invNumber,
       supplierId: row.supplierId,
       supplier: row.supplier,
       supplierPoId: row.id,
       po: row.nomor,
+      type: invoiceType.toUpperCase(),
+      jenis: invoiceType,
+      dpLabel: invTagihanScheme === "DP" ? `DP ${invDpPercent}%` : undefined,
+      dpAmount: invTagihanScheme === "DP" ? total : undefined,
+      notes: termDesc,
+      catatan: termDesc,
       nilai: amt,
       ppn,
       pph,
@@ -991,8 +1063,102 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
           </DialogHeader>
 
           <ScrollView contentContainerClassName="p-4 gap-3.5" style={{ maxHeight: 560 }}>
+            {/* Ringkasan Nilai PO & Syarat Pembayaran */}
+            <View className="bg-card p-3 rounded-xl border border-border gap-1.5">
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">Nilai Dasar PO (DPP):</Text>
+                <Text className="text-xs font-bold text-foreground">{rupiah(effectivePoDpp)}</Text>
+              </View>
+              {supplierInvoices.length > 0 ? (
+                <>
+                  <View className="flex-row justify-between items-center">
+                    <Text className="text-xs text-muted-foreground">Sudah Ditagihkan ({supplierInvoices.length} invoice):</Text>
+                    <Text className="text-xs font-semibold text-emerald-600">{rupiah(poAlreadyBilledDpp)}</Text>
+                  </View>
+                  <View className="flex-row justify-between items-center pt-1 border-t border-border/60">
+                    <Text className="text-xs font-bold text-foreground">Sisa Belum Ditagih (DPP):</Text>
+                    <Text className="text-xs font-bold text-primary">{rupiah(poRemainingDpp)}</Text>
+                  </View>
+                </>
+              ) : null}
+              {row.paymentTerms ? (
+                <View className="flex-row justify-between items-center pt-1 border-t border-border/40">
+                  <Text className="text-[11px] text-muted-foreground">Syarat Pembayaran PO:</Text>
+                  <Text className="text-[11px] font-semibold text-primary">{row.paymentTerms}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Skema Tagihan: Sekaligus / DP / Termin / Pelunasan */}
+            <FormField label="Skema Tagihan Invoice Ini" required>
+              <View className="flex-row gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant={invTagihanScheme === "SEKALIGUS" ? "default" : "outline"}
+                  onPress={() => handleSwitchTagihanScheme("SEKALIGUS")}
+                  className="flex-1 min-w-[100px]"
+                >
+                  <Text className="text-xs font-semibold">Sekaligus (100%)</Text>
+                </Button>
+                <Button
+                  size="sm"
+                  variant={invTagihanScheme === "DP" ? "default" : "outline"}
+                  onPress={() => handleSwitchTagihanScheme("DP")}
+                  className="flex-1 min-w-[100px]"
+                >
+                  <Text className="text-xs font-semibold">DP (Uang Muka)</Text>
+                </Button>
+                <Button
+                  size="sm"
+                  variant={invTagihanScheme === "TERMIN" ? "default" : "outline"}
+                  onPress={() => handleSwitchTagihanScheme("TERMIN")}
+                  className="flex-1 min-w-[100px]"
+                >
+                  <Text className="text-xs font-semibold">Termin (Bertahap)</Text>
+                </Button>
+                {supplierInvoices.length > 0 ? (
+                  <Button
+                    size="sm"
+                    variant={invTagihanScheme === "PELUNASAN" ? "default" : "outline"}
+                    onPress={() => handleSwitchTagihanScheme("PELUNASAN")}
+                    className="flex-1 min-w-[100px]"
+                  >
+                    <Text className="text-xs font-semibold">Pelunasan (Sisa)</Text>
+                  </Button>
+                ) : null}
+              </View>
+            </FormField>
+
+            {invTagihanScheme === "DP" ? (
+              <FormField label="Persentase DP (%)" required>
+                <Input
+                  value={invDpPercent}
+                  onChangeText={(val) => {
+                    const clean = val.replace(/\D/g, "");
+                    setInvDpPercent(clean);
+                    handleSwitchTagihanScheme("DP", clean);
+                  }}
+                  keyboardType="numeric"
+                  placeholder="50"
+                />
+              </FormField>
+            ) : invTagihanScheme === "TERMIN" ? (
+              <FormField label={`Persentase Termin ${supplierInvoices.length + 1} (%)`} required>
+                <Input
+                  value={invTerminPercent}
+                  onChangeText={(val) => {
+                    const clean = val.replace(/\D/g, "");
+                    setInvTerminPercent(clean);
+                    handleSwitchTagihanScheme("TERMIN", clean);
+                  }}
+                  keyboardType="numeric"
+                  placeholder="30"
+                />
+              </FormField>
+            ) : null}
+
             {/* Skema Pembayaran */}
-            <FormField label="Skema Pembayaran ke Supplier" required>
+            <FormField label="Status Pembayaran Saat Ini" required>
               <View className="flex-row gap-2">
                 <Button
                   size="sm"

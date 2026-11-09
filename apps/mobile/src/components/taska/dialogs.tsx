@@ -18,10 +18,38 @@ import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-u
 import { downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { pphRateFor, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import { MODULES, type CreateField, type ModuleDef, type Row } from "@/constants/modules";
+import {
+  PoClientSelect,
+  QuotationSelect,
+  LeadSelect,
+  ContinuableInvoiceSelect,
+  ProjectSelect,
+  SurveySelect,
+  PocSelect,
+  VisitSelect,
+} from "./document-select";
 
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
 export { QuickAddCustomerDialog } from "./quick-add-customer-dialog";
 export { QuickAddSupplierDialog } from "./quick-add-supplier-dialog";
+export {
+  SupplierSelect,
+  formatSupplierLabel,
+  getSupplierTagsText,
+  cleanSupplierName,
+  findSupplierMatch,
+} from "./supplier-select";
+export { ProductSelect } from "./product-select";
+export {
+  PoClientSelect,
+  QuotationSelect,
+  LeadSelect,
+  ContinuableInvoiceSelect,
+  ProjectSelect,
+  SurveySelect,
+  PocSelect,
+  VisitSelect,
+} from "./document-select";
 export function formatThousands(raw: any): string {
   if (raw == null || raw === "") return "";
   const digits = String(raw).replace(/\D/g, "");
@@ -1322,6 +1350,159 @@ export function FormDialog({
                 error={errs[f.key]}
               >
                 {f.type === "select" ? (
+                  (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase() === "supplier") ? (
+                    <SupplierSelect
+                      value={vals[f.key]}
+                      onChange={(v, s) => {
+                        setVals((prev) => ({
+                          ...prev,
+                          [f.key]: v,
+                          ...(s?.payment ? { payment: s.payment } : {}),
+                        }));
+                      }}
+                      onAddNew={() => setQuickSupplierKey(f.key)}
+                      addNewLabel="+ Tambah Supplier Baru"
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                    />
+                  ) : (f.key === "lead" || f.key === "leadId") ? (
+                    <LeadSelect
+                      value={vals[f.key]}
+                      allowClear={!f.required}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      onChange={(lead) => {
+                        if (!lead) {
+                          setVals((s) => ({ ...s, [f.key]: f.required ? "" : "-" }));
+                          return;
+                        }
+                        const cust = lead.perusahaan || lead.customer || "";
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: lead.nama,
+                          ...(cust && (!s.customer || s.customer === "-") ? { customer: cust } : {}),
+                          ...(def?.key === "projects" && !s.nama ? { nama: `Project ${lead.nama}` } : {}),
+                          ...(def?.key === "surveys" && lead.lokasi && !s.lokasi ? { lokasi: lead.lokasi } : {}),
+                        }));
+                      }}
+                    />
+                  ) : (f.key === "project" || f.key === "projectId") ? (
+                    <ProjectSelect
+                      value={vals[f.key]}
+                      projectId={vals.projectId}
+                      allowClear={!f.required}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      onChange={(proj) => {
+                        if (!proj) {
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: f.required ? "" : "-",
+                            ...(s.projectId ? { projectId: "" } : {}),
+                          }));
+                          return;
+                        }
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: proj.nama,
+                          projectId: String(proj.id),
+                          ...(proj.customer && (!s.customer || s.customer === "-") ? { customer: proj.customer } : {}),
+                        }));
+                      }}
+                    />
+                  ) : (f.key === "survey" || f.key === "surveyId") ? (
+                    <SurveySelect
+                      value={vals[f.key]}
+                      surveyId={vals.surveyId}
+                      allowClear={!f.required}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      onChange={(survey) => {
+                        if (!survey) {
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: f.required ? "" : "-",
+                            ...(s.surveyId ? { surveyId: "" } : {}),
+                          }));
+                          return;
+                        }
+                        const lbl = `Survey #${survey.id} - ${survey.lead || survey.customer || survey.lokasi || "Survey"}`;
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: lbl,
+                          surveyId: String(survey.id),
+                        }));
+                      }}
+                    />
+                  ) : (f.key === "pocReport" || f.key === "poc" || f.key === "pocId" || f.key === "pocReportId") ? (
+                    <PocSelect
+                      value={vals[f.key]}
+                      pocId={vals.pocReportId || vals.pocId}
+                      allowClear={!f.required}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      onChange={(poc) => {
+                        if (!poc) {
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: f.required ? "" : "-",
+                            ...(s.pocReportId ? { pocReportId: "" } : {}),
+                          }));
+                          return;
+                        }
+                        const lbl = `POC ${poc.nomor || poc.number} - ${poc.judul || poc.title}`;
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: lbl,
+                          pocReportId: String(poc.id),
+                        }));
+                      }}
+                    />
+                  ) : (f.key === "visitReport" || f.key === "visit" || f.key === "visitId" || f.key === "visitReportId") ? (
+                    <VisitSelect
+                      value={vals[f.key]}
+                      visitId={vals.visitReportId || vals.visitId}
+                      allowClear={!f.required}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      onChange={(visit) => {
+                        if (!visit) {
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: f.required ? "" : "-",
+                            ...(s.visitReportId ? { visitReportId: "" } : {}),
+                          }));
+                          return;
+                        }
+                        const lbl = `VISIT ${visit.nomor || visit.number} - ${visit.judul || visit.title}`;
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: lbl,
+                          visitReportId: String(visit.id),
+                        }));
+                      }}
+                    />
+                  ) : (f.key === "penawaran") ? (
+                    <QuotationSelect
+                      value={vals[f.key]}
+                      allowClear={!f.required}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      onChange={(quote) => {
+                        if (!quote) {
+                          setVals((s) => ({ ...s, [f.key]: f.required ? "" : "-" }));
+                          return;
+                        }
+                        const lbl = `${quote.nomor} - ${quote.customer || "-"} - ${quote.lead || quote.nama || "-"}`;
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: lbl,
+                          nilai: formatThousands(String(quote.totalAfterDisc || quote.nilai || quote.total || 0)),
+                          ...(quote.customer ? { customer: quote.customer } : {}),
+                        }));
+                      }}
+                    />
+                  ) : (
                   <View className="gap-1.5">
                     <SearchableSelect
                       value={vals[f.key]}
@@ -1491,6 +1672,7 @@ export function FormDialog({
                       );
                     })() : null}
                   </View>
+                  )
                 ) : f.type === "multiselect" ? (
                   <MultiSelect
                     values={vals[f.key]?.split(", ").filter(Boolean) ?? []}

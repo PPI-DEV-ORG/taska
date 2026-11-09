@@ -19,7 +19,15 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/taska/basics";
-import { SearchableSelect, DatePicker, QuickAddCustomerDialog, formatThousands } from "@/components/taska/dialogs";
+import {
+  SearchableSelect,
+  DatePicker,
+  QuickAddCustomerDialog,
+  formatThousands,
+  ProductSelect,
+  QuotationSelect,
+  ProjectSelect,
+} from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
@@ -728,15 +736,16 @@ function CreateSalesOrderForm({
                 label="Berdasarkan Penawaran Asal (Opsional)"
                 hint="Pilih penawaran (quotation) untuk otomatis mengisi item & nilai"
               >
-                <SearchableSelect
-                  value={quotationLabel}
-                  options={["-", ...quotationOptions.map((q) => q.label)]}
-                  onChange={(val) => {
-                    if (val === "-" || !val) {
+                <QuotationSelect
+                  quotationId={quotationId}
+                  allowClear={true}
+                  onChange={(q) => {
+                    if (!q) {
                       setQuotationLabel("");
                       setQuotationId("");
                     } else {
-                      void handleSelectQuotation(val);
+                      const lbl = `${q.nomor} - ${q.customer || "-"} - ${q.lead || "-"}`;
+                      void handleSelectQuotation(lbl);
                     }
                   }}
                   placeholder="Pilih penawaran jika ada..."
@@ -790,18 +799,13 @@ function CreateSalesOrderForm({
 
             <View className="flex-1">
               <FormField label="Alokasi Proyek Terkait (Opsional)" hint="Hubungkan dengan data project">
-                <SearchableSelect
-                  value={projectOptions.find((p) => p.id === projectId)?.label || ""}
-                  options={["-", ...projectOptions.map((p) => p.label)]}
-                  onChange={(val) => {
-                    if (val === "-" || !val) {
-                      setProjectId("");
-                    } else {
-                      const match = projectOptions.find((p) => p.label === val);
-                      setProjectId(match ? match.id : "");
-                    }
+                <ProjectSelect
+                  projectId={projectId}
+                  allowClear={true}
+                  onChange={(p) => {
+                    setProjectId(p ? String(p.id) : "");
                   }}
-                  placeholder="Pilih project..."
+                  placeholder="Pilih project jika ada..."
                 />
               </FormField>
             </View>
@@ -847,25 +851,11 @@ function CreateSalesOrderForm({
             {itemMode === "master" ? (
               <View className="gap-3 pt-1">
                 <FormField label="Pilih Produk dari Master Stok" hint="Pilih barang dari katalog gudang">
-                  <SearchableSelect
-                    value={
-                      selectedProductObj
-                        ? `${selectedProductObj.nama || selectedProductObj.name} (Stok: ${getProductStock(
-                            selectedProductObj
-                          )} ${selectedProductObj.satuan || selectedProductObj.unit || "unit"})`
-                        : ""
-                    }
-                    options={(data.products ?? []).map(
-                      (p: Row) =>
-                        `${p.nama || p.name} (Stok: ${getProductStock(p)} ${p.satuan || p.unit || "unit"})`
-                    )}
-                    onChange={(val) => {
-                      const match = (data.products ?? []).find(
-                        (p: Row) =>
-                          `${p.nama || p.name} (Stok: ${getProductStock(p)} ${p.satuan || p.unit || "unit"})` === val
-                      );
-                      if (match) {
-                        handleSelectMasterProduct(String(match.id));
+                  <ProductSelect
+                    productId={selectedProductId}
+                    onChange={(p) => {
+                      if (p) {
+                        handleSelectMasterProduct(String(p.id));
                       } else {
                         setSelectedProductId("");
                       }

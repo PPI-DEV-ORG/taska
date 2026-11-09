@@ -1,15 +1,26 @@
 import * as React from "react";
 import { View, ScrollView } from "react-native";
-import { Truck, User, Phone, MapPin, Mail, CreditCard } from "lucide-react-native";
+import { Truck, User, Phone, MapPin, Mail, CreditCard, Tag } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
+import { SearchableSelect } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
+import { api } from "@/services/api";
 import { type Row } from "@/constants/modules";
+
+const DEFAULT_PAYMENT_TERMS = [
+  "Tunai",
+  "Net 14",
+  "Net 30",
+  "Net 60",
+  "COD",
+  "DP 50%, Pelunasan 50%",
+];
 
 export function QuickAddSupplierDialog({
   open,
@@ -23,23 +34,51 @@ export function QuickAddSupplierDialog({
   const { addRow, toast } = useApp();
   const [nama, setNama] = React.useState("");
   const [jenisUsaha, setJenisUsaha] = React.useState<"Non-PKP" | "PKP">("Non-PKP");
+  const [tagInput, setTagInput] = React.useState("");
   const [kontak, setKontak] = React.useState("");
   const [telepon, setTelepon] = React.useState("");
   const [kota, setKota] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [payment, setPayment] = React.useState("");
+  const [payment, setPayment] = React.useState("Net 30");
+  const [paymentOptions, setPaymentOptions] = React.useState<string[]>(DEFAULT_PAYMENT_TERMS);
   const [catatan, setCatatan] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
+  // Load custom payment terms options from settings if available
+  React.useEffect(() => {
+    if (!open) return;
+    let isMounted = true;
+    void (async () => {
+      try {
+        const res = await api<any[]>("GET", "/settings");
+        if (Array.isArray(res) && isMounted) {
+          const item = res.find((s) => s.key === "supplier.payment.terms");
+          if (item?.value) {
+            try {
+              const parsed = JSON.parse(item.value);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setPaymentOptions(Array.from(new Set([...parsed, ...DEFAULT_PAYMENT_TERMS])));
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [open]);
+
   const resetForm = React.useCallback(() => {
     setNama("");
     setJenisUsaha("Non-PKP");
+    setTagInput("");
     setKontak("");
     setTelepon("");
     setKota("");
     setEmail("");
-    setPayment("");
+    setPayment("Net 30");
     setCatatan("");
     setError("");
     setLoading(false);
@@ -63,11 +102,12 @@ export function QuickAddSupplierDialog({
         nama: nama.trim(),
         jenisUsaha,
         taxStatus: jenisUsaha === "PKP" ? "PKP" : "NON_PKP",
+        tagInput: tagInput.trim() || undefined,
         kontak: kontak.trim() || "-",
         kota: kota.trim() || "-",
         telepon: telepon.trim() || "-",
         email: email.trim() || "-",
-        payment: payment.trim() || "-",
+        payment: payment.trim() || "Net 30",
         catatan: catatan.trim() || "-",
         status: "Aktif",
       });
@@ -134,6 +174,23 @@ export function QuickAddSupplierDialog({
                 </Button>
               </View>
             </View>
+
+            <FormField
+              label="Tags / Kategori Barang Supplier (Opsional)"
+              hint="Contoh: Kabel, Baut, Switch, Aksesoris (pisahkan dengan koma)"
+            >
+              <View className="relative">
+                <Input
+                  value={tagInput}
+                  onChangeText={setTagInput}
+                  placeholder="Kabel, Konektor, Switch Hub, Server"
+                  className="pl-8"
+                />
+                <View className="absolute left-2.5 top-3">
+                  <Tag size={14} color={colors.textSecondary} />
+                </View>
+              </View>
+            </FormField>
 
             <View className="flex-row gap-2">
               <View className="flex-1">
@@ -205,17 +262,12 @@ export function QuickAddSupplierDialog({
             </View>
 
             <FormField label="Termin Pembayaran (Opsional)">
-              <View className="relative">
-                <Input
-                  value={payment}
-                  onChangeText={setPayment}
-                  placeholder="Contoh: Net 30, Cash on Delivery, Tunai"
-                  className="pl-8"
-                />
-                <View className="absolute left-2.5 top-3">
-                  <CreditCard size={14} color={colors.textSecondary} />
-                </View>
-              </View>
+              <SearchableSelect
+                value={payment}
+                onChange={setPayment}
+                options={paymentOptions}
+                placeholder="Pilih syarat/termin pembayaran..."
+              />
             </FormField>
 
             <FormField label="Catatan / Alamat Supplier (Opsional)">
