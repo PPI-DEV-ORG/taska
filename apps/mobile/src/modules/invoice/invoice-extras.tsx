@@ -134,7 +134,7 @@ export function InvoiceExtras({
     });
     await reload();
     if (onRefresh) await onRefresh();
-    toast("Barang berhasil dihapus dari invoice");
+    toast("Barang berhasil dihapus dari faktur");
   }
 
   async function handleDeleteSelectedItems() {
@@ -243,10 +243,10 @@ export function InvoiceExtras({
     setIsSending(true);
     try {
       await setStatus("invoices", String(row.id), "Terkirim");
-      toast("Invoice berhasil dikirim ke customer");
+      toast("Faktur berhasil dikirim ke pelanggan");
       await reload();
     } catch (e: any) {
-      toast(e?.message ?? "Gagal mengirim invoice", "danger");
+      toast(e?.message ?? "Gagal mengirim faktur", "danger");
     } finally {
       setIsSending(false);
     }
@@ -435,7 +435,7 @@ export function InvoiceExtras({
       <ConflictAndSwapBanner row={row} />
 
       <Panel
-        title="Ringkasan Pembayaran Invoice"
+        title="Ringkasan Pembayaran Faktur"
         right={
           <View className="flex-row items-center gap-1.5">
             {canExportEfaktur ? (
@@ -447,7 +447,7 @@ export function InvoiceExtras({
             {canManage && !isSent && row.status !== "Batal" && row.status !== "Dibatalkan" ? (
               <Button size="sm" onPress={handleSendInvoice} disabled={isSending} className="flex-row items-center gap-1 bg-primary">
                 <Send size={13} color="#fff" />
-                <Text className="text-xs text-white font-semibold">{isSending ? "Mengirim..." : "Kirim ke Customer"}</Text>
+                <Text className="text-xs text-white font-semibold">{isSending ? "Mengirim..." : "Kirim ke Pelanggan"}</Text>
               </Button>
             ) : null}
             {canManage && isSent && sisa > 0 && row.status !== "Batal" && row.status !== "Dibatalkan" ? (
@@ -508,8 +508,8 @@ export function InvoiceExtras({
         <Line left="Sisa Tagihan" right={<Text className="text-sm font-semibold">{rupiah(sisa)}</Text>} />
         {row.fileId ? (
           <Line
-            left="Dokumen Invoice"
-            sub="File invoice yang diunggah / diekstrak"
+            left="Dokumen Faktur"
+            sub="File faktur yang diunggah / diekstrak"
             right={
               <Button
                 variant="outline"
@@ -518,7 +518,7 @@ export function InvoiceExtras({
                 className="flex-row items-center gap-1.5 h-8 px-2.5"
               >
                 <FileText size={13} color={colors.primary} />
-                <Text className="text-xs text-primary font-semibold">Buka File Invoice</Text>
+                <Text className="text-xs text-primary font-semibold">Buka File Faktur</Text>
                 <ExternalLink size={11} color={colors.primary} />
               </Button>
             }
@@ -526,8 +526,8 @@ export function InvoiceExtras({
         ) : null}
         {effectivePaidFileId ? (
           <Line
-            left="Bukti Pembayaran Customer"
-            sub={effectivePaidFileName || "Lampiran bukti transfer / pelunasan invoice"}
+            left="Bukti Pembayaran Pelanggan"
+            sub={effectivePaidFileName || "Lampiran bukti transfer / pelunasan faktur"}
             right={
               <Button
                 variant="outline"
@@ -547,7 +547,7 @@ export function InvoiceExtras({
       {/* Panel Daftar & Alokasi Barang Terpakai */}
       <Panel
         title="Daftar & Alokasi Barang Terpakai"
-        subtitle="Tracking stok barang dan alokasi yang dipakai pada invoice ini agar stok gudang tetap akurat."
+        subtitle="Tracking stok barang dan alokasi yang dipakai pada faktur ini agar stok gudang tetap akurat."
         right={
           <Button
             size="sm"
@@ -728,7 +728,7 @@ export function InvoiceExtras({
           </View>
         ) : (
           <View className="p-4 rounded-xl border border-dashed border-border/80 items-center justify-center gap-2">
-            <Text className="text-xs text-muted-foreground">Belum ada barang yang dialokasikan ke invoice ini.</Text>
+            <Text className="text-xs text-muted-foreground">Belum ada barang yang dialokasikan ke faktur ini.</Text>
             <Button size="sm" variant="outline" onPress={() => setPickerOpen(true)} className="flex-row items-center gap-1.5">
               <Plus size={14} color={colors.text} />
               <Text className="text-xs">Pilih dari Stok Gudang</Text>
@@ -749,7 +749,7 @@ export function InvoiceExtras({
       {hasPhysicalGoods && (
         <Panel
           title={`Surat Jalan / Pengiriman Barang (${linkedDeliveryNotes.length})`}
-          subtitle="Pengiriman barang fisik langsung dari Invoice tanpa memerlukan Sales Order."
+          subtitle="Pengiriman barang fisik langsung dari Faktur tanpa memerlukan Pesanan Penjualan."
           right={
             <Button
               size="sm"
@@ -779,7 +779,7 @@ export function InvoiceExtras({
                       <Text className="text-xs font-bold text-foreground">
                         {dn.nomor || `SJ #${dn.id}`}
                       </Text>
-                      <StatusBadge status={dn.status || "Pending"} />
+                      <StatusBadge status={dn.status || "Menunggu pengiriman"} />
                     </View>
                     <Text className="text-[11px] text-muted-foreground mt-0.5" numberOfLines={1}>
                       Tujuan: {dn.tujuan || row.customer} · {dn.tanggal || "-"}
@@ -803,7 +803,7 @@ export function InvoiceExtras({
       {/* Dokumen Faktur Manual */}
       <Panel
         title="Dokumen Faktur Manual"
-        subtitle="Upload dokumen file invoice / penagihan manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke invoice ini."
+        subtitle="Upload dokumen file faktur / penagihan manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke faktur ini."
       >
         {row.fileId ? (
           <View className="mb-3 p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between">
@@ -838,7 +838,7 @@ export function InvoiceExtras({
                     await patchRow("invoices", row.id, { fileId: null, fileName: null });
                     await reload();
                     await onRefresh?.();
-                    toast("File dokumen invoice berhasil dihapus");
+                    toast("File dokumen faktur berhasil dihapus");
                   } catch {
                     toast("Gagal menghapus file", "danger");
                   }
@@ -852,7 +852,7 @@ export function InvoiceExtras({
         ) : null}
 
         <FileUploader
-          label={row.fileId ? "Ganti File Invoice Manual (PDF / Excel)" : "Pilih atau Tarik File Invoice Manual (PDF / Excel)"}
+          label={row.fileId ? "Ganti File Faktur Manual (PDF / Excel)" : "Pilih atau Tarik File Faktur Manual (PDF / Excel)"}
           kind="dokumen"
           category="invoice"
           autoFlush
@@ -877,8 +877,8 @@ export function InvoiceExtras({
 
       {/* Bukti Pembayaran / Transfer Customer */}
       <Panel
-        title="Bukti Pembayaran / Transfer Customer"
-        subtitle="Lampiran bukti transfer / pembayaran customer saat invoice ditandai dibayar atau lunas."
+        title="Bukti Pembayaran / Transfer Pelanggan"
+        subtitle="Lampiran bukti transfer / pembayaran pelanggan saat faktur ditandai dibayar atau lunas."
       >
         {(() => {
           const paymentProofs = payments.filter((p) => p.fileId);
@@ -972,7 +972,7 @@ export function InvoiceExtras({
           label={
             effectivePaidFileId
               ? "Upload / Ganti Bukti Pembayaran (JPG / PNG / PDF)"
-              : "Upload Bukti Pembayaran / Transfer Customer (JPG / PNG / PDF)"
+              : "Upload Bukti Pembayaran / Transfer Pelanggan (JPG / PNG / PDF)"
           }
           kind="foto"
           category="foto-struk"
@@ -998,7 +998,7 @@ export function InvoiceExtras({
         />
       </Panel>
 
-      <Panel title="Receipt / Bukti Pembayaran Masuk" subtitle="Riwayat pembayaran customer & cetak kwitansi resmi (Receipt)">
+      <Panel title="Receipt / Bukti Pembayaran Masuk" subtitle="Riwayat pembayaran pelanggan & cetak kwitansi resmi (Receipt)">
         {payments.length > 0 ? (
           payments.map((p, idx) => (
             <Line
@@ -1067,7 +1067,7 @@ export function InvoiceExtras({
 
       <Panel
         title={`Retur Penjualan (${salesReturns.length})`}
-        subtitle="Pencatatan pengembalian barang dari customer (otomatis memperbarui status SN & mutasi stok retur)"
+        subtitle="Pencatatan pengembalian barang dari pelanggan (otomatis memperbarui status SN & mutasi stok retur)"
         right={
           <Button
             size="sm"
@@ -1088,7 +1088,7 @@ export function InvoiceExtras({
         }
       >
         {salesReturns.length === 0 ? (
-          <Text className="text-muted-foreground text-sm">Belum ada retur penjualan pada invoice ini.</Text>
+          <Text className="text-muted-foreground text-sm">Belum ada retur penjualan pada faktur ini.</Text>
         ) : (
           salesReturns.map((rt: Row) => (
             <Line
@@ -1170,7 +1170,7 @@ export function InvoiceExtras({
                     ...(data.products ?? []).filter((p: any) => p.type !== "JASA").map((p: any) => String(p.nama || "")).filter(Boolean),
                   ]),
                 )}
-                placeholder="Pilih barang dari invoice atau master produk..."
+                placeholder="Pilih barang dari faktur atau master produk..."
               />
             </FormField>
             {(() => {

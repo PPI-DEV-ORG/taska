@@ -352,11 +352,11 @@ export function QuotationTemplateGenerator({
                   <Input value={city} onChangeText={setCity} placeholder="Bekasi" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-xs font-semibold">Tujuan / Alamat Customer</Text>
+                  <Text className="text-xs font-semibold">Tujuan / Alamat Pelanggan</Text>
                   <Input
                     value={customerAddress}
                     onChangeText={setCustomerAddress}
-                    placeholder="Di Tempat (atau alamat customer)"
+                    placeholder="Di Tempat (atau alamat pelanggan)"
                   />
                 </View>
               </View>

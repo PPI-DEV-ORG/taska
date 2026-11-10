@@ -61,7 +61,7 @@ export function StockDetailDialog({
             {selectedDetail?.type === "warehouse_product" && "Detail Stok Gudang"}
             {selectedDetail?.type === "serial" && "Detail Unit Serial Number"}
             {selectedDetail?.type === "movement" && "Detail Pergerakan Stok"}
-            {selectedDetail?.type === "reservation" && "Detail Reservasi Project"}
+            {selectedDetail?.type === "reservation" && "Detail Reservasi Proyek"}
           </DialogTitle>
         </DialogHeader>
 
@@ -466,7 +466,7 @@ export function StockDetailDialog({
                   <Text className="text-xs font-semibold text-foreground">{s.gudang || "-"}</Text>
                 </View>
                 <View className="flex-row justify-between py-1 border-b border-border">
-                  <Text className="text-xs text-muted-foreground">Alokasi Project</Text>
+                  <Text className="text-xs text-muted-foreground">Alokasi Proyek</Text>
                   <Text className="text-xs font-semibold text-foreground">{s.project || "Bebas / Tidak dialokasikan"}</Text>
                 </View>
                 <View className="flex-row justify-between py-1 border-b border-border">
@@ -527,7 +527,7 @@ export function StockDetailDialog({
                   <Text className="text-xs font-semibold text-foreground">{m.gudang || "-"}</Text>
                 </View>
                 <View className="flex-row justify-between py-1 border-b border-border">
-                  <Text className="text-xs text-muted-foreground">Project Terkait</Text>
+                  <Text className="text-xs text-muted-foreground">Proyek Terkait</Text>
                   <Text className="text-xs font-semibold text-foreground">{m.project || "-"}</Text>
                 </View>
                 <View className="flex-row justify-between py-1 border-b border-border">
@@ -565,7 +565,7 @@ export function StockDetailDialog({
 
               <View className="bg-card border-border space-y-2 rounded-lg border p-3">
                 <View className="flex-row justify-between py-1 border-b border-border">
-                  <Text className="text-xs text-muted-foreground">Project Pemesan</Text>
+                  <Text className="text-xs text-muted-foreground">Proyek Pemesan</Text>
                   <Text className="text-xs font-bold text-foreground">{r.project}</Text>
                 </View>
                 <View className="flex-row justify-between py-1 border-b border-border">

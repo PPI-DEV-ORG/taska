@@ -9,6 +9,11 @@ import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { RequestDto, RequestListQuery, RequestStatusDto } from "./dto.js";
+import {
+  REQUEST_CREATOR_ROLES,
+  assertPrEditable,
+  assertPrTransition,
+} from "./purchase-flow.js";
 
 @Injectable()
 export class RequestsService {
@@ -136,12 +141,7 @@ export class RequestsService {
             select: { id: true, originalName: true, mimeType: true, size: true },
           })
         : Promise.resolve(null),
-      (row as any).doFileId
-        ? this.prisma.main.file.findUnique({
-            where: { id: (row as any).doFileId },
-            select: { id: true, originalName: true, mimeType: true, size: true },
-          })
-        : Promise.resolve(null),
+      this.resolveDoFile(id, (row as any).doFileId),
       (row as any).paymentProofFileId
         ? this.prisma.main.file.findUnique({
             where: { id: (row as any).paymentProofFileId },
@@ -161,12 +161,8 @@ export class RequestsService {
         })),
       ),
     ]);
-    const isPaid =
-      (row.status as string) === "DIBAYAR" ||
-      (row.otherNote as string)?.includes("[DIBAYAR") ||
-      !!paymentProofFile;
-    const fundingMatch = (row.otherNote as string)?.match(/\[DIBAYAR:([^\]]+)\]/);
-    const fundingSource = fundingMatch ? fundingMatch[1] : undefined;
+    // Satu sumber: paymentStatus (status DIBAYAR selalu ikut menyetel paymentStatus).
+    const isPaid = row.paymentStatus === "DIBAYAR" || (row.status as string) === "DIBAYAR";
     return {
       ...row,
       evidenceFile,
@@ -175,28 +171,61 @@ export class RequestsService {
       stock,
       paymentProofFile,
       paymentProofFileId: paymentProofFile?.id ?? null,
-      fundingSource,
+      fundingSource: row.paymentAccountCode ?? null,
       paymentStatus: isPaid ? "DIBAYAR" : "BELUM_DIBAYAR",
       isPaid,
     };
   }
 
+  /**
+   * Surat jalan / DO tidak disalin ke tiap dokumen. Sumbernya: yang diunggah Procurement saat kirim (request / PO),
+   * kalau tidak ada maka foto/DO yang diunggah Gudang di penerimaan.
+   */
+  private async resolveDoFile(requestId: number, ownDoFileId?: number | null) {
+    let fileId = ownDoFileId ?? null;
+    if (!fileId) {
+      const po = await this.prisma.main.supplierPO.findFirst({
+        where: { requestId, doFileId: { not: null } },
+        orderBy: { id: "desc" },
+        select: { doFileId: true },
+      });
+      fileId = po?.doFileId ?? null;
+    }
+    if (!fileId) {
+      const rec = await this.prisma.main.receiving.findFirst({
+        where: { OR: [{ requestId }, { supplierPo: { requestId } }], receiptFileId: { not: null } },
+        orderBy: { id: "desc" },
+        select: { receiptFileId: true },
+      });
+      fileId = rec?.receiptFileId ?? null;
+    }
+    if (!fileId) return null;
+    return this.prisma.main.file.findUnique({
+      where: { id: fileId },
+      select: { id: true, originalName: true, mimeType: true, size: true },
+    });
+  }
+
   async create(dto: RequestDto, user: RequestUser) {
+    if (!REQUEST_CREATOR_ROLES.includes(user.role)) {
+      throw new ForbiddenException("Hanya Procurement, Gudang, Admin, atau PM yang dapat membuat request barang");
+    }
     const costType = dto.costType ?? "STOK";
-    let projectId = dto.projectId;
+    const projectId = dto.projectId;
     if (costType === "PROJECT" && !projectId) {
-      const firstProj = await this.prisma.main.project.findFirst();
-      projectId = firstProj?.id;
+      throw new BadRequestException("Request untuk project wajib memilih project");
+    }
+    const source = String(dto.procurementSource ?? "SUPPLIER").toUpperCase();
+    if (!["SUPPLIER", "RETAIL", "GUDANG"].includes(source)) {
+      throw new BadRequestException("Sumber pengadaan harus Supplier, Ritel, atau Gudang");
     }
     const purpose = dto.purpose || "Kebutuhan operasional";
     const otherNote = costType === "LAINNYA" && !dto.otherNote?.trim() ? purpose : dto.otherNote;
 
-    let items = dto.items ?? [];
-    if (!items.length) {
-      const firstProduct = await this.prisma.main.product.findFirst();
-      if (firstProduct) {
-        items = [{ productId: firstProduct.id, qty: 1, unitCost: 0 }];
-      }
+    const items = dto.items ?? [];
+    if (!items.length) throw new BadRequestException("Request minimal berisi satu barang");
+    if (items.some((i) => !i.productId && !i.customName?.trim())) {
+      throw new BadRequestException("Setiap barang harus memilih produk atau mengisi nama barang");
     }
 
     const number = await this.docnum.next("permintaan");
@@ -224,7 +253,7 @@ export class RequestsService {
         dueDate,
         requesterId: user.id,
         costType,
-        procurementSource: dto.procurementSource ?? "SUPPLIER",
+        procurementSource: source,
         paymentMethod: dto.paymentMethod ?? "UTANG",
         projectId,
         taskId: dto.taskId,
@@ -234,7 +263,7 @@ export class RequestsService {
         purpose,
         otherNote,
         evidenceFileId: dto.evidenceFileId,
-        status: (dto.status as any) ?? "DIAJUKAN",
+        status: "DIAJUKAN",
         items: {
           create: items.map((i) => ({
             productId: i.productId ?? null,
@@ -301,6 +330,8 @@ export class RequestsService {
   async update(id: number, dto: RequestDto, user: RequestUser) {
     const row = await this.prisma.main.purchaseRequest.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
+    // Status, pembayaran, dan surat jalan hanya berubah lewat /status agar alur tidak terlompati.
+    assertPrEditable(row, user);
 
     const updated = await this.prisma.main.purchaseRequest.update({
       where: { id },
@@ -317,10 +348,6 @@ export class RequestsService {
         ...(dto.purpose !== undefined ? { purpose: dto.purpose } : {}),
         ...(dto.otherNote !== undefined ? { otherNote: dto.otherNote } : {}),
         ...(dto.evidenceFileId !== undefined ? { evidenceFileId: dto.evidenceFileId } : {}),
-        ...(dto.doFileId !== undefined ? { doFileId: dto.doFileId } : {}),
-        ...(dto.paymentProofFileId !== undefined ? { paymentProofFileId: dto.paymentProofFileId } : {}),
-        ...(dto.paymentStatus !== undefined ? { paymentStatus: dto.paymentStatus } : {}),
-        ...(dto.status ? { status: dto.status as any } : {}),
         ...(dto.items?.length
           ? {
               estimatedCost:
@@ -357,25 +384,6 @@ export class RequestsService {
           data: { refType: "purchase_request", refId: String(id) },
         })
         .catch(() => {});
-    }
-    if (dto.doFileId) {
-      await this.prisma.main.file
-        .update({
-          where: { id: dto.doFileId },
-          data: { refType: "purchase_request_do", refId: String(id) },
-        })
-        .catch(() => {});
-    }
-
-    if (
-      dto.status === "DISETUJUI" ||
-      dto.status === "DIBAYAR" ||
-      dto.status === "DITERIMA" ||
-      (dto as any).status === "Lunas" ||
-      dto.paymentProofFileId ||
-      dto.paymentStatus === "DIBAYAR"
-    ) {
-      await this.syncConsumablesToProject(id);
     }
 
     return updated;
@@ -422,6 +430,34 @@ export class RequestsService {
       },
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
+
+    // Persetujuan / penolakan wajib lewat modul Persetujuan (menghormati ambang Bos & larangan setujui sendiri).
+    if (dto.status === "DISETUJUI" || dto.status === "DITOLAK") {
+      if (row.status !== "DIAJUKAN" && row.status !== "CEK_STOK") {
+        throw new BadRequestException(`Request berstatus ${row.status} tidak dapat diputuskan lagi`);
+      }
+      if (dto.status === "DITOLAK" && !dto.reason?.trim()) {
+        throw new BadRequestException("Alasan penolakan wajib diisi");
+      }
+      const approval = await this.prisma.main.approval.findUnique({
+        where: { kind_entityId: { kind: "PURCHASE_REQUEST", entityId: id } },
+      });
+      if (!approval) throw new BadRequestException("Pengajuan persetujuan request ini tidak ditemukan");
+      await this.approvals.decide(approval.id, user, dto.status === "DISETUJUI", dto.reason);
+      this.notifications.dataChange("purchase-requests", "status", id);
+      this.notifications.dataChange("purchase-requests", "update", id);
+      return this.prisma.main.purchaseRequest.findUnique({
+        where: { id },
+        include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
+      });
+    }
+
+    const activePos = (row.supplierPOs ?? []).filter((p) => !["DITOLAK", "DIBATALKAN"].includes(p.status));
+    assertPrTransition(row, dto.status, user, {
+      activePoCount: activePos.length,
+      hasApprovedPo: activePos.some((p) => p.status === "DISETUJUI"),
+      paymentProofProvided: Boolean(dto.paymentProofFileId),
+    });
 
     // Untuk request internal (ambil stok gudang untuk project): kurangi stok OUT saat diserahkan/dikirim.
     // Untuk pembelian (ritel / PO): barang belum ada di gudang, stok baru bertambah saat Penerimaan (Receiving).
@@ -563,14 +599,8 @@ export class RequestsService {
       }
     }
 
-    const isMarkingPaid =
-      dto.status === "DIBAYAR" ||
-      (dto as any).status === "Lunas" ||
-      dto.paymentStatus === "DIBAYAR" ||
-      Boolean(dto.paymentProofFileId);
-    const paidTag = dto.fundingSource
-      ? `[DIBAYAR:${dto.fundingSource}]`
-      : "[DIBAYAR]";
+    // Pembayaran hanya lewat status DIBAYAR (peran Finance + bukti wajib, divalidasi assertPrTransition).
+    const isMarkingPaid = dto.status === "DIBAYAR";
 
     const allConsumables = row.items.length > 0 && row.items.every((it) => !!it.customName);
 
@@ -586,58 +616,28 @@ export class RequestsService {
       await this.syncConsumablesToProject(id);
     }
 
+    // Pembayaran setelah barang dikirim/diterima (utang) hanya mencatat pembayaran, status alur tidak mundur.
     const targetStatus =
-      row.status === "DITERIMA" && (dto.status === "DIBAYAR" || (dto as any).status === "Lunas")
-        ? "DITERIMA"
-        : (dto.status === "Lunas" ? "DIBAYAR" : dto.status);
+      dto.status === "DIBAYAR" && (row.status === "DIKIRIM" || row.status === "DITERIMA" || row.status === "PO_DIBUAT")
+        ? row.status
+        : dto.status;
 
-    // Bersihkan tag [DIBAYAR] bila status diubah ke DISETUJUI dan belum pernah ada bukti bayar
-    let cleanOtherNote = row.otherNote;
-    if (dto.status === "DISETUJUI" && !isMarkingPaid && !dto.paymentProofFileId && !row.paymentProofFileId) {
-      cleanOtherNote = row.otherNote
-        ? row.otherNote.replace(/\[DIBAYAR(?::[^\]]+)?\]\s*/g, "").trim() || null
-        : null;
-    }
-
-    let updated: any;
-    try {
-      updated = await this.prisma.main.purchaseRequest.update({
-        where: { id },
-        data: {
-          status: targetStatus as never,
-          paymentStatus: isMarkingPaid
-            ? "DIBAYAR"
-            : (dto as any).paymentStatus ?? (dto.status === "DISETUJUI" && !row.paymentProofFileId ? "BELUM_DIBAYAR" : row.paymentStatus),
-          rejectReason: dto.reason ?? row.rejectReason,
-          ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
-          ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
-          ...(isMarkingPaid && !row.otherNote?.includes("[DIBAYAR")
-            ? { otherNote: row.otherNote ? `${paidTag} ${row.otherNote}` : paidTag }
-            : dto.status === "DISETUJUI" && !isMarkingPaid
-            ? { otherNote: cleanOtherNote }
-            : {}),
-        },
-        include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
-      });
-    } catch (err: any) {
-      if (dto.status === "DIBAYAR" || (dto as any).status === "Lunas") {
-        // Fallback bila MySQL enum belum di-alter ke DIBAYAR
-        updated = await this.prisma.main.purchaseRequest.update({
-          where: { id },
-          data: {
-            status: (row.status === "DITERIMA" ? "DITERIMA" : "DISETUJUI") as never,
-            paymentStatus: isMarkingPaid ? "DIBAYAR" : ((dto as any).paymentStatus ?? row.paymentStatus),
-            rejectReason: dto.reason ?? row.rejectReason,
-            ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
-            ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
-            otherNote: row.otherNote ? (row.otherNote.includes("[DIBAYAR") ? row.otherNote : `${paidTag} ${row.otherNote}`) : paidTag,
-          },
-          include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
-        });
-      } else {
-        throw err;
-      }
-    }
+    const updated = await this.prisma.main.purchaseRequest.update({
+      where: { id },
+      data: {
+        status: targetStatus as never,
+        ...(isMarkingPaid
+          ? {
+              paymentStatus: "DIBAYAR",
+              ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
+              ...(dto.fundingSource ? { paymentAccountCode: dto.fundingSource } : {}),
+            }
+          : {}),
+        rejectReason: dto.reason ?? row.rejectReason,
+        ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
+      },
+      include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
+    });
     if (dto.doFileId) {
       await this.prisma.main.file
         .update({
@@ -655,28 +655,12 @@ export class RequestsService {
         .catch(() => {});
     }
 
-    const reqSuffix = String(row.number || "").replace(/^(?:PNJ|REQ|PR)\//i, "");
-    if (reqSuffix) {
-      try {
-        await this.prisma.main.supplierPO.updateMany({
-          where: {
-            requestId: null,
-            OR: [
-              { number: `PO/${reqSuffix}` },
-              { number: { endsWith: reqSuffix } },
-            ],
-          },
-          data: { requestId: id },
-        });
-      } catch {}
-    }
-
     // Sinkronisasi status pengiriman ke Supplier PO terkait
     if (dto.status === "DIKIRIM") {
       try {
         await this.prisma.main.supplierPO.updateMany({
-          where: { requestId: id, shipmentStatus: { notIn: ["DIKIRIM", "SAMPAI"] } },
-          data: { shipmentStatus: "DIKIRIM", status: "DISETUJUI" },
+          where: { requestId: id, status: "DISETUJUI", shipmentStatus: "DI_SUPPLIER" },
+          data: { shipmentStatus: "DIKIRIM" },
         });
         const linkedPos = await this.prisma.main.supplierPO.findMany({
           where: { requestId: id },
@@ -691,8 +675,8 @@ export class RequestsService {
     } else if (dto.status === "DITERIMA") {
       try {
         await this.prisma.main.supplierPO.updateMany({
-          where: { requestId: id, shipmentStatus: { not: "SAMPAI" } },
-          data: { shipmentStatus: "SAMPAI", status: "DISETUJUI", arrivedAt: new Date() },
+          where: { requestId: id, status: "DISETUJUI", shipmentStatus: { not: "SAMPAI" } },
+          data: { shipmentStatus: "SAMPAI", arrivedAt: new Date() },
         });
         const linkedPos = await this.prisma.main.supplierPO.findMany({
           where: { requestId: id },
@@ -709,10 +693,6 @@ export class RequestsService {
     // Sinkronisasi status lunas ke Supplier PO terkait
     if (isMarkingPaid) {
       try {
-        await this.prisma.main.supplierPO.updateMany({
-          where: { requestId: id },
-          data: { status: "DISETUJUI", shipmentStatus: "SAMPAI" },
-        });
         const linkedPos = await this.prisma.main.supplierPO.findMany({
           where: { requestId: id },
           select: { id: true },
@@ -738,16 +718,15 @@ export class RequestsService {
           where: {
             OR: [
               { requestId: row.id },
-              { conditionNote: { contains: row.number } },
               ...(linkedPo?.id ? [{ supplierPoId: linkedPo.id }] : []),
             ],
           },
         });
         if (!existingRec) {
           const recNumber = await this.docnum.next("penerimaan");
-          const defaultWh =
-            (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
-            (await this.prisma.main.warehouse.findFirst());
+          // Gudang diisi otomatis hanya bila tepat satu gudang aktif; bila lebih, Gudang memilih saat konfirmasi.
+        const activeWhs = await this.prisma.main.warehouse.findMany({ where: { status: "AKTIF" }, select: { id: true }, take: 2 });
+        const defaultWh = activeWhs.length === 1 ? activeWhs[0] : null;
           const defaultCat =
             (await this.prisma.main.productCategory.findFirst({ where: { status: "AKTIF" } })) ??
             (await this.prisma.main.productCategory.findFirst());
@@ -818,8 +797,7 @@ export class RequestsService {
               date: new Date(),
               receiverId: user.id,
               status: "MENUNGGU",
-              conditionNote: `Ref Request: ${row.number} — ${row.purpose}${linkedPo ? ` (PO: ${linkedPo.number})` : ""}`,
-              receiptFileId: row.evidenceFileId ?? (row as any).doFileId ?? null,
+              receiptFileId: (row as any).doFileId ?? null,
               items: {
                 create: recItems,
               },

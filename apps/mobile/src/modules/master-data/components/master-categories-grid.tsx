@@ -40,7 +40,7 @@ export function MasterCategoriesGrid({
   const ALL_MASTER_CARDS = [
     {
       id: "customer" as MasterKey,
-      title: "Master Customer",
+      title: "Master Pelanggan",
       desc: "Data klien, perusahaan, kontak PIC, dan status keaktifan",
       count: `${data.customers?.length || 0} Klien`,
       icon: Building2,
@@ -50,7 +50,7 @@ export function MasterCategoriesGrid({
     },
     {
       id: "sumber-lead" as MasterKey,
-      title: "Sumber Lead (Lead Source)",
+      title: "Sumber Prospek",
       desc: "Kanal rujukan prospek (Website, Referral, Event, Distributor)",
       count: `${data.leadSources?.length || 0} Kanal`,
       icon: Radio,
@@ -61,7 +61,7 @@ export function MasterCategoriesGrid({
     {
       id: "alasan-lost" as MasterKey,
       title: "Alasan Lost (Gagal Deal)",
-      desc: "Daftar alasan wajib saat lead ditandai Lost (Harga, Kompetitor, Batal)",
+      desc: "Daftar alasan wajib saat prospek ditandai Kalah (Harga, Kompetitor, Batal)",
       count: `${data.lostReasons?.length || 0} Alasan`,
       icon: HelpCircle,
       tag: "Dikelola Sales",
@@ -80,7 +80,7 @@ export function MasterCategoriesGrid({
     },
     {
       id: "supplier" as MasterKey,
-      title: "Master Supplier",
+      title: "Master Pemasok",
       desc: "Daftar vendor penyedia barang, syarat pembayaran & tempo",
       count: `${data.suppliers?.length || 0} Supplier`,
       icon: Truck,
@@ -131,7 +131,7 @@ export function MasterCategoriesGrid({
     {
       id: "cost-center" as MasterKey,
       title: "Cost Center (Pusat Biaya)",
-      desc: "Klasifikasi alokasi anggaran departemen dan project",
+      desc: "Klasifikasi alokasi anggaran departemen dan proyek",
       count: `${data.costCenters?.length || 0} Cost Center`,
       icon: PieChart,
       tag: "Dikelola Finance",

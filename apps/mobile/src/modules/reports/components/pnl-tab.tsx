@@ -164,19 +164,19 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
       </Panel>
 
       <Panel
-        title="Laporan Untung-Rugi (P&L) per Project"
-        subtitle="Analisis profitabilitas individual proyek: pendapatan DPP, PPN, kas masuk, piutang, HPP supplier, biaya operasional, dan margin"
-        right={<ExportBar type="profit-loss" title="Laporan Untung-Rugi P&L per Project" onDownload={onDownload} />}
+        title="Laporan Untung-Rugi (P&L) per Proyek"
+        subtitle="Analisis profitabilitas individual proyek: pendapatan DPP, PPN, kas masuk, piutang, HPP pemasok, biaya operasional, dan margin"
+        right={<ExportBar type="profit-loss" title="Laporan Untung-Rugi P&L per Proyek" onDownload={onDownload} />}
       >
         <ScrollView horizontal showsHorizontalScrollIndicator>
           <View className="min-w-[1080px] w-full gap-1">
             <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
-              <Text className="w-[170px] text-xs font-bold">Project</Text>
-              <Text className="w-[150px] text-xs font-bold">Customer</Text>
+              <Text className="w-[170px] text-xs font-bold">Proyek</Text>
+              <Text className="w-[150px] text-xs font-bold">Pelanggan</Text>
               <Text className="w-[125px] text-xs font-bold text-right">Pendapatan DPP</Text>
               <Text className="w-[110px] text-xs font-bold text-right">Kas Diterima</Text>
               <Text className="w-[110px] text-xs font-bold text-right">Sisa Piutang</Text>
-              <Text className="w-[120px] text-xs font-bold text-right">HPP PO Supplier</Text>
+              <Text className="w-[120px] text-xs font-bold text-right">HPP PO Pemasok</Text>
               <Text className="w-[115px] text-xs font-bold text-right">Biaya Lapangan</Text>
               <Text className="w-[125px] text-xs font-bold text-right">Laba Bersih</Text>
               <Text className="w-[75px] text-xs font-bold text-center">Margin</Text>

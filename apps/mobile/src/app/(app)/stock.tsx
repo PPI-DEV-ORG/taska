@@ -301,7 +301,7 @@ export default function StockScreen() {
         />
       )}
 
-      {activeTab === "Reservasi Project" && (
+      {activeTab === "Reservasi Proyek" && (
         <StockReservationTab
           filteredReservations={filteredReservations}
           onSelectDetail={(target) => setSelectedDetail(target)}

@@ -308,9 +308,6 @@ export class LeadsService {
         await tx.approval.deleteMany({ where: { kind: "PENAWARAN", entityId: { in: quotationIds } } });
         await tx.followUp.deleteMany({ where: { quotationId: { in: quotationIds } } });
         await tx.quotationVersion.deleteMany({ where: { quotationId: { in: quotationIds } } });
-        await tx.systemSetting.deleteMany({
-          where: { key: { in: quotationIds.map((qid) => `quotation.meta.${qid}`) } },
-        });
         await tx.quotation.deleteMany({ where: { id: { in: quotationIds } } });
       }
       if (surveyIds.length) {

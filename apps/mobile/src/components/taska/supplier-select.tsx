@@ -95,10 +95,10 @@ export function SupplierSelect({
   value,
   supplierId,
   onChange,
-  placeholder = "Pilih Supplier...",
+  placeholder = "Pilih Pemasok...",
   error,
   onAddNew,
-  addNewLabel = "+ Tambah Supplier Baru",
+  addNewLabel = "+ Tambah Pemasok Baru",
   allowClear = true,
 }: SupplierSelectProps) {
   const { data } = useApp();
@@ -208,7 +208,7 @@ export function SupplierSelect({
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Building2 size={20} color={colors.primary} />
-                <DialogTitle>Pilih Supplier / Vendor</DialogTitle>
+                <DialogTitle>Pilih Pemasok / Vendor</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -220,7 +220,7 @@ export function SupplierSelect({
               <Input
                 value={q}
                 onChangeText={setQ}
-                placeholder="Cari berdasarkan nama supplier, barang/tag, kota, atau termin..."
+                placeholder="Cari berdasarkan nama pemasok, barang/tag, kota, atau termin..."
                 autoFocus
                 className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
               />
@@ -247,7 +247,7 @@ export function SupplierSelect({
               <View className="flex-1 min-w-[760px]">
                 {/* Table Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nama Supplier & Kota</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nama Pemasok & Kota</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">Tags / Kategori Barang</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-32 text-center">Status Pajak</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2">Syarat Pembayaran</Text>

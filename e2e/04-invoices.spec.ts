@@ -7,18 +7,18 @@ test.describe("Modul Invoices (CRUD)", () => {
     await expect(page).toHaveURL(/.*invoices/);
 
     // 2. Klik Catat Invoice
-    const tambahBtn = page.getByRole("button", { name: /Catat invoice|Tambah invoice/i }).first();
+    const tambahBtn = page.getByRole("button", { name: /Catat faktur|Tambah faktur/i }).first();
     await expect(tambahBtn).toBeVisible({ timeout: 10000 });
     await tambahBtn.click();
 
     // 3. Isi Form Invoice
     const dialog = page.getByRole("dialog").last();
-    const customerTab = dialog.getByRole("button", { name: "Customer" });
+    const customerTab = dialog.getByRole("button", { name: "Pelanggan" });
     if (await customerTab.isVisible()) {
       await customerTab.click();
     }
 
-    const customerTrigger = dialog.getByText(/Cari & pilih customer|Pilih customer/i).first();
+    const customerTrigger = dialog.getByText(/Cari & pilih customer|Pilih pelanggan/i).first();
     if (await customerTrigger.isVisible()) {
       await customerTrigger.click();
       await page.getByRole("dialog").last().getByText(/PT|Telkom/i).first().click().catch(() => {});
@@ -30,8 +30,8 @@ test.describe("Modul Invoices (CRUD)", () => {
       await nilaiInput.fill("10000000");
     }
 
-    // Klik Simpan & Buat Invoice
-    await dialog.getByRole("button", { name: /Simpan & Buat Invoice|Simpan/i }).click();
+    // Klik Simpan & Buat Faktur
+    await dialog.getByRole("button", { name: /Simpan & Buat Faktur|Simpan/i }).click();
 
     // 4. Buka baris teratas yang baru dibuat
     const row = page.getByText(/INV\/\d+\/\d+\/\d+/).first();
@@ -41,8 +41,8 @@ test.describe("Modul Invoices (CRUD)", () => {
     // 5. Verifikasi Halaman Detail
     await expect(page).toHaveURL(/.*invoices\/\d+/);
 
-    // 6. Test Action Kirim ke Customer
-    const kirimBtn = page.getByRole("button", { name: /Kirim ke customer/i }).first();
+    // 6. Test Action Kirim ke Pelanggan
+    const kirimBtn = page.getByRole("button", { name: /Kirim ke pelanggan/i }).first();
     if (await kirimBtn.isVisible()) {
       await kirimBtn.click();
       await page.waitForTimeout(500);

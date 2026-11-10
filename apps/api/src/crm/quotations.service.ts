@@ -25,6 +25,7 @@ import {
   type QuotationItemData,
   type QuotationMeta,
 } from "./quotation-excel.js";
+import { quotationMetaFromRow, quotationMetaToData } from "./quotation-meta.js";
 
 const MANUAL_STATUSES = [
   "NOT_YET",
@@ -90,101 +91,27 @@ export class QuotationsService {
     };
   }
 
-  private metaKey(id: number): string {
-    return `quotation.meta.${id}`;
-  }
-
+  /** Metadata penawaran dibaca dari kolom tabel Quotation. */
   private async getMetaMap(ids: number[]): Promise<Map<number, QuotationMeta>> {
     const map = new Map<number, QuotationMeta>();
     if (!ids.length) return map;
-    const keys = ids.map((id) => this.metaKey(id));
-    const settings = await this.prisma.main.systemSetting.findMany({
-      where: { key: { in: keys } },
-    });
-    for (const s of settings) {
-      const id = Number(s.key.replace("quotation.meta.", ""));
-      if (!Number.isFinite(id)) continue;
-      try {
-        const parsed = JSON.parse(s.value) as QuotationMeta;
-        map.set(id, {
-          items: Array.isArray(parsed.items) ? parsed.items : [],
-          subject: parsed.subject,
-          intro: parsed.intro,
-          notes: Array.isArray(parsed.notes) ? parsed.notes : DEFAULT_QUOTATION_NOTES,
-          city: parsed.city,
-          kopText: parsed.kopText,
-          customerAddress: parsed.customerAddress,
-          signerName: parsed.signerName,
-          signerTitle: parsed.signerTitle,
-          latestFileId: parsed.latestFileId ?? null,
-          latestFileName: parsed.latestFileName ?? null,
-          stockConflictFlag: Boolean(parsed.stockConflictFlag),
-          stockConflictMessage: parsed.stockConflictMessage ?? null,
-          autoSwapLogs: Array.isArray(parsed.autoSwapLogs) ? parsed.autoSwapLogs : [],
-          emergencyPrId: parsed.emergencyPrId ?? null,
-          emergencyPrNumber: parsed.emergencyPrNumber ?? null,
-        });
-      } catch {
-        // ignore invalid json
-      }
-    }
+    const rows = await this.prisma.main.quotation.findMany({ where: { id: { in: ids } } });
+    for (const r of rows) map.set(r.id, quotationMetaFromRow(r));
     return map;
   }
 
-  private async saveMeta(id: number, patch: Partial<QuotationMeta>, userId?: number): Promise<QuotationMeta> {
-    const existingMap = await this.getMetaMap([id]);
-    const current: QuotationMeta = existingMap.get(id) ?? {
-      items: [],
-      notes: DEFAULT_QUOTATION_NOTES,
-    };
-    const merged: QuotationMeta = {
-      ...current,
-      ...patch,
-      items: patch.items !== undefined ? patch.items : current.items,
-      notes: patch.notes !== undefined && patch.notes.length > 0 ? patch.notes : current.notes,
-    };
-    const isDefaultNotes =
-      Array.isArray(merged.notes) &&
-      merged.notes.length === DEFAULT_QUOTATION_NOTES.length &&
-      merged.notes.every((n, i) => n === DEFAULT_QUOTATION_NOTES[i]);
-
-    const toStore: Record<string, any> = { ...merged };
-    if (isDefaultNotes) {
-      delete toStore.notes;
-    }
-    const key = this.metaKey(id);
-    const jsonVal = JSON.stringify(toStore);
+  private async saveMeta(id: number, patch: Partial<QuotationMeta>, _userId?: number): Promise<QuotationMeta> {
+    const data = quotationMetaToData(patch);
     try {
-      await this.prisma.main.systemSetting.upsert({
-        where: { key },
-        update: {
-          value: jsonVal,
-          ...(userId ? { updatedById: userId } : {}),
-        },
-        create: {
-          key,
-          value: jsonVal,
-          description: `Metadata item & template penawaran #${id}`,
-          ...(userId ? { updatedById: userId } : {}),
-        },
-      });
-    } catch (err: any) {
-      await this.prisma.main.$executeRawUnsafe("ALTER TABLE `SystemSetting` MODIFY COLUMN `value` LONGTEXT NOT NULL").catch(() => {});
-      await this.prisma.main.systemSetting.upsert({
-        where: { key },
-        update: {
-          value: jsonVal,
-          ...(userId ? { updatedById: userId } : {}),
-        },
-        create: {
-          key,
-          value: jsonVal,
-          description: `Metadata item & template penawaran #${id}`,
-          ...(userId ? { updatedById: userId } : {}),
-        },
-      });
+      const row = Object.keys(data).length
+        ? await this.prisma.main.quotation.update({ where: { id }, data: data as never })
+        : await this.prisma.main.quotation.findUnique({ where: { id } });
+      return row ? quotationMetaFromRow(row) : { items: [], notes: DEFAULT_QUOTATION_NOTES };
+    } catch (e) {
+      console.warn("Gagal menyimpan metadata penawaran #" + id + ":", (e as Error).message);
+      const row = await this.prisma.main.quotation.findUnique({ where: { id } });
+      return row ? quotationMetaFromRow(row) : { items: [], notes: DEFAULT_QUOTATION_NOTES };
     }
-    return merged;
   }
 
   private isExpired(validUntil: Date | null): boolean {
@@ -1296,7 +1223,6 @@ export class QuotationsService {
       await tx.approval.deleteMany({ where: { kind: "PENAWARAN", entityId: id } });
       await tx.followUp.deleteMany({ where: { quotationId: id } });
       await tx.quotationVersion.deleteMany({ where: { quotationId: id } });
-      await tx.systemSetting.deleteMany({ where: { key: this.metaKey(id) } });
       await tx.quotation.delete({ where: { id } });
     });
     await this.audit.log({

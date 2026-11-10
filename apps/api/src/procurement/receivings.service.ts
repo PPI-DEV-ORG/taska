@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -10,6 +10,7 @@ import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import type { Role } from "../generated/prisma/client.js";
 import { IssueDto, ReceivingDto, ReceivingListQuery } from "./dto.js";
+import { WAREHOUSE_ROLES, assertReceivable } from "./purchase-flow.js";
 
 function parseSerials(raw?: string): string[] {
   if (!raw) return [];
@@ -127,11 +128,40 @@ export class ReceivingsService {
         })
       : null;
 
+    // Urutan alur: barang hanya bisa diterima setelah Procurement menandai DIKIRIM.
+    const requestId = dto.requestId ?? po?.requestId ?? null;
+    if (po && po.status !== "DISETUJUI") {
+      throw new BadRequestException("PO supplier belum disetujui, barang belum bisa diterima");
+    }
+    if (requestId) {
+      const pr = await this.prisma.main.purchaseRequest.findUnique({
+        where: { id: requestId },
+        select: { status: true, procurementSource: true },
+      });
+      if (!pr) throw new NotFoundException("Request barang tidak ditemukan");
+      assertReceivable(pr);
+      const pending = await this.prisma.main.receiving.findFirst({
+        where: {
+          status: "MENUNGGU",
+          OR: [{ requestId }, ...(po ? [{ supplierPoId: po.id }] : [])],
+        },
+        select: { id: true, number: true },
+      });
+      if (pending) {
+        throw new BadRequestException(
+          `Sudah ada penerimaan ${pending.number} yang menunggu konfirmasi Gudang untuk request ini, gunakan dokumen tersebut`,
+        );
+      }
+    }
+
     const direct = po ? !!po.projectId && !dto.warehouseId : false;
     let warehouseId = direct ? null : dto.warehouseId ?? null;
-    if (!direct && !warehouseId) {
-      const firstWh = await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } });
-      warehouseId = firstWh?.id ?? null;
+    if (warehouseId) {
+      const wh = await this.prisma.main.warehouse.findUnique({ where: { id: warehouseId } });
+      if (!wh) throw new BadRequestException("Gudang penerima tidak ditemukan");
+      if (wh.status !== "AKTIF") throw new BadRequestException(`Gudang ${wh.name} nonaktif, pilih gudang lain`);
+    } else if (!direct) {
+      warehouseId = await this.resolveWarehouseId(null);
     }
 
     const inputItems =
@@ -153,7 +183,12 @@ export class ReceivingsService {
       if (!item.productId) continue;
       const poItem = po ? po.items.find((i) => i.productId === item.productId) : null;
       const qtyReceived = Math.max(1, item.qtyReceived || 1);
-      const qtyOrdered = poItem ? Math.max(qtyReceived, poItem.qty - poItem.receivedQty) : qtyReceived;
+      if (poItem && qtyReceived > poItem.qty - poItem.receivedQty) {
+        throw new BadRequestException(
+          `Jumlah diterima (${qtyReceived}) melebihi sisa pesanan PO (${Math.max(0, poItem.qty - poItem.receivedQty)})`,
+        );
+      }
+      const qtyOrdered = poItem ? poItem.qty - poItem.receivedQty : qtyReceived;
 
       const product = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
       let serialsList = parseSerials(item.serials);
@@ -173,8 +208,8 @@ export class ReceivingsService {
     }
 
     const number = await this.docnum.next("penerimaan");
-    const isDirectApproved = dto.status === "DITERIMA" || ["GUDANG", "SUPER_ADMIN", "ADMIN"].includes(user.role);
-    const initialStatus = isDirectApproved ? "DITERIMA" : ((dto.status as any) ?? "MENUNGGU");
+    // Hanya Gudang (atau admin) yang boleh langsung menyatakan barang DITERIMA; peran lain menunggu konfirmasi Gudang.
+    const initialStatus = WAREHOUSE_ROLES.includes(user.role) ? "DITERIMA" : "MENUNGGU";
 
     if (initialStatus === "DITERIMA" && preparedItems.length) {
       await this.validateSerials(preparedItems);
@@ -210,75 +245,6 @@ export class ReceivingsService {
     });
     if (effectiveDoFileId) await this.attachFile(effectiveDoFileId, "receiving", receiving.id).catch(() => {});
     if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", receiving.id).catch(() => {});
-    if (po?.id) {
-      const poPatch: any = {};
-      if (effectiveDoFileId) poPatch.doFileId = effectiveDoFileId;
-      if (initialStatus === "DITERIMA") {
-        poPatch.shipmentStatus = "SAMPAI";
-        poPatch.arrivedAt = new Date();
-      }
-      if (Object.keys(poPatch).length > 0) {
-        await this.prisma.main.supplierPO
-          .update({
-            where: { id: po.id },
-            data: poPatch,
-          })
-          .catch(() => {});
-        this.notifications.dataChange("supplier-pos", "update", po.id);
-        this.notifications.dataChange("supplier-pos", "status", po.id);
-      }
-      if (po.requestId && initialStatus === "DITERIMA") {
-        await this.prisma.main.purchaseRequest
-          .updateMany({
-            where: { id: po.requestId, status: { notIn: ["DIBATALKAN"] } },
-            data: {
-              status: "DITERIMA",
-              ...(effectiveDoFileId ? { doFileId: effectiveDoFileId } : {}),
-            },
-          })
-          .catch(() => {});
-        this.notifications.dataChange("purchase-requests", "status", po.requestId);
-      }
-    }
-
-    if (dto.requestId) {
-      const prData: any = {};
-      if (effectiveDoFileId) prData.doFileId = effectiveDoFileId;
-      if (initialStatus === "DITERIMA") prData.status = "DITERIMA";
-      if (Object.keys(prData).length > 0) {
-        await this.prisma.main.purchaseRequest
-          .update({
-            where: { id: dto.requestId },
-            data: prData,
-          })
-          .catch(() => {});
-        this.notifications.dataChange("purchase-requests", "update", dto.requestId);
-        this.notifications.dataChange("purchase-requests", "status", dto.requestId);
-      }
-
-      // Sinkronisasi status SAMPAI ke PO Supplier jika request barang ini memiliki PO terkait
-      if (initialStatus === "DITERIMA") {
-        await this.prisma.main.supplierPO
-          .updateMany({
-            where: { requestId: dto.requestId, shipmentStatus: { not: "SAMPAI" } },
-            data: {
-              shipmentStatus: "SAMPAI",
-              arrivedAt: new Date(),
-              ...(effectiveDoFileId ? { doFileId: effectiveDoFileId } : {}),
-            },
-          })
-          .catch(() => {});
-        const linkedPos = await this.prisma.main.supplierPO.findMany({
-          where: { requestId: dto.requestId },
-          select: { id: true },
-        });
-        for (const p of linkedPos) {
-          this.notifications.dataChange("supplier-pos", "status", p.id);
-          this.notifications.dataChange("supplier-pos", "update", p.id);
-        }
-      }
-    }
-
     await this.audit.log({
       actor: user,
       action: "BUAT_PENERIMAAN",
@@ -305,9 +271,44 @@ export class ReceivingsService {
     return receiving;
   }
 
+  /** Konfirmasi barang diterima: hanya Gudang, hanya setelah Procurement menandai DIKIRIM. */
+  private async assertCanConfirm(
+    row: { id: number; status: string; requestId: number | null; supplierPoId: number | null },
+    user: RequestUser,
+  ) {
+    if (!WAREHOUSE_ROLES.includes(user.role)) {
+      throw new ForbiddenException("Hanya Gudang yang dapat mengonfirmasi penerimaan barang");
+    }
+    if (row.status === "DITOLAK") throw new BadRequestException("Penerimaan sudah ditolak");
+    if (row.status === "DITERIMA") {
+      // Dokumen "Diterima" yang stoknya belum tercatat (data lama / gagal sebagian) boleh dikonfirmasi ulang.
+      const posted = await this.prisma.main.stockMovement.count({ where: { receivingId: row.id } });
+      if (posted > 0) throw new BadRequestException("Penerimaan sudah dikonfirmasi dan stok sudah tercatat");
+    }
+    let requestId = row.requestId;
+    if (!requestId && row.supplierPoId) {
+      const po = await this.prisma.main.supplierPO.findUnique({
+        where: { id: row.supplierPoId },
+        select: { requestId: true, status: true },
+      });
+      if (po && po.status !== "DISETUJUI") throw new BadRequestException("PO supplier belum disetujui");
+      requestId = po?.requestId ?? null;
+    }
+    if (requestId) {
+      const pr = await this.prisma.main.purchaseRequest.findUnique({
+        where: { id: requestId },
+        select: { status: true, procurementSource: true },
+      });
+      assertReceivable(pr);
+    }
+  }
+
   async update(id: number, dto: ReceivingDto, user: RequestUser) {
     const row = await this.prisma.main.receiving.findUnique({ where: { id }, include: { items: true } });
     if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
+    if (dto.status === "DITERIMA" || dto.status === "DITERIMA_SEBAGIAN" || dto.status === "DITOLAK") {
+      await this.assertCanConfirm(row, user);
+    }
 
     // Validasi serial number terlebih dahulu sebelum mengubah data apapun di DB
     const willBeReceived = (dto.status ?? row.status) === "DITERIMA";
@@ -342,7 +343,10 @@ export class ReceivingsService {
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.warehouseId !== undefined ? { warehouseId: dto.warehouseId } : {}),
         ...(dto.conditionNote !== undefined ? { conditionNote: dto.conditionNote } : {}),
-        ...(dto.status ? { status: dto.status as any } : {}),
+        // DITERIMA hanya boleh ditulis oleh postStock setelah stok benar-benar tercatat.
+        // Sebelumnya status disimpan lebih dulu, sehingga bila pencatatan stok gagal dokumen
+        // terkunci "Diterima" tanpa ada stok yang masuk.
+        ...(dto.status && dto.status !== "DITERIMA" ? { status: dto.status as any } : {}),
         ...(dto.receiptFileId !== undefined ? { receiptFileId: dto.receiptFileId } : {}),
         ...(dto.photoFileId !== undefined ? { photoFileId: dto.photoFileId } : {}),
         ...(preparedItems
@@ -365,38 +369,6 @@ export class ReceivingsService {
     });
     if (dto.receiptFileId) await this.attachFile(dto.receiptFileId, "receiving", updated.id).catch(() => {});
     if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", updated.id).catch(() => {});
-    const rawTargetPoId = dto.supplierPoId ?? updated.supplierPo?.id ?? row.supplierPoId;
-    const targetPoId = rawTargetPoId != null ? Number(rawTargetPoId) : null;
-    const syncedDoFileId = dto.receiptFileId ?? dto.photoFileId ?? updated.receiptFileId ?? updated.photoFileId;
-    if (targetPoId && syncedDoFileId) {
-      await this.prisma.main.supplierPO
-        .update({
-          where: { id: targetPoId },
-          data: { doFileId: syncedDoFileId },
-        })
-        .catch(() => {});
-      this.notifications.dataChange("supplier-pos", "update", targetPoId);
-    }
-
-    const rawTargetReqId = dto.requestId ?? (updated as any).request?.id ?? (updated as any).requestId ?? (row as any).requestId;
-    const targetReqId = rawTargetReqId != null ? Number(rawTargetReqId) : null;
-    if (targetReqId) {
-      const prData: any = {};
-      if (syncedDoFileId) prData.doFileId = syncedDoFileId;
-      if (dto.status === "DITERIMA" || (updated.status as any) === "DITERIMA") {
-        prData.status = "DITERIMA";
-      }
-      if (Object.keys(prData).length > 0) {
-        await this.prisma.main.purchaseRequest
-          .update({
-            where: { id: targetReqId },
-            data: prData,
-          })
-          .catch(() => {});
-        this.notifications.dataChange("purchase-requests", "update", targetReqId);
-      }
-    }
-
     // Jika status diubah menjadi DITERIMA dan sebelumnya masih MENUNGGU atau stok belum tercatat, catat stok & serial unit
     const alreadyPosted = (await this.prisma.main.stockMovement.count({ where: { receivingId: id } })) > 0;
     if (dto.status === "DITERIMA" && (!alreadyPosted || row.status === "MENUNGGU")) {
@@ -410,6 +382,11 @@ export class ReceivingsService {
   async setStatus(id: number, status: string, user: RequestUser) {
     const row = await this.prisma.main.receiving.findUnique({ where: { id }, include: { items: true } });
     if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
+    if (status === "DITERIMA" || status === "DITERIMA_SEBAGIAN" || status === "DITOLAK") {
+      await this.assertCanConfirm(row, user);
+    } else if (status !== "MENUNGGU") {
+      throw new BadRequestException(`Status penerimaan ${status} tidak dikenal`);
+    }
     if (status === "DITERIMA") {
       await this.validateSerials(row.items, id);
     }
@@ -433,23 +410,155 @@ export class ReceivingsService {
   }
 
   async remove(id: number, user: RequestUser) {
-    const row = await this.prisma.main.receiving.findUnique({ where: { id } });
+    const row = await this.prisma.main.receiving.findUnique({ where: { id }, include: { items: true } });
     if (!row) throw new NotFoundException("Penerimaan tidak ditemukan");
+    if (!WAREHOUSE_ROLES.includes(user.role) && user.role !== "PROCUREMENT") {
+      throw new ForbiddenException("Hanya Gudang atau Procurement yang dapat menghapus penerimaan");
+    }
+
+    // Bila stok sudah tercatat, penghapusan harus membalik stok, unit SN, dan qty PO — bukan sekadar menghapus baris.
+    const movements = await this.prisma.main.stockMovement.findMany({ where: { receivingId: id } });
+    const unitIds = movements.map((m) => m.serialUnitId).filter((v): v is number => v != null);
+    if (unitIds.length) {
+      const allowed = row.projectId ? ["DI_GUDANG", "TERPASANG"] : ["DI_GUDANG"];
+      const moved = await this.prisma.main.serialUnit.count({
+        where: { id: { in: unitIds }, status: { notIn: allowed as never[] } },
+      });
+      if (moved > 0) {
+        throw new BadRequestException(
+          `${moved} unit dari penerimaan ini sudah keluar dari gudang (dipakai / dikirim / direservasi). Batalkan pengeluarannya dulu sebelum menghapus penerimaan.`,
+        );
+      }
+    }
+
     await this.prisma.main.$transaction(async (tx) => {
+      for (const m of movements) {
+        if (m.type === "IN" && m.toWarehouseId) {
+          const bal = await tx.stockBalance.findUnique({
+            where: { productId_warehouseId: { productId: m.productId, warehouseId: m.toWarehouseId } },
+          });
+          const cur = bal?.qty ?? 0;
+          if (cur < m.qty) {
+            throw new BadRequestException(
+              `Stok produk #${m.productId} sekarang ${cur}, kurang dari ${m.qty} yang diterima — sebagian sudah keluar. Penerimaan tidak bisa dihapus.`,
+            );
+          }
+          await tx.stockBalance.update({
+            where: { productId_warehouseId: { productId: m.productId, warehouseId: m.toWarehouseId } },
+            data: { qty: cur - m.qty },
+          });
+        }
+      }
+      if (unitIds.length) {
+        await tx.serialUnitHistory.deleteMany({ where: { serialUnitId: { in: unitIds } } });
+      }
+      await tx.stockMovement.deleteMany({ where: { receivingId: id } });
+      if (unitIds.length) await tx.serialUnit.deleteMany({ where: { id: { in: unitIds } } });
+
+      // Kembalikan qty terima di PO (hanya bila penerimaan ini sempat tercatat ke stok)
+      if (row.supplierPoId && movements.length) {
+        for (const it of row.items) {
+          const poItem = await tx.supplierPOItem.findFirst({
+            where: { poId: row.supplierPoId, productId: it.productId },
+          });
+          if (poItem) {
+            await tx.supplierPOItem.update({
+              where: { id: poItem.id },
+              data: { receivedQty: Math.max(0, poItem.receivedQty - it.qtyReceived) },
+            });
+          }
+        }
+      }
+
       await tx.approval.deleteMany({ where: { kind: "PENERIMAAN", entityId: id } });
       await tx.issueReport.deleteMany({ where: { receivingId: id } });
       await tx.receivingItem.deleteMany({ where: { receivingId: id } });
       await tx.receiving.delete({ where: { id } });
     });
+
+    // Status request & PO diturunkan kembali sesuai penerimaan yang masih ada.
+    await this.recomputeChain(row.requestId, row.supplierPoId);
+
     await this.audit.log({
       actor: user,
       action: "HAPUS_PENERIMAAN",
       entityType: "receiving",
       entityId: id,
-      detail: `${row.number} dihapus`,
+      detail: `${row.number} dihapus${movements.length ? " (stok dibalik)" : ""}`,
     });
     this.notifications.dataChange("receiving", "delete", id);
+    if (movements.length) this.notifications.dataChange("stock", "update");
     return { id, deleted: true };
+  }
+
+  /**
+   * Tentukan gudang penerima. Dipakai saat membuat & mengonfirmasi penerimaan.
+   * - Sudah dipilih  -> harus ada & aktif.
+   * - Belum dipilih  -> hanya boleh otomatis bila tepat satu gudang aktif; selain itu pengguna harus memilih.
+   * - Belum ada gudang sama sekali -> pesan jelas agar gudang ditambahkan lebih dulu.
+   */
+  private async resolveWarehouseId(selected: number | null | undefined): Promise<number> {
+    if (selected) {
+      const wh = await this.prisma.main.warehouse.findUnique({ where: { id: selected } });
+      if (!wh) throw new BadRequestException("Gudang penerima tidak ditemukan");
+      if (wh.status !== "AKTIF") throw new BadRequestException(`Gudang ${wh.name} nonaktif, pilih gudang lain`);
+      return wh.id;
+    }
+    const active = await this.prisma.main.warehouse.findMany({ where: { status: "AKTIF" }, select: { id: true }, take: 2 });
+    if (active.length === 1) return active[0]!.id;
+    if (active.length === 0) {
+      throw new BadRequestException("Belum ada gudang aktif. Tambahkan gudang dulu di Master Data > Gudang, lalu ulangi penerimaan.");
+    }
+    throw new BadRequestException("Ada lebih dari satu gudang. Pilih gudang penerima terlebih dahulu.");
+  }
+
+  /**
+   * Satu-satunya tempat menurunkan status Request & PO ketika penerimaan hilang / berubah.
+   * Aturan: Request/PO hanya "Diterima/Sampai" selama masih ada penerimaan DITERIMA atau qty PO terpenuhi.
+   */
+  private async recomputeChain(requestId?: number | null, poId?: number | null) {
+    const po = poId
+      ? await this.prisma.main.supplierPO.findUnique({ where: { id: poId }, select: { id: true, requestId: true } })
+      : null;
+    const reqId = requestId ?? po?.requestId ?? null;
+    if (!reqId && !po) return;
+
+    const doneReceivings = await this.prisma.main.receiving.count({
+      where: {
+        status: "DITERIMA",
+        OR: [
+          ...(reqId ? [{ requestId: reqId }, { supplierPo: { requestId: reqId } }] : []),
+          ...(po ? [{ supplierPoId: po.id }] : []),
+        ],
+      },
+    });
+
+    const pos = await this.prisma.main.supplierPO.findMany({
+      where: { OR: [...(reqId ? [{ requestId: reqId }] : []), ...(po ? [{ id: po.id }] : [])] },
+      include: { items: true },
+    });
+    for (const p of pos) {
+      if (p.shipmentStatus !== "SAMPAI") continue;
+      const qtyComplete = p.items.length > 0 && p.items.every((i) => i.receivedQty >= i.qty);
+      if (!qtyComplete && doneReceivings === 0) {
+        await this.prisma.main.supplierPO.update({
+          where: { id: p.id },
+          data: { shipmentStatus: "DIKIRIM", arrivedAt: null },
+        });
+        this.notifications.dataChange("supplier-pos", "status", p.id);
+      }
+    }
+
+    if (reqId && doneReceivings === 0) {
+      const reverted = await this.prisma.main.purchaseRequest.updateMany({
+        where: { id: reqId, status: "DITERIMA", procurementSource: { in: ["SUPPLIER", "RETAIL"] } },
+        data: { status: "DIKIRIM" },
+      });
+      if (reverted.count > 0) {
+        this.notifications.dataChange("purchase-requests", "status", reqId);
+        this.notifications.dataChange("purchase-requests", "update", reqId);
+      }
+    }
   }
 
   private async validateSerials(
@@ -516,13 +625,21 @@ export class ReceivingsService {
     });
     if (!receiving) return;
 
-    const effectiveWhId =
-      receiving.warehouseId ??
-      (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } }))?.id ??
-      (await this.prisma.main.warehouse.findFirst())?.id;
-
+    // Gudang penerima harus jelas: dipilih di dokumen, atau satu-satunya gudang aktif. Disimpan ke dokumen
+    // supaya laporan tidak menampilkan "tanpa gudang" padahal stok masuk ke gudang tertentu.
+    const effectiveWhId = receiving.projectId && !receiving.warehouseId
+      ? undefined
+      : await this.resolveWarehouseId(receiving.warehouseId);
+    if (effectiveWhId && effectiveWhId !== receiving.warehouseId) {
+      await this.prisma.main.receiving.update({ where: { id }, data: { warehouseId: effectiveWhId } });
+    }
     for (const item of receiving.items) {
       const serials = parseSerials(item.serials ?? undefined);
+      if (item.product.hasSerial && serials.length < item.qtyReceived) {
+        throw new BadRequestException(
+          `${item.product.name} memakai nomor seri: isi ${item.qtyReceived} serial number (baru ${serials.length}) agar unit tercatat di stok`,
+        );
+      }
       if (effectiveWhId) {
         if (item.product.hasSerial && serials.length) {
           const seen = new Set<string>();
@@ -745,10 +862,9 @@ export class ReceivingsService {
             },
           });
           if (po.requestId) {
-            const effectiveDo = receiving.receiptFileId ?? receiving.photoFileId;
             await this.prisma.main.purchaseRequest.updateMany({
               where: { id: po.requestId, status: { in: ["PO_DIBUAT", "DISETUJUI", "DIBAYAR", "DIKIRIM"] } },
-              data: { status: "DITERIMA", ...(effectiveDo ? { doFileId: effectiveDo } : {}) },
+              data: { status: "DITERIMA" },
             });
             this.notifications.dataChange("purchase-requests", "status", po.requestId);
           }
@@ -769,31 +885,17 @@ export class ReceivingsService {
     }
 
     // Sinkronisasi status & DO File ke Purchase Request terkait (untuk penerimaan ritel / request langsung)
-    const effectiveDoFile = receiving.receiptFileId ?? receiving.photoFileId;
     const reqIdsToNotify = new Set<number>();
+    // Penerimaan sebagian tidak menutup request; request baru DITERIMA setelah semua barang tiba.
+    const fullyReceived =
+      (await this.prisma.main.receiving.findUnique({ where: { id }, select: { status: true } }))?.status === 'DITERIMA';
 
-    if (receiving.conditionNote) {
-      const match = receiving.conditionNote.match(/Ref Request:\s*([^\s—]+)/);
-      const reqNumber = match?.[1];
-      if (reqNumber) {
-        await this.prisma.main.purchaseRequest.updateMany({
-          where: { number: reqNumber },
-          data: {
-            status: "DITERIMA",
-            ...(effectiveDoFile ? { doFileId: effectiveDoFile } : {}),
-          },
-        });
-        const matchedPr = await this.prisma.main.purchaseRequest.findFirst({ where: { number: reqNumber } });
-        if (matchedPr) reqIdsToNotify.add(matchedPr.id);
-      }
-    }
     const directReqId = (receiving as any).requestId ?? (receiving as any).request?.id;
     if (directReqId) {
       await this.prisma.main.purchaseRequest.updateMany({
         where: { id: Number(directReqId) },
         data: {
-          status: "DITERIMA",
-          ...(effectiveDoFile ? { doFileId: effectiveDoFile } : {}),
+          ...(fullyReceived ? { status: "DITERIMA" as const } : {}),
         },
       });
       reqIdsToNotify.add(Number(directReqId));
@@ -805,12 +907,12 @@ export class ReceivingsService {
 
       // Sinkronisasi status pengiriman SAMPAI ke PO Supplier yang terhubung ke Request ini
       try {
+        if (!fullyReceived) continue;
         await this.prisma.main.supplierPO.updateMany({
           where: { requestId: rId, shipmentStatus: { not: "SAMPAI" } },
           data: {
             shipmentStatus: "SAMPAI",
             arrivedAt: new Date(),
-            ...(effectiveDoFile ? { doFileId: effectiveDoFile } : {}),
           },
         });
         const pos = await this.prisma.main.supplierPO.findMany({

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Cell, Chip } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { statusText } from "@/lib/labels";
 import { DatePicker } from "@/components/taska/dialogs";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { colors } from "@/tokens";
@@ -69,7 +70,7 @@ export function FilterBar({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
           <Chip label="Semua" active={!status} onPress={() => onStatus("")} />
           {statuses.map((s) => (
-            <Chip key={s} label={s} active={status === s} onPress={() => onStatus(s === status ? "" : s)} />
+            <Chip key={s} label={statusText(s)} active={status === s} onPress={() => onStatus(s === status ? "" : s)} />
           ))}
         </ScrollView>
       ) : null}

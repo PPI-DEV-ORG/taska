@@ -1361,7 +1361,7 @@ export function FormDialog({
                         }));
                       }}
                       onAddNew={() => setQuickSupplierKey(f.key)}
-                      addNewLabel="+ Tambah Supplier Baru"
+                      addNewLabel="+ Tambah Pemasok Baru"
                       placeholder={`Pilih ${f.label.toLowerCase()}...`}
                       error={!!errs[f.key]}
                     />
@@ -1515,8 +1515,8 @@ export function FormDialog({
                       }
                       addNewLabel={
                         (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
-                          ? "+ Tambah Supplier Baru"
-                          : "+ Tambah Customer Baru"
+                          ? "+ Tambah Pemasok Baru"
+                          : "+ Tambah Pelanggan Baru"
                       }
                       onChange={(v) => {
                         if (def?.key === "po-client" && f.key === "penawaran") {

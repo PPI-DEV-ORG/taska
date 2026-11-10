@@ -24,8 +24,8 @@ export function ProjectOverviewCard({
   );
   return (
     <Panel
-      title="Project Overview"
-      subtitle="Track progress along all active projects"
+      title="Ringkasan Proyek"
+      subtitle="Pantau progres semua proyek aktif"
       icon={FolderKanban}
       right={
         !disableNavigation && onViewAll ? (

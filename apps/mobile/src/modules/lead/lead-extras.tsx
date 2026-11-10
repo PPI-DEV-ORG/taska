@@ -219,7 +219,7 @@ export function LeadExtras({ row }: { row: Row }) {
       selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
       status: "Berjalan",
     });
-    toast("Project baru berhasil dibuat");
+    toast("Proyek baru berhasil dibuat");
     router.push("/leads");
   }
 
@@ -243,11 +243,11 @@ export function LeadExtras({ row }: { row: Row }) {
 
       if (createdSo?.id) {
         await reload();
-        toast("Sales Order (SO) berhasil dibuat!");
+        toast("Pesanan Penjualan (SO) berhasil dibuat!");
         router.push(`/po-client/${createdSo.id}` as any);
       }
     } catch (err: any) {
-      toast(err?.message || "Gagal membuat Sales Order", "danger");
+      toast(err?.message || "Gagal membuat Pesanan Penjualan", "danger");
     }
   }
 
@@ -257,7 +257,7 @@ export function LeadExtras({ row }: { row: Row }) {
       {row.status === "Won" || leadSos.length > 0 || isPenjualanBarang ? (
         <Panel
           title={`Sales Order (SO) & Pesanan Barang (${leadSos.length})`}
-          subtitle="Peluang penjualan barang yang berhasil (Won) dapat langsung dilanjutkan ke penerbitan Sales Order (SO) untuk customer."
+          subtitle="Peluang penjualan barang yang berhasil (Won) dapat langsung dilanjutkan ke penerbitan Pesanan Penjualan (SO) untuk pelanggan."
           right={
             <Button
               size="sm"
@@ -265,7 +265,7 @@ export function LeadExtras({ row }: { row: Row }) {
               className="bg-emerald-600 hover:bg-emerald-700 flex-row items-center gap-1.5"
             >
               <FileCheck size={14} color="#fff" />
-              <Text className="text-xs text-white font-semibold">Buat Sales Order (SO)</Text>
+              <Text className="text-xs text-white font-semibold">Buat Pesanan Penjualan (SO)</Text>
             </Button>
           }
         >
@@ -319,11 +319,11 @@ export function LeadExtras({ row }: { row: Row }) {
       {(!isPenjualanBarang && (row.status === "Won" || relProjects.length > 0)) || relProjects.length > 0 ? (
         <Panel
           title={`Project Terkait (${relProjects.length})`}
-          subtitle="Prospek yang berhasil (Won) dapat langsung dilanjutkan ke pengerjaan Project."
+          subtitle="Prospek yang berhasil (Menang) dapat langsung dilanjutkan ke pengerjaan Proyek."
           right={
             <Button size="sm" onPress={handleCreateProject} className="flex-row items-center gap-1">
               <Plus size={14} color={colors.background} />
-              <Text className="text-xs">Jadikan Project</Text>
+              <Text className="text-xs">Jadikan Proyek</Text>
             </Button>
           }
         >
@@ -355,7 +355,7 @@ export function LeadExtras({ row }: { row: Row }) {
                         className="h-7 px-2.5"
                         onPress={() => router.push(`/projects/${projId}` as any)}
                       >
-                        <Text className="text-xs">Buka Project</Text>
+                        <Text className="text-xs">Buka Proyek</Text>
                       </Button>
                     </View>
                   );
@@ -367,8 +367,8 @@ export function LeadExtras({ row }: { row: Row }) {
       ) : null}
 
       <Panel
-        title="PIC & Kepemilikan Lead"
-        subtitle="Setiap lead memiliki PIC Sales yang bertanggung jawab mengawal pipeline."
+        title="PIC & Kepemilikan Prospek"
+        subtitle="Setiap prospek memiliki PIC Sales yang bertanggung jawab mengawal pipeline."
         right={
           (user?.role === "super_admin" || user?.role === "bos" || user?.role === "admin" || user?.role === "sales") ? (
             <Button size="sm" variant="outline" onPress={() => setReassignOpen(true)}>
@@ -466,7 +466,7 @@ export function LeadExtras({ row }: { row: Row }) {
       {/* Panel Penawaran Terkait */}
       <Panel
         title="Penawaran Terkait"
-        subtitle="Daftar penawaran harga yang terhubung dengan lead ini."
+        subtitle="Daftar penawaran harga yang terhubung dengan prospek ini."
         right={
           <Button
             size="sm"
@@ -559,7 +559,7 @@ export function LeadExtras({ row }: { row: Row }) {
 
       {/* Panel Invoice Terkait */}
       <Panel
-        title="Invoice Terkait"
+        title="Faktur Terkait"
         subtitle="Kelola tagihan pembayaran untuk prospek atau penawaran ini."
         right={
           isFinanceOrAdmin ? (
@@ -569,7 +569,7 @@ export function LeadExtras({ row }: { row: Row }) {
               className="flex-row items-center gap-1"
             >
               <Plus size={14} color={colors.background} />
-              <Text className="text-xs">Buat Invoice</Text>
+              <Text className="text-xs">Buat Faktur</Text>
             </Button>
           ) : undefined
         }
@@ -662,7 +662,7 @@ export function LeadExtras({ row }: { row: Row }) {
                             await setStatus("invoices", String(inv.id), "Lunas");
                             toast(`Invoice ${inv.nomor} berhasil dilunasi!`);
                           } catch {
-                            toast("Gagal mengubah status invoice", "danger");
+                            toast("Gagal mengubah status faktur", "danger");
                           }
                         }}
                       >
@@ -692,7 +692,7 @@ export function LeadExtras({ row }: { row: Row }) {
                 className="self-start flex-row items-center gap-1.5"
               >
                 <Plus size={14} color={colors.background} />
-                <Text className="text-xs font-semibold">Buat Invoice</Text>
+                <Text className="text-xs font-semibold">Buat Faktur</Text>
               </Button>
             ) : null}
           </View>
@@ -733,7 +733,7 @@ export function LeadExtras({ row }: { row: Row }) {
               <Textarea
                 value={fuNote}
                 onChangeText={setFuNote}
-                placeholder="Contoh: Diskusi kebutuhan 16 titik kamera di gudang utama, customer meminta estimasi diskon 5%..."
+                placeholder="Contoh: Diskusi kebutuhan 16 titik kamera di gudang utama, pelanggan meminta estimasi diskon 5%..."
                 numberOfLines={3}
               />
             </View>

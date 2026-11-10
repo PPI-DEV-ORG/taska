@@ -314,19 +314,19 @@ function CreateInvoiceForm({
       { code: "6203.02", label: "Servis Kendaraan / BBM / Operasional Lapangan [6203.02]", category: "Operasional Kendaraan" },
       { code: "6202.06", label: "Pembelian ATK & Perlengkapan Kantor [6202.06]", category: "ATK & Perlengkapan Kantor" },
       { code: "6202.07", label: "Tagihan Jasa / Operasional Umum Lainnya [6202.07]", category: "Tagihan Operasional Lainnya" },
-      { code: "1200", label: "Pembelian Barang Stok / Persediaan Gudang [1200]", category: "Tagihan Supplier (Stok)" },
-      { code: "5101", label: "Tagihan Subkon / Material Proyek [5101 - HPP Project]", category: "Tagihan Proyek" },
+      { code: "1200", label: "Pembelian Barang Stok / Persediaan Gudang [1200]", category: "Tagihan Pemasok (Stok)" },
+      { code: "5101", label: "Tagihan Subkon / Material Proyek [5101 - HPP Proyek]", category: "Tagihan Proyek" },
     ],
     []
   );
 
   const sourceTypeOptions = React.useMemo(
     () => [
-      { value: "po" as InvoiceSourceType, label: "PO Client / Sales Order (SO)" },
+      { value: "po" as InvoiceSourceType, label: "PO Pelanggan / Pesanan Penjualan (SO)" },
       { value: "quotation" as InvoiceSourceType, label: "Penawaran (Quotation)" },
-      { value: "direct_sale" as InvoiceSourceType, label: "Invoice Penjualan Langsung (Walk-in)" },
-      { value: "lead" as InvoiceSourceType, label: "Lead / Prospek" },
-      { value: "customer" as InvoiceSourceType, label: "Customer Langsung" },
+      { value: "direct_sale" as InvoiceSourceType, label: "Faktur Penjualan Langsung (Walk-in)" },
+      { value: "lead" as InvoiceSourceType, label: "Prospek" },
+      { value: "customer" as InvoiceSourceType, label: "Pelanggan Langsung" },
     ],
     []
   );
@@ -377,7 +377,7 @@ function CreateInvoiceForm({
     if (initialQuotation?.nomor) return `Invoice untuk Penawaran ${initialQuotation.nomor}`;
     if (initialLead?.nama) return `Invoice untuk Lead ${initialLead.nama}`;
     if (defaultDirectSale) return "Nota Penjualan Langsung (Walk-in)";
-    if (defaultDirectPurchase) return "Invoice Pembelian Langsung";
+    if (defaultDirectPurchase) return "Faktur Pembelian Langsung";
     return "";
   });
   const [fileId, setFileId] = React.useState<number | null>(null);
@@ -958,8 +958,8 @@ function CreateInvoiceForm({
           data.invoiceIn,
         ),
       );
-      if (!catatan || catatan === "Nota Penjualan Langsung (Walk-in)" || catatan.startsWith("Invoice untuk")) {
-        setCatatan("Tagihan Operasional / Invoice Masuk");
+      if (!catatan || catatan === "Nota Penjualan Langsung (Walk-in)" || catatan.startsWith("Faktur untuk")) {
+        setCatatan("Tagihan Operasional / Faktur Masuk");
       }
     } else if (newMode === "lanjut") {
       if (sourceType === "direct_purchase") setSourceType("po");
@@ -1216,11 +1216,11 @@ function CreateInvoiceForm({
   // Handle Submit
   async function handleSubmit() {
     if (!nomor.trim()) {
-      toast("Nomor invoice wajib diisi", "danger");
+      toast("Nomor faktur wajib diisi", "danger");
       return;
     }
     if (currentDpp <= 0) {
-      toast("Nilai tagihan invoice harus lebih dari 0", "danger");
+      toast("Nilai tagihan faktur harus lebih dari 0", "danger");
       return;
     }
 
@@ -1231,7 +1231,7 @@ function CreateInvoiceForm({
 
     const validCustStr = (v?: string | null) => (v && v !== "-" ? v : null);
     const custName = isPurchase
-      ? customSupplierName || supplierObj?.nama || supplierObj?.name || "Supplier Pembelian Langsung"
+      ? customSupplierName || supplierObj?.nama || supplierObj?.name || "Pemasok Pembelian Langsung"
       : validCustStr(customCustomerName) ||
         validCustStr(customerObj?.nama) ||
         (sourceType === "direct_sale" ? "Pelanggan Langsung (Walk-in)" : null) ||
@@ -1260,7 +1260,7 @@ function CreateInvoiceForm({
         : activeQuotation?.nomor ||
           activePo?.nomor ||
           activePo?.nomorSo ||
-          (activeLead ? `Lead ${activeLead.nama}` : "Invoice");
+          (activeLead ? `Prospek ${activeLead.nama}` : "Invoice");
 
     const termDesc =
       mode === "lanjut" || (mode === "masuk" && relatedExistingInvoices.length > 0)
@@ -1409,8 +1409,8 @@ function CreateInvoiceForm({
           ? `FAKTUR PEMBELIAN LANGSUNG - ${custName.toUpperCase()}`
           : activeQuotation?.subject || `INVOICE PENAGIHAN - ${custName.toUpperCase()}`,
         intro: isPurchase
-          ? "Faktur pembelian langsung barang/jasa dari supplier :"
-          : activeQuotation?.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
+          ? "Faktur pembelian langsung barang/jasa dari pemasok :"
+          : activeQuotation?.intro || "Bersama surat ini kami sampaikan faktur penagihan untuk pekerjaan berikut :",
         notesList: activeQuotation?.notesList,
         city: activeQuotation?.city,
         kopText: activeQuotation?.kopText,
@@ -1459,7 +1459,7 @@ function CreateInvoiceForm({
         await onSuccess?.();
       }
     } catch (e: any) {
-      toast(e?.message ?? "Gagal membuat invoice", "danger");
+      toast(e?.message ?? "Gagal membuat faktur", "danger");
     } finally {
       setIsSubmitting(false);
     }
@@ -1476,10 +1476,10 @@ function CreateInvoiceForm({
         <DialogTitle className="flex-row items-center gap-2">
           <Text className="text-base font-bold">
             {mode === "masuk"
-              ? "Buat Invoice Masuk (Tagihan / Pembelian)"
+              ? "Buat Faktur Masuk (Tagihan / Pembelian)"
               : sourceType === "direct_sale"
-              ? "Invoice Penjualan Langsung"
-              : "Buat Invoice Penagihan (Invoice Keluar)"}
+              ? "Faktur Penjualan Langsung"
+              : "Buat Faktur Penagihan (Faktur Keluar)"}
           </Text>
           {mode === "masuk" ? (
             <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-warning/15 text-warning">
@@ -1551,7 +1551,7 @@ function CreateInvoiceForm({
               <Text className="text-xs font-bold text-foreground">
                 Detail Tagihan / Invoice Masuk (Listrik, Internet, Operasional, atau Supplier)
               </Text>
-              <StatusBadge status="Invoice Masuk" />
+              <StatusBadge status="Faktur Masuk" />
             </View>
 
             <FormField
@@ -1592,9 +1592,9 @@ function CreateInvoiceForm({
             </FormField>
 
             <FormField
-              label="Pihak Penagih / Penyedia Layanan / Supplier"
+              label="Pihak Penagih / Penyedia Layanan / Pemasok"
               required
-              hint="Pilih dari daftar supplier rekanan atau ketik manual nama penagih (misal: PLN, Telkom IndiHome, Biznet)"
+              hint="Pilih dari daftar pemasok rekanan atau ketik manual nama penagih (misal: PLN, Telkom IndiHome, Biznet)"
             >
               <View className="gap-1.5">
                 <SupplierSelect
@@ -1615,8 +1615,8 @@ function CreateInvoiceForm({
                     }
                   }}
                   onAddNew={() => setQuickSupplierOpen(true)}
-                  addNewLabel="+ Tambah Supplier Baru"
-                  placeholder="Pilih supplier rekanan..."
+                  addNewLabel="+ Tambah Pemasok Baru"
+                  placeholder="Pilih pemasok rekanan..."
                 />
                 <Input
                   value={customSupplierName}
@@ -1631,7 +1631,7 @@ function CreateInvoiceForm({
               </View>
             </FormField>
 
-            <FormField label="PO Supplier Terkait (Opsional — Kosongkan untuk Tagihan Listrik / Internet / Non-PO)">
+            <FormField label="PO Pemasok Terkait (Opsional — Kosongkan untuk Tagihan Listrik / Internet / Non-PO)">
               <SearchableSelect
                 value={
                   (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId))?.nomor ||
@@ -1677,12 +1677,12 @@ function CreateInvoiceForm({
                 options={(data["supplier-pos"] ?? []).map(
                   (p: Row) => `${p.nomor || p.number} - ${p.supplier || "-"}`,
                 )}
-                placeholder="Kosongkan jika bukan dari PO Supplier..."
+                placeholder="Kosongkan jika bukan dari PO Pemasok..."
               />
             </FormField>
 
             {continuableInvoiceInOptions.length > 0 ? (
-              <FormField label="Atau Lanjutkan dari Invoice Masuk DP / Termin Sebelumnya (Opsional)">
+              <FormField label="Atau Lanjutkan dari Faktur Masuk DP / Termin Sebelumnya (Opsional)">
                 <SearchableSelect
                   value={
                     continuableInvoiceInOptions.find((o: { id: string; label: string; raw: Row }) => o.id === selectedParentInvoiceInId)?.label || ""
@@ -1706,8 +1706,8 @@ function CreateInvoiceForm({
                       setSelectedParentInvoiceInId("");
                     }
                   }}
-                  options={["-- Tidak ada (Invoice Baru) --", ...continuableInvoiceInOptions.map((o: { id: string; label: string; raw: Row }) => o.label)]}
-                  placeholder="Pilih invoice DP / Termin sebelumnya..."
+                  options={["-- Tidak ada (Faktur Baru) --", ...continuableInvoiceInOptions.map((o: { id: string; label: string; raw: Row }) => o.label)]}
+                  placeholder="Pilih faktur DP / Termin sebelumnya..."
                 />
               </FormField>
             ) : null}
@@ -1720,7 +1720,7 @@ function CreateInvoiceForm({
               </Text>
               <StatusBadge status="Lanjutan" />
             </View>
-            <FormField label="Pilih Invoice DP / Termin Acuan" required hint="Cari & pilih invoice DP/Termin yang masih memiliki sisa tagihan atau sisa kontrak">
+            <FormField label="Pilih Faktur DP / Termin Acuan" required hint="Cari & pilih faktur DP/Termin yang masih memiliki sisa tagihan atau sisa kontrak">
               {continuableInvoiceOptions.length === 0 ? (
                 <View className="p-3 rounded-lg bg-panel border border-dashed border-border/80">
                   <Text className="text-xs text-muted-foreground text-center">
@@ -1738,7 +1738,7 @@ function CreateInvoiceForm({
             {selectedParentInvoice ? (
               <View className="gap-1 mt-1 p-2.5 rounded-lg bg-panel/70 border border-border/50 text-xs">
                 <View className="flex-row justify-between">
-                  <Text className="text-[11px] text-muted-foreground">Customer:</Text>
+                  <Text className="text-[11px] text-muted-foreground">Pelanggan:</Text>
                   <Text className="text-[11px] font-semibold text-foreground">
                     {selectedParentInvoice.customer || customCustomerName || "-"}
                   </Text>
@@ -1772,7 +1772,7 @@ function CreateInvoiceForm({
           </View>
         ) : (
           <View className="mb-4 gap-2">
-            <FormField label="Tautkan Invoice Ke / Jenis Transaksi" required>
+            <FormField label="Tautkan Faktur Ke / Jenis Transaksi" required>
               <SearchableSelect
                 value={
                   sourceTypeOptions.find((o) => o.value === sourceType)?.label ||
@@ -1787,7 +1787,7 @@ function CreateInvoiceForm({
                   if (nextType === "direct_sale") {
                     setScheme("sekaligus");
                     setPaymentStatus("PAID");
-                    if (!catatan || catatan.startsWith("Invoice ") || catatan.startsWith("Tagihan ")) {
+                    if (!catatan || catatan.startsWith("Faktur ") || catatan.startsWith("Tagihan ")) {
                       setCatatan("Nota Penjualan Langsung (Walk-in)");
                     }
                   } else if (nextType === "po") {
@@ -1795,13 +1795,13 @@ function CreateInvoiceForm({
                   }
                 }}
                 options={sourceTypeOptions.map((o) => o.label)}
-                placeholder="Pilih jenis transaksi invoice..."
+                placeholder="Pilih jenis transaksi faktur..."
               />
             </FormField>
 
             {sourceType === "direct_sale" ? (
               <View className="gap-2 p-2.5 rounded-lg border border-border bg-card/60">
-                <FormField label="Customer (Opsional: Kosongkan untuk Pelanggan Langsung / Walk-in)">
+                <FormField label="Pelanggan (Opsional: Kosongkan untuk Pelanggan Langsung / Walk-in)">
                   <SearchableSelect
                     value={
                       customCustomerName ||
@@ -1809,7 +1809,7 @@ function CreateInvoiceForm({
                       ""
                     }
                     onAddNew={() => setQuickCustomerOpen(true)}
-                    addNewLabel="+ Tambah Customer Baru"
+                    addNewLabel="+ Tambah Pelanggan Baru"
                     onChange={(val) => {
                       setCustomCustomerName(val);
                       const match = (data.customers ?? []).find((c: Row) => c.nama === val);
@@ -1817,7 +1817,7 @@ function CreateInvoiceForm({
                       else setSelectedCustomerId("");
                     }}
                     options={Array.from(new Set([customCustomerName, "Pelanggan Langsung (Walk-in)", ...(data.customers ?? []).map((c: Row) => c.nama)])).filter(Boolean)}
-                    placeholder="Pelanggan Langsung (Walk-in) / Cari customer..."
+                    placeholder="Pelanggan Langsung (Walk-in) / Cari pelanggan..."
                   />
                 </FormField>
               </View>
@@ -1869,14 +1869,14 @@ function CreateInvoiceForm({
                 ) : null}
               </FormField>
             ) : sourceType === "po" ? (
-              <FormField label="Pilih PO Client (Sales Order) Terkait" required>
+              <FormField label="Pilih PO Pelanggan (Pesanan Penjualan) Terkait" required>
                 <PoClientSelect
                   poId={selectedPoId}
                   onChange={handleSelectPo}
                 />
               </FormField>
             ) : sourceType === "lead" ? (
-              <FormField label="Pilih Lead / Prospek Terkait" required>
+              <FormField label="Pilih Prospek Terkait" required>
                 <LeadSelect
                   leadId={selectedLeadId}
                   onChange={handleSelectLead}
@@ -1885,14 +1885,14 @@ function CreateInvoiceForm({
             ) : null}
 
             {sourceType !== "direct_purchase" && sourceType !== "direct_sale" ? (
-              <FormField label="Customer" required>
+              <FormField label="Pelanggan" required>
                 <SearchableSelect
                   value={
                     customCustomerName ||
                     (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama || ""
                   }
                   onAddNew={() => setQuickCustomerOpen(true)}
-                  addNewLabel="+ Tambah Customer Baru"
+                  addNewLabel="+ Tambah Pelanggan Baru"
                   onChange={(val) => {
                     setCustomCustomerName(val);
                     const match = (data.customers ?? []).find((c: Row) => c.nama === val);
@@ -1900,7 +1900,7 @@ function CreateInvoiceForm({
                     else setSelectedCustomerId("");
                   }}
                   options={Array.from(new Set([customCustomerName, ...(data.customers ?? []).map((c: Row) => c.nama)])).filter(Boolean)}
-                  placeholder="Cari & pilih customer..."
+                  placeholder="Cari & pilih pelanggan..."
                 />
               </FormField>
             ) : null}
@@ -2061,8 +2061,8 @@ function CreateInvoiceForm({
           <FormField
             label={
               mode === "masuk"
-                ? "Nomor Invoice Masuk / No. Tagihan (Kosongkan untuk otomatis)"
-                : "Nomor Invoice (Kosongkan untuk otomatis)"
+                ? "Nomor Faktur Masuk / No. Tagihan (Kosongkan untuk otomatis)"
+                : "Nomor Faktur (Kosongkan untuk otomatis)"
             }
           >
             <Input
@@ -2457,7 +2457,7 @@ function CreateInvoiceForm({
                   hint={
                     mode === "masuk"
                       ? "Pilih rekening bank atau kas kecil yang digunakan untuk membayar tagihan ini"
-                      : "Pilih rekening bank atau kas kecil tempat pembayaran invoice ini masuk"
+                      : "Pilih rekening bank atau kas kecil tempat pembayaran faktur ini masuk"
                   }
                 >
                   <SearchableSelect
@@ -2498,12 +2498,12 @@ function CreateInvoiceForm({
           <FormField
             label={
               mode === "masuk"
-                ? "Upload Dokumen Invoice Masuk / Tagihan (Opsional)"
-                : "Upload Dokumen Pendukung Invoice (Opsional)"
+                ? "Upload Dokumen Faktur Masuk / Tagihan (Opsional)"
+                : "Upload Dokumen Pendukung Faktur (Opsional)"
             }
             hint={
               mode === "masuk"
-                ? "Lampirkan file PDF / foto tagihan (misal: Tagihan PLN, IndiHome, atau Faktur Supplier)"
+                ? "Lampirkan file PDF / foto tagihan (misal: Tagihan PLN, IndiHome, atau Faktur Pemasok)"
                 : "Lampirkan dokumen pendukung bila ada"
             }
           >
@@ -2511,7 +2511,7 @@ function CreateInvoiceForm({
               label={
                 mode === "masuk"
                   ? "Pilih File PDF / Foto Tagihan Masuk"
-                  : "Pilih File Dokumen Invoice"
+                  : "Pilih File Dokumen Faktur"
               }
               kind="semua"
               category="invoice"
@@ -2524,7 +2524,7 @@ function CreateInvoiceForm({
             label={
               mode === "masuk"
                 ? "Catatan / Keterangan Tagihan Masuk"
-                : "Catatan / Keterangan Invoice"
+                : "Catatan / Keterangan Faktur"
             }
           >
             <Textarea
@@ -2533,7 +2533,7 @@ function CreateInvoiceForm({
               placeholder={
                 mode === "masuk"
                   ? "Contoh: Tagihan Internet IndiHome Bulan November 2026 / ID Pelanggan..."
-                  : "Catatan tambahan untuk invoice ini..."
+                  : "Catatan tambahan untuk faktur ini..."
               }
             />
           </FormField>
@@ -2668,7 +2668,7 @@ function CreateInvoiceForm({
             </View>
           ) : null}
           <View className="flex-row justify-between pt-1 border-t border-border">
-            <Text className="text-sm font-bold text-foreground">Total Tagihan Bersih Invoice Ini:</Text>
+            <Text className="text-sm font-bold text-foreground">Total Tagihan Bersih Faktur Ini:</Text>
             <Text className="text-sm font-bold text-primary">{rupiah(currentTotal)}</Text>
           </View>
 
@@ -2692,8 +2692,8 @@ function CreateInvoiceForm({
             {isSubmitting
               ? "Menyimpan..."
               : mode === "masuk"
-              ? "Simpan Invoice Masuk"
-              : "Simpan & Buat Invoice"}
+              ? "Simpan Faktur Masuk"
+              : "Simpan & Buat Faktur"}
           </Text>
         </Button>
       </DialogFooter>

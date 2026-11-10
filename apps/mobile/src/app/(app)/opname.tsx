@@ -515,7 +515,7 @@ export default function StockOpnameScreen() {
               <Textarea
                 value={replaceReason}
                 onChangeText={setReplaceReason}
-                placeholder="Contoh: Unit pengganti klaim retur supplier untuk kamera rusak"
+                placeholder="Contoh: Unit pengganti klaim retur pemasok untuk kamera rusak"
               />
             </FormField>
           </View>

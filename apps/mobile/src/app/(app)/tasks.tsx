@@ -43,7 +43,7 @@ export default function TasksScreen() {
       <FilterBar
         search={q}
         onSearch={setQ}
-        placeholder="Cari tugas, project, atau PIC..."
+        placeholder="Cari tugas, proyek, atau PIC..."
         statuses={["TODO", "IN PROGRESS", "PENDING", "TESTED", "DONE", "REJECTED", "BLOCKED"]}
         status={filterStatus}
         onStatus={setFilterStatus}

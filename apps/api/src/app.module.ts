@@ -11,6 +11,7 @@ import { NotificationsModule } from "./notifications/notifications.module.js";
 import { ApprovalsModule } from "./approvals/approvals.module.js";
 import { AuditModule } from "./audit/audit.module.js";
 import { SettingsModule } from "./settings/settings.module.js";
+import { RbacModule } from "./rbac/rbac.module.js";
 import { DocumentNumberModule } from "./document-number/document-number.module.js";
 import { MasterModule } from "./master/master.module.js";
 import { CrmModule } from "./crm/crm.module.js";
@@ -40,6 +41,7 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
     PrismaModule,
     AuditModule,
     SettingsModule,
+    RbacModule,
     DocumentNumberModule,
     AuthModule,
     UsersModule,

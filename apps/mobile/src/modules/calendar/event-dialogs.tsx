@@ -371,43 +371,43 @@ export function EventFormDialog({
               <Text className="text-xs font-semibold text-muted-foreground">Relasi Dokumen ERP (Opsional)</Text>
               <View className="flex-row gap-3">
                 <View className="flex-1">
-                  <FormField label="Customer">
+                  <FormField label="Pelanggan">
                     <SearchableSelect
                       value={customerLabel}
                       onAddNew={() => setQuickCustomerOpen(true)}
-                      addNewLabel="+ Tambah Customer Baru"
+                      addNewLabel="+ Tambah Pelanggan Baru"
                       onChange={(v) => setCustomerLabel(v === customerLabel ? "" : v)}
                       options={customerMap.map((x) => x.label)}
-                      placeholder="Pilih customer"
+                      placeholder="Pilih pelanggan"
                     />
                   </FormField>
                 </View>
                 <View className="flex-1">
-                  <FormField label="Project">
-                    <SearchableSelect value={projectLabel} onChange={(v) => setProjectLabel(v === projectLabel ? "" : v)} options={projectMap.map((x) => x.label)} placeholder="Pilih project" />
+                  <FormField label="Proyek">
+                    <SearchableSelect value={projectLabel} onChange={(v) => setProjectLabel(v === projectLabel ? "" : v)} options={projectMap.map((x) => x.label)} placeholder="Pilih proyek" />
                   </FormField>
                 </View>
               </View>
               <View className="flex-row gap-3">
                 <View className="flex-1">
-                  <FormField label="Lead / Prospek">
-                    <SearchableSelect value={leadLabel} onChange={(v) => setLeadLabel(v === leadLabel ? "" : v)} options={leadMap.map((x) => x.label)} placeholder="Pilih lead" />
+                  <FormField label="Prospek">
+                    <SearchableSelect value={leadLabel} onChange={(v) => setLeadLabel(v === leadLabel ? "" : v)} options={leadMap.map((x) => x.label)} placeholder="Pilih prospek" />
                   </FormField>
                 </View>
                 <View className="flex-1">
-                  <FormField label="Invoice">
-                    <SearchableSelect value={invoiceLabel} onChange={(v) => setInvoiceLabel(v === invoiceLabel ? "" : v)} options={invoiceMap.map((x) => x.label)} placeholder="Pilih invoice" />
+                  <FormField label="Faktur">
+                    <SearchableSelect value={invoiceLabel} onChange={(v) => setInvoiceLabel(v === invoiceLabel ? "" : v)} options={invoiceMap.map((x) => x.label)} placeholder="Pilih faktur" />
                   </FormField>
                 </View>
               </View>
-              <FormField label="Vendor / Supplier">
+              <FormField label="Vendor / Pemasok">
                 <SearchableSelect
                   value={supplierLabel}
                   onChange={(v) => setSupplierLabel(v === supplierLabel ? "" : v)}
                   options={supplierMap.map((x) => x.label)}
-                  placeholder="Pilih supplier"
+                  placeholder="Pilih pemasok"
                   onAddNew={() => setQuickSupplierOpen(true)}
-                  addNewLabel="+ Tambah Supplier Baru"
+                  addNewLabel="+ Tambah Pemasok Baru"
                 />
               </FormField>
             </View>

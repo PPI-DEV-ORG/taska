@@ -287,17 +287,34 @@ PERMISSIONS.FINANCE!.payroll = "LCUA";
 PERMISSIONS.HR!.attendance = "LCUA";
 PERMISSIONS.HR!.payroll = "LCUA";
 
+/** Daftar semua kunci modul yang valid. */
+export const MODULE_KEYS = Object.keys(ALL) as ModuleKey[];
+
+/**
+ * Hak akses yang sedang berlaku (dari database, bisa diubah Super Admin). Bila belum dimuat atau peran/modul tidak
+ * punya baris, dipakai matriks bawaan di atas. Diisi oleh RbacService.
+ */
+let runtime: Record<string, Partial<Record<ModuleKey, string>>> | null = null;
+
+export function setRuntimePermissions(map: Record<string, Partial<Record<ModuleKey, string>>> | null) {
+  runtime = map;
+}
+
+/** Aksi yang berlaku untuk peran+modul: baris database bila ada, kalau tidak matriks bawaan. */
+export function actionsOf(role: string, module: ModuleKey): string {
+  const norm = (role || "").toUpperCase();
+  const override = runtime?.[norm]?.[module];
+  if (override !== undefined) return override;
+  const table = PERMISSIONS[norm] || PERMISSIONS[role];
+  return table?.[module] ?? "";
+}
+
 export function can(role: string, module: ModuleKey, action: Action): boolean {
   const norm = (role || "").toUpperCase();
-  if (norm === "SUPER_ADMIN") return true;
-  const table = PERMISSIONS[norm] || PERMISSIONS[role];
-  if (!table) return false;
-  const actions = table[module];
-  if (!actions) return false;
-  return grant(actions).includes(action);
+  if (norm === "SUPER_ADMIN") return true; // Super Admin selalu penuh dan tidak bisa diubah (mencegah terkunci)
+  return grant(actionsOf(norm, module)).includes(action);
 }
 
 export function visibleModules(role: string): ModuleKey[] {
-  const table = PERMISSIONS[role] ?? {};
-  return (Object.keys(table) as ModuleKey[]).filter((m) => grant(table[m] ?? "").includes("L"));
+  return MODULE_KEYS.filter((m) => can(role, m, "L"));
 }

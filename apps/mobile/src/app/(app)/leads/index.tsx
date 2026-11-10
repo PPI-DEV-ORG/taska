@@ -69,9 +69,9 @@ export default function LeadsScreen() {
   return (
     <>
       <PageHeader
-        title="Leads"
+        title="Prospek"
         subtitle={`${leads.length} lead`}
-        action={canAdd ? <Button onPress={() => setForm(true)}><Plus size={16} color={colors.background} /><Text>Tambah lead</Text></Button> : undefined}
+        action={canAdd ? <Button onPress={() => setForm(true)}><Plus size={16} color={colors.background} /><Text>Tambah prospek</Text></Button> : undefined}
       />
       <ViewToggle view={view} onView={setView} />
       <FilterBar
@@ -79,7 +79,7 @@ export default function LeadsScreen() {
         onSearch={setQ}
         date={dateFilter}
         onDate={setDateFilter}
-        placeholder="Cari lead atau perusahaan"
+        placeholder="Cari prospek atau perusahaan"
       />
       <ScrollView horizontal showsHorizontalScrollIndicator contentContainerClassName="gap-3 pb-3">
         {LEAD_STAGES.map((stage, si) => {
@@ -98,7 +98,7 @@ export default function LeadsScreen() {
                 <Text className="text-muted-foreground text-[13px]">{rupiahShort(sum)}</Text>
               </View>
               <View className="gap-2 p-2">
-                {col.length === 0 ? <Text className="text-muted-foreground px-2 py-4 text-center text-[13px]">Belum ada lead</Text> : null}
+                {col.length === 0 ? <Text className="text-muted-foreground px-2 py-4 text-center text-[13px]">Belum ada prospek</Text> : null}
                 {col.map((l) => (
                   <View key={l.id} className="bg-card border-border gap-2 rounded-lg border p-3">
                     <View className="flex-row items-start gap-2">
@@ -189,8 +189,8 @@ export default function LeadsScreen() {
       <ConfirmDialog
         open={!!lost}
         onOpenChange={(v) => !v && setLost(null)}
-        title="Tandai lead ini Lost?"
-        description="Lead pindah ke kolom Lost dan tidak muncul di pipeline aktif. Data tetap tersimpan."
+        title="Tandai prospek ini Kalah?"
+        description="Prospek pindah ke kolom Kalah dan tidak muncul di pipeline aktif. Data tetap tersimpan."
         confirmLabel="Ya, tandai Lost"
         destructive
         reasonLabel="Alasan Lost"
@@ -200,7 +200,7 @@ export default function LeadsScreen() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
-        title="Hapus lead ini?"
+        title="Hapus prospek ini?"
         description={`Lead "${deleteTarget?.nama ?? ""}" akan dihapus setelah kamu mengonfirmasi. Server tetap memvalidasi apakah lead ini boleh dihapus.`}
         confirmLabel="Ya, hapus"
         destructive

@@ -137,7 +137,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx",
         fileId,
         fileName: fileId ? `so-supplier-${row.id}` : null,
-        emptyHint: "Belum ada file Sales Order (SO) dari Supplier",
+        emptyHint: "Belum ada file Pesanan Penjualan (SO) dari Pemasok",
       };
     }
     const fileId = (row as any).fileId ?? null;
@@ -148,7 +148,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       accept: "image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx",
       fileId,
       fileName: fileId ? `po-terbitan-kita-${row.id}` : null,
-      emptyHint: "Belum ada file Purchase Order (PO) terbitan kita",
+      emptyHint: "Belum ada file Pesanan Pembelian (PO) terbitan kita",
     };
   }
 
@@ -235,7 +235,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         kind: "semua",
         fileId,
         fileName: fileId ? `bukti-bayar-invoice-${row.id}` : null,
-        emptyHint: "Belum ada bukti pembayaran dari customer",
+        emptyHint: "Belum ada bukti pembayaran dari pelanggan",
       };
     }
     const fileId = (row as any).fileId ?? null;
@@ -245,7 +245,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       kind: "dokumen",
       fileId,
       fileName: fileId ? `file-invoice-${row.id}` : null,
-      emptyHint: "Belum ada file invoice yang diunggah",
+      emptyHint: "Belum ada file faktur yang diunggah",
     };
   }
 
@@ -279,7 +279,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         fileName: soFile?.originalName ?? (soFileId ? `sales-order-${row.id}` : null),
         mimeType: soFile?.mimeType,
         fileSize: soFile?.size,
-        emptyHint: "Belum ada file Sales Order (SO) terbitan kita",
+        emptyHint: "Belum ada file Pesanan Penjualan (SO) terbitan kita",
       };
     }
     const file = (row as any).file;
@@ -294,7 +294,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
       fileName: file?.originalName ?? (fileId ? `po-customer-${row.id}` : null),
       mimeType: file?.mimeType,
       fileSize: file?.size,
-      emptyHint: "Belum ada file Purchase Order (PO) dari customer",
+      emptyHint: "Belum ada file Pesanan Pembelian (PO) dari pelanggan",
     };
   }
 

@@ -327,9 +327,9 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
             <View className="flex-row flex-wrap gap-1.5">
               {[
                 "Semua",
-                "Invoice Client",
-                "Pembayaran Invoice",
-                "PO Supplier",
+                "Faktur Pelanggan",
+                "Pembayaran Faktur",
+                "PO Pemasok",
                 "Pelunasan PO",
                 "Pengeluaran (Expense)",
                 "Pembayaran Pengeluaran",

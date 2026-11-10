@@ -99,7 +99,7 @@ export function QuotationPreviewModal({
           {/* Tujuan */}
           <View className="gap-0.5">
             <Text className="text-xs text-black font-bold">Kepada Yth.</Text>
-            <Text className="text-xs text-black font-bold">{row.customer || row.perusahaan || "Nama Customer"}</Text>
+            <Text className="text-xs text-black font-bold">{row.customer || row.perusahaan || "Nama Pelanggan"}</Text>
             <Text className="text-xs text-black font-bold">{customerAddress || row.customerAddress || "Di Tempat"}</Text>
           </View>
 

@@ -81,7 +81,7 @@ export function ProjectExtras({ row }: { row: Row }) {
   const [bastDate, setBastDate] = React.useState("");
   const [bastP1Company, setBastP1Company] = React.useState("PT GHINA MULTI PRIMA");
   const [bastP1Name, setBastP1Name] = React.useState("");
-  const [bastP1Title, setBastP1Title] = React.useState("Project Manager");
+  const [bastP1Title, setBastP1Title] = React.useState("Manajer Proyek");
   const [bastLogoFileId, setBastLogoFileId] = React.useState<number | null>(null);
   const [bastP2Company, setBastP2Company] = React.useState("");
   const [bastP2Name, setBastP2Name] = React.useState("");
@@ -419,7 +419,7 @@ export function ProjectExtras({ row }: { row: Row }) {
   async function handleSyncBoqFromQuotation() {
     const q = activeQuotation || linkedQuotation;
     if (!q) {
-      toast("Belum ada penawaran yang terhubung ke project ini", "danger");
+      toast("Belum ada penawaran yang terhubung ke proyek ini", "danger");
       return;
     }
     setIsSyncingBoq(true);
@@ -551,8 +551,8 @@ export function ProjectExtras({ row }: { row: Row }) {
       setBastNumber(`BAST-P${row.id}-${todayStr.replace(/-/g, "")}`);
       setBastDate(todayStr);
       setBastP1Company("PT GHINA MULTI PRIMA");
-      setBastP1Name(row.pm || user?.name || "Project Manager");
-      setBastP1Title("Project Manager");
+      setBastP1Name(row.pm || user?.name || "Manajer Proyek");
+      setBastP1Title("Manajer Proyek");
       setBastP2Company(row.customer || "Customer");
       setBastP2Name(row.picClient || "Penanggung Jawab Proyek");
       setBastP2Title("Penanggung Jawab Proyek");
@@ -659,7 +659,7 @@ export function ProjectExtras({ row }: { row: Row }) {
   async function handlePrintBast() {
     const ok = await downloadDocumentationPdf("project", row.id);
     if (ok) {
-      toast("PDF Laporan Dokumentasi Project berhasil diunduh");
+      toast("PDF Laporan Dokumentasi Proyek berhasil diunduh");
       return;
     }
     if (typeof window !== "undefined") {
@@ -698,18 +698,18 @@ export function ProjectExtras({ row }: { row: Row }) {
   const flowSteps = [
     { key: "boq", label: "1. BOQ", done: st ? st.boq : !!row.boqFileId || requirements.length > 0 || quoServices.length > 0, sub: row.boqFileId ? "Dokumen BOQ terunggah" : `${st?.counts.requirements ?? requirements.length + quoServices.length} item` },
     { key: "survey", label: "2. Survey (Opsional)", done: st ? st.survey : linkedSurveys.length > 0, sub: (st?.counts.surveys ?? linkedSurveys.length) > 0 ? `${st?.counts.surveys ?? linkedSurveys.length} survey` : "Opsional" },
-    { key: "penawaran", label: "3. Penawaran Project", done: st ? st.penawaran : !!linkedQuotation, sub: linkedQuotation?.nomor || (st?.penawaran ? "Tertaut" : "Belum ada") },
-    { key: "po", label: "4. PO Project", done: st ? st.po : linkedClientPos.length > 0 || projectPos.length > 0, sub: `${st?.counts.clientPos ?? linkedClientPos.length} SO · ${st?.counts.supplierPos ?? projectPos.length} PO` },
-    { key: "progress", label: "5. Progress Project", done: st ? st.progress : Number(row.progres || 0) > 0, sub: `${row.progres ?? 0}%` },
-    { key: "invoice", label: "6. Invoice Project", done: st ? st.invoice : projectInvoices.length > 0, sub: `${st?.counts.invoices ?? projectInvoices.length} invoice` },
+    { key: "penawaran", label: "3. Penawaran Proyek", done: st ? st.penawaran : !!linkedQuotation, sub: linkedQuotation?.nomor || (st?.penawaran ? "Tertaut" : "Belum ada") },
+    { key: "po", label: "4. PO Proyek", done: st ? st.po : linkedClientPos.length > 0 || projectPos.length > 0, sub: `${st?.counts.clientPos ?? linkedClientPos.length} SO · ${st?.counts.supplierPos ?? projectPos.length} PO` },
+    { key: "progress", label: "5. Progress Proyek", done: st ? st.progress : Number(row.progres || 0) > 0, sub: `${row.progres ?? 0}%` },
+    { key: "invoice", label: "6. Faktur Proyek", done: st ? st.invoice : projectInvoices.length > 0, sub: `${st?.counts.invoices ?? projectInvoices.length} invoice` },
     { key: "bast", label: "7. Penyelesaian / BAST", done: st ? st.bast : row.status === "Selesai" || !!row.bastFileId, sub: row.status === "Selesai" ? "Selesai" : "Menunggu" },
   ];
 
   return (
     <>
       <Panel
-        title="Alur Terpadu Project (End-to-End)"
-        subtitle="Pantau kelengkapan 7 tahapan project mulai dari BOQ, Survey, Penawaran, PO, Progress, Invoice, hingga BAST"
+        title="Alur Terpadu Proyek (End-to-End)"
+        subtitle="Pantau kelengkapan 7 tahapan proyek mulai dari BOQ, Survey, Penawaran, PO, Progress, Faktur, hingga BAST"
       >
         <View className="flex-row flex-wrap gap-2">
           {flowSteps.map((st) => (
@@ -735,7 +735,7 @@ export function ProjectExtras({ row }: { row: Row }) {
 
       {/* 1. BOQ Kontrak Awal dari Penawaran Resmi (Read-Only) */}
       <Panel
-        title="1. BOQ (Bill of Quantities) & Reservasi Material Project"
+        title="1. BOQ (Bill of Quantities) & Reservasi Material Proyek"
         subtitle="Daftar seluruh kebutuhan barang serta jasa instalasi dari penawaran resmi (Read-Only)."
         right={
           activeQuotation || linkedQuotation ? (
@@ -813,7 +813,7 @@ export function ProjectExtras({ row }: { row: Row }) {
       {/* 1.B Barang & Jasa Tambahan di Luar BOQ Awal */}
       <Panel
         title="Barang & Jasa Tambahan (Di Luar BOQ Awal)"
-        subtitle="Daftar material, barang ritel, dan jasa tambahan yang diajukan di luar penawaran kontrak awal. Beban modal masuk ke P&L project."
+        subtitle="Daftar material, barang ritel, dan jasa tambahan yang diajukan di luar penawaran kontrak awal. Beban modal masuk ke P&L proyek."
         right={
           <Button
             size="sm"
@@ -882,13 +882,13 @@ export function ProjectExtras({ row }: { row: Row }) {
       </Panel>
 
       <Panel
-        title="2–6. Dokumen Komersial Project (Survey, Penawaran, PO & Invoice Project)"
-        subtitle="Integrasi dokumen komersial project dalam satu tampilan terpadu"
+        title="2–6. Dokumen Komersial Proyek (Survey, Penawaran, PO & Faktur Proyek)"
+        subtitle="Integrasi dokumen komersial proyek dalam satu tampilan terpadu"
         right={
           canViewFinancials ? (
             <Button size="sm" onPress={() => setCreateInvOpen(true)} className="flex-row items-center gap-1 bg-primary">
               <Plus size={13} color={colors.background} />
-              <Text className="text-xs text-primary-foreground font-semibold">Buat Invoice Project</Text>
+              <Text className="text-xs text-primary-foreground font-semibold">Buat Faktur Proyek</Text>
             </Button>
           ) : undefined
         }
@@ -898,7 +898,7 @@ export function ProjectExtras({ row }: { row: Row }) {
           sub={
             linkedSurveys.length > 0
               ? linkedSurveys.map((s: Row) => `${s.lokasi || s.lead} (${s.status})`).join(", ")
-              : "Tidak ada / belum ada survey lokasi untuk project ini"
+              : "Tidak ada / belum ada survey lokasi untuk proyek ini"
           }
           right={
             linkedSurveys[0] ? (
@@ -913,7 +913,7 @@ export function ProjectExtras({ row }: { row: Row }) {
         />
 
         <Line
-          left="Penawaran Project (Quotation)"
+          left="Penawaran Proyek (Quotation)"
           sub={
             linkedQuotation
               ? `${linkedQuotation.nomor} · Nilai: ${rupiah(linkedQuotation.totalAfterDisc || linkedQuotation.nilai || 0)} (${linkedQuotation.status})`
@@ -934,7 +934,7 @@ export function ProjectExtras({ row }: { row: Row }) {
         />
 
         <Line
-          left="PO Project — Sales Order / PO Client"
+          left="PO Proyek — Pesanan Penjualan / PO Pelanggan"
           sub={
             linkedClientPos.length > 0
               ? linkedClientPos.map((po: Row) => `${po.nomor} (${rupiah(po.nilai)})`).join(", ")
@@ -961,20 +961,20 @@ export function ProjectExtras({ row }: { row: Row }) {
         />
 
         <Line
-          left="PO Project — Pengadaan ke Supplier"
+          left="PO Proyek — Pengadaan ke Pemasok"
           sub={
             projectPos.length > 0
               ? projectPos.map((po: Row) => `${po.nomor} · ${po.supplier} (${po.status})`).join(", ")
-              : "Belum ada PO Supplier untuk project ini"
+              : "Belum ada PO Pemasok untuk proyek ini"
           }
           right={
             projectPos[0] ? (
               <Button size="sm" variant="outline" onPress={() => router.push(`/supplier-pos/${projectPos[0]!.id}` as any)}>
                 <ExternalLink size={12} color={colors.text} />
-                <Text className="text-xs">Buka PO Supplier</Text>
+                <Text className="text-xs">Buka PO Pemasok</Text>
               </Button>
             ) : (
-              <StatusBadge status="0 PO Supplier" />
+              <StatusBadge status="0 PO Pemasok" />
             )
           }
         />
@@ -984,7 +984,7 @@ export function ProjectExtras({ row }: { row: Row }) {
             Daftar Invoice Project ({projectInvoices.length})
           </Text>
           {projectInvoices.length === 0 ? (
-            <Text className="text-muted-foreground text-xs">Belum ada invoice yang diterbitkan untuk project ini.</Text>
+            <Text className="text-muted-foreground text-xs">Belum ada faktur yang diterbitkan untuk proyek ini.</Text>
           ) : (
             projectInvoices.map((inv: any) => (
               <Line
@@ -1008,7 +1008,7 @@ export function ProjectExtras({ row }: { row: Row }) {
       <DocumentationPhotosPanel
         kind="project"
         entityId={row.id}
-        title="Dokumentasi Foto Instalasi & Progress Project"
+        title="Dokumentasi Foto Instalasi & Progress Proyek"
         subtitle="Galeri foto pemasangan perangkat di lapangan yang terkompilasi ke laporan PDF."
       />
 
@@ -1031,7 +1031,7 @@ export function ProjectExtras({ row }: { row: Row }) {
 
       {canViewFinancials ? (
         <Panel
-          title="Analisa Untung-Rugi (P&L Project)"
+          title="Analisa Untung-Rugi (P&L Proyek)"
           subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan dan pengeluaran beban riil"
           right={
             <Button
@@ -1045,19 +1045,19 @@ export function ProjectExtras({ row }: { row: Row }) {
               className="gap-1.5"
             >
               <Plus size={14} color={colors.background} />
-              <Text className="text-xs font-semibold">+ Catat Biaya Project</Text>
+              <Text className="text-xs font-semibold">+ Catat Biaya Proyek</Text>
             </Button>
           }
         >
           <View className="gap-4">
             <View className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Pendapatan (DPP Invoice)</Text>
+                <Text className="text-xs text-muted-foreground">Pendapatan (DPP Faktur)</Text>
                 <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
                 <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice terbit</Text>
               </View>
               <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Beban PO Supplier</Text>
+                <Text className="text-xs text-muted-foreground">Beban PO Pemasok</Text>
                 <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
                 <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
               </View>
@@ -1518,7 +1518,7 @@ export function ProjectExtras({ row }: { row: Row }) {
                       <Input
                         value={bastP1Name}
                         onChangeText={setBastP1Name}
-                        placeholder="Nama Project Manager"
+                        placeholder="Nama Manajer Proyek"
                         className="h-8 text-xs"
                       />
                     </View>
@@ -1527,7 +1527,7 @@ export function ProjectExtras({ row }: { row: Row }) {
                       <Input
                         value={bastP1Title}
                         onChangeText={setBastP1Title}
-                        placeholder="Project Manager"
+                        placeholder="Manajer Proyek"
                         className="h-8 text-xs"
                       />
                     </View>
@@ -1710,7 +1710,7 @@ export function ProjectExtras({ row }: { row: Row }) {
                   <View className="items-center w-40">
                     <Text className="text-[11px] text-muted-foreground">Pihak Pertama</Text>
                     <View className="h-12" />
-                    <Text className="text-xs font-semibold">{bastP1Name || "Project Manager"}</Text>
+                    <Text className="text-xs font-semibold">{bastP1Name || "Manajer Proyek"}</Text>
                     <Text className="text-[10px] text-muted-foreground">{bastP1Title || "PT Ghina Multi Prima"}</Text>
                   </View>
                   <View className="items-center w-40">

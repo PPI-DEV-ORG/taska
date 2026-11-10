@@ -130,7 +130,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
       docNumber: row.nomor || `DO/${row.id}`,
       refNumber: row.alasan || undefined,
       date: row.tanggal,
-      counterpartyLabel: "Tujuan / Penerima (Customer)",
+      counterpartyLabel: "Tujuan / Penerima (Pelanggan)",
       counterpartyName: row.tujuan || "-",
       items: printableItems,
       notes: row.catatanSerahTerima || row.alasan || undefined,
@@ -152,7 +152,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
                 Terkait Sales Order: {matchedSo.nomorSo || matchedSo.nomor || `SO #${matchedSo.id}`}
               </Text>
               <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-                {matchedSo.customer || "Customer"} · Nilai: Rp{(Number(matchedSo.nilai || matchedSo.amount || 0)).toLocaleString("id-ID")}
+                {matchedSo.customer || "Pelanggan"} · Nilai: Rp{(Number(matchedSo.nilai || matchedSo.amount || 0)).toLocaleString("id-ID")}
               </Text>
             </View>
           </View>
@@ -172,7 +172,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN (Stok otomatis berkurang saat status Dikirim)" : "Surat jalan penugasan tanpa barang"}
         right={
           <View className="flex-row items-center gap-2 flex-wrap">
-            {row.status === "Pending" ? (
+            {row.status === "Menunggu pengiriman" ? (
               <Button
                 size="sm"
                 variant="outline"

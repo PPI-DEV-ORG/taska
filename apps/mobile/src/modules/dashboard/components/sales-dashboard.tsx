@@ -91,7 +91,7 @@ export function SalesDashboard({ user, data, isMobile }: SalesDashboardProps) {
 
       <KpiRow>
         <KpiCard
-          label="Active Leads"
+          label="Prospek Aktif"
           value={String(activeLeads)}
           hint="Sedang di-follow up"
           icon={TrendingUp}
@@ -132,7 +132,7 @@ export function SalesDashboard({ user, data, isMobile }: SalesDashboardProps) {
         <View className={isMobile ? "w-full" : "flex-1"}>
           <Panel
             title="Tindak Lanjut Mendesak"
-            subtitle="Lead prospek yang belum dihubungi atau sudah lama idle"
+            subtitle="Prospek yang belum dihubungi atau sudah lama idle"
             icon={Clock}
           >
             <View className="gap-3">
@@ -176,10 +176,10 @@ export function SalesDashboard({ user, data, isMobile }: SalesDashboardProps) {
       <QuickActionsCard role={role} />
 
       <View className="flex-row flex-wrap gap-4">
-        <ChartCard title="Lead per Sumber" subtitle="Asal kedatangan leads">
+        <ChartCard title="Prospek per Sumber" subtitle="Asal kedatangan prospek">
           <HBarChart data={sources} />
         </ChartCard>
-        <ChartCard title="Alasan Lost" subtitle="Analisa penyebab lead batal">
+        <ChartCard title="Alasan Lost" subtitle="Analisa penyebab prospek batal">
           <HBarChart data={lostReasons} />
         </ChartCard>
       </View>

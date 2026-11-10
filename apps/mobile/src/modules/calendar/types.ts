@@ -34,7 +34,7 @@ export const CATEGORY_META: Record<string, { label: string; color: string }> = {
   KUNJUNGAN: { label: "Kunjungan", color: "#2DD4BF" },
   POC: { label: "POC & Demo", color: "#A78BFA" },
   SURVEY: { label: "Survey", color: colors.warning },
-  PROJECT: { label: "Project", color: colors.primary },
+  PROJECT: { label: "Proyek", color: colors.primary },
   TASK: { label: "Tugas", color: colors.success },
   FINANCE: { label: "Keuangan", color: colors.danger },
   TAX: { label: "Pajak", color: "#F472B6" },
@@ -85,7 +85,7 @@ export const REMINDER_OPTIONS: { label: string; value: number | null }[] = [
 export const TEAM_FILTER_OPTIONS: { label: string; code: string }[] = [
   { label: "Semua Tim", code: "" },
   { label: "Sales", code: "SALES" },
-  { label: "Project Manager", code: "PM" },
+  { label: "Manajer Proyek", code: "PM" },
   { label: "Teknisi", code: "TEKNISI" },
   { label: "Software Engineer", code: "SE" },
   { label: "Procurement", code: "PROCUREMENT" },

@@ -1,1596 +1,455 @@
 import * as React from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { CheckCircle2, AlertTriangle, Truck, PackageCheck, XCircle, Clock, Check, FileText, Plus, DollarSign, ExternalLink, Calendar } from "lucide-react-native";
+import { CheckCircle2, FileText, PackageCheck, Plus, Truck, Wallet, XCircle, Ban } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Panel, FormField } from "@/components/taska/basics";
 import { FileUploader } from "@/components/taska/file-uploader";
+import { FlowTracker, NextStepCard } from "@/components/taska/flow-tracker";
+import { SearchableSelect, DatePicker, QuickAddSupplierDialog, SupplierSelect } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { toEnum } from "@/services/adapters";
-import { SearchableSelect, DatePicker, QuickAddSupplierDialog, SupplierSelect } from "@/components/taska/dialogs";
-import { StatusBadge } from "@/components/taska/status-badge";
-import { Input } from "@/components/ui/input";
+import { canOwnerAct } from "@/lib/flow";
+import { evaluatePurchase, needsPrepayment, purchaseKind } from "@/lib/purchase-flow";
 
-export function PurchaseRequestExtras({
-  row,
-  onRefresh,
-}: {
-  row: Row;
-  onRefresh?: () => Promise<void> | void;
-}) {
+const SOURCE_LABEL = { SUPPLIER: "Via PO Pemasok", RETAIL: "Beli Ritel / Toko", GUDANG: "Ambil Stok Gudang" } as const;
+
+/**
+ * Detail request barang: satu pelacak alur + satu kartu "Langkah berikutnya".
+ * Aturan urutan diverifikasi ulang di backend, jadi tombol di sini hanya muncul bila memang gilirannya.
+ */
+export function PurchaseRequestExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promise<void> | void }) {
   const router = useRouter();
-  const { user, data, addRow, patchRow, setStatus, decide, toast, reload, approvals } = useApp();
-  const [rejectOpen, setRejectOpen] = React.useState(false);
-  const [rejectReason, setRejectReason] = React.useState("");
-  const [confirmSendOpen, setConfirmSendOpen] = React.useState(false);
-  const [confirmReceiveOpen, setConfirmReceiveOpen] = React.useState(false);
-  const [payModalOpen, setPayModalOpen] = React.useState(false);
-  const [createPoOpen, setCreatePoOpen] = React.useState(false);
+  const { user, data, addRow, setStatus, toast, reload } = useApp();
+  const [dialog, setDialog] = React.useState<null | "reject" | "pay" | "po" | "ship" | "receive" | "cancel">(null);
+  const [reason, setReason] = React.useState("");
+  const [proofId, setProofId] = React.useState<number | null>(null);
+  const [fundingSource, setFundingSource] = React.useState("1000.01");
+  const [busy, setBusy] = React.useState(false);
   const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
-  const [poSupplierId, setPoSupplierId] = React.useState<string>("");
-  const [poPaymentTerms, setPoPaymentTerms] = React.useState<string>("Utang / Tempo (Net 30)");
-  const [poEta, setPoEta] = React.useState<string>("");
-  const [poTotal, setPoTotal] = React.useState<string>("");
-  const [paymentProofFileId, setPaymentProofFileId] = React.useState<number | null>(null);
-  const [selectedFundingSource, setSelectedFundingSource] = React.useState<string>("1000.01");
-  const [doFileId, setDoFileId] = React.useState<number | null>(null);
-  const [loading, setLoading] = React.useState(false);
-  const [localStatus, setLocalStatus] = React.useState<string | null>(null);
+  const [poSupplierId, setPoSupplierId] = React.useState("");
+  const [poTerms, setPoTerms] = React.useState("Utang / Tempo (Net 30)");
+  const [poEta, setPoEta] = React.useState("");
+  const [poTotal, setPoTotal] = React.useState("");
 
   const role = user?.role ?? "";
-  const isGudang = role === "gudang" || role === "super_admin" || role === "admin";
-  const isProcurement = role === "procurement" || role === "super_admin" || role === "admin";
-  const isFinance = role === "finance" || role === "bos" || role === "super_admin" || role === "admin";
-  const isRequesterOrPM =
-    String(row.pemohonId) === String(user?.id) ||
-    role === "pm" ||
-    role === "super_admin" ||
-    role === "admin";
+  const isRequester = String(row.pemohonId) === String(user?.id);
+  const source = purchaseKind(row.procurementSource);
+  const payMethod = String(row.paymentMethod || "UTANG").toUpperCase();
+  const prepay = needsPrepayment(source, payMethod);
 
-  const procSource = String(row.procurementSource || "").toUpperCase();
-  const payMethod = String(row.paymentMethod || "").toUpperCase();
-  const costType = String(row.costType || "").toUpperCase();
-  const isProject = costType === "PROJECT" || !!(row.projectId || (row.project && row.project !== "-"));
-
-  // 4 Kategori Alur Dokumen:
-  const isStockTake = procSource === "GUDANG"; // Flow 1: Ambil Stok Gudang untuk Project
-  const isCash = payMethod === "KAS" || payMethod === "TUNAI" || payMethod === "CASH" || payMethod.includes("KAS") || payMethod.includes("TUNAI");
-  const isDebt = !isStockTake && !isCash;
-  const isRetailCash = procSource === "RETAIL" && isCash; // Flow 2: Pembelian Ritel Tunai/Lunas (Stok atau Project)
-  const isRetailDebt = (procSource === "RETAIL" || !procSource) && !isStockTake && isDebt; // Flow 3: Pembelian Ritel Tempo/Hutang (Stok atau Project)
-  const isSupplierPo = procSource === "SUPPLIER"; // Flow 4: Pengadaan via PO Supplier Formal
-  const isRetailOrPurchase = !isStockTake;
-
-  // Raw status enum
-  const effectiveRaw = (
-    localStatus ||
-    row.rawStatus ||
-    (row.status ? toEnum("purchase-requests", row.status) : "DIAJUKAN") ||
-    "DIAJUKAN"
+  const rawStatus = String(
+    row.rawStatus || (row.status ? toEnum("purchase-requests", row.status) : "DIAJUKAN") || "DIAJUKAN",
   ).toUpperCase();
 
-  const linkedPo = React.useMemo(() => {
-    const prSuffix = String(row.nomor || "").replace(/^(?:PNJ|REQ|PR)\//i, "");
-    const fromList = (data["supplier-pos"] ?? []).find(
-      (sp: Row) =>
-        (sp.requestId && String(sp.requestId) === String(row.id)) ||
-        (row.nomor && sp.request && String(sp.request).toLowerCase() === String(row.nomor).toLowerCase()) ||
-        (row.nomor && String(sp.nomor).includes(row.nomor)) ||
-        (prSuffix && sp.nomor && String(sp.nomor).replace(/^(?:POD|PO-S|PO)\//i, "") === prSuffix),
+  const linkedPos: Row[] = React.useMemo(() => {
+    const fromList = (data["supplier-pos"] ?? []).filter(
+      (sp: Row) => sp.requestId != null && String(sp.requestId) === String(row.id),
     );
-    if (fromList) return fromList;
-    if (Array.isArray(row.supplierPOs) && row.supplierPOs.length > 0) {
-      const p = row.supplierPOs[0];
-      return {
-        id: String(p.id),
-        nomor: p.number || `PO/${p.id}`,
-        status: p.status,
-        shipmentStatus: p.shipmentStatus,
-        total: p.total,
-        supplier: p.supplier?.name || row.supplier || "-",
-        isPaid: p.isPaid,
-        invoiceIns: p.invoiceIns,
-      };
+    if (fromList.length) return fromList;
+    return Array.isArray(row.supplierPOs)
+      ? row.supplierPOs.map((p: any) => ({ id: String(p.id), nomor: p.number, status: p.status, total: p.total }))
+      : [];
+  }, [data, row.id, row.supplierPOs]);
+  const activePos = linkedPos.filter((p) => !/ditolak|dibatalkan/i.test(String(p.status)));
+  const poApproved = activePos.some((p) => !/menunggu|MENUNGGU_PERSETUJUAN/i.test(String(p.status)));
+
+  // Satu sumber (sama dengan backend): paymentStatus. Status DIBAYAR selalu ikut menyetelnya.
+  const isPaid = rawStatus === "DIBAYAR" || String(row.paymentStatus || "").toUpperCase() === "DIBAYAR";
+
+  const flow = React.useMemo(
+    () =>
+      evaluatePurchase({
+        source,
+        paymentMethod: payMethod,
+        rawStatus,
+        isPaid,
+        poCount: activePos.length,
+        poApproved,
+        rejectReason: row.rejectReason,
+      }),
+    [source, payMethod, rawStatus, isPaid, activePos.length, poApproved, row.rejectReason],
+  );
+
+  const can = (key: string) => {
+    const step = flow.actionable.find((s) => s.key === key);
+    return !!step && canOwnerAct(step.owner, role, isRequester);
+  };
+  // PO baru boleh dibuat bila belum ada PO aktif; bayar boleh diulang untuk tempo setelah barang diterima.
+  const canApprove = can("approve");
+  const canPo = can("po") && activePos.length === 0;
+  const canPay = can("pay") || can("settle");
+  const canShip = can("ship");
+  const canReceive = can("receive");
+  const canCancel =
+    !flow.stopped &&
+    ["DIAJUKAN", "CEK_STOK", "DISETUJUI", "PO_DIBUAT"].includes(rawStatus) &&
+    !isPaid &&
+    activePos.length === 0 &&
+    (isRequester || ["procurement", "finance", "bos", "admin", "super_admin"].includes(role));
+
+  const items: any[] = Array.isArray(row.items) ? row.items : [];
+  const stockInfo: any[] = Array.isArray(row.stock) ? row.stock : [];
+  const receivings: Row[] = (data.receiving ?? []).filter(
+    (rc: Row) =>
+      (rc.requestId && String(rc.requestId) === String(row.id)) ||
+      activePos.some((p) => String(rc.supplierPoId) === String(p.id)),
+  );
+
+  async function run(fn: () => Promise<void>, close = true) {
+    setBusy(true);
+    try {
+      await fn();
+      if (close) setDialog(null);
+      if (onRefresh) await onRefresh();
+      await reload();
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal memproses", "danger");
+    } finally {
+      setBusy(false);
     }
-    if (row.supplierPo) {
-      return {
-        id: String(row.supplierPo.id),
-        nomor: row.supplierPo.number || `PO/${row.supplierPo.id}`,
-        status: row.supplierPo.status,
-        shipmentStatus: row.supplierPo.shipmentStatus,
-        total: row.supplierPo.total,
-        supplier: row.supplierPo.supplier?.name || row.supplier || "-",
-        isPaid: row.supplierPo.isPaid,
-        invoiceIns: row.supplierPo.invoiceIns,
-      };
-    }
-    return null;
-  }, [data, row.id, row.nomor, row.supplierPOs, row.supplierPo, row.estimasi, row.supplier]);
-
-  const isPoPaid = React.useMemo(() => {
-    if (Boolean(row.isPaid)) return true;
-    if (!linkedPo) return false;
-    if (linkedPo.isPaid || linkedPo.status === "Lunas" || linkedPo.status === "LUNAS" || linkedPo.status === "DIBAYAR") return true;
-    const invs = (data.invoiceIn ?? []).filter(
-      (inv: Row) => String(inv.supplierPoId) === String(linkedPo.id) || (linkedPo.nomor && inv.po === linkedPo.nomor)
-    );
-    if (invs.some((inv: Row) => inv.status === "PAID" || inv.status === "Lunas" || (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0))) {
-      return true;
-    }
-    if (Array.isArray(linkedPo.invoiceIns) && linkedPo.invoiceIns.some((inv: any) => inv.status === "PAID" || (Number(inv.paidAmount || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0))) {
-      return true;
-    }
-    return false;
-  }, [row.isPaid, linkedPo, data.invoiceIn]);
-
-  const isDiajukan = effectiveRaw === "DIAJUKAN";
-  const isCekStok = effectiveRaw === "CEK_STOK";
-  const isDisetujui = effectiveRaw === "DISETUJUI";
-  const isPaid =
-    isPoPaid ||
-    localStatus === "LUNAS" ||
-    localStatus === "DIBAYAR" ||
-    effectiveRaw === "DIBAYAR" ||
-    row.status === "Lunas" ||
-    row.status === "Dibayar" ||
-    row.paymentStatus === "DIBAYAR" ||
-    !!row.paymentProofFileId ||
-    !!row.paymentProofFile ||
-    String(row.otherNote || "").includes("[DIBAYAR");
-  const isDikirim =
-    effectiveRaw === "DIKIRIM" ||
-    row.status === "Dikirim" ||
-    localStatus === "DIKIRIM";
-  const isDiterima =
-    effectiveRaw === "DITERIMA" ||
-    row.status === "Diterima" ||
-    row.status === "Diterima (Belum Lunas)" ||
-    (isDebt && (row.status === "Lunas" || localStatus === "LUNAS"));
-  const isDitolak = effectiveRaw === "DITOLAK";
-
-  const isPoDibuat =
-    effectiveRaw === "PO_DIBUAT" ||
-    row.status === "PO dibuat" ||
-    localStatus === "PO_DIBUAT" ||
-    !!linkedPo;
-  const isApproved =
-    isDisetujui ||
-    isPoDibuat ||
-    isPaid ||
-    isDikirim ||
-    isDiterima ||
-    row.approval?.status === "Disetujui";
-  const isStockChecked = isCekStok || isApproved || isDikirim || isDiterima;
-  const isDispatched =
-    isDikirim ||
-    isDiterima ||
-    linkedPo?.shipmentStatus === "DIKIRIM" ||
-    linkedPo?.shipmentStatus === "SAMPAI";
-
-  const items: any[] = React.useMemo(() => (Array.isArray(row.items) ? row.items : []), [row.items]);
-  const stockInfo: any[] = React.useMemo(() => (Array.isArray(row.stock) ? row.stock : []), [row.stock]);
-  const approval =
-    row.approval ??
-    approvals.find(
-      (a) =>
-        a.module === "purchase-requests" &&
-        String(a.refId) === String(row.id),
-    );
-  const isPendingApproval = approval?.status === "Menunggu" && !isApproved;
-
-  // Check if all items have sufficient warehouse stock
-  const stockSummary = React.useMemo(() => {
-    return items.map((i) => {
-      const isCustom = !i.productId && !!i.customName;
-      const match = i.productId ? stockInfo.find((s) => s.productId === i.productId) : undefined;
-      const available = match?.available ?? 0;
-      const ordered = i.qty ?? 0;
-      return {
-        ...i,
-        isCustom,
-        available,
-        ordered,
-        isEnough: isCustom ? false : available >= ordered,
-      };
-    });
-  }, [items, stockInfo]);
-
-  const linkedInvoices = React.useMemo(() => {
-    if (!linkedPo) return [];
-    return (data.invoiceIn ?? []).filter(
-      (inv: Row) => String(inv.supplierPoId) === String(linkedPo.id) || inv.po === linkedPo.nomor,
-    );
-  }, [data.invoiceIn, linkedPo]);
-
-  const linkedReceivings = React.useMemo(() => {
-    return (data.receiving ?? []).filter(
-      (rc: Row) =>
-        (rc.requestId && String(rc.requestId) === String(row.id)) ||
-        (linkedPo && String(rc.supplierPoId) === String(linkedPo.id)) ||
-        (row.nomor && rc.requestNumber === row.nomor),
-    );
-  }, [data.receiving, row.id, linkedPo, row.nomor]);
-
-  function handleOpenCreatePo() {
-    const suppliersList = data.suppliers ?? [];
-    const matchedSupplier = suppliersList.find(
-      (s: Row) =>
-        (row.supplierId && String(s.id) === String(row.supplierId)) ||
-        (row.supplier && String(s.nama || s.name).toLowerCase() === String(row.supplier).toLowerCase())
-    ) ?? suppliersList[0];
-
-    setPoSupplierId(matchedSupplier?.id ? String(matchedSupplier.id) : "");
-    setPoPaymentTerms(
-      row.paymentMethod === "KAS"
-        ? "Tunai / Kas"
-        : row.paymentMethod === "NET14"
-        ? "Net 14 Hari"
-        : "Utang / Tempo (Net 30)"
-    );
-    const defaultEta = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0] || "";
-    setPoEta(defaultEta);
-    setPoTotal(row.estimasi ? formatThousands(row.estimasi) : "");
-    setCreatePoOpen(true);
   }
 
-  async function handleSubmitCreatePo() {
-    const suppliersList = data.suppliers ?? [];
-    const targetSupplier =
-      suppliersList.find((s: Row) => String(s.id) === String(poSupplierId)) ??
-      suppliersList.find((s: Row) => (s.nama || s.name) === poSupplierId) ??
-      suppliersList[0];
-    const supplierName = targetSupplier?.nama ?? targetSupplier?.name ?? row.supplier ?? "Supplier Utama";
-    const supplierId = targetSupplier?.id ? Number(targetSupplier.id) : (row.supplierId ? Number(row.supplierId) : undefined);
+  const approve = () => run(() => setStatus("purchase-requests", row.id, "Disetujui"), false);
+  const reject = () => {
+    if (!reason.trim()) return toast("Alasan penolakan wajib diisi", "danger");
+    return run(async () => {
+      await setStatus("purchase-requests", row.id, "Ditolak", reason.trim());
+      setReason("");
+    });
+  };
+  const cancel = () => run(() => setStatus("purchase-requests", row.id, "Dibatalkan", reason.trim() || undefined));
+  const pay = () => {
+    if (!proofId) return toast("Unggah bukti pembayaran terlebih dahulu", "danger");
+    return run(async () => {
+      await setStatus("purchase-requests", row.id, "Dibayar", undefined, {
+        paymentProofFileId: proofId,
+        fundingSource,
+        paymentStatus: "DIBAYAR",
+      });
+      setProofId(null);
+    });
+  };
+  const ship = () =>
+    run(() => setStatus("purchase-requests", row.id, "Dikirim"));
+  const confirmStockReceived = () => run(() => setStatus("purchase-requests", row.id, "Diterima"));
 
-    const reqItems = Array.isArray(row.items) && row.items.length
-      ? row.items.map((i: any) => ({
-          productId: i.productId || i.product?.id ? Number(i.productId || i.product?.id) : undefined,
+  function openCreatePo() {
+    const suppliers: Row[] = data.suppliers ?? [];
+    const match =
+      suppliers.find((s) => row.supplierId && String(s.id) === String(row.supplierId)) ??
+      suppliers.find((s) => row.supplier && String(s.nama || s.name).toLowerCase() === String(row.supplier).toLowerCase());
+    setPoSupplierId(match?.id ? String(match.id) : "");
+    setPoTerms(prepay ? "Tunai / Kas" : "Utang / Tempo (Net 30)");
+    setPoEta(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
+    setPoTotal(row.estimasi ? formatThousands(row.estimasi) : "");
+    setDialog("po");
+  }
+
+  function submitPo() {
+    const supplier = (data.suppliers ?? []).find((s: Row) => String(s.id) === String(poSupplierId));
+    if (!supplier) return toast("Pilih pemasok terlebih dahulu", "danger");
+    const total = Number(String(poTotal).replace(/\./g, "").replace(/,/g, ".")) || Number(row.estimasi) || 0;
+    if (total <= 0) return toast("Total PO wajib diisi", "danger");
+    return run(async () => {
+      const perItem = items.length ? Math.round(total / items.length) : 0;
+      await addRow("supplier-pos", {
+        supplier: supplier.nama ?? supplier.name,
+        supplierId: Number(supplier.id),
+        request: row.nomor,
+        requestId: Number(row.id),
+        projectId: row.projectId != null ? Number(row.projectId) : undefined,
+        project: row.project,
+        payment: poTerms,
+        paymentTerms: poTerms,
+        item: row.item || row.tujuan || "Barang Permintaan",
+        items: items.map((i: any) => ({
+          productId: i.productId ? Number(i.productId) : undefined,
           customName: i.customName || undefined,
           customUnit: i.customUnit || undefined,
           qty: Number(i.qty) || 1,
-          price: Number(i.unitCost || i.estimatedPrice || i.price || (row.estimasi ? Math.round(row.estimasi / row.items.length) : 0)),
-        }))
-      : undefined;
-
-    setLoading(true);
-    try {
-      const cleanPoTotal = Number(String(poTotal).replace(/\./g, "").replace(/,/g, ".")) || 0;
-      const targetTotal = cleanPoTotal || row.estimasi || 0;
-      const prPpnMode: "none" | "exclude" | "include" =
-        row.ppnMode === "exclude" || row.ppnMode === "include"
-          ? row.ppnMode
-          : ((row.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] as any) || "none");
-      const poDppVal =
-        prPpnMode === "none" ? targetTotal : Math.round(targetTotal / 1.11);
-      const poPpnVal =
-        prPpnMode === "none" ? 0 : Math.max(0, targetTotal - poDppVal);
-
-      const created = await addRow("supplier-pos", {
-        supplier: supplierName,
-        supplierId: supplierId,
-        request: row.nomor,
-        requestId: row.id != null ? Number(row.id) : undefined,
-        projectId: row.projectId != null ? Number(row.projectId) : undefined,
-        project: row.project,
-        payment: poPaymentTerms,
-        paymentTerms: poPaymentTerms,
-        item: row.item || row.tujuan || "Barang Request",
-        items: reqItems,
-        total: targetTotal,
-        dpp: poDppVal,
-        ppn: poPpnVal,
-        ppnMode: prPpnMode,
+          price: Number(i.unitCost) || perItem,
+        })),
+        total,
         eta: poEta || undefined,
-        status: isPaid ? "Lunas" : isDiterima ? "Sampai" : isDikirim ? "Dikirim" : (isApproved ? "Disetujui" : "Menunggu persetujuan"),
       });
-      if (created) {
-        setCreatePoOpen(false);
-        setLocalStatus("PO_DIBUAT");
-        const curStatus = String(row.status || "").toLowerCase();
-        if (!["diterima", "lunas", "dikirim"].includes(curStatus)) {
-          try {
-            await setStatus("purchase-requests", row.id, "PO dibuat");
-          } catch {}
-        }
-        toast(`PO Supplier untuk request ${row.nomor} berhasil dibuat dan terhubung!`);
-        if (onRefresh) await onRefresh();
-        await reload();
-      }
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal membuat PO Supplier", "danger");
-    } finally {
-      setLoading(false);
-    }
+    });
   }
 
-  const allStockAvailable = stockSummary.length > 0 && stockSummary.every((s) => s.isEnough);
-
-  async function handleApprove() {
-    setLoading(true);
-    try {
-      setLocalStatus("DISETUJUI");
-      const apprv =
-        approval ??
-        approvals.find(
-          (a) =>
-            a.module === "purchase-requests" &&
-            String(a.refId) === String(row.id),
-        );
-      if (apprv?.id && (apprv.status === "Menunggu" || isPendingApproval)) {
-        try { await decide(apprv.id, "Disetujui"); } catch {}
-      }
-      await setStatus("purchase-requests", row.id, "Disetujui");
-      toast("Request barang berhasil disetujui");
-      if (onRefresh) await onRefresh();
-      await reload();
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal menyetujui request", "danger");
-    } finally {
-      setLoading(false);
-    }
+  function goReceive() {
+    const pending = receivings.find((rc) => String(rc.rawStatus || rc.status).match(/MENUNGGU|Menunggu/));
+    router.push(
+      (pending
+        ? `/receiving/new?receivingId=${pending.id}`
+        : `/receiving/new?requestId=${row.id}${activePos[0] ? `&poId=${activePos[0].id}` : ""}`) as any,
+    );
   }
-
-  async function handleReject() {
-    if (!rejectReason.trim()) {
-      toast("Alasan penolakan wajib diisi", "danger");
-      return;
-    }
-    setLoading(true);
-    try {
-      setLocalStatus("DITOLAK");
-      if (approval?.id && isPendingApproval) {
-        try { await decide(approval.id, "Ditolak", rejectReason); } catch {}
-      }
-      await setStatus("purchase-requests", row.id, "Ditolak", rejectReason);
-      setRejectOpen(false);
-      setRejectReason("");
-      toast("Request barang ditolak");
-      if (onRefresh) await onRefresh();
-      await reload();
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal menolak request", "danger");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleMarkCheckStock() {
-    setLoading(true);
-    try {
-      setLocalStatus("CEK_STOK");
-      await setStatus("purchase-requests", row.id, "Cek stok");
-      toast("Status berhasil diubah ke Cek Stok");
-      if (onRefresh) await onRefresh();
-      await reload();
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal memperbarui status", "danger");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleMarkPaid() {
-    if (!paymentProofFileId) {
-      toast("Unggah bukti pembayaran terlebih dahulu", "danger");
-      return;
-    }
-    setLoading(true);
-    try {
-      const nextStatus = isDebt ? "Lunas" : "Dibayar";
-      setLocalStatus(isDebt ? "LUNAS" : "DIBAYAR");
-      await setStatus("purchase-requests", row.id, nextStatus, undefined, {
-        paymentProofFileId,
-        fundingSource: selectedFundingSource,
-        paymentStatus: "DIBAYAR",
-      });
-      if (linkedPo?.id) {
-        try {
-          await patchRow("supplier-pos", String(linkedPo.id), { status: "Lunas", isPaid: true });
-        } catch {}
-      }
-      setPayModalOpen(false);
-      toast(
-        isDebt
-          ? "Request & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!"
-          : "Pembayaran kas berhasil dicatat. Status request menjadi Dibayar. Procurement dapat menandai barang dikirim."
-      );
-      if (onRefresh) await onRefresh();
-      await reload();
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal menandai pembayaran", "danger");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSendGoods() {
-    setLoading(true);
-    try {
-      setLocalStatus("DIKIRIM");
-      await setStatus("purchase-requests", row.id, "Dikirim");
-      if (linkedPo?.id) {
-        try {
-          await patchRow("supplier-pos", String(linkedPo.id), {
-            pengiriman: "Dikirim",
-            shipmentStatus: "DIKIRIM",
-            status: "DISETUJUI",
-          });
-          await setStatus("supplier-pos", String(linkedPo.id), "Dikirim");
-        } catch {}
-      }
-      setConfirmSendOpen(false);
-      toast(
-        isSupplierPo
-          ? "Barang PO Supplier ditandai dikirim. Status PO dan Request Barang telah disinkronkan!"
-          : isRetailOrPurchase
-          ? "Barang pengadaan ditandai dikirim. Data Penerimaan di Gudang otomatis dibuat!"
-          : "Barang berhasil diserahkan/dikirim dari Gudang"
-      );
-      if (onRefresh) await onRefresh();
-      await reload();
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal memproses penyerahan barang", "danger");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleConfirmReceive() {
-    setLoading(true);
-    try {
-      setLocalStatus("DITERIMA");
-      await setStatus("purchase-requests", row.id, "Diterima", undefined, doFileId ? { doFileId } : undefined);
-      if (linkedPo?.id) {
-        try {
-          await patchRow("supplier-pos", String(linkedPo.id), {
-            pengiriman: "Sampai",
-            shipmentStatus: "SAMPAI",
-            status: "DISETUJUI",
-          });
-          await setStatus("supplier-pos", String(linkedPo.id), "Sampai");
-        } catch {}
-      }
-      setConfirmReceiveOpen(false);
-      toast("Penerimaan barang telah dikonfirmasi dan status PO telah disinkronkan!");
-      if (onRefresh) await onRefresh();
-      await reload();
-    } catch (e: any) {
-      toast(e?.message ?? "Gagal mengonfirmasi penerimaan barang", "danger");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Visual Stepper Stages per Jenis & Flow Request
-  const steps = React.useMemo(() => {
-    if (isStockTake) {
-      // Flow 1: Ambil Stok Gudang untuk Project
-      return [
-        { label: "Diajukan", done: true, current: isDiajukan },
-        { label: "Cek Stok", done: isStockChecked, current: isCekStok },
-        { label: "Disetujui", done: isApproved, current: isDisetujui && !isDispatched && !isDiterima },
-        { label: "Diserahkan", done: isDispatched, current: isDikirim },
-        { label: "Diterima Proyek", done: isDiterima, current: isDiterima },
-      ];
-    }
-    if (isRetailCash) {
-      // Flow 2: Pembelian Ritel Tunai / Kas (Disetujui -> Dibayar Kas -> Dikirim -> Diterima)
-      return [
-        { label: "Diajukan", done: true, current: isDiajukan },
-        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPaid && !isDispatched && !isDiterima },
-        { label: "Dibayar (Kas)", done: isPaid, current: (effectiveRaw === "DIBAYAR" || isPaid) && !isDispatched && !isDiterima },
-        { label: "Dikirim Toko", done: isDispatched, current: isDikirim && !isDiterima },
-        { label: "Diterima Gudang", done: isDiterima, current: isDiterima },
-      ];
-    }
-    if (isRetailDebt) {
-      // Flow 3: Pembelian Ritel Tempo / Hutang (Disetujui -> Dikirim -> Diterima Hutang -> Pelunasan)
-      return [
-        { label: "Diajukan", done: true, current: isDiajukan },
-        { label: "Disetujui", done: isApproved, current: isDisetujui && !isDikirim && !isDiterima && !isPaid },
-        { label: "Dikirim Toko", done: isDispatched, current: isDikirim && !isDiterima && !isPaid },
-        { label: "Diterima (Hutang)", done: isDiterima || isPaid, current: isDiterima && !isPaid },
-        { label: "Lunas", done: isPaid, current: isPaid },
-      ];
-    }
-    // Flow 4: Pengadaan via PO Supplier Formal
-    if (isSupplierPo && !isDebt) {
-      return [
-        { label: "Diajukan", done: true, current: isDiajukan },
-        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPaid && !isDispatched && !isDiterima },
-        { label: "Dibayar (Kas)", done: isPaid, current: (effectiveRaw === "DIBAYAR" || isPaid) && !isDispatched && !isDiterima },
-        { label: "Dikirim Supplier", done: isDispatched, current: isDikirim && !isDiterima },
-        { label: "Diterima Gudang", done: isDiterima, current: isDiterima },
-      ];
-    }
-    return [
-      { label: "Diajukan", done: true, current: isDiajukan },
-      { label: "Disetujui", done: isApproved, current: isDisetujui && !isPoDibuat && !isDispatched && !isDiterima && !isPaid },
-      { label: "PO Dibuat", done: isPoDibuat || isDispatched || isDiterima || isPaid, current: isPoDibuat && !isDispatched && !isDiterima && !isPaid },
-      { label: "Dikirim Supplier", done: isDispatched, current: isDikirim && !isDiterima && !isPaid },
-      { label: "Diterima (Hutang)", done: isDiterima || isPaid, current: isDiterima && !isPaid },
-      { label: "Lunas", done: isPaid, current: isPaid },
-    ];
-  }, [
-    isStockTake,
-    isRetailCash,
-    isRetailDebt,
-    isDebt,
-    isSupplierPo,
-    isDiajukan,
-    isStockChecked,
-    isCekStok,
-    isApproved,
-    isDisetujui,
-    isPoDibuat,
-    isDispatched,
-    isDikirim,
-    isDiterima,
-    isPaid,
-    effectiveRaw,
-  ]);
 
   return (
     <>
-      {/* ─── STATUS STEPPER / FLOW ─── */}
-      <Panel title="Alur & Status Request" subtitle="Perkembangan tahapan proses barang dari pengajuan hingga diterima">
-        <View className="flex-row items-center justify-between gap-1 py-1">
-          {steps.map((st, idx) => {
-            const isLast = idx === steps.length - 1;
-            return (
-              <React.Fragment key={st.label}>
-                <View className="items-center flex-1">
-                  <View
-                    className={`h-7 w-7 rounded-full items-center justify-center ${
-                      isDitolak
-                        ? "bg-destructive/15 border border-destructive/40"
-                        : st.done
-                        ? "bg-emerald-600 border border-emerald-600"
-                        : st.current
-                        ? "bg-primary border border-primary"
-                        : "bg-muted border border-border"
-                    }`}
-                  >
-                    {isDitolak ? (
-                      <XCircle size={14} color={colors.danger} />
-                    ) : st.done ? (
-                      <Check size={14} color="#fff" />
-                    ) : (
-                      <Text
-                        className={`text-[10px] font-bold ${
-                          st.current ? "text-white" : "text-muted-foreground"
-                        }`}
-                      >
-                        {idx + 1}
-                      </Text>
-                    )}
-                  </View>
-                  <Text
-                    className={`text-[11px] mt-1 text-center font-medium ${
-                      st.current ? "text-primary font-bold" : st.done ? "text-foreground font-semibold" : "text-muted-foreground"
-                    }`}
-                    numberOfLines={1}
-                  >
-                    {st.label}
-                  </Text>
-                </View>
-                {!isLast ? (
-                  <View
-                    className={`h-[2px] flex-1 -mt-3.5 ${
-                      st.done && steps[idx + 1]?.done ? "bg-emerald-600" : "bg-border"
-                    }`}
-                  />
-                ) : null}
-              </React.Fragment>
-            );
-          })}
-        </View>
-        {(row.dueDate || row.jatuhTempo) && (row.dueDate !== "-" && row.jatuhTempo !== "-") ? (
-          <View className="mt-3 pt-2.5 border-t border-border/60 flex-row flex-wrap items-center justify-between gap-2">
-            <View className="flex-row items-center gap-1.5">
-              <Calendar size={14} color={colors.warning} />
-              <Text className="text-xs text-muted-foreground font-medium">Jatuh Tempo Pembayaran:</Text>
-              <Text className="text-xs font-bold text-amber-700 dark:text-amber-400">
-                {row.jatuhTempo || row.dueDate}
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-1">
-              <Clock size={13} color={colors.muted} />
-              <Text className="text-[11px] text-muted-foreground">
-                Metode: {row.metodePembayaran || "Tempo"}
-              </Text>
-            </View>
-          </View>
+      {/* 1. Ringkas: jenis & pembayaran */}
+      <View className="flex-row flex-wrap gap-2">
+        <Chip text={SOURCE_LABEL[source]} />
+        {source !== "GUDANG" ? (
+          <Chip text={prepay ? "Bayar dulu (Finance)" : "Tempo / Utang"} tone={prepay ? "info" : "warn"} />
         ) : null}
-      </Panel>
+        {row.project && row.project !== "-" ? <Chip text={`Project: ${row.project}`} /> : null}
+        {!prepay && source !== "GUDANG" && (row.dueDate || row.jatuhTempo) ? (
+          <Chip text={`Jatuh tempo ${row.jatuhTempo || row.dueDate}`} tone="warn" />
+        ) : null}
+      </View>
 
-      {/* ─── PROMINENT STATUS ALERT BANNER ─── */}
-      {isDitolak ? (
-        <View className="bg-destructive/15 border border-destructive/40 rounded-xl p-4 flex-row items-center gap-3">
-          <XCircle size={22} color={colors.danger} />
-          <View className="flex-1">
-            <Text className="text-destructive font-bold text-base">Request Barang Ditolak</Text>
-            <Text className="text-destructive/90 text-xs mt-0.5">
-              Alasan: {row.rejectReason || "Request tidak dapat diproses oleh Gudang/Approver."}
-            </Text>
-          </View>
-        </View>
-      ) : isDiterima ? (
-        isDebt && !isPaid ? (
-          <View className="bg-amber-500/15 border border-amber-500/40 rounded-xl p-4 flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <View className="flex-row items-center gap-3 flex-1">
-              <Clock size={22} color={colors.warning} />
-              <View className="flex-1">
-                <Text className="text-amber-800 dark:text-amber-400 font-bold text-base">
-                  Barang Telah Diterima (Belum Lunas)
-                </Text>
-                <Text className="text-amber-900/90 dark:text-amber-300/80 text-xs mt-0.5">
-                  Barang & nota bon tempo telah diterima di gudang (stok bertambah & tercatat Hutang Usaha 210102). Menunggu pelunasan hutang oleh Finance.
-                </Text>
-                {row.dueDate || row.jatuhTempo ? (
-                  <View className="mt-1.5 flex-row items-center gap-1.5 bg-amber-500/20 px-2 py-0.5 rounded self-start">
-                    <Calendar size={13} color={colors.warning} />
-                    <Text className="text-xs font-semibold text-amber-950 dark:text-amber-200">
-                      Jatuh Tempo: {row.dueDate || row.jatuhTempo}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-            {linkedPo ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2 sm:mt-0"
-                onPress={() => router.push(`/supplier-pos` as any)}
-              >
-                <FileText size={14} color={colors.text} />
-                <Text className="text-xs">Buka PO {linkedPo.nomor}</Text>
-              </Button>
-            ) : isFinance ? (
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 mt-2 sm:mt-0"
-                onPress={() => setPayModalOpen(true)}
-                disabled={loading}
-              >
-                <DollarSign size={14} color="#fff" />
-                <Text className="text-xs font-semibold text-white">Unggah Bukti Bayar / Pelunasan</Text>
-              </Button>
-            ) : null}
-          </View>
-        ) : (
-          <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
-            <CheckCircle2 size={22} color="#10b981" />
-            <View className="flex-1">
-              <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">
-                {isStockTake
-                  ? "Barang Selesai Diterima di Proyek"
-                  : isDebt
-                  ? "Pengadaan Selesai & Lunas"
-                  : isProject && items.some((it: any) => it.customName)
-                  ? "Pengadaan Material Khusus Project Selesai"
-                  : "Barang Selesai Diterima di Gudang"}
-              </Text>
-              <Text className="text-muted-foreground text-xs mt-0.5">
-                {isStockTake
-                  ? `Barang dari gudang telah diterima oleh tim proyek (${row.pemohon || "User"}). Seluruh unit serial terpasang di proyek.`
-                  : isDebt
-                  ? "Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance (Saldo Hutang Usaha 210102 Rp 0)."
-                  : isProject && items.some((it: any) => it.customName)
-                  ? `Material khusus project telah dibayar dan langsung dimasukkan ke BOQ Barang Tambahan Project ${row.project || ""}.`
-                  : "Barang telah diterima di gudang, stok tercatat bertambah, dan proses pengadaan telah tuntas."}
-              </Text>
-            </View>
-          </View>
-        )
-      ) : isPaid && isDebt ? (
-        <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
-          <CheckCircle2 size={22} color="#10b981" />
-          <View className="flex-1">
-            <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">
-              Pengadaan Selesai & Lunas
-            </Text>
-            <Text className="text-muted-foreground text-xs mt-0.5">
-              Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance (Saldo Hutang Usaha 210102 Rp 0).
-            </Text>
-          </View>
-        </View>
-      ) : isDikirim ? (
-        <View className="bg-sky-500/15 border border-sky-500/40 rounded-xl p-4 flex-row items-center justify-between gap-3">
-          <View className="flex-1 flex-row items-center gap-3">
-            <Truck size={22} color="#0284c7" />
-            <View className="flex-1">
-              <Text className="text-sky-800 dark:text-sky-300 font-bold text-base">
-                {isStockTake
-                  ? "Barang Telah Diserahkan & Keluar Gudang"
-                  : isRetailDebt
-                  ? "Barang Sedang Dikirim dari Toko Ritel (Nota Tempo)"
-                  : "Barang Pengadaan Sedang Dikirim ke Gudang"}
-              </Text>
-              <Text className="text-muted-foreground text-xs mt-0.5">
-                {isStockTake
-                  ? `Stok telah dipotong dari saldo gudang (Keluar Proyek). Menunggu tim proyek (${row.pemohon || "User"}) mengonfirmasi penerimaan.`
-                  : isRetailDebt
-                  ? "Toko ritel telah mengirim barang bersama nota bon tempo. Data Penerimaan telah dibuat otomatis di Gudang."
-                  : "Barang telah dibayar dan sedang dikirim. Data Penerimaan telah dibuat otomatis di Gudang. Petugas gudang dapat memverifikasi fisik & SN saat barang tiba."}
-              </Text>
-            </View>
-          </View>
-          {isRequesterOrPM || isGudang ? (
-            <Button size="sm" onPress={() => setConfirmReceiveOpen(true)} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700">
-              <PackageCheck size={14} color="#fff" />
-              <Text className="text-xs font-semibold text-white">Konfirmasi Terima</Text>
+      {/* 2. Langkah berikutnya + tombol aksi */}
+      <NextStepCard flow={flow} role={role} isRequester={isRequester}>
+        {canApprove ? (
+          <>
+            <Button size="sm" onPress={approve} disabled={busy} className="bg-emerald-600">
+              <CheckCircle2 size={14} color="#fff" />
+              <Text className="text-xs font-semibold text-white">Setujui</Text>
             </Button>
-          ) : null}
-        </View>
-      ) : isRetailCash && (effectiveRaw === "DIBAYAR" || isPaid) ? (
-        <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <View className="flex-1 flex-row items-center gap-3">
-            <CheckCircle2 size={22} color="#10b981" />
-            <View className="flex-1">
-              <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">Telah Dibayar oleh Finance (Status: Dibayar)</Text>
-              <Text className="text-muted-foreground text-xs mt-0.5">
-                Bukti bayar telah diunggah & tercatat di akuntansi ({isProject ? "HPP Project 5101" : "Persediaan 1200"}). Menunggu Procurement menandai &quot;Barang Dikirim&quot; agar data Penerimaan Gudang otomatis dibuat.
-              </Text>
-            </View>
-          </View>
-          {(isProcurement || isGudang) ? (
-            <Button
-              size="sm"
-              onPress={() => setConfirmSendOpen(true)}
-              disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-700"
-            >
-              <Truck size={14} color="#fff" />
-              <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
+            <Button size="sm" variant="destructive" onPress={() => setDialog("reject")} disabled={busy}>
+              <XCircle size={14} color="#fff" />
+              <Text className="text-xs font-semibold">Tolak</Text>
             </Button>
-          ) : null}
-        </View>
-      ) : isRetailDebt && isPaid ? (
-        <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
-          <CheckCircle2 size={22} color="#10b981" />
-          <View className="flex-1">
-            <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">Hutang Toko Ritel Telah Dilunasi</Text>
-            <Text className="text-muted-foreground text-xs mt-0.5">
-              Finance telah mengunggah bukti pelunasan nota tempo toko ritel. Kewajiban hutang telah tuntas di akuntansi.
-            </Text>
-          </View>
-        </View>
-      ) : isPoDibuat ? (
-        <View className="bg-sky-500/15 border border-sky-500/40 rounded-xl p-4 flex-row items-center justify-between gap-3">
-          <View className="flex-1 flex-row items-center gap-3">
-            <Truck size={22} color="#0284c7" />
-            <View className="flex-1">
-              <Text className="text-sky-800 dark:text-sky-300 font-bold text-base">
-                PO Supplier Telah Diterbitkan {linkedPo?.nomor ? `(${linkedPo.nomor})` : ""}
-              </Text>
-              <Text className="text-muted-foreground text-xs mt-0.5">
-                PO pembelian ke supplier telah berhasil diterbitkan. Setelah supplier mengirim barang, klik &quot;Tandai Barang Dikirim&quot; agar status terupdate dan draf penerimaan otomatis siap di Gudang.
-              </Text>
-            </View>
-          </View>
-          <Button
-            size="sm"
-            onPress={() => setConfirmSendOpen(true)}
-            disabled={loading}
-            className="bg-sky-600 hover:bg-sky-700"
-          >
-            <Truck size={14} color="#fff" />
-            <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
+          </>
+        ) : null}
+        {canPo ? (
+          <Button size="sm" onPress={openCreatePo} disabled={busy}>
+            <Plus size={14} color="#fff" />
+            <Text className="text-xs font-semibold text-white">Buat PO Pemasok</Text>
           </Button>
-        </View>
-      ) : isDisetujui ? (
-        <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
-          <CheckCircle2 size={22} color="#10b981" />
-          <View className="flex-1">
-            <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">Request Telah Disetujui</Text>
-            <Text className="text-muted-foreground text-xs mt-0.5">
-              {isStockTake
-                ? "Permintaan telah disetujui. Petugas gudang dapat segera menyerahkan barang ke tim proyek."
-                : isRetailCash
-                ? "Request disetujui. Menunggu Finance melakukan pembayaran kas/transfer & mengunggah bukti transfer."
-                : isRetailDebt
-                ? "Pembelian tempo disetujui. Toko dapat segera mengirimkan barang dengan nota bon tempo."
-                : "Request disetujui. Procurement dapat segera menerbitkan PO Supplier resmi."}
-            </Text>
-          </View>
-        </View>
-      ) : isCekStok ? (
-        <View className="bg-amber-500/15 border border-amber-500/40 rounded-xl p-4 flex-row items-center gap-3">
-          <Clock size={22} color={colors.warning} />
-          <View className="flex-1">
-            <Text className="text-amber-800 dark:text-amber-300 font-bold text-base">Sedang Pengecekan Stok Gudang</Text>
-            <Text className="text-muted-foreground text-xs mt-0.5">
-              Petugas gudang sedang memeriksa ketersediaan fisik barang dan unit serial number di gudang.
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
-      {/* ─── PURCHASE ORDER (PO) SUPPLIER SHORTCUT & DETAIL ─── */}
-      {!isStockTake && (
-        <Panel
-          title="Purchase Order (PO) Supplier"
-          subtitle={
-            linkedPo
-              ? `Terhubung dengan ${linkedPo.nomor}`
-              : "Penerbitan PO resmi ke supplier/vendor untuk pengadaan barang ini"
-          }
-        >
-          {linkedPo ? (
-            <View className="bg-panel/50 border border-border/80 rounded-xl p-3.5 gap-2.5">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-2">
-                  <FileText size={18} color={colors.primary} />
-                  <Text className="font-bold text-base text-foreground">
-                    {linkedPo.nomor}
-                  </Text>
-                </View>
-                <StatusBadge status={linkedPo.status || "Menunggu persetujuan"} />
-              </View>
-
-              <View className="flex-row flex-wrap items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border/50 gap-2">
-                <View className="flex-row items-center gap-1.5">
-                  <Text className="text-xs text-muted-foreground">Supplier:</Text>
-                  <Text className="text-xs font-semibold text-foreground">
-                    {linkedPo.supplier || row.supplier || "-"}
-                  </Text>
-                </View>
-                <View className="flex-row items-center gap-1.5">
-                  <Text className="text-xs text-muted-foreground">Total Nilai PO:</Text>
-                  <Text className="text-xs font-bold text-primary">
-                    Rp {Number(linkedPo.total || row.estimasi || 0).toLocaleString("id-ID")}
-                  </Text>
-                </View>
-              </View>
-
-              <View className="flex-row flex-wrap items-center gap-2 pt-2">
-                <Button
-                  size="sm"
-                  className="bg-primary hover:bg-primary/90"
-                  onPress={() => router.push(`/supplier-pos/${linkedPo.id}` as any)}
-                >
-                  <ExternalLink size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">
-                    Buka Detail PO Supplier
-                  </Text>
-                </Button>
-                {linkedInvoices.length > 0 ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onPress={() => router.push(`/invoices` as any)}
-                  >
-                    <FileText size={14} color={colors.text} />
-                    <Text className="text-xs">
-                      Invoice Masuk ({linkedInvoices.length}): {linkedInvoices[0]?.nomor}
-                    </Text>
-                  </Button>
-                ) : null}
-                {linkedReceivings[0] ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onPress={() => router.push(`/receiving/${linkedReceivings[0]?.id}` as any)}
-                  >
-                    <PackageCheck size={14} color={colors.success} />
-                    <Text className="text-xs font-semibold text-emerald-600">
-                      Penerimaan Gudang: {linkedReceivings[0]?.nomor}
-                    </Text>
-                  </Button>
-                ) : null}
-              </View>
-            </View>
+        ) : null}
+        {canPay ? (
+          <Button size="sm" onPress={() => setDialog("pay")} disabled={busy} className="bg-emerald-600">
+            <Wallet size={14} color="#fff" />
+            <Text className="text-xs font-semibold text-white">{can("settle") ? "Lunasi Tagihan" : "Bayar & Unggah Bukti"}</Text>
+          </Button>
+        ) : null}
+        {canShip ? (
+          <Button size="sm" onPress={() => setDialog("ship")} disabled={busy} className="bg-sky-600">
+            <Truck size={14} color="#fff" />
+            <Text className="text-xs font-semibold text-white">{source === "GUDANG" ? "Serahkan Barang" : "Tandai Dikirim"}</Text>
+          </Button>
+        ) : null}
+        {canReceive ? (
+          source === "GUDANG" ? (
+            <Button size="sm" onPress={() => setDialog("receive")} disabled={busy} className="bg-emerald-600">
+              <PackageCheck size={14} color="#fff" />
+              <Text className="text-xs font-semibold text-white">Konfirmasi Barang Diterima</Text>
+            </Button>
           ) : (
-            <View className="bg-panel/50 border border-dashed border-border/90 rounded-xl p-4 gap-3 items-start sm:flex-row sm:items-center sm:justify-between">
-              <View className="flex-1 gap-1">
-                <Text className="font-semibold text-foreground text-sm">
-                  Belum Ada PO Supplier Terbit
-                </Text>
-                <Text className="text-xs text-muted-foreground">
-                  Buat Purchase Order (PO) resmi ke supplier untuk memesan barang ini. PO akan otomatis terhubung secara permanen dengan request ini.
-                </Text>
-              </View>
-              {!isDitolak ? (
-                <Button
-                  size="sm"
-                  className="bg-primary hover:bg-primary/90"
-                  onPress={handleOpenCreatePo}
-                  disabled={loading}
-                >
-                  <Plus size={15} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">
-                    + Buat PO Supplier
-                  </Text>
-                </Button>
-              ) : null}
-            </View>
-          )}
-        </Panel>
-      )}
+            <Button size="sm" onPress={goReceive} disabled={busy} className="bg-emerald-600">
+              <PackageCheck size={14} color="#fff" />
+              <Text className="text-xs font-semibold text-white">Terima di Penerimaan Barang</Text>
+            </Button>
+          )
+        ) : null}
+        {canCancel ? (
+          <Button size="sm" variant="outline" onPress={() => setDialog("cancel")} disabled={busy}>
+            <Ban size={14} color={colors.text} />
+            <Text className="text-xs">Batalkan</Text>
+          </Button>
+        ) : null}
+      </NextStepCard>
 
-      {/* ─── SKEMA AKUNTANSI & KETERKAITAN DOKUMEN (PO/SO & INVOICE) ─── */}
-      <Panel
-        title="Skema Akuntansi & Keterkaitan Dokumen"
-        subtitle={
-          isStockTake
-            ? "Alokasi material internal: Persediaan Gudang (1200) → HPP Project (5101)"
-            : isRetailCash
-            ? "Pembelian Ritel Tunai: Kas Keluar (1000.01) langsung diakui saat dibayar"
-            : isRetailDebt
-            ? "Pembelian Ritel Tempo: Hutang Usaha (210102) saat terima barang, dilunasi saat jatuh tempo"
-            : "Pengadaan Supplier: Terhubung ke PO Supplier resmi & Faktur/Invoice Masuk"
-        }
-      >
-        <View className="gap-2.5">
-          <View className="bg-panel/50 border-border/70 rounded-xl border p-3 gap-1.5">
-            <View className="flex-row justify-between items-center">
-              <Text className="text-xs text-muted-foreground">Jenis / Sumber Alur:</Text>
-              <Text className="text-xs font-bold text-foreground">
-                {isStockTake
-                  ? "Ambil Stok Gudang untuk Proyek"
-                  : isRetailCash
-                  ? "Beli Ritel / Toko (Tunai / Lunas)"
-                  : isRetailDebt
-                  ? "Beli Ritel / Toko (Utang / Tempo)"
-                  : "Pengadaan via PO Supplier Resmi"}
-              </Text>
-            </View>
-            <View className="flex-row justify-between items-center">
-              <Text className="text-xs text-muted-foreground">Metode Pembayaran:</Text>
-              <Text className="text-xs font-bold text-foreground">
-                {isStockTake
-                  ? "Non-Tunai (Transfer Material Internal Gudang)"
-                  : isRetailCash
-                  ? "Kas / Tunai (Dibayar Dimuka)"
-                  : isRetailDebt
-                  ? "Utang / Tempo (Nota Bon Toko)"
-                  : "Tempo / PO & Invoice Masuk"}
-              </Text>
-            </View>
-            <View className="flex-row justify-between items-center">
-              <Text className="text-xs text-muted-foreground">Pos DEBIT Akuntansi:</Text>
-              <Text className="text-xs font-bold text-primary">
-                {isProject
-                  ? "[5101] HPP Project (Bahan & Material Proyek)"
-                  : "[1200] Persediaan Barang Dagang (Aset Lancar)"}
-              </Text>
-            </View>
-            <View className="flex-row justify-between items-center">
-              <Text className="text-xs text-muted-foreground">Pos KREDIT Akuntansi:</Text>
-              <Text className="text-xs font-bold text-warning">
-                {isStockTake
-                  ? "[1200] Persediaan Barang Dagang (Stok Gudang Berkurang — Tanpa Kas/Utang)"
-                  : isPaid
-                  ? `${row.fundingSource === "1000.02" || /mandiri|bank/i.test(String(row.fundingSource || "")) ? "[1000.02] Bank Mandiri PT GMP" : "[1000.01] Kas Kecil / Tunai"} (Pelunasan: Saldo Hutang 210102 Rp 0)`
-                  : isRetailCash
-                  ? row.fundingSource === "1000.02" || /mandiri|bank/i.test(String(row.fundingSource || ""))
-                    ? "[1000.02] Bank Mandiri PT GMP (Pengeluaran Transfer)"
-                    : "[1000.01] Kas Kecil / Tunai (Pengeluaran Kas)"
-                  : "[210102] Hutang Usaha (Nota Bon Toko / Supplier)"}
-              </Text>
-            </View>
-            {row.ppnMode && row.ppnMode !== "none" ? (
-              <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-muted-foreground">Skema Pajak (PPN):</Text>
-                <Text className="text-xs font-bold text-primary">
-                  {row.ppnMode === "include" ? "PPN Included (Sudah termasuk 11%)" : "PPN (11% Ditambahkan)"}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1">
-            {linkedPo ? (
-              <View className="flex-row flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onPress={() => router.push(`/supplier-pos/${linkedPo.id}` as any)}
-                >
-                  <FileText size={14} color={colors.primary} />
-                  <Text className="text-xs font-semibold text-primary">
-                    Lihat PO / SO: {linkedPo.nomor}
-                  </Text>
-                </Button>
-                {linkedInvoices.length > 0 ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onPress={() => router.push(`/invoices` as any)}
-                  >
-                    <FileText size={14} color={colors.text} />
-                    <Text className="text-xs">
-                      Invoice Masuk ({linkedInvoices.length}): {linkedInvoices[0]?.nomor}
-                    </Text>
-                  </Button>
-                ) : null}
-                {linkedReceivings[0] ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onPress={() => router.push(`/receiving/${linkedReceivings[0]?.id}` as any)}
-                  >
-                    <PackageCheck size={14} color={colors.success} />
-                    <Text className="text-xs font-semibold text-emerald-600">
-                      Penerimaan Gudang: {linkedReceivings[0]?.nomor}
-                    </Text>
-                  </Button>
-                ) : null}
-              </View>
-            ) : isSupplierPo && (isProcurement || isGudang) && !isDitolak ? (
-              <Button size="sm" variant="outline" onPress={handleOpenCreatePo} disabled={loading}>
-                <Plus size={14} color={colors.primary} />
-                <Text className="text-xs font-semibold text-primary">
-                  Buat PO Supplier
-                </Text>
-              </Button>
-            ) : null}
-
-            {/* Link Bukti Pembayaran Kas / Transfer */}
-            {row.paymentProofFileId || row.paymentProofFile ? (
-              <View className="flex-row items-center gap-1.5 bg-card border-border/70 border rounded-lg px-2.5 py-1">
-                <CheckCircle2 size={13} color={colors.success} />
-                <Text className="text-xs font-semibold text-foreground">
-                  Bukti Bayar Terlampir
-                </Text>
-              </View>
-            ) : null}
-
-            {/* Link Bukti Surat Jalan DO */}
-            {row.doFileId ? (
-              <View className="flex-row items-center gap-1.5 bg-card border-border/70 border rounded-lg px-2.5 py-1">
-                <FileText size={13} color={colors.primary} />
-                <Text className="text-xs font-semibold text-foreground">
-                  Surat Jalan DO Terlampir
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
+      {/* 3. Alur */}
+      <Panel title="Alur Pembelian" subtitle="Dokumen ini sekarang ada di langkah yang ditandai">
+        <FlowTracker flow={flow} role={role} isRequester={isRequester} />
       </Panel>
 
-      {/* ─── RINCIAN BARANG & KETERSEDIAAN STOK GUDANG ─── */}
-      <Panel
-        title={`Rincian Barang (${items.length || 1} Item)`}
-        subtitle="Mendukung barang dari Master Barang (Ber-SN / Non-SN) maupun barang Non-Master (Beli Ritel)"
-      >
-        {stockSummary.length === 0 ? (
-          <View className="py-2">
-            <Text className="text-sm font-semibold">{row.item || row.tujuan || "Barang Operasional"}</Text>
-            <Text className="text-xs text-muted-foreground mt-1">Estimasi Biaya: Rp{Number(row.estimasi || 0).toLocaleString("id-ID")}</Text>
-          </View>
+      {/* 4. Barang */}
+      <Panel title={`Barang (${items.length})`}>
+        {items.length === 0 ? (
+          <Text className="text-sm text-muted-foreground">{row.item || row.tujuan || "-"}</Text>
         ) : (
-          <View className="gap-2.5">
-            {stockSummary.map((item, idx) => {
-              const productName = item.product?.name || item.customName || `Barang #${idx + 1}`;
-              const sku = item.product?.sku ? `SKU: ${item.product.sku} · ` : item.isCustom ? "Non-Master (Ritel) · " : "";
-              const unit = item.product?.unit || item.customUnit ? ` ${item.product?.unit || item.customUnit}` : "";
-              const unitCost = Number(item.unitCost || 0);
-              let parsedSerials: string[] = [];
-              if (item.serials) {
-                try {
-                  const arr = JSON.parse(item.serials);
-                  if (Array.isArray(arr)) parsedSerials = arr.map(String);
-                } catch {
-                  parsedSerials = String(item.serials)
-                    .split(",")
-                    .map((s: string) => s.trim())
-                    .filter(Boolean);
-                }
-              }
+          <View>
+            {items.map((it, idx) => {
+              const name = it.product?.name || String(it.customName || "").replace("[PAKAI_HABIS] ", "") || `Barang #${idx + 1}`;
+              const unit = it.product?.unit || it.customUnit || "";
+              const cost = Number(it.unitCost || 0);
+              const avail = it.productId ? stockInfo.find((s) => s.productId === it.productId)?.available : undefined;
               return (
-                <View
-                  key={item.id ?? idx}
-                  className="border-border/60 flex-row items-center justify-between border-b py-2.5 last:border-b-0"
-                >
-                  <View className="flex-1 min-w-0 pr-3">
-                    <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                      {productName}
+                <View key={it.id ?? idx} className="flex-row items-center justify-between border-b border-border/60 py-2.5">
+                  <View className="min-w-0 flex-1 pr-3">
+                    <Text className="text-sm font-semibold" numberOfLines={2}>{name}</Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {it.qty} {unit}
+                      {cost > 0 ? ` · @ ${rupiah(cost)}` : ""}
                     </Text>
-                    <Text className="text-muted-foreground text-xs mt-0.5">
-                      {sku}Diminta: <Text className="font-semibold text-foreground">{item.ordered}{unit}</Text>
-                      {unitCost > 0 ? ` · @ ${rupiah(unitCost)}` : ""}
+                  </View>
+                  {source === "GUDANG" && avail != null ? (
+                    <Text className={`text-xs font-semibold ${avail >= it.qty ? "text-emerald-600" : "text-amber-600"}`}>
+                      Stok {avail}
                     </Text>
-                    {parsedSerials.length > 0 ? (
-                      <Text className="text-[11px] font-mono font-semibold text-primary mt-0.5">
-                        SN: {parsedSerials.join(", ")}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <View className="items-end shrink-0">
-                    {item.isCustom ? (
-                      <View className="bg-info/15 border border-info/30 rounded-md px-2.5 py-1">
-                        <Text className="text-info text-xs font-semibold">
-                          Beli Ritel / Non-Master
-                        </Text>
-                      </View>
-                    ) : item.isEnough ? (
-                      <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-2.5 py-1">
-                        <Text className="text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
-                          Stok Cukup (Tersedia {item.available}{unit})
-                        </Text>
-                      </View>
-                    ) : (
-                      <View className="bg-amber-500/15 border border-amber-500/30 rounded-md px-2.5 py-1">
-                        <Text className="text-amber-700 dark:text-amber-400 text-xs font-semibold">
-                          Kurang (Tersedia {item.available}{unit})
-                        </Text>
-                      </View>
-                    )}
-                  </View>
+                  ) : cost > 0 ? (
+                    <Text className="text-sm font-medium">{rupiah(cost * it.qty)}</Text>
+                  ) : null}
                 </View>
               );
             })}
+            <View className="flex-row items-center justify-between pt-3">
+              <Text className="text-sm font-bold">Total</Text>
+              <Text className="text-base font-bold text-primary">{rupiah(Number(row.estimasi || 0))}</Text>
+            </View>
           </View>
         )}
       </Panel>
 
-      {/* ─── TINDAKAN GUDANG, PENGADAAN & FINANCE ─── */}
-      {(isGudang || isProcurement || isFinance) ? (
-        <Panel
-          title="Tindakan Gudang, Pengadaan & Finance"
-          subtitle="Tahapan aksi operasional sesuai jenis dan alur request barang"
-        >
-          <View className="flex-row flex-wrap items-center gap-2.5 pt-1">
-            {/* 1. Persetujuan Request */}
-            {(isApproved || isPoDibuat || isDispatched || isDiterima || isPaid) ? (
-              <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
-                <CheckCircle2 size={15} color="#10b981" />
-                <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                  ✓ Sudah Disetujui
-                </Text>
-              </View>
-            ) : !isDitolak ? (
-              ((isStockTake && (isGudang || isRequesterOrPM || isFinance)) ||
-               (isRetailCash && isFinance) ||
-               (isRetailDebt && (isFinance || isProcurement)) ||
-               (isSupplierPo && (isProcurement || isFinance))) ? (
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                  onPress={handleApprove}
-                  disabled={loading}
-                >
-                  <CheckCircle2 size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Setujui Request</Text>
-                </Button>
-              ) : null
-            ) : null}
-
-            {/* 2. Cek Stok Gudang (Khusus Flow 1: Ambil Stok Gudang untuk Proyek) */}
-            {isStockTake && (
-              isStockChecked ? (
-                <View className="bg-sky-500/15 border border-sky-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
-                  <CheckCircle2 size={15} color="#0284c7" />
-                  <Text className="text-xs font-semibold text-sky-700 dark:text-sky-400">
-                    ✓ Stok Telah Dicek
-                  </Text>
-                </View>
-              ) : isGudang && !isDitolak ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onPress={handleMarkCheckStock}
-                  disabled={loading}
-                >
-                  <Clock size={14} color={colors.text} />
-                  <Text className="text-xs">Tandai Cek Stok Fisik</Text>
-                </Button>
-              ) : null
-            )}
-
-            {/* 3. Pembayaran Tunai / Kas (Bayar di Muka sebelum Kirim) */}
-            {(!isStockTake && !isDebt) && (
-              isPaid ? (
-                <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
-                  <CheckCircle2 size={15} color="#10b981" />
-                  <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    ✓ Sudah Dibayar Kas
-                  </Text>
-                </View>
-              ) : isApproved && isFinance && !isDitolak ? (
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                  onPress={() => setPayModalOpen(true)}
-                  disabled={loading}
-                >
-                  <DollarSign size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Bayar Kas & Unggah Bukti</Text>
-                </Button>
-              ) : null
-            )}
-
-            {/* 4. Pembayaran Tempo / Pelunasan Hutang (Bayar setelah Barang Sampai) */}
-            {isDebt && (
-              isPaid ? (
-                <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
-                  <CheckCircle2 size={15} color="#10b981" />
-                  <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    ✓ Hutang Telah Dilunasi (Lunas)
-                  </Text>
-                </View>
-              ) : isDiterima && isFinance && !isDitolak ? (
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                  onPress={() => setPayModalOpen(true)}
-                  disabled={loading}
-                >
-                  <DollarSign size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Unggah Bukti Bayar & Pelunasan Hutang</Text>
-                </Button>
-              ) : null
-            )}
-
-            {/* 5. Serahkan / Kirim Barang */}
-            {isDispatched ? (
-              <View className="bg-indigo-500/15 border border-indigo-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
-                <Truck size={15} color="#6366f1" />
-                <Text className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
-                  {isStockTake ? "✓ Barang Telah Diserahkan" : "✓ Pengadaan Sedang Dikirim"}
-                </Text>
-              </View>
-            ) : !isDitolak ? (
-              // Stock take: Gudang serahkan barang bila sudah approved
-              (isStockTake && isApproved && isGudang) ? (
-                <Button
-                  size="sm"
-                  onPress={() => setConfirmSendOpen(true)}
-                  disabled={loading}
-                >
-                  <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold">Serahkan Barang ke Proyek</Text>
-                </Button>
-              ) : // Retail Cash: Procurement kirim barang bila sudah dibayar
-              (isRetailCash && isPaid && (isProcurement || isGudang)) ? (
-                <Button
-                  size="sm"
-                  onPress={() => setConfirmSendOpen(true)}
-                  disabled={loading}
-                  className="bg-indigo-600 hover:bg-indigo-700"
-                >
-                  <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim (Auto Penerimaan)</Text>
-                </Button>
-              ) : // Retail Debt: Procurement kirim barang segera setelah approved (bayar tempo belakangan)
-              (isRetailDebt && isApproved && (isProcurement || isGudang)) ? (
-                <Button
-                  size="sm"
-                  onPress={() => setConfirmSendOpen(true)}
-                  disabled={loading}
-                  className="bg-indigo-600 hover:bg-indigo-700"
-                >
-                  <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim (Auto Penerimaan)</Text>
-                </Button>
-              ) : // Supplier PO: Tandai barang dikirim setelah PO dibuat / disetujui
-              (isSupplierPo && (isDebt ? (isPoDibuat || isApproved) : isPaid) && (isProcurement || isGudang)) ? (
-                <Button
-                  size="sm"
-                  className="bg-sky-600 hover:bg-sky-700"
-                  onPress={() => setConfirmSendOpen(true)}
-                  disabled={loading}
-                >
-                  <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
-                </Button>
-              ) : null
-            ) : null}
-
-            {/* Konfirmasi Penerimaan Barang di Gudang */}
-            {isDispatched && !isDiterima && !isDitolak ? (
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700"
-                onPress={() => setConfirmReceiveOpen(true)}
-                disabled={loading}
-              >
-                <PackageCheck size={14} color="#fff" />
-                <Text className="text-xs font-semibold text-white">Konfirmasi Terima Barang</Text>
-              </Button>
-            ) : null}
-
-            {/* 6. Terbitkan PO Supplier Formal */}
-            {isSupplierPo && !linkedPo && !isPoDibuat && !isDitolak && isApproved && (
-              <Button size="sm" className="bg-primary hover:bg-primary/90" onPress={handleOpenCreatePo} disabled={loading}>
-                <Plus size={14} color="#fff" />
-                <Text className="text-xs font-semibold text-white">
-                  Buat PO Supplier
-                </Text>
-              </Button>
-            )}
-
-            {/* 7. Tolak Request */}
-            {isDitolak ? (
-              <View className="bg-destructive/15 border border-destructive/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
-                <XCircle size={15} color={colors.danger} />
-                <Text className="text-xs font-semibold text-destructive">
-                  ✗ Request Telah Ditolak
-                </Text>
-              </View>
-            ) : !isDiterima && !isDispatched && !isPoDibuat && !isPaid ? (
-              <Button
-                variant="destructive"
-                size="sm"
-                onPress={() => setRejectOpen(true)}
-                disabled={loading}
-              >
-                <XCircle size={14} color="#fff" />
-                <Text className="text-xs font-semibold">Tolak Request</Text>
-              </Button>
-            ) : null}
+      {/* 5. Dokumen terkait */}
+      {linkedPos.length || receivings.length ? (
+        <Panel title="Dokumen Terkait">
+          <View className="gap-1">
+            {linkedPos.map((p) => (
+              <DocLink key={`po-${p.id}`} label={`PO ${p.nomor}`} status={String(p.status)} onPress={() => router.push(`/supplier-pos/${p.id}` as any)} />
+            ))}
+            {receivings.map((rc) => (
+              <DocLink key={`rc-${rc.id}`} label={`Penerimaan ${rc.nomor}`} status={String(rc.status)} onPress={() => router.push(`/receiving/${rc.id}` as any)} />
+            ))}
           </View>
         </Panel>
       ) : null}
 
-      {/* Dialog Konfirmasi Serahkan / Kirim Barang */}
-      <Dialog open={confirmSendOpen} onOpenChange={setConfirmSendOpen}>
+      {/* ─── Dialog ─── */}
+      <Dialog open={dialog === "reject"} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {isStockTake ? "Serahkan Barang ke Tim Proyek?" : "Tandai Barang Sedang Dikirim ke Gudang?"}
-            </DialogTitle>
-            <DialogDescription>
-              {isStockTake
-                ? `Stok barang di gudang akan otomatis dipotong dan dialokasikan ke proyek ${row.project || ""}. Notifikasi akan dikirim ke pemohon (${row.pemohon || "User"}) untuk konfirmasi penerimaan di lokasi.`
-                : isSupplierPo
-                ? "Status PO Supplier dan Request Barang akan berubah menjadi 'Dikirim'. Tim Gudang dapat bersiap mengecek fisik saat barang tiba."
-                : "Status akan berubah menjadi 'Dikirim' dan data Penerimaan di Gudang akan otomatis dibuat. Petugas Gudang dapat mengecek fisik barang dan mencatat SN saat barang tiba."}
-            </DialogDescription>
+            <DialogTitle>Tolak Permintaan</DialogTitle>
+            <DialogDescription>Tulis alasan agar pemohon tahu apa yang perlu diperbaiki.</DialogDescription>
           </DialogHeader>
-          {isStockTake && !allStockAvailable && stockSummary.length > 0 ? (
-            <View className="bg-amber-500/15 border border-amber-500/30 rounded-xl p-3 flex-row items-center gap-2">
-              <AlertTriangle size={16} color={colors.warning} />
-              <Text className="text-xs text-amber-700 dark:text-amber-400 flex-1">
-                Perhatian: Sebagian stok tercatat kurang di sistem. Anda tetap dapat menyerahkan bila ada stok fisik riil di gudang.
-              </Text>
-            </View>
-          ) : null}
+          <Textarea value={reason} onChangeText={setReason} placeholder="Alasan penolakan (wajib)" />
           <DialogFooter className="gap-2">
-            <Button variant="outline" onPress={() => setConfirmSendOpen(false)} disabled={loading}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleSendGoods} disabled={loading}>
-              <Truck size={14} color="#fff" />
-              <Text className="text-white font-semibold">
-                {loading ? "Memproses..." : isStockTake ? "Ya, Serahkan Barang" : "Ya, Tandai Dikirim"}
-              </Text>
-            </Button>
+            <Button variant="outline" onPress={() => setDialog(null)} disabled={busy}><Text>Batal</Text></Button>
+            <Button variant="destructive" onPress={reject} disabled={busy}><Text>Tolak Permintaan</Text></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Konfirmasi Terima Barang */}
-      <Dialog open={confirmReceiveOpen} onOpenChange={setConfirmReceiveOpen}>
+      <Dialog open={dialog === "cancel"} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {isStockTake ? "Konfirmasi Terima Barang di Proyek" : "Konfirmasi Terima Barang di Gudang"}
-            </DialogTitle>
-            <DialogDescription>
-              {isStockTake
-                ? "Apakah seluruh barang yang diminta sudah Anda terima dalam kondisi baik di lokasi proyek?"
-                : "Apakah barang fisik dari toko/supplier sudah diterima di gudang dalam kondisi baik?"}
-            </DialogDescription>
+            <DialogTitle>Batalkan Permintaan?</DialogTitle>
+            <DialogDescription>Permintaan yang dibatalkan tidak bisa dilanjutkan lagi.</DialogDescription>
           </DialogHeader>
-          <View className="py-2 gap-3">
-            <FormField label="Dokumen Surat Jalan / Delivery Order (DO) / Foto Nota" hint="Lampirkan foto surat jalan DO, dokumen PDF, atau bukti serah terima (opsional)">
-              <FileUploader
-                label="Unggah Dokumen DO / Nota (Foto atau PDF)"
-                kind="semua"
-                accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
-                allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
-                category="purchase-request-do"
-                hint="Mendukung foto/gambar (JPG, PNG) atau dokumen (PDF)"
-                autoFlush={true}
-                onUploaded={(id) => setDoFileId(id)}
-              />
-            </FormField>
-          </View>
+          <Textarea value={reason} onChangeText={setReason} placeholder="Alasan (opsional)" />
           <DialogFooter className="gap-2">
-            <Button variant="outline" onPress={() => setConfirmReceiveOpen(false)} disabled={loading}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleConfirmReceive} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700">
-              <PackageCheck size={14} color="#fff" />
-              <Text className="text-white font-semibold">{loading ? "Memproses..." : "Ya, Barang Sudah Diterima"}</Text>
-            </Button>
+            <Button variant="outline" onPress={() => setDialog(null)} disabled={busy}><Text>Kembali</Text></Button>
+            <Button variant="destructive" onPress={cancel} disabled={busy}><Text>Ya, Batalkan</Text></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Unggah Bukti Bayar & Tandai Dibayar oleh Finance */}
-      <Dialog open={payModalOpen} onOpenChange={setPayModalOpen}>
+      <Dialog open={dialog === "pay"} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {isRetailDebt ? "Pelunasan Hutang Pembelian Ritel" : "Pembayaran Kas / Tunai Pembelian Ritel"}
-            </DialogTitle>
+            <DialogTitle>{can("settle") ? "Lunasi Tagihan" : "Bayar Pembelian"}</DialogTitle>
             <DialogDescription>
-              {isRetailDebt
-                ? "Silakan unggah bukti transfer/pelunasan nota toko. Pelunasan hutang ini akan dicatat di jurnal akuntansi (Debit: 210102 Hutang Usaha, Kredit: 1000.01 Kas/Bank)."
-                : `Silakan unggah bukti transfer/struk pembayaran kas untuk menandai bahwa pembelian ini telah dibayar. Transaksi akan langsung tercatat di jurnal akuntansi (Kas Keluar: Kredit 1000.01 Kas, Debit ${isProject ? "5101 HPP Project" : "1200 Persediaan"}).`}
+              Unggah bukti transfer / struk. Pembayaran tercatat otomatis di akuntansi.
             </DialogDescription>
           </DialogHeader>
-          <View className="py-2 gap-3">
-            <FormField label="Pilih Sumber Dana (Akun Kas / Bank)" required hint="Akun kas/bank yang akan dikreditkan pada jurnal pengeluaran">
+          <View className="gap-3 py-2">
+            <FormField label="Dibayar dari" required>
               <SearchableSelect
-                value={
-                  selectedFundingSource === "1000.02"
-                    ? "Bank Mandiri PT GMP [1000.02]"
-                    : "Kas Kecil / Tunai [1000.01]"
-                }
-                options={[
-                  "Kas Kecil / Tunai [1000.01]",
-                  "Bank Mandiri PT GMP [1000.02]",
-                ]}
-                onChange={(val) => {
-                  if (val.includes("1000.02") || val.includes("Mandiri")) {
-                    setSelectedFundingSource("1000.02");
-                  } else {
-                    setSelectedFundingSource("1000.01");
-                  }
-                }}
-                placeholder="Pilih rekening kas / bank..."
+                value={fundingSource === "1000.02" ? "Bank Mandiri PT GMP [1000.02]" : "Kas Kecil / Tunai [1000.01]"}
+                options={["Kas Kecil / Tunai [1000.01]", "Bank Mandiri PT GMP [1000.02]"]}
+                onChange={(v) => setFundingSource(v.includes("1000.02") ? "1000.02" : "1000.01")}
+                placeholder="Pilih kas / bank"
               />
             </FormField>
-
-            <FormField label="Bukti Pembayaran / Struk Kas / Transfer" hint="Wajib dilampirkan sebagai bukti sah pencatatan kas keluar (bisa PDF atau Foto/Gambar)">
+            <FormField label="Bukti pembayaran" required>
               <FileUploader
-                label="Unggah Bukti Bayar (Foto atau PDF)"
+                label="Unggah bukti bayar (foto / PDF)"
                 kind="semua"
                 accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
                 allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
                 category="bukti-bayar"
-                hint="Mendukung foto/screenshot bukti transfer (JPG, PNG) atau dokumen (PDF)"
-                autoFlush={true}
-                onUploaded={(id) => setPaymentProofFileId(id)}
+                autoFlush
+                onUploaded={(id) => setProofId(id)}
               />
             </FormField>
           </View>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onPress={() => setPayModalOpen(false)} disabled={loading}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleMarkPaid} disabled={loading || !paymentProofFileId} className="bg-emerald-600 hover:bg-emerald-700">
-              <CheckCircle2 size={14} color="#fff" />
-              <Text className="text-white font-semibold">{loading ? "Memproses..." : "Konfirmasi Pembayaran"}</Text>
+            <Button variant="outline" onPress={() => setDialog(null)} disabled={busy}><Text>Batal</Text></Button>
+            <Button onPress={pay} disabled={busy || !proofId} className="bg-emerald-600">
+              <Text className="text-white font-semibold">{busy ? "Memproses..." : "Konfirmasi Pembayaran"}</Text>
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Tolak Request */}
-      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+      <Dialog open={dialog === "ship"} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Tolak Request Barang</DialogTitle>
+            <DialogTitle>{source === "GUDANG" ? "Serahkan barang ke pemohon?" : "Tandai barang sudah dikirim?"}</DialogTitle>
             <DialogDescription>
-              Masukkan alasan penolakan agar pemohon dapat mengetahui kendala (misal: stok kosong, anggaran tidak disetujui, dll).
+              {source === "GUDANG"
+                ? "Stok gudang akan berkurang sesuai barang yang diserahkan."
+                : "Dokumen Penerimaan otomatis dibuat untuk Gudang. Gudang yang mengonfirmasi saat barang tiba."}
             </DialogDescription>
           </DialogHeader>
-          <View className="py-2">
-            <Textarea
-              placeholder="Contoh: Stok barang kosong di seluruh gudang / perlu PO baru..."
-              value={rejectReason}
-              onChangeText={setRejectReason}
-              numberOfLines={3}
-            />
-          </View>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onPress={() => setRejectOpen(false)} disabled={loading}>
-              <Text>Batal</Text>
-            </Button>
-            <Button variant="destructive" onPress={handleReject} disabled={loading}>
-              <Text className="text-white font-semibold">{loading ? "Memproses..." : "Tolak Request"}</Text>
+            <Button variant="outline" onPress={() => setDialog(null)} disabled={busy}><Text>Batal</Text></Button>
+            <Button onPress={ship} disabled={busy}><Text className="text-white font-semibold">Ya, Lanjutkan</Text></Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "receive"} onOpenChange={(o) => !o && setDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Barang sudah diterima?</DialogTitle>
+            <DialogDescription>Konfirmasi bahwa barang dari gudang sudah sampai ke Anda / tim proyek.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onPress={() => setDialog(null)} disabled={busy}><Text>Batal</Text></Button>
+            <Button onPress={confirmStockReceived} disabled={busy} className="bg-emerald-600">
+              <Text className="text-white font-semibold">Ya, Sudah Diterima</Text>
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Buat PO Supplier dari Request Barang */}
-      <Dialog open={createPoOpen} onOpenChange={setCreatePoOpen}>
+      <Dialog open={dialog === "po"} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Buat Purchase Order (PO) Supplier</DialogTitle>
-            <DialogDescription>
-              Relasi PO ke request {row.nomor} dan proyek akan otomatis terhubung secara permanen.
-            </DialogDescription>
+            <DialogTitle>Buat PO Pemasok</DialogTitle>
+            <DialogDescription>Barang diambil dari request {row.nomor}. Cukup pilih supplier dan cek total.</DialogDescription>
           </DialogHeader>
-
-          <View className="py-2 gap-3">
-            {/* Info Relasi Otomatis */}
-            <View className="bg-panel/60 border border-border/80 rounded-xl p-3 gap-1">
-              <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-muted-foreground">Request Asal:</Text>
-                <Text className="text-xs font-semibold text-primary">{row.nomor}</Text>
-              </View>
-              <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-muted-foreground">Proyek / Alokasi:</Text>
-                <Text className="text-xs font-semibold text-foreground">{row.project || "Stok Gudang"}</Text>
-              </View>
-              <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-muted-foreground">Barang Diminta:</Text>
-                <Text className="text-xs font-semibold text-foreground flex-1 text-right ml-2" numberOfLines={1}>{row.item || row.tujuan || "-"}</Text>
-              </View>
-            </View>
-
-            <FormField label="Pilih Supplier" required hint="Pemasok / vendor tujuan pemesanan">
+          <View className="gap-3 py-2">
+            <FormField label="Pemasok" required>
               <SupplierSelect
                 supplierId={poSupplierId}
-                value={
-                  (data.suppliers ?? []).find((s: Row) => String(s.id) === String(poSupplierId))?.nama ??
-                  (data.suppliers ?? []).find((s: Row) => String(s.id) === String(poSupplierId))?.name ??
-                  row.supplier ??
-                  ""
-                }
-                onChange={(val, match) => {
-                  if (match) {
-                    setPoSupplierId(String(match.id));
-                    if (match.payment || match.paymentTerms) {
-                      setPoPaymentTerms(match.payment || match.paymentTerms);
-                    }
-                  } else {
-                    setPoSupplierId("");
-                  }
-                }}
+                value={(data.suppliers ?? []).find((s: Row) => String(s.id) === String(poSupplierId))?.nama ?? ""}
+                onChange={(_v, match) => setPoSupplierId(match ? String(match.id) : "")}
                 onAddNew={() => setQuickSupplierOpen(true)}
-                addNewLabel="+ Tambah Supplier Baru"
-                placeholder="Pilih supplier..."
+                addNewLabel="+ Tambah Pemasok Baru"
+                placeholder="Pilih pemasok..."
               />
             </FormField>
-
-            <FormField label="Syarat Pembayaran" required hint="Termin pembayaran ke supplier">
+            <FormField label="Syarat pembayaran" required>
               <SearchableSelect
-                value={poPaymentTerms}
-                options={[
-                  "Utang / Tempo (Net 30)",
-                  "Utang / Tempo (Net 14)",
-                  "Tunai / Kas",
-                  "Termin DP & Pelunasan",
-                ]}
-                onChange={setPoPaymentTerms}
-                placeholder="Pilih syarat pembayaran..."
+                value={poTerms}
+                options={["Utang / Tempo (Net 30)", "Utang / Tempo (Net 14)", "Tunai / Kas", "Termin DP & Pelunasan"]}
+                onChange={setPoTerms}
+                placeholder="Pilih syarat"
               />
             </FormField>
-
-            <FormField label="Perkiraan Tiba (ETA)" hint="Tanggal perkiraan pengiriman barang sampai di gudang/lokasi">
-              <DatePicker
-                value={poEta}
-                onChange={setPoEta}
-                placeholder="Pilih tanggal tiba..."
-              />
+            <FormField label="Perkiraan tiba">
+              <DatePicker value={poEta} onChange={setPoEta} placeholder="Pilih tanggal" />
             </FormField>
-
-            <FormField label="Total Nilai PO (Rp)" required hint="Nominal tagihan estimasi PO">
-              <Input
-                value={poTotal}
-                onChangeText={(v) => setPoTotal(formatThousands(v))}
-                keyboardType="numeric"
-                placeholder="Contoh: 10.000.000"
-              />
+            <FormField label="Total PO (Rp)" required>
+              <Input value={poTotal} onChangeText={(v) => setPoTotal(formatThousands(v))} keyboardType="numeric" placeholder="10.000.000" />
             </FormField>
           </View>
-
           <DialogFooter className="gap-2">
-            <Button variant="outline" onPress={() => setCreatePoOpen(false)} disabled={loading}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleSubmitCreatePo} disabled={loading} className="bg-primary">
-              <Check size={14} color="#fff" />
-              <Text className="text-white font-semibold">
-                {loading ? "Menyimpan..." : "Simpan & Buat PO"}
-              </Text>
-            </Button>
+            <Button variant="outline" onPress={() => setDialog(null)} disabled={busy}><Text>Batal</Text></Button>
+            <Button onPress={submitPo} disabled={busy}><Text className="text-white font-semibold">{busy ? "Menyimpan..." : "Buat PO"}</Text></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1598,10 +457,34 @@ export function PurchaseRequestExtras({
       <QuickAddSupplierDialog
         open={quickSupplierOpen}
         onOpenChange={setQuickSupplierOpen}
-        onSuccess={(newSupp) => {
-          setPoSupplierId(String(newSupp.id));
-        }}
+        onSuccess={(s) => setPoSupplierId(String(s.id))}
       />
     </>
+  );
+}
+
+function Chip({ text, tone }: { text: string; tone?: "info" | "warn" }) {
+  const cls =
+    tone === "warn"
+      ? "border-amber-500/40 bg-amber-500/15"
+      : tone === "info"
+      ? "border-info/40 bg-info/15"
+      : "border-border bg-muted";
+  return (
+    <View className={`rounded-full border px-2.5 py-1 ${cls}`}>
+      <Text className="text-[11px] font-semibold">{text}</Text>
+    </View>
+  );
+}
+
+function DocLink({ label, status, onPress }: { label: string; status: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} className="flex-row items-center justify-between rounded-lg border border-border/60 px-3 py-2.5">
+      <View className="flex-row items-center gap-2">
+        <FileText size={14} color={colors.muted} />
+        <Text className="text-sm font-medium">{label}</Text>
+      </View>
+      <Text className="text-xs text-muted-foreground">{status}</Text>
+    </Pressable>
   );
 }

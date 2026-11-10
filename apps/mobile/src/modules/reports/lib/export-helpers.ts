@@ -20,7 +20,7 @@ export function generateCsvByType(type: string, title: string, fin: any, data: a
       `"4101","Pendapatan Proyek & Integrasi Sistem (DPP Bersih)","Pendapatan","${inc.revenueDpp}"`,
       `"2102","PPN Keluaran Terpungut (11% — Titipan Pajak)","Informasi Pajak","${inc.ppnKeluaran}"`,
       `"-","Total Nilai Tagihan Kotor (Gross Invoiced)","Informasi Tagihan","${inc.revenueGross}"`,
-      `"5101","Harga Pokok Penjualan / Pengadaan PO Supplier (HPP)","Beban Pokok (HPP)","-${inc.cogsTotal}"`,
+      `"5101","Harga Pokok Penjualan / Pengadaan PO Pemasok (HPP)","Beban Pokok (HPP)","-${inc.cogsTotal}"`,
       `"=","LABA KOTOR (GROSS PROFIT) — Margin ${inc.grossMarginPct}%","Subtotal","${inc.grossProfit}"`,
       ...inc.opexByCategory.map(
         (c: any) => `"6101","Beban Operasional: ${c.kategori} (${c.count} transaksi)","Beban Operasional (OPEX)","-${c.nominal}"`
@@ -52,7 +52,7 @@ export function generateCsvByType(type: string, title: string, fin: any, data: a
       `"1105","Uang Muka PPh / Pajak Dibayar Dimuka (Prepaid Tax)","ASET LANCAR (AKTIVA)","${bs.assets.uangMukaPph || 0}"`,
       `"1600","PPN Masukan (Kredit Pajak Masukan / Input VAT)","ASET LANCAR (AKTIVA)","${bs.assets.ppnMasukan || 0}"`,
       `"=","TOTAL ASET (AKTIVA)","TOTAL AKTIVA","${bs.assets.totalAsetLancar}"`,
-      `"2101","Hutang Usaha Supplier (Accounts Payable)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangSupplier}"`,
+      `"2101","Hutang Usaha Pemasok (Accounts Payable)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangSupplier}"`,
       `"2102","Hutang PPN Keluaran (Output VAT)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangPpnKeluaran}"`,
       `"2103","Hutang Biaya & Reimbursement Operasional","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangReimbursement}"`,
       `"=","TOTAL KEWAJIBAN (LIABILITAS)","SUBTOTAL KEWAJIBAN","${bs.liabilities.totalKewajiban}"`,

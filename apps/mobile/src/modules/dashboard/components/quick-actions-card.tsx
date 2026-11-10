@@ -28,7 +28,7 @@ export function QuickActionsCard({ role }: { role: string }) {
       <View className="flex-row flex-wrap gap-3 py-1 w-full">
         {isSuper || role === "bos" || role === "sales" ? (
           <QuickActionButton
-            label="Buat Lead Baru"
+            label="Buat Prospek Baru"
             icon={Plus}
             shortcut="⌘L"
             className="flex-1 min-w-[170px]"
@@ -37,7 +37,7 @@ export function QuickActionsCard({ role }: { role: string }) {
         ) : null}
         {isSuper || role === "bos" || role === "pm" || role === "teknisi" || role === "procurement" || role === "gudang" ? (
           <QuickActionButton
-            label="Request Barang"
+            label="Permintaan Barang"
             icon={ShoppingCart}
             shortcut="⌘R"
             className="flex-1 min-w-[170px]"
@@ -55,7 +55,7 @@ export function QuickActionsCard({ role }: { role: string }) {
         ) : null}
         {isSuper || role === "bos" || role === "finance" ? (
           <QuickActionButton
-            label="Buat Invoice"
+            label="Buat Faktur"
             icon={FileText}
             shortcut="⌘I"
             className="flex-1 min-w-[170px]"

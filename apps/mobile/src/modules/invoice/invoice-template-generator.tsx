@@ -75,7 +75,7 @@ export function InvoiceTemplateGenerator({
   const [customerAddress, setCustomerAddress] = React.useState<string>(row.customerAddress || "");
   const [subject, setSubject] = React.useState<string>(row.subject || `INVOICE PENAGIHAN (${row.nomor})`);
   const [intro, setIntro] = React.useState<string>(
-    row.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pengadaan Barang & Jasa Instalasi :",
+    row.intro || "Bersama surat ini kami sampaikan faktur penagihan untuk pengadaan Barang & Jasa Instalasi :",
   );
   const [signerName, setSignerName] = React.useState<string>(row.signerName || "Finance");
   const [signerTitle, setSignerTitle] = React.useState<string>(row.signerTitle || "Finance & Accounting");
@@ -242,8 +242,8 @@ export function InvoiceTemplateGenerator({
   return (
     <>
       <Panel
-        title="Rincian Item & Generator Template Invoice (.xlsx / .pdf)"
-        subtitle="Finance dapat mengubah seluruh isi template invoice (kop surat, tujuan, kota, notes, rincian item, dan penandatangan). File Excel & PDF akan otomatis tersinkronisasi."
+        title="Rincian Item & Generator Template Faktur (.xlsx / .pdf)"
+        subtitle="Finance dapat mengubah seluruh isi template faktur (kop surat, tujuan, kota, notes, rincian item, dan penandatangan). File Excel & PDF akan otomatis tersinkronisasi."
       >
         <View className="gap-3">
           <View className="flex-row flex-wrap items-center justify-between gap-2">
@@ -429,11 +429,11 @@ export function InvoiceTemplateGenerator({
                   <Input value={city} onChangeText={setCity} placeholder="Bekasi" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-xs font-semibold">Tujuan / Alamat Customer</Text>
+                  <Text className="text-xs font-semibold">Tujuan / Alamat Pelanggan</Text>
                   <Input
                     value={customerAddress}
                     onChangeText={setCustomerAddress}
-                    placeholder="Di Tempat (atau alamat customer)"
+                    placeholder="Di Tempat (atau alamat pelanggan)"
                   />
                 </View>
               </View>
@@ -451,7 +451,7 @@ export function InvoiceTemplateGenerator({
                 <Textarea
                   value={intro}
                   onChangeText={setIntro}
-                  placeholder="Bersama surat ini kami sampaikan invoice penagihan untuk pengadaan Barang & Jasa Instalasi :"
+                  placeholder="Bersama surat ini kami sampaikan faktur penagihan untuk pengadaan Barang & Jasa Instalasi :"
                 />
               </View>
             </View>
@@ -662,7 +662,7 @@ export function InvoiceTemplateGenerator({
 
             {/* 6. PENANDATANGAN */}
             <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-3">
-              <Text className="text-xs font-bold text-primary uppercase tracking-wide">6. Penandatangan Invoice</Text>
+              <Text className="text-xs font-bold text-primary uppercase tracking-wide">6. Penandatangan Faktur</Text>
               <View className="flex-row gap-2">
                 <View className="flex-1">
                   <Text className="text-xs font-semibold">Nama Penandatangan</Text>
@@ -697,7 +697,7 @@ export function InvoiceTemplateGenerator({
       <QuotationPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
-        title="Preview File Invoice (Format Resmi Excel & PDF)"
+        title="Preview File Faktur (Format Resmi Excel & PDF)"
         row={{ ...row, nomor: row.nomor }}
         items={items}
         itemsTotal={itemsTotal}
@@ -714,7 +714,7 @@ export function InvoiceTemplateGenerator({
         signerTitle={signerTitle}
         dpLabel={showDpRow && dpLabel ? (dpLabel.endsWith(":") ? dpLabel : `${dpLabel}    :`) : undefined}
         dpAmount={showDpRow ? dpAmount : undefined}
-        closingText="Sekian surat invoice penagihan ini kami sampaikan. Atas perhatian dan kerjasamanya kami ucapkan terima kasih."
+        closingText="Sekian surat faktur penagihan ini kami sampaikan. Atas perhatian dan kerjasamanya kami ucapkan terima kasih."
         onDownloadPdf={() => downloadInvoicePdf({ invoiceId: row.id })}
         onDownloadExcel={() => downloadInvoiceExcel({ invoiceId: row.id })}
         onSave={() => handleSaveItems(false)}

@@ -98,7 +98,7 @@ export function MyAttendanceTab({
                   <Input
                     value={checkInNote}
                     onChangeText={setCheckInNote}
-                    placeholder="Contoh: Kantor pusat, site project..."
+                    placeholder="Contoh: Kantor pusat, site proyek..."
                   />
                 </FormField>
                 <Button

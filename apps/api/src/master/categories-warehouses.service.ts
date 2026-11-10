@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
@@ -88,7 +88,8 @@ export class WarehousesService {
   }
 
   async create(dto: WarehouseDto) {
-    const name = dto.name || `Gudang-${Date.now()}`;
+    const name = dto.name?.trim();
+    if (!name) throw new BadRequestException("Nama gudang wajib diisi");
     const dup = await this.prisma.main.warehouse.findFirst({ where: { name } });
     if (dup) throw new ConflictException("Nama gudang sudah ada");
     return this.prisma.main.warehouse.create({ data: { ...dto, name } });

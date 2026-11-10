@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { statusText } from "@/lib/labels";
 import { DatePicker, SearchableSelect, formatThousands } from "@/components/taska/dialogs";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
@@ -319,7 +320,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
   async function handleSavePurchaseReturn() {
     if (!returProduct) {
-      toast("Pilih barang yang diretur ke supplier", "danger");
+      toast("Pilih barang yang diretur ke pemasok", "danger");
       return;
     }
     if (!returNote.trim()) {
@@ -337,7 +338,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
         po: row.nomor,
         keterangan: returNote.trim(),
       });
-      toast("Retur pembelian ke supplier berhasil dicatat");
+      toast("Retur pembelian ke pemasok berhasil dicatat");
       setReturOpen(false);
       setReturProduct("");
       setReturSn("");
@@ -481,9 +482,9 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
           coaAccount: invCoaAccount,
           fileId: invPayProofFileId ?? undefined,
         }).catch(() => {});
-        toast("Invoice masuk & pelunasan langsung berhasil dicatat (Lunas)");
+        toast("Faktur masuk & pelunasan langsung berhasil dicatat (Lunas)");
       } else {
-        toast("Invoice masuk (Tempo / Utang) berhasil dicatat");
+        toast("Faktur masuk (Tempo / Utang) berhasil dicatat");
       }
       setInvOpen(false);
       setInvFileId(null);
@@ -504,8 +505,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   return (
     <>
       <Panel
-        title="Alur Keterkaitan Dokumen: PO Pembelian Kita ↔ Sales Order (SO) Supplier"
-        subtitle="Sisi Pembelian (Procurement): Kita menerbitkan PO ke Supplier, lalu Supplier menerbitkan SO sebagai konfirmasi pesanan"
+        title="Alur Keterkaitan Dokumen: PO Pembelian Kita ↔ Pesanan Penjualan (SO) Pemasok"
+        subtitle="Sisi Pembelian (Procurement): Kita menerbitkan PO ke Pemasok, lalu Pemasok menerbitkan SO sebagai konfirmasi pesanan"
       >
         <View className="gap-2.5">
           <View className="bg-panel/60 border-border/80 rounded-xl border p-3 gap-1.5">
@@ -525,7 +526,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                       docNumber: row.nomor || `PO-S/${row.id}`,
                       refNumber: row.nomorSoSupplier,
                       date: row.tanggal,
-                      counterpartyLabel: "Supplier (Penjual)",
+                      counterpartyLabel: "Pemasok (Penjual)",
                       counterpartyName: row.supplier,
                       items: Array.isArray(row.items) && row.items.length > 0
                         ? row.items.map((it: any) => ({
@@ -681,14 +682,14 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
         </View>
       </Panel>
 
-      <Panel title="Pengiriman dari supplier" subtitle="Status diubah manual oleh Procurement dengan bukti DO">
+      <Panel title="Pengiriman dari pemasok" subtitle="Procurement menandai Dikirim. Status Diterima Gudang terisi otomatis setelah Gudang mengonfirmasi di menu Penerimaan Barang.">
         {steps.map((s, i) => (
           <View key={s} className="flex-row items-center gap-3 py-2">
             {i <= cur ? <CheckCircle2 size={20} color={colors.success} /> : <Circle size={20} color={colors.border} />}
-            <Text className={i <= cur ? "text-sm font-medium" : "text-muted-foreground text-sm"}>{s}</Text>
+            <Text className={i <= cur ? "text-sm font-medium" : "text-muted-foreground text-sm"}>{statusText(s)}</Text>
           </View>
         ))}
-        {(user!.role === "super_admin" || user!.role === "procurement" || user!.role === "bos" || user!.role === "admin") && cur < 2 && steps[cur + 1] ? (
+        {(user!.role === "super_admin" || user!.role === "procurement" || user!.role === "bos" || user!.role === "admin") && cur < 1 && steps[cur + 1] ? (
           <Button
             className="mt-2 self-start"
             variant="outline"
@@ -697,7 +698,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
               if (nextStep) go(nextStep);
             }}
           >
-            <Text>Tandai {steps[cur + 1]}</Text>
+            <Text>Tandai {statusText(steps[cur + 1] ?? "")}</Text>
           </Button>
         ) : null}
       </Panel>
@@ -905,17 +906,17 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
       {showPrice ? (
         <Panel
-          title="Invoice Masuk & Pembayaran ke Supplier"
-          subtitle="Tagihan dari supplier atas PO ini beserta status pelunasan oleh Finance."
+          title="Faktur Masuk & Pembayaran ke Pemasok"
+          subtitle="Tagihan dari pemasok atas PO ini beserta status pelunasan oleh Finance."
           right={
             <Button size="sm" variant="outline" onPress={handleOpenInvoiceModal} className="flex-row items-center gap-1">
               <Plus size={14} color={colors.text} />
-              <Text className="text-xs">Catat Invoice Masuk</Text>
+              <Text className="text-xs">Catat Faktur Masuk</Text>
             </Button>
           }
         >
           {supplierInvoices.length === 0 ? (
-            <Text className="text-muted-foreground text-xs py-1">Belum ada tagihan (Invoice Masuk) dari supplier untuk PO ini.</Text>
+            <Text className="text-muted-foreground text-xs py-1">Belum ada tagihan (Faktur Masuk) dari pemasok untuk PO ini.</Text>
           ) : (
             supplierInvoices.map((inv) => {
               const lunas = Number(inv.terbayar || 0) >= Number(inv.total || 0) && Number(inv.total || 0) > 0;
@@ -947,7 +948,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
       <Panel
         title={`Retur Pembelian & Klaim ke Supplier (${purchaseReturns.length})`}
-        subtitle="Pengembalian barang rusak / salah kirim ke supplier (mendukung pemilihan Serial Number unit)"
+        subtitle="Pengembalian barang rusak / salah kirim ke pemasok (mendukung pemilihan Serial Number unit)"
         right={
           <Button
             size="sm"
@@ -1019,7 +1020,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                       setReturQty("1");
                     }}
                     options={snOpts}
-                    placeholder="Pilih SN unit yang diretur ke supplier..."
+                    placeholder="Pilih SN unit yang diretur ke pemasok..."
                   />
                 </FormField>
               );
@@ -1027,7 +1028,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             <FormField label="Jumlah Retur (Qty)" required>
               <Input value={returQty} onChangeText={setReturQty} keyboardType="numeric" />
             </FormField>
-            <FormField label="Alasan Retur ke Supplier" required>
+            <FormField label="Alasan Retur ke Pemasok" required>
               <Input
                 value={returNote}
                 onChangeText={setReturNote}
@@ -1054,7 +1055,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                 <Receipt size={18} color={colors.primary} />
               </View>
               <View className="flex-1">
-                <DialogTitle>Catat Invoice Masuk dari Supplier</DialogTitle>
+                <DialogTitle>Catat Faktur Masuk dari Pemasok</DialogTitle>
                 <Text className="text-xs text-muted-foreground mt-0.5">
                   Catat tagihan invoice masuk dari supplier {row.supplier ? `(${row.supplier})` : ""} untuk PO {row.nomor}
                 </Text>
@@ -1090,7 +1091,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             </View>
 
             {/* Skema Tagihan: Sekaligus / DP / Termin / Pelunasan */}
-            <FormField label="Skema Tagihan Invoice Ini" required>
+            <FormField label="Skema Tagihan Faktur Ini" required>
               <View className="flex-row gap-2 flex-wrap">
                 <Button
                   size="sm"
@@ -1247,7 +1248,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             {/* Nomor Invoice & Nilai DPP / Tagihan */}
             <View className="flex-row flex-wrap gap-3">
               <View className="flex-1 min-w-[240px]">
-                <FormField label="Nomor Invoice Supplier" required>
+                <FormField label="Nomor Faktur Pemasok" required>
                   <Input value={invNumber} onChangeText={setInvNumber} placeholder="Contoh: INV-SUP/2026/001" />
                 </FormField>
               </View>
@@ -1365,7 +1366,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                   </View>
                 ) : null}
                 <View className="flex-row justify-between pt-1 border-t border-border/60 items-center">
-                  <Text className="text-xs font-bold text-foreground">Total Tagihan Bersih (Hutang ke Supplier):</Text>
+                  <Text className="text-xs font-bold text-foreground">Total Tagihan Bersih (Hutang ke Pemasok):</Text>
                   <Text className="text-sm font-bold text-primary">{rupiah(calcInvTotal)}</Text>
                 </View>
               </View>
@@ -1374,13 +1375,13 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             {/* Tanggal Invoice & Jatuh Tempo */}
             <View className="flex-row flex-wrap gap-3">
               <View className="flex-1 min-w-[240px]">
-                <FormField label="Tanggal Invoice *" hint="Tanggal terbit invoice supplier">
+                <FormField label="Tanggal Faktur *" hint="Tanggal terbit faktur pemasok">
                   <DatePicker value={invDate} onChange={setInvDate} />
                 </FormField>
               </View>
               {invPaymentScheme === "TEMPO" ? (
                 <View className="flex-1 min-w-[240px]">
-                  <FormField label="Jatuh Tempo *" hint="Batas waktu pembayaran ke supplier">
+                  <FormField label="Jatuh Tempo *" hint="Batas waktu pembayaran ke pemasok">
                     <DatePicker value={invDue} onChange={setInvDue} />
                   </FormField>
                 </View>
@@ -1391,13 +1392,13 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             <View className="flex-row flex-wrap gap-3 mt-1">
               <View className="flex-1 min-w-[260px]">
                 <FileUploader
-                  label="File Invoice Supplier (Gambar/PDF) *"
+                  label="File Faktur Pemasok (Gambar/PDF) *"
                   kind="semua"
                   accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
                   category="invoice"
                   autoFlush
                   onUploaded={(fileId) => setInvFileId(fileId)}
-                  hint="File tagihan invoice resmi dari supplier"
+                  hint="File tagihan faktur resmi dari pemasok"
                 />
               </View>
               {invPaymentScheme === "LUNAS" ? (
@@ -1421,7 +1422,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
               <Text>Batal</Text>
             </Button>
             <Button size="sm" onPress={handleCreateInvoiceIn}>
-              <Text>{invPaymentScheme === "LUNAS" ? "Simpan & Tandai Lunas" : "Simpan Invoice Masuk"}</Text>
+              <Text>{invPaymentScheme === "LUNAS" ? "Simpan & Tandai Lunas" : "Simpan Faktur Masuk"}</Text>
             </Button>
           </DialogFooter>
         </DialogContent>

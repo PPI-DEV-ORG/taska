@@ -1340,12 +1340,9 @@ export function computeFinancialStatements(
     const isKasPr = String(pr.paymentMethod || "").toUpperCase() === "KAS";
     const isPaid =
       String(pr.paymentStatus || "").toUpperCase() === "DIBAYAR" ||
-      !!pr.paymentProofFileId ||
-      !!pr.buktiPembayaran ||
       stLower === "dibayar" ||
       stLower === "lunas" ||
-      (stLower.includes("lunas") && !stLower.includes("belum")) ||
-      (pr.otherNote as string)?.includes("[DIBAYAR");
+      (stLower.includes("lunas") && !stLower.includes("belum"));
 
     const prFundingCode =
       pr.fundingSource === "1000.02" || /mandiri|bank/i.test(String(pr.fundingSource || ""))

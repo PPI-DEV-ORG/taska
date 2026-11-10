@@ -6,6 +6,7 @@ import { ApprovalsService } from "../approvals/approvals.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
+import { Prisma } from "../generated/prisma/client.js";
 import type { InvoiceIn, Role } from "../generated/prisma/client.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { InvoiceInDto, PaymentDto } from "./dto.js";
@@ -54,24 +55,13 @@ export class InvoiceInService {
             paymentStatus: "DIBAYAR",
             status: po.shipmentStatus === "SAMPAI" ? "DITERIMA" : undefined,
             ...(payFileId ? { paymentProofFileId: payFileId } : {}),
-            otherNote: "[DIBAYAR DARI PO SUPPLIER]",
           },
         });
         this.notifications.dataChange("purchase-requests", "update", po.requestId);
         this.notifications.dataChange("purchase-requests", "status", po.requestId);
       }
-      const metaKey = `supplier-po:meta:${supplierPoId}`;
-      let meta: any = {};
-      try {
-        const cur = await this.prisma.main.systemSetting.findUnique({ where: { key: metaKey } });
-        if (cur?.value) meta = JSON.parse(cur.value);
-      } catch {}
-      delete meta.manualStatus;
-      await this.prisma.main.systemSetting.upsert({
-        where: { key: metaKey },
-        update: { value: JSON.stringify(meta) },
-        create: { key: metaKey, value: JSON.stringify(meta) },
-      }).catch(() => {});
+      // Pelunasan lewat invoice menggantikan penanda manual (Lunas / Sampai belum lunas).
+      await this.prisma.main.supplierPO.update({ where: { id: supplierPoId }, data: { manualStatus: null } }).catch(() => {});
       this.notifications.dataChange("supplier-pos", "status", supplierPoId);
       this.notifications.dataChange("supplier-pos", "update", supplierPoId);
     } catch (e) {
@@ -98,39 +88,43 @@ export class InvoiceInService {
     };
   }
 
-  private metaKey(id: number) {
-    return `invoice-in:meta:${id}`;
-  }
-
-  private async getMetaMap(ids: number[]): Promise<Map<number, any>> {
-    const map = new Map<number, any>();
-    if (!ids.length) return map;
-    const rows = await this.prisma.main.systemSetting.findMany({
-      where: { key: { in: ids.map((id) => this.metaKey(id)) } },
-    });
-    for (const r of rows) {
-      try {
-        const id = Number(r.key.replace("invoice-in:meta:", ""));
-        map.set(id, JSON.parse(r.value));
-      } catch {}
-    }
-    return map;
+  /** Bentuk metadata (di-spread ke respons) dari kolom InvoiceIn. Berkas tidak ikut: itu sudah kolom fileId/transferFileId. */
+  private rowToMeta(r: any): Record<string, any> {
+    const str = (v: unknown) => (v == null || v === "" ? undefined : v);
+    const meta: Record<string, any> = {
+      notes: str(r.notes),
+      category: str(r.category),
+      debitAccount: str(r.debitAccount),
+      date: r.date ? new Date(r.date).toISOString().slice(0, 10) : undefined,
+      items: Array.isArray(r.items) ? r.items : undefined,
+      coaAccount: str(r.coaAccount),
+      pph: r.pph == null ? undefined : Number(r.pph),
+      pphMode: str(r.pphMode),
+      tipePph: str(r.tipePph),
+    };
+    for (const k of Object.keys(meta)) if (meta[k] === undefined) delete meta[k];
+    return meta;
   }
 
   private async saveMeta(id: number, patch: Record<string, any>) {
-    const key = this.metaKey(id);
-    let existing: Record<string, any> = {};
+    const data: Record<string, unknown> = {};
+    const strOrNull = (v: unknown) => (v == null || v === "" ? null : String(v));
+    for (const k of ["notes", "category", "debitAccount", "coaAccount", "pphMode", "tipePph"]) {
+      if (patch[k] !== undefined) data[k] = strOrNull(patch[k]);
+    }
+    if (patch.pph !== undefined) data.pph = patch.pph == null || patch.pph === "" ? null : Number(patch.pph);
+    if (patch.date !== undefined) data.date = patch.date ? new Date(patch.date) : null;
+    if (patch.items !== undefined) data.items = patch.items == null ? Prisma.DbNull : (patch.items as Prisma.InputJsonValue);
     try {
-      const cur = await this.prisma.main.systemSetting.findUnique({ where: { key } });
-      if (cur?.value) existing = JSON.parse(cur.value);
-    } catch {}
-    const merged = { ...existing, ...patch };
-    await this.prisma.main.systemSetting.upsert({
-      where: { key },
-      update: { value: JSON.stringify(merged) },
-      create: { key, value: JSON.stringify(merged) },
-    }).catch(() => {});
-    return merged;
+      const row = Object.keys(data).length
+        ? await this.prisma.main.invoiceIn.update({ where: { id }, data: data as never })
+        : await this.prisma.main.invoiceIn.findUnique({ where: { id } });
+      return row ? this.rowToMeta(row) : {};
+    } catch (e) {
+      console.warn("Gagal menyimpan metadata invoice masuk #" + id + ":", (e as Error).message);
+      const row = await this.prisma.main.invoiceIn.findUnique({ where: { id } });
+      return row ? this.rowToMeta(row) : {};
+    }
   }
 
   async list(q: PageQuery & { status?: string; supplierId?: number }) {
@@ -150,13 +144,13 @@ export class InvoiceInService {
       this.prisma.main.invoiceIn.count({ where }),
     ]);
     const synced = await Promise.all(rows.map((r) => this.sync(r)));
-    const metaMap = await this.getMetaMap(synced.map((r) => r.id));
+    const metaMap = new Map<number, any>(synced.map((r) => [r.id, this.rowToMeta(r)]));
 
     const fileIds = new Set<number>();
     for (const r of synced) {
       const m = metaMap.get(r.id) || {};
-      const fid = r.fileId ?? m.fileId;
-      const tfid = r.transferFileId ?? m.transferFileId ?? m.paymentFileId;
+      const fid = r.fileId;
+      const tfid = r.transferFileId;
       if (typeof fid === "number" && fid > 0) fileIds.add(fid);
       if (typeof tfid === "number" && tfid > 0) fileIds.add(tfid);
       for (const p of (r as any).payments ?? []) {
@@ -174,9 +168,9 @@ export class InvoiceInService {
     const items = synced.map((r) => {
       const m = metaMap.get(r.id) || {};
       const paymentWithFile = ((r as any).payments ?? []).find((p: any) => p.fileId);
-      const effectiveFileId = r.fileId ?? m.fileId ?? null;
+      const effectiveFileId = r.fileId ?? null;
       const effectiveTransferFileId =
-        r.transferFileId ?? m.transferFileId ?? m.paymentFileId ?? paymentWithFile?.fileId ?? null;
+        r.transferFileId ?? paymentWithFile?.fileId ?? null;
       return {
         ...r,
         ...m,
@@ -195,16 +189,12 @@ export class InvoiceInService {
       include: { supplier: true, supplierPo: true, payments: { orderBy: { date: "desc" } } },
     });
     if (!row) throw new NotFoundException("Invoice supplier tidak ditemukan");
-    const [synced, approval, metaMap] = await Promise.all([
-      this.sync(row),
-      this.approvals.getFor("INVOICE_IN", id),
-      this.getMetaMap([id]),
-    ]);
-    const m = metaMap.get(id) || {};
+    const [synced, approval] = await Promise.all([this.sync(row), this.approvals.getFor("INVOICE_IN", id)]);
+    const m = this.rowToMeta(row);
     const paymentWithFile = ((synced as any).payments ?? []).find((p: any) => p.fileId);
-    const effectiveFileId = synced.fileId ?? m.fileId ?? null;
+    const effectiveFileId = synced.fileId ?? null;
     const effectiveTransferFileId =
-      synced.transferFileId ?? m.transferFileId ?? m.paymentFileId ?? paymentWithFile?.fileId ?? null;
+      synced.transferFileId ?? paymentWithFile?.fileId ?? null;
     const [file, transferFile] = await Promise.all([
       effectiveFileId
         ? this.prisma.main.file.findUnique({
@@ -302,8 +292,6 @@ export class InvoiceInService {
       pph: dto.pph || undefined,
       pphMode: dto.pphMode || undefined,
       tipePph: dto.tipePph || undefined,
-      ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
-      ...(payFileId !== undefined ? { transferFileId: payFileId, paymentFileId: payFileId } : {}),
     });
     if (dto.fileId) {
       await this.prisma.main.file.update({
@@ -417,8 +405,6 @@ export class InvoiceInService {
       ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
       ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
       ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
-      ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
-      ...(payFileId !== undefined ? { transferFileId: payFileId, paymentFileId: payFileId } : {}),
     });
     if (dto.fileId) {
       await this.prisma.main.file.update({

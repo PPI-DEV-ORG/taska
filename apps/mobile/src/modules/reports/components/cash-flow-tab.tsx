@@ -29,11 +29,11 @@ export function CashFlowTab({ fin, onDownload }: CashFlowTabProps) {
         <KpiCard
           label="Total Kas Masuk (Inflow)"
           value={rupiah(cf.totalCashIn)}
-          hint="Penerimaan pembayaran invoice pelanggan"
+          hint="Penerimaan pembayaran faktur pelanggan"
           tone="success"
         />
         <KpiCard
-          label="Kas Keluar Supplier PO"
+          label="Kas Keluar Pemasok PO"
           value={rupiah(cf.cashOutSuppliers)}
           hint="Pelunasan PO pengadaan barang"
           tone="warning"

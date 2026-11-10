@@ -44,6 +44,8 @@ import { ProjectExtras } from "@/modules/project/project-extras";
 import { InvoiceExtras } from "@/modules/invoice/invoice-extras";
 import { SupplierPoExtras } from "@/modules/supplier-po/supplier-po-extras";
 import { PurchaseRequestExtras } from "@/modules/purchase-request/purchase-request-extras";
+import { SalesChainPanel } from "@/modules/shared/sales-chain-panel";
+import { SALES_MODULES } from "@/lib/sales-flow";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { printOrderDocument } from "@/lib/order-print";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
@@ -113,7 +115,7 @@ function SupplierExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   return (
     <View className="gap-4">
       <Panel
-        title="Status Perpajakan Supplier"
+        title="Status Perpajakan Pemasok"
         subtitle="Identifikasi kewajiban pajak PPN dan penerbitan faktur pajak"
       >
         <View className="flex-row items-center justify-between py-2">
@@ -123,8 +125,8 @@ function SupplierExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             </Text>
             <Text className="text-xs text-muted-foreground">
               {isPkp
-                ? "Supplier ini wajib menerbitkan Faktur Pajak PPN 11% untuk setiap transaksi pengadaan barang/jasa."
-                : "Supplier tidak mengenakan PPN dan tidak menerbitkan faktur pajak resmi."}
+                ? "Pemasok ini wajib menerbitkan Faktur Pajak PPN 11% untuk setiap transaksi pengadaan barang/jasa."
+                : "Pemasok tidak mengenakan PPN dan tidak menerbitkan faktur pajak resmi."}
             </Text>
           </View>
           <StatusBadge status={isPkp ? "Disetujui" : "Draft"} />
@@ -176,7 +178,7 @@ function SupplierExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       <Dialog open={tagModalOpen} onOpenChange={setTagModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Tambah Tag Barang Supplier</DialogTitle>
+            <DialogTitle>Tambah Tag Barang Pemasok</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
             <FormField label="Nama Barang / Kategori Tag" required>
@@ -311,7 +313,7 @@ function DamageReportExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Pr
             <Text className="text-xs text-muted-foreground leading-relaxed">
               {alreadyReplaced
                 ? `Unit pengganti (${row.snPengganti}) sudah diterima dan masuk ke stok gudang (+${row.qty || 1} tersedia) dengan status DI GUDANG, serta terhubung langsung dengan riwayat SN lama (${row.sn}).`
-                : "Ketika unit pengganti dari supplier/garansi tiba (misal SN baru), klik tombol 'Terima Barang Pengganti' di atas. Sistem otomatis mendaftarkan SN baru ke gudang, menambah kembali stok tersedia (+1), menautkan SN lama → SN baru, dan menutup laporan ini menjadi Selesai."}
+                : "Ketika unit pengganti dari pemasok/garansi tiba (misal SN baru), klik tombol 'Terima Barang Pengganti' di atas. Sistem otomatis mendaftarkan SN baru ke gudang, menambah kembali stok tersedia (+1), menautkan SN lama → SN baru, dan menutup laporan ini menjadi Selesai."}
             </Text>
           </View>
         </View>
@@ -364,7 +366,7 @@ function DamageReportExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Pr
               <Textarea
                 value={reason}
                 onChangeText={setReason}
-                placeholder="Contoh: Unit pengganti klaim garansi / retur dari supplier"
+                placeholder="Contoh: Unit pengganti klaim garansi / retur dari pemasok"
               />
             </FormField>
           </View>
@@ -485,7 +487,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   // Buat Delivery Order (DO) / Surat Jalan dari SO state
   const [createDoOpen, setCreateDoOpen] = React.useState(false);
   const [doTujuan, setDoTujuan] = React.useState(
-    row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Customer"
+    row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Pelanggan"
   );
   const [doAlasan, setDoAlasan] = React.useState(
     `Pengiriman Barang Sales Order ${row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : row.nomor || ""}`
@@ -711,7 +713,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   const pullFromInvoice = async () => {
     if (!invoiceItems.length) {
-      toast("Invoice terkait tidak memiliki item");
+      toast("Faktur terkait tidak memiliki item");
       return;
     }
     await saveItems(invoiceItems, true);
@@ -734,7 +736,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   );
 
   const handleCreateDoFromSo = async () => {
-    const targetTujuan = doTujuan.trim() || (row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Customer");
+    const targetTujuan = doTujuan.trim() || (row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Pelanggan");
     setCreatingDo(true);
     try {
       const productsList = (data.products ?? []) as any[];
@@ -777,7 +779,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         project: linkedProjects[0]?.nama || "-",
         withGoods: true,
         barang: barangSummary,
-        status: "Pending",
+        status: "Menunggu pengiriman",
         items: mappedItems.length > 0 ? mappedItems : undefined,
       });
       if (createdDn) {
@@ -808,7 +810,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               <Text className="text-sm font-bold text-foreground">
                 {row.settlementType === "LANGSUNG"
                   ? "SO Lunas (Nota Kontan Langsung)"
-                  : "SO Lunas (Seluruh Invoice Terbayar)"}
+                  : "SO Lunas (Seluruh Faktur Terbayar)"}
               </Text>
             </View>
             <View className="flex-row items-center gap-1.5">
@@ -825,7 +827,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                 {row.settledAt ? ` pada tanggal ${tanggal(row.settledAt)}.` : "."}
               </>
             ) : (
-              "Seluruh tagihan invoice pada Sales Order ini telah dibayar lunas."
+              "Seluruh tagihan faktur pada Pesanan Penjualan ini telah dibayar lunas."
             )}
           </Text>
           {row.paymentProofFile ? (
@@ -875,7 +877,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       ) : null}
 
       <Panel
-        title="Alur Keterkaitan Dokumen: PO Customer ↔ Sales Order (SO) Kita"
+        title="Alur Keterkaitan Dokumen: PO Pelanggan ↔ Pesanan Penjualan (SO) Kita"
         subtitle="Sisi Penjualan (Sales) & Pembelian (Procurement): Dokumen PO dan SO saling melengkapi alur pengadaan & penagihan"
         right={
           <View className="flex-row items-center gap-1.5 flex-wrap">
@@ -955,7 +957,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                       docNumber: row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : (row.nomor || `SO/${row.id}`),
                       refNumber: row.nomorPoClient && row.nomorPoClient !== "-" ? row.nomorPoClient : undefined,
                       date: row.tanggal,
-                      counterpartyLabel: row.customer && row.customer !== "-" ? "Customer (Pembeli)" : row.supplier && row.supplier !== "-" ? "Supplier" : "Pihak Terkait",
+                      counterpartyLabel: row.customer && row.customer !== "-" ? "Pelanggan (Pembeli)" : row.supplier && row.supplier !== "-" ? "Supplier" : "Pihak Terkait",
                       counterpartyName: row.customer && row.customer !== "-" ? row.customer : row.supplier && row.supplier !== "-" ? row.supplier : "-",
                       items: currentItems,
                       totalAmount: Number(row.nilai) || 0,
@@ -993,14 +995,14 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
           ) : (
             <Line left="Total Nilai Pesanan (PO / SO)" right={<Text className="text-sm font-semibold">{rupiah(row.total || row.nilai)}</Text>} />
           )}
-          <Line left="Total Faktur / Invoice Terbit" right={<Text className="text-sm font-medium">{rupiah(row.totalInvoice)}</Text>} />
+          <Line left="Total Faktur / Faktur Terbit" right={<Text className="text-sm font-medium">{rupiah(row.totalInvoice)}</Text>} />
           <Line left="Sisa Belum Ditagih" right={<Text className="text-sm font-medium text-primary">{rupiah(Math.max(0, sisa))}</Text>} />
         </View>
       </Panel>
 
       <Panel
         title={`Daftar Barang & Jasa (${currentItems.length})`}
-        subtitle="Rincian pesanan yang tertera pada dokumen PO & Sales Order (SO)"
+        subtitle="Rincian pesanan yang tertera pada dokumen PO & Pesanan Penjualan (SO)"
         right={
           <View className="flex-row items-center gap-1.5 flex-wrap">
             {selectedItemIndices.length > 0 ? (
@@ -1037,7 +1039,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             {invoiceItems.length > 0 ? (
               <Button size="sm" variant="outline" className="h-7 px-2 flex-row items-center gap-1" onPress={pullFromInvoice}>
                 <DownloadCloud size={12} color={colors.text} />
-                <Text className="text-[11px]">Tarik dari Invoice</Text>
+                <Text className="text-[11px]">Tarik dari Faktur</Text>
               </Button>
             ) : null}
             <Button size="sm" variant="outline" className="h-7 px-2 flex-row items-center gap-1" onPress={openAddItem}>
@@ -1214,7 +1216,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                   docNumber: linkedDeliveryNotes[0]?.nomor || `DO/${row.nomorSo || row.nomor || row.id}`,
                   refNumber: row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : row.nomor,
                   date: row.tanggal,
-                  counterpartyLabel: "Penerima (Customer)",
+                  counterpartyLabel: "Penerima (Pelanggan)",
                   counterpartyName: row.customer && row.customer !== "-" ? row.customer : "-",
                   items: currentItems,
                   notes: row.catatan,
@@ -1251,7 +1253,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               right={
                 <View className="flex-row items-center gap-2">
                   <Cell fmt="status" value={dn.status} />
-                  {dn.status === "Pending" ? (
+                  {dn.status === "Menunggu pengiriman" ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -1293,13 +1295,13 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               onPress={() => setCreateInvOpen(true)}
             >
               <Plus size={12} color="#fff" />
-              <Text className="text-[11px] text-white">Terbitkan Invoice Keluar</Text>
+              <Text className="text-[11px] text-white">Terbitkan Faktur Keluar</Text>
             </Button>
           </View>
         }
       >
         {linkedInvoices.length === 0 ? (
-          <Text className="text-muted-foreground text-sm py-1">Belum ada invoice untuk Sales Order / PO ini.</Text>
+          <Text className="text-muted-foreground text-sm py-1">Belum ada faktur untuk Pesanan Penjualan / PO ini.</Text>
         ) : (
           linkedInvoices.map((inv: Row) => (
             <Line
@@ -1330,7 +1332,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                 <View className="flex-row items-center gap-2">
                   <Cell fmt="status" value={proj.status} />
                   <Button size="sm" variant="outline" onPress={() => router.push(`/projects/${proj.id}` as any)}>
-                    <Text className="text-xs">Buka Project</Text>
+                    <Text className="text-xs">Buka Proyek</Text>
                   </Button>
                 </View>
               }
@@ -1487,8 +1489,8 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
             <DialogTitle>Buat Delivery Order (DO) / Surat Jalan dari SO</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
-            <FormField label="Tujuan Pengiriman (Customer / Alamat)" required>
-              <Input value={doTujuan} onChangeText={setDoTujuan} placeholder="Nama customer / alamat pengiriman" />
+            <FormField label="Tujuan Pengiriman (Pelanggan / Alamat)" required>
+              <Input value={doTujuan} onChangeText={setDoTujuan} placeholder="Nama pelanggan / alamat pengiriman" />
             </FormField>
             <FormField label="Keperluan / Referensi SO" required>
               <Input value={doAlasan} onChangeText={setDoAlasan} />
@@ -1588,9 +1590,9 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                 </Text>
               </View>
               <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-muted-foreground">Customer</Text>
+                <Text className="text-xs text-muted-foreground">Pelanggan</Text>
                 <Text className="text-xs font-semibold text-foreground">
-                  {row.customer && row.customer !== "-" ? row.customer : "Customer Umum"}
+                  {row.customer && row.customer !== "-" ? row.customer : "Pelanggan Umum"}
                 </Text>
               </View>
               <View className="flex-row justify-between items-center pt-1 border-t border-border/50">
@@ -1684,6 +1686,16 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   );
 }
 
+export function ModuleExtras(props: React.ComponentProps<typeof ModuleExtrasBody>) {
+  const isSales = SALES_MODULES.includes(props.moduleKey);
+  return (
+    <>
+      {isSales ? <SalesChainPanel moduleKey={props.moduleKey} row={props.row} /> : null}
+      <ModuleExtrasBody {...props} />
+    </>
+  );
+}
+
 export function isPoPurchaseRow(row?: Row | null): boolean {
   if (!row) return false;
   if ((row as any).isSupplierPo) return true;
@@ -1699,7 +1711,7 @@ export function isPoPurchaseRow(row?: Row | null): boolean {
   return false;
 }
 
-export function ModuleExtras({
+function ModuleExtrasBody({
   moduleKey,
   row,
   onRefresh,
@@ -1790,7 +1802,7 @@ export function ModuleExtras({
     const leads = (data.leads ?? []).filter((l: Row) => l.perusahaan === row.nama);
     return (
       <Panel title={`Lead milik customer ini (${leads.length})`}>
-        {leads.length === 0 ? <Text className="text-muted-foreground text-sm">Belum ada lead.</Text> : leads.map((l) => (
+        {leads.length === 0 ? <Text className="text-muted-foreground text-sm">Belum ada prospek.</Text> : leads.map((l) => (
           <Line key={l.id} left={l.nama} sub={`Perkiraan closing ${tanggal(l.closing)}`} right={<Cell fmt="status" value={l.status} />} />
         ))}
       </Panel>

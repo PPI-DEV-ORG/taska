@@ -12,7 +12,7 @@ test.describe("Modul Penawaran (CRUD)", () => {
     await createBtn.click();
 
     // 3. Isi Form Penawaran
-    const customerTrigger = page.getByText("Pilih customer", { exact: true });
+    const customerTrigger = page.getByText("Pilih pelanggan", { exact: true });
     if (await customerTrigger.isVisible()) {
       await customerTrigger.click();
       await page.getByRole("dialog").last().getByText(/PT|Telkom/i).first().click();
@@ -36,7 +36,7 @@ test.describe("Modul Penawaran (CRUD)", () => {
     await expect(page.getByText(/Rincian Nilai & Kalkulasi Penawaran/i)).toBeVisible({ timeout: 10000 });
 
     // 6. Test Action Kirim ke Customer
-    const kirimBtn = page.getByRole("button", { name: "Kirim ke customer" });
+    const kirimBtn = page.getByRole("button", { name: "Kirim ke pelanggan" });
     if (await kirimBtn.isVisible()) {
       await kirimBtn.click();
       await page.waitForTimeout(500);

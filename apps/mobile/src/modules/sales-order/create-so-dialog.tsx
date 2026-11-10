@@ -430,7 +430,7 @@ function CreateSalesOrderForm({
   // Submit SO
   async function handleSubmit() {
     if (items.length === 0) {
-      toast("Tambahkan minimal 1 barang / jasa ke daftar Sales Order", "danger");
+      toast("Tambahkan minimal 1 barang / jasa ke daftar Pesanan Penjualan", "danger");
       return;
     }
     if (grandTotal <= 0) {
@@ -566,10 +566,10 @@ function CreateSalesOrderForm({
         onSuccess?.();
         onClose();
       } else {
-        toast("Gagal menerbitkan Sales Order", "danger");
+        toast("Gagal menerbitkan Pesanan Penjualan", "danger");
       }
     } catch (err: any) {
-      toast(err?.message || "Terjadi kesalahan saat menyimpan Sales Order", "danger");
+      toast(err?.message || "Terjadi kesalahan saat menyimpan Pesanan Penjualan", "danger");
     } finally {
       setIsSubmitting(false);
     }
@@ -624,8 +624,8 @@ function CreateSalesOrderForm({
           </View>
           <Text className="text-[11px] text-muted-foreground leading-relaxed">
             {paymentFlow === "REGULER"
-              ? "Sistem membuat Sales Order berstatus pesanan aktif untuk ditindaklanjuti dengan invoice termin/DP atau Surat Jalan gudang."
-              : "Penjualan langsung / kasir (Walk-in). SO langsung dilunasi dan invoice keluar dibuat seketika saat transaksi disimpan."}
+              ? "Sistem membuat Pesanan Penjualan berstatus pesanan aktif untuk ditindaklanjuti dengan faktur termin/DP atau Surat Jalan gudang."
+              : "Penjualan langsung / kasir (Walk-in). SO langsung dilunasi dan faktur keluar dibuat seketika saat transaksi disimpan."}
           </Text>
 
           {paymentFlow === "WALK_IN" ? (
@@ -702,14 +702,14 @@ function CreateSalesOrderForm({
           <View className="flex-col sm:flex-row gap-3">
             <View className="flex-1">
               <FormField
-                label="Customer / Pelanggan (Opsional)"
-                hint="Pilih pelanggan tujuan Sales Order ini (bisa dikosongkan jika umum/walk-in)"
+                label="Pelanggan (Opsional)"
+                hint="Pilih pelanggan tujuan Pesanan Penjualan ini (bisa dikosongkan jika umum/walk-in)"
               >
                 <SearchableSelect
                   value={customerName}
-                  options={["- Tanpa Customer (Umum / Walk-in) -", ...customerOptions.map((c) => c.name)]}
+                  options={["- Tanpa Pelanggan (Umum / Walk-in) -", ...customerOptions.map((c) => c.name)]}
                   onChange={(val) => {
-                    if (val === "- Tanpa Customer (Umum / Walk-in) -") {
+                    if (val === "- Tanpa Pelanggan (Umum / Walk-in) -") {
                       setCustomerName("");
                       setCustomerId("");
                       return;
@@ -725,8 +725,8 @@ function CreateSalesOrderForm({
                     }
                   }}
                   onAddNew={() => setQuickCustomerOpen(true)}
-                  addNewLabel="+ Tambah Customer Baru"
-                  placeholder="Pilih customer atau kosongkan..."
+                  addNewLabel="+ Tambah Pelanggan Baru"
+                  placeholder="Pilih pelanggan atau kosongkan..."
                 />
               </FormField>
             </View>
@@ -758,7 +758,7 @@ function CreateSalesOrderForm({
           <View className="flex-col sm:flex-row gap-3">
             <View className="flex-1">
               <FormField
-                label="Nomor Sales Order (SO)"
+                label="Nomor Pesanan Penjualan (SO)"
                 hint={`Kosongkan untuk otomatis sistem (${suggestedSoNumber || "Otomatis"})`}
               >
                 <Input
@@ -772,7 +772,7 @@ function CreateSalesOrderForm({
             <View className="flex-1">
               <FormField
                 label="Nomor PO Client (Opsional)"
-                hint="Nomor dokumen PO resmi dari pihak customer"
+                hint="Nomor dokumen PO resmi dari pihak pelanggan"
               >
                 <Input
                   value={nomorPoClient}
@@ -792,20 +792,20 @@ function CreateSalesOrderForm({
             </View>
 
             <View className="flex-1">
-              <FormField label="Estimasi Pengiriman (ETA)" hint="Perkiraan barang siap dikirim ke customer">
+              <FormField label="Estimasi Pengiriman (ETA)" hint="Perkiraan barang siap dikirim ke pelanggan">
                 <DatePicker value={eta} onChange={setEta} placeholder="Pilih estimasi pengiriman..." />
               </FormField>
             </View>
 
             <View className="flex-1">
-              <FormField label="Alokasi Proyek Terkait (Opsional)" hint="Hubungkan dengan data project">
+              <FormField label="Alokasi Proyek Terkait (Opsional)" hint="Hubungkan dengan data proyek">
                 <ProjectSelect
                   projectId={projectId}
                   allowClear={true}
                   onChange={(p) => {
                     setProjectId(p ? String(p.id) : "");
                   }}
-                  placeholder="Pilih project jika ada..."
+                  placeholder="Pilih proyek jika ada..."
                 />
               </FormField>
             </View>
@@ -882,7 +882,7 @@ function CreateSalesOrderForm({
                       hint={
                         selectedProductObj
                           ? `Harga acuan jual: ${rupiah(Number(selectedProductObj.hargaJual || selectedProductObj.price || 0))}`
-                          : "Harga jual ke customer"
+                          : "Harga jual ke pelanggan"
                       }
                     >
                       <Input
@@ -992,7 +992,7 @@ function CreateSalesOrderForm({
                   <View className="flex-1">
                     <FormField
                       label={newNonInvType === "JASA" ? "Biaya Jasa Satuan (Rp) *" : "Harga Jual Satuan (Rp) *"}
-                      hint="Harga jual satuan ke customer"
+                      hint="Harga jual satuan ke pelanggan"
                     >
                       <Input
                         value={newPrice}
@@ -1006,7 +1006,7 @@ function CreateSalesOrderForm({
 
                 {newNonInvType === "JASA" ? (
                   <View className="gap-1.5 bg-card/60 border border-border/80 rounded-lg p-3">
-                    <Text className="text-xs font-semibold text-foreground">Pemotongan PPh Jasa (Vendor / Customer):</Text>
+                    <Text className="text-xs font-semibold text-foreground">Pemotongan PPh Jasa (Vendor / Pelanggan):</Text>
                     <Text className="text-[11px] text-muted-foreground">
                       PPh dipotong dari biaya jasa ini oleh customer (PPh pasal 23/4(2)/21)
                     </Text>

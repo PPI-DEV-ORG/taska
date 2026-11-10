@@ -2,6 +2,7 @@ import * as React from "react";
 import { Platform } from "react-native";
 import { colorScheme } from "nativewind";
 import { useRouter } from "expo-router";
+import { permitted, type PermAction, type Perms } from "@/lib/rbac";
 import { MODULES, ROLE_LABEL, NAV_BY_ROLE, CAN_APPROVE, type Notif, type Row, type User, type Role } from "@/constants/modules";
 import { NotifPopupHost, ToastHost, type NotifPopupItem, type ToastItem } from "@/components/taska/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens, isNetworkError } from "@/services/api";
@@ -73,6 +74,7 @@ export type OfflineQueueItem = {
 const STORAGE_QUEUE_KEY = "taska.offline.queue.v1";
 const STORAGE_CACHE_DB_KEY = "taska.offline.db.v1";
 const STORAGE_CACHE_USER_KEY = "taska.offline.user.v1";
+const STORAGE_CACHE_PERMS_KEY = "taska.perms.v1";
 const STORAGE_CACHE_HIST_KEY = "taska.offline.hist.v1";
 const STORAGE_CACHE_APPROVALS_KEY = "taska.offline.approvals.v1";
 
@@ -158,6 +160,11 @@ function writeStorageJson(key: string, val: unknown) {
 
 type Ctx = {
   user: User | null;
+  /** Hak akses efektif dari server (diatur Super Admin). null = belum dimuat. */
+  perms: Perms | null;
+  /** Boleh melakukan aksi pada modul ini? undefined = belum diketahui. */
+  can: (navKey: string, action: PermAction) => boolean | undefined;
+  refreshPerms: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   updateProfile: (patch: { name?: string; phone?: string; avatarFileId?: number; avatarUrl?: string }) => Promise<void>;
@@ -313,6 +320,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return initial;
   });
   const [user, setUser] = React.useState<User | null>(() => readStorageJson<User | null>(STORAGE_CACHE_USER_KEY, null));
+  const [perms, setPerms] = React.useState<Perms | null>(() => readStorageJson<Perms | null>(STORAGE_CACHE_PERMS_KEY, null));
+
+  const refreshPerms = React.useCallback(async () => {
+    try {
+      const res = await api<{ role: string; permissions: Perms }>("GET", "/rbac/me");
+      setPerms(res.permissions);
+      writeStorageJson(STORAGE_CACHE_PERMS_KEY, res.permissions);
+    } catch {
+      // offline / API lama: pakai hak akses tersimpan atau aturan peran bawaan
+    }
+  }, []);
+  React.useEffect(() => {
+    if (!user) return;
+    void refreshPerms();
+    // perubahan dari Super Admin berlaku tanpa login ulang
+    const t = setInterval(() => void refreshPerms(), 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [user?.id, refreshPerms]);
+  const canDo = React.useCallback((navKey: string, action: PermAction) => permitted(perms, navKey, action), [perms]);
   const [data, setData] = React.useState<DB>(() => {
     const cached = readStorageJson<DB | null>(STORAGE_CACHE_DB_KEY, null);
     const q = readStorageJson<OfflineQueueItem[]>(STORAGE_QUEUE_KEY, []);
@@ -494,6 +520,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setNotifPopups([]);
     syncServiceWorkerAuth([]);
     setUser(null);
+    setPerms(null);
+    writeStorageJson(STORAGE_CACHE_PERMS_KEY, null);
     setData(emptyDB());
     setApprovals([]);
     setNotifs([]);
@@ -1423,7 +1451,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value = React.useMemo<Ctx>(
     () => ({
-      user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
+      user, perms, can: canDo, refreshPerms, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
       deleteRow,
       history, pushHistory, loadHistory, approvals, refreshApprovals, decide, notifs: myNotifs, unread, markRead, markAllRead,
       toast, offline, setOffline,
@@ -1431,7 +1459,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       syncOfflineQueue,
       reload, refreshModule, hydrated, theme, toggleTheme,
     }),
-    [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
+    [user, perms, canDo, refreshPerms, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, loadHistory, approvals, refreshApprovals, decide, myNotifs, unread, markRead, markAllRead,
      toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme],
   );

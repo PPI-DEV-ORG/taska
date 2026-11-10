@@ -1,4 +1,6 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "../generated/prisma/client.js";
+import { quotationMetaFromRow } from "../crm/quotation-meta.js";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
@@ -16,7 +18,7 @@ import { UploadService } from "../upload/upload.service.js";
 type StatusFilter = "DRAFT" | "SENT" | "PARTIAL" | "PAID" | "OVERDUE" | "BATAL";
 
 @Injectable()
-export class InvoiceOutService {
+export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -76,39 +78,141 @@ export class InvoiceOutService {
     }
     if (status !== row.status) {
       await this.prisma.main.invoiceOut.update({ where: { id: row.id }, data: { status } });
-      if (status === "OVERDUE") {
-        const cust = row.customerId
-          ? await this.prisma.main.customer
-              .findUnique({ where: { id: row.customerId }, select: { name: true } })
-              .catch(() => null)
-          : null;
-        const sisa = Math.max(0, Number(row.total) - Number(row.paidAmount));
-        await this.notifications
-          .notify({
-            roles: ["FINANCE", "BOS"],
-            kind: "APPROVAL",
-            text: `Invoice ${row.number}${cust?.name ? ` (${cust.name})` : ""} sudah jatuh tempo! Sisa tagihan Rp${sisa.toLocaleString("id-ID")} perlu segera ditagih oleh Finance.`,
-            href: `/invoices/${row.id}`,
-          })
-          .catch(() => {});
-      }
+      if (status === "OVERDUE") await this.notifyOverdue(row);
     }
     return { ...row, status, ...(await this.warningFor(row)) };
   }
 
   private async warningFor(row: InvoiceOut): Promise<{ warning?: string }> {
-    if (!row.clientPoId) return {};
-    const po = await this.prisma.main.clientPO.findUnique({ where: { id: row.clientPoId } });
-    if (!po) return {};
-    const invoices = await this.prisma.main.invoiceOut.findMany({
-      where: { clientPoId: row.clientPoId, status: { not: "BATAL" } },
-      select: { total: true },
-    });
-    const sum = invoices.reduce((s, i) => s + Number(i.total), 0);
-    if (sum > Number(po.amount)) {
-      return { warning: `Total invoice Rp${sum} melebihi nilai PO client Rp${po.amount}` };
+    const w = (await this.warningsFor([row])).get(row.id);
+    return w ? { warning: w } : {};
+  }
+
+  /** Peringatan "total invoice melebihi nilai PO client" untuk banyak invoice dengan 2 query total (bukan 2 per baris). */
+  private async warningsFor(rows: InvoiceOut[]): Promise<Map<number, string>> {
+    const out = new Map<number, string>();
+    const poIds = [...new Set(rows.map((r) => r.clientPoId).filter((v): v is number => v != null))];
+    if (!poIds.length) return out;
+    const [pos, invs] = await Promise.all([
+      this.prisma.main.clientPO.findMany({ where: { id: { in: poIds } }, select: { id: true, amount: true } }),
+      this.prisma.main.invoiceOut.findMany({
+        where: { clientPoId: { in: poIds }, status: { not: "BATAL" } },
+        select: { clientPoId: true, total: true },
+      }),
+    ]);
+    const amount = new Map(pos.map((po) => [po.id, Number(po.amount)]));
+    const sum = new Map<number, number>();
+    for (const i of invs) sum.set(i.clientPoId!, (sum.get(i.clientPoId!) ?? 0) + Number(i.total));
+    for (const r of rows) {
+      if (r.clientPoId == null || !amount.has(r.clientPoId)) continue;
+      const total = sum.get(r.clientPoId) ?? 0;
+      const limit = amount.get(r.clientPoId)!;
+      if (total > limit) out.set(r.id, `Total invoice Rp${total} melebihi nilai PO client Rp${limit}`);
     }
-    return {};
+    return out;
+  }
+
+  /**
+   * Tampilan baca-saja untuk daftar/detail: status turunan + peringatan, tanpa menulis ke database dan tanpa notifikasi.
+   * Invoice DP/Termin yang sudah "tertutup" pelunasan/termin lanjutan dicari dengan SATU query untuk seluruh halaman.
+   * Perubahan status yang sebenarnya dipersist oleh jalur tulis (pembayaran/ubah status) dan penjadwal jatuh tempo.
+   */
+  private async viewMany(rows: InvoiceOut[]): Promise<Array<InvoiceOut & { status: StatusFilter; warning?: string }>> {
+    const views = rows.map((row) => ({
+      row,
+      status: this.compute(row) as StatusFilter,
+      paidAmount: row.paidAmount as unknown as InvoiceOut["paidAmount"],
+      prefix: null as string | null,
+      termNum: 1,
+    }));
+
+    const pending = views.filter((v) => {
+      if (v.status === "PAID" || (v.row.type !== "DP" && v.row.type !== "TERMIN")) return false;
+      const match = v.row.number.match(/^(INV\/\d{4}\/\d{2}\/\d+)(?:\/(\d+))?$/i);
+      v.prefix = match ? match[1]! : null;
+      v.termNum = match?.[2] ? Number(match[2]) : 1;
+      return Boolean(v.prefix || v.row.projectId);
+    });
+    if (pending.length) {
+      const prefixes = [...new Set(pending.map((v) => v.prefix).filter((s): s is string => !!s))];
+      const projectIds = [...new Set(pending.map((v) => v.row.projectId).filter((n): n is number => n != null))];
+      const paid = await this.prisma.main.invoiceOut.findMany({
+        where: {
+          status: "PAID",
+          type: { in: ["PELUNASAN", "TERMIN"] },
+          OR: [
+            ...prefixes.map((x) => ({ number: { startsWith: x } })),
+            ...(projectIds.length ? [{ projectId: { in: projectIds } }] : []),
+          ],
+        },
+        select: { id: true, number: true, type: true, description: true, projectId: true },
+      });
+      for (const v of pending) {
+        const closing = paid.find((c) => {
+          if (c.id === v.row.id) return false;
+          if (!((v.prefix && c.number.startsWith(v.prefix)) || (v.row.projectId && c.projectId === v.row.projectId))) return false;
+          const subMatch = c.number.match(/\/(\d+)$/);
+          const subTermNum = subMatch ? Number(subMatch[1]) : 1;
+          return c.type === "PELUNASAN" || subTermNum > v.termNum || /pelunasan/i.test(c.description || "");
+        });
+        if (closing) {
+          v.status = "PAID";
+          v.paidAmount = v.row.total;
+        }
+      }
+    }
+
+    const warnings = await this.warningsFor(rows);
+    return views.map((v) => ({
+      ...v.row,
+      status: v.status,
+      paidAmount: v.paidAmount,
+      ...(warnings.has(v.row.id) ? { warning: warnings.get(v.row.id) } : {}),
+    }));
+  }
+
+  private async notifyOverdue(row: InvoiceOut) {
+    const cust = row.customerId
+      ? await this.prisma.main.customer
+          .findUnique({ where: { id: row.customerId }, select: { name: true } })
+          .catch(() => null)
+      : null;
+    const sisa = Math.max(0, Number(row.total) - Number(row.paidAmount));
+    await this.notifications
+      .notify({
+        roles: ["FINANCE", "BOS"],
+        kind: "APPROVAL",
+        text: `Invoice ${row.number}${cust?.name ? ` (${cust.name})` : ""} sudah jatuh tempo! Sisa tagihan Rp${sisa.toLocaleString("id-ID")} perlu segera ditagih oleh Finance.`,
+        href: `/invoices/${row.id}`,
+      })
+      .catch(() => {});
+  }
+
+  private overdueTimer?: ReturnType<typeof setInterval>;
+
+  onModuleInit() {
+    // Jatuh tempo ditandai oleh penjadwal (bukan saat daftar dibuka). Jalan sekali setelah start, lalu tiap 6 jam.
+    const run = () => void this.markOverdueInvoices().catch((e) => console.warn("Gagal menandai invoice jatuh tempo:", (e as Error).message));
+    setTimeout(run, 30_000).unref?.();
+    this.overdueTimer = setInterval(run, 6 * 60 * 60 * 1000);
+    this.overdueTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.overdueTimer) clearInterval(this.overdueTimer);
+  }
+
+  /** Invoice belum dibayar sama sekali yang lewat jatuh tempo -> OVERDUE, dan Finance/Bos diberi tahu sekali. */
+  async markOverdueInvoices(): Promise<number> {
+    const rows = await this.prisma.main.invoiceOut.findMany({
+      where: { status: "SENT", dueDate: { lt: new Date() } },
+    });
+    for (const r of rows) {
+      const res = await this.prisma.main.invoiceOut.updateMany({ where: { id: r.id, status: "SENT" }, data: { status: "OVERDUE" } });
+      if (res.count > 0) await this.notifyOverdue(r);
+    }
+    if (rows.length) this.notifications.dataChange("invoices", "status");
+    return rows.length;
   }
 
   private async syncProjectPayment(projectId: number | null | undefined) {
@@ -253,34 +357,7 @@ export class InvoiceOutService {
       this.prisma.main.invoiceOut.count({ where }),
     ]);
 
-    const invoiceIds = rows.map((r) => r.id);
-    const metaSettings = await this.prisma.main.systemSetting.findMany({
-      where: {
-        key: {
-          in: [
-            ...invoiceIds.map((id) => this.metaKey(id)),
-            ...invoiceIds.map((id) => `invoice.items.${id}`),
-          ],
-        },
-      },
-    });
-    const metaMap = new Map<number, any>();
-    for (const s of metaSettings) {
-      try {
-        if (s.key.startsWith("invoice:meta:")) {
-          const id = Number(s.key.replace("invoice:meta:", ""));
-          const prev = metaMap.get(id) || {};
-          metaMap.set(id, { ...prev, ...JSON.parse(s.value) });
-        } else if (s.key.startsWith("invoice.items.")) {
-          const id = Number(s.key.replace("invoice.items.", ""));
-          const prev = metaMap.get(id) || {};
-          const parsedItems = JSON.parse(s.value);
-          if (!Array.isArray(prev.items) && Array.isArray(parsedItems)) {
-            metaMap.set(id, { ...prev, items: parsedItems });
-          }
-        }
-      } catch {}
-    }
+    const metaMap = new Map<number, any>(rows.map((r) => [r.id, this.rowToMeta(r)]));
 
     const fileIdSet = new Set<number>();
     for (const r of rows) {
@@ -301,11 +378,12 @@ export class InvoiceOutService {
       : [];
     const fileMap = new Map(files.map((f) => [f.id, f]));
 
+    const viewById = new Map((await this.viewMany(rows)).map((v) => [v.id, v]));
     const items = await Promise.all(
       rows.map(async (r) => {
-        const synced = await this.sync(r);
+        const synced = viewById.get(r.id)!;
         const meta = metaMap.get(r.id) || {};
-        const effectivePpn = Number(meta.ppn !== undefined ? meta.ppn : synced.ppn);
+        const effectivePpn = Number(synced.ppn);
         const effectiveTipePpn = meta.tipePpn ?? (effectivePpn > 0 ? "Exclude PPN (11%)" : "No PPN (Tanpa PPN)");
         const effectivePpnMode = meta.ppnMode ?? (effectivePpn > 0 ? "exclude" : "none");
         const qId = meta.quotationId ?? r.clientPo?.quotationId ?? r.project?.quotationId ?? undefined;
@@ -316,7 +394,7 @@ export class InvoiceOutService {
         }
         const f = r.fileId ? fileMap.get(r.fileId) ?? null : null;
         const paymentWithFile = (r.payments ?? []).find((p) => p.fileId);
-        const effectivePaidFileId = meta.paidFileId ?? meta.paymentFileId ?? paymentWithFile?.fileId ?? null;
+        const effectivePaidFileId = paymentWithFile?.fileId ?? meta.paidFileId ?? meta.paymentFileId ?? null;
         const paidFile = effectivePaidFileId ? fileMap.get(Number(effectivePaidFileId)) ?? null : null;
         const enrichedPayments = (r.payments ?? []).map((p) => ({
           ...p,
@@ -327,7 +405,7 @@ export class InvoiceOutService {
           ppn: effectivePpn,
           tipePpn: effectiveTipePpn,
           ppnMode: effectivePpnMode,
-          total: Number(meta.total !== undefined ? meta.total : synced.total),
+          total: Number(synced.total),
           payments: enrichedPayments,
           file: f,
           fileName: f?.originalName ?? null,
@@ -351,32 +429,100 @@ export class InvoiceOutService {
     return paginate(items, total, q);
   }
 
-  private metaKey(id: number) {
-    return `invoice:meta:${id}`;
+  /** Bentuk metadata lama (dipakai banyak pemanggil) yang dibaca dari kolom InvoiceOut. */
+  private rowToMeta(r: any): any {
+    const num = (v: unknown) => (v == null ? undefined : Number(v));
+    const str = (v: unknown) => (v == null || v === "" ? undefined : v);
+    const meta: Record<string, unknown> = {
+      quotationId: str(r.quotationId),
+      parentInvoiceId: str(r.parentInvoiceId),
+      isContinuation: Boolean(r.isContinuation),
+      discount: num(r.discount),
+      dpLabel: str(r.dpLabel),
+      dpAmount: num(r.dpAmount),
+      pph: num(r.pph),
+      pphMode: str(r.pphMode),
+      tipePph: str(r.tipePph),
+      tipePpn: str(r.tipePpn),
+      ppnMode: str(r.ppnMode),
+      coaAccount: str(r.coaAccount),
+      paidFileId: str(r.paidFileId),
+      subject: str(r.subject),
+      intro: str(r.intro),
+      city: str(r.city),
+      kopText: str(r.kopText),
+      kopLogoUrl: str(r.kopLogoUrl),
+      customerAddress: str(r.customerAddress),
+      signerName: str(r.signerName),
+      signerTitle: str(r.signerTitle),
+      notesList: Array.isArray(r.notesList) ? r.notesList : undefined,
+      items: Array.isArray(r.items) ? r.items : undefined,
+      stockConflictFlag: Boolean(r.stockConflictFlag),
+      stockConflictMessage: str(r.stockConflictMessage),
+      autoSwapLogs: Array.isArray(r.autoSwapLogs) ? r.autoSwapLogs : undefined,
+      emergencyPrId: str(r.emergencyPrId),
+      emergencyPrNumber: str(r.emergencyPrNumber),
+      latestFileId: str(r.latestFileId),
+      latestFileName: str(r.latestFileName),
+    };
+    for (const k of Object.keys(meta)) if (meta[k] === undefined) delete meta[k];
+    return meta;
+  }
+
+  /** Kunci metadata -> kolom. Kunci lain (mis. customerName, quotation) sengaja diabaikan: itu turunan relasi. */
+  private metaPatchToData(patch: any): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+    const intOrNull = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Math.trunc(Number(v)));
+    const numOrNull = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+    const strOrNull = (v: unknown) => (v == null || v === "" ? null : String(v));
+    const jsonOrNull = (v: unknown) => (v == null ? Prisma.DbNull : (v as Prisma.InputJsonValue));
+    const has = (k: string) => patch[k] !== undefined;
+
+    if (has("quotationId")) data.quotationId = intOrNull(patch.quotationId);
+    if (has("parentInvoiceId")) data.parentInvoiceId = intOrNull(patch.parentInvoiceId);
+    if (has("isContinuation")) data.isContinuation = Boolean(patch.isContinuation);
+    if (has("discount")) data.discount = numOrNull(patch.discount);
+    if (has("dpAmount")) data.dpAmount = numOrNull(patch.dpAmount);
+    if (has("pph")) data.pph = numOrNull(patch.pph);
+    for (const k of [
+      "dpLabel", "pphMode", "tipePph", "tipePpn", "ppnMode", "coaAccount", "subject", "intro", "city",
+      "kopText", "kopLogoUrl", "customerAddress", "signerName", "signerTitle", "stockConflictMessage",
+      "emergencyPrNumber", "latestFileName",
+    ]) {
+      if (has(k)) data[k] = strOrNull(patch[k]);
+    }
+    if (has("paidFileId")) data.paidFileId = intOrNull(patch.paidFileId);
+    else if (has("paymentFileId")) data.paidFileId = intOrNull(patch.paymentFileId);
+    if (has("emergencyPrId")) data.emergencyPrId = intOrNull(patch.emergencyPrId);
+    if (has("latestFileId")) data.latestFileId = intOrNull(patch.latestFileId);
+    if (has("stockConflictFlag")) data.stockConflictFlag = Boolean(patch.stockConflictFlag);
+    if (has("items")) data.items = jsonOrNull(patch.items);
+    if (has("notesList")) data.notesList = jsonOrNull(patch.notesList);
+    if (has("autoSwapLogs")) data.autoSwapLogs = jsonOrNull(patch.autoSwapLogs);
+    return data;
   }
 
   async getMeta(id: number): Promise<any> {
-    try {
-      const setting = await this.prisma.main.systemSetting.findUnique({
-        where: { key: this.metaKey(id) },
-      });
-      if (setting?.value) {
-        return JSON.parse(setting.value);
-      }
-    } catch {}
-    return null;
+    const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
+    return row ? this.rowToMeta(row) : null;
   }
 
   async saveMeta(id: number, patch: any): Promise<any> {
-    const existing = (await this.getMeta(id)) || {};
-    const merged = { ...existing, ...patch };
-    const key = this.metaKey(id);
-    await this.prisma.main.systemSetting.upsert({
-      where: { key },
-      update: { value: JSON.stringify(merged) },
-      create: { key, value: JSON.stringify(merged) },
-    }).catch(() => {});
-    return merged;
+    const data = this.metaPatchToData(patch ?? {});
+    // Penawaran harus masih ada (foreign key); bila tidak, jangan gagalkan simpan metadata lain.
+    if (typeof data.quotationId === "number") {
+      const q = await this.prisma.main.quotation.findUnique({ where: { id: data.quotationId }, select: { id: true } });
+      if (!q) delete data.quotationId;
+    }
+    try {
+      const row = Object.keys(data).length
+        ? await this.prisma.main.invoiceOut.update({ where: { id }, data: data as never })
+        : await this.prisma.main.invoiceOut.findUnique({ where: { id } });
+      return row ? this.rowToMeta(row) : {};
+    } catch (e) {
+      console.warn("Gagal menyimpan metadata invoice #" + id + ":", (e as Error).message);
+      return (await this.getMeta(id)) ?? {};
+    }
   }
 
   async get(id: number) {
@@ -417,15 +563,7 @@ export class InvoiceOutService {
       } catch {}
     }
 
-    let quoteMeta: any = null;
-    if (relatedQuote) {
-      try {
-        const qSetting = await this.prisma.main.systemSetting.findFirst({
-          where: { key: { in: [`quotation:meta:${relatedQuote.id}`, `quotation.meta.${relatedQuote.id}`] } },
-        });
-        if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
-      } catch {}
-    }
+    const quoteMeta: any = relatedQuote ? quotationMetaFromRow(relatedQuote) : null;
 
     const file = row.fileId
       ? await this.prisma.main.file.findUnique({
@@ -470,15 +608,15 @@ export class InvoiceOutService {
       : [];
     const paymentFileMap = new Map(paymentFiles.map((pf) => [pf.id, pf]));
     const firstPayWithFile = (row.payments ?? []).find((p) => p.fileId);
-    const effectivePaidFileId = meta.paidFileId ?? meta.paymentFileId ?? firstPayWithFile?.fileId ?? null;
+    const effectivePaidFileId = firstPayWithFile?.fileId ?? meta.paidFileId ?? meta.paymentFileId ?? null;
     const paidFile = effectivePaidFileId ? paymentFileMap.get(Number(effectivePaidFileId)) ?? null : null;
     const enrichedPayments = (row.payments ?? []).map((p) => ({
       ...p,
       file: p.fileId ? paymentFileMap.get(p.fileId) ?? null : null,
     }));
 
-    const synced = await this.sync(row);
-    const effectivePpn = Number(meta.ppn !== undefined ? meta.ppn : synced.ppn);
+    const synced = (await this.viewMany([row]))[0]!;
+    const effectivePpn = Number(synced.ppn);
     const effectiveTipePpn = meta.tipePpn ?? (effectivePpn > 0 ? "Exclude PPN (11%)" : "No PPN (Tanpa PPN)");
     const effectivePpnMode = meta.ppnMode ?? (effectivePpn > 0 ? "exclude" : "none");
 
@@ -487,7 +625,7 @@ export class InvoiceOutService {
       ppn: effectivePpn,
       tipePpn: effectiveTipePpn,
       ppnMode: effectivePpnMode,
-      total: Number(meta.total !== undefined ? meta.total : synced.total),
+      total: Number(synced.total),
       payments: enrichedPayments,
       file,
       paidFileId: effectivePaidFileId,
@@ -610,12 +748,8 @@ export class InvoiceOutService {
 
     let quoteMeta: any = null;
     if (qId) {
-      try {
-        const qSetting = await this.prisma.main.systemSetting.findFirst({
-          where: { key: { in: [`quotation.meta.${qId}`, `quotation:meta:${qId}`] } },
-        });
-        if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
-      } catch {}
+      const qRow = await this.prisma.main.quotation.findUnique({ where: { id: qId } });
+      if (qRow) quoteMeta = quotationMetaFromRow(qRow);
     }
 
     return { quotationId: qId, quotationNumber: qNum, quoteMeta };
@@ -1023,23 +1157,15 @@ export class InvoiceOutService {
     });
 
     if (qId) {
-      const candidateIds = new Set(candidates.map((c) => c.id));
-      const allSettings = await this.prisma.main.systemSetting.findMany({
+      const candidateIds = candidates.map((c) => c.id);
+      const sameQuotation = await this.prisma.main.invoiceOut.findMany({
         where: {
-          key: { startsWith: "invoice:meta:" },
-          value: { contains: `"quotationId":${qId}` },
+          quotationId: Number(qId),
+          id: { notIn: [row.id, ...candidateIds] },
+          status: { not: "BATAL" },
         },
       });
-      for (const s of allSettings) {
-        const sid = Number(s.key.replace("invoice:meta:", ""));
-        if (sid && sid !== row.id && !candidateIds.has(sid)) {
-          const inv = await this.prisma.main.invoiceOut.findUnique({ where: { id: sid } });
-          if (inv && inv.status !== "BATAL") {
-            candidates.push(inv);
-            candidateIds.add(inv.id);
-          }
-        }
-      }
+      candidates.push(...sameQuotation);
     }
 
     return candidates;
@@ -1195,7 +1321,6 @@ export class InvoiceOutService {
         where: { id: dto.fileId },
         data: { refType: "payment", refId: String(id) },
       }).catch(() => {});
-      await this.saveMeta(id, { paidFileId: dto.fileId }).catch(() => {});
     }
 
     const payments = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
@@ -1313,7 +1438,6 @@ export class InvoiceOutService {
     await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
     await this.prisma.main.$transaction(async (tx) => {
       await tx.payment.deleteMany({ where: { invoiceOutId: id } });
-      await tx.systemSetting.deleteMany({ where: { key: this.metaKey(id) } });
       await tx.invoiceOut.delete({ where: { id } });
     });
     await this.audit.log({
@@ -1524,21 +1648,14 @@ export class InvoiceOutService {
     }
 
     // 2. Cek semua Penawaran (Quotation) lain yang masih aktif (bukan penawaran milik invoice lunas ini)
-    const allQuotationSettings = await this.prisma.main.systemSetting.findMany({
-      where: { key: { startsWith: "quotation.meta." } },
+    const otherQuotations = await this.prisma.main.quotation.findMany({
+      where: { status: { notIn: ["REJECTED", "EXPIRED"] } },
     });
 
-    for (const qSetting of allQuotationSettings) {
-      const qId = Number(qSetting.key.replace("quotation.meta.", ""));
-      if (!Number.isFinite(qId) || qId <= 0 || qId === paidQuoteId) continue;
-
-      let qMeta: any = null;
-      try {
-        qMeta = JSON.parse(qSetting.value);
-      } catch {
-        continue;
-      }
-      const qItems: any[] = Array.isArray(qMeta?.items) ? qMeta.items : [];
+    for (const qRow of otherQuotations) {
+      const qId = qRow.id;
+      if (qId === paidQuoteId) continue;
+      const qItems: any[] = Array.isArray(qRow.items) ? (qRow.items as any[]) : [];
       if (qItems.length === 0) continue;
 
       const hasCollision = qItems.some((it) => {
@@ -1550,9 +1667,6 @@ export class InvoiceOutService {
         );
       });
       if (!hasCollision) continue;
-
-      const qRow = await this.prisma.main.quotation.findUnique({ where: { id: qId } });
-      if (!qRow || qRow.status === "REJECTED" || qRow.status === "EXPIRED") continue;
 
       await this.swapCollidingItemsForDocument({
         docType: "QUOTATION",
@@ -1777,26 +1891,18 @@ export class InvoiceOutService {
         .catch(() => {});
     } else {
       // QUOTATION
-      const key = `quotation.meta.${docId}`;
-      const setting = await this.prisma.main.systemSetting.findUnique({ where: { key } });
-      let qMeta: any = {};
-      try {
-        if (setting?.value) qMeta = JSON.parse(setting.value);
-      } catch {}
-      const prevLogs = Array.isArray(qMeta.autoSwapLogs) ? qMeta.autoSwapLogs : [];
-      const mergedQMeta = {
-        ...qMeta,
-        items: updatedItems,
-        stockConflictFlag: missingCount > 0,
-        stockConflictMessage: conflictMessage,
-        autoSwapLogs: [...swapLogs, ...prevLogs].slice(0, 50),
-        ...(emergencyPr ? { emergencyPrId: emergencyPr.id, emergencyPrNumber: emergencyPr.number } : {}),
-      };
-      await this.prisma.main.systemSetting
-        .upsert({
-          where: { key },
-          update: { value: JSON.stringify(mergedQMeta) },
-          create: { key, value: JSON.stringify(mergedQMeta) },
+      const current = await this.prisma.main.quotation.findUnique({ where: { id: docId }, select: { autoSwapLogs: true } });
+      const prevLogs: any[] = Array.isArray(current?.autoSwapLogs) ? (current!.autoSwapLogs as any[]) : [];
+      await this.prisma.main.quotation
+        .update({
+          where: { id: docId },
+          data: {
+            items: updatedItems as unknown as Prisma.InputJsonValue,
+            stockConflictFlag: missingCount > 0,
+            stockConflictMessage: conflictMessage,
+            autoSwapLogs: [...swapLogs, ...prevLogs].slice(0, 50) as unknown as Prisma.InputJsonValue,
+            ...(emergencyPr ? { emergencyPrId: emergencyPr.id, emergencyPrNumber: emergencyPr.number } : {}),
+          },
         })
         .catch(() => {});
 
@@ -2026,15 +2132,7 @@ export class InvoiceOutService {
       } catch {}
     }
 
-    let quoteMeta: any = null;
-    if (relatedQuote) {
-      try {
-        const qSetting = await this.prisma.main.systemSetting.findFirst({
-          where: { key: { in: [`quotation:meta:${relatedQuote.id}`, `quotation.meta.${relatedQuote.id}`] } },
-        });
-        if (qSetting?.value) quoteMeta = JSON.parse(qSetting.value);
-      } catch {}
-    }
+    const quoteMeta: any = relatedQuote ? quotationMetaFromRow(relatedQuote) : null;
 
     const items = meta.items ?? quoteMeta?.items ?? [
       {

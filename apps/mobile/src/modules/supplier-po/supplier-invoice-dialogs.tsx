@@ -134,11 +134,11 @@ export function SupplierInvoiceDetailDialog({
           {/* Main Info Card */}
           <View className="bg-panel rounded-xl border border-border p-3.5 gap-2.5">
             <View className="flex-row items-center justify-between">
-              <Text className="text-xs text-muted-foreground">Nomor Invoice</Text>
+              <Text className="text-xs text-muted-foreground">Nomor Faktur</Text>
               <Text className="text-xs font-semibold">{displayInvoice.nomor || "-"}</Text>
             </View>
             <View className="flex-row items-center justify-between">
-              <Text className="text-xs text-muted-foreground">Supplier / Penagih</Text>
+              <Text className="text-xs text-muted-foreground">Pemasok / Penagih</Text>
               <Text className="text-xs font-medium">{displayInvoice.supplier || displayInvoice.customer || "-"}</Text>
             </View>
             {displayInvoice.category || displayInvoice.jenis ? (
@@ -151,7 +151,7 @@ export function SupplierInvoiceDetailDialog({
               </View>
             ) : null}
             <View className="flex-row items-center justify-between">
-              <Text className="text-xs text-muted-foreground">PO Supplier Terkait</Text>
+              <Text className="text-xs text-muted-foreground">PO Pemasok Terkait</Text>
               {onOpenPo && displayInvoice.supplierPoId ? (
                 <Button
                   variant="ghost"
@@ -219,7 +219,7 @@ export function SupplierInvoiceDetailDialog({
 
           {/* Lampiran File Tagihan */}
           <View className="gap-1.5">
-            <Text className="text-xs font-semibold text-foreground">File Dokumen Tagihan / Invoice Masuk</Text>
+            <Text className="text-xs font-semibold text-foreground">File Dokumen Tagihan / Faktur Masuk</Text>
             {displayInvoice.fileId ? (
               <View className="flex-row items-center justify-between p-3 rounded-xl border border-border bg-panel">
                 <View className="flex-row items-center gap-2.5 flex-1 mr-2">
@@ -230,7 +230,7 @@ export function SupplierInvoiceDetailDialog({
                     <Text className="text-xs font-medium truncate" numberOfLines={1}>
                       {displayInvoice.file?.originalName || `Tagihan-${displayInvoice.nomor || displayInvoice.id}.pdf`}
                     </Text>
-                    <Text className="text-[11px] text-muted-foreground">Dokumen tagihan / invoice masuk</Text>
+                    <Text className="text-[11px] text-muted-foreground">Dokumen tagihan / faktur masuk</Text>
                   </View>
                 </View>
                 <Button
@@ -285,7 +285,7 @@ export function SupplierInvoiceDetailDialog({
 
           {/* Riwayat Pembayaran */}
           <View className="gap-2">
-            <Text className="text-xs font-semibold text-foreground">Riwayat Pembayaran ke Supplier</Text>
+            <Text className="text-xs font-semibold text-foreground">Riwayat Pembayaran ke Pemasok</Text>
             {payments.length === 0 ? (
               <Text className="text-xs text-muted-foreground italic bg-panel/50 p-2.5 rounded-lg border border-dashed border-border">
                 Belum ada catatan pembayaran yang tercatat.
@@ -330,7 +330,7 @@ export function SupplierInvoiceDetailDialog({
               className="flex-row items-center gap-1.5"
             >
               <Pencil size={14} color={colors.text} />
-              <Text className="font-medium">Edit Invoice Masuk</Text>
+              <Text className="font-medium">Edit Faktur Masuk</Text>
             </Button>
           ) : null}
           {!lunas && canPay && onPayPress ? (
@@ -359,8 +359,8 @@ const INVOICE_IN_CATEGORY_OPTIONS = [
   { code: "6203.02", label: "Servis Kendaraan / BBM / Operasional Lapangan [6203.02]", category: "Operasional Kendaraan" },
   { code: "6202.06", label: "Pembelian ATK & Perlengkapan Kantor [6202.06]", category: "ATK & Perlengkapan Kantor" },
   { code: "6202.07", label: "Tagihan Jasa / Operasional Umum Lainnya [6202.07]", category: "Tagihan Operasional Lainnya" },
-  { code: "1200", label: "Pembelian Barang Stok / Persediaan Gudang [1200]", category: "Tagihan Supplier (Stok)" },
-  { code: "5101", label: "Tagihan Subkon / Material Proyek [5101 - HPP Project]", category: "Tagihan Proyek" },
+  { code: "1200", label: "Pembelian Barang Stok / Persediaan Gudang [1200]", category: "Tagihan Pemasok (Stok)" },
+  { code: "5101", label: "Tagihan Subkon / Material Proyek [5101 - HPP Proyek]", category: "Tagihan Proyek" },
 ];
 
 function SupplierInvoiceEditForm({
@@ -439,7 +439,7 @@ function SupplierInvoiceEditForm({
 
   async function handleSave() {
     if (!nomor.trim()) {
-      toast("Nomor invoice masuk wajib diisi", "danger");
+      toast("Nomor faktur masuk wajib diisi", "danger");
       return;
     }
     if (effectiveDpp <= 0) {
@@ -466,7 +466,7 @@ function SupplierInvoiceEditForm({
 
       await api("PATCH", `/invoice-in/${targetId}`, {
         number: nomor.trim(),
-        supplierName: supplierName.trim() || "Supplier / Vendor",
+        supplierName: supplierName.trim() || "Pemasok / Vendor",
         supplierId: selectedSupplierId ? Number(selectedSupplierId) : undefined,
         supplierPoId: selectedSupplierPoId ? Number(selectedSupplierPoId) : undefined,
         category: selectedCatOpt.category,
@@ -490,7 +490,7 @@ function SupplierInvoiceEditForm({
       onOpenChange(false);
       onSuccess?.();
     } catch (e: any) {
-      toast(e?.message ?? "Gagal menyimpan perubahan invoice masuk", "danger");
+      toast(e?.message ?? "Gagal menyimpan perubahan faktur masuk", "danger");
     } finally {
       setSubmitting(false);
     }
@@ -499,7 +499,7 @@ function SupplierInvoiceEditForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Edit Invoice Masuk</DialogTitle>
+        <DialogTitle>Edit Faktur Masuk</DialogTitle>
         <DialogDescription>
           Perbarui informasi tagihan masuk, kategori COA, nominal PPN, atau dokumen lampiran.
         </DialogDescription>
@@ -522,7 +522,7 @@ function SupplierInvoiceEditForm({
             />
           </FormField>
 
-          <FormField label="Pihak Penagih / Penyedia Layanan / Supplier" required>
+          <FormField label="Pihak Penagih / Penyedia Layanan / Pemasok" required>
             <View className="gap-1.5">
               <SupplierSelect
                 value={supplierName}
@@ -536,7 +536,7 @@ function SupplierInvoiceEditForm({
                     setSelectedSupplierId("");
                   }
                 }}
-                placeholder="Pilih dari daftar supplier..."
+                placeholder="Pilih dari daftar pemasok..."
               />
               <Input
                 value={supplierName}
@@ -551,8 +551,8 @@ function SupplierInvoiceEditForm({
             </View>
           </FormField>
 
-          <FormField label="Nomor Invoice Masuk / No. Tagihan" required>
-            <Input value={nomor} onChangeText={setNomor} placeholder="Nomor invoice masuk" />
+          <FormField label="Nomor Faktur Masuk / No. Tagihan" required>
+            <Input value={nomor} onChangeText={setNomor} placeholder="Nomor faktur masuk" />
           </FormField>
 
           <View className="flex-row gap-2">
@@ -793,7 +793,7 @@ function SupplierInvoicePayForm({
       await reload();
       onSuccess?.();
     } catch (e: any) {
-      toast(e?.message ?? "Gagal mencatat pembayaran supplier", "danger");
+      toast(e?.message ?? "Gagal mencatat pembayaran pemasok", "danger");
     } finally {
       setSubmitting(false);
     }
@@ -802,7 +802,7 @@ function SupplierInvoicePayForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Catat Pembayaran ke Supplier</DialogTitle>
+        <DialogTitle>Catat Pembayaran ke Pemasok</DialogTitle>
         <DialogDescription>
           Pelunasan tagihan invoice {invoice.nomor} ({invoice.supplier || invoice.customer || "Supplier"}).
         </DialogDescription>

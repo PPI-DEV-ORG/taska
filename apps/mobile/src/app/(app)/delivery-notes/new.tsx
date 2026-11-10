@@ -406,7 +406,7 @@ export default function NewDeliveryNoteScreen() {
         setTujuan(match.customer);
       }
       const soNum = (match.nomorSo && match.nomorSo !== "-") ? match.nomorSo : match.nomor;
-      if (!alasan.trim() || alasan.startsWith("Pengiriman barang untuk Sales Order")) {
+      if (!alasan.trim() || alasan.startsWith("Pengiriman barang untuk Pesanan Penjualan")) {
         setAlasan(`Pengiriman barang untuk Sales Order ${soNum}`);
       }
       if (match.projectId || match.project) {
@@ -451,7 +451,7 @@ export default function NewDeliveryNoteScreen() {
       if (!tujuan.trim() && projMatch.customer && projMatch.customer !== "-") {
         setTujuan(projMatch.customer);
       }
-      if (!alasan.trim() || alasan.startsWith("Pengiriman material untuk project")) {
+      if (!alasan.trim() || alasan.startsWith("Pengiriman material untuk proyek")) {
         setAlasan(`Pengiriman material untuk project ${projMatch.nama || projMatch.name}`);
       }
       api<any>("GET", `/projects/${projMatch.id}/requirements`)
@@ -641,7 +641,7 @@ export default function NewDeliveryNoteScreen() {
     }, 50);
   }
 
-  async function submit(targetStatus?: "Pending" | "Dikirim") {
+  async function submit(targetStatus?: "Menunggu pengiriman" | "Dikirim") {
     if (submitting) return;
     if (!tujuan.trim()) {
       toast("Tujuan wajib diisi", "danger");
@@ -711,7 +711,7 @@ export default function NewDeliveryNoteScreen() {
       if (editId) {
         const nextStatus = willShip
           ? "Dikirim"
-          : (targetStatus === "Pending" ? "Pending" : (initialExistingDn?.status || "Pending"));
+          : (targetStatus === "Menunggu pengiriman" ? "Menunggu pengiriman" : (initialExistingDn?.status || "Menunggu pengiriman"));
 
         await patchRow("delivery-notes", editId, {
           tanggal: tanggalSj,
@@ -773,7 +773,7 @@ export default function NewDeliveryNoteScreen() {
         withGoods: hasGoods && items.length > 0,
         reportText: hasGoods && items.length > 0 ? itemsSummary : undefined,
         items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
-        status: willShip ? "Dikirim" : "Pending",
+        status: willShip ? "Dikirim" : "Menunggu pengiriman",
         persetujuan: "Menunggu persetujuan",
         fileId,
         scanFileId: fileId ? Number(fileId) : undefined,
@@ -852,30 +852,30 @@ export default function NewDeliveryNoteScreen() {
             />
           </FormField>
 
-          <FormField label="Terkait Sales Order (SO) (Opsional)" hint="Pilih SO bila surat jalan ini untuk pengiriman pesanan penjualan barang">
+          <FormField label="Terkait Pesanan Penjualan (SO) (Opsional)" hint="Pilih SO bila surat jalan ini untuk pengiriman pesanan penjualan barang">
             <SearchableSelect
               value={selectedSoOption}
               onChange={handleSelectSo}
               options={soOptions}
-              placeholder="Pilih Sales Order (SO) jika ada..."
+              placeholder="Pilih Pesanan Penjualan (SO) jika ada..."
             />
           </FormField>
 
-          <FormField label="Terkait Invoice Penjualan (Opsional)" hint="Pilih Invoice bila pengiriman langsung dari invoice lunas tanpa SO">
+          <FormField label="Terkait Faktur Penjualan (Opsional)" hint="Pilih Faktur bila pengiriman langsung dari faktur lunas tanpa SO">
             <SearchableSelect
               value={selectedInvoiceOption}
               onChange={handleSelectInvoice}
               options={invoiceOptions}
-              placeholder="Pilih Invoice jika ada..."
+              placeholder="Pilih Faktur jika ada..."
             />
           </FormField>
 
-          <FormField label="Terkait Project (Opsional)" hint="Pilih project jika penugasan ini untuk pekerjaan proyek tertentu">
+          <FormField label="Terkait Proyek (Opsional)" hint="Pilih proyek jika penugasan ini untuk pekerjaan proyek tertentu">
             <SearchableSelect
               value={selectedProject}
               onChange={handleSelectProject}
               options={projectOptions}
-              placeholder="Pilih project jika ada..."
+              placeholder="Pilih proyek jika ada..."
             />
           </FormField>
         </View>
@@ -1262,7 +1262,7 @@ export default function NewDeliveryNoteScreen() {
             size="lg"
             variant="outline"
             className="flex-1 border-neutral-300"
-            onPress={() => submit("Pending")}
+            onPress={() => submit("Menunggu pengiriman")}
             disabled={submitting}
           >
             <Text className="text-neutral-700 font-medium">Simpan Draf (Pending)</Text>
@@ -1280,7 +1280,7 @@ export default function NewDeliveryNoteScreen() {
           </Button>
         </View>
       ) : (
-        <Button size="lg" onPress={() => submit("Pending")} disabled={submitting}>
+        <Button size="lg" onPress={() => submit("Menunggu pengiriman")} disabled={submitting}>
           <Check size={18} color={colors.background} />
           <Text>{submitting ? "Memproses..." : "Ajukan Surat Jalan"}</Text>
         </Button>
