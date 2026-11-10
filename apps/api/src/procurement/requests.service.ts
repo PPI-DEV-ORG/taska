@@ -99,6 +99,7 @@ export class RequestsService {
               shipmentStatus: true,
               total: true,
               supplierId: true,
+              supplier: { select: { id: true, name: true } },
             },
           },
           _count: { select: { supplierPOs: true } },
@@ -431,6 +432,13 @@ export class RequestsService {
     });
     if (!row) throw new NotFoundException("Request tidak ditemukan");
 
+    if (row.status === dto.status) {
+      return this.prisma.main.purchaseRequest.findUnique({
+        where: { id },
+        include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
+      });
+    }
+
     // Persetujuan / penolakan wajib lewat modul Persetujuan (menghormati ambang Bos & larangan setujui sendiri).
     if (dto.status === "DISETUJUI" || dto.status === "DITOLAK") {
       if (row.status !== "DIAJUKAN" && row.status !== "CEK_STOK") {
@@ -600,7 +608,7 @@ export class RequestsService {
     }
 
     // Pembayaran hanya lewat status DIBAYAR (peran Finance + bukti wajib, divalidasi assertPrTransition).
-    const isMarkingPaid = dto.status === "DIBAYAR";
+    const isMarkingPaid = dto.status === "DIBAYAR" || dto.status === "LUNAS";
 
     const allConsumables = row.items.length > 0 && row.items.every((it) => !!it.customName);
 
@@ -618,9 +626,9 @@ export class RequestsService {
 
     // Pembayaran setelah barang dikirim/diterima (utang) hanya mencatat pembayaran, status alur tidak mundur.
     const targetStatus =
-      dto.status === "DIBAYAR" && (row.status === "DIKIRIM" || row.status === "DITERIMA" || row.status === "PO_DIBUAT")
+      (dto.status === "DIBAYAR" || dto.status === "LUNAS") && (row.status === "DIKIRIM" || row.status === "DITERIMA" || row.status === "PO_DIBUAT")
         ? row.status
-        : dto.status;
+        : (dto.status === "LUNAS" ? "DIBAYAR" : dto.status);
 
     const updated = await this.prisma.main.purchaseRequest.update({
       where: { id },
@@ -630,14 +638,30 @@ export class RequestsService {
           ? {
               paymentStatus: "DIBAYAR",
               ...(dto.paymentProofFileId ? { paymentProofFileId: dto.paymentProofFileId } : {}),
-              ...(dto.fundingSource ? { paymentAccountCode: dto.fundingSource } : {}),
+              ...(dto.paymentAccountCode || dto.fundingSource ? { paymentAccountCode: dto.paymentAccountCode || dto.fundingSource } : {}),
             }
           : {}),
-        rejectReason: dto.reason ?? row.rejectReason,
+        rejectReason: dto.status === "DIAJUKAN" ? null : (dto.reason ?? row.rejectReason),
         ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
       },
       include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
     });
+    if (dto.status === "DIAJUKAN") {
+      const estimated =
+        Number(row.estimatedCost ?? 0) ||
+        (row.items ?? []).reduce(
+          (acc, it) => acc + (Number(it.unitCost ?? 0) * (it.qty ?? 1)),
+          0,
+        );
+      await this.approvals.request({
+        kind: "PURCHASE_REQUEST",
+        entityId: row.id,
+        title: `Request barang ${row.number}`,
+        amount: estimated,
+        requestedBy: user,
+        href: `/requests/${row.id}`,
+      }).catch(() => {});
+    }
     if (dto.doFileId) {
       await this.prisma.main.file
         .update({

@@ -921,8 +921,19 @@ export function adaptRow(module: string, raw: any): Row {
         rawStatus: raw.status,
         status: displayStatus,
         tujuan: raw.purpose ?? "",
-        supplier: nameOf(raw.supplier) || "-",
-        supplierId: idOf(raw.supplier),
+        supplier:
+          nameOf(raw.supplier) ||
+          (Array.isArray(raw.supplierPOs) && raw.supplierPOs[0]?.supplier
+            ? nameOf(raw.supplierPOs[0].supplier)
+            : "") ||
+          (raw.supplierPo?.supplier ? nameOf(raw.supplierPo.supplier) : "") ||
+          "-",
+        supplierId:
+          idOf(raw.supplier) ??
+          (Array.isArray(raw.supplierPOs) && raw.supplierPOs[0]?.supplierId != null
+            ? String(raw.supplierPOs[0].supplierId)
+            : null) ??
+          (raw.supplierPo?.supplierId != null ? String(raw.supplierPo.supplierId) : null),
         fileId: raw.evidenceFileId ?? (raw.fileId ?? null),
         doFileId: raw.doFileId ?? null,
         doFile: raw.doFile ?? null,

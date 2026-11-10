@@ -143,8 +143,15 @@ export class RequestDto {
 }
 
 export class RequestStatusDto {
-  @Transform(({ value }) => typeof value === "string" ? value.trim().toUpperCase().replace(/[\s\-]/g, "_") : value)
-  @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DIBAYAR", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      const v = value.trim().toUpperCase().replace(/[\s\-]/g, "_");
+      if (v === "LUNAS") return "DIBAYAR";
+      return v;
+    }
+    return value;
+  })
+  @IsIn(["DIAJUKAN", "CEK_STOK", "DISETUJUI", "DIBAYAR", "LUNAS", "DITOLAK", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBATALKAN"])
   status!: string;
 
   @IsOptional() @IsString()
@@ -161,6 +168,9 @@ export class RequestStatusDto {
 
   @IsOptional() @IsString()
   fundingSource?: string;
+
+  @IsOptional() @IsString()
+  paymentAccountCode?: string;
 }
 
 export class PoListQuery extends PageQuery {
