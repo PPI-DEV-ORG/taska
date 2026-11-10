@@ -1042,6 +1042,21 @@ function CreateInvoiceForm({
     } else {
       setItems([]);
     }
+
+    const rawDisc = Number(q.discount ?? q.disc ?? 0);
+    if (rawDisc > 0) {
+      setCustomDiscount(formatThousands(rawDisc));
+      const baseGross = Number(q.nilai || q.total || 0);
+      if (baseGross > 0) {
+        setDiscPercent(String(Math.round(((rawDisc / baseGross) * 100) * 10) / 10));
+      } else {
+        setDiscPercent("");
+      }
+    } else {
+      setCustomDiscount("");
+      setDiscPercent("");
+    }
+
     if (q.catatan) {
       setCatatan(q.catatan);
     }

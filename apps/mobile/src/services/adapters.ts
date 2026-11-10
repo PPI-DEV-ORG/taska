@@ -429,6 +429,7 @@ export function adaptRow(module: string, raw: any): Row {
           total: qRawTot,
           ppn: qRawPpn,
           disc: qRawDisc,
+          discount: qRawDisc,
           pph: qRawPph,
           pphMode: qPphMode,
           tipePph: qTipePph,
