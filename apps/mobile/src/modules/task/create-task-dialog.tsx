@@ -102,7 +102,7 @@ export function CreateTaskDialog({
         status: "TODO",
       });
 
-      toast("Tugas project berhasil ditambahkan", "success");
+      toast("Tugas proyek berhasil ditambahkan", "success");
       onOpenChange(false);
       onCreated?.();
     } catch (e: any) {
@@ -116,7 +116,7 @@ export function CreateTaskDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl w-[94vw] max-h-[92vh] flex flex-col p-6">
         <DialogHeader className="shrink-0 mb-1">
-          <DialogTitle>Tambah Tugas Project</DialogTitle>
+          <DialogTitle>Tambah Tugas Proyek</DialogTitle>
         </DialogHeader>
 
         <ScrollView className="flex-1 -mx-2 px-2" contentContainerClassName="gap-4 py-1 pb-4" showsVerticalScrollIndicator>

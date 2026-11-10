@@ -15,27 +15,32 @@ function convert(value: unknown, seen = new WeakSet()): unknown {
   if (typeof value !== "object") return value;
   if (Buffer.isBuffer(value)) return value;
 
+  // `seen` = leluhur pada jalur saat ini: hanya referensi melingkar yang dibuang,
+  // objek/array yang dipakai bersama di beberapa tempat tetap diteruskan.
   if (seen.has(value as object)) return undefined;
   seen.add(value as object);
-
-  if (Array.isArray(value)) {
-    const len = value.length;
-    const arr = new Array(len);
-    for (let i = 0; i < len; i++) {
-      arr[i] = convert(value[i], seen);
+  try {
+    if (Array.isArray(value)) {
+      const len = value.length;
+      const arr = new Array(len);
+      for (let i = 0; i < len; i++) {
+        arr[i] = convert(value[i], seen);
+      }
+      return arr;
     }
-    return arr;
-  }
 
-  if (!isPlainObject(value)) return value;
+    if (!isPlainObject(value)) return value;
 
-  const out: Record<string, unknown> = {};
-  for (const k in value) {
-    if (Object.prototype.hasOwnProperty.call(value, k)) {
-      out[k] = convert((value as Record<string, unknown>)[k], seen);
+    const out: Record<string, unknown> = {};
+    for (const k in value) {
+      if (Object.prototype.hasOwnProperty.call(value, k)) {
+        out[k] = convert((value as Record<string, unknown>)[k], seen);
+      }
     }
+    return out;
+  } finally {
+    seen.delete(value as object);
   }
-  return out;
 }
 
 /** Ubah Decimal Prisma menjadi number agar JSON bersih. */

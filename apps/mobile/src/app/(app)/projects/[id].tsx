@@ -169,9 +169,9 @@ export default function ProjectDetailScreen() {
   if (!project) {
     return (
       <EmptyState
-        title="Project tidak ditemukan"
-        text="Data project tidak tersedia atau telah dihapus."
-        actionLabel="Kembali ke daftar project"
+        title="Proyek tidak ditemukan"
+        text="Data proyek tidak tersedia atau telah dihapus."
+        actionLabel="Kembali ke daftar proyek"
         onAction={() => router.replace("/projects")}
       />
     );
@@ -278,7 +278,7 @@ export default function ProjectDetailScreen() {
     if (!project) return;
     setStatus("projects", project.id, "Selesai");
     patchRow("projects", project.id, { status: "Selesai", progres: 100 });
-    toast("Project ditandai selesai (progres otomatis 100%)");
+    toast("Proyek ditandai selesai (progres otomatis 100%)");
   }
 
   async function saveProgress() {
@@ -333,7 +333,7 @@ export default function ProjectDetailScreen() {
             </Button>
             {project.status !== "Selesai" && (user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "admin") ? (
               <Button size="sm" onPress={markCompleted}>
-                <Text>Selesaikan Project</Text>
+                <Text>Selesaikan Proyek</Text>
               </Button>
             ) : null}
           </View>
@@ -355,13 +355,13 @@ export default function ProjectDetailScreen() {
       {/* Tab 1: Ringkasan */}
       {activeTab === "Ringkasan" && (
         <View className="gap-4">
-          <Panel title="Informasi Project">
+          <Panel title="Informasi Proyek">
             <InfoGrid
               fields={[
-                { label: "Project Manager (PIC)", key: "pm" },
+                { label: "Manajer Proyek (PIC)", key: "pm" },
                 { label: "Tim Lapangan (SE / Teknisi)", key: "tim" },
                 { label: "Penawaran Terkait", key: "penawaran" },
-                { label: "Lead CRM Terkait", key: "lead" },
+                { label: "Prospek CRM Terkait", key: "lead" },
                 { label: "Tanggal Mulai", key: "mulai", fmt: "date" },
                 { label: "Target Selesai", key: "selesai", fmt: "date" },
                 { label: "Status Logistik Barang", key: "barang" },
@@ -491,8 +491,8 @@ export default function ProjectDetailScreen() {
 
           {canViewFinancials ? (
             <Panel
-              title="Analisa Untung-Rugi (P&L Project)"
-              subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan invoice dan pengeluaran beban riil."
+              title="Analisa Untung-Rugi (P&L Proyek)"
+              subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan faktur dan pengeluaran beban riil."
               right={
                 <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="flex-row items-center gap-1.5">
                   <FileSpreadsheet size={13} color={colors.success} />
@@ -503,14 +503,14 @@ export default function ProjectDetailScreen() {
               <View className="divide-y divide-border/60">
                 <View className="flex-row items-center justify-between py-2">
                   <View>
-                    <Text className="text-sm">Pendapatan Proyek (DPP Invoice)</Text>
+                    <Text className="text-sm">Pendapatan Proyek (DPP Faktur)</Text>
                     <Text className="text-xs text-muted-foreground">{projectInvoices.length} invoice tercatat</Text>
                   </View>
                   <Text className="text-sm font-semibold">{rupiah(revenue)}</Text>
                 </View>
                 <View className="flex-row items-center justify-between py-2">
                   <View>
-                    <Text className="text-sm">Biaya PO Supplier (Material)</Text>
+                    <Text className="text-sm">Biaya PO Pemasok (Material)</Text>
                     <Text className="text-xs text-muted-foreground">{projectPos.length} purchase order</Text>
                   </View>
                   <Text className="text-sm font-semibold text-danger">{rupiah(poCost)}</Text>
@@ -553,7 +553,7 @@ export default function ProjectDetailScreen() {
         <View className="gap-4">
           <Panel
             title="Daftar Tugas Bertingkat"
-            subtitle="Tugas induk dan sub-tugas project"
+            subtitle="Tugas induk dan sub-tugas proyek"
             right={
               <View className="flex-row gap-2">
                 <Button size="sm" onPress={() => setTaskModalOpen(true)}>
@@ -562,13 +562,13 @@ export default function ProjectDetailScreen() {
                 </Button>
                 <Button size="sm" variant="outline" onPress={() => router.push("/purchase-requests/new" as any)}>
                   <ShoppingCart size={14} color={colors.text} />
-                  <Text className="text-xs">Request Barang</Text>
+                  <Text className="text-xs">Permintaan Barang</Text>
                 </Button>
               </View>
             }
           >
             {tasks.length === 0 ? (
-              <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada tugas untuk project ini.</Text>
+              <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada tugas untuk proyek ini.</Text>
             ) : (
               tasks.map((t) => (
                 <View
@@ -629,7 +629,7 @@ export default function ProjectDetailScreen() {
       {activeTab === "Barang" && (
         <View className="gap-4">
           <Panel
-            title="Kebutuhan Barang Project"
+            title="Kebutuhan Barang Proyek"
             subtitle="Sistem otomatis mengecek stok, menahan (reserve) yang tersedia, dan mengajukan kekurangan ke Procurement"
             right={
               <View className="flex-row flex-wrap gap-2">
@@ -662,7 +662,7 @@ export default function ProjectDetailScreen() {
                   <Text className="text-xs">Isi Kebutuhan Barang</Text>
                 </Button>
                 <Button size="sm" variant="outline" onPress={() => router.push("/purchase-requests/new" as any)}>
-                  <Text className="text-xs">Request Manual</Text>
+                  <Text className="text-xs">Permintaan Manual</Text>
                 </Button>
                 <Button size="sm" variant="outline" onPress={() => setReturnModalOpen(true)}>
                   <RotateCcw size={14} color={colors.text} />
@@ -701,7 +701,7 @@ export default function ProjectDetailScreen() {
                         await api("DELETE", `/projects/${project.id}/requirements/${r.id}`);
                         await loadRequirements();
                         await refreshModule("projects");
-                        toast("Kebutuhan barang & request berhasil dihapus");
+                        toast("Kebutuhan barang & permintaan berhasil dihapus");
                       } catch (e: any) {
                         toast(e?.message ?? "Gagal menghapus", "danger");
                       }
@@ -717,7 +717,7 @@ export default function ProjectDetailScreen() {
           {/* Panel 2: Daftar Request Barang / Pengadaan Project */}
           <Panel
             title={`Request Barang Project (${projectRequests.length})`}
-            subtitle="Daftar pengajuan permintaan barang ke Gudang / Pengadaan terkait project ini"
+            subtitle="Daftar pengajuan permintaan barang ke Gudang / Pengadaan terkait proyek ini"
             right={
               <Button
                 size="sm"
@@ -725,7 +725,7 @@ export default function ProjectDetailScreen() {
                 onPress={() => router.push({ pathname: "/purchase-requests/new", params: { projectId: project.id } } as any)}
               >
                 <Plus size={14} color={colors.text} />
-                <Text className="text-xs">Buat Request</Text>
+                <Text className="text-xs">Buat Permintaan</Text>
               </Button>
             }
           >
@@ -762,16 +762,16 @@ export default function ProjectDetailScreen() {
                       onPress={async () => {
                         const isDiajukan = pr.status === "Diajukan" || pr.status === "DIAJUKAN";
                         if (!isDiajukan) {
-                          toast("Request sudah berjalan tidak bisa hapus request", "danger");
+                          toast("Permintaan sudah berjalan tidak bisa hapus permintaan", "danger");
                           return;
                         }
                         try {
                           await api("DELETE", `/requests/${pr.id}`);
                           await refreshModule("purchase-requests");
                           await loadRequirements();
-                          toast("Request barang berhasil dihapus");
+                          toast("Permintaan Barang berhasil dihapus");
                         } catch (err: any) {
-                          toast(err?.message ?? "Gagal menghapus request", "danger");
+                          toast(err?.message ?? "Gagal menghapus permintaan", "danger");
                         }
                       }}
                     >
@@ -803,7 +803,7 @@ export default function ProjectDetailScreen() {
             }
           >
             {deliveryNotes.length === 0 ? (
-              <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada surat jalan untuk project ini.</Text>
+              <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada surat jalan untuk proyek ini.</Text>
             ) : (
               deliveryNotes.map((dn) => (
                 <Pressable
@@ -826,7 +826,7 @@ export default function ProjectDetailScreen() {
       {/* Tab 5: Dokumen (PRD, BAST, DO) */}
       {activeTab === "Dokumen" && (
         <View className="gap-4">
-          <Panel title="File & Lampiran Dokumen Project">
+          <Panel title="File & Lampiran Dokumen Proyek">
             <DocumentViewerList
               moduleKey="projects"
               docs={[
@@ -859,7 +859,7 @@ export default function ProjectDetailScreen() {
         <View className="gap-4">
           {canViewFinancials ? (
             <Panel
-              title="Ringkasan Margin Laba-Rugi Project"
+              title="Ringkasan Margin Laba-Rugi Proyek"
               right={
                 <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="flex-row items-center gap-1.5">
                   <FileSpreadsheet size={13} color={colors.success} />
@@ -869,12 +869,12 @@ export default function ProjectDetailScreen() {
             >
               <View className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Pendapatan (DPP Invoice)</Text>
+                  <Text className="text-xs text-muted-foreground">Pendapatan (DPP Faktur)</Text>
                   <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
                   <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice</Text>
                 </View>
                 <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Biaya PO Supplier</Text>
+                  <Text className="text-xs text-muted-foreground">Biaya PO Pemasok</Text>
                   <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
                   <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
                 </View>
@@ -893,7 +893,7 @@ export default function ProjectDetailScreen() {
           ) : null}
 
           <Panel
-            title="Biaya Operasional & Reimbursement Project"
+            title="Biaya Operasional & Reimbursement Proyek"
             subtitle="Tracking pengeluaran terhubung, pemisahan dana perusahaan vs talangan pribadi"
             right={
               <Button
@@ -907,7 +907,7 @@ export default function ProjectDetailScreen() {
                 className="gap-1.5"
               >
                 <Plus size={14} color={colors.background} />
-                <Text className="text-xs font-semibold">+ Catat Biaya Project</Text>
+                <Text className="text-xs font-semibold">+ Catat Biaya Proyek</Text>
               </Button>
             }
           >
@@ -928,7 +928,7 @@ export default function ProjectDetailScreen() {
               </View>
 
               {expenses.length === 0 ? (
-                <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada pengeluaran yang dicatat untuk project ini.</Text>
+                <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada pengeluaran yang dicatat untuk proyek ini.</Text>
               ) : (
                 <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
                   {expenses.map((e) => {
@@ -968,7 +968,7 @@ export default function ProjectDetailScreen() {
 
       {/* Tab 7: Riwayat Timeline */}
       {activeTab === "Riwayat" && (
-        <Panel title="Riwayat Aktivitas Project">
+        <Panel title="Riwayat Aktivitas Proyek">
           <Timeline items={history("projects", project.id)} />
         </Panel>
       )}
@@ -985,7 +985,7 @@ export default function ProjectDetailScreen() {
       <FormDialog
         open={reqModalOpen}
         onOpenChange={setReqModalOpen}
-        title="Tambah Kebutuhan Barang / BOQ Project"
+        title="Tambah Kebutuhan Barang / BOQ Proyek"
         fields={[
           {
             key: "source",
@@ -1062,7 +1062,7 @@ export default function ProjectDetailScreen() {
             await loadRequirements();
             toast(
               res?.purchaseRequestCreated
-                ? "Stok tersedia di-reserve & kekurangan otomatis dibuatkan Request ke Procurement"
+                ? "Stok tersedia di-reserve & kekurangan otomatis dibuatkan Permintaan ke Procurement"
                 : "Kebutuhan barang dicatat & stok di-reserve",
             );
           } catch (e: any) {
@@ -1135,11 +1135,11 @@ export default function ProjectDetailScreen() {
         open={editProjectOpen}
         onOpenChange={setEditProjectOpen}
         def={MODULES.projects}
-        title="Ubah Project"
+        title="Ubah Proyek"
         fields={[
           ...(MODULES.projects?.createFields || []),
           { key: "progres", label: "Progres Pekerjaan (%)", type: "number", placeholder: "Contoh: 100" },
-          { key: "status", label: "Status Project", type: "select", options: ["Berjalan", "Terlambat", "Selesai", "Ditunda"] },
+          { key: "status", label: "Status Proyek", type: "select", options: ["Berjalan", "Terlambat", "Selesai", "Ditunda"] },
         ]}
         initialRow={{
           ...project,
@@ -1153,8 +1153,8 @@ export default function ProjectDetailScreen() {
       <ConfirmDialog
         open={deleteProjectOpen}
         onOpenChange={setDeleteProjectOpen}
-        title="Hapus project ini?"
-        description="Project yang dihapus tidak dapat dikembalikan."
+        title="Hapus proyek ini?"
+        description="Proyek yang dihapus tidak dapat dikembalikan."
         confirmLabel="Ya, hapus"
         destructive
         onConfirm={() => {

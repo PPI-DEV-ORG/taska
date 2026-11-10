@@ -10,12 +10,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Text } from "@/components/ui/text";
-import { Chip, PageHeader } from "@/components/taska/basics";
+import { Chip, EmptyState, PageHeader } from "@/components/taska/basics";
 import { FilterBar } from "@/components/taska/data-table";
 import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { ModuleList } from "@/screens/module-list";
 import { useApp } from "@/store/app-store";
-import { MODULES, type Row } from "@/constants/modules";
+import { MODULES, hasUserPermission, type Row } from "@/constants/modules";
 import { LEAD_STAGES, chartSeries, colors } from "@/tokens";
 import { rupiahShort, tanggal, compareDesc } from "@/lib/format";
 
@@ -40,6 +40,10 @@ export default function LeadsScreen() {
   const [form, setForm] = React.useState(false);
   const [lost, setLost] = React.useState<Row | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
+
+  if (!hasUserPermission(user, "leads", "M")) {
+    return <EmptyState title="Akses Ditolak" text="Akun kamu tidak memiliki akses untuk membuka halaman prospek." />;
+  }
 
   if (view === "tabel") return <ModuleList def={def} headerExtra={<ViewToggle view={view} onView={setView} />} />;
 
@@ -69,9 +73,9 @@ export default function LeadsScreen() {
   return (
     <>
       <PageHeader
-        title="Leads"
+        title="Prospek"
         subtitle={`${leads.length} lead`}
-        action={canAdd ? <Button onPress={() => setForm(true)}><Plus size={16} color={colors.background} /><Text>Tambah lead</Text></Button> : undefined}
+        action={canAdd ? <Button onPress={() => setForm(true)}><Plus size={16} color={colors.background} /><Text>Tambah prospek</Text></Button> : undefined}
       />
       <ViewToggle view={view} onView={setView} />
       <FilterBar
@@ -79,7 +83,7 @@ export default function LeadsScreen() {
         onSearch={setQ}
         date={dateFilter}
         onDate={setDateFilter}
-        placeholder="Cari lead atau perusahaan"
+        placeholder="Cari prospek atau perusahaan"
       />
       <ScrollView horizontal showsHorizontalScrollIndicator contentContainerClassName="gap-3 pb-3">
         {LEAD_STAGES.map((stage, si) => {
@@ -98,7 +102,7 @@ export default function LeadsScreen() {
                 <Text className="text-muted-foreground text-[13px]">{rupiahShort(sum)}</Text>
               </View>
               <View className="gap-2 p-2">
-                {col.length === 0 ? <Text className="text-muted-foreground px-2 py-4 text-center text-[13px]">Belum ada lead</Text> : null}
+                {col.length === 0 ? <Text className="text-muted-foreground px-2 py-4 text-center text-[13px]">Belum ada prospek</Text> : null}
                 {col.map((l) => (
                   <View key={l.id} className="bg-card border-border gap-2 rounded-lg border p-3">
                     <View className="flex-row items-start gap-2">
@@ -189,8 +193,8 @@ export default function LeadsScreen() {
       <ConfirmDialog
         open={!!lost}
         onOpenChange={(v) => !v && setLost(null)}
-        title="Tandai lead ini Lost?"
-        description="Lead pindah ke kolom Lost dan tidak muncul di pipeline aktif. Data tetap tersimpan."
+        title="Tandai prospek ini Kalah?"
+        description="Prospek pindah ke kolom Kalah dan tidak muncul di pipeline aktif. Data tetap tersimpan."
         confirmLabel="Ya, tandai Lost"
         destructive
         reasonLabel="Alasan Lost"
@@ -200,7 +204,7 @@ export default function LeadsScreen() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
-        title="Hapus lead ini?"
+        title="Hapus prospek ini?"
         description={`Lead "${deleteTarget?.nama ?? ""}" akan dihapus setelah kamu mengonfirmasi. Server tetap memvalidasi apakah lead ini boleh dihapus.`}
         confirmLabel="Ya, hapus"
         destructive

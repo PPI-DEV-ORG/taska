@@ -17,7 +17,7 @@ export function StockSerialTab({
         { key: "sn", label: "Serial Number", primary: true, flex: 1.5 },
         { key: "produk", label: "Produk", flex: 1.6 },
         { key: "gudang", label: "Lokasi Gudang", flex: 1.2 },
-        { key: "project", label: "Alokasi Project", flex: 1.4 },
+        { key: "project", label: "Alokasi Proyek", flex: 1.4 },
         { key: "garansiDisplay", label: "Masa Garansi", flex: 1.2 },
         { key: "status", label: "Status Unit", fmt: "status", flex: 1 },
       ]}

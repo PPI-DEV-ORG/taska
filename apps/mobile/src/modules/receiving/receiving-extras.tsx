@@ -23,7 +23,7 @@ export function ReceivingExtras({ row }: { row: Row }) {
   const [issueItem, setIssueItem] = React.useState<string>(row.item ? (String(row.item).split(",")[0] ?? "") : "");
   const [issueQty, setIssueQty] = React.useState("1");
   const [issueNotes, setIssueNotes] = React.useState("");
-  const [issueSolusi, setIssueSolusi] = React.useState("Retur Tukar Baru ke Supplier");
+  const [issueSolusi, setIssueSolusi] = React.useState("Retur Tukar Baru ke Pemasok");
   const [issueFileId, setIssueFileId] = React.useState<number | null>(null);
 
   // State untuk Dialog Penerimaan Barang Cepat
@@ -108,8 +108,8 @@ export function ReceivingExtras({ row }: { row: Row }) {
             item: (String(row.item).split(",")[0] ?? "Perangkat") as string,
             qty: 1,
             notes: "Casing penyok saat unboxing dari ekspedisi",
-            solusi: "Retur Tukar Baru ke Supplier",
-            status: "Diproses Supplier",
+            solusi: "Retur Tukar Baru ke Pemasok",
+            status: "Diproses Pemasok",
           },
         ]
       : []),
@@ -216,7 +216,7 @@ export function ReceivingExtras({ row }: { row: Row }) {
       qty: qNum,
       notes: issueNotes.trim(),
       solusi: issueSolusi,
-      status: "Menunggu Tindakan Supplier",
+      status: "Menunggu Tindakan Pemasok",
     };
     setIssueList([newIssue, ...issueList]);
     addRow("damage-reports", {
@@ -276,11 +276,11 @@ export function ReceivingExtras({ row }: { row: Row }) {
 
       <Panel title="Rincian Penerimaan Barang">
         <Line left="Barang Diterima" right={<Text className="font-semibold">{row.item}</Text>} />
-        <Line left="Nomor PO Supplier" right={<Text className="text-text-secondary">{row.po}</Text>} />
+        <Line left="Nomor PO Pemasok" right={<Text className="text-text-secondary">{row.po}</Text>} />
         {row.requestNumber && row.requestNumber !== "-" && (
-          <Line left="Ref Request Barang" right={<Text className="text-primary font-medium">{row.requestNumber}</Text>} />
+          <Line left="Ref Permintaan Barang" right={<Text className="text-primary font-medium">{row.requestNumber}</Text>} />
         )}
-        <Line left="Supplier" right={<Text className="text-text-secondary">{row.supplier}</Text>} />
+        <Line left="Pemasok" right={<Text className="text-text-secondary">{row.supplier}</Text>} />
         <Line left="Petugas Penerima" right={<Text className="text-text-secondary">{row.penerima}</Text>} />
         <Line left="Status Penerimaan" right={<StatusBadge status={row.status} />} />
         {row.conditionNote ? <Line left="Catatan Kondisi" right={<Text className="text-text-secondary">{row.conditionNote}</Text>} /> : null}
@@ -534,7 +534,7 @@ export function ReceivingExtras({ row }: { row: Row }) {
               <Input
                 value={issueSolusi}
                 onChangeText={setIssueSolusi}
-                placeholder="Contoh: Retur Tukar Baru / Potong Invoice"
+                placeholder="Contoh: Retur Tukar Baru / Potong Faktur"
               />
             </View>
 

@@ -7,7 +7,7 @@ test.describe("Modul Master Customer (CRUD)", () => {
     await page.goto("/customers");
     await expect(page).toHaveURL(/.*customers/);
 
-    const tambahBtn = page.getByRole("button", { name: /Tambah customer/i }).first();
+    const tambahBtn = page.getByRole("button", { name: /Tambah pelanggan/i }).first();
     await expect(tambahBtn).toBeVisible({ timeout: 10000 });
     await tambahBtn.click();
 

@@ -153,7 +153,7 @@ export function SurveyExtras({ row }: { row: Row }) {
         kind="survey"
         entityId={row.id}
         title="Dokumentasi Foto Lapangan"
-        subtitle="Bukti kondisi fisik lokasi survey untuk tim project & sales (terkompilasi otomatis ke PDF)."
+        subtitle="Bukti kondisi fisik lokasi survey untuk tim proyek & sales (terkompilasi otomatis ke PDF)."
       />
 
       <Panel

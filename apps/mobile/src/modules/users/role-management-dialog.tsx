@@ -55,6 +55,14 @@ function normalizeRolePermissions(
     }
   }
 
+  // Migrasi data legacy: jika di default sistem modul ini punya 'M' dan di permissions tersimpan punya 'L',
+  // pastikan 'M' tetap aktif agar halaman tidak hilang
+  for (const [k, v] of Object.entries(sysDefault)) {
+    if (v.includes("M") && result[k] && result[k].includes("L") && !result[k].includes("M")) {
+      result[k].unshift("M");
+    }
+  }
+
   return result;
 }
 

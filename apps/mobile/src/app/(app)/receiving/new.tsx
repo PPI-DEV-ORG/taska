@@ -193,7 +193,7 @@ export default function NewReceivingScreen() {
       return String(initialDraft.supplier || initialDraft.supplierName || "-");
     }
     if (initialSourceType === "REQUEST" && initialReq) {
-      return String(initialReq.supplier || "Supplier Ritel");
+      return String(initialReq.supplier || "Pemasok Ritel");
     }
     return "";
   });
@@ -203,8 +203,34 @@ export default function NewReceivingScreen() {
     if (initialSourceType === "DRAFT" && initialDraft && (initialDraft.warehouse || initialDraft.gudang)) {
       return String(initialDraft.warehouse || initialDraft.gudang);
     }
-    return warehouses[0]?.nama || "Gudang Utama Jakarta";
+    // Tidak ada gudang bawaan palsu: pilih otomatis hanya bila gudangnya tepat satu.
+    return warehouses.length === 1 ? String(warehouses[0]?.nama ?? "") : "";
   });
+  const [newWhName, setNewWhName] = React.useState("");
+  const [newWhCity, setNewWhCity] = React.useState("");
+  const [addingWh, setAddingWh] = React.useState(false);
+
+  async function handleAddWarehouse() {
+    const name = newWhName.trim();
+    if (!name) return toast("Nama gudang wajib diisi", "danger");
+    if (warehouses.some((w) => String(w.nama).trim().toLowerCase() === name.toLowerCase())) {
+      return toast("Nama gudang sudah ada", "danger");
+    }
+    setAddingWh(true);
+    try {
+      const created = await addRow("warehouses", { nama: name, kota: newWhCity.trim() || undefined });
+      if (created) {
+        setSelectedGudang(name);
+        setNewWhName("");
+        setNewWhCity("");
+        toast(`Gudang ${name} ditambahkan`);
+      }
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal menambah gudang", "danger");
+    } finally {
+      setAddingWh(false);
+    }
+  }
 
   const [tanggalTerima, setTanggalTerima] = React.useState(new Date().toISOString().slice(0, 10));
 
@@ -259,7 +285,7 @@ export default function NewReceivingScreen() {
     } else if (type === "REQUEST") {
       const targetReq = purchaseRequests.find((r) => String(r.id) === String(selectedReqId)) || eligibleRequests[0];
       if (targetReq) {
-        setDirectSupplier(String(targetReq.supplier || "Supplier Ritel"));
+        setDirectSupplier(String(targetReq.supplier || "Pemasok Ritel"));
         setNotes(`Ref Request: ${targetReq.nomor} — ${targetReq.purpose || targetReq.tujuan || ""}`);
         setItems(getRequestLineItems(targetReq));
       }
@@ -286,7 +312,7 @@ export default function NewReceivingScreen() {
     setSelectedReqId(reqId);
     const targetReq = purchaseRequests.find((r) => String(r.id) === String(reqId));
     if (targetReq) {
-      setDirectSupplier(String(targetReq.supplier || "Supplier Ritel"));
+      setDirectSupplier(String(targetReq.supplier || "Pemasok Ritel"));
       setNotes(`Ref Request: ${targetReq.nomor} — ${targetReq.purpose || targetReq.tujuan || ""}`);
       setItems(getRequestLineItems(targetReq));
     }
@@ -397,15 +423,15 @@ export default function NewReceivingScreen() {
       return;
     }
     if (sourceType === "REQUEST" && !selectedReqId) {
-      toast("Pilih request barang terlebih dahulu", "danger");
+      toast("Pilih permintaan barang terlebih dahulu", "danger");
       return;
     }
     if (sourceType === "PO" && !selectedPo) {
-      toast("Pilih PO Supplier terlebih dahulu", "danger");
+      toast("Pilih PO Pemasok terlebih dahulu", "danger");
       return;
     }
     if (sourceType === "DIRECT" && !directSupplier.trim()) {
-      toast("Isi nama supplier / toko penerimaan langsung", "danger");
+      toast("Isi nama pemasok / toko penerimaan langsung", "danger");
       return;
     }
     if (items.length === 0) {
@@ -445,6 +471,15 @@ export default function NewReceivingScreen() {
 
     const fileId = (await fileHandle.current?.flush()) ?? undefined;
     const wh = warehouses.find((w) => w.nama === selectedGudang);
+    if (!wh?.id) {
+      toast(
+        warehouses.length === 0
+          ? "Belum ada gudang. Tambahkan gudang terlebih dahulu di bagian Gudang Penerima."
+          : "Pilih gudang penerima terlebih dahulu",
+        "danger",
+      );
+      return;
+    }
 
     const payloadItems = items.map((line) => {
       const prod = products.find((p) => Number(p.id) === line.productId);
@@ -485,35 +520,6 @@ export default function NewReceivingScreen() {
         ...(effectiveFileId ? { fileId: effectiveFileId, receiptFileId: effectiveFileId, photoFileId: effectiveFileId } : {}),
       });
 
-      // Update Purchase Request jika ada relasi
-      const rawReqId = selectedDraft.requestId || selectedDraft.requestNumber;
-      const targetReq = (data["purchase-requests"] ?? []).find(
-        (r) => String(r.id) === String(rawReqId) || r.nomor === rawReqId
-      );
-      const effReqId = targetReq?.id ?? (rawReqId && !isNaN(Number(rawReqId)) ? rawReqId : null);
-      if (effReqId) {
-        await patchRow("purchase-requests", String(effReqId), {
-          status: "DITERIMA",
-          ...(effectiveFileId ? { doFileId: effectiveFileId } : {}),
-        }).catch(() => {});
-      }
-
-      // Update PO Supplier jika ada relasi langsung atau via request
-      const draftPoId =
-        selectedDraft.supplierPoId && String(selectedDraft.supplierPoId) !== "-"
-          ? String(selectedDraft.supplierPoId)
-          : (effReqId
-              ? (data["supplier-pos"] ?? []).find((p) => String(p.requestId) === String(effReqId))?.id
-              : undefined);
-
-      if (draftPoId) {
-        await patchRow("supplier-pos", String(draftPoId), {
-          pengiriman: "Sampai",
-          ...(effectiveFileId ? { doFileId: effectiveFileId } : {}),
-        }).catch(() => {});
-        await setStatus("supplier-pos", String(draftPoId), "Sampai").catch(() => {});
-      }
-
       toast("Penerimaan barang berhasil diproses! Stok bertambah dan dokumen diperbarui.");
       router.replace("/stock");
       return;
@@ -524,8 +530,8 @@ export default function NewReceivingScreen() {
       const row = {
         nomor: `TB/${new Date().getFullYear()}/${Math.floor(Math.random() * 800) + 100}`,
         requestId: Number(selectedReq.id),
-        supplier: selectedReq.supplier || "Supplier Ritel",
-        supplierName: selectedReq.supplier || "Supplier Ritel",
+        supplier: selectedReq.supplier || "Pemasok Ritel",
+        supplierName: selectedReq.supplier || "Pemasok Ritel",
         gudang: selectedGudang,
         warehouseId: wh?.id ? Number(wh.id) : undefined,
         item: itemsSummary,
@@ -540,24 +546,7 @@ export default function NewReceivingScreen() {
       };
 
       await addRow("receiving", row);
-      await patchRow("purchase-requests", String(selectedReq.id), {
-        status: "DITERIMA",
-        ...(fileId ? { doFileId: fileId } : {}),
-      }).catch(() => {});
-
-      // Update PO Supplier jika request ini memiliki PO terkait
-      const linkedPo = (data["supplier-pos"] ?? []).find(
-        (p) => String(p.requestId) === String(selectedReq.id) || p.request === selectedReq.nomor
-      );
-      if (linkedPo?.id) {
-        await patchRow("supplier-pos", String(linkedPo.id), {
-          pengiriman: "Sampai",
-          ...(fileId ? { doFileId: fileId } : {}),
-        }).catch(() => {});
-        await setStatus("supplier-pos", String(linkedPo.id), "Sampai").catch(() => {});
-      }
-
-      toast("Penerimaan dari Request Barang berhasil disimpan & stok bertambah!");
+      toast("Penerimaan dari Permintaan Barang berhasil disimpan & stok bertambah!");
       router.replace("/stock");
       return;
     }
@@ -583,23 +572,6 @@ export default function NewReceivingScreen() {
     };
 
     await addRow("receiving", row);
-    if (sourceType === "PO" && po?.id) {
-      await patchRow("supplier-pos", String(po.id), {
-        pengiriman: "Sampai",
-        ...(fileId ? { doFileId: fileId } : {}),
-      }).catch(() => {});
-      await setStatus("supplier-pos", String(po.id), "Sampai").catch(() => {});
-
-      // Sinkronisasi ke Request Barang jika PO ini terhubung ke Request
-      const targetReqId = po.requestId || (po.request && (data["purchase-requests"] ?? []).find((r) => r.nomor === po.request)?.id);
-      if (targetReqId) {
-        await patchRow("purchase-requests", String(targetReqId), {
-          status: "DITERIMA",
-          ...(fileId ? { doFileId: fileId } : {}),
-        }).catch(() => {});
-      }
-    }
-
     toast("Penerimaan barang berhasil disimpan, stok bertambah & DO terhubung ke PO");
     router.replace("/stock");
   }
@@ -641,7 +613,7 @@ export default function NewReceivingScreen() {
               className="flex-1 min-w-[140px]"
             >
               <PackageCheck size={16} color={sourceType === "PO" ? colors.background : colors.text} />
-              <Text>Dari PO Supplier</Text>
+              <Text>Dari PO Pemasok</Text>
             </Button>
             <Button
               size="sm"
@@ -666,7 +638,7 @@ export default function NewReceivingScreen() {
                 <DraftReceivingSelect
                   value={
                     selectedDraft
-                      ? `${selectedDraft.nomor} — ${selectedDraft.supplier || selectedDraft.supplierName || "Supplier"}`
+                      ? `${selectedDraft.nomor} — ${selectedDraft.supplier || selectedDraft.supplierName || "Pemasok"}`
                       : ""
                   }
                   receivingId={selectedDraftId}
@@ -679,11 +651,11 @@ export default function NewReceivingScreen() {
               )}
             </FormField>
           ) : sourceType === "REQUEST" ? (
-            <FormField label="Pilih Purchase Request yang Sudah Disetujui / Dikirim" required>
+            <FormField label="Pilih Permintaan Barang (Purchase Request) yang Sudah Disetujui / Dikirim" required>
               <PurchaseRequestSelect
                 value={
                   selectedReq
-                    ? `${selectedReq.nomor} — ${selectedReq.purpose || selectedReq.tujuan || "Request"}`
+                    ? `${selectedReq.nomor} — ${selectedReq.purpose || selectedReq.tujuan || "Permintaan"}`
                     : ""
                 }
                 requestId={selectedReqId}
@@ -695,18 +667,18 @@ export default function NewReceivingScreen() {
               />
             </FormField>
           ) : sourceType === "PO" ? (
-            <FormField label="Pilih PO Supplier" required>
+            <FormField label="Pilih PO Pemasok" required>
               <SupplierPoSelect
                 value={selectedPo}
                 pos={pos}
                 onChange={(p) => {
                   handleSelectPo(p ? (p.nomor || p.number || "") : "");
                 }}
-                placeholder="Pilih nomor PO supplier..."
+                placeholder="Pilih nomor PO pemasok..."
               />
             </FormField>
           ) : (
-            <FormField label="Nama Supplier / Toko / Vendor" required>
+            <FormField label="Nama Pemasok / Toko / Vendor" required>
               <View className="gap-2 w-full">
                 <View className="flex-row items-center gap-1.5 bg-panel/60 p-1 rounded-lg border border-border w-full">
                   <Pressable
@@ -776,30 +748,53 @@ export default function NewReceivingScreen() {
 
           {sourceType === "REQUEST" && selectedReq && (
             <View className="bg-panel/50 border-border rounded-xl border p-3.5 gap-1.5">
-              <Text className="text-text-secondary text-xs">Informasi Request Barang:</Text>
+              <Text className="text-text-secondary text-xs">Informasi Permintaan Barang:</Text>
               <Text className="text-sm font-semibold">{selectedReq.nomor} — {selectedReq.tujuan || selectedReq.purpose}</Text>
-              <Text className="text-xs text-muted-foreground">Supplier: {selectedReq.supplier || "Supplier Ritel"}</Text>
+              <Text className="text-xs text-muted-foreground">Supplier: {selectedReq.supplier || "Pemasok Ritel"}</Text>
               <Text className="text-xs text-muted-foreground">Item: {selectedReq.item || "-"}</Text>
             </View>
           )}
 
           {sourceType === "PO" && po && (
             <View className="bg-panel/50 border-border rounded-xl border p-3.5 gap-1.5">
-              <Text className="text-text-secondary text-xs">Informasi PO Supplier:</Text>
+              <Text className="text-text-secondary text-xs">Informasi PO Pemasok:</Text>
               <Text className="text-sm font-semibold">{po.supplier}</Text>
               <Text className="text-muted-foreground text-xs">Barang PO: {po.item || "-"}</Text>
             </View>
           )}
 
           <View className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <FormField label="Gudang Penerima" required>
-              <SearchableSelect
-                value={selectedGudang}
-                onChange={setSelectedGudang}
-                options={warehouses.map((w) => String(w.nama))}
-                placeholder="Pilih gudang penerima"
-              />
-            </FormField>
+            {warehouses.length === 0 ? (
+              <View className="gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 md:col-span-2">
+                <Text className="text-sm font-bold text-amber-800 dark:text-amber-300">Belum ada gudang</Text>
+                <Text className="text-xs text-muted-foreground">
+                  Tambahkan gudang penerima dulu supaya stok bisa dicatat.
+                </Text>
+                <View className="flex-row flex-wrap items-end gap-2">
+                  <View className="min-w-[160px] flex-1 gap-1">
+                    <Text className="text-xs text-muted-foreground">Nama gudang</Text>
+                    <Input value={newWhName} onChangeText={setNewWhName} placeholder="Contoh: Gudang Utama" />
+                  </View>
+                  <View className="min-w-[120px] flex-1 gap-1">
+                    <Text className="text-xs text-muted-foreground">Kota (opsional)</Text>
+                    <Input value={newWhCity} onChangeText={setNewWhCity} placeholder="Bekasi" />
+                  </View>
+                  <Button size="sm" onPress={handleAddWarehouse} disabled={addingWh} className="h-10 px-3">
+                    <Plus size={15} color="#fff" />
+                    <Text className="text-xs font-semibold text-white">{addingWh ? "Menyimpan..." : "Tambah Gudang"}</Text>
+                  </Button>
+                </View>
+              </View>
+            ) : (
+              <FormField label="Gudang Penerima" required hint={!selectedGudang ? "Pilih gudang tempat barang disimpan" : undefined}>
+                <SearchableSelect
+                  value={selectedGudang}
+                  onChange={setSelectedGudang}
+                  options={warehouses.map((w) => String(w.nama))}
+                  placeholder="Pilih gudang penerima"
+                />
+              </FormField>
+            )}
 
             <FormField label="Tanggal Penerimaan" required>
               <DatePicker
@@ -810,7 +805,7 @@ export default function NewReceivingScreen() {
             </FormField>
           </View>
 
-          <FormField label="Catatan Kondisi Fisik / Nomor DO Supplier">
+          <FormField label="Catatan Kondisi Fisik / Nomor DO Pemasok">
             <Input
               value={notes}
               onChangeText={setNotes}
@@ -982,11 +977,11 @@ export default function NewReceivingScreen() {
       {/* Panel 3: File DO & Foto Dokumentasi */}
       <Panel title="File Delivery Order (DO) & Foto Dokumentasi">
         <FileUploader
-          label="Upload File DO / Surat Jalan Supplier & Bukti Fisik (Gambar / PDF)"
+          label="Upload File DO / Surat Jalan Pemasok & Bukti Fisik (Gambar / PDF)"
           kind="semua"
           accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
           allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
-          hint="Mendukung Gambar (JPG, PNG, WEBP) atau Dokumen PDF. File DO otomatis terhubung ke Penerimaan, Request Barang, dan PO Supplier."
+          hint="Mendukung Gambar (JPG, PNG, WEBP) atau Dokumen PDF. File DO otomatis terhubung ke Penerimaan, Permintaan Barang, dan PO Pemasok."
           category="penerimaan"
           handleRef={(h) => { fileHandle.current = h; }}
         />

@@ -101,7 +101,7 @@ export function SupplierPaymentTermsDialog({
     try {
       await api("PUT", "/settings/supplier.payment.terms", {
         value: JSON.stringify(terms),
-        description: "Daftar opsi syarat pembayaran supplier",
+        description: "Daftar opsi syarat pembayaran pemasok",
       });
 
       // Update module definitions in memory
@@ -110,7 +110,7 @@ export function SupplierPaymentTermsDialog({
       const poPayment = MODULES["supplier-pos"]?.createFields?.find((f) => f.key === "payment");
       if (poPayment) poPayment.options = terms;
 
-      toast("Syarat pembayaran supplier berhasil disimpan", "success");
+      toast("Syarat pembayaran pemasok berhasil disimpan", "success");
       if (onSaved) onSaved(terms);
       onOpenChange(false);
     } catch (e: any) {
@@ -128,7 +128,7 @@ export function SupplierPaymentTermsDialog({
             <View className="p-2 bg-primary/10 rounded-xl">
               <CreditCard size={18} color={colors.primary} />
             </View>
-            <DialogTitle>Atur Syarat Pembayaran Supplier</DialogTitle>
+            <DialogTitle>Atur Syarat Pembayaran Pemasok</DialogTitle>
           </View>
           <DialogDescription>
             Kelola opsi termin/syarat pembayaran yang dapat dipilih saat mendaftarkan Supplier maupun membuat PO Pembelian.

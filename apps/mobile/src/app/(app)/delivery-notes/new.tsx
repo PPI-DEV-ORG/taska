@@ -603,7 +603,7 @@ export default function NewDeliveryNoteScreen() {
     }, 50);
   }
 
-  async function submit(targetStatus?: "Pending" | "Dikirim") {
+  async function submit(targetStatus?: "Menunggu pengiriman" | "Dikirim") {
     if (submitting) return;
     if (!tujuan.trim()) {
       toast("Tujuan wajib diisi", "danger");
@@ -673,7 +673,7 @@ export default function NewDeliveryNoteScreen() {
       if (editId) {
         const nextStatus = willShip
           ? "Dikirim"
-          : (targetStatus === "Pending" ? "Pending" : (initialExistingDn?.status || "Pending"));
+          : (targetStatus === "Menunggu pengiriman" ? "Menunggu pengiriman" : (initialExistingDn?.status || "Menunggu pengiriman"));
 
         await patchRow("delivery-notes", editId, {
           tanggal: tanggalSj,
@@ -735,7 +735,7 @@ export default function NewDeliveryNoteScreen() {
         withGoods: hasGoods && items.length > 0,
         reportText: hasGoods && items.length > 0 ? itemsSummary : undefined,
         items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
-        status: willShip ? "Dikirim" : "Pending",
+        status: willShip ? "Dikirim" : "Menunggu pengiriman",
         persetujuan: "Menunggu persetujuan",
         fileId,
         scanFileId: fileId ? Number(fileId) : undefined,
@@ -1234,7 +1234,7 @@ export default function NewDeliveryNoteScreen() {
             size="lg"
             variant="outline"
             className="flex-1 border-neutral-300"
-            onPress={() => submit("Pending")}
+            onPress={() => submit("Menunggu pengiriman")}
             disabled={submitting}
           >
             <Text className="text-neutral-700 font-medium">Simpan Draf (Pending)</Text>
@@ -1257,10 +1257,10 @@ export default function NewDeliveryNoteScreen() {
             size="lg"
             variant="outline"
             className="flex-1 border-neutral-300"
-            onPress={() => submit("Pending")}
+            onPress={() => submit("Menunggu pengiriman")}
             disabled={submitting}
           >
-            <Text className="text-neutral-700 font-medium">Simpan Draf (Pending)</Text>
+            <Text className="text-neutral-700 font-medium">Simpan Draf (Menunggu pengiriman)</Text>
           </Button>
           <Button
             size="lg"

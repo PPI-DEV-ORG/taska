@@ -126,7 +126,7 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
 
 export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?: string; headerExtra?: React.ReactNode }) {
   const router = useRouter();
-  const { user, data, deleteRow, refreshModule } = useApp();
+  const { user, data, deleteRow, refreshModule, can } = useApp();
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [dateFilter, setDateFilter] = React.useState("");
@@ -298,14 +298,14 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       };
 
       const invOut = (data.invoices ?? []).map((r) =>
-        enrich({ ...r, id: String(r.id), direction: "out", tipeInvoice: "Invoice Keluar" })
+        enrich({ ...r, id: String(r.id), direction: "out", tipeInvoice: "Faktur Keluar" })
       );
       const invIn = (data.invoiceIn ?? []).map((r: Row) => ({
         ...r,
         id: String(r.id).startsWith("in-") ? String(r.id) : `in-${r.id}`,
         rawId: (r as any).rawId ?? r.id,
         direction: "in",
-        tipeInvoice: "Invoice Masuk",
+        tipeInvoice: "Faktur Masuk",
         customer: r.supplier || r.customer,
       }));
       if (invoiceTab === "out") {
@@ -442,8 +442,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       if (invoiceTab === "receipts") {
         return [
           { key: "nomor", label: "No. Receipt / Kwitansi", primary: true, flex: 1.5 },
-          { key: "invoiceNomor", label: "No. Invoice", flex: 1.3 },
-          { key: "customer", label: "Customer", flex: 1.5 },
+          { key: "invoiceNomor", label: "No. Faktur", flex: 1.3 },
+          { key: "customer", label: "Pelanggan", flex: 1.5 },
           { key: "jenis", label: "Metode & Jenis", flex: 1.3 },
           { key: "total", label: "Nominal Diterima", fmt: "rupiah" as const },
           { key: "tanggal", label: "Tanggal Bayar", fmt: "date" as const },
@@ -453,7 +453,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       return [
         { key: "nomor", label: "Nomor", primary: true, flex: 1.4 },
         { key: "tipeInvoice", label: "Tipe", flex: 1.1 },
-        { key: "customer", label: "Pihak (Customer/Supplier)", flex: 1.6 },
+        { key: "customer", label: "Pihak (Pelanggan/Pemasok)", flex: 1.6 },
         { key: "jenis", label: "Jenis" },
         { key: "total", label: "Total", fmt: "rupiah" as const },
         { key: "terbayar", label: "Terbayar", fmt: "rupiah" as const },
@@ -463,8 +463,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     }
     if (def.key === "supplier-pos" && poTab === "faktur") {
       return [
-        { key: "nomor", label: "No. Faktur Supplier", primary: true, flex: 1.4 },
-        { key: "supplier", label: "Supplier", flex: 1.6 },
+        { key: "nomor", label: "No. Faktur Pemasok", primary: true, flex: 1.4 },
+        { key: "supplier", label: "Pemasok", flex: 1.6 },
         { key: "item", label: "Referensi PO & Bayar", flex: 1.8 },
         { key: "total", label: "Total Tagihan", fmt: "rupiah" as const },
         { key: "eta", label: "Jatuh Tempo", fmt: "date" as const },
@@ -474,7 +474,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     if (def.key === "supplier-pos" && poTab === "pembayaran") {
       return [
         { key: "nomor", label: "No. Bukti / Ref Bayar", primary: true, flex: 1.4 },
-        { key: "supplier", label: "Supplier", flex: 1.6 },
+        { key: "supplier", label: "Pemasok", flex: 1.6 },
         { key: "item", label: "Faktur & PO Terkait", flex: 1.8 },
         { key: "total", label: "Nominal Dibayar", fmt: "rupiah" as const },
         { key: "eta", label: "Tanggal Bayar", fmt: "date" as const },
@@ -637,12 +637,12 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             onPress={() => setDamageTab("kerusakan")}
           />
           <Chip
-            label="Retur Penjualan (Customer)"
+            label="Retur Penjualan (Pelanggan)"
             active={damageTab === "retur-sales"}
             onPress={() => setDamageTab("retur-sales")}
           />
           <Chip
-            label="Retur Pembelian (Supplier)"
+            label="Retur Pembelian (Pemasok)"
             active={damageTab === "retur-purchase"}
             onPress={() => setDamageTab("retur-purchase")}
           />

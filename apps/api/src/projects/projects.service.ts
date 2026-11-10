@@ -721,13 +721,10 @@ export class ProjectsService {
     const contractNames = new Set<string>();
 
     if (quotationId) {
-      const metaSetting = await this.prisma.main.systemSetting.findUnique({
-        where: { key: `quotation.meta.${quotationId}` },
-      });
-      if (metaSetting?.value) {
+      const quoteRow = await this.prisma.main.quotation.findUnique({ where: { id: quotationId }, select: { items: true } });
+      {
         try {
-          const parsed = JSON.parse(metaSetting.value);
-          const qItems = Array.isArray(parsed?.items) ? parsed.items : [];
+          const qItems: any[] = Array.isArray(quoteRow?.items) ? (quoteRow!.items as any[]) : [];
           for (const it of qItems) {
             if (it.productId) contractProductIds.add(Number(it.productId));
             if (it.sku) contractSkus.add(String(it.sku).trim().toLowerCase());
@@ -782,8 +779,6 @@ export class ProjectsService {
         OR: [
           { status: { in: validStatuses } },
           { paymentStatus: "DIBAYAR" },
-          { paymentProofFileId: { not: null } },
-          { otherNote: { contains: "[DIBAYAR" } },
         ],
       },
       include: { items: true },
@@ -1187,19 +1182,10 @@ export class ProjectsService {
     const project = await this.prisma.main.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
 
-    const metaSetting = await this.prisma.main.systemSetting.findUnique({
-      where: { key: `quotation.meta.${quotationId}` },
-    });
-    if (!metaSetting?.value) return { imported: 0, items: [] };
+    const quoteRow = await this.prisma.main.quotation.findUnique({ where: { id: quotationId }, select: { items: true } });
+    if (!Array.isArray(quoteRow?.items)) return { imported: 0, items: [] };
 
-    let parsed: any;
-    try {
-      parsed = JSON.parse(metaSetting.value);
-    } catch {
-      return { imported: 0, items: [] };
-    }
-
-    const qItems = Array.isArray(parsed?.items) ? parsed.items : [];
+    const qItems: any[] = quoteRow.items as any[];
     let imported = 0;
     const results = [];
 

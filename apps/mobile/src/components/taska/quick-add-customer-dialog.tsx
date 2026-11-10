@@ -48,7 +48,7 @@ export function QuickAddCustomerDialog({
 
   async function handleSave() {
     if (!nama.trim()) {
-      setError("Nama customer / perusahaan wajib diisi.");
+      setError("Nama pelanggan / perusahaan wajib diisi.");
       return;
     }
 
@@ -72,7 +72,7 @@ export function QuickAddCustomerDialog({
         onSuccess?.(created);
       }
     } catch (err: any) {
-      setError(err?.message || "Gagal menambahkan customer baru.");
+      setError(err?.message || "Gagal menambahkan pelanggan baru.");
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ export function QuickAddCustomerDialog({
               <Building2 size={18} color={colors.primary} />
             </View>
             <View className="flex-1">
-              <DialogTitle>Tambah Customer Baru</DialogTitle>
+              <DialogTitle>Tambah Pelanggan Baru</DialogTitle>
               <DialogDescription>
                 Customer akan langsung tersimpan di Master Data dan terpilih otomatis
               </DialogDescription>
@@ -96,7 +96,7 @@ export function QuickAddCustomerDialog({
         </DialogHeader>
 
         <View className="gap-3 py-1">
-          <FormField label="Nama Customer / Perusahaan" required error={error}>
+          <FormField label="Nama Pelanggan / Perusahaan" required error={error}>
             <Input
               value={nama}
               onChangeText={(v) => { setNama(v); setError(""); }}
@@ -165,7 +165,7 @@ export function QuickAddCustomerDialog({
           </Button>
           <Button onPress={handleSave} disabled={loading}>
             <Plus size={16} color={colors.background} />
-            <Text>{loading ? "Menyimpan..." : "Simpan Customer"}</Text>
+            <Text>{loading ? "Menyimpan..." : "Simpan Pelanggan"}</Text>
           </Button>
         </DialogFooter>
       </DialogContent>

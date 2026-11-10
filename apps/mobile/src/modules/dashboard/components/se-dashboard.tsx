@@ -31,7 +31,7 @@ export function SeDashboard({ user, data, isMobile }: SeDashboardProps) {
 
       <KpiRow>
         <KpiCard
-          label="Internal Projects"
+          label="Proyek Internal"
           value={String(myProjects.length)}
           hint="R&D dan integrasi sistem"
           icon={FolderKanban}

@@ -16,7 +16,7 @@ import { PageHeader, Chip, EmptyState } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
 import { compareDesc } from "@/lib/format";
-import { NAV_BY_ROLE, type Role, type Row } from "@/constants/modules";
+import { hasUserPermission, type Role, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 
 import { STOCK_TABS, type StockTab, type DetailTarget } from "@/modules/stock/types";
@@ -34,10 +34,7 @@ export default function StockScreen() {
   const router = useRouter();
   const { user, data, toast, reload, refreshModule, addRow } = useApp();
 
-  const userRole = (user?.role || "").toLowerCase() as Role;
-  const isSuperOrAdmin = ["super_admin", "admin", "bos"].includes(userRole);
-  const navItems = userRole && NAV_BY_ROLE[userRole] ? NAV_BY_ROLE[userRole] : [];
-  const isAllowed = isSuperOrAdmin || navItems.some((n) => n.key === "stock" || n.href === "/stock");
+  const isAllowed = hasUserPermission(user, "stock", "M");
 
   const canManageCatalog = ["super_admin", "admin", "bos", "gudang", "procurement", "finance"].includes(user?.role ?? "");
   const canManageStock = ["super_admin", "admin", "bos", "gudang", "procurement", "finance", "pm", "sales"].includes(user?.role ?? "");
@@ -311,7 +308,7 @@ export default function StockScreen() {
         />
       )}
 
-      {activeTab === "Reservasi Project" && (
+      {activeTab === "Reservasi Proyek" && (
         <StockReservationTab
           filteredReservations={filteredReservations}
           onSelectDetail={(target) => setSelectedDetail(target)}

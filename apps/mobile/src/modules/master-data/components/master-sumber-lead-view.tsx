@@ -34,7 +34,7 @@ export function MasterSumberLeadView({
 
   function handleSaveLeadSource() {
     if (!leadSourceNama.trim()) {
-      toast("Nama kanal sumber lead wajib diisi", "danger");
+      toast("Nama kanal sumber prospek wajib diisi", "danger");
       return;
     }
     addRow("leadSources", {
@@ -43,14 +43,14 @@ export function MasterSumberLeadView({
     });
     setLeadSourceOpen(false);
     setLeadSourceNama("");
-    toast("Kanal sumber lead berhasil ditambahkan");
+    toast("Kanal sumber prospek berhasil ditambahkan");
   }
 
   return (
     <View className="gap-5">
       <PageHeader
         back
-        title="Sumber Kedatangan Lead"
+        title="Sumber Kedatangan Prospek"
         subtitle={`${data.leadSources?.length || 0} kanal akuisisi marketing (Dikelola Sales)`}
         action={
           <View className="flex-row gap-2">
@@ -61,7 +61,7 @@ export function MasterSumberLeadView({
             {canAddLeadSource ? (
               <Button size="sm" onPress={() => setLeadSourceOpen(true)}>
                 <Plus size={15} color={colors.background} />
-                <Text className="text-xs">Tambah Sumber Lead</Text>
+                <Text className="text-xs">Tambah Sumber Prospek</Text>
               </Button>
             ) : null}
           </View>
@@ -69,7 +69,7 @@ export function MasterSumberLeadView({
       />
       <DataTable
         columns={[
-          { key: "nama", label: "Kanal Sumber Lead", primary: true, flex: 2 },
+          { key: "nama", label: "Kanal Sumber Prospek", primary: true, flex: 2 },
           { key: "status", label: "Status", fmt: "status", flex: 1 },
         ]}
         rows={data.leadSources || []}
@@ -81,10 +81,10 @@ export function MasterSumberLeadView({
       <Dialog open={leadSourceOpen} onOpenChange={setLeadSourceOpen}>
         <DialogContent className="sm:max-w-xl md:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Tambah Kanal Sumber Lead</DialogTitle>
+            <DialogTitle>Tambah Kanal Sumber Prospek</DialogTitle>
           </DialogHeader>
           <View className="gap-4">
-            <FormField label="Nama Kanal / Sumber Lead" required>
+            <FormField label="Nama Kanal / Sumber Prospek" required>
               <Input
                 value={leadSourceNama}
                 onChangeText={setLeadSourceNama}
@@ -97,7 +97,7 @@ export function MasterSumberLeadView({
               <Text>Batal</Text>
             </Button>
             <Button onPress={handleSaveLeadSource}>
-              <Text>Simpan Sumber Lead</Text>
+              <Text>Simpan Sumber Prospek</Text>
             </Button>
           </DialogFooter>
         </DialogContent>

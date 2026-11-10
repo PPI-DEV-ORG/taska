@@ -26,10 +26,6 @@ function plan(kind: ApprovalKind, needsBos: boolean): Group[] {
       return [{ roles: ["PM", "BOS", "FINANCE"], mode: "any" }];
     case "SURAT_JALAN":
       return [{ roles: ["FINANCE", "BOS"], mode: "any" }];
-    case "PURCHASE_REQUEST":
-      return needsBos
-        ? [{ roles: ["FINANCE", "BOS", "GUDANG", "PM"], mode: "any" }, { roles: ["BOS"], mode: "all" }]
-        : [{ roles: ["FINANCE", "BOS", "GUDANG", "PM"], mode: "any" }];
     default:
       return needsBos
         ? [{ roles: ["FINANCE", "BOS"], mode: "any" }, { roles: ["BOS"], mode: "all" }]
@@ -269,18 +265,14 @@ export class ApprovalsService {
         (s) =>
           s.approverRole === (user.role as Role) ||
           (r.kind === "PERMINTAAN_SURVEY" &&
-            (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")) ||
-          (r.kind === "PURCHASE_REQUEST" &&
-            (user.role === "GUDANG" || user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS")),
+            (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")),
       );
     }
 
     return (
       r.steps.some((s) => s.approverRole === (user.role as Role)) ||
       (r.kind === "PERMINTAAN_SURVEY" &&
-        (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")) ||
-      (r.kind === "PURCHASE_REQUEST" &&
-        (user.role === "GUDANG" || user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS"))
+        (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM"))
     );
   }
 
@@ -366,9 +358,7 @@ export class ApprovalsService {
                 (r.kind === "OPNAME" &&
                   (user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS")) ||
                 (r.kind === "PERMINTAAN_SURVEY" &&
-                  (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")) ||
-                (r.kind === "PURCHASE_REQUEST" &&
-                  (user.role === "GUDANG" || user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS")),
+                  (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")),
             );
       if (!relevant.length) continue;
       let requester = (r as any).requested_by;
@@ -457,13 +447,6 @@ export class ApprovalsService {
       !step &&
       approval.kind === "PERMINTAAN_SURVEY" &&
       (user.role === "FINANCE" || user.role === "BOS" || user.role === "PM")
-    ) {
-      step = pending[0];
-    }
-    if (
-      !step &&
-      approval.kind === "PURCHASE_REQUEST" &&
-      (user.role === "GUDANG" || user.role === "PROCUREMENT" || user.role === "FINANCE" || user.role === "BOS")
     ) {
       step = pending[0];
     }

@@ -28,6 +28,7 @@ import {
   Presentation,
   Handshake,
   CalendarDays,
+  ShieldCheck,
 } from "lucide-react-native";
 
 export type Role =
@@ -329,7 +330,7 @@ export const ROLE_LABEL: Record<string, string> = {
   admin: "Admin / Bos",
   bos: "Admin / Bos",
   sales: "Sales",
-  pm: "Project Manager",
+  pm: "Manajer Proyek",
   teknisi: "Teknisi",
   procurement: "Procurement",
   finance: "Finance",
@@ -408,7 +409,7 @@ const ALL: Role[] = ["super_admin", "admin", "bos", "sales", "pm", "teknisi", "p
 
 export const MODULES: Record<string, ModuleDef> = {
   leads: {
-    key: "leads", title: "Leads", singular: "Lead", icon: Target, idPrefix: "L",
+    key: "leads", title: "Prospek", singular: "Prospek", icon: Target, idPrefix: "L",
     columns: [
       { key: "nama", label: "Nama", primary: true, flex: 2 },
       { key: "jenisTransaksi", label: "Jenis" },
@@ -432,9 +433,9 @@ export const MODULES: Record<string, ModuleDef> = {
     statuses: ["Prospecting", "Qualification", "Proposal", "Negotiation", "Won", "Lost"],
     titleOf: (r) => r.nama, subtitleOf: (r) => r.perusahaan,
     search: ["nama", "perusahaan", "pemilik", "sumber", "jenisTransaksi"],
-    createLabel: "Tambah lead",
+    createLabel: "Tambah prospek",
     createFields: [
-      { key: "nama", label: "Nama lead", type: "text", required: true, placeholder: "Contoh: CCTV Gudang Baru / Pengadaan Switch 24 Port" },
+      { key: "nama", label: "Nama prospek", type: "text", required: true, placeholder: "Contoh: CCTV Gudang Baru / Pengadaan Switch 24 Port" },
       { key: "jenisTransaksi", label: "Jenis Transaksi / Peluang", type: "select", options: ["Proyek (Instalasi & Jasa)", "Penjualan Barang (Perangkat / Retail)"], required: true },
       { key: "perusahaan", label: "Customer", type: "select", required: true, options: [] },
       { key: "sumber", label: "Sumber", type: "select", required: true, options: [] },
@@ -450,19 +451,19 @@ export const MODULES: Record<string, ModuleDef> = {
     actions: [
       { label: "Download template penawaran", toast: "Template penawaran berhasil diunduh" },
       { label: "Minta survey", toast: "Permintaan survey dikirim ke PM" },
-      { label: "Jadikan project", toast: "Project baru berhasil dibuat", to: () => "/leads" },
-      { label: "Buat Sales Order (SO)", toast: "Sales Order berhasil dibuat", to: () => "/po-client" },
+      { label: "Jadikan proyek", toast: "Proyek baru berhasil dibuat", to: () => "/leads" },
+      { label: "Buat Pesanan Penjualan (SO)", toast: "Pesanan Penjualan berhasil dibuat", to: () => "/po-client" },
     ],
     docs: ["Dokumen pendukung / brief"],
-    emptyText: "Belum ada lead. Tambah lead pertama untuk mulai melacak peluang.",
+    emptyText: "Belum ada prospek. Tambah prospek pertama untuk mulai melacak peluang.",
     confirmStatuses: ["Lost"],
   },
   quotations: {
     key: "quotations", title: "Penawaran", singular: "Penawaran", icon: FileText, idPrefix: "Q",
     columns: [
       { key: "nomor", label: "Nomor", primary: true, flex: 1.5 },
-      { key: "customer", label: "Customer", flex: 1.5 },
-      { key: "lead", label: "Lead Sumber", flex: 1.5 },
+      { key: "customer", label: "Pelanggan", flex: 1.5 },
+      { key: "lead", label: "Sumber Prospek", flex: 1.5 },
       { key: "total", label: "Total", fmt: "rupiah" },
       { key: "disc", label: "Disc", fmt: "rupiah" },
       { key: "ppn", label: "PPN (11%)", fmt: "rupiah" },
@@ -472,8 +473,8 @@ export const MODULES: Record<string, ModuleDef> = {
     ],
     fields: [
       { label: "Nomor Penawaran", key: "nomor" },
-      { label: "Customer", key: "customer" },
-      { label: "Lead Sumber", key: "lead" },
+      { label: "Pelanggan", key: "customer" },
+      { label: "Sumber Prospek", key: "lead" },
       { label: "Total Sebelum PPN/Disc", key: "total", fmt: "rupiah" },
       { label: "Diskon (Disc)", key: "disc", fmt: "rupiah" },
       { label: "PPN (11%)", key: "ppn", fmt: "rupiah" },
@@ -491,8 +492,8 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["nomor", "customer", "lead"],
     createLabel: "Buat penawaran",
     createFields: [
-      { key: "lead", label: "Lead sumber", type: "select", options: [] },
-      { key: "customer", label: "Customer", type: "select", required: true, options: [] },
+      { key: "lead", label: "Sumber prospek", type: "select", options: [] },
+      { key: "customer", label: "Pelanggan", type: "select", required: true, options: [] },
       { key: "nilai", label: "Nilai Penawaran (Rp)", type: "number", required: true },
       { key: "disc", label: "Diskon", type: "number" },
       { key: "berlaku", label: "Berlaku sampai", type: "date" },
@@ -500,27 +501,27 @@ export const MODULES: Record<string, ModuleDef> = {
     ],
     defaults: { status: "Not Yet", versi: 1, lead: "-", total: 0, ppn: 0, disc: 0, pph: 0, pphMode: "none", tipePph: "Tanpa PPh", totalAfterDisc: 0, fileUploaded: false, tipePpn: "Exclude PPN (11%)" },
     actions: [
-      { label: "Kirim ke customer", toast: "Penawaran ditandai terkirim", status: "Terkirim" },
-      { label: "Buat invoice", toast: "Invoice disiapkan untuk penawaran ini" },
+      { label: "Kirim ke pelanggan", toast: "Penawaran ditandai terkirim", status: "Terkirim" },
+      { label: "Buat faktur", toast: "Faktur disiapkan untuk penawaran ini" },
     ],
     docs: [],
-    emptyText: "Belum ada penawaran. Penawaran otomatis dibuat saat lead masuk tahap Qualification.",
+    emptyText: "Belum ada penawaran. Penawaran otomatis dibuat saat prospek masuk tahap Qualification.",
     confirmStatuses: ["Ditolak"],
   },
   surveys: {
     key: "surveys", title: "Survey", singular: "Survey", icon: ClipboardList, idPrefix: "SV",
     columns: [
       { key: "lead", label: "Kebutuhan", primary: true, flex: 2 },
-      { key: "customer", label: "Customer", flex: 1.5 },
+      { key: "customer", label: "Pelanggan", flex: 1.5 },
       { key: "lokasi", label: "Lokasi", flex: 2 },
       { key: "jadwal", label: "Jadwal", fmt: "date" },
       { key: "tim", label: "Tim", flex: 1.5 },
       { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
-      { label: "Lead terkait", key: "lead" },
-      { label: "Project terkait", key: "project" },
-      { label: "Customer", key: "customer" }, { label: "Lokasi", key: "lokasi" },
+      { label: "Prospek terkait", key: "lead" },
+      { label: "Proyek terkait", key: "project" },
+      { label: "Pelanggan", key: "customer" }, { label: "Lokasi", key: "lokasi" },
       { label: "Jadwal", key: "jadwal", fmt: "date" }, { label: "Tim survey", key: "tim" },
       { label: "Biaya survey", key: "biaya", fmt: "rupiah" },
     ],
@@ -530,9 +531,9 @@ export const MODULES: Record<string, ModuleDef> = {
     search: ["lead", "customer", "lokasi"],
     createLabel: "Minta survey",
     createFields: [
-      { key: "lead", label: "Lead terkait", type: "select", required: true, options: [] },
-      { key: "project", label: "Project terkait (Opsional)", type: "select", options: ["-"] },
-      { key: "customer", label: "Customer", type: "select", required: true, options: [] },
+      { key: "lead", label: "Prospek terkait", type: "select", required: true, options: [] },
+      { key: "project", label: "Proyek terkait (Opsional)", type: "select", options: ["-"] },
+      { key: "customer", label: "Pelanggan", type: "select", required: true, options: [] },
       { key: "lokasi", label: "Lokasi", type: "text", required: true, placeholder: "Alamat atau titik lokasi survey" },
       { key: "jadwal", label: "Tanggal survey", type: "date", required: true },
       {
@@ -551,61 +552,61 @@ export const MODULES: Record<string, ModuleDef> = {
     emptyText: "Belum ada survey. Minta survey bila kebutuhan client belum jelas.",
   },
   "po-client": {
-    key: "po-client", title: "Sales Order (SO)", singular: "Sales Order", icon: FileCheck, idPrefix: "SO",
+    key: "po-client", title: "Pesanan Penjualan (SO)", singular: "Pesanan Penjualan", icon: FileCheck, idPrefix: "SO",
     columns: [
       { key: "nomor", label: "Nomor SO", primary: true, flex: 1.4 },
       { key: "nomorPoClient", label: "Nomor PO Client", flex: 1.3 },
-      { key: "customer", label: "Customer", flex: 1.5 },
+      { key: "customer", label: "Pelanggan", flex: 1.5 },
       { key: "penawaran", label: "Penawaran", flex: 1.3 },
       { key: "nilai", label: "Nilai Pesanan", fmt: "rupiah" },
-      { key: "totalInvoice", label: "Total Invoice", fmt: "rupiah" },
+      { key: "totalInvoice", label: "Total Faktur", fmt: "rupiah" },
       { key: "tanggal", label: "Tanggal", fmt: "date" },
       { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
       { label: "Nomor SO", key: "nomor" },
       { label: "Nomor PO Client", key: "nomorPoClient" },
-      { label: "Customer", key: "customer" },
-      { label: "Lead terkait", key: "lead" },
+      { label: "Pelanggan", key: "customer" },
+      { label: "Prospek terkait", key: "lead" },
       { label: "Penawaran asal", key: "penawaran" },
-      { label: "Project terkait", key: "project" },
+      { label: "Proyek terkait", key: "project" },
       { label: "Nilai Pesanan", key: "nilai", fmt: "rupiah" },
-      { label: "Total Invoice", key: "totalInvoice", fmt: "rupiah" },
+      { label: "Total Faktur", key: "totalInvoice", fmt: "rupiah" },
       { label: "Tanggal SO", key: "tanggal", fmt: "date" },
       { label: "Catatan", key: "catatan" },
     ],
-    statusKey: "status", statuses: ["Pending", "Lunas sebagian", "Lunas"],
+    statusKey: "status", statuses: ["Belum dibayar", "Lunas sebagian", "Lunas"],
     titleOf: (r) => {
       if (r.nomor && r.nomorPoClient && r.nomorPoClient !== "-") {
         return `${r.nomor} · PO: ${r.nomorPoClient}`;
       }
-      return r.nomor || r.nomorSo || "Sales Order";
+      return r.nomor || r.nomorSo || "Pesanan Penjualan";
     },
     subtitleOf: (r) => r.customer || "-",
     search: ["nomor", "nomorSo", "nomorPoClient", "customer", "penawaran"],
-    createLabel: "Buat Sales Order (SO)",
+    createLabel: "Buat Pesanan Penjualan (SO)",
     createFields: [
-      { key: "nomorSo", label: "Nomor Sales Order / SO (Kosongkan untuk otomatis)", type: "text", placeholder: "Otomatis: SO/2026/10/001" },
+      { key: "nomorSo", label: "Nomor Pesanan Penjualan / SO (Kosongkan untuk otomatis)", type: "text", placeholder: "Otomatis: SO/2026/10/001" },
       { key: "nomorPoClient", label: "Nomor PO Client (Opsional)", type: "text", placeholder: "Contoh: PO-CUST/088" },
-      { key: "customer", label: "Customer", type: "select", required: true, options: [] },
-      { key: "lead", label: "Lead terkait (Opsional)", type: "select", options: ["-"] },
+      { key: "customer", label: "Pelanggan", type: "select", required: true, options: [] },
+      { key: "lead", label: "Prospek terkait (Opsional)", type: "select", options: ["-"] },
       { key: "penawaran", label: "Penawaran asal (Opsional)", type: "select", options: ["-"] },
-      { key: "project", label: "Project terkait (Opsional)", type: "select", options: ["-"] },
+      { key: "project", label: "Proyek terkait (Opsional)", type: "select", options: ["-"] },
       { key: "nilai", label: "Nilai Pesanan (Rp)", type: "number", required: true },
       { key: "tanggal", label: "Tanggal Dokumen SO", type: "date", required: true },
       { key: "catatan", label: "Catatan Pesanan (Acuan Gudang & Pengiriman)", type: "textarea", placeholder: "Ketentuan termin, jadwal kirim, atau instruksi penyiapan barang" },
-      { key: "fileId", label: "Upload File PO dari Customer (Opsional)", type: "file" },
+      { key: "fileId", label: "Upload File PO dari Pelanggan (Opsional)", type: "file" },
       { key: "soFileId", label: "Upload File SO Terbitan Kita (Opsional)", type: "file" },
     ],
     defaults: { status: "Diterima", customer: "-", penawaran: "-", totalInvoice: 0 },
-    docs: ["File Purchase Order (PO) dari Customer", "File Sales Order (SO) Terbitan Kita", "File Delivery Order (DO) yang Sudah Ditandatangani"],
-    emptyText: "Belum ada Sales Order. Buat Sales Order (SO) setelah penawaran disetujui atau saat customer memesan.",
+    docs: ["File Pesanan Pembelian (PO) dari Pelanggan", "File Pesanan Penjualan (SO) Terbitan Kita", "File Delivery Order (DO) yang Sudah Ditandatangani"],
+    emptyText: "Belum ada Pesanan Penjualan. Buat Pesanan Penjualan (SO) setelah penawaran disetujui atau saat pelanggan memesan.",
   },
   invoices: {
-    key: "invoices", title: "Invoice dan pembayaran", singular: "Invoice", icon: Receipt, idPrefix: "INV",
+    key: "invoices", title: "Faktur Penjualan & Pembayaran", singular: "Faktur Penjualan", icon: Receipt, idPrefix: "INV",
     columns: [
       { key: "nomor", label: "Nomor", primary: true, flex: 1.5 },
-      { key: "customer", label: "Customer", flex: 1.5 },
+      { key: "customer", label: "Pelanggan", flex: 1.5 },
       { key: "jenis", label: "Jenis" },
       { key: "total", label: "Total", fmt: "rupiah" },
       { key: "terbayar", label: "Terbayar", fmt: "rupiah" },
@@ -613,10 +614,10 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
-      { label: "Customer", key: "customer" },
+      { label: "Pelanggan", key: "customer" },
       { label: "PO client", key: "po" },
       { label: "Penawaran terkait", key: "penawaran" },
-      { label: "Project terkait", key: "project" },
+      { label: "Proyek terkait", key: "project" },
       { label: "Jenis", key: "jenis" },
       { label: "Nilai (DPP)", key: "nilai", fmt: "rupiah" },
       { label: "PPN", key: "ppn", fmt: "rupiah" },
@@ -632,34 +633,34 @@ export const MODULES: Record<string, ModuleDef> = {
     statuses: ["Belum lunas", "Belum dikirim", "Terkirim", "Dibayar sebagian", "Lunas", "Terlambat"],
     titleOf: (r) => r.nomor, subtitleOf: (r) => `${r.customer} · ${r.jenis}`,
     search: ["nomor", "customer", "po", "quotation", "lead", "project", "jenis", "status", "paymentNote"],
-    createLabel: "Catat invoice",
+    createLabel: "Catat faktur",
     createFields: [
-      { key: "nomor", label: "Nomor invoice (Kosongkan untuk otomatis)", type: "text", placeholder: "Contoh: INV/2026/10/001" },
-      { key: "customer", label: "Customer", type: "select", required: true, options: [] },
+      { key: "nomor", label: "Nomor faktur (Kosongkan untuk otomatis)", type: "text", placeholder: "Contoh: INV/2026/10/001" },
+      { key: "customer", label: "Pelanggan", type: "select", required: true, options: [] },
       { key: "po", label: "PO client terkait (Opsional)", type: "select", options: ["-"] },
       { key: "penawaran", label: "Penawaran terkait (Opsional)", type: "select", options: ["-"] },
-      { key: "project", label: "Project terkait (Opsional)", type: "select", options: ["-"] },
+      { key: "project", label: "Proyek terkait (Opsional)", type: "select", options: ["-"] },
       { key: "jenis", label: "Jenis", type: "select", required: true, options: ["DP", "Termin", "Pelunasan"] },
       { key: "nilai", label: "Nilai sebelum PPN (Rp)", type: "number", required: true },
       { key: "tanggal", label: "Tanggal terbit", type: "date" },
       { key: "jatuhTempo", label: "Jatuh tempo", type: "date", required: true },
-      { key: "dokumen", label: "File invoice (Opsional)", type: "file" },
+      { key: "dokumen", label: "File faktur (Opsional)", type: "file" },
     ],
     defaults: { status: "Belum dikirim", terbayar: 0, po: "-" },
     createRoles: ["finance", "super_admin", "admin", "bos"],
     actions: [
-      { label: "Kirim ke customer", status: "Terkirim", toast: "Invoice terkirim ke customer" },
+      { label: "Kirim ke pelanggan", status: "Terkirim", toast: "Faktur terkirim ke pelanggan" },
       { label: "Catat pembayaran", toast: "Pembayaran dicatat" },
     ],
     docs: [],
-    emptyText: "Belum ada invoice. Upload invoice yang dibuat di luar aplikasi.",
+    emptyText: "Belum ada faktur. Upload faktur yang dibuat di luar aplikasi.",
   },
   projects: {
-    key: "projects", title: "Project", singular: "Project", icon: Briefcase, idPrefix: "P",
+    key: "projects", title: "Proyek", singular: "Proyek", icon: Briefcase, idPrefix: "P",
     columns: [
-      { key: "nama", label: "Project", primary: true, flex: 2 },
+      { key: "nama", label: "Proyek", primary: true, flex: 2 },
       { key: "jenis", label: "Jenis" },
-      { key: "customer", label: "Customer", flex: 1.5 },
+      { key: "customer", label: "Pelanggan", flex: 1.5 },
       { key: "progres", label: "Progres", fmt: "pct" },
       { key: "pembayaran", label: "Pembayaran", fmt: "status" },
       { key: "status", label: "Status", fmt: "status", mobile: true },
@@ -668,27 +669,27 @@ export const MODULES: Record<string, ModuleDef> = {
     statusKey: "status", statuses: ["Berjalan", "Terlambat", "Selesai", "Ditunda"],
     titleOf: (r) => r.nama, subtitleOf: (r) => r.customer,
     search: ["nama", "customer", "jenis"],
-    createLabel: "Buat project",
+    createLabel: "Buat proyek",
     createFields: [
-      { key: "nama", label: "Nama project", type: "text", required: true, placeholder: "Contoh: Instalasi CCTV Gudang" },
+      { key: "nama", label: "Nama proyek", type: "text", required: true, placeholder: "Contoh: Instalasi CCTV Gudang" },
       { key: "jenis", label: "Jenis", type: "select", required: true, options: ["Customer", "Product/R&D", "Internal", "Maintenance", "Support", "Lainnya"] },
-      { key: "lead", label: "Lead terkait (Opsional)", type: "select", options: ["-"] },
-      { key: "customer", label: "Customer", type: "select", options: ["-"] },
-      { key: "pm", label: "Project Manager (PIC)", type: "select", options: [] },
+      { key: "lead", label: "Prospek terkait (Opsional)", type: "select", options: ["-"] },
+      { key: "customer", label: "Pelanggan", type: "select", options: ["-"] },
+      { key: "pm", label: "Manajer Proyek (PIC)", type: "select", options: [] },
       { key: "tim", label: "Tim pelaksana", type: "multiselect", options: [] },
       { key: "mulai", label: "Tanggal mulai", type: "date" },
       { key: "selesai", label: "Target selesai", type: "date", required: true },
       { key: "dokumen", label: "Dokumen PRD / SPK (Opsional)", type: "file" },
     ],
     defaults: { status: "Berjalan", progres: 0, pembayaran: "Belum lunas", tim: "-", barang: "Diminta" },
-    emptyText: "Belum ada project yang kamu pegang.",
+    emptyText: "Belum ada proyek yang kamu pegang.",
     confirmStatuses: ["Ditunda"],
   },
   "purchase-requests": {
-    key: "purchase-requests", title: "Request barang", singular: "Request barang", icon: ShoppingCart, idPrefix: "RB",
+    key: "purchase-requests", title: "Permintaan Barang", singular: "Permintaan Barang", icon: ShoppingCart, idPrefix: "RB",
     columns: [
       { key: "nomor", label: "Nomor", primary: true, flex: 1.3 },
-      { key: "project", label: "Project", flex: 1.6 },
+      { key: "project", label: "Proyek", flex: 1.6 },
       { key: "sumberPengadaan", label: "Sumber", flex: 1.2 },
       { key: "metodePembayaran", label: "Pembayaran", flex: 1.1 },
       { key: "item", label: "Barang", flex: 2 },
@@ -701,9 +702,8 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Tanggal", key: "tanggal", fmt: "date" },
       { label: "Jatuh tempo", key: "jatuhTempo", fmt: "date" },
       { label: "Pemohon", key: "pemohon" },
-      { label: "Jenis biaya", key: "jenisBiaya" }, { label: "Project", key: "project" },
+      { label: "Jenis biaya", key: "jenisBiaya" }, { label: "Proyek", key: "project" },
       { label: "Sumber pengadaan", key: "sumberPengadaan" }, { label: "Metode pembayaran", key: "metodePembayaran" },
-      { label: "Alokasi akuntansi", key: "alokasiAkuntansi" },
       { label: "Barang", key: "item" }, { label: "Estimasi harga", key: "estimasi", fmt: "rupiah" },
       { label: "Tujuan", key: "tujuan" },
     ],
@@ -711,28 +711,25 @@ export const MODULES: Record<string, ModuleDef> = {
     statuses: ["Diajukan", "Cek stok", "Disetujui", "Dibayar", "PO dibuat", "Dikirim", "Diterima", "Diterima (Belum Lunas)", "Lunas"],
     titleOf: (r) => r.nomor, subtitleOf: (r) => r.item,
     search: ["nomor", "project", "item", "pemohon"],
-    createLabel: "Buat request",
+    createLabel: "Buat permintaan",
     newHref: "/purchase-requests/new",
     createFields: [
       { key: "jenisBiaya", label: "Jenis biaya", type: "select", required: true, options: ["Project", "Stok", "Internal", "Lainnya"] },
-      { key: "project", label: "Project terkait", type: "select", options: ["-"] },
+      { key: "project", label: "Proyek terkait", type: "select", options: ["-"] },
       { key: "tanggal", label: "Tanggal", type: "date" },
       { key: "jatuhTempo", label: "Jatuh tempo", type: "date" },
       { key: "tujuan", label: "Tujuan / kebutuhan", type: "textarea", required: true },
     ],
-    createRoles: ["pm", "procurement", "finance", "gudang", "teknisi", "admin", "super_admin", "bos"],
-    actions: [
-      { label: "Teruskan ke Gudang", status: "Cek stok", toast: "Request diteruskan ke Gudang untuk cek ketersediaan stok" },
-    ],
+    createRoles: ["pm", "procurement", "gudang", "admin", "super_admin", "bos"],
     docs: ["Bukti permintaan (WA, email, atau BOQ)", "Bukti Pembayaran / Transfer", "Surat Jalan / Delivery Order (DO)"],
-    emptyText: "Belum ada request barang. Buat request untuk project atau stok.",
+    emptyText: "Belum ada permintaan barang. Buat permintaan untuk proyek atau stok.",
   },
   "supplier-pos": {
-    key: "supplier-pos", title: "Purchase Order (PO)", singular: "Purchase Order", icon: Truck, idPrefix: "PO",
+    key: "supplier-pos", title: "Pesanan Pembelian (PO)", singular: "Pesanan Pembelian", icon: Truck, idPrefix: "PO",
     columns: [
       { key: "nomor", label: "Nomor PO", primary: true, flex: 1.3 },
-      { key: "nomorSoSupplier", label: "Nomor SO Supplier", flex: 1.3 },
-      { key: "supplier", label: "Supplier", flex: 1.8 },
+      { key: "nomorSoSupplier", label: "Nomor SO Pemasok", flex: 1.3 },
+      { key: "supplier", label: "Pemasok", flex: 1.8 },
       { key: "item", label: "Barang", flex: 1.8 },
       { key: "total", label: "Total", fmt: "rupiah" },
       { key: "eta", label: "Perkiraan tiba", fmt: "date" },
@@ -740,8 +737,8 @@ export const MODULES: Record<string, ModuleDef> = {
     ],
     fields: [
       { label: "Nomor PO", key: "nomor" },
-      { label: "Nomor SO Supplier", key: "nomorSoSupplier" },
-      { label: "Supplier", key: "supplier" },
+      { label: "Nomor SO Pemasok", key: "nomorSoSupplier" },
+      { label: "Pemasok", key: "supplier" },
       { label: "Pembuat PO", key: "pembuat" },
       { label: "Barang", key: "item" },
       { label: "Total", key: "total", fmt: "rupiah" },
@@ -755,36 +752,36 @@ export const MODULES: Record<string, ModuleDef> = {
     titleOf: (r) => `${r.nomor}${r.nomorSoSupplier && r.nomorSoSupplier !== "-" ? ` (SO: ${r.nomorSoSupplier})` : ""}`,
     subtitleOf: (r) => r.supplier,
     search: ["nomor", "nomorSoSupplier", "supplier", "item"],
-    createLabel: "Buat Purchase Order (PO)",
+    createLabel: "Buat Pesanan Pembelian (PO)",
     createFields: [
-      { key: "nomor", label: "Nomor Purchase Order (PO) (Kosongkan untuk otomatis)", type: "text", placeholder: "Otomatis: PO/2026/10/001" },
-      { key: "nomorSoSupplier", label: "Nomor Sales Order (SO) Supplier (Kosongkan jika belum ada)", type: "text", placeholder: "Contoh: SO/2026/10/001" },
-      { key: "supplier", label: "Supplier", type: "select", required: true, options: [] },
+      { key: "nomor", label: "Nomor Pesanan Pembelian (PO) (Kosongkan untuk otomatis)", type: "text", placeholder: "Otomatis: PO/2026/10/001" },
+      { key: "nomorSoSupplier", label: "Nomor Pesanan Penjualan (SO) Pemasok (Kosongkan jika belum ada)", type: "text", placeholder: "Contoh: SO/2026/10/001" },
+      { key: "supplier", label: "Pemasok", type: "select", required: true, options: [] },
       { key: "item", label: "Barang", type: "select", required: true, options: [] },
       { key: "total", label: "Total (Rp)", type: "number", required: true },
       { key: "tanggal", label: "Tanggal Dokumen", type: "date" },
       { key: "eta", label: "Perkiraan tiba", type: "date", required: true },
       { key: "payment", label: "Syarat pembayaran", type: "select", options: ["Tunai", "Net 14", "Net 30"] },
-      { key: "fileId", label: "Upload File Purchase Order (PO) (Opsional)", type: "file" },
-      { key: "soFileId", label: "Upload File Sales Order (SO) (Opsional)", type: "file" },
+      { key: "fileId", label: "Upload File Pesanan Pembelian (PO) (Opsional)", type: "file" },
+      { key: "soFileId", label: "Upload File Pesanan Penjualan (SO) (Opsional)", type: "file" },
     ],
     defaults: { status: "Menunggu persetujuan", persetujuan: "Menunggu persetujuan", pengiriman: "Di Supplier", nomorSoSupplier: "-" },
     createRoles: ["procurement", "finance", "bos", "super_admin", "admin"],
-    docs: ["File Purchase Order (PO) Terbitan Kita", "File Sales Order (SO) dari Supplier", "Bukti Delivery Order (DO) Supplier"],
-    emptyText: "Belum ada PO pembelian ke supplier.",
+    docs: ["File Pesanan Pembelian (PO) Terbitan Kita", "File Pesanan Penjualan (SO) dari Pemasok", "Bukti Delivery Order (DO) Pemasok"],
+    emptyText: "Belum ada PO pembelian ke pemasok.",
   },
   receiving: {
-    key: "receiving", title: "Penerimaan barang", singular: "Penerimaan", icon: PackageCheck, idPrefix: "RC",
+    key: "receiving", title: "Penerimaan Barang", singular: "Penerimaan Barang", icon: PackageCheck, idPrefix: "RC",
     columns: [
       { key: "nomor", label: "Nomor", primary: true, flex: 1.3 },
       { key: "po", label: "PO", flex: 1.3 },
-      { key: "supplier", label: "Supplier", flex: 2 },
+      { key: "supplier", label: "Pemasok", flex: 2 },
       { key: "item", label: "Barang", flex: 2 },
       { key: "tanggal", label: "Tanggal", fmt: "date" },
       { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
-      { label: "PO supplier", key: "po" }, { label: "Supplier", key: "supplier" },
+      { label: "PO pemasok", key: "po" }, { label: "Pemasok", key: "supplier" },
       { label: "Barang", key: "item" }, { label: "Tanggal", key: "tanggal", fmt: "date" },
       { label: "Penerima", key: "penerima" },
     ],
@@ -795,7 +792,7 @@ export const MODULES: Record<string, ModuleDef> = {
     createLabel: "Terima barang",
     newHref: "/receiving/new",
     createFields: [
-      { key: "po", label: "PO supplier", type: "select", options: [] },
+      { key: "po", label: "PO pemasok", type: "select", options: [] },
       { key: "warehouse", label: "Gudang penerima", type: "select", options: [] },
       { key: "tanggal", label: "Tanggal penerimaan", type: "date", required: true },
       { key: "conditionNote", label: "Catatan kondisi fisik", type: "textarea" },
@@ -805,7 +802,7 @@ export const MODULES: Record<string, ModuleDef> = {
     emptyText: "Belum ada penerimaan barang.",
   },
   "delivery-notes": {
-    key: "delivery-notes", title: "Surat jalan", singular: "Surat jalan", icon: FileSignature, idPrefix: "SJ",
+    key: "delivery-notes", title: "Surat Jalan", singular: "Surat Jalan", icon: FileSignature, idPrefix: "SJ",
     columns: [
       { key: "nomor", label: "Nomor", primary: true, flex: 1.4 },
       { key: "tujuan", label: "Tujuan", flex: 2 },
@@ -816,7 +813,7 @@ export const MODULES: Record<string, ModuleDef> = {
     ],
     fields: [
       { label: "Tujuan", key: "tujuan" }, { label: "Alasan", key: "alasan" },
-      { label: "Project", key: "project" },
+      { label: "Proyek", key: "project" },
       { label: "Sales Order (SO)", key: "soDisplay" },
       { label: "Invoice Terkait", key: "invoiceDisplay" },
       { label: "Tanggal", key: "tanggal", fmt: "date" },
@@ -824,7 +821,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Persetujuan", key: "persetujuan", fmt: "status" },
     ],
     statusKey: "status",
-    statuses: ["Pending", "Dikirim", "Diterima", "Dibatalkan"],
+    statuses: ["Menunggu pengiriman", "Dikirim", "Diterima", "Dibatalkan"],
     titleOf: (r) => r.nomor, subtitleOf: (r) => r.tujuan,
     search: ["nomor", "tujuan", "alasan", "pembuat"],
     createLabel: "Buat surat jalan",
@@ -832,7 +829,7 @@ export const MODULES: Record<string, ModuleDef> = {
     createFields: [
       { key: "tujuan", label: "Lokasi tujuan", type: "text", required: true },
       { key: "alasan", label: "Alasan / keperluan", type: "textarea", required: true },
-      { key: "project", label: "Project terkait", type: "select", options: ["-"] },
+      { key: "project", label: "Proyek terkait", type: "select", options: ["-"] },
       { key: "tanggal", label: "Tanggal", type: "date", required: true },
       { key: "barang", label: "Barang yang dibawa", type: "text", placeholder: "Kosongkan atau '-' jika tanpa barang" },
     ],
@@ -857,7 +854,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Kategori", key: "kategori" }, { label: "Nominal", key: "nominal", fmt: "rupiah" },
       { label: "Sumber Dana", key: "sumberDana" },
       { label: "Metode / Kas Bayar", key: "paymentMethod" },
-      { label: "Project", key: "project" }, { label: "Survey", key: "survey" }, { label: "POC / Demo", key: "pocReport" }, { label: "Kunjungan / Meeting", key: "visitReport" },
+      { label: "Proyek", key: "project" }, { label: "Survey", key: "survey" }, { label: "POC / Demo", key: "pocReport" }, { label: "Kunjungan / Meeting", key: "visitReport" },
       { label: "Alasan", key: "alasan" },
     ],
     statusKey: "status",
@@ -870,7 +867,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "nominal", label: "Nominal pengeluaran (Rp)", type: "number", required: true },
       { key: "kategori", label: "Kategori pengeluaran", type: "select", required: true, options: [] },
       { key: "sumberDana", label: "Sumber pendanaan", type: "select", options: ["Dana Perusahaan", "Talangan Pribadi (Reimbursement)"] },
-      { key: "project", label: "Project terkait (opsional)", type: "select", options: ["-"] },
+      { key: "project", label: "Proyek terkait (opsional)", type: "select", options: ["-"] },
       { key: "survey", label: "Survey terkait (opsional)", type: "select", options: ["-"] },
       { key: "pocReport", label: "Kegiatan POC / Demo terkait (opsional)", type: "select", options: ["-"] },
       { key: "visitReport", label: "Kunjungan / Meeting terkait (opsional)", type: "select", options: ["-"] },
@@ -899,7 +896,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "SN Rusak / Retur", key: "sn" },
       { label: "SN / Unit Pengganti", key: "snPengganti" },
       { label: "Jenis / Kategori", key: "jenis" },
-      { label: "Referensi PO / Invoice", key: "po" },
+      { label: "Referensi PO / Faktur", key: "po" },
       { label: "Tanggal", key: "tanggal", fmt: "date" },
       { label: "Pelapor", key: "pelapor" },
       { label: "Keterangan", key: "keterangan" },
@@ -913,7 +910,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "jenis", label: "Jenis laporan / retur", type: "select", required: true, options: ["Rusak", "Salah barang", "Kurang", "Retur Penjualan", "Retur Pembelian"] },
       { key: "qty", label: "Jumlah (Qty)", type: "number", placeholder: "1" },
       { key: "tanggal", label: "Tanggal kejadian / retur", type: "date" },
-      { key: "po", label: "Nomor PO / Invoice terkait", type: "select", options: [] },
+      { key: "po", label: "Nomor PO / Faktur terkait", type: "select", options: [] },
       { key: "keterangan", label: "Alasan / keterangan", type: "textarea", required: true },
       { key: "dokumen", label: "Foto bukti barang / retur (Opsional)", type: "file", kind: "foto", category: "laporan-kerusakan" },
     ],
@@ -922,7 +919,7 @@ export const MODULES: Record<string, ModuleDef> = {
     emptyText: "Belum ada laporan kerusakan atau retur barang.",
   },
   customers: {
-    key: "customers", title: "Customer", singular: "Customer", icon: Building2, idPrefix: "C",
+    key: "customers", title: "Pelanggan", singular: "Pelanggan", icon: Building2, idPrefix: "C",
     columns: [
       { key: "nama", label: "Nama", primary: true, flex: 2 },
       { key: "kota", label: "Kota" },
@@ -941,20 +938,20 @@ export const MODULES: Record<string, ModuleDef> = {
     statusKey: "status", statuses: ["Aktif", "Nonaktif"],
     titleOf: (r) => r.nama, subtitleOf: (r) => r.kota,
     search: ["nama", "kota", "kontak", "email", "catatan"],
-    createLabel: "Tambah customer",
+    createLabel: "Tambah pelanggan",
     createFields: [
       { key: "nama", label: "Nama perusahaan", type: "text", required: true },
       { key: "kota", label: "Kota", type: "text", required: true },
       { key: "kontak", label: "Nama kontak PIC", type: "text", required: true },
       { key: "email", label: "Email perusahaan / PIC", type: "text", placeholder: "contoh@perusahaan.com" },
       { key: "telepon", label: "Nomor telepon / WhatsApp", type: "text", placeholder: "0812-xxxx-xxxx" },
-      { key: "catatan", label: "Catatan khusus customer", type: "textarea", placeholder: "Ketentuan pembayaran, lokasi pengiriman, preferensi teknis, dll." },
+      { key: "catatan", label: "Catatan khusus pelanggan", type: "textarea", placeholder: "Ketentuan pembayaran, lokasi pengiriman, preferensi teknis, dll." },
     ],
     defaults: { status: "Aktif", email: "-", catatan: "-" },
-    emptyText: "Belum ada customer.",
+    emptyText: "Belum ada pelanggan.",
   },
   suppliers: {
-    key: "suppliers", title: "Supplier", singular: "Supplier", icon: Truck, idPrefix: "S",
+    key: "suppliers", title: "Pemasok", singular: "Pemasok", icon: Truck, idPrefix: "S",
     columns: [
       { key: "nama", label: "Nama", primary: true, flex: 2 },
       { key: "jenisUsaha", label: "Jenis Usaha", flex: 1 },
@@ -977,24 +974,24 @@ export const MODULES: Record<string, ModuleDef> = {
     statusKey: "status", statuses: ["Aktif", "Nonaktif"],
     titleOf: (r) => r.nama, subtitleOf: (r) => `${r.jenisUsaha || "Non-PKP"} · ${r.kota || "-"}`,
     search: ["nama", "kota", "kontak", "tagSummary", "jenisUsaha"],
-    createLabel: "Tambah supplier",
+    createLabel: "Tambah pemasok",
     createFields: [
-      { key: "nama", label: "Nama supplier", type: "text", required: true },
+      { key: "nama", label: "Nama pemasok", type: "text", required: true },
       { key: "jenisUsaha", label: "Jenis Usaha (Perpajakan)", type: "select", options: ["PKP", "Non-PKP"], required: true },
       { key: "tagInput", label: "Tag Barang (Pisahkan koma, misal: HDD, SSD, RAM)", type: "text", placeholder: "Contoh: HDD: 500000, SSD, RAM" },
       { key: "kota", label: "Kota", type: "text", required: true },
       { key: "kontak", label: "Nama kontak PIC", type: "text", placeholder: "Contoh: Sales Support" },
       { key: "telepon", label: "Nomor telepon / WhatsApp", type: "text", placeholder: "021-xxxx / 0812-xxxx" },
-      { key: "email", label: "Email supplier", type: "text", placeholder: "sales@supplier.co.id" },
+      { key: "email", label: "Email pemasok", type: "text", placeholder: "sales@supplier.co.id" },
       { key: "payment", label: "Syarat pembayaran", type: "select", options: ["Tunai", "Net 14", "Net 30"] },
-      { key: "catatan", label: "Catatan supplier", type: "textarea" },
+      { key: "catatan", label: "Catatan pemasok", type: "textarea" },
     ],
     defaults: { status: "Aktif", jenisUsaha: "Non-PKP" },
     createRoles: ["procurement", "admin", "bos", "super_admin"],
-    emptyText: "Belum ada supplier.",
+    emptyText: "Belum ada pemasok.",
   },
   users: {
-    key: "users", title: "Pengguna dan role", singular: "Pengguna", icon: UserCog, idPrefix: "U",
+    key: "users", title: "Pengguna & Peran", singular: "Pengguna", icon: UserCog, idPrefix: "U",
     columns: [
       { key: "name", label: "Nama", primary: true, flex: 1.5 },
       { key: "email", label: "Email", flex: 1.8 },
@@ -1018,18 +1015,18 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "name", label: "Nama lengkap", type: "text", required: true, placeholder: "Masukkan nama lengkap" },
       { key: "email", label: "Email", type: "text", required: true, placeholder: "nama@taska.co.id" },
       { key: "password", label: "Kata sandi", type: "password", required: true, placeholder: "Masukkan kata sandi akun" },
-      { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Super Admin", "Admin / Bos", "HR", "Sales", "Project Manager", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
+      { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Super Admin", "Admin / Bos", "HR", "Sales", "Manajer Proyek", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
       { key: "phone", label: "Nomor telepon", type: "text", placeholder: "0812-xxxx-xxxx" },
       { key: "position", label: "Jabatan", type: "text", placeholder: "Contoh: Senior Engineer" },
       { key: "gudang", label: "Gudang ditugaskan (Opsional)", type: "select", options: ["-"] },
     ],
     defaults: { status: "Aktif", gudang: "-" },
-    actions: [{ label: "Alihkan tugas", toast: "Lead, project, dan tugas dialihkan ke orang lain" }],
+    actions: [{ label: "Alihkan tugas", toast: "Prospek, proyek, dan tugas dialihkan ke orang lain" }],
     emptyText: "Belum ada pengguna.",
     confirmStatuses: ["Nonaktif"],
   },
   opname: {
-    key: "opname", title: "Stok Opname", singular: "Opname", icon: ClipboardCheck, idPrefix: "OP",
+    key: "opname", title: "Stok Opname", singular: "Stok Opname", icon: ClipboardCheck, idPrefix: "OP",
     columns: [
       { key: "gudang", label: "Gudang", primary: true, flex: 1.5 },
       { key: "tanggal", label: "Tanggal", fmt: "date" },
@@ -1052,7 +1049,7 @@ export const MODULES: Record<string, ModuleDef> = {
     emptyText: "Belum ada riwayat stok opname.",
   },
   "audit-log": {
-    key: "audit-log", title: "Audit log", singular: "Log", icon: ScrollText, idPrefix: "AL",
+    key: "audit-log", title: "Log Audit", singular: "Log Audit", icon: ScrollText, idPrefix: "AL",
     columns: [
       { key: "waktu", label: "Waktu", fmt: "date" },
       { key: "pengguna", label: "Pengguna" },
@@ -1090,8 +1087,8 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Tanggal selesai", key: "tanggalSelesai", fmt: "date" },
       { label: "Lokasi", key: "lokasi" },
       { label: "Klien / Mitra", key: "klien" },
-      { label: "Project terkait", key: "project" },
-      { label: "Lead terkait", key: "lead" },
+      { label: "Proyek terkait", key: "project" },
+      { label: "Prospek terkait", key: "lead" },
       { label: "PIC / Pemilik", key: "pemilik" },
       { label: "Tim bertugas", key: "tim" },
       { label: "Target & Kriteria", key: "targetCriteria" },
@@ -1113,9 +1110,9 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "tanggalSelesai", label: "Tanggal Selesai (Opsional)", type: "date" },
       { key: "lokasi", label: "Lokasi Kegiatan", type: "text", placeholder: "Nama gedung, stand expo, alamat" },
       { key: "klien", label: "Nama Klien / Acara", type: "text", placeholder: "Contoh: PT Bank Mandiri / Expo Security 2026" },
-      { key: "customer", label: "Pilih Customer Terdaftar (Opsional)", type: "select", options: ["-"] },
-      { key: "lead", label: "Pilih Lead Terdaftar (Opsional)", type: "select", options: ["-"] },
-      { key: "project", label: "Hubungkan ke Project (Opsional)", type: "select", options: [] },
+      { key: "customer", label: "Pilih Pelanggan Terdaftar (Opsional)", type: "select", options: ["-"] },
+      { key: "lead", label: "Pilih Prospek Terdaftar (Opsional)", type: "select", options: ["-"] },
+      { key: "project", label: "Hubungkan ke Proyek (Opsional)", type: "select", options: [] },
       { key: "tim", label: "Anggota Tim POC (Pilih Karyawan / Staf)", type: "multiselect", options: [] },
       { key: "anggaran", label: "Anggaran Biaya (Rp)", type: "number", placeholder: "0" },
       { key: "targetCriteria", label: "Target & Kriteria Keberhasilan", type: "textarea", placeholder: "Parameter pengujian, fitur yang dites..." },
@@ -1150,9 +1147,9 @@ export const MODULES: Record<string, ModuleDef> = {
       { label: "Lokasi", key: "lokasi" },
       { label: "Klien / Perusahaan", key: "klien" },
       { label: "Kontak / Peserta Klien", key: "kontakKlien" },
-      { label: "Customer terdaftar", key: "customer" },
-      { label: "Project terkait", key: "project" },
-      { label: "Lead terkait", key: "lead" },
+      { label: "Pelanggan terdaftar", key: "customer" },
+      { label: "Proyek terkait", key: "project" },
+      { label: "Prospek terkait", key: "lead" },
       { label: "PIC / Pemilik", key: "pemilik" },
       { label: "Tim hadir", key: "tim" },
       { label: "Tujuan kunjungan", key: "tujuan" },
@@ -1167,15 +1164,15 @@ export const MODULES: Record<string, ModuleDef> = {
     createLabel: "Tambah Laporan Kunjungan",
     createFields: [
       { key: "judul", label: "Nama / Judul Aktivitas", type: "text", required: true, placeholder: "Contoh: Diskusi Solusi CCTV di Kantor Klien" },
-      { key: "tipe", label: "Jenis Aktivitas", type: "select", options: ["Product Introduction", "Product Presentation / Demo", "Business Meeting", "Project Coordination", "Negotiation", "Follow-up Meeting", "Other"], required: true },
+      { key: "tipe", label: "Jenis Aktivitas", type: "select", options: ["Product Introduction", "Product Presentation / Demo", "Business Meeting", "Proyek Coordination", "Negotiation", "Follow-up Meeting", "Other"], required: true },
       { key: "tanggal", label: "Tanggal Kunjungan", type: "date", required: true },
       { key: "tanggalSelesai", label: "Tanggal Selesai (Opsional)", type: "date" },
       { key: "klien", label: "Nama Klien / Instansi", type: "text", placeholder: "PT Contoh Sukses / Dinas Terkait" },
       { key: "kontakKlien", label: "Kontak / Peserta Pihak Klien", type: "text", placeholder: "Nama PIC atau staf klien" },
       { key: "lokasi", label: "Lokasi Kunjungan", type: "text", placeholder: "Alamat atau ruangan pertemuan" },
-      { key: "customer", label: "Pilih Customer Terdaftar (Opsional)", type: "select", options: ["-"] },
-      { key: "lead", label: "Pilih Lead Terdaftar (Opsional)", type: "select", options: ["-"] },
-      { key: "project", label: "Hubungkan ke Project (Opsional)", type: "select", options: [] },
+      { key: "customer", label: "Pilih Pelanggan Terdaftar (Opsional)", type: "select", options: ["-"] },
+      { key: "lead", label: "Pilih Prospek Terdaftar (Opsional)", type: "select", options: ["-"] },
+      { key: "project", label: "Hubungkan ke Proyek (Opsional)", type: "select", options: [] },
       { key: "tim", label: "Anggota Tim Hadir (Karyawan / Staf)", type: "multiselect", options: [] },
       { key: "tujuan", label: "Tujuan Kunjungan", type: "textarea", placeholder: "Maksud dan target utama pertemuan..." },
       { key: "deskripsi", label: "Deskripsi / Catatan Singkat", type: "textarea" },
@@ -1188,54 +1185,55 @@ export const MODULES: Record<string, ModuleDef> = {
 export type NavItem = { key: string; label: string; short?: string; href: string; icon: LucideIcon };
 
 const N = {
-  dashboard: { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  dashboard: { key: "dashboard", label: "Beranda", href: "/dashboard", icon: LayoutDashboard },
   calendar: { key: "calendar", label: "Kalender Kerja", short: "Kalender", href: "/calendar", icon: CalendarDays },
   approvals: { key: "approvals", label: "Persetujuan", href: "/approvals", icon: CheckSquare },
-  leads: { key: "leads", label: "Leads", href: "/leads", icon: Target },
+  leads: { key: "leads", label: "Prospek", href: "/leads", icon: Target },
   quotations: { key: "quotations", label: "Penawaran", href: "/quotations", icon: FileText },
   surveys: { key: "surveys", label: "Survey", href: "/surveys", icon: ClipboardList },
   pocReports: { key: "poc-reports", label: "Laporan POC & Demo", short: "POC", href: "/poc-reports", icon: Presentation },
   visitReports: { key: "visit-reports", label: "Laporan Kunjungan", short: "Kunjungan", href: "/visit-reports", icon: Handshake },
-  customers: { key: "customers", label: "Customer", href: "/customers", icon: Building2 },
-  projects: { key: "projects", label: "Project", href: "/projects", icon: Briefcase },
-  myProjects: { key: "projects", label: "Project saya", short: "Project", href: "/projects", icon: Briefcase },
+  customers: { key: "customers", label: "Pelanggan", href: "/customers", icon: Building2 },
+  projects: { key: "projects", label: "Proyek", href: "/projects", icon: Briefcase },
+  myProjects: { key: "projects", label: "Proyek saya", short: "Proyek", href: "/projects", icon: Briefcase },
   tasks: { key: "tasks", label: "Tugas", href: "/tasks", icon: ListChecks },
-  requests: { key: "purchase-requests", label: "Request barang", short: "Request", href: "/purchase-requests", icon: ShoppingCart },
-  supplierPos: { key: "supplier-pos", label: "Purchase Order (PO)", short: "PO", href: "/supplier-pos", icon: Truck },
-  shipments: { key: "shipments", label: "Pengiriman", href: "/shipments", icon: Truck },
-  receiving: { key: "receiving", label: "Penerimaan", href: "/receiving", icon: PackageCheck },
+  requests: { key: "purchase-requests", label: "Permintaan Barang", short: "Permintaan", href: "/purchase-requests", icon: ShoppingCart },
+  supplierPos: { key: "supplier-pos", label: "PO Keluar (ke pemasok)", short: "PO Keluar", href: "/supplier-pos", icon: Truck },
+  purchaseOrders: { key: "purchase-orders", label: "PO Masuk & Keluar", short: "PO", href: "/purchase-orders", icon: Truck },
+  shipments: { key: "shipments", label: "Pengiriman dari Pemasok", short: "Pengiriman", href: "/shipments", icon: Truck },
+  receiving: { key: "receiving", label: "Penerimaan Barang", short: "Penerimaan", href: "/receiving", icon: PackageCheck },
   stock: { key: "stock", label: "Barang, Jasa & SN", short: "Stok", href: "/stock", icon: Boxes },
   stockView: { key: "stock", label: "Barang, Jasa & SN", short: "Stok", href: "/stock", icon: Boxes },
-  invoices: { key: "invoices", label: "Invoice & Receipt", short: "Invoice", href: "/invoices", icon: Receipt },
-  poClient: { key: "po-client", label: "Sales Order (SO)", short: "SO", href: "/po-client", icon: FileCheck },
-  opname: { key: "opname", label: "Opname", href: "/opname", icon: ClipboardCheck },
-  delivery: { key: "delivery-notes", label: "Delivery / Surat Jalan", short: "Delivery", href: "/delivery-notes", icon: FileSignature },
+  invoices: { key: "invoices", label: "Faktur & Kwitansi", short: "Faktur", href: "/invoices", icon: Receipt },
+  poClient: { key: "po-client", label: "Pesanan Penjualan (SO)", short: "SO", href: "/po-client", icon: FileCheck },
+  opname: { key: "opname", label: "Stok Opname", href: "/opname", icon: ClipboardCheck },
+  delivery: { key: "delivery-notes", label: "Surat Jalan", short: "Surat Jalan", href: "/delivery-notes", icon: FileSignature },
   expenses: { key: "expenses", label: "Pengeluaran", short: "Biaya", href: "/expenses", icon: Wallet },
   accounting: { key: "accounting", label: "Buku Besar & COA", short: "Akuntansi", href: "/accounting", icon: BookOpen },
   damage: { key: "damage-reports", label: "Kerusakan & Retur", short: "Retur", href: "/damage-reports", icon: TriangleAlert },
   reports: { key: "reports", label: "Laporan", href: "/reports", icon: BarChart3 },
-  master: { key: "master-data", label: "Master data", href: "/master-data", icon: Database },
+  master: { key: "master-data", label: "Data Master", href: "/master-data", icon: Database },
   users: { key: "users", label: "Pengguna", href: "/users", icon: UserCog },
-  archive: { key: "archive", label: "Archive", href: "/archive", icon: Archive },
-  hr: { key: "hr", label: "Absensi & Payroll", short: "HR", href: "/hr", icon: UserCheck },
-  audit: { key: "audit-log", label: "Audit log", href: "/audit-log", icon: ScrollText },
+  archive: { key: "archive", label: "Arsip", href: "/archive", icon: Archive },
+  hr: { key: "hr", label: "Absensi & Penggajian", short: "SDM", href: "/hr", icon: UserCheck },
+  audit: { key: "audit-log", label: "Log Audit", href: "/audit-log", icon: ScrollText },
 } satisfies Record<string, NavItem>;
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   super_admin: [
     N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.customers,
-    N.projects, N.tasks, N.requests, N.supplierPos, N.shipments, N.receiving,
+    N.projects, N.tasks, N.requests, N.purchaseOrders, N.shipments, N.receiving,
     N.stock, N.opname, N.delivery, N.poClient, N.invoices, N.expenses,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
-  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.supplierPos, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
-  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.supplierPos, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
-  sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.surveys, N.pocReports, N.visitReports, N.customers, N.expenses, N.hr, N.master],
+  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.purchaseOrders, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
+  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.purchaseOrders, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
+  sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.customers, N.expenses, N.hr, N.master],
   pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.requests, N.delivery, N.expenses, N.hr],
   teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.hr],
-  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.opname, N.damage, N.expenses, N.hr, N.master],
-  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.invoices, N.poClient, N.delivery, N.accounting, N.expenses, N.reports, N.hr],
-  gudang: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.hr, N.master],
+  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.purchaseOrders, N.shipments, N.receiving, N.delivery, N.stockView, N.opname, N.damage, N.expenses, N.visitReports, N.hr, N.master],
+  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.purchaseOrders, N.surveys, N.pocReports, N.visitReports, N.invoices, N.quotations, N.poClient, N.delivery, N.accounting, N.hr, N.stock, N.expenses, N.opname, N.reports],
+  gudang: [N.dashboard, N.calendar, N.approvals, N.requests, N.purchaseOrders, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.hr, N.master],
   se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.delivery, N.expenses, N.hr],
   hr: [N.dashboard, N.calendar, N.hr, N.users, N.expenses, N.visitReports, N.pocReports, N.requests, N.reports],
 };
@@ -1244,12 +1242,13 @@ export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "g
 
 const ALL_NAV_ORDERED: NavItem[] = [
   N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.customers,
-  N.projects, N.tasks, N.requests, N.supplierPos, N.shipments, N.receiving,
+  N.projects, N.tasks, N.requests, N.purchaseOrders, N.supplierPos, N.shipments, N.receiving,
   N.stock, N.opname, N.delivery, N.poClient, N.invoices, N.expenses,
   N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
 ];
 
 const CLIENT_MODULE_ALIASES: Record<string, string[]> = {
+  "purchase-orders": ["purchase-orders", "supplier-pos", "supplier_pos", "pos"],
   "po-client": ["po-client", "po_client", "sales-order"],
   "purchase-requests": ["purchase-requests", "requests"],
   "supplier-pos": ["supplier-pos", "supplier_pos", "shipments"],
@@ -1299,6 +1298,10 @@ export function setClientDynamicRoles(roles: RoleDef[]) {
       for (const [k, v] of Object.entries(existing.permissions)) {
         if (!normalizedPerms[k] || normalizedPerms[k].length === 0) {
           normalizedPerms[k] = [...v];
+        } else if (v.includes("M") && normalizedPerms[k].includes("L") && !normalizedPerms[k].includes("M")) {
+          // Migrasi data legacy: modul sistem bawaan yang aslinya punya 'M' dan diizinkan ('L'),
+          // tambahkan 'M' agar halaman tetap tampil di menu & bisa dibuka
+          normalizedPerms[k].unshift("M");
         }
       }
     }
@@ -1351,15 +1354,21 @@ export function hasUserPermission(
   const dyn = findRoleDefForUser(user);
   if (dyn && dyn.permissions) {
     const candidates = CLIENT_MODULE_ALIASES[moduleKey] ?? [moduleKey];
+    const hasAnyM = Object.values(dyn.permissions).some((p: any) =>
+      Array.isArray(p) ? p.includes("M") : String(p).includes("M")
+    );
     for (const key of candidates) {
       const acts: any = dyn.permissions[key];
       if (Array.isArray(acts)) {
         if (acts.includes(action)) return true;
         // Jika cek Lihat Data ('L') dan role punya Menu ('M'), otomatis boleh
         if (action === "L" && acts.includes("M")) return true;
+        // Backward compatibility: jika role legacy hanya punya 'L' tapi belum pernah diset 'M'
+        if (action === "M" && acts.includes("L") && !hasAnyM) return true;
       } else if (typeof acts === "string") {
         if (acts.includes(action)) return true;
         if (action === "L" && acts.includes("M")) return true;
+        if (action === "M" && acts.includes("L") && !hasAnyM) return true;
       }
     }
     // Jika role dynamic sudah terdaftar dan dikelola hak aksesnya, keputusan dyn.permissions adalah absolut.
@@ -1412,11 +1421,16 @@ export function getNavForUser(user: User | null | undefined): NavItem[] {
   const dyn = findRoleDefForUser(user);
   if (dyn && dyn.permissions && Object.keys(dyn.permissions).length > 0) {
     const filtered = ALL_NAV_ORDERED.filter((item) => {
-      if (item.key === "dashboard" || item.key === "calendar") {
-        return hasUserPermission(user, item.key, "M") || hasUserPermission(user, item.key, "L");
-      }
       return hasUserPermission(user, item.key, "M");
     });
+    // Jika role punya modul navigasi selain hanya dashboard/calendar, gunakan hasil matriks
+    if (filtered.length > 2 || (filtered.length > 0 && !filtered.every((i) => i.key === "dashboard" || i.key === "calendar"))) {
+      return filtered;
+    }
+    // Jika role sistem bawaan belum memiliki 'M' yang terdefinisi pada modul utamanya, fallback ke default navigasi role
+    if (NAV_BY_ROLE[roleLower]) {
+      return NAV_BY_ROLE[roleLower];
+    }
     if (filtered.length > 0) return filtered;
   }
 

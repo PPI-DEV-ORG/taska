@@ -10,12 +10,12 @@ test.describe("Modul Projects (CRUD)", () => {
     await expect(page).toHaveURL(/.*projects/);
 
     // 2. Klik Tambah / Buat Project
-    const tambahBtn = page.getByRole("button", { name: /Buat project|Tambah project/i }).first();
+    const tambahBtn = page.getByRole("button", { name: /Buat proyek|Tambah proyek/i }).first();
     await expect(tambahBtn).toBeVisible({ timeout: 10000 });
     await tambahBtn.click();
 
     // 3. Isi Form Project
-    const namaInput = page.getByPlaceholder(/Instalasi CCTV Gudang|Nama project/i).first();
+    const namaInput = page.getByPlaceholder(/Instalasi CCTV Gudang|Nama proyek/i).first();
     if (await namaInput.isVisible()) {
       await namaInput.fill(projName);
     }

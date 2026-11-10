@@ -7,7 +7,7 @@ test.describe("Modul Request Barang (Purchase Requests)", () => {
     await expect(page).toHaveURL(/.*purchase-requests/);
 
     // 2. Klik Buat Request
-    const createBtn = page.getByRole("button", { name: "Buat request" }).first();
+    const createBtn = page.getByRole("button", { name: "Buat permintaan" }).first();
     await expect(createBtn).toBeVisible({ timeout: 10000 });
     await createBtn.click();
 
@@ -25,7 +25,7 @@ test.describe("Modul Request Barang (Purchase Requests)", () => {
     await nextBtn2.click();
 
     // Langkah 3: Konfirmasi dan Ajukan
-    const submitBtn = page.getByRole("button", { name: /Ajukan Request Barang/i });
+    const submitBtn = page.getByRole("button", { name: /Ajukan Permintaan Barang/i });
     await expect(submitBtn).toBeVisible({ timeout: 10000 });
     await submitBtn.click();
 

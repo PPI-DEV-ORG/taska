@@ -29,7 +29,10 @@ function useNav() {
   const { user, roles } = useApp();
   const pathname = usePathname();
   const items = React.useMemo(() => getNavForUser(user), [user, roles]);
-  const active = (i: NavItem) => pathname === i.href || pathname.startsWith(i.href + "/");
+  const active = (i: NavItem) =>
+    pathname === i.href ||
+    pathname.startsWith(i.href + "/") ||
+    (i.key === "purchase-orders" && pathname.startsWith("/supplier-pos"));
   return { items, active, pathname };
 }
 
@@ -226,16 +229,16 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
     const isSales = role === "sales";
     const isFinance = role === "finance";
     const out: { id: string; type: string; title: string; href: string }[] = [];
-    (data.leads ?? []).forEach((r) => r?.nama && r.nama.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Lead", title: r.nama, href: `/leads/${r.id}` }));
+    (data.leads ?? []).forEach((r) => r?.nama && r.nama.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Prospek", title: r.nama, href: `/leads/${r.id}` }));
     (data.projects ?? []).forEach((r) => {
       const title = r?.nama || r?.name;
-      if (r && title && title.toLowerCase().includes(s)) out.push({ id: String(r.id), type: "Project", title, href: `/projects/${r.id}` });
+      if (r && title && title.toLowerCase().includes(s)) out.push({ id: String(r.id), type: "Proyek", title, href: `/projects/${r.id}` });
     });
     if (!isFinance) {
       (data.quotations ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Penawaran", title: r.nomor, href: `/quotations/${r.id}` }));
     }
     if (!isSales) {
-      (data.invoices ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Invoice", title: r.nomor, href: `/invoices/${r.id}` }));
+      (data.invoices ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Faktur", title: r.nomor, href: `/invoices/${r.id}` }));
     }
     (data["delivery-notes"] ?? []).forEach((r) => r?.nomor && r.nomor.toLowerCase().includes(s) && out.push({ id: String(r.id), type: "Surat jalan", title: r.nomor, href: `/delivery-notes/${r.id}` }));
     if (!isFinance) {
@@ -247,7 +250,7 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
     <View className="gap-3">
       <View className="bg-input border-border h-11 flex-row items-center gap-2 rounded-lg border px-3">
         <Search size={16} color={colors.muted} />
-        <Input autoFocus value={q} onChangeText={setQ} placeholder="Cari lead, project, dokumen, atau SN" className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none sm:h-9" />
+        <Input autoFocus value={q} onChangeText={setQ} placeholder="Cari prospek, proyek, dokumen, atau SN" className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none sm:h-9" />
       </View>
       {q.trim().length >= 2 && res.length === 0 ? <Text className="text-muted-foreground px-1 text-sm">Tidak ada hasil untuk &quot;{q}&quot;.</Text> : null}
       {res.map((r) => (

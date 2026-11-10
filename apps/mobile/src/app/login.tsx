@@ -77,7 +77,7 @@ export default function LoginScreen() {
               </View>
             )}
             <Text className="text-3xl font-semibold tracking-tight">Taska</Text>
-            <Text className="text-text-secondary text-center text-sm">Satu tempat untuk lead, project, barang, dan pengeluaran kantor.</Text>
+            <Text className="text-text-secondary text-center text-sm">Satu tempat untuk prospek, proyek, barang, dan pengeluaran kantor.</Text>
           </View>
 
           <View className="bg-card border-border gap-4 rounded-xl border p-5">

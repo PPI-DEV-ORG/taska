@@ -13,6 +13,7 @@ import {
   getClientDynamicRoles,
   canUserApprove,
   hasUserPermission,
+  type ActionCode,
   type Notif,
   type Row,
   type User,
@@ -178,6 +179,8 @@ function writeStorageJson(key: string, val: unknown) {
 
 type Ctx = {
   user: User | null;
+  /** Boleh melakukan aksi pada modul ini? */
+  can: (navKey: string, action?: ActionCode) => boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   updateProfile: (patch: { name?: string; phone?: string; avatarFileId?: number; avatarUrl?: string }) => Promise<void>;
@@ -420,6 +423,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setClientDynamicRoles(DEFAULT_SYSTEM_ROLES);
     return DEFAULT_SYSTEM_ROLES;
   });
+  const can = React.useCallback(
+    (navKey: string, action: ActionCode = "L") => hasUserPermission(user, navKey, action),
+    [user, roles]
+  );
   const [notifs, setNotifs] = React.useState<Notif[]>([]);
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
   const [notifPopups, setNotifPopups] = React.useState<NotifPopupItem[]>([]);
@@ -505,8 +512,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const loadAll = React.useCallback(async (targetModules?: readonly string[], targetUser?: User | null) => {
     const activeUser = targetUser ?? userRef.current;
     const role = (activeUser?.role || "").toLowerCase() as Role;
-    const navItems = role && NAV_BY_ROLE[role] ? NAV_BY_ROLE[role] : [];
-    const roleModuleKeys = new Set(navItems.map((n) => n.key));
 
     const modulesToFetch = (targetModules ?? EAGER_MODULES).filter((m) => {
       if (m === "audit-log" && role !== "super_admin" && role !== "admin" && role !== "bos") return false;
@@ -1671,7 +1676,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value = React.useMemo<Ctx>(
     () => ({
-      user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
+      user, can, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead,
       deleteRow,
       history, pushHistory, loadHistory, approvals, refreshApprovals, decide, notifs: myNotifs, unread, markRead, markAllRead,
       toast, offline, setOffline,
@@ -1682,7 +1687,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       docFormats, updateDocFormats,
       roles, saveRole, deleteRole,
     }),
-    [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
+    [user, can, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, loadHistory, approvals, refreshApprovals, decide, myNotifs, unread, markRead, markAllRead,
      toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme,
      companyProfile, updateCompanyProfile, docFormats, updateDocFormats, roles, saveRole, deleteRole],
@@ -1714,4 +1719,5 @@ export function useApp(): Ctx {
   if (!c) throw new Error("useApp harus di dalam AppProvider");
   return c;
 }
+
 

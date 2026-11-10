@@ -86,7 +86,7 @@ export function ExecutiveDashboard({
       {/* Top 4 KPI Cards */}
       <KpiRow>
         <KpiCard
-          label="Active Projects"
+          label="Proyek Aktif"
           value={String(activeProjects.length)}
           hint="+2 from last month"
           icon={FolderKanban}
@@ -108,7 +108,7 @@ export function ExecutiveDashboard({
           onPress={() => router.push("/approvals")}
         />
         <KpiCard
-          label="Unpaid Invoices"
+          label="Faktur Belum Dibayar"
           value={rupiahShort(unpaidInv)}
           hint="Outstanding balance"
           tone="warning"
@@ -177,14 +177,14 @@ export function ExecutiveDashboard({
 
       {/* Charts & Analytics */}
       <View className="flex-row flex-wrap gap-4">
-        <ChartCard title="Funnel Lead" subtitle="Pergerakan dari Prospecting ke Won">
+        <ChartCard title="Funnel Prospek" subtitle="Pergerakan dari Prospecting ke Won">
           <Funnel data={funnelData} />
         </ChartCard>
-        <ChartCard title="Pendapatan vs Invoice Terbayar" subtitle="Dalam jutaan Rupiah">
+        <ChartCard title="Pendapatan vs Faktur Terbayar" subtitle="Dalam jutaan Rupiah">
           <BarChart
             data={revenueBars}
             series={[
-              { name: "Nilai Invoice", color: colors.info },
+              { name: "Nilai Faktur", color: colors.info },
               { name: "Terbayar", color: colors.success },
             ]}
             format={(n) => `${n} jt`}
@@ -194,7 +194,7 @@ export function ExecutiveDashboard({
 
       {/* Risky Projects & Audit Log */}
       <View className="flex-row flex-wrap gap-4">
-        <Panel title="Project Berisiko" subtitle="Terlambat atau belum lunas" className="flex-1 min-w-[300px]">
+        <Panel title="Proyek Berisiko" subtitle="Terlambat atau belum lunas" className="flex-1 min-w-[300px]">
           {riskyProjects.slice(0, 3).map((p: any) => (
             <Pressable
               key={p.id}

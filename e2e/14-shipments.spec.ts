@@ -7,15 +7,15 @@ test.describe("Modul Pengiriman Supplier (Shipments)", () => {
     await expect(page).toHaveURL(/.*shipments/);
 
     // 2. Verifikasi Header
-    await expect(page.getByText("Pengiriman dari Supplier")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Pengiriman dari Pemasok")).toBeVisible({ timeout: 10000 });
 
-    // 3. Verifikasi tahapan pengiriman (Di Supplier, Dikirim, Sampai)
-    await expect(page.getByText("Di Supplier").first()).toBeVisible({ timeout: 10000 });
+    // 3. Verifikasi tahapan pengiriman (Belum dikirim, Dikirim, Diterima Gudang)
+    await expect(page.getByText("Belum dikirim").first()).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Dikirim").first()).toBeVisible();
     await expect(page.getByText("Sampai").first()).toBeVisible();
 
     // 4. Buka salah satu shipment card untuk menuju PO supplier terkait
-    const shipmentCard = page.locator("div[role='button'], [tabindex='0']").filter({ hasText: /SP\/\d+|Di Supplier|Dikirim|Sampai/i }).first();
+    const shipmentCard = page.locator("div[role='button'], [tabindex='0']").filter({ hasText: /SP\/\d+|Belum dikirim|Dikirim|Diterima Gudang/i }).first();
     if (await shipmentCard.isVisible()) {
       await shipmentCard.click();
       await expect(page).toHaveURL(/.*supplier-pos\/\d+/);

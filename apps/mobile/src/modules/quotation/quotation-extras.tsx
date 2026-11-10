@@ -344,12 +344,12 @@ export function QuotationExtras({
     <>
       <Panel
         title="Rincian Nilai & Kalkulasi Penawaran"
-        subtitle="Nomor penawaran dibuat otomatis saat Lead masuk Qualification dan ter-link langsung ke Lead."
+        subtitle="Nomor penawaran dibuat otomatis saat Prospek masuk Qualification dan ter-link langsung ke Prospek."
       >
         <View className="gap-3">
           <Line left="Nomor Penawaran (Auto-Generated)" right={<Text className="text-primary font-bold">{row.nomor}</Text>} />
           <Line
-            left="Lead Sumber"
+            left="Sumber Prospek"
             right={
               <Pressable
                 onPress={() => {
@@ -367,7 +367,7 @@ export function QuotationExtras({
               </Pressable>
             }
           />
-          <Line left="Customer" right={<Text className="text-text-secondary">{row.customer}</Text>} />
+          <Line left="Pelanggan" right={<Text className="text-text-secondary">{row.customer}</Text>} />
           {ppnMode === "include" ? (
             <>
               <Line left="Nilai Sebelum Diskon (Inc. PPN)" right={<Text className="font-semibold">{rupiah(row.total || row.nilai || 0)}</Text>} />
@@ -1020,8 +1020,8 @@ export function QuotationExtras({
       {/* Panel Invoice & Penagihan */}
       {user?.role !== "sales" ? (
       <Panel
-        title="Invoice & Penagihan"
-        subtitle="Kelola tagihan pembayaran untuk penawaran ini. Status pembayaran project akan otomatis sinkron."
+        title="Faktur & Penagihan"
+        subtitle="Kelola tagihan pembayaran untuk penawaran ini. Status pembayaran proyek akan otomatis sinkron."
         right={
           canCreateInvoice ? (
             <Button
@@ -1030,7 +1030,7 @@ export function QuotationExtras({
               className="flex-row items-center gap-1"
             >
               <Plus size={14} color={colors.background} />
-              <Text className="text-xs">Buat Invoice</Text>
+              <Text className="text-xs">Buat Faktur</Text>
             </Button>
           ) : undefined
         }
@@ -1064,7 +1064,7 @@ export function QuotationExtras({
                       </Text>
                     </View>
                     <View>
-                      <Text className="text-[11px] text-muted-foreground">Project</Text>
+                      <Text className="text-[11px] text-muted-foreground">Proyek</Text>
                       <Text className="text-xs font-semibold text-primary" numberOfLines={1}>
                         {inv.project || relatedProject?.nama || "-"}
                       </Text>
@@ -1105,7 +1105,7 @@ export function QuotationExtras({
                             await setStatus("invoices", String(inv.id), "Lunas");
                             toast(`Invoice ${inv.nomor} berhasil dilunasi & status Project tersinkronkan!`);
                           } catch {
-                            toast("Gagal mengubah status invoice", "danger");
+                            toast("Gagal mengubah status faktur", "danger");
                           }
                         }}
                       >
@@ -1136,7 +1136,7 @@ export function QuotationExtras({
                 className="self-start flex-row items-center gap-1.5 mt-1"
               >
                 <Receipt size={14} color={colors.text} />
-                <Text className="text-xs">Buat Invoice untuk Penawaran Ini</Text>
+                <Text className="text-xs">Buat Faktur untuk Penawaran Ini</Text>
               </Button>
             ) : null}
           </View>

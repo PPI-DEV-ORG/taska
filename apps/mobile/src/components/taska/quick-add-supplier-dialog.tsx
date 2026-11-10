@@ -91,7 +91,7 @@ export function QuickAddSupplierDialog({
 
   async function handleSave() {
     if (!nama.trim()) {
-      setError("Nama supplier / vendor wajib diisi.");
+      setError("Nama pemasok / vendor wajib diisi.");
       return;
     }
 
@@ -119,7 +119,7 @@ export function QuickAddSupplierDialog({
         onSuccess?.(created);
       }
     } catch (err: any) {
-      setError(err?.message || "Gagal menambahkan supplier baru.");
+      setError(err?.message || "Gagal menambahkan pemasok baru.");
     } finally {
       setLoading(false);
     }
@@ -134,7 +134,7 @@ export function QuickAddSupplierDialog({
               <Truck size={18} color={colors.primary} />
             </View>
             <View className="flex-1">
-              <DialogTitle>Tambah Supplier Baru</DialogTitle>
+              <DialogTitle>Tambah Pemasok Baru</DialogTitle>
               <DialogDescription>
                 Supplier akan langsung tersimpan di Master Data dan terpilih otomatis
               </DialogDescription>
@@ -144,7 +144,7 @@ export function QuickAddSupplierDialog({
 
         <ScrollView className="max-h-[60vh] py-1" showsVerticalScrollIndicator={false}>
           <View className="gap-3">
-            <FormField label="Nama Supplier / Toko" required error={error}>
+            <FormField label="Nama Pemasok / Toko" required error={error}>
               <Input
                 value={nama}
                 onChangeText={(v) => { setNama(v); setError(""); }}
@@ -176,7 +176,7 @@ export function QuickAddSupplierDialog({
             </View>
 
             <FormField
-              label="Tags / Kategori Barang Supplier (Opsional)"
+              label="Tags / Kategori Barang Pemasok (Opsional)"
               hint="Contoh: Kabel, Baut, Switch, Aksesoris (pisahkan dengan koma)"
             >
               <View className="relative">
@@ -270,12 +270,12 @@ export function QuickAddSupplierDialog({
               />
             </FormField>
 
-            <FormField label="Catatan / Alamat Supplier (Opsional)">
+            <FormField label="Catatan / Alamat Pemasok (Opsional)">
               <View className="relative">
                 <Textarea
                   value={catatan}
                   onChangeText={setCatatan}
-                  placeholder="Catatan rekening, alamat gudang supplier, dll."
+                  placeholder="Catatan rekening, alamat gudang pemasok, dll."
                   numberOfLines={2}
                 />
               </View>
@@ -288,7 +288,7 @@ export function QuickAddSupplierDialog({
             <Text>Batal</Text>
           </Button>
           <Button onPress={handleSave} disabled={loading}>
-            <Text>{loading ? "Menyimpan..." : "Simpan Supplier"}</Text>
+            <Text>{loading ? "Menyimpan..." : "Simpan Pemasok"}</Text>
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -5,6 +5,7 @@ import {
 } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
 import { toneColor, type Tone } from "@/tokens";
+import { statusText } from "@/lib/labels";
 
 const S: Record<string, [Tone, LucideIcon]> = {};
 const add = (tone: Tone, icon: LucideIcon, names: string[]) => names.forEach((n) => (S[n] = [tone, icon]));
@@ -19,7 +20,7 @@ add("warning", Clock, [
   "Dibayar sebagian", "Lunas sebagian", "Diterima sebagian", "Pending", "PENDING", "Diminta", "Belum dikirim", "Belum lunas", "Dijadwalkan",
   "Di Supplier", "TODO", "Diproses", "Revisi", "Prospecting", "Ditunda", "Reserved", "Menunggu Bos", "Planned",
   "UNPAID", "unpaid", "PARTIAL", "partial",
-  "Diterima (Belum Lunas)", "Sampai (Belum Lunas)", "Belum Dibayar", "Menunggu Pembayaran",
+  "Diterima (Belum Lunas)", "Sampai (Belum Lunas)", "Belum Dibayar", "Belum dibayar", "Menunggu pengiriman", "Menunggu Pembayaran",
   "Pending Evaluation", "On Hold", "Partial Success",
 ]);
 add("danger", AlertTriangle, ["Terlambat", "Kedaluwarsa", "Rusak", "Kurang", "Salah barang", "BLOCKED", "OVERDUE", "overdue"]);
@@ -47,7 +48,7 @@ export function StatusBadge({ status }: { status: string }) {
     >
       <Icon size={11} color={color} />
       <Text className="text-[11px] font-semibold tracking-wide" style={{ color }}>
-        {status}
+        {statusText(status)}
       </Text>
     </View>
   );

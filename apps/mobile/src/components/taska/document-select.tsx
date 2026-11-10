@@ -70,7 +70,7 @@ export function PoClientSelect({
   value,
   poId,
   onChange,
-  placeholder = "Cari & pilih PO client (Sales Order)...",
+  placeholder = "Cari & pilih PO pelanggan (Pesanan Penjualan)...",
   error,
   allowClear = true,
 }: PoClientSelectProps) {
@@ -156,7 +156,7 @@ export function PoClientSelect({
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <FileText size={20} color={colors.primary} />
-                <DialogTitle>Pilih PO Client (Sales Order)</DialogTitle>
+                <DialogTitle>Pilih PO Pelanggan (Pesanan Penjualan)</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -167,7 +167,7 @@ export function PoClientSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nomor PO/SO, nama customer, proyek, atau catatan..."
+              placeholder="Cari berdasarkan nomor PO/SO, nama pelanggan, proyek, atau catatan..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -180,7 +180,7 @@ export function PoClientSelect({
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nomor SO & Tanggal</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Customer & Proyek</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Pelanggan & Proyek</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Total Nilai Pesanan</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2 text-center">Status & Tagihan</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
@@ -412,7 +412,7 @@ export function QuotationSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nomor penawaran, nama customer, atau lead..."
+              placeholder="Cari berdasarkan nomor penawaran, nama pelanggan, atau prospek..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -425,7 +425,7 @@ export function QuotationSelect({
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nomor Penawaran & Versi</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">Customer & Lead</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">Pelanggan & Prospek</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Total Nilai Penawaran</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[120px] px-2 text-center">Status</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
@@ -561,7 +561,7 @@ export function LeadSelect({
   value,
   leadId,
   onChange,
-  placeholder = "Cari & pilih lead / prospek...",
+  placeholder = "Cari & pilih prospek...",
   error,
   allowClear = false,
 }: LeadSelectProps) {
@@ -645,7 +645,7 @@ export function LeadSelect({
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Users size={20} color={colors.primary} />
-                <DialogTitle>Pilih Lead / Prospek</DialogTitle>
+                <DialogTitle>Pilih Prospek</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -656,7 +656,7 @@ export function LeadSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nama lead, perusahaan, telepon, atau kebutuhan..."
+              placeholder="Cari berdasarkan nama prospek, perusahaan, telepon, atau kebutuhan..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -668,8 +668,8 @@ export function LeadSelect({
               <View className="flex-1 min-w-[760px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nama Lead & Kontak</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Perusahaan / Customer</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nama Prospek & Kontak</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Perusahaan / Pelanggan</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[200px] px-2">Kebutuhan / Prospek</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-28 px-2 text-center">Tahapan / Status</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
@@ -803,7 +803,7 @@ export function ContinuableInvoiceSelect({
   invoiceId,
   options,
   onChange,
-  placeholder = "Ketik atau pilih invoice DP / termin acuan...",
+  placeholder = "Ketik atau pilih faktur DP / termin acuan...",
   error,
 }: ContinuableInvoiceSelectProps) {
   const [open, setOpen] = React.useState(false);
@@ -880,7 +880,7 @@ export function ContinuableInvoiceSelect({
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Layers size={20} color={colors.primary} />
-                <DialogTitle>Pilih Invoice DP / Termin Acuan</DialogTitle>
+                <DialogTitle>Pilih Faktur DP / Termin Acuan</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -891,7 +891,7 @@ export function ContinuableInvoiceSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nomor invoice, customer, PO/SO, atau penawaran..."
+              placeholder="Cari berdasarkan nomor faktur, pelanggan, PO/SO, atau penawaran..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -903,8 +903,8 @@ export function ContinuableInvoiceSelect({
               <View className="flex-1 min-w-[760px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nomor Invoice & Tanggal</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Customer & Dokumen Asal</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nomor Faktur & Tanggal</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Pelanggan & Dokumen Asal</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Total Nilai Tagihan</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[160px] px-2 text-center">Status & Sisa Kontrak</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
@@ -1387,7 +1387,7 @@ export function ProjectSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nama proyek, customer, atau jenis proyek..."
+              placeholder="Cari berdasarkan nama proyek, pelanggan, atau jenis proyek..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -1400,7 +1400,7 @@ export function ProjectSelect({
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">Nama Proyek & Jenis</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Customer / Klien</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Pelanggan</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Nilai Kontrak</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2 text-center">Progres & Status</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
@@ -1619,7 +1619,7 @@ export function SurveySelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nomor survey, kebutuhan, customer, atau lokasi..."
+              placeholder="Cari berdasarkan nomor survey, kebutuhan, pelanggan, atau lokasi..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -1632,7 +1632,7 @@ export function SurveySelect({
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">ID & Kebutuhan Survey</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Customer & Lokasi</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Pelanggan & Lokasi</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">Jadwal & Tim</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[120px] px-2 text-center">Status</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>

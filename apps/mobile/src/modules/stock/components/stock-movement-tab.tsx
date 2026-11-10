@@ -17,7 +17,7 @@ export function StockMovementTab({
         { key: "produk", label: "Nama Barang", primary: true, flex: 1.8 },
         { key: "kategori", label: "Kategori Mutasi", flex: 1.3 },
         { key: "gudang", label: "Gudang", flex: 1.2 },
-        { key: "project", label: "Project", flex: 1.3 },
+        { key: "project", label: "Proyek", flex: 1.3 },
         { key: "qtyDisplay", label: "Jumlah", flex: 0.9 },
         { key: "waktu", label: "Tanggal Mutasi", flex: 1.2 },
         { key: "jenis", label: "Jenis Mutasi", fmt: "status", flex: 1 },

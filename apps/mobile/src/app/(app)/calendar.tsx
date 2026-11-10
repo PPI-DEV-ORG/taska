@@ -176,7 +176,7 @@ export default function CalendarScreen() {
           scope === "all" && canViewAll
             ? "Seluruh agenda, jadwal, dan deadline perusahaan"
             : scope === "team"
-              ? "Agenda tim, project, dan kegiatan lintas anggota di mana saya terlibat"
+              ? "Agenda tim, proyek, dan kegiatan lintas anggota di mana saya terlibat"
               : "Agenda pribadi, tugas, dan kegiatan yang melibatkan saya"
         }
         action={
@@ -194,7 +194,7 @@ export default function CalendarScreen() {
         right={
           <View className="flex-row flex-wrap gap-2">
             <Chip label="Agenda saya" active={scope === "me"} onPress={() => setScope("me")} />
-            <Chip label="Tim & Project saya" active={scope === "team"} onPress={() => setScope("team")} />
+            <Chip label="Tim & Proyek saya" active={scope === "team"} onPress={() => setScope("team")} />
             {canViewAll ? (
               <Chip label="Semua perusahaan" active={scope === "all"} onPress={() => setScope("all")} />
             ) : null}

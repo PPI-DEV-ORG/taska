@@ -1536,7 +1536,7 @@ export function ConflictAndSwapBanner({ row }: { row: any }) {
           </View>
           <Text className="text-xs text-foreground leading-relaxed">
             {conflictMsg ||
-              "Unit SN pada dokumen ini telah terpakai oleh Invoice lain yang sudah Lunas, dan stok SN pengganti model yang sama sedang kosong di gudang. Sistem telah membuat Request Pembelian (PR) Darurat secara otomatis."}
+              "Unit SN pada dokumen ini telah terpakai oleh Faktur lain yang sudah Lunas, dan stok SN pengganti model yang sama sedang kosong di gudang. Sistem telah membuat Permintaan Barang Darurat secara otomatis."}
           </Text>
         </View>
       )}

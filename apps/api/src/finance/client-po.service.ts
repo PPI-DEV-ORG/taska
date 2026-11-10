@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { Prisma } from "../generated/prisma/client.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
@@ -21,14 +22,12 @@ type ClientPoMeta = {
   settledAt?: string | null;
   goodsDispatched?: boolean;
   projectId?: number | null;
-  projectName?: string | null;
   ppn?: number;
   tipePpn?: string | null;
   ppnMode?: string | null;
   pph?: number;
   tipePph?: string | null;
   pphMode?: string | null;
-  total?: number;
 };
 
 @Injectable()
@@ -40,46 +39,6 @@ export class ClientPoService {
     private readonly stock: StockService,
   ) {}
 
-  private metaKey(id: number) {
-    return `client-po:meta:${id}`;
-  }
-
-  private migrationDone = false;
-  private async ensurePoMigration() {
-    if (this.migrationDone) return;
-    this.migrationDone = true;
-    try {
-      await this.prisma.main.$executeRawUnsafe(`
-        INSERT INTO \`SupplierPO\` (\`number\`, \`supplierId\`, \`total\`, \`date\`, \`paymentTerms\`, \`status\`, \`shipmentStatus\`, \`fileId\`, \`createdById\`, \`createdAt\`, \`updatedAt\`)
-        SELECT 
-          c.number,
-          COALESCE(c.supplierId, (SELECT id FROM \`Supplier\` WHERE status = 'AKTIF' ORDER BY id ASC LIMIT 1), (SELECT id FROM \`Supplier\` ORDER BY id ASC LIMIT 1)),
-          c.amount,
-          c.date,
-          'Tempo / Utang',
-          'DI_SUPPLIER',
-          'DI_SUPPLIER',
-          c.fileId,
-          (SELECT id FROM \`User\` WHERE role IN ('ADMIN', 'BOS', 'PROCUREMENT', 'FINANCE') ORDER BY id ASC LIMIT 1),
-          c.createdAt,
-          c.updatedAt
-        FROM \`ClientPO\` c
-        WHERE (c.number LIKE 'PO/%' OR c.number LIKE 'POD/%' OR c.number LIKE 'PO-%')
-          AND c.number NOT IN (SELECT number FROM \`SupplierPO\`)
-      `).catch(() => {});
-      await this.prisma.main.$executeRawUnsafe(`
-        UPDATE \`InvoiceOut\` 
-        SET \`clientPoId\` = NULL 
-        WHERE \`clientPoId\` IN (
-          SELECT id FROM (SELECT id FROM \`ClientPO\` WHERE number LIKE 'PO/%' OR number LIKE 'POD/%' OR number LIKE 'PO-%') as tmp
-        )
-      `).catch(() => {});
-      await this.prisma.main.$executeRawUnsafe(`
-        DELETE FROM \`ClientPO\` WHERE number LIKE 'PO/%' OR number LIKE 'POD/%' OR number LIKE 'PO-%'
-      `).catch(() => {});
-    } catch {}
-  }
-
   private defaultSoNumber(id: number, date?: Date | null): string {
     const d = date ? new Date(date) : new Date();
     const yyyy = d.getFullYear();
@@ -87,40 +46,78 @@ export class ClientPoService {
     return `SO/${yyyy}/${mm}/${String(id).padStart(3, "0")}`;
   }
 
-  private async getMetaMap(ids: number[]): Promise<Map<number, ClientPoMeta>> {
-    const map = new Map<number, ClientPoMeta>();
-    if (!ids.length) return map;
-    const rows = await this.prisma.main.systemSetting.findMany({
-      where: { key: { in: ids.map((id) => this.metaKey(id)) } },
-    });
-    for (const r of rows) {
-      try {
-        const id = Number(r.key.replace("client-po:meta:", ""));
-        map.set(id, JSON.parse(r.value));
-      } catch {}
-    }
-    return map;
+  /** Bentuk metadata (dipakai enrichRow & pelunasan) yang dibaca dari kolom ClientPO. */
+  private rowToMeta(r: any): ClientPoMeta {
+    const num = (v: unknown) => (v == null ? undefined : Number(v));
+    const str = (v: unknown) => (v == null || v === "" ? undefined : (v as string));
+    const meta: Record<string, unknown> = {
+      soNumber: str(r.soNumber),
+      poClientNumber: str(r.poClientNumber),
+      docMode: str(r.docMode),
+      soFileId: r.soFileId ?? undefined,
+      items: Array.isArray(r.items) ? r.items : undefined,
+      paymentStatus: str(r.paymentStatus),
+      settlementType: str(r.settlementType),
+      paymentProofFileId: r.paymentProofFileId ?? undefined,
+      coaAccount: str(r.coaAccount),
+      settledAt: r.settledAt ? new Date(r.settledAt).toISOString() : undefined,
+      goodsDispatched: Boolean(r.goodsDispatched),
+      projectId: r.projectId ?? undefined,
+      ppn: num(r.ppn),
+      tipePpn: str(r.tipePpn),
+      ppnMode: str(r.ppnMode),
+      pph: num(r.pph),
+      tipePph: str(r.tipePph),
+      pphMode: str(r.pphMode),
+    };
+    for (const k of Object.keys(meta)) if (meta[k] === undefined) delete meta[k];
+    return meta as ClientPoMeta;
   }
 
   private async saveMeta(id: number, patch: Partial<ClientPoMeta>): Promise<ClientPoMeta> {
-    const key = this.metaKey(id);
-    let existing: ClientPoMeta = {};
+    const data: Record<string, unknown> = {};
+    const intOrNull = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Math.trunc(Number(v)));
+    const numOrNull = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+    const strOrNull = (v: unknown) => (v == null || v === "" ? null : String(v));
+    const has = (k: keyof ClientPoMeta) => patch[k] !== undefined;
+
+    for (const k of ["soNumber", "poClientNumber", "docMode", "paymentStatus", "settlementType", "coaAccount", "tipePpn", "ppnMode", "tipePph", "pphMode"] as const) {
+      if (has(k)) data[k] = strOrNull(patch[k]);
+    }
+    if (has("soFileId")) data.soFileId = intOrNull(patch.soFileId);
+    if (has("paymentProofFileId")) data.paymentProofFileId = intOrNull(patch.paymentProofFileId);
+    if (has("projectId")) data.projectId = intOrNull(patch.projectId);
+    if (has("ppn")) data.ppn = numOrNull(patch.ppn);
+    if (has("pph")) data.pph = numOrNull(patch.pph);
+    if (has("goodsDispatched")) data.goodsDispatched = Boolean(patch.goodsDispatched);
+    if (has("settledAt")) data.settledAt = patch.settledAt ? new Date(patch.settledAt) : null;
+    if (has("items")) data.items = patch.items == null ? Prisma.DbNull : (patch.items as Prisma.InputJsonValue);
+
+    // Project harus masih ada (foreign key); bila tidak, jangan gagalkan simpan metadata lain.
+    if (typeof data.projectId === "number") {
+      const pr = await this.prisma.main.project.findUnique({ where: { id: data.projectId }, select: { id: true } });
+      if (!pr) delete data.projectId;
+    }
     try {
-      const cur = await this.prisma.main.systemSetting.findUnique({ where: { key } });
-      if (cur?.value) existing = JSON.parse(cur.value);
-    } catch {}
-    const merged: ClientPoMeta = { ...existing, ...patch };
-    await this.prisma.main.systemSetting
-      .upsert({
-        where: { key },
-        update: { value: JSON.stringify(merged) },
-        create: { key, value: JSON.stringify(merged) },
-      })
-      .catch(() => {});
-    return merged;
+      const row = Object.keys(data).length
+        ? await this.prisma.main.clientPO.update({ where: { id }, data: data as never })
+        : await this.prisma.main.clientPO.findUnique({ where: { id } });
+      return row ? this.rowToMeta(row) : {};
+    } catch (e) {
+      console.warn("Gagal menyimpan metadata SO #" + id + ":", (e as Error).message);
+      const row = await this.prisma.main.clientPO.findUnique({ where: { id } });
+      return row ? this.rowToMeta(row) : {};
+    }
   }
 
-  private enrichRow(row: any, meta: ClientPoMeta, fileMap: Map<number, any>) {
+  private async projectNamesFor(metas: Array<ClientPoMeta | undefined>) {
+    const ids = [...new Set(metas.map((m) => (m?.projectId ? Number(m.projectId) : 0)).filter((n) => n > 0))];
+    if (!ids.length) return new Map<number, string>();
+    const rows = await this.prisma.main.project.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    return new Map(rows.map((r) => [r.id, r.name]));
+  }
+
+  private enrichRow(row: any, meta: ClientPoMeta, fileMap: Map<number, any>, projectNames?: Map<number, string>) {
     const isNumberSo = /^SO[\-\/]/i.test(String(row.number || ""));
     const isNumberPo = /^PO[\-\/]/i.test(String(row.number || ""));
 
@@ -153,11 +150,8 @@ export class ClientPoService {
     const soFile = meta.soFileId ? fileMap.get(Number(meta.soFileId)) ?? null : null;
     const paymentProofFile = meta.paymentProofFileId ? fileMap.get(Number(meta.paymentProofFileId)) ?? null : null;
 
-    const effectiveTotal =
-      meta.total ??
-      (meta.ppn || meta.pph
-        ? Number(row.amount || 0) + Number(meta.ppn ?? 0) - Number(meta.pph ?? 0)
-        : Number(row.amount || 0));
+    // Total tidak disimpan di metadata (dulu bisa basi setelah amount diubah): selalu dihitung dari kolom + pajak.
+    const effectiveTotal = Number(row.amount || 0) + Number(meta.ppn ?? 0) - Number(meta.pph ?? 0);
 
     const activeInvoices = Array.isArray(row.invoices)
       ? row.invoices.filter((i: any) => i.status !== "BATAL")
@@ -198,7 +192,7 @@ export class ClientPoService {
       poClientNumber: poClientNumber || "-",
       docMode: meta.docMode || (soNumber !== "-" && poClientNumber !== "-" ? "BOTH" : soNumber !== "-" ? "SO" : "PO"),
       projectId: meta.projectId ?? null,
-      projectName: meta.projectName ?? null,
+      projectName: meta.projectId ? projectNames?.get(Number(meta.projectId)) ?? null : null,
       soFileId: meta.soFileId ?? null,
       items: Array.isArray(meta.items) ? meta.items : [],
       paymentStatus: computedPaymentStatus,
@@ -222,7 +216,6 @@ export class ClientPoService {
   }
 
   async list(q: PageQuery & { customerId?: number; from?: string; to?: string }) {
-    await this.ensurePoMigration();
     const where = {
       ...(q.customerId ? { customerId: q.customerId } : {}),
       ...(q.from || q.to
@@ -259,8 +252,7 @@ export class ClientPoService {
       this.prisma.main.clientPO.count({ where }),
     ]);
 
-    const ids = items.map((r) => r.id);
-    const metaMap = await this.getMetaMap(ids);
+    const metaMap = new Map<number, ClientPoMeta>(items.map((r) => [r.id, this.rowToMeta(r)]));
     const fileIds = new Set<number>();
     for (const r of items) {
       if (r.fileId) fileIds.add(r.fileId);
@@ -273,7 +265,8 @@ export class ClientPoService {
       : [];
     const fileMap = new Map(files.map((f) => [f.id, f]));
 
-    const enriched = items.map((r) => this.enrichRow(r, metaMap.get(r.id) ?? {}, fileMap));
+    const projectNames = await this.projectNamesFor(items.map((r) => metaMap.get(r.id)));
+    const enriched = items.map((r) => this.enrichRow(r, metaMap.get(r.id) ?? {}, fileMap, projectNames));
     return paginate(enriched, total, q);
   }
 
@@ -288,14 +281,13 @@ export class ClientPoService {
       },
     });
     if (!row) throw new NotFoundException("Sales Order / PO client tidak ditemukan");
-    const metaMap = await this.getMetaMap([id]);
-    const meta = metaMap.get(id) ?? {};
+    const meta = this.rowToMeta(row);
     const fileIds = [row.fileId, meta.soFileId, meta.paymentProofFileId].filter((x): x is number => typeof x === "number" && x > 0);
     const files = fileIds.length
       ? await this.prisma.main.file.findMany({ where: { id: { in: fileIds } } })
       : [];
     const fileMap = new Map(files.map((f) => [f.id, f]));
-    return this.enrichRow(row, meta, fileMap);
+    return this.enrichRow(row, meta, fileMap, await this.projectNamesFor([meta]));
   }
 
   async create(dto: ClientPoDto, user: RequestUser) {
@@ -345,17 +337,8 @@ export class ClientPoService {
 
     let items = Array.isArray(dto.items) ? dto.items : [];
     if (!items.length && dto.quotationId) {
-      try {
-        const qMeta = await this.prisma.main.systemSetting.findUnique({
-          where: { key: `quotation.meta.${dto.quotationId}` },
-        });
-        if (qMeta?.value) {
-          const parsed = JSON.parse(qMeta.value);
-          if (Array.isArray(parsed.items) && parsed.items.length > 0) {
-            items = parsed.items;
-          }
-        }
-      } catch {}
+      const quoteRow = await this.prisma.main.quotation.findUnique({ where: { id: Number(dto.quotationId) }, select: { items: true } });
+      if (Array.isArray(quoteRow?.items) && quoteRow.items.length > 0) items = quoteRow.items as any[];
     }
 
     let calculatedAmount = dto.amount;
@@ -414,7 +397,6 @@ export class ClientPoService {
       items,
       paymentStatus: "PENDING",
       ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
-      ...(dto.projectName !== undefined ? { projectName: dto.projectName } : {}),
       ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
       ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
       ...(dto.tipePpn !== undefined ? { tipePpn: dto.tipePpn } : {}),
@@ -422,7 +404,6 @@ export class ClientPoService {
       ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
       ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
       ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
-      ...(dto.total !== undefined ? { total: dto.total } : {}),
     });
 
     if (dto.fileId) {
@@ -486,14 +467,12 @@ export class ClientPoService {
       dto.soFileId !== undefined ||
       dto.items !== undefined ||
       dto.projectId !== undefined ||
-      dto.projectName !== undefined ||
       dto.ppn !== undefined ||
       dto.tipePpn !== undefined ||
       dto.ppnMode !== undefined ||
       dto.pph !== undefined ||
       dto.tipePph !== undefined ||
-      dto.pphMode !== undefined ||
-      dto.total !== undefined
+      dto.pphMode !== undefined
     ) {
       await this.saveMeta(id, {
         ...(dto.soNumber !== undefined ? { soNumber: dto.soNumber } : {}),
@@ -501,14 +480,12 @@ export class ClientPoService {
         ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
         ...(dto.items !== undefined ? { items: dto.items } : {}),
         ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
-        ...(dto.projectName !== undefined ? { projectName: dto.projectName } : {}),
         ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
         ...(dto.tipePpn !== undefined ? { tipePpn: dto.tipePpn } : {}),
         ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
         ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
         ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
         ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
-        ...(dto.total !== undefined ? { total: dto.total } : {}),
       });
     }
 
@@ -541,7 +518,6 @@ export class ClientPoService {
 
   async remove(id: number, user: RequestUser) {
     const row = await this.get(id);
-    await this.prisma.main.systemSetting.deleteMany({ where: { key: this.metaKey(id) } }).catch(() => {});
     await this.prisma.main.clientPO.delete({ where: { id } });
     await this.audit.log({
       actor: user,
@@ -559,17 +535,8 @@ export class ClientPoService {
 
     let items = Array.isArray(row.items) ? row.items : [];
     if (!items.length && row.quotationId) {
-      try {
-        const qMeta = await this.prisma.main.systemSetting.findUnique({
-          where: { key: `quotation.meta.${row.quotationId}` },
-        });
-        if (qMeta?.value) {
-          const parsed = JSON.parse(qMeta.value);
-          if (Array.isArray(parsed.items) && parsed.items.length > 0) {
-            items = parsed.items;
-          }
-        }
-      } catch {}
+      const quoteRow = await this.prisma.main.quotation.findUnique({ where: { id: Number(row.quotationId) }, select: { items: true } });
+      if (Array.isArray(quoteRow?.items) && quoteRow.items.length > 0) items = quoteRow.items as any[];
     }
 
     // 1. Catat Surat Jalan (Delivery Note) dengan status PENDING agar tim Gudang dapat mengalokasikan unit SN fisik & melakukan pengiriman
@@ -659,31 +626,15 @@ export class ClientPoService {
           dueDate: settlementDate,
           status: "PAID",
           fileId: dto.fileId ?? null,
+          // Metadata invoice sebagai kolom (ppn & total sudah kolom sendiri di atas)
+          tipePpn: effectiveTipePpn,
+          ppnMode: effectivePpnMode,
+          pph: effectivePph,
+          tipePph: effectiveTipePph,
+          pphMode: effectivePphMode,
+          ...(items.length > 0 ? { items } : {}),
         },
       });
-
-      // Simpan metadata invoice (PPN, paidFileId, items, dll)
-      const invMeta = {
-        ppn: effectivePpn,
-        tipePpn: effectiveTipePpn,
-        ppnMode: effectivePpnMode,
-        pph: effectivePph,
-        tipePph: effectiveTipePph,
-        pphMode: effectivePphMode,
-        paidFileId: dto.fileId ?? null,
-        total: effectiveTotal,
-        ...(items.length > 0 ? { items } : {}),
-      };
-      await this.prisma.main.systemSetting.upsert({
-        where: { key: `invoice:meta:${inv.id}` },
-        update: { value: JSON.stringify(invMeta) },
-        create: { key: `invoice:meta:${inv.id}`, value: JSON.stringify(invMeta) },
-      }).catch(() => {});
-      await this.prisma.main.systemSetting.upsert({
-        where: { key: `invoice.meta.${inv.id}` },
-        update: { value: JSON.stringify(invMeta) },
-        create: { key: `invoice.meta.${inv.id}`, value: JSON.stringify(invMeta) },
-      }).catch(() => {});
 
       // Catat payment record pada invoice agar bukti bayar dan riwayat terdata lengkap
       if (effectiveTotal > 0) {
@@ -697,14 +648,6 @@ export class ClientPoService {
             fileId: dto.fileId ?? null,
             createdById: user.id,
           },
-        }).catch(() => {});
-      }
-
-      if (items.length > 0) {
-        await this.prisma.main.systemSetting.upsert({
-          where: { key: `invoice.items.${inv.id}` },
-          update: { value: JSON.stringify(items) },
-          create: { key: `invoice.items.${inv.id}`, value: JSON.stringify(items) },
         }).catch(() => {});
       }
     }

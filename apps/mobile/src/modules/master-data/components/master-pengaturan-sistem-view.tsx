@@ -80,7 +80,7 @@ export function MasterPengaturanSistemView({
       />
       <Panel
         title="Ambang Batas Persetujuan Bos (BOS Approval Threshold)"
-        subtitle="Dokumen pembelian, penawaran, invoice, dan pengeluaran di atas nilai ini wajib disetujui Bos selain Finance."
+        subtitle="Dokumen pembelian, penawaran, faktur, dan pengeluaran di atas nilai ini wajib disetujui Bos selain Finance."
       >
         <View className="gap-4">
           <View className="flex-row items-center gap-3">
@@ -102,7 +102,7 @@ export function MasterPengaturanSistemView({
 
       <Panel
         title="Tarif PPN Standar Nasional"
-        subtitle="Tarif pajak pertambahan nilai yang dihitung otomatis pada Invoice dan Penawaran."
+        subtitle="Tarif pajak pertambahan nilai yang dihitung otomatis pada Faktur dan Penawaran."
       >
         <View className="gap-4">
           <View className="flex-row items-center gap-3">

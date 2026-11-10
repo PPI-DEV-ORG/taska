@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -8,6 +8,24 @@ import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { PoDto, PoListQuery, ShipmentDto } from "./dto.js";
+import {
+  FINANCE_ROLES,
+  PROCUREMENT_ROLES,
+  assertPoCanBeCreatedFromPr,
+  assertPoShipmentTransition,
+} from "./purchase-flow.js";
+
+type PoMeta = {
+  supplierSoNumber?: string | null;
+  soFileId: number | null;
+  manualStatus: string | null;
+  ppnMode: string | null;
+  dpp: number | null;
+  ppn: number | null;
+  pphMode: string | null;
+  tipePph: string | null;
+  pph: number | null;
+};
 
 @Injectable()
 export class PosService {
@@ -33,7 +51,7 @@ export class PosService {
       });
       if (row.requestId) {
         await this.prisma.main.purchaseRequest.updateMany({
-          where: { id: row.requestId, status: { in: ["DIAJUKAN", "CEK_STOK", "DISETUJUI"] } },
+          where: { id: row.requestId, status: "DISETUJUI" },
           data: { status: "PO_DIBUAT" },
         });
       }
@@ -63,81 +81,50 @@ export class PosService {
     return this.docnum.suggest("pesanan");
   }
 
-  private metaKey(id: number) {
-    return `supplier-po:meta:${id}`;
+  /** Metadata PO sekarang kolom SupplierPO (dulu JSON di SystemSetting). */
+  private metaOf(row: {
+    supplierSoNumber?: string | null;
+    soFileId?: number | null;
+    manualStatus?: string | null;
+    ppnMode?: string | null;
+    dpp?: unknown;
+    ppn?: unknown;
+    pphMode?: string | null;
+    tipePph?: string | null;
+    pph?: unknown;
+  }): PoMeta {
+    const n = (v: unknown) => (v == null ? null : Number(v));
+    return {
+      supplierSoNumber: row.supplierSoNumber ?? undefined,
+      soFileId: row.soFileId ?? null,
+      manualStatus: row.manualStatus ?? null,
+      ppnMode: row.ppnMode ?? null,
+      dpp: n(row.dpp),
+      ppn: n(row.ppn),
+      pphMode: row.pphMode ?? null,
+      tipePph: row.tipePph ?? null,
+      pph: n(row.pph),
+    };
   }
 
-  private async getMetaMap(ids: number[]): Promise<Map<number, { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null; ppnMode?: string | null; ppn?: number | null; dpp?: number | null; pphMode?: string | null; tipePph?: string | null; pph?: number | null }>> {
-    const map = new Map<number, { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null; ppnMode?: string | null; ppn?: number | null; dpp?: number | null; pphMode?: string | null; tipePph?: string | null; pph?: number | null }>();
-    if (!ids.length) return map;
-    const rows = await this.prisma.main.systemSetting.findMany({
-      where: { key: { in: ids.map((id) => this.metaKey(id)) } },
+  private async saveMeta(id: number, patch: Partial<PoMeta>) {
+    await this.prisma.main.supplierPO.update({
+      where: { id },
+      data: {
+        ...(patch.supplierSoNumber !== undefined ? { supplierSoNumber: patch.supplierSoNumber } : {}),
+        ...(patch.soFileId !== undefined ? { soFileId: patch.soFileId } : {}),
+        ...(patch.manualStatus !== undefined ? { manualStatus: patch.manualStatus } : {}),
+        ...(patch.ppnMode !== undefined ? { ppnMode: patch.ppnMode } : {}),
+        ...(patch.dpp !== undefined ? { dpp: patch.dpp } : {}),
+        ...(patch.ppn !== undefined ? { ppn: patch.ppn } : {}),
+        ...(patch.pphMode !== undefined ? { pphMode: patch.pphMode } : {}),
+        ...(patch.tipePph !== undefined ? { tipePph: patch.tipePph } : {}),
+        ...(patch.pph !== undefined ? { pph: patch.pph } : {}),
+      },
     });
-    for (const r of rows) {
-      try {
-        const id = Number(r.key.replace("supplier-po:meta:", ""));
-        map.set(id, JSON.parse(r.value));
-      } catch {}
-    }
-    return map;
-  }
-
-  private async saveMeta(id: number, patch: { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null; ppnMode?: string | null; ppn?: number | null; dpp?: number | null; pphMode?: string | null; tipePph?: string | null; pph?: number | null }) {
-    const key = this.metaKey(id);
-    let existing: { supplierSoNumber?: string; soFileId?: number | null; manualStatus?: string | null; ppnMode?: string | null; ppn?: number | null; dpp?: number | null; pphMode?: string | null; tipePph?: string | null; pph?: number | null } = {};
-    try {
-      const cur = await this.prisma.main.systemSetting.findUnique({ where: { key } });
-      if (cur?.value) existing = JSON.parse(cur.value);
-    } catch {}
-    const merged = { ...existing, ...patch };
-    await this.prisma.main.systemSetting
-      .upsert({
-        where: { key },
-        update: { value: JSON.stringify(merged) },
-        create: { key, value: JSON.stringify(merged) },
-      })
-      .catch(() => {});
-    return merged;
-  }
-
-  private migrationDone = false;
-  private async ensurePoMigration() {
-    if (this.migrationDone) return;
-    this.migrationDone = true;
-    try {
-      await this.prisma.main.$executeRawUnsafe(`
-        INSERT INTO \`SupplierPO\` (\`number\`, \`supplierId\`, \`total\`, \`date\`, \`paymentTerms\`, \`status\`, \`shipmentStatus\`, \`fileId\`, \`createdById\`, \`createdAt\`, \`updatedAt\`)
-        SELECT 
-          c.number,
-          COALESCE(c.supplierId, (SELECT id FROM \`Supplier\` WHERE status = 'AKTIF' ORDER BY id ASC LIMIT 1), (SELECT id FROM \`Supplier\` ORDER BY id ASC LIMIT 1)),
-          c.amount,
-          c.date,
-          'Tempo / Utang',
-          'DI_SUPPLIER',
-          'DI_SUPPLIER',
-          c.fileId,
-          (SELECT id FROM \`User\` WHERE role IN ('ADMIN', 'BOS', 'PROCUREMENT', 'FINANCE') ORDER BY id ASC LIMIT 1),
-          c.createdAt,
-          c.updatedAt
-        FROM \`ClientPO\` c
-        WHERE (c.number LIKE 'PO/%' OR c.number LIKE 'POD/%' OR c.number LIKE 'PO-%')
-          AND c.number NOT IN (SELECT number FROM \`SupplierPO\`)
-      `).catch(() => {});
-      await this.prisma.main.$executeRawUnsafe(`
-        UPDATE \`InvoiceOut\` 
-        SET \`clientPoId\` = NULL 
-        WHERE \`clientPoId\` IN (
-          SELECT id FROM (SELECT id FROM \`ClientPO\` WHERE number LIKE 'PO/%' OR number LIKE 'POD/%' OR number LIKE 'PO-%') as tmp
-        )
-      `).catch(() => {});
-      await this.prisma.main.$executeRawUnsafe(`
-        DELETE FROM \`ClientPO\` WHERE number LIKE 'PO/%' OR number LIKE 'POD/%' OR number LIKE 'PO-%'
-      `).catch(() => {});
-    } catch {}
   }
 
   async list(q: PoListQuery) {
-    await this.ensurePoMigration();
     const where = {
       ...(q.status ? { status: q.status as never } : {}),
       ...(q.shipmentStatus ? { shipmentStatus: q.shipmentStatus as never } : {}),
@@ -190,62 +177,22 @@ export class PosService {
       }),
       this.prisma.main.supplierPO.count({ where }),
     ]);
-    const metaMap = await this.getMetaMap(items.map((r) => r.id));
     const enriched = await Promise.all(
       items.map(async (r) => {
-        const m = metaMap.get(r.id) ?? {};
+        const m = this.metaOf(r);
         const recWithDo = (r.receivings ?? []).find((rc) => rc.receiptFileId || rc.photoFileId);
         const fallbackDoFileId = recWithDo?.receiptFileId ?? recWithDo?.photoFileId ?? null;
         const rawNum = String(r.number || "");
         const normalizedNumber = rawNum.replace(/^(?:POD|PO-S)\//i, "PO/");
-        if (normalizedNumber !== rawNum && normalizedNumber) {
-          void this.prisma.main.supplierPO
-            .update({ where: { id: r.id }, data: { number: normalizedNumber } })
-            .catch(() => {});
-        }
 
         let linkedReq = r.request;
-        if (!r.requestId) {
-          const suffix = (normalizedNumber || rawNum).replace(/^(?:POD|PO-S|PO)\//i, "");
-          const matchedPr = await this.prisma.main.purchaseRequest.findFirst({
-            where: {
-              OR: [
-                { number: `PNJ/${suffix}` },
-                { number: { endsWith: suffix } },
-              ],
-            },
-            select: {
-              id: true,
-              number: true,
-              purpose: true,
-              status: true,
-              paymentStatus: true,
-              paymentProofFileId: true,
-              otherNote: true,
-              costType: true,
-              procurementSource: true,
-              paymentMethod: true,
-              projectId: true,
-            },
-          });
-          if (matchedPr) {
-            r.requestId = matchedPr.id;
-            linkedReq = matchedPr;
-            void this.prisma.main.supplierPO
-              .update({ where: { id: r.id }, data: { requestId: matchedPr.id } })
-              .catch(() => {});
-          }
-        }
 
         const isManualLunas = m.manualStatus === "LUNAS";
         const isManualBelumLunas = m.manualStatus === "SAMPAI_BELUM_LUNAS";
 
         const isPrPaid =
           !isManualBelumLunas &&
-          ((linkedReq as any)?.status === "DIBAYAR" ||
-          (linkedReq as any)?.paymentStatus === "DIBAYAR" ||
-          !!(linkedReq as any)?.paymentProofFileId ||
-          Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR")));
+          ((linkedReq as any)?.status === "DIBAYAR" || (linkedReq as any)?.paymentStatus === "DIBAYAR");
         const isInvoicePaid =
           !isManualBelumLunas &&
           Array.isArray(r.invoiceIns) &&
@@ -307,61 +254,19 @@ export class PosService {
       },
     });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
-    const [approval, metaMap] = await Promise.all([
-      this.approvals.getFor("SUPPLIER_PO", id),
-      this.getMetaMap([id]),
-    ]);
-    const meta = metaMap.get(id) ?? {};
+    const approval = await this.approvals.getFor("SUPPLIER_PO", id);
+    const meta = this.metaOf(row);
     const recWithDo = (row.receivings ?? []).find((rc) => rc.receiptFileId || rc.photoFileId);
     const fallbackDoFileId = recWithDo?.receiptFileId ?? recWithDo?.photoFileId ?? null;
     const rawNum = String(row.number || "");
     const normalizedNumber = rawNum.replace(/^(?:POD|PO-S)\//i, "PO/");
-    if (normalizedNumber !== rawNum && normalizedNumber) {
-      void this.prisma.main.supplierPO
-        .update({ where: { id: row.id }, data: { number: normalizedNumber } })
-        .catch(() => {});
-    }
     let linkedReq = row.request;
-    if (!row.requestId) {
-      const suffix = (normalizedNumber || rawNum).replace(/^(?:POD|PO-S|PO)\//i, "");
-      const matchedPr = await this.prisma.main.purchaseRequest.findFirst({
-        where: {
-          OR: [
-            { number: `PNJ/${suffix}` },
-            { number: { endsWith: suffix } },
-          ],
-        },
-        select: {
-          id: true,
-          number: true,
-          purpose: true,
-          status: true,
-          paymentStatus: true,
-          paymentProofFileId: true,
-          otherNote: true,
-          costType: true,
-          procurementSource: true,
-          paymentMethod: true,
-          projectId: true,
-        },
-      });
-      if (matchedPr) {
-        row.requestId = matchedPr.id;
-        linkedReq = matchedPr as any;
-        void this.prisma.main.supplierPO
-          .update({ where: { id: row.id }, data: { requestId: matchedPr.id } })
-          .catch(() => {});
-      }
-    }
     const isManualLunas = meta.manualStatus === "LUNAS";
     const isManualBelumLunas = meta.manualStatus === "SAMPAI_BELUM_LUNAS";
 
     const isPrPaid =
       !isManualBelumLunas &&
-      ((linkedReq as any)?.status === "DIBAYAR" ||
-      (linkedReq as any)?.paymentStatus === "DIBAYAR" ||
-      !!(linkedReq as any)?.paymentProofFileId ||
-      Boolean((linkedReq as any)?.otherNote?.includes("[DIBAYAR")));
+      ((linkedReq as any)?.status === "DIBAYAR" || (linkedReq as any)?.paymentStatus === "DIBAYAR");
     const isInvoicePaid =
       !isManualBelumLunas &&
       Array.isArray(row.invoiceIns) &&
@@ -392,6 +297,18 @@ export class PosService {
   }
 
   async create(dto: PoDto, user: RequestUser) {
+    if (!PROCUREMENT_ROLES.includes(user.role) && user.role !== "BOS") {
+      throw new ForbiddenException("Hanya Procurement yang dapat membuat PO supplier");
+    }
+    let parentPr: { id: number; status: string; procurementSource: string | null } | null = null;
+    if (dto.requestId) {
+      parentPr = await this.prisma.main.purchaseRequest.findUnique({
+        where: { id: dto.requestId },
+        select: { id: true, status: true, procurementSource: true },
+      });
+      if (!parentPr) throw new NotFoundException("Request barang tidak ditemukan");
+      assertPoCanBeCreatedFromPr(parentPr);
+    }
     const supplier = dto.supplierId
       ? await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } })
       : await this.prisma.main.supplier.findFirst({ where: { status: "AKTIF" } });
@@ -470,24 +387,9 @@ export class PosService {
     }
     const total = dto.total ?? resolvedItems.reduce((s, i) => s + i.qty * i.price, 0);
 
-    let isAutoApprovedFromPr = false;
-    if (dto.requestId) {
-      const parentPr = await this.prisma.main.purchaseRequest.findUnique({
-        where: { id: dto.requestId },
-        select: { id: true, status: true },
-      });
-      if (
-        parentPr &&
-        ["DISETUJUI", "PO_DIBUAT", "DIKIRIM", "DITERIMA", "DIBAYAR"].includes(parentPr.status)
-      ) {
-        isAutoApprovedFromPr = true;
-      }
-    }
-
-    const targetStatus =
-      dto.status === "DISETUJUI" || isAutoApprovedFromPr
-        ? "DISETUJUI"
-        : ((dto.status as any) ?? "MENUNGGU_PERSETUJUAN");
+    // PO dari request yang sudah disetujui Finance otomatis disetujui. PO mandiri wajib melalui persetujuan;
+    // klien tidak boleh menyetujui sendiri lewat body.
+    const targetStatus = parentPr ? "DISETUJUI" : "MENUNGGU_PERSETUJUAN";
 
     const row = await this.prisma.main.supplierPO.create({
       data: {
@@ -600,7 +502,7 @@ export class PosService {
 
     if (dto.requestId) {
       await this.prisma.main.purchaseRequest.updateMany({
-        where: { id: dto.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
+        where: { id: dto.requestId, status: "DISETUJUI" },
         data: { status: "PO_DIBUAT" },
       }).catch(() => {});
       this.notifications.dataChange("purchase-requests", "status", dto.requestId);
@@ -614,6 +516,23 @@ export class PosService {
   async update(id: number, dto: PoDto, user: RequestUser) {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
+    if (!PROCUREMENT_ROLES.includes(user.role) && user.role !== "BOS") {
+      throw new ForbiddenException("Hanya Procurement yang dapat mengubah PO supplier");
+    }
+    // Status & pengiriman hanya lewat endpoint khusus (/status, /shipment) agar urutan alur divalidasi.
+    const wantsShipment = dto.shipmentStatus && dto.shipmentStatus !== row.shipmentStatus;
+    if (wantsShipment) {
+      await this.setShipment(id, { shipmentStatus: dto.shipmentStatus as never } as ShipmentDto, user);
+    }
+    // Isi PO terkunci setelah disetujui / dikirim.
+    const touchesContent =
+      (Array.isArray(dto.items) && dto.items.length > 0) ||
+      dto.supplierId !== undefined ||
+      dto.total !== undefined ||
+      dto.requestId !== undefined;
+    if (touchesContent && (row.status === "DISETUJUI" || row.shipmentStatus !== "DI_SUPPLIER")) {
+      throw new BadRequestException("PO yang sudah disetujui / dikirim tidak bisa diubah isinya");
+    }
 
     if (Array.isArray(dto.items) && dto.items.length > 0) {
       await this.prisma.main.supplierPOItem.deleteMany({ where: { poId: id } });
@@ -629,22 +548,12 @@ export class PosService {
       });
     }
 
-    const poStatusValues = ["MENUNGGU_PERSETUJUAN", "DISETUJUI", "DITOLAK", "DIBATALKAN"];
-    const shipmentStatusValues = ["DI_SUPPLIER", "DIKIRIM", "SAMPAI", "BELUM_DIKIRIM", "DALAM_PERJALANAN"];
-    let poStatus: any = undefined;
-    let shipmentStatus: any = dto.shipmentStatus ?? undefined;
-
-    if (dto.status) {
-      if (poStatusValues.includes(dto.status)) {
-        poStatus = dto.status;
-      } else if (shipmentStatusValues.includes(dto.status)) {
-        if (!shipmentStatus) {
-          shipmentStatus = dto.status === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : dto.status === "DALAM_PERJALANAN" ? "DIKIRIM" : dto.status;
-        }
-      }
+    // Perubahan status lewat body sudah ditangani/ditolak di atas; tidak ditulis langsung ke database.
+    if (dto.status && dto.status !== row.status) {
+      await this.setStatus(id, dto.status, user);
     }
-    if (shipmentStatus === "BELUM_DIKIRIM") shipmentStatus = "DI_SUPPLIER";
-    if (shipmentStatus === "DALAM_PERJALANAN") shipmentStatus = "DIKIRIM";
+    const poStatus: any = undefined;
+    const shipmentStatus: any = undefined;
 
     const updated = await this.prisma.main.supplierPO.update({
       where: { id },
@@ -672,19 +581,6 @@ export class PosService {
 
     // Sinkronisasi status pengiriman ke Purchase Request terkait
     let reqId = row.requestId;
-    if (!reqId) {
-      const suffix = String(row.number || "").replace(/^(?:POD|PO-S|PO)\//i, "");
-      const matchedPr = await this.prisma.main.purchaseRequest.findFirst({
-        where: {
-          OR: [{ number: `PNJ/${suffix}` }, { number: { endsWith: suffix } }],
-        },
-        select: { id: true },
-      });
-      if (matchedPr) {
-        reqId = matchedPr.id;
-        void this.prisma.main.supplierPO.update({ where: { id: row.id }, data: { requestId: matchedPr.id } }).catch(() => {});
-      }
-    }
     if (shipmentStatus === "DIKIRIM" && reqId) {
       await this.prisma.main.purchaseRequest.updateMany({
         where: { id: reqId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
@@ -742,101 +638,87 @@ export class PosService {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
     const shipmentStatuses = ["BELUM_DIKIRIM", "DIKIRIM", "DALAM_PERJALANAN", "SAMPAI", "DI_SUPPLIER"];
-    const isShipment = shipmentStatuses.includes(status);
-    const effShipment = status === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : status === "DALAM_PERJALANAN" ? "DIKIRIM" : status;
     const isLunas = status === "LUNAS" || status === "DIBAYAR" || status === "SELESAI";
     const isBelumLunas = status === "SAMPAI_BELUM_LUNAS" || status === "BELUM_LUNAS";
 
-    let data: any = {};
-    if (isLunas) {
-      await this.saveMeta(id, { manualStatus: "LUNAS" });
-      data = {
-        status: "DISETUJUI",
-        shipmentStatus: "SAMPAI",
-        arrivedAt: row.arrivedAt || new Date(),
-      };
-    } else if (isBelumLunas) {
-      await this.saveMeta(id, { manualStatus: "SAMPAI_BELUM_LUNAS" });
-      data = {
-        status: "DISETUJUI",
-        shipmentStatus: "SAMPAI",
-        arrivedAt: row.arrivedAt || new Date(),
-      };
-    } else if (isShipment) {
-      await this.saveMeta(id, { manualStatus: null });
-      data = {
-        shipmentStatus: effShipment as never,
-        ...(effShipment === "SAMPAI" ? { arrivedAt: row.arrivedAt || new Date() } : {}),
-        ...(effShipment === "DIKIRIM" || effShipment === "SAMPAI" ? { status: "DISETUJUI" } : {}),
-      };
-    } else {
-      await this.saveMeta(id, { manualStatus: null });
-      data = { status: status as never };
+    // Pengiriman: lewat aturan yang sama dengan endpoint /shipment (urutan & peran divalidasi di sana).
+    if (shipmentStatuses.includes(status)) {
+      const eff = status === "BELUM_DIKIRIM" ? "DI_SUPPLIER" : status === "DALAM_PERJALANAN" ? "DIKIRIM" : status;
+      await this.setShipment(id, { shipmentStatus: eff } as ShipmentDto, user);
+      return this.get(id);
+    }
+    if (status === "DIBATALKAN") {
+      await this.cancel(id, user);
+      return this.get(id);
+    }
+    if (status === "DISETUJUI" || status === "DITOLAK") {
+      throw new BadRequestException("Persetujuan PO dilakukan Finance lewat menu Persetujuan");
+    }
+    if (!isLunas && !isBelumLunas) {
+      throw new BadRequestException(`Status PO "${status}" tidak dapat diubah manual`);
     }
 
-    const updated = await this.prisma.main.supplierPO.update({
-      where: { id },
-      data,
-      include: { supplier: { select: { id: true, name: true } } },
+    // Pembayaran PO: hanya Finance, hanya setelah PO disetujui. Tidak mengubah status pengiriman/penerimaan.
+    if (!FINANCE_ROLES.includes(user.role)) {
+      throw new ForbiddenException("Hanya Finance yang dapat mencatat pembayaran PO");
+    }
+    if (row.status !== "DISETUJUI") {
+      throw new BadRequestException("PO belum disetujui, pembayaran belum bisa dicatat");
+    }
+    if (isBelumLunas && row.shipmentStatus !== "SAMPAI") {
+      throw new BadRequestException("Barang belum diterima Gudang, status 'Sampai (Belum Lunas)' belum berlaku");
+    }
+    await this.saveMeta(id, { manualStatus: isLunas ? "LUNAS" : "SAMPAI_BELUM_LUNAS" });
+
+    if (row.requestId && isLunas) {
+      // Request yang belum dikirim naik ke DIBAYAR; yang sudah jalan hanya dicatat lunas (status alur tidak mundur).
+      await this.prisma.main.purchaseRequest
+        .updateMany({
+          where: { id: row.requestId, status: { in: ["DISETUJUI", "PO_DIBUAT"] } },
+          data: { status: "DIBAYAR", paymentStatus: "DIBAYAR" },
+        })
+        .catch(() => {});
+      await this.prisma.main.purchaseRequest
+        .updateMany({
+          where: { id: row.requestId, status: { in: ["DIBAYAR", "DIKIRIM", "DITERIMA"] } },
+          data: { paymentStatus: "DIBAYAR" },
+        })
+        .catch(() => {});
+      this.notifications.dataChange("purchase-requests", "status", row.requestId);
+      this.notifications.dataChange("purchase-requests", "update", row.requestId);
+    }
+
+    await this.audit.log({
+      actor: user,
+      action: "CATAT_PEMBAYARAN_PO",
+      entityType: "supplier-po",
+      entityId: id,
+      detail: `${row.number}: ${isLunas ? "Lunas" : "Sampai (Belum Lunas)"}`,
     });
-
-    if (row.requestId) {
-      if (isLunas) {
-        await this.prisma.main.purchaseRequest.updateMany({
-          where: { id: row.requestId },
-          data: {
-            status: "DITERIMA",
-            paymentStatus: "DIBAYAR",
-          },
-        }).catch(() => {});
-        this.notifications.dataChange("purchase-requests", "status", row.requestId);
-        this.notifications.dataChange("purchase-requests", "update", row.requestId);
-      } else if (isBelumLunas) {
-        await this.prisma.main.purchaseRequest.updateMany({
-          where: { id: row.requestId },
-          data: {
-            status: "DITERIMA",
-            paymentStatus: "BELUM_DIBAYAR",
-          },
-        }).catch(() => {});
-        this.notifications.dataChange("purchase-requests", "status", row.requestId);
-        this.notifications.dataChange("purchase-requests", "update", row.requestId);
-      } else if (isShipment && effShipment === "DIKIRIM") {
-        await this.prisma.main.purchaseRequest.updateMany({
-          where: { id: row.requestId, status: { notIn: ["DIKIRIM", "DITERIMA", "DIBATALKAN"] } },
-          data: { status: "DIKIRIM" },
-        }).catch(() => {});
-        this.notifications.dataChange("purchase-requests", "status", row.requestId);
-        this.notifications.dataChange("purchase-requests", "update", row.requestId);
-      } else if (isShipment && effShipment === "SAMPAI") {
-        await this.prisma.main.purchaseRequest.updateMany({
-          where: { id: row.requestId, status: { notIn: ["DIBATALKAN"] } },
-          data: { status: "DITERIMA" },
-        }).catch(() => {});
-        this.notifications.dataChange("purchase-requests", "status", row.requestId);
-        this.notifications.dataChange("purchase-requests", "update", row.requestId);
-      }
-    }
-
-    if (isShipment && effShipment === "DIKIRIM") {
-      await this.ensureReceivingCreated(id, user, (row as any).doFileId);
-    }
-
-    this.notifications.dataChange("supplier-pos", "status", updated.id);
-    this.notifications.dataChange("supplier-pos", "update", updated.id);
-    return this.get(updated.id);
+    this.notifications.dataChange("supplier-pos", "status", id);
+    this.notifications.dataChange("supplier-pos", "update", id);
+    return this.get(id);
   }
 
   /** Tracking pengiriman diubah manual oleh Procurement (PRD). */
   async setShipment(id: number, dto: ShipmentDto, user: RequestUser) {
-    const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
+    const row = await this.prisma.main.supplierPO.findUnique({
+      where: { id },
+      include: {
+        request: {
+          select: {
+            status: true,
+            requesterId: true,
+            procurementSource: true,
+            paymentMethod: true,
+            paymentStatus: true,
+            paymentProofFileId: true,
+            otherNote: true,
+          },
+        },
+      },
+    });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
-    if (dto.doFileId) {
-      await this.prisma.main.file.update({
-        where: { id: dto.doFileId },
-        data: { refType: "supplier-po-do", refId: String(id) },
-      }).catch(() => {});
-    }
 
     const rawShipment = String(dto.shipmentStatus);
     const effShipment: "DI_SUPPLIER" | "DIKIRIM" | "SAMPAI" =
@@ -845,13 +727,20 @@ export class PosService {
         : rawShipment === "DALAM_PERJALANAN"
         ? "DIKIRIM"
         : dto.shipmentStatus;
+    // Urutan: PO disetujui -> (tunai: dibayar Finance) -> Procurement tandai DIKIRIM -> Gudang terima (SAMPAI).
+    assertPoShipmentTransition(row, effShipment, user, row.request);
+
+    if (dto.doFileId) {
+      await this.prisma.main.file.update({
+        where: { id: dto.doFileId },
+        data: { refType: "supplier-po-do", refId: String(id) },
+      }).catch(() => {});
+    }
     const updated = await this.prisma.main.supplierPO.update({
       where: { id },
       data: {
         shipmentStatus: effShipment as never,
-        ...(effShipment === "DIKIRIM" || effShipment === "SAMPAI" ? { status: "DISETUJUI" } : {}),
         ...(dto.doFileId ? { doFileId: dto.doFileId } : {}),
-        ...(effShipment === "SAMPAI" ? { arrivedAt: row.arrivedAt || new Date() } : {}),
       },
       include: { supplier: { select: { id: true, name: true } } },
     });
@@ -872,19 +761,6 @@ export class PosService {
     }
 
     let reqId = row.requestId;
-    if (!reqId) {
-      const suffix = String(row.number || "").replace(/^(?:POD|PO-S|PO)\//i, "");
-      const matchedPr = await this.prisma.main.purchaseRequest.findFirst({
-        where: {
-          OR: [{ number: `PNJ/${suffix}` }, { number: { endsWith: suffix } }],
-        },
-        select: { id: true },
-      });
-      if (matchedPr) {
-        reqId = matchedPr.id;
-        void this.prisma.main.supplierPO.update({ where: { id: row.id }, data: { requestId: matchedPr.id } }).catch(() => {});
-      }
-    }
 
     if (effShipment === "DIKIRIM" && reqId) {
       await this.prisma.main.purchaseRequest.updateMany({
@@ -941,10 +817,32 @@ export class PosService {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
     if (row.status === "DIBATALKAN") return row;
+    if (![...PROCUREMENT_ROLES, ...FINANCE_ROLES].includes(user.role)) {
+      throw new ForbiddenException("Hanya Procurement atau Finance yang dapat membatalkan PO");
+    }
+    if (row.shipmentStatus !== "DI_SUPPLIER") {
+      throw new BadRequestException("PO yang sudah dikirim / diterima tidak bisa dibatalkan");
+    }
+    const receivingCount = await this.prisma.main.receiving.count({ where: { supplierPoId: id } });
+    if (receivingCount > 0) {
+      throw new BadRequestException("PO sudah memiliki dokumen penerimaan, tidak bisa dibatalkan");
+    }
     const updated = await this.prisma.main.supplierPO.update({
       where: { id },
       data: { status: "DIBATALKAN" },
     });
+    // Bila tidak ada PO aktif lain, request kembali ke Disetujui agar PO baru bisa dibuat.
+    if (row.requestId) {
+      const stillActive = await this.prisma.main.supplierPO.count({
+        where: { requestId: row.requestId, id: { not: id }, status: { notIn: ["DITOLAK", "DIBATALKAN"] } },
+      });
+      if (stillActive === 0) {
+        await this.prisma.main.purchaseRequest
+          .updateMany({ where: { id: row.requestId, status: "PO_DIBUAT" }, data: { status: "DISETUJUI" } })
+          .catch(() => {});
+        this.notifications.dataChange("purchase-requests", "status", row.requestId);
+      }
+    }
     await this.audit.log({
       actor: user,
       action: "BATALKAN_PO_SUPPLIER",
@@ -969,15 +867,14 @@ export class PosService {
           OR: [
             { supplierPoId: poId },
             ...(row.requestId ? [{ requestId: row.requestId }] : []),
-            { conditionNote: { contains: row.number } },
           ],
         },
       });
       if (!existingRec) {
         const recNumber = await this.docnum.next("penerimaan");
-        const defaultWh =
-          (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
-          (await this.prisma.main.warehouse.findFirst());
+        // Gudang diisi otomatis hanya bila tepat satu gudang aktif; bila lebih, Gudang memilih saat konfirmasi.
+        const activeWhs = await this.prisma.main.warehouse.findMany({ where: { status: "AKTIF" }, select: { id: true }, take: 2 });
+        const defaultWh = activeWhs.length === 1 ? activeWhs[0] : null;
 
         const recItems: any[] = [];
         for (const it of row.items) {
@@ -1007,7 +904,6 @@ export class PosService {
             date: new Date(),
             receiverId: user.id,
             status: "MENUNGGU",
-            conditionNote: `Pengiriman PO Supplier ${row.number}`,
             receiptFileId: doFileId ?? row.doFileId ?? null,
             items: {
               create: recItems,
@@ -1030,6 +926,9 @@ export class PosService {
   async remove(id: number, user: RequestUser) {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
+    if (!["MENUNGGU_PERSETUJUAN", "DITOLAK", "DIBATALKAN"].includes(row.status)) {
+      throw new BadRequestException("PO yang sudah disetujui tidak bisa dihapus, batalkan terlebih dahulu");
+    }
     await this.prisma.main.$transaction(async (tx) => {
       await tx.approval.deleteMany({ where: { kind: "SUPPLIER_PO", entityId: id } });
       await tx.supplierPOItem.deleteMany({ where: { poId: id } });

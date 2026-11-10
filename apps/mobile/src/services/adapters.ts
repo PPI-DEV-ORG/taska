@@ -81,7 +81,7 @@ const MAPS: Record<string, Record<string, string>> = {
     NEGOTIATION: "Negosiasi", REVISION: "Revisi", EXPIRED: "Kedaluwarsa",
   },
   surveys: { DIMINTA: "Diminta", DIJADWALKAN: "Dijadwalkan", BERJALAN: "Berjalan", SELESAI: "Selesai", BATAL: "Dibatalkan" },
-  "po-client": { PENDING: "Pending", DITERIMA: "Pending", LUNAS_SEBAGIAN: "Lunas sebagian", LUNAS: "Lunas", DIBATALKAN: "Dibatalkan" },
+  "po-client": { PENDING: "Belum dibayar", DITERIMA: "Belum dibayar", LUNAS_SEBAGIAN: "Lunas sebagian", LUNAS: "Lunas", DIBATALKAN: "Dibatalkan" },
   invoices: { DRAFT: "Belum dikirim", SENT: "Terkirim", PARTIAL: "Dibayar sebagian", PAID: "Lunas", OVERDUE: "Terlambat", BATAL: "Dibatalkan" },
   projects: {
     DIRENCANAKAN: "Direncanakan", BERJALAN: "Berjalan", DITUNDA: "Ditunda",
@@ -105,7 +105,7 @@ const MAPS: Record<string, Record<string, string>> = {
     BELUM_DIKIRIM: "Di Supplier", DI_SUPPLIER: "Di Supplier", DALAM_PERJALANAN: "Dalam Perjalanan", DIKIRIM: "Dikirim", SAMPAI: "Sampai",
   },
   receiving: { MENUNGGU: "Menunggu penerimaan", DITERIMA_SEBAGIAN: "Diterima sebagian", DITERIMA: "Diterima", DITOLAK: "Ditolak" },
-  "delivery-notes": { PENDING: "Pending", DIKIRIM: "Dikirim", DITERIMA: "Diterima", DIBATALKAN: "Dibatalkan" },
+  "delivery-notes": { PENDING: "Menunggu pengiriman", DIKIRIM: "Dikirim", DITERIMA: "Diterima", DIBATALKAN: "Dibatalkan" },
   expenses: { DILAPORKAN: "Dilaporkan", DISETUJUI: "Disetujui", DITOLAK: "Ditolak", DIBAYAR: "Dibayar" },
   "damage-reports": { DILAPORKAN: "Dilaporkan", DIPROSES: "Diproses", SELESAI: "Selesai" },
   users: { AKTIF: "Aktif", NONAKTIF: "Nonaktif" },
@@ -590,7 +590,7 @@ export function adaptRow(module: string, raw: any): Row {
           activeInvs.some(
             (b: any) => (b.status === "PAID" || b.status === "PARTIAL") && n(b.total) > 0,
           ));
-      const soStatusLabel = isSoLunas ? "Lunas" : isSoPartial ? "Lunas sebagian" : "Pending";
+      const soStatusLabel = isSoLunas ? "Lunas" : isSoPartial ? "Lunas sebagian" : "Belum dibayar";
       const soPaymentStatus = isSoLunas ? "LUNAS" : isSoPartial ? "LUNAS_SEBAGIAN" : "PENDING";
 
       return {
@@ -877,10 +877,7 @@ export function adaptRow(module: string, raw: any): Row {
       const isPaid =
         isPoPaid ||
         raw.status === "DIBAYAR" ||
-        raw.paymentStatus === "DIBAYAR" ||
-        !!raw.paymentProofFileId ||
-        !!raw.paymentProofFile ||
-        (raw.otherNote as string)?.includes("[DIBAYAR");
+        raw.paymentStatus === "DIBAYAR";
 
       const displayStatus = (() => {
         if (raw.status === "DITERIMA") {
@@ -931,7 +928,7 @@ export function adaptRow(module: string, raw: any): Row {
         doFile: raw.doFile ?? null,
         paymentProofFileId: raw.paymentProofFileId ?? (raw.paymentProofFile?.id ?? null),
         paymentProofFile: raw.paymentProofFile ?? null,
-        fundingSource: raw.fundingSource || (raw.otherNote?.match(/\[DIBAYAR:([^\]]+)\]/)?.[1] ?? null),
+        fundingSource: raw.fundingSource ?? raw.paymentAccountCode ?? null,
         ppnMode: raw.ppnMode || (raw.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] ?? "none"),
         paymentStatus: isPaid ? "DIBAYAR" : "BELUM_DIBAYAR",
         isPaid,
@@ -977,9 +974,7 @@ export function adaptRow(module: string, raw: any): Row {
           raw.paymentStatus === "DIBAYAR" ||
           raw.request?.status === "DIBAYAR" ||
           raw.request?.status === "LUNAS" ||
-          raw.request?.paymentStatus === "DIBAYAR" ||
-          !!raw.request?.paymentProofFileId ||
-          Boolean(String(raw.request?.otherNote || "").includes("[DIBAYAR"))
+          raw.request?.paymentStatus === "DIBAYAR"
         ));
 
       const displayStatus =

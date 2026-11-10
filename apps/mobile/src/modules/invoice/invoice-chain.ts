@@ -178,7 +178,7 @@ function findClientPo(row: Row, clientPos: Row[]): Row | null {
   return null;
 }
 
-/** Ambil nomor penawaran dari tampilan project, mis. "PNW/2026/11/016 - Customer". */
+/** Ambil nomor penawaran dari tampilan project, mis. "PNW/2026/11/016 - Pelanggan". */
 function quotationNumberFromText(value: unknown): string {
   const raw = String(value ?? "");
   const match = raw.match(/(?:PNW|QUO)[-\w/]+/i);
