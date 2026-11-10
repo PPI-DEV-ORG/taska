@@ -8,6 +8,8 @@ import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
+import { useApp } from "@/store/app-store";
+import { apiBase } from "@/services/api";
 
 export function QuotationPreviewModal({
   open,
@@ -58,6 +60,7 @@ export function QuotationPreviewModal({
   onDownloadExcel?: () => void;
   onSave?: () => void;
 }) {
+  const { companyProfile } = useApp();
   const activeNotes =
     notesList && notesList.length > 0
       ? notesList
@@ -67,7 +70,10 @@ export function QuotationPreviewModal({
           "Garansi perangkat 1 Tahun Harddisk dan PSU 6 Bulan Instalasi 3 Bulan",
         ];
 
-  const logoSource = kopLogoUrl || (row as any).kopLogoUrl;
+  const defaultLogo = companyProfile?.logoFileId ? `${apiBase()}/files/${companyProfile.logoFileId}` : "";
+  const defaultKop = [companyProfile?.name, companyProfile?.tagline, companyProfile?.address].filter(Boolean).join("\n");
+  const logoSource = kopLogoUrl || (row as any).kopLogoUrl || defaultLogo;
+  const effectiveKopText = kopText || row.kopText || defaultKop || "KOP SURAT";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,14 +91,14 @@ export function QuotationPreviewModal({
               />
             ) : null}
             <Text className="text-sm font-bold text-black tracking-wide uppercase text-center leading-snug">
-              {kopText || row.kopText || "KOP SURAT"}
+              {effectiveKopText}
             </Text>
           </View>
 
           {/* Tanggal Kanan */}
           <View className="items-end pt-1">
             <Text className="text-xs text-black font-bold">
-              {city || row.city || "Bekasi"}, {tanggal(row.dibuat || new Date().toISOString())}
+              {city || row.city || companyProfile?.city || "Bekasi"}, {tanggal(row.dibuat || new Date().toISOString())}
             </Text>
           </View>
 

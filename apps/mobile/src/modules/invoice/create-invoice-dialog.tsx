@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
 import {
+  CustomerSelect,
   DatePicker,
   SearchableSelect,
   QuickAddCustomerDialog,
@@ -1822,22 +1823,27 @@ function CreateInvoiceForm({
             {sourceType === "direct_sale" ? (
               <View className="gap-2 p-2.5 rounded-lg border border-border bg-card/60">
                 <FormField label="Customer (Opsional: Kosongkan untuk Pelanggan Langsung / Walk-in)">
-                  <SearchableSelect
+                  <CustomerSelect
                     value={
                       customCustomerName ||
                       (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama ||
                       ""
                     }
+                    customerId={selectedCustomerId}
                     onAddNew={() => setQuickCustomerOpen(true)}
                     addNewLabel="+ Tambah Customer Baru"
-                    onChange={(val) => {
-                      setCustomCustomerName(val);
-                      const match = (data.customers ?? []).find((c: Row) => c.nama === val);
-                      if (match) setSelectedCustomerId(String(match.id));
-                      else setSelectedCustomerId("");
+                    onChange={(cust) => {
+                      if (!cust) {
+                        setCustomCustomerName("");
+                        setSelectedCustomerId("");
+                        return;
+                      }
+                      const name = cust.company || cust.nama || cust.name || "";
+                      setCustomCustomerName(name);
+                      setSelectedCustomerId(String(cust.id));
                     }}
-                    options={Array.from(new Set([customCustomerName, "Pelanggan Langsung (Walk-in)", ...(data.customers ?? []).map((c: Row) => c.nama)])).filter(Boolean)}
                     placeholder="Pelanggan Langsung (Walk-in) / Cari customer..."
+                    allowClear
                   />
                 </FormField>
               </View>
@@ -1906,20 +1912,25 @@ function CreateInvoiceForm({
 
             {sourceType !== "direct_purchase" && sourceType !== "direct_sale" ? (
               <FormField label="Customer" required>
-                <SearchableSelect
+                <CustomerSelect
                   value={
                     customCustomerName ||
-                    (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama || ""
+                    (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId))?.nama ||
+                    ""
                   }
+                  customerId={selectedCustomerId}
                   onAddNew={() => setQuickCustomerOpen(true)}
                   addNewLabel="+ Tambah Customer Baru"
-                  onChange={(val) => {
-                    setCustomCustomerName(val);
-                    const match = (data.customers ?? []).find((c: Row) => c.nama === val);
-                    if (match) setSelectedCustomerId(String(match.id));
-                    else setSelectedCustomerId("");
+                  onChange={(cust) => {
+                    if (!cust) {
+                      setCustomCustomerName("");
+                      setSelectedCustomerId("");
+                      return;
+                    }
+                    const name = cust.company || cust.nama || cust.name || "";
+                    setCustomCustomerName(name);
+                    setSelectedCustomerId(String(cust.id));
                   }}
-                  options={Array.from(new Set([customCustomerName, ...(data.customers ?? []).map((c: Row) => c.nama)])).filter(Boolean)}
                   placeholder="Cari & pilih customer..."
                 />
               </FormField>

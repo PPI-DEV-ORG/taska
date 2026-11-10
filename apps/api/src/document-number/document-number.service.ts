@@ -16,7 +16,7 @@ export const DOC_TYPES = {
 
 export type DocType = keyof typeof DOC_TYPES;
 
-const FORMAT_UMUM: Record<DocType, string> = {
+export const FORMAT_UMUM: Record<DocType, string> = {
   penawaran: "PNW/YYYY/MM/NNN",
   clientPO: "SO/YYYY/MM/NNN",
   permintaan: "PNJ/YYYY/MM/NNN",
@@ -28,16 +28,22 @@ const FORMAT_UMUM: Record<DocType, string> = {
   proyek: "PRJ/YYYY/NNN",
 };
 
+const ROMAN_MONTHS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+
 function pad(n: number, width: number): string {
   return String(n).padStart(width, "0");
 }
 
-function applyFormat(format: string, year: number, month: number, seq: number): string {
+export function applyFormat(format: string, year: number, month: number, seq: number): string {
+  const romanMonth = ROMAN_MONTHS[Math.max(0, Math.min(11, month - 1))] || "I";
+  const yy = String(year).slice(-2);
   return format
-    .replace(/YYYY/g, String(year))
-    .replace(/MM/g, pad(month, 2))
-    .replace(/N{4}/g, pad(seq, 4))
-    .replace(/N{3}/g, pad(seq, 3))
+    .replace(/\{YYYY\}|YYYY/g, String(year))
+    .replace(/\{YY\}|\bYY\b/g, yy)
+    .replace(/\{ROMAN_MM\}|ROMAN_MM/g, romanMonth)
+    .replace(/\{MM\}|MM/g, pad(month, 2))
+    .replace(/\{NNNN\}|\{SEQ4\}|N{4}/g, pad(seq, 4))
+    .replace(/\{NNN\}|\{SEQ\}|N{3}/g, pad(seq, 3))
     .replace(/##{3}/g, pad(seq, 3))
     .replace(/##/g, pad(seq, 2));
 }
@@ -52,7 +58,8 @@ export class DocumentNumberService {
   private async format(docType: DocType, year: number, month: number, seq: number): Promise<string> {
     let format = FORMAT_UMUM[docType];
     try {
-      format = await this.settings.getValue(DOC_TYPES[docType]);
+      const saved = await this.settings.getValue(DOC_TYPES[docType]);
+      if (saved && saved.trim()) format = saved.trim();
     } catch {
       /* pakai format bawaan */
     }

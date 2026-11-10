@@ -3,6 +3,7 @@ import { DocumentationPhoto } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { UploadService } from "../upload/upload.service.js";
 import { AuditService } from "../audit/audit.service.js";
+import { SettingsService } from "../settings/settings.service.js";
 import { renderPdf } from "../common/pdf.js";
 import { can, type ModuleKey } from "../rbac/permissions.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
@@ -34,6 +35,7 @@ export class DocumentationService {
     private readonly prisma: PrismaService,
     private readonly upload: UploadService,
     private readonly audit: AuditService,
+    private readonly settings: SettingsService,
   ) {}
 
   private assert(kind: DocKind, user: RequestUser, action: "L" | "C" | "U") {
@@ -574,16 +576,32 @@ export class DocumentationService {
     }
 
     const entityLabel = await this.entityExists(kind, entityId);
+    const company = await this.settings.getCompanyProfile().catch(() => null);
+    if (!customHeader && company?.name) {
+      customHeader = company.name;
+    }
+    if (!images["headerLogo"] && company?.logoFileId && Number(company.logoFileId) > 0) {
+      try {
+        const logo = await this.upload.read(Number(company.logoFileId));
+        images["headerLogo"] = `data:image/png;base64,${logo.buffer.toString("base64")}`;
+      } catch {}
+    }
+
     const build = (imgs: Record<string, string>, items: Record<string, unknown>[]) => ({
       pageSize: "A4" as const,
       pageMargins: [40, 40, 40, 40] as [number, number, number, number],
       images: imgs,
       content: [
-        { text: TITLE_FOR[kind], fontSize: 14, bold: true, alignment: "center" },
         ...(imgs["headerLogo"]
-          ? [{ image: "headerLogo", width: 90, alignment: "center", margin: [0, 0, 0, 6] }]
+          ? [{ image: "headerLogo", width: 85, alignment: "center", margin: [0, 0, 0, 6] }]
           : []),
-        { text: customHeader || TITLE_FOR[kind], fontSize: 14, bold: true, alignment: "center" },
+        ...(customHeader
+          ? [{ text: customHeader, fontSize: 13, bold: true, alignment: "center", margin: [0, 0, 0, 2] }]
+          : []),
+        ...(company?.address
+          ? [{ text: `${company.address}${company.phone ? ` · Telp: ${company.phone}` : ""}`, fontSize: 8.5, color: "#555555", alignment: "center", margin: [0, 0, 0, 8] }]
+          : []),
+        { text: TITLE_FOR[kind], fontSize: 14, bold: true, alignment: "center" },
         { text: entityLabel.label, fontSize: 10, alignment: "center", margin: [0, 2, 0, 10] },
         ...items,
         {

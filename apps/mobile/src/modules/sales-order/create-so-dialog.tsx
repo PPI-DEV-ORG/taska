@@ -20,6 +20,7 @@ import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/taska/basics";
 import {
+  CustomerSelect,
   SearchableSelect,
   DatePicker,
   QuickAddCustomerDialog,
@@ -706,28 +707,22 @@ function CreateSalesOrderForm({
                 label="Customer / Pelanggan (Opsional)"
                 hint="Pilih pelanggan tujuan Sales Order ini (bisa dikosongkan jika umum/walk-in)"
               >
-                <SearchableSelect
+                <CustomerSelect
                   value={customerName}
-                  options={["- Tanpa Customer (Umum / Walk-in) -", ...customerOptions.map((c) => c.name)]}
-                  onChange={(val) => {
-                    if (val === "- Tanpa Customer (Umum / Walk-in) -") {
-                      setCustomerName("");
-                      setCustomerId("");
-                      return;
-                    }
-                    setCustomerName(val);
-                    const match = (data.customers ?? []).find(
-                      (c: Row) => (c.nama || c.name) === val || String(c.id) === String(val)
-                    );
-                    if (match) {
-                      setCustomerId(String(match.id));
+                  customerId={customerId}
+                  onChange={(c) => {
+                    if (c) {
+                      setCustomerName(c.company || c.nama || c.name || "");
+                      setCustomerId(String(c.id));
                     } else {
+                      setCustomerName("");
                       setCustomerId("");
                     }
                   }}
                   onAddNew={() => setQuickCustomerOpen(true)}
                   addNewLabel="+ Tambah Customer Baru"
                   placeholder="Pilih customer atau kosongkan..."
+                  allowClear
                 />
               </FormField>
             </View>

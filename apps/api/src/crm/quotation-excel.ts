@@ -85,6 +85,7 @@ export async function buildQuotationXlsx(params: {
   leadName?: string;
   kopText?: string;
   kopLogoUrl?: string;
+  kopLogoDataUrl?: string;
   subject?: string;
   intro?: string;
   items?: QuotationItemData[];
@@ -772,6 +773,7 @@ export async function buildQuotationPdf(params: {
   leadName?: string;
   kopText?: string;
   kopLogoUrl?: string;
+  kopLogoDataUrl?: string;
   subject?: string;
   intro?: string;
   items?: QuotationItemData[];
@@ -924,25 +926,43 @@ export async function buildQuotationPdf(params: {
   const notesList =
     Array.isArray(params.notes) && params.notes.length > 0 ? params.notes : DEFAULT_QUOTATION_NOTES;
 
-  const docDefinition = {
+  const docDefinition: Record<string, unknown> = {
     pageSize: "A4",
     pageMargins: [35, 30, 35, 30],
+    ...(params.kopLogoDataUrl ? { images: { kopLogo: params.kopLogoDataUrl } } : {}),
     content: [
       // KOP SURAT
       {
         table: {
-          widths: ["*"],
+          widths: params.kopLogoDataUrl ? [70, "*"] : ["*"],
           body: [
-            [
-              {
-                text: params.kopText?.trim() || "KOP SURAT",
-                fontSize: params.kopText ? 10 : 14,
-                bold: true,
-                alignment: "center",
-                margin: [0, 8, 0, 8],
-                color: "#111827",
-              },
-            ],
+            params.kopLogoDataUrl
+              ? [
+                  {
+                    image: "kopLogo",
+                    width: 60,
+                    alignment: "center",
+                    margin: [4, 6, 4, 6],
+                  },
+                  {
+                    text: params.kopText?.trim() || "KOP SURAT",
+                    fontSize: params.kopText ? 10 : 14,
+                    bold: true,
+                    alignment: "center",
+                    margin: [0, 8, 0, 8],
+                    color: "#111827",
+                  },
+                ]
+              : [
+                  {
+                    text: params.kopText?.trim() || "KOP SURAT",
+                    fontSize: params.kopText ? 10 : 14,
+                    bold: true,
+                    alignment: "center",
+                    margin: [0, 8, 0, 8],
+                    color: "#111827",
+                  },
+                ],
           ],
         },
         layout: {

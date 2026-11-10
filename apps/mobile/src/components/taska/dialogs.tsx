@@ -19,6 +19,7 @@ import { downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { pphRateFor, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import { MODULES, type CreateField, type ModuleDef, type Row } from "@/constants/modules";
 import {
+  CustomerSelect,
   PoClientSelect,
   QuotationSelect,
   LeadSelect,
@@ -27,6 +28,9 @@ import {
   SurveySelect,
   PocSelect,
   VisitSelect,
+  SupplierPoSelect,
+  PurchaseRequestSelect,
+  DraftReceivingSelect,
 } from "./document-select";
 
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
@@ -48,6 +52,7 @@ export {
   findSupplierMatch,
 };
 export {
+  CustomerSelect,
   PoClientSelect,
   QuotationSelect,
   LeadSelect,
@@ -56,6 +61,9 @@ export {
   SurveySelect,
   PocSelect,
   VisitSelect,
+  SupplierPoSelect,
+  PurchaseRequestSelect,
+  DraftReceivingSelect,
 } from "./document-select";
 export function formatThousands(raw: any): string {
   if (raw == null || raw === "") return "";
@@ -1372,6 +1380,35 @@ export function FormDialog({
                       addNewLabel="+ Tambah Supplier Baru"
                       placeholder={`Pilih ${f.label.toLowerCase()}...`}
                       error={!!errs[f.key]}
+                    />
+                  ) : (f.key === "customer" || f.key === "customerId" || f.key === "perusahaan" || String(f.label || "").toLowerCase() === "customer") ? (
+                    <CustomerSelect
+                      value={vals[f.key]}
+                      customerId={vals.customerId}
+                      allowClear={!f.required}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      onAddNew={() => setQuickCustomerKey(f.key)}
+                      addNewLabel="+ Tambah Customer Baru"
+                      onChange={(cust) => {
+                        if (!cust) {
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: f.required ? "" : "-",
+                            ...(s.customerId ? { customerId: "" } : {}),
+                          }));
+                          return;
+                        }
+                        const name = cust.company || cust.nama || cust.name || "";
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: name,
+                          customerId: String(cust.id),
+                          ...(cust.pic && cust.pic !== "-" && (!s.kontak || s.kontak === "-") ? { kontak: cust.pic } : {}),
+                          ...(cust.phone && (!s.telepon || s.telepon === "-") ? { telepon: cust.phone } : {}),
+                          ...(cust.email && (!s.email || s.email === "-") ? { email: cust.email } : {}),
+                        }));
+                      }}
                     />
                   ) : (f.key === "lead" || f.key === "leadId") ? (
                     <LeadSelect

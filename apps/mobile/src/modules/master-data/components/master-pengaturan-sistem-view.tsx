@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View } from "react-native";
-import { ArrowLeft } from "lucide-react-native";
+import { ArrowLeft, Building2, FileText, Shield } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -8,6 +8,9 @@ import { PageHeader, Panel } from "@/components/taska/basics";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { api } from "@/services/api";
+import { useApp } from "@/store/app-store";
+import { CompanyProfileDialog } from "@/modules/settings/company-profile-dialog";
+import { RoleManagementDialog } from "@/modules/users/role-management-dialog";
 
 interface MasterPengaturanSistemViewProps {
   user: any;
@@ -20,8 +23,12 @@ export function MasterPengaturanSistemView({
   onBack,
   toast,
 }: MasterPengaturanSistemViewProps) {
+  const { companyProfile, docFormats, roles } = useApp();
   const [thresholdInput, setThresholdInput] = React.useState("10000000");
   const [ppnInput, setPpnInput] = React.useState("11");
+  const [companyDialogOpen, setCompanyDialogOpen] = React.useState(false);
+  const [companyDialogTab, setCompanyDialogTab] = React.useState<"company" | "formats">("company");
+  const [roleDialogOpen, setRoleDialogOpen] = React.useState(false);
 
   React.useEffect(() => {
     void (async () => {
@@ -116,13 +123,89 @@ export function MasterPengaturanSistemView({
       </Panel>
 
       <Panel
+        title="Profil Perusahaan, Logo & Kop Dokumen (White-Label)"
+        subtitle="Nama perusahaan, logo, alamat, rekening bank, dan penandatangan default untuk seluruh cetakan dokumen."
+        right={
+          canEditSettings ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => {
+                setCompanyDialogTab("company");
+                setCompanyDialogOpen(true);
+              }}
+              className="flex-row items-center gap-1.5"
+            >
+              <Building2 size={14} color={colors.primary} />
+              <Text className="text-xs font-semibold text-primary">Atur Profil & Logo Perusahaan</Text>
+            </Button>
+          ) : null
+        }
+      >
+        <View className="gap-1.5">
+          <Text className="text-sm font-bold text-foreground">{companyProfile.name || "PT Samtek"}</Text>
+          <Text className="text-xs text-muted-foreground">{companyProfile.tagline || "-"}</Text>
+          <Text className="text-xs text-muted-foreground">{companyProfile.address || "-"}</Text>
+          {companyProfile.bankAccount ? (
+            <Text className="text-xs text-primary font-medium">
+              Rekening Default: {companyProfile.bankName} — {companyProfile.bankAccount} a.n {companyProfile.bankHolder || companyProfile.name}
+            </Text>
+          ) : null}
+        </View>
+      </Panel>
+
+      <Panel
+        title="Manajemen Role & Matriks Hak Akses (Dynamic RBAC)"
+        subtitle="Buat role kustom baru atau sesuaikan izin akses per modul dan aksi."
+        right={
+          canEditSettings ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => setRoleDialogOpen(true)}
+              className="flex-row items-center gap-1.5"
+            >
+              <Shield size={14} color={colors.primary} />
+              <Text className="text-xs font-semibold text-primary">Kelola Role & Hak Akses ({roles.length} Role)</Text>
+            </Button>
+          ) : null
+        }
+      >
+        <View className="flex-row flex-wrap gap-1.5">
+          {roles.map((r) => (
+            <View key={r.code} className="bg-panel border border-border rounded-lg px-2.5 py-1">
+              <Text className="text-xs font-semibold text-foreground">{r.name}</Text>
+            </View>
+          ))}
+        </View>
+      </Panel>
+
+      <Panel
         title="Format Penomoran Dokumen Otomatis"
-        subtitle="Template kode penomoran yang di-generate otomatis oleh modul."
+        subtitle="Template kode penomoran yang di-generate otomatis oleh modul (mendukung {YYYY}, {MM}, {ROMAN_MM}, {NNN})."
+        right={
+          canEditSettings ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => {
+                setCompanyDialogTab("formats");
+                setCompanyDialogOpen(true);
+              }}
+              className="flex-row items-center gap-1.5"
+            >
+              <FileText size={14} color={colors.primary} />
+              <Text className="text-xs font-semibold text-primary">Kustomisasi Format Nomor</Text>
+            </Button>
+          ) : null
+        }
       >
         <View className="gap-2">
-          <Text className="text-xs font-mono text-muted-foreground">Penawaran: PNW/YYYY/MM/XXX (Contoh: PNW/2026/10/001)</Text>
-          <Text className="text-xs font-mono text-muted-foreground">PO Supplier: PO/YYYY/MM/XXX (Contoh: PO/2026/10/001)</Text>
-          <Text className="text-xs font-mono text-muted-foreground">Surat Jalan: SJ/YYYY/MM/XXX (Contoh: SJ/2026/10/001)</Text>
+          <Text className="text-xs font-mono text-muted-foreground">Penawaran: {docFormats.penawaran || "QUO/{YYYY}/{MM}/{NNN}"}</Text>
+          <Text className="text-xs font-mono text-muted-foreground">Sales Order (SO): {docFormats.salesOrder || "SO/{YYYY}/{MM}/{NNN}"}</Text>
+          <Text className="text-xs font-mono text-muted-foreground">PO Supplier: {docFormats.poSupplier || "PO/{YYYY}/{MM}/{NNN}"}</Text>
+          <Text className="text-xs font-mono text-muted-foreground">Invoice: {docFormats.invoice || "INV/{YYYY}/{MM}/{NNN}"}</Text>
+          <Text className="text-xs font-mono text-muted-foreground">Surat Jalan: {docFormats.suratJalan || "SJN/{YYYY}/{MM}/{NNN}"}</Text>
         </View>
       </Panel>
 
@@ -131,6 +214,13 @@ export function MasterPengaturanSistemView({
           <Text>Simpan Perubahan Pengaturan</Text>
         </Button>
       ) : null}
+
+      <CompanyProfileDialog
+        open={companyDialogOpen}
+        onOpenChange={setCompanyDialogOpen}
+        initialTab={companyDialogTab}
+      />
+      <RoleManagementDialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen} />
     </View>
   );
 }

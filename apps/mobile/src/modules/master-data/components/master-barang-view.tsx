@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View } from "react-native";
+import { View, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Edit3, Layers, Plus } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,11 @@ export function MasterBarangView({
   // Edit Harga & Min Stok Dialog State
   const [editPriceOpen, setEditPriceOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<any>(null);
+  const [editNamaVal, setEditNamaVal] = React.useState("");
+  const [editMerkVal, setEditMerkVal] = React.useState("");
+  const [editCategoryVal, setEditCategoryVal] = React.useState("");
+  const [editSkuVal, setEditSkuVal] = React.useState("");
+  const [editGaransiVal, setEditGaransiVal] = React.useState("2 tahun");
   const [editHargaVal, setEditHargaVal] = React.useState("");
   const [editHargaJualVal, setEditHargaJualVal] = React.useState("");
   const [editMinStokVal, setEditMinStokVal] = React.useState("");
@@ -85,6 +90,12 @@ export function MasterBarangView({
 
   function handleOpenEditPrice(product: any) {
     setEditingProduct(product);
+    setEditNamaVal(product.nama || product.name || "");
+    setEditSkuVal(product.sku || "");
+    setEditMerkVal(product.merk && product.merk !== "-" ? product.merk : (product.brand && product.brand !== "-" ? product.brand : ""));
+    const defaultCat = data.productCategories?.[0]?.nama ? String(data.productCategories[0].nama) : "Kamera CCTV";
+    setEditCategoryVal(product.kategori || product.category?.name || defaultCat);
+    setEditGaransiVal(product.garansi && product.garansi !== "-" ? product.garansi : (product.warrantyMonths ? `${product.warrantyMonths} bulan` : "2 tahun"));
     const currPrice = product.hargaBeli ?? product.purchasePrice ?? 0;
     const currSellPrice = product.hargaJual ?? product.price ?? 0;
     const currMin = product.minStock ?? product.min ?? 0;
@@ -96,12 +107,27 @@ export function MasterBarangView({
 
   async function handleSavePrice() {
     if (!editingProduct || !patchRow) return;
+    if (!editSkuVal.trim()) {
+      toast("Kode SKU wajib diisi", "danger");
+      return;
+    }
     setIsSavingPrice(true);
     try {
       const cleanPrice = Number(editHargaVal.replace(/\D/g, "")) || 0;
       const cleanSellPrice = Number(editHargaJualVal.replace(/\D/g, "")) || 0;
       const cleanMin = Number(editMinStokVal.replace(/\D/g, "")) || 0;
+      const matchedCat = (data.productCategories || []).find(
+        (c: any) => c.nama === editCategoryVal || c.name === editCategoryVal
+      );
       await patchRow("products", editingProduct.id, {
+        nama: editNamaVal.trim() || editingProduct.nama,
+        name: editNamaVal.trim() || editingProduct.nama,
+        sku: editSkuVal.trim().toUpperCase(),
+        merk: editMerkVal.trim() || "-",
+        brand: editMerkVal.trim() || "-",
+        kategori: editCategoryVal,
+        categoryId: matchedCat?.id ? Number(matchedCat.id) : undefined,
+        garansi: editGaransiVal,
         hargaBeli: cleanPrice,
         purchasePrice: cleanPrice,
         hargaJual: cleanSellPrice,
@@ -109,7 +135,7 @@ export function MasterBarangView({
         min: cleanMin,
         minStock: cleanMin,
       });
-      toast(`Harga & Stok Minimum untuk "${editingProduct.nama || editingProduct.sku}" berhasil diperbarui`);
+      toast(`Data barang "${editNamaVal.trim() || editingProduct.nama || editSkuVal}" berhasil diperbarui`);
       setEditPriceOpen(false);
       setEditingProduct(null);
     } catch (err: any) {
@@ -368,56 +394,117 @@ export function MasterBarangView({
         </DialogContent>
       </Dialog>
 
-      {/* Modal Edit Harga & Minimal Stok Barang / Jasa */}
+      {/* Modal Edit Master Barang & Produk */}
       <Dialog open={editPriceOpen} onOpenChange={setEditPriceOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle>Edit Harga & Minimal Stok</DialogTitle>
+            <DialogTitle>Edit Data Master Barang & Produk</DialogTitle>
           </DialogHeader>
-          <View className="gap-3 py-2">
-            <View className="bg-muted/40 p-3 rounded-lg border border-border/60 gap-1">
-              <Text className="text-xs text-muted-foreground">Item:</Text>
-              <Text className="text-sm font-bold text-foreground">
-                {editingProduct?.nama}
-              </Text>
-              <Text className="text-xs font-mono text-primary">
-                SKU: {editingProduct?.sku} · Satuan: {editingProduct?.satuan}
-              </Text>
-            </View>
+          <ScrollView className="max-h-[70vh]" contentContainerStyle={{ paddingBottom: 8 }}>
+            <View className="gap-3.5 py-1">
+              <View className="bg-muted/40 p-3 rounded-lg border border-border/60 gap-1">
+                <Text className="text-xs text-muted-foreground">Item Saat Ini:</Text>
+                <Text className="text-sm font-bold text-foreground">
+                  {editingProduct?.nama}
+                </Text>
+                <Text className="text-xs font-mono text-primary">
+                  SKU Awal: {editingProduct?.sku} · Satuan: {editingProduct?.satuan}
+                </Text>
+              </View>
 
-            <FormField label="Harga Beli / Acuan (Rp)" required>
-              <Input
-                value={editHargaVal ? formatThousands(editHargaVal) : ""}
-                onChangeText={(v) => setEditHargaVal(v.replace(/\D/g, ""))}
-                keyboardType="numeric"
-                placeholder="Contoh: 1.500.000"
-                autoFocus
-              />
-            </FormField>
-
-            <FormField label="Harga Jual Acuan (Rp)">
-              <Input
-                value={editHargaJualVal ? formatThousands(editHargaJualVal) : ""}
-                onChangeText={(v) => setEditHargaJualVal(v.replace(/\D/g, ""))}
-                keyboardType="numeric"
-                placeholder="Contoh: 1.800.000"
-              />
-            </FormField>
-
-            {editingProduct?.type !== "JASA" && (
-              <FormField
-                label="Stok Minimum Peringatan (Unit)"
-                hint="Bila saldo stok di gudang berada di bawah angka ini, sistem menandai peringatan stok rendah"
-              >
+              <FormField label="Nama Produk / Barang" required>
                 <Input
-                  value={editMinStokVal}
-                  onChangeText={(v) => setEditMinStokVal(v.replace(/\D/g, ""))}
-                  keyboardType="numeric"
-                  placeholder="Contoh: 5"
+                  value={editNamaVal}
+                  onChangeText={setEditNamaVal}
+                  placeholder="Contoh: Switch PoE 24 Port Managed"
                 />
               </FormField>
-            )}
-          </View>
+
+              <View className="flex-row flex-wrap gap-3">
+                <View className="flex-1 min-w-[200px]">
+                  <FormField label="Kode SKU" required>
+                    <Input
+                      value={editSkuVal}
+                      onChangeText={(v) => setEditSkuVal(v.toUpperCase())}
+                      placeholder="Contoh: SW-POE-24P"
+                    />
+                  </FormField>
+                </View>
+
+                <View className="flex-1 min-w-[200px]">
+                  <FormField label="Merk / Brand (Pabrikan)">
+                    <Input
+                      value={editMerkVal}
+                      onChangeText={setEditMerkVal}
+                      placeholder="Contoh: Uniview, Hikvision, Ruijie"
+                    />
+                  </FormField>
+                </View>
+              </View>
+
+              <View className="flex-row flex-wrap gap-3">
+                <View className="flex-1 min-w-[200px]">
+                  <FormField label="Kategori Produk" required>
+                    <SearchableSelect
+                      value={editCategoryVal}
+                      onChange={setEditCategoryVal}
+                      options={(data.productCategories || []).map((c: any) => String(c.nama))}
+                      placeholder="Pilih kategori..."
+                    />
+                  </FormField>
+                </View>
+
+                <View className="flex-1 min-w-[200px]">
+                  <FormField label="Garansi Unit" required>
+                    <SearchableSelect
+                      value={editGaransiVal}
+                      onChange={setEditGaransiVal}
+                      options={["1 tahun", "2 tahun", "3 tahun", "5 tahun", "Tanpa garansi"]}
+                      placeholder="Pilih masa garansi..."
+                    />
+                  </FormField>
+                </View>
+              </View>
+
+              <View className="flex-row flex-wrap gap-3">
+                <View className="flex-1 min-w-[200px]">
+                  <FormField label="Harga Beli / Acuan (Rp)" required>
+                    <Input
+                      value={editHargaVal ? formatThousands(editHargaVal) : ""}
+                      onChangeText={(v) => setEditHargaVal(v.replace(/\D/g, ""))}
+                      keyboardType="numeric"
+                      placeholder="Contoh: 1.500.000"
+                    />
+                  </FormField>
+                </View>
+
+                <View className="flex-1 min-w-[200px]">
+                  <FormField label="Harga Jual Acuan (Rp)">
+                    <Input
+                      value={editHargaJualVal ? formatThousands(editHargaJualVal) : ""}
+                      onChangeText={(v) => setEditHargaJualVal(v.replace(/\D/g, ""))}
+                      keyboardType="numeric"
+                      placeholder="Contoh: 1.800.000"
+                    />
+                  </FormField>
+                </View>
+              </View>
+
+              {editingProduct?.type !== "JASA" && (
+                <FormField
+                  label="Stok Minimum Peringatan (Unit)"
+                  hint="Bila saldo stok di gudang berada di bawah angka ini, sistem menandai peringatan stok rendah"
+                >
+                  <Input
+                    value={editMinStokVal}
+                    onChangeText={(v) => setEditMinStokVal(v.replace(/\D/g, ""))}
+                    keyboardType="numeric"
+                    placeholder="Contoh: 5"
+                  />
+                </FormField>
+              )}
+            </View>
+          </ScrollView>
           <DialogFooter>
             <Button variant="outline" onPress={() => setEditPriceOpen(false)} disabled={isSavingPrice}>
               <Text>Batal</Text>

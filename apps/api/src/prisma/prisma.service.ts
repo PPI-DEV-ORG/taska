@@ -32,9 +32,9 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
 
   private async ensureRoleEnums(db: PrismaClient) {
     try {
-      await db.$executeRawUnsafe(`ALTER TABLE \`User\` MODIFY COLUMN \`role\` ${ROLE_ENUM_SQL} NOT NULL`);
-      await db.$executeRawUnsafe(`ALTER TABLE \`Notification\` MODIFY COLUMN \`targetRole\` ${ROLE_ENUM_SQL} NULL`);
-      await db.$executeRawUnsafe(`ALTER TABLE \`ApprovalStep\` MODIFY COLUMN \`approverRole\` ${ROLE_ENUM_SQL} NOT NULL`);
+      await db.$executeRawUnsafe("ALTER TABLE `User` MODIFY COLUMN `role` VARCHAR(64) NOT NULL DEFAULT 'SALES'");
+      await db.$executeRawUnsafe("ALTER TABLE `Notification` MODIFY COLUMN `targetRole` VARCHAR(64) NULL");
+      await db.$executeRawUnsafe("ALTER TABLE `ApprovalStep` MODIFY COLUMN `approverRole` VARCHAR(64) NOT NULL");
       await db.$executeRawUnsafe("ALTER TABLE `SystemSetting` MODIFY COLUMN `value` LONGTEXT NOT NULL");
     } catch {}
     // Ensure StockReservation & item serial columns for Phase 1-5 SN reservation flow

@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } from "@/components/taska/basics";
 import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
 import {
+  CustomerSelect,
   LeadSelect,
   ProjectSelect,
   QuotationSelect,
@@ -16,6 +17,7 @@ import {
   PocSelect,
   VisitSelect,
 } from "@/components/taska/document-select";
+import { SupplierSelect } from "@/components/taska/supplier-select";
 import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { ModuleExtras } from "@/screens/module-extras";
@@ -99,25 +101,22 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     return () => {
       active = false;
     };
-  }, [moduleKey, id, refreshIndex]);
+  }, [moduleKey, id, refreshIndex, rowFromStore]);
 
   const row = React.useMemo(() => {
     if (!remoteRow) return rowFromStore;
     if (!rowFromStore) return remoteRow;
     return {
-      ...rowFromStore,
       ...remoteRow,
-      ...(rowFromStore.items !== undefined ? { items: rowFromStore.items } : {}),
-      ...(rowFromStore.total !== undefined ? { total: rowFromStore.total } : {}),
-      ...(rowFromStore.nilai !== undefined ? { nilai: rowFromStore.nilai } : {}),
-      ...(rowFromStore.amount !== undefined ? { amount: rowFromStore.amount } : {}),
-      ...(rowFromStore.ppn !== undefined ? { ppn: rowFromStore.ppn } : {}),
-      ...(rowFromStore.pph !== undefined ? { pph: rowFromStore.pph } : {}),
+      ...rowFromStore,
+      items: Array.isArray(rowFromStore.items) && rowFromStore.items.length > 0 ? rowFromStore.items : (remoteRow.items ?? rowFromStore.items),
+      _payments: Array.isArray(rowFromStore._payments) && rowFromStore._payments.length > 0 ? rowFromStore._payments : (remoteRow._payments ?? rowFromStore._payments),
+      _followUps: Array.isArray(rowFromStore._followUps) && rowFromStore._followUps.length > 0 ? rowFromStore._followUps : (remoteRow._followUps ?? rowFromStore._followUps),
+      files: Array.isArray(rowFromStore.files) && rowFromStore.files.length > 0 ? rowFromStore.files : (remoteRow.files ?? rowFromStore.files),
+      versions: Array.isArray(remoteRow.versions) && remoteRow.versions.length > 0 ? remoteRow.versions : rowFromStore.versions,
       ...(rowFromStore.status ? { status: rowFromStore.status, rawStatus: toEnum(moduleKey, rowFromStore.status) || rowFromStore.status } : {}),
-      ...(rowFromStore.pengiriman ? { pengiriman: rowFromStore.pengiriman } : {}),
-      ...(rowFromStore.shipmentStatus ? { shipmentStatus: rowFromStore.shipmentStatus } : {}),
     };
-  }, [remoteRow, rowFromStore]);
+  }, [remoteRow, rowFromStore, moduleKey]);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
@@ -1080,7 +1079,45 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                         error={errs[f.key]}
                       >
                         {f.type === "select" ? (
-                          (f.key === "lead" || f.key === "leadId") ? (
+                          (f.key === "customer" || f.key === "customerId" || f.key === "perusahaan" || String(f.label || "").toLowerCase() === "customer") ? (
+                            <CustomerSelect
+                              value={getFieldValue(f)}
+                              customerId={edits.customerId ?? row.customerId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onAddNew={() => setQuickCustomerKey(f.key)}
+                              addNewLabel="+ Tambah Customer Baru"
+                              onChange={(cust) => {
+                                if (!cust) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("customerId", null);
+                                  return;
+                                }
+                                const name = cust.company || cust.nama || cust.name || "";
+                                setFieldValue(f.key, name);
+                                setFieldValue("customerId", cust.id);
+                                if (cust.pic && cust.pic !== "-") {
+                                  setFieldValue("kontak", cust.pic);
+                                }
+                              }}
+                            />
+                          ) : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase() === "supplier") ? (
+                            <SupplierSelect
+                              value={getFieldValue(f)}
+                              supplierId={edits.supplierId ?? row.supplierId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onAddNew={() => setQuickSupplierKey(f.key)}
+                              addNewLabel="+ Tambah Supplier Baru"
+                              onChange={(name, supp) => {
+                                setFieldValue(f.key, name || (f.required ? "" : "-"));
+                                if (supp?.id) setFieldValue("supplierId", supp.id);
+                                if (supp?.payment) setFieldValue("payment", supp.payment);
+                              }}
+                            />
+                          ) : (f.key === "lead" || f.key === "leadId") ? (
                             <LeadSelect
                               value={getFieldValue(f)}
                               leadId={edits.leadId ?? row.leadId}

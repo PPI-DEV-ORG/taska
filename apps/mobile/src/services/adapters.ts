@@ -1,4 +1,4 @@
-import type { Row, User, Role } from "@/constants/modules";
+import { getClientDynamicRoles, ROLE_LABEL, type Row, type User, type Role } from "@/constants/modules";
 import { apiBase } from "@/services/api";
 
 export type ApiUser = {
@@ -279,18 +279,32 @@ const ROLE_FROM_LABEL: Record<string, string> = {
 };
 
 export function roleFromUi(role: string): string {
-  return ROLE_FROM_LABEL[role] ?? ROLE_FROM_UI[role] ?? "SALES";
+  const dyn = getClientDynamicRoles();
+  const matchedDyn = dyn.find(
+    (r) => r.name.toLowerCase() === String(role || "").toLowerCase() || r.code.toLowerCase() === String(role || "").toLowerCase(),
+  );
+  if (matchedDyn) return matchedDyn.code;
+  return ROLE_FROM_LABEL[role] ?? ROLE_FROM_UI[role] ?? String(role || "SALES").toUpperCase().replace(/[^A-Z0-9_]/g, "_");
 }
 
 // Label role untuk ditampilkan (detail/daftar), dihitung dari enum backend.
 export function roleLabelOf(role: string | undefined): string {
+  if (!role) return "Sales";
+  const dyn = getClientDynamicRoles();
+  const matchedDyn = dyn.find((r) => r.code.toUpperCase() === role.toUpperCase());
+  if (matchedDyn) return matchedDyn.name;
+  if (ROLE_LABEL[role.toLowerCase()]) return ROLE_LABEL[role.toLowerCase()]!;
   const ui = roleToUi(role);
-  const entry = Object.entries(ROLE_FROM_LABEL).find(([, v]) => v === (role ?? "").toUpperCase());
+  const entry = Object.entries(ROLE_FROM_LABEL).find(([, v]) => v === role.toUpperCase());
   if (entry) return entry[0];
   return ui.charAt(0).toUpperCase() + ui.slice(1);
 }
 export function roleToUi(role: string | undefined): Role {
-  return (role && ROLE_UI[role]) || "sales";
+  if (!role) return "sales";
+  if (ROLE_UI[role]) return ROLE_UI[role];
+  const upper = role.toUpperCase();
+  if (ROLE_UI[upper]) return ROLE_UI[upper];
+  return role.toLowerCase();
 }
 
 export function apiUserToRow(u: ApiUser): User {
@@ -2704,6 +2718,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.nominal !== undefined) out.amount = num(patch.nominal);
   if (patch.satuan !== undefined) out.unit = patch.satuan;
   if (patch.merk !== undefined) out.brand = patch.merk;
+  if (patch.brand !== undefined) out.brand = patch.brand;
   if (patch.berSN !== undefined) out.hasSerial = !!patch.berSN;
   if (patch.min !== undefined) out.minStock = num(patch.min);
   if (patch.minStock !== undefined) out.minStock = num(patch.minStock);
@@ -2718,7 +2733,22 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
     out.description = desc;
   }
-  if (patch.garansi !== undefined) out.warrantyMonths = parseInt(String(patch.garansi), 10) || undefined;
+  if (patch.garansi !== undefined) {
+    const rawG = String(patch.garansi).toLowerCase();
+    if (rawG.includes("tahun") || rawG.includes("thn") || rawG.includes("yr")) {
+      out.warrantyMonths = (parseInt(rawG, 10) || 1) * 12;
+    } else if (rawG.includes("tanpa") || rawG === "-" || rawG === "0") {
+      out.warrantyMonths = undefined;
+    } else {
+      out.warrantyMonths = parseInt(rawG, 10) || undefined;
+    }
+  }
+  if (patch.warrantyMonths !== undefined) out.warrantyMonths = Number(patch.warrantyMonths) || undefined;
+  if (patch.categoryId !== undefined) out.categoryId = patch.categoryId ? Number(patch.categoryId) : undefined;
+  else if (patch.kategori !== undefined && module === "products") {
+    const matchCat = (db?.productCategories ?? []).find((c: any) => c.nama === patch.kategori || c.name === patch.kategori);
+    if (matchCat?.id) out.categoryId = Number(matchCat.id);
+  }
   if (patch.payment !== undefined) out.paymentTerms = patch.payment;
 
   if (patch.fileId !== undefined) {

@@ -11,6 +11,7 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { UploadService } from "../upload/upload.service.js";
+import { SettingsService } from "../settings/settings.service.js";
 import { ReservationsService } from "../stock/reservations.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
@@ -56,7 +57,25 @@ export class QuotationsService {
     private readonly approvals: ApprovalsService,
     private readonly upload: UploadService,
     private readonly reservations: ReservationsService,
+    private readonly settings: SettingsService,
   ) {}
+
+  private async resolveKopDefaults(meta?: any): Promise<{ kopText?: string; kopLogoDataUrl?: string }> {
+    const company = await this.settings.getCompanyProfile().catch(() => null);
+    const defaultKopText = company?.name
+      ? `${company.name}${company.address ? `\n${company.address}` : ""}${company.phone ? ` · Telp: ${company.phone}` : ""}${company.email ? ` · Email: ${company.email}` : ""}`
+      : undefined;
+    const kopText = meta?.kopText?.trim() || defaultKopText;
+    let kopLogoDataUrl: string | undefined;
+    const logoId = Number((meta as any)?.kopLogoFileId || company?.logoFileId || 0);
+    if (logoId > 0) {
+      try {
+        const logo = await this.upload.read(logoId);
+        kopLogoDataUrl = `data:image/png;base64,${logo.buffer.toString("base64")}`;
+      } catch {}
+    }
+    return { kopText, kopLogoDataUrl };
+  }
 
   private normalizeItem(it: any, idx: number): QuotationItemData {
     const serialNumbers = Array.isArray(it.serialNumbers)
@@ -763,6 +782,7 @@ export class QuotationsService {
     if (!row) throw new NotFoundException("Penawaran tidak ditemukan");
 
     const meta = (await this.getMetaMap([id])).get(id);
+    const kop = await this.resolveKopDefaults(meta);
     const buffer = await buildQuotationXlsx({
       quoteNo: row.number,
       date: row.createdAt,
@@ -770,7 +790,7 @@ export class QuotationsService {
       customerName: row.customer?.name || "-",
       customerAddress: meta?.customerAddress || row.customer?.address || "Di Tempat",
       leadName: row.lead?.name || "-",
-      kopText: meta?.kopText,
+      kopText: kop.kopText,
       subject: meta?.subject,
       intro: meta?.intro,
       items: meta?.items ?? [],
@@ -800,6 +820,7 @@ export class QuotationsService {
     if (!row) throw new NotFoundException("Penawaran tidak ditemukan");
 
     const meta = (await this.getMetaMap([id])).get(id);
+    const kop = await this.resolveKopDefaults(meta);
     const buffer = await buildQuotationPdf({
       quoteNo: row.number,
       date: row.createdAt,
@@ -807,8 +828,9 @@ export class QuotationsService {
       customerName: row.customer?.name || "-",
       customerAddress: meta?.customerAddress || row.customer?.address || "Di Tempat",
       leadName: row.lead?.name || "-",
-      kopText: meta?.kopText,
+      kopText: kop.kopText,
       kopLogoUrl: (meta as any)?.kopLogoUrl,
+      kopLogoDataUrl: kop.kopLogoDataUrl,
       subject: meta?.subject,
       intro: meta?.intro,
       items: meta?.items ?? [],
@@ -849,6 +871,7 @@ export class QuotationsService {
       });
       if (leadRow) {
         const suggestedNo = await this.docnum.suggest("penawaran");
+        const kop = await this.resolveKopDefaults();
         const buffer = await buildQuotationXlsx({
           quoteNo: query.nomor || suggestedNo,
           date: new Date(),
@@ -857,6 +880,8 @@ export class QuotationsService {
           leadName: leadRow.name,
           total: Number(leadRow.estimatedValue) || 0,
           signerName: leadRow.owner?.name || query.signer || "Sales",
+          kopText: kop.kopText,
+          kopLogoDataUrl: kop.kopLogoDataUrl,
         });
         const safeName = leadRow.name.replace(/[^a-zA-Z0-9_-]/g, "-");
         return { buffer, filename: `Template-Penawaran-${safeName}.xlsx` };
@@ -864,6 +889,7 @@ export class QuotationsService {
     }
 
     const suggestedNo = query.nomor || (await this.docnum.suggest("penawaran"));
+    const kop = await this.resolveKopDefaults();
     const buffer = await buildQuotationXlsx({
       quoteNo: suggestedNo,
       date: new Date(),
@@ -871,6 +897,8 @@ export class QuotationsService {
       customerName: query.customer || "-",
       leadName: query.lead || "Pekerjaan",
       signerName: query.signer || "Sales",
+      kopText: kop.kopText,
+      kopLogoDataUrl: kop.kopLogoDataUrl,
     });
     return {
       buffer,
@@ -902,6 +930,7 @@ export class QuotationsService {
       });
       if (leadRow) {
         const suggestedNo = await this.docnum.suggest("penawaran");
+        const kop = await this.resolveKopDefaults();
         const buffer = await buildQuotationPdf({
           quoteNo: query.nomor || suggestedNo,
           date: new Date(),
@@ -910,6 +939,8 @@ export class QuotationsService {
           leadName: leadRow.name,
           total: Number(leadRow.estimatedValue) || 0,
           signerName: leadRow.owner?.name || query.signer || "Sales",
+          kopText: kop.kopText,
+          kopLogoDataUrl: kop.kopLogoDataUrl,
         });
         const safeName = leadRow.name.replace(/[^a-zA-Z0-9_-]/g, "-");
         return { buffer, filename: `Template-Penawaran-${safeName}.pdf` };
@@ -917,6 +948,7 @@ export class QuotationsService {
     }
 
     const suggestedNo = query.nomor || (await this.docnum.suggest("penawaran"));
+    const kop = await this.resolveKopDefaults();
     const buffer = await buildQuotationPdf({
       quoteNo: suggestedNo,
       date: new Date(),
@@ -924,6 +956,8 @@ export class QuotationsService {
       customerName: query.customer || "-",
       leadName: query.lead || "Pekerjaan",
       signerName: query.signer || "Sales",
+      kopText: kop.kopText,
+      kopLogoDataUrl: kop.kopLogoDataUrl,
     });
     return {
       buffer,

@@ -191,7 +191,7 @@ function RecordClientPoForm({
             <View className="flex-1 min-w-[240px]">
               <FormField
                 label="Nomor PO Customer"
-                helper="Nomor PO resmi dari customer. Kosongkan untuk nomor otomatis sistem."
+                hint="Nomor PO resmi dari customer. Kosongkan untuk nomor otomatis sistem."
               >
                 <Input
                   value={poNumber}
@@ -203,7 +203,7 @@ function RecordClientPoForm({
 
             {/* Tanggal PO */}
             <View className="flex-1 min-w-[240px]">
-              <FormField label="Tanggal Dokumen PO *" helper="Tanggal terbit PO dari pihak customer">
+              <FormField label="Tanggal Dokumen PO *" hint="Tanggal terbit PO dari pihak customer">
                 <DatePicker value={date} onChange={setDate} placeholder="Pilih tanggal PO" />
               </FormField>
             </View>
@@ -214,7 +214,7 @@ function RecordClientPoForm({
             <View className="flex-1 min-w-[240px]">
               <FormField
                 label="Total Nilai PO (Rp) *"
-                helper="Total nilai pesanan / kontrak sesuai PO customer"
+                hint="Total nilai pesanan / kontrak sesuai PO customer"
               >
                 <Input
                   value={amountStr}
@@ -227,7 +227,7 @@ function RecordClientPoForm({
 
             {/* Customer Info (Read-only) */}
             <View className="flex-1 min-w-[240px]">
-              <FormField label="Customer Project" helper="Pelanggan pemesan (terikat otomatis ke project ini)">
+              <FormField label="Customer Project" hint="Pelanggan pemesan (terikat otomatis ke project ini)">
                 <View className="h-10 px-3 justify-center rounded-lg border border-border/70 bg-muted/40">
                   <Text className="text-sm font-medium text-foreground truncate" numberOfLines={1}>
                     {customerName}
@@ -253,7 +253,7 @@ function RecordClientPoForm({
           {/* Catatan / Keterangan */}
           <FormField
             label="Catatan PO Customer (Opsional)"
-            helper="Ketentuan termin penagihan, catatan instruksi pengiriman, atau catatan lainnya"
+            hint="Ketentuan termin penagihan, catatan instruksi pengiriman, atau catatan lainnya"
           >
             <Input
               value={notes}

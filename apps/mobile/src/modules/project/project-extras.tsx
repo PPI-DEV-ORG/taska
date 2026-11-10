@@ -17,7 +17,7 @@ import { api, apiBase, downloadDocumentationPdf } from "@/services/api";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands, tanggal } from "@/lib/format";
-import { type Row } from "@/constants/modules";
+import { hasUserPermission, type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
 import { DocumentViewerItem, resolveModuleDocs } from "@/components/taska/document-viewer";
@@ -63,7 +63,7 @@ const PPH_OPTIONS = [
 
 export function ProjectExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { toast, data, reload, user, patchRow } = useApp();
+  const { toast, data, reload, refreshModule, user, patchRow, companyProfile } = useApp();
   const products: Row[] = data.products ?? [];
   const serials: Row[] = data.serials ?? [];
   const [pickerOpen, setPickerOpen] = React.useState(false);
@@ -135,9 +135,9 @@ export function ProjectExtras({ row }: { row: Row }) {
 
   const normalizedRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
   const isSales = normalizedRole === "sales";
-  const canViewBoqPricing = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
-  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "admin"].includes(normalizedRole);
-  const canManageInvoice = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole);
+  const canViewBoqPricing = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole) || hasUserPermission(user, "projects", "P");
+  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "admin"].includes(normalizedRole) || hasUserPermission(user, "projects", "P");
+  const canManageInvoice = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole) || hasUserPermission(user, "invoices", "C");
 
   const [quotationDetail, setQuotationDetail] = React.useState<any>(null);
   const [recordClientPoOpen, setRecordClientPoOpen] = React.useState(false);
@@ -603,15 +603,17 @@ export function ProjectExtras({ row }: { row: Row }) {
   }
 
 
-  const prevBastOpenRef = React.useRef(false);
-  React.useEffect(() => {
-    if (bastOpen && !prevBastOpenRef.current) {
+  function openBastDialog() {
+    setBastOpen(true);
       const todayStr = new Date().toISOString().slice(0, 10);
       setBastNumber(`BAST-P${row.id}-${todayStr.replace(/-/g, "")}`);
       setBastDate(todayStr);
-      setBastP1Company("PT GHINA MULTI PRIMA");
-      setBastP1Name(row.pm || user?.name || "Project Manager");
-      setBastP1Title("Project Manager");
+      setBastP1Company(companyProfile.name || "PT GHINA MULTI PRIMA");
+      setBastP1Name(row.pm || companyProfile.signatoryName || user?.name || "Project Manager");
+      setBastP1Title(companyProfile.signatoryTitle || "Project Manager");
+      if (companyProfile.logoFileId) {
+        setBastLogoFileId(Number(companyProfile.logoFileId));
+      }
       setBastP2Company(row.customer || "Customer");
       setBastP2Name(row.picClient || "Penanggung Jawab Proyek");
       setBastP2Title("Penanggung Jawab Proyek");
@@ -648,9 +650,7 @@ export function ProjectExtras({ row }: { row: Row }) {
           }
         })
         .catch(() => {});
-    }
-    prevBastOpenRef.current = bastOpen;
-  }, [bastOpen]);
+  }
 
   async function handleGenerateBast() {
     setIsGeneratingBast(true);
@@ -1107,7 +1107,7 @@ export function ProjectExtras({ row }: { row: Row }) {
         title="Berita Acara Serah Terima (BAST)"
         subtitle="Dokumen legal serah terima pekerjaan selesai kepada klien."
         right={
-          <Button size="sm" variant="outline" onPress={() => setBastOpen(true)} className="flex-row items-center gap-1.5">
+          <Button size="sm" variant="outline" onPress={openBastDialog} className="flex-row items-center gap-1.5">
             <Printer size={14} color={colors.text} />
             <Text className="text-xs">Generate Draf BAST</Text>
           </Button>

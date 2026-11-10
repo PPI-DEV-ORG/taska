@@ -17,7 +17,7 @@ import { FormField } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, uploadFile } from "@/services/api";
 import { subscribeNotificationTap } from "@/services/notify";
-import { NAV_BY_ROLE, ROLE_LABEL, type NavItem } from "@/constants/modules";
+import { getNavForUser, ROLE_LABEL, type NavItem } from "@/constants/modules";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { colors } from "@/tokens";
 import { kelompokHari, waktuRelatif } from "@/lib/format";
@@ -26,9 +26,9 @@ import { cn } from "@/lib/utils";
 const NOTIF_ICON = { approval: CheckSquare, stok: Boxes, pengiriman: Truck, lead: Target, tugas: ListChecks, surat: FileSignature };
 
 function useNav() {
-  const { user } = useApp();
+  const { user, roles } = useApp();
   const pathname = usePathname();
-  const items = NAV_BY_ROLE[user!.role];
+  const items = React.useMemo(() => getNavForUser(user), [user, roles]);
   const active = (i: NavItem) => pathname === i.href || pathname.startsWith(i.href + "/");
   return { items, active, pathname };
 }
@@ -171,7 +171,7 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
               </View>
               <View className="flex-1">
                 <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>{user!.name}</Text>
-                <Text className="text-muted-foreground text-[11px]" numberOfLines={1}>{ROLE_LABEL[user!.role]}</Text>
+                <Text className="text-muted-foreground text-[11px]" numberOfLines={1}>{ROLE_LABEL[user!.role] || user!.roleLabel || user!.role}</Text>
               </View>
               <Pressable onPress={logout} hitSlop={10} className="p-1.5 rounded-lg hover:bg-panel">
                 <LogOut size={16} color={colors.muted} />
@@ -514,7 +514,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
               </View>
               <View className="flex-row items-center justify-between">
                 <Text className="text-muted-foreground text-xs">Role / Divisi</Text>
-                <Text className="text-foreground text-xs font-semibold">{ROLE_LABEL[user.role]}</Text>
+                <Text className="text-foreground text-xs font-semibold">{ROLE_LABEL[user.role] || user.roleLabel || user.role}</Text>
               </View>
             </View>
 

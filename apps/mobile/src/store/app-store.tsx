@@ -1,8 +1,25 @@
 import * as React from "react";
 import { Platform } from "react-native";
 import { colorScheme } from "nativewind";
-import { useRouter } from "expo-router";
-import { MODULES, ROLE_LABEL, NAV_BY_ROLE, CAN_APPROVE, type Notif, type Row, type User, type Role } from "@/constants/modules";
+import { usePathname, useRouter } from "expo-router";
+import {
+  MODULES,
+  ROLE_LABEL,
+  NAV_BY_ROLE,
+  CAN_APPROVE,
+  DEFAULT_COMPANY_PROFILE,
+  DEFAULT_SYSTEM_ROLES,
+  setClientDynamicRoles,
+  getClientDynamicRoles,
+  canUserApprove,
+  hasUserPermission,
+  type Notif,
+  type Row,
+  type User,
+  type Role,
+  type RoleDef,
+  type CompanyProfile,
+} from "@/constants/modules";
 import { NotifPopupHost, ToastHost, type NotifPopupItem, type ToastItem } from "@/components/taska/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens, isNetworkError } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
@@ -75,6 +92,9 @@ const STORAGE_CACHE_DB_KEY = "taska.offline.db.v1";
 const STORAGE_CACHE_USER_KEY = "taska.offline.user.v1";
 const STORAGE_CACHE_HIST_KEY = "taska.offline.hist.v1";
 const STORAGE_CACHE_APPROVALS_KEY = "taska.offline.approvals.v1";
+const STORAGE_CACHE_COMPANY_KEY = "taska.offline.company.v1";
+const STORAGE_CACHE_DOC_FORMATS_KEY = "taska.offline.docFormats.v1";
+const STORAGE_CACHE_ROLES_KEY = "taska.offline.roles.v1";
 
 const FIELD_LABELS: Record<string, string> = {
   nama: "Nama",
@@ -187,6 +207,13 @@ type Ctx = {
   hydrated: boolean;
   theme: "dark" | "light";
   toggleTheme: () => void;
+  companyProfile: CompanyProfile;
+  updateCompanyProfile: (patch: Partial<CompanyProfile>) => Promise<CompanyProfile | null>;
+  docFormats: Record<string, string>;
+  updateDocFormats: (formats: Record<string, string>) => Promise<Record<string, string> | null>;
+  roles: RoleDef[];
+  saveRole: (role: Partial<RoleDef> & { name: string }, isEdit?: boolean) => Promise<RoleDef[] | null>;
+  deleteRole: (code: string) => Promise<RoleDef[] | null>;
 };
 
 const AppContext = React.createContext<Ctx | null>(null);
@@ -202,7 +229,61 @@ const emptyDB = (): DB => ({
   "visit-reports": [], "visit-activity-types": [],
 });
 
-/** Modul yang diambil dari backend saat load. Beberapa dibuat lazily (tasks, stock) karena mahal. */
+/** Modul yang diambil per halaman aktif agar tidak memanggil seluruh 28 endpoint sekaligus saat refresh/pindah halaman. */
+const ROUTE_MODULES_BY_SEGMENT: Record<string, readonly string[]> = {
+  dashboard: [
+    "users", "customers", "suppliers",
+    "leads", "quotations", "surveys", "po-client", "invoices", "projects", "tasks",
+    "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses",
+    "damage-reports", "products", "serials", "warehouses", "opname", "poc-reports", "visit-reports",
+  ],
+  calendar: [
+    "users", "customers", "suppliers",
+    "surveys", "projects", "tasks", "poc-reports", "visit-reports",
+    "invoices", "supplier-pos", "delivery-notes", "followups", "leads",
+  ],
+  approvals: [
+    "quotations", "surveys", "purchase-requests", "supplier-pos",
+    "receiving", "delivery-notes", "expenses", "opname",
+  ],
+  leads: ["leads", "quotations", "customers", "leadSources", "lostReasons", "followups", "users", "surveys", "projects", "po-client"],
+  quotations: ["quotations", "leads", "customers", "products", "serials", "projects", "po-client", "invoices"],
+  surveys: ["surveys", "leads", "projects", "customers", "users", "expenses"],
+  "poc-reports": ["poc-reports", "projects", "leads", "customers", "users", "products"],
+  "visit-reports": ["visit-reports", "visit-activity-types", "projects", "leads", "customers", "users"],
+  customers: ["customers"],
+  projects: [
+    "projects", "tasks", "leads", "quotations", "po-client", "invoices", "invoiceIn",
+    "purchase-requests", "supplier-pos", "expenses", "delivery-notes", "products",
+    "serials", "customers", "users", "surveys", "poc-reports", "visit-reports",
+  ],
+  tasks: ["tasks", "projects", "users"],
+  "purchase-requests": ["purchase-requests", "projects", "products", "serials", "suppliers", "supplier-pos", "expenses", "warehouses"],
+  "supplier-pos": ["supplier-pos", "purchase-requests", "suppliers", "po-client", "receiving", "invoiceIn", "products", "serials", "warehouses", "projects", "expenses"],
+  shipments: ["supplier-pos", "receiving", "suppliers", "warehouses"],
+  receiving: ["receiving", "supplier-pos", "warehouses", "products", "serials", "movements"],
+  stock: ["products", "serials", "movements", "reservations", "warehouses", "productCategories", "suppliers", "projects"],
+  opname: ["opname", "warehouses", "products", "serials"],
+  "delivery-notes": ["delivery-notes", "projects", "products", "serials", "warehouses", "invoices", "po-client", "customers"],
+  "po-client": ["po-client", "quotations", "leads", "customers", "projects", "invoices", "products", "serials", "supplier-pos"],
+  invoices: ["invoices", "invoiceIn", "po-client", "quotations", "projects", "customers", "products", "serials", "damage-reports", "delivery-notes", "supplier-pos"],
+  expenses: ["expenses", "projects", "surveys", "expenseCategories", "costCenters", "users", "poc-reports", "visit-reports"],
+  accounting: ["invoices", "invoiceIn", "expenses", "supplier-pos", "po-client", "projects", "payrollSlips"],
+  "damage-reports": ["damage-reports", "products", "serials", "warehouses", "suppliers", "customers", "invoices", "supplier-pos", "receiving"],
+  reports: ["leads", "quotations", "po-client", "invoices", "invoiceIn", "projects", "purchase-requests", "supplier-pos", "expenses", "products", "customers", "suppliers", "users"],
+  hr: ["users", "payrollSlips", "expenses"],
+  "master-data": ["customers", "suppliers", "warehouses", "products", "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters", "visit-activity-types"],
+  users: ["users", "warehouses"],
+  archive: ["leads", "quotations", "po-client", "invoices", "projects", "surveys", "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses", "damage-reports", "poc-reports", "visit-reports"],
+  "audit-log": ["audit-log", "users"],
+};
+
+function getModulesForPath(pathname?: string): readonly string[] | undefined {
+  const raw = pathname || (typeof window !== "undefined" ? window.location.pathname : "") || "";
+  const seg = raw.split("/").filter(Boolean)[0] || "";
+  if (!seg || seg === "login") return undefined;
+  return ROUTE_MODULES_BY_SEGMENT[seg];
+}
 const EAGER_MODULES = [
   "tasks", "leads", "quotations", "surveys", "po-client", "invoices", "projects",
   "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses",
@@ -324,12 +405,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [approvals, setApprovals] = React.useState<ApprovalRow[]>(() =>
     readStorageJson<ApprovalRow[]>(STORAGE_CACHE_APPROVALS_KEY, [])
   );
+  const [companyProfile, setCompanyProfile] = React.useState<CompanyProfile>(() =>
+    readStorageJson<CompanyProfile>(STORAGE_CACHE_COMPANY_KEY, DEFAULT_COMPANY_PROFILE)
+  );
+  const [docFormats, setDocFormats] = React.useState<Record<string, string>>(() =>
+    readStorageJson<Record<string, string>>(STORAGE_CACHE_DOC_FORMATS_KEY, {})
+  );
+  const [roles, setRoles] = React.useState<RoleDef[]>(() => {
+    const cached = readStorageJson<RoleDef[]>(STORAGE_CACHE_ROLES_KEY, []);
+    if (Array.isArray(cached) && cached.length > 0) {
+      setClientDynamicRoles(cached);
+      return getClientDynamicRoles();
+    }
+    setClientDynamicRoles(DEFAULT_SYSTEM_ROLES);
+    return DEFAULT_SYSTEM_ROLES;
+  });
   const [notifs, setNotifs] = React.useState<Notif[]>([]);
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
   const [notifPopups, setNotifPopups] = React.useState<NotifPopupItem[]>([]);
   const seenNotifIdsRef = React.useRef<Set<string>>(new Set());
   const notifHydratedRef = React.useRef<boolean>(false);
+  const fetchedModulesRef = React.useRef<Set<string>>(new Set());
+  const settingsLoadedRef = React.useRef<boolean>(false);
   const router = useRouter();
+  const pathname = usePathname();
   const [offline, setOffline] = React.useState<boolean>(() => {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
     return false;
@@ -414,10 +513,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return true;
     });
 
-    const isApprover = role && CAN_APPROVE.includes(role);
+    const isApprover = canUserApprove(activeUser);
+    const needStockSummary =
+      !targetModules ||
+      targetModules.some((m) => ["stock", "products", "serials", "warehouses", "opname", "invoices", "quotations", "projects"].includes(m));
+    const needSettings = !settingsLoadedRef.current;
 
-    const [pairs, notifRes, appr, stockRes] = await Promise.all([
-      Promise.all(modulesToFetch.map(async (m) => [m, await fetchList(m)] as const)),
+    const [pairs, notifRes, appr, stockRes, companyRes, docFmtRes, rolesRes] = await Promise.all([
+      Promise.all(
+        modulesToFetch.map(async (m) => {
+          const rows = await fetchList(m);
+          fetchedModulesRef.current.add(m);
+          return [m, rows] as const;
+        }),
+      ),
       (async () => {
         try {
           return await api<Page<any>>("GET", "/notifications?limit=50");
@@ -426,22 +535,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       })(),
       (async () => {
-        if (!isApprover) return [] as ApprovalRow[];
+        if (!isApprover) return null;
+        if (targetModules && !targetModules.some((m) => ["approvals", "quotations", "surveys", "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses", "opname"].includes(m))) {
+          return null;
+        }
         try {
           const r = await api<{ items: any[] }>("GET", "/approvals?limit=100");
           return adaptApprovalList(r.items);
         } catch {
-          return [] as ApprovalRow[];
+          return null;
         }
       })(),
       (async () => {
+        if (!needStockSummary) return null;
         try {
           return await api<Page<any>>("GET", "/stock/summary?limit=200");
         } catch {
           return null;
         }
       })(),
+      (async () => {
+        if (!needSettings) return null;
+        try {
+          return await api<CompanyProfile>("GET", "/settings/company");
+        } catch {
+          return null;
+        }
+      })(),
+      (async () => {
+        if (!needSettings) return null;
+        try {
+          return await api<Record<string, string>>("GET", "/settings/doc-formats");
+        } catch {
+          return null;
+        }
+      })(),
+      (async () => {
+        if (!needSettings) return null;
+        try {
+          return await api<RoleDef[]>("GET", "/settings/roles");
+        } catch {
+          return null;
+        }
+      })(),
     ]);
+
+    if (companyRes || docFmtRes || rolesRes) {
+      settingsLoadedRef.current = true;
+    }
+
+    if (companyRes) {
+      setCompanyProfile(companyRes);
+      writeStorageJson(STORAGE_CACHE_COMPANY_KEY, companyRes);
+    }
+    if (docFmtRes) {
+      setDocFormats(docFmtRes);
+      writeStorageJson(STORAGE_CACHE_DOC_FORMATS_KEY, docFmtRes);
+    }
+    if (rolesRes && Array.isArray(rolesRes)) {
+      setClientDynamicRoles(rolesRes);
+      setRoles(rolesRes);
+      writeStorageJson(STORAGE_CACHE_ROLES_KEY, rolesRes);
+    }
 
     let withOfflineResult: DB | null = null;
     setData((prev) => {
@@ -478,7 +633,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setUser(u);
       writeStorageJson(STORAGE_CACHE_USER_KEY, u);
       setOffline(false);
-      await loadAll(undefined, u);
+      fetchedModulesRef.current.clear();
+      settingsLoadedRef.current = false;
+      await loadAll(getModulesForPath(), u);
       // minta izin notifikasi saat masih dalam gestur tap login (iOS perlu gesture)
       void ensureNotifPermission();
     },
@@ -490,6 +647,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     writeStorageJson(STORAGE_CACHE_USER_KEY, null);
     writeStorageJson(STORAGE_CACHE_APPROVALS_KEY, []);
     seenNotifIdsRef.current.clear();
+    fetchedModulesRef.current.clear();
+    settingsLoadedRef.current = false;
     notifHydratedRef.current = false;
     setNotifPopups([]);
     syncServiceWorkerAuth([]);
@@ -521,7 +680,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const reload = React.useCallback(async () => {
-    await loadAll();
+    await loadAll(getModulesForPath());
   }, [loadAll]);
 
   const refreshNotifs = React.useCallback(async () => {
@@ -573,7 +732,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setUser(u);
         writeStorageJson(STORAGE_CACHE_USER_KEY, u);
         setOffline(false);
-        await loadAll(undefined, u);
+        await loadAll(getModulesForPath(), u);
         void ensureNotifPermission();
       } catch (err: any) {
         if (isNetworkError(err)) {
@@ -763,11 +922,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshModule = React.useCallback(async (module: string) => {
+    fetchedModulesRef.current.add(module);
     if (module === "approvals") {
       await refreshApprovals();
       return [];
     }
     if (module === "tasks") {
+      fetchedModulesRef.current.add("projects");
       const projects = await fetchList("projects");
       const taskRows = await fetchTasks(projects);
       setData((d) => {
@@ -807,6 +968,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     refreshModuleRef.current = refreshModule;
   }, [refreshModule]);
+
+  // Saat berpindah halaman (route), muat modul yang dibutuhkan halaman tersebut jika belum pernah dimuat di sesi ini
+  React.useEffect(() => {
+    if (!hydrated || !user || offline) return;
+    const needed = getModulesForPath(pathname);
+    if (!needed || needed.length === 0) return;
+    const missing = needed.filter((m) => !fetchedModulesRef.current.has(m));
+    if (missing.length > 0) {
+      for (const m of missing) fetchedModulesRef.current.add(m);
+      void loadAll(missing, user);
+    }
+  }, [pathname, hydrated, user, offline, loadAll]);
 
   const enqueueOfflineAdd = React.useCallback(
     (module: string, row: Record<string, any>): Row => {
@@ -1401,13 +1574,88 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         toast(decision === "Disetujui" ? "Dokumen disetujui" : "Dokumen ditolak", decision === "Disetujui" ? "success" : "danger");
-        await reload();
+        await refreshApprovals();
+        if (target?.module) {
+          await refreshModule(target.module);
+        }
       } catch (e: any) {
         if (isNetworkError(e)) setOffline(true);
         toast(e?.message ?? "Gagal memutuskan", "danger");
       }
     },
-    [approvals, pushHistory, toast, reload],
+    [approvals, pushHistory, toast, refreshApprovals, refreshModule],
+  );
+
+  const updateCompanyProfile = React.useCallback(
+    async (patch: Partial<CompanyProfile>): Promise<CompanyProfile | null> => {
+      try {
+        const updated = await api<CompanyProfile>("PUT", "/settings/company", patch);
+        setCompanyProfile(updated);
+        writeStorageJson(STORAGE_CACHE_COMPANY_KEY, updated);
+        toast("Profil perusahaan & template dokumen berhasil disimpan");
+        return updated;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal menyimpan profil perusahaan", "danger");
+        return null;
+      }
+    },
+    [toast],
+  );
+
+  const updateDocFormats = React.useCallback(
+    async (formats: Record<string, string>): Promise<Record<string, string> | null> => {
+      try {
+        const updated = await api<Record<string, string>>("PUT", "/settings/doc-formats", formats);
+        setDocFormats(updated);
+        writeStorageJson(STORAGE_CACHE_DOC_FORMATS_KEY, updated);
+        toast("Format penomoran dokumen berhasil disimpan");
+        return updated;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal menyimpan format dokumen", "danger");
+        return null;
+      }
+    },
+    [toast],
+  );
+
+  const saveRole = React.useCallback(
+    async (role: Partial<RoleDef> & { name: string }, isEdit?: boolean): Promise<RoleDef[] | null> => {
+      try {
+        const updated = isEdit && role.code
+          ? await api<RoleDef[]>("PUT", `/settings/roles/${encodeURIComponent(role.code)}`, role)
+          : await api<RoleDef[]>("POST", "/settings/roles", role);
+        if (Array.isArray(updated)) {
+          setClientDynamicRoles(updated);
+          setRoles(updated);
+          writeStorageJson(STORAGE_CACHE_ROLES_KEY, updated);
+        }
+        toast(isEdit ? `Peran '${role.name}' berhasil diperbarui` : `Peran baru '${role.name}' berhasil dibuat`);
+        return updated;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal menyimpan peran", "danger");
+        return null;
+      }
+    },
+    [toast],
+  );
+
+  const deleteRole = React.useCallback(
+    async (code: string): Promise<RoleDef[] | null> => {
+      try {
+        const updated = await api<RoleDef[]>("DELETE", `/settings/roles/${encodeURIComponent(code)}`);
+        if (Array.isArray(updated)) {
+          setClientDynamicRoles(updated);
+          setRoles(updated);
+          writeStorageJson(STORAGE_CACHE_ROLES_KEY, updated);
+        }
+        toast("Peran berhasil dihapus");
+        return updated;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal menghapus peran", "danger");
+        return null;
+      }
+    },
+    [toast],
   );
 
   const myNotifs = notifs;
@@ -1430,10 +1678,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pendingSyncCount: pendingQueue.length,
       syncOfflineQueue,
       reload, refreshModule, hydrated, theme, toggleTheme,
+      companyProfile, updateCompanyProfile,
+      docFormats, updateDocFormats,
+      roles, saveRole, deleteRole,
     }),
     [user, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, loadHistory, approvals, refreshApprovals, decide, myNotifs, unread, markRead, markAllRead,
-     toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme],
+     toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme,
+     companyProfile, updateCompanyProfile, docFormats, updateDocFormats, roles, saveRole, deleteRole],
   );
 
   return (

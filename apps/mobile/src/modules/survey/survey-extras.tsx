@@ -19,7 +19,7 @@ import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-
 import { Line } from "@/modules/shared/line";
 
 export function SurveyExtras({ row }: { row: Row }) {
-  const { addRow, patchRow, toast, data, user } = useApp();
+  const { addRow, patchRow, toast, data, user, companyProfile } = useApp();
   const [techNoteOpen, setTechNoteOpen] = React.useState(false);
   const [techNotes, setTechNotes] = React.useState(row.catatanTeknis || "");
   const [inputTechNotes, setInputTechNotes] = React.useState(techNotes);
@@ -453,8 +453,20 @@ export function SurveyExtras({ row }: { row: Row }) {
           </DialogHeader>
           <ScrollView className="py-2 gap-4">
             <View className="bg-panel border-border/80 rounded-xl border p-4 gap-2">
-              <Text className="font-bold text-sm tracking-wide">PT GHINA MULTI PRIMA / TASKA</Text>
-              <Text className="text-xs text-muted-foreground">Laporan Resmi Inspeksi Lapangan</Text>
+              <View className="flex-row items-center gap-3">
+                {companyProfile.logoFileId ? (
+                  <Image
+                    source={{ uri: `${apiBase()}/files/${companyProfile.logoFileId}` }}
+                    style={{ width: 48, height: 36, resizeMode: "contain" }}
+                  />
+                ) : null}
+                <View className="flex-1">
+                  <Text className="font-bold text-sm tracking-wide">{(companyProfile.name || "PT SAMTEK").toUpperCase()}</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {companyProfile.address || "Laporan Resmi Inspeksi Lapangan"}
+                  </Text>
+                </View>
+              </View>
               <View className="border-border border-t pt-2 gap-1 mt-1">
                 <Text className="text-xs font-semibold">Lead / Project: {row.lead}</Text>
                 <Text className="text-xs text-muted-foreground">Customer: {row.customer}</Text>

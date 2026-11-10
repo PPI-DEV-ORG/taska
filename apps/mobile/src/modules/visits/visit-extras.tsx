@@ -45,7 +45,7 @@ type ActionItem = {
 
 export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void }) {
   const router = useRouter();
-  const { data, user, toast, patchRow, setStatus, refreshModule } = useApp();
+  const { data, user, toast, patchRow, setStatus, refreshModule, companyProfile } = useApp();
 
   const [pdfBusy, setPdfBusy] = React.useState(false);
   const [actions, setActions] = React.useState<ActionItem[]>(() =>
@@ -72,7 +72,7 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
 
   // Header & Logo customization dialog
   const [headerDialogOpen, setHeaderDialogOpen] = React.useState(false);
-  const [companyHeader, setCompanyHeader] = React.useState(row.companyHeader || "");
+  const [companyHeader, setCompanyHeader] = React.useState(row.companyHeader || companyProfile.name || "");
   const logoUploaderRef = React.useRef<FileUploaderHandle | null>(null);
 
   const reloadVisit = React.useCallback(async () => {

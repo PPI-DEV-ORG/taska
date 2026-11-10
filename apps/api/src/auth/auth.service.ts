@@ -14,6 +14,7 @@ import { AuditService } from "../audit/audit.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 
 const MAX_ATTEMPTS = 5;
+const MAX_IP_ATTEMPTS = 15;
 const WINDOW_MS = 15 * 60 * 1000;
 
 type RateEntry = { count: number; firstAt: number };
@@ -42,25 +43,38 @@ export class AuthService {
     return createHash("sha256").update(token).digest("hex");
   }
 
-  private checkRate(key: string) {
+  private checkRate(key: string, ipKey?: string) {
     const now = Date.now();
     const entry = this.attempts.get(key);
-    if (!entry || now - entry.firstAt > WINDOW_MS) {
-      this.attempts.set(key, { count: 1, firstAt: now });
-      return;
-    }
-    entry.count += 1;
-    if (entry.count > MAX_ATTEMPTS) {
+    if (entry && now - entry.firstAt <= WINDOW_MS && entry.count >= MAX_ATTEMPTS) {
       throw new HttpException(
-        "Terlalu banyak percobaan login. Coba lagi dalam 15 menit",
+        "Terlalu banyak percobaan login gagal untuk akun ini. Coba lagi dalam 15 menit",
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
+    if (ipKey) {
+      const ipEntry = this.attempts.get(ipKey);
+      if (ipEntry && now - ipEntry.firstAt <= WINDOW_MS && ipEntry.count >= MAX_IP_ATTEMPTS) {
+        throw new HttpException(
+          "Terlalu banyak percobaan login gagal dari perangkat/jaringan ini. Coba lagi dalam 15 menit",
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
   }
 
-  private fail(key: string) {
-    const entry = this.attempts.get(key);
-    if (!entry) this.attempts.set(key, { count: 1, firstAt: Date.now() });
+  private fail(key: string, ipKey?: string) {
+    const now = Date.now();
+    const bump = (k: string) => {
+      const entry = this.attempts.get(k);
+      if (!entry || now - entry.firstAt > WINDOW_MS) {
+        this.attempts.set(k, { count: 1, firstAt: now });
+      } else {
+        entry.count += 1;
+      }
+    };
+    bump(key);
+    if (ipKey) bump(ipKey);
   }
 
   private clearRate(key: string) {
@@ -89,14 +103,16 @@ export class AuthService {
   }
 
   async login(email: string, password: string, meta: { ip?: string; userAgent?: string }) {
-    const key = `${email}|${meta.ip ?? "-"}`;
-    this.checkRate(key);
+    const normEmail = String(email || "").trim().toLowerCase();
+    const key = `${normEmail}|${meta.ip ?? "-"}`;
+    const ipKey = meta.ip ? `ip:${meta.ip}` : undefined;
+    this.checkRate(key, ipKey);
 
-    const user = await this.prisma.main.user.findUnique({ where: { email } });
+    const user = await this.prisma.main.user.findUnique({ where: { email: normEmail } });
     const ok = user && user.status === "AKTIF" && (await bcrypt.compare(password, user.passwordHash));
 
     if (!ok) {
-      this.fail(key);
+      this.fail(key, ipKey);
       throw new UnauthorizedException("Email atau password salah");
     }
     this.clearRate(key);

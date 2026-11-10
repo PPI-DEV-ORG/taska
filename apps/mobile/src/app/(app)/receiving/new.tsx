@@ -1,14 +1,23 @@
 import * as React from "react";
 import { View, Pressable } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { Check, PackageCheck, Plus, Trash2, Box, Barcode, Store, FileText, Clock } from "lucide-react-native";
+import { Building2, Check, PackageCheck, Plus, Trash2, Box, Barcode, Store, FileText, Clock } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import {
+  DatePicker,
+  SearchableSelect,
+  SupplierPoSelect,
+  PurchaseRequestSelect,
+  DraftReceivingSelect,
+  SupplierSelect,
+  ProductSelect,
+} from "@/components/taska/dialogs";
+import { cn } from "@/lib/utils";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
@@ -188,6 +197,7 @@ export default function NewReceivingScreen() {
     }
     return "";
   });
+  const [supplierInputMode, setSupplierInputMode] = React.useState<"master" | "manual">("master");
 
   const [selectedGudang, setSelectedGudang] = React.useState<string>(() => {
     if (initialSourceType === "DRAFT" && initialDraft && (initialDraft.warehouse || initialDraft.gudang)) {
@@ -653,57 +663,100 @@ export default function NewReceivingScreen() {
                   </Text>
                 </View>
               ) : (
-                <SearchableSelect
+                <DraftReceivingSelect
                   value={
                     selectedDraft
                       ? `${selectedDraft.nomor} — ${selectedDraft.supplier || selectedDraft.supplierName || "Supplier"}`
                       : ""
                   }
-                  onChange={(label) => {
-                    const match = pendingReceivings.find(
-                      (d) => `${d.nomor} — ${d.supplier || d.supplierName || "Supplier"}` === label
-                    );
-                    if (match) handleSelectDraft(String(match.id));
+                  receivingId={selectedDraftId}
+                  receivings={pendingReceivings}
+                  onChange={(d) => {
+                    if (d) handleSelectDraft(String(d.id));
                   }}
-                  options={pendingReceivings.map((d) => `${d.nomor} — ${d.supplier || d.supplierName || "Supplier"}`)}
-                  placeholder="Pilih nomor draft penerimaan"
+                  placeholder="Pilih data draft penerimaan..."
                 />
               )}
             </FormField>
           ) : sourceType === "REQUEST" ? (
             <FormField label="Pilih Purchase Request yang Sudah Disetujui / Dikirim" required>
-              <SearchableSelect
+              <PurchaseRequestSelect
                 value={
                   selectedReq
                     ? `${selectedReq.nomor} — ${selectedReq.purpose || selectedReq.tujuan || "Request"}`
                     : ""
                 }
-                onChange={(label) => {
-                  const match = eligibleRequests.find(
-                    (r) => `${r.nomor} — ${r.purpose || r.tujuan || "Request"}` === label
-                  );
-                  if (match) handleSelectRequest(String(match.id));
+                requestId={selectedReqId}
+                requests={eligibleRequests}
+                onChange={(r) => {
+                  if (r) handleSelectRequest(String(r.id));
                 }}
-                options={eligibleRequests.map((r) => `${r.nomor} — ${r.purpose || r.tujuan || "Request"}`)}
-                placeholder="Pilih nomor purchase request"
+                placeholder="Pilih purchase request..."
               />
             </FormField>
           ) : sourceType === "PO" ? (
             <FormField label="Pilih PO Supplier" required>
-              <SearchableSelect
+              <SupplierPoSelect
                 value={selectedPo}
-                onChange={(value) => handleSelectPo(value)}
-                options={pos.map((p) => p.nomor)}
-                placeholder="Pilih nomor PO"
+                pos={pos}
+                onChange={(p) => {
+                  handleSelectPo(p ? (p.nomor || p.number || "") : "");
+                }}
+                placeholder="Pilih nomor PO supplier..."
               />
             </FormField>
           ) : (
             <FormField label="Nama Supplier / Toko / Vendor" required>
-              <Input
-                value={directSupplier}
-                onChangeText={setDirectSupplier}
-                placeholder="Contoh: PT Hikvision Pratama / Toko Listrik Glodok"
-              />
+              <View className="gap-2 w-full">
+                <View className="flex-row items-center gap-1.5 bg-panel/60 p-1 rounded-lg border border-border w-full">
+                  <Pressable
+                    onPress={() => setSupplierInputMode("master")}
+                    className={cn(
+                      "flex-1 py-1.5 rounded-md flex-row items-center justify-center gap-1.5",
+                      supplierInputMode === "master" ? "bg-primary text-background shadow-xs" : "hover:bg-panel"
+                    )}
+                  >
+                    <Building2 size={13} color={supplierInputMode === "master" ? colors.background : colors.muted} />
+                    <Text className={cn("text-xs font-semibold", supplierInputMode === "master" ? "text-background" : "text-foreground")}>
+                      Pilih dari Master Vendor
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setSupplierInputMode("manual")}
+                    className={cn(
+                      "flex-1 py-1.5 rounded-md flex-row items-center justify-center gap-1.5",
+                      supplierInputMode === "manual" ? "bg-primary text-background shadow-xs" : "hover:bg-panel"
+                    )}
+                  >
+                    <Store size={13} color={supplierInputMode === "manual" ? colors.background : colors.muted} />
+                    <Text className={cn("text-xs font-semibold", supplierInputMode === "manual" ? "text-background" : "text-foreground")}>
+                      Tulis Manual (Toko Lepas / Sekali Beli)
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <View className="w-full">
+                  {supplierInputMode === "master" ? (
+                    <SupplierSelect
+                      value={directSupplier}
+                      onChange={(name) => setDirectSupplier(name || "")}
+                      placeholder="Cari & pilih supplier dari master (tabel)..."
+                    />
+                  ) : (
+                    <Input
+                      value={directSupplier}
+                      onChangeText={setDirectSupplier}
+                      placeholder="Contoh: Toko Listrik Glodok / Toko Baut Glodok Makmur"
+                      className="w-full"
+                    />
+                  )}
+                </View>
+                <Text className="text-[11px] text-muted-foreground">
+                  {supplierInputMode === "master"
+                    ? "Memilih dari vendor rekanan terdaftar di master data."
+                    : "Gunakan mode ini jika belanja lepas sekali beli di toko ritel yang tidak perlu didaftarkan di master vendor."}
+                </Text>
+              </View>
             </FormField>
           )}
 
@@ -829,14 +882,21 @@ export default function NewReceivingScreen() {
                 <View className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <View className="md:col-span-2">
                     <FormField label="Pilih Produk Master" required>
-                      <SearchableSelect
+                      <ProductSelect
+                        productId={line.productId}
                         value={prod?.nama ? String(prod.nama) : ""}
-                        onChange={(name) => {
-                          const found = products.find((p) => p.nama === name);
-                          if (found) handleUpdateItem(line.id, { productId: Number(found.id) });
+                        onChange={(p) => {
+                          if (p) {
+                            handleUpdateItem(line.id, {
+                              productId: Number(p.id),
+                              hasSerial:
+                                p.berSN !== undefined || (p as any).hasSerial !== undefined
+                                  ? Boolean(p.berSN ?? (p as any).hasSerial)
+                                  : undefined,
+                            });
+                          }
                         }}
-                        options={products.map((p) => String(p.nama))}
-                        placeholder="Cari nama produk / SKU"
+                        placeholder="Pilih produk dari master katalog (tabel)..."
                       />
                     </FormField>
                   </View>

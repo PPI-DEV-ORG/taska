@@ -41,9 +41,290 @@ export type Role =
   | "finance"
   | "gudang"
   | "se"
-  | "hr";
+  | "hr"
+  | (string & {});
 
-export const ROLE_LABEL: Record<Role, string> = {
+export type ActionCode = "M" | "L" | "C" | "U" | "A" | "P" | "V" | "E";
+
+export type RoleDef = {
+  code: string;
+  name: string;
+  description?: string;
+  isSystem?: boolean;
+  permissions: Record<string, ActionCode[]>;
+};
+
+export const ALL_ACTION_CODES: ActionCode[] = ["M", "L", "C", "U", "A", "P", "V", "E"];
+
+export const ALL_MODULE_KEYS = [
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "customers",
+  "po-client", "projects", "tasks", "delivery-notes",
+  "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports", "suppliers", "warehouses", "products",
+  "invoices", "expenses", "accounting", "reports",
+  "hr",
+  "dashboard", "calendar", "approvals", "master-data", "users", "archive", "audit-log",
+] as const;
+
+const ALL_PERMS = Object.fromEntries(ALL_MODULE_KEYS.map((k) => [k, [...ALL_ACTION_CODES]])) as Record<string, ActionCode[]>;
+
+export const DEFAULT_SYSTEM_ROLES: RoleDef[] = [
+  {
+    code: "SUPER_ADMIN",
+    name: "Super Admin",
+    description: "Akses penuh ke seluruh modul, pengaturan sistem, dan manajemen peran",
+    isSystem: true,
+    permissions: ALL_PERMS,
+  },
+  {
+    code: "ADMIN",
+    name: "Admin",
+    description: "Administrator operasional kantor dengan akses seluruh modul",
+    isSystem: true,
+    permissions: ALL_PERMS,
+  },
+  {
+    code: "BOS",
+    name: "Direktur / Bos",
+    description: "Pimpinan perusahaan dengan akses persetujuan, laporan P&L, dan seluruh modul",
+    isSystem: true,
+    permissions: ALL_PERMS,
+  },
+  {
+    code: "SALES",
+    name: "Sales",
+    description: "Tim penjualan: mengelola leads, survey, penawaran, SO, dan relasi customer",
+    isSystem: true,
+    permissions: {
+      dashboard: ["M", "L"],
+      calendar: ["M", "L", "C", "U"],
+      leads: ["M", "L", "C", "U"],
+      quotations: ["M", "L", "C", "U", "P", "E"],
+      surveys: ["M", "L", "C", "U"],
+      "poc-reports": ["M", "L", "C", "U"],
+      "visit-reports": ["M", "L", "C", "U"],
+      customers: ["M", "L", "C", "U"],
+      "po-client": ["M", "L", "C", "U"],
+      "delivery-notes": ["M", "L"],
+      expenses: ["M", "L", "C", "U"],
+      hr: ["M", "L", "C"],
+      "master-data": ["M", "L"],
+      // Akses lihat data saja (tanpa tampil di sidebar)
+      products: ["L"],
+      stock: ["L"],
+      projects: ["L"],
+      reports: ["L"],
+    },
+  },
+  {
+    code: "PM",
+    name: "Project Manager",
+    description: "Manajer proyek: mengelola jalannya proyek, tugas tim, P&L proyek, dan BAST",
+    isSystem: true,
+    permissions: {
+      dashboard: ["M", "L"],
+      calendar: ["M", "L", "C", "U"],
+      projects: ["M", "L", "C", "U", "P", "E"],
+      tasks: ["M", "L", "C", "U"],
+      surveys: ["M", "L", "C", "U", "A"],
+      "poc-reports": ["M", "L", "C", "U"],
+      "visit-reports": ["M", "L", "C", "U"],
+      "purchase-requests": ["M", "L", "C", "U"],
+      "delivery-notes": ["M", "L", "C", "U"],
+      expenses: ["M", "L", "C", "U"],
+      hr: ["M", "L", "C"],
+      // Akses lihat data saja
+      quotations: ["L"],
+      leads: ["L"],
+      customers: ["L", "C", "U"],
+      stock: ["L"],
+      products: ["L"],
+      reports: ["L"],
+    },
+  },
+  {
+    code: "TEKNISI",
+    name: "Teknisi",
+    description: "Tim teknis lapangan: eksekusi tugas proyek, survey lokasi, dan instalasi",
+    isSystem: true,
+    permissions: {
+      dashboard: ["M", "L"],
+      calendar: ["M", "L"],
+      tasks: ["M", "L", "U"],
+      projects: ["M", "L"],
+      surveys: ["M", "L", "C", "U"],
+      "poc-reports": ["M", "L", "C", "U"],
+      "visit-reports": ["M", "L", "C", "U"],
+      "purchase-requests": ["M", "L", "C"],
+      "delivery-notes": ["M", "L"],
+      expenses: ["M", "L", "C"],
+      hr: ["M", "L", "C"],
+      // Akses lihat data saja
+      stock: ["L"],
+      products: ["L"],
+      warehouses: ["L"],
+    },
+  },
+  {
+    code: "PROCUREMENT",
+    name: "Procurement / Purchasing",
+    description: "Tim pengadaan: mengelola PR, PO Supplier, penerimaan barang, dan harga vendor",
+    isSystem: true,
+    permissions: {
+      dashboard: ["M", "L"],
+      calendar: ["M", "L"],
+      approvals: ["M", "L", "V"],
+      "purchase-requests": ["M", "L", "C", "U", "V"],
+      "supplier-pos": ["M", "L", "C", "U", "A", "P", "E"],
+      shipments: ["M", "L", "C", "U"],
+      receiving: ["M", "L", "C", "U", "A"],
+      stock: ["M", "L", "C", "U", "P"],
+      opname: ["M", "L", "C", "U"],
+      "damage-reports": ["M", "L", "C", "U"],
+      suppliers: ["M", "L", "C", "U", "A"],
+      warehouses: ["M", "L", "C", "U"],
+      products: ["M", "L", "C", "U", "P"],
+      "delivery-notes": ["M", "L", "C", "U"],
+      expenses: ["M", "L", "C", "U"],
+      hr: ["M", "L", "C"],
+      "master-data": ["M", "L"],
+      // Akses lihat data saja
+      projects: ["L"],
+      reports: ["L"],
+    },
+  },
+  {
+    code: "FINANCE",
+    name: "Finance & Accounting",
+    description: "Tim keuangan: mengelola invoice keluar/masuk, pembayaran, pengeluaran, COA, dan P&L",
+    isSystem: true,
+    permissions: {
+      dashboard: ["M", "L"],
+      calendar: ["M", "L"],
+      approvals: ["M", "L", "V"],
+      invoices: ["M", "L", "C", "U", "A", "P", "V", "E"],
+      "po-client": ["M", "L", "C", "U", "P"],
+      "purchase-requests": ["M", "L", "U", "V"],
+      "supplier-pos": ["M", "L", "C", "U", "P", "E"],
+      expenses: ["M", "L", "C", "U", "A", "P", "V", "E"],
+      accounting: ["M", "L", "C", "U", "A", "P", "V", "E"],
+      "delivery-notes": ["M", "L"],
+      reports: ["M", "L", "P", "E"],
+      hr: ["M", "L", "C", "U", "A", "P", "V", "E"],
+      // Akses lihat data saja
+      quotations: ["L", "P", "E"],
+      projects: ["L", "P"],
+      customers: ["L", "C", "U"],
+      suppliers: ["L", "C", "U"],
+      archive: ["L"],
+    },
+  },
+  {
+    code: "GUDANG",
+    name: "Admin Gudang",
+    description: "Tim logistik & gudang: mengelola stok, serial number, opname, penerimaan, dan surat jalan",
+    isSystem: true,
+    permissions: {
+      dashboard: ["M", "L"],
+      calendar: ["M", "L"],
+      approvals: ["M", "L", "V"],
+      stock: ["M", "L", "C", "U"],
+      opname: ["M", "L", "C", "U", "A"],
+      receiving: ["M", "L", "C", "U", "A"],
+      "delivery-notes": ["M", "L", "C", "U"],
+      "damage-reports": ["M", "L", "C", "U"],
+      "purchase-requests": ["M", "L", "C", "U"],
+      "supplier-pos": ["M", "L"],
+      warehouses: ["M", "L", "C", "U"],
+      products: ["M", "L", "C", "U"],
+      hr: ["M", "L", "C"],
+      "master-data": ["M", "L"],
+    },
+  },
+  {
+    code: "SE",
+    name: "System Engineer / Presales",
+    description: "Tim presales & solusi teknis: POC, demo, survey, dan pendampingan teknis",
+    isSystem: true,
+    permissions: {
+      dashboard: ["M", "L"],
+      calendar: ["M", "L"],
+      "poc-reports": ["M", "L", "C", "U", "A"],
+      "visit-reports": ["M", "L", "C", "U", "A"],
+      surveys: ["M", "L", "C", "U"],
+      projects: ["M", "L"],
+      tasks: ["M", "L", "U"],
+      "delivery-notes": ["M", "L"],
+      expenses: ["M", "L", "C"],
+      hr: ["M", "L", "C"],
+      // Akses lihat data saja
+      stock: ["L"],
+      products: ["L"],
+    },
+  },
+  {
+    code: "HR",
+    name: "HR / Personalia",
+    description: "Tim SDM: mengelola data karyawan, rekap absensi, lembur, dan slip gaji (payroll)",
+    isSystem: true,
+    permissions: {
+      dashboard: ["M", "L"],
+      calendar: ["M", "L"],
+      hr: ["M", "L", "C", "U", "A", "P", "V", "E"],
+      users: ["M", "L", "C", "U"],
+      expenses: ["M", "L", "C", "U"],
+      "purchase-requests": ["M", "L", "C"],
+      reports: ["M", "L"],
+      "visit-reports": ["M", "L"],
+      "poc-reports": ["M", "L"],
+      // Akses lihat data saja
+      customers: ["L"],
+      suppliers: ["L"],
+    },
+  },
+];
+
+export function getDefaultRoleDef(code: string): RoleDef | undefined {
+  const norm = String(code || "").toUpperCase().trim().replace(/[\s\-]+/g, "_");
+  return DEFAULT_SYSTEM_ROLES.find((r) => r.code === norm);
+}
+
+export type CompanyProfile = {
+  name: string;
+  tagline: string;
+  address: string;
+  city: string;
+  phone: string;
+  email: string;
+  website: string;
+  npwp: string;
+  bankName: string;
+  bankAccount: string;
+  bankHolder: string;
+  signatoryName: string;
+  signatoryTitle: string;
+  logoFileId: string;
+  stampFileId: string;
+};
+
+export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
+  name: "PT Samtek",
+  tagline: "General Contractor, IT & Security System Integrator",
+  address: "Bekasi, Jawa Barat",
+  city: "Bekasi",
+  phone: "",
+  email: "",
+  website: "",
+  npwp: "",
+  bankName: "",
+  bankAccount: "",
+  bankHolder: "",
+  signatoryName: "Direktur Utama",
+  signatoryTitle: "Direktur",
+  logoFileId: "",
+  stampFileId: "",
+};
+
+export const ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin",
   admin: "Admin / Bos",
   bos: "Admin / Bos",
@@ -131,7 +412,7 @@ export const MODULES: Record<string, ModuleDef> = {
     columns: [
       { key: "nama", label: "Nama", primary: true, flex: 2 },
       { key: "jenisTransaksi", label: "Jenis" },
-      { key: "perusahaan", label: "Perusahaan", flex: 1.5 },
+      { key: "perusahaan", label: "Customer", flex: 1.5 },
       { key: "sumber", label: "Sumber" },
       { key: "nilai", label: "Nilai", fmt: "rupiah" },
       { key: "peluang", label: "Peluang", fmt: "pct" },
@@ -140,7 +421,7 @@ export const MODULES: Record<string, ModuleDef> = {
       { key: "status", label: "Status", fmt: "status", mobile: true },
     ],
     fields: [
-      { label: "Perusahaan", key: "perusahaan" }, { label: "Kontak", key: "kontak" },
+      { label: "Customer", key: "perusahaan" }, { label: "Kontak", key: "kontak" },
       { label: "Jenis Transaksi", key: "jenisTransaksi" },
       { label: "Sumber", key: "sumber" }, { label: "Tipe client", key: "tipe" },
       { label: "Nilai perkiraan", key: "nilai", fmt: "rupiah" }, { label: "Peluang", key: "peluang", fmt: "pct" },
@@ -155,7 +436,7 @@ export const MODULES: Record<string, ModuleDef> = {
     createFields: [
       { key: "nama", label: "Nama lead", type: "text", required: true, placeholder: "Contoh: CCTV Gudang Baru / Pengadaan Switch 24 Port" },
       { key: "jenisTransaksi", label: "Jenis Transaksi / Peluang", type: "select", options: ["Proyek (Instalasi & Jasa)", "Penjualan Barang (Perangkat / Retail)"], required: true },
-      { key: "perusahaan", label: "Perusahaan", type: "select", required: true, options: [] },
+      { key: "perusahaan", label: "Customer", type: "select", required: true, options: [] },
       { key: "sumber", label: "Sumber", type: "select", required: true, options: [] },
       { key: "tipe", label: "Tipe client", type: "select", options: ["End user", "Partner", "SI (Sistem Integrator)"] },
       { key: "kontak", label: "Nama kontak PIC", type: "text", placeholder: "Masukkan nama PIC" },
@@ -960,4 +1241,185 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
 };
 
 export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "gudang", "procurement"];
+
+const ALL_NAV_ORDERED: NavItem[] = [
+  N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.customers,
+  N.projects, N.tasks, N.requests, N.supplierPos, N.shipments, N.receiving,
+  N.stock, N.opname, N.delivery, N.poClient, N.invoices, N.expenses,
+  N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
+];
+
+const CLIENT_MODULE_ALIASES: Record<string, string[]> = {
+  "po-client": ["po-client", "po_client", "sales-order"],
+  "purchase-requests": ["purchase-requests", "requests"],
+  "supplier-pos": ["supplier-pos", "supplier_pos", "shipments"],
+  "delivery-notes": ["delivery-notes", "delivery"],
+  "damage-reports": ["damage-reports", "damage"],
+  "master-data": ["master-data", "master", "customers", "suppliers", "products", "warehouses"],
+  "audit-log": ["audit-log", "audit"],
+  "poc-reports": ["poc-reports", "poc_reports"],
+  "visit-reports": ["visit-reports", "visit_reports"],
+  stock: ["stock", "products", "serials", "movements", "warehouses"],
+  shipments: ["shipments", "supplier-pos", "supplier_pos"],
+};
+
+let CLIENT_DYNAMIC_ROLES: RoleDef[] = [...DEFAULT_SYSTEM_ROLES];
+
+export function setClientDynamicRoles(roles: RoleDef[]) {
+  if (!Array.isArray(roles) || roles.length === 0) {
+    CLIENT_DYNAMIC_ROLES = [...DEFAULT_SYSTEM_ROLES];
+    return;
+  }
+  const byCode = new Map<string, RoleDef>();
+  for (const def of DEFAULT_SYSTEM_ROLES) {
+    byCode.set(def.code, { ...def });
+  }
+  for (const r of roles) {
+    if (!r?.code) continue;
+    const norm = r.code.toUpperCase();
+    const existing = byCode.get(norm);
+    const hasPerms = r.permissions && Object.keys(r.permissions).length > 0;
+    
+    // Normalisasi format array atau string ke ActionCode[]
+    const normalizedPerms: Record<string, ActionCode[]> = {};
+    const sourcePerms: Record<string, any> = (hasPerms ? r.permissions : existing?.permissions) || {};
+    for (const [k, rawVal] of Object.entries(sourcePerms)) {
+      const v: any = rawVal;
+      if (Array.isArray(v)) {
+        normalizedPerms[k] = v as ActionCode[];
+      } else if (typeof v === "string" && v.length > 0) {
+        normalizedPerms[k] = v
+          .split("")
+          .filter((c: string): c is ActionCode => ["M", "L", "C", "U", "A", "P", "V", "E"].includes(c));
+      }
+    }
+
+    // Jika ada modul bawaan yang belum didefinisikan, isi dari default sistem
+    if (existing?.permissions) {
+      for (const [k, v] of Object.entries(existing.permissions)) {
+        if (!normalizedPerms[k] || normalizedPerms[k].length === 0) {
+          normalizedPerms[k] = [...v];
+        }
+      }
+    }
+
+    byCode.set(norm, {
+      code: norm,
+      name: r.name || existing?.name || norm,
+      description: r.description ?? existing?.description ?? "",
+      isSystem: existing?.isSystem ?? r.isSystem ?? false,
+      permissions: normalizedPerms,
+    });
+  }
+  CLIENT_DYNAMIC_ROLES = Array.from(byCode.values());
+  const labelOptions: string[] = [];
+  for (const r of CLIENT_DYNAMIC_ROLES) {
+    const uiCode = r.code.toLowerCase();
+    ROLE_LABEL[uiCode] = r.name;
+    ROLE_LABEL[r.code] = r.name;
+    if (!labelOptions.includes(r.name)) {
+      labelOptions.push(r.name);
+    }
+  }
+  const roleField = MODULES.users?.createFields?.find((f) => f.key === "roleLabel");
+  if (roleField && labelOptions.length > 0) {
+    roleField.options = labelOptions;
+  }
+}
+
+export function getClientDynamicRoles(): RoleDef[] {
+  return CLIENT_DYNAMIC_ROLES;
+}
+
+export function findRoleDefForUser(user: User | null | undefined): RoleDef | undefined {
+  if (!user?.role) return undefined;
+  const upper = String(user.role).toUpperCase();
+  return CLIENT_DYNAMIC_ROLES.find(
+    (r) => r.code.toUpperCase() === upper || r.name.toLowerCase() === String(user.roleLabel || "").toLowerCase(),
+  );
+}
+
+export function hasUserPermission(
+  user: User | null | undefined,
+  moduleKey: string,
+  action: ActionCode = "L",
+): boolean {
+  if (!user?.role) return false;
+  const roleLower = String(user.role).toLowerCase();
+  if (roleLower === "super_admin" || roleLower === "admin" || roleLower === "bos") return true;
+
+  const dyn = findRoleDefForUser(user);
+  if (dyn && dyn.permissions) {
+    const candidates = CLIENT_MODULE_ALIASES[moduleKey] ?? [moduleKey];
+    for (const key of candidates) {
+      const acts: any = dyn.permissions[key];
+      if (Array.isArray(acts)) {
+        if (acts.includes(action)) return true;
+        // Jika cek Lihat Data ('L') dan role punya Menu ('M'), otomatis boleh
+        if (action === "L" && acts.includes("M")) return true;
+      } else if (typeof acts === "string") {
+        if (acts.includes(action)) return true;
+        if (action === "L" && acts.includes("M")) return true;
+      }
+    }
+    // Jika role dynamic sudah terdaftar dan dikelola hak aksesnya, keputusan dyn.permissions adalah absolut.
+    return false;
+  }
+
+  // Fallback to static NAV_BY_ROLE / createRoles jika role belum memiliki konfigurasi dynamic
+  if (action === "M" || action === "L") {
+    const nav = NAV_BY_ROLE[roleLower] ?? [];
+    return nav.some((n) => n.key === moduleKey);
+  }
+  if (action === "C" || action === "U") {
+    const def = MODULES[moduleKey];
+    if (def?.createRoles) return def.createRoles.includes(roleLower);
+    const nav = NAV_BY_ROLE[roleLower] ?? [];
+    return nav.some((n) => n.key === moduleKey);
+  }
+  if (action === "V") {
+    return CAN_APPROVE.includes(roleLower);
+  }
+  if (action === "P") {
+    return ["super_admin", "admin", "bos", "finance", "procurement", "sales", "pm"].includes(roleLower);
+  }
+  return false;
+}
+
+export function canUserApprove(user: User | null | undefined): boolean {
+  if (!user?.role) return false;
+  const roleLower = String(user.role).toLowerCase();
+  if (CAN_APPROVE.includes(roleLower)) return true;
+  const dyn = findRoleDefForUser(user);
+  if (dyn) {
+    const appr: any = dyn.permissions?.approvals;
+    if (Array.isArray(appr) && (appr.includes("L") || appr.includes("V") || appr.includes("M"))) return true;
+    if (typeof appr === "string" && (appr.includes("L") || appr.includes("V") || appr.includes("M"))) return true;
+    return Object.values(dyn.permissions ?? {}).some(
+      (acts: any) => (Array.isArray(acts) && acts.includes("V")) || (typeof acts === "string" && acts.includes("V")),
+    );
+  }
+  return false;
+}
+
+export function getNavForUser(user: User | null | undefined): NavItem[] {
+  if (!user?.role) return NAV_BY_ROLE.sales;
+  const roleLower = String(user.role).toLowerCase();
+  if (roleLower === "super_admin" || roleLower === "admin" || roleLower === "bos") {
+    return NAV_BY_ROLE[roleLower] ?? ALL_NAV_ORDERED;
+  }
+
+  const dyn = findRoleDefForUser(user);
+  if (dyn && dyn.permissions && Object.keys(dyn.permissions).length > 0) {
+    const filtered = ALL_NAV_ORDERED.filter((item) => {
+      if (item.key === "dashboard" || item.key === "calendar") {
+        return hasUserPermission(user, item.key, "M") || hasUserPermission(user, item.key, "L");
+      }
+      return hasUserPermission(user, item.key, "M");
+    });
+    if (filtered.length > 0) return filtered;
+  }
+
+  return NAV_BY_ROLE[roleLower] ?? [N.dashboard, N.calendar];
+}
 
