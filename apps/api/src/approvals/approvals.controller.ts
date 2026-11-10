@@ -46,7 +46,7 @@ export class ApprovalsController {
   }
 
   @Post(":id/decide")
-  @Require("approvals", "A")
+  @Require("approvals", "V")
   @HttpCode(200)
   decide(
     @Param("id", ParseIntPipe) id: number,

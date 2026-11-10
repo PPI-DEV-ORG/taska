@@ -94,7 +94,7 @@ export function assertPrTransition(
   }
 
   // Pembayaran bisa dicatat setelah barang diterima (utang), tanpa mengubah status DITERIMA.
-  if (to === "DIBAYAR") {
+  if (to === "DIBAYAR" || to === "LUNAS") {
     if (!purchase) throw invalid("Request ambil stok gudang tidak memerlukan pembayaran");
     requireRole(user.role, FINANCE_ROLES, "Hanya Finance yang dapat mencatat pembayaran");
     if (!["DISETUJUI", "PO_DIBUAT", "DIKIRIM", "DITERIMA"].includes(from)) {
@@ -107,12 +107,22 @@ export function assertPrTransition(
     return;
   }
 
+  if (from === to) return;
+
   if (from === "DITOLAK" || from === "DIBATALKAN") {
-    throw invalid(`Request sudah ${from === "DITOLAK" ? "ditolak" : "dibatalkan"} dan tidak bisa diproses lagi`);
+    if (to !== "DIAJUKAN") {
+      throw invalid(`Request sudah ${from === "DITOLAK" ? "ditolak" : "dibatalkan"} dan tidak bisa diproses lagi`);
+    }
   }
-  if (from === to) throw invalid(`Request sudah berstatus ${to}`);
 
   switch (to) {
+    case "DIAJUKAN": {
+      if (isPaid(pr)) throw invalid("Request yang sudah dibayar tidak bisa diajukan ulang");
+      if (from === "DIKIRIM" || from === "DITERIMA") {
+        throw invalid("Request yang barangnya sudah dikirim/diterima tidak bisa dikembalikan ke Diajukan");
+      }
+      return;
+    }
     case "CEK_STOK": {
       requireRole(user.role, [...WAREHOUSE_ROLES, "PROCUREMENT"], "Cek stok dilakukan Gudang / Procurement");
       if (from !== "DIAJUKAN") throw invalid("Cek stok hanya untuk request yang berstatus Diajukan");
