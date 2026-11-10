@@ -51,12 +51,24 @@ export class UsersService {
   }
 
   /** Opsi anggota tim (divisi) — minim, tanpa data sensitif. */
-  options(role?: string) {
-    return this.prisma.main.user.findMany({
+  async options(role?: string) {
+    const list = await this.prisma.main.user.findMany({
       where: { status: "AKTIF", ...(role ? { role: role as never } : {}) },
-      select: { id: true, name: true, role: true, position: true, department: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        position: true,
+        department: true,
+        warehouse: { select: { name: true } },
+      },
       orderBy: { name: "asc" },
     });
+    return list.map((u) => ({
+      ...u,
+      warehouseName: u.warehouse?.name ?? "-",
+    }));
   }
 
   async get(id: number) {

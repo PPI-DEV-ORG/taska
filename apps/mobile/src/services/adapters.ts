@@ -1,4 +1,4 @@
-import type { Row, User, Role } from "@/constants/modules";
+import { getClientDynamicRoles, ROLE_LABEL, type Row, type User, type Role } from "@/constants/modules";
 import { apiBase } from "@/services/api";
 
 export type ApiUser = {
@@ -81,7 +81,7 @@ const MAPS: Record<string, Record<string, string>> = {
     NEGOTIATION: "Negosiasi", REVISION: "Revisi", EXPIRED: "Kedaluwarsa",
   },
   surveys: { DIMINTA: "Diminta", DIJADWALKAN: "Dijadwalkan", BERJALAN: "Berjalan", SELESAI: "Selesai", BATAL: "Dibatalkan" },
-  "po-client": { PENDING: "Pending", DITERIMA: "Pending", LUNAS_SEBAGIAN: "Lunas sebagian", LUNAS: "Lunas", DIBATALKAN: "Dibatalkan" },
+  "po-client": { PENDING: "Belum dibayar", DITERIMA: "Belum dibayar", LUNAS_SEBAGIAN: "Lunas sebagian", LUNAS: "Lunas", DIBATALKAN: "Dibatalkan" },
   invoices: { DRAFT: "Belum dikirim", SENT: "Terkirim", PARTIAL: "Dibayar sebagian", PAID: "Lunas", OVERDUE: "Terlambat", BATAL: "Dibatalkan" },
   projects: {
     DIRENCANAKAN: "Direncanakan", BERJALAN: "Berjalan", DITUNDA: "Ditunda",
@@ -105,7 +105,7 @@ const MAPS: Record<string, Record<string, string>> = {
     BELUM_DIKIRIM: "Di Supplier", DI_SUPPLIER: "Di Supplier", DALAM_PERJALANAN: "Dalam Perjalanan", DIKIRIM: "Dikirim", SAMPAI: "Sampai",
   },
   receiving: { MENUNGGU: "Menunggu penerimaan", DITERIMA_SEBAGIAN: "Diterima sebagian", DITERIMA: "Diterima", DITOLAK: "Ditolak" },
-  "delivery-notes": { PENDING: "Pending", DIKIRIM: "Dikirim", DITERIMA: "Diterima", DIBATALKAN: "Dibatalkan" },
+  "delivery-notes": { PENDING: "Menunggu pengiriman", DIKIRIM: "Dikirim", DITERIMA: "Diterima", DIBATALKAN: "Dibatalkan" },
   expenses: { DILAPORKAN: "Dilaporkan", DISETUJUI: "Disetujui", DITOLAK: "Ditolak", DIBAYAR: "Dibayar" },
   "damage-reports": { DILAPORKAN: "Dilaporkan", DIPROSES: "Diproses", SELESAI: "Selesai" },
   users: { AKTIF: "Aktif", NONAKTIF: "Nonaktif" },
@@ -279,18 +279,32 @@ const ROLE_FROM_LABEL: Record<string, string> = {
 };
 
 export function roleFromUi(role: string): string {
-  return ROLE_FROM_LABEL[role] ?? ROLE_FROM_UI[role] ?? "SALES";
+  const dyn = getClientDynamicRoles();
+  const matchedDyn = dyn.find(
+    (r) => r.name.toLowerCase() === String(role || "").toLowerCase() || r.code.toLowerCase() === String(role || "").toLowerCase(),
+  );
+  if (matchedDyn) return matchedDyn.code;
+  return ROLE_FROM_LABEL[role] ?? ROLE_FROM_UI[role] ?? String(role || "SALES").toUpperCase().replace(/[^A-Z0-9_]/g, "_");
 }
 
 // Label role untuk ditampilkan (detail/daftar), dihitung dari enum backend.
 export function roleLabelOf(role: string | undefined): string {
+  if (!role) return "Sales";
+  const dyn = getClientDynamicRoles();
+  const matchedDyn = dyn.find((r) => r.code.toUpperCase() === role.toUpperCase());
+  if (matchedDyn) return matchedDyn.name;
+  if (ROLE_LABEL[role.toLowerCase()]) return ROLE_LABEL[role.toLowerCase()]!;
   const ui = roleToUi(role);
-  const entry = Object.entries(ROLE_FROM_LABEL).find(([, v]) => v === (role ?? "").toUpperCase());
+  const entry = Object.entries(ROLE_FROM_LABEL).find(([, v]) => v === role.toUpperCase());
   if (entry) return entry[0];
   return ui.charAt(0).toUpperCase() + ui.slice(1);
 }
 export function roleToUi(role: string | undefined): Role {
-  return (role && ROLE_UI[role]) || "sales";
+  if (!role) return "sales";
+  if (ROLE_UI[role]) return ROLE_UI[role];
+  const upper = role.toUpperCase();
+  if (ROLE_UI[upper]) return ROLE_UI[upper];
+  return role.toLowerCase();
 }
 
 export function apiUserToRow(u: ApiUser): User {
@@ -429,6 +443,7 @@ export function adaptRow(module: string, raw: any): Row {
           total: qRawTot,
           ppn: qRawPpn,
           disc: qRawDisc,
+          discount: qRawDisc,
           pph: qRawPph,
           pphMode: qPphMode,
           tipePph: qTipePph,
@@ -575,7 +590,7 @@ export function adaptRow(module: string, raw: any): Row {
           activeInvs.some(
             (b: any) => (b.status === "PAID" || b.status === "PARTIAL") && n(b.total) > 0,
           ));
-      const soStatusLabel = isSoLunas ? "Lunas" : isSoPartial ? "Lunas sebagian" : "Pending";
+      const soStatusLabel = isSoLunas ? "Lunas" : isSoPartial ? "Lunas sebagian" : "Belum dibayar";
       const soPaymentStatus = isSoLunas ? "LUNAS" : isSoPartial ? "LUNAS_SEBAGIAN" : "PENDING";
 
       return {
@@ -862,10 +877,7 @@ export function adaptRow(module: string, raw: any): Row {
       const isPaid =
         isPoPaid ||
         raw.status === "DIBAYAR" ||
-        raw.paymentStatus === "DIBAYAR" ||
-        !!raw.paymentProofFileId ||
-        !!raw.paymentProofFile ||
-        (raw.otherNote as string)?.includes("[DIBAYAR");
+        raw.paymentStatus === "DIBAYAR";
 
       const displayStatus = (() => {
         if (raw.status === "DITERIMA") {
@@ -916,7 +928,7 @@ export function adaptRow(module: string, raw: any): Row {
         doFile: raw.doFile ?? null,
         paymentProofFileId: raw.paymentProofFileId ?? (raw.paymentProofFile?.id ?? null),
         paymentProofFile: raw.paymentProofFile ?? null,
-        fundingSource: raw.fundingSource || (raw.otherNote?.match(/\[DIBAYAR:([^\]]+)\]/)?.[1] ?? null),
+        fundingSource: raw.fundingSource ?? raw.paymentAccountCode ?? null,
         ppnMode: raw.ppnMode || (raw.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] ?? "none"),
         paymentStatus: isPaid ? "DIBAYAR" : "BELUM_DIBAYAR",
         isPaid,
@@ -962,9 +974,7 @@ export function adaptRow(module: string, raw: any): Row {
           raw.paymentStatus === "DIBAYAR" ||
           raw.request?.status === "DIBAYAR" ||
           raw.request?.status === "LUNAS" ||
-          raw.request?.paymentStatus === "DIBAYAR" ||
-          !!raw.request?.paymentProofFileId ||
-          Boolean(String(raw.request?.otherNote || "").includes("[DIBAYAR"))
+          raw.request?.paymentStatus === "DIBAYAR"
         ));
 
       const displayStatus =
@@ -2703,6 +2713,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   if (patch.nominal !== undefined) out.amount = num(patch.nominal);
   if (patch.satuan !== undefined) out.unit = patch.satuan;
   if (patch.merk !== undefined) out.brand = patch.merk;
+  if (patch.brand !== undefined) out.brand = patch.brand;
   if (patch.berSN !== undefined) out.hasSerial = !!patch.berSN;
   if (patch.min !== undefined) out.minStock = num(patch.min);
   if (patch.minStock !== undefined) out.minStock = num(patch.minStock);
@@ -2717,7 +2728,22 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
     out.description = desc;
   }
-  if (patch.garansi !== undefined) out.warrantyMonths = parseInt(String(patch.garansi), 10) || undefined;
+  if (patch.garansi !== undefined) {
+    const rawG = String(patch.garansi).toLowerCase();
+    if (rawG.includes("tahun") || rawG.includes("thn") || rawG.includes("yr")) {
+      out.warrantyMonths = (parseInt(rawG, 10) || 1) * 12;
+    } else if (rawG.includes("tanpa") || rawG === "-" || rawG === "0") {
+      out.warrantyMonths = undefined;
+    } else {
+      out.warrantyMonths = parseInt(rawG, 10) || undefined;
+    }
+  }
+  if (patch.warrantyMonths !== undefined) out.warrantyMonths = Number(patch.warrantyMonths) || undefined;
+  if (patch.categoryId !== undefined) out.categoryId = patch.categoryId ? Number(patch.categoryId) : undefined;
+  else if (patch.kategori !== undefined && module === "products") {
+    const matchCat = (db?.productCategories ?? []).find((c: any) => c.nama === patch.kategori || c.name === patch.kategori);
+    if (matchCat?.id) out.categoryId = Number(matchCat.id);
+  }
   if (patch.payment !== undefined) out.paymentTerms = patch.payment;
 
   if (patch.fileId !== undefined) {

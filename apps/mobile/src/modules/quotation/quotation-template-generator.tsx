@@ -58,14 +58,29 @@ export function QuotationTemplateGenerator({
     asVersion?: boolean,
   ) => Promise<void> | void;
 }) {
+  const { data, toast, companyProfile } = useApp();
+  const defaultKopFromProfile = React.useMemo(() => {
+    return [
+      companyProfile.name,
+      companyProfile.tagline,
+      companyProfile.address,
+      companyProfile.phone ? `Telp: ${companyProfile.phone}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }, [companyProfile]);
+  const defaultLogoFromProfile = React.useMemo(() => {
+    return companyProfile.logoFileId ? `${apiBase()}/files/${companyProfile.logoFileId}` : "";
+  }, [companyProfile.logoFileId]);
+
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [editItemsOpen, setEditItemsOpen] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
 
   const [items, setItems] = React.useState<QuotationItem[]>(row.items && row.items.length ? row.items : []);
-  const [kopText, setKopText] = React.useState<string>(row.kopText || "");
-  const [kopLogoUrl, setKopLogoUrl] = React.useState<string>((row as any).kopLogoUrl || "");
-  const [city, setCity] = React.useState<string>(row.city || "Bekasi");
+  const [kopText, setKopText] = React.useState<string>(row.kopText || defaultKopFromProfile);
+  const [kopLogoUrl, setKopLogoUrl] = React.useState<string>((row as any).kopLogoUrl || defaultLogoFromProfile);
+  const [city, setCity] = React.useState<string>(row.city || companyProfile.city || "Bekasi");
   const [customerAddress, setCustomerAddress] = React.useState<string>(row.customerAddress || "");
   const [subject, setSubject] = React.useState<string>(
     row.subject || `Penawaran Pengadaan Barang & Jasa Instalasi (${row.lead || "-"})`,
@@ -73,8 +88,8 @@ export function QuotationTemplateGenerator({
   const [intro, setIntro] = React.useState<string>(
     row.intro || "Sesuai permintaan Bapak / Ibu sebelumnya, berikut penawaran dari kami terkait pengadaan Barang & Jasa Instalasi :",
   );
-  const [signerName, setSignerName] = React.useState<string>(row.signerName || row.pemilik || "");
-  const [signerTitle, setSignerTitle] = React.useState<string>(row.signerTitle || "Sales Engineer");
+  const [signerName, setSignerName] = React.useState<string>(row.signerName || row.pemilik || companyProfile.signatoryName || "");
+  const [signerTitle, setSignerTitle] = React.useState<string>(row.signerTitle || companyProfile.signatoryTitle || "Sales Engineer");
   const [notesText, setNotesText] = React.useState<string>(
     Array.isArray(row.notesList) && row.notesList.length > 0
       ? row.notesList.join("\n")
@@ -85,7 +100,6 @@ export function QuotationTemplateGenerator({
         ].join("\n"),
   );
 
-  const { data, toast } = useApp();
   const products = (data.products ?? []) as any[];
 
   // New item inputs
@@ -352,11 +366,11 @@ export function QuotationTemplateGenerator({
                   <Input value={city} onChangeText={setCity} placeholder="Bekasi" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-xs font-semibold">Tujuan / Alamat Customer</Text>
+                  <Text className="text-xs font-semibold">Tujuan / Alamat Pelanggan</Text>
                   <Input
                     value={customerAddress}
                     onChangeText={setCustomerAddress}
-                    placeholder="Di Tempat (atau alamat customer)"
+                    placeholder="Di Tempat (atau alamat pelanggan)"
                   />
                 </View>
               </View>

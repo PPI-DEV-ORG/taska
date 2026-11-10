@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } from "@/components/taska/basics";
 import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
 import {
+  CustomerSelect,
   LeadSelect,
   ProjectSelect,
   QuotationSelect,
@@ -16,6 +17,7 @@ import {
   PocSelect,
   VisitSelect,
 } from "@/components/taska/document-select";
+import { SupplierSelect } from "@/components/taska/supplier-select";
 import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { ModuleExtras } from "@/screens/module-extras";
@@ -58,7 +60,7 @@ function get30DaysLaterIso(): string {
 
 export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string }) {
   const router = useRouter();
-  const { data, user, addRow, patchRow, deleteRow, setStatus, history, loadHistory, approvals, decide, toast } = useApp();
+  const { data, user, addRow, patchRow, deleteRow, setStatus, history, loadHistory, approvals, decide, toast, can: serverCan } = useApp();
   const { bp, isMobile } = useBreakpoint();
   const def = MODULES[moduleKey];
   const rowFromStore = data[moduleKey]?.find((r: { id: string }) => r.id === id);
@@ -99,25 +101,22 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     return () => {
       active = false;
     };
-  }, [moduleKey, id, refreshIndex]);
+  }, [moduleKey, id, refreshIndex, rowFromStore]);
 
   const row = React.useMemo(() => {
     if (!remoteRow) return rowFromStore;
     if (!rowFromStore) return remoteRow;
     return {
-      ...rowFromStore,
       ...remoteRow,
-      ...(rowFromStore.items !== undefined ? { items: rowFromStore.items } : {}),
-      ...(rowFromStore.total !== undefined ? { total: rowFromStore.total } : {}),
-      ...(rowFromStore.nilai !== undefined ? { nilai: rowFromStore.nilai } : {}),
-      ...(rowFromStore.amount !== undefined ? { amount: rowFromStore.amount } : {}),
-      ...(rowFromStore.ppn !== undefined ? { ppn: rowFromStore.ppn } : {}),
-      ...(rowFromStore.pph !== undefined ? { pph: rowFromStore.pph } : {}),
+      ...rowFromStore,
+      items: Array.isArray(rowFromStore.items) && rowFromStore.items.length > 0 ? rowFromStore.items : (remoteRow.items ?? rowFromStore.items),
+      _payments: Array.isArray(rowFromStore._payments) && rowFromStore._payments.length > 0 ? rowFromStore._payments : (remoteRow._payments ?? rowFromStore._payments),
+      _followUps: Array.isArray(rowFromStore._followUps) && rowFromStore._followUps.length > 0 ? rowFromStore._followUps : (remoteRow._followUps ?? rowFromStore._followUps),
+      files: Array.isArray(rowFromStore.files) && rowFromStore.files.length > 0 ? rowFromStore.files : (remoteRow.files ?? rowFromStore.files),
+      versions: Array.isArray(remoteRow.versions) && remoteRow.versions.length > 0 ? remoteRow.versions : rowFromStore.versions,
       ...(rowFromStore.status ? { status: rowFromStore.status, rawStatus: toEnum(moduleKey, rowFromStore.status) || rowFromStore.status } : {}),
-      ...(rowFromStore.pengiriman ? { pengiriman: rowFromStore.pengiriman } : {}),
-      ...(rowFromStore.shipmentStatus ? { shipmentStatus: rowFromStore.shipmentStatus } : {}),
     };
-  }, [remoteRow, rowFromStore]);
+  }, [remoteRow, rowFromStore, moduleKey]);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
@@ -362,7 +361,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     ? isFinanceOrBos || ["gudang", "procurement"].includes(user?.role ?? "")
     : true;
   const canDelete =
-    user?.role === "super_admin"
+    serverCan(moduleKey, "U") === false
+      ? false
+      : user?.role === "super_admin"
       ? true
       : moduleKey === "expenses"
       ? isFinanceOrBos || (["sales", "procurement", "admin", "pm", "teknisi", "se", "gudang"].includes(user?.role ?? "") && isReporter && row?.status !== "Dibayar")
@@ -578,7 +579,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         se: data.users?.find((u: any) => u.role === "se")?.nama || "Andi Pratama",
         status: "Terjadwal",
       });
-    } else if (a.label === "Jadikan project") {
+    } else if (a.label === "Jadikan proyek") {
       const custName = row.perusahaan || row.customer || "Klien";
       const projName = row.nama
         ? row.nama.toLowerCase().startsWith("project")
@@ -600,9 +601,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         selesai: row.targetSelesai || row.closing || getTodayIso(),
         status: "Berjalan",
       });
-      toast("Project baru berhasil dibuat");
+      toast("Proyek baru berhasil dibuat");
       router.push("/leads");
-    } else if (a.label === "Buat Sales Order (SO)") {
+    } else if (a.label === "Buat Pesanan Penjualan (SO)") {
       const matchedQuo =
         leadQuotation ||
         (data.quotations ?? []).find(
@@ -627,13 +628,13 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       });
 
       if (createdSo?.id) {
-        toast("Sales Order (SO) berhasil dibuat!");
+        toast("Pesanan Penjualan (SO) berhasil dibuat!");
         router.push(`/po-client/${createdSo.id}` as any);
       }
       return;
-    } else if (a.label === "Buat PO supplier") {
+    } else if (a.label === "Buat PO pemasok") {
       const firstSuppId = data.suppliers?.[0]?.id ? String(data.suppliers[0].id) : undefined;
-      const targetSupplier = row.supplier || (data.suppliers?.[0]?.nama ?? "Supplier Utama");
+      const targetSupplier = row.supplier || (data.suppliers?.[0]?.nama ?? "Pemasok Utama");
       const targetSupplierId = row.supplierId || firstSuppId;
 
       const reqItems = Array.isArray(row.items) && row.items.length
@@ -647,7 +648,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         : undefined;
 
       const created = await addRow("supplier-pos", {
-        supplier: targetSupplier !== "-" ? targetSupplier : (data.suppliers?.[0]?.nama ?? "Supplier Utama"),
+        supplier: targetSupplier !== "-" ? targetSupplier : (data.suppliers?.[0]?.nama ?? "Pemasok Utama"),
         supplierId: targetSupplierId,
         request: row.nomor,
         requestId: row.id,
@@ -664,7 +665,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         router.push(`/supplier-pos/${created.id}` as any);
       }
       return;
-    } else if (a.label === "Buat invoice") {
+    } else if (a.label === "Buat faktur") {
       const q = moduleKey === "quotations" ? row : (data.quotations ?? []).find(
         (quot) => (quot.leadId && String(quot.leadId) === String(row.id)) || (quot.lead && quot.lead.toLowerCase() === row.nama?.toLowerCase())
       );
@@ -724,9 +725,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     } else if (moduleKey === "invoices" && a.label === "Catat pembayaran") {
       setInvoicePayOpen(true);
       return;
-    } else if (moduleKey === "invoices" && a.label === "Kirim ke customer") {
+    } else if (moduleKey === "invoices" && a.label === "Kirim ke pelanggan") {
       await setStatus("invoices", id, "Terkirim");
-      toast("Invoice berhasil dikirim ke customer");
+      toast("Faktur berhasil dikirim ke pelanggan");
       handleRefresh();
       return;
     } else if (moduleKey === "delivery-notes" && (a.label.toLowerCase().includes("upload") || a.label.toLowerCase().includes("laporan") || a.label.toLowerCase().includes("surat jalan"))) {
@@ -747,8 +748,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const filteredActions = (def.actions ?? []).filter((a) => {
     if (isLead) {
       if (a.label === "Download template penawaran" && !canOfferLead) return false;
-      if (a.label === "Jadikan project" && row.status === "Lost") return false;
-      if (a.label === "Buat Sales Order (SO)" && row.status === "Lost") return false;
+      if (a.label === "Jadikan proyek" && row.status === "Lost") return false;
+      if (a.label === "Buat Pesanan Penjualan (SO)" && row.status === "Lost") return false;
     }
     if (moduleKey === "invoices") {
       const rawStatusUpper = String(row.rawStatus || "").toUpperCase();
@@ -757,15 +758,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         const isPaid = row.status === "Lunas" || rawStatusUpper === "PAID" || (row.total > 0 && row.terbayar >= row.total);
         if (!isSent || isPaid || row.status === "Batal" || row.status === "Dibatalkan") return false;
       }
-      if (a.label === "Kirim ke customer") {
+      if (a.label === "Kirim ke pelanggan") {
         if (isSent || row.status === "Batal" || row.status === "Dibatalkan") return false;
       }
     }
-    if (moduleKey === "quotations" && a.label === "Kirim ke customer") {
+    if (moduleKey === "quotations" && a.label === "Kirim ke pelanggan") {
       const st = String(row.status ?? "");
       if (["Terkirim", "Disetujui", "Ditolak", "Kedaluwarsa", "Not Yet"].includes(st)) return false;
     }
-    if (moduleKey === "quotations" && a.label === "Buat invoice") {
+    if (moduleKey === "quotations" && a.label === "Buat faktur") {
       const isFinanceOrAdmin = ["finance", "admin", "super_admin", "bos"].includes(
         (user?.role || "").toLowerCase()
       );
@@ -778,7 +779,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       if (qHasInvoice || row.status === "Ditolak" || row.status === "Kedaluwarsa") return false;
     }
     if (moduleKey === "purchase-requests") {
-      if (a.label === "Buat PO supplier") return false;
+      if (a.label === "Buat PO pemasok") return false;
       if (a.label === "Teruskan ke Gudang") {
         if (user?.role === "gudang") return false;
         const st = String(row?.rawStatus || (row?.status ? toEnum("purchase-requests", row.status) : "") || "").toUpperCase();
@@ -1080,7 +1081,45 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                         error={errs[f.key]}
                       >
                         {f.type === "select" ? (
-                          (f.key === "lead" || f.key === "leadId") ? (
+                          (f.key === "customer" || f.key === "customerId" || f.key === "perusahaan" || String(f.label || "").toLowerCase() === "customer") ? (
+                            <CustomerSelect
+                              value={getFieldValue(f)}
+                              customerId={edits.customerId ?? row.customerId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onAddNew={() => setQuickCustomerKey(f.key)}
+                              addNewLabel="+ Tambah Customer Baru"
+                              onChange={(cust) => {
+                                if (!cust) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("customerId", null);
+                                  return;
+                                }
+                                const name = cust.company || cust.nama || cust.name || "";
+                                setFieldValue(f.key, name);
+                                setFieldValue("customerId", cust.id);
+                                if (cust.pic && cust.pic !== "-") {
+                                  setFieldValue("kontak", cust.pic);
+                                }
+                              }}
+                            />
+                          ) : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase() === "supplier") ? (
+                            <SupplierSelect
+                              value={getFieldValue(f)}
+                              supplierId={edits.supplierId ?? row.supplierId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onAddNew={() => setQuickSupplierKey(f.key)}
+                              addNewLabel="+ Tambah Supplier Baru"
+                              onChange={(name, supp) => {
+                                setFieldValue(f.key, name || (f.required ? "" : "-"));
+                                if (supp?.id) setFieldValue("supplierId", supp.id);
+                                if (supp?.payment) setFieldValue("payment", supp.payment);
+                              }}
+                            />
+                          ) : (f.key === "lead" || f.key === "leadId") ? (
                             <LeadSelect
                               value={getFieldValue(f)}
                               leadId={edits.leadId ?? row.leadId}
@@ -1230,8 +1269,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                               }
                               addNewLabel={
                                 (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
-                                  ? "+ Tambah Supplier Baru"
-                                  : "+ Tambah Customer Baru"
+                                  ? "+ Tambah Pemasok Baru"
+                                  : "+ Tambah Pelanggan Baru"
                               }
                               onChange={(v) => setFieldValue(f.key, v)}
                               options={getDynamicOptions(f, data, def.key, fallbackUsers) ?? []}
@@ -1517,10 +1556,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       <ConfirmDialog
         open={!!pending}
         onOpenChange={(v) => !v && setPending(null)}
-        title={isLost ? "Tandai lead ini Lost?" : `Ubah status ke ${pending}?`}
+        title={isLost ? "Tandai prospek ini Kalah?" : `Ubah status ke ${pending}?`}
         description={
           isLost
-            ? "Lead pindah ke kolom Lost dan tidak muncul di pipeline aktif. Data tetap tersimpan dan bisa dibuka lagi."
+            ? "Prospek pindah ke kolom Kalah dan tidak muncul di pipeline aktif. Data tetap tersimpan dan bisa dibuka lagi."
             : "Pihak terkait akan diberi tahu. Perubahan ini tercatat di audit log."
         }
         confirmLabel="Ya, ubah"

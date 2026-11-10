@@ -12,17 +12,14 @@ import { FormDialog, SearchableSelect } from "@/components/taska/dialogs";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
-import { MODULES, NAV_BY_ROLE, type Role, type Row } from "@/constants/modules";
+import { MODULES, hasUserPermission, type Role, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 
 export default function StockOpnameScreen() {
   const router = useRouter();
   const { data, user, toast, reload, refreshModule } = useApp();
 
-  const userRole = (user?.role || "").toLowerCase() as Role;
-  const isSuperOrAdmin = ["super_admin", "admin", "bos"].includes(userRole);
-  const navItems = userRole && NAV_BY_ROLE[userRole] ? NAV_BY_ROLE[userRole] : [];
-  const isAllowed = isSuperOrAdmin || navItems.some((n) => n.key === "opname" || n.href === "/opname");
+  const isAllowed = hasUserPermission(user, "opname", "M");
 
   const products: Row[] = data.products ?? [];
   const warehouses: Row[] = data.warehouses ?? [];
@@ -524,7 +521,7 @@ export default function StockOpnameScreen() {
               <Textarea
                 value={replaceReason}
                 onChangeText={setReplaceReason}
-                placeholder="Contoh: Unit pengganti klaim retur supplier untuk kamera rusak"
+                placeholder="Contoh: Unit pengganti klaim retur pemasok untuk kamera rusak"
               />
             </FormField>
           </View>

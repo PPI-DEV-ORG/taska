@@ -651,6 +651,8 @@ export class DeliveryService implements OnModuleInit {
 
   private company = async (): Promise<string> => {
     try {
+      const profile = await this.settings.getCompanyProfile();
+      if (profile?.name) return profile.name;
       return await this.settings.getValue("nama.perusahaan");
     } catch {
       return "Taska";

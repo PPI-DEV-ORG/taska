@@ -78,7 +78,7 @@ export function SummaryTab({ fin, onNavigateToReports }: SummaryTabProps) {
               <Text className="text-xs font-bold text-foreground">{rupiah(fin.balanceSheet.assets.totalAsetLancar)}</Text>
             </View>
             <View className="flex-row justify-between py-1 border-b border-border/40">
-              <Text className="text-xs text-muted-foreground">Total Kewajiban (Hutang Supplier & PPN):</Text>
+              <Text className="text-xs text-muted-foreground">Total Kewajiban (Hutang Pemasok & PPN):</Text>
               <Text className="text-xs font-bold text-warning">{rupiah(fin.balanceSheet.liabilities.totalKewajiban)}</Text>
             </View>
             <View className="flex-row justify-between py-1 border-b border-border/40">

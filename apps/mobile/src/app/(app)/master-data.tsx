@@ -159,7 +159,7 @@ export default function MasterDataScreen() {
           onBack={() => setSelectedCategory(null)}
           addRow={addRow}
           toast={toast}
-          renderActions={deleteActions("leadSources", "sumber lead", canAddLeadSource)}
+          renderActions={deleteActions("leadSources", "sumber prospek", canAddLeadSource)}
         />
       )}
 

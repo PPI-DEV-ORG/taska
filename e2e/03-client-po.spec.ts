@@ -15,7 +15,7 @@ test.describe("Modul Sales Order & PO Client (CRUD)", () => {
 
     // 3. Isi Form di Modal
     const modal = page.getByRole("dialog").last();
-    const custTrigger = modal.getByText(/Pilih customer/i).first();
+    const custTrigger = modal.getByText(/Pilih pelanggan/i).first();
     if (await custTrigger.isVisible()) {
       await custTrigger.click();
       await page.getByRole("dialog").last().getByText(/PT|Telkom/i).first().click().catch(() => {});

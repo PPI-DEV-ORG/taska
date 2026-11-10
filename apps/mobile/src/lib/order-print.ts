@@ -1,4 +1,28 @@
 import { rupiah, tanggal } from "@/lib/format";
+import { DEFAULT_COMPANY_PROFILE, type CompanyProfile } from "@/constants/modules";
+import { apiBase } from "@/services/api";
+
+export function escapeHtml(str: unknown): string {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function readCachedCompanyProfile(): CompanyProfile {
+  if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem("taska.offline.company.v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { ...DEFAULT_COMPANY_PROFILE, ...parsed };
+      }
+    } catch {}
+  }
+  return DEFAULT_COMPANY_PROFILE;
+}
 
 export interface PrintableOrderItem {
   name?: string;
@@ -27,8 +51,21 @@ export function printOrderDocument(opts: {
   paymentTerms?: string;
   senderName?: string;
   recipientName?: string;
+  companyName?: string;
+  companyTagline?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  companyLogoUrl?: string;
 }) {
   if (typeof window === "undefined") return;
+
+  const profile = readCachedCompanyProfile();
+  const compName = escapeHtml(opts.companyName || profile.name || "PT Samtek");
+  const compTagline = escapeHtml(opts.companyTagline || profile.tagline || "TASKA ERP System");
+  const compAddress = escapeHtml(opts.companyAddress ?? profile.address ?? "");
+  const compPhone = escapeHtml(opts.companyPhone ?? profile.phone ?? "");
+  const compSignatory = escapeHtml(opts.senderName || profile.signatoryName || profile.name || "PT Samtek");
+  const logoUrl = opts.companyLogoUrl || (profile.logoFileId ? `${apiBase()}/files/${profile.logoFileId}` : "");
 
   const isSo = opts.docType === "SO";
   const isDo = opts.docType === "DO";
@@ -44,22 +81,30 @@ export function printOrderDocument(opts: {
       : "Dokumen Resmi Pemesanan Barang / Jasa (Purchase Order)";
   const refLabel = isDo ? "Referensi No. SO / PO" : isSo ? "Referensi No. PO" : "Referensi No. SO";
   const totalAmount = Number(opts.totalAmount ?? 0);
+  const safeDocNumber = escapeHtml(opts.docNumber || "-");
+  const safeRefNumber = escapeHtml(opts.refNumber && opts.refNumber !== "-" ? opts.refNumber : "-");
+  const safeCounterpartyLabel = escapeHtml(opts.counterpartyLabel);
+  const safeCounterpartyName = escapeHtml(opts.counterpartyName || "-");
+  const safeNotes = opts.notes ? escapeHtml(opts.notes).replace(/\n/g, "<br/>") : "";
+  const safePaymentTerms = opts.paymentTerms ? escapeHtml(opts.paymentTerms) : "";
+  const safeRecipient = escapeHtml(opts.recipientName || opts.counterpartyName || "Penerima & Cap/TTD");
 
   const rowsHtml =
     opts.items.length > 0
       ? opts.items
           .map((it, idx) => {
-            const name = it.item || it.name || it.nama || it.productName || "Barang / Jasa";
+            const name = escapeHtml(it.item || it.name || it.nama || it.productName || "Barang / Jasa");
             const qty = Number(it.qty) || 1;
             const price = Number(it.harga ?? it.price ?? 0);
-            const unit = it.satuan || it.unit || "Unit";
-            const sn =
+            const unit = escapeHtml(it.satuan || it.unit || "Unit");
+            const rawSn =
               it.sn ||
               (Array.isArray(it.serialNumbers)
                 ? it.serialNumbers.join(", ")
                 : typeof it.serialNumbers === "string"
                   ? it.serialNumbers
                   : "");
+            const sn = escapeHtml(rawSn);
             const sub = qty * price;
             if (isDo) {
               return `
@@ -90,7 +135,7 @@ export function printOrderDocument(opts: {
         ? `
         <tr>
           <td style="text-align:center;">1</td>
-          <td>Pengiriman barang sesuai pesanan (${opts.docNumber})</td>
+          <td>Pengiriman barang sesuai pesanan (${safeDocNumber})</td>
           <td>-</td>
           <td style="text-align:center;font-weight:700;">1 Paket</td>
           <td>Baik / Lengkap</td>
@@ -99,7 +144,7 @@ export function printOrderDocument(opts: {
         : `
         <tr>
           <td style="text-align:center;">1</td>
-          <td>Pesanan sesuai kesepakatan (${opts.docNumber})</td>
+          <td>Pesanan sesuai kesepakatan (${safeDocNumber})</td>
           <td style="text-align:center;">1 Paket</td>
           <td style="text-align:right;">${rupiah(totalAmount)}</td>
           <td style="text-align:right;font-weight:600;">${rupiah(totalAmount)}</td>
@@ -110,7 +155,7 @@ export function printOrderDocument(opts: {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>${title} - ${opts.docNumber}</title>
+  <title>${title} - ${safeDocNumber}</title>
   <style>
     body { font-family: Arial, sans-serif; color: #111827; margin: 32px; font-size: 13px; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111827; padding-bottom: 14px; margin-bottom: 20px; }
@@ -139,31 +184,35 @@ export function printOrderDocument(opts: {
       <div class="title">${title}</div>
       <div class="subtitle">${subtitle}</div>
     </div>
-    <div style="text-align:right;">
-      <div style="font-weight:800;font-size:15px;">PT SAMTEK MANDIRI</div>
-      <div style="font-size:11px;color:#6b7280;">TASKA ERP System</div>
+    <div style="text-align:right;display:flex;align-items:center;gap:12px;">
+      ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" style="max-height:48px;max-width:120px;object-fit:contain;" />` : ""}
+      <div>
+        <div style="font-weight:800;font-size:15px;">${compName.toUpperCase()}</div>
+        <div style="font-size:11px;color:#6b7280;">${compTagline}</div>
+        ${compAddress ? `<div style="font-size:10.5px;color:#6b7280;">${compAddress}${compPhone ? ` · Telp: ${compPhone}` : ""}</div>` : ""}
+      </div>
     </div>
   </div>
 
   <div class="meta-grid">
     <div>
       <div class="meta-item">
-        <div class="meta-label">Nomor ${opts.docType}</div>
-        <div class="meta-val">${opts.docNumber || "-"}</div>
+        <div class="meta-label">Nomor ${escapeHtml(opts.docType)}</div>
+        <div class="meta-val">${safeDocNumber}</div>
       </div>
       <div class="meta-item" style="margin-top:8px;">
         <div class="meta-label">${refLabel}</div>
-        <div class="meta-val">${opts.refNumber && opts.refNumber !== "-" ? opts.refNumber : "-"}</div>
+        <div class="meta-val">${safeRefNumber}</div>
       </div>
     </div>
     <div>
       <div class="meta-item">
-        <div class="meta-label">${opts.counterpartyLabel}</div>
-        <div class="meta-val">${opts.counterpartyName || "-"}</div>
+        <div class="meta-label">${safeCounterpartyLabel}</div>
+        <div class="meta-val">${safeCounterpartyName}</div>
       </div>
       <div class="meta-item" style="margin-top:8px;">
         <div class="meta-label">Tanggal Dokumen</div>
-        <div class="meta-val">${opts.date ? tanggal(opts.date) : "-"}</div>
+        <div class="meta-val">${opts.date ? escapeHtml(tanggal(opts.date)) : "-"}</div>
       </div>
     </div>
   </div>
@@ -202,15 +251,15 @@ export function printOrderDocument(opts: {
               <span>TOTAL NILAI</span>
               <span>${rupiah(totalAmount)}</span>
             </div>
-            ${opts.paymentTerms ? `<div style="font-size:11px;color:#4b5563;margin-top:6px;">Syarat Pembayaran: ${opts.paymentTerms}</div>` : ""}
+            ${safePaymentTerms ? `<div style="font-size:11px;color:#4b5563;margin-top:6px;">Syarat Pembayaran: ${safePaymentTerms}</div>` : ""}
           </div>
         </div>`
   }
 
   ${
-    opts.notes
+    safeNotes
       ? `<div style="margin-top:16px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">
-          <strong>Catatan / Instruksi:</strong><br/>${opts.notes}
+          <strong>Catatan / Instruksi:</strong><br/>${safeNotes}
          </div>`
       : ""
   }
@@ -220,7 +269,7 @@ export function printOrderDocument(opts: {
       ? `<div style="margin-top:44px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;text-align:center;">
           <div>
             <div>Diserahkan Oleh (Gudang),</div>
-            <div class="sign-line">${opts.senderName || "PT Samtek Mandiri"}</div>
+            <div class="sign-line">${compSignatory}</div>
           </div>
           <div>
             <div>Dikirim / Dibawa Oleh,</div>
@@ -228,17 +277,17 @@ export function printOrderDocument(opts: {
           </div>
           <div>
             <div>Diterima Oleh (Pihak Kedua),</div>
-            <div class="sign-line">${opts.recipientName || opts.counterpartyName || "Penerima & Cap/TTD"}</div>
+            <div class="sign-line">${safeRecipient}</div>
           </div>
         </div>`
       : `<div class="sign-grid">
           <div>
             <div>Diterbitkan Oleh,</div>
-            <div class="sign-line">PT Samtek Mandiri</div>
+            <div class="sign-line">${compName}</div>
           </div>
           <div>
             <div>Disetujui / Dikonfirmasi Oleh,</div>
-            <div class="sign-line">${opts.counterpartyName || "Pihak Terkait"}</div>
+            <div class="sign-line">${safeCounterpartyName !== "-" ? safeCounterpartyName : "Pihak Terkait"}</div>
           </div>
         </div>`
   }

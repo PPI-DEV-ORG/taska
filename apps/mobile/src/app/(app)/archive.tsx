@@ -82,7 +82,7 @@ export default function ArchiveScreen() {
   return (
     <View className="gap-5">
       <PageHeader
-        title="Arsip Data Lama (Archive)"
+        title="Arsip Data Lama"
         subtitle="Data berumur lebih dari 2 tahun yang dipindahkan secara aman (Read-Only)"
         onRefresh={fetchArchive}
       />

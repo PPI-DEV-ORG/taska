@@ -13,14 +13,14 @@ test.describe("Modul Survey (CRUD)", () => {
 
     const dialog = page.getByRole("dialog").last();
 
-    const leadTrigger = dialog.getByText(/Pilih lead terkait/i).first();
+    const leadTrigger = dialog.getByText(/Pilih prospek terkait/i).first();
     if (await leadTrigger.isVisible()) {
       await leadTrigger.click();
       await page.getByRole("dialog").last().getByText(/PT|CCTV|test/i).first().click().catch(() => {});
       await page.waitForTimeout(300);
     }
 
-    const custTrigger = dialog.getByText("Pilih customer").first();
+    const custTrigger = dialog.getByText("Pilih pelanggan").first();
     if (await custTrigger.isVisible()) {
       await custTrigger.click();
       await page.getByRole("dialog").last().getByText(/PT|Telkom/i).first().click().catch(() => {});

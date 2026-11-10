@@ -130,12 +130,12 @@ function RecordClientPoForm({
         void refreshModule("po-client");
         void refreshModule("projects");
         pushHistory("projects", project.id, `Mencatat PO Customer ${poNumber.trim() || created.nomor} (${rupiah(cleanAmount)})`);
-        toast("PO Customer berhasil dicatat!");
+        toast("PO Pelanggan berhasil dicatat!");
         onSuccess?.(created);
         onClose();
       }
     } catch (err: any) {
-      toast(err?.message || "Gagal mencatat PO Customer", "danger");
+      toast(err?.message || "Gagal mencatat PO Pelanggan", "danger");
     } finally {
       setIsSubmitting(false);
     }
@@ -149,7 +149,7 @@ function RecordClientPoForm({
             <FileCheck size={20} color={colors.primary} />
           </View>
           <View className="flex-1">
-            <DialogTitle>Catat PO Customer</DialogTitle>
+            <DialogTitle>Catat PO Pelanggan</DialogTitle>
             <Text className="text-xs text-muted-foreground mt-0.5">
               Catat dokumen PO yang diterima dari customer untuk project ini tanpa menerbitkan Sales Order (SO)
             </Text>
@@ -190,8 +190,8 @@ function RecordClientPoForm({
             {/* Nomor PO */}
             <View className="flex-1 min-w-[240px]">
               <FormField
-                label="Nomor PO Customer"
-                helper="Nomor PO resmi dari customer. Kosongkan untuk nomor otomatis sistem."
+                label="Nomor PO Pelanggan"
+                hint="Nomor PO resmi dari pelanggan. Kosongkan untuk nomor otomatis sistem."
               >
                 <Input
                   value={poNumber}
@@ -203,7 +203,7 @@ function RecordClientPoForm({
 
             {/* Tanggal PO */}
             <View className="flex-1 min-w-[240px]">
-              <FormField label="Tanggal Dokumen PO *" helper="Tanggal terbit PO dari pihak customer">
+              <FormField label="Tanggal Dokumen PO *" hint="Tanggal terbit PO dari pihak pelanggan">
                 <DatePicker value={date} onChange={setDate} placeholder="Pilih tanggal PO" />
               </FormField>
             </View>
@@ -214,7 +214,7 @@ function RecordClientPoForm({
             <View className="flex-1 min-w-[240px]">
               <FormField
                 label="Total Nilai PO (Rp) *"
-                helper="Total nilai pesanan / kontrak sesuai PO customer"
+                hint="Total nilai pesanan / kontrak sesuai PO pelanggan"
               >
                 <Input
                   value={amountStr}
@@ -227,7 +227,7 @@ function RecordClientPoForm({
 
             {/* Customer Info (Read-only) */}
             <View className="flex-1 min-w-[240px]">
-              <FormField label="Customer Project" helper="Pelanggan pemesan (terikat otomatis ke project ini)">
+              <FormField label="Pelanggan Proyek" hint="Pelanggan pemesan (terikat otomatis ke proyek ini)">
                 <View className="h-10 px-3 justify-center rounded-lg border border-border/70 bg-muted/40">
                   <Text className="text-sm font-medium text-foreground truncate" numberOfLines={1}>
                     {customerName}
@@ -240,20 +240,20 @@ function RecordClientPoForm({
           {/* File Upload PO Customer */}
           <View className="mt-1">
             <FileUploader
-              label="Upload Berkas PO Customer (PDF / Gambar)"
+              label="Upload Berkas PO Pelanggan (PDF / Gambar)"
               kind="dokumen"
               category="po-client"
               handleRef={(h) => {
                 fileHandleRef.current = h;
               }}
-              hint="Lampirkan file scan/PDF resmi PO dari customer (maks. 15 MB)"
+              hint="Lampirkan file scan/PDF resmi PO dari pelanggan (maks. 15 MB)"
             />
           </View>
 
           {/* Catatan / Keterangan */}
           <FormField
-            label="Catatan PO Customer (Opsional)"
-            helper="Ketentuan termin penagihan, catatan instruksi pengiriman, atau catatan lainnya"
+            label="Catatan PO Pelanggan (Opsional)"
+            hint="Ketentuan termin penagihan, catatan instruksi pengiriman, atau catatan lainnya"
           >
             <Input
               value={notes}

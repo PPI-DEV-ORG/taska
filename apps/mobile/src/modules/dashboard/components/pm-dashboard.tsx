@@ -32,7 +32,7 @@ export function PmDashboard({ user, data, isMobile }: PmDashboardProps) {
 
       <KpiRow>
         <KpiCard
-          label="My Projects"
+          label="Proyek Saya"
           value={String(myProjects.length)}
           hint="Aktif di bawah PIC Anda"
           icon={FolderKanban}
@@ -46,7 +46,7 @@ export function PmDashboard({ user, data, isMobile }: PmDashboardProps) {
           onPress={() => router.push("/surveys")}
         />
         <KpiCard
-          label="Pending Requests"
+          label="Permintaan Tertunda"
           value={String(pendingReqs)}
           hint="Material butuh approval"
           tone="warning"
@@ -73,7 +73,7 @@ export function PmDashboard({ user, data, isMobile }: PmDashboardProps) {
 
         <View className={isMobile ? "w-full" : "flex-1"}>
           <Panel
-            title="Peringatan & Kebutuhan Project"
+            title="Peringatan & Kebutuhan Proyek"
             subtitle="Material lapangan dan kesiapan implementasi"
             icon={AlertTriangle}
           >
@@ -85,7 +85,7 @@ export function PmDashboard({ user, data, isMobile }: PmDashboardProps) {
                     {l.perusahaan} · Potensi: {rupiah(l.nilai)}. Siap dialokasikan tim lapangan.
                   </Text>
                   <Button size="sm" className="mt-1 h-8" onPress={() => router.push("/projects")}>
-                    <Text className="text-xs">Buka & Setup Project</Text>
+                    <Text className="text-xs">Buka & Setup Proyek</Text>
                   </Button>
                 </View>
               ))}
@@ -96,12 +96,12 @@ export function PmDashboard({ user, data, isMobile }: PmDashboardProps) {
                     {r.project ? `Project: ${r.project} · ` : ""}{r.item || r.tujuan || "Material dibutuhkan"}.
                   </Text>
                   <Button variant="outline" size="sm" className="mt-1 h-8" onPress={() => router.push("/purchase-requests")}>
-                    <Text className="text-xs">Periksa Request Barang</Text>
+                    <Text className="text-xs">Periksa Permintaan Barang</Text>
                   </Button>
                 </View>
               ))}
               {data.leads.filter((l: any) => l.status === "Won").length === 0 && data["purchase-requests"].filter((r: any) => r.status === "Diajukan" || r.status === "Cek stok").length === 0 ? (
-                <Text className="text-muted-foreground py-6 text-center text-xs">Tidak ada kebutuhan mendesak project saat ini.</Text>
+                <Text className="text-muted-foreground py-6 text-center text-xs">Tidak ada kebutuhan mendesak proyek saat ini.</Text>
               ) : null}
             </View>
           </Panel>

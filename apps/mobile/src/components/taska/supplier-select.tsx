@@ -24,6 +24,7 @@ import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import type { Row } from "@/constants/modules";
+import { api } from "@/services/api";
 
 export function getSupplierTagsText(s: any): string {
   if (!s) return "";
@@ -95,17 +96,53 @@ export function SupplierSelect({
   value,
   supplierId,
   onChange,
-  placeholder = "Pilih Supplier...",
+  placeholder = "Pilih Pemasok...",
   error,
   onAddNew,
-  addNewLabel = "+ Tambah Supplier Baru",
+  addNewLabel = "+ Tambah Pemasok Baru",
   allowClear = true,
 }: SupplierSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
+  const [fetchedSuppliers, setFetchedSuppliers] = React.useState<Row[]>([]);
 
-  const suppliers: Row[] = React.useMemo(() => data.suppliers ?? [], [data.suppliers]);
+  React.useEffect(() => {
+    let active = true;
+    if (!data.suppliers || data.suppliers.length === 0) {
+      api<any>("GET", "/suppliers")
+        .then((res) => {
+          if (!active) return;
+          const items = Array.isArray(res) ? res : res?.items ?? [];
+          setFetchedSuppliers(
+            items.map((s: any) => ({
+              id: String(s.id),
+              name: s.name ?? "",
+              nama: s.name ?? s.nama ?? "",
+              kota: s.city ?? s.kota ?? "-",
+              city: s.city ?? s.kota ?? "-",
+              kontak: s.pic ?? s.kontak ?? "-",
+              pic: s.pic ?? s.kontak ?? "-",
+              email: s.email ?? "",
+              telepon: s.phone ?? s.telepon ?? "",
+              phone: s.phone ?? s.telepon ?? "",
+              payment: s.paymentTerms ?? s.payment ?? "",
+              catatan: s.notes ?? s.catatan ?? "",
+              status: s.status === "AKTIF" || s.status === "Aktif" ? "Aktif" : (s.status || "Aktif"),
+              tags: Array.isArray(s.itemTags) ? s.itemTags : [],
+              tagSummary: (s.itemTags ?? []).map((t: any) => t.itemName).join(", "),
+            }))
+          );
+        })
+        .catch(() => {});
+    }
+    return () => { active = false; };
+  }, [data.suppliers]);
+
+  const suppliers: Row[] = React.useMemo(() => {
+    if (data.suppliers && data.suppliers.length > 0) return data.suppliers;
+    return fetchedSuppliers;
+  }, [data.suppliers, fetchedSuppliers]);
 
   // Find currently selected supplier object
   const selectedSupplier = React.useMemo(() => {
@@ -208,7 +245,7 @@ export function SupplierSelect({
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Building2 size={20} color={colors.primary} />
-                <DialogTitle>Pilih Supplier / Vendor</DialogTitle>
+                <DialogTitle>Pilih Pemasok / Vendor</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -220,7 +257,7 @@ export function SupplierSelect({
               <Input
                 value={q}
                 onChangeText={setQ}
-                placeholder="Cari berdasarkan nama supplier, barang/tag, kota, atau termin..."
+                placeholder="Cari berdasarkan nama pemasok, barang/tag, kota, atau termin..."
                 autoFocus
                 className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
               />
@@ -247,7 +284,7 @@ export function SupplierSelect({
               <View className="flex-1 min-w-[760px]">
                 {/* Table Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nama Supplier & Kota</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nama Pemasok & Kota</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">Tags / Kategori Barang</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-32 text-center">Status Pajak</Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2">Syarat Pembayaran</Text>

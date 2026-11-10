@@ -766,11 +766,36 @@ model Quotation {
   discount       Decimal         @default(0) @db.Decimal(18, 2)
   grandTotal     Decimal         @default(0) @db.Decimal(18, 2)
   sentAt         DateTime?
+
+  // Isi & template penawaran (dulu JSON di SystemSetting "quotation.meta.<id>")
+  items          Json?
+  subject        String?
+  intro          String?   @db.Text
+  // Catatan kaki. Null = pakai catatan bawaan.
+  notes          Json?
+  city           String?
+  kopText        String?   @db.Text
+  customerAddress String?  @db.Text
+  signerName     String?
+  signerTitle    String?
+  pph            Decimal?  @db.Decimal(18, 2)
+  pphMode        String?
+  tipePph        String?
+  // Berkas terakhir yang dihasilkan / diunggah
+  latestFileId   Int?
+  latestFileName String?
+  // Konflik stok / auto-swap SN
+  stockConflictFlag    Boolean @default(false)
+  stockConflictMessage String? @db.Text
+  autoSwapLogs         Json?
+  emergencyPrId        Int?
+  emergencyPrNumber    String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
   versions     QuotationVersion[]
   clientPOs    ClientPO[]
+  invoices     InvoiceOut[]
   followUps    FollowUp[]
   projects     Project[]
   reservations StockReservation[]
@@ -813,6 +838,29 @@ model ClientPO {
   date        DateTime   @db.Date
   fileId      Int?
   notes       String?
+
+  // Metadata Sales Order (dulu JSON di SystemSetting "client-po:meta:<id>")
+  // Nomor SO / nomor PO dari customer; "number" tetap nomor utama dokumen.
+  soNumber        String?
+  poClientNumber  String?
+  docMode         String?   // SO | PO | BOTH
+  soFileId        Int?
+  items           Json?
+  projectId       Int?
+  project         Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  ppn             Decimal?  @db.Decimal(18, 2)
+  tipePpn         String?
+  ppnMode         String?
+  pph             Decimal?  @db.Decimal(18, 2)
+  tipePph         String?
+  pphMode         String?
+  // Pelunasan langsung (tanpa invoice)
+  paymentStatus        String?   // PENDING | LUNAS
+  settlementType       String?   // LANGSUNG | TEMPO
+  paymentProofFileId   Int?
+  coaAccount           String?
+  settledAt            DateTime?
+  goodsDispatched      Boolean   @default(false)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -821,6 +869,7 @@ model ClientPO {
   @@index([customerId])
   @@index([supplierId])
   @@index([date])
+  @@index([projectId])
 }
 
 model InvoiceOut {
@@ -842,6 +891,42 @@ model InvoiceOut {
   dueDate     DateTime         @db.Date
   status      InvoiceOutStatus @default(DRAFT)
   fileId      Int?
+
+  // Metadata invoice (dulu JSON di SystemSetting "invoice:meta:<id>")
+  quotationId     Int?
+  quotation       Quotation?  @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  parentInvoiceId Int?
+  isContinuation  Boolean     @default(false)
+  discount        Decimal?    @db.Decimal(18, 2)
+  dpLabel         String?
+  dpAmount        Decimal?    @db.Decimal(18, 2)
+  pph             Decimal?    @db.Decimal(18, 2)
+  pphMode         String?
+  tipePph         String?
+  tipePpn         String?
+  ppnMode         String?
+  coaAccount      String?
+  // Berkas bukti bayar. Bila ada baris Payment, berkas Payment terbaru yang dipakai.
+  paidFileId      Int?
+  // Tampilan dokumen (kop, penandatangan, teks)
+  subject         String?
+  intro           String?     @db.Text
+  city            String?
+  kopText         String?     @db.Text
+  kopLogoUrl      String?     @db.LongText
+  customerAddress String?     @db.Text
+  signerName      String?
+  signerTitle     String?
+  notesList       Json?
+  items           Json?
+  // Konflik stok / auto-swap SN
+  stockConflictFlag    Boolean @default(false)
+  stockConflictMessage String? @db.Text
+  autoSwapLogs         Json?
+  emergencyPrId        Int?
+  emergencyPrNumber    String?
+  latestFileId         Int?
+  latestFileName       String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -852,6 +937,7 @@ model InvoiceOut {
   @@index([dueDate])
   @@index([customerId])
   @@index([projectId])
+  @@index([quotationId])
 }
 
 model InvoiceIn {
@@ -869,6 +955,17 @@ model InvoiceIn {
   status         InvoiceInStatus @default(UNPAID)
   fileId         Int?
   transferFileId Int?
+
+  // Metadata (dulu JSON di SystemSetting "invoice-in:meta:<id>"). Berkas tetap di fileId / transferFileId.
+  notes        String?  @db.Text
+  category     String?
+  debitAccount String?
+  date         DateTime? @db.Date
+  items        Json?
+  coaAccount   String?
+  pph          Decimal? @db.Decimal(18, 2)
+  pphMode      String?
+  tipePph      String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -988,6 +1085,7 @@ model Project {
   @@index([status])
   @@index([picId])
   @@index([customerId])
+  clientPOs ClientPO[]
 }
 
 model ProjectMember {
@@ -1074,6 +1172,8 @@ model PurchaseRequest {
   doFileId          Int?
   paymentProofFileId Int?
   paymentStatus     String?       @default("BELUM_DIBAYAR")
+  // Kode akun kas/bank sumber pembayaran (mis. 1000.01). Satu-satunya tempat; dulu disisipkan sebagai tag di otherNote.
+  paymentAccountCode String?
   dueDate           DateTime?     @db.Date
   status            PrStatus      @default(DIAJUKAN)
   rejectReason      String?
@@ -1126,6 +1226,17 @@ model SupplierPO {
   createdById    Int?
   creator        User?            @relation("POCreator", fields: [createdById], references: [id])
   arrivedAt      DateTime?
+  // Metadata PO (dulu JSON di SystemSetting "supplier-po:meta:<id>")
+  supplierSoNumber String?
+  soFileId       Int?
+  // Penanda pembayaran manual dari Finance: LUNAS | SAMPAI_BELUM_LUNAS
+  manualStatus   String?
+  ppnMode        String?
+  dpp            Decimal?         @db.Decimal(18, 2)
+  ppn            Decimal?         @db.Decimal(18, 2)
+  pphMode        String?
+  tipePph        String?
+  pph            Decimal?         @db.Decimal(18, 2)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 

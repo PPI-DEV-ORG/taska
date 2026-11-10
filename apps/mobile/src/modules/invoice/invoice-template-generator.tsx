@@ -51,6 +51,21 @@ export function InvoiceTemplateGenerator({
     shouldDownload?: boolean,
   ) => Promise<void> | void;
 }) {
+  const { data, toast, companyProfile } = useApp();
+  const defaultKopFromProfile = React.useMemo(() => {
+    return [
+      companyProfile.name,
+      companyProfile.tagline,
+      companyProfile.address,
+      companyProfile.phone ? `Telp: ${companyProfile.phone}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }, [companyProfile]);
+  const defaultLogoFromProfile = React.useMemo(() => {
+    return companyProfile.logoFileId ? `${apiBase()}/files/${companyProfile.logoFileId}` : "";
+  }, [companyProfile.logoFileId]);
+
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [editItemsOpen, setEditItemsOpen] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
@@ -69,25 +84,36 @@ export function InvoiceTemplateGenerator({
   }, [row.items, row.catatan, row.description, row.nilai, row.amount]);
 
   const [items, setItems] = React.useState<QuotationItem[]>(initialItems);
-  const [kopText, setKopText] = React.useState<string>(row.kopText || "");
-  const [kopLogoUrl, setKopLogoUrl] = React.useState<string>((row as any).kopLogoUrl || "");
-  const [city, setCity] = React.useState<string>(row.city || "Bekasi");
+  const [kopText, setKopText] = React.useState<string>(row.kopText || defaultKopFromProfile);
+  const [kopLogoUrl, setKopLogoUrl] = React.useState<string>((row as any).kopLogoUrl || defaultLogoFromProfile);
+  const [city, setCity] = React.useState<string>(row.city || companyProfile.city || "Bekasi");
   const [customerAddress, setCustomerAddress] = React.useState<string>(row.customerAddress || "");
   const [subject, setSubject] = React.useState<string>(row.subject || `INVOICE PENAGIHAN (${row.nomor})`);
   const [intro, setIntro] = React.useState<string>(
-    row.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pengadaan Barang & Jasa Instalasi :",
+    row.intro || "Bersama surat ini kami sampaikan faktur penagihan untuk pengadaan Barang & Jasa Instalasi :",
   );
-  const [signerName, setSignerName] = React.useState<string>(row.signerName || "Finance");
-  const [signerTitle, setSignerTitle] = React.useState<string>(row.signerTitle || "Finance & Accounting");
+  const [signerName, setSignerName] = React.useState<string>(row.signerName || companyProfile.signatoryName || "Finance");
+  const [signerTitle, setSignerTitle] = React.useState<string>(row.signerTitle || companyProfile.signatoryTitle || "Finance & Accounting");
 
-  const DEFAULT_INVOICE_NOTES = [
-    "Pembayaran dapat di Transfer ke:",
-    "Bank : Bank Mandiri",
-    "No. Rek : 1670011359410",
-    "Nama : Ghina Multi Prima",
-    "Alamat : Jl. Bintara Jaya VIII RT.008/RW.009",
-    "Bekasi Barat Bintara Jaya Bekasi",
-  ];
+  const DEFAULT_INVOICE_NOTES = React.useMemo(() => {
+    if (companyProfile.bankName || companyProfile.bankAccount) {
+      return [
+        "Pembayaran dapat di Transfer ke:",
+        `Bank : ${companyProfile.bankName || "Bank Mandiri"}`,
+        `No. Rek : ${companyProfile.bankAccount || "-"}`,
+        `Nama : ${companyProfile.bankHolder || companyProfile.name || "-"}`,
+        ...(companyProfile.address ? [`Alamat : ${companyProfile.address}`] : []),
+      ];
+    }
+    return [
+      "Pembayaran dapat di Transfer ke:",
+      "Bank : Bank Mandiri",
+      "No. Rek : 1670011359410",
+      "Nama : Ghina Multi Prima",
+      "Alamat : Jl. Bintara Jaya VIII RT.008/RW.009",
+      "Bekasi Barat Bintara Jaya Bekasi",
+    ];
+  }, [companyProfile]);
 
   const [notesText, setNotesText] = React.useState<string>(
     Array.isArray(row.notesList) && row.notesList.length > 0
@@ -95,7 +121,6 @@ export function InvoiceTemplateGenerator({
       : DEFAULT_INVOICE_NOTES.join("\n"),
   );
 
-  const { data, toast } = useApp();
   const products = (data.products ?? []) as any[];
 
   // New item inputs
@@ -242,8 +267,8 @@ export function InvoiceTemplateGenerator({
   return (
     <>
       <Panel
-        title="Rincian Item & Generator Template Invoice (.xlsx / .pdf)"
-        subtitle="Finance dapat mengubah seluruh isi template invoice (kop surat, tujuan, kota, notes, rincian item, dan penandatangan). File Excel & PDF akan otomatis tersinkronisasi."
+        title="Rincian Item & Generator Template Faktur (.xlsx / .pdf)"
+        subtitle="Finance dapat mengubah seluruh isi template faktur (kop surat, tujuan, kota, notes, rincian item, dan penandatangan). File Excel & PDF akan otomatis tersinkronisasi."
       >
         <View className="gap-3">
           <View className="flex-row flex-wrap items-center justify-between gap-2">
@@ -429,11 +454,11 @@ export function InvoiceTemplateGenerator({
                   <Input value={city} onChangeText={setCity} placeholder="Bekasi" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-xs font-semibold">Tujuan / Alamat Customer</Text>
+                  <Text className="text-xs font-semibold">Tujuan / Alamat Pelanggan</Text>
                   <Input
                     value={customerAddress}
                     onChangeText={setCustomerAddress}
-                    placeholder="Di Tempat (atau alamat customer)"
+                    placeholder="Di Tempat (atau alamat pelanggan)"
                   />
                 </View>
               </View>
@@ -451,7 +476,7 @@ export function InvoiceTemplateGenerator({
                 <Textarea
                   value={intro}
                   onChangeText={setIntro}
-                  placeholder="Bersama surat ini kami sampaikan invoice penagihan untuk pengadaan Barang & Jasa Instalasi :"
+                  placeholder="Bersama surat ini kami sampaikan faktur penagihan untuk pengadaan Barang & Jasa Instalasi :"
                 />
               </View>
             </View>
@@ -662,7 +687,7 @@ export function InvoiceTemplateGenerator({
 
             {/* 6. PENANDATANGAN */}
             <View className="bg-panel/70 border-border/70 rounded-xl border p-3.5 gap-3">
-              <Text className="text-xs font-bold text-primary uppercase tracking-wide">6. Penandatangan Invoice</Text>
+              <Text className="text-xs font-bold text-primary uppercase tracking-wide">6. Penandatangan Faktur</Text>
               <View className="flex-row gap-2">
                 <View className="flex-1">
                   <Text className="text-xs font-semibold">Nama Penandatangan</Text>
@@ -697,7 +722,7 @@ export function InvoiceTemplateGenerator({
       <QuotationPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
-        title="Preview File Invoice (Format Resmi Excel & PDF)"
+        title="Preview File Faktur (Format Resmi Excel & PDF)"
         row={{ ...row, nomor: row.nomor }}
         items={items}
         itemsTotal={itemsTotal}
@@ -714,7 +739,7 @@ export function InvoiceTemplateGenerator({
         signerTitle={signerTitle}
         dpLabel={showDpRow && dpLabel ? (dpLabel.endsWith(":") ? dpLabel : `${dpLabel}    :`) : undefined}
         dpAmount={showDpRow ? dpAmount : undefined}
-        closingText="Sekian surat invoice penagihan ini kami sampaikan. Atas perhatian dan kerjasamanya kami ucapkan terima kasih."
+        closingText="Sekian surat faktur penagihan ini kami sampaikan. Atas perhatian dan kerjasamanya kami ucapkan terima kasih."
         onDownloadPdf={() => downloadInvoicePdf({ invoiceId: row.id })}
         onDownloadExcel={() => downloadInvoiceExcel({ invoiceId: row.id })}
         onSave={() => handleSaveItems(false)}

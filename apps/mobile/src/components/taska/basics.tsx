@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Pressable, View, Linking } from "react-native";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { ArrowLeft, Inbox, RefreshCw, MessageSquare, Mail, ChevronDown, ChevronUp, type LucideIcon } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -43,6 +43,33 @@ export function Panel({
   );
 }
 
+const ROUTE_MODULES_MAP: Record<string, string[]> = {
+  leads: ["leads", "customers", "leadSources", "lostReasons", "followups"],
+  quotations: ["quotations", "leads", "customers"],
+  surveys: ["surveys", "leads", "projects", "customers"],
+  "po-client": ["po-client", "quotations", "customers", "projects", "invoices"],
+  invoices: ["invoices", "po-client", "quotations", "projects", "customers"],
+  projects: ["projects", "tasks", "invoices", "purchase-requests", "expenses", "delivery-notes"],
+  tasks: ["tasks", "projects"],
+  "purchase-requests": ["purchase-requests", "projects", "products", "supplier-pos"],
+  "supplier-pos": ["supplier-pos", "purchase-requests", "suppliers", "po-client", "receiving", "invoiceIn"],
+  shipments: ["supplier-pos", "receiving"],
+  receiving: ["receiving", "supplier-pos", "warehouses", "products", "serials"],
+  "delivery-notes": ["delivery-notes", "projects", "products", "serials", "warehouses"],
+  expenses: ["expenses", "projects", "expenseCategories", "costCenters"],
+  "damage-reports": ["damage-reports", "products", "serials", "warehouses"],
+  customers: ["customers"],
+  suppliers: ["suppliers"],
+  users: ["users", "warehouses"],
+  "audit-log": ["audit-log"],
+  opname: ["opname", "warehouses", "products"],
+  "poc-reports": ["poc-reports", "projects", "leads", "customers"],
+  "visit-reports": ["visit-reports", "visit-activity-types", "projects", "leads", "customers"],
+  stock: ["products", "serials", "movements", "reservations", "warehouses", "productCategories"],
+  "master-data": ["customers", "suppliers", "warehouses", "products", "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters", "visit-activity-types"],
+  approvals: ["approvals"],
+};
+
 export function PageHeader({
   title,
   subtitle,
@@ -63,15 +90,27 @@ export function PageHeader({
   onRefresh?: () => void | Promise<void>;
 }) {
   const router = useRouter();
-  const { reload, toast } = useApp();
+  const pathname = usePathname();
+  const { reload, refreshModule, toast } = useApp();
   const [refreshing, setRefreshing] = React.useState(false);
 
   async function handleRefresh() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await Promise.all([reload(), onRefresh ? onRefresh() : Promise.resolve()]);
-      toast("Data diperbarui");
+      const seg = (pathname || "").split("/").filter(Boolean)[0] || "";
+      const targetMods = ROUTE_MODULES_MAP[seg];
+      if (onRefresh) {
+        await Promise.all([
+          Promise.resolve(onRefresh()),
+          ...(targetMods ? targetMods.map((m) => refreshModule(m)) : []),
+        ]);
+      } else if (targetMods && targetMods.length > 0) {
+        await Promise.all(targetMods.map((m) => refreshModule(m)));
+      } else {
+        await reload();
+      }
+      toast("Data halaman diperbarui");
     } finally {
       setRefreshing(false);
     }

@@ -3,7 +3,7 @@ export const STOCK_TABS = [
   "Per Gudang",
   "Per Serial Number",
   "Pergerakan Stok",
-  "Reservasi Project",
+  "Reservasi Proyek",
 ] as const;
 
 export type StockTab = typeof STOCK_TABS[number];

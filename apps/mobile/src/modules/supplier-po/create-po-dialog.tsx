@@ -122,7 +122,7 @@ function CreateSupplierPoForm({
           }
         }
       } catch (err) {
-        console.warn("Failed to fetch supplier payment terms:", err);
+        console.warn("Failed to fetch pemasok payment terms:", err);
       }
     })();
     return () => {
@@ -353,7 +353,7 @@ function CreateSupplierPoForm({
   // Submit PO
   async function handleSubmit() {
     if (!supplierId && !supplierName) {
-      toast("Supplier wajib dipilih", "danger");
+      toast("Pemasok wajib dipilih", "danger");
       return;
     }
     if (items.length === 0) {
@@ -452,7 +452,7 @@ function CreateSupplierPoForm({
         onSuccess?.();
       }
     } catch (e: any) {
-      toast(e?.message ?? "Gagal membuat Purchase Order (PO)", "danger");
+      toast(e?.message ?? "Gagal membuat Pesanan Pembelian (PO)", "danger");
     } finally {
       setIsSubmitting(false);
     }
@@ -466,7 +466,7 @@ function CreateSupplierPoForm({
             <View className="p-2 bg-primary/10 rounded-xl">
               <ShoppingCart size={18} color={colors.primary} />
             </View>
-            <DialogTitle>Buat Purchase Order (PO) Supplier</DialogTitle>
+            <DialogTitle>Buat Pesanan Pembelian (PO) Pemasok</DialogTitle>
           </View>
         </DialogHeader>
 
@@ -476,13 +476,13 @@ function CreateSupplierPoForm({
             <View className="p-3.5 rounded-xl bg-card border border-border gap-3.5">
               <View className="flex-row items-center gap-2 pb-1 border-b border-border/50">
                 <Building2 size={15} color={colors.primary} />
-                <Text className="text-xs font-bold text-foreground">Data Pembelian & Supplier</Text>
+                <Text className="text-xs font-bold text-foreground">Data Pembelian & Pemasok</Text>
               </View>
 
               {/* Baris 1: Supplier & Syarat Pembayaran */}
               <View className="flex-col sm:flex-row gap-3">
                 <View className="flex-1">
-                  <FormField label="Pilih Supplier" required hint="Pemasok / vendor tujuan pemesanan">
+                  <FormField label="Pilih Pemasok" required hint="Pemasok / vendor tujuan pemesanan">
                     <SupplierSelect
                       value={supplierName}
                       supplierId={supplierId}
@@ -502,8 +502,8 @@ function CreateSupplierPoForm({
                         }
                       }}
                       onAddNew={() => setQuickSupplierOpen(true)}
-                      addNewLabel="+ Tambah Supplier Baru"
-                      placeholder="Cari & pilih supplier..."
+                      addNewLabel="+ Tambah Pemasok Baru"
+                      placeholder="Cari & pilih pemasok..."
                     />
                   </FormField>
                 </View>
@@ -524,7 +524,7 @@ function CreateSupplierPoForm({
                         </Pressable>
                       </View>
                     }
-                    hint="Ketentuan pembayaran ke supplier"
+                    hint="Ketentuan pembayaran ke pemasok"
                   >
                     <SearchableSelect
                       value={paymentTerms}
@@ -551,7 +551,7 @@ function CreateSupplierPoForm({
                 </View>
 
                 <View className="flex-1">
-                  <FormField label="Nomor SO Supplier (Opsional)" hint="Nomor ref pesanan dari supplier jika ada">
+                  <FormField label="Nomor SO Pemasok (Opsional)" hint="Nomor ref pesanan dari pemasok jika ada">
                     <Input
                       value={nomorSoSupplier}
                       onChangeText={setNomorSoSupplier}
@@ -1079,7 +1079,7 @@ function CreateSupplierPoForm({
               </View>
               <View className="flex-col sm:flex-row gap-3">
                 <View className="flex-1">
-                  <FormField label="File Purchase Order (PO)">
+                  <FormField label="File Pesanan Pembelian (PO)">
                     <FileUploader
                       label="Unggah File PO"
                       autoFlush
@@ -1089,12 +1089,12 @@ function CreateSupplierPoForm({
                   </FormField>
                 </View>
                 <View className="flex-1">
-                  <FormField label="File Sales Order (SO) dari Supplier">
+                  <FormField label="File Pesanan Penjualan (SO) dari Pemasok">
                     <FileUploader
-                      label="Unggah File SO Supplier"
+                      label="Unggah File SO Pemasok"
                       autoFlush
                       onUploaded={(id) => setSoFileId(id)}
-                      hint="Unggah dokumen SO supplier (PDF / Foto)"
+                      hint="Unggah dokumen SO pemasok (PDF / Foto)"
                     />
                   </FormField>
                 </View>

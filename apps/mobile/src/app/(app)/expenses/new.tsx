@@ -280,12 +280,12 @@ export default function NewExpenseScreen() {
             />
           </FormField>
 
-          <FormField label="Terkait Project (Opsional)">
+          <FormField label="Terkait Proyek (Opsional)">
             <ProjectSelect
               value={selectedProject}
               projectId={params.projectId}
               allowClear={true}
-              placeholder="Pilih project jika ada..."
+              placeholder="Pilih proyek jika ada..."
               onChange={(proj) => {
                 setCustomProject(proj ? proj.nama : "-");
               }}

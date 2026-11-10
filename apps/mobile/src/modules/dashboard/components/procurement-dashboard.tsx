@@ -53,7 +53,7 @@ export function ProcurementDashboard({ user, data, now, isMobile }: ProcurementD
 
       <KpiRow>
         <KpiCard
-          label="Pending Requests"
+          label="Permintaan Tertunda"
           value={String(pendingReqs)}
           hint="Cek stok sebelum beli"
           tone="warning"
@@ -61,7 +61,7 @@ export function ProcurementDashboard({ user, data, now, isMobile }: ProcurementD
           onPress={() => router.push("/purchase-requests")}
         />
         <KpiCard
-          label="Supplier POs"
+          label="PO ke Pemasok"
           value={String(activePos)}
           hint="Pesanan aktif ke vendor"
           icon={FileText}
@@ -93,14 +93,14 @@ export function ProcurementDashboard({ user, data, now, isMobile }: ProcurementD
 
         <View className={isMobile ? "w-full" : "flex-1"}>
           <Panel
-            title="Peringatan Pengadaan & Supplier"
-            subtitle="Cek ketersediaan stok internal & status PO supplier"
+            title="Peringatan Pengadaan & Pemasok"
+            subtitle="Cek ketersediaan stok internal & status PO pemasok"
             icon={PackageCheck}
           >
             <View className="gap-3">
               {data["purchase-requests"].filter((r: any) => r.status === "Cek stok" || r.status === "Diajukan").slice(0, 1).map((r: any) => (
                 <View key={r.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
-                  <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Cek Stok: {r.nomor || r.item || "Purchase Request"}</Text>
+                  <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Cek Stok: {r.nomor || r.item || "Permintaan Barang"}</Text>
                   <Text className="text-muted-foreground text-xs" numberOfLines={2}>
                     {r.item || r.tujuan || "Material diajukan"}. Cek ketersediaan stok sebelum PO baru.
                   </Text>
@@ -134,7 +134,7 @@ export function ProcurementDashboard({ user, data, now, isMobile }: ProcurementD
       <ChartCard title="Nilai Pembelian per Bulan" subtitle="Dalam jutaan Rupiah">
         <BarChart
           data={purchasesByMonth}
-          series={[{ name: "Total PO Supplier", color: colors.primary }]}
+          series={[{ name: "Total PO Pemasok", color: colors.primary }]}
           format={(n) => `${n} jt`}
         />
       </ChartCard>

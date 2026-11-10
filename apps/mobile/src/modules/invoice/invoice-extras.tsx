@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Linking, Pressable } from "react-native";
-import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check, Truck, AlertTriangle } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check, Truck, AlertTriangle, Package } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -15,12 +15,13 @@ import { api, apiBase, uploadFile } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";
 import { buildEfakturCsv } from "@/lib/efaktur";
-import { type Row } from "@/constants/modules";
+import { type Row, hasUserPermission } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode, getItemAvailableStock } from "@/modules/quotation/lib";
 import { getKasBankAccounts } from "@/lib/accounting";
+import { SalesChainPanel } from "@/modules/shared/sales-chain-panel";
 
 export function InvoiceExtras({
   row,
@@ -59,12 +60,10 @@ export function InvoiceExtras({
     items: Array.isArray(row.items) ? row.items : [],
   });
 
-  const items: QuotationItem[] =
-    itemsOverride.rowItems === row.items
-      ? itemsOverride.items
-      : Array.isArray(row.items)
-      ? row.items
-      : [];
+  const items = React.useMemo<QuotationItem[]>(() => {
+    if (itemsOverride.rowItems === row.items) return itemsOverride.items;
+    return Array.isArray(row.items) ? row.items : [];
+  }, [itemsOverride.rowItems, itemsOverride.items, row.items]);
 
   const updateItems = React.useCallback((next: QuotationItem[]) => {
     setItemsOverride({ rowItems: row.items, items: next });
@@ -134,7 +133,7 @@ export function InvoiceExtras({
     });
     await reload();
     if (onRefresh) await onRefresh();
-    toast("Barang berhasil dihapus dari invoice");
+    toast("Barang berhasil dihapus dari faktur");
   }
 
   async function handleDeleteSelectedItems() {
@@ -243,10 +242,10 @@ export function InvoiceExtras({
     setIsSending(true);
     try {
       await setStatus("invoices", String(row.id), "Terkirim");
-      toast("Invoice berhasil dikirim ke customer");
+      toast("Faktur berhasil dikirim ke pelanggan");
       await reload();
     } catch (e: any) {
-      toast(e?.message ?? "Gagal mengirim invoice", "danger");
+      toast(e?.message ?? "Gagal mengirim faktur", "danger");
     } finally {
       setIsSending(false);
     }
@@ -272,15 +271,48 @@ export function InvoiceExtras({
     return items.some((it) => (it.productId || it.kind === "GOODS") && !isServiceItem(it));
   }, [items]);
 
+  const soList = data["po-client"];
+  const linkedSo = React.useMemo(() => {
+    return (soList ?? []).find((so: Row) => {
+      if (row.clientPoId && String(so.id) === String(row.clientPoId)) return true;
+      if (row.po && (so.nomor === row.po || so.soNumber === row.po || so.poClientNumber === row.po)) return true;
+      if (row.quotationId && so.quotationId && String(so.quotationId) === String(row.quotationId)) return true;
+      if (row.projectId && so.projectId && String(so.projectId) === String(row.projectId)) return true;
+      return false;
+    });
+  }, [soList, row.clientPoId, row.po, row.quotationId, row.projectId]);
+
+  const linkedQuotation = React.useMemo(() => {
+    const qList = data.quotations ?? [];
+    return qList.find(
+      (q: Row) =>
+        (row.quotationId && String(q.id) === String(row.quotationId)) ||
+        (row.penawaran && String(q.nomor).toLowerCase() === String(row.penawaran).toLowerCase()) ||
+        (linkedSo?.quotationId && String(q.id) === String(linkedSo.quotationId)) ||
+        (linkedSo?.penawaran && String(q.nomor).toLowerCase() === String(linkedSo.penawaran).toLowerCase()),
+    );
+  }, [data.quotations, row.quotationId, row.penawaran, linkedSo]);
+
+  const canAccessQuotation = Boolean(
+    user && hasUserPermission(user, "quotations", "M"),
+  );
+
   const dnList = data["delivery-notes"];
   const linkedDeliveryNotes = React.useMemo(() => {
     return (dnList ?? []).filter((dn: Row) => {
       if (dn.invoiceId && String(dn.invoiceId) === String(row.id)) return true;
       if (String(dn.alasan || "").includes(`[inv:${row.id}]`)) return true;
       if (row.nomor && String(dn.alasan || "").includes(`[invNum:${row.nomor}]`)) return true;
+      if (linkedSo) {
+        if (dn.clientPoId && String(dn.clientPoId) === String(linkedSo.id)) return true;
+        if (dn.soId && String(dn.soId) === String(linkedSo.id)) return true;
+        if (linkedSo.nomor && (dn.soNumber === linkedSo.nomor || String(dn.alasan || "").includes(linkedSo.nomor))) return true;
+        if (linkedSo.soNumber && dn.soNumber === linkedSo.soNumber) return true;
+        if (linkedSo.poClientNumber && String(dn.alasan || "").includes(linkedSo.poClientNumber)) return true;
+      }
       return false;
     });
-  }, [dnList, row.id, row.nomor]);
+  }, [dnList, row.id, row.nomor, linkedSo]);
 
   function isServiceItem(it: any): boolean {
     const name = String(it.item || it.name || "").trim().toLowerCase();
@@ -433,9 +465,10 @@ export function InvoiceExtras({
   return (
     <>
       <ConflictAndSwapBanner row={row} />
+      <SalesChainPanel moduleKey="invoices" row={row} />
 
       <Panel
-        title="Ringkasan Pembayaran Invoice"
+        title="Ringkasan Pembayaran Faktur"
         right={
           <View className="flex-row items-center gap-1.5">
             {canExportEfaktur ? (
@@ -447,7 +480,7 @@ export function InvoiceExtras({
             {canManage && !isSent && row.status !== "Batal" && row.status !== "Dibatalkan" ? (
               <Button size="sm" onPress={handleSendInvoice} disabled={isSending} className="flex-row items-center gap-1 bg-primary">
                 <Send size={13} color="#fff" />
-                <Text className="text-xs text-white font-semibold">{isSending ? "Mengirim..." : "Kirim ke Customer"}</Text>
+                <Text className="text-xs text-white font-semibold">{isSending ? "Mengirim..." : "Kirim ke Pelanggan"}</Text>
               </Button>
             ) : null}
             {canManage && isSent && sisa > 0 && row.status !== "Batal" && row.status !== "Dibatalkan" ? (
@@ -456,7 +489,7 @@ export function InvoiceExtras({
                 <Text className="text-xs">Catat Pembayaran</Text>
               </Button>
             ) : null}
-            {canManage && sisa === 0 && row.status === "Lunas" && hasPhysicalGoods ? (
+            {canManage && sisa === 0 && row.status === "Lunas" && hasPhysicalGoods && linkedDeliveryNotes.length === 0 ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -508,8 +541,8 @@ export function InvoiceExtras({
         <Line left="Sisa Tagihan" right={<Text className="text-sm font-semibold">{rupiah(sisa)}</Text>} />
         {row.fileId ? (
           <Line
-            left="Dokumen Invoice"
-            sub="File invoice yang diunggah / diekstrak"
+            left="Dokumen Faktur"
+            sub="File faktur yang diunggah / diekstrak"
             right={
               <Button
                 variant="outline"
@@ -518,7 +551,7 @@ export function InvoiceExtras({
                 className="flex-row items-center gap-1.5 h-8 px-2.5"
               >
                 <FileText size={13} color={colors.primary} />
-                <Text className="text-xs text-primary font-semibold">Buka File Invoice</Text>
+                <Text className="text-xs text-primary font-semibold">Buka File Faktur</Text>
                 <ExternalLink size={11} color={colors.primary} />
               </Button>
             }
@@ -526,8 +559,8 @@ export function InvoiceExtras({
         ) : null}
         {effectivePaidFileId ? (
           <Line
-            left="Bukti Pembayaran Customer"
-            sub={effectivePaidFileName || "Lampiran bukti transfer / pelunasan invoice"}
+            left="Bukti Pembayaran Pelanggan"
+            sub={effectivePaidFileName || "Lampiran bukti transfer / pelunasan faktur"}
             right={
               <Button
                 variant="outline"
@@ -547,7 +580,7 @@ export function InvoiceExtras({
       {/* Panel Daftar & Alokasi Barang Terpakai */}
       <Panel
         title="Daftar & Alokasi Barang Terpakai"
-        subtitle="Tracking stok barang dan alokasi yang dipakai pada invoice ini agar stok gudang tetap akurat."
+        subtitle="Tracking stok barang dan alokasi yang dipakai pada faktur ini agar stok gudang tetap akurat."
         right={
           <Button
             size="sm"
@@ -728,7 +761,7 @@ export function InvoiceExtras({
           </View>
         ) : (
           <View className="p-4 rounded-xl border border-dashed border-border/80 items-center justify-center gap-2">
-            <Text className="text-xs text-muted-foreground">Belum ada barang yang dialokasikan ke invoice ini.</Text>
+            <Text className="text-xs text-muted-foreground">Belum ada barang yang dialokasikan ke faktur ini.</Text>
             <Button size="sm" variant="outline" onPress={() => setPickerOpen(true)} className="flex-row items-center gap-1.5">
               <Plus size={14} color={colors.text} />
               <Text className="text-xs">Pilih dari Stok Gudang</Text>
@@ -745,26 +778,184 @@ export function InvoiceExtras({
         onAddItems={handleAddItems}
       />
 
-    {/* Panel Surat Jalan / Pengiriman Barang dari Invoice */}
-      {hasPhysicalGoods && (
+      {/* Panel Pesanan Penjualan (SO) Terhubung */}
+      {linkedSo ? (
         <Panel
-          title={`Surat Jalan / Pengiriman Barang (${linkedDeliveryNotes.length})`}
-          subtitle="Pengiriman barang fisik langsung dari Invoice tanpa memerlukan Sales Order."
+          title="Pesanan Penjualan (SO) Terhubung"
+          subtitle="Data Sales Order / PO Pelanggan yang mendasari penerbitan Faktur ini."
           right={
             <Button
               size="sm"
-              onPress={() => router.push(`/delivery-notes/new?invoiceId=${row.id}` as any)}
-              className="flex-row items-center gap-1.5 bg-primary"
+              variant="outline"
+              onPress={() => router.push(`/po-client/${linkedSo.id}` as any)}
+              className="flex-row items-center gap-1.5"
             >
-              <Truck size={14} color="#ffffff" />
-              <Text className="text-xs text-white font-semibold">Buat Surat Jalan</Text>
+              <Package size={13} color={colors.primary} />
+              <Text className="text-xs font-semibold text-primary">Detail SO</Text>
+              <ExternalLink size={11} color={colors.primary} />
             </Button>
+          }
+        >
+          <View className="gap-2.5">
+            <Line
+              left="Nomor SO / PO Klien"
+              sub={`Pelanggan: ${linkedSo.customer || row.customer || "-"}`}
+              right={
+                <View className="items-end">
+                  <Text className="text-sm font-bold text-foreground">
+                    {linkedSo.soNumber || linkedSo.nomor || `SO #${linkedSo.id}`}
+                  </Text>
+                  {linkedSo.poClientNumber && linkedSo.poClientNumber !== "-" ? (
+                    <Text className="text-xs text-muted-foreground">PO: {linkedSo.poClientNumber}</Text>
+                  ) : null}
+                </View>
+              }
+            />
+            {linkedQuotation ? (
+              <Line
+                left="Penawaran Harga Terkait"
+                sub={`No: ${linkedQuotation.nomor || "-"}`}
+                right={
+                  canAccessQuotation ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onPress={() => router.push(`/quotations/${linkedQuotation.id}` as any)}
+                      className="flex-row items-center gap-1.5 h-7 px-2"
+                    >
+                      <FileText size={11} color={colors.primary} />
+                      <Text className="text-xs text-primary font-medium">Buka Penawaran</Text>
+                      <ExternalLink size={10} color={colors.primary} />
+                    </Button>
+                  ) : null
+                }
+              />
+            ) : null}
+            <Line
+              left="Status Pesanan & Pengiriman"
+              right={
+                <View className="flex-row items-center gap-1.5">
+                  <StatusBadge status={linkedSo.status || "Aktif"} />
+                  {linkedSo.goodsDispatched ? (
+                    <View className="rounded bg-emerald-500/15 border border-emerald-500/40 px-2 py-0.5">
+                      <Text className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                        Barang Sudah Dikirim
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              }
+            />
+            <Line
+              left="Nilai Total SO"
+              right={<Text className="text-sm font-semibold">{rupiah(linkedSo.total || linkedSo.amount || 0)}</Text>}
+            />
+
+            {/* Berkas Dokumen SO & PO Pelanggan */}
+            {(linkedSo.fileId || linkedSo.soFileId || linkedSo.paymentProofFileId) ? (
+              <View className="pt-2 border-t border-border/60 flex-row flex-wrap items-center gap-2">
+                {linkedSo.fileId ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => openFileUrl(linkedSo.fileId)}
+                    className="flex-row items-center gap-1.5 h-8 px-2.5"
+                  >
+                    <FileText size={12} color={colors.primary} />
+                    <Text className="text-xs text-primary font-medium">File PO Pelanggan</Text>
+                    <ExternalLink size={10} color={colors.primary} />
+                  </Button>
+                ) : null}
+                {linkedSo.soFileId ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => openFileUrl(linkedSo.soFileId)}
+                    className="flex-row items-center gap-1.5 h-8 px-2.5"
+                  >
+                    <FileText size={12} color={colors.primary} />
+                    <Text className="text-xs text-primary font-medium">Dokumen SO Resmi</Text>
+                    <ExternalLink size={10} color={colors.primary} />
+                  </Button>
+                ) : null}
+                {linkedSo.paymentProofFileId ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => openFileUrl(linkedSo.paymentProofFileId)}
+                    className="flex-row items-center gap-1.5 h-8 px-2.5"
+                  >
+                    <Paperclip size={12} color={colors.success} />
+                    <Text className="text-xs text-success font-medium">Bukti Bayar SO</Text>
+                    <ExternalLink size={10} color={colors.success} />
+                  </Button>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        </Panel>
+      ) : null}
+
+      {/* Panel Penawaran Harga (Quotation) Terhubung (bila invoice langsung dari Penawaran tanpa SO) */}
+      {!linkedSo && linkedQuotation && canAccessQuotation ? (
+        <Panel
+          title="Penawaran Harga (Quotation) Terhubung"
+          subtitle="Data penawaran harga acuan untuk faktur ini."
+          right={
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => router.push(`/quotations/${linkedQuotation.id}` as any)}
+              className="flex-row items-center gap-1.5"
+            >
+              <FileText size={13} color={colors.primary} />
+              <Text className="text-xs font-semibold text-primary">Detail Penawaran</Text>
+              <ExternalLink size={11} color={colors.primary} />
+            </Button>
+          }
+        >
+          <View className="gap-2.5">
+            <Line
+              left="Nomor Penawaran"
+              sub={`Pelanggan: ${linkedQuotation.customer || row.customer || "-"}`}
+              right={<Text className="text-sm font-bold">{linkedQuotation.nomor}</Text>}
+            />
+            <Line
+              left="Status Penawaran"
+              right={<StatusBadge status={linkedQuotation.status || "Disetujui"} />}
+            />
+            <Line
+              left="Total Penawaran"
+              right={<Text className="text-sm font-semibold">{rupiah(linkedQuotation.total || linkedQuotation.amount || 0)}</Text>}
+            />
+          </View>
+        </Panel>
+      ) : null}
+
+      {/* Panel Surat Jalan / Pengiriman Barang dari Invoice */}
+      {(hasPhysicalGoods || linkedDeliveryNotes.length > 0 || !!linkedSo) && (
+        <Panel
+          title={`Surat Jalan / Pengiriman Barang (${linkedDeliveryNotes.length})`}
+          subtitle="Pengiriman barang fisik yang terhubung dengan Faktur dan Sales Order ini."
+          right={
+            linkedDeliveryNotes.length === 0 ? (
+              <Button
+                size="sm"
+                onPress={() => router.push(`/delivery-notes/new?invoiceId=${row.id}${linkedSo ? `&clientPoId=${linkedSo.id}` : ""}` as any)}
+                className="flex-row items-center gap-1.5 bg-primary"
+              >
+                <Truck size={14} color="#ffffff" />
+                <Text className="text-xs text-white font-semibold">Buat Surat Jalan</Text>
+              </Button>
+            ) : null
           }
         >
           {linkedDeliveryNotes.length === 0 ? (
             <View className="py-2 gap-1.5">
               <Text className="text-xs text-muted-foreground">
-                Belum ada Surat Jalan (DO) untuk invoice ini. Klik tombol &quot;Buat Surat Jalan&quot; untuk langsung mengantarkan barang fisik ke customer.
+                {linkedSo?.goodsDispatched
+                  ? "Barang telah ditandai sudah dikirim dari Sales Order. Belum ada Surat Jalan (DO) tersendiri yang tercatat."
+                  : "Belum ada Surat Jalan (DO) untuk faktur ini. Klik tombol \"Buat Surat Jalan\" untuk mengirimkan barang fisik ke customer."}
               </Text>
             </View>
           ) : (
@@ -772,27 +963,51 @@ export function InvoiceExtras({
               {linkedDeliveryNotes.map((dn: Row) => (
                 <View
                   key={dn.id}
-                  className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80"
+                  className="flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl bg-panel border border-border/80 gap-2"
                 >
-                  <View className="flex-1 mr-2">
-                    <View className="flex-row items-center gap-2">
+                  <View className="flex-1 min-w-0 mr-2">
+                    <View className="flex-row items-center gap-2 flex-wrap">
                       <Text className="text-xs font-bold text-foreground">
                         {dn.nomor || `SJ #${dn.id}`}
                       </Text>
-                      <StatusBadge status={dn.status || "Pending"} />
+                      <StatusBadge status={dn.status || "Menunggu pengiriman"} />
+                      {dn.withGoods ? (
+                        <View className="rounded bg-muted px-1.5 py-0.5">
+                          <Text className="text-[10px] text-muted-foreground">Fisik</Text>
+                        </View>
+                      ) : null}
                     </View>
                     <Text className="text-[11px] text-muted-foreground mt-0.5" numberOfLines={1}>
                       Tujuan: {dn.tujuan || row.customer} · {dn.tanggal || "-"}
                     </Text>
+                    {dn.barang && dn.barang !== "-" ? (
+                      <Text className="text-[11px] text-foreground font-medium mt-0.5" numberOfLines={1}>
+                        Barang: {dn.barang}
+                      </Text>
+                    ) : null}
                   </View>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2.5"
-                    onPress={() => router.push(`/delivery-notes/${dn.id}` as any)}
-                  >
-                    <Text className="text-xs">Detail</Text>
-                  </Button>
+                  <View className="flex-row items-center gap-1.5 shrink-0">
+                    {(dn.scanFileId || dn.fileId) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5 flex-row items-center gap-1"
+                        onPress={() => openFileUrl(dn.scanFileId || dn.fileId)}
+                      >
+                        <FileText size={11} color={colors.primary} />
+                        <Text className="text-xs font-medium text-primary">File TTD DO</Text>
+                        <ExternalLink size={10} color={colors.primary} />
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2.5"
+                      onPress={() => router.push(`/delivery-notes/${dn.id}` as any)}
+                    >
+                      <Text className="text-xs">Detail</Text>
+                    </Button>
+                  </View>
                 </View>
               ))}
             </View>
@@ -803,7 +1018,7 @@ export function InvoiceExtras({
       {/* Dokumen Faktur Manual */}
       <Panel
         title="Dokumen Faktur Manual"
-        subtitle="Upload dokumen file invoice / penagihan manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke invoice ini."
+        subtitle="Upload dokumen file faktur / penagihan manual (.pdf / .xlsx / dokumen) untuk dilampirkan ke faktur ini."
       >
         {row.fileId ? (
           <View className="mb-3 p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between">
@@ -838,7 +1053,7 @@ export function InvoiceExtras({
                     await patchRow("invoices", row.id, { fileId: null, fileName: null });
                     await reload();
                     await onRefresh?.();
-                    toast("File dokumen invoice berhasil dihapus");
+                    toast("File dokumen faktur berhasil dihapus");
                   } catch {
                     toast("Gagal menghapus file", "danger");
                   }
@@ -852,7 +1067,7 @@ export function InvoiceExtras({
         ) : null}
 
         <FileUploader
-          label={row.fileId ? "Ganti File Invoice Manual (PDF / Excel)" : "Pilih atau Tarik File Invoice Manual (PDF / Excel)"}
+          label={row.fileId ? "Ganti File Faktur Manual (PDF / Excel)" : "Pilih atau Tarik File Faktur Manual (PDF / Excel)"}
           kind="dokumen"
           category="invoice"
           autoFlush
@@ -875,199 +1090,138 @@ export function InvoiceExtras({
         />
       </Panel>
 
-      {/* Bukti Pembayaran / Transfer Customer */}
+      {/* Panel Gabungan: Riwayat Pembayaran, Kwitansi & Bukti Transfer Pelanggan */}
       <Panel
-        title="Bukti Pembayaran / Transfer Customer"
-        subtitle="Lampiran bukti transfer / pembayaran customer saat invoice ditandai dibayar atau lunas."
+        title="Pembayaran & Bukti Transfer Pelanggan"
+        subtitle="Riwayat pembayaran masuk, cetak kwitansi resmi (Receipt), dan lampiran bukti transfer pelanggan."
       >
-        {(() => {
-          const paymentProofs = payments.filter((p) => p.fileId);
-          if (paymentProofs.length > 0) {
-            return (
-              <View className="gap-2.5 mb-3">
-                {paymentProofs.map((p, idx) => {
-                  const fName =
-                    p.file?.originalName ||
-                    p.fileName ||
-                    effectivePaidFileName ||
-                    `Bukti-Pembayaran-${row.nomor}-${idx + 1}.pdf`;
-                  return (
-                    <View
-                      key={p.id || idx}
-                      className="p-3 bg-panel border border-success/40 rounded-xl flex-row items-center justify-between gap-2"
-                    >
-                      <View className="flex-row items-center gap-2.5 flex-1 mr-2">
-                        <View className="p-2 bg-success/10 rounded-lg">
-                          <CheckCircle2 size={20} color={colors.success} />
-                        </View>
-                        <View className="flex-1">
-                          <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
-                            {fName}
-                          </Text>
-                          <Text className="text-[11px] text-muted-foreground mt-0.5">
-                            {rupiah(p.amount)} · {p.date} · {p.method}
-                            {p.reference && p.reference !== "-" ? ` (${p.reference})` : ""}
-                          </Text>
-                        </View>
-                      </View>
-                      <View className="flex-row items-center gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onPress={() => openFileUrl(p.fileId)}
-                          className="h-8 px-2.5 flex-row items-center gap-1.5"
-                        >
-                          <ExternalLink size={12} color={colors.primary} />
-                          <Text className="text-xs font-semibold text-primary">Lihat Bukti Pembayaran</Text>
-                        </Button>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          }
-
-          if (effectivePaidFileId) {
-            return (
-              <View className="mb-3 p-3 bg-panel border border-success/40 rounded-xl flex-row items-center justify-between gap-2">
-                <View className="flex-row items-center gap-2.5 flex-1 mr-2">
-                  <View className="p-2 bg-success/10 rounded-lg">
-                    <CheckCircle2 size={20} color={colors.success} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
-                      {effectivePaidFileName || `Bukti-Pembayaran-${row.nomor}.pdf`}
-                    </Text>
-                    <Text className="text-[11px] text-muted-foreground mt-0.5">
-                      Bukti pembayaran tersimpan (File ID: #{effectivePaidFileId})
-                    </Text>
-                  </View>
-                </View>
-                <View className="flex-row items-center gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={() => openFileUrl(effectivePaidFileId)}
-                    className="h-8 px-2.5 flex-row items-center gap-1.5"
-                  >
-                    <ExternalLink size={12} color={colors.primary} />
-                    <Text className="text-xs font-semibold text-primary">Lihat Bukti Pembayaran</Text>
-                  </Button>
-                </View>
-              </View>
-            );
-          }
-
-          return (
-            <View className="mb-3 p-3 rounded-xl border border-dashed border-border/80 bg-muted/20">
-              <Text className="text-xs text-muted-foreground italic">
-                Belum ada file bukti pembayaran / transfer yang dilampirkan.
-              </Text>
-            </View>
-          );
-        })()}
-
-        <FileUploader
-          label={
-            effectivePaidFileId
-              ? "Upload / Ganti Bukti Pembayaran (JPG / PNG / PDF)"
-              : "Upload Bukti Pembayaran / Transfer Customer (JPG / PNG / PDF)"
-          }
-          kind="foto"
-          category="foto-struk"
-          autoFlush
-          onFilePicked={async (file) => {
-            try {
-              const uploadedId = await uploadFile(file, "foto", "foto-struk", {
-                refType: "invoice-payment",
-                refId: row.id,
-              });
-              if (!uploadedId) throw new Error("Gagal mengunggah bukti pembayaran ke server");
-              await patchRow("invoices", row.id, {
-                paidFileId: uploadedId,
-                paymentFileId: uploadedId,
-              });
-              await reload();
-              await onRefresh?.();
-              toast(`Bukti pembayaran "${file.name}" berhasil disimpan!`);
-            } catch (e: any) {
-              toast(e?.message || "Gagal mengunggah bukti pembayaran", "danger");
-            }
-          }}
-        />
-      </Panel>
-
-      <Panel title="Receipt / Bukti Pembayaran Masuk" subtitle="Riwayat pembayaran customer & cetak kwitansi resmi (Receipt)">
         {payments.length > 0 ? (
-          payments.map((p, idx) => (
-            <Line
-              key={p.id}
-              left={`KW/${p.reference && p.reference !== "-" ? p.reference : `${row.nomor}/${idx + 1}`} · ${p.method}`}
-              sub={`Tanggal: ${p.date}${p.reference && p.reference !== "-" ? ` · Ref: ${p.reference}` : ""}`}
-              right={
-                <View className="flex-row items-center gap-1.5 flex-wrap">
-                  <Text className="text-sm font-semibold text-success mr-1">{rupiah(p.amount)}</Text>
+          <View className="gap-2.5 mb-3">
+            {payments.map((p, idx) => (
+              <View
+                key={p.id || idx}
+                className="p-3 bg-panel border border-border/80 rounded-xl flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5"
+              >
+                <View className="flex-1 min-w-0">
+                  <View className="flex-row items-center gap-2 flex-wrap">
+                    <Text className="text-xs font-bold text-foreground">
+                      {`KW/${p.reference && p.reference !== "-" ? p.reference : `${row.nomor}/${idx + 1}`} · ${p.method}`}
+                    </Text>
+                  </View>
+                  <Text className="text-[11px] text-muted-foreground mt-0.5">
+                    Tanggal: {p.date}{p.reference && p.reference !== "-" ? ` · Ref: ${p.reference}` : ""}
+                  </Text>
+                </View>
+                <View className="flex-row items-center gap-2 flex-wrap">
+                  <Text className="text-sm font-bold text-success mr-1">{rupiah(p.amount)}</Text>
                   <Button
                     variant="outline"
                     size="sm"
                     onPress={() => setReceiptPreview({ ...p, idx })}
-                    className="flex-row items-center gap-1 h-7 px-2"
+                    className="flex-row items-center gap-1.5 h-7 px-2.5"
                   >
                     <Printer size={12} color={colors.text} />
-                    <Text className="text-[11px] font-medium">Receipt / Kwitansi</Text>
+                    <Text className="text-xs font-medium">Receipt / Kwitansi</Text>
                   </Button>
-                  {p.fileId ? (
+                  {(p.fileId || effectivePaidFileId) ? (
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      onPress={() => openFileUrl(p.fileId)}
-                      className="flex-row items-center gap-1 h-7 px-2 hover:bg-panel"
+                      onPress={() => openFileUrl(p.fileId || effectivePaidFileId)}
+                      className="flex-row items-center gap-1.5 h-7 px-2.5 border-primary/50"
                     >
                       <Paperclip size={12} color={colors.primary} />
-                      <Text className="text-[11px] text-primary font-medium">Bukti Transfer</Text>
+                      <Text className="text-xs text-primary font-medium">Lihat Bukti Transfer</Text>
+                      <ExternalLink size={10} color={colors.primary} />
                     </Button>
                   ) : null}
                 </View>
-              }
-            />
-          ))
+              </View>
+            ))}
+          </View>
         ) : row.terbayar > 0 ? (
-          <Line
-            left={`KW/${row.nomor}/1 · Transfer`}
-            sub="Bukti pembayaran tercatat"
-            right={
-              <View className="flex-row items-center gap-2">
-                <Text className="text-sm font-semibold text-success">{rupiah(row.terbayar)}</Text>
+          <View className="p-3 bg-panel border border-border/80 rounded-xl flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 mb-3">
+            <View className="flex-1 min-w-0">
+              <Text className="text-xs font-bold text-foreground">{`KW/${row.nomor}/1 · Transfer`}</Text>
+              <Text className="text-[11px] text-muted-foreground mt-0.5">
+                Tanggal: {row.tanggal || "-"} · Bukti pembayaran tercatat
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-2 flex-wrap">
+              <Text className="text-sm font-bold text-success mr-1">{rupiah(row.terbayar)}</Text>
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() =>
+                  setReceiptPreview({
+                    id: "1",
+                    amount: Number(row.terbayar) || 0,
+                    date: row.tanggal || new Date().toISOString().slice(0, 10),
+                    method: "TRANSFER",
+                    reference: row.nomor,
+                    idx: 0,
+                  })
+                }
+                className="flex-row items-center gap-1.5 h-7 px-2.5"
+              >
+                <Printer size={12} color={colors.text} />
+                <Text className="text-xs font-medium">Receipt / Kwitansi</Text>
+              </Button>
+              {effectivePaidFileId ? (
                 <Button
                   variant="outline"
                   size="sm"
-                  onPress={() =>
-                    setReceiptPreview({
-                      id: "1",
-                      amount: Number(row.terbayar) || 0,
-                      date: row.tanggal || new Date().toISOString().slice(0, 10),
-                      method: "TRANSFER",
-                      reference: row.nomor,
-                      idx: 0,
-                    })
-                  }
-                  className="flex-row items-center gap-1 h-7 px-2"
+                  onPress={() => openFileUrl(effectivePaidFileId)}
+                  className="flex-row items-center gap-1.5 h-7 px-2.5 border-primary/50"
                 >
-                  <Printer size={12} color={colors.text} />
-                  <Text className="text-[11px] font-medium">Receipt / Kwitansi</Text>
+                  <Paperclip size={12} color={colors.primary} />
+                  <Text className="text-xs text-primary font-medium">Lihat Bukti Transfer</Text>
+                  <ExternalLink size={10} color={colors.primary} />
                 </Button>
-              </View>
-            }
-          />
+              ) : null}
+            </View>
+          </View>
         ) : (
-          <Text className="text-muted-foreground text-sm">Belum ada pembayaran / receipt tercatat.</Text>
+          <Text className="text-muted-foreground text-xs italic mb-3">
+            Belum ada pembayaran atau bukti transfer yang tercatat.
+          </Text>
         )}
+
+        <View className="pt-2 border-t border-border/60">
+          <FileUploader
+            label={
+              effectivePaidFileId
+                ? "Upload / Ganti Bukti Transfer (JPG / PNG / PDF)"
+                : "Upload Bukti Pembayaran / Transfer Pelanggan (JPG / PNG / PDF)"
+            }
+            kind="foto"
+            category="foto-struk"
+            autoFlush
+            onFilePicked={async (file) => {
+              try {
+                const uploadedId = await uploadFile(file, "foto", "foto-struk", {
+                  refType: "invoice-payment",
+                  refId: row.id,
+                });
+                if (!uploadedId) throw new Error("Gagal mengunggah bukti pembayaran ke server");
+                await patchRow("invoices", row.id, {
+                  paidFileId: uploadedId,
+                  paymentFileId: uploadedId,
+                });
+                await reload();
+                await onRefresh?.();
+                toast(`Bukti pembayaran "${file.name}" berhasil disimpan!`);
+              } catch (e: any) {
+                toast(e?.message || "Gagal mengunggah bukti pembayaran", "danger");
+              }
+            }}
+          />
+        </View>
       </Panel>
 
       <Panel
         title={`Retur Penjualan (${salesReturns.length})`}
-        subtitle="Pencatatan pengembalian barang dari customer (otomatis memperbarui status SN & mutasi stok retur)"
+        subtitle="Pencatatan pengembalian barang dari pelanggan (otomatis memperbarui status SN & mutasi stok retur)"
         right={
           <Button
             size="sm"
@@ -1088,7 +1242,7 @@ export function InvoiceExtras({
         }
       >
         {salesReturns.length === 0 ? (
-          <Text className="text-muted-foreground text-sm">Belum ada retur penjualan pada invoice ini.</Text>
+          <Text className="text-muted-foreground text-sm">Belum ada retur penjualan pada faktur ini.</Text>
         ) : (
           salesReturns.map((rt: Row) => (
             <Line
@@ -1170,7 +1324,7 @@ export function InvoiceExtras({
                     ...(data.products ?? []).filter((p: any) => p.type !== "JASA").map((p: any) => String(p.nama || "")).filter(Boolean),
                   ]),
                 )}
-                placeholder="Pilih barang dari invoice atau master produk..."
+                placeholder="Pilih barang dari faktur atau master produk..."
               />
             </FormField>
             {(() => {

@@ -48,7 +48,7 @@ export class CreateUserDto {
   department?: string;
 
   @Transform(({ value }) => normalizeRole(value))
-  @IsOptional() @IsIn(Object.values(Role))
+  @IsOptional() @IsString()
   role?: Role;
 
   @Transform(({ value }) => normalizeActiveStatus(value))
@@ -76,7 +76,7 @@ export class UpdateUserDto {
   department?: string;
 
   @Transform(({ value }) => normalizeRole(value))
-  @IsOptional() @IsIn(Object.values(Role))
+  @IsOptional() @IsString()
   role?: Role;
 
   @Transform(({ value }) => normalizeActiveStatus(value))

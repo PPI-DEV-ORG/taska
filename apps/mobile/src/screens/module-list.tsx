@@ -1,14 +1,16 @@
 import * as React from "react";
 import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronRight, Plus, Trash2, CreditCard } from "lucide-react-native";
+import { ChevronRight, Plus, Trash2, CreditCard, Shield, Building2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { EmptyState, PageHeader, Chip } from "@/components/taska/basics";
 import { DataTable, FilterBar } from "@/components/taska/data-table";
 import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
-import type { ModuleDef, Role, Row, User } from "@/constants/modules";
+import { hasUserPermission, findRoleDefForUser, type ModuleDef, type Role, type Row, type User } from "@/constants/modules";
+import { RoleManagementDialog } from "@/modules/users/role-management-dialog";
+import { CompanyProfileDialog } from "@/modules/settings/company-profile-dialog";
 import { colors } from "@/tokens";
 import {
   SupplierInvoiceDetailDialog,
@@ -44,11 +46,16 @@ const CREATE: Record<string, Role[]> = {
   "visit-reports": ["pm", "sales", "teknisi", "se"],
 };
 
-export function canCreate(def: ModuleDef, role: Role) {
-  if (role === "super_admin") return !!(def.newHref || def.createFields);
+export function canCreate(def: ModuleDef, role: Role, user?: User | null) {
+  const hasCreatorUi = !!(def.newHref || def.createFields);
+  if (!hasCreatorUi) return false;
+  if (role === "super_admin") return true;
+  if (user && findRoleDefForUser(user)) {
+    return hasUserPermission(user, def.key, "C");
+  }
   // PRD Aturan: Bos / Admin hanya melihat dan menyetujui, tanpa tombol buat, ubah, atau hapus
   if ((role === "bos" || role === "admin") && def.key !== "users") return false;
-  return (def.createRoles ?? CREATE[def.key] ?? []).includes(role) && !!(def.newHref || def.createFields);
+  return (def.createRoles ?? CREATE[def.key] ?? []).includes(role);
 }
 
 const DELETE: Record<string, Role[]> = {
@@ -71,8 +78,11 @@ const DELETE: Record<string, Role[]> = {
   "visit-reports": ["pm", "sales", "teknisi", "se", "admin"],
 };
 
-export function canDelete(def: ModuleDef, role: Role) {
+export function canDelete(def: ModuleDef, role: Role, user?: User | null) {
   if (role === "super_admin" || role === "bos") return true;
+  if (user && findRoleDefForUser(user)) {
+    return hasUserPermission(user, def.key, "A");
+  }
   return (DELETE[def.key] ?? []).includes(role);
 }
 
@@ -116,7 +126,7 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
 
 export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?: string; headerExtra?: React.ReactNode }) {
   const router = useRouter();
-  const { user, data, deleteRow, refreshModule } = useApp();
+  const { user, data, deleteRow, refreshModule, can } = useApp();
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [dateFilter, setDateFilter] = React.useState("");
@@ -145,6 +155,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
   const [supplierEditTarget, setSupplierEditTarget] = React.useState<Row | null>(null);
   const [paymentTermsOpen, setPaymentTermsOpen] = React.useState(false);
+  const [roleDialogOpen, setRoleDialogOpen] = React.useState(false);
+  const [companyDialogOpen, setCompanyDialogOpen] = React.useState(false);
 
   const clientReceipts = React.useMemo(() => {
     const list: Row[] = [];
@@ -286,14 +298,14 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       };
 
       const invOut = (data.invoices ?? []).map((r) =>
-        enrich({ ...r, id: String(r.id), direction: "out", tipeInvoice: "Invoice Keluar" })
+        enrich({ ...r, id: String(r.id), direction: "out", tipeInvoice: "Faktur Keluar" })
       );
       const invIn = (data.invoiceIn ?? []).map((r: Row) => ({
         ...r,
         id: String(r.id).startsWith("in-") ? String(r.id) : `in-${r.id}`,
         rawId: (r as any).rawId ?? r.id,
         direction: "in",
-        tipeInvoice: "Invoice Masuk",
+        tipeInvoice: "Faktur Masuk",
         customer: r.supplier || r.customer,
       }));
       if (invoiceTab === "out") {
@@ -430,8 +442,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       if (invoiceTab === "receipts") {
         return [
           { key: "nomor", label: "No. Receipt / Kwitansi", primary: true, flex: 1.5 },
-          { key: "invoiceNomor", label: "No. Invoice", flex: 1.3 },
-          { key: "customer", label: "Customer", flex: 1.5 },
+          { key: "invoiceNomor", label: "No. Faktur", flex: 1.3 },
+          { key: "customer", label: "Pelanggan", flex: 1.5 },
           { key: "jenis", label: "Metode & Jenis", flex: 1.3 },
           { key: "total", label: "Nominal Diterima", fmt: "rupiah" as const },
           { key: "tanggal", label: "Tanggal Bayar", fmt: "date" as const },
@@ -441,7 +453,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       return [
         { key: "nomor", label: "Nomor", primary: true, flex: 1.4 },
         { key: "tipeInvoice", label: "Tipe", flex: 1.1 },
-        { key: "customer", label: "Pihak (Customer/Supplier)", flex: 1.6 },
+        { key: "customer", label: "Pihak (Pelanggan/Pemasok)", flex: 1.6 },
         { key: "jenis", label: "Jenis" },
         { key: "total", label: "Total", fmt: "rupiah" as const },
         { key: "terbayar", label: "Terbayar", fmt: "rupiah" as const },
@@ -451,8 +463,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     }
     if (def.key === "supplier-pos" && poTab === "faktur") {
       return [
-        { key: "nomor", label: "No. Faktur Supplier", primary: true, flex: 1.4 },
-        { key: "supplier", label: "Supplier", flex: 1.6 },
+        { key: "nomor", label: "No. Faktur Pemasok", primary: true, flex: 1.4 },
+        { key: "supplier", label: "Pemasok", flex: 1.6 },
         { key: "item", label: "Referensi PO & Bayar", flex: 1.8 },
         { key: "total", label: "Total Tagihan", fmt: "rupiah" as const },
         { key: "eta", label: "Jatuh Tempo", fmt: "date" as const },
@@ -462,7 +474,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     if (def.key === "supplier-pos" && poTab === "pembayaran") {
       return [
         { key: "nomor", label: "No. Bukti / Ref Bayar", primary: true, flex: 1.4 },
-        { key: "supplier", label: "Supplier", flex: 1.6 },
+        { key: "supplier", label: "Pemasok", flex: 1.6 },
         { key: "item", label: "Faktur & PO Terkait", flex: 1.8 },
         { key: "total", label: "Nominal Dibayar", fmt: "rupiah" as const },
         { key: "eta", label: "Tanggal Bayar", fmt: "date" as const },
@@ -494,29 +506,46 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     return def.columns;
   }, [def.key, def.columns, invoiceTab, poTab]);
 
-  const allowed = canCreate(def, user!.role);
-  const deleteAllowed = canDelete(def, user!.role);
+  const allowed = canCreate(def, user!.role, user);
+  const deleteAllowed = canDelete(def, user!.role, user);
   const canManagePaymentTerms = def.key === "suppliers" && ["super_admin", "admin", "bos", "procurement", "finance"].includes(user!.role);
+  const canManageRolesAndCompany =
+    def.key === "users" &&
+    (["super_admin", "admin", "bos", "hr"].includes(user!.role) || hasUserPermission(user, "users", "U"));
 
-  const action = allowed ? (
-    <View className="flex-row items-center gap-2">
-      {canManagePaymentTerms ? (
-        <Button variant="outline" onPress={() => setPaymentTermsOpen(true)} className="gap-1.5 h-10 px-3">
-          <CreditCard size={15} color={colors.primary} />
-          <Text className="text-xs font-semibold">Atur Syarat Pembayaran</Text>
-        </Button>
-      ) : null}
-      <Button onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}>
-        <Plus size={16} color={colors.background} />
-        <Text>{def.key === "supplier-pos" && poTab === "po_in" ? "Buat PO Client (SO)" : (def.createLabel ?? `Tambah ${def.singular}`)}</Text>
-      </Button>
-    </View>
-  ) : canManagePaymentTerms ? (
-    <Button variant="outline" onPress={() => setPaymentTermsOpen(true)} className="gap-1.5 h-10 px-3">
-      <CreditCard size={15} color={colors.primary} />
-      <Text className="text-xs font-semibold">Atur Syarat Pembayaran</Text>
-    </Button>
-  ) : undefined;
+  const action =
+    allowed || canManagePaymentTerms || canManageRolesAndCompany ? (
+      <View className="flex-row flex-wrap items-center gap-2">
+        {canManageRolesAndCompany ? (
+          <>
+            <Button variant="outline" onPress={() => setCompanyDialogOpen(true)} className="gap-1.5 h-10 px-3">
+              <Building2 size={15} color={colors.primary} />
+              <Text className="text-xs font-semibold">Profil Perusahaan & Format Dokumen</Text>
+            </Button>
+            <Button variant="outline" onPress={() => setRoleDialogOpen(true)} className="gap-1.5 h-10 px-3">
+              <Shield size={15} color={colors.primary} />
+              <Text className="text-xs font-semibold">Kelola Role & Hak Akses</Text>
+            </Button>
+          </>
+        ) : null}
+        {canManagePaymentTerms ? (
+          <Button variant="outline" onPress={() => setPaymentTermsOpen(true)} className="gap-1.5 h-10 px-3">
+            <CreditCard size={15} color={colors.primary} />
+            <Text className="text-xs font-semibold">Atur Syarat Pembayaran</Text>
+          </Button>
+        ) : null}
+        {allowed ? (
+          <Button onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}>
+            <Plus size={16} color={colors.background} />
+            <Text>
+              {def.key === "supplier-pos" && poTab === "po_in"
+                ? "Buat PO Client (SO)"
+                : (def.createLabel ?? `Tambah ${def.singular}`)}
+            </Text>
+          </Button>
+        ) : null}
+      </View>
+    ) : undefined;
 
   const isMasterOrSub = ["customers", "suppliers", "users"].includes(def.key);
 
@@ -608,12 +637,12 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             onPress={() => setDamageTab("kerusakan")}
           />
           <Chip
-            label="Retur Penjualan (Customer)"
+            label="Retur Penjualan (Pelanggan)"
             active={damageTab === "retur-sales"}
             onPress={() => setDamageTab("retur-sales")}
           />
           <Chip
-            label="Retur Pembelian (Supplier)"
+            label="Retur Pembelian (Pemasok)"
             active={damageTab === "retur-purchase"}
             onPress={() => setDamageTab("retur-purchase")}
           />
@@ -806,6 +835,13 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         open={paymentTermsOpen}
         onOpenChange={setPaymentTermsOpen}
       />
+
+      {def.key === "users" ? (
+        <>
+          <RoleManagementDialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen} />
+          <CompanyProfileDialog open={companyDialogOpen} onOpenChange={setCompanyDialogOpen} />
+        </>
+      ) : null}
     </>
   );
 }

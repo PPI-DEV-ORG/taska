@@ -15,7 +15,7 @@ export function StockReservationTab({
     <DataTable
       columns={[
         { key: "produk", label: "Nama Barang", primary: true, flex: 1.8 },
-        { key: "project", label: "Project Pemesan", flex: 1.6 },
+        { key: "project", label: "Proyek Pemesan", flex: 1.6 },
         { key: "sn", label: "Serial Number", flex: 1.2 },
         { key: "qtyDisplay", label: "Jumlah Ditahan", flex: 1.1 },
         { key: "status", label: "Status Alokasi", fmt: "status", flex: 1 },

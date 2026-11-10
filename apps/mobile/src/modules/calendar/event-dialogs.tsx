@@ -9,7 +9,16 @@ import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FormField, Panel, Timeline } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
+import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog, SupplierSelect } from "@/components/taska/dialogs";
+import {
+  CustomerSelect,
+  LeadSelect,
+  ProjectSelect,
+  InvoiceSelect,
+  UserSelect,
+  UserMultiSelect,
+} from "@/components/taska/document-select";
+import { hasUserPermission } from "@/constants/modules";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { tanggal } from "@/lib/format";
@@ -26,13 +35,32 @@ type Person = { id: number; name: string };
 
 function usePeople(): Person[] {
   const { data } = useApp();
-  return React.useMemo(
-    () =>
-      (data.users ?? [])
-        .map((u: any) => ({ id: Number(u.id), name: String(u.name || u.nama || "") }))
-        .filter((u: Person) => u.name && Number.isFinite(u.id)),
-    [data.users],
-  );
+  const [fetchedUsers, setFetchedUsers] = React.useState<Person[]>([]);
+
+  React.useEffect(() => {
+    let active = true;
+    if (!data.users || data.users.length === 0) {
+      api<any>("GET", "/users/options")
+        .then((res) => {
+          if (!active) return;
+          const items = Array.isArray(res) ? res : res?.items ?? [];
+          setFetchedUsers(
+            items
+              .map((u: any) => ({ id: Number(u.id), name: String(u.name || u.nama || "") }))
+              .filter((u: Person) => u.name && Number.isFinite(u.id))
+          );
+        })
+        .catch(() => {});
+    }
+    return () => { active = false; };
+  }, [data.users]);
+
+  return React.useMemo(() => {
+    const list = (data.users ?? [])
+      .map((u: any) => ({ id: Number(u.id), name: String(u.name || u.nama || "") }))
+      .filter((u: Person) => u.name && Number.isFinite(u.id));
+    return list.length > 0 ? list : fetchedUsers;
+  }, [data.users, fetchedUsers]);
 }
 
 const byLabel = <T extends string>(map: Record<T, string>, label?: string) =>
@@ -64,6 +92,7 @@ export function EventFormDialog({
   const [endTime, setEndTime] = React.useState("10:00");
   const [allDay, setAllDay] = React.useState(false);
   const [assignee, setAssignee] = React.useState("");
+  const [assigneeId, setAssigneeId] = React.useState<number | null>(null);
   const [attendees, setAttendees] = React.useState<string[]>([]);
   const [priority, setPriority] = React.useState("MEDIUM");
   const [status, setStatus] = React.useState("NOT_STARTED");
@@ -76,25 +105,30 @@ export function EventFormDialog({
   const [completionNote, setCompletionNote] = React.useState("");
   const [occurrenceMode, setOccurrenceMode] = React.useState<"single" | "series">("series");
   const [customerLabel, setCustomerLabel] = React.useState("");
+  const [customerId, setCustomerId] = React.useState<number | null>(null);
   const [projectLabel, setProjectLabel] = React.useState("");
+  const [projectId, setProjectId] = React.useState<number | null>(null);
   const [leadLabel, setLeadLabel] = React.useState("");
+  const [leadId, setLeadId] = React.useState<number | null>(null);
   const [invoiceLabel, setInvoiceLabel] = React.useState("");
+  const [invoiceId, setInvoiceId] = React.useState<number | null>(null);
   const [supplierLabel, setSupplierLabel] = React.useState("");
+  const [supplierId, setSupplierId] = React.useState<number | null>(null);
   const [quickCustomerOpen, setQuickCustomerOpen] = React.useState(false);
   const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
 
   const userRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
   const isSuperOrAdmin = ["super_admin", "admin", "bos"].includes(userRole);
 
-  const canAccessCustomer = isSuperOrAdmin || ["sales", "finance"].includes(userRole);
-  const canAccessProject = isSuperOrAdmin || ["pm", "teknisi", "se", "sales"].includes(userRole);
-  const canAccessLead = isSuperOrAdmin || ["sales"].includes(userRole);
-  const canAccessInvoice = isSuperOrAdmin || ["finance", "sales"].includes(userRole);
-  const canAccessSupplier = isSuperOrAdmin || ["procurement", "gudang", "finance"].includes(userRole);
+  const canAccessCustomer = isSuperOrAdmin || hasUserPermission(user, "customers", "L");
+  const canAccessProject = isSuperOrAdmin || hasUserPermission(user, "projects", "L");
+  const canAccessLead = isSuperOrAdmin || hasUserPermission(user, "leads", "L");
+  const canAccessInvoice = isSuperOrAdmin || hasUserPermission(user, "invoices", "L");
+  const canAccessSupplier = isSuperOrAdmin || hasUserPermission(user, "suppliers", "L");
   const hasAnyDocAccess = canAccessCustomer || canAccessProject || canAccessLead || canAccessInvoice || canAccessSupplier;
 
   const customerMap = React.useMemo(
-    () => canAccessCustomer ? (data.customers ?? []).map((c: any) => ({ id: Number(c.id), label: String(c.company || c.name || "") })).filter((x: any) => x.label && Number.isFinite(x.id)) : [],
+    () => canAccessCustomer ? (data.customers ?? []).map((c: any) => ({ id: Number(c.id), label: String(c.company || c.nama || c.name || "") })).filter((x: any) => x.label && Number.isFinite(x.id)) : [],
     [data.customers, canAccessCustomer],
   );
   const projectMap = React.useMemo(
@@ -132,6 +166,7 @@ export function EventFormDialog({
         setEndTime("10:00");
         setAllDay(false);
         setAssignee(user?.name ?? "");
+        setAssigneeId(user?.id ? Number(user.id) : null);
         setAttendees([]);
         setPriority("MEDIUM");
         setStatus("NOT_STARTED");
@@ -144,10 +179,15 @@ export function EventFormDialog({
         setCompletionNote("");
         setOccurrenceMode("series");
         setCustomerLabel("");
+        setCustomerId(null);
         setProjectLabel("");
+        setProjectId(null);
         setLeadLabel("");
+        setLeadId(null);
         setInvoiceLabel("");
+        setInvoiceId(null);
         setSupplierLabel("");
+        setSupplierId(null);
       }
     }
   }
@@ -161,7 +201,9 @@ export function EventFormDialog({
         setTitle(e.title ?? ""); setCategory(e.category ?? "MEETING");
         setStartDate(occurrenceDate || wibKey(e.startDate)); setStartTime(wibTime(e.startDate));
         setEndDate(e.endDate ? wibKey(e.endDate) : ""); setEndTime(e.endDate ? wibTime(e.endDate) : "10:00");
-        setAllDay(!!e.isAllDay); setAssignee(e.assignee?.name ?? "");
+        setAllDay(!!e.isAllDay);
+        setAssignee(e.assignee?.name ?? "");
+        setAssigneeId(e.assigneeId ? Number(e.assigneeId) : (e.assignee?.id ? Number(e.assignee.id) : null));
         setAttendees((e.attendees ?? []).map((a: any) => a.user?.name).filter(Boolean));
         setPriority(e.priority ?? "MEDIUM"); setStatus(e.status ?? "NOT_STARTED");
         setRecurrence(e.recurrence ?? "NONE"); setUntil(e.recurrenceUntil ? wibKey(e.recurrenceUntil) : "");
@@ -175,11 +217,16 @@ export function EventFormDialog({
         }
         setDescription(e.description ?? "");
         setCompletionNote(e.completionNote ?? "");
-        setCustomerLabel(customerMap.find((x) => x.id === e.customerId)?.label ?? "");
-        setProjectLabel(projectMap.find((x) => x.id === e.projectId)?.label ?? "");
-        setLeadLabel(leadMap.find((x) => x.id === e.leadId)?.label ?? "");
-        setInvoiceLabel(invoiceMap.find((x) => x.id === e.invoiceId)?.label ?? "");
-        setSupplierLabel(supplierMap.find((x) => x.id === e.supplierId)?.label ?? "");
+        setCustomerLabel(customerMap.find((x) => x.id === e.customerId)?.label ?? (e.customer?.company || e.customer?.nama || e.customer?.name || ""));
+        setCustomerId(e.customerId ? Number(e.customerId) : null);
+        setProjectLabel(projectMap.find((x) => x.id === e.projectId)?.label ?? (e.project?.name ? `${e.project.code || ""} - ${e.project.name}` : ""));
+        setProjectId(e.projectId ? Number(e.projectId) : null);
+        setLeadLabel(leadMap.find((x) => x.id === e.leadId)?.label ?? (e.lead?.company || e.lead?.nama || ""));
+        setLeadId(e.leadId ? Number(e.leadId) : null);
+        setInvoiceLabel(invoiceMap.find((x) => x.id === e.invoiceId)?.label ?? (e.invoice?.number || ""));
+        setInvoiceId(e.invoiceId ? Number(e.invoiceId) : null);
+        setSupplierLabel(supplierMap.find((x) => x.id === e.supplierId)?.label ?? (e.supplier?.name || e.supplier?.nama || ""));
+        setSupplierId(e.supplierId ? Number(e.supplierId) : null);
       })
       .catch((err) => {
         if (active) toast(err?.message ?? "Gagal memuat agenda", "danger");
@@ -209,13 +256,13 @@ export function EventFormDialog({
       recurrenceUntil: recurrence !== "NONE" && until ? toIsoWib(until, "23:59") : null,
       reminderMinutes: resolvedReminder,
       remindOnCreate,
-      assigneeId: people.find((p) => p.name === assignee)?.id ?? null,
+      assigneeId: assigneeId ?? (people.find((p) => p.name === assignee)?.id ?? null),
       attendeeIds: attendees.map((n) => people.find((p) => p.name === n)?.id).filter((x): x is number => !!x),
-      customerId: customerMap.find((x) => x.label === customerLabel)?.id ?? null,
-      projectId: projectMap.find((x) => x.label === projectLabel)?.id ?? null,
-      leadId: leadMap.find((x) => x.label === leadLabel)?.id ?? null,
-      invoiceId: invoiceMap.find((x) => x.label === invoiceLabel)?.id ?? null,
-      supplierId: supplierMap.find((x) => x.label === supplierLabel)?.id ?? null,
+      customerId: customerId ?? (customerMap.find((x) => x.label === customerLabel)?.id ?? null),
+      projectId: projectId ?? (projectMap.find((x) => x.label === projectLabel)?.id ?? null),
+      leadId: leadId ?? (leadMap.find((x) => x.label === leadLabel)?.id ?? null),
+      invoiceId: invoiceId ?? (invoiceMap.find((x) => x.label === invoiceLabel)?.id ?? null),
+      supplierId: supplierId ?? (supplierMap.find((x) => x.label === supplierLabel)?.id ?? null),
     };
     if (eventId) {
       body.status = status;
@@ -305,10 +352,27 @@ export function EventFormDialog({
               {!allDay ? <View className="w-28"><FormField label="Jam selesai (WIB)"><Input value={endTime} onChangeText={setEndTime} placeholder="10:00" /></FormField></View> : null}
             </View>
             <FormField label="Penanggung jawab">
-              <SearchableSelect value={assignee} onChange={setAssignee} options={names} placeholder="Pilih penanggung jawab" />
+              <UserSelect
+                value={assignee}
+                userId={assigneeId}
+                onChange={(u) => {
+                  if (u) {
+                    setAssignee(u.name || u.nama || "");
+                    setAssigneeId(Number(u.id));
+                  } else {
+                    setAssignee("");
+                    setAssigneeId(null);
+                  }
+                }}
+                placeholder="Pilih penanggung jawab"
+              />
             </FormField>
             <FormField label="Peserta / pihak terkait">
-              <MultiSelect values={attendees} onChange={setAttendees} options={names} placeholder="Pilih peserta" />
+              <UserMultiSelect
+                values={attendees}
+                onChange={setAttendees}
+                placeholder="Pilih peserta / pihak terkait"
+              />
             </FormField>
             <View className="flex-row gap-3">
               <View className="flex-1">
@@ -386,22 +450,38 @@ export function EventFormDialog({
                     <View className="flex-row gap-3">
                       <View className="flex-1">
                         <FormField label="Customer">
-                          <SearchableSelect
+                          <CustomerSelect
                             value={customerLabel}
+                            customerId={customerId}
+                            onChange={(c) => {
+                              if (c) {
+                                setCustomerLabel(c.company || c.nama || c.name || "");
+                                setCustomerId(Number(c.id));
+                              } else {
+                                setCustomerLabel("");
+                                setCustomerId(null);
+                              }
+                            }}
                             onAddNew={() => setQuickCustomerOpen(true)}
-                            addNewLabel="+ Tambah Customer Baru"
-                            onChange={(v) => setCustomerLabel(v === customerLabel ? "" : v)}
-                            options={customerMap.map((x) => x.label)}
                             placeholder="Pilih customer"
+                            allowClear
                           />
                         </FormField>
                       </View>
                       <View className="flex-1">
                         <FormField label="Project">
-                          <SearchableSelect
+                          <ProjectSelect
                             value={projectLabel}
-                            onChange={(v) => setProjectLabel(v === projectLabel ? "" : v)}
-                            options={projectMap.map((x) => x.label)}
+                            projectId={projectId}
+                            onChange={(p) => {
+                              if (p) {
+                                setProjectLabel(`${p.code || `#${p.id}`} - ${p.nama || p.name || ""}`);
+                                setProjectId(Number(p.id));
+                              } else {
+                                setProjectLabel("");
+                                setProjectId(null);
+                              }
+                            }}
                             placeholder="Pilih project"
                           />
                         </FormField>
@@ -409,21 +489,37 @@ export function EventFormDialog({
                     </View>
                   ) : canAccessCustomer ? (
                     <FormField label="Customer">
-                      <SearchableSelect
+                      <CustomerSelect
                         value={customerLabel}
+                        customerId={customerId}
+                        onChange={(c) => {
+                          if (c) {
+                            setCustomerLabel(c.company || c.nama || c.name || "");
+                            setCustomerId(Number(c.id));
+                          } else {
+                            setCustomerLabel("");
+                            setCustomerId(null);
+                          }
+                        }}
                         onAddNew={() => setQuickCustomerOpen(true)}
-                        addNewLabel="+ Tambah Customer Baru"
-                        onChange={(v) => setCustomerLabel(v === customerLabel ? "" : v)}
-                        options={customerMap.map((x) => x.label)}
                         placeholder="Pilih customer"
+                        allowClear
                       />
                     </FormField>
                   ) : (
                     <FormField label="Project">
-                      <SearchableSelect
+                      <ProjectSelect
                         value={projectLabel}
-                        onChange={(v) => setProjectLabel(v === projectLabel ? "" : v)}
-                        options={projectMap.map((x) => x.label)}
+                        projectId={projectId}
+                        onChange={(p) => {
+                          if (p) {
+                            setProjectLabel(`${p.code || `#${p.id}`} - ${p.nama || p.name || ""}`);
+                            setProjectId(Number(p.id));
+                          } else {
+                            setProjectLabel("");
+                            setProjectId(null);
+                          }
+                        }}
                         placeholder="Pilih project"
                       />
                     </FormField>
@@ -435,41 +531,77 @@ export function EventFormDialog({
                     <View className="flex-row gap-3">
                       <View className="flex-1">
                         <FormField label="Lead / Prospek">
-                          <SearchableSelect
+                          <LeadSelect
                             value={leadLabel}
-                            onChange={(v) => setLeadLabel(v === leadLabel ? "" : v)}
-                            options={leadMap.map((x) => x.label)}
+                            leadId={leadId}
+                            onChange={(l) => {
+                              if (l) {
+                                setLeadLabel(`${l.perusahaan || l.customer || l.nama || ""} (${l.pic || l.nama || "-"})`);
+                                setLeadId(Number(l.id));
+                              } else {
+                                setLeadLabel("");
+                                setLeadId(null);
+                              }
+                            }}
                             placeholder="Pilih lead"
+                            allowClear
                           />
                         </FormField>
                       </View>
                       <View className="flex-1">
                         <FormField label="Invoice">
-                          <SearchableSelect
+                          <InvoiceSelect
                             value={invoiceLabel}
-                            onChange={(v) => setInvoiceLabel(v === invoiceLabel ? "" : v)}
-                            options={invoiceMap.map((x) => x.label)}
+                            invoiceId={invoiceId}
+                            onChange={(iv) => {
+                              if (iv) {
+                                setInvoiceLabel(`${iv.nomor || iv.number || `#${iv.id}`} - ${iv.customer || ""}`);
+                                setInvoiceId(Number(iv.id));
+                              } else {
+                                setInvoiceLabel("");
+                                setInvoiceId(null);
+                              }
+                            }}
                             placeholder="Pilih invoice"
+                            allowClear
                           />
                         </FormField>
                       </View>
                     </View>
                   ) : canAccessLead ? (
                     <FormField label="Lead / Prospek">
-                      <SearchableSelect
+                      <LeadSelect
                         value={leadLabel}
-                        onChange={(v) => setLeadLabel(v === leadLabel ? "" : v)}
-                        options={leadMap.map((x) => x.label)}
+                        leadId={leadId}
+                        onChange={(l) => {
+                          if (l) {
+                            setLeadLabel(`${l.perusahaan || l.customer || l.nama || ""} (${l.pic || l.nama || "-"})`);
+                            setLeadId(Number(l.id));
+                          } else {
+                            setLeadLabel("");
+                            setLeadId(null);
+                          }
+                        }}
                         placeholder="Pilih lead"
+                        allowClear
                       />
                     </FormField>
                   ) : (
                     <FormField label="Invoice">
-                      <SearchableSelect
+                      <InvoiceSelect
                         value={invoiceLabel}
-                        onChange={(v) => setInvoiceLabel(v === invoiceLabel ? "" : v)}
-                        options={invoiceMap.map((x) => x.label)}
+                        invoiceId={invoiceId}
+                        onChange={(iv) => {
+                          if (iv) {
+                            setInvoiceLabel(`${iv.nomor || iv.number || `#${iv.id}`} - ${iv.customer || ""}`);
+                            setInvoiceId(Number(iv.id));
+                          } else {
+                            setInvoiceLabel("");
+                            setInvoiceId(null);
+                          }
+                        }}
                         placeholder="Pilih invoice"
+                        allowClear
                       />
                     </FormField>
                   )
@@ -477,13 +609,16 @@ export function EventFormDialog({
 
                 {canAccessSupplier ? (
                   <FormField label="Vendor / Supplier">
-                    <SearchableSelect
+                    <SupplierSelect
                       value={supplierLabel}
-                      onChange={(v) => setSupplierLabel(v === supplierLabel ? "" : v)}
-                      options={supplierMap.map((x) => x.label)}
-                      placeholder="Pilih supplier"
+                      supplierId={supplierId}
+                      onChange={(name, supp) => {
+                        setSupplierLabel(name || "");
+                        setSupplierId(supp?.id ? Number(supp.id) : null);
+                      }}
+                      placeholder="Pilih vendor / supplier"
                       onAddNew={() => setQuickSupplierOpen(true)}
-                      addNewLabel="+ Tambah Supplier Baru"
+                      allowClear
                     />
                   </FormField>
                 ) : null}
@@ -508,6 +643,7 @@ export function EventFormDialog({
           onOpenChange={setQuickCustomerOpen}
           onSuccess={(newCust) => {
             setCustomerLabel(String(newCust.company || newCust.name || newCust.nama));
+            if (newCust.id) setCustomerId(Number(newCust.id));
           }}
         />
         <QuickAddSupplierDialog
@@ -515,6 +651,7 @@ export function EventFormDialog({
           onOpenChange={setQuickSupplierOpen}
           onSuccess={(newSupp) => {
             setSupplierLabel(String(newSupp.name || newSupp.nama));
+            if (newSupp.id) setSupplierId(Number(newSupp.id));
           }}
         />
       </DialogContent>

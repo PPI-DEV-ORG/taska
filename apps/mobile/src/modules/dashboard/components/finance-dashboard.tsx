@@ -132,7 +132,7 @@ export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDas
           onPress={() => router.push("/approvals")}
         />
         <KpiCard
-          label="Overdue Invoices"
+          label="Faktur Jatuh Tempo"
           value={String(dueInvoices)}
           hint="Perlu penagihan segera"
           tone="warning"

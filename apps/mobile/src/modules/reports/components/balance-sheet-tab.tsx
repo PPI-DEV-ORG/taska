@@ -226,7 +226,7 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
         return (
           <Panel
             title="Rekapitulasi PPN & Posisi Pajak DJP (SPT Masa PPN)"
-            subtitle="Perhitungan kompensasi PPN Keluaran (Penjualan/Invoice) dikurangi PPN Masukan (Pembelian PO/Retail)"
+            subtitle="Perhitungan kompensasi PPN Keluaran (Penjualan/Faktur) dikurangi PPN Masukan (Pembelian PO/Retail)"
           >
             <View className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <View className="bg-panel/50 border-border rounded-lg border p-3 gap-1">

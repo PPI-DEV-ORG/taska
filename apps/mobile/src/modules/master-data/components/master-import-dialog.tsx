@@ -23,7 +23,7 @@ export function MasterImportDialog({
   onSuccess,
   toast,
 }: MasterImportDialogProps) {
-  const [importTarget, setImportTarget] = React.useState("Customer (Data Klien & PIC)");
+  const [importTarget, setImportTarget] = React.useState("Pelanggan (Data Pelanggan & PIC)");
   const [importFile, setImportFile] = React.useState<{ name: string; blob?: Blob; uri?: string } | null>(null);
   const [importBusy, setImportBusy] = React.useState(false);
   const [importResult, setImportResult] = React.useState<{
@@ -95,8 +95,8 @@ export function MasterImportDialog({
                 setImportResult(null);
               }}
               options={[
-                "Customer (Data Klien & PIC)",
-                "Supplier (Vendor Penyedia)",
+                "Pelanggan (Data Pelanggan & PIC)",
+                "Pemasok (Vendor Penyedia)",
                 "Produk & SKU Barang",
                 "Gudang & Lokasi Inventori",
                 "Saldo Stok Awal per Gudang",

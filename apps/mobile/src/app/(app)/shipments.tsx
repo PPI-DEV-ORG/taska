@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { PageHeader, Panel } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
+import { statusText } from "@/lib/labels";
 import { useApp } from "@/store/app-store";
 import { tanggal } from "@/lib/format";
 import { colors } from "@/tokens";
@@ -19,7 +20,7 @@ export default function ShipmentsScreen() {
   return (
     <View className="gap-5">
       <PageHeader
-        title="Pengiriman dari Supplier"
+        title="Pengiriman dari Pemasok"
         subtitle="Tracking status pengiriman logistik vendor & bukti Delivery Order (DO)"
       />
 
@@ -52,7 +53,7 @@ export default function ShipmentsScreen() {
                         <Circle size={16} color={colors.border} />
                       )}
                       <Text className={i <= cur ? "text-xs font-semibold text-text" : "text-xs text-muted-foreground"}>
-                        {s}
+                        {statusText(s)}
                       </Text>
                     </View>
                   ))}

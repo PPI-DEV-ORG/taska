@@ -9,7 +9,7 @@ test.describe("Modul Leads (CRUD)", () => {
     await expect(page).toHaveURL(/.*leads/);
 
     // 2. Klik Tambah Lead
-    const tambahBtn = page.getByRole("button", { name: /Tambah lead/i });
+    const tambahBtn = page.getByRole("button", { name: /Tambah prospek/i });
     await expect(tambahBtn).toBeVisible({ timeout: 10000 });
     await tambahBtn.click();
 

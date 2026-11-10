@@ -29,7 +29,7 @@ export function GudangDashboard({ user, data, isMobile }: GudangDashboardProps) 
     const min = Number(p.minStock ?? p.min ?? 5);
     return cur <= min;
   }).length;
-  const todaySJ = data["delivery-notes"].filter((sj: any) => sj.status === "Pending" || sj.status === "Menunggu persetujuan").length;
+  const todaySJ = data["delivery-notes"].filter((sj: any) => sj.status === "Menunggu pengiriman" || sj.status === "Menunggu persetujuan").length;
 
   return (
     <View className="gap-6">
@@ -44,7 +44,7 @@ export function GudangDashboard({ user, data, isMobile }: GudangDashboardProps) 
           onPress={() => router.push("/receiving")}
         />
         <KpiCard
-          label="Request Barang"
+          label="Permintaan Barang"
           value={String(pendingRequests.length)}
           hint="Permintaan barang tim"
           tone="warning"
@@ -79,7 +79,7 @@ export function GudangDashboard({ user, data, isMobile }: GudangDashboardProps) 
         <View className={isMobile ? "w-full" : "flex-1"}>
           <Panel
             title="Tindakan Gudang & Logistik"
-            subtitle="Penerimaan barang, request barang, & surat jalan"
+            subtitle="Penerimaan barang, permintaan barang, & surat jalan"
             icon={PackageCheck}
           >
             <View className="gap-3">
@@ -105,7 +105,7 @@ export function GudangDashboard({ user, data, isMobile }: GudangDashboardProps) 
                   </Button>
                 </View>
               ))}
-              {data["delivery-notes"].filter((sj: any) => sj.status === "Pending" || sj.status === "Menunggu persetujuan").slice(0, 1).map((sj: any) => (
+              {data["delivery-notes"].filter((sj: any) => sj.status === "Menunggu pengiriman" || sj.status === "Menunggu persetujuan").slice(0, 1).map((sj: any) => (
                 <View key={sj.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
                   <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Surat Jalan: {sj.nomor}</Text>
                   <Text className="text-muted-foreground text-xs" numberOfLines={2}>
@@ -118,7 +118,7 @@ export function GudangDashboard({ user, data, isMobile }: GudangDashboardProps) 
               ))}
               {pendingRequests.length === 0 &&
               data.receiving.filter((r: any) => r.status !== "Diterima").length === 0 &&
-              data["delivery-notes"].filter((sj: any) => sj.status === "Pending" || sj.status === "Menunggu persetujuan").length === 0 ? (
+              data["delivery-notes"].filter((sj: any) => sj.status === "Menunggu pengiriman" || sj.status === "Menunggu persetujuan").length === 0 ? (
                 <Text className="text-muted-foreground py-6 text-center text-xs">Tidak ada antrean logistik gudang saat ini.</Text>
               ) : null}
             </View>
