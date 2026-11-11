@@ -31,8 +31,7 @@ function useNav() {
   const items = React.useMemo(() => getNavForUser(user), [user, roles]);
   const active = (i: NavItem) =>
     pathname === i.href ||
-    pathname.startsWith(i.href + "/") ||
-    (i.key === "purchase-orders" && pathname.startsWith("/supplier-pos"));
+    pathname.startsWith(i.href + "/");
   return { items, active, pathname };
 }
 

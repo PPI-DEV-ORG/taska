@@ -311,6 +311,7 @@ export interface BalanceSheetSummary {
   };
   totalPasiva: number;
   isBalanced: boolean;
+  discrepancy: number;
 }
 
 export interface CashFlowItem {
@@ -2229,6 +2230,7 @@ export function computeFinancialStatements(
       },
       totalPasiva,
       isBalanced: Math.abs(totalAsetLancar - totalPasiva) < 5,
+      discrepancy: Math.abs(totalAsetLancar - totalPasiva),
     },
     cashFlow: {
       cashInCustomers,

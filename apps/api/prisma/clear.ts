@@ -17,31 +17,34 @@ async function main() {
   const prisma = new PrismaClient({ adapter: adapter(process.env["DATABASE_URL"]) });
   console.log("Mengosongkan seluruh tabel database...");
 
-  // Nonaktifkan pemeriksaan foreign key sementara
-  await prisma.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 0;");
+  try {
+    // Nonaktifkan pemeriksaan foreign key sementara
+    await prisma.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 0;");
 
-  // Ambil semua nama tabel di database aktif (kecuali tabel migrasi Prisma)
-  const tables: Array<{ TABLE_NAME: string }> = await prisma.$queryRawUnsafe(`
-    SELECT TABLE_NAME 
-    FROM information_schema.tables 
-    WHERE table_schema = DATABASE() 
-      AND TABLE_TYPE = 'BASE TABLE'
-      AND TABLE_NAME != '_prisma_migrations';
-  `);
+    // Ambil semua nama tabel di database aktif (kecuali tabel migrasi Prisma)
+    const tables: Array<{ TABLE_NAME: string }> = await prisma.$queryRawUnsafe(`
+      SELECT TABLE_NAME 
+      FROM information_schema.tables 
+      WHERE table_schema = DATABASE() 
+        AND TABLE_TYPE = 'BASE TABLE'
+        AND TABLE_NAME != '_prisma_migrations';
+    `);
 
-  for (const { TABLE_NAME } of tables) {
-    try {
-      await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${TABLE_NAME}\`;`);
-      console.log(`✓ Dikosongkan: ${TABLE_NAME}`);
-    } catch (e: any) {
-      console.warn(`! Gagal truncate ${TABLE_NAME}: ${e?.message}`);
+    for (const { TABLE_NAME } of tables) {
+      try {
+        await prisma.$executeRawUnsafe(`DELETE FROM \`${TABLE_NAME}\`;`);
+        console.log(`✓ Dikosongkan: ${TABLE_NAME}`);
+      } catch (e: any) {
+        console.warn(`! Gagal mengosongkan ${TABLE_NAME}: ${e?.message}`);
+      }
     }
+  } finally {
+    // Aktifkan kembali pemeriksaan foreign key
+    await prisma.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 1;").catch(() => {});
+    await prisma.$disconnect();
   }
 
-  // Aktifkan kembali pemeriksaan foreign key
-  await prisma.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 1;");
   console.log("\nSelesai! Database telah bersih. Anda dapat menjalankan 'pnpm db:seed' untuk mengisi ulang data.");
-  await prisma.$disconnect();
 }
 
 main().catch((err) => {

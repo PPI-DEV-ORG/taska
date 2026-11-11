@@ -1251,18 +1251,18 @@ const N = {
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   super_admin: [
     N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.customers,
-    N.projects, N.tasks, N.requests, N.purchaseOrders, N.shipments, N.receiving,
-    N.stock, N.opname, N.delivery, N.poClient, N.invoices, N.expenses,
+    N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
+    N.stock, N.opname, N.delivery, N.invoices, N.expenses,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
-  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.purchaseOrders, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
-  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.poClient, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.purchaseOrders, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
+  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
+  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
   sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.customers, N.expenses, N.hr, N.master],
   pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.requests, N.delivery, N.expenses, N.hr],
   teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.hr],
-  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.purchaseOrders, N.shipments, N.receiving, N.delivery, N.stockView, N.opname, N.damage, N.expenses, N.visitReports, N.hr, N.master],
-  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.purchaseOrders, N.surveys, N.pocReports, N.visitReports, N.invoices, N.quotations, N.poClient, N.delivery, N.accounting, N.hr, N.stock, N.expenses, N.opname, N.reports],
-  gudang: [N.dashboard, N.calendar, N.approvals, N.requests, N.purchaseOrders, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.hr, N.master],
+  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.opname, N.damage, N.expenses, N.visitReports, N.hr, N.master],
+  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.poClient, N.surveys, N.pocReports, N.visitReports, N.invoices, N.quotations, N.delivery, N.accounting, N.hr, N.stock, N.expenses, N.opname, N.reports],
+  gudang: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.hr, N.master],
   se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.delivery, N.expenses, N.hr],
   hr: [N.dashboard, N.calendar, N.hr, N.users, N.expenses, N.visitReports, N.pocReports, N.requests, N.reports],
 };
@@ -1271,13 +1271,13 @@ export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "g
 
 const ALL_NAV_ORDERED: NavItem[] = [
   N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.customers,
-  N.projects, N.tasks, N.requests, N.purchaseOrders, N.supplierPos, N.shipments, N.receiving,
-  N.stock, N.opname, N.delivery, N.poClient, N.invoices, N.expenses,
+  N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
+  N.stock, N.opname, N.delivery, N.invoices, N.expenses,
   N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
 ];
 
 const CLIENT_MODULE_ALIASES: Record<string, string[]> = {
-  "purchase-orders": ["purchase-orders", "supplier-pos", "supplier_pos", "pos"],
+  "purchase-orders": ["purchase-orders", "pos"],
   "po-client": ["po-client", "po_client", "sales-order"],
   "purchase-requests": ["purchase-requests", "requests"],
   "supplier-pos": ["supplier-pos", "supplier_pos", "shipments"],
