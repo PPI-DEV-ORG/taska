@@ -142,14 +142,11 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     if (def?.key && fetchedRef.current !== def.key) {
       fetchedRef.current = def.key;
       void refreshModule(def.key);
-      if (def.key === "invoices" || def.key === "supplier-pos") void refreshModule("invoiceIn");
-      if (def.key === "po-client") void refreshModule("supplier-pos");
-      if (def.key === "supplier-pos") void refreshModule("po-client");
+      if (def.key === "invoices") void refreshModule("invoiceIn");
     }
   }, [def?.key, refreshModule]);
 
   const [invoiceTab, setInvoiceTab] = React.useState<"all" | "out" | "receipts" | "in">("all");
-  const [poTab, setPoTab] = React.useState<"all" | "po_out" | "po_in" | "faktur" | "pembayaran">("all");
   const [damageTab, setDamageTab] = React.useState<"all" | "kerusakan" | "retur-sales" | "retur-purchase">("all");
   const [selectedSupplierInvoice, setSelectedSupplierInvoice] = React.useState<Row | null>(null);
   const [supplierPayTarget, setSupplierPayTarget] = React.useState<Row | null>(null);
@@ -182,45 +179,6 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
     }
     return list;
   }, [data.invoices]);
-
-  const supplierPayments = React.useMemo(() => {
-    const list: Row[] = [];
-    for (const inv of data.invoiceIn ?? []) {
-      const payments = Array.isArray(inv._payments) ? inv._payments : [];
-      if (payments.length > 0) {
-        payments.forEach((p: any, idx: number) => {
-          list.push({
-            ...inv,
-            id: `spay-${inv.id}-${p.id ?? idx}`,
-            rawId: (inv as any).rawId ?? inv.id,
-            nomor: p.reference && p.reference !== "-" ? p.reference : `PAY-SUP/${inv.nomor}/${idx + 1}`,
-            supplier: inv.supplier || inv.customer,
-            item: `Faktur ${inv.nomor}${inv.po && inv.po !== "-" ? ` · PO ${inv.po}` : ""}`,
-            total: Number(p.amount) || 0,
-            eta: p.date || inv.tanggal,
-            tanggal: p.date || inv.tanggal,
-            status: "Lunas",
-            direction: "in",
-          });
-        });
-      } else if (Number(inv.terbayar) > 0) {
-        list.push({
-          ...inv,
-          id: `spay-${inv.id}-0`,
-          rawId: (inv as any).rawId ?? inv.id,
-          nomor: `PAY-SUP/${inv.nomor}`,
-          supplier: inv.supplier || inv.customer,
-          item: `Faktur ${inv.nomor}${inv.po && inv.po !== "-" ? ` · PO ${inv.po}` : ""}`,
-          total: Number(inv.terbayar) || 0,
-          eta: inv.tanggal,
-          tanggal: inv.tanggal,
-          status: inv.status || "Dibayar sebagian",
-          direction: "in",
-        });
-      }
-    }
-    return list;
-  }, [data.invoiceIn]);
 
   const rows = React.useMemo(() => {
     let sourceRows = data[def.key] ?? [];
@@ -318,49 +276,10 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         sourceRows = [...invOut, ...invIn];
       }
     } else if (def.key === "supplier-pos") {
-      const supplierPos = (data["supplier-pos"] ?? []).map((sp: Row) => ({
+      sourceRows = (data["supplier-pos"] ?? []).map((sp: Row) => ({
         ...sp,
         nomor: String(sp.nomor || "").replace(/^(?:POD|PO-S)\//i, "PO/"),
-        tipePo: "PO Keluar (Supplier)",
-        direction: "out",
       }));
-
-      const clientPos = (data["po-client"] ?? []).map((so: Row) => ({
-        ...so,
-        id: String(so.id),
-        nomor: so.nomorPoClient && so.nomorPoClient !== "-" ? so.nomorPoClient : (so.nomor || `SO #${so.id}`),
-        nomorSoSupplier: so.nomorSo && so.nomorSo !== "-" ? so.nomorSo : (so.nomor || "-"),
-        supplier: so.customer || so.supplier || "-",
-        item: so.penawaran && so.penawaran !== "-" ? `Penawaran: ${so.penawaran}` : (so.nama || so.lead || "Pesanan Client"),
-        total: Number(so.total || so.nilai || 0),
-        eta: so.tanggal || "-",
-        status: so.status || "Pending",
-        tipePo: "PO Masuk (Client)",
-        direction: "client_po",
-      }));
-
-      if (poTab === "faktur") {
-        sourceRows = (data.invoiceIn ?? []).map((r: Row) => ({
-          ...r,
-          id: String(r.id).startsWith("in-") ? String(r.id) : `in-${r.id}`,
-          rawId: (r as any).rawId ?? r.id,
-          nomor: r.nomor,
-          supplier: r.supplier || String(r.customer || "").replace(/\s*\(Supplier\)$/i, ""),
-          item: r.po && r.po !== "-" ? `PO: ${r.po} · Terbayar Rp ${(Number(r.terbayar) || 0).toLocaleString("id-ID")}` : `Tagihan Supplier`,
-          total: Number(r.total) || 0,
-          eta: r.jatuhTempo || r.tanggal,
-          status: r.status || "Belum lunas",
-          direction: "in",
-        }));
-      } else if (poTab === "pembayaran") {
-        sourceRows = supplierPayments;
-      } else if (poTab === "po_out") {
-        sourceRows = supplierPos;
-      } else if (poTab === "po_in") {
-        sourceRows = clientPos;
-      } else {
-        sourceRows = [...supplierPos, ...clientPos];
-      }
     } else if (def.key === "po-client") {
       sourceRows = data["po-client"] ?? [];
     } else if (def.key === "damage-reports") {
@@ -435,7 +354,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         return r;
       })
       .sort(compareDesc);
-  }, [def, data, user, q, status, dateFilter, invoiceTab, poTab, damageTab, clientReceipts, supplierPayments]);
+  }, [def, data, user, q, status, dateFilter, invoiceTab, damageTab, clientReceipts]);
 
   const activeColumns = React.useMemo(() => {
     if (def.key === "invoices") {
@@ -461,50 +380,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         { key: "status", label: "Status", fmt: "status" as const, mobile: true },
       ];
     }
-    if (def.key === "supplier-pos" && poTab === "faktur") {
-      return [
-        { key: "nomor", label: "No. Faktur Pemasok", primary: true, flex: 1.4 },
-        { key: "supplier", label: "Pemasok", flex: 1.6 },
-        { key: "item", label: "Referensi PO & Bayar", flex: 1.8 },
-        { key: "total", label: "Total Tagihan", fmt: "rupiah" as const },
-        { key: "eta", label: "Jatuh Tempo", fmt: "date" as const },
-        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
-      ];
-    }
-    if (def.key === "supplier-pos" && poTab === "pembayaran") {
-      return [
-        { key: "nomor", label: "No. Bukti / Ref Bayar", primary: true, flex: 1.4 },
-        { key: "supplier", label: "Pemasok", flex: 1.6 },
-        { key: "item", label: "Faktur & PO Terkait", flex: 1.8 },
-        { key: "total", label: "Nominal Dibayar", fmt: "rupiah" as const },
-        { key: "eta", label: "Tanggal Bayar", fmt: "date" as const },
-        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
-      ];
-    }
-    if (def.key === "supplier-pos" && poTab === "po_in") {
-      return [
-        { key: "nomor", label: "Nomor PO Client", primary: true, flex: 1.4 },
-        { key: "nomorSoSupplier", label: "Nomor SO", flex: 1.2 },
-        { key: "supplier", label: "Customer", flex: 1.6 },
-        { key: "item", label: "Penawaran / Ref", flex: 1.8 },
-        { key: "total", label: "Nilai Pesanan", fmt: "rupiah" as const },
-        { key: "eta", label: "Tanggal", fmt: "date" as const },
-        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
-      ];
-    }
-    if (def.key === "supplier-pos" && poTab === "all") {
-      return [
-        { key: "nomor", label: "Nomor PO / SO", primary: true, flex: 1.4 },
-        { key: "tipePo", label: "Tipe Arus", flex: 1.2 },
-        { key: "supplier", label: "Pihak Terkait", flex: 1.6 },
-        { key: "item", label: "Item / Referensi", flex: 1.8 },
-        { key: "total", label: "Total", fmt: "rupiah" as const },
-        { key: "eta", label: "Tanggal / ETA", fmt: "date" as const },
-        { key: "status", label: "Status", fmt: "status" as const, mobile: true },
-      ];
-    }
     return def.columns;
-  }, [def.key, def.columns, invoiceTab, poTab]);
+  }, [def.key, def.columns, invoiceTab]);
 
   const allowed = canCreate(def, user!.role, user);
   const deleteAllowed = canDelete(def, user!.role, user);
@@ -537,11 +414,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         {allowed ? (
           <Button onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}>
             <Plus size={16} color={colors.background} />
-            <Text>
-              {def.key === "supplier-pos" && poTab === "po_in"
-                ? "Buat PO Client (SO)"
-                : (def.createLabel ?? `Tambah ${def.singular}`)}
-            </Text>
+            <Text>{def.createLabel ?? `Tambah ${def.singular}`}</Text>
           </Button>
         ) : null}
       </View>
@@ -550,13 +423,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
   const isMasterOrSub = ["customers", "suppliers", "users"].includes(def.key);
 
   const filterStatuses = React.useMemo(() => {
-    if (def.key === "supplier-pos") {
-      if (poTab === "po_in") return ["Pending", "Lunas sebagian", "Lunas"];
-      if (poTab === "faktur") return ["Belum lunas", "Dibayar sebagian", "Lunas"];
-      if (poTab === "all") return Array.from(new Set([...def.statuses, "Pending", "Lunas sebagian", "Lunas"]));
-    }
     return def.statuses;
-  }, [def.key, def.statuses, poTab]);
+  }, [def.statuses]);
 
   function toast(arg0: string) {
     Alert.alert("Berhasil", arg0);
@@ -592,35 +460,6 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             label={`Receipt / Kwitansi (${clientReceipts.length})`}
             active={invoiceTab === "receipts"}
             onPress={() => setInvoiceTab("receipts")}
-          />
-        </View>
-      ) : null}
-      {def.key === "supplier-pos" ? (
-        <View className="flex-row flex-wrap items-center gap-2 mb-3">
-          <Chip
-            label={`Semua PO (${(data["supplier-pos"]?.length || 0) + (data["po-client"]?.length || 0)})`}
-            active={poTab === "all"}
-            onPress={() => setPoTab("all")}
-          />
-          <Chip
-            label={`PO Keluar (Supplier) (${data["supplier-pos"]?.length || 0})`}
-            active={poTab === "po_out"}
-            onPress={() => setPoTab("po_out")}
-          />
-          <Chip
-            label={`PO Masuk (Client) (${data["po-client"]?.length || 0})`}
-            active={poTab === "po_in"}
-            onPress={() => setPoTab("po_in")}
-          />
-          <Chip
-            label={`Faktur Pembelian (${data.invoiceIn?.length || 0})`}
-            active={poTab === "faktur"}
-            onPress={() => setPoTab("faktur")}
-          />
-          <Chip
-            label={`Pembayaran Pembelian (${supplierPayments.length})`}
-            active={poTab === "pembayaran"}
-            onPress={() => setPoTab("pembayaran")}
           />
         </View>
       ) : null}
@@ -680,12 +519,10 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           columns={activeColumns}
           rows={rows}
           onRowPress={(r) => {
-            if ((def.key === "invoices" || def.key === "supplier-pos") && r.direction === "in") {
+            if (def.key === "invoices" && r.direction === "in") {
               setSelectedSupplierInvoice(r);
             } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
               router.push(`/invoices/${r.invoiceId}` as any);
-            } else if (def.key === "supplier-pos" && r.direction === "client_po") {
-              router.push(`/po-client/${r.id}` as any);
             } else {
               router.push(`/${def.key}/${r.id}` as any);
             }
@@ -702,12 +539,10 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
                 size="icon"
                 className="size-8 rounded-lg hover:bg-panel"
                 onPress={() => {
-                  if ((def.key === "invoices" || def.key === "supplier-pos") && r.direction === "in") {
+                  if (def.key === "invoices" && r.direction === "in") {
                     setSelectedSupplierInvoice(r);
                   } else if (def.key === "invoices" && r.direction === "receipt" && r.invoiceId) {
                     router.push(`/invoices/${r.invoiceId}` as any);
-                  } else if (def.key === "supplier-pos" && r.direction === "client_po") {
-                    router.push(`/po-client/${r.id}` as any);
                   } else {
                     router.push(`/${def.key}/${r.id}` as any);
                   }
@@ -736,11 +571,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           defaultDirectPurchase={invoiceTab === "in"}
         />
       ) : def.key === "supplier-pos" ? (
-        poTab === "po_in" ? (
-          <CreateSalesOrderDialog open={open} onOpenChange={setOpen} />
-        ) : (
-          <CreateSupplierPoDialog open={open} onOpenChange={setOpen} />
-        )
+        <CreateSupplierPoDialog open={open} onOpenChange={setOpen} />
       ) : def.key === "po-client" ? (
         <CreateSalesOrderDialog open={open} onOpenChange={setOpen} />
       ) : def.createFields ? (

@@ -34,7 +34,7 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
               Status Keseimbangan Neraca:{" "}
               {fin.balanceSheet.isBalanced
                 ? "SEIMBANG (BALANCED)"
-                : `SELISIH ${rupiah(Math.abs(fin.balanceSheet.discrepancy))}`}
+                : `SELISIH ${rupiah(Math.abs(fin.balanceSheet.discrepancy ?? (fin.balanceSheet.assets.totalAsetLancar - fin.balanceSheet.totalPasiva)))}`}
             </Text>
             <Text className="text-xs text-text-secondary">
               Total Aktiva ({rupiah(fin.balanceSheet.assets.totalAsetLancar)}) = Total Pasiva (
