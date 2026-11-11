@@ -30,6 +30,7 @@ export interface PoItemEntry {
   productId?: string;
   name: string;
   sku?: string;
+  brand?: string;
   unit: string;
   hasSerial: boolean;
   categoryId?: string;
@@ -148,6 +149,8 @@ function CreateSupplierPoForm({
 
   // New item input state
   const [newName, setNewName] = React.useState<string>("");
+  const [newBrand, setNewBrand] = React.useState<string>("");
+  const [newSku, setNewSku] = React.useState<string>("");
   const [newHasSerial, setNewHasSerial] = React.useState<boolean>(false);
   const [newCategoryId, setNewCategoryId] = React.useState<string>("");
   const [newUnit, setNewUnit] = React.useState<string>("unit");
@@ -267,6 +270,8 @@ function CreateSupplierPoForm({
     const newItem: PoItemEntry = {
       id: `new-${Date.now()}-${Math.random()}`,
       name: trimmedName,
+      brand: newBrand.trim() || undefined,
+      sku: newSku.trim() ? newSku.trim().toUpperCase() : undefined,
       unit: newUnit.trim() || "unit",
       hasSerial: newHasSerial,
       categoryId: newCategoryId || undefined,
@@ -279,6 +284,8 @@ function CreateSupplierPoForm({
 
     setItems((prev) => [...prev, newItem]);
     setNewName("");
+    setNewBrand("");
+    setNewSku("");
     setNewQty("1");
     setNewPrice("");
     setNewSellPrice("");
@@ -374,10 +381,11 @@ function CreateSupplierPoForm({
         let finalProdId = item.productId;
 
         if (!item.isNonInventory && (item.isNewItem || !finalProdId)) {
-          const autoSku = `SKU-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 100)}`;
+          const autoSku = item.sku || `SKU-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 100)}`;
           const createdProduct = await addRow("products", {
             nama: item.name,
             sku: autoSku,
+            merk: item.brand || undefined,
             satuan: item.unit,
             unit: item.unit,
             berSN: item.hasSerial,
@@ -695,7 +703,7 @@ function CreateSupplierPoForm({
                       className="h-6 px-2 text-[11px]"
                     >
                       <Text className={`text-[11px] font-semibold ${addItemMode === "new" ? "text-primary-foreground" : "text-muted-foreground"}`}>
-                        + Item Baru (Stok)
+                        + Barang Baru (Non-Master)
                       </Text>
                     </Button>
                     <Button
@@ -770,43 +778,39 @@ function CreateSupplierPoForm({
                   </View>
                 ) : addItemMode === "new" ? (
                   <View className="gap-2.5">
-                    <FormField label="Nama Barang Baru *" required hint="Nama item yang akan didaftarkan ke master barang">
-                      <Input
-                        value={newName}
-                        onChangeText={setNewName}
-                        placeholder="Contoh: Kabel UTP Cat6 305m Belden"
-                      />
-                    </FormField>
-
-                    <View className="flex-row gap-2">
+                    <View className="flex-col sm:flex-row gap-2.5">
                       <View className="flex-1">
-                        <FormField label="Tipe Barang *" required>
-                          <View className="flex-row gap-1">
-                            <Button
-                              variant={!newHasSerial ? "default" : "outline"}
-                              size="sm"
-                              onPress={() => setNewHasSerial(false)}
-                              className="flex-1 h-8 px-2"
-                            >
-                              <Text className={`text-[11px] font-semibold ${!newHasSerial ? "text-primary-foreground" : ""}`}>
-                                Non-SN
-                              </Text>
-                            </Button>
-                            <Button
-                              variant={newHasSerial ? "default" : "outline"}
-                              size="sm"
-                              onPress={() => setNewHasSerial(true)}
-                              className="flex-1 h-8 px-2"
-                            >
-                              <Text className={`text-[11px] font-semibold ${newHasSerial ? "text-primary-foreground" : ""}`}>
-                                Ber-SN
-                              </Text>
-                            </Button>
-                          </View>
+                        <FormField label="Nama Barang Baru *" required hint="Item akan otomatis didaftarkan ke master barang">
+                          <Input
+                            value={newName}
+                            onChangeText={setNewName}
+                            placeholder="Contoh: Kabel UTP Cat6 305m Belden"
+                          />
+                        </FormField>
+                      </View>
+                      <View className="flex-1 sm:max-w-[200px]">
+                        <FormField label="Merk / Brand (Pabrikan)">
+                          <Input
+                            value={newBrand}
+                            onChangeText={setNewBrand}
+                            placeholder="Contoh: Belden, Uniview"
+                          />
+                        </FormField>
+                      </View>
+                    </View>
+
+                    <View className="flex-row flex-wrap gap-2">
+                      <View className="flex-1 min-w-[130px]">
+                        <FormField label="Kode SKU (Opsional)" hint="Kosongkan untuk otomatis">
+                          <Input
+                            value={newSku}
+                            onChangeText={setNewSku}
+                            placeholder="Contoh: CBL-UTP-BELDEN"
+                          />
                         </FormField>
                       </View>
 
-                      <View className="flex-1">
+                      <View className="flex-1 min-w-[140px]">
                         <FormField label="Kategori Barang">
                           <SearchableSelect
                             value={categoryOptions.find((c) => c.id === newCategoryId)?.name || ""}
@@ -827,6 +831,33 @@ function CreateSupplierPoForm({
                             onChangeText={setNewUnit}
                             placeholder="unit, pcs, m..."
                           />
+                        </FormField>
+                      </View>
+
+                      <View className="w-28">
+                        <FormField label="Lacak SN" required>
+                          <View className="flex-row gap-1">
+                            <Button
+                              variant={!newHasSerial ? "default" : "outline"}
+                              size="sm"
+                              onPress={() => setNewHasSerial(false)}
+                              className="flex-1 h-8 px-1"
+                            >
+                              <Text className={`text-[10px] font-semibold ${!newHasSerial ? "text-primary-foreground" : ""}`}>
+                                Non-SN
+                              </Text>
+                            </Button>
+                            <Button
+                              variant={newHasSerial ? "default" : "outline"}
+                              size="sm"
+                              onPress={() => setNewHasSerial(true)}
+                              className="flex-1 h-8 px-1"
+                            >
+                              <Text className={`text-[10px] font-semibold ${newHasSerial ? "text-primary-foreground" : ""}`}>
+                                Ber-SN
+                              </Text>
+                            </Button>
+                          </View>
                         </FormField>
                       </View>
                     </View>

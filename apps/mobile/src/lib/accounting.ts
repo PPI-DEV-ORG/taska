@@ -104,15 +104,15 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
   "7200.01": { code: "7200.01", name: "biaya adm bank", category: "Beban Diluar Usaha", normalBalance: "DEBIT", parentCode: "7200" },
   "7200.02": { code: "7200.02", name: "beban lain-lain", category: "Beban Diluar Usaha", normalBalance: "DEBIT", parentCode: "7200" },
 
-  // Aliases for backward compatibility
-  "1101": { code: "1000.01", name: "Kas & Bank Operasional", category: "Aset Lancar", normalBalance: "DEBIT" },
-  "1102": { code: "110302", name: "Piutang Usaha (Accounts Receivable)", category: "Aset Lancar", normalBalance: "DEBIT" },
-  "1103": { code: "1200", name: "Persediaan Barang Gudang (Inventory)", category: "Aset Lancar", normalBalance: "DEBIT" },
-  "1104": { code: "1600", name: "PPN Masukan (Input VAT)", category: "Aset Lancar", normalBalance: "DEBIT" },
-  "2101": { code: "210102", name: "Hutang Usaha Supplier (Accounts Payable)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT" },
-  "2102": { code: "2100", name: "Hutang PPN Keluaran (Output VAT)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT" },
-  "3101": { code: "310001", name: "Modal Kerja & Cadangan Persediaan Awal", category: "Ekuitas", normalBalance: "KREDIT" },
-  "4101": { code: "4000.01", name: "Pendapatan Proyek & Penjualan", category: "Pendapatan", normalBalance: "KREDIT" },
+  // Standard 4-digit accounts & aliases for balance sheet & general journal
+  "1101": { code: "1101", name: "Kas & Bank Operasional", category: "Aset Lancar", normalBalance: "DEBIT", type: "cash/bank", parentCode: "1000" },
+  "1102": { code: "1102", name: "Piutang Usaha (Accounts Receivable)", category: "Aset Lancar", normalBalance: "DEBIT", type: "account receivable", parentCode: "1100" },
+  "1103": { code: "1103", name: "Persediaan Barang Gudang (Inventory)", category: "Aset Lancar", normalBalance: "DEBIT", type: "inventory" },
+  "1104": { code: "1104", name: "PPN Masukan (Input VAT)", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset" },
+  "2101": { code: "2101", name: "Hutang Usaha Supplier (Accounts Payable)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "account payable", parentCode: "2000" },
+  "2102": { code: "2102", name: "Hutang PPN Keluaran (Output VAT)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "other current liability", parentCode: "2000" },
+  "3101": { code: "3101", name: "Modal Kerja & Cadangan Persediaan Awal", category: "Ekuitas", normalBalance: "KREDIT", type: "equity", parentCode: "3000" },
+  "4101": { code: "4101", name: "Pendapatan Proyek & Penjualan", category: "Pendapatan", normalBalance: "KREDIT", type: "revenue", parentCode: "4000" },
 };
 
 export interface JournalLine {
@@ -145,6 +145,7 @@ export interface JournalLine {
   namaAkun: string;
   debit: number;
   kredit: number;
+  manualJournalId?: string;
 }
 
 export interface ManualJournalLine {
@@ -1677,6 +1678,7 @@ export function computeFinancialStatements(
         namaAkun: acc ? acc.name : l.kodeAkun,
         debit: d,
         kredit: k,
+        manualJournalId: mj.id,
       });
     });
   }
@@ -2055,10 +2057,26 @@ export function computeFinancialStatements(
   const hutangReimbursement = Math.max(0, expensesTableTotal - cashOutExpenses);
   const hutangPpnKeluaran = ppnKeluaran;
 
+  // Manual journal impacts on cash & initial capital
+  const manualCashLines = journalLines.filter(
+    (l) =>
+      l.sumber === "Jurnal Manual" &&
+      (l.kodeAkun === "1101" || l.kodeAkun === "1000" || l.kodeAkun.startsWith("1000."))
+  );
+  const manualCashNet = manualCashLines.reduce((s, l) => s + l.debit - l.kredit, 0);
+
+  const manualEquityLines = journalLines.filter(
+    (l) =>
+      l.sumber === "Jurnal Manual" &&
+      (l.kodeAkun === "3101" || l.kodeAkun === "310001" || l.kodeAkun === "3000")
+  );
+  const manualEquityNet = manualEquityLines.reduce((s, l) => s + l.kredit - l.debit, 0);
+
   // Working capital reserve covers initial warehouse inventory + base treasury buffer if netCashFlow < 0
-  const baseWorkingCapitalCash = netCashFlow < 0 ? Math.abs(netCashFlow) + 25_000_000 : 0;
-  const kasDanBank = netCashFlow + baseWorkingCapitalCash;
-  const modalKerjaAwal = initialPhysicalStock + baseWorkingCapitalCash;
+  const effectiveCashIn = netCashFlow + manualCashNet;
+  const baseWorkingCapitalCash = effectiveCashIn < 0 ? Math.abs(effectiveCashIn) + 25_000_000 : 0;
+  const kasDanBank = Math.max(0, effectiveCashIn + baseWorkingCapitalCash);
+  const modalKerjaAwal = initialPhysicalStock + manualEquityNet + baseWorkingCapitalCash;
   const labaBerjalan = netProfit;
 
   // 7. COA Trial Balance Summary (Aggregates standard + custom user accounts + manual journals)
@@ -2090,7 +2108,9 @@ export function computeFinancialStatements(
     if (acc.code === "1200" || acc.code === "1103") {
       d += initialPhysicalStock;
     } else if (acc.code === "310001" || acc.code === "3101") {
-      k += modalKerjaAwal;
+      k += Math.max(0, modalKerjaAwal - manualEquityNet);
+    } else if (acc.code === "1101" || acc.code === "1000.01") {
+      d += baseWorkingCapitalCash;
     } else if (acc.code === "3102") {
       if (labaBerjalan >= 0) k += labaBerjalan;
       else d += Math.abs(labaBerjalan);
