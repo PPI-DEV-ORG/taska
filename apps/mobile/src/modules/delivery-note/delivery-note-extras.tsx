@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { tanggal } from "@/lib/format";
@@ -36,6 +36,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
   });
   const [handoverNotes, setHandoverNotes] = React.useState("");
   const [handoverFileId, setHandoverFileId] = React.useState<number | null>(null);
+  const fileUploaderRef = React.useRef<FileUploaderHandle | null>(null);
 
 
   const poClientList = data["po-client"];
@@ -87,19 +88,35 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
       toast("Nama penerima lapangan wajib diisi", "danger");
       return;
     }
+    let finalFid = handoverFileId;
+    if (!finalFid && fileUploaderRef.current?.hasStaged()) {
+      try {
+        finalFid = await fileUploaderRef.current.flush();
+      } catch {}
+    }
+    if (!finalFid && !row.scanFileId && !row.fileId && !row.signedFileId) {
+      toast("Bukti tanda terima / scan surat jalan bertanda tangan wajib dilampirkan", "danger");
+      return;
+    }
     setSubmitting(true);
     try {
-      await patchRow("delivery-notes", row.id, {
+      const patchOk = await patchRow("delivery-notes", row.id, {
         penerimaNama: recipientName.trim(),
         penerimaKontak: recipientPhone.trim(),
         penerimaJabatan: recipientTitle.trim(),
         catatanSerahTerima: handoverNotes.trim(),
         tanggalDiterima: new Date().toISOString().slice(0, 10),
         status: "Diterima",
-        ...(handoverFileId ? { scanFileId: handoverFileId, fileId: handoverFileId } : {}),
+        ...(finalFid ? { scanFileId: finalFid, fileId: finalFid } : {}),
       });
-      await setStatus("delivery-notes", row.id, "Diterima");
-      if (handoverFileId) {
+      if (!patchOk) {
+        return;
+      }
+      const statusOk = await setStatus("delivery-notes", row.id, "Diterima", undefined, finalFid ? { scanFileId: finalFid } : undefined);
+      if (!statusOk) {
+        return;
+      }
+      if (finalFid) {
         const matchedSo = (data["po-client"] ?? []).find(
           (so: Row) =>
             (row.soId && String(so.id) === String(row.soId)) ||
@@ -109,7 +126,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
             (row.id && String(so.catatan || "").includes(`[do:${row.id}]`))
         );
         if (matchedSo?.id) {
-          await patchRow("po-client", matchedSo.id, { doFileId: handoverFileId }).catch(() => {});
+          await patchRow("po-client", matchedSo.id, { doFileId: finalFid }).catch(() => {});
         }
       }
       setHandoverOpen(false);
@@ -213,7 +230,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN (Stok otomatis berkurang saat status Dikirim)" : "Surat jalan penugasan tanpa barang"}
         right={
           <View className="flex-row items-center gap-2 flex-wrap">
-            {row.status === "Menunggu pengiriman" || row.status === "Pending" || !row.status || row.status === "Menunggu persetujuan" ? (
+            {row.status !== "Dibatalkan" ? (
               <Button
                 size="sm"
                 variant="default"
@@ -504,11 +521,12 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
               />
             </View>
             <FileUploader
-              label="Upload DO / Surat Jalan yang Sudah Di-TTD Kedua Pihak (Gambar / PDF)"
+              label="Upload DO / Surat Jalan yang Sudah Di-TTD Kedua Pihak (Wajib) *"
               kind="semua"
               accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
               allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
               category="surat-jalan"
+              handleRef={(h) => { fileUploaderRef.current = h; }}
               autoFlush
               onUploaded={(id) => setHandoverFileId(id)}
             />

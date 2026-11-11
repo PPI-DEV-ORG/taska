@@ -68,7 +68,12 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
 
   if (moduleKey === "purchase-requests") {
     if (/bayar|payment|bukti transfer/i.test(labelLower)) {
-      const fileId = (row as any).paymentProofFileId ?? (row as any).paymentProofFile?.id ?? null;
+      const pos = Array.isArray((row as any).supplierPOs) ? (row as any).supplierPOs : ((row as any).supplierPo ? [(row as any).supplierPo] : []);
+      const invProofFileId = pos
+        .flatMap((p: any) => Array.isArray(p.invoiceIns) ? p.invoiceIns : [])
+        .find((i: any) => i.transferFileId || (Array.isArray(i.payments) && i.payments.some((pay: any) => pay.fileId)))?.transferFileId || null;
+
+      const fileId = (row as any).paymentProofFileId ?? (row as any).paymentProofFile?.id ?? invProofFileId ?? null;
       const fileMeta = (row as any).paymentProofFile;
       return {
         label: docLabel,

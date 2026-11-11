@@ -667,13 +667,17 @@ export default function NewDeliveryNoteScreen() {
       finalAlasan = `${finalAlasan || `Pengiriman Barang Invoice ${invNum}`}${invTag}`;
     }
 
+    const currentStatus = initialExistingDn?.status || "Menunggu pengiriman";
+    const isAlreadySentOrDelivered = currentStatus === "Dikirim" || currentStatus === "Diterima";
     const willShip = targetStatus === "Dikirim";
 
     try {
       if (editId) {
-        const nextStatus = willShip
+        const nextStatus = isAlreadySentOrDelivered
+          ? currentStatus
+          : willShip
           ? "Dikirim"
-          : (targetStatus === "Menunggu pengiriman" ? "Menunggu pengiriman" : (initialExistingDn?.status || "Menunggu pengiriman"));
+          : (targetStatus === "Menunggu pengiriman" ? "Menunggu pengiriman" : currentStatus);
 
         await patchRow("delivery-notes", editId, {
           tanggal: tanggalSj,
@@ -694,7 +698,7 @@ export default function NewDeliveryNoteScreen() {
           ...(fileId ? { fileId, scanFileId: Number(fileId) } : {}),
         });
 
-        if (willShip) {
+        if (willShip && !isAlreadySentOrDelivered) {
           const allSerials = itemsList
             .flatMap((i) => (i.serials ? i.serials.split(",") : []))
             .map((s) => s.trim())
@@ -708,7 +712,11 @@ export default function NewDeliveryNoteScreen() {
           await patchRow("delivery-notes", editId, { status: "Dikirim" }).catch(() => {});
           toast("Surat jalan diperbarui & barang berhasil dikirim (stok berkurang)!");
         } else {
-          toast("Surat jalan berhasil diperbarui!");
+          toast(
+            isAlreadySentOrDelivered
+              ? "Surat jalan & nomor seri barang berhasil diperbarui!"
+              : "Surat jalan berhasil diperbarui!"
+          );
         }
 
         await refreshModule("delivery-notes");
@@ -1121,7 +1129,7 @@ export default function NewDeliveryNoteScreen() {
 
                         <View className="flex-row items-center gap-2">
                           <Text className="text-xs text-muted-foreground">Qty:</Text>
-                          {isSerial ? (
+                          {isSerial && snList.length > 0 ? (
                             <View className="w-14 h-8 items-center justify-center rounded-md bg-muted/40 border border-border/60">
                               <Text className="text-xs font-bold text-foreground">{it.qty}</Text>
                             </View>
@@ -1147,6 +1155,34 @@ export default function NewDeliveryNoteScreen() {
                           </Pressable>
                         </View>
                       </View>
+
+                      {isSerial && (
+                        <View className="mt-1 pt-2 border-t border-border/40 gap-1.5">
+                          <View className="flex-row items-center justify-between">
+                            <Text className="text-[11px] font-medium text-muted-foreground">
+                              Nomor Seri (SN) Fisik ({snList.length} dari {it.qty} unit terisi):
+                            </Text>
+                            {snList.length < Number(it.qty || 1) && (
+                              <Text className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                                {snList.length === 0 ? "Belum di-scan (Bisa diisi nanti)" : `${Number(it.qty || 1) - snList.length} belum diisi`}
+                              </Text>
+                            )}
+                          </View>
+                          <Input
+                            value={snList.join(", ")}
+                            onChangeText={(v) => {
+                              const parsed = v.split(",").map((s) => s.trim()).filter(Boolean);
+                              setItems((prev) =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, serialNumbers: parsed } : item
+                                )
+                              );
+                            }}
+                            placeholder="Ketik atau scan nomor SN dipisah koma (cth: UNV-1001, UNV-1002)..."
+                            className="text-xs h-8"
+                          />
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -1230,26 +1266,42 @@ export default function NewDeliveryNoteScreen() {
 
       {editId ? (
         <View className="flex-row items-center gap-3">
-          <Button
-            size="lg"
-            variant="outline"
-            className="flex-1 border-neutral-300"
-            onPress={() => submit("Menunggu pengiriman")}
-            disabled={submitting}
-          >
-            <Text className="text-neutral-700 font-medium">Simpan Draf (Pending)</Text>
-          </Button>
-          <Button
-            size="lg"
-            className="flex-1 bg-primary"
-            onPress={() => submit("Dikirim")}
-            disabled={submitting}
-          >
-            <Check size={18} color="#ffffff" />
-            <Text className="font-semibold text-white">
-              {submitting ? "Memproses..." : "Simpan & Kirim Barang"}
-            </Text>
-          </Button>
+          {initialExistingDn?.status === "Dikirim" || initialExistingDn?.status === "Diterima" ? (
+            <Button
+              size="lg"
+              className="flex-1 bg-primary"
+              onPress={() => submit()}
+              disabled={submitting}
+            >
+              <Check size={18} color="#ffffff" />
+              <Text className="font-semibold text-white">
+                {submitting ? "Memproses..." : "Simpan Perubahan Surat Jalan"}
+              </Text>
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="lg"
+                variant="outline"
+                className="flex-1 border-neutral-300"
+                onPress={() => submit("Menunggu pengiriman")}
+                disabled={submitting}
+              >
+                <Text className="text-neutral-700 font-medium">Simpan Draf (Pending)</Text>
+              </Button>
+              <Button
+                size="lg"
+                className="flex-1 bg-primary"
+                onPress={() => submit("Dikirim")}
+                disabled={submitting}
+              >
+                <Check size={18} color="#ffffff" />
+                <Text className="font-semibold text-white">
+                  {submitting ? "Memproses..." : "Simpan & Kirim Barang"}
+                </Text>
+              </Button>
+            </>
+          )}
         </View>
       ) : (
         <View className="flex-row items-center gap-3">

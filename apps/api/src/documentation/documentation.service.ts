@@ -205,6 +205,7 @@ export class DocumentationService {
           ["Biaya", `Rp${Number(s.cost).toLocaleString("id-ID")}`],
           ["Pemohon", s.requester.name],
           ["Tim", s.members.map((m) => `${m.user.name} (${m.user.role})`).join(", ") || "-"],
+          ...(s.notes ? [["Catatan Teknis", s.notes] as [string, string]] : []),
         ]),
       );
     } else if (kind === "project") {

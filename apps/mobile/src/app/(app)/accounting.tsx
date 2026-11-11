@@ -181,7 +181,11 @@ export default function AccountingScreen() {
 
     // Kumpulkan turunan rekursif dari parentCode atau prefiks titik (dot notation)
     const collectDescendantCodes = (parentCode: string) => {
-      Object.values(allAccountsMap).forEach((acc) => {
+      const allList: any[] = [
+        ...Object.values(allAccountsMap),
+        ...(fin?.coaBalances || []),
+      ];
+      allList.forEach((acc) => {
         if (!acc?.code) return;
         if (acc.parentCode === parentCode || acc.code.startsWith(`${parentCode}.`)) {
           if (!targetCodes.has(acc.code)) {

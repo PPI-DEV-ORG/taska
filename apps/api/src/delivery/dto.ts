@@ -144,6 +144,9 @@ export class DeliveryStatusDto {
 
   @IsOptional() @IsString()
   reason?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  scanFileId?: number;
 }
 
 export class DeliveryReportDto {

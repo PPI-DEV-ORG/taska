@@ -1251,7 +1251,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               right={
                 <View className="flex-row items-center gap-2">
                   <Cell fmt="status" value={dn.status} />
-                  {dn.status === "Menunggu pengiriman" ? (
+                  {dn.status !== "Dibatalkan" ? (
                     <Button
                       size="sm"
                       variant="outline"

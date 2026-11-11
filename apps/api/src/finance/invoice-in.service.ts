@@ -49,14 +49,33 @@ export class InvoiceInService {
         select: { id: true, requestId: true, shipmentStatus: true },
       });
       if (po?.requestId) {
+        const pr = await this.prisma.main.purchaseRequest.findUnique({
+          where: { id: po.requestId },
+          select: { status: true },
+        });
+        const targetStatus =
+          po.shipmentStatus === "SAMPAI"
+            ? "DITERIMA"
+            : po.shipmentStatus === "DIKIRIM"
+              ? "DIKIRIM"
+              : pr?.status === "DISETUJUI" || pr?.status === "PO_DIBUAT"
+                ? "DIBAYAR"
+                : undefined;
+
         await this.prisma.main.purchaseRequest.updateMany({
           where: { id: po.requestId },
           data: {
             paymentStatus: "DIBAYAR",
-            status: po.shipmentStatus === "SAMPAI" ? "DITERIMA" : undefined,
+            ...(targetStatus ? { status: targetStatus as never } : {}),
             ...(payFileId ? { paymentProofFileId: payFileId } : {}),
           },
         });
+        if (payFileId) {
+          await this.prisma.main.file.update({
+            where: { id: payFileId },
+            data: { refType: "purchase_request_payment", refId: String(po.requestId) },
+          }).catch(() => {});
+        }
         this.notifications.dataChange("purchase-requests", "update", po.requestId);
         this.notifications.dataChange("purchase-requests", "status", po.requestId);
       }
@@ -264,6 +283,13 @@ export class InvoiceInService {
 
     const isPaid = !!dto.paid;
     const payFileId = dto.paymentFileId ?? dto.transferFileId;
+
+    if (!dto.fileId) {
+      throw new BadRequestException("File faktur pemasok wajib diunggah");
+    }
+    if (isPaid && !payFileId) {
+      throw new BadRequestException("Bukti transfer / pembayaran wajib diunggah untuk status lunas");
+    }
 
     const row = await this.prisma.main.invoiceIn.create({
       data: {
@@ -479,6 +505,10 @@ export class InvoiceInService {
       );
     }
 
+    if (!dto.fileId) {
+      throw new BadRequestException("Bukti transfer / pembayaran wajib diunggah");
+    }
+
     const finalReference = dto.coaAccount
       ? (dto.reference?.includes(`[AKUN:`) ? dto.reference : `[AKUN:${dto.coaAccount}] ${dto.reference || ""}`.trim())
       : dto.reference;
@@ -509,8 +539,9 @@ export class InvoiceInService {
       include: { supplier: true, payments: { orderBy: { date: "desc" } } },
     });
 
-    if (paid >= Number(row.total) && Number(row.total) > 0) {
-      await this.syncLinkedRequest(row.supplierPoId, dto.fileId ?? row.transferFileId);
+    const effectiveProofFileId = dto.fileId ?? row.transferFileId;
+    if ((paid >= Number(row.total) && Number(row.total) > 0) || effectiveProofFileId) {
+      await this.syncLinkedRequest(row.supplierPoId, effectiveProofFileId);
     }
 
     await this.audit.log({

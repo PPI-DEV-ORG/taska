@@ -34,6 +34,7 @@ import { rupiah, tanggal } from "@/lib/format";
 import { ProjectExtras, useProjectExpenses } from "@/modules/project/project-extras";
 import { TaskDetailDialog } from "@/modules/task/task-detail-dialog";
 import { CreateTaskDialog } from "@/modules/task/create-task-dialog";
+import { CompleteTaskDialog } from "@/modules/task/complete-task-dialog";
 
 const TABS = [
   "Ringkasan",
@@ -61,6 +62,7 @@ export default function ProjectDetailScreen() {
   const [deleteProjectOpen, setDeleteProjectOpen] = React.useState(false);
   const [requirements, setRequirements] = React.useState<any[]>([]);
   const [detailTask, setDetailTask] = React.useState<Row | null>(null);
+  const [completeTask, setCompleteTask] = React.useState<Row | null>(null);
 
   React.useEffect(() => {
     if (id) {
@@ -268,10 +270,13 @@ export default function ProjectDetailScreen() {
       ));
   const hasProgressChanged = liveProgress !== currentProgress;
 
-  function toggleTask(taskId: string, currentStatus: string) {
-    const next = currentStatus === "DONE" ? "IN PROGRESS" : "DONE";
-    patchRow("tasks", taskId, { status: next });
-    toast(`Status tugas diubah ke ${next}`);
+  function toggleTask(t: Row) {
+    if (t.status === "DONE") {
+      patchRow("tasks", t.id, { status: "IN PROGRESS", progres: 50 });
+      toast("Status tugas diubah ke IN PROGRESS");
+    } else {
+      setCompleteTask(t);
+    }
   }
 
   function markCompleted() {
@@ -598,7 +603,7 @@ export default function ProjectDetailScreen() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onPress={() => toggleTask(t.id, t.status)}
+                        onPress={() => toggleTask(t)}
                       >
                         <Text className="text-xs">{t.status === "DONE" ? "Buka lagi" : "Selesai"}</Text>
                       </Button>
@@ -621,6 +626,11 @@ export default function ProjectDetailScreen() {
             open={!!detailTask}
             onOpenChange={(v) => !v && setDetailTask(null)}
             onSaved={(updated) => setDetailTask(updated)}
+          />
+          <CompleteTaskDialog
+            task={completeTask ? ((data.tasks ?? []).find((t: Row) => String(t.id) === String(completeTask.id)) ?? completeTask) : null}
+            open={!!completeTask}
+            onOpenChange={(v) => !v && setCompleteTask(null)}
           />
         </View>
       )}

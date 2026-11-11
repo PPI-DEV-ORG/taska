@@ -763,6 +763,7 @@ function SupplierInvoicePayForm({
   const [coaAccount, setCoaAccount] = React.useState<string>("1000.02");
   const [reference, setReference] = React.useState(() => `TRF-${invoice.nomor || invoice.id}`);
   const [fileId, setFileId] = React.useState<number | null>(null);
+  const payFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
   const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
@@ -779,6 +780,18 @@ function SupplierInvoicePayForm({
     }
     setSubmitting(true);
     try {
+      let finalFileId = fileId;
+      if (payFileHandle.current?.hasStaged()) {
+        try {
+          finalFileId = await payFileHandle.current.flush();
+        } catch {}
+      }
+
+      if (!finalFileId) {
+        toast("Bukti pembayaran / transfer (Gambar / PDF) wajib diunggah", "danger");
+        return;
+      }
+
       const targetId = (invoice as any).rawId ?? String(invoice.id).replace(/^in-/, "");
       await api("POST", `/invoice-in/${targetId}/payments`, {
         amount: numAmt,
@@ -786,7 +799,7 @@ function SupplierInvoicePayForm({
         method,
         reference: `[AKUN:${coaAccount}] ${reference.trim()}`,
         coaAccount,
-        fileId: fileId ?? undefined,
+        fileId: finalFileId ?? undefined,
       });
       toast(`Pembayaran supplier ${rupiah(numAmt)} berhasil dicatat`);
       onOpenChange(false);
@@ -892,12 +905,15 @@ function SupplierInvoicePayForm({
             />
           </FormField>
 
-          <FormField label="Bukti Transfer (Opsional)">
+          <FormField label="Bukti Transfer / Pembayaran (Wajib) *" required>
             <FileUploader
-              label="Upload Foto / PDF Bukti Transfer Bank"
+              label="Upload Foto / PDF Bukti Transfer Bank (Wajib) *"
               kind="semua"
               category="invoice"
               autoFlush
+              handleRef={(h) => {
+                payFileHandle.current = h;
+              }}
               onUploaded={(id) => setFileId(id)}
             />
           </FormField>

@@ -90,7 +90,7 @@ export function SerialItemPickerModal({
   }
   const [snSearch, setSnSearch] = React.useState("");
   const [selectedSerialIds, setSelectedSerialIds] = React.useState<number[]>([]);
-  const [splitMode, setSplitMode] = React.useState<"PER_SN" | "COMBINED">("PER_SN");
+  const [splitMode, setSplitMode] = React.useState<"PER_SN" | "COMBINED" | "QTY_ONLY">("PER_SN");
   const [fifoCountInput, setFifoCountInput] = React.useState("1");
   const [goodsQty, setGoodsQty] = React.useState("1");
   const [goodsUnit, setGoodsUnit] = React.useState("Unit");
@@ -602,6 +602,30 @@ export function SerialItemPickerModal({
     const isSerialSelectionActive = mode === "serial" && isSerialProduct;
 
     if (isSerialSelectionActive) {
+      if (splitMode === "QTY_ONLY") {
+        const qty = Math.max(1, Number(goodsQty) || 1);
+        onAddItems([
+          {
+            id: `gds-${Date.now()}-${selectedProduct.id}`,
+            item: baseName,
+            qty,
+            satuan,
+            harga,
+            kind: "GOODS",
+            productId: Number(selectedProduct.id),
+            sku: selectedProduct.sku || undefined,
+            hasSerial: true,
+            serialUnitIds: [],
+            serialNumbers: [],
+            pphMode: goodsPphMode,
+            tipePph: pphModeToTipe(goodsPphMode),
+          },
+        ]);
+        setGoodsQty("1");
+        handleClose();
+        return;
+      }
+
       if (selectedSerialIds.length === 0) {
         toast("Pilih minimal 1 Serial Number (SN) untuk barang ber-SN ini.", "danger");
         return;
@@ -1027,10 +1051,10 @@ export function SerialItemPickerModal({
                           <Text className="text-xs font-semibold text-foreground">
                             Cara Memasukkan SN ke Daftar Item:
                           </Text>
-                          <View className="flex-row gap-2">
+                          <View className="flex-row gap-2 flex-wrap">
                             <Pressable
                               onPress={() => setSplitMode("PER_SN")}
-                              className={`flex-1 p-2.5 rounded-lg border ${
+                              className={`flex-1 min-w-[150px] p-2.5 rounded-lg border ${
                                 splitMode === "PER_SN"
                                   ? "border-primary bg-primary/10"
                                   : "border-border bg-background"
@@ -1041,7 +1065,7 @@ export function SerialItemPickerModal({
                                   splitMode === "PER_SN" ? "text-primary" : "text-foreground"
                                 }`}
                               >
-                                1 SN = 1 Item Sendiri (Satuan)
+                                1 SN = 1 Item (Satuan)
                               </Text>
                               <Text className="text-[11px] text-muted-foreground mt-0.5">
                                 Setiap kamera dengan SN unik masuk sebagai 1 baris item tersendiri (Qty 1).
@@ -1049,7 +1073,7 @@ export function SerialItemPickerModal({
                             </Pressable>
                             <Pressable
                               onPress={() => setSplitMode("COMBINED")}
-                              className={`flex-1 p-2.5 rounded-lg border ${
+                              className={`flex-1 min-w-[150px] p-2.5 rounded-lg border ${
                                 splitMode === "COMBINED"
                                   ? "border-primary bg-primary/10"
                                   : "border-border bg-background"
@@ -1063,107 +1087,150 @@ export function SerialItemPickerModal({
                                 Banyak Sekaligus (1 Baris)
                               </Text>
                               <Text className="text-[11px] text-muted-foreground mt-0.5">
-                                Gabung semua SN terpilih dalam 1 baris item (Qty = {selectedSerialIds.length || "N"} unit).
+                                Gabung semua SN terpilih dalam 1 baris item ({selectedSerialIds.length || "N"} unit).
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => setSplitMode("QTY_ONLY")}
+                              className={`flex-1 min-w-[150px] p-2.5 rounded-lg border ${
+                                splitMode === "QTY_ONLY"
+                                  ? "border-primary bg-primary/10"
+                                  : "border-border bg-background"
+                              }`}
+                            >
+                              <Text
+                                className={`text-xs font-bold ${
+                                  splitMode === "QTY_ONLY" ? "text-primary" : "text-foreground"
+                                }`}
+                              >
+                                Input Qty Saja (Tanpa Scan)
+                              </Text>
+                              <Text className="text-[11px] text-muted-foreground mt-0.5">
+                                Kirim dulu tanpa scan, nomor SN diinput nanti saat edit surat jalan.
                               </Text>
                             </Pressable>
                           </View>
                         </View>
 
-                        <View className="flex-row items-end gap-2 flex-wrap">
-                          <View className="flex-1 min-w-[160px]">
-                            <FormField
-                              label={`Daftar Unit SN (${selectedSerialIds.length > 0 ? `${selectedSerialIds.length} Terpilih · ` : ""}${availableFifoSerials.length} Di Gudang dari ${productSerials.length} unit)`}
-                            >
-                              <Input
-                                value={snSearch}
-                                onChangeText={setSnSearch}
-                                placeholder="Cari nomor SN / gudang..."
-                              />
-                            </FormField>
-                          </View>
-                          <View className="w-20">
-                            <FormField label="Jml FIFO">
-                              <Input
-                                value={fifoCountInput}
-                                onChangeText={setFifoCountInput}
-                                keyboardType="numeric"
-                              />
-                            </FormField>
-                          </View>
-                          <Button size="sm" variant="outline" onPress={handleAutoPickFifo}>
-                            <Zap size={14} color={colors.primary} />
-                            <Text className="text-xs">Pilih FIFO</Text>
-                          </Button>
-                          {selectedSerialIds.length > 0 && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() => setSelectedSerialIds([])}
-                            >
-                              <Text className="text-xs">Reset ({selectedSerialIds.length})</Text>
-                            </Button>
-                          )}
-                        </View>
-
-                        <ScrollView className="max-h-56 rounded-lg border border-border bg-background">
-                          {productSerials.length === 0 ? (
-                            <View className="p-5 items-center gap-2">
-                              <Text className="text-xs text-muted-foreground text-center">
-                                Belum ada unit Serial Number (SN) terdaftar untuk {selectedProduct.nama}.
-                              </Text>
-                              <Button
-                                size="sm"
-                                onPress={() => setBatchRegisterOpen(true)}
-                              >
-                                <Plus size={14} color={colors.background} />
-                                <Text className="text-xs">Tambah Daftar SN Sekarang</Text>
-                              </Button>
+                        {splitMode === "QTY_ONLY" ? (
+                          <View className="gap-2.5 pt-1">
+                            <View className="flex-row items-center gap-3">
+                              <View className="w-32">
+                                <FormField label="Jumlah (Qty)" required>
+                                  <Input
+                                    value={goodsQty}
+                                    onChangeText={setGoodsQty}
+                                    keyboardType="numeric"
+                                    placeholder="Contoh: 5"
+                                  />
+                                </FormField>
+                              </View>
+                              <View className="flex-1 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                                <Text className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed font-medium">
+                                  Barang ber-SN ini akan ditambahkan dengan jumlah Qty saja tanpa nomor seri. Surat jalan dapat langsung dikirim, dan nomor seri (SN) fisik dapat dilengkapi belakangan saat edit surat jalan.
+                                </Text>
+                              </View>
                             </View>
-                          ) : (
-                            productSerials.map((snRow, idx) => {
-                              const idNum = Number(snRow.id);
-                              const checked = selectedSerialIds.includes(idNum);
-                              const avail = getSerialAvailability(snRow);
-                              return (
-                                <Pressable
-                                  key={snRow.id}
-                                  disabled={!avail.selectable}
-                                  onPress={() => toggleSerial(idNum)}
-                                  className={`flex-row items-center justify-between px-3 py-2.5 border-b border-border ${
-                                    checked
-                                      ? "bg-primary/10"
-                                      : !avail.selectable
-                                      ? "opacity-50 bg-muted/20"
-                                      : ""
-                                  }`}
+                          </View>
+                        ) : (
+                          <>
+                            <View className="flex-row items-end gap-2 flex-wrap">
+                              <View className="flex-1 min-w-[160px]">
+                                <FormField
+                                  label={`Daftar Unit SN (${selectedSerialIds.length > 0 ? `${selectedSerialIds.length} Terpilih · ` : ""}${availableFifoSerials.length} Di Gudang dari ${productSerials.length} unit)`}
                                 >
-                                  <View className="flex-row items-center gap-2.5 flex-1">
-                                    <View
-                                      className={`w-4 h-4 rounded items-center justify-center border ${
+                                  <Input
+                                    value={snSearch}
+                                    onChangeText={setSnSearch}
+                                    placeholder="Cari nomor SN / gudang..."
+                                  />
+                                </FormField>
+                              </View>
+                              <View className="w-20">
+                                <FormField label="Jml FIFO">
+                                  <Input
+                                    value={fifoCountInput}
+                                    onChangeText={setFifoCountInput}
+                                    keyboardType="numeric"
+                                  />
+                                </FormField>
+                              </View>
+                              <Button size="sm" variant="outline" onPress={handleAutoPickFifo}>
+                                <Zap size={14} color={colors.primary} />
+                                <Text className="text-xs">Pilih FIFO</Text>
+                              </Button>
+                              {selectedSerialIds.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onPress={() => setSelectedSerialIds([])}
+                                >
+                                  <Text className="text-xs">Reset ({selectedSerialIds.length})</Text>
+                                </Button>
+                              )}
+                            </View>
+
+                            <ScrollView className="max-h-56 rounded-lg border border-border bg-background">
+                              {productSerials.length === 0 ? (
+                                <View className="p-5 items-center gap-2">
+                                  <Text className="text-xs text-muted-foreground text-center">
+                                    Belum ada unit Serial Number (SN) terdaftar untuk {selectedProduct.nama}.
+                                  </Text>
+                                  <Button
+                                    size="sm"
+                                    onPress={() => setBatchRegisterOpen(true)}
+                                  >
+                                    <Plus size={14} color={colors.background} />
+                                    <Text className="text-xs">Tambah Daftar SN Sekarang</Text>
+                                  </Button>
+                                </View>
+                              ) : (
+                                productSerials.map((snRow, idx) => {
+                                  const idNum = Number(snRow.id);
+                                  const checked = selectedSerialIds.includes(idNum);
+                                  const avail = getSerialAvailability(snRow);
+                                  return (
+                                    <Pressable
+                                      key={snRow.id}
+                                      disabled={!avail.selectable}
+                                      onPress={() => toggleSerial(idNum)}
+                                      className={`flex-row items-center justify-between px-3 py-2.5 border-b border-border ${
                                         checked
-                                          ? "bg-primary border-primary"
-                                          : "border-border"
+                                          ? "bg-primary/10"
+                                          : !avail.selectable
+                                          ? "opacity-50 bg-muted/20"
+                                          : ""
                                       }`}
                                     >
-                                      {checked && <Check size={11} color="#ffffff" />}
-                                    </View>
-                                    <View className="flex-1">
-                                      <View className="flex-row items-center gap-2">
-                                        <Text className="text-xs font-mono font-bold text-foreground">
-                                          {snRow.sn}
-                                        </Text>
-                                        <Text className="text-[10px] text-muted-foreground">
-                                          #{idx + 1} · {snRow.gudang || "Gudang Utama"}
-                                        </Text>
+                                      <View className="flex-row items-center gap-2.5 flex-1">
+                                        <View
+                                          className={`w-4 h-4 rounded items-center justify-center border ${
+                                            checked
+                                              ? "bg-primary border-primary"
+                                              : "border-border"
+                                          }`}
+                                        >
+                                          {checked && <Check size={11} color="#ffffff" />}
+                                        </View>
+                                        <View className="flex-1">
+                                          <View className="flex-row items-center gap-2">
+                                            <Text className="text-xs font-mono font-bold text-foreground">
+                                              {snRow.sn}
+                                            </Text>
+                                            <Text className="text-[10px] text-muted-foreground">
+                                              #{idx + 1} · {snRow.gudang || "Gudang Utama"}
+                                            </Text>
+                                          </View>
+                                        </View>
                                       </View>
-                                    </View>
-                                  </View>
-                                  <StatusBadge status={avail.badge} />
-                                </Pressable>
-                              );
-                            })
-                          )}
-                        </ScrollView>
+                                      <StatusBadge status={avail.badge} />
+                                    </Pressable>
+                                  );
+                                })
+                              )}
+                            </ScrollView>
+                          </>
+                        )}
                       </View>
                     )}
                   </View>
@@ -1182,7 +1249,9 @@ export function SerialItemPickerModal({
                 {tab === "SERVICE"
                   ? "Tambah Jasa / Non-Barang"
                   : mode === "serial" && selectedProduct?.berSN
-                  ? splitMode === "PER_SN"
+                  ? splitMode === "QTY_ONLY"
+                    ? `Tambah ${Number(goodsQty) || 1} Unit (SN Menyusul)`
+                    : splitMode === "PER_SN"
                     ? `Tambah ${selectedSerialIds.length} Item per-SN`
                     : `Tambah 1 Baris (${selectedSerialIds.length} SN)`
                   : "Tambah Barang Stok"}

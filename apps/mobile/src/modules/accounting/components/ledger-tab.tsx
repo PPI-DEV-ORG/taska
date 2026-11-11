@@ -69,19 +69,31 @@ export function LedgerTab({
               <View className="text-right items-end">
                 <Text className="text-[10px] text-muted-foreground uppercase font-semibold">Total Mutasi Debit</Text>
                 <Text className="text-xs font-bold font-mono">
-                  {rupiah(ledgerLines.reduce((s, l) => s + l.debit, 0))}
+                  {rupiah(
+                    ledgerLines.length > 0
+                      ? ledgerLines.reduce((s, l) => s + l.debit, 0)
+                      : (fin?.coaBalances?.find((b: any) => b.code === selectedLedgerCode)?.totalDebit ?? 0)
+                  )}
                 </Text>
               </View>
               <View className="text-right items-end">
                 <Text className="text-[10px] text-muted-foreground uppercase font-semibold">Total Mutasi Kredit</Text>
                 <Text className="text-xs font-bold font-mono text-info">
-                  {rupiah(ledgerLines.reduce((s, l) => s + l.kredit, 0))}
+                  {rupiah(
+                    ledgerLines.length > 0
+                      ? ledgerLines.reduce((s, l) => s + l.kredit, 0)
+                      : (fin?.coaBalances?.find((b: any) => b.code === selectedLedgerCode)?.totalKredit ?? 0)
+                  )}
                 </Text>
               </View>
               <View className="bg-primary/10 border-primary/30 border rounded-lg px-3 py-1.5 items-end">
                 <Text className="text-[10px] text-primary uppercase font-bold">Saldo Akhir Berjalan</Text>
                 <Text className="text-sm font-black font-mono text-primary">
-                  {rupiah(ledgerLines.length > 0 ? (ledgerLines[ledgerLines.length - 1]?.runningBalance ?? 0) : 0)}
+                  {rupiah(
+                    ledgerLines.length > 0
+                      ? (ledgerLines[ledgerLines.length - 1]?.runningBalance ?? 0)
+                      : (fin?.coaBalances?.find((b: any) => b.code === selectedLedgerCode)?.endingBalance ?? 0)
+                  )}
                 </Text>
               </View>
             </View>
@@ -106,10 +118,15 @@ export function LedgerTab({
                 <Text className="w-[130px] text-xs font-bold text-right">Saldo Berjalan</Text>
               </View>
               {ledgerLines.length === 0 ? (
-                <View className="py-12 items-center justify-center">
+                <View className="py-12 items-center justify-center gap-1">
                   <Text className="text-xs text-muted-foreground">
-                    Belum ada mutasi pembukuan pada akun [{selectedAcc?.code}] {selectedAcc?.name}.
+                    Belum ada mutasi transaksi spesifik pada akun [{selectedAcc?.code}] {selectedAcc?.name}.
                   </Text>
+                  {(fin?.coaBalances?.find((b: any) => b.code === selectedLedgerCode)?.endingBalance ?? 0) !== 0 ? (
+                    <Text className="text-xs font-medium text-foreground">
+                      Saldo berjalan saat ini: {rupiah(fin?.coaBalances?.find((b: any) => b.code === selectedLedgerCode)?.endingBalance ?? 0)}
+                    </Text>
+                  ) : null}
                 </View>
               ) : (
                 (ledgerLines || []).map((l) => {

@@ -539,6 +539,9 @@ export function adaptRow(module: string, raw: any): Row {
         status: toLabel("surveys", raw.status),
         biaya: n(raw.cost),
         need: raw.need ?? "",
+        notes: raw.notes ?? "",
+        catatan: raw.notes ?? "",
+        catatanTeknis: raw.notes ?? "",
         requester: nameOf(raw.requester) ?? "",
         approval: raw.approval ? adaptApproval(raw.approval) : undefined,
         files: surveyFiles,
@@ -856,6 +859,8 @@ export function adaptRow(module: string, raw: any): Row {
         perluBarang: !!raw.needsPurchase,
         progres: n(raw.progress),
         priority: raw.priority,
+        proofFileId: raw.proofFileId ?? raw.bastFileId ?? raw.fileId ?? null,
+        fileId: raw.proofFileId ?? raw.bastFileId ?? raw.fileId ?? null,
       };
     case "purchase-requests": {
       const prSource = String(raw.procurementSource || "SUPPLIER").toUpperCase();
@@ -2616,7 +2621,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "signerTitle",
   ],
   projects: ["name", "type", "customerId", "picId", "quotationId", "startDate", "endDate", "status", "progress", "prdFileId", "bahpFileId", "bastFileId", "doFileId", "boqFileId", "notes", "memberIds"],
-  tasks: ["name", "description", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "doFileId"],
+  tasks: ["name", "description", "parentId", "assigneeId", "dueDate", "priority", "status", "progress", "needsPurchase", "bahpFileId", "bastFileId", "proofFileId", "fileId", "doFileId"],
   "po-client": ["number", "soNumber", "poClientNumber", "docMode", "customerId", "supplierId", "quotationId", "amount", "date", "fileId", "soFileId", "items", "notes", "projectId", "projectName", "ppn", "tipePpn", "ppnMode", "pph", "tipePph", "pphMode", "total"],
   invoices: [
     "number",
@@ -2931,6 +2936,9 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.progres !== undefined) out.progress = num(patch.progres);
     if (patch.perluBarang !== undefined) out.needsPurchase = !!patch.perluBarang;
     if (patch.status !== undefined) out.status = toEnum("tasks", patch.status) || String(patch.status).replace(" ", "_");
+    if (patch.proofFileId !== undefined) out.proofFileId = patch.proofFileId ? Number(patch.proofFileId) : null;
+    if (patch.bastFileId !== undefined) out.bastFileId = patch.bastFileId ? Number(patch.bastFileId) : null;
+    if (patch.fileId !== undefined && patch.proofFileId === undefined) out.proofFileId = patch.fileId ? Number(patch.fileId) : null;
   } else if (module === "po-client") {
     if (patch.customer !== undefined) {
       out.customerId = patch.customer && patch.customer !== "-" ? findId(db?.customers, patch.customer) : null;
@@ -3033,6 +3041,28 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
   } else if (module === "delivery-notes") {
     if (patch.status !== undefined) {
       out.status = toEnum("delivery-notes", patch.status) || patch.status;
+    }
+    if (patch.locations !== undefined) {
+      out.locations = patch.locations;
+    } else if (patch.tujuan !== undefined || patch.alasan !== undefined || patch.projectId !== undefined || patch.project !== undefined) {
+      out.locations = [
+        {
+          destination: patch.tujuan || "-",
+          reason: patch.alasan || "Dinas luar",
+          projectId: patch.projectId != null ? Number(patch.projectId) : findId(db?.projects, patch.project),
+        },
+      ];
+    }
+    if (patch.items !== undefined && Array.isArray(patch.items)) {
+      out.items = patch.items.map((i: any) => ({
+        productId: Number(i.productId || i.product?.id),
+        qty: Number(i.qty) || 1,
+        serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+        note: i.note ? String(i.note) : undefined,
+      }));
+    }
+    if (patch.withGoods !== undefined) {
+      out.withGoods = patch.withGoods === true || patch.withGoods === "true";
     }
     if (patch.penerimaNama || patch.catatanSerahTerima || patch.penerimaJabatan || patch.penerimaKontak) {
       out.reportText = [

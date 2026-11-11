@@ -226,13 +226,12 @@ export function LeadExtras({ row }: { row: Row }) {
         selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
         status: "Berjalan",
       });
+      if (!created || !created.id) {
+        return;
+      }
       await reload();
       toast("Proyek baru berhasil dibuat");
-      if (created?.id) {
-        router.push(`/projects/${created.id}` as any);
-      } else {
-        router.push("/leads");
-      }
+      router.push(`/projects/${created.id}` as any);
     } catch (err: any) {
       toast(err?.message || "Gagal membuat proyek", "danger");
     }

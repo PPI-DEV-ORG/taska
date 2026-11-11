@@ -404,7 +404,7 @@ export type CreateField = {
   category?: string;
   defaultValue?: string;
 };
-export type ModuleAction = { label: string; toast: string; to?: (r: Row) => string; status?: string };
+export type ModuleAction = { label: string; toast?: string; to?: (r: Row) => string; status?: string };
 
 export type ModuleDef = {
   key: string;

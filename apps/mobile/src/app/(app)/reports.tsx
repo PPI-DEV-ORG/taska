@@ -13,7 +13,16 @@ import { DatePicker } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
 import { rupiah, tanggal } from "@/lib/format";
 import { colors } from "@/tokens";
-import { computeFinancialStatements } from "@/lib/accounting";
+import {
+  computeFinancialStatements,
+  loadManualJournals,
+  loadCustomCoa,
+  loadDeletedCoaCodes,
+  saveManualJournals,
+  type ManualJournal,
+  type CoaAccount,
+} from "@/lib/accounting";
+import { api } from "@/services/api";
 import { useLocalSearchParams } from "expo-router";
 
 import type { ReportTab, ReportCardItem, DownloadFormat } from "@/modules/reports/types";
@@ -38,6 +47,41 @@ export default function ReportsScreen() {
     : selectedTab;
   const setActiveTab = setSelectedTab;
 
+  const [manualJournals, setManualJournals] = React.useState<ManualJournal[]>(() => loadManualJournals());
+  const [customAccounts] = React.useState<CoaAccount[]>(() => loadCustomCoa());
+  const [deletedCoaCodes] = React.useState<string[]>(() => loadDeletedCoaCodes());
+
+  React.useEffect(() => {
+    let active = true;
+    api<{ items?: any[] }>("GET", "/manual-journals")
+      .then((res) => {
+        if (!active || !Array.isArray(res?.items) || res.items.length === 0) return;
+        const dbJournals: ManualJournal[] = res.items.map((r: any) => ({
+          id: String(r.id || r.journalNo),
+          journalNo: r.journalNo,
+          tanggal: r.date || r.tanggal,
+          refNo: r.refNo || "-",
+          keterangan: r.description || r.keterangan,
+          project: r.project || "-",
+          createdBy: r.createdBy || "Admin Finance",
+          createdAt: r.createdAt,
+          lines: typeof r.lines === "string" ? JSON.parse(r.lines) : r.lines,
+        }));
+        setManualJournals((prev) => {
+          const map = new Map<string, ManualJournal>();
+          prev.forEach((j) => map.set(j.journalNo || j.id, j));
+          dbJournals.forEach((j) => map.set(j.journalNo || j.id, j));
+          const merged = Array.from(map.values());
+          saveManualJournals(merged);
+          return merged;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const [reportDate, setReportDate] = React.useState("");
 
   const filteredData = React.useMemo(() => {
@@ -61,7 +105,10 @@ export default function ReportsScreen() {
     };
   }, [data, reportDate]);
 
-  const fin = React.useMemo(() => computeFinancialStatements(filteredData), [filteredData]);
+  const fin = React.useMemo(
+    () => computeFinancialStatements(filteredData, manualJournals, customAccounts, deletedCoaCodes),
+    [filteredData, manualJournals, customAccounts, deletedCoaCodes]
+  );
 
   const reportCards = React.useMemo(() => {
     const leadsCount = (data.leads ?? []).length;

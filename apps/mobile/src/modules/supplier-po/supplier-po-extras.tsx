@@ -10,7 +10,7 @@ import { Panel, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { statusText } from "@/lib/labels";
 import { DatePicker, SearchableSelect, formatThousands } from "@/components/taska/dialogs";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader, FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase } from "@/services/api";
 import { colors } from "@/tokens";
@@ -224,6 +224,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   const [invCoaAccount, setInvCoaAccount] = React.useState<string>("1000.02");
   const [invFileId, setInvFileId] = React.useState<number | null>(null);
   const [invPayProofFileId, setInvPayProofFileId] = React.useState<number | null>(null);
+  const invFileHandle = React.useRef<FileUploaderHandle | null>(null);
+  const invPayProofHandle = React.useRef<FileUploaderHandle | null>(null);
 
   const poAlreadyBilledDpp = React.useMemo(() => {
     return supplierInvoices.reduce((acc, inv) => acc + (Number(inv.nilai ?? inv.amount ?? 0)), 0);
@@ -236,6 +238,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   const [invTerminPercent, setInvTerminPercent] = React.useState<string>("30");
 
   function handleOpenInvoiceModal() {
+    setInvFileId(null);
+    setInvPayProofFileId(null);
     setInvPphMode(effectivePoPphMode);
     const defJasa =
       poJasaDpp > 0
@@ -420,11 +424,39 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   );
 
   async function handleCreateInvoiceIn() {
+    let finalInvFileId = invFileId;
+    if (invFileHandle.current?.hasStaged()) {
+      try {
+        finalInvFileId = await invFileHandle.current.flush();
+      } catch {}
+    }
+    let finalPayProofId = invPayProofFileId;
+    if (invPayProofHandle.current?.hasStaged()) {
+      try {
+        finalPayProofId = await invPayProofHandle.current.flush();
+      } catch {}
+    }
+
+    if (!finalInvFileId) {
+      toast("File faktur pemasok (Gambar / PDF) wajib diunggah", "danger");
+      return;
+    }
+
     const amt = calcInvDpp;
     const ppn = calcInvPpn;
     const pph = calcInvPph;
     const total = calcInvTotal;
     const isLunas = invPaymentScheme === "LUNAS";
+
+    if (amt <= 0) {
+      toast("Nominal tagihan harus lebih dari 0", "danger");
+      return;
+    }
+
+    if (isLunas && !finalPayProofId) {
+      toast("Bukti bayar / transfer (Gambar / PDF) wajib diunggah untuk status Lunas", "danger");
+      return;
+    }
 
     const invoiceType =
       invTagihanScheme === "DP"
@@ -463,25 +495,16 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
       tipePph: pphModeToTipe(invPphMode),
       total,
       jatuhTempo: isLunas ? invDate : invDue,
-      fileId: invFileId ?? undefined,
-      transferFileId: invPayProofFileId ?? undefined,
+      fileId: finalInvFileId ?? undefined,
+      transferFileId: finalPayProofId ?? undefined,
       paid: isLunas,
       paymentMethod: invPayMethod,
       coaAccount: invCoaAccount,
-      paymentFileId: invPayProofFileId ?? undefined,
+      paymentFileId: finalPayProofId ?? undefined,
       paymentReference: `[AKUN:${invCoaAccount}] LUNAS-${row.nomor || "PO"}`,
     });
     if (created) {
-      if (isLunas && created.id && !String(created.id).startsWith("offline-")) {
-        const cleanId = String(created.id).replace(/^in-/, "");
-        await api("POST", `/invoice-in/${cleanId}/payments`, {
-          amount: total,
-          date: invDate,
-          method: invPayMethod,
-          reference: `[AKUN:${invCoaAccount}] LUNAS-${row.nomor || cleanId}`,
-          coaAccount: invCoaAccount,
-          fileId: invPayProofFileId ?? undefined,
-        }).catch(() => {});
+      if (isLunas) {
         toast("Faktur masuk & pelunasan langsung berhasil dicatat (Lunas)");
       } else {
         toast("Faktur masuk (Tempo / Utang) berhasil dicatat");
@@ -1397,6 +1420,9 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                   accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
                   category="invoice"
                   autoFlush
+                  handleRef={(h) => {
+                    invFileHandle.current = h;
+                  }}
                   onUploaded={(fileId) => setInvFileId(fileId)}
                   hint="File tagihan faktur resmi dari pemasok"
                 />
@@ -1409,6 +1435,9 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                     accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
                     category="bukti-bayar-supplier"
                     autoFlush
+                    handleRef={(h) => {
+                      invPayProofHandle.current = h;
+                    }}
                     onUploaded={(fileId) => setInvPayProofFileId(fileId)}
                     hint="Bukti transfer bank atau struk kas pelunasan"
                   />
