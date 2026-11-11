@@ -64,7 +64,8 @@ export class UploadController {
   }
 
   @Delete(":id")
-  remove(@Param("id", ParseIntPipe) id: number) {
-    return this.service.remove(id);
+  remove(@Param("id", ParseIntPipe) id: number, @Query("force") force?: string) {
+    if (force === "true") return this.service.remove(id);
+    return this.service.safeRemove(id);
   }
 }

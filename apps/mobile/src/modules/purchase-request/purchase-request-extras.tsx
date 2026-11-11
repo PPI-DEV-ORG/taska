@@ -28,7 +28,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Panel, FormField } from "@/components/taska/basics";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import {
   SearchableSelect,
   DatePicker,
@@ -63,8 +63,11 @@ export function PurchaseRequestExtras({
   const [poEta, setPoEta] = React.useState<string>("");
   const [poTotal, setPoTotal] = React.useState<string>("");
   const [paymentProofFileId, setPaymentProofFileId] = React.useState<number | null>(null);
+  const [payProofHasFile, setPayProofHasFile] = React.useState(false);
+  const payProofHandle = React.useRef<FileUploaderHandle | null>(null);
   const [selectedFundingSource, setSelectedFundingSource] = React.useState<string>("1000.01");
   const [doFileId, setDoFileId] = React.useState<number | null>(null);
+  const doFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [localStatus, setLocalStatus] = React.useState<string | null>(null);
 
@@ -485,16 +488,25 @@ export function PurchaseRequestExtras({
   }
 
   async function handleMarkPaid() {
-    if (!paymentProofFileId) {
-      toast("Unggah bukti pembayaran terlebih dahulu", "danger");
+    if (!payProofHasFile && !paymentProofFileId) {
+      toast("Pilih bukti pembayaran terlebih dahulu", "danger");
       return;
     }
     setLoading(true);
     try {
+      let finalProofId = paymentProofFileId;
+      if (payProofHandle.current?.hasStaged()) {
+        finalProofId = await payProofHandle.current.flush();
+        if (!finalProofId) {
+          toast("Gagal mengunggah bukti pembayaran", "danger");
+          setLoading(false);
+          return;
+        }
+      }
       const nextStatus = isDebt ? "Lunas" : "Dibayar";
       setLocalStatus(isDebt ? "LUNAS" : "DIBAYAR");
       await setStatus("purchase-requests", row.id, nextStatus, undefined, {
-        paymentProofFileId,
+        paymentProofFileId: finalProofId,
         fundingSource: selectedFundingSource,
         paymentAccountCode: selectedFundingSource,
         paymentStatus: "DIBAYAR",
@@ -505,6 +517,9 @@ export function PurchaseRequestExtras({
         } catch {}
       }
       setPayModalOpen(false);
+      setPaymentProofFileId(null);
+      setPayProofHasFile(false);
+      payProofHandle.current = null;
       toast(
         isDebt
           ? "Permintaan & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!"
@@ -554,8 +569,12 @@ export function PurchaseRequestExtras({
   async function handleConfirmReceive() {
     setLoading(true);
     try {
+      let finalDoId = doFileId;
+      if (doFileHandle.current?.hasStaged()) {
+        finalDoId = await doFileHandle.current.flush();
+      }
       setLocalStatus("DITERIMA");
-      await setStatus("purchase-requests", row.id, "Diterima", undefined, doFileId ? { doFileId } : undefined);
+      await setStatus("purchase-requests", row.id, "Diterima", undefined, finalDoId ? { doFileId: finalDoId } : undefined);
       if (linkedPo?.id) {
         try {
           await patchRow("supplier-pos", String(linkedPo.id), {
@@ -1448,8 +1467,7 @@ export function PurchaseRequestExtras({
                 allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
                 category="purchase-request-do"
                 hint="Mendukung foto/gambar (JPG, PNG) atau dokumen (PDF)"
-                autoFlush={true}
-                onUploaded={(id) => setDoFileId(id)}
+                handleRef={(h) => { doFileHandle.current = h; }}
               />
             </FormField>
           </View>
@@ -1522,8 +1540,8 @@ export function PurchaseRequestExtras({
                 allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
                 category="bukti-bayar"
                 hint="Mendukung foto/screenshot bukti transfer (JPG, PNG) atau dokumen (PDF)"
-                autoFlush={true}
-                onUploaded={(id) => setPaymentProofFileId(id)}
+                handleRef={(h) => { payProofHandle.current = h; }}
+                onChange={(c) => setPayProofHasFile(c > 0)}
               />
             </FormField>
           </View>
@@ -1533,7 +1551,7 @@ export function PurchaseRequestExtras({
             </Button>
             <Button
               onPress={handleMarkPaid}
-              disabled={loading || !paymentProofFileId}
+              disabled={loading || (!payProofHasFile && !paymentProofFileId)}
               className="bg-emerald-600 hover:bg-emerald-700"
             >
               <CheckCircle2 size={14} color="#fff" />
