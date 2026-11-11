@@ -250,6 +250,126 @@ export class UploadService {
     return { ...row, url: `/api/files/${row.id}` };
   }
 
+  async isFileReferenced(id: number): Promise<boolean> {
+    if (!id || typeof id !== "number" || isNaN(id)) return false;
+
+    const idStr = String(id);
+    const checks = await Promise.all([
+      // 1. Dokumentasi Foto
+      this.prisma.main.documentationPhoto.findFirst({ where: { fileId: id }, select: { id: true } }),
+      // 2. Faktur Penjualan (InvoiceOut)
+      this.prisma.main.invoiceOut.findFirst({
+        where: { OR: [{ fileId: id }, { paidFileId: id }, { latestFileId: id }] },
+        select: { id: true },
+      }),
+      // 3. Pembayaran Faktur (Payment)
+      this.prisma.main.payment.findFirst({ where: { fileId: id }, select: { id: true } }),
+      // 4. Pengeluaran / Biaya (Expense)
+      this.prisma.main.expense.findFirst({
+        where: {
+          OR: [
+            { receiptFileId: id },
+            { paidFileId: id },
+            { receiptFileIds: { contains: idStr } },
+          ],
+        },
+        select: { id: true },
+      }),
+      // 5. Permintaan Barang (PurchaseRequest)
+      this.prisma.main.purchaseRequest.findFirst({
+        where: { OR: [{ evidenceFileId: id }, { doFileId: id }, { paymentProofFileId: id }] },
+        select: { id: true },
+      }),
+      // 6. PO Pemasok (SupplierPO)
+      this.prisma.main.supplierPO.findFirst({
+        where: { OR: [{ fileId: id }, { doFileId: id }, { soFileId: id }] },
+        select: { id: true },
+      }),
+      // 7. Surat Jalan (DeliveryNote)
+      this.prisma.main.deliveryNote.findFirst({
+        where: { OR: [{ scanFileId: id }, { reportFileId: id }] },
+        select: { id: true },
+      }),
+      // 8. Proyek (Project)
+      this.prisma.main.project.findFirst({
+        where: {
+          OR: [
+            { prdFileId: id },
+            { bahpFileId: id },
+            { bastFileId: id },
+            { doFileId: id },
+            { boqFileId: id },
+          ],
+        },
+        select: { id: true },
+      }),
+      // 9. Tugas Proyek (Task)
+      this.prisma.main.task.findFirst({
+        where: { OR: [{ bahpFileId: id }, { bastFileId: id }, { doFileId: id }] },
+        select: { id: true },
+      }),
+      // 10. PO Klien (ClientPO)
+      this.prisma.main.clientPO.findFirst({
+        where: { OR: [{ fileId: id }, { soFileId: id }, { paymentProofFileId: id }] },
+        select: { id: true },
+      }),
+      // 11. Faktur Masuk (InvoiceIn)
+      this.prisma.main.invoiceIn.findFirst({
+        where: { OR: [{ fileId: id }, { transferFileId: id }] },
+        select: { id: true },
+      }),
+      // 12. Penawaran & Versi Penawaran (Quotation & QuotationVersion)
+      this.prisma.main.quotation.findFirst({
+        where: { latestFileId: id },
+        select: { id: true },
+      }),
+      this.prisma.main.quotationVersion.findFirst({
+        where: { fileId: id },
+        select: { id: true },
+      }),
+      // 13. Penerimaan Barang (Receiving)
+      this.prisma.main.receiving.findFirst({
+        where: { OR: [{ receiptFileId: id }, { photoFileId: id }] },
+        select: { id: true },
+      }),
+      // 14. Laporan Kendala & Kerusakan (IssueReport & DamageReport)
+      this.prisma.main.issueReport.findFirst({ where: { fileId: id }, select: { id: true } }),
+      this.prisma.main.damageReport.findFirst({ where: { fileId: id }, select: { id: true } }),
+      // 15. POC & Visit Reports
+      this.prisma.main.pocReport.findFirst({
+        where: { OR: [{ logoFileId: id }, { documentFileId: id }] },
+        select: { id: true },
+      }),
+      this.prisma.main.visitReport.findFirst({
+        where: { OR: [{ logoFileId: id }, { documentFileId: id }] },
+        select: { id: true },
+      }),
+      // 16. Pengaturan Profil Perusahaan (SystemSetting)
+      this.prisma.main.systemSetting.findFirst({
+        where: {
+          key: { in: ["company.profile", "company.logo"] },
+          value: { contains: idStr },
+        },
+        select: { key: true },
+      }),
+    ]);
+
+    return checks.some((c) => Boolean(c));
+  }
+
+  async safeRemove(id: number) {
+    if (!id || typeof id !== "number" || isNaN(id)) return { ok: false, reason: "invalid_id" };
+    const row = await this.prisma.main.file.findUnique({ where: { id } });
+    if (!row) return { ok: true, reason: "already_deleted" };
+
+    const inUse = await this.isFileReferenced(id);
+    if (inUse) {
+      return { ok: false, reason: "in_use", message: "File masih digunakan oleh dokumen lain" };
+    }
+
+    return this.remove(id);
+  }
+
   async remove(id: number) {
     const row = await this.prisma.main.file.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("File tidak ditemukan");

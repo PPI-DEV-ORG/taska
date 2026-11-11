@@ -354,21 +354,24 @@ export function LeadExtras({ row }: { row: Row }) {
               <View className="gap-2">
                 {relProjects.map((proj: Row, idx: number) => {
                   if (!proj) return null;
-                  const projId = proj.id != null ? String(proj.id) : `proj-${idx}`;
+                  const rawProjId = typeof proj.id === "object" && proj.id !== null ? (proj.id as any).id : proj.id;
+                  const projId = rawProjId != null ? String(rawProjId) : `proj-${idx}`;
                   const rawProjName = proj.nama || proj.name;
                   const projName = typeof rawProjName === "string"
                     ? rawProjName
-                    : (typeof rawProjName === "object" && rawProjName?.name
-                      ? String(rawProjName.name)
+                    : (typeof rawProjName === "object" && (rawProjName?.name || rawProjName?.nama)
+                      ? String(rawProjName.name || rawProjName.nama)
                       : `Project #${projId}`);
                   const pmText = typeof proj.pm === "string"
                     ? proj.pm
-                    : (typeof proj.pm === "object" && proj.pm?.name ? String(proj.pm.name) : "-");
+                    : (typeof proj.pm === "object" && (proj.pm?.name || proj.pm?.nama) ? String(proj.pm.name || proj.pm.nama) : "-");
                   const statusText = typeof proj.status === "string"
                     ? proj.status
-                    : (typeof proj.status === "object" && proj.status?.name ? String(proj.status.name) : (proj.status || "Berjalan"));
+                    : (typeof proj.status === "object" && (proj.status?.name || proj.status?.nama || proj.status?.label)
+                      ? String(proj.status.name || proj.status.nama || proj.status.label)
+                      : "Berjalan");
                   return (
-                    <View key={projId} className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80">
+                    <View key={`lead-rel-proj-${projId}-${idx}`} className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80">
                       <View className="flex-1 mr-2">
                         <Text className="text-xs font-bold text-foreground">{String(projName)}</Text>
                         <Text className="text-[11px] text-muted-foreground">

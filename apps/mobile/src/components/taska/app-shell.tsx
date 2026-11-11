@@ -138,12 +138,13 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
               </Text>
               {recentProjects.map((p, idx) => {
                 if (!p) return null;
-                const pId = p.id != null ? String(p.id) : `proj-${idx}`;
+                const rawId = typeof p.id === "object" && p.id !== null ? (p.id as any).id : p.id;
+                const pId = rawId != null ? String(rawId) : `proj-${idx}`;
                 const rawName = p.nama || p.name;
                 const pName = typeof rawName === "string" ? rawName : (typeof rawName === "object" && rawName?.name ? String(rawName.name) : `Project #${pId}`);
                 return (
                   <Pressable
-                    key={pId}
+                    key={`sidebar-proj-${pId}-${idx}`}
                     onPress={() => router.push(`/projects/${pId}` as any)}
                     className="flex-row items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-panel/50 active:bg-panel"
                   >

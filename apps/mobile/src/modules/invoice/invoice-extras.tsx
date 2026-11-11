@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Panel, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, uploadFile } from "@/services/api";
 import { colors } from "@/tokens";
@@ -335,6 +335,8 @@ export function InvoiceExtras({
   const [payMethod, setPayMethod] = React.useState<"TRANSFER" | "TUNAI" | "QRIS" | "LAINNYA">("TRANSFER");
   const [payRef, setPayRef] = React.useState("");
   const [payFileId, setPayFileId] = React.useState<number | null>(null);
+  const [payHasFile, setPayHasFile] = React.useState(false);
+  const payFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const [isSubmittingPay, setIsSubmittingPay] = React.useState(false);
 
   const payments: {
@@ -366,6 +368,8 @@ export function InvoiceExtras({
   function openPayModal() {
     setPayAmount(formatThousands(Math.max(0, Number(row.total || 0) - Number(row.terbayar || 0))));
     setPayFileId(null);
+    setPayHasFile(false);
+    payFileHandle.current = null;
     setPayMethod("TRANSFER");
     const defaultAcc = kasBankOptions.find((o) => o.code === "1000.02") || kasBankOptions[0];
     if (defaultAcc) setPayCoaAccount(defaultAcc.code);
@@ -378,8 +382,8 @@ export function InvoiceExtras({
       toast("Nominal pembayaran harus lebih dari 0", "danger");
       return;
     }
-    if (!payFileId) {
-      toast("Bukti transfer / pembayaran wajib diunggah sebelum menyimpan", "danger");
+    if (!payHasFile && !payFileId) {
+      toast("Bukti transfer / pembayaran wajib dipilih sebelum menyimpan", "danger");
       return;
     }
 
@@ -403,18 +407,30 @@ export function InvoiceExtras({
 
     setIsSubmittingPay(true);
     try {
+      let finalFileId = payFileId;
+      if (payFileHandle.current?.hasStaged()) {
+        finalFileId = await payFileHandle.current.flush();
+        if (!finalFileId) {
+          toast("Gagal mengunggah bukti pembayaran", "danger");
+          setIsSubmittingPay(false);
+          return;
+        }
+      }
+
       await api("POST", `/invoices/${row.id}/payments`, {
         amount: amt,
         date: payDate || new Date().toISOString().slice(0, 10),
         method: payMethod,
         reference: payRef.trim() || undefined,
         coaAccount: payCoaAccount,
-        fileId: payFileId,
+        fileId: finalFileId,
       });
       toast(`Pembayaran ${rupiah(amt)} berhasil dicatat`);
       setPayOpen(false);
       setPayRef("");
       setPayFileId(null);
+      setPayHasFile(false);
+      payFileHandle.current = null;
       await reload();
       await onRefresh?.();
     } catch (e: any) {
@@ -1168,16 +1184,38 @@ export function InvoiceExtras({
                 <Text className="text-xs font-medium">Receipt / Kwitansi</Text>
               </Button>
               {effectivePaidFileId ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onPress={() => openFileUrl(effectivePaidFileId)}
-                  className="flex-row items-center gap-1.5 h-7 px-2.5 border-primary/50"
-                >
-                  <Paperclip size={12} color={colors.primary} />
-                  <Text className="text-xs text-primary font-medium">Lihat Bukti Transfer</Text>
-                  <ExternalLink size={10} color={colors.primary} />
-                </Button>
+                <View className="flex-row items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => openFileUrl(effectivePaidFileId)}
+                    className="flex-row items-center gap-1.5 h-7 px-2.5 border-primary/50"
+                  >
+                    <Paperclip size={12} color={colors.primary} />
+                    <Text className="text-xs text-primary font-medium">Lihat Bukti Transfer</Text>
+                    <ExternalLink size={10} color={colors.primary} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={async () => {
+                      if (typeof window !== "undefined" && !window.confirm("Hapus lampiran bukti transfer ini?")) return;
+                      const toDelete = effectivePaidFileId;
+                      await patchRow("invoices", row.id, {
+                        paidFileId: null,
+                        paymentFileId: null,
+                      });
+                      if (toDelete) await api("DELETE", `/files/${toDelete}`).catch(() => {});
+                      await reload();
+                      await onRefresh?.();
+                      toast("Bukti transfer berhasil dihapus");
+                    }}
+                    className="flex-row items-center gap-1 h-7 px-2 border-danger/30 hover:bg-danger/10"
+                  >
+                    <Trash2 size={12} color={colors.danger} />
+                    <Text className="text-xs text-danger font-medium">Hapus</Text>
+                  </Button>
+                </View>
               ) : null}
             </View>
           </View>
@@ -1199,6 +1237,7 @@ export function InvoiceExtras({
             autoFlush
             onFilePicked={async (file) => {
               try {
+                const oldFileId = row.paidFileId || (row as any).paymentFileId;
                 const uploadedId = await uploadFile(file, "foto", "foto-struk", {
                   refType: "invoice-payment",
                   refId: row.id,
@@ -1208,6 +1247,9 @@ export function InvoiceExtras({
                   paidFileId: uploadedId,
                   paymentFileId: uploadedId,
                 });
+                if (oldFileId && Number(oldFileId) !== uploadedId) {
+                  await api("DELETE", `/files/${oldFileId}`).catch(() => {});
+                }
                 await reload();
                 await onRefresh?.();
                 toast(`Bukti pembayaran "${file.name}" berhasil disimpan!`);
@@ -1446,17 +1488,17 @@ export function InvoiceExtras({
                 label="Upload Bukti Pembayaran / Transfer (Wajib - JPG / PNG / PDF)"
                 kind="semua"
                 category="foto-struk"
-                autoFlush
+                handleRef={(h) => { payFileHandle.current = h; }}
+                onChange={(cnt) => setPayHasFile(cnt > 0)}
                 required
-                onUploaded={(fId) => setPayFileId(fId)}
               />
-              {payFileId ? (
+              {payHasFile || payFileId ? (
                 <Text className="text-[11px] text-success mt-1 font-medium">
-                  ✓ Bukti pembayaran tersimpan (File ID: #{payFileId})
+                  ✓ Bukti pembayaran siap diunggah saat disimpan
                 </Text>
               ) : (
                 <Text className="text-[11px] text-danger mt-1">
-                  * Bukti pembayaran wajib diunggah sebelum menyimpan
+                  * Bukti pembayaran wajib dipilih sebelum menyimpan
                 </Text>
               )}
             </View>
@@ -1465,7 +1507,7 @@ export function InvoiceExtras({
             <Button variant="outline" onPress={() => setPayOpen(false)}>
               <Text>Batal</Text>
             </Button>
-            <Button onPress={handleSavePayment} disabled={isSubmittingPay || !payFileId}>
+            <Button onPress={handleSavePayment} disabled={isSubmittingPay || (!payHasFile && !payFileId)}>
               <Text>{isSubmittingPay ? "Menyimpan..." : "Simpan Pembayaran"}</Text>
             </Button>
           </DialogFooter>

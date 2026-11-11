@@ -129,6 +129,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const expenseFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const [deliveryDocOpen, setDeliveryDocOpen] = React.useState(false);
   const [deliveryDocFileId, setDeliveryDocFileId] = React.useState<number | null>(null);
+  const [deliveryDocHasFile, setDeliveryDocHasFile] = React.useState(false);
+  const deliveryDocFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const [deliveryDocReport, setDeliveryDocReport] = React.useState("");
   const [deliveryDocTargetStatus, setDeliveryDocTargetStatus] = React.useState<"Dikirim" | "Diterima">("Dikirim");
   const [submittingDeliveryDoc, setSubmittingDeliveryDoc] = React.useState(false);
@@ -816,16 +818,25 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   }
 
   async function handleSaveDeliveryDoc() {
-    if (!deliveryDocFileId && !deliveryDocReport.trim()) {
+    if (!deliveryDocHasFile && !deliveryDocFileId && !deliveryDocReport.trim()) {
       toast("Lampirkan file surat jalan / bukti pengiriman atau isi laporan terlebih dahulu", "danger");
       return;
     }
     setSubmittingDeliveryDoc(true);
     try {
+      let finalFid = deliveryDocFileId;
+      if (deliveryDocFileHandle.current?.hasStaged()) {
+        finalFid = await deliveryDocFileHandle.current.flush();
+      }
+
       const patchPayload: Record<string, any> = {};
-      if (deliveryDocFileId) {
-        patchPayload.scanFileId = deliveryDocFileId;
-        patchPayload.fileId = deliveryDocFileId;
+      if (finalFid) {
+        const oldFid = row.scanFileId || row.fileId;
+        patchPayload.scanFileId = finalFid;
+        patchPayload.fileId = finalFid;
+        if (oldFid && Number(oldFid) !== Number(finalFid)) {
+          void api("DELETE", `/files/${oldFid}`).catch(() => {});
+        }
       }
       if (deliveryDocReport.trim()) {
         patchPayload.reportText = deliveryDocReport.trim();
@@ -1693,8 +1704,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
               accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
               allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
               category="surat-jalan"
-              autoFlush
-              onUploaded={(fid) => setDeliveryDocFileId(fid)}
+              handleRef={(h) => { deliveryDocFileHandle.current = h; }}
+              onChange={(c) => setDeliveryDocHasFile(c > 0)}
             />
 
             <View className="gap-1">
