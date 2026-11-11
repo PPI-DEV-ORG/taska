@@ -3,6 +3,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Search, FileDown, X, Plus } from "lucide-react-native";
 import { QuickAddCustomerDialog } from "./quick-add-customer-dialog";
 import { QuickAddSupplierDialog } from "./quick-add-supplier-dialog";
+import { QuickAddDealTypeDialog } from "./quick-add-deal-type-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,7 @@ import {
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
 export { QuickAddCustomerDialog } from "./quick-add-customer-dialog";
 export { QuickAddSupplierDialog } from "./quick-add-supplier-dialog";
+export { QuickAddDealTypeDialog } from "./quick-add-deal-type-dialog";
 import {
   SupplierSelect,
   formatSupplierLabel,
@@ -605,6 +607,13 @@ export function getDynamicOptions(
     }
     case "sumber":
       return nonEmpty((data.leadSources ?? []).map((r: any) => String(r.nama)).filter(Boolean), f.options);
+    case "jenisTransaksi": {
+      const customTypes = (data.dealTypes ?? []).map((r: any) => String(r.nama || r.name)).filter(Boolean);
+      return nonEmpty(
+        Array.from(new Set([...(f.options ?? []), ...customTypes])),
+        f.options
+      );
+    }
     case "supplier": {
       const supps = (data.suppliers ?? []).map((r: any) => {
         const name = String(r.nama || r.name || "").trim();
@@ -792,6 +801,7 @@ export function FormDialog({
   const [fallbackSerials, setFallbackSerials] = React.useState<any[]>([]);
   const [quickCustomerKey, setQuickCustomerKey] = React.useState<string | null>(null);
   const [quickSupplierKey, setQuickSupplierKey] = React.useState<string | null>(null);
+  const [quickDealTypeKey, setQuickDealTypeKey] = React.useState<string | null>(null);
   const fileHandles = React.useRef<(FileUploaderHandle | null)[]>([]);
   const fileHandleAt = (i: number) => (h: FileUploaderHandle | null) => { fileHandles.current[i] = h; };
 
@@ -1556,10 +1566,14 @@ export function FormDialog({
                           ? () => setQuickCustomerKey(f.key)
                           : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
                           ? () => setQuickSupplierKey(f.key)
+                          : (f.key === "jenisTransaksi" || f.key === "dealType" || f.key === "transactionType" || String(f.label || "").toLowerCase().includes("jenis transaksi") || String(f.label || "").toLowerCase().includes("peluang"))
+                          ? () => setQuickDealTypeKey(f.key)
                           : undefined
                       }
                       addNewLabel={
-                        (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
+                        (f.key === "jenisTransaksi" || f.key === "dealType" || f.key === "transactionType" || String(f.label || "").toLowerCase().includes("jenis transaksi") || String(f.label || "").toLowerCase().includes("peluang"))
+                          ? "+ Tambah Jenis Transaksi Baru"
+                          : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
                           ? "+ Tambah Pemasok Baru"
                           : "+ Tambah Pelanggan Baru"
                       }
@@ -1775,6 +1789,16 @@ export function FormDialog({
             if (quickSupplierKey) {
               setVals((s) => ({ ...s, [quickSupplierKey]: newSupp.nama }));
               setQuickSupplierKey(null);
+            }
+          }}
+        />
+        <QuickAddDealTypeDialog
+          open={!!quickDealTypeKey}
+          onOpenChange={(op) => { if (!op) setQuickDealTypeKey(null); }}
+          onSuccess={(newType) => {
+            if (quickDealTypeKey) {
+              setVals((s) => ({ ...s, [quickDealTypeKey]: newType.nama }));
+              setQuickDealTypeKey(null);
             }
           }}
         />

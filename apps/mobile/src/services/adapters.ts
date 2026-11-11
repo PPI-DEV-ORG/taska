@@ -43,6 +43,7 @@ export const PATHS: Record<string, string> = {
   lostReasons: "/lost-reasons",
   expenseCategories: "/expense-categories",
   costCenters: "/cost-centers",
+  dealTypes: "/deal-types",
   serials: "/serials",
   movements: "/movements",
   reservations: "/reservations",
@@ -346,11 +347,19 @@ export function adaptRow(module: string, raw: any): Row {
       const sepiDays = latestFu
         ? Math.max(0, Math.floor((Date.now() - new Date(latestFu).getTime()) / 86_400_000))
         : 0;
-      const jenisMatch = raw.need?.match(/\[JENIS:(BARANG|PROYEK)\]/i);
-      const cleanNeed = raw.need ? raw.need.replace(/\[JENIS:(BARANG|PROYEK)\]\s*/gi, "") : "";
-      const jenisTransaksi = jenisMatch
-        ? (jenisMatch[1].toUpperCase() === "BARANG" ? "Penjualan Barang" : "Proyek (Instalasi & Jasa)")
-        : (/barang|retail|perangkat/i.test(raw.name ?? "") ? "Penjualan Barang" : "Proyek (Instalasi & Jasa)");
+      const jenisMatch = raw.need?.match(/\[JENIS:([^\]]+)\]/i);
+      const cleanNeed = raw.need ? raw.need.replace(/\[JENIS:[^\]]+\]\s*/gi, "") : "";
+      let jenisTransaksi = jenisMatch ? jenisMatch[1].trim() : "";
+      if (jenisTransaksi.toUpperCase() === "BARANG") {
+        jenisTransaksi = "Penjualan Barang (Perangkat / Retail)";
+      } else if (jenisTransaksi.toUpperCase() === "PROYEK") {
+        jenisTransaksi = "Proyek (Instalasi & Jasa)";
+      }
+      if (!jenisTransaksi) {
+        jenisTransaksi = /barang|retail|perangkat/i.test(raw.name ?? "")
+          ? "Penjualan Barang (Perangkat / Retail)"
+          : "Proyek (Instalasi & Jasa)";
+      }
 
       return {
         ...base,
@@ -1524,6 +1533,7 @@ export function adaptRow(module: string, raw: any): Row {
     case "lostReasons":
     case "expenseCategories":
     case "costCenters":
+    case "dealTypes":
       return { ...base, nama: raw.name ?? "", status: toLabel("users", raw.status ?? "AKTIF") };
     case "serials": {
       const activeRes = Array.isArray(raw.reservations) ? raw.reservations : [];
@@ -1873,10 +1883,10 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
   const today = new Date().toISOString().slice(0, 10);
   switch (module) {
     case "leads": {
-      const isBarang = row.jenisTransaksi === "Penjualan Barang" || /barang|retail/i.test(row.jenisTransaksi || "");
-      const tag = isBarang ? "[JENIS:BARANG] " : "[JENIS:PROYEK] ";
+      const jenis = (row.jenisTransaksi || "Proyek (Instalasi & Jasa)").trim();
+      const tag = `[JENIS:${jenis}] `;
       const baseNeed = row.need || row.catatan || "";
-      const cleanedBase = baseNeed.replace(/\[JENIS:(BARANG|PROYEK)\]\s*/gi, "");
+      const cleanedBase = baseNeed.replace(/\[JENIS:[^\]]+\]\s*/gi, "");
       const fullNeed = `${tag}${cleanedBase}`.trim();
 
       return {
@@ -2508,6 +2518,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     case "lostReasons":
     case "expenseCategories":
     case "costCenters":
+    case "dealTypes":
       return { name: row.nama ?? row.name, status: "AKTIF" };
     case "followups": {
       const mRaw = String(row.method ?? row.metode ?? "WA").toUpperCase();
@@ -2592,6 +2603,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   lostReasons: ["name", "status"],
   expenseCategories: ["name", "status"],
   costCenters: ["name", "status"],
+  dealTypes: ["name", "status"],
   leads: ["name", "customerId", "sourceId", "clientType", "need", "contactName", "estimatedValue", "probability", "targetClosing", "ownerId", "needsSurvey", "stage", "lostReasonId", "lostNote", "fileId"],
   surveys: ["leadId", "location", "need", "notes", "scheduleAt", "cost", "status", "memberIds", "evidenceFileId", "documentFileId", "fileId"],
   quotations: [
@@ -2848,6 +2860,13 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.closing !== undefined) out.targetClosing = patch.closing;
     if (patch.tipe !== undefined) out.clientType = toEnum("clientType", patch.tipe);
     if (patch.status !== undefined) out.stage = toEnum("leads", patch.status);
+    if (patch.jenisTransaksi !== undefined || patch.need !== undefined) {
+      const existingLead = (db?.leads ?? []).find((l: any) => String(l.id) === String(patch.id || out.id));
+      const currentNeed = patch.need !== undefined ? patch.need : (existingLead?.need || "");
+      const currentJenis = patch.jenisTransaksi !== undefined ? patch.jenisTransaksi : (existingLead?.jenisTransaksi || "Proyek (Instalasi & Jasa)");
+      const cleaned = (currentNeed || "").replace(/\[JENIS:[^\]]+\]\s*/gi, "");
+      out.need = `[JENIS:${currentJenis.trim()}] ${cleaned}`.trim();
+    }
     if (patch.alasanLost !== undefined) {
       out.lostNote = patch.alasanLost;
       const lrId = findId(db?.lostReasons, patch.alasanLost);
@@ -3113,7 +3132,7 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
       }
     }
   } else if (
-    ["customers", "suppliers", "products", "productCategories", "warehouses", "leadSources", "lostReasons", "expenseCategories", "costCenters"].includes(module)
+    ["customers", "suppliers", "products", "productCategories", "warehouses", "leadSources", "lostReasons", "expenseCategories", "costCenters", "dealTypes"].includes(module)
   ) {
     if (patch.status !== undefined) out.status = toEnum("users", patch.status) || patch.status;
     if (module === "suppliers") {

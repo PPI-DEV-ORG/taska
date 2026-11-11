@@ -3,7 +3,18 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
 
-export type LookupModel = "leadSource" | "lostReason" | "expenseCategory" | "costCenter" | "visitActivityType";
+export type LookupModel =
+  | "leadSource"
+  | "lostReason"
+  | "expenseCategory"
+  | "costCenter"
+  | "visitActivityType"
+  | "dealType";
+
+const DEFAULT_DEAL_TYPES = [
+  { id: 1, name: "Proyek (Instalasi & Jasa)", status: "AKTIF" },
+  { id: 2, name: "Penjualan Barang (Perangkat / Retail)", status: "AKTIF" },
+];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -11,11 +22,54 @@ export type LookupModel = "leadSource" | "lostReason" | "expenseCategory" | "cos
 export class LookupsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async getDealTypes(): Promise<Array<{ id: number; name: string; status: string }>> {
+    const row = await this.prisma.main.systemSetting.findUnique({ where: { key: "master.dealTypes" } });
+    if (!row?.value) {
+      return [...DEFAULT_DEAL_TYPES];
+    }
+    try {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {}
+    return [...DEFAULT_DEAL_TYPES];
+  }
+
+  private async saveDealTypes(items: Array<{ id: number; name: string; status: string }>): Promise<void> {
+    await this.prisma.main.systemSetting.upsert({
+      where: { key: "master.dealTypes" },
+      create: {
+        key: "master.dealTypes",
+        value: JSON.stringify(items),
+        description: "Master Jenis Transaksi / Peluang Lead",
+      },
+      update: {
+        value: JSON.stringify(items),
+      },
+    });
+  }
+
   private delegate(model: LookupModel): any {
     return (this.prisma.main as any)[model];
   }
 
   async list(model: LookupModel, q: PageQuery & { status?: string }) {
+    if (model === "dealType") {
+      let items = await this.getDealTypes();
+      if (q.status) {
+        items = items.filter((i) => i.status === q.status);
+      }
+      if (q.q) {
+        const query = q.q.toLowerCase();
+        items = items.filter((i) => i.name.toLowerCase().includes(query));
+      }
+      items.sort((a, b) => a.name.localeCompare(b.name));
+      const total = items.length;
+      const page = q.page ? Math.max(1, Number(q.page)) : 1;
+      const limit = q.limit ? Math.max(1, Number(q.limit)) : 50;
+      const paginated = items.slice((page - 1) * limit, page * limit);
+      return paginate(paginated, total, { ...q, page, limit });
+    }
+
     const where = searchWhere(q, [["name", "contains"]], {
       ...(q.status ? { status: q.status as "AKTIF" | "NONAKTIF" } : {}),
     });
@@ -30,7 +84,15 @@ export class LookupsService {
     return paginate(items, total, q);
   }
 
-  options(model: LookupModel) {
+  async options(model: LookupModel) {
+    if (model === "dealType") {
+      const items = await this.getDealTypes();
+      return items
+        .filter((i) => i.status === "AKTIF")
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((i) => ({ id: i.id, name: i.name }));
+    }
+
     return this.delegate(model).findMany({
       where: { status: "AKTIF" },
       select: { id: true, name: true },
@@ -39,6 +101,19 @@ export class LookupsService {
   }
 
   async create(model: LookupModel, name: string, status?: string) {
+    if (model === "dealType") {
+      const items = await this.getDealTypes();
+      const trimmed = name.trim();
+      if (items.some((i) => i.name.toLowerCase() === trimmed.toLowerCase())) {
+        throw new ConflictException(`Nama "${trimmed}" sudah ada`);
+      }
+      const nextId = items.reduce((max, i) => Math.max(max, Number(i.id) || 0), 0) + 1;
+      const newItem = { id: nextId, name: trimmed, status: status || "AKTIF" };
+      items.push(newItem);
+      await this.saveDealTypes(items);
+      return newItem;
+    }
+
     const dup = await this.delegate(model).findFirst({ where: { name } });
     if (dup) throw new ConflictException(`Nama "${name}" sudah ada`);
     return this.delegate(model).create({
@@ -47,6 +122,20 @@ export class LookupsService {
   }
 
   async update(model: LookupModel, id: number, name?: string, status?: string) {
+    if (model === "dealType") {
+      const items = await this.getDealTypes();
+      const item = items.find((i) => i.id === id);
+      if (!item) throw new NotFoundException("Data tidak ditemukan");
+      if (name && name.trim().toLowerCase() !== item.name.toLowerCase()) {
+        const dup = items.find((i) => i.id !== id && i.name.toLowerCase() === name.trim().toLowerCase());
+        if (dup) throw new ConflictException(`Nama "${name.trim()}" sudah ada`);
+        item.name = name.trim();
+      }
+      if (status) item.status = status;
+      await this.saveDealTypes(items);
+      return item;
+    }
+
     const row = await this.delegate(model).findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Data tidak ditemukan");
     if (name && name !== row.name) {
@@ -63,6 +152,14 @@ export class LookupsService {
   }
 
   async remove(model: LookupModel, id: number) {
+    if (model === "dealType") {
+      const items = await this.getDealTypes();
+      const idx = items.findIndex((i) => i.id === id);
+      if (idx === -1) throw new NotFoundException("Data tidak ditemukan");
+      items.splice(idx, 1);
+      await this.saveDealTypes(items);
+      return { id, deleted: true };
+    }
     const row = await this.delegate(model).findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Data tidak ditemukan");
 

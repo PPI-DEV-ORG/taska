@@ -63,6 +63,7 @@ export type DB = {
   lostReasons: Row[];
   expenseCategories: Row[];
   costCenters: Row[];
+  dealTypes: Row[];
   followups: Row[];
   issueReports: Row[];
   opname: Row[];
@@ -226,7 +227,7 @@ const emptyDB = (): DB => ({
   projects: [], tasks: [], "purchase-requests": [], "supplier-pos": [],
   receiving: [], "delivery-notes": [], expenses: [], "damage-reports": [],
   customers: [], suppliers: [], warehouses: [], products: [],
-  productCategories: [], leadSources: [], lostReasons: [], expenseCategories: [], costCenters: [],
+  productCategories: [], leadSources: [], lostReasons: [], expenseCategories: [], costCenters: [], dealTypes: [],
   followups: [], issueReports: [], opname: [], users: [], "audit-log": [],
   serials: [], movements: [], reservations: [], invoiceIn: [], "poc-reports": [],
   "visit-reports": [], "visit-activity-types": [],
@@ -249,7 +250,7 @@ const ROUTE_MODULES_BY_SEGMENT: Record<string, readonly string[]> = {
     "quotations", "surveys", "purchase-requests", "supplier-pos",
     "receiving", "delivery-notes", "expenses", "opname",
   ],
-  leads: ["leads", "quotations", "customers", "leadSources", "lostReasons", "followups", "users", "surveys", "projects", "po-client"],
+  leads: ["leads", "quotations", "customers", "leadSources", "dealTypes", "lostReasons", "followups", "users", "surveys", "projects", "po-client"],
   quotations: ["quotations", "leads", "customers", "products", "serials", "projects", "po-client", "invoices"],
   surveys: ["surveys", "leads", "projects", "customers", "users", "expenses"],
   "poc-reports": ["poc-reports", "projects", "leads", "customers", "users", "products"],
@@ -275,7 +276,7 @@ const ROUTE_MODULES_BY_SEGMENT: Record<string, readonly string[]> = {
   "damage-reports": ["damage-reports", "products", "serials", "warehouses", "suppliers", "customers", "invoices", "supplier-pos", "receiving"],
   reports: ["leads", "quotations", "po-client", "invoices", "invoiceIn", "projects", "purchase-requests", "supplier-pos", "expenses", "products", "customers", "suppliers", "users"],
   hr: ["users", "payrollSlips", "expenses"],
-  "master-data": ["customers", "suppliers", "warehouses", "products", "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters", "visit-activity-types"],
+  "master-data": ["customers", "suppliers", "warehouses", "products", "productCategories", "leadSources", "dealTypes", "lostReasons", "expenseCategories", "costCenters", "visit-activity-types"],
   users: ["users", "warehouses"],
   archive: ["leads", "quotations", "po-client", "invoices", "projects", "surveys", "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses", "damage-reports", "poc-reports", "visit-reports"],
   "audit-log": ["audit-log", "users"],
@@ -291,7 +292,7 @@ const EAGER_MODULES = [
   "tasks", "leads", "quotations", "surveys", "po-client", "invoices", "projects",
   "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses",
   "damage-reports", "customers", "suppliers", "warehouses", "products",
-  "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
+  "productCategories", "leadSources", "dealTypes", "lostReasons", "expenseCategories", "costCenters",
   "opname", "users", "audit-log", "serials", "movements", "reservations", "followups", "invoiceIn",
   "poc-reports", "visit-reports", "visit-activity-types", "payrollSlips",
 ] as const;
@@ -309,8 +310,9 @@ async function fetchList(module: string): Promise<Row[]> {
   }
   try {
     const limit = module === "serials" ? 1000 : 200;
-    const res = await api<Page<any>>("GET", `${path}?limit=${limit}`);
-    const rows = adaptRows(module, res.items);
+    const res = await api<any>("GET", `${path}?limit=${limit}`);
+    const rawItems = Array.isArray(res) ? res : (res?.items ?? res?.data ?? []);
+    const rows = adaptRows(module, rawItems);
     if (rows.length > 0 || (module !== "users" && module !== "tasks")) return rows;
   } catch {}
   if (module === "tasks") {
@@ -1217,7 +1219,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (module: string, id: string, status: string, note?: string, extra?: Record<string, any>) => {
       const MASTER_MODULES = [
         "users", "customers", "suppliers", "warehouses", "products",
-        "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters",
+        "productCategories", "leadSources", "dealTypes", "lostReasons", "expenseCategories", "costCenters",
       ];
 
       if (module === "invoices" && status === "Lunas") {

@@ -44,7 +44,7 @@ export function Panel({
 }
 
 const ROUTE_MODULES_MAP: Record<string, string[]> = {
-  leads: ["leads", "customers", "leadSources", "lostReasons", "followups"],
+  leads: ["leads", "customers", "leadSources", "dealTypes", "lostReasons", "followups"],
   quotations: ["quotations", "leads", "customers"],
   surveys: ["surveys", "leads", "projects", "customers"],
   "po-client": ["po-client", "quotations", "customers", "projects", "invoices"],
@@ -66,7 +66,7 @@ const ROUTE_MODULES_MAP: Record<string, string[]> = {
   "poc-reports": ["poc-reports", "projects", "leads", "customers"],
   "visit-reports": ["visit-reports", "visit-activity-types", "projects", "leads", "customers"],
   stock: ["products", "serials", "movements", "reservations", "warehouses", "productCategories"],
-  "master-data": ["customers", "suppliers", "warehouses", "products", "productCategories", "leadSources", "lostReasons", "expenseCategories", "costCenters", "visit-activity-types"],
+  "master-data": ["customers", "suppliers", "warehouses", "products", "productCategories", "leadSources", "dealTypes", "lostReasons", "expenseCategories", "costCenters", "visit-activity-types"],
   approvals: ["approvals"],
 };
 

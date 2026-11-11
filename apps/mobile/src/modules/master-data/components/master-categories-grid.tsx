@@ -15,6 +15,7 @@ import {
   Receipt,
   PieChart,
   Handshake,
+  Briefcase,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -67,6 +68,16 @@ export function MasterCategoriesGrid({
       tag: "Dikelola Sales",
       roles: ["admin", "bos", "sales"],
       onPress: () => onSelectCategory("alasan-lost"),
+    },
+    {
+      id: "jenis-transaksi" as MasterKey,
+      title: "Jenis Transaksi / Peluang",
+      desc: "Kategori tipe kesepakatan lead (Proyek, Pengadaan Barang, AMC, dll.)",
+      count: `${data.dealTypes?.length || 0} Jenis`,
+      icon: Briefcase,
+      tag: "Dikelola Sales",
+      roles: ["admin", "bos", "sales"],
+      onPress: () => onSelectCategory("jenis-transaksi"),
     },
     {
       id: "jenis-kunjungan" as MasterKey,

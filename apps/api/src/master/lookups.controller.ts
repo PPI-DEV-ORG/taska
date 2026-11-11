@@ -59,6 +59,7 @@ export const ExpenseCategoriesController = makeLookupController(
   "expenseCategories",
 );
 export const CostCentersController = makeLookupController("cost-centers", "costCenter", "costCenters");
+export const DealTypesController = makeLookupController("deal-types", "dealType", "leads");
 export const VisitActivityTypesController = makeLookupController(
   "visit-activity-types",
   "visitActivityType",

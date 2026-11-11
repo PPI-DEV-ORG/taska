@@ -13,6 +13,7 @@ import { MasterKategoriBarangView } from "@/modules/master-data/components/maste
 import { MasterGudangView } from "@/modules/master-data/components/master-gudang-view";
 import { MasterSumberLeadView } from "@/modules/master-data/components/master-sumber-lead-view";
 import { MasterAlasanLostView } from "@/modules/master-data/components/master-alasan-lost-view";
+import { MasterJenisTransaksiView } from "@/modules/master-data/components/master-jenis-transaksi-view";
 import { MasterJenisKunjunganView } from "@/modules/master-data/components/master-jenis-kunjungan-view";
 import { MasterKategoriPengeluaranView } from "@/modules/master-data/components/master-kategori-pengeluaran-view";
 import { MasterCostCenterView } from "@/modules/master-data/components/master-cost-center-view";
@@ -35,6 +36,7 @@ export default function MasterDataScreen() {
           refreshModule("suppliers"),
           refreshModule("warehouses"),
           refreshModule("leadSources"),
+          refreshModule("dealTypes"),
           refreshModule("lostReasons"),
           refreshModule("expenseCategories"),
           refreshModule("costCenters"),
@@ -171,6 +173,17 @@ export default function MasterDataScreen() {
           addRow={addRow}
           toast={toast}
           renderActions={deleteActions("lostReasons", "alasan Lost", canAddLostReason)}
+        />
+      )}
+
+      {selectedCategory === "jenis-transaksi" && (
+        <MasterJenisTransaksiView
+          data={data}
+          user={user}
+          onBack={() => setSelectedCategory(null)}
+          addRow={addRow}
+          toast={toast}
+          renderActions={deleteActions("dealTypes", "jenis transaksi", canAddLeadSource)}
         />
       )}
 
