@@ -382,6 +382,8 @@ const MODULE_ALIASES: Record<string, string[]> = {
   ],
   leadSources: ["leadSources", "lead-sources", "master-data", "masterData", "leads", "settings"],
   "lead-sources": ["lead-sources", "leadSources", "master-data", "masterData", "leads", "settings"],
+  dealTypes: ["dealTypes", "deal-types", "master-data", "masterData", "leads", "settings"],
+  "deal-types": ["deal-types", "dealTypes", "master-data", "masterData", "leads", "settings"],
   lostReasons: ["lostReasons", "lost-reasons", "master-data", "masterData", "leads", "quotations", "settings"],
   "lost-reasons": ["lost-reasons", "lostReasons", "master-data", "masterData", "leads", "quotations", "settings"],
   expenseCategories: ["expenseCategories", "expense-categories", "master-data", "masterData", "expenses", "accounting", "settings"],

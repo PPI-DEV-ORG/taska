@@ -11,6 +11,7 @@ import { LookupsService } from "./lookups.service.js";
 import {
   CoaAccountsController,
   CostCentersController,
+  DealTypesController,
   ExpenseCategoriesController,
   LeadSourcesController,
   LostReasonsController,
@@ -28,6 +29,7 @@ import {
     WarehousesController,
     LeadSourcesController,
     LostReasonsController,
+    DealTypesController,
     ExpenseCategoriesController,
     CostCentersController,
     VisitActivityTypesController,

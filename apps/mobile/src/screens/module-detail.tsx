@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } from "@/components/taska/basics";
-import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands, QuickAddCustomerDialog, QuickAddSupplierDialog } from "@/components/taska/dialogs";
+import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands, QuickAddCustomerDialog, QuickAddSupplierDialog, QuickAddDealTypeDialog } from "@/components/taska/dialogs";
 import {
   CustomerSelect,
   LeadSelect,
@@ -136,6 +136,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [submittingDeliveryDoc, setSubmittingDeliveryDoc] = React.useState(false);
   const [quickCustomerKey, setQuickCustomerKey] = React.useState<string | null>(null);
   const [quickSupplierKey, setQuickSupplierKey] = React.useState<string | null>(null);
+  const [quickDealTypeKey, setQuickDealTypeKey] = React.useState<string | null>(null);
 
   const editableFields: CreateField[] = React.useMemo(() => {
     if (!def) return [];
@@ -1294,10 +1295,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                                   ? () => setQuickCustomerKey(f.key)
                                   : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
                                   ? () => setQuickSupplierKey(f.key)
+                                  : (f.key === "jenisTransaksi" || f.key === "dealType" || f.key === "transactionType" || String(f.label || "").toLowerCase().includes("jenis transaksi") || String(f.label || "").toLowerCase().includes("peluang"))
+                                  ? () => setQuickDealTypeKey(f.key)
                                   : undefined
                               }
                               addNewLabel={
-                                (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
+                                (f.key === "jenisTransaksi" || f.key === "dealType" || f.key === "transactionType" || String(f.label || "").toLowerCase().includes("jenis transaksi") || String(f.label || "").toLowerCase().includes("peluang"))
+                                  ? "+ Tambah Jenis Transaksi Baru"
+                                  : (f.key === "supplier" || f.key === "supplierId" || String(f.label || "").toLowerCase().includes("supplier") || String(f.label || "").toLowerCase().includes("vendor"))
                                   ? "+ Tambah Pemasok Baru"
                                   : "+ Tambah Pelanggan Baru"
                               }
@@ -1779,6 +1784,16 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           if (quickSupplierKey) {
             setFieldValue(quickSupplierKey, newSupp.nama);
             setQuickSupplierKey(null);
+          }
+        }}
+      />
+      <QuickAddDealTypeDialog
+        open={!!quickDealTypeKey}
+        onOpenChange={(op) => { if (!op) setQuickDealTypeKey(null); }}
+        onSuccess={(newType) => {
+          if (quickDealTypeKey) {
+            setFieldValue(quickDealTypeKey, newType.nama);
+            setQuickDealTypeKey(null);
           }
         }}
       />
