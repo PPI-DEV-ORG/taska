@@ -1246,6 +1246,15 @@ function CreateInvoiceForm({
     }
 
     const isPurchase = mode === "masuk" || sourceType === "direct_purchase";
+    if (isPurchase && !fileId) {
+      toast("File faktur / tagihan pemasok wajib diunggah", "danger");
+      return;
+    }
+    const isPaidNow = paymentStatus === "PAID";
+    if (isPurchase && isPaidNow && !paymentFileId) {
+      toast("Bukti pembayaran / transfer wajib diunggah untuk status Lunas", "danger");
+      return;
+    }
     const supplierObj = (data.suppliers ?? []).find((s: Row) => String(s.id) === String(selectedSupplierId));
     const suppPoObj = (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId));
     const customerObj = (data.customers ?? []).find((c: Row) => String(c.id) === String(selectedCustomerId));
@@ -1300,7 +1309,6 @@ function CreateInvoiceForm({
     }
 
     setIsSubmitting(true);
-    const isPaidNow = paymentStatus === "PAID";
     const effectiveInvoicePphMode: PphMode =
       pphMode !== "none"
         ? pphMode

@@ -1,6 +1,6 @@
 import * as React from "react";
-import { View, Pressable, Platform, ScrollView } from "react-native";
-import { Upload, Eye, Edit3, FileText } from "lucide-react-native";
+import { View, Pressable, Platform, ScrollView, Linking } from "react-native";
+import { Upload, Eye, Edit3, FileText, ExternalLink } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +9,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
+import { apiBase } from "@/services/api";
 import { tanggal } from "@/lib/format";
 import { colors } from "@/tokens";
 import { type Row } from "@/constants/modules";
@@ -39,8 +41,10 @@ export function TaskDetailDialog({
   const [pic, setPic] = React.useState("");
   const [tenggat, setTenggat] = React.useState("");
   const [status, setStatus] = React.useState("TODO");
+  const [proofFileId, setProofFileId] = React.useState<number | null>(null);
 
   const fileInputRef = React.useRef<any>(null);
+  const fileUploaderRef = React.useRef<FileUploaderHandle | null>(null);
 
   const liveTask = React.useMemo(() => {
     if (!task) return null;
@@ -73,6 +77,7 @@ export function TaskDetailDialog({
       setPic(String(active.pic ?? ""));
       setTenggat(String(active.tenggat ?? ""));
       setStatus(String(active.status ?? "TODO"));
+      setProofFileId((active.proofFileId || active.bastFileId || active.fileId) ? Number(active.proofFileId || active.bastFileId || active.fileId) : null);
     }
   }
 
@@ -86,6 +91,19 @@ export function TaskDetailDialog({
       toast("Nama tugas wajib diisi", "danger");
       return;
     }
+
+    let finalFid = proofFileId;
+    if (!finalFid && fileUploaderRef.current?.hasStaged()) {
+      try {
+        finalFid = await fileUploaderRef.current.flush();
+      } catch {}
+    }
+
+    if (status === "DONE" && !finalFid && !liveTask?.proofFileId && !task?.proofFileId && !liveTask?.bastFileId && !task?.bastFileId && !liveTask?.fileId && !task?.fileId) {
+      toast("Bukti selesai tugas (foto/dokumen) wajib diunggah sebelum status dapat diubah ke DONE", "danger");
+      return;
+    }
+
     setSaving(true);
     try {
       const patch = {
@@ -94,6 +112,7 @@ export function TaskDetailDialog({
         pic,
         tenggat: tenggat || undefined,
         status,
+        ...(finalFid ? { proofFileId: finalFid, fileId: finalFid } : {}),
       };
       await patchRow("tasks", task!.id, patch);
       toast("Tugas berhasil diperbarui");
@@ -206,6 +225,27 @@ export function TaskDetailDialog({
             <FormField label="Status">
               <SearchableSelect value={status} onChange={setStatus} options={STATUSES} />
             </FormField>
+
+            {status === "DONE" && (
+              <View className="gap-1 mt-1 p-3 rounded-xl border border-primary/30 bg-primary/5">
+                <Text className="text-xs font-semibold text-foreground">
+                  Bukti Selesai Tugas (Wajib untuk Status DONE) *
+                </Text>
+                <Text className="text-[11px] text-muted-foreground mb-1.5">
+                  Lampirkan foto hasil pekerjaan, screenshot pengujian, atau dokumen serah terima pekerjaan.
+                </Text>
+                <FileUploader
+                  label="Upload Bukti Selesai (Foto / Dokumen / PDF) *"
+                  kind="semua"
+                  accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+                  allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
+                  category="task-proof"
+                  handleRef={(h) => { fileUploaderRef.current = h; }}
+                  autoFlush
+                  onUploaded={(id) => setProofFileId(id)}
+                />
+              </View>
+            )}
           </View>
         ) : (
           <View className="gap-3 py-1">
@@ -231,6 +271,35 @@ export function TaskDetailDialog({
               <Text className="text-xs text-muted-foreground">Tenggat: {(tenggat || liveTask?.tenggat || task.tenggat) ? tanggal(tenggat || liveTask?.tenggat || task.tenggat) : "-"}</Text>
               <Text className="text-xs text-muted-foreground">Perlu pembelian barang: {(liveTask?.perluBarang ?? task.perluBarang) ? "Ya" : "Tidak"}</Text>
             </View>
+            {(liveTask?.proofFileId || task.proofFileId || liveTask?.bastFileId || task.bastFileId || liveTask?.fileId || task.fileId) ? (() => {
+              const fid = liveTask?.proofFileId || task.proofFileId || liveTask?.bastFileId || task.bastFileId || liveTask?.fileId || task.fileId;
+              const fileUrl = `${apiBase()}/files/${fid}`;
+              return (
+                <View className="gap-1.5 p-3 rounded-xl border border-border bg-card">
+                  <Text className="text-xs font-semibold text-foreground">Bukti Selesai Tugas (Lampiran)</Text>
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2 flex-1 mr-2">
+                      <FileText size={16} color={colors.primary} />
+                      <Text className="text-xs text-foreground font-medium truncate" numberOfLines={1}>
+                        Bukti Selesai #{fid}
+                      </Text>
+                    </View>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2.5 flex-row items-center gap-1"
+                      onPress={() => {
+                        if (typeof window !== "undefined") window.open(fileUrl, "_blank");
+                        else Linking.openURL(fileUrl).catch(() => {});
+                      }}
+                    >
+                      <ExternalLink size={12} color={colors.textSecondary} />
+                      <Text className="text-xs">Buka Bukti</Text>
+                    </Button>
+                  </View>
+                </View>
+              );
+            })() : null}
             {subTasks.length > 0 ? (
               <View className="gap-1">
                 <Text className="text-xs font-semibold">Sub-tugas ({subTasks.length})</Text>

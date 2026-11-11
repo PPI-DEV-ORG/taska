@@ -277,6 +277,7 @@ export default function NewPurchaseRequestScreen() {
   // Ritel selalu dibayar Finance dulu; hanya supplier yang bisa tempo. Gudang tanpa pembayaran.
   const effectivePayment: "KAS" | "UTANG" | undefined =
     procurementSource === "SUPPLIER" ? paymentMethod : procurementSource === "RETAIL" ? "KAS" : undefined;
+  const isAllConsumablesPreview = selectedItems.length > 0 && selectedItems.every((it: any) => it.isProjectConsumable);
   const previewFlow = evaluatePurchase({
     source: purchaseKind(procurementSource),
     paymentMethod: effectivePayment,
@@ -284,6 +285,7 @@ export default function NewPurchaseRequestScreen() {
     isPaid: false,
     poCount: 0,
     poApproved: false,
+    isProjectConsumable: costType === "Project" && isAllConsumablesPreview,
   });
 
   function handleAddCustomItem() {

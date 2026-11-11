@@ -143,15 +143,7 @@ export class RequestsService {
           })
         : Promise.resolve(null),
       this.resolveDoFile(id, (row as any).doFileId),
-      (row as any).paymentProofFileId
-        ? this.prisma.main.file.findUnique({
-            where: { id: (row as any).paymentProofFileId },
-            select: { id: true, originalName: true, mimeType: true, size: true },
-          })
-        : this.prisma.main.file.findFirst({
-            where: { refType: "purchase_request_payment", refId: String(id) },
-            select: { id: true, originalName: true, mimeType: true, size: true },
-          }),
+      this.resolvePaymentProofFile(id, (row as any).paymentProofFileId),
       Promise.all(
         row.items.map(async (i) => ({
           productId: i.productId,
@@ -199,6 +191,47 @@ export class RequestsService {
         select: { receiptFileId: true },
       });
       fileId = rec?.receiptFileId ?? null;
+    }
+    if (!fileId) return null;
+    return this.prisma.main.file.findUnique({
+      where: { id: fileId },
+      select: { id: true, originalName: true, mimeType: true, size: true },
+    });
+  }
+
+  /**
+   * Bukti pembayaran dapat diambil langsung dari paymentProofFileId sendiri,
+   * atau dari file bukti bayar Invoice Masuk / pembayaran invoice PO terkait request ini.
+   */
+  private async resolvePaymentProofFile(requestId: number, ownProofFileId?: number | null) {
+    let fileId = ownProofFileId ?? null;
+    if (!fileId) {
+      const prFile = await this.prisma.main.file.findFirst({
+        where: { refType: "purchase_request_payment", refId: String(requestId) },
+        select: { id: true },
+      });
+      fileId = prFile?.id ?? null;
+    }
+    if (!fileId) {
+      const invWithProof = await this.prisma.main.invoiceIn.findFirst({
+        where: {
+          supplierPo: { requestId },
+          OR: [
+            { transferFileId: { not: null } },
+            { payments: { some: { fileId: { not: null } } } },
+          ],
+        },
+        orderBy: { id: "desc" },
+        include: {
+          payments: {
+            where: { fileId: { not: null } },
+            orderBy: { date: "desc" },
+            take: 1,
+            select: { fileId: true },
+          },
+        },
+      });
+      fileId = invWithProof?.transferFileId ?? invWithProof?.payments?.[0]?.fileId ?? null;
     }
     if (!fileId) return null;
     return this.prisma.main.file.findUnique({
@@ -461,10 +494,17 @@ export class RequestsService {
     }
 
     const activePos = (row.supplierPOs ?? []).filter((p) => !["DITOLAK", "DIBATALKAN"].includes(p.status));
+    const isProjectConsumable =
+      Boolean(row.projectId) &&
+      (String(row.otherNote || "").includes("[ALL_CONSUMABLES]") ||
+        (row.items.length > 0 &&
+          row.items.every((it) => String(it.customName || "").includes("[PAKAI_HABIS]"))));
+
     assertPrTransition(row, dto.status, user, {
       activePoCount: activePos.length,
       hasApprovedPo: activePos.some((p) => p.status === "DISETUJUI"),
       paymentProofProvided: Boolean(dto.paymentProofFileId),
+      isProjectConsumable,
     });
 
     // Untuk request internal (ambil stok gudang untuk project): kurangi stok OUT saat diserahkan/dikirim.
@@ -608,9 +648,12 @@ export class RequestsService {
     }
 
     // Pembayaran hanya lewat status DIBAYAR (peran Finance + bukti wajib, divalidasi assertPrTransition).
-    const isMarkingPaid = dto.status === "DIBAYAR" || dto.status === "LUNAS";
-
-    const allConsumables = row.items.length > 0 && row.items.every((it) => !!it.customName);
+    const isMarkingPaid =
+      dto.status === "DIBAYAR" ||
+      dto.status === "LUNAS" ||
+      dto.status === "DITERIMA" ||
+      dto.paymentStatus === "DIBAYAR" ||
+      Boolean(dto.paymentProofFileId);
 
     // Jika request barang project dibayar / disetujui / diterima, masukkan barang non-master/pakai habis ke Project Requirement (Barang Tambahan Project)
     const shouldSyncConsumables =
@@ -624,11 +667,18 @@ export class RequestsService {
       await this.syncConsumablesToProject(id);
     }
 
-    // Pembayaran setelah barang dikirim/diterima (utang) hanya mencatat pembayaran, status alur tidak mundur.
-    const targetStatus =
-      (dto.status === "DIBAYAR" || dto.status === "LUNAS") && (row.status === "DIKIRIM" || row.status === "DITERIMA" || row.status === "PO_DIBUAT")
-        ? row.status
-        : (dto.status === "LUNAS" ? "DIBAYAR" : dto.status);
+    // Material pakai habis proyek yang dibayar langsung selesai (DITERIMA) tanpa perlu kirim & terima gudang
+    let targetStatus = dto.status;
+    if (isProjectConsumable && isMarkingPaid) {
+      targetStatus = "DITERIMA";
+    } else if (
+      (dto.status === "DIBAYAR" || dto.status === "LUNAS") &&
+      (row.status === "DIKIRIM" || row.status === "DITERIMA" || row.status === "PO_DIBUAT")
+    ) {
+      targetStatus = row.status;
+    } else if (dto.status === "LUNAS") {
+      targetStatus = "DIBAYAR";
+    }
 
     const updated = await this.prisma.main.purchaseRequest.update({
       where: { id },

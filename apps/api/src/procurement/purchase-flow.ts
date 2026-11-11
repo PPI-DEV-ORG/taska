@@ -40,6 +40,8 @@ export type PrFlowContext = {
   hasApprovedPo: boolean;
   /** Request ini sudah punya bukti/status bayar (termasuk dari body saat ini). */
   paymentProofProvided?: boolean;
+  /** Belanja ritel / online material non-master / pakai habis proyek (tanpa master produk). */
+  isProjectConsumable?: boolean;
 };
 
 export const isPurchaseSource = (src?: string | null) => {
@@ -152,7 +154,14 @@ export function assertPrTransition(
     }
     case "DITERIMA": {
       if (purchase) {
-        throw invalid("Penerimaan barang pembelian dikonfirmasi Gudang lewat menu Penerimaan Barang");
+        if (!ctx.isProjectConsumable) {
+          throw invalid("Penerimaan barang pembelian dikonfirmasi Gudang lewat menu Penerimaan Barang");
+        }
+        requireRole(user.role, FINANCE_ROLES, "Hanya Finance yang dapat mengonfirmasi pembayaran dan penerimaan material proyek");
+        if (!ctx.paymentProofProvided && !pr.paymentProofFileId) {
+          throw invalid("Bukti pembayaran wajib dilampirkan");
+        }
+        return;
       }
       if (from !== "DIKIRIM") throw invalid("Barang belum diserahkan, belum bisa dikonfirmasi diterima");
       if (user.role !== "GUDANG" && !ADMIN_ROLES.includes(user.role) && user.id !== pr.requesterId) {

@@ -278,6 +278,12 @@ export class TaskDto {
   @IsOptional() @IsInt()
   bastFileId?: number;
 
+  @IsOptional() @Type(() => Number) @IsInt()
+  proofFileId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  fileId?: number;
+
   @IsOptional() @IsInt()
   doFileId?: number;
 }
@@ -305,6 +311,15 @@ export class TaskStatusDto {
 
   @IsOptional() @IsString()
   note?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  proofFileId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  bastFileId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  fileId?: number;
 }
 
 export class GenerateBastDto {

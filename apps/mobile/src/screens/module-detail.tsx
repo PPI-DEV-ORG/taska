@@ -568,6 +568,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
       setInvoicePayOpen(true);
       return;
     }
+    if (moduleKey === "delivery-notes" && s === "Diterima") {
+      const hasProof = row?.scanFileId || row?.fileId || row?.signedFileId;
+      if (!hasProof) {
+        toast("Bukti tanda terima / scan surat jalan bertanda tangan wajib dilampirkan sebelum status dapat diubah menjadi Diterima", "danger");
+        setDeliveryDocTargetStatus("Diterima");
+        setDeliveryDocOpen(true);
+        return;
+      }
+    }
     if (def?.confirmStatuses?.includes(s)) setPending(s);
     else void setStatus(moduleKey, id, s).then(() => handleRefresh());
   }
@@ -588,7 +597,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           ? row.nama
           : `Project ${row.nama}`
         : `Project ${custName}`;
-      await addRow("projects", {
+      const created = await addRow("projects", {
         nama: projName,
         customer: custName,
         perusahaan: custName,
@@ -603,8 +612,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         selesai: row.targetSelesai || row.closing || getTodayIso(),
         status: "Berjalan",
       });
-      toast("Proyek baru berhasil dibuat");
-      router.push("/leads");
+      if (created?.id) {
+        toast(a.toast || "Proyek baru berhasil dibuat");
+        if (a.to && row) {
+          router.push(a.to(row) as any);
+        } else {
+          router.push(`/projects/${created.id}` as any);
+        }
+      }
+      return;
     } else if (a.label === "Buat Pesanan Penjualan (SO)") {
       const matchedQuo =
         leadQuotation ||
@@ -818,17 +834,23 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   }
 
   async function handleSaveDeliveryDoc() {
-    if (!deliveryDocHasFile && !deliveryDocFileId && !deliveryDocReport.trim()) {
+    let finalFid = deliveryDocFileId;
+    if (deliveryDocFileHandle.current?.hasStaged()) {
+      finalFid = await deliveryDocFileHandle.current.flush();
+    }
+    const targetStatus = deliveryDocTargetStatus === "Diterima" ? "Diterima" : "Dikirim";
+
+    if (targetStatus === "Diterima" && !finalFid && !row?.scanFileId && !row?.fileId && !row?.signedFileId) {
+      toast("Bukti tanda terima / scan surat jalan bertanda tangan wajib dilampirkan untuk status Diterima", "danger");
+      return;
+    }
+
+    if (!deliveryDocHasFile && !finalFid && !row?.scanFileId && !row?.fileId && !deliveryDocReport.trim()) {
       toast("Lampirkan file surat jalan / bukti pengiriman atau isi laporan terlebih dahulu", "danger");
       return;
     }
     setSubmittingDeliveryDoc(true);
     try {
-      let finalFid = deliveryDocFileId;
-      if (deliveryDocFileHandle.current?.hasStaged()) {
-        finalFid = await deliveryDocFileHandle.current.flush();
-      }
-
       const patchPayload: Record<string, any> = {};
       if (finalFid) {
         const oldFid = row.scanFileId || row.fileId;
@@ -842,7 +864,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         patchPayload.reportText = deliveryDocReport.trim();
       }
       if (Object.keys(patchPayload).length > 0) {
-        await patchRow("delivery-notes", id, patchPayload).catch(() => {});
+        const patchOk = await patchRow("delivery-notes", id, patchPayload);
+        if (!patchOk) {
+          return;
+        }
       }
 
       const hasGoods = row.withGoods !== undefined ? Boolean(row.withGoods) : (row.barang && row.barang !== "-");
@@ -866,8 +891,10 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         });
       }
 
-      const targetStatus = deliveryDocTargetStatus === "Diterima" ? "Diterima" : "Dikirim";
-      await setStatus("delivery-notes", id, targetStatus);
+      const statusOk = await setStatus("delivery-notes", id, targetStatus, undefined, finalFid ? { scanFileId: finalFid } : undefined);
+      if (!statusOk) {
+        return;
+      }
 
       if (deliveryDocFileId) {
         const matchedSo = (data["po-client"] ?? []).find(
@@ -911,15 +938,6 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
               <Button variant="outline" onPress={() => setDeleteOpen(true)}>
                 <Trash2 size={15} color={colors.danger} />
                 <Text className="text-danger">Hapus</Text>
-              </Button>
-            ) : null}
-            {moduleKey === "delivery-notes" && (status === "Pending" || !status || status === "Menunggu persetujuan") ? (
-              <Button
-                variant="outline"
-                className="border-primary/50"
-                onPress={() => router.push(`/delivery-notes/new?id=${id}` as any)}
-              >
-                <Text className="text-primary font-medium">Edit Surat Jalan & Barang</Text>
               </Button>
             ) : null}
             {def.statuses.length > 1 && !(isLead && (user?.role === "bos" || user?.role === "admin")) ? (
@@ -1367,21 +1385,9 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                           />
                         ) : moduleKey === "delivery-notes" && f.key === "barang" ? (
                           <View className="gap-2 p-3 bg-panel/60 rounded-xl border border-border">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-xs text-muted-foreground font-medium">
-                                Barang Fisik & Serial Number
-                              </Text>
-                              {(status === "Pending" || !status || status === "Menunggu persetujuan") ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 px-2.5 border-primary/60"
-                                  onPress={() => router.push(`/delivery-notes/new?id=${id}` as any)}
-                                >
-                                  <Text className="text-xs text-primary font-semibold">Buka Form Edit Barang</Text>
-                                </Button>
-                              ) : null}
-                            </View>
+                            <Text className="text-xs text-muted-foreground font-medium">
+                              Barang Fisik & Serial Number
+                            </Text>
                             <Text className="text-sm font-medium text-foreground">
                               {row.barang && row.barang !== "-" ? row.barang : "Tanpa barang"}
                             </Text>
@@ -1699,7 +1705,11 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
           <View className="gap-3 py-2">
             <FileUploader
-              label="File Surat Jalan / DO Bertanda Tangan (Gambar / PDF)"
+              label={
+                deliveryDocTargetStatus === "Diterima"
+                  ? "File Surat Jalan / DO Bertanda Tangan (Wajib untuk Status Diterima) *"
+                  : "File Surat Jalan / DO Bertanda Tangan (Gambar / PDF)"
+              }
               kind="semua"
               accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
               allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}

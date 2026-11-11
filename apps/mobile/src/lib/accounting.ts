@@ -30,7 +30,7 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
   "1105": { code: "1105", name: "Uang Muka PPh / Pajak Dibayar Dimuka", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1100" },
 
   // 1200 ASSET
-  "1200": { code: "1200", name: "Persediaan barang dagang", category: "Aset Lancar", normalBalance: "DEBIT", type: "inventory" },
+  "1200": { code: "1200", name: "Persediaan barang dagang", category: "Aset Lancar", normalBalance: "DEBIT", type: "inventory", parentCode: "1103" },
   "1300": { code: "1300", name: "Perlengkapan", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset" },
   "1600": { code: "1600", name: "Ppn masukan", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset" },
 
@@ -47,7 +47,8 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
 
   // 3000 Modal
   "3000": { code: "3000", name: "Modal (Header)", category: "Ekuitas", normalBalance: "KREDIT" },
-  "310001": { code: "310001", name: "OPENING BALANCE EQUITY", category: "Ekuitas", normalBalance: "KREDIT", type: "equity", parentCode: "3000" },
+  "3101": { code: "3101", name: "Modal Kerja & Cadangan Persediaan Awal", category: "Ekuitas", normalBalance: "KREDIT", type: "equity", parentCode: "3000" },
+  "310001": { code: "3101", name: "Modal Kerja & Cadangan Persediaan Awal", category: "Ekuitas", normalBalance: "KREDIT", type: "equity", parentCode: "3000" },
   "3200.02": { code: "3200.02", name: "Dividend", category: "Ekuitas", normalBalance: "KREDIT", type: "equity", parentCode: "3000" },
   "3102": { code: "3102", name: "Laba Ditahan / Laba Bersih Tahun Berjalan", category: "Ekuitas", normalBalance: "KREDIT", parentCode: "3000" },
 
@@ -111,7 +112,6 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
   "1104": { code: "1104", name: "PPN Masukan (Input VAT)", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset" },
   "2101": { code: "2101", name: "Hutang Usaha Supplier (Accounts Payable)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "account payable", parentCode: "2000" },
   "2102": { code: "2102", name: "Hutang PPN Keluaran (Output VAT)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", type: "other current liability", parentCode: "2000" },
-  "3101": { code: "3101", name: "Modal Kerja & Cadangan Persediaan Awal", category: "Ekuitas", normalBalance: "KREDIT", type: "equity", parentCode: "3000" },
   "4101": { code: "4101", name: "Pendapatan Proyek & Penjualan", category: "Pendapatan", normalBalance: "KREDIT", type: "revenue", parentCode: "4000" },
 };
 
@@ -138,7 +138,9 @@ export interface JournalLine {
     | "Reimburse"
     | "Pembayaran Reimburse"
     | "Payroll & Gaji"
-    | "Jurnal Manual";
+    | "Jurnal Manual"
+    | "Saldo Awal"
+    | "Ikhtisar Laba Rugi";
   keterangan: string;
   project: string;
   kodeAkun: string;
@@ -2079,6 +2081,78 @@ export function computeFinancialStatements(
   const modalKerjaAwal = initialPhysicalStock + manualEquityNet + baseWorkingCapitalCash;
   const labaBerjalan = netProfit;
 
+  // 3d. Saldo Awal (Persediaan Fisik Gudang & Cadangan Kas Modal Kerja)
+  if (initialPhysicalStock > 0 || baseWorkingCapitalCash > 0) {
+    const openingEntries: Array<{ kodeAkun: string; keterangan: string; debit: number; kredit: number }> = [];
+    if (initialPhysicalStock > 0) {
+      openingEntries.push({
+        kodeAkun: "1200",
+        keterangan: "Saldo Awal Persediaan Fisik Perangkat Gudang",
+        debit: initialPhysicalStock,
+        kredit: 0,
+      });
+    }
+    if (baseWorkingCapitalCash > 0) {
+      openingEntries.push({
+        kodeAkun: "1000.01",
+        keterangan: "Saldo Awal Cadangan Kas & Bank Operasional",
+        debit: baseWorkingCapitalCash,
+        kredit: 0,
+      });
+    }
+    const totInitial = initialPhysicalStock + baseWorkingCapitalCash;
+    if (totInitial > 0) {
+      openingEntries.push({
+        kodeAkun: "3101",
+        keterangan: "Modal Kerja & Cadangan Persediaan Awal",
+        debit: 0,
+        kredit: totInitial,
+      });
+    }
+    const jNo = `JU-${String(seq++).padStart(4, "0")}`;
+    openingEntries.forEach((e, idx) => {
+      const acc = activeCoa[e.kodeAkun];
+      journalLines.push({
+        id: `${jNo}-${idx + 1}`,
+        journalNo: jNo,
+        tanggal: "2026-01-01 00:00",
+        refNo: "SALDO-AWAL-001",
+        sumber: "Saldo Awal",
+        keterangan: e.keterangan,
+        project: "Modal Awal",
+        kodeAkun: e.kodeAkun,
+        namaAkun: acc ? acc.name : e.kodeAkun,
+        debit: toNum(e.debit),
+        kredit: toNum(e.kredit),
+      });
+    });
+  }
+
+  // 3e. Ikhtisar Laba Rugi / Laba Bersih Periode Berjalan
+  if (labaBerjalan !== 0) {
+    const isProfit = labaBerjalan > 0;
+    const absProfit = Math.abs(labaBerjalan);
+    const jNo = `JU-${String(seq++).padStart(4, "0")}`;
+    const acc = activeCoa["3102"];
+    journalLines.push({
+      id: `${jNo}-1`,
+      journalNo: jNo,
+      tanggal: formatJournalDateTime(new Date().toISOString()),
+      refNo: "IKHTISAR-LR",
+      sumber: "Ikhtisar Laba Rugi",
+      keterangan: "Akumulasi Laba Bersih Periode Berjalan (Current Period Net Profit)",
+      project: "Operasional Umum",
+      kodeAkun: "3102",
+      namaAkun: acc ? acc.name : "Laba Ditahan / Laba Bersih Tahun Berjalan",
+      debit: isProfit ? 0 : absProfit,
+      kredit: isProfit ? absProfit : 0,
+    });
+  }
+
+  // Recalculate journal line totals
+  // const totalDebit = journalLines.reduce((sum, l) => sum + l.debit, 0);
+  // const totalKredit = journalLines.reduce((sum, l) => sum + l.kredit, 0);
+
   // 7. COA Trial Balance Summary (Aggregates standard + custom user accounts + manual journals)
   // Deduplicate by acc.code so legacy aliases do not duplicate rows or React keys
   const uniqueAccountsMap: Record<string, CoaAccount> = {};
@@ -2102,19 +2176,8 @@ export function computeFinancialStatements(
   const directMutasiMap: Record<string, { d: number; k: number }> = {};
   for (const acc of Object.values(uniqueAccountsMap)) {
     const lines = journalLines.filter((l) => l.kodeAkun === acc.code);
-    let d = lines.reduce((s, l) => s + l.debit, 0);
-    let k = lines.reduce((s, l) => s + l.kredit, 0);
-
-    if (acc.code === "1200" || acc.code === "1103") {
-      d += initialPhysicalStock;
-    } else if (acc.code === "310001" || acc.code === "3101") {
-      k += Math.max(0, modalKerjaAwal - manualEquityNet);
-    } else if (acc.code === "1101" || acc.code === "1000.01") {
-      d += baseWorkingCapitalCash;
-    } else if (acc.code === "3102") {
-      if (labaBerjalan >= 0) k += labaBerjalan;
-      else d += Math.abs(labaBerjalan);
-    }
+    const d = lines.reduce((s, l) => s + l.debit, 0);
+    const k = lines.reduce((s, l) => s + l.kredit, 0);
     directMutasiMap[acc.code] = { d, k };
   }
 

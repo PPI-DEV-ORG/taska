@@ -18,6 +18,7 @@ export type PurchaseFlowInput = {
   isShipped?: boolean;
   isReceived?: boolean;
   rejectReason?: string | null;
+  isProjectConsumable?: boolean;
 };
 
 export const purchaseKind = (src?: string | null): PurchaseKind => {
@@ -32,7 +33,14 @@ export function needsPrepayment(source: PurchaseKind, paymentMethod?: string | n
   return false;
 }
 
-export function purchaseSteps(source: PurchaseKind, paymentMethod?: string | null): FlowStepDef[] {
+export function purchaseSteps(source: PurchaseKind, paymentMethod?: string | null, isProjectConsumable?: boolean): FlowStepDef[] {
+  if (source === "RETAIL" && isProjectConsumable) {
+    return [
+      { key: "request", label: "Diajukan", owner: "pemohon", hint: "Permintaan material khusus proyek dibuat." },
+      { key: "approve", label: "Disetujui", owner: "finance", needs: ["request"], hint: "Finance menyetujui pembelian material proyek." },
+      { key: "pay", label: "Dibayar & Selesai", owner: "finance", needs: ["approve"], hint: "Finance membayar & mengunggah bukti bayar. Material langsung masuk ke BOQ proyek." },
+    ];
+  }
   const prepay = needsPrepayment(source, paymentMethod);
   if (source === "GUDANG") {
     return [
@@ -66,12 +74,12 @@ export function purchaseSteps(source: PurchaseKind, paymentMethod?: string | nul
 const AFTER_APPROVAL = ["DISETUJUI", "PO_DIBUAT", "DIBAYAR", "DIKIRIM", "DITERIMA"];
 
 export function evaluatePurchase(input: PurchaseFlowInput): FlowResult {
-  const { source, rawStatus: st } = input;
-  const defs = purchaseSteps(source, input.paymentMethod);
+  const { source, rawStatus: st, isProjectConsumable } = input;
+  const defs = purchaseSteps(source, input.paymentMethod, isProjectConsumable);
   const done = new Set<string>(["request"]);
   if (AFTER_APPROVAL.includes(st)) done.add("approve");
   if (input.poCount > 0 || input.poApproved) done.add("po");
-  if (input.isPaid) done.add("pay");
+  if (input.isPaid || (isProjectConsumable && st === "DITERIMA")) done.add("pay");
   if (st === "DIKIRIM" || st === "DITERIMA" || input.isShipped || input.isReceived) done.add("ship");
   if (st === "DITERIMA" || input.isReceived) done.add("receive");
   if ((st === "DITERIMA" || input.isReceived) && input.isPaid) done.add("settle");

@@ -187,8 +187,8 @@ type Ctx = {
   data: DB;
   addRow: (module: string, row: Record<string, any>) => Promise<Row | null>;
   deleteRow: (module: string, id: string) => Promise<boolean>;
-  patchRow: (module: string, id: string, patch: Record<string, any>) => Promise<void>;
-  setStatus: (module: string, id: string, status: string, note?: string, extra?: Record<string, any>) => Promise<void>;
+  patchRow: (module: string, id: string, patch: Record<string, any>) => Promise<boolean>;
+  setStatus: (module: string, id: string, status: string, note?: string, extra?: Record<string, any>) => Promise<boolean>;
   createQuotationFromLead: (lead: Row, extra?: { items?: any[]; fileUploaded?: boolean; status?: string }) => Promise<Row | null>;
   history: (module: string, id: string) => HistoryItem[];
   pushHistory: (module: string, id: string, what: string) => void;
@@ -261,7 +261,7 @@ const ROUTE_MODULES_BY_SEGMENT: Record<string, readonly string[]> = {
     "serials", "customers", "users", "surveys", "poc-reports", "visit-reports",
   ],
   tasks: ["tasks", "projects", "users"],
-  "purchase-requests": ["purchase-requests", "projects", "products", "serials", "suppliers", "supplier-pos", "expenses", "warehouses"],
+  "purchase-requests": ["purchase-requests", "projects", "products", "serials", "suppliers", "supplier-pos", "expenses", "warehouses", "invoiceIn"],
   "supplier-pos": ["supplier-pos", "purchase-requests", "suppliers", "po-client", "receiving", "invoiceIn", "products", "serials", "warehouses", "projects", "expenses"],
   shipments: ["supplier-pos", "receiving", "suppliers", "warehouses"],
   receiving: ["receiving", "supplier-pos", "warehouses", "products", "serials", "movements"],
@@ -1147,9 +1147,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const patchRow = React.useCallback(
-    async (module: string, id: string, patch: Record<string, any>) => {
+    async (module: string, id: string, patch: Record<string, any>): Promise<boolean> => {
       const path = PATHS[module];
-      if (!path) return;
+      if (!path) return false;
       const existingRow = (data[module] as Row[] | undefined)?.find((r: any) => String(r.id) === String(id));
       if (existingRow) {
         const changedKeys = Object.keys(patch).filter((k) => {
@@ -1189,7 +1189,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       if (offline || String(id).startsWith("offline-")) {
         enqueueOfflinePatch(module, id, patch);
-        return;
+        return true;
       }
       try {
         const body = buildPatchBody(module, patch, data);
@@ -1198,13 +1198,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           await api("PATCH", `${path}/${id}`, body);
           await refreshModule(module);
         }
+        return true;
       } catch (e: any) {
         if (isNetworkError(e)) {
           setOffline(true);
           enqueueOfflinePatch(module, id, patch);
-          return;
+          return true;
         }
         toast(e?.message ?? "Gagal mengubah", "danger");
+        void refreshModule(module);
+        return false;
       }
     },
     [data, offline, enqueueOfflinePatch, pushHistory, refreshModule, toast],
@@ -1391,13 +1394,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setStatus = React.useCallback(
-    async (module: string, id: string, status: string, note?: string, extra?: Record<string, any>) => {
+    async (module: string, id: string, status: string, note?: string, extra?: Record<string, any>): Promise<boolean> => {
       const def = MODULES[module];
       const key = def?.statusKey || "status";
 
       if (offline || String(id).startsWith("offline-")) {
         enqueueOfflineStatus(module, id, status, note);
-        return;
+        return true;
       }
 
       try {
@@ -1406,10 +1409,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (isNetworkError(e)) {
           setOffline(true);
           enqueueOfflineStatus(module, id, status, note);
-          return;
+          return true;
         }
         toast(e?.message ?? "Gagal mengubah status", "danger");
-        return;
+        return false;
       }
 
       // optimistik
@@ -1510,6 +1513,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await refreshModule("projects");
         await refreshModule("po-client");
       }
+      return true;
     },
     [data.leads, offline, enqueueOfflineStatus, executeRemoteStatus, pushHistory, toast, refreshModule, createQuotationFromLead],
   );

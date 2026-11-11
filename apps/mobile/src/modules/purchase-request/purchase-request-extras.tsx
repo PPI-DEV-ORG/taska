@@ -306,6 +306,11 @@ export function PurchaseRequestExtras({
     });
   }, [items, stockInfo]);
 
+  const isProjectConsumableRequest =
+    isProject &&
+    (String(row.otherNote || "").includes("[ALL_CONSUMABLES]") ||
+      (items.length > 0 && items.every((it: any) => String(it.customName || "").includes("[PAKAI_HABIS]"))));
+
   const linkedInvoices = React.useMemo(() => {
     if (!linkedPo) return [];
     return (data.invoiceIn ?? []).filter(
@@ -503,8 +508,12 @@ export function PurchaseRequestExtras({
           return;
         }
       }
-      const nextStatus = isDebt ? "Lunas" : "Dibayar";
-      setLocalStatus(isDebt ? "LUNAS" : "DIBAYAR");
+      const isProjectConsumableRequest =
+        isProject &&
+        (String(row.otherNote || "").includes("[ALL_CONSUMABLES]") ||
+          (items.length > 0 && items.every((it: any) => String(it.customName || "").includes("[PAKAI_HABIS]"))));
+      const nextStatus = isProjectConsumableRequest ? "Diterima" : (isDebt ? "Lunas" : "Dibayar");
+      setLocalStatus(isProjectConsumableRequest ? "DITERIMA" : (isDebt ? "LUNAS" : "DIBAYAR"));
       await setStatus("purchase-requests", row.id, nextStatus, undefined, {
         paymentProofFileId: finalProofId,
         fundingSource: selectedFundingSource,
@@ -521,7 +530,9 @@ export function PurchaseRequestExtras({
       setPayProofHasFile(false);
       payProofHandle.current = null;
       toast(
-        isDebt
+        isProjectConsumableRequest
+          ? "Pembayaran dikonfirmasi! Material khusus project otomatis ditambahkan ke Barang Tambahan Project dan pengadaan selesai."
+          : isDebt
           ? "Permintaan & PO berhasil ditandai Lunas. Hutang Usaha (210102) telah selesai dicatat di kas keluar!"
           : "Pembayaran kas berhasil dicatat. Status permintaan menjadi Dibayar. Procurement dapat menandai barang dikirim.",
       );
@@ -598,6 +609,14 @@ export function PurchaseRequestExtras({
 
   // Visual Stepper Stages per Jenis & Flow Request
   const steps = React.useMemo(() => {
+    if (isProjectConsumableRequest) {
+      return [
+        { label: "Diajukan", done: true, current: isDiajukan },
+        { label: "Disetujui", done: isApproved, current: isDisetujui && !isDiterima },
+        { label: "Dibayar Kas", done: isDiterima || isPaid, current: isApproved && !isDiterima },
+        { label: "Masuk Proyek (Diterima)", done: isDiterima, current: isDiterima },
+      ];
+    }
     if (isStockTake) {
       // Flow 1: Ambil Stok Gudang untuk Project
       return [
@@ -771,15 +790,27 @@ export function PurchaseRequestExtras({
             </Text>
           </View>
         </View>
-      ) : isDiterima && isPaid ? (
+      ) : isDiterima && (isPaid || isProjectConsumableRequest) ? (
         <View className="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-4 flex-row items-center gap-3">
           <CheckCircle2 size={22} color="#10b981" />
           <View className="flex-1">
             <Text className="text-emerald-700 dark:text-emerald-400 font-bold text-base">
-              Pengadaan Selesai & Lunas
+              {isProjectConsumableRequest
+                ? "Pengadaan Material Khusus Project Selesai"
+                : isStockTake
+                ? "Barang Selesai Diterima di Proyek"
+                : isDebt
+                ? "Pengadaan Selesai & Lunas"
+                : "Barang Selesai Diterima di Gudang"}
             </Text>
             <Text className="text-muted-foreground text-xs mt-0.5">
-              Seluruh barang telah diterima di gudang/proyek dan pembayaran telah dilunasi sepenuhnya (Lunas).
+              {isProjectConsumableRequest
+                ? `Material khusus project telah dibayar dan langsung dimasukkan ke BOQ Barang Tambahan Project ${row.project || ""}.`
+                : isStockTake
+                ? `Barang dari gudang telah diterima oleh tim proyek (${row.pemohon || "User"}).`
+                : isDebt
+                ? "Barang telah diterima di gudang dan hutang telah dilunasi sepenuhnya oleh Finance."
+                : "Barang telah diterima di gudang, stok tercatat bertambah, dan proses pengadaan telah tuntas."}
             </Text>
           </View>
         </View>
@@ -1122,7 +1153,13 @@ export function PurchaseRequestExtras({
             ) : null}
 
             {/* Link Bukti Pembayaran */}
-            {row.paymentProofFileId || row.paymentProofFile ? (
+            {row.paymentProofFileId ||
+            row.paymentProofFile ||
+            linkedInvoices.some(
+              (inv: any) =>
+                Boolean(inv.transferFileId) ||
+                (Array.isArray(inv._payments) && inv._payments.some((p: any) => p.fileId)),
+            ) ? (
               <View className="flex-row items-center gap-1.5 bg-card border-border/70 border rounded-lg px-2.5 py-1">
                 <CheckCircle2 size={13} color={colors.success} />
                 <Text className="text-xs font-semibold text-foreground">
@@ -1276,7 +1313,7 @@ export function PurchaseRequestExtras({
                 <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
                   <CheckCircle2 size={15} color="#10b981" />
                   <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    ✓ Sudah Dibayar Kas
+                    {isProjectConsumableRequest ? "✓ Sudah Dibayar & Masuk Proyek" : "✓ Sudah Dibayar Kas"}
                   </Text>
                 </View>
               ) : isApproved && isFinance && !isDitolak ? (
@@ -1315,54 +1352,56 @@ export function PurchaseRequestExtras({
             )}
 
             {/* 5. Serahkan / Kirim Barang */}
-            {isDispatched ? (
-              <View className="bg-indigo-500/15 border border-indigo-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
-                <Truck size={15} color="#6366f1" />
-                <Text className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
-                  {isStockTake ? "✓ Barang Telah Diserahkan" : "✓ Pengadaan Sedang / Sudah Dikirim"}
-                </Text>
-              </View>
-            ) : !isDitolak ? (
-              isStockTake && isApproved && isGudang ? (
-                <Button size="sm" onPress={() => setConfirmSendOpen(true)} disabled={loading}>
-                  <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold">Serahkan Barang ke Proyek</Text>
-                </Button>
-              ) : isRetailCash && isPaid && (isProcurement || isGudang) ? (
-                <Button
-                  size="sm"
-                  onPress={() => setConfirmSendOpen(true)}
-                  disabled={loading}
-                  className="bg-indigo-600 hover:bg-indigo-700"
-                >
-                  <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
-                </Button>
-              ) : isRetailDebt && isApproved && (isProcurement || isGudang) ? (
-                <Button
-                  size="sm"
-                  onPress={() => setConfirmSendOpen(true)}
-                  disabled={loading}
-                  className="bg-indigo-600 hover:bg-indigo-700"
-                >
-                  <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
-                </Button>
-              ) : isSupplierPo && (isDebt ? isPoDibuat || isApproved : isPaid) && (isProcurement || isGudang) ? (
-                <Button
-                  size="sm"
-                  className="bg-sky-600 hover:bg-sky-700"
-                  onPress={() => setConfirmSendOpen(true)}
-                  disabled={loading}
-                >
-                  <Truck size={14} color="#fff" />
-                  <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
-                </Button>
+            {!isProjectConsumableRequest && (
+              isDispatched ? (
+                <View className="bg-indigo-500/15 border border-indigo-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
+                  <Truck size={15} color="#6366f1" />
+                  <Text className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">
+                    {isStockTake ? "✓ Barang Telah Diserahkan" : "✓ Pengadaan Sedang / Sudah Dikirim"}
+                  </Text>
+                </View>
+              ) : !isDitolak ? (
+                isStockTake && isApproved && isGudang ? (
+                  <Button size="sm" onPress={() => setConfirmSendOpen(true)} disabled={loading}>
+                    <Truck size={14} color="#fff" />
+                    <Text className="text-xs font-semibold">Serahkan Barang ke Proyek</Text>
+                  </Button>
+                ) : isRetailCash && isPaid && (isProcurement || isGudang) ? (
+                  <Button
+                    size="sm"
+                    onPress={() => setConfirmSendOpen(true)}
+                    disabled={loading}
+                    className="bg-indigo-600 hover:bg-indigo-700"
+                  >
+                    <Truck size={14} color="#fff" />
+                    <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
+                  </Button>
+                ) : isRetailDebt && isApproved && (isProcurement || isGudang) ? (
+                  <Button
+                    size="sm"
+                    onPress={() => setConfirmSendOpen(true)}
+                    disabled={loading}
+                    className="bg-indigo-600 hover:bg-indigo-700"
+                  >
+                    <Truck size={14} color="#fff" />
+                    <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
+                  </Button>
+                ) : isSupplierPo && (isDebt ? isPoDibuat || isApproved : isPaid) && (isProcurement || isGudang) ? (
+                  <Button
+                    size="sm"
+                    className="bg-sky-600 hover:bg-sky-700"
+                    onPress={() => setConfirmSendOpen(true)}
+                    disabled={loading}
+                  >
+                    <Truck size={14} color="#fff" />
+                    <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
+                  </Button>
+                ) : null
               ) : null
-            ) : null}
+            )}
 
             {/* Konfirmasi Penerimaan Barang di Gudang */}
-            {isDispatched && !isDiterima && !isDitolak ? (
+            {!isProjectConsumableRequest && isDispatched && !isDiterima && !isDitolak ? (
               <Button
                 size="sm"
                 className="bg-emerald-600 hover:bg-emerald-700"
@@ -1375,7 +1414,7 @@ export function PurchaseRequestExtras({
             ) : null}
 
             {/* 6. Terbitkan PO Supplier Formal */}
-            {isSupplierPo && !linkedPo && !isPoDibuat && !isDitolak && isApproved && (
+            {!isProjectConsumableRequest && isSupplierPo && !linkedPo && !isPoDibuat && !isDitolak && isApproved && (
               <Button
                 size="sm"
                 className="bg-primary hover:bg-primary/90"

@@ -185,6 +185,14 @@ export class TasksService {
       await this.assertAssignee(dto.assigneeId);
     }
 
+    const proofId = dto.proofFileId ?? dto.bastFileId ?? dto.fileId;
+    if (dto.status === "DONE") {
+      const hasProof = proofId ?? task.bastFileId;
+      if (!hasProof) {
+        throw new BadRequestException("Bukti selesai tugas (foto/dokumen) wajib dilampirkan sebelum status dapat diubah menjadi DONE");
+      }
+    }
+
     const nextProgress =
       dto.progress !== undefined
         ? dto.progress
@@ -209,7 +217,7 @@ export class TasksService {
         progress: nextProgress,
         needsPurchase: dto.needsPurchase ?? task.needsPurchase,
         bahpFileId: dto.bahpFileId ?? task.bahpFileId,
-        bastFileId: dto.bastFileId ?? task.bastFileId,
+        bastFileId: proofId ?? task.bastFileId,
         doFileId: dto.doFileId ?? task.doFileId,
       },
       include: {
@@ -244,10 +252,30 @@ export class TasksService {
   async setStatus(id: number, dto: TaskStatusDto, user: RequestUser) {
     const task = await this.prisma.main.task.findUnique({ where: { id }, include: { project: true } });
     if (!task) throw new NotFoundException("Task tidak ditemukan");
+
+    const proofFileId = dto.proofFileId ?? dto.bastFileId ?? dto.fileId;
+    if (dto.status === "DONE") {
+      const hasProof = proofFileId ?? task.bastFileId;
+      if (!hasProof) {
+        throw new BadRequestException("Bukti selesai tugas (foto/dokumen) wajib dilampirkan sebelum status dapat diubah menjadi DONE");
+      }
+    }
+
+    if (proofFileId) {
+      await this.prisma.main.file.update({
+        where: { id: proofFileId },
+        data: { refType: "task-proof", refId: String(id) },
+      }).catch(() => {});
+    }
+
     const progress = dto.status === "DONE" ? 100 : (dto.progress ?? task.progress);
     const updated = await this.prisma.main.task.update({
       where: { id },
-      data: { status: dto.status as any, progress },
+      data: {
+        status: dto.status as any,
+        progress,
+        ...(proofFileId ? { bastFileId: proofFileId } : {}),
+      },
       include: {
         project: { select: { id: true, name: true } },
         assignee: { select: { id: true, name: true, role: true } },
@@ -331,6 +359,7 @@ export class TasksService {
     const map: [number | undefined, string][] = [
       [dto.bahpFileId, "task-bahp"],
       [dto.bastFileId, "task-bast"],
+      [dto.proofFileId ?? dto.fileId, "task-proof"],
       [dto.doFileId, "task-do"],
     ];
     for (const [fileId, refType] of map) {

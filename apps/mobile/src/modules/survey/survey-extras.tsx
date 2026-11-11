@@ -21,7 +21,8 @@ import { Line } from "@/modules/shared/line";
 export function SurveyExtras({ row }: { row: Row }) {
   const { addRow, patchRow, toast, data, user, companyProfile } = useApp();
   const [techNoteOpen, setTechNoteOpen] = React.useState(false);
-  const [techNotes, setTechNotes] = React.useState(row.catatanTeknis || "");
+  const [localTechNotes, setLocalTechNotes] = React.useState<string | null>(null);
+  const techNotes = localTechNotes ?? (row.catatanTeknis || row.notes || row.catatan || "");
   const [inputTechNotes, setInputTechNotes] = React.useState(techNotes);
   const [selectedExp, setSelectedExp] = React.useState<Row | null>(null);
 
@@ -70,11 +71,16 @@ export function SurveyExtras({ row }: { row: Row }) {
       .reduce((acc: number, e: Row) => acc + (Number(e.nominal || e.amount) || 0), 0);
   }, [surveyExpenses]);
 
-  function handleSaveTechNotes() {
-    setTechNotes(inputTechNotes);
-    patchRow("surveys", row.id, { catatanTeknis: inputTechNotes });
+  async function handleSaveTechNotes() {
+    const val = inputTechNotes;
+    setLocalTechNotes(val);
     setTechNoteOpen(false);
-    toast("Catatan teknis lapangan berhasil disimpan");
+    try {
+      await patchRow("surveys", row.id, { catatanTeknis: val, notes: val });
+      toast("Catatan teknis lapangan berhasil disimpan");
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal menyimpan catatan teknis", "danger");
+    }
   }
 
   async function handleAddExpense() {

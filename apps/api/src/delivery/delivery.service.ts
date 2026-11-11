@@ -158,8 +158,18 @@ export class DeliveryService implements OnModuleInit {
   }
 
   async update(id: number, dto: DeliveryCreateDto, user: RequestUser) {
-    const row = await this.prisma.main.deliveryNote.findUnique({ where: { id } });
+    const row = await this.prisma.main.deliveryNote.findUnique({
+      where: { id },
+      include: { locations: true },
+    });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
+
+    if (dto.status === "DITERIMA") {
+      const hasProof = dto.scanFileId ?? dto.fileId ?? row.scanFileId;
+      if (!hasProof) {
+        throw new BadRequestException("Bukti tanda terima / scan surat jalan bertanda tangan wajib dilampirkan sebelum status dapat diubah menjadi Diterima");
+      }
+    }
 
     const updated = await this.prisma.main.deliveryNote.update({
       where: { id },
@@ -207,6 +217,12 @@ export class DeliveryService implements OnModuleInit {
       },
     });
 
+    const effectiveStatus = dto.status || row.status;
+    if (["DIKIRIM", "DITERIMA"].includes(effectiveStatus) && dto.items?.length) {
+      const firstLoc = updated.locations?.[0] || row.locations?.[0];
+      await this.syncSerialsOnUpdate(id, row.number, effectiveStatus, firstLoc, dto.items, user);
+    }
+
     if (dto.scanFileId || dto.fileId) {
       const fid = dto.scanFileId ?? dto.fileId;
       const fileRow = await this.prisma.main.file.findUnique({ where: { id: Number(fid) } }).catch(() => null);
@@ -227,6 +243,110 @@ export class DeliveryService implements OnModuleInit {
 
     this.notifications.dataChange("delivery-notes", "update", updated.id);
     return this.get(id);
+  }
+
+  private async syncSerialsOnUpdate(
+    id: number,
+    dnNumber: string,
+    dnStatus: string,
+    firstLocation: any,
+    items: any[],
+    user: RequestUser,
+  ) {
+    const rawSerials = (items ?? [])
+      .flatMap((it) => (it.serials ? String(it.serials).split(",") : []))
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const uniqueSerials = Array.from(new Set(rawSerials));
+    if (uniqueSerials.length === 0) return;
+
+    const units = await this.prisma.main.serialUnit.findMany({
+      where: { sn: { in: uniqueSerials } },
+    });
+
+    const isDelivered = dnStatus === "DITERIMA";
+    const targetStatus = isDelivered && firstLocation?.projectId ? "TERPASANG" : "DIKIRIM";
+
+    for (const u of units) {
+      const existingMovement = await this.prisma.main.stockMovement.findFirst({
+        where: { deliveryNoteId: id, serialUnitId: u.id },
+      });
+
+      if (!existingMovement) {
+        const unlinkedMovement = await this.prisma.main.stockMovement.findFirst({
+          where: { deliveryNoteId: id, productId: u.productId, serialUnitId: null },
+        });
+
+        if (unlinkedMovement) {
+          if (Number(unlinkedMovement.qty) > 1) {
+            await this.prisma.main.stockMovement.update({
+              where: { id: unlinkedMovement.id },
+              data: { qty: Number(unlinkedMovement.qty) - 1 },
+            });
+            await this.prisma.main.stockMovement.create({
+              data: {
+                date: unlinkedMovement.date,
+                type: "OUT",
+                category: unlinkedMovement.category,
+                productId: u.productId,
+                fromWarehouseId: unlinkedMovement.fromWarehouseId,
+                qty: 1,
+                serialUnitId: u.id,
+                deliveryNoteId: id,
+                projectId: firstLocation?.projectId ?? unlinkedMovement.projectId ?? null,
+                reason: unlinkedMovement.reason,
+                createdById: user.id,
+              },
+            });
+          } else {
+            await this.prisma.main.stockMovement.update({
+              where: { id: unlinkedMovement.id },
+              data: { serialUnitId: u.id },
+            });
+          }
+        } else {
+          await this.stock.applyMovement({
+            date: new Date(),
+            type: "OUT",
+            category: "KELUAR_SURAT_JALAN",
+            productId: u.productId,
+            fromWarehouseId: u.warehouseId ?? undefined,
+            qty: 1,
+            serialUnitId: u.id,
+            deliveryNoteId: id,
+            projectId: firstLocation?.projectId ?? null,
+            reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
+            createdById: user.id,
+          }).catch(() => {});
+        }
+      }
+
+      if (u.status !== targetStatus) {
+        await this.prisma.main.serialUnit.update({
+          where: { id: u.id },
+          data: {
+            status: targetStatus,
+            warehouseId: null,
+            ...(isDelivered && firstLocation?.projectId ? { projectId: firstLocation.projectId } : {}),
+          },
+        });
+        await this.prisma.main.stockReservation.updateMany({
+          where: { serialUnitId: u.id, releasedAt: null },
+          data: { releasedAt: new Date() },
+        });
+        await this.prisma.main.serialUnitHistory.create({
+          data: {
+            serialUnitId: u.id,
+            status: targetStatus,
+            projectId: isDelivered ? firstLocation?.projectId : null,
+            note: isDelivered
+              ? `Diterima dan terpasang di lokasi ${firstLocation?.destination ?? "-"} (surat jalan ${dnNumber})`
+              : `Keluar dengan surat jalan ${dnNumber} (input SN)`,
+            changedById: user.id,
+          },
+        });
+      }
+    }
   }
 
   async list(q: DeliveryListQuery) {
@@ -402,53 +522,57 @@ export class DeliveryService implements OnModuleInit {
       if (remainingQty <= 0) continue;
 
       if (product.hasSerial) {
-        const autoUnits = await this.prisma.main.serialUnit.findMany({
-          where: {
-            productId: item.productId,
-            status: { in: ["DI_GUDANG", "RESERVED"] },
-            warehouseId: { not: null },
-          },
-          take: remainingQty,
-        });
-        for (const u of autoUnits) {
-          if (!u.warehouseId) continue;
-          await this.stock.applyMovement({
-            date: row.date,
-            type: "OUT",
-            category: "KELUAR_SURAT_JALAN",
-            productId: u.productId,
-            fromWarehouseId: u.warehouseId,
-            qty: 1,
-            serialUnitId: u.id,
-            deliveryNoteId: row.id,
-            projectId: firstLocation?.projectId ?? null,
-            reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
-            createdById: user.id,
-          });
-          await this.prisma.main.serialUnit.update({
-            where: { id: u.id },
-            data: { status: "DIKIRIM", warehouseId: null },
-          });
-          await this.prisma.main.stockReservation.updateMany({
-            where: { serialUnitId: u.id, releasedAt: null },
-            data: { releasedAt: new Date() },
-          });
-          await this.prisma.main.serialUnitHistory.create({
-            data: {
-              serialUnitId: u.id,
-              status: "DIKIRIM",
-              warehouseId: u.warehouseId,
-              note: `Keluar dengan surat jalan ${row.number}`,
-              changedById: user.id,
+        const itemHasDeclaredSerials = Boolean(item.serials && String(item.serials).trim().length > 0);
+        if (itemHasDeclaredSerials) {
+          const autoUnits = await this.prisma.main.serialUnit.findMany({
+            where: {
+              productId: item.productId,
+              status: { in: ["DI_GUDANG", "RESERVED"] },
+              warehouseId: { not: null },
             },
+            take: remainingQty,
           });
-          dispatchedCount++;
+          for (const u of autoUnits) {
+            if (!u.warehouseId) continue;
+            await this.stock.applyMovement({
+              date: row.date,
+              type: "OUT",
+              category: "KELUAR_SURAT_JALAN",
+              productId: u.productId,
+              fromWarehouseId: u.warehouseId,
+              qty: 1,
+              serialUnitId: u.id,
+              deliveryNoteId: row.id,
+              projectId: firstLocation?.projectId ?? null,
+              reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
+              createdById: user.id,
+            });
+            await this.prisma.main.serialUnit.update({
+              where: { id: u.id },
+              data: { status: "DIKIRIM", warehouseId: null },
+            });
+            await this.prisma.main.stockReservation.updateMany({
+              where: { serialUnitId: u.id, releasedAt: null },
+              data: { releasedAt: new Date() },
+            });
+            await this.prisma.main.serialUnitHistory.create({
+              data: {
+                serialUnitId: u.id,
+                status: "DIKIRIM",
+                warehouseId: u.warehouseId,
+                note: `Keluar dengan surat jalan ${row.number}`,
+                changedById: user.id,
+              },
+            });
+            dispatchedCount++;
+          }
+          const stillRemaining = remainingQty - autoUnits.length;
+          if (stillRemaining <= 0) continue;
         }
-        const stillRemaining = remainingQty - autoUnits.length;
-        if (stillRemaining <= 0) continue;
+
         const balance =
           (await this.prisma.main.stockBalance.findFirst({
-            where: { productId: item.productId, qty: { gte: stillRemaining } },
+            where: { productId: item.productId, qty: { gte: remainingQty } },
           })) ??
           (await this.prisma.main.stockBalance.findFirst({
             where: { productId: item.productId, qty: { gt: 0 } },
@@ -461,13 +585,13 @@ export class DeliveryService implements OnModuleInit {
             category: "KELUAR_SURAT_JALAN",
             productId: item.productId,
             fromWarehouseId: warehouseId,
-            qty: stillRemaining,
+            qty: remainingQty,
             deliveryNoteId: row.id,
             projectId: firstLocation?.projectId ?? null,
-            reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
+            reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason} (Barang SN belum scan)` : null,
             createdById: user.id,
           }).catch(() => {});
-          dispatchedCount += stillRemaining;
+          dispatchedCount += remainingQty;
         }
         continue;
       }
@@ -524,6 +648,21 @@ export class DeliveryService implements OnModuleInit {
       include: { locations: true, items: true },
     });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
+
+    if (dto.scanFileId) {
+      await this.prisma.main.deliveryNote.update({
+        where: { id },
+        data: { scanFileId: dto.scanFileId },
+      });
+      row.scanFileId = dto.scanFileId;
+    }
+
+    if (dto.status === "DITERIMA") {
+      const hasProof = row.scanFileId || dto.scanFileId;
+      if (!hasProof) {
+        throw new BadRequestException("Bukti tanda terima / scan surat jalan bertanda tangan wajib dilampirkan sebelum status dapat diubah menjadi Diterima");
+      }
+    }
 
     if (dto.status === "DIKIRIM" && (row.withGoods || (row.items && row.items.length > 0))) {
       await this.prepareGoods(id, {}, user).catch(() => {});
