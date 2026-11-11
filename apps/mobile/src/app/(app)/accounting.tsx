@@ -58,6 +58,7 @@ export default function AccountingScreen() {
     () => loadDeletedCoaCodes(),
   );
   const [deleteCoaTarget, setDeleteCoaTarget] = React.useState<CoaTrialBalanceRow | null>(null);
+  const [deleteJournalTarget, setDeleteJournalTarget] = React.useState<{ id: string; journalNo?: string; keterangan?: string } | null>(null);
 
   const fin = React.useMemo(
     () => computeFinancialStatements(data, manualJournals, customAccounts, deletedCoaCodes),
@@ -137,6 +138,31 @@ export default function AccountingScreen() {
           dbAccounts.forEach((a) => mergedMap.set(a.code, a));
           const merged = Array.from(mergedMap.values());
           saveCustomCoa(merged);
+          return merged;
+        });
+      })
+      .catch(() => {});
+
+    api<{ items?: any[] }>("GET", "/manual-journals")
+      .then((res) => {
+        if (!active || !Array.isArray(res?.items) || res.items.length === 0) return;
+        const dbJournals: ManualJournal[] = res.items.map((r: any) => ({
+          id: String(r.id || r.journalNo),
+          journalNo: r.journalNo,
+          tanggal: r.date || r.tanggal,
+          refNo: r.refNo || "-",
+          keterangan: r.description || r.keterangan,
+          project: r.project || "-",
+          createdBy: r.createdBy || "Admin Finance",
+          createdAt: r.createdAt,
+          lines: typeof r.lines === "string" ? JSON.parse(r.lines) : r.lines,
+        }));
+        setManualJournals((prev) => {
+          const map = new Map<string, ManualJournal>();
+          prev.forEach((j) => map.set(j.journalNo || j.id, j));
+          dbJournals.forEach((j) => map.set(j.journalNo || j.id, j));
+          const merged = Array.from(map.values());
+          saveManualJournals(merged);
           return merged;
         });
       })
@@ -225,6 +251,7 @@ export default function AccountingScreen() {
     const nextList = [newJournal, ...manualJournals];
     setManualJournals(nextList);
     saveManualJournals(nextList);
+    void api("POST", "/manual-journals", newJournal).catch(() => {});
 
     toast("Ayat jurnal manual berhasil disimpan ke buku besar akuntansi.", "success");
     setManualModalOpen(false);
@@ -291,6 +318,18 @@ export default function AccountingScreen() {
 
     toast(`Akun [${targetCode}] ${deleteCoaTarget.name} berhasil dihapus dari COA.`, "success");
     setDeleteCoaTarget(null);
+  };
+
+  const handleDeleteManualJournal = () => {
+    if (!deleteJournalTarget) return;
+    const targetId = deleteJournalTarget.id;
+    const targetNo = deleteJournalTarget.journalNo || "";
+    const nextList = manualJournals.filter((j) => j.id !== targetId && j.journalNo !== targetNo);
+    setManualJournals(nextList);
+    saveManualJournals(nextList);
+    setDeleteJournalTarget(null);
+    void api("DELETE", `/manual-journals/${encodeURIComponent(targetId || targetNo)}`).catch(() => {});
+    toast(`Ayat jurnal manual ${targetNo ? `[${targetNo}] ` : ""}berhasil dihapus.`, "success");
   };
 
   const handleExportJournalCsv = () => {
@@ -468,6 +507,7 @@ export default function AccountingScreen() {
               setSelectedLedgerCode(code);
               setActiveTab("ledger");
             }}
+            onDeleteManualJournal={(t) => setDeleteJournalTarget(t)}
           />
         )}
 
@@ -574,6 +614,17 @@ export default function AccountingScreen() {
         confirmLabel="Ya, Hapus Akun"
         destructive
         onConfirm={handleDeleteCoaAccount}
+      />
+
+      {/* Dialog Konfirmasi Hapus Ayat Jurnal Manual */}
+      <ConfirmDialog
+        open={!!deleteJournalTarget}
+        onOpenChange={(v) => !v && setDeleteJournalTarget(null)}
+        title="Hapus Ayat Jurnal Manual?"
+        description={`Apakah Anda yakin ingin menghapus seluruh ayat jurnal manual [${deleteJournalTarget?.journalNo || "-"}] (${deleteJournalTarget?.keterangan || "-"})? Entri debit dan kredit terkait akan ditiadakan dari buku besar.`}
+        confirmLabel="Ya, Hapus Jurnal"
+        destructive
+        onConfirm={handleDeleteManualJournal}
       />
     </ScrollView>
   );

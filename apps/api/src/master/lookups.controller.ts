@@ -104,3 +104,23 @@ export class CoaAccountsController {
     return this.service.removeCoa(code);
   }
 }
+
+@Controller("manual-journals")
+export class ManualJournalsController {
+  constructor(readonly service: LookupsService) {}
+
+  @Get()
+  list() {
+    return this.service.listManualJournals();
+  }
+
+  @Post()
+  create(@Body() dto: any) {
+    return this.service.createManualJournal(dto);
+  }
+
+  @Delete(":id")
+  remove(@Param("id") id: string) {
+    return this.service.removeManualJournal(id);
+  }
+}

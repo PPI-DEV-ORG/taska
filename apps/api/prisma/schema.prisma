@@ -1846,3 +1846,19 @@ model CoaAccount {
   @@index([category])
 }
 
+// ─────────────────────────────── Jurnal Umum Manual ───────────────────────────────
+model ManualJournal {
+  id          Int      @id @default(autoincrement())
+  journalNo   String   @unique
+  date        String
+  refNo       String?
+  description String   @db.Text
+  project     String?
+  lines       String   @db.LongText
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+}
+

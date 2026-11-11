@@ -90,6 +90,41 @@ interface CustomItemRow {
   hargaBeli: string;
   berSN?: boolean;
   isProjectConsumable?: boolean;
+  merk?: string;
+  sku?: string;
+  kategori?: string;
+  hargaJual?: string;
+}
+
+interface SelectedItemRow {
+  isCustom: boolean;
+  isProjectConsumable?: boolean;
+  customId?: string;
+  productId?: number;
+  nama: string;
+  merk: any;
+  sku?: string;
+  kategori?: string;
+  hargaJual?: string;
+  satuan: string;
+  berSN: boolean;
+  availSns: string[];
+  chosenSns: string[];
+  hargaBeli: number;
+  qty: number;
+  stock: number;
+  subtotal: number;
+}
+
+function generateAutoSku(sku?: string): string {
+  if (sku && sku.trim()) return sku.trim().toUpperCase();
+  const timePart = Date.now().toString().slice(-6);
+  const randPart = Math.floor(Math.random() * 100);
+  return `SKU-${timePart}-${randPart}`;
+}
+
+function generateCustomItemId(): string {
+  return `CUST-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 export default function NewPurchaseRequestScreen() {
@@ -141,9 +176,13 @@ export default function NewPurchaseRequestScreen() {
   // Step 2: Non-master (custom / retail) items
   const [customItems, setCustomItems] = React.useState<CustomItemRow[]>([]);
   const [newCustomName, setNewCustomName] = React.useState("");
+  const [newCustomMerk, setNewCustomMerk] = React.useState("");
+  const [newCustomSku, setNewCustomSku] = React.useState("");
+  const [newCustomCategory, setNewCustomCategory] = React.useState("");
   const [newCustomUnit, setNewCustomUnit] = React.useState("unit");
   const [newCustomQty, setNewCustomQty] = React.useState("1");
   const [newCustomPrice, setNewCustomPrice] = React.useState("");
+  const [newCustomSellPrice, setNewCustomSellPrice] = React.useState("");
   const [newCustomBerSN, setNewCustomBerSN] = React.useState(false);
   /** Barang pakai habis untuk project (paku, selotip, dll) — tidak masuk master stok. */
   const [newCustomConsumable, setNewCustomConsumable] = React.useState(false);
@@ -159,7 +198,7 @@ export default function NewPurchaseRequestScreen() {
     return ["Semua", ...Array.from(new Set([...fromMaster, ...fromProducts]))];
   }, [data.productCategories, products]);
 
-  const selectedMasterItems = selectedNames.map((name) => {
+  const selectedMasterItems: SelectedItemRow[] = selectedNames.map((name) => {
     const prod = products.find((p) => p.nama === name);
     const stockAvailable = prod
       ? stockSummary
@@ -183,9 +222,13 @@ export default function NewPurchaseRequestScreen() {
       : [];
     return {
       isCustom: false,
+      isProjectConsumable: false,
       productId: prod?.id ? Number(prod.id) : undefined,
       nama: name,
       merk: prod?.merk || prod?.brand || "",
+      sku: prod?.sku ? String(prod.sku) : undefined,
+      kategori: prod?.kategori ? String(prod.kategori) : undefined,
+      hargaJual: prod?.hargaJual ? String(prod.hargaJual) : undefined,
       satuan: String(prod?.satuan || "unit"),
       berSN: !!prod?.berSN,
       availSns,
@@ -197,20 +240,23 @@ export default function NewPurchaseRequestScreen() {
     };
   });
 
-  const mappedCustomItems = customItems.map((ci) => {
+  const mappedCustomItems: SelectedItemRow[] = customItems.map((ci) => {
     const q = Math.max(1, Number(ci.qty) || 1);
     const unitPrice = Math.max(0, Number(ci.hargaBeli) || 0);
     return {
       isCustom: true,
       isProjectConsumable: !!ci.isProjectConsumable,
       customId: ci.id,
-      productId: undefined as number | undefined,
+      productId: undefined,
       nama: ci.nama,
-      merk: ci.isProjectConsumable ? "Khusus Proyek (Pakai Habis — Non-Master)" : "Non-Master / Ritel",
+      merk: ci.merk || (ci.isProjectConsumable ? "Khusus Proyek (Pakai Habis — Non-Master)" : "Non-Master / Ritel"),
+      sku: ci.sku,
+      kategori: ci.kategori,
+      hargaJual: ci.hargaJual,
       satuan: ci.satuan || "unit",
       berSN: !!ci.berSN,
-      availSns: [] as string[],
-      chosenSns: [] as string[],
+      availSns: [],
+      chosenSns: [],
       hargaBeli: unitPrice,
       qty: q,
       stock: 0,
@@ -231,41 +277,48 @@ export default function NewPurchaseRequestScreen() {
   // Ritel selalu dibayar Finance dulu; hanya supplier yang bisa tempo. Gudang tanpa pembayaran.
   const effectivePayment: "KAS" | "UTANG" | undefined =
     procurementSource === "SUPPLIER" ? paymentMethod : procurementSource === "RETAIL" ? "KAS" : undefined;
-  const previewFlow = React.useMemo(
-    () =>
-      evaluatePurchase({
-        source: purchaseKind(procurementSource),
-        paymentMethod: effectivePayment,
-        rawStatus: "DIAJUKAN",
-        isPaid: false,
-        poCount: 0,
-        poApproved: false,
-      }),
-    [procurementSource, effectivePayment],
-  );
+  const previewFlow = evaluatePurchase({
+    source: purchaseKind(procurementSource),
+    paymentMethod: effectivePayment,
+    rawStatus: "DIAJUKAN",
+    isPaid: false,
+    poCount: 0,
+    poApproved: false,
+  });
 
   function handleAddCustomItem() {
     const trimmed = newCustomName.trim();
     if (!trimmed) {
-      toast("Masukkan nama barang non-master terlebih dahulu", "danger");
+      toast("Masukkan nama barang terlebih dahulu", "danger");
       return;
     }
+    const autoSku = generateAutoSku(newCustomSku);
+    const chosenCat = newCustomCategory.trim() || (categoryOptions.length > 1 ? categoryOptions[1] : "Umum");
+
     setCustomItems((prev) => [
       ...prev,
       {
-        id: `CUST-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: generateCustomItemId(),
         nama: trimmed,
+        merk: newCustomMerk.trim() || undefined,
+        sku: autoSku,
+        kategori: chosenCat,
         satuan: newCustomUnit.trim() || "unit",
         qty: newCustomQty.replace(/\D/g, "") || "1",
         hargaBeli: newCustomPrice.replace(/\D/g, "") || "0",
+        hargaJual: newCustomSellPrice.replace(/\D/g, "") || "0",
         berSN: newCustomBerSN && !newCustomConsumable,
         isProjectConsumable: costType === "Project" && newCustomConsumable,
       },
     ]);
     setNewCustomName("");
+    setNewCustomMerk("");
+    setNewCustomSku("");
+    setNewCustomCategory("");
     setNewCustomUnit("unit");
     setNewCustomQty("1");
     setNewCustomPrice("");
+    setNewCustomSellPrice("");
     setNewCustomBerSN(false);
     setNewCustomConsumable(false);
   }
@@ -279,16 +332,45 @@ export default function NewPurchaseRequestScreen() {
     try {
       const fileId = (await fileHandle.current?.flush()) ?? undefined;
       const allConsumables = selectedItems.length > 0 && selectedItems.every((it: any) => it.isProjectConsumable);
-      const itemsPayload = selectedItems.map((it: any) => ({
+
+      // Otomatis daftarkan barang non-master (yang bukan pakai habis) ke master data produk
+      const resolvedItems: any[] = [];
+      for (const it of selectedItems) {
+        let finalProdId = it.productId;
+        if (it.isCustom && !it.isProjectConsumable && !finalProdId) {
+          const autoSku = generateAutoSku(it.sku);
+          const createdProduct = await addRow("products", {
+            nama: it.nama,
+            sku: autoSku,
+            merk: it.merk || undefined,
+            kategori: it.kategori || "Umum",
+            satuan: it.satuan || "unit",
+            hargaBeli: it.hargaBeli,
+            hargaJual: Number(it.hargaJual) || 0,
+            berSN: !!it.berSN,
+            status: "AKTIF",
+          }).catch(() => null);
+
+          if (createdProduct?.id) {
+            finalProdId = Number(createdProduct.id);
+          }
+        }
+        resolvedItems.push({
+          ...it,
+          productId: finalProdId,
+        });
+      }
+
+      const itemsPayload = resolvedItems.map((it: any) => ({
         productId: it.productId,
-        customName: it.isCustom
+        customName: it.isCustom && !it.productId
           ? (it.isProjectConsumable ? `[PAKAI_HABIS] ${it.nama}` : it.nama)
           : undefined,
-        customUnit: it.isCustom ? it.satuan : undefined,
+        customUnit: it.isCustom && !it.productId ? it.satuan : undefined,
         hasSerial: it.berSN,
         qty: it.qty,
         unitCost: it.hargaBeli,
-        serials: it.chosenSns.length > 0 ? it.chosenSns : undefined,
+        serials: it.chosenSns && it.chosenSns.length > 0 ? it.chosenSns : undefined,
       }));
       const itemDesc = selectedItems
         .map(
@@ -473,55 +555,132 @@ export default function NewPurchaseRequestScreen() {
               </FormField>
             </View>
 
-            {/* Barang di luar master (ritel / ketik manual) — satu form saja */}
+            {/* Barang di luar master (ritel / ketik manual) — lengkap seperti master produk baru */}
             {!isStockTakeMode && (
-              <View className="bg-panel/30 border-border/70 rounded-xl border p-3.5 gap-3">
+              <View className="bg-panel/30 border-border/70 rounded-xl border p-4 gap-3.5">
                 <View>
-                  <Text className="text-xs font-bold uppercase tracking-wider text-info">B. Barang di luar master</Text>
+                  <Text className="text-xs font-bold uppercase tracking-wider text-info">
+                    B. Barang di luar master (Daftar Produk Baru)
+                  </Text>
                   <Text className="text-xs text-muted-foreground mt-0.5">
-                    Untuk barang yang belum ada di katalog (aksesoris, material tambahan, dll).
+                    Item yang belum terdaftar di katalog. Barang akan otomatis ditambahkan ke Master Produk saat pengajuan disimpan.
                   </Text>
                 </View>
-                <View className="flex-row flex-wrap gap-2 items-end">
-                  <View className="flex-1 min-w-[180px] gap-1">
-                    <Text className="text-xs text-muted-foreground">Nama barang</Text>
-                    <Input value={newCustomName} onChangeText={setNewCustomName} placeholder="Contoh: Kabel Roll / Paku Beton 5cm" />
+
+                {/* Baris 1: Nama Produk & Merk */}
+                <View className="flex-col sm:flex-row gap-3">
+                  <View className="flex-1">
+                    <FormField label="Nama Barang / Produk *" required>
+                      <Input
+                        value={newCustomName}
+                        onChangeText={setNewCustomName}
+                        placeholder="Contoh: Kamera IP UNV 4MP Bullet Outdoor"
+                      />
+                    </FormField>
                   </View>
-                  <View className="w-20 gap-1">
-                    <Text className="text-xs text-muted-foreground">Qty</Text>
-                    <Input value={newCustomQty} onChangeText={(v) => setNewCustomQty(v.replace(/\D/g, ""))} keyboardType="numeric" placeholder="1" />
-                  </View>
-                  <View className="w-24 gap-1">
-                    <Text className="text-xs text-muted-foreground">Satuan</Text>
-                    <Input value={newCustomUnit} onChangeText={setNewCustomUnit} placeholder="unit/pcs" />
-                  </View>
-                  <View className="w-36 gap-1">
-                    <Text className="text-xs text-muted-foreground">Harga satuan (Rp)</Text>
-                    <Input
-                      value={formatThousands(newCustomPrice)}
-                      onChangeText={(v) => setNewCustomPrice(v.replace(/\D/g, ""))}
-                      keyboardType="numeric"
-                      placeholder="250.000"
-                    />
+                  <View className="flex-1 sm:max-w-[240px]">
+                    <FormField label="Merk / Brand (Pabrikan)">
+                      <Input
+                        value={newCustomMerk}
+                        onChangeText={setNewCustomMerk}
+                        placeholder="Contoh: Uniview, Belden, Hikvision"
+                      />
+                    </FormField>
                   </View>
                 </View>
-                <View className="flex-row flex-wrap items-center gap-2">
-                  <Button size="sm" variant={newCustomBerSN ? "default" : "outline"} onPress={() => setNewCustomBerSN((v) => !v)} className="h-9 px-3">
-                    <Text className="text-xs">{newCustomBerSN ? "✓ " : ""}Pakai nomor seri (SN)</Text>
-                  </Button>
-                  {costType === "Project" ? (
+
+                {/* Baris 2: Kategori, Kode SKU, Satuan */}
+                <View className="flex-col sm:flex-row gap-3">
+                  <View className="flex-1">
+                    <FormField label="Kategori Produk">
+                      <SearchableSelect
+                        value={newCustomCategory}
+                        options={categoryOptions.filter((c) => c !== "Semua")}
+                        onChange={setNewCustomCategory}
+                        placeholder="Pilih atau cari kategori..."
+                      />
+                    </FormField>
+                  </View>
+                  <View className="flex-1 sm:max-w-[180px]">
+                    <FormField label="Kode SKU (Opsional)" hint="Kosongkan untuk otomatis">
+                      <Input
+                        value={newCustomSku}
+                        onChangeText={setNewCustomSku}
+                        placeholder="Contoh: CAM-UNV-4K"
+                      />
+                    </FormField>
+                  </View>
+                  <View className="w-full sm:w-28">
+                    <FormField label="Satuan" required>
+                      <SearchableSelect
+                        value={newCustomUnit}
+                        options={["unit", "pcs", "roll", "meter", "box", "pack", "set", "lot"]}
+                        onChange={setNewCustomUnit}
+                        placeholder="unit"
+                      />
+                    </FormField>
+                  </View>
+                </View>
+
+                {/* Baris 3: Qty, Harga Beli Satuan, Estimasi Harga Jual */}
+                <View className="flex-col sm:flex-row gap-3">
+                  <View className="w-full sm:w-24">
+                    <FormField label="Qty *" required>
+                      <Input
+                        value={newCustomQty}
+                        onChangeText={(v) => setNewCustomQty(v.replace(/\D/g, ""))}
+                        keyboardType="numeric"
+                        placeholder="1"
+                      />
+                    </FormField>
+                  </View>
+                  <View className="flex-1">
+                    <FormField label="Harga Beli Satuan (Rp) *" required>
+                      <Input
+                        value={formatThousands(newCustomPrice)}
+                        onChangeText={(v) => setNewCustomPrice(v.replace(/\D/g, ""))}
+                        keyboardType="numeric"
+                        placeholder="Contoh: 850.000"
+                      />
+                    </FormField>
+                  </View>
+                  <View className="flex-1">
+                    <FormField label="Estimasi Harga Jual (Rp)">
+                      <Input
+                        value={formatThousands(newCustomSellPrice)}
+                        onChangeText={(v) => setNewCustomSellPrice(v.replace(/\D/g, ""))}
+                        keyboardType="numeric"
+                        placeholder="Opsional (Jual)"
+                      />
+                    </FormField>
+                  </View>
+                </View>
+
+                {/* Opsi Tipe Barang & Tombol Tambah */}
+                <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/50">
+                  <View className="flex-row flex-wrap items-center gap-2">
                     <Button
                       size="sm"
-                      variant={newCustomConsumable ? "default" : "outline"}
-                      onPress={() => setNewCustomConsumable((v) => !v)}
+                      variant={newCustomBerSN ? "default" : "outline"}
+                      onPress={() => setNewCustomBerSN((v) => !v)}
                       className="h-9 px-3"
                     >
-                      <Text className="text-xs">{newCustomConsumable ? "✓ " : ""}Pakai habis (masuk Barang Tambahan Project)</Text>
+                      <Text className="text-xs">{newCustomBerSN ? "✓ " : ""}Lacak Nomor Seri (SN)</Text>
                     </Button>
-                  ) : null}
-                  <Button size="sm" onPress={handleAddCustomItem} className="h-9 px-3">
+                    {costType === "Project" ? (
+                      <Button
+                        size="sm"
+                        variant={newCustomConsumable ? "default" : "outline"}
+                        onPress={() => setNewCustomConsumable((v) => !v)}
+                        className="h-9 px-3"
+                      >
+                        <Text className="text-xs">{newCustomConsumable ? "✓ " : ""}Pakai habis (Barang Tambahan Proyek)</Text>
+                      </Button>
+                    ) : null}
+                  </View>
+                  <Button size="sm" onPress={handleAddCustomItem} className="h-9 px-4 gap-1.5 bg-primary">
                     <Plus size={15} color="#fff" />
-                    <Text className="text-xs font-semibold text-white">Tambah</Text>
+                    <Text className="text-xs font-semibold text-white">Tambahkan ke Daftar</Text>
                   </Button>
                 </View>
               </View>
@@ -582,7 +741,21 @@ export default function NewPurchaseRequestScreen() {
                         </Pressable>
                       </View>
 
-                      {!item.isCustom ? (
+                      {item.isCustom ? (
+                        <View className="bg-panel/40 border-border/60 rounded-lg border p-2 flex-row flex-wrap justify-between gap-2">
+                          <Text className="text-xs text-muted-foreground">
+                            Merk: <Text className="font-semibold text-foreground">{item.merk || "-"}</Text>
+                          </Text>
+                          <Text className="text-xs text-muted-foreground">
+                            Kategori: <Text className="font-semibold text-foreground">{item.kategori || "-"}</Text>
+                          </Text>
+                          {item.sku ? (
+                            <Text className="text-xs text-muted-foreground">
+                              SKU: <Text className="font-semibold font-mono text-foreground">{item.sku}</Text>
+                            </Text>
+                          ) : null}
+                        </View>
+                      ) : (
                         <View className="bg-panel/40 border-border/60 rounded-lg border p-2 flex-row flex-wrap justify-between gap-1">
                           <Text className="text-xs text-muted-foreground">
                             Stok gudang: <Text className="font-semibold text-foreground">{item.stock} {item.satuan}</Text>
@@ -591,7 +764,7 @@ export default function NewPurchaseRequestScreen() {
                             Harga acuan: <Text className="font-semibold text-foreground">{rupiah(item.hargaBeli)} / {item.satuan}</Text>
                           </Text>
                         </View>
-                      ) : null}
+                      )}
 
                       <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1">
                         <View className="flex-row items-center gap-2">

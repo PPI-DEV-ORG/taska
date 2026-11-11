@@ -94,6 +94,7 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
       "ALTER TABLE `PurchaseRequest` ADD COLUMN `paymentStatus` VARCHAR(64) NULL DEFAULT 'BELUM_DIBAYAR'",
       "ALTER TABLE `PurchaseRequest` ADD COLUMN `paymentProofFileId` INT NULL",
       "ALTER TABLE `Receiving` ADD COLUMN `requestId` INT NULL",
+      "CREATE TABLE IF NOT EXISTS `ManualJournal` (`id` INT NOT NULL AUTO_INCREMENT, `journalNo` VARCHAR(64) NOT NULL, `date` VARCHAR(32) NOT NULL, `refNo` VARCHAR(191) NULL, `description` TEXT NOT NULL, `project` VARCHAR(191) NULL, `lines` LONGTEXT NOT NULL, `createdBy` VARCHAR(191) NULL, `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY (`id`), UNIQUE INDEX `ManualJournal_journalNo_key` (`journalNo`)) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
     ];
     for (const sql of schemaPatches) {
       await db.$executeRawUnsafe(sql).catch(() => {});

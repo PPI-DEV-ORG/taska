@@ -14,6 +14,7 @@ import {
   ExpenseCategoriesController,
   LeadSourcesController,
   LostReasonsController,
+  ManualJournalsController,
   VisitActivityTypesController,
 } from "./lookups.controller.js";
 
@@ -31,6 +32,7 @@ import {
     CostCentersController,
     VisitActivityTypesController,
     CoaAccountsController,
+    ManualJournalsController,
   ],
   exports: [ProductsService, SuppliersService, CustomersService, LookupsService],
 })

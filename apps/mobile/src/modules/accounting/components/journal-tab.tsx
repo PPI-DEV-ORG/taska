@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/taska/basics";
 import { DatePicker } from "@/components/taska/dialogs";
-import { CheckCircle2, FileSpreadsheet, Search, ChevronLeft, ChevronRight } from "lucide-react-native";
+import { CheckCircle2, FileSpreadsheet, Search, ChevronLeft, ChevronRight, Trash2 } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { JournalLine } from "@/lib/accounting";
@@ -28,6 +28,7 @@ interface JournalTabProps {
   JOURNAL_PAGE_SIZE: number;
   setJournalPageSize?: (s: number) => void;
   onSelectAccount: (code: string) => void;
+  onDeleteManualJournal?: (target: { id: string; journalNo?: string; keterangan?: string }) => void;
 }
 
 export function JournalTab({
@@ -47,6 +48,7 @@ export function JournalTab({
   JOURNAL_PAGE_SIZE,
   setJournalPageSize,
   onSelectAccount,
+  onDeleteManualJournal,
 }: JournalTabProps) {
   return (
     <View className="gap-4 w-full">
@@ -155,6 +157,7 @@ export function JournalTab({
                 <Text className="flex-1 text-xs font-bold">Uraian Transaksi</Text>
                 <Text className="w-[125px] text-xs font-bold text-right">Debit (Rp)</Text>
                 <Text className="w-[125px] text-xs font-bold text-right">Kredit (Rp)</Text>
+                <Text className="w-[50px] text-xs font-bold text-center">Aksi</Text>
               </View>
               {filteredJournal.length === 0 ? (
                 <View className="py-12 items-center justify-center">
@@ -201,6 +204,25 @@ export function JournalTab({
                       <Text className="w-[125px] text-xs font-mono text-right font-semibold text-info">
                         {(line.kredit ?? 0) > 0 ? rupiah(line.kredit) : "-"}
                       </Text>
+                      <View className="w-[50px] items-center justify-center">
+                        {line.manualJournalId && onDeleteManualJournal ? (
+                          <Pressable
+                            onPress={() =>
+                              onDeleteManualJournal({
+                                id: line.manualJournalId!,
+                                journalNo: line.journalNo,
+                                keterangan: line.keterangan,
+                              })
+                            }
+                            hitSlop={8}
+                            className="p-1 rounded-md hover:bg-danger/10 active:opacity-70"
+                          >
+                            <Trash2 size={13} color={colors.danger} />
+                          </Pressable>
+                        ) : (
+                          <Text className="text-[10px] text-muted-foreground/30">-</Text>
+                        )}
+                      </View>
                     </View>
                   );
                 })

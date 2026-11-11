@@ -41,6 +41,20 @@ export function ManualJournalDialog({
   allAccountsMap,
   onSave,
 }: ManualJournalDialogProps) {
+  const accountOptions = React.useMemo(() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    Object.values(allAccountsMap).forEach((a) => {
+      if (!a?.code) return;
+      const label = `[${a.code}] ${a.name || a.code}`;
+      if (!seen.has(label)) {
+        seen.add(label);
+        list.push(label);
+      }
+    });
+    return list.sort((a, b) => a.localeCompare(b));
+  }, [allAccountsMap]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl max-h-[90vh]">
@@ -106,14 +120,14 @@ export function ManualJournalDialog({
 
                 <SearchableSelect
                   value={`[${line.kodeAkun}] ${allAccountsMap[line.kodeAkun]?.name || line.kodeAkun}`}
-                  options={Object.values(allAccountsMap).map((a) => `[${a.code}] ${a.name}`)}
+                  options={accountOptions}
                   onChange={(val) => {
-                    const m = val.match(/\[(\w+)\]/);
+                    const m = val.match(/\[([^\]]+)\]/);
                     if (m && m[1]) {
                       const next = [...mjLines];
                       const nextLine = next[idx];
                       if (!nextLine) return;
-                      nextLine.kodeAkun = m[1];
+                      nextLine.kodeAkun = m[1].trim();
                       setMjLines(next);
                     }
                   }}

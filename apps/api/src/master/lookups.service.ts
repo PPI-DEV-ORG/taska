@@ -141,4 +141,42 @@ export class LookupsService {
       .catch(() => {});
     return { code, deleted: true };
   }
+
+  async listManualJournals() {
+    const rows = await (this.prisma.main as any)
+      .$queryRawUnsafe("SELECT * FROM `ManualJournal` ORDER BY `createdAt` DESC")
+      .catch(() => []);
+    return { items: rows ?? [] };
+  }
+
+  async createManualJournal(dto: any) {
+    const journalNo = String(dto.journalNo || `JM-${Date.now().toString().slice(-4)}`);
+    const date = String(dto.tanggal || dto.date || new Date().toISOString().slice(0, 10));
+    const refNo = dto.refNo ? String(dto.refNo) : null;
+    const description = String(dto.keterangan || dto.description || "");
+    const project = dto.project ? String(dto.project) : null;
+    const lines = typeof dto.lines === "string" ? dto.lines : JSON.stringify(dto.lines || []);
+    const createdBy = dto.createdBy ? String(dto.createdBy) : null;
+
+    await (this.prisma.main as any).$executeRawUnsafe(
+      "INSERT INTO `ManualJournal` (`journalNo`, `date`, `refNo`, `description`, `project`, `lines`, `createdBy`) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      journalNo,
+      date,
+      refNo,
+      description,
+      project,
+      lines,
+      createdBy
+    );
+    return { success: true, journalNo };
+  }
+
+  async removeManualJournal(id: string) {
+    await (this.prisma.main as any).$executeRawUnsafe(
+      "DELETE FROM `ManualJournal` WHERE `id` = ? OR `journalNo` = ?",
+      id,
+      id
+    );
+    return { success: true };
+  }
 }
