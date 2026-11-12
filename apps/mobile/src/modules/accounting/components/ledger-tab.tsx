@@ -108,7 +108,7 @@ export function LedgerTab({
             <View className="min-w-full w-full gap-0.5">
               <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg w-full">
                 <Text className="w-[145px] text-xs font-bold">No. Jurnal</Text>
-                <Text className="w-[95px] text-xs font-bold">Tanggal</Text>
+                <Text className="w-[130px] text-xs font-bold">Tanggal & Waktu</Text>
                 <Text className="w-[125px] text-xs font-bold">Referensi</Text>
                 <Text className="w-[110px] text-xs font-bold">Akun Terkait</Text>
                 <Text className="w-[140px] text-xs font-bold">Sumber Transaksi</Text>
@@ -139,7 +139,7 @@ export function LedgerTab({
                       <Text className="w-[145px] text-xs font-mono text-muted-foreground">
                         {l.journalNo}
                       </Text>
-                      <Text className="w-[95px] text-xs font-mono text-muted-foreground">
+                      <Text className="w-[130px] text-xs font-mono text-muted-foreground">
                         {l.tanggal}
                       </Text>
                       <Text className="w-[125px] text-xs font-semibold font-mono" numberOfLines={1}>

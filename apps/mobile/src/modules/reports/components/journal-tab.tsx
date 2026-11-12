@@ -334,8 +334,11 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                 "Semua",
                 "Faktur Pelanggan",
                 "Pembayaran Faktur",
+                "Pengiriman Barang",
                 "PO Pemasok",
+                "Penerimaan Barang",
                 "Pelunasan PO",
+                "Pembelian Ritel",
                 "Pengeluaran (Expense)",
                 "Pembayaran Pengeluaran",
                 "Reimburse",
@@ -378,7 +381,7 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
             <View className="min-w-full w-full gap-0.5">
               <View className="bg-panel border-border flex-row items-center border-b px-4 py-2.5 rounded-t-lg w-full">
                 <Text className="w-[145px] text-xs font-bold">No. Jurnal</Text>
-                <Text className="w-[115px] text-xs font-bold">Tanggal & Waktu</Text>
+                <Text className="w-[130px] text-xs font-bold">Tanggal & Waktu</Text>
                 <Text className="w-[170px] text-xs font-bold pr-2">Referensi</Text>
                 <Text className="w-[95px] text-xs font-bold pr-2">Akun</Text>
                 <Text className="w-[220px] text-xs font-bold">Nama Akun</Text>
@@ -402,7 +405,7 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                       <Text className="w-[145px] text-xs font-mono text-text-secondary" numberOfLines={1}>
                         {line.journalNo}
                       </Text>
-                      <Text className="w-[115px] text-xs font-mono text-text-secondary">
+                      <Text className="w-[130px] text-xs font-mono text-text-secondary">
                         {line.tanggal}
                       </Text>
                       <Text className="w-[170px] text-xs font-semibold font-mono pr-2" numberOfLines={1}>

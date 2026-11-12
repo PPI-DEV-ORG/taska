@@ -113,6 +113,7 @@ export class AccountingReportService {
         entryId: l.entryId,
         entryNumber: l.entry.number,
         date: l.entry.date,
+        createdAt: l.entry.createdAt,
         accountCode: l.accountCode,
         accountName: l.account?.name || "",
         debit: Number(l.debit),

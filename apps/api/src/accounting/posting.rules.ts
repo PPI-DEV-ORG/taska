@@ -14,7 +14,11 @@ export interface InvoiceOutContext {
   retentionAmount?: number;
   items?: Array<{
     type?: string; // "PRODUCT" | "SERVICE"
-    amount: number;
+    amount?: number | null;
+    subtotal?: number | null;
+    harga?: number | null;
+    price?: number | null;
+    qty?: number | null;
   }>;
 }
 
@@ -87,10 +91,15 @@ export class PostingRules {
     let srvRev = 0;
     if (inv.items && inv.items.length > 0) {
       for (const item of inv.items) {
+        const itemAmt = Number(
+          item.amount ??
+          item.subtotal ??
+          ((Number(item.harga ?? item.price ?? 0)) * (Number(item.qty || 1)))
+        ) || 0;
         if (item.type === "SERVICE") {
-          srvRev += Number(item.amount || 0);
+          srvRev += itemAmt;
         } else {
-          prodRev += Number(item.amount || 0);
+          prodRev += itemAmt;
         }
       }
     } else {
@@ -100,6 +109,23 @@ export class PostingRules {
 
     prodRev = round(prodRev);
     srvRev = round(srvRev);
+
+    // Keseimbangan Kredit Pendapatan terhadap DPP
+    const targetDpp = round(Number(inv.dpp));
+    if (prodRev + srvRev !== targetDpp) {
+      if (srvRev > 0 && prodRev === 0) {
+        srvRev = targetDpp;
+      } else if (prodRev > 0 && srvRev === 0) {
+        prodRev = targetDpp;
+      } else if (prodRev + srvRev > 0) {
+        const ratio = targetDpp / (prodRev + srvRev);
+        prodRev = round(prodRev * ratio);
+        srvRev = targetDpp - prodRev;
+      } else {
+        if (inv.type === "SERVICE") srvRev = targetDpp;
+        else prodRev = targetDpp;
+      }
+    }
 
     if (prodRev > 0) {
       lines.push({

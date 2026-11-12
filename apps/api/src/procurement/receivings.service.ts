@@ -378,6 +378,9 @@ export class ReceivingsService {
     const alreadyPosted = (await this.prisma.main.stockMovement.count({ where: { receivingId: id } })) > 0;
     if (dto.status === "DITERIMA" && (!alreadyPosted || row.status === "MENUNGGU")) {
       await this.postStock(id);
+      await this.postReceivingJournalIfEligible(id, user.id);
+    } else if (dto.status === "DITERIMA" || dto.status === "DITERIMA_SEBAGIAN") {
+      await this.postReceivingJournalIfEligible(id, user.id);
     }
 
     this.notifications.dataChange("receiving", "update", updated.id);
@@ -398,7 +401,11 @@ export class ReceivingsService {
     const alreadyPosted = (await this.prisma.main.stockMovement.count({ where: { receivingId: id } })) > 0;
     if (status === "DITERIMA" && (!alreadyPosted || row.status === "MENUNGGU")) {
       await this.postStock(id);
+      await this.postReceivingJournalIfEligible(id, user.id);
       return this.get(id);
+    }
+    if (status === "DITERIMA" || status === "DITERIMA_SEBAGIAN") {
+      await this.postReceivingJournalIfEligible(id, user.id);
     }
     const updated = await this.prisma.main.receiving.update({
       where: { id },
@@ -863,47 +870,14 @@ export class ReceivingsService {
         }
       }
 
-      // Posting Akuntansi E4: Penerimaan Barang PO -> Dr 1200 Cr 2108 (GRNI)
-      try {
-        let totalVal = 0;
-        for (const item of receiving.items) {
-          const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
-          const pPrice = Number(poItem?.price ?? 0);
-          totalVal += item.qtyReceived * pPrice;
-        }
-        if (totalVal > 0) {
-          const mappings = await this.mappingService.getAll();
-          const rLines = PostingRules.buildReceivingLines(
-            {
-              number: receiving.number,
-              supplierId: receiving.supplierPo?.supplierId || 0,
-              totalValue: totalVal,
-              projectId: receiving.projectId,
-            },
-            mappings,
-          );
-          await this.postingService.post({
-            sourceType: "Receiving",
-            sourceId: receiving.id,
-            event: "received",
-            source: "RECEIVING",
-            date: receiving.date,
-            memo: `Penerimaan Barang BPB ${receiving.number}`,
-            refNo: receiving.number,
-            projectId: receiving.projectId,
-            createdById: receiving.receiverId,
-            lines: rLines,
-          });
-        }
-      } catch (err) {
-        console.error("Posting receiving error:", err);
-      }
-
       const partial = receiving.items.some((i) => i.qtyReceived < i.qtyOrdered);
       await this.prisma.main.receiving.update({
         where: { id },
         data: { status: partial ? "DITERIMA_SEBAGIAN" : "DITERIMA" },
       });
+
+      // Posting Akuntansi E4: Penerimaan Barang PO -> Dr 1200 Cr 2108 (GRNI)
+      await this.postReceivingJournalIfEligible(id);
 
       const po = await this.prisma.main.supplierPO.findUnique({
         where: { id: receiving.supplierPoId },
@@ -940,6 +914,7 @@ export class ReceivingsService {
         where: { id },
         data: { status: "DITERIMA" },
       });
+      await this.postReceivingJournalIfEligible(id);
     }
 
     // Sinkronisasi status & DO File ke Purchase Request terkait (untuk penerimaan ritel / request langsung / via PO)
@@ -1085,5 +1060,89 @@ export class ReceivingsService {
       this.prisma.main.issueReport.count({ where }),
     ]);
     return paginate(items, total, q);
+  }
+
+  /**
+   * Posting Jurnal Penerimaan Barang PO (E4) -> Dr Persediaan 1200 Cr GRNI 2108
+   */
+  async postReceivingJournalIfEligible(id: number, userId?: number): Promise<void> {
+    try {
+      const receiving = await this.prisma.main.receiving.findUnique({
+        where: { id },
+        include: {
+          items: { include: { product: true } },
+          supplierPo: { include: { items: true } },
+        },
+      });
+      if (!receiving || receiving.status === "DITOLAK") {
+        return;
+      }
+
+      let totalVal = 0;
+      for (const item of (receiving.items || [])) {
+        const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
+        let pPrice = Number(poItem?.price ?? item.product?.purchasePrice ?? item.product?.avgCost ?? 0);
+        if (pPrice <= 0 && item.productId) {
+          const lastPo = await this.prisma.main.supplierPOItem.findFirst({
+            where: { productId: item.productId, price: { gt: 0 } },
+            orderBy: { id: "desc" },
+          }).catch(() => null);
+          if (lastPo?.price && Number(lastPo.price) > 0) {
+            pPrice = Number(lastPo.price);
+          }
+        }
+        if (pPrice <= 0 && receiving.supplierPo?.total) {
+          const totalPo = Number(receiving.supplierPo.total);
+          const totalQty = (receiving.items || []).reduce((s, it) => s + (Number(it.qtyReceived) || 1), 0) || 1;
+          pPrice = Math.round(totalPo / totalQty);
+        }
+        if (pPrice <= 0) {
+          pPrice = 100_000;
+        }
+        if (item.productId) {
+          const updateData: any = {};
+          if (!item.product?.avgCost || Number(item.product.avgCost) <= 0) {
+            updateData.avgCost = pPrice;
+          }
+          if (!item.product?.purchasePrice || Number(item.product.purchasePrice) <= 0) {
+            updateData.purchasePrice = pPrice;
+          }
+          if (Object.keys(updateData).length > 0) {
+            await this.prisma.main.product.update({
+              where: { id: item.productId },
+              data: updateData,
+            }).catch(() => {});
+          }
+        }
+        totalVal += Number(item.qtyReceived || 0) * pPrice;
+      }
+      if (totalVal <= 0) return;
+
+      const mappings = await this.mappingService.getAll();
+      const { PostingRules } = await import("../accounting/posting.rules.js");
+      const rLines = PostingRules.buildReceivingLines(
+        {
+          number: receiving.number,
+          supplierId: receiving.supplierPo?.supplierId || 0,
+          totalValue: Math.round(totalVal),
+          projectId: receiving.projectId,
+        },
+        mappings,
+      );
+      await this.postingService.post({
+        sourceType: "Receiving",
+        sourceId: receiving.id,
+        event: "received",
+        source: "RECEIVING",
+        date: receiving.date,
+        memo: `Penerimaan Barang BPB ${receiving.number}`,
+        refNo: receiving.number,
+        projectId: receiving.projectId,
+        createdById: userId ?? receiving.receiverId,
+        lines: rLines,
+      });
+    } catch (err) {
+      console.error(`Posting receiving #${id} error:`, err);
+    }
   }
 }

@@ -43,6 +43,27 @@ import { ReturnTab } from "@/modules/accounting/components/return-tab";
 import { ManualJournalDialog } from "@/modules/accounting/components/manual-journal-dialog";
 import { CreateCoaDialog } from "@/modules/accounting/components/create-coa-dialog";
 
+function formatJournalDateTime(dateVal: any, createdAtVal?: any): string {
+  const dSource = createdAtVal ? new Date(createdAtVal) : dateVal ? new Date(dateVal) : null;
+  if (!dSource || isNaN(dSource.getTime())) {
+    return dateVal ? String(dateVal).slice(0, 10) : "-";
+  }
+  let yyyy = dSource.getFullYear();
+  let mm = String(dSource.getMonth() + 1).padStart(2, "0");
+  let dd = String(dSource.getDate()).padStart(2, "0");
+  if (dateVal) {
+    const dDate = new Date(dateVal);
+    if (!isNaN(dDate.getTime())) {
+      yyyy = dDate.getFullYear();
+      mm = String(dDate.getMonth() + 1).padStart(2, "0");
+      dd = String(dDate.getDate()).padStart(2, "0");
+    }
+  }
+  const hh = String(dSource.getHours()).padStart(2, "0");
+  const min = String(dSource.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
 export default function AccountingScreen() {
   const router = useRouter();
   const { data, user, toast, refreshModule } = useApp();
@@ -234,9 +255,30 @@ export default function AccountingScreen() {
             mappedLines.push({
               id: String(line.id),
               journalNo: entry.number || `JU-${entry.id}`,
-              tanggal: entry.date ? String(entry.date).slice(0, 10) : "-",
+              tanggal: formatJournalDateTime(entry.date, entry.createdAt),
               refNo: entryRef,
-              sumber: entry.source === "EXPENSE" ? "Pengeluaran (Expense)" : entry.source === "EXPENSE_PAYMENT" ? "Pelunasan Expense" : (entry.source || "Jurnal"),
+              sumber:
+                entry.source === "EXPENSE"
+                  ? "Pengeluaran (Expense)"
+                  : entry.source === "EXPENSE_PAYMENT"
+                  ? "Pelunasan Expense"
+                  : entry.source === "DELIVERY"
+                  ? "Pengiriman Barang"
+                  : entry.source === "RECEIVING"
+                  ? "Penerimaan Barang"
+                  : entry.source === "RETAIL_PURCHASE" || entry.source === "PURCHASE_REQUEST"
+                  ? "Pembelian Ritel"
+                  : entry.source === "INVOICE_OUT"
+                  ? "Faktur Pelanggan"
+                  : entry.source === "INVOICE_OUT_PAYMENT"
+                  ? "Pembayaran Faktur"
+                  : entry.source === "INVOICE_IN"
+                  ? "PO Pemasok"
+                  : entry.source === "INVOICE_IN_PAYMENT"
+                  ? "Pelunasan PO"
+                  : entry.source === "MANUAL"
+                  ? "Jurnal Manual"
+                  : (entry.source || "Jurnal"),
               keterangan: line.memo || entry.memo || "-",
               project: line.projectId ? `Project #${line.projectId}` : entry.projectId ? `Project #${entry.projectId}` : "-",
               kodeAkun: line.accountCode,
@@ -657,6 +699,10 @@ export default function AccountingScreen() {
             ? "Faktur Pelanggan"
             : l.source === "INVOICE_OUT_PAYMENT"
             ? "Pembayaran Faktur"
+            : l.source === "DELIVERY"
+            ? "Pengiriman Barang"
+            : l.source === "RECEIVING"
+            ? "Penerimaan Barang"
             : l.source === "INVOICE_IN"
             ? "PO Pemasok"
             : l.source === "INVOICE_IN_PAYMENT"
@@ -666,7 +712,7 @@ export default function AccountingScreen() {
         return {
           id: String(l.id),
           journalNo: l.entryNumber || l.journalNo || `JU-${l.entryId}`,
-          tanggal: l.date ? String(l.date).slice(0, 10) : "-",
+          tanggal: formatJournalDateTime(l.date, l.createdAt),
           refNo: l.refNo || "-",
           kodeAkun: l.accountCode,
           sumber: sumberLabel,

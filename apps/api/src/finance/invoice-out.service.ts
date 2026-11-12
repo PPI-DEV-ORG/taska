@@ -969,50 +969,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     const synced = await this.sync(row);
 
     // Posting Akuntansi E1 / E2 jika invoice terbit
-    if (["SENT", "PAID", "PARTIAL"].includes(synced.status)) {
-      try {
-        const mappings = await this.mappingService.getAll();
-        const lines = (dto.type === "DP" || row.type === "DP")
-          ? PostingRules.buildCustomerDpLines(
-              { number: row.number, customerId: row.customerId!, projectId: row.projectId, dpp: Number(row.amount), ppn: Number(row.ppn), total: Number(row.total) },
-              mappings,
-            )
-          : PostingRules.buildInvoiceOutLines(
-              {
-                id: row.id,
-                number: row.number,
-                type: row.type,
-                customerId: row.customerId!,
-                projectId: row.projectId,
-                dpp: Number(row.amount),
-                ppn: Number(row.ppn),
-                total: Number(row.total),
-                dpApplied: Number(dto.dpApplied || 0),
-                retentionPercent: Number(dto.retentionPercent || 0),
-                retentionAmount: Number(dto.retentionAmount || 0),
-                items: (resolvedItems || []).map((it: any) => ({
-                  type: /jasa|instalasi|service|pasang/i.test(it.name || it.item || "") ? "SERVICE" : "PRODUCT",
-                  amount: Number(it.price || it.amount || 0) * Number(it.qty || 1),
-                })),
-              },
-              mappings,
-            );
-        await this.postingService.post({
-          sourceType: "InvoiceOut",
-          sourceId: row.id,
-          event: "issued",
-          source: "INVOICE_OUT",
-          date: row.date,
-          memo: `Penerbitan Invoice Penjualan ${row.number}`,
-          refNo: row.number,
-          projectId: row.projectId,
-          createdById: user.id,
-          lines,
-        });
-      } catch (err) {
-        console.error("Posting invoice out error:", err);
-      }
-    }
+    await this.postInvoiceJournalIfEligible(row.id, user.id);
     if (synced.status === "PAID") {
       await this.syncRelatedInvoicesOnPaid(synced, user);
     }
@@ -1168,6 +1125,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     if (dto.status === "PAID" || (dto.paidAmount !== undefined && Number(dto.paidAmount) >= total)) {
       await this.syncRelatedInvoicesOnPaid(updated, user);
     }
+    await this.postInvoiceJournalIfEligible(id, user.id);
     return this.get(id);
   }
 
@@ -1392,6 +1350,9 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    // Pastikan jurnal terbit invoice (E1 / E2) sudah diposting sebelum mencatat pelunasan
+    await this.postInvoiceJournalIfEligible(row.id, user.id);
+
     // Posting Akuntansi E3: Pelunasan Invoice Keluar
     try {
       const mappings = await this.mappingService.getAll();
@@ -1537,6 +1498,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
       // Pembalik Jurnal Akuntansi jika invoice dibatalkan
       await this.postingService.reverse("InvoiceOut", id, "issued", "Invoice dibatalkan", user.id).catch(() => {});
+    } else if (["SENT", "PAID", "PARTIAL", "OVERDUE"].includes(status)) {
+      await this.postInvoiceJournalIfEligible(id, user.id);
     }
     if (status === "PAID") {
       await this.syncRelatedInvoicesOnPaid(updated, user);
@@ -2338,5 +2301,74 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
 
     const filename = `Invoice-${ctx.row.number.replace(/\//g, "-")}.pdf`;
     return { buffer, filename };
+  }
+
+  /**
+   * Posting Jurnal Penerbitan Invoice Keluar (E1 / E2)
+   */
+  async postInvoiceJournalIfEligible(invoiceId: number, userId?: number): Promise<void> {
+    try {
+      const inv = await this.prisma.main.invoiceOut.findUnique({
+        where: { id: invoiceId },
+        include: { customer: true },
+      });
+      if (!inv || inv.status === "BATAL" || inv.status === "DRAFT") return;
+
+      const meta = (await this.getMeta(inv.id)) || {};
+      const rawItems = Array.isArray(meta.items) && meta.items.length > 0
+        ? meta.items
+        : Array.isArray((inv as any).items)
+        ? (inv as any).items
+        : [];
+      const mappings = await this.mappingService.getAll();
+
+      const lines = (inv.type === "DP")
+        ? PostingRules.buildCustomerDpLines(
+            {
+              number: inv.number,
+              customerId: inv.customerId || 0,
+              projectId: inv.projectId,
+              dpp: Number(inv.amount),
+              ppn: Number(inv.ppn),
+              total: Number(inv.total),
+            },
+            mappings,
+          )
+        : PostingRules.buildInvoiceOutLines(
+            {
+              id: inv.id,
+              number: inv.number,
+              type: inv.type,
+              customerId: inv.customerId || 0,
+              projectId: inv.projectId,
+              dpp: Number(inv.amount),
+              ppn: Number(inv.ppn),
+              total: Number(inv.total),
+              dpApplied: Number(meta.dpApplied || 0),
+              retentionPercent: Number(meta.retentionPercent || 0),
+              retentionAmount: Number(meta.retentionAmount || 0),
+              items: rawItems.map((it: any) => ({
+                type: /jasa|instalasi|service|pasang/i.test(it.name || it.item || it.productName || "") ? "SERVICE" : "PRODUCT",
+                amount: Number(it.subtotal || it.amount || (Number(it.harga || it.price || 0) * Number(it.qty || 1)) || 0),
+              })),
+            },
+            mappings,
+          );
+
+      await this.postingService.post({
+        sourceType: "InvoiceOut",
+        sourceId: inv.id,
+        event: "issued",
+        source: "INVOICE_OUT",
+        date: inv.date,
+        memo: `Penerbitan Invoice Penjualan ${inv.number}`,
+        refNo: inv.number,
+        projectId: inv.projectId,
+        createdById: userId,
+        lines,
+      });
+    } catch (err) {
+      console.error(`Posting invoice out #${invoiceId} error:`, err);
+    }
   }
 }

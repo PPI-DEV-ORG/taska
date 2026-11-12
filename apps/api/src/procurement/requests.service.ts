@@ -721,29 +721,13 @@ export class RequestsService {
     if (isMarkingPaid) {
       try {
         const mappings = await this.mappingService.getAll();
-        const payAccount = dto.paymentAccountCode || dto.fundingSource || mappings.CASH_DEFAULT || "1000.02";
+        const payAccount = dto.paymentAccountCode || dto.fundingSource || updated.paymentAccountCode || mappings.CASH_DEFAULT || "1000.02";
         const estimatedCost = Number(row.estimatedCost || 0) ||
           (row.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0);
 
         if (estimatedCost > 0) {
-          if (row.procurementSource === "GUDANG" && !row.projectId) {
-            // Masuk stok gudang ritel: Dr 1200 Cr Kas/Bank
-            await this.postingService.post({
-              sourceType: "PurchaseRequest",
-              sourceId: row.id,
-              event: "paid",
-              source: "RETAIL_PURCHASE",
-              date: new Date(),
-              memo: `Pembelian Ritel Stok Masuk #${row.number}`,
-              refNo: row.number,
-              createdById: user.id,
-              lines: [
-                { accountCode: mappings.INVENTORY || "1200", debit: estimatedCost, credit: 0, memo: `Persediaan Ritel #${row.number}` },
-                { accountCode: payAccount, debit: 0, credit: estimatedCost, memo: `Kas Keluar Ritel #${row.number}` },
-              ],
-            });
-          } else if (row.projectId) {
-            // Non-stok habis pakai proyek: Dr 5101 Cr Kas/Bank
+          if (row.projectId && isProjectConsumable) {
+            // A. Non-stok habis pakai proyek: Dr 5101 Cr Kas/Bank
             await this.postingService.post({
               sourceType: "PurchaseRequest",
               sourceId: row.id,
@@ -757,6 +741,25 @@ export class RequestsService {
               lines: [
                 { accountCode: mappings.COGS_PROJECT || "5101", debit: estimatedCost, credit: 0, memo: `HPP Material Proyek #${row.number}`, projectId: row.projectId },
                 { accountCode: payAccount, debit: 0, credit: estimatedCost, memo: `Kas Keluar Ritel #${row.number}`, projectId: row.projectId },
+              ],
+            });
+          } else {
+            // B. Pembelian Toko Online / Ritel / Masuk Gudang: Dr 2108 (GRNI) Cr Kas/Bank
+            // Karena saat penerimaan barang (BPB), dicatat: Dr 1200 (Persediaan) Cr 2108 (GRNI),
+            // maka jurnal pembayaran mendebit 2108 (GRNI) dan mengkredit Kas/Bank sehingga saldo kliring pas nol.
+            await this.postingService.post({
+              sourceType: "PurchaseRequest",
+              sourceId: row.id,
+              event: "paid",
+              source: "RETAIL_PURCHASE",
+              date: new Date(),
+              memo: `Pembayaran Pembelian Toko Online #${row.number}`,
+              refNo: row.number,
+              projectId: row.projectId,
+              createdById: user.id,
+              lines: [
+                { accountCode: mappings.GRNI || "2108", debit: estimatedCost, credit: 0, memo: `Kliring GRNI Pembelian #${row.number}`, projectId: row.projectId },
+                { accountCode: payAccount, debit: 0, credit: estimatedCost, memo: `Kas Keluar Pembelian #${row.number}`, projectId: row.projectId },
               ],
             });
           }
