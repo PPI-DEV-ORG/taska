@@ -6,6 +6,9 @@ import { AuditService } from "../audit/audit.service.js";
 import { StockService } from "../stock/stock.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { SettingsService } from "../settings/settings.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import { can } from "../rbac/permissions.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import type {
@@ -26,6 +29,8 @@ export class DeliveryService implements OnModuleInit {
     private readonly stock: StockService,
     private readonly docnum: DocumentNumberService,
     private readonly settings: SettingsService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {
     this.approvals.onChange("SURAT_JALAN", (entityId, status) => this.onApproval(entityId, status));
   }
@@ -169,6 +174,10 @@ export class DeliveryService implements OnModuleInit {
       if (!hasProof) {
         throw new BadRequestException("Bukti tanda terima / scan surat jalan bertanda tangan wajib dilampirkan sebelum status dapat diubah menjadi Diterima");
       }
+    }
+
+    if (dto.status === "DIBATALKAN") {
+      await this.postingService.reverse("DeliveryNote", id, "shipped", dto.reason || "Surat jalan dibatalkan", user.id).catch(() => {});
     }
 
     const updated = await this.prisma.main.deliveryNote.update({
@@ -442,6 +451,23 @@ export class DeliveryService implements OnModuleInit {
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
 
     const firstLocation = row.locations[0];
+    // Guard Stok Negatif (Poin 4 & 5 E7): Verifikasi saldo stok fisik gudang sebelum Surat Jalan dikirim
+    const itemsToCheck = dto.items?.length ? dto.items : row.items;
+    for (const it of itemsToCheck) {
+      if (!it.productId) continue;
+      const totalAvail = await this.prisma.main.stockBalance.aggregate({
+        where: { productId: it.productId },
+        _sum: { qty: true },
+      });
+      const currentStock = totalAvail._sum.qty || 0;
+      if (currentStock < Number(it.qty || 0)) {
+        const prod = await this.prisma.main.product.findUnique({ where: { id: it.productId } });
+        throw new BadRequestException(
+          `Stok tidak mencukupi untuk "${prod?.name || it.productId}". Tersedia: ${currentStock}, Dikirim: ${it.qty}. Pengiriman Surat Jalan ditolak untuk mencegah stok minus.`,
+        );
+      }
+    }
+
     const defaultWarehouse =
       (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
       (await this.prisma.main.warehouse.findFirst());
@@ -626,6 +652,43 @@ export class DeliveryService implements OnModuleInit {
       data: { status: "DIKIRIM" },
     });
 
+    // Posting Akuntansi E7: Pengiriman Barang Surat Jalan -> Dr HPP Cr Persediaan (1200)
+    try {
+      let costTotal = 0;
+      for (const it of (itemsToProcess || [])) {
+        if (!it.productId) continue;
+        const p = await this.prisma.main.product.findUnique({ where: { id: it.productId } });
+        const avg = Number(p?.avgCost || p?.purchasePrice || 0);
+        costTotal += (Number(it.qty || 0)) * avg;
+      }
+      if (costTotal > 0) {
+        const mappings = await this.mappingService.getAll();
+        const dLines = PostingRules.buildDeliveryLines(
+          {
+            number: row.number,
+            costTotal,
+            isProject: !!firstLocation?.projectId,
+            projectId: firstLocation?.projectId,
+          },
+          mappings,
+        );
+        await this.postingService.post({
+          sourceType: "DeliveryNote",
+          sourceId: row.id,
+          event: "shipped",
+          source: "DELIVERY",
+          date: row.date,
+          memo: `HPP Pengiriman Barang SJ ${row.number}`,
+          refNo: row.number,
+          projectId: firstLocation?.projectId,
+          createdById: user.id,
+          lines: dLines,
+        });
+      }
+    } catch (err) {
+      console.error("Posting delivery error:", err);
+    }
+
     await this.notifications.notify({
       userIds: [row.creatorId],
       kind: "SURAT",
@@ -692,6 +755,10 @@ export class DeliveryService implements OnModuleInit {
           }
         }
       }
+    }
+
+    if (dto.status === "DIBATALKAN") {
+      await this.postingService.reverse("DeliveryNote", id, "shipped", dto.reason || "Surat jalan dibatalkan", user.id).catch(() => {});
     }
 
     const updated = await this.prisma.main.deliveryNote.update({

@@ -423,6 +423,7 @@ export function InvoiceExtras({
         method: payMethod,
         reference: payRef.trim() || undefined,
         coaAccount: payCoaAccount,
+        accountCode: payCoaAccount,
         fileId: finalFileId,
       });
       toast(`Pembayaran ${rupiah(amt)} berhasil dicatat`);

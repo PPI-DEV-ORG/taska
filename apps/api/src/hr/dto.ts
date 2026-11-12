@@ -75,6 +75,10 @@ export class PaySlipDto {
   @IsOptional()
   @IsString()
   paymentMethod?: string; // "BANK" | "KAS"
+
+  @IsOptional()
+  @IsString()
+  paidAccountCode?: string;
 }
 
 export class WorkScheduleSettingsDto {

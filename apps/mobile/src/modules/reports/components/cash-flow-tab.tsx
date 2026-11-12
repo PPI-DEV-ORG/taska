@@ -57,42 +57,49 @@ export function CashFlowTab({ fin, onDownload }: CashFlowTabProps) {
         subtitle="Mencatat transaksi kas riil yang telah diterima atau dibayarkan (Cash Basis)"
         right={<ExportBar type="cash-flow" title="Laporan Arus Kas Cash Flow" onDownload={onDownload} />}
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator>
-          <View className="min-w-[880px] w-full gap-1">
-            <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
-              <Text className="w-[95px] text-xs font-bold">Tanggal</Text>
-              <Text className="w-[125px] text-xs font-bold">No. Referensi</Text>
-              <Text className="w-[195px] text-xs font-bold">Kategori Arus Kas</Text>
-              <Text className="w-[150px] text-xs font-bold">Pihak Terkait</Text>
-              <Text className="flex-1 text-xs font-bold">Keterangan</Text>
-              <Text className="w-[125px] text-xs font-bold text-right">Kas Masuk</Text>
-              <Text className="w-[125px] text-xs font-bold text-right">Kas Keluar</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator
+          contentContainerStyle={{ minWidth: "100%" }}
+          className="w-full"
+        >
+          <View className="min-w-full w-full gap-1">
+            <View className="bg-panel border-border flex-row items-center border-b px-4 py-2.5 rounded-t-lg w-full">
+              <Text className="w-[110px] text-xs font-bold">Tanggal</Text>
+              <Text className="w-[140px] text-xs font-bold">No. Referensi</Text>
+              <Text className="w-[160px] text-xs font-bold">Kategori Arus Kas</Text>
+              <Text className="w-[180px] text-xs font-bold">Pihak Terkait</Text>
+              <Text className="flex-1 min-w-[200px] text-xs font-bold">Keterangan</Text>
+              <Text className="w-[140px] text-xs font-bold text-right pr-2">Kas Masuk</Text>
+              <Text className="w-[140px] text-xs font-bold text-right pr-2">Kas Keluar</Text>
             </View>
             {(cf.items || []).map((item: any) => (
               <View
                 key={item.id}
-                className="border-border/60 flex-row items-center border-b px-3 py-2.5"
+                className="border-border/60 flex-row items-center border-b px-4 py-2.5 hover:bg-panel/40 w-full"
               >
-                <Text className="w-[95px] text-xs font-mono text-text-secondary">
+                <Text className="w-[110px] text-xs font-mono text-text-secondary">
                   {item.tanggal}
                 </Text>
-                <Text className="w-[125px] text-xs font-semibold font-mono">{item.refNo}</Text>
-                <View className="w-[195px] pr-2">
+                <Text className="w-[140px] text-xs font-semibold font-mono" numberOfLines={1}>
+                  {item.refNo}
+                </Text>
+                <View className="w-[160px] pr-2">
                   <Pill
                     label={item.kategori}
                     tone={item.masuk > 0 ? "success" : "warning"}
                   />
                 </View>
-                <Text className="w-[150px] text-xs font-medium" numberOfLines={1}>
+                <Text className="w-[180px] text-xs font-medium" numberOfLines={1}>
                   {item.pihak}
                 </Text>
-                <Text className="flex-1 text-xs text-text-secondary pr-3" numberOfLines={1}>
+                <Text className="flex-1 min-w-[200px] text-xs text-text-secondary pr-3" numberOfLines={1}>
                   {item.keterangan}
                 </Text>
-                <Text className="w-[125px] text-xs font-bold font-mono text-right text-success">
+                <Text className="w-[140px] text-xs font-bold font-mono text-right text-success pr-2">
                   {item.masuk > 0 ? `+${rupiah(item.masuk)}` : "-"}
                 </Text>
-                <Text className="w-[125px] text-xs font-bold font-mono text-right text-danger">
+                <Text className="w-[140px] text-xs font-bold font-mono text-right text-danger pr-2">
                   {item.keluar > 0 ? `-${rupiah(item.keluar)}` : "-"}
                 </Text>
               </View>

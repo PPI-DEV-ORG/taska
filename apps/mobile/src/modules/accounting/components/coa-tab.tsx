@@ -4,7 +4,7 @@ import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/taska/basics";
-import { Plus, Search, ChevronLeft, ChevronRight, ArrowRight, Trash2 } from "lucide-react-native";
+import { Plus, Search, ChevronLeft, ChevronRight, ArrowRight, Trash2, RefreshCw } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { CoaTrialBalanceRow } from "@/lib/accounting";
@@ -12,6 +12,7 @@ import { COA_CATEGORIES } from "../types";
 
 interface CoaTabProps {
   onOpenCreateCoa: () => void;
+  onRefresh?: () => void;
   coaQuery: string;
   setCoaQuery: (v: string) => void;
   setCoaPage: React.Dispatch<React.SetStateAction<number>>;
@@ -29,6 +30,7 @@ interface CoaTabProps {
 
 export function CoaTab({
   onOpenCreateCoa,
+  onRefresh,
   coaQuery,
   setCoaQuery,
   setCoaPage,
@@ -49,10 +51,18 @@ export function CoaTab({
         title="Bagan Akun Standar & Saldo (Chart of Accounts / COA)"
         subtitle="Daftar master akun akuntansi resmi PT Ghina Multi Prima beserta mutasi dan saldo akhir"
         right={
-          <Button size="sm" onPress={onOpenCreateCoa} className="gap-1.5 h-8">
-            <Plus size={14} color={colors.background} />
-            <Text className="text-xs font-semibold">+ Tambah Akun</Text>
-          </Button>
+          <View className="flex-row items-center gap-2">
+            {onRefresh && (
+              <Button size="sm" variant="outline" onPress={onRefresh} className="gap-1.5 h-8">
+                <RefreshCw size={13} color={colors.text} />
+                <Text className="text-xs">Refresh</Text>
+              </Button>
+            )}
+            <Button size="sm" onPress={onOpenCreateCoa} className="gap-1.5 h-8">
+              <Plus size={14} color={colors.background} />
+              <Text className="text-xs font-semibold">+ Tambah Akun</Text>
+            </Button>
+          </View>
         }
       >
         <View className="gap-3">

@@ -799,6 +799,8 @@ function SupplierInvoicePayForm({
         method,
         reference: `[AKUN:${coaAccount}] ${reference.trim()}`,
         coaAccount,
+        accountCode: coaAccount,
+        paidAccountCode: coaAccount,
         fileId: finalFileId ?? undefined,
       });
       toast(`Pembayaran supplier ${rupiah(numAmt)} berhasil dicatat`);

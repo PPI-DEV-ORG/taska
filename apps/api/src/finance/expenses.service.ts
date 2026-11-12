@@ -3,6 +3,9 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { ApprovalStatus } from "../generated/prisma/client.js";
@@ -16,6 +19,8 @@ export class ExpensesService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly approvals: ApprovalsService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {
     this.approvals.onChange("PENGELUARAN", (entityId, status) => this.onApproval(entityId, status));
   }
@@ -409,6 +414,115 @@ export class ExpensesService {
       } else if (dto.status === "DITOLAK") {
         await this.approvals.decide(pendingAppr.id, user, false, dto.reason).catch(() => {});
       }
+    }
+
+    // Posting Akuntansi E8a / E8b: Biaya Operasional
+    try {
+      const mappings = await this.mappingService.getAll();
+      const cat = row.categoryId
+        ? await this.prisma.main.expenseCategory.findUnique({ where: { id: row.categoryId } })
+        : null;
+      const expenseCoa = cat?.coaAccount || undefined;
+      const expCode = `EXP-${String(row.id).padStart(3, "0")}`;
+      const who = updated.reporter?.name || undefined;
+      const what = row.description || cat?.name || undefined;
+
+      if (dto.status === "DISETUJUI") {
+        const aLines = PostingRules.buildExpenseApprovedLines(
+          {
+            id: row.id,
+            number: expCode,
+            amount: Number(row.amount),
+            expenseAccountCode: expenseCoa,
+            projectId: row.projectId,
+            partyId: row.reporterId,
+            description: row.description || undefined,
+            reporterName: who,
+            categoryName: cat?.name || undefined,
+          },
+          mappings,
+        );
+        await this.postingService.post({
+          sourceType: "Expense",
+          sourceId: row.id,
+          event: "approved",
+          source: "EXPENSE",
+          date: row.date,
+          memo: `Beban ${cat?.name || "Operasional"}${row.description ? `: ${row.description}` : ""} (${who || "Karyawan"})`,
+          refNo: expCode,
+          projectId: row.projectId,
+          createdById: user.id,
+          lines: aLines,
+        });
+      } else if (dto.status === "DIBAYAR") {
+        // Jika belum ada jurnal pengakuan beban (misal langsung bypass DIBAYAR), catat dulu pengakuan bebannya
+        const existingAccrual = await (this.prisma.main as any).journalEntry.findFirst({
+          where: {
+            sourceType: "Expense",
+            sourceId: row.id,
+            status: "POSTED",
+            event: "approved",
+          },
+        });
+        if (!existingAccrual) {
+          const aLines = PostingRules.buildExpenseApprovedLines(
+            {
+              id: row.id,
+              number: expCode,
+              amount: Number(row.amount),
+              expenseAccountCode: expenseCoa,
+              projectId: row.projectId,
+              partyId: row.reporterId,
+              description: row.description || undefined,
+              reporterName: who,
+              categoryName: cat?.name || undefined,
+            },
+            mappings,
+          );
+          await this.postingService.post({
+            sourceType: "Expense",
+            sourceId: row.id,
+            event: "approved",
+            source: "EXPENSE",
+            date: row.date,
+            memo: `Beban ${cat?.name || "Operasional"}${row.description ? `: ${row.description}` : ""} (${who || "Karyawan"})`,
+            refNo: expCode,
+            projectId: row.projectId,
+            createdById: user.id,
+            lines: aLines,
+          });
+        }
+
+        const payAccount = dto.paidAccountCode || mappings.CASH_DEFAULT || "1000.02";
+        const pLines = PostingRules.buildExpensePaidLines(
+          {
+            id: row.id,
+            number: `${expCode}/PAY`,
+            amount: Number(row.amount),
+            paidAccountCode: payAccount,
+            projectId: row.projectId,
+            partyId: row.reporterId,
+            description: row.description || undefined,
+            reporterName: who,
+            categoryName: cat?.name || undefined,
+          },
+          mappings,
+        );
+        await this.postingService.post({
+          sourceType: "Expense",
+          sourceId: row.id,
+          event: "paid",
+          source: "EXPENSE_PAYMENT",
+          date: new Date(),
+          memo: `Pelunasan Biaya/Reimbursement ${expCode} kepada ${who || "Karyawan"}`,
+          refNo: `${expCode}/PAY`,
+          projectId: row.projectId,
+          createdById: user.id,
+          lines: pLines,
+        });
+      }
+    } catch (err) {
+      console.error("Posting expense error:", err);
     }
 
     this.notifications.dataChange("expenses", "status", updated.id);

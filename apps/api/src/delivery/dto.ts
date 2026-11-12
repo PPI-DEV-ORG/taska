@@ -97,6 +97,9 @@ export class DeliveryCreateDto {
   status?: "PENDING" | "DIKIRIM" | "DITERIMA" | "DIBATALKAN";
 
   @IsOptional() @IsString()
+  reason?: string;
+
+  @IsOptional() @IsString()
   reportText?: string;
 
   @IsOptional() @Type(() => Number) @IsInt()

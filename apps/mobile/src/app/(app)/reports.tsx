@@ -14,6 +14,8 @@ import { useApp } from "@/store/app-store";
 import { rupiah, tanggal } from "@/lib/format";
 import { colors } from "@/tokens";
 import {
+  CHART_OF_ACCOUNTS,
+  buildCoaTree,
   computeFinancialStatements,
   loadManualJournals,
   loadCustomCoa,
@@ -84,6 +86,83 @@ export default function ReportsScreen() {
 
   const [reportDate, setReportDate] = React.useState("");
 
+  // Server-side accounting reports
+  const [serverIncomeStatement, setServerIncomeStatement] = React.useState<any>(null);
+  const [serverBalanceSheet, setServerBalanceSheet] = React.useState<any>(null);
+  const [serverCashFlow, setServerCashFlow] = React.useState<any>(null);
+  const [serverTrialBalance, setServerTrialBalance] = React.useState<any>(null);
+  const [serverJournalLines, setServerJournalLines] = React.useState<any[] | null>(null);
+
+  React.useEffect(() => {
+    if (!canAccessFinancials) return;
+    let active = true;
+
+    const startDate = reportDate ? `${reportDate.slice(0, 7)}-01` : undefined;
+    const endDate = reportDate ? reportDate.slice(0, 10) : undefined;
+
+    const query = new URLSearchParams();
+    if (startDate) query.set("startDate", startDate);
+    if (endDate) query.set("endDate", endDate);
+    const qStr = query.toString();
+
+    void api<any>("GET", `/accounting/income-statement${qStr ? `?${qStr}` : ""}`)
+      .then((res) => { if (active && res) setServerIncomeStatement(res); })
+      .catch(() => {});
+
+    void api<any>("GET", `/accounting/balance-sheet${endDate ? `?asOfDate=${endDate}` : ""}`)
+      .then((res) => { if (active && res) setServerBalanceSheet(res); })
+      .catch(() => {});
+
+    void api<any>("GET", `/accounting/cash-flow${qStr ? `?${qStr}` : ""}`)
+      .then((res) => { if (active && res) setServerCashFlow(res); })
+      .catch(() => {});
+
+    void api<any>("GET", `/accounting/trial-balance${endDate ? `?asOfDate=${endDate}` : ""}`)
+      .then((res) => { if (active && res) setServerTrialBalance(res); })
+      .catch(() => {});
+
+    const jParams = new URLSearchParams();
+    if (reportDate) {
+      jParams.set("startDate", `${reportDate.slice(0, 10)}T00:00:00Z`);
+      jParams.set("endDate", `${reportDate.slice(0, 10)}T23:59:59Z`);
+    }
+    jParams.set("limit", "150");
+    const jStr = jParams.toString();
+    void api<any>("GET", `/accounting/journals${jStr ? `?${jStr}` : ""}`)
+      .then((res) => {
+        if (!active || !Array.isArray(res?.items)) return;
+        const mappedLines: any[] = [];
+        res.items.forEach((entry: any) => {
+          let entryRef = entry.refNo || "-";
+          if (entry.sourceType === "Expense" && entry.sourceId && (!entryRef || /^\d+$/.test(entryRef))) {
+            const expCode = `EXP-${String(entry.sourceId).padStart(3, "0")}`;
+            entryRef = entry.event === "paid" || entry.source === "EXPENSE_PAYMENT" ? `${expCode}/PAY` : expCode;
+          }
+          (entry.lines || []).forEach((line: any) => {
+            mappedLines.push({
+              id: String(line.id),
+              journalNo: entry.number || `JU-${entry.id}`,
+              tanggal: entry.date ? String(entry.date).slice(0, 10) : "-",
+              refNo: entryRef,
+              sumber: entry.source === "EXPENSE" ? "Pengeluaran (Expense)" : entry.source === "EXPENSE_PAYMENT" ? "Pelunasan Expense" : (entry.source || "Jurnal"),
+              keterangan: line.memo || entry.memo || "-",
+              project: line.projectId ? `Project #${line.projectId}` : entry.projectId ? `Project #${entry.projectId}` : "-",
+              kodeAkun: line.accountCode,
+              namaAkun: line.memo || line.accountCode,
+              debit: Number(line.debit || 0),
+              kredit: Number(line.credit || 0),
+            });
+          });
+        });
+        setServerJournalLines(mappedLines);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [canAccessFinancials, reportDate]);
+
   const filteredData = React.useMemo(() => {
     if (!reportDate) return data;
     const target = reportDate.slice(0, 10);
@@ -105,10 +184,276 @@ export default function ReportsScreen() {
     };
   }, [data, reportDate]);
 
-  const fin = React.useMemo(
-    () => computeFinancialStatements(filteredData, manualJournals, customAccounts, deletedCoaCodes),
-    [filteredData, manualJournals, customAccounts, deletedCoaCodes]
-  );
+  const fin = React.useMemo(() => {
+    const localFin = computeFinancialStatements(filteredData, manualJournals, customAccounts, deletedCoaCodes);
+    if (!serverIncomeStatement && !serverBalanceSheet && !serverCashFlow && !serverTrialBalance && !serverJournalLines) {
+      return localFin;
+    }
+
+    // Merge server official double-entry data if available
+    const merged = { ...localFin };
+
+    const sumAccounts = (items: any[] = [], prefixes: string[]) => {
+      if (Array.isArray(items) && items.length > 0) {
+        return items
+          .filter((i: any) => prefixes.some((p) => i.code === p || i.code.startsWith(`${p}.`)))
+          .reduce((sum: number, i: any) => sum + Number(i.amount || 0), 0);
+      }
+      return (merged.coaBalances || [])
+        .filter((a: any) => !a.isHeader && prefixes.some((p) => a.code === p || a.code.startsWith(`${p}.`)))
+        .reduce((sum: number, a: any) => sum + Number(a.endingBalance || 0), 0);
+    };
+
+    if (serverIncomeStatement) {
+      const revTotal = Number(serverIncomeStatement.revenue?.total || 0);
+      const cogsTotal = Number(serverIncomeStatement.cogs?.total || 0);
+      const opexTotal = Number(serverIncomeStatement.operatingExpense?.total || 0);
+      const grossProfit = Number(serverIncomeStatement.grossProfit || (revTotal - cogsTotal));
+      const netProfit = Number(serverIncomeStatement.netProfit || (grossProfit - opexTotal));
+      const grossMarginPct = revTotal > 0 ? Number(((grossProfit / revTotal) * 100).toFixed(1)) : 0;
+      const netMarginPct = revTotal > 0 ? Number(((netProfit / revTotal) * 100).toFixed(1)) : 0;
+
+      const ppnKeluaran = sumAccounts(serverBalanceSheet?.liabilities?.items, ["2100", "2102"]);
+      const revenueGross = revTotal + ppnKeluaran;
+
+      const cogsProject = (serverIncomeStatement.cogs?.accounts || []).find((a: any) => a.code === "5101")?.amount ?? cogsTotal;
+      const cogsRetail = (serverIncomeStatement.cogs?.accounts || []).find((a: any) => a.code === "5102")?.amount ?? 0;
+
+      const opexByCategory = (serverIncomeStatement.operatingExpense?.accounts || [])
+        .filter((a: any) => Number(a.amount || 0) > 0)
+        .map((a: any) => ({
+          kategori: a.name.replace(/^Biaya\s+/i, "").replace(/^Beban\s+/i, ""),
+          nominal: Number(a.amount || 0),
+          count: 1,
+        }));
+
+      merged.incomeStatement = {
+        ...localFin.incomeStatement,
+        revenueGross,
+        revenueDpp: revTotal,
+        ppnKeluaran,
+        cogsProject,
+        cogsRetail,
+        cogsTotal,
+        grossProfit,
+        grossMarginPct,
+        opexByCategory,
+        opexTotal,
+        netProfit,
+        netMarginPct,
+      };
+    } else if (merged.coaBalances && merged.coaBalances.length > 0) {
+      const coaRevenue = merged.coaBalances
+        .filter((a: any) => !a.isHeader && (a.category === "Pendapatan" || a.category === "Pendapatan Diluar Usaha"))
+        .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+      const coaCogs = merged.coaBalances
+        .filter((a: any) => !a.isHeader && a.category === "Beban Pokok (HPP)")
+        .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+      const coaOpex = merged.coaBalances
+        .filter((a: any) => !a.isHeader && (a.category === "Beban Operasional" || a.category === "Beban Diluar Usaha"))
+        .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+
+      const grossProfit = coaRevenue - coaCogs;
+      const netProfit = grossProfit - coaOpex;
+      const grossMarginPct = coaRevenue > 0 ? Number(((grossProfit / coaRevenue) * 100).toFixed(1)) : 0;
+      const netMarginPct = coaRevenue > 0 ? Number(((netProfit / coaRevenue) * 100).toFixed(1)) : 0;
+      const ppnKeluaran = sumAccounts([], ["2100", "2102"]);
+
+      merged.incomeStatement = {
+        ...localFin.incomeStatement,
+        revenueGross: coaRevenue + ppnKeluaran,
+        revenueDpp: coaRevenue,
+        ppnKeluaran,
+        cogsProject: coaCogs,
+        cogsRetail: 0,
+        cogsTotal: coaCogs,
+        grossProfit,
+        grossMarginPct,
+        opexByCategory: merged.coaBalances
+          .filter((a: any) => !a.isHeader && (a.category === "Beban Operasional" || a.category === "Beban Diluar Usaha") && Number(a.endingBalance || 0) > 0)
+          .map((a: any) => ({
+            kategori: a.name.replace(/^Biaya\s+/i, "").replace(/^Beban\s+/i, ""),
+            nominal: Number(a.endingBalance || 0),
+            count: 1,
+          })),
+        opexTotal: coaOpex,
+        netProfit,
+        netMarginPct,
+      };
+    }
+
+    if (serverBalanceSheet) {
+      const assetsTotal = Number(serverBalanceSheet.assets?.total || 0);
+      const liabTotal = Number(serverBalanceSheet.liabilities?.total || 0);
+      const eqTotal = Number(serverBalanceSheet.equity?.total || 0);
+      const totalPasiva = Number(serverBalanceSheet.totalLiabilitiesAndEquity || (liabTotal + eqTotal));
+      const isBalanced = Boolean(serverBalanceSheet.isBalanced);
+
+      const kasDanBank = sumAccounts(serverBalanceSheet.assets?.items, ["1000", "1101"]);
+      const piutangUsaha = sumAccounts(serverBalanceSheet.assets?.items, ["1100", "1102", "110302", "110303"]);
+      const persediaanBarang = sumAccounts(serverBalanceSheet.assets?.items, ["1200", "1103"]);
+      const ppnMasukan = sumAccounts(serverBalanceSheet.assets?.items, ["1600", "1104"]);
+      const uangMukaPph = sumAccounts(serverBalanceSheet.assets?.items, ["1105", "1106"]);
+
+      const hutangSupplier = sumAccounts(serverBalanceSheet.liabilities?.items, ["2101", "210102"]);
+      const hutangPpnKeluaran = sumAccounts(serverBalanceSheet.liabilities?.items, ["2100", "2102"]);
+      const hutangReimbursement = sumAccounts(serverBalanceSheet.liabilities?.items, ["2103"]);
+
+      const modalKerjaAwal = sumAccounts(serverBalanceSheet.equity?.items, ["3101", "310001", "3000"]);
+      const labaBerjalan = sumAccounts(serverBalanceSheet.equity?.items, ["3102-AUTO", "3102"]);
+
+      merged.balanceSheet = {
+        ...localFin.balanceSheet,
+        isBalanced,
+        discrepancy: Math.abs(assetsTotal - totalPasiva),
+        totalPasiva,
+        assets: {
+          ...localFin.balanceSheet.assets,
+          items: serverBalanceSheet.assets?.items || [],
+          totalAsetLancar: assetsTotal,
+          kasDanBank,
+          piutangUsaha,
+          persediaanBarang,
+          ppnMasukan,
+          uangMukaPph,
+        },
+        liabilities: {
+          ...localFin.balanceSheet.liabilities,
+          items: serverBalanceSheet.liabilities?.items || [],
+          totalKewajiban: liabTotal,
+          hutangSupplier,
+          hutangPpnKeluaran,
+          hutangReimbursement,
+        },
+        equity: {
+          ...localFin.balanceSheet.equity,
+          items: serverBalanceSheet.equity?.items || [],
+          modalKerjaAwal,
+          labaBerjalan,
+          totalEkuitas: eqTotal,
+        },
+      };
+    } else if (merged.coaBalances && merged.coaBalances.length > 0) {
+      const coaAssets = merged.coaBalances
+        .filter((a: any) => !a.isHeader && a.category?.startsWith("Aset"))
+        .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+      const coaLiabilities = merged.coaBalances
+        .filter((a: any) => !a.isHeader && a.category?.startsWith("Kewajiban"))
+        .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+      const coaEquity = merged.coaBalances
+        .filter((a: any) => !a.isHeader && a.category === "Ekuitas")
+        .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+
+      const kasDanBank = sumAccounts([], ["1000", "1101"]);
+      const piutangUsaha = sumAccounts([], ["1100", "1102", "110302", "110303"]);
+      const persediaanBarang = sumAccounts([], ["1200", "1103"]);
+      const ppnMasukan = sumAccounts([], ["1600", "1104"]);
+      const uangMukaPph = sumAccounts([], ["1105", "1106"]);
+
+      const hutangSupplier = sumAccounts([], ["2101", "210102"]);
+      const hutangPpnKeluaran = sumAccounts([], ["2100", "2102"]);
+      const hutangReimbursement = sumAccounts([], ["2103"]);
+
+      const modalKerjaAwal = sumAccounts([], ["3101", "310001", "3000"]);
+      const labaBerjalan = merged.incomeStatement?.netProfit || 0;
+      const totalEkuitas = coaEquity + labaBerjalan;
+      const totalPasiva = coaLiabilities + totalEkuitas;
+
+      merged.balanceSheet = {
+        ...localFin.balanceSheet,
+        isBalanced: Math.abs(coaAssets - totalPasiva) < 1,
+        discrepancy: Math.abs(coaAssets - totalPasiva),
+        totalPasiva,
+        assets: {
+          ...localFin.balanceSheet.assets,
+          items: merged.coaBalances
+            .filter((a: any) => !a.isHeader && a.category?.startsWith("Aset") && Number(a.endingBalance || 0) !== 0)
+            .map((a: any) => ({ code: a.code, name: a.name, category: a.category, amount: a.endingBalance })),
+          totalAsetLancar: coaAssets,
+          kasDanBank,
+          piutangUsaha,
+          persediaanBarang,
+          ppnMasukan,
+          uangMukaPph,
+        },
+        liabilities: {
+          ...localFin.balanceSheet.liabilities,
+          items: merged.coaBalances
+            .filter((a: any) => !a.isHeader && a.category?.startsWith("Kewajiban") && Number(a.endingBalance || 0) !== 0)
+            .map((a: any) => ({ code: a.code, name: a.name, category: a.category, amount: a.endingBalance })),
+          totalKewajiban: coaLiabilities,
+          hutangSupplier,
+          hutangPpnKeluaran,
+          hutangReimbursement,
+        },
+        equity: {
+          ...localFin.balanceSheet.equity,
+          items: merged.coaBalances
+            .filter((a: any) => !a.isHeader && a.category === "Ekuitas")
+            .map((a: any) => ({ code: a.code, name: a.name, category: a.category, amount: a.endingBalance })),
+          modalKerjaAwal,
+          labaBerjalan,
+          totalEkuitas,
+        },
+      };
+    }
+
+    if (serverCashFlow) {
+      const rawItems = serverCashFlow.items || [];
+      const mappedItems = rawItems.map((item: any) => ({
+        id: String(item.id),
+        tanggal: item.date ? String(item.date).slice(0, 10) : item.tanggal || "-",
+        refNo: item.refNo || "-",
+        kategori: item.kategori || (item.source === "EXPENSE_PAYMENT" ? "Operasional" : item.source === "MANUAL" ? "Modal / Kas" : "Kas/Bank"),
+        pihak: item.pihak || (item.accountName || "Kas/Bank"),
+        keterangan: item.memo || item.keterangan || "-",
+        masuk: Number(item.inflow ?? item.masuk ?? 0),
+        keluar: Number(item.outflow ?? item.keluar ?? 0),
+      }));
+
+      const cashInCustomers = mappedItems.filter((i: any) => i.masuk > 0).reduce((s: number, i: any) => s + i.masuk, 0);
+      const cashOutExpenses = mappedItems.filter((i: any) => i.keluar > 0 && (i.kategori.includes("Operasional") || (i.refNo && i.refNo.includes("EXP")))).reduce((s: number, i: any) => s + i.keluar, 0);
+      const cashOutSuppliers = mappedItems.filter((i: any) => i.keluar > 0 && !i.kategori.includes("Operasional") && !(i.refNo && i.refNo.includes("EXP"))).reduce((s: number, i: any) => s + i.keluar, 0);
+
+      merged.cashFlow = {
+        cashInCustomers,
+        cashOutSuppliers,
+        cashOutExpenses,
+        totalCashIn: Number(serverCashFlow.totalInflow || cashInCustomers),
+        totalCashOut: Number(serverCashFlow.totalOutflow || (cashOutSuppliers + cashOutExpenses)),
+        netCashFlow: Number(serverCashFlow.netCashFlow || 0),
+        cashConversionRatePct: 0,
+        items: mappedItems,
+      };
+    }
+
+    if (serverJournalLines && serverJournalLines.length > 0) {
+      merged.journalLines = serverJournalLines;
+    }
+
+    if (serverTrialBalance?.rows && Array.isArray(serverTrialBalance.rows)) {
+      const coaMap: Record<string, CoaAccount> = { ...CHART_OF_ACCOUNTS };
+      customAccounts.forEach((acc) => {
+        coaMap[acc.code] = acc;
+      });
+      merged.coaBalances = buildCoaTree(coaMap, serverTrialBalance.rows, deletedCoaCodes);
+      merged.totalDebit = Number(serverTrialBalance.grandTotalDebit || 0);
+      merged.totalKredit = Number(serverTrialBalance.grandTotalCredit || 0);
+      merged.isJournalBalanced = Boolean(serverTrialBalance.isBalanced);
+    }
+
+    return merged;
+  }, [
+    filteredData,
+    manualJournals,
+    customAccounts,
+    deletedCoaCodes,
+    serverIncomeStatement,
+    serverBalanceSheet,
+    serverCashFlow,
+    serverTrialBalance,
+    serverJournalLines,
+  ]);
 
   const reportCards = React.useMemo(() => {
     const leadsCount = (data.leads ?? []).length;

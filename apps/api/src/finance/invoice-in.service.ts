@@ -4,6 +4,9 @@ import { AuditService } from "../audit/audit.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import { Prisma } from "../generated/prisma/client.js";
@@ -21,6 +24,8 @@ export class InvoiceInService {
     private readonly docnum: DocumentNumberService,
     private readonly approvals: ApprovalsService,
     private readonly notifications: NotificationsService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {}
 
   private compute(row: InvoiceIn): StatusFilter {
@@ -374,6 +379,36 @@ export class InvoiceInService {
       await this.syncLinkedRequest(row.supplierPoId, payFileId);
     }
 
+    // Posting Akuntansi E5: Tagihan Supplier Masuk (Invoice In)
+    try {
+      const mappings = await this.mappingService.getAll();
+      const inLines = PostingRules.buildInvoiceInLines(
+        {
+          number: row.number || `INV-IN-${row.id}`,
+          supplierId: supplier.id,
+          dpp: Number(row.amount),
+          ppn: Number(row.ppn || 0),
+          total: Number(row.total),
+          isExpense: !row.supplierPoId,
+          expenseAccountCode: dto.debitAccount || dto.coaAccount || undefined,
+        },
+        mappings,
+      );
+      await this.postingService.post({
+        sourceType: "InvoiceIn",
+        sourceId: row.id,
+        event: "issued",
+        source: "INVOICE_IN",
+        date: dto.date ? new Date(dto.date) : new Date(),
+        memo: `Tagihan Supplier #${row.number || row.id} (${supplier.name})`,
+        refNo: row.number || `INV-IN-${String(row.id).padStart(3, "0")}`,
+        createdById: user.id,
+        lines: inLines,
+      });
+    } catch (err) {
+      console.error("Posting invoice in error:", err);
+    }
+
     await this.audit.log({
       actor: user,
       action: isPaid ? "BUAT_DAN_LUNASI_INVOICE_MASUK" : "BUAT_INVOICE_MASUK",
@@ -513,17 +548,50 @@ export class InvoiceInService {
       ? (dto.reference?.includes(`[AKUN:`) ? dto.reference : `[AKUN:${dto.coaAccount}] ${dto.reference || ""}`.trim())
       : dto.reference;
 
-    await this.prisma.main.payment.create({
+    const chosenAccount = dto.paidAccountCode || dto.accountCode || dto.coaAccount || null;
+
+    const createdPay = await this.prisma.main.payment.create({
       data: {
         invoiceInId: id,
         amount: dto.amount,
         date: dto.date ? new Date(dto.date) : new Date(),
         method: dto.method ?? "TRANSFER",
         reference: finalReference,
+        accountCode: chosenAccount,
         fileId: dto.fileId,
         createdById: user.id,
       },
     });
+
+    // Posting Akuntansi E6: Pelunasan Tagihan Supplier (Supplier Payment)
+    try {
+      const mappings = await this.mappingService.getAll();
+      const pLines = PostingRules.buildSupplierPaymentLines(
+        {
+          id: createdPay.id,
+          sourceType: "INVOICE_IN",
+          sourceId: row.id,
+          amount: Number(dto.amount),
+          accountCode: chosenAccount || mappings.CASH_DEFAULT || "1000.02",
+          partyType: "SUPPLIER",
+          partyId: row.supplierId || undefined,
+        },
+        mappings,
+      );
+      await this.postingService.post({
+        sourceType: "Payment",
+        sourceId: createdPay.id,
+        event: "settled",
+        source: "INVOICE_IN_PAYMENT",
+        date: dto.date ? new Date(dto.date) : new Date(),
+        memo: `Pembayaran Tagihan Supplier #${row.number || row.id}`,
+        refNo: row.number ? `${row.number}/PAY` : `INV-IN-${String(row.id).padStart(3, "0")}/PAY`,
+        createdById: user.id,
+        lines: pLines,
+      });
+    } catch (err) {
+      console.error("Posting supplier payment error:", err);
+    }
     if (dto.fileId) {
       await this.prisma.main.file.update({
         where: { id: dto.fileId },
@@ -561,6 +629,10 @@ export class InvoiceInService {
     const row = await this.prisma.main.invoiceIn.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice supplier tidak ditemukan");
     const updated = await this.prisma.main.invoiceIn.update({ where: { id }, data: { status: status as never } });
+
+    if (status === "BATAL") {
+      await this.postingService.reverse("InvoiceIn", id, "received", "Invoice supplier dibatalkan", user.id).catch(() => {});
+    }
 
     await this.audit.log({
       actor: user,

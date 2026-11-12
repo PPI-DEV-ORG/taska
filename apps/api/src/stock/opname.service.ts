@@ -3,6 +3,9 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { StockService } from "./stock.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import type { OpnameCreateDto, OpnameSubmitDto } from "./dto.js";
 import type { PageQuery } from "../common/dto/page-query.js";
@@ -16,6 +19,8 @@ export class OpnameService {
     private readonly stock: StockService,
     private readonly approvals: ApprovalsService,
     private readonly notifications: NotificationsService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {
     this.approvals.onChange("OPNAME", (entityId, status) => this.onApproval(entityId, status));
   }
@@ -77,6 +82,37 @@ export class OpnameService {
         }
       }
     }
+    // Posting Akuntansi E9: Selisih Fisik Opname
+    try {
+      let diffVal = 0;
+      for (const d of opname.details) {
+        if (d.diff === 0) continue;
+        const prod = await this.prisma.main.product.findUnique({ where: { id: d.productId } });
+        const avg = Number(prod?.avgCost || prod?.purchasePrice || 0);
+        diffVal += d.diff * avg;
+      }
+      if (diffVal !== 0) {
+        const mappings = await this.mappingService.getAll();
+        const oLines = PostingRules.buildOpnameLines(
+          { id: opname.id, number: `OPN-${opname.id}`, diffValue: diffVal },
+          mappings,
+        );
+        await this.postingService.post({
+          sourceType: "StockOpname",
+          sourceId: opname.id,
+          event: "approved",
+          source: "STOCK_OPNAME",
+          date,
+          memo: `Penyesuaian Fisik Opname #${opname.id}`,
+          refNo: (opname as any).number || `OPN-${String(opname.id).padStart(3, "0")}`,
+          createdById: opname.conductorId,
+          lines: oLines,
+        });
+      }
+    } catch (err) {
+      console.error("Posting opname error:", err);
+    }
+
     await this.prisma.main.stockOpname.update({ where: { id: entityId }, data: { status: "DISETUJUI" } });
     await this.notifications.notify({
       roles: ["GUDANG"],

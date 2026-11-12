@@ -5,6 +5,9 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { StockService } from "../stock/stock.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
@@ -24,6 +27,8 @@ export class RequestsService {
     private readonly docnum: DocumentNumberService,
     private readonly approvals: ApprovalsService,
     private readonly stock: StockService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {
     this.approvals.onChange("PURCHASE_REQUEST", (entityId, status) =>
       this.onApproval(entityId, status),
@@ -520,6 +525,22 @@ export class RequestsService {
       row.status !== "DITERIMA";
 
     if (shouldReduceStock) {
+      // Guard Stok Negatif (Poin 4 & 5 E7): Pastikan stok gudang mencukupi sebelum dikeluarkan
+      for (const item of row.items) {
+        if (!item.productId) continue;
+        const totalAvail = await this.prisma.main.stockBalance.aggregate({
+          where: { productId: item.productId },
+          _sum: { qty: true },
+        });
+        const currentStock = totalAvail._sum.qty || 0;
+        if (currentStock < item.qty) {
+          const p = await this.prisma.main.product.findUnique({ where: { id: item.productId } });
+          throw new BadRequestException(
+            `Stok tidak mencukupi untuk "${p?.name || item.productId}". Tersedia: ${currentStock}, Dibutuhkan: ${item.qty}. Transaksi ditolak untuk mencegah stok negatif.`,
+          );
+        }
+      }
+
       const defaultWarehouse =
         (await this.prisma.main.warehouse.findFirst({ where: { status: "AKTIF" } })) ??
         (await this.prisma.main.warehouse.findFirst());
@@ -696,6 +717,55 @@ export class RequestsService {
       },
       include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
     });
+    // Posting Akuntansi E7b: Pembelian Ritel via Request Barang (tanpa PO)
+    if (isMarkingPaid) {
+      try {
+        const mappings = await this.mappingService.getAll();
+        const payAccount = dto.paymentAccountCode || dto.fundingSource || mappings.CASH_DEFAULT || "1000.02";
+        const estimatedCost = Number(row.estimatedCost || 0) ||
+          (row.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0);
+
+        if (estimatedCost > 0) {
+          if (row.procurementSource === "GUDANG" && !row.projectId) {
+            // Masuk stok gudang ritel: Dr 1200 Cr Kas/Bank
+            await this.postingService.post({
+              sourceType: "PurchaseRequest",
+              sourceId: row.id,
+              event: "paid",
+              source: "RETAIL_PURCHASE",
+              date: new Date(),
+              memo: `Pembelian Ritel Stok Masuk #${row.number}`,
+              refNo: row.number,
+              createdById: user.id,
+              lines: [
+                { accountCode: mappings.INVENTORY || "1200", debit: estimatedCost, credit: 0, memo: `Persediaan Ritel #${row.number}` },
+                { accountCode: payAccount, debit: 0, credit: estimatedCost, memo: `Kas Keluar Ritel #${row.number}` },
+              ],
+            });
+          } else if (row.projectId) {
+            // Non-stok habis pakai proyek: Dr 5101 Cr Kas/Bank
+            await this.postingService.post({
+              sourceType: "PurchaseRequest",
+              sourceId: row.id,
+              event: "paid",
+              source: "RETAIL_PURCHASE",
+              date: new Date(),
+              memo: `Pembelian Bahan/Material Proyek #${row.number}`,
+              refNo: row.number,
+              projectId: row.projectId,
+              createdById: user.id,
+              lines: [
+                { accountCode: mappings.COGS_PROJECT || "5101", debit: estimatedCost, credit: 0, memo: `HPP Material Proyek #${row.number}`, projectId: row.projectId },
+                { accountCode: payAccount, debit: 0, credit: estimatedCost, memo: `Kas Keluar Ritel #${row.number}`, projectId: row.projectId },
+              ],
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Posting retail request error:", err);
+      }
+    }
+
     if (dto.status === "DIAJUKAN") {
       const estimated =
         Number(row.estimatedCost ?? 0) ||
