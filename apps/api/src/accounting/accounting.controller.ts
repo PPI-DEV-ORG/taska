@@ -74,6 +74,9 @@ export class AccountingController {
     @Query("endDate") endDate?: string,
     @Query("status") status?: string,
   ) {
+    // Sinkronisasi otomatis untuk invoice atau surat jalan terbit/terkirim yang belum tercatat jurnal
+    await this.postingService.syncUnpostedDocuments().catch(() => {});
+
     const p = Math.max(1, parseInt(page, 10));
     const l = Math.min(100, Math.max(1, parseInt(limit, 10)));
     const where: any = {};
@@ -177,6 +180,11 @@ export class AccountingController {
   ) {
     if (!reason) throw new BadRequestException("Alasan reversal wajib diisi.");
     return this.postingService.reverse(parseInt(id, 10), reason, undefined, undefined, user?.id);
+  }
+
+  @Post("sync-unposted")
+  async syncUnposted(@CurrentUser() user: any) {
+    return this.postingService.syncUnpostedDocuments(user?.id);
   }
 
   @Get("periods")

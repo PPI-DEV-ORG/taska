@@ -491,6 +491,7 @@ export class InvoiceInService {
       entityId: id,
       detail: updated.number ?? `invoice #${id}`,
     });
+    await this.postInvoiceInJournalIfEligible(id, user.id);
     return this.get(id);
   }
 
@@ -562,6 +563,9 @@ export class InvoiceInService {
         createdById: user.id,
       },
     });
+
+    // Pastikan tagihan invoice masuk sudah tercatat sebelum mencatat pembayaran
+    await this.postInvoiceInJournalIfEligible(id, user.id);
 
     // Posting Akuntansi E6: Pelunasan Tagihan Supplier (Supplier Payment)
     try {
@@ -646,5 +650,45 @@ export class InvoiceInService {
 
   suggestNumber() {
     return this.docnum.suggest("invoiceIn");
+  }
+
+  /**
+   * Posting Jurnal Tagihan Supplier Masuk (E5)
+   */
+  async postInvoiceInJournalIfEligible(id: number, userId?: number): Promise<void> {
+    try {
+      const row = await this.prisma.main.invoiceIn.findUnique({
+        where: { id },
+        include: { supplier: true },
+      });
+      if (!row || (row.status as string) === "BATAL") return;
+
+      const mappings = await this.mappingService.getAll();
+      const inLines = PostingRules.buildInvoiceInLines(
+        {
+          number: row.number || `INV-IN-${row.id}`,
+          supplierId: row.supplierId,
+          dpp: Number(row.amount),
+          ppn: Number(row.ppn || 0),
+          total: Number(row.total),
+          isExpense: !row.supplierPoId,
+          expenseAccountCode: row.debitAccount || row.coaAccount || undefined,
+        },
+        mappings,
+      );
+      await this.postingService.post({
+        sourceType: "InvoiceIn",
+        sourceId: row.id,
+        event: "issued",
+        source: "INVOICE_IN",
+        date: row.date || new Date(),
+        memo: `Tagihan Supplier #${row.number || row.id} (${row.supplier?.name || "Supplier"})`,
+        refNo: row.number || `INV-IN-${String(row.id).padStart(3, "0")}`,
+        createdById: userId,
+        lines: inLines,
+      });
+    } catch (err) {
+      console.error(`Posting invoice in #${id} error:`, err);
+    }
   }
 }

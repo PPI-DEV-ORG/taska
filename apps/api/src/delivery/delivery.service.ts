@@ -251,6 +251,9 @@ export class DeliveryService implements OnModuleInit {
     }
 
     this.notifications.dataChange("delivery-notes", "update", updated.id);
+    if (effectiveStatus && ["DIKIRIM", "DITERIMA"].includes(effectiveStatus)) {
+      await this.postDeliveryJournalIfEligible(id, user.id);
+    }
     return this.get(id);
   }
 
@@ -480,6 +483,7 @@ export class DeliveryService implements OnModuleInit {
         where: { id },
         data: { status: "DIKIRIM" },
       });
+      await this.postDeliveryJournalIfEligible(id, user.id);
       return this.get(id);
     }
 
@@ -653,41 +657,7 @@ export class DeliveryService implements OnModuleInit {
     });
 
     // Posting Akuntansi E7: Pengiriman Barang Surat Jalan -> Dr HPP Cr Persediaan (1200)
-    try {
-      let costTotal = 0;
-      for (const it of (itemsToProcess || [])) {
-        if (!it.productId) continue;
-        const p = await this.prisma.main.product.findUnique({ where: { id: it.productId } });
-        const avg = Number(p?.avgCost || p?.purchasePrice || 0);
-        costTotal += (Number(it.qty || 0)) * avg;
-      }
-      if (costTotal > 0) {
-        const mappings = await this.mappingService.getAll();
-        const dLines = PostingRules.buildDeliveryLines(
-          {
-            number: row.number,
-            costTotal,
-            isProject: !!firstLocation?.projectId,
-            projectId: firstLocation?.projectId,
-          },
-          mappings,
-        );
-        await this.postingService.post({
-          sourceType: "DeliveryNote",
-          sourceId: row.id,
-          event: "shipped",
-          source: "DELIVERY",
-          date: row.date,
-          memo: `HPP Pengiriman Barang SJ ${row.number}`,
-          refNo: row.number,
-          projectId: firstLocation?.projectId,
-          createdById: user.id,
-          lines: dLines,
-        });
-      }
-    } catch (err) {
-      console.error("Posting delivery error:", err);
-    }
+    await this.postDeliveryJournalIfEligible(id, user.id);
 
     await this.notifications.notify({
       userIds: [row.creatorId],
@@ -769,6 +739,9 @@ export class DeliveryService implements OnModuleInit {
       },
       include: { creator: { select: { name: true } } },
     });
+    if (["DIKIRIM", "DITERIMA"].includes(dto.status)) {
+      await this.postDeliveryJournalIfEligible(id, user.id);
+    }
     await this.audit.log({
       actor: user,
       action: "UBAH_STATUS_SURAT_JALAN",
@@ -892,5 +865,328 @@ export class DeliveryService implements OnModuleInit {
       reportText: row.reportText ?? "",
       approval: row.approval?.status ?? "-",
     };
+  }
+
+  /**
+   * Posting Jurnal Pengiriman Barang Surat Jalan (E7) -> Dr HPP Cr Persediaan (1200)
+   */
+  async postDeliveryJournalIfEligible(id: number, userId?: number): Promise<void> {
+    try {
+      const row = await this.prisma.main.deliveryNote.findUnique({
+        where: { id },
+        include: {
+          locations: true,
+          items: { include: { product: true } },
+          movements: { include: { product: true } },
+        },
+      });
+      if (!row || (row.status !== "DIKIRIM" && row.status !== "DITERIMA")) {
+        return;
+      }
+
+      // 1. Ekstrak kaitan dokumen SO / ClientPO / Invoice
+      const fullText = [
+        row.reportText || "",
+        ...(row.locations || []).map((l) => `${l.destination || ""} ${l.reason || ""}`),
+      ].join(" ");
+
+      const soIdMatch = fullText.match(/\[so:(\d+)\]/i);
+      const invIdMatch = fullText.match(/\[inv:(\d+)\]/i);
+      const invNumMatch = fullText.match(/\[invNum:([^\]]+)\]/i);
+      const soNumMatch = fullText.match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
+
+      let clientPo: any = null;
+      if (soIdMatch?.[1]) {
+        clientPo = await this.prisma.main.clientPO.findUnique({
+          where: { id: parseInt(soIdMatch[1], 10) },
+          include: { invoices: true },
+        }).catch(() => null);
+      } else if (soNumMatch?.[1]) {
+        clientPo = await this.prisma.main.clientPO.findFirst({
+          where: { OR: [{ number: soNumMatch[1] }, { soNumber: soNumMatch[1] }] },
+          include: { invoices: true },
+        }).catch(() => null);
+      }
+
+      let invoice: any = null;
+      if (invIdMatch?.[1]) {
+        invoice = await this.prisma.main.invoiceOut.findUnique({
+          where: { id: parseInt(invIdMatch[1], 10) },
+        }).catch(() => null);
+      } else if (invNumMatch?.[1]) {
+        invoice = await this.prisma.main.invoiceOut.findFirst({
+          where: { number: invNumMatch[1] },
+        }).catch(() => null);
+      } else if (clientPo?.invoices?.length) {
+        invoice = clientPo.invoices[0];
+      }
+
+      const firstLocation = row.locations[0];
+      if (!clientPo && firstLocation?.destination && firstLocation.destination !== "-") {
+        clientPo = await this.prisma.main.clientPO.findFirst({
+          where: {
+            OR: [
+              { customer: { name: { contains: firstLocation.destination.trim() } } },
+              { notes: { contains: firstLocation.destination.trim() } },
+            ],
+          },
+          orderBy: { id: "desc" },
+          include: { invoices: true },
+        }).catch(() => null);
+        if (!invoice && clientPo?.invoices?.length) {
+          invoice = clientPo.invoices[0];
+        }
+      }
+
+      // 2. Tentukan item yang dikirim & agregasi kuantitas sebenarnya
+      const poItems = Array.isArray(clientPo?.items) ? (clientPo.items as any[]) : [];
+      const invItems = Array.isArray(invoice?.items) ? (invoice.items as any[]) : [];
+
+      type ItemCostGroup = {
+        productId?: number;
+        product?: any;
+        name: string;
+        qty: number;
+        unitCost?: number;
+      };
+
+      const groupMap = new Map<string, ItemCostGroup>();
+
+      // A. Kumpulkan dari row.items
+      for (const it of (row.items || [])) {
+        const pId = it.productId ? Number(it.productId) : undefined;
+        const key = pId ? `pid:${pId}` : `note:${(it.note || "").trim().toLowerCase()}`;
+        const existing = groupMap.get(key);
+        const q = Number(it.qty) || 1;
+        if (existing) {
+          existing.qty += q;
+        } else {
+          groupMap.set(key, {
+            productId: pId,
+            product: it.product,
+            name: it.note || it.product?.name || "Barang",
+            qty: q,
+          });
+        }
+      }
+
+      // B. Kumpulkan dari row.movements (type "OUT")
+      for (const m of (row.movements || [])) {
+        if (m.type !== "OUT") continue;
+        const pId = m.productId ? Number(m.productId) : undefined;
+        const key = pId ? `pid:${pId}` : `note:${(m.reason || "").trim().toLowerCase()}`;
+        const existing = groupMap.get(key);
+        const q = Number(m.qty) || 1;
+        if (existing) {
+          if (pId) {
+            const totalMoveQty = (row.movements || [])
+              .filter((x: any) => x.type === "OUT" && Number(x.productId) === pId)
+              .reduce((s: number, x: any) => s + (Number(x.qty) || 1), 0);
+            existing.qty = Math.max(existing.qty, totalMoveQty);
+          }
+        } else {
+          groupMap.set(key, {
+            productId: pId,
+            product: m.product,
+            name: m.reason || m.product?.name || "Barang",
+            qty: q,
+            unitCost: Number(m.unitCost) > 0 ? Number(m.unitCost) : undefined,
+          });
+        }
+      }
+
+      // C. Jika groupMap masih kosong atau jika linked ke SO / Invoice:
+      if (groupMap.size === 0) {
+        const sourceGoods = (poItems.length > 0 ? poItems : invItems).filter(
+          (p: any) => !/jasa|instalasi|service|pasang/i.test(p.item || p.name || p.productName || "")
+        );
+        for (const it of sourceGoods) {
+          const pId = it.productId ? Number(it.productId) : undefined;
+          const key = pId ? `pid:${pId}` : `note:${(it.item || it.name || it.productName || "").trim().toLowerCase()}`;
+          const q = Number(it.qty) || 1;
+          groupMap.set(key, {
+            productId: pId,
+            name: it.item || it.name || it.productName || "Barang",
+            qty: q,
+          });
+        }
+      } else {
+        // Sinkronisasi target kuantitas dari SO / Invoice jika terdata kuantitas pengiriman penuh
+        for (const itemGroup of groupMap.values()) {
+          const matchedPo = poItems.find(
+            (p: any) =>
+              (itemGroup.productId && Number(p.productId) === itemGroup.productId) ||
+              (itemGroup.name && [p.item, p.name, p.productName].some((n: string) => n && itemGroup.name.toLowerCase().includes(n.toLowerCase())))
+          );
+          if (matchedPo && Number(matchedPo.qty) > itemGroup.qty) {
+            itemGroup.qty = Number(matchedPo.qty);
+          }
+          const matchedInv = invItems.find(
+            (p: any) =>
+              (itemGroup.productId && Number(p.productId) === itemGroup.productId) ||
+              (itemGroup.name && [p.item, p.name, p.productName].some((n: string) => n && itemGroup.name.toLowerCase().includes(n.toLowerCase())))
+          );
+          if (matchedInv && Number(matchedInv.qty) > itemGroup.qty) {
+            itemGroup.qty = Math.max(itemGroup.qty, Number(matchedInv.qty));
+          }
+        }
+      }
+
+      let costTotal = 0;
+
+      for (const item of groupMap.values()) {
+        const qty = Math.max(1, item.qty);
+        let unitCost = 0;
+
+        let freshProd = item.product;
+        if (item.productId) {
+          freshProd = await this.prisma.main.product.findUnique({
+            where: { id: item.productId },
+          }).catch(() => null);
+        }
+
+        const matchedPo = poItems.find(
+          (p: any) =>
+            (item.productId && Number(p.productId) === item.productId) ||
+            (item.name && [p.item, p.name, p.productName].some((n: string) => n && item.name.toLowerCase().includes(n.toLowerCase())))
+        );
+
+        // Prioritas 1: Harga modal / beli di item SO (jika ada)
+        if (matchedPo) {
+          const poCost = Number(matchedPo.cost ?? matchedPo.hargaBeli ?? matchedPo.purchasePrice ?? 0);
+          if (poCost > 0) unitCost = poCost;
+        }
+
+        // Prioritas 2: Harga Beli dari Master Data (Purchase Price)
+        if (unitCost <= 0 && freshProd?.purchasePrice && Number(freshProd.purchasePrice) > 0) {
+          unitCost = Number(freshProd.purchasePrice);
+        }
+
+        // Prioritas 3: Moving Average Cost (avgCost)
+        if (unitCost <= 0 && freshProd?.avgCost && Number(freshProd.avgCost) > 0) {
+          unitCost = Number(freshProd.avgCost);
+        }
+
+        // Prioritas 4: Unit cost tercatat di stock movement
+        if (unitCost <= 0 && item.unitCost && item.unitCost > 0) {
+          unitCost = item.unitCost;
+        }
+
+        // Prioritas 5: Riwayat Pembelian Supplier PO terakhir
+        if (unitCost <= 0 && item.productId) {
+          const lastPo = await this.prisma.main.supplierPOItem.findFirst({
+            where: { productId: item.productId, price: { gt: 0 } },
+            orderBy: { id: "desc" },
+          }).catch(() => null);
+          if (lastPo?.price && Number(lastPo.price) > 0) {
+            unitCost = Number(lastPo.price);
+          }
+        }
+
+        // Prioritas 6: Riwayat stok masuk (IN) terakhir
+        if (unitCost <= 0 && item.productId) {
+          const inMove = await this.prisma.main.stockMovement.findFirst({
+            where: { productId: item.productId, type: "IN", unitCost: { gt: 0 } },
+            orderBy: { date: "desc" },
+          }).catch(() => null);
+          if (inMove?.unitCost && Number(inMove.unitCost) > 0) {
+            unitCost = Number(inMove.unitCost);
+          }
+        }
+
+        // Prioritas 7: Estimasi 70% dari harga jual SO (Decision #4)
+        if (unitCost <= 0 && matchedPo) {
+          const sellPrice = Number(
+            matchedPo.price ??
+            matchedPo.harga ??
+            (matchedPo.subtotal && matchedPo.qty ? matchedPo.subtotal / matchedPo.qty : 0)
+          );
+          if (sellPrice > 0) {
+            unitCost = Math.round(sellPrice * 0.7);
+          }
+        }
+
+        // Prioritas 8: Fallback dari invoice
+        if (unitCost <= 0 && invoice?.amount) {
+          const totalInv = Number(invoice.amount);
+          if (totalInv > 0) {
+            const count = groupMap.size || 1;
+            unitCost = Math.round(((totalInv / count) * 0.7) / qty);
+          }
+        }
+
+        // Prioritas 9: Fallback batas minimum
+        if (unitCost <= 0) {
+          unitCost = 100_000;
+        }
+
+        // Aligned-kan avgCost bila kosong
+        if (item.productId && (!freshProd?.avgCost || Number(freshProd.avgCost) <= 0)) {
+          await this.prisma.main.product.update({
+            where: { id: item.productId },
+            data: { avgCost: unitCost },
+          }).catch(() => {});
+        }
+
+        costTotal += qty * unitCost;
+      }
+
+      if (costTotal <= 0) {
+        if (clientPo?.amount) {
+          costTotal = Math.round(Number(clientPo.amount) * 0.7);
+        } else if (invoice?.amount) {
+          costTotal = Math.round(Number(invoice.amount) * 0.7);
+        } else {
+          costTotal = 100_000;
+        }
+      }
+
+      // Periksa apakah sudah ada jurnal aktif; jika nilai HPP berbeda, balik terlebih dahulu
+      const existing = await this.prisma.main.journalEntry.findFirst({
+        where: {
+          sourceType: "DeliveryNote",
+          sourceId: row.id,
+          event: "shipped",
+          status: "POSTED",
+        },
+        include: { lines: true },
+        orderBy: { version: "desc" },
+      });
+
+      if (existing) {
+        const exDebit = existing.lines.reduce((s: number, l: any) => s + Number(l.debit), 0);
+        if (Math.round(exDebit) === Math.round(costTotal)) {
+          return; // Sudah cocok & seimbang
+        }
+        await this.postingService.reverse(existing.id, "Koreksi nilai HPP Surat Jalan", userId);
+      }
+
+      const mappings = await this.mappingService.getAll();
+      const dLines = PostingRules.buildDeliveryLines(
+        {
+          number: row.number,
+          costTotal: Math.round(costTotal),
+          isProject: !!firstLocation?.projectId,
+          projectId: firstLocation?.projectId,
+          customerId: clientPo?.customerId ?? invoice?.customerId,
+        },
+        mappings,
+      );
+
+      await this.postingService.post({
+        sourceType: "DeliveryNote",
+        sourceId: row.id,
+        event: "shipped",
+        source: "DELIVERY",
+        date: row.date,
+        memo: `HPP Pengiriman Barang SJ ${row.number}`,
+        refNo: row.number,
+        projectId: firstLocation?.projectId,
+        createdById: userId,
+        lines: dLines,
+      });
+    } catch (err) {
+      console.error(`Posting delivery note #${id} error:`, err);
+    }
   }
 }

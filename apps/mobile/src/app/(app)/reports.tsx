@@ -35,6 +35,27 @@ import { CashFlowTab } from "@/modules/reports/components/cash-flow-tab";
 import { JournalTab } from "@/modules/reports/components/journal-tab";
 import { ReportCardsTab } from "@/modules/reports/components/report-cards-tab";
 
+function formatJournalDateTime(dateVal: any, createdAtVal?: any): string {
+  const dSource = createdAtVal ? new Date(createdAtVal) : dateVal ? new Date(dateVal) : null;
+  if (!dSource || isNaN(dSource.getTime())) {
+    return dateVal ? String(dateVal).slice(0, 10) : "-";
+  }
+  let yyyy = dSource.getFullYear();
+  let mm = String(dSource.getMonth() + 1).padStart(2, "0");
+  let dd = String(dSource.getDate()).padStart(2, "0");
+  if (dateVal) {
+    const dDate = new Date(dateVal);
+    if (!isNaN(dDate.getTime())) {
+      yyyy = dDate.getFullYear();
+      mm = String(dDate.getMonth() + 1).padStart(2, "0");
+      dd = String(dDate.getDate()).padStart(2, "0");
+    }
+  }
+  const hh = String(dSource.getHours()).padStart(2, "0");
+  const min = String(dSource.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
 export default function ReportsScreen() {
   const { data, approvals, user, toast } = useApp();
   const roleLower = (user?.role || "").toLowerCase();
@@ -142,9 +163,30 @@ export default function ReportsScreen() {
             mappedLines.push({
               id: String(line.id),
               journalNo: entry.number || `JU-${entry.id}`,
-              tanggal: entry.date ? String(entry.date).slice(0, 10) : "-",
+              tanggal: formatJournalDateTime(entry.date, entry.createdAt),
               refNo: entryRef,
-              sumber: entry.source === "EXPENSE" ? "Pengeluaran (Expense)" : entry.source === "EXPENSE_PAYMENT" ? "Pelunasan Expense" : (entry.source || "Jurnal"),
+              sumber:
+                entry.source === "EXPENSE"
+                  ? "Pengeluaran (Expense)"
+                  : entry.source === "EXPENSE_PAYMENT"
+                  ? "Pelunasan Expense"
+                  : entry.source === "DELIVERY"
+                  ? "Pengiriman Barang"
+                  : entry.source === "RECEIVING"
+                  ? "Penerimaan Barang"
+                  : entry.source === "RETAIL_PURCHASE" || entry.source === "PURCHASE_REQUEST"
+                  ? "Pembelian Ritel"
+                  : entry.source === "INVOICE_OUT"
+                  ? "Faktur Pelanggan"
+                  : entry.source === "INVOICE_OUT_PAYMENT"
+                  ? "Pembayaran Faktur"
+                  : entry.source === "INVOICE_IN"
+                  ? "PO Pemasok"
+                  : entry.source === "INVOICE_IN_PAYMENT"
+                  ? "Pelunasan PO"
+                  : entry.source === "MANUAL"
+                  ? "Jurnal Manual"
+                  : (entry.source || "Jurnal"),
               keterangan: line.memo || entry.memo || "-",
               project: line.projectId ? `Project #${line.projectId}` : entry.projectId ? `Project #${entry.projectId}` : "-",
               kodeAkun: line.accountCode,
