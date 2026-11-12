@@ -55,6 +55,7 @@ export class AccountingReportService {
       },
       orderBy: [
         { entry: { date: "asc" } },
+        { entry: { createdAt: "asc" } },
         { entryId: "asc" },
         { lineNo: "asc" },
       ],
@@ -459,7 +460,7 @@ export class AccountingReportService {
         entry: true,
         account: true,
       },
-      orderBy: [{ entry: { date: "asc" } }, { id: "asc" }],
+      orderBy: [{ entry: { date: "asc" } }, { entry: { createdAt: "asc" } }, { id: "asc" }],
     });
 
     let totalInflow = 0;

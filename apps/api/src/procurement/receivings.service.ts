@@ -1072,6 +1072,7 @@ export class ReceivingsService {
         include: {
           items: { include: { product: true } },
           supplierPo: { include: { items: true } },
+          request: { include: { items: true } },
         },
       });
       if (!receiving || receiving.status === "DITOLAK") {
@@ -1081,7 +1082,8 @@ export class ReceivingsService {
       let totalVal = 0;
       for (const item of (receiving.items || [])) {
         const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
-        let pPrice = Number(poItem?.price ?? item.product?.purchasePrice ?? item.product?.avgCost ?? 0);
+        const reqItem = (receiving as any).request?.items?.find((ri: any) => ri.productId === item.productId);
+        let pPrice = Number(poItem?.price ?? reqItem?.unitCost ?? item.product?.purchasePrice ?? item.product?.avgCost ?? 0);
         if (pPrice <= 0 && item.productId) {
           const lastPo = await this.prisma.main.supplierPOItem.findFirst({
             where: { productId: item.productId, price: { gt: 0 } },
