@@ -354,4 +354,126 @@ export async function downloadDocumentationPdf(
   return true;
 }
 
+// ─── Modul Akuntansi Backend (/accounting/*) ───
+
+export async function fetchAccounts(params?: { cash?: boolean; postable?: boolean; category?: string; search?: string }) {
+  const query = new URLSearchParams();
+  if (params?.cash !== undefined) query.set("cash", String(params.cash));
+  if (params?.postable !== undefined) query.set("postable", String(params.postable));
+  if (params?.category) query.set("category", params.category);
+  if (params?.search) query.set("search", params.search);
+  const qStr = query.toString();
+  return api<any[]>("GET", `/accounting/accounts${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function createAccount(data: any) {
+  return api<any>("POST", "/accounting/accounts", data);
+}
+
+export async function updateAccount(code: string, data: any) {
+  return api<any>("PUT", `/accounting/accounts/${code}`, data);
+}
+
+export async function fetchJournals(params?: { page?: number; limit?: number; startDate?: string; endDate?: string; status?: string }) {
+  const query = new URLSearchParams();
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.startDate) query.set("startDate", params.startDate);
+  if (params?.endDate) query.set("endDate", params.endDate);
+  if (params?.status) query.set("status", params.status);
+  const qStr = query.toString();
+  return api<{ total: number; page: number; limit: number; items: any[] }>("GET", `/accounting/journals${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function createManualJournal(data: { date?: string; memo: string; refNo?: string; projectId?: number; lines: any[] }) {
+  return api<any>("POST", "/accounting/journals/manual", data);
+}
+
+export async function reverseJournal(id: number, reason: string) {
+  return api<any>("POST", `/accounting/journals/${id}/reverse`, { reason });
+}
+
+export async function fetchGeneralLedger(params?: { accountCode?: string; startDate?: string; endDate?: string }) {
+  const query = new URLSearchParams();
+  if (params?.accountCode) query.set("accountCode", params.accountCode);
+  if (params?.startDate) query.set("startDate", params.startDate);
+  if (params?.endDate) query.set("endDate", params.endDate);
+  const qStr = query.toString();
+  return api<any[]>("GET", `/accounting/ledger${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function fetchTrialBalance(asOfDate?: string) {
+  const query = new URLSearchParams();
+  if (asOfDate) query.set("asOfDate", asOfDate);
+  const qStr = query.toString();
+  return api<any>("GET", `/accounting/trial-balance${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function fetchIncomeStatement(startDate?: string, endDate?: string) {
+  const query = new URLSearchParams();
+  if (startDate) query.set("startDate", startDate);
+  if (endDate) query.set("endDate", endDate);
+  const qStr = query.toString();
+  return api<any>("GET", `/accounting/income-statement${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function fetchBalanceSheet(asOfDate?: string) {
+  const query = new URLSearchParams();
+  if (asOfDate) query.set("asOfDate", asOfDate);
+  const qStr = query.toString();
+  return api<any>("GET", `/accounting/balance-sheet${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function fetchCashFlow(startDate?: string, endDate?: string) {
+  const query = new URLSearchParams();
+  if (startDate) query.set("startDate", startDate);
+  if (endDate) query.set("endDate", endDate);
+  const qStr = query.toString();
+  return api<any>("GET", `/accounting/cash-flow${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function fetchTaxSummary(year?: number, month?: number) {
+  const query = new URLSearchParams();
+  if (year) query.set("year", String(year));
+  if (month) query.set("month", String(month));
+  const qStr = query.toString();
+  return api<any>("GET", `/accounting/tax/summary${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function settleVat(data: { year: number; month: number; date?: string; payAccountCode?: string }) {
+  return api<any>("POST", "/accounting/tax/vat-settlement", data);
+}
+
+export async function remitWithholding(data: { taxType: string; amount: number; date?: string; payAccountCode: string; memo?: string }) {
+  return api<any>("POST", "/accounting/tax/withholding-remittance", data);
+}
+
+export async function fetchAccountingPeriods(year?: number) {
+  const query = new URLSearchParams();
+  if (year) query.set("year", String(year));
+  const qStr = query.toString();
+  return api<any[]>("GET", `/accounting/periods${qStr ? `?${qStr}` : ""}`);
+}
+
+export async function requestClosePeriod(year: number, month: number) {
+  return api<any>("POST", `/accounting/periods/${year}/${month}/request-close`);
+}
+
+export async function approveClosePeriod(year: number, month: number) {
+  return api<any>("POST", `/accounting/periods/${year}/${month}/approve-close`);
+}
+
+export async function reopenPeriod(year: number, month: number, reopenReason: string) {
+  return api<any>("POST", `/accounting/periods/${year}/${month}/reopen`, { reopenReason });
+}
+
+export async function closeFiscalYear(year: number, taxEstimated: number) {
+  return api<any>("POST", `/accounting/fiscal-years/${year}/close`, { taxEstimated });
+}
+
+export async function reopenFiscalYear(year: number, reopenReason: string) {
+  return api<any>("POST", `/accounting/fiscal-years/${year}/reopen`, { reopenReason });
+}
+
+
 

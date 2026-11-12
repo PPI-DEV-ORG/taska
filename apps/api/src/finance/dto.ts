@@ -166,6 +166,9 @@ export class InvoiceOutDto {
   @IsOptional() @IsString()
   description?: string;
 
+  @IsOptional() @IsString()
+  paidAccountCode?: string;
+
   @IsOptional()
   @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase().trim() : value))
   @IsIn(["DP", "TERMIN", "PELUNASAN"])
@@ -262,6 +265,15 @@ export class InvoiceOutDto {
 
   @IsOptional() @IsNumber()
   dpAmount?: number;
+
+  @IsOptional() @IsNumber()
+  dpApplied?: number;
+
+  @IsOptional() @IsNumber()
+  retentionPercent?: number;
+
+  @IsOptional() @IsNumber()
+  retentionAmount?: number;
 
   @IsOptional() @IsBoolean()
   isContinuation?: boolean;
@@ -360,6 +372,15 @@ export class PaymentDto {
   @IsOptional() @IsString()
   coaAccount?: string;
 
+  @IsOptional() @IsString()
+  accountCode?: string;
+
+  @IsOptional() @IsString()
+  paidAccountCode?: string;
+
+  @IsOptional() @IsNumber()
+  pph23Amount?: number;
+
   @IsOptional() @IsInt()
   fileId?: number;
 }
@@ -419,6 +440,9 @@ export class ExpenseDto {
   @IsOptional() @IsInt()
   paidFileId?: number;
 
+  @IsOptional() @IsString()
+  paidAccountCode?: string;
+
   @IsOptional()
   @Transform(({ value }) => (typeof value === "string" ? value.toUpperCase().trim() : value))
   @IsIn(["DILAPORKAN", "DISETUJUI", "DITOLAK", "DIBAYAR"])
@@ -441,4 +465,7 @@ export class ExpenseStatusDto {
 
   @IsOptional() @IsString()
   fundingSource?: string;
+
+  @IsOptional() @IsString()
+  paidAccountCode?: string;
 }

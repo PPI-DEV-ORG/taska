@@ -2848,6 +2848,11 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     }
     if (patch.fundingSource !== undefined) out.fundingSource = patch.fundingSource;
     if (patch.paymentMethod !== undefined) out.paymentMethod = patch.paymentMethod;
+    if (patch.accountCode !== undefined) out.accountCode = patch.accountCode;
+    if (patch.paidAccountCode !== undefined) out.paidAccountCode = patch.paidAccountCode;
+    if (patch.paymentMethod && !out.paidAccountCode) {
+      out.paidAccountCode = String(patch.paymentMethod).toLowerCase().includes("kecil") ? "1000.01" : "1000.02";
+    }
     if (patch.costCenter !== undefined) out.costCenterId = findId(db?.costCenters, patch.costCenter);
   }
 

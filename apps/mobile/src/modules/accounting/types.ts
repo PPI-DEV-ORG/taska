@@ -1,6 +1,6 @@
 import { CoaAccount } from "@/lib/accounting";
 
-export type AccountingTab = "journal" | "coa" | "ledger" | "summary";
+export type AccountingTab = "journal" | "coa" | "ledger" | "summary" | "tax" | "period" | "return";
 
 export const COA_CATEGORIES: CoaAccount["category"][] = [
   "Aset Lancar",

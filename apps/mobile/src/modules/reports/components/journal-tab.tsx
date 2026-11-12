@@ -130,16 +130,21 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
             />
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator>
-            <View className="min-w-[820px] w-full gap-1">
-              <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
-                <Text className="w-[115px] text-xs font-bold">Kode</Text>
-                <Text className="flex-1 text-xs font-bold">Nama Akun (COA)</Text>
-                <Text className="w-[160px] text-xs font-bold">Kategori</Text>
-                <Text className="w-[90px] text-xs font-bold text-center">Saldo Normal</Text>
-                <Text className="w-[130px] text-xs font-bold text-right">Mutasi Debit</Text>
-                <Text className="w-[130px] text-xs font-bold text-right">Mutasi Kredit</Text>
-                <Text className="w-[140px] text-xs font-bold text-right">Saldo Akhir</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator
+            contentContainerStyle={{ minWidth: "100%" }}
+            className="w-full"
+          >
+            <View className="min-w-full w-full gap-1">
+              <View className="bg-panel border-border flex-row items-center border-b px-4 py-2.5 rounded-t-lg w-full">
+                <Text className="w-[120px] text-xs font-bold">Kode</Text>
+                <Text className="flex-1 min-w-[260px] text-xs font-bold">Nama Akun (COA)</Text>
+                <Text className="w-[180px] text-xs font-bold">Kategori</Text>
+                <Text className="w-[110px] text-xs font-bold text-center">Saldo Normal</Text>
+                <Text className="w-[140px] text-xs font-bold text-right pr-3">Mutasi Debit</Text>
+                <Text className="w-[140px] text-xs font-bold text-right pr-3">Mutasi Kredit</Text>
+                <Text className="w-[160px] text-xs font-bold text-right pr-4">Saldo Akhir</Text>
               </View>
               {pagedCoa.length === 0 ? (
                 <View className="py-8 items-center justify-center">
@@ -152,13 +157,13 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                   return (
                     <View
                       key={`${acc.code}-${acc.name}`}
-                      className={`border-border/60 flex-row items-center border-b px-3 py-2 ${
+                      className={`border-border/60 flex-row items-center border-b px-4 py-2 hover:bg-panel/40 w-full ${
                         isHeader ? "bg-panel/60" : ""
                       }`}
                     >
                       <View
                         style={{ paddingLeft: depth * 12 }}
-                        className="w-[115px] flex-row items-center gap-1"
+                        className="w-[120px] flex-row items-center gap-1"
                       >
                         {depth > 0 ? (
                           <Text className="text-xs font-mono text-muted-foreground">↳</Text>
@@ -173,7 +178,7 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                       </View>
                       <View
                         style={{ paddingLeft: depth * 16 }}
-                        className="flex-1 flex-row items-center gap-2 pr-2"
+                        className="flex-1 min-w-[260px] flex-row items-center gap-2 pr-2"
                       >
                         {depth > 0 ? (
                           <View className="w-1.5 h-1.5 rounded-full bg-primary/50" />
@@ -193,28 +198,28 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                           </View>
                         ) : null}
                       </View>
-                      <Text className="w-[160px] text-xs text-text-secondary">{acc.category}</Text>
-                      <View className="w-[90px] items-center">
+                      <Text className="w-[180px] text-xs text-text-secondary">{acc.category}</Text>
+                      <View className="w-[110px] items-center">
                         <Pill
                           label={acc.normalBalance}
                           tone={acc.normalBalance === "DEBIT" ? "info" : "primary"}
                         />
                       </View>
                       <Text
-                        className={`w-[130px] text-xs font-mono text-right ${
+                        className={`w-[140px] text-xs font-mono text-right pr-3 ${
                           isHeader ? "font-bold" : ""
                         }`}
                       >
                         {rupiah(acc.totalDebit)}
                       </Text>
                       <Text
-                        className={`w-[130px] text-xs font-mono text-right ${
+                        className={`w-[140px] text-xs font-mono text-right pr-3 ${
                           isHeader ? "font-bold" : ""
                         }`}
                       >
                         {rupiah(acc.totalKredit)}
                       </Text>
-                      <Text className="w-[140px] text-xs font-bold font-mono text-right">
+                      <Text className="w-[160px] text-xs font-bold font-mono text-right pr-4">
                         {rupiah(acc.endingBalance)}
                       </Text>
                     </View>
@@ -364,17 +369,22 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
             </View>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator>
-            <View className="min-w-[1000px] w-full gap-0.5">
-              <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
-                <Text className="w-[85px] text-xs font-bold">No. Jurnal</Text>
-                <Text className="w-[130px] text-xs font-bold">Tanggal & Waktu</Text>
-                <Text className="w-[125px] text-xs font-bold">Referensi</Text>
-                <Text className="w-[75px] text-xs font-bold">Akun</Text>
-                <Text className="w-[210px] text-xs font-bold">Nama Akun</Text>
-                <Text className="flex-1 text-xs font-bold">Uraian / Keterangan</Text>
-                <Text className="w-[125px] text-xs font-bold text-right">Debit (Rp)</Text>
-                <Text className="w-[125px] text-xs font-bold text-right">Kredit (Rp)</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator
+            contentContainerStyle={{ minWidth: "100%" }}
+            className="w-full"
+          >
+            <View className="min-w-full w-full gap-0.5">
+              <View className="bg-panel border-border flex-row items-center border-b px-4 py-2.5 rounded-t-lg w-full">
+                <Text className="w-[145px] text-xs font-bold">No. Jurnal</Text>
+                <Text className="w-[115px] text-xs font-bold">Tanggal & Waktu</Text>
+                <Text className="w-[170px] text-xs font-bold pr-2">Referensi</Text>
+                <Text className="w-[95px] text-xs font-bold pr-2">Akun</Text>
+                <Text className="w-[220px] text-xs font-bold">Nama Akun</Text>
+                <Text className="flex-1 min-w-[220px] text-xs font-bold">Uraian / Keterangan</Text>
+                <Text className="w-[135px] text-xs font-bold text-right pr-2">Debit (Rp)</Text>
+                <Text className="w-[135px] text-xs font-bold text-right pr-2">Kredit (Rp)</Text>
               </View>
               {pagedJournal.length === 0 ? (
                 <View className="py-8 items-center justify-center">
@@ -387,33 +397,33 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
                   return (
                     <View
                       key={line.id}
-                      className="border-border/50 flex-row items-center border-b px-3 py-2"
+                      className="border-border/50 flex-row items-center border-b px-4 py-2 hover:bg-panel/40 w-full"
                     >
-                      <Text className="w-[85px] text-xs font-mono text-text-secondary">
+                      <Text className="w-[145px] text-xs font-mono text-text-secondary" numberOfLines={1}>
                         {line.journalNo}
                       </Text>
-                      <Text className="w-[130px] text-xs font-mono text-text-secondary">
+                      <Text className="w-[115px] text-xs font-mono text-text-secondary">
                         {line.tanggal}
                       </Text>
-                      <Text className="w-[125px] text-xs font-semibold font-mono">
+                      <Text className="w-[170px] text-xs font-semibold font-mono pr-2" numberOfLines={1}>
                         {line.refNo}
                       </Text>
-                      <Text className="w-[75px] text-xs font-bold font-mono text-primary">
+                      <Text className="w-[95px] text-xs font-bold font-mono text-primary pr-2">
                         {line.kodeAkun}
                       </Text>
                       <Text
-                        className={`w-[210px] text-xs font-medium ${isCredit ? "pl-4 text-text-secondary" : ""}`}
+                        className={`w-[220px] text-xs font-medium ${isCredit ? "pl-4 text-text-secondary" : ""}`}
                         numberOfLines={1}
                       >
                         {line.namaAkun}
                       </Text>
-                      <Text className="flex-1 text-xs text-text-secondary pr-3" numberOfLines={1}>
+                      <Text className="flex-1 min-w-[220px] text-xs text-text-secondary pr-3" numberOfLines={1}>
                         {line.keterangan}
                       </Text>
-                      <Text className="w-[125px] text-xs font-mono text-right font-semibold">
+                      <Text className="w-[135px] text-xs font-mono text-right font-semibold pr-2">
                         {line.debit > 0 ? rupiah(line.debit) : "-"}
                       </Text>
-                      <Text className="w-[125px] text-xs font-mono text-right font-semibold text-info">
+                      <Text className="w-[135px] text-xs font-mono text-right font-semibold text-info pr-2">
                         {line.kredit > 0 ? rupiah(line.kredit) : "-"}
                       </Text>
                     </View>

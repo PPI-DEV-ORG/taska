@@ -3,6 +3,9 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { StockService } from "./stock.service.js";
 import { SerialsService } from "./serials.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import type { DamageCreateDto, DamageListQuery, DamageReplaceDto } from "./dto.js";
 
@@ -13,6 +16,8 @@ export class DamagesService {
     private readonly stock: StockService,
     private readonly serials: SerialsService,
     private readonly notifications: NotificationsService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {}
 
   async list(q: DamageListQuery) {
@@ -121,10 +126,14 @@ export class DamagesService {
       return row;
     });
 
-    // Mutasi saldo stok aktif (stockBalance + stockMovement):
-    // - Laporan Kerusakan di Gudang / Retur Pembelian -> mengurangi stok bagus yang tersedia (-qty)
+    // Guard Stok Negatif (Poin 4 & 5 E7): Cegah laporan barang rusak jika stok fisik kosong
     if (wh?.id && shouldDeductActiveStock) {
       const currentBal = await this.stock.balanceOf(product.id, wh.id);
+      if (currentBal < qty) {
+        throw new BadRequestException(
+          `Stok fisik "${product.name}" di gudang tidak mencukupi (Tersedia: ${currentBal}, Dilaporkan Rusak: ${qty}). Laporan kerusakan ditolak untuk mencegah stok minus.`,
+        );
+      }
       const deductQty = Math.min(currentBal, qty);
       if (deductQty > 0) {
         await this.stock.applyMovement({
@@ -138,6 +147,34 @@ export class DamagesService {
           reason: `${isReturPembelian ? "Retur Pembelian" : "Laporan Barang Rusak"}${serial?.sn ? ` (SN: ${serial.sn})` : ""}: ${description}`,
           createdById: user.id,
         }).catch(() => {});
+
+        // Posting Akuntansi: Kerusakan Barang (Stock Damage) -> Dr 5105 Cr 1200
+        if (!isReturPembelian) {
+          try {
+            const avg = Number(product.avgCost || product.purchasePrice || 0);
+            const totalCost = deductQty * avg;
+            if (totalCost > 0) {
+              const mappings = await this.mappingService.getAll();
+              const dLines = PostingRules.buildDamageLines(
+                { id: created.id, number: `DAM-${created.id}`, costTotal: totalCost },
+                mappings,
+              );
+              await this.postingService.post({
+                sourceType: "DamageReport",
+                sourceId: created.id,
+                event: "damaged",
+                source: "DAMAGE",
+                date: dto.date ? new Date(dto.date) : new Date(),
+                memo: `Beban Kerusakan Barang #${created.id} (${product.name})`,
+                refNo: `DAM-${String(created.id).padStart(3, "0")}`,
+                createdById: user.id,
+                lines: dLines,
+              });
+            }
+          } catch (err) {
+            console.error("Posting damage error:", err);
+          }
+        }
       }
     } else if (wh?.id && isReturPenjualan) {
       // Retur dari customer dicatat di riwayat mutasi tanpa menambah stok bagus sebelum diganti/diperbaiki

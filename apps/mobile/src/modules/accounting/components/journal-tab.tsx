@@ -5,13 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/taska/basics";
 import { DatePicker } from "@/components/taska/dialogs";
-import { CheckCircle2, FileSpreadsheet, Search, ChevronLeft, ChevronRight, Trash2 } from "lucide-react-native";
+import { CheckCircle2, FileSpreadsheet, Search, ChevronLeft, ChevronRight, Trash2, RefreshCw } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { JournalLine } from "@/lib/accounting";
 
 interface JournalTabProps {
   fin: any;
+  onRefresh?: () => void;
   handleExportJournalCsv: () => void;
   journalQuery: string;
   setJournalQuery: (v: string) => void;
@@ -33,6 +34,7 @@ interface JournalTabProps {
 
 export function JournalTab({
   fin,
+  onRefresh,
   handleExportJournalCsv,
   journalQuery,
   setJournalQuery,
@@ -64,10 +66,18 @@ export function JournalTab({
             </Text>
           </View>
         </View>
-        <Button size="sm" variant="outline" onPress={handleExportJournalCsv} className="gap-1.5 h-8">
-          <FileSpreadsheet size={14} color={colors.success} />
-          <Text className="text-xs">Download CSV Jurnal</Text>
-        </Button>
+        <View className="flex-row items-center gap-2">
+          {onRefresh && (
+            <Button size="sm" variant="outline" onPress={onRefresh} className="gap-1.5 h-8">
+              <RefreshCw size={13} color={colors.text} />
+              <Text className="text-xs">Refresh</Text>
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onPress={handleExportJournalCsv} className="gap-1.5 h-8">
+            <FileSpreadsheet size={14} color={colors.success} />
+            <Text className="text-xs">Download CSV Jurnal</Text>
+          </Button>
+        </View>
       </View>
 
       <Panel title="Daftar Transaksi Ayat Jurnal" subtitle="Pencatatan kronologis debit dan kredit atas seluruh transaksi operasional & manual">
@@ -148,15 +158,15 @@ export function JournalTab({
             className="w-full"
           >
             <View className="min-w-full w-full gap-0.5">
-              <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
-                <Text className="w-[85px] text-xs font-bold">No. Jurnal</Text>
-                <Text className="w-[130px] text-xs font-bold">Tanggal & Waktu</Text>
-                <Text className="w-[125px] text-xs font-bold">Referensi</Text>
-                <Text className="w-[75px] text-xs font-bold">Akun</Text>
+              <View className="bg-panel border-border flex-row items-center border-b px-4 py-2.5 rounded-t-lg w-full">
+                <Text className="w-[145px] text-xs font-bold">No. Jurnal</Text>
+                <Text className="w-[115px] text-xs font-bold">Tanggal & Waktu</Text>
+                <Text className="w-[170px] text-xs font-bold pr-2">Referensi</Text>
+                <Text className="w-[95px] text-xs font-bold pr-2">Akun</Text>
                 <Text className="w-[220px] text-xs font-bold">Nama Akun</Text>
-                <Text className="flex-1 text-xs font-bold">Uraian Transaksi</Text>
-                <Text className="w-[125px] text-xs font-bold text-right">Debit (Rp)</Text>
-                <Text className="w-[125px] text-xs font-bold text-right">Kredit (Rp)</Text>
+                <Text className="flex-1 min-w-[220px] text-xs font-bold">Uraian Transaksi</Text>
+                <Text className="w-[135px] text-xs font-bold text-right pr-2">Debit (Rp)</Text>
+                <Text className="w-[135px] text-xs font-bold text-right pr-2">Kredit (Rp)</Text>
                 <Text className="w-[50px] text-xs font-bold text-center">Aksi</Text>
               </View>
               {filteredJournal.length === 0 ? (
@@ -170,20 +180,20 @@ export function JournalTab({
                   return (
                     <View
                       key={line.id}
-                      className="border-border/50 flex-row items-center border-b px-3 py-2 hover:bg-panel/40"
+                      className="border-border/50 flex-row items-center border-b px-4 py-2 hover:bg-panel/40 w-full"
                     >
-                      <Text className="w-[85px] text-xs font-mono text-muted-foreground">
+                      <Text className="w-[145px] text-xs font-mono text-muted-foreground" numberOfLines={1}>
                         {line.journalNo}
                       </Text>
-                      <Text className="w-[130px] text-xs font-mono text-muted-foreground">
+                      <Text className="w-[115px] text-xs font-mono text-muted-foreground">
                         {line.tanggal}
                       </Text>
-                      <Text className="w-[125px] text-xs font-semibold font-mono" numberOfLines={1}>
+                      <Text className="w-[170px] text-xs font-semibold font-mono pr-2" numberOfLines={1}>
                         {line.refNo}
                       </Text>
                       <Pressable
                         onPress={() => onSelectAccount(line.kodeAkun)}
-                        className="w-[75px]"
+                        className="w-[95px] pr-2"
                       >
                         <Text className="text-xs font-bold font-mono text-primary underline">
                           {line.kodeAkun}
@@ -195,13 +205,13 @@ export function JournalTab({
                       >
                         {line.namaAkun}
                       </Text>
-                      <Text className="flex-1 text-xs text-muted-foreground pr-3" numberOfLines={1}>
+                      <Text className="flex-1 min-w-[220px] text-xs text-muted-foreground pr-3" numberOfLines={1}>
                         {line.keterangan}
                       </Text>
-                      <Text className="w-[125px] text-xs font-mono text-right font-semibold">
+                      <Text className="w-[135px] text-xs font-mono text-right font-semibold pr-2">
                         {(line.debit ?? 0) > 0 ? rupiah(line.debit) : "-"}
                       </Text>
-                      <Text className="w-[125px] text-xs font-mono text-right font-semibold text-info">
+                      <Text className="w-[135px] text-xs font-mono text-right font-semibold text-info pr-2">
                         {(line.kredit ?? 0) > 0 ? rupiah(line.kredit) : "-"}
                       </Text>
                       <View className="w-[50px] items-center justify-center">

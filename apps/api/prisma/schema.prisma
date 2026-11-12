@@ -572,6 +572,7 @@ model Product {
   minStock       Int              @default(0)
   warrantyMonths Int?
   purchasePrice  Decimal          @default(0) @db.Decimal(18, 2)
+  avgCost        Decimal          @default(0) @db.Decimal(18, 4)
   status         ActiveStatus     @default(AKTIF)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -634,10 +635,11 @@ model VisitActivityType {
 }
 
 model ExpenseCategory {
-  id       Int          @id @default(autoincrement())
-  name     String       @unique
-  status   ActiveStatus @default(AKTIF)
-  expenses Expense[]
+  id         Int          @id @default(autoincrement())
+  name       String       @unique
+  coaAccount String?
+  status     ActiveStatus @default(AKTIF)
+  expenses   Expense[]
 }
 
 model CostCenter {
@@ -897,10 +899,13 @@ model InvoiceOut {
   quotation       Quotation?  @relation(fields: [quotationId], references: [id], onDelete: SetNull)
   parentInvoiceId Int?
   isContinuation  Boolean     @default(false)
-  discount        Decimal?    @db.Decimal(18, 2)
-  dpLabel         String?
-  dpAmount        Decimal?    @db.Decimal(18, 2)
-  pph             Decimal?    @db.Decimal(18, 2)
+  discount         Decimal?    @db.Decimal(18, 2)
+  dpLabel          String?
+  dpAmount         Decimal?    @db.Decimal(18, 2)
+  dpApplied        Decimal     @default(0) @db.Decimal(18, 2)
+  retentionPercent Decimal?    @db.Decimal(5, 2)
+  retentionAmount  Decimal?    @db.Decimal(18, 2)
+  pph              Decimal?    @db.Decimal(18, 2)
   pphMode         String?
   tipePph         String?
   tipePpn         String?
@@ -985,6 +990,7 @@ model Payment {
   amount       Decimal       @db.Decimal(18, 2)
   date         DateTime      @db.Date
   method       PaymentMethod @default(TRANSFER)
+  accountCode  String?
   reference    String?
   fileId       Int?
   createdById  Int?
@@ -1026,6 +1032,7 @@ model Expense {
   paymentMethod  String?
   approvedAmount Decimal?         @db.Decimal(18, 2)
   paidAmount     Decimal?         @db.Decimal(18, 2)
+  paidAccountCode String?
   paidById       Int?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -1357,6 +1364,8 @@ model StockMovement {
   toWarehouseId   Int?
   toWarehouse     Warehouse?       @relation("MoveTo", fields: [toWarehouseId], references: [id])
   qty             Int
+  unitCost        Decimal?         @db.Decimal(18, 4)
+  totalCost       Decimal?         @db.Decimal(18, 2)
   serialUnitId    Int?
   serialUnit      SerialUnit?      @relation(fields: [serialUnitId], references: [id])
   projectId       Int?
@@ -1599,9 +1608,10 @@ model PayrollSlip {
   workDays      Int       @default(0)
   presentDays   Int       @default(0)
   absentDays    Int       @default(0)
-  lateCount     Int       @default(0)
-  status        String    @default("DRAFT")
-  paidAt        DateTime?
+  lateCount       Int       @default(0)
+  status          String    @default("DRAFT")
+  paidAccountCode String?
+  paidAt          DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -1827,26 +1837,129 @@ model CalendarAttendee {
   @@index([userId])
 }
 
-// ─────────────────────────────── Bagan Akun (COA) ───────────────────────────────
+// ─────────────────────────────── Bagan Akun (COA) & Akuntansi ───────────────────────────────
+enum JournalStatus {
+  POSTED
+  REVERSED
+}
+
+enum PeriodStatus {
+  OPEN
+  REQUESTED_CLOSE
+  CLOSED
+}
+
 model CoaAccount {
-  id            Int          @id @default(autoincrement())
-  code          String       @unique
+  id            Int              @id @default(autoincrement())
+  code          String           @unique
   name          String
   category      String
-  normalBalance String       @default("DEBIT")
+  normalBalance String           @default("DEBIT")
   type          String?
   parentCode    String?
-  parent        CoaAccount?  @relation("CoaHierarchy", fields: [parentCode], references: [code], onDelete: SetNull)
-  children      CoaAccount[] @relation("CoaHierarchy")
-  status        String       @default("AKTIF")
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  parent        CoaAccount?      @relation("CoaHierarchy", fields: [parentCode], references: [code], onDelete: SetNull)
+  children      CoaAccount[]     @relation("CoaHierarchy")
+  isPostable    Boolean          @default(true)
+  isCash        Boolean          @default(false)
+  isSystem      Boolean          @default(false)
+  status        String           @default("AKTIF")
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  lines         JournalLine[]
+  mappings      AccountMapping[]
 
   @@index([parentCode])
   @@index([category])
 }
 
-// ─────────────────────────────── Jurnal Umum Manual ───────────────────────────────
+model JournalEntry {
+  id           Int              @id @default(autoincrement())
+  number       String           @unique
+  date         DateTime         @db.Date
+  source       String
+  sourceType   String?
+  sourceId     Int?
+  event        String?
+  version      Int              @default(1)
+  memo         String           @db.Text
+  refNo        String?
+  projectId    Int?
+  status       JournalStatus    @default(POSTED)
+  reversalOfId Int?             @unique
+  reversalOf   JournalEntry?    @relation("JournalReversal", fields: [reversalOfId], references: [id])
+  reversedBy   JournalEntry?    @relation("JournalReversal")
+  periodId     Int
+  period       AccountingPeriod @relation(fields: [periodId], references: [id])
+  createdById  Int?
+  createdAt    DateTime         @default(now())
+
+  lines JournalLine[]
+
+  @@unique([sourceType, sourceId, event, version])
+  @@index([date])
+  @@index([source])
+  @@index([projectId])
+  @@index([periodId])
+}
+
+model JournalLine {
+  id          Int          @id @default(autoincrement())
+  entryId     Int
+  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  lineNo      Int
+  accountCode String
+  account     CoaAccount   @relation(fields: [accountCode], references: [code])
+  debit       Decimal      @default(0) @db.Decimal(18, 2)
+  credit      Decimal      @default(0) @db.Decimal(18, 2)
+  memo        String?
+  projectId   Int?
+  partyType   String?
+  partyId     Int?
+
+  @@index([entryId])
+  @@index([accountCode])
+  @@index([projectId])
+  @@index([partyType, partyId])
+}
+
+model AccountingPeriod {
+  id            Int            @id @default(autoincrement())
+  year          Int
+  month         Int
+  status        PeriodStatus   @default(OPEN)
+  requestedAt   DateTime?
+  requestedById Int?
+  closedAt      DateTime?
+  closedById    Int?
+  reopenedAt    DateTime?
+  reopenedById  Int?
+  note          String?
+  reopenReason  String?
+  entries       JournalEntry[]
+
+  @@unique([year, month])
+}
+
+model FiscalYear {
+  year           Int          @id
+  status         PeriodStatus @default(OPEN)
+  closingEntryId Int?         @unique
+  closedAt       DateTime?
+  closedById     Int?
+  reopenedAt     DateTime?
+  reopenedById   Int?
+  reopenReason   String?
+}
+
+model AccountMapping {
+  key         String     @id
+  accountCode String
+  account     CoaAccount @relation(fields: [accountCode], references: [code])
+  updatedAt   DateTime   @updatedAt
+}
+
+// ─────────────────────────────── Jurnal Umum Manual (Legacy) ───────────────────────────────
 model ManualJournal {
   id          Int      @id @default(autoincrement())
   journalNo   String   @unique

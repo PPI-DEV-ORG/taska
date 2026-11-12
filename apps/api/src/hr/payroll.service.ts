@@ -1,10 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import { GeneratePayrollDto, PaySlipDto, UpdateSalaryConfigDto } from "./dto.js";
 
 @Injectable()
 export class PayrollService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
+  ) {}
 
   async getSalaryConfigs() {
     const users = await (this.prisma.main as any).user.findMany({
@@ -347,13 +354,47 @@ export class PayrollService {
       throw new NotFoundException("Slip gaji tidak ditemukan");
     }
 
+    const paidAccount = dto.paidAccountCode || "1000.02";
+
     const updated = await (this.prisma.main as any).payrollSlip.update({
       where: { id },
       data: {
         status: "PAID",
         paidAt: new Date(),
+        paidAccountCode: paidAccount,
       },
     });
+
+    // Posting Akuntansi E10: Penggajian Karyawan & BPJS Perusahaan
+    try {
+      const mappings = await this.mappingService.getAll();
+      const pLines = PostingRules.buildPayrollLines(
+        {
+          id: slip.id,
+          slipNumber: `PAY-${slip.period}-${slip.userId}`,
+          grossSalary: Number(slip.grossSalary || 0),
+          bpjsCompany: 0, // porsi perusahaan jika terpisah
+          pph21: Number(slip.pph21 || 0),
+          bpjsEmployee: Number(slip.bpjs || 0),
+          netSalary: Number(slip.netSalary || 0),
+          paidAccountCode: paidAccount,
+          employeeId: slip.userId,
+        },
+        mappings,
+      );
+      await this.postingService.post({
+        sourceType: "PayrollSlip",
+        sourceId: slip.id,
+        event: "paid",
+        source: "PAYROLL",
+        date: new Date(),
+        memo: `Pembayaran Gaji Karyawan #${slip.userId} Periode ${slip.period}`,
+        refNo: `PAY-${slip.period}-${slip.userId}`,
+        lines: pLines,
+      });
+    } catch (err) {
+      console.error("Posting payroll error:", err);
+    }
 
     return updated;
   }

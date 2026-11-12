@@ -14,6 +14,9 @@ import type { RequestUser } from "../common/decorators/current-user.decorator.js
 import { InvoiceOutDto, PaymentDto } from "./dto.js";
 
 import { UploadService } from "../upload/upload.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 
 type StatusFilter = "DRAFT" | "SENT" | "PARTIAL" | "PAID" | "OVERDUE" | "BATAL";
 
@@ -27,6 +30,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     private readonly reservations: ReservationsService,
     private readonly notifications: NotificationsService,
     private readonly approvals: ApprovalsService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {}
 
   /** Status dihitung dari pembayaran + jatuh tempo (PRD: Unpaid/Partial/Paid/Overdue otomatis). */
@@ -962,6 +967,52 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     });
     await this.syncProjectPayment(row.projectId);
     const synced = await this.sync(row);
+
+    // Posting Akuntansi E1 / E2 jika invoice terbit
+    if (["SENT", "PAID", "PARTIAL"].includes(synced.status)) {
+      try {
+        const mappings = await this.mappingService.getAll();
+        const lines = (dto.type === "DP" || row.type === "DP")
+          ? PostingRules.buildCustomerDpLines(
+              { number: row.number, customerId: row.customerId!, projectId: row.projectId, dpp: Number(row.amount), ppn: Number(row.ppn), total: Number(row.total) },
+              mappings,
+            )
+          : PostingRules.buildInvoiceOutLines(
+              {
+                id: row.id,
+                number: row.number,
+                type: row.type,
+                customerId: row.customerId!,
+                projectId: row.projectId,
+                dpp: Number(row.amount),
+                ppn: Number(row.ppn),
+                total: Number(row.total),
+                dpApplied: Number(dto.dpApplied || 0),
+                retentionPercent: Number(dto.retentionPercent || 0),
+                retentionAmount: Number(dto.retentionAmount || 0),
+                items: (resolvedItems || []).map((it: any) => ({
+                  type: /jasa|instalasi|service|pasang/i.test(it.name || it.item || "") ? "SERVICE" : "PRODUCT",
+                  amount: Number(it.price || it.amount || 0) * Number(it.qty || 1),
+                })),
+              },
+              mappings,
+            );
+        await this.postingService.post({
+          sourceType: "InvoiceOut",
+          sourceId: row.id,
+          event: "issued",
+          source: "INVOICE_OUT",
+          date: row.date,
+          memo: `Penerbitan Invoice Penjualan ${row.number}`,
+          refNo: row.number,
+          projectId: row.projectId,
+          createdById: user.id,
+          lines,
+        });
+      } catch (err) {
+        console.error("Posting invoice out error:", err);
+      }
+    }
     if (synced.status === "PAID") {
       await this.syncRelatedInvoicesOnPaid(synced, user);
     }
@@ -1326,17 +1377,53 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       ? (dto.reference?.includes(`[AKUN:`) ? dto.reference : `[AKUN:${dto.coaAccount}] ${dto.reference || ""}`.trim())
       : dto.reference;
 
-    await this.prisma.main.payment.create({
+    const chosenAccount = dto.paidAccountCode || dto.accountCode || dto.coaAccount || null;
+
+    const createdPayment = await this.prisma.main.payment.create({
       data: {
         invoiceOutId: id,
         amount: dto.amount,
         date: dto.date ? new Date(dto.date) : new Date(),
         method: dto.method ?? "TRANSFER",
         reference: finalReference,
+        accountCode: chosenAccount,
         fileId: dto.fileId,
         createdById: user.id,
       },
     });
+
+    // Posting Akuntansi E3: Pelunasan Invoice Keluar
+    try {
+      const mappings = await this.mappingService.getAll();
+      const pLines = PostingRules.buildCustomerPaymentLines(
+        {
+          id: createdPayment.id,
+          sourceType: "INVOICE_OUT",
+          sourceId: row.id,
+          amount: Number(dto.amount),
+          accountCode: chosenAccount || mappings.CASH_DEFAULT || "1000.02",
+          pph23Amount: Number(dto.pph23Amount || 0),
+          partyType: "CUSTOMER",
+          partyId: row.customerId!,
+          projectId: row.projectId,
+        },
+        mappings,
+      );
+      await this.postingService.post({
+        sourceType: "Payment",
+        sourceId: createdPayment.id,
+        event: "received",
+        source: "INVOICE_OUT_PAYMENT",
+        date: dto.date ? new Date(dto.date) : new Date(),
+        memo: `Penerimaan Pembayaran Inv ${row.number}`,
+        refNo: `${row.number}/PAY`,
+        projectId: row.projectId,
+        createdById: user.id,
+        lines: pLines,
+      });
+    } catch (err) {
+      console.error("Posting payment error:", err);
+    }
     if (dto.coaAccount) {
       await this.saveMeta(id, { coaAccount: dto.coaAccount }).catch(() => {});
     }
@@ -1448,6 +1535,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     await this.syncProjectPayment(row.projectId);
     if (status === "BATAL") {
       await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
+      // Pembalik Jurnal Akuntansi jika invoice dibatalkan
+      await this.postingService.reverse("InvoiceOut", id, "issued", "Invoice dibatalkan", user.id).catch(() => {});
     }
     if (status === "PAID") {
       await this.syncRelatedInvoicesOnPaid(updated, user);
@@ -1461,6 +1550,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
     await this.prisma.main.$transaction(async (tx) => {
+      await this.postingService.reverse("InvoiceOut", id, "issued", "Invoice dihapus", user.id, tx).catch(() => {});
       await tx.payment.deleteMany({ where: { invoiceOutId: id } });
       await tx.invoiceOut.delete({ where: { id } });
     });

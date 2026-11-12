@@ -29,7 +29,7 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
         <KpiCard
           label="Beban Operasional (OPEX)"
           value={rupiah(fin.incomeStatement.opexTotal)}
-          hint={`${fin.incomeStatement.opexByCategory.length} Kategori Biaya Lapangan & Kantor`}
+          hint={`${(fin.incomeStatement.opexByCategory || []).length} Kategori Biaya Lapangan & Kantor`}
           tone="warning"
         />
         <KpiCard
@@ -119,7 +119,7 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
             <Text className="text-xs font-bold uppercase tracking-wider text-warning">
               III. BEBAN OPERASIONAL & LAPANGAN (OPEX)
             </Text>
-            {fin.incomeStatement.opexByCategory.map((cat: any) => (
+            {(fin.incomeStatement.opexByCategory || []).map((cat: any) => (
               <View key={cat.kategori} className="flex-row justify-between items-center py-1">
                 <Text className="text-sm text-text-secondary">
                   [6101] Beban {cat.kategori} ({cat.count} pengajuan)

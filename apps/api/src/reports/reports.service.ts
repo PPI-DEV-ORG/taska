@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { MovementsService } from "../stock/movements.service.js";
+import { AccountingReportService } from "../accounting/accounting-report.service.js";
 import type { ReportData } from "./exporters.js";
 
 export type ReportQuery = {
@@ -40,6 +41,7 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     private readonly approvals: ApprovalsService,
     private readonly movements: MovementsService,
+    private readonly accountingReport: AccountingReportService,
   ) {}
 
   async build(type: string, q: ReportQuery): Promise<ReportData> {
@@ -508,188 +510,63 @@ export class ReportsService {
   }
 
   private async generalJournal(q: ReportQuery): Promise<ReportData> {
-    const [invoices, supplierPos, expenses] = await Promise.all([
-      this.prisma.main.invoiceOut.findMany({
-        where: { status: { not: "BATAL" }, ...this.dateRange(q, "date") },
-        include: { customer: { select: { name: true } }, project: { select: { name: true } } },
-        orderBy: { date: "asc" },
-      }),
-      this.prisma.main.supplierPO.findMany({
-        where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, ...this.dateRange(q, "date") },
-        include: {
-          supplier: { select: { name: true } },
-          project: { select: { name: true } },
-          invoiceIns: { select: { amount: true, ppn: true, total: true, paidAmount: true, status: true } },
+    const lines = await (this.prisma.main as any).journalLine.findMany({
+      where: {
+        entry: {
+          status: "POSTED",
+          ...(q.from || q.to
+            ? {
+                date: {
+                  ...(q.from ? { gte: new Date(q.from) } : {}),
+                  ...(q.to ? { lte: new Date(q.to) } : {}),
+                },
+              }
+            : {}),
         },
-        orderBy: { date: "asc" },
-      }),
-      this.prisma.main.expense.findMany({
-        where: { status: { in: ["DISETUJUI", "DIBAYAR"] }, ...this.dateRange(q, "date") },
-        include: {
-          reporter: { select: { name: true } },
-          category: { select: { name: true } },
-          project: { select: { name: true } },
-        },
-        orderBy: { date: "asc" },
-      }),
-    ]);
+      },
+      include: {
+        entry: true,
+        account: true,
+      },
+      orderBy: [{ entry: { date: "asc" } }, { entryId: "asc" }, { lineNo: "asc" }],
+      take: MAX_ROWS,
+    });
 
     const rows: ReportData["rows"] = [];
-    let seq = 1;
     let totalDebit = 0;
     let totalKredit = 0;
 
-    const addLines = (
-      dateStr: string,
-      ref: string,
-      proj: string,
-      entries: { code: string; name: string; desc: string; debit: number; kredit: number }[],
-    ) => {
-      const jNo = `JU-${String(seq++).padStart(4, "0")}`;
-      for (const e of entries) {
-        if (e.debit === 0 && e.kredit === 0) continue;
-        totalDebit += e.debit;
-        totalKredit += e.kredit;
-        rows.push([
-          jNo,
-          dateStr,
-          ref,
-          proj,
-          e.code,
-          e.name,
-          e.desc,
-          `Rp ${e.debit.toLocaleString("id-ID")}`,
-          `Rp ${e.kredit.toLocaleString("id-ID")}`,
-        ]);
-      }
-    };
-
-    for (const inv of invoices) {
-      const d = new Date(inv.date).toLocaleDateString("id-ID");
-      const cust = inv.customer?.name ?? "Pelanggan";
-      const proj = inv.project?.name ?? "-";
-      const dpp = Number(inv.amount) || 0;
-      const ppn = Number(inv.ppn) || 0;
-      const expectedFull = dpp + ppn;
-      const tot = Number(inv.total) > 0 ? Number(inv.total) : expectedFull;
-      const pph = Math.max(0, expectedFull - tot);
-      const paid = inv.status === "PAID" ? Math.max(Number(inv.paidAmount) || 0, tot) : Number(inv.paidAmount) || 0;
-
-      if (tot > 0 || pph > 0) {
-        addLines(d, inv.number, proj, [
-          { code: "1102", name: "Piutang Usaha", desc: `Tagihan Invoice ${inv.number} — ${cust}`, debit: tot, kredit: 0 },
-          ...(pph > 0 ? [{ code: "1105", name: "Uang Muka PPh / Pajak Dibayar Dimuka", desc: `Uang Muka PPh atas ${inv.number}`, debit: pph, kredit: 0 }] : []),
-          { code: "4101", name: "Pendapatan Proyek", desc: `Pendapatan Proyek ${inv.number} (${cust})`, debit: 0, kredit: dpp },
-          ...(ppn > 0 ? [{ code: "2102", name: "Hutang PPN Keluaran", desc: `PPN Keluaran 11% atas ${inv.number}`, debit: 0, kredit: ppn }] : []),
-        ]);
-      }
-      if (paid > 0) {
-        addLines(d, `${inv.number}/PAY`, proj, [
-          { code: "1101", name: "Kas & Bank Operasional", desc: `Penerimaan Kas Invoice ${inv.number} (${cust})`, debit: paid, kredit: 0 },
-          { code: "1102", name: "Piutang Usaha", desc: `Pelunasan Piutang ${inv.number}`, debit: 0, kredit: paid },
-        ]);
-      }
-    }
-
-    for (const po of supplierPos) {
-      const sup = (po as any).supplier?.name ?? "Supplier";
-      const isProjectPo = !!(po.projectId || (po as any).project?.name);
-      const proj = (po as any).project?.name ?? (isProjectPo ? "Proyek" : "Stok Gudang / Retail");
-      const tot = Number(po.total) || 0;
-      const isKas = /kas|tunai|cash/i.test(String(po.paymentTerms || ""));
-      const debitCode = isProjectPo ? "5101" : "1200";
-      const debitName = isProjectPo ? "HPP Project (Pengadaan Proyek)" : "Persediaan Barang Dagang (Aset)";
-
-      const invs = ((po as any).invoiceIns || []).filter((i: any) => i.status !== "BATAL");
-
-      if (invs.length > 0) {
-        for (const inv of invs) {
-          const invDate = new Date(inv.date || po.date).toLocaleDateString("id-ID");
-          const invDppRaw = Number(inv.amount) || 0;
-          const invPpn = Number(inv.ppn) || 0;
-          const invTot = Number(inv.total) || (invDppRaw + invPpn);
-          const invDpp = invDppRaw > 0 ? invDppRaw : (invTot > 0 && invPpn > 0 ? Math.max(0, invTot - invPpn) : invTot);
-          const invPaid = Number(inv.paidAmount) || 0;
-          const isInvPaid = inv.status === "PAID" || (invPaid >= invTot && invTot > 0);
-          const invNum = inv.number || po.number;
-
-          if (invTot > 0) {
-            addLines(invDate, `${po.number} (${invNum})`, proj, [
-              {
-                code: debitCode,
-                name: debitName,
-                desc: isProjectPo
-                  ? `HPP Project Pengadaan PO ${po.number} (${invNum}) — ${sup}`
-                  : `Pembelian Aset Persediaan Stok/Retail PO ${po.number} (${invNum}) — ${sup}`,
-                debit: invDpp,
-                kredit: 0,
-              },
-              ...(invPpn > 0
-                ? [{ code: "1600", name: "PPN Masukan (Input VAT)", desc: `PPN Masukan 11% Invoice ${invNum} atas PO ${po.number} (${sup})`, debit: invPpn, kredit: 0 }]
-                : []),
-              { code: "210102", name: "Hutang Usaha Supplier", desc: `Hutang Usaha Supplier atas Invoice ${invNum} (${sup})`, debit: 0, kredit: invTot },
-            ]);
-
-            if (isInvPaid) {
-              const payAmt = invPaid > 0 ? invPaid : invTot;
-              addLines(invDate, `${invNum}/SETTLE`, proj, [
-                { code: "210102", name: "Hutang Usaha Supplier", desc: `Pelunasan Hutang Invoice ${invNum} — ${sup}`, debit: payAmt, kredit: 0 },
-                { code: "1000.01", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas Pelunasan Invoice ${invNum} ke ${sup}`, debit: 0, kredit: payAmt },
-              ]);
-            }
-          }
-        }
-      } else if (isKas || po.status === "DISETUJUI") {
-        if (tot > 0) {
-          const d = new Date(po.date).toLocaleDateString("id-ID");
-          addLines(d, po.number, proj, [
-            {
-              code: debitCode,
-              name: debitName,
-              desc: isProjectPo
-                ? `HPP Project Pengadaan PO ${po.number} — ${sup}`
-                : `Pembelian Aset Persediaan Stok/Retail PO ${po.number} — ${sup}`,
-              debit: tot,
-              kredit: 0,
-            },
-            { code: "1000.01", name: "Kas & Bank Operasional", desc: `Pengeluaran Kas Pembelian Tunai PO ${po.number} (${sup})`, debit: 0, kredit: tot },
-          ]);
-        }
-      }
-      // PO bertempo yang belum ada invoice masuk tidak dijurnal
-    }
-
-    for (const ex of expenses) {
-      const d = new Date(ex.date).toLocaleDateString("id-ID");
-      const ref = `EXP-${String(ex.id).padStart(3, "0")}`;
-      const rep = ex.reporter?.name ?? "Staf";
-      const cat = ex.category?.name ?? "Operasional";
-      const proj = ex.project?.name ?? "-";
-      const amt = Number(ex.amount) || 0;
-      const isReimburse = /reimburse/i.test(`${cat} ${ex.description}`);
-      if (amt > 0) {
-        addLines(d, ref, proj, [
-          {
-            code: isReimburse ? "6202.08" : "6101",
-            name: isReimburse ? "Beban Reimburse" : "Beban Operasional",
-            desc: `${isReimburse ? "Beban Reimburse" : `Beban ${cat}`}: ${ex.description} (${rep})`,
-            debit: amt,
-            kredit: 0,
-          },
-          { code: "2103", name: "Hutang Reimbursement", desc: `Kewajiban Reimbursement ${rep}`, debit: 0, kredit: amt },
-        ]);
-        if (ex.status === "DIBAYAR") {
-          addLines(d, `${ref}/PAY`, proj, [
-            { code: "2103", name: "Hutang Reimbursement", desc: `Pelunasan Reimbursement ${ref} (${rep})`, debit: amt, kredit: 0 },
-            { code: "1101", name: "Kas & Bank Operasional", desc: `Pembayaran Kas Reimbursement ${ref}`, debit: 0, kredit: amt },
-          ]);
-        }
-      }
+    for (const l of lines) {
+      const d = Number(l.debit || 0);
+      const c = Number(l.credit || 0);
+      totalDebit += d;
+      totalKredit += c;
+      rows.push([
+        l.entry.number,
+        new Date(l.entry.date).toLocaleDateString("id-ID"),
+        l.entry.refNo || "-",
+        l.projectId ? `Project #${l.projectId}` : "-",
+        l.accountCode,
+        l.account?.name || "-",
+        l.memo || l.entry.memo,
+        `Rp ${d.toLocaleString("id-ID")}`,
+        `Rp ${c.toLocaleString("id-ID")}`,
+      ]);
     }
 
     return {
-      title: "Laporan Jurnal Umum (General Journal Double-Entry)",
-      columns: ["No. Jurnal", "Tanggal", "No. Referensi", "Project", "Kode Akun", "Nama Akun", "Uraian / Keterangan", "Debit (Rp)", "Kredit (Rp)"],
+      title: "Laporan Jurnal Umum (General Journal - Double Entry DB)",
+      columns: [
+        "No. Jurnal",
+        "Tanggal",
+        "No. Referensi",
+        "Project",
+        "Kode Akun",
+        "Nama Akun",
+        "Uraian / Keterangan",
+        "Debit (Rp)",
+        "Kredit (Rp)",
+      ],
       note: `Total Debit: Rp ${totalDebit.toLocaleString("id-ID")} | Total Kredit: Rp ${totalKredit.toLocaleString("id-ID")} | Status: ${totalDebit === totalKredit ? "SEIMBANG (BALANCED)" : "SELISIH"}`,
       rows,
     };

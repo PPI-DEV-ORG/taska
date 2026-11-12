@@ -84,6 +84,7 @@ export function CreateCoaDialog({
           <DialogTitle>Tambah Akun Baru ke COA</DialogTitle>
         </DialogHeader>
 
+        <View className="gap-3 p-1">
           <FormField label="Kode Akun" required>
             <Input
               value={newAccCode}
@@ -103,7 +104,6 @@ export function CreateCoaDialog({
             />
           </FormField>
 
-        <View className="gap-3 p-1">
           <FormField label="Parent Account (Akun Induk COA)">
             <SearchableSelect
               value={selectedLabel}

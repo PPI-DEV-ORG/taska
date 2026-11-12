@@ -106,16 +106,16 @@ export function LedgerTab({
             className="w-full"
           >
             <View className="min-w-full w-full gap-0.5">
-              <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg">
-                <Text className="w-[85px] text-xs font-bold">No. Jurnal</Text>
-                <Text className="w-[90px] text-xs font-bold">Tanggal</Text>
+              <View className="bg-panel border-border flex-row items-center border-b px-3 py-2.5 rounded-t-lg w-full">
+                <Text className="w-[145px] text-xs font-bold">No. Jurnal</Text>
+                <Text className="w-[95px] text-xs font-bold">Tanggal</Text>
                 <Text className="w-[125px] text-xs font-bold">Referensi</Text>
                 <Text className="w-[110px] text-xs font-bold">Akun Terkait</Text>
-                <Text className="w-[130px] text-xs font-bold">Sumber Transaksi</Text>
-                <Text className="flex-1 text-xs font-bold">Uraian / Keterangan</Text>
-                <Text className="w-[115px] text-xs font-bold text-right">Debit (Rp)</Text>
-                <Text className="w-[115px] text-xs font-bold text-right">Kredit (Rp)</Text>
-                <Text className="w-[130px] text-xs font-bold text-right">Saldo Berjalan</Text>
+                <Text className="w-[140px] text-xs font-bold">Sumber Transaksi</Text>
+                <Text className="flex-1 min-w-[200px] text-xs font-bold">Uraian / Keterangan</Text>
+                <Text className="w-[125px] text-xs font-bold text-right pr-2">Debit (Rp)</Text>
+                <Text className="w-[125px] text-xs font-bold text-right pr-2">Kredit (Rp)</Text>
+                <Text className="w-[140px] text-xs font-bold text-right pr-2">Saldo Berjalan</Text>
               </View>
               {ledgerLines.length === 0 ? (
                 <View className="py-12 items-center justify-center gap-1">
@@ -134,12 +134,12 @@ export function LedgerTab({
                   return (
                     <View
                       key={l.id}
-                      className="border-border/50 flex-row items-center border-b px-3 py-2 hover:bg-panel/40"
+                      className="border-border/50 flex-row items-center border-b px-3 py-2 hover:bg-panel/40 w-full"
                     >
-                      <Text className="w-[85px] text-xs font-mono text-muted-foreground">
+                      <Text className="w-[145px] text-xs font-mono text-muted-foreground">
                         {l.journalNo}
                       </Text>
-                      <Text className="w-[90px] text-xs font-mono text-muted-foreground">
+                      <Text className="w-[95px] text-xs font-mono text-muted-foreground">
                         {l.tanggal}
                       </Text>
                       <Text className="w-[125px] text-xs font-semibold font-mono" numberOfLines={1}>
@@ -148,19 +148,19 @@ export function LedgerTab({
                       <Text className="w-[110px] text-[11px] font-mono text-primary" numberOfLines={1}>
                         {l.kodeAkun}
                       </Text>
-                      <Text className="w-[130px] text-xs text-muted-foreground" numberOfLines={1}>
+                      <Text className="w-[140px] text-xs text-muted-foreground" numberOfLines={1}>
                         {l.sumber}
                       </Text>
-                      <Text className="flex-1 text-xs text-foreground pr-3" numberOfLines={1}>
+                      <Text className="flex-1 min-w-[200px] text-xs text-foreground pr-3" numberOfLines={1}>
                         {l.keterangan}
                       </Text>
-                      <Text className="w-[115px] text-xs font-mono text-right font-semibold">
+                      <Text className="w-[125px] text-xs font-mono text-right font-semibold pr-2">
                         {l.debit > 0 ? rupiah(l.debit) : "-"}
                       </Text>
-                      <Text className="w-[115px] text-xs font-mono text-right font-semibold text-info">
+                      <Text className="w-[125px] text-xs font-mono text-right font-semibold text-info pr-2">
                         {l.kredit > 0 ? rupiah(l.kredit) : "-"}
                       </Text>
-                      <Text className="w-[130px] text-xs font-bold font-mono text-right text-primary">
+                      <Text className="w-[140px] text-xs font-bold font-mono text-right text-primary pr-2">
                         {rupiah(l.runningBalance)}
                       </Text>
                     </View>

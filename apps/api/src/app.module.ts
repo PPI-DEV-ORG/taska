@@ -28,6 +28,7 @@ import { VisitsModule } from "./visits/visits.module.js";
 import { CalendarModule } from "./calendar/calendar.module.js";
 import { WhatsappModule } from "./whatsapp/whatsapp.module.js";
 import { HrModule } from "./hr/hr.module.js";
+import { AccountingModule } from "./accounting/accounting.module.js";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard.js";
 import { PermissionsGuard } from "./common/guards/permissions.guard.js";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor.js";
@@ -62,6 +63,7 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
     CalendarModule,
     WhatsappModule,
     HrModule,
+    AccountingModule,
   ],
   controllers: [AppController],
   providers: [

@@ -19,15 +19,17 @@ import {
   CHART_OF_ACCOUNTS,
   type CoaAccount,
   type CoaTrialBalanceRow,
+  type JournalLine,
   type ManualJournal,
   type ManualJournalLine,
+  buildCoaTree,
   computeFinancialStatements,
-  loadManualJournals,
-  saveManualJournals,
   loadCustomCoa,
-  saveCustomCoa,
   loadDeletedCoaCodes,
+  loadManualJournals,
+  saveCustomCoa,
   saveDeletedCoaCodes,
+  saveManualJournals,
 } from "@/lib/accounting";
 
 import { AccountingTab } from "@/modules/accounting/types";
@@ -35,6 +37,9 @@ import { JournalTab } from "@/modules/accounting/components/journal-tab";
 import { CoaTab } from "@/modules/accounting/components/coa-tab";
 import { LedgerTab } from "@/modules/accounting/components/ledger-tab";
 import { SummaryTab } from "@/modules/accounting/components/summary-tab";
+import { TaxTab } from "@/modules/accounting/components/tax-tab";
+import { PeriodTab } from "@/modules/accounting/components/period-tab";
+import { ReturnTab } from "@/modules/accounting/components/return-tab";
 import { ManualJournalDialog } from "@/modules/accounting/components/manual-journal-dialog";
 import { CreateCoaDialog } from "@/modules/accounting/components/create-coa-dialog";
 
@@ -77,6 +82,11 @@ export default function AccountingScreen() {
     return map;
   }, [customAccounts, deletedCoaCodes]);
 
+  const allAccountsMapRef = React.useRef(allAccountsMap);
+  React.useEffect(() => {
+    allAccountsMapRef.current = allAccountsMap;
+  }, [allAccountsMap]);
+
   // Tab 1: Journal filters & pagination
   const [journalQuery, setJournalQuery] = React.useState("");
   const [journalDate, setJournalDate] = React.useState("");
@@ -117,9 +127,28 @@ export default function AccountingScreen() {
   const [newAccNormalBalance, setNewAccNormalBalance] = React.useState<"DEBIT" | "KREDIT">("DEBIT");
   const [newAccParentCode, setNewAccParentCode] = React.useState<string>("");
 
+  // Refresh Trigger for Reactivity
+  const [refreshTrigger, setRefreshTrigger] = React.useState(0);
+
+  const refreshAccountingData = React.useCallback(async () => {
+    setRefreshTrigger((k) => k + 1);
+    await Promise.allSettled([
+      refreshModule("invoiceIn"),
+      refreshModule("supplier-pos"),
+      refreshModule("invoices"),
+      refreshModule("expenses"),
+    ]);
+  }, [refreshModule]);
+
+  // Server-side Ledger & Journal Data
+  const [serverLedgerLines, setServerLedgerLines] = React.useState<any[] | null>(null);
+  const [serverJournalLines, setServerJournalLines] = React.useState<JournalLine[] | null>(null);
+  const [serverTrialBalance, setServerTrialBalance] = React.useState<any | null>(null);
+  const [serverIncomeStatement, setServerIncomeStatement] = React.useState<any | null>(null);
+  const [serverBalanceSheet, setServerBalanceSheet] = React.useState<any | null>(null);
+
+  // Initial sync: fetch custom COA and manual journals once on mount or when explicit refresh triggered
   React.useEffect(() => {
-    void refreshModule("invoiceIn");
-    void refreshModule("supplier-pos");
     let active = true;
     api<{ items?: any[] }>("GET", "/coa-accounts")
       .then((res) => {
@@ -167,58 +196,123 @@ export default function AccountingScreen() {
         });
       })
       .catch(() => {});
+
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshTrigger]);
 
-  // Ledger Lines for Selected Account (termasuk mutasi dari akun children / sub-accounts bila akun parent)
-  const selectedAcc = allAccountsMap[selectedLedgerCode] || fin.coaBalances[0];
-  const ledgerLines = React.useMemo(() => {
-    // Kumpulkan kode akun yang relevan: akun itu sendiri + seluruh children/sub-akunnya
-    const targetCodes = new Set<string>();
-    targetCodes.add(selectedLedgerCode);
+  // Fetch Journals & Trial Balance directly from backend DB
+  React.useEffect(() => {
+    let active = true;
 
-    // Kumpulkan turunan rekursif dari parentCode atau prefiks titik (dot notation)
-    const collectDescendantCodes = (parentCode: string) => {
-      const allList: any[] = [
-        ...Object.values(allAccountsMap),
-        ...(fin?.coaBalances || []),
-      ];
-      allList.forEach((acc) => {
-        if (!acc?.code) return;
-        if (acc.parentCode === parentCode || acc.code.startsWith(`${parentCode}.`)) {
-          if (!targetCodes.has(acc.code)) {
-            targetCodes.add(acc.code);
-            collectDescendantCodes(acc.code);
-          }
-        }
-      });
-    };
-    collectDescendantCodes(selectedLedgerCode);
-
-    let matching = fin.journalLines
-      .filter((l) => targetCodes.has(l.kodeAkun))
-      .sort((a, b) => a.tanggal.localeCompare(b.tanggal));
-
-    if (ledgerDate) {
-      const target = ledgerDate.slice(0, 10);
-      matching = matching.filter((l) => l.tanggal?.startsWith(target));
+    const jParams = new URLSearchParams();
+    if (journalDate) {
+      jParams.set("startDate", `${journalDate.slice(0, 10)}T00:00:00Z`);
+      jParams.set("endDate", `${journalDate.slice(0, 10)}T23:59:59Z`);
     }
+    jParams.set("limit", "150");
+    const jStr = jParams.toString();
+    api<any>("GET", `/accounting/journals${jStr ? `?${jStr}` : ""}`)
+      .then((res) => {
+        if (!active || !Array.isArray(res?.items)) return;
+        const currentAccounts = allAccountsMapRef.current || CHART_OF_ACCOUNTS;
+        const mappedLines: JournalLine[] = [];
+        res.items.forEach((entry: any) => {
+          let entryRef = entry.refNo || "-";
+          if (entry.sourceType === "Expense" && entry.sourceId && (!entryRef || /^\d+$/.test(entryRef))) {
+            const expCode = `EXP-${String(entry.sourceId).padStart(3, "0")}`;
+            entryRef = entry.event === "paid" || entry.source === "EXPENSE_PAYMENT" ? `${expCode}/PAY` : expCode;
+          } else if (entry.sourceType === "Payment" || entry.source === "INVOICE_OUT_PAYMENT" || entry.source === "INVOICE_IN_PAYMENT") {
+            if (entryRef !== "-" && !entryRef.endsWith("/PAY")) {
+              entryRef = `${entryRef}/PAY`;
+            }
+          }
 
-    return matching.reduce<{ lines: (typeof matching[0] & { runningBalance: number })[]; balance: number }>(
-      (acc, l) => {
-        const balance = acc.balance +
-          (selectedAcc?.normalBalance === "DEBIT" ? l.debit - l.kredit : l.kredit - l.debit);
-        acc.lines.push({ ...l, runningBalance: balance });
-        return { lines: acc.lines, balance };
-      },
-      { lines: [], balance: 0 },
-    ).lines;
-  }, [fin.journalLines, selectedLedgerCode, selectedAcc, ledgerDate, allAccountsMap]);
+          (entry.lines || []).forEach((line: any) => {
+            const acc = currentAccounts[line.accountCode] || CHART_OF_ACCOUNTS[line.accountCode];
+            mappedLines.push({
+              id: String(line.id),
+              journalNo: entry.number || `JU-${entry.id}`,
+              tanggal: entry.date ? String(entry.date).slice(0, 10) : "-",
+              refNo: entryRef,
+              sumber: entry.source === "EXPENSE" ? "Pengeluaran (Expense)" : entry.source === "EXPENSE_PAYMENT" ? "Pelunasan Expense" : (entry.source || "Jurnal"),
+              keterangan: line.memo || entry.memo || "-",
+              project: line.projectId ? `Project #${line.projectId}` : entry.projectId ? `Project #${entry.projectId}` : "-",
+              kodeAkun: line.accountCode,
+              namaAkun: acc?.name || line.accountCode,
+              debit: Number(line.debit || 0),
+              kredit: Number(line.credit || 0),
+              manualJournalId: entry.source === "MANUAL" ? String(entry.id) : undefined,
+            });
+          });
+        });
+        setServerJournalLines(mappedLines);
+      })
+      .catch(() => {
+        if (active) setServerJournalLines(null);
+      });
+
+    // Fetch Trial Balance directly from backend DB
+    api<any>("GET", "/accounting/trial-balance")
+      .then((res) => {
+        if (!active || !res?.rows) return;
+        setServerTrialBalance(res);
+      })
+      .catch(() => {
+        if (active) setServerTrialBalance(null);
+      });
+
+    // Fetch Income Statement directly from backend DB
+    api<any>("GET", "/accounting/income-statement")
+      .then((res) => {
+        if (!active || !res) return;
+        setServerIncomeStatement(res);
+      })
+      .catch(() => {
+        if (active) setServerIncomeStatement(null);
+      });
+
+    // Fetch Balance Sheet directly from backend DB
+    api<any>("GET", "/accounting/balance-sheet")
+      .then((res) => {
+        if (!active || !res) return;
+        setServerBalanceSheet(res);
+      })
+      .catch(() => {
+        if (active) setServerBalanceSheet(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [journalDate, refreshTrigger]);
+
+  React.useEffect(() => {
+    let active = true;
+    const query = new URLSearchParams();
+    if (selectedLedgerCode) query.set("accountCode", selectedLedgerCode);
+    if (ledgerDate) {
+      query.set("startDate", `${ledgerDate.slice(0, 10)}T00:00:00Z`);
+      query.set("endDate", `${ledgerDate.slice(0, 10)}T23:59:59Z`);
+    }
+    const qStr = query.toString();
+    api<any[]>("GET", `/accounting/ledger${qStr ? `?${qStr}` : ""}`)
+      .then((res) => {
+        if (!active || !Array.isArray(res)) return;
+        setServerLedgerLines(res);
+      })
+      .catch(() => {
+        if (active) setServerLedgerLines(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedLedgerCode, ledgerDate, refreshTrigger]);
 
   // Handlers
-  const handleSaveManualJournal = () => {
+  const handleSaveManualJournal = async () => {
     const totDebit = mjLines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
     const totKredit = mjLines.reduce((s, l) => s + (Number(l.kredit) || 0), 0);
 
@@ -255,9 +349,29 @@ export default function AccountingScreen() {
     const nextList = [newJournal, ...manualJournals];
     setManualJournals(nextList);
     saveManualJournals(nextList);
-    void api("POST", "/manual-journals", newJournal).catch(() => {});
 
-    toast("Ayat jurnal manual berhasil disimpan ke buku besar akuntansi.", "success");
+    // Optimistically prepend to serverJournalLines for instant UI update
+    if (serverJournalLines) {
+      const optimisticLines: JournalLine[] = mjLines.map((l, idx) => {
+        const acc = allAccountsMap[l.kodeAkun];
+        return {
+          id: `${nextId}-${idx}`,
+          journalNo: newJournal.journalNo || `JM-${nextId}`,
+          tanggal: mjDate,
+          refNo: mjRef.trim() || "-",
+          sumber: "MANUAL",
+          keterangan: l.keterangan || mjDesc.trim(),
+          project: "-",
+          kodeAkun: l.kodeAkun,
+          namaAkun: acc?.name || l.kodeAkun,
+          debit: Number(l.debit) || 0,
+          kredit: Number(l.kredit) || 0,
+          manualJournalId: nextId,
+        };
+      });
+      setServerJournalLines((prev) => (prev ? [...optimisticLines, ...prev] : optimisticLines));
+    }
+
     setManualModalOpen(false);
     setMjDesc("");
     setMjRef("");
@@ -265,9 +379,31 @@ export default function AccountingScreen() {
       { kodeAkun: "1101", keterangan: "", debit: 0, kredit: 0 },
       { kodeAkun: "3101", keterangan: "", debit: 0, kredit: 0 },
     ]);
+
+    try {
+      await Promise.allSettled([
+        api("POST", "/manual-journals", newJournal),
+        api("POST", "/accounting/journals/manual", {
+          date: mjDate,
+          memo: mjDesc.trim(),
+          refNo: mjRef.trim() || undefined,
+          lines: mjLines.map((l, idx) => ({
+            accountCode: l.kodeAkun,
+            lineNo: idx + 1,
+            debit: Number(l.debit) || 0,
+            credit: Number(l.kredit) || 0,
+            memo: l.keterangan || mjDesc.trim(),
+          })),
+        }),
+      ]);
+    } finally {
+      await refreshAccountingData();
+    }
+
+    toast("Ayat jurnal manual berhasil disimpan ke buku besar akuntansi.", "success");
   };
 
-  const handleSaveCustomAccount = () => {
+  const handleSaveCustomAccount = async () => {
     const code = newAccCode.trim();
     const name = newAccName.trim();
     if (!code || !name) {
@@ -285,55 +421,105 @@ export default function AccountingScreen() {
         : code.includes(".")
           ? code.split(".")[0]
           : undefined;
+
+    const isCashAccount =
+      inferredParent === "1000" ||
+      code.startsWith("1000.") ||
+      (newAccCategory === "Aset Lancar" &&
+        (name.toLowerCase().includes("bank") || name.toLowerCase().includes("kas")));
+
     const newAcc: CoaAccount = {
       code,
       name,
       category: newAccCategory,
       normalBalance: newAccNormalBalance,
-      ...(inferredParent && allAccountsMap[inferredParent] ? { parentCode: inferredParent } : {}),
+      ...(inferredParent ? { parentCode: inferredParent } : {}),
+      isCash: isCashAccount,
+      isPostable: true,
     };
 
     const next = [...customAccounts, newAcc];
     setCustomAccounts(next);
     saveCustomCoa(next);
-    void api("POST", "/coa-accounts", newAcc).catch(() => {});
-
-    toast(`Akun [${code}] ${name} berhasil ditambahkan ke COA.`, "success");
     setCoaModalOpen(false);
     setNewAccCode("");
     setNewAccName("");
     setNewAccParentCode("");
+
+    const accountPayload = {
+      code,
+      name,
+      category: newAccCategory,
+      normalBalance: newAccNormalBalance,
+      parentCode: inferredParent || null,
+      isCash: isCashAccount,
+      isPostable: true,
+      status: "AKTIF",
+    };
+
+    try {
+      await Promise.allSettled([
+        api("POST", "/accounting/accounts", accountPayload),
+        api("POST", "/coa-accounts", accountPayload),
+      ]);
+    } finally {
+      await refreshAccountingData();
+    }
+
+    toast(`Akun [${code}] ${name} berhasil ditambahkan ke COA.`, "success");
   };
 
-  const handleDeleteCoaAccount = () => {
+  const handleDeleteCoaAccount = async () => {
     if (!deleteCoaTarget) return;
     const targetCode = deleteCoaTarget.code;
 
     const nextCustom = customAccounts.filter((a) => a.code !== targetCode);
     setCustomAccounts(nextCustom);
     saveCustomCoa(nextCustom);
-    void api("DELETE", `/coa-accounts/${encodeURIComponent(targetCode)}`).catch(() => {});
 
     if (CHART_OF_ACCOUNTS[targetCode]) {
       const nextDeleted = Array.from(new Set([...deletedCoaCodes, targetCode]));
       setDeletedCoaCodes(nextDeleted);
       saveDeletedCoaCodes(nextDeleted);
     }
+    setDeleteCoaTarget(null);
+
+    try {
+      await Promise.allSettled([
+        api("DELETE", `/accounting/accounts/${encodeURIComponent(targetCode)}`),
+        api("DELETE", `/coa-accounts/${encodeURIComponent(targetCode)}`),
+      ]);
+    } finally {
+      await refreshAccountingData();
+    }
 
     toast(`Akun [${targetCode}] ${deleteCoaTarget.name} berhasil dihapus dari COA.`, "success");
-    setDeleteCoaTarget(null);
   };
 
-  const handleDeleteManualJournal = () => {
+  const handleDeleteManualJournal = async () => {
     if (!deleteJournalTarget) return;
     const targetId = deleteJournalTarget.id;
     const targetNo = deleteJournalTarget.journalNo || "";
     const nextList = manualJournals.filter((j) => j.id !== targetId && j.journalNo !== targetNo);
     setManualJournals(nextList);
     saveManualJournals(nextList);
+    if (serverJournalLines) {
+      setServerJournalLines((prev) =>
+        prev
+          ? prev.filter((l) => l.manualJournalId !== targetId && l.journalNo !== targetNo && l.id !== targetId)
+          : null
+      );
+    }
     setDeleteJournalTarget(null);
-    void api("DELETE", `/manual-journals/${encodeURIComponent(targetId || targetNo)}`).catch(() => {});
-    toast(`Ayat jurnal manual ${targetNo ? `[${targetNo}] ` : ""}berhasil dihapus.`, "success");
+    const numId = parseInt(targetId, 10);
+    const promises: Promise<any>[] = [];
+    if (!isNaN(numId)) {
+      promises.push(api("POST", `/accounting/journals/${numId}/reverse`, { reason: "Dihapus oleh pengguna" }));
+    }
+    promises.push(api("DELETE", `/manual-journals/${encodeURIComponent(targetId || targetNo)}`));
+    await Promise.allSettled(promises);
+    await refreshAccountingData();
+    toast(`Ayat jurnal manual ${targetNo ? `[${targetNo}] ` : ""}berhasil dihapus / dibalik.`, "success");
   };
 
   const handleExportJournalCsv = () => {
@@ -365,7 +551,8 @@ export default function AccountingScreen() {
   };
 
   // Filtered Journal & Pagination
-  const filteredJournal = fin.journalLines.filter((l) => {
+  const effectiveJournalLines = serverJournalLines && serverJournalLines.length > 0 ? serverJournalLines : fin.journalLines;
+  const filteredJournal = effectiveJournalLines.filter((l) => {
     if (!l) return false;
     if (journalSourceFilter !== "Semua" && l.sumber !== journalSourceFilter) return false;
     if (journalDate) {
@@ -391,8 +578,25 @@ export default function AccountingScreen() {
     currentJournalPage * JOURNAL_PAGE_SIZE
   );
 
+  const effectiveTotalDebit = React.useMemo(
+    () => effectiveJournalLines.reduce((s, l) => s + (Number(l.debit) || 0), 0),
+    [effectiveJournalLines]
+  );
+  const effectiveTotalKredit = React.useMemo(
+    () => effectiveJournalLines.reduce((s, l) => s + (Number(l.kredit) || 0), 0),
+    [effectiveJournalLines]
+  );
+
   // Filtered COA & Pagination
-  const filteredCoa = (fin?.coaBalances || []).filter((acc) => {
+  const effectiveCoaBalances = React.useMemo(() => {
+    return buildCoaTree(
+      allAccountsMap,
+      serverTrialBalance?.rows || [],
+      deletedCoaCodes
+    );
+  }, [allAccountsMap, serverTrialBalance, deletedCoaCodes]);
+
+  const filteredCoa = (effectiveCoaBalances || []).filter((acc:any) => {
     if (!acc) return false;
     if (coaCategoryFilter !== "Semua" && acc.category !== coaCategoryFilter) return false;
     if (!coaQuery.trim()) return true;
@@ -406,6 +610,206 @@ export default function AccountingScreen() {
     (currentCoaPage - 1) * COA_PAGE_SIZE,
     currentCoaPage * COA_PAGE_SIZE
   );
+
+  // Ledger Lines for Selected Account (termasuk mutasi dari akun children / sub-accounts bila akun parent)
+  const selectedAcc =
+    allAccountsMap[selectedLedgerCode] ||
+    effectiveCoaBalances.find((b: any) => b.code === selectedLedgerCode) ||
+    CHART_OF_ACCOUNTS[selectedLedgerCode] ||
+    effectiveCoaBalances[0];
+
+  const ledgerLines = React.useMemo(() => {
+    const targetCodes = new Set<string>();
+    targetCodes.add(selectedLedgerCode);
+
+    // Kumpulkan turunan rekursif dari parentCode atau prefiks titik (dot notation)
+    const collectDescendantCodes = (parentCode: string) => {
+      const allList: any[] = [
+        ...Object.values(allAccountsMap),
+        ...(effectiveCoaBalances || []),
+      ];
+      allList.forEach((acc) => {
+        if (!acc?.code) return;
+        if (acc.parentCode === parentCode || acc.code.startsWith(`${parentCode}.`)) {
+          if (!targetCodes.has(acc.code)) {
+            targetCodes.add(acc.code);
+            collectDescendantCodes(acc.code);
+          }
+        }
+      });
+    };
+    collectDescendantCodes(selectedLedgerCode);
+
+    if (Array.isArray(serverLedgerLines) && serverLedgerLines.length > 0) {
+      let balance = 0;
+      return serverLedgerLines.map((l: any) => {
+        const debit = Number(l.debit || 0);
+        const credit = Number(l.credit || 0);
+        balance += selectedAcc?.normalBalance === "DEBIT" ? debit - credit : credit - debit;
+        const sumberLabel =
+          l.source === "EXPENSE"
+            ? "Pengeluaran (Expense)"
+            : l.source === "EXPENSE_PAYMENT"
+            ? "Pelunasan Expense"
+            : l.source === "MANUAL"
+            ? "Jurnal Manual"
+            : l.source === "INVOICE_OUT"
+            ? "Faktur Pelanggan"
+            : l.source === "INVOICE_OUT_PAYMENT"
+            ? "Pembayaran Faktur"
+            : l.source === "INVOICE_IN"
+            ? "PO Pemasok"
+            : l.source === "INVOICE_IN_PAYMENT"
+            ? "Pelunasan PO"
+            : l.source || (l.partyType ? `${l.partyType} #${l.partyId}` : "Jurnal");
+
+        return {
+          id: String(l.id),
+          journalNo: l.entryNumber || l.journalNo || `JU-${l.entryId}`,
+          tanggal: l.date ? String(l.date).slice(0, 10) : "-",
+          refNo: l.refNo || "-",
+          kodeAkun: l.accountCode,
+          sumber: sumberLabel,
+          keterangan: l.memo || "-",
+          debit,
+          kredit: credit,
+          runningBalance: balance,
+        };
+      });
+    }
+
+    // Filter langsung dari effectiveJournalLines yang memuat seluruh transaksi server
+    let matching = (effectiveJournalLines || [])
+      .filter((l) => targetCodes.has(l.kodeAkun))
+      .sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+
+    if (ledgerDate) {
+      const target = ledgerDate.slice(0, 10);
+      matching = matching.filter((l) => l.tanggal?.startsWith(target));
+    }
+
+    let balance = 0;
+    return matching.map((l) => {
+      balance += selectedAcc?.normalBalance === "DEBIT" ? l.debit - l.kredit : l.kredit - l.debit;
+      return {
+        ...l,
+        runningBalance: balance,
+      };
+    });
+  }, [
+    serverLedgerLines,
+    effectiveJournalLines,
+    selectedLedgerCode,
+    ledgerDate,
+    selectedAcc,
+    allAccountsMap,
+    effectiveCoaBalances,
+  ]);
+
+  const finForSummary = React.useMemo(() => {
+    const sumAccounts = (items: any[] = [], prefixes: string[]) => {
+      if (Array.isArray(items) && items.length > 0) {
+        return items
+          .filter((i: any) => prefixes.some((p) => i.code === p || i.code.startsWith(`${p}.`)))
+          .reduce((sum: number, i: any) => sum + Number(i.amount || 0), 0);
+      }
+      return (effectiveCoaBalances || [])
+        .filter((a: any) => !a.isHeader && prefixes.some((p) => a.code === p || a.code.startsWith(`${p}.`)))
+        .reduce((sum: number, a: any) => sum + Number(a.endingBalance || 0), 0);
+    };
+
+    const coaRevenue = (effectiveCoaBalances || [])
+      .filter((a: any) => !a.isHeader && (a.category === "Pendapatan" || a.category === "Pendapatan Diluar Usaha"))
+      .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+
+    const coaCogs = (effectiveCoaBalances || [])
+      .filter((a: any) => !a.isHeader && a.category === "Beban Pokok (HPP)")
+      .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+
+    const coaOpex = (effectiveCoaBalances || [])
+      .filter((a: any) => !a.isHeader && (a.category === "Beban Operasional" || a.category === "Beban Diluar Usaha"))
+      .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+
+    const coaAssets = (effectiveCoaBalances || [])
+      .filter((a: any) => !a.isHeader && a.category?.startsWith("Aset"))
+      .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+
+    const coaLiabilities = (effectiveCoaBalances || [])
+      .filter((a: any) => !a.isHeader && a.category?.startsWith("Kewajiban"))
+      .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+
+    const coaEquity = (effectiveCoaBalances || [])
+      .filter((a: any) => !a.isHeader && a.category === "Ekuitas")
+      .reduce((s: number, a: any) => s + (Number(a.endingBalance) || 0), 0);
+
+    const finalRev = serverIncomeStatement ? Number(serverIncomeStatement.revenue?.total || 0) : coaRevenue;
+    const finalCogs = serverIncomeStatement ? Number(serverIncomeStatement.cogs?.total || 0) : coaCogs;
+    const finalOpex = serverIncomeStatement ? Number(serverIncomeStatement.operatingExpense?.total || 0) : coaOpex;
+    const grossProfit = Number(serverIncomeStatement?.grossProfit ?? (finalRev - finalCogs));
+    const netProfit = Number(serverIncomeStatement?.netProfit ?? (grossProfit - finalOpex));
+    const grossMarginPct = finalRev > 0 ? Number(((grossProfit / finalRev) * 100).toFixed(1)) : 0;
+    const netMarginPct = finalRev > 0 ? Number(((netProfit / finalRev) * 100).toFixed(1)) : 0;
+
+    const assetsTotal = serverBalanceSheet ? Number(serverBalanceSheet.assets?.total || 0) : coaAssets;
+    const liabTotal = serverBalanceSheet ? Number(serverBalanceSheet.liabilities?.total || 0) : coaLiabilities;
+    const eqTotal = serverBalanceSheet ? Number(serverBalanceSheet.equity?.total || 0) : (coaEquity + netProfit);
+    const totalPasiva = serverBalanceSheet ? Number(serverBalanceSheet.totalLiabilitiesAndEquity || (liabTotal + eqTotal)) : (liabTotal + eqTotal);
+
+    return {
+      ...fin,
+      coaBalances: effectiveCoaBalances,
+      journalLines: effectiveJournalLines,
+      totalDebit: effectiveTotalDebit,
+      totalKredit: effectiveTotalKredit,
+      incomeStatement: {
+        ...fin.incomeStatement,
+        revenueDpp: finalRev,
+        cogsTotal: finalCogs,
+        grossProfit,
+        grossMarginPct,
+        opexTotal: finalOpex,
+        netProfit,
+        netMarginPct,
+      },
+      balanceSheet: {
+        ...fin.balanceSheet,
+        totalPasiva,
+        assets: {
+          ...fin.balanceSheet.assets,
+          items: serverBalanceSheet?.assets?.items || [],
+          totalAsetLancar: assetsTotal,
+          kasDanBank: sumAccounts(serverBalanceSheet?.assets?.items, ["1000", "1101"]),
+          piutangUsaha: sumAccounts(serverBalanceSheet?.assets?.items, ["1100", "1102", "110302", "110303"]),
+          persediaanBarang: sumAccounts(serverBalanceSheet?.assets?.items, ["1200", "1103"]),
+          ppnMasukan: sumAccounts(serverBalanceSheet?.assets?.items, ["1600", "1104"]),
+          uangMukaPph: sumAccounts(serverBalanceSheet?.assets?.items, ["1105", "1106"]),
+        },
+        liabilities: {
+          ...fin.balanceSheet.liabilities,
+          items: serverBalanceSheet?.liabilities?.items || [],
+          totalKewajiban: liabTotal,
+          hutangSupplier: sumAccounts(serverBalanceSheet?.liabilities?.items, ["2101", "210102"]),
+          hutangPpnKeluaran: sumAccounts(serverBalanceSheet?.liabilities?.items, ["2100", "2102"]),
+          hutangReimbursement: sumAccounts(serverBalanceSheet?.liabilities?.items, ["2103"]),
+        },
+        equity: {
+          ...fin.balanceSheet.equity,
+          items: serverBalanceSheet?.equity?.items || [],
+          modalKerjaAwal: sumAccounts(serverBalanceSheet?.equity?.items, ["3101", "310001", "3000"]),
+          labaBerjalan: sumAccounts(serverBalanceSheet?.equity?.items, ["3102-AUTO", "3102"]),
+          totalEkuitas: eqTotal,
+        },
+      },
+    };
+  }, [
+    fin,
+    effectiveCoaBalances,
+    effectiveJournalLines,
+    effectiveTotalDebit,
+    effectiveTotalKredit,
+    serverIncomeStatement,
+    serverBalanceSheet,
+  ]);
 
   if (!canAccess) {
     return (
@@ -426,7 +830,8 @@ export default function AccountingScreen() {
         <PageHeader
           title="Akuntansi & Pembukuan"
           subtitle="Sistem Pembukuan Berpasangan (Double-Entry General Journal, COA Standar, dan Buku Besar)"
-          showRefresh={false}
+          showRefresh={true}
+          onRefresh={refreshAccountingData}
           action={
             <Button size="sm" onPress={() => setManualModalOpen(true)} className="gap-1.5 h-9 px-3">
               <Plus size={14} color="#FFFFFF" />
@@ -441,10 +846,13 @@ export default function AccountingScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="w-full">
           <View className="bg-panel border-border/80 flex-row items-center rounded-2xl border p-1.5 gap-1.5">
             {[
-              { id: "journal", label: "Jurnal Umum", icon: BookOpen, count: fin.journalLines.length },
-              { id: "coa", label: "Bagan Akun (COA)", icon: Scale, count: fin.coaBalances.length },
+              { id: "journal", label: "Jurnal Umum", icon: BookOpen, count: effectiveJournalLines.length },
+              { id: "coa", label: "Bagan Akun (COA)", icon: Scale, count: effectiveCoaBalances.length },
               { id: "ledger", label: "Buku Besar", icon: FileText, count: ledgerLines.length },
               { id: "summary", label: "Ringkasan Saldo", icon: TrendingUp, count: null },
+              { id: "tax", label: "Pajak & PPN", icon: Scale, count: null },
+              { id: "period", label: "Tutup Buku", icon: BookOpen, count: null },
+              { id: "return", label: "Retur Barang", icon: BookOpen, count: null },
             ].map((t) => {
               const active = activeTab === t.id;
               const IconComp = t.icon;
@@ -488,7 +896,12 @@ export default function AccountingScreen() {
         {/* TAB 1: JURNAL UMUM */}
         {activeTab === "journal" && (
           <JournalTab
-            fin={fin}
+            fin={{
+              ...fin,
+              totalDebit: effectiveTotalDebit,
+              totalKredit: effectiveTotalKredit,
+            }}
+            onRefresh={refreshAccountingData}
             handleExportJournalCsv={handleExportJournalCsv}
             journalQuery={journalQuery}
             setJournalQuery={setJournalQuery}
@@ -519,6 +932,7 @@ export default function AccountingScreen() {
         {activeTab === "coa" && (
           <CoaTab
             onOpenCreateCoa={() => setCoaModalOpen(true)}
+            onRefresh={refreshAccountingData}
             coaQuery={coaQuery}
             setCoaQuery={setCoaQuery}
             setCoaPage={setCoaPage}
@@ -555,7 +969,7 @@ export default function AccountingScreen() {
             setSelectedLedgerCode={setSelectedLedgerCode}
             ledgerDate={ledgerDate}
             setLedgerDate={setLedgerDate}
-            fin={fin}
+            fin={finForSummary}
             ledgerLines={ledgerLines}
           />
         )}
@@ -563,10 +977,19 @@ export default function AccountingScreen() {
         {/* TAB 4: IKHTISAR KEUANGAN & NERACA */}
         {activeTab === "summary" && (
           <SummaryTab
-            fin={fin}
+            fin={finForSummary}
             onNavigateToReports={(tab) => router.push(`/reports?tab=${tab}` as any)}
           />
         )}
+
+        {/* TAB 5: PAJAK & PPN */}
+        {activeTab === "tax" && <TaxTab onRefreshParent={refreshAccountingData} />}
+
+        {/* TAB 6: TUTUP BUKU */}
+        {activeTab === "period" && <PeriodTab onRefreshParent={refreshAccountingData} />}
+
+        {/* TAB 7: RETUR BARANG */}
+        {activeTab === "return" && <ReturnTab onRefreshParent={refreshAccountingData} />}
       </View>
 
       {/* MODAL: INPUT JURNAL MANUAL */}
@@ -599,7 +1022,7 @@ export default function AccountingScreen() {
         setNewAccNormalBalance={setNewAccNormalBalance}
         newAccParentCode={newAccParentCode}
         setNewAccParentCode={setNewAccParentCode}
-        parentOptions={fin.coaBalances.map((row) => ({
+        parentOptions={effectiveCoaBalances.map((row) => ({
           code: row.code,
           name: row.name,
           category: row.category,

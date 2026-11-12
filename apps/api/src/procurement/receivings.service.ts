@@ -5,6 +5,9 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { DocumentNumberService } from "../document-number/document-number.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { StockService } from "../stock/stock.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
@@ -29,6 +32,8 @@ export class ReceivingsService {
     private readonly docnum: DocumentNumberService,
     private readonly approvals: ApprovalsService,
     private readonly stock: StockService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {
     this.approvals.onChange("PENERIMAAN", (entityId, status) => this.onApproval(entityId, status));
   }
@@ -834,11 +839,64 @@ export class ReceivingsService {
         const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
         const poPrice = Number(poItem?.price ?? 0);
         if (poPrice > 0) {
-          await this.prisma.main.product.update({
+          // Hitung rata-rata tertimbang Product.avgCost
+          const prod = await this.prisma.main.product.findUnique({
             where: { id: item.productId },
-            data: { purchasePrice: poPrice },
-          }).catch(() => {});
+          });
+          const stockBalances = await this.prisma.main.stockBalance.findMany({
+            where: { productId: item.productId },
+          });
+          if (prod) {
+            const currentTotalQty = stockBalances.reduce((s: number, b: any) => s + Number(b.qty || 0), 0) - item.qtyReceived;
+            const validOldQty = Math.max(0, currentTotalQty);
+            const oldAvg = Number(prod.avgCost || prod.purchasePrice || 0);
+            const totalQty = validOldQty + item.qtyReceived;
+            const newAvg = totalQty > 0 ? (validOldQty * oldAvg + item.qtyReceived * poPrice) / totalQty : poPrice;
+            await this.prisma.main.product.update({
+              where: { id: item.productId },
+              data: {
+                purchasePrice: poPrice,
+                avgCost: newAvg,
+              },
+            }).catch(() => {});
+          }
         }
+      }
+
+      // Posting Akuntansi E4: Penerimaan Barang PO -> Dr 1200 Cr 2108 (GRNI)
+      try {
+        let totalVal = 0;
+        for (const item of receiving.items) {
+          const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
+          const pPrice = Number(poItem?.price ?? 0);
+          totalVal += item.qtyReceived * pPrice;
+        }
+        if (totalVal > 0) {
+          const mappings = await this.mappingService.getAll();
+          const rLines = PostingRules.buildReceivingLines(
+            {
+              number: receiving.number,
+              supplierId: receiving.supplierPo?.supplierId || 0,
+              totalValue: totalVal,
+              projectId: receiving.projectId,
+            },
+            mappings,
+          );
+          await this.postingService.post({
+            sourceType: "Receiving",
+            sourceId: receiving.id,
+            event: "received",
+            source: "RECEIVING",
+            date: receiving.date,
+            memo: `Penerimaan Barang BPB ${receiving.number}`,
+            refNo: receiving.number,
+            projectId: receiving.projectId,
+            createdById: receiving.receiverId,
+            lines: rLines,
+          });
+        }
+      } catch (err) {
+        console.error("Posting receiving error:", err);
       }
 
       const partial = receiving.items.some((i) => i.qtyReceived < i.qtyOrdered);
