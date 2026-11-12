@@ -588,16 +588,25 @@ export class PostingService {
     let syncedInvoices = 0;
     let syncedDeliveries = 0;
 
-    // 1. Sync Invoices (SENT, PAID, PARTIAL) yang belum memiliki JournalEntry
+    // 1. Sync Invoices (SENT, PAID, PARTIAL, OVERDUE / yang ada pembayaran) yang belum memiliki JournalEntry
     const eligibleInvoices = await (this.prisma.main as any).invoiceOut.findMany({
       where: {
-        status: { in: ["SENT", "PAID", "PARTIAL", "LUNAS"] },
-        date: { gte: CUTOFF_DATE },
+        OR: [
+          { status: { in: ["SENT", "PAID", "PARTIAL", "LUNAS", "OVERDUE"] } },
+          { paidAmount: { gt: 0 } },
+          { payments: { some: {} } },
+        ],
+        NOT: { status: "BATAL" },
       },
-      include: { customer: true },
+      include: { customer: true, payments: true },
     });
 
     for (const inv of eligibleInvoices) {
+      const effectiveDate = inv.date
+        ? new Date(inv.date)
+        : (inv.payments?.[0]?.date ? new Date(inv.payments[0].date) : (inv.createdAt ? new Date(inv.createdAt) : new Date()));
+      const validDate = isNaN(effectiveDate.getTime()) || effectiveDate < CUTOFF_DATE ? new Date() : effectiveDate;
+
       const existing = await (this.prisma.main as any).journalEntry.findFirst({
         where: {
           sourceType: "InvoiceOut",
@@ -620,14 +629,15 @@ export class PostingService {
             });
           }
 
+          const targetDpp = Number(inv.amount || (Number(inv.total) - Number(inv.ppn || 0)));
           const lines = (inv.type === "DP")
             ? PostingRules.buildCustomerDpLines(
                 {
                   number: inv.number,
                   customerId: inv.customerId || 0,
                   projectId: inv.projectId,
-                  dpp: Number(inv.amount),
-                  ppn: Number(inv.ppn),
+                  dpp: targetDpp,
+                  ppn: Number(inv.ppn || 0),
                   total: Number(inv.total),
                 },
                 mappings,
@@ -639,8 +649,8 @@ export class PostingService {
                   type: inv.type,
                   customerId: inv.customerId || 0,
                   projectId: inv.projectId,
-                  dpp: Number(inv.amount),
-                  ppn: Number(inv.ppn),
+                  dpp: targetDpp,
+                  ppn: Number(inv.ppn || 0),
                   total: Number(inv.total),
                   dpApplied: Number(inv.dpApplied || 0),
                   retentionPercent: Number(inv.retentionPercent || 0),
@@ -658,7 +668,7 @@ export class PostingService {
             sourceId: inv.id,
             event: "issued",
             source: "INVOICE_OUT",
-            date: inv.date,
+            date: validDate,
             memo: `Penerbitan Invoice Penjualan ${inv.number}`,
             refNo: inv.number,
             projectId: inv.projectId,
@@ -668,6 +678,53 @@ export class PostingService {
           syncedInvoices++;
         } catch (err) {
           console.error(`Gagal sync jurnal invoice #${inv.id}:`, err);
+        }
+      }
+
+      // Sync pembayaran faktur yang belum tercatat jurnalnya
+      if (Array.isArray(inv.payments)) {
+        for (const p of inv.payments) {
+          const existingPayJournal = await (this.prisma.main as any).journalEntry.findFirst({
+            where: {
+              sourceType: "Payment",
+              sourceId: p.id,
+              status: "POSTED",
+            },
+          });
+          if (!existingPayJournal && Number(p.amount) > 0) {
+            try {
+              const mappings = await this.mappingService.getAll();
+              const pLines = PostingRules.buildCustomerPaymentLines(
+                {
+                  id: p.id,
+                  sourceType: "INVOICE_OUT",
+                  sourceId: inv.id,
+                  amount: Number(p.amount),
+                  accountCode: p.accountCode || mappings.CASH_DEFAULT || "1000.02",
+                  pph23Amount: 0,
+                  partyType: "CUSTOMER",
+                  partyId: inv.customerId || 0,
+                  projectId: inv.projectId,
+                },
+                mappings,
+              );
+              const pDate = p.date ? new Date(p.date) : validDate;
+              await this.post({
+                sourceType: "Payment",
+                sourceId: p.id,
+                event: "received",
+                source: "INVOICE_OUT_PAYMENT",
+                date: isNaN(pDate.getTime()) || pDate < CUTOFF_DATE ? new Date() : pDate,
+                memo: `Penerimaan Pembayaran Inv ${inv.number}`,
+                refNo: `${inv.number}/PAY`,
+                projectId: inv.projectId,
+                createdById: userId,
+                lines: pLines,
+              });
+            } catch (pErr) {
+              console.error(`Gagal sync jurnal payment #${p.id}:`, pErr);
+            }
+          }
         }
       }
     }
