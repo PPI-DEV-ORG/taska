@@ -744,9 +744,17 @@ export class RequestsService {
               ],
             });
           } else {
-            // B. Pembelian Toko Online / Ritel / Masuk Gudang: Dr 2108 (GRNI) Cr Kas/Bank
-            // Karena saat penerimaan barang (BPB), dicatat: Dr 1200 (Persediaan) Cr 2108 (GRNI),
-            // maka jurnal pembayaran mendebit 2108 (GRNI) dan mengkredit Kas/Bank sehingga saldo kliring pas nol.
+            // B. Pembelian Toko Online / Ritel / Masuk Gudang: Dr 2108 (GRNI) & Dr 1600 (PPN Masukan jika ada) Cr Kas/Bank
+            // Karena saat penerimaan barang (BPB), dicatat: Dr 1200 (Persediaan) Cr 2108 (GRNI) sebesar harga barang (DPP),
+            // maka jurnal pembayaran mendebit 2108 (GRNI) sebesar DPP dan PPN Masukan jika ada selisih PPN, sehingga saldo kliring pas nol.
+            const itemsDpp = (row.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0);
+            let grniAmount = estimatedCost;
+            let vatAmount = 0;
+            if (itemsDpp > 0 && estimatedCost > itemsDpp) {
+              grniAmount = itemsDpp;
+              vatAmount = Math.max(0, Math.round(estimatedCost - itemsDpp));
+            }
+
             await this.postingService.post({
               sourceType: "PurchaseRequest",
               sourceId: row.id,
@@ -758,7 +766,8 @@ export class RequestsService {
               projectId: row.projectId,
               createdById: user.id,
               lines: [
-                { accountCode: mappings.GRNI || "2108", debit: estimatedCost, credit: 0, memo: `Kliring GRNI Pembelian #${row.number}`, projectId: row.projectId },
+                { accountCode: mappings.GRNI || "2108", debit: grniAmount, credit: 0, memo: `Kliring GRNI Pembelian #${row.number}`, projectId: row.projectId },
+                ...(vatAmount > 0 ? [{ accountCode: mappings.VAT_IN || "1600", debit: vatAmount, credit: 0, memo: `PPN Masukan Pembelian #${row.number}`, projectId: row.projectId }] : []),
                 { accountCode: payAccount, debit: 0, credit: estimatedCost, memo: `Kas Keluar Pembelian #${row.number}`, projectId: row.projectId },
               ],
             });

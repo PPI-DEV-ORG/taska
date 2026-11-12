@@ -1054,6 +1054,7 @@ export class PostingService {
       include: {
         items: { include: { product: true } },
         supplierPo: { include: { items: true } },
+        request: { include: { items: true } },
       },
     });
 
@@ -1071,7 +1072,8 @@ export class PostingService {
           let totalVal = 0;
           for (const item of (rec.items || [])) {
             const poItem = rec.supplierPo?.items?.find((p: any) => p.productId === item.productId);
-            let pPrice = Number(poItem?.price ?? item.product?.purchasePrice ?? item.product?.avgCost ?? 0);
+            const reqItem = rec.request?.items?.find((ri: any) => ri.productId === item.productId);
+            let pPrice = Number(poItem?.price ?? reqItem?.unitCost ?? item.product?.purchasePrice ?? item.product?.avgCost ?? 0);
             if (pPrice <= 0 && item.productId) {
               const lastPo = await (this.prisma.main as any).supplierPOItem.findFirst({
                 where: { productId: item.productId, price: { gt: 0 } },
@@ -1231,13 +1233,22 @@ export class PostingService {
                 (pr.items.length > 0 &&
                   pr.items.every((it: any) => String(it.customName || "").includes("[PAKAI_HABIS]"))));
 
+            const itemsDpp = (pr.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0);
+            let grniAmount = costTotal;
+            let vatAmount = 0;
+            if (itemsDpp > 0 && costTotal > itemsDpp) {
+              grniAmount = itemsDpp;
+              vatAmount = Math.max(0, Math.round(costTotal - itemsDpp));
+            }
+
             const lines = (pr.projectId && isProjectConsumable)
               ? [
                   { accountCode: mappings.COGS_PROJECT || "5101", debit: costTotal, credit: 0, memo: `HPP Material Proyek #${pr.number}`, projectId: pr.projectId },
                   { accountCode: payAccount, debit: 0, credit: costTotal, memo: `Kas Keluar #${pr.number}`, projectId: pr.projectId },
                 ]
               : [
-                  { accountCode: mappings.GRNI || "2108", debit: costTotal, credit: 0, memo: `Kliring GRNI Pembelian #${pr.number}`, projectId: pr.projectId },
+                  { accountCode: mappings.GRNI || "2108", debit: grniAmount, credit: 0, memo: `Kliring GRNI Pembelian #${pr.number}`, projectId: pr.projectId },
+                  ...(vatAmount > 0 ? [{ accountCode: mappings.VAT_IN || "1600", debit: vatAmount, credit: 0, memo: `PPN Masukan Pembelian #${pr.number}`, projectId: pr.projectId }] : []),
                   { accountCode: payAccount, debit: 0, credit: costTotal, memo: `Kas Keluar Pembelian #${pr.number}`, projectId: pr.projectId },
                 ];
 
