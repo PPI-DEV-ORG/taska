@@ -110,20 +110,21 @@ export class PostingRules {
     prodRev = round(prodRev);
     srvRev = round(srvRev);
 
-    // Keseimbangan Kredit Pendapatan terhadap DPP
-    const targetDpp = round(Number(inv.dpp));
-    if (prodRev + srvRev !== targetDpp) {
+    const ppn = round(Number(inv.ppn || 0));
+    // Keseimbangan Kredit Pendapatan: Pendapatan + PPN selalu seimbang dengan Total Invoice (Debit)
+    const targetRevenue = Math.max(0, round(Number(inv.total) - ppn));
+    if (prodRev + srvRev !== targetRevenue) {
       if (srvRev > 0 && prodRev === 0) {
-        srvRev = targetDpp;
+        srvRev = targetRevenue;
       } else if (prodRev > 0 && srvRev === 0) {
-        prodRev = targetDpp;
+        prodRev = targetRevenue;
       } else if (prodRev + srvRev > 0) {
-        const ratio = targetDpp / (prodRev + srvRev);
+        const ratio = targetRevenue / (prodRev + srvRev);
         prodRev = round(prodRev * ratio);
-        srvRev = targetDpp - prodRev;
+        srvRev = round(targetRevenue - prodRev);
       } else {
-        if (inv.type === "SERVICE") srvRev = targetDpp;
-        else prodRev = targetDpp;
+        if (inv.type === "SERVICE") srvRev = targetRevenue;
+        else prodRev = targetRevenue;
       }
     }
 
@@ -147,7 +148,6 @@ export class PostingRules {
       });
     }
 
-    const ppn = round(Number(inv.ppn || 0));
     if (ppn > 0) {
       lines.push({
         accountCode: map.VAT_OUT || "2100",
@@ -171,8 +171,8 @@ export class PostingRules {
     map: Record<string, string>,
   ): JournalLineSpec[] {
     const tot = round(Number(inv.total));
-    const dpp = round(Number(inv.dpp));
     const ppn = round(Number(inv.ppn || 0));
+    const dpp = Math.max(0, round(tot - ppn));
     const lines: JournalLineSpec[] = [
       {
         accountCode: map.AR || "110302",

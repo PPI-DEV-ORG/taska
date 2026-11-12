@@ -1439,6 +1439,9 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       include: { customer: true, payments: { orderBy: { date: "desc" } } },
     });
 
+    // Pastikan jurnal penerbitan invoice sudah tercatat
+    await this.postInvoiceJournalIfEligible(id, user.id);
+
     await this.audit.log({
       actor: user,
       action: "BAYAR_INVOICE_KELUAR",
@@ -2312,7 +2315,9 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         where: { id: invoiceId },
         include: { customer: true },
       });
-      if (!inv || inv.status === "BATAL" || inv.status === "DRAFT") return;
+      if (!inv || inv.status === "BATAL") return;
+      const hasPayment = Number(inv.paidAmount) > 0;
+      if (inv.status === "DRAFT" && !hasPayment) return;
 
       const meta = (await this.getMeta(inv.id)) || {};
       const rawItems = Array.isArray(meta.items) && meta.items.length > 0
@@ -2322,14 +2327,15 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         : [];
       const mappings = await this.mappingService.getAll();
 
+      const targetDpp = Number(inv.amount || (Number(inv.total) - Number(inv.ppn || 0)));
       const lines = (inv.type === "DP")
         ? PostingRules.buildCustomerDpLines(
             {
               number: inv.number,
               customerId: inv.customerId || 0,
               projectId: inv.projectId,
-              dpp: Number(inv.amount),
-              ppn: Number(inv.ppn),
+              dpp: targetDpp,
+              ppn: Number(inv.ppn || 0),
               total: Number(inv.total),
             },
             mappings,
@@ -2341,8 +2347,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
               type: inv.type,
               customerId: inv.customerId || 0,
               projectId: inv.projectId,
-              dpp: Number(inv.amount),
-              ppn: Number(inv.ppn),
+              dpp: targetDpp,
+              ppn: Number(inv.ppn || 0),
               total: Number(inv.total),
               dpApplied: Number(meta.dpApplied || 0),
               retentionPercent: Number(meta.retentionPercent || 0),
@@ -2355,12 +2361,17 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
             mappings,
           );
 
+      const effectiveDate = inv.date
+        ? new Date(inv.date)
+        : (inv.createdAt ? new Date(inv.createdAt) : new Date());
+      const validDate = isNaN(effectiveDate.getTime()) ? new Date() : effectiveDate;
+
       await this.postingService.post({
         sourceType: "InvoiceOut",
         sourceId: inv.id,
         event: "issued",
         source: "INVOICE_OUT",
-        date: inv.date,
+        date: validDate,
         memo: `Penerbitan Invoice Penjualan ${inv.number}`,
         refNo: inv.number,
         projectId: inv.projectId,
