@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { can } from "../rbac/permissions.js";
 
 /**
  * Aturan alur pembelian (single source of truth).
@@ -142,7 +143,9 @@ export function assertPrTransition(
         requireRole(user.role, WAREHOUSE_ROLES, "Hanya Gudang yang dapat menyerahkan barang stok");
         return;
       }
-      requireRole(user.role, PROCUREMENT_ROLES, "Hanya Procurement yang dapat menandai barang dikirim");
+      if (!can(user.role, "procurement", "U") && !can(user.role, "requests", "U") && !can(user.role, "shipments", "U")) {
+        throw forbid("Anda tidak memiliki hak akses (RBAC) untuk menandai barang dikirim");
+      }
       if (isSupplierSource(pr.procurementSource)) {
         if (ctx.activePoCount === 0) throw invalid("Buat PO supplier dulu sebelum menandai barang dikirim");
         if (!ctx.hasApprovedPo) throw invalid("PO supplier belum disetujui");
@@ -216,7 +219,9 @@ export function assertPoShipmentTransition(
   user: { role: string },
   linkedPr?: PrFlowRow | null,
 ) {
-  requireRole(user.role, PROCUREMENT_ROLES, "Hanya Procurement yang dapat mengubah status pengiriman");
+  if (!can(user.role, "procurement", "U") && !can(user.role, "shipments", "U")) {
+    throw forbid("Anda tidak memiliki hak akses (RBAC) untuk mengubah status pengiriman");
+  }
   if (target === "SAMPAI") {
     throw invalid("Barang tiba dikonfirmasi Gudang lewat menu Penerimaan Barang");
   }
