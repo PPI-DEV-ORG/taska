@@ -8,9 +8,8 @@ import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { PoDto, PoListQuery, ShipmentDto } from "./dto.js";
+import { can } from "../rbac/permissions.js";
 import {
-  FINANCE_ROLES,
-  PROCUREMENT_ROLES,
   assertPoCanBeCreatedFromPr,
   assertPoShipmentTransition,
 } from "./purchase-flow.js";
@@ -297,8 +296,8 @@ export class PosService {
   }
 
   async create(dto: PoDto, user: RequestUser) {
-    if (!PROCUREMENT_ROLES.includes(user.role) && user.role !== "BOS") {
-      throw new ForbiddenException("Hanya Procurement yang dapat membuat PO supplier");
+    if (!can(user.role, "procurement", "C")) {
+      throw new ForbiddenException("Anda tidak memiliki hak akses (RBAC) untuk membuat PO supplier");
     }
     let parentPr: { id: number; status: string; procurementSource: string | null } | null = null;
     if (dto.requestId) {
@@ -516,8 +515,8 @@ export class PosService {
   async update(id: number, dto: PoDto, user: RequestUser) {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
-    if (!PROCUREMENT_ROLES.includes(user.role) && user.role !== "BOS") {
-      throw new ForbiddenException("Hanya Procurement yang dapat mengubah PO supplier");
+    if (!can(user.role, "procurement", "U")) {
+      throw new ForbiddenException("Anda tidak memiliki hak akses (RBAC) untuk mengubah PO supplier");
     }
     // Status & pengiriman hanya lewat endpoint khusus (/status, /shipment) agar urutan alur divalidasi.
     const wantsShipment = dto.shipmentStatus && dto.shipmentStatus !== row.shipmentStatus;
@@ -658,9 +657,9 @@ export class PosService {
       throw new BadRequestException(`Status PO "${status}" tidak dapat diubah manual`);
     }
 
-    // Pembayaran PO: hanya Finance, hanya setelah PO disetujui. Tidak mengubah status pengiriman/penerimaan.
-    if (!FINANCE_ROLES.includes(user.role)) {
-      throw new ForbiddenException("Hanya Finance yang dapat mencatat pembayaran PO");
+    // Pembayaran PO: dicek lewat izin RBAC financeOut atau procurement
+    if (!can(user.role, "financeOut", "U") && !can(user.role, "procurement", "U")) {
+      throw new ForbiddenException("Anda tidak memiliki hak akses (RBAC) untuk mencatat pembayaran PO");
     }
     if (row.status !== "DISETUJUI") {
       throw new BadRequestException("PO belum disetujui, pembayaran belum bisa dicatat");
@@ -817,8 +816,8 @@ export class PosService {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
     if (row.status === "DIBATALKAN") return row;
-    if (![...PROCUREMENT_ROLES, ...FINANCE_ROLES].includes(user.role)) {
-      throw new ForbiddenException("Hanya Procurement atau Finance yang dapat membatalkan PO");
+    if (!can(user.role, "procurement", "U") && !can(user.role, "procurement", "A")) {
+      throw new ForbiddenException("Anda tidak memiliki hak akses (RBAC) untuk membatalkan PO supplier");
     }
     if (row.shipmentStatus !== "DI_SUPPLIER") {
       throw new BadRequestException("PO yang sudah dikirim / diterima tidak bisa dibatalkan");

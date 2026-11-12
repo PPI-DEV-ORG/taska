@@ -66,45 +66,44 @@ export function CoaTab({
         }
       >
         <View className="gap-3">
-          <View className="flex-row flex-wrap items-center justify-between gap-2">
-            <View className="flex-row items-center gap-2 flex-1 min-w-[240px]">
-              <Search size={15} color={colors.textSecondary} />
-              <Input
-                value={coaQuery}
-                onChangeText={(t) => {
-                  setCoaQuery(t);
+          <View className="flex-row items-center gap-2 w-full bg-card border border-border/80 rounded-xl px-3 h-10 shadow-sm">
+            <Search size={15} color={colors.textSecondary} />
+            <Input
+              value={coaQuery}
+              onChangeText={(t) => {
+                setCoaQuery(t);
+                setCoaPage(1);
+              }}
+              placeholder="Cari kode akun atau nama akun..."
+              className="flex-1 h-8 text-xs border-0 bg-transparent px-0 shadow-none"
+            />
+          </View>
+
+          <View className="flex-row flex-wrap items-center gap-1.5 py-1 w-full" style={{ width: "100%", flexWrap: "wrap" }}>
+            {["Semua", ...COA_CATEGORIES].map((cat) => (
+              <Pressable
+                key={cat}
+                onPress={() => {
+                  setCoaCategoryFilter(cat);
                   setCoaPage(1);
                 }}
-                placeholder="Cari kode akun atau nama akun..."
-                className="flex-1 h-9 text-xs"
-              />
-            </View>
-            <View className="flex-row flex-wrap gap-1.5">
-              {["Semua", ...COA_CATEGORIES].map((cat) => (
-                <Pressable
-                  key={cat}
-                  onPress={() => {
-                    setCoaCategoryFilter(cat);
-                    setCoaPage(1);
-                  }}
+                className={
+                  coaCategoryFilter === cat
+                    ? "bg-primary/20 border-primary rounded-md border px-2.5 py-1"
+                    : "bg-panel border-border rounded-md border px-2.5 py-1"
+                }
+              >
+                <Text
                   className={
                     coaCategoryFilter === cat
-                      ? "bg-primary/20 border-primary rounded-md border px-2.5 py-1"
-                      : "bg-panel border-border rounded-md border px-2.5 py-1"
+                      ? "text-primary text-xs font-semibold"
+                      : "text-muted-foreground text-xs"
                   }
                 >
-                  <Text
-                    className={
-                      coaCategoryFilter === cat
-                        ? "text-primary text-xs font-semibold"
-                        : "text-muted-foreground text-xs"
-                    }
-                  >
-                    {cat}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+                  {cat}
+                </Text>
+              </Pressable>
+            ))}
           </View>
 
           <ScrollView
