@@ -277,7 +277,7 @@ export class AccountingReportService {
         amount = round(net);
       }
 
-      if (amount === 0 && !acc.isPostable) continue;
+      if (amount === 0) continue;
 
       const item = { code: acc.code, name: acc.name, amount };
 
@@ -395,7 +395,7 @@ export class AccountingReportService {
         amount = round(-net);
       }
 
-      if (amount === 0 && !acc.isPostable) continue;
+      if (amount === 0) continue;
 
       const item = { code: acc.code, name: acc.name, category: acc.category, amount };
 
