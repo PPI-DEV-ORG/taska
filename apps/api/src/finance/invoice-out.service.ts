@@ -1304,6 +1304,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
               entityId: sib.id,
               detail: `${sib.number}: otomatis LUNAS karena invoice ${invoice.number} telah lunas`,
             });
+            this.notifications.dataChange("invoices", "status", sib.id);
           }
         }
       }
@@ -1507,6 +1508,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     if (status === "PAID") {
       await this.syncRelatedInvoicesOnPaid(updated, user);
     }
+    this.notifications.dataChange("invoices", "status", id);
     return this.sync(updated);
   }
 
@@ -1528,6 +1530,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       detail: `${row.number} dihapus`,
     });
     await this.syncProjectPayment(row.projectId);
+    this.notifications.dataChange("invoices", "delete", id);
     return { id, deleted: true };
   }
 

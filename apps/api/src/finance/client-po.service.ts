@@ -7,6 +7,7 @@ import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { StockService } from "../stock/stock.service.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import { ClientPoDirectSettlementDto, ClientPoDto } from "./dto.js";
 
 type ClientPoMeta = {
@@ -37,6 +38,7 @@ export class ClientPoService {
     private readonly audit: AuditService,
     private readonly docnum: DocumentNumberService,
     private readonly stock: StockService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private defaultSoNumber(id: number, date?: Date | null): string {
@@ -431,6 +433,7 @@ export class ClientPoService {
       entityId: row.id,
       detail: `SO: ${soNumber} | PO: ${poClientNumber} Rp${amount} — ${party}`,
     });
+    this.notifications.dataChange("po-client", "create", row.id);
     return this.get(row.id);
   }
 
@@ -513,6 +516,7 @@ export class ClientPoService {
       entityId: id,
       detail: `${updated.number} Rp${updated.amount}`,
     });
+    this.notifications.dataChange("po-client", "update", id);
     return this.get(id);
   }
 
@@ -526,6 +530,7 @@ export class ClientPoService {
       entityId: id,
       detail: `${row.number} dihapus`,
     });
+    this.notifications.dataChange("po-client", "delete", id);
     return { id, deleted: true };
   }
 
@@ -560,7 +565,7 @@ export class ClientPoService {
       })
       .filter((x: any) => x.productId > 0);
 
-    await this.prisma.main.deliveryNote.create({
+    const deliveryNote = await this.prisma.main.deliveryNote.create({
       data: {
         number: dnNumber,
         creatorId: user.id,
@@ -588,7 +593,7 @@ export class ClientPoService {
             }
           : undefined,
       },
-    }).catch(() => {});
+    }).catch(() => null);
 
     // 2. Sinkronkan Invoice Lunas Otomatis (Hanya untuk Penjualan Langsung / Nota Kontan yang belum memiliki invoice)
     const hasExistingInvoices =
@@ -598,6 +603,7 @@ export class ClientPoService {
           where: { quotationId: row.quotationId, status: { not: "BATAL" } },
         })) > 0);
 
+    let createdInvoiceId: number | null = null;
     if (!hasExistingInvoices && !row.projectId) {
       const cust = row.customerId
         ? await this.prisma.main.customer.findUnique({ where: { id: row.customerId } })
@@ -635,6 +641,7 @@ export class ClientPoService {
           ...(items.length > 0 ? { items } : {}),
         },
       });
+      createdInvoiceId = inv.id;
 
       // Catat payment record pada invoice agar bukti bayar dan riwayat terdata lengkap
       if (effectiveTotal > 0) {
@@ -678,6 +685,10 @@ export class ClientPoService {
       entityId: row.id,
       detail: `${row.number} diselesaikan via Nota Kontan Langsung (Akun: ${dto.coaAccount}) Rp${row.amount}`,
     });
+
+    this.notifications.dataChange("po-client", "update", row.id);
+    if (deliveryNote) this.notifications.dataChange("delivery-notes", "create", deliveryNote.id);
+    if (createdInvoiceId) this.notifications.dataChange("invoices", "create", createdInvoiceId);
 
     return this.get(row.id);
   }

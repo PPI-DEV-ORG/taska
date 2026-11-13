@@ -160,6 +160,7 @@ export class ApprovalsService {
       await this.prisma.main.approval.update({ where: { id: approval.id }, data: { status: evaluated } });
       await this.fire(input.kind, input.entityId, evaluated);
     }
+    this.notifications.dataChange("approvals", "update", approval.id);
     return approval;
   }
 

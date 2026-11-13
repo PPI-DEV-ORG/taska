@@ -373,6 +373,7 @@ export class InvoiceInService {
         where: { approvalId: approval.id },
         data: { status: "DISETUJUI", decidedById: user.id, decidedAt: new Date() },
       }).catch(() => {});
+      this.notifications.dataChange("approvals", "update", approval.id);
     }
 
     if (isPaid) {
@@ -416,6 +417,7 @@ export class InvoiceInService {
       entityId: row.id,
       detail: `total Rp${dto.total} — ${supplier.name}${isPaid ? " (Langsung Lunas)" : ""}`,
     });
+    this.notifications.dataChange("invoiceIn", "create", row.id);
     return { ...(await this.sync(row)), ...meta };
   }
 
@@ -492,6 +494,7 @@ export class InvoiceInService {
       detail: updated.number ?? `invoice #${id}`,
     });
     await this.postInvoiceInJournalIfEligible(id, user.id);
+    this.notifications.dataChange("invoiceIn", "update", id);
     return this.get(id);
   }
 
@@ -514,6 +517,8 @@ export class InvoiceInService {
       entityId: id,
       detail: row.number ?? `invoice #${id}`,
     });
+    this.notifications.dataChange("invoiceIn", "delete", id);
+    this.notifications.dataChange("approvals", "delete", id);
     return { deleted: true, id };
   }
 
@@ -623,6 +628,7 @@ export class InvoiceInService {
       entityId: id,
       detail: `Rp${dto.amount} — ${row.supplierId ? `supplier #${row.supplierId}` : ""}`,
     });
+    this.notifications.dataChange("invoiceIn", "update", id);
     return this.sync(updated);
   }
 
@@ -645,6 +651,7 @@ export class InvoiceInService {
       entityId: id,
       detail: `${row.status} → ${status}`,
     });
+    this.notifications.dataChange("invoiceIn", "status", id);
     return this.sync(updated);
   }
 
