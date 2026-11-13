@@ -1120,7 +1120,7 @@ export function adaptRow(module: string, raw: any): Row {
         items: raw.items ?? [],
         receiptFileId: raw.receiptFileId ?? null,
         photoFileId: raw.photoFileId ?? null,
-        fileId: raw.photoFileId ?? raw.receiptFileId ?? (raw.fileId ?? null),
+        fileId: raw.receiptFileId ?? (raw.photoFileId ? null : (raw.fileId ?? null)),
       };
     }
     case "delivery-notes": {
@@ -2229,7 +2229,9 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         date: row.tanggal || row.date || today,
         conditionNote: row.conditionNote || row.catatan || undefined,
         status: row.status ? toEnum("receiving", row.status) : undefined,
-        receiptFileId: row.receiptFileId ?? (row.fileId ? Number(row.fileId) : undefined),
+        receiptFileId:
+          row.receiptFileId ??
+          (row.photoFileId ? undefined : (row.fileId ? Number(row.fileId) : undefined)),
         photoFileId: row.photoFileId ? Number(row.photoFileId) : undefined,
         items:
           Array.isArray(row.items) && row.items.length

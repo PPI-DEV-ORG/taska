@@ -38,7 +38,7 @@ type SourceType = "DRAFT" | "REQUEST" | "PO" | "DIRECT";
 export default function NewReceivingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ receivingId?: string; requestId?: string; poId?: string }>();
-  const { data, user, addRow, patchRow, setStatus, toast } = useApp();
+  const { data, user, addRow, patchRow, toast } = useApp();
 
   const pos = data["supplier-pos"] || [];
   const warehouses = data.warehouses || [];
@@ -244,7 +244,8 @@ export default function NewReceivingScreen() {
     return "";
   });
 
-  const fileHandle = React.useRef<FileUploaderHandle | null>(null);
+  const doFileHandle = React.useRef<FileUploaderHandle | null>(null);
+  const photoFileHandle = React.useRef<FileUploaderHandle | null>(null);
 
   // Line items initial state
   const [items, setItems] = React.useState<ReceivingLineItem[]>(() => {
@@ -469,7 +470,8 @@ export default function NewReceivingScreen() {
       }
     }
 
-    const fileId = (await fileHandle.current?.flush()) ?? undefined;
+    const uploadedDoFileId = (await doFileHandle.current?.flush()) ?? undefined;
+    const uploadedPhotoFileId = (await photoFileHandle.current?.flush()) ?? undefined;
     const wh = warehouses.find((w) => w.nama === selectedGudang);
     if (!wh?.id) {
       toast(
@@ -510,14 +512,21 @@ export default function NewReceivingScreen() {
 
     // Alur 1: Melanjutkan Draft Penerimaan yang sudah ada
     if (sourceType === "DRAFT" && selectedDraft) {
-      const effectiveFileId = fileId ?? selectedDraft.fileId;
+      const draftDoFileId =
+        selectedDraft.receiptFileId ??
+        (selectedDraft.photoFileId ? undefined : selectedDraft.fileId);
+      const doFileId = uploadedDoFileId ?? (draftDoFileId ? Number(draftDoFileId) : undefined);
+      const photoFileId =
+        uploadedPhotoFileId ??
+        (selectedDraft.photoFileId ? Number(selectedDraft.photoFileId) : undefined);
       await patchRow("receiving", String(selectedDraft.id), {
         status: "DITERIMA",
         conditionNote: notes || selectedDraft.conditionNote,
         catatan: notes || selectedDraft.conditionNote,
         warehouseId: wh?.id ? Number(wh.id) : undefined,
         items: payloadItems,
-        ...(effectiveFileId ? { fileId: effectiveFileId, receiptFileId: effectiveFileId, photoFileId: effectiveFileId } : {}),
+        ...(doFileId ? { fileId: doFileId, receiptFileId: doFileId } : {}),
+        ...(photoFileId ? { photoFileId } : {}),
       });
 
       toast("Penerimaan barang berhasil diproses! Stok bertambah dan dokumen diperbarui.");
@@ -540,9 +549,9 @@ export default function NewReceivingScreen() {
         penerima: user?.name || "Petugas Gudang",
         status: "Diterima",
         catatan: notes,
-        fileId,
-        receiptFileId: fileId,
-        photoFileId: fileId,
+        fileId: uploadedDoFileId,
+        receiptFileId: uploadedDoFileId,
+        photoFileId: uploadedPhotoFileId,
       };
 
       await addRow("receiving", row);
@@ -566,9 +575,9 @@ export default function NewReceivingScreen() {
       penerima: user?.name || "Petugas Gudang",
       status: "Diterima",
       catatan: notes,
-      fileId,
-      receiptFileId: fileId,
-      photoFileId: fileId,
+      fileId: uploadedDoFileId,
+      receiptFileId: uploadedDoFileId,
+      photoFileId: uploadedPhotoFileId,
     };
 
     await addRow("receiving", row);
@@ -804,14 +813,6 @@ export default function NewReceivingScreen() {
               />
             </FormField>
           </View>
-
-          <FormField label="Catatan Kondisi Fisik / Nomor DO Pemasok">
-            <Input
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Contoh: No DO DO-2026/089, kardus utuh, segel baik"
-            />
-          </FormField>
         </View>
       </Panel>
 
@@ -974,17 +975,62 @@ export default function NewReceivingScreen() {
         </View>
       </Panel>
 
-      {/* Panel 3: File DO & Foto Dokumentasi */}
-      <Panel title="File Delivery Order (DO) & Foto Dokumentasi">
-        <FileUploader
-          label="Upload File DO / Surat Jalan Pemasok & Bukti Fisik (Gambar / PDF)"
-          kind="semua"
-          accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
-          allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
-          hint="Mendukung Gambar (JPG, PNG, WEBP) atau Dokumen PDF. File DO otomatis terhubung ke Penerimaan, Permintaan Barang, dan PO Pemasok."
-          category="penerimaan"
-          handleRef={(h) => { fileHandle.current = h; }}
-        />
+      {/* Panel 3: Kondisi Barang */}
+      <Panel
+        title="Kondisi Barang"
+        subtitle="Catat kondisi fisik barang saat diterima dan unboxing"
+      >
+        <View className="gap-3">
+          <FormField label="Catatan Kondisi Fisik / Nomor DO Pemasok">
+            <Textarea
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Contoh: No DO DO-2026/089, kardus utuh, segel baik, tidak ada penyok"
+              numberOfLines={3}
+            />
+          </FormField>
+          <View className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+            <Text className="text-xs text-muted-foreground">
+              Foto kondisi barang diunggah terpisah di section Dokumen Penerimaan. Catatan ini akan tampil sebagai
+              keterangan kondisi pada detail penerimaan.
+            </Text>
+          </View>
+        </View>
+      </Panel>
+
+      {/* Panel 4: Dokumen Penerimaan */}
+      <Panel
+        title="Dokumen Penerimaan"
+        subtitle="File DO dan foto kondisi barang disimpan sebagai dua lampiran terpisah"
+      >
+        <View className="gap-4">
+          <FileUploader
+            label="File Delivery Order (DO) / Surat Jalan Pemasok"
+            kind="semua"
+            accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+            allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
+            hint="Mendukung Gambar (JPG, PNG, WEBP) atau Dokumen PDF. File DO otomatis terhubung ke Penerimaan, Permintaan Barang, dan PO Pemasok."
+            category="penerimaan"
+            handleRef={(h) => { doFileHandle.current = h; }}
+          />
+
+          <View className="rounded-xl border border-border/70 bg-panel/40 p-3">
+            <Text className="text-xs font-semibold text-foreground">Foto Kondisi Barang</Text>
+            <Text className="text-[11px] text-muted-foreground mt-0.5">
+              Unggah foto fisik barang/kardus saat diterima. File ini tidak akan menimpa atau mengisi file DO.
+            </Text>
+            <View className="mt-3">
+              <FileUploader
+                label="Upload Foto Kondisi Barang"
+                kind="foto"
+                accept="image/*,.jpg,.jpeg,.png,.webp"
+                allowedExtensions={["jpg", "jpeg", "png", "webp"]}
+                category="penerimaan-kondisi"
+                handleRef={(h) => { photoFileHandle.current = h; }}
+              />
+            </View>
+          </View>
+        </View>
       </Panel>
 
       {/* Tombol Simpan */}

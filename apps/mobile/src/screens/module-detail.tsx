@@ -1474,16 +1474,18 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 try {
                   const patchPayload: Record<string, any> = { [fieldKey]: fileId };
                   if (
-                    fieldKey === "receiptFileId" ||
-                    fieldKey === "photoFileId" ||
-                    fieldKey === "scanFileId" ||
-                    fieldKey === "evidenceFileId" ||
-                    fieldKey === "documentFileId" ||
-                    fieldKey === "latestFileId" ||
-                    fieldKey === "doFileId" ||
-                    fieldKey === "prdFileId" ||
-                    fieldKey === "bahpFileId" ||
-                    fieldKey === "bastFileId"
+                    fieldKey !== "photoFileId" &&
+                    (
+                      fieldKey === "receiptFileId" ||
+                      fieldKey === "scanFileId" ||
+                      fieldKey === "evidenceFileId" ||
+                      fieldKey === "documentFileId" ||
+                      fieldKey === "latestFileId" ||
+                      fieldKey === "doFileId" ||
+                      fieldKey === "prdFileId" ||
+                      fieldKey === "bahpFileId" ||
+                      fieldKey === "bastFileId"
+                    )
                   ) {
                     patchPayload.fileId = fileId;
                   }
@@ -1495,7 +1497,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                     await patchRow(moduleKey, id, patchPayload);
                     if (
                       moduleKey === "receiving" &&
-                      (fieldKey === "receiptFileId" || fieldKey === "photoFileId") &&
+                      fieldKey === "receiptFileId" &&
                       row?.supplierPoId
                     ) {
                       await patchRow("supplier-pos", String(row.supplierPoId), {

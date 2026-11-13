@@ -159,7 +159,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
 
   if (moduleKey === "receiving") {
     if (/kondisi|foto/i.test(labelLower) && !/do|delivery|tanda terima/i.test(labelLower)) {
-      const fileId = (row as any).photoFileId ?? (row as any).fileId ?? null;
+      const fileId = (row as any).photoFileId ?? null;
       return {
         label: docLabel,
         fieldKey: "photoFileId",
@@ -170,7 +170,7 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         emptyHint: "Belum ada foto kondisi barang",
       };
     }
-    const fileId = (row as any).receiptFileId ?? (row as any).photoFileId ?? (row as any).fileId ?? null;
+    const fileId = (row as any).receiptFileId ?? (row as any).fileId ?? null;
     return {
       label: docLabel,
       fieldKey: "receiptFileId",

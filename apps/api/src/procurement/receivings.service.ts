@@ -220,7 +220,8 @@ export class ReceivingsService {
       await this.validateSerials(preparedItems);
     }
 
-    const effectiveDoFileId = dto.receiptFileId ?? dto.photoFileId;
+    const doFileId = dto.receiptFileId ?? null;
+    const photoFileId = dto.photoFileId ?? null;
 
     const receiving = await this.prisma.main.receiving.create({
       data: {
@@ -234,8 +235,8 @@ export class ReceivingsService {
         receiverId: user.id,
         status: initialStatus as any,
         conditionNote: dto.conditionNote,
-        receiptFileId: effectiveDoFileId,
-        photoFileId: dto.photoFileId ?? dto.receiptFileId,
+        receiptFileId: doFileId,
+        photoFileId,
         items: {
           create: preparedItems,
         },
@@ -248,8 +249,8 @@ export class ReceivingsService {
         items: true,
       },
     });
-    if (effectiveDoFileId) await this.attachFile(effectiveDoFileId, "receiving", receiving.id).catch(() => {});
-    if (dto.photoFileId) await this.attachFile(dto.photoFileId, "receiving-photo", receiving.id).catch(() => {});
+    if (doFileId) await this.attachFile(doFileId, "receiving", receiving.id).catch(() => {});
+    if (photoFileId) await this.attachFile(photoFileId, "receiving-photo", receiving.id).catch(() => {});
     await this.audit.log({
       actor: user,
       action: "BUAT_PENERIMAAN",

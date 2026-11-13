@@ -30,7 +30,8 @@ export function ReceivingExtras({ row }: { row: Row }) {
   const [processOpen, setProcessOpen] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [processNotes, setProcessNotes] = React.useState(row.conditionNote ? String(row.conditionNote) : "");
-  const receiveFileHandle = React.useRef<FileUploaderHandle | null>(null);
+  const receiveDoFileHandle = React.useRef<FileUploaderHandle | null>(null);
+  const receivePhotoFileHandle = React.useRef<FileUploaderHandle | null>(null);
 
   const isPending =
     row.status === "Menunggu penerimaan" ||
@@ -141,8 +142,15 @@ export function ReceivingExtras({ row }: { row: Row }) {
         }
       }
 
-      const uploadedFileId = (await receiveFileHandle.current?.flush()) ?? undefined;
-      const effectiveFileId = uploadedFileId ?? (row.fileId ? Number(row.fileId) : undefined);
+      const uploadedDoFileId = (await receiveDoFileHandle.current?.flush()) ?? undefined;
+      const uploadedPhotoFileId = (await receivePhotoFileHandle.current?.flush()) ?? undefined;
+      const fallbackDoFileId =
+        row.receiptFileId ??
+        (row.photoFileId ? undefined : row.fileId);
+      const effectiveDoFileId =
+        uploadedDoFileId ?? (fallbackDoFileId ? Number(fallbackDoFileId) : undefined);
+      const effectivePhotoFileId =
+        uploadedPhotoFileId ?? (row.photoFileId ? Number(row.photoFileId) : undefined);
 
       const payloadItems = receiveItems.map((it) => {
         const sns = it.snInput
@@ -161,7 +169,8 @@ export function ReceivingExtras({ row }: { row: Row }) {
         status: "DITERIMA",
         conditionNote: processNotes || row.conditionNote,
         items: payloadItems,
-        ...(effectiveFileId ? { fileId: effectiveFileId, receiptFileId: effectiveFileId, photoFileId: effectiveFileId } : {}),
+        ...(effectiveDoFileId ? { fileId: effectiveDoFileId, receiptFileId: effectiveDoFileId } : {}),
+        ...(effectivePhotoFileId ? { photoFileId: effectivePhotoFileId } : {}),
       });
 
       // Update Purchase Request jika ada relasi
@@ -173,7 +182,7 @@ export function ReceivingExtras({ row }: { row: Row }) {
       if (effReqId) {
         await patchRow("purchase-requests", String(effReqId), {
           status: "DITERIMA",
-          ...(effectiveFileId ? { doFileId: effectiveFileId } : {}),
+          ...(effectiveDoFileId ? { doFileId: effectiveDoFileId } : {}),
         }).catch(() => {});
       }
 
@@ -188,7 +197,7 @@ export function ReceivingExtras({ row }: { row: Row }) {
       if (targetPoId) {
         await patchRow("supplier-pos", String(targetPoId), {
           pengiriman: "Sampai",
-          ...(effectiveFileId ? { doFileId: effectiveFileId } : {}),
+          ...(effectiveDoFileId ? { doFileId: effectiveDoFileId } : {}),
         }).catch(() => {});
         await setStatus("supplier-pos", String(targetPoId), "Sampai").catch(() => {});
       }
@@ -464,14 +473,30 @@ export function ReceivingExtras({ row }: { row: Row }) {
               />
             </FormField>
 
-            <FileUploader
-              label="Upload Foto DO / Surat Jalan / Bukti Fisik"
-              kind="semua"
-              accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
-              allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
-              category="penerimaan"
-              handleRef={(h) => { receiveFileHandle.current = h; }}
-            />
+            <View className="rounded-xl border border-border/70 bg-panel/40 p-3 gap-3">
+              <View>
+                <Text className="text-xs font-semibold text-foreground">Dokumen Penerimaan</Text>
+                <Text className="text-[11px] text-muted-foreground mt-0.5">
+                  File DO dan foto kondisi barang disimpan terpisah, tidak saling menimpa.
+                </Text>
+              </View>
+              <FileUploader
+                label="Upload File DO / Surat Jalan / Tanda Terima"
+                kind="semua"
+                accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+                allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
+                category="penerimaan"
+                handleRef={(h) => { receiveDoFileHandle.current = h; }}
+              />
+              <FileUploader
+                label="Upload Foto Kondisi Barang"
+                kind="foto"
+                accept="image/*,.jpg,.jpeg,.png,.webp"
+                allowedExtensions={["jpg", "jpeg", "png", "webp"]}
+                category="penerimaan-kondisi"
+                handleRef={(h) => { receivePhotoFileHandle.current = h; }}
+              />
+            </View>
           </ScrollView>
 
           <DialogFooter>
