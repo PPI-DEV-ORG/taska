@@ -254,6 +254,22 @@ export default function AccountingScreen() {
             const acc = currentAccounts[line.accountCode] || CHART_OF_ACCOUNTS[line.accountCode];
             mappedLines.push({
               id: String(line.id),
+              journalEntryId: entry.id != null ? String(entry.id) : undefined,
+              lineNo: Number(line.lineNo) || 0,
+              source: entry.source,
+              sourceType: entry.sourceType,
+              sourceId: entry.sourceId != null ? String(entry.sourceId) : undefined,
+              event: entry.event,
+              entryMemo: entry.memo,
+              entryStatus: entry.status,
+              projectId:
+                line.projectId != null
+                  ? String(line.projectId)
+                  : entry.projectId != null
+                    ? String(entry.projectId)
+                    : undefined,
+              partyType: line.partyType ?? undefined,
+              partyId: line.partyId != null ? String(line.partyId) : undefined,
               journalNo: entry.number || `JU-${entry.id}`,
               tanggal: formatJournalDateTime(entry.date, entry.createdAt),
               refNo: entryRef,
@@ -959,6 +975,7 @@ export default function AccountingScreen() {
             setJournalSourceFilter={setJournalSourceFilter}
             filteredJournal={filteredJournal}
             pagedJournal={pagedJournal}
+            allJournalLines={effectiveJournalLines}
             currentJournalPage={currentJournalPage}
             totalJournalPages={totalJournalPages}
             JOURNAL_PAGE_SIZE={JOURNAL_PAGE_SIZE}

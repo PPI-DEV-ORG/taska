@@ -1334,7 +1334,7 @@ export function setClientDynamicRoles(roles: RoleDef[]) {
     if (!r?.code) continue;
     const norm = r.code.toUpperCase();
     const existing = byCode.get(norm);
-    const hasPerms = r.permissions && Object.keys(r.permissions).length > 0;
+    const hasPerms = Boolean(r.permissions && typeof r.permissions === "object");
     
     // Normalisasi format array atau string ke ActionCode[]
     const normalizedPerms: Record<string, ActionCode[]> = {};
@@ -1343,22 +1343,20 @@ export function setClientDynamicRoles(roles: RoleDef[]) {
       const v: any = rawVal;
       if (Array.isArray(v)) {
         normalizedPerms[k] = v as ActionCode[];
-      } else if (typeof v === "string" && v.length > 0) {
-        normalizedPerms[k] = v
-          .split("")
-          .filter((c: string): c is ActionCode => ["M", "L", "C", "U", "A", "P", "V", "E"].includes(c));
+      } else if (typeof v === "string") {
+        normalizedPerms[k] = v.length > 0
+          ? v
+              .split("")
+              .filter((c: string): c is ActionCode => ["M", "L", "C", "U", "A", "P", "V", "E"].includes(c))
+          : [];
       }
     }
 
-    // Jika ada modul bawaan yang belum didefinisikan, isi dari default sistem
+    // Hanya jika ada modul bawaan yang belum didefinisikan sama sekali di konfigurasi role (key tidak ada), isi dari default sistem
     if (existing?.permissions) {
       for (const [k, v] of Object.entries(existing.permissions)) {
-        if (!normalizedPerms[k] || normalizedPerms[k].length === 0) {
+        if (!(k in sourcePerms)) {
           normalizedPerms[k] = [...v];
-        } else if (v.includes("M") && normalizedPerms[k].includes("L") && !normalizedPerms[k].includes("M")) {
-          // Migrasi data legacy: modul sistem bawaan yang aslinya punya 'M' dan diizinkan ('L'),
-          // tambahkan 'M' agar halaman tetap tampil di menu & bisa dibuka
-          normalizedPerms[k].unshift("M");
         }
       }
     }
@@ -1480,15 +1478,7 @@ export function getNavForUser(user: User | null | undefined): NavItem[] {
     const filtered = ALL_NAV_ORDERED.filter((item) => {
       return hasUserPermission(user, item.key, "M");
     });
-    // Jika role punya modul navigasi selain hanya dashboard/calendar, gunakan hasil matriks
-    if (filtered.length > 2 || (filtered.length > 0 && !filtered.every((i) => i.key === "dashboard" || i.key === "calendar"))) {
-      return filtered;
-    }
-    // Jika role sistem bawaan belum memiliki 'M' yang terdefinisi pada modul utamanya, fallback ke default navigasi role
-    if (NAV_BY_ROLE[roleLower]) {
-      return NAV_BY_ROLE[roleLower];
-    }
-    if (filtered.length > 0) return filtered;
+    return filtered;
   }
 
   return NAV_BY_ROLE[roleLower] ?? [N.dashboard, N.calendar];

@@ -28,8 +28,8 @@ export class ProductsController {
 
   @Post()
   @Require("products", "C")
-  create(@Body() dto: ProductDto) {
-    return this.service.create(dto);
+  create(@Body() dto: ProductDto, @CurrentUser() user: RequestUser) {
+    return this.service.create(dto, user);
   }
 
   @Patch(":id")

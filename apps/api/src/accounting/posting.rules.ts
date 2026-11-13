@@ -256,6 +256,42 @@ export class PostingRules {
   }
 
   /**
+   * E4a: Saldo Awal Persediaan Gudang
+   * Dr Persediaan (INVENTORY) / Cr Ekuitas Saldo Awal (EQUITY_INITIAL/CAPITAL).
+   */
+  static buildInitialStockLines(
+    payload: {
+      productId: number;
+      productName: string;
+      qty: number;
+      cost: number;
+      unit?: string;
+    },
+    map: Record<string, string>,
+  ): JournalLineSpec[] {
+    const qty = Number(payload.qty || 0);
+    const cost = Number(payload.cost || 0);
+    const total = round(qty * cost);
+    if (qty <= 0 || total <= 0) return [];
+
+    const memo = `Saldo Awal Persediaan Gudang: ${payload.productName} (${qty}${payload.unit ? ` ${payload.unit}` : ""})`;
+    return [
+      {
+        accountCode: map.INVENTORY || "1200",
+        debit: total,
+        credit: 0,
+        memo,
+      },
+      {
+        accountCode: map.EQUITY_INITIAL || map.CAPITAL || "3101",
+        debit: 0,
+        credit: total,
+        memo,
+      },
+    ];
+  }
+
+  /**
    * E4: Penerimaan Barang (Receiving PO)
    */
   static buildReceivingLines(

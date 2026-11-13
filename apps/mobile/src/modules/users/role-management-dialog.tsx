@@ -47,19 +47,13 @@ function normalizeRolePermissions(
       const uiKey = ALIAS_TO_UI_KEY[k] || k;
       if (Array.isArray(v)) {
         result[uiKey] = v as ActionCode[];
-      } else if (typeof v === "string" && v.length > 0) {
-        result[uiKey] = v
-          .split("")
-          .filter((c): c is ActionCode => ["M", "L", "C", "U", "A", "P", "V", "E"].includes(c));
+      } else if (typeof v === "string") {
+        result[uiKey] = v.length > 0
+          ? v
+              .split("")
+              .filter((c): c is ActionCode => ["M", "L", "C", "U", "A", "P", "V", "E"].includes(c))
+          : [];
       }
-    }
-  }
-
-  // Migrasi data legacy: jika di default sistem modul ini punya 'M' dan di permissions tersimpan punya 'L',
-  // pastikan 'M' tetap aktif agar halaman tidak hilang
-  for (const [k, v] of Object.entries(sysDefault)) {
-    if (v.includes("M") && result[k] && result[k].includes("L") && !result[k].includes("M")) {
-      result[k].unshift("M");
     }
   }
 

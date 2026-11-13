@@ -1,8 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { PostingRules } from "../accounting/posting.rules.js";
 import { ProductDto } from "./dto.js";
 
 const PRICE_ROLES = new Set(["PROCUREMENT", "FINANCE", "PM", "BOS", "ADMIN", "SUPER_ADMIN", "GUDANG"]);
@@ -14,7 +17,11 @@ type Row = Awaited<ReturnType<PrismaService["main"]["product"]["findFirst"]>> & 
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
+  ) {}
 
   private shape(row: Row, user: RequestUser) {
     const { purchasePrice, ...rest } = row ?? ({} as Row);
@@ -123,22 +130,174 @@ export class ProductsService {
     };
   }
 
-  async create(dto: ProductDto) {
+  async create(dto: ProductDto, user?: RequestUser) {
     if (dto.hargaBeli !== undefined && dto.purchasePrice === undefined) {
       dto.purchasePrice = dto.hargaBeli;
     }
     delete (dto as any).hargaBeli;
+
     const sku = dto.sku || `SKU-${Date.now()}`;
-    const exists = await this.prisma.main.product.findUnique({ where: { sku } });
-    if (exists) throw new ConflictException(`SKU ${sku} sudah dipakai`);
-    return this.prisma.main.product.create({
-      data: {
-        ...dto,
-        sku,
-        name: dto.name || "Barang Baru",
-        unit: dto.unit || "unit",
-      },
-      include: INCLUDE,
+    const initialStockRaw = Number(dto.initialStock ?? 0);
+    const initialStock = Math.trunc(initialStockRaw);
+    const purchasePrice = Number(dto.purchasePrice ?? 0);
+    const isJasa = String(dto.type ?? "BARANG").toUpperCase() === "JASA";
+    const hasSerial = !!dto.hasSerial;
+    const warehouseId = dto.warehouseId != null ? Number(dto.warehouseId) : undefined;
+    const serialNumbers = Array.isArray(dto.serialNumbers)
+      ? dto.serialNumbers.map((sn) => String(sn).trim()).filter(Boolean)
+      : [];
+
+    if (!Number.isInteger(initialStockRaw) || initialStock < 0) {
+      throw new BadRequestException("Stok awal harus berupa bilangan bulat >= 0");
+    }
+    if (initialStock > 0) {
+      if (isJasa) throw new BadRequestException("Jasa tidak dapat memiliki stok awal fisik");
+      if (!warehouseId) throw new BadRequestException("Gudang wajib dipilih untuk stok awal");
+      if (purchasePrice <= 0) {
+        throw new BadRequestException("Harga beli/modal wajib lebih dari 0 untuk stok awal");
+      }
+      if (hasSerial) {
+        if (serialNumbers.length !== initialStock) {
+          throw new BadRequestException(
+            `Jumlah serial number (${serialNumbers.length}) harus sama dengan qty stok awal (${initialStock})`,
+          );
+        }
+        if (new Set(serialNumbers).size !== serialNumbers.length) {
+          throw new BadRequestException("Serial number tidak boleh duplikat");
+        }
+      }
+    }
+
+    const productData: Record<string, any> = { ...(dto as any) };
+    delete productData.initialStock;
+    delete productData.warehouseId;
+    delete productData.serialNumbers;
+    if (initialStock > 0 && purchasePrice > 0) productData.avgCost = purchasePrice;
+
+    const mappings: Record<string, string> = initialStock > 0 ? await this.mappingService.getAll() : {};
+
+    return this.prisma.main.$transaction(async (tx) => {
+      const exists = await tx.product.findUnique({ where: { sku } });
+      if (exists) throw new ConflictException(`SKU ${sku} sudah dipakai`);
+
+      let targetWarehouseId: number | null = null;
+      if (initialStock > 0) {
+        const warehouse = await tx.warehouse.findUnique({ where: { id: warehouseId as number } });
+        if (!warehouse) throw new BadRequestException("Gudang stok awal tidak ditemukan");
+        targetWarehouseId = warehouse.id;
+
+        if (hasSerial && serialNumbers.length > 0) {
+          const existingSerial = await tx.serialUnit.findFirst({
+            where: { sn: { in: serialNumbers } },
+            select: { sn: true },
+          });
+          if (existingSerial) {
+            throw new BadRequestException(`Serial number ${existingSerial.sn} sudah tercatat`);
+          }
+        }
+      }
+
+      const product = await tx.product.create({
+        data: {
+          ...productData,
+          sku,
+          name: dto.name || "Barang Baru",
+          unit: dto.unit || "unit",
+        } as any,
+        include: INCLUDE,
+      });
+
+      if (initialStock <= 0 || targetWarehouseId == null) return product;
+
+      const totalValue = purchasePrice * initialStock;
+      const entryDate = new Date();
+
+      await tx.stockBalance.upsert({
+        where: {
+          productId_warehouseId: {
+            productId: product.id,
+            warehouseId: targetWarehouseId,
+          },
+        },
+        create: {
+          productId: product.id,
+          warehouseId: targetWarehouseId,
+          qty: initialStock,
+        },
+        update: {
+          qty: { increment: initialStock },
+        },
+      });
+
+      await tx.stockMovement.create({
+        data: {
+          date: entryDate,
+          type: "IN",
+          category: "SALDO_AWAL",
+          productId: product.id,
+          toWarehouseId: targetWarehouseId,
+          qty: initialStock,
+          unitCost: purchasePrice,
+          totalCost: totalValue,
+          reason: "Saldo Awal Barang Baru",
+          createdById: user?.id ?? null,
+        },
+      });
+
+      if (hasSerial) {
+        const warrantyEndsAt = product.warrantyMonths
+          ? new Date(Date.now() + product.warrantyMonths * 30 * 24 * 3600 * 1000)
+          : null;
+
+        for (const sn of serialNumbers) {
+          const unit = await tx.serialUnit.create({
+            data: {
+              sn,
+              productId: product.id,
+              status: "DI_GUDANG",
+              warehouseId: targetWarehouseId,
+              warrantyEndsAt,
+            },
+          });
+          await tx.serialUnitHistory.create({
+            data: {
+              serialUnitId: unit.id,
+              status: "DI_GUDANG",
+              warehouseId: targetWarehouseId,
+              note: "Saldo awal barang baru",
+              changedById: user?.id ?? null,
+            },
+          });
+        }
+      }
+
+      const lines = PostingRules.buildInitialStockLines(
+        {
+          productId: product.id,
+          productName: product.name,
+          qty: initialStock,
+          cost: purchasePrice,
+          unit: product.unit,
+        },
+        mappings,
+      );
+
+      await this.postingService.post(
+        {
+          date: entryDate,
+          source: "INITIAL_STOCK",
+          sourceType: "Product",
+          sourceId: product.id,
+          event: "initial-stock",
+          memo: `Saldo Awal Persediaan Gudang: ${product.name} (${initialStock} ${product.unit})`,
+          refNo: product.sku,
+          createdById: user?.id ?? null,
+          lines,
+        },
+        tx,
+      );
+
+      return product;
     });
   }
 
@@ -149,6 +308,10 @@ export class ProductsService {
       dto.purchasePrice = dto.hargaBeli;
     }
     delete (dto as any).hargaBeli;
+    // Field stok awal hanya untuk create; jangan pernah ikut di-update sebagai kolom Product.
+    delete (dto as any).initialStock;
+    delete (dto as any).warehouseId;
+    delete (dto as any).serialNumbers;
     if (dto.min !== undefined && dto.minStock === undefined) {
       dto.minStock = dto.min;
     }

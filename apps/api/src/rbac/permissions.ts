@@ -652,18 +652,26 @@ export function setDynamicRoles(roles: RoleDefinition[]) {
     const normCode = String(r.code).toUpperCase().trim().replace(/[\s\-]+/g, "_");
     const isSys = Boolean(DEFAULT_UI_PERMISSIONS[normCode]);
     const existing = byCode.get(normCode);
-    const hasCustomPerms = r.permissions && Object.keys(r.permissions).length > 0;
+    const hasCustomPerms = Boolean(r.permissions && typeof r.permissions === "object");
+
+    const convertedPerms: Record<string, string> = {};
+    if (hasCustomPerms) {
+      for (const [k, v] of Object.entries(r.permissions)) {
+        convertedPerms[k] = Array.isArray(v) ? v.join("") : String(v ?? "");
+      }
+    }
+
+    const mergedPerms: Record<string, string> = {
+      ...(existing?.permissions ?? {}),
+      ...convertedPerms,
+    };
 
     byCode.set(normCode, {
       code: normCode,
       name: r.name || existing?.name || normCode,
       description: r.description ?? existing?.description ?? "",
       isSystem: isSys,
-      permissions: hasCustomPerms
-        ? Object.fromEntries(
-            Object.entries(r.permissions).map(([k, v]) => [k, Array.isArray(v) ? v.join("") : String(v)])
-          )
-        : (existing?.permissions ?? {}),
+      permissions: mergedPerms,
     });
   }
 
@@ -688,10 +696,6 @@ export function can(role: string, module: ModuleKey | string, action: Action): b
       }
       // Hak Menu/Page ('M') otomatis boleh membaca data ('L')
       if (action === "L" && actionsList.includes("M")) {
-        return true;
-      }
-      // Backward compatibility: jika role legacy hanya punya 'L'
-      if (action === "M" && actionsList.includes("L") && !actionsList.includes("M")) {
         return true;
       }
       // Saling kompatibel antara 'V' (Approve di UI) dan 'A' (Approve legacy) pada modul approvals

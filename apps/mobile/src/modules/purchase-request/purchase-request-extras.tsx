@@ -238,6 +238,7 @@ export function PurchaseRequestExtras({
     row.status === "PO dibuat" ||
     localStatus === "PO_DIBUAT" ||
     linkedPos.length > 0;
+  const isViaPo = isSupplierPo || isPoDibuat || Boolean(linkedPo);
 
   const isDiterima =
     effectiveRaw === "DITERIMA" ||
@@ -651,9 +652,9 @@ export function PurchaseRequestExtras({
     if (isSupplierPo && !isDebt) {
       return [
         { label: "Diajukan", done: true, current: isDiajukan },
-        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPaid && !isDispatched && !isDiterima },
-        { label: "Dibayar (Kas)", done: isPaid, current: (effectiveRaw === "DIBAYAR" || isPaid) && !isDispatched && !isDiterima },
-        { label: "Dikirim Supplier", done: isDispatched, current: isDikirim && !isDiterima },
+        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPoDibuat && !isDispatched && !isDiterima },
+        { label: "PO Pemasok", done: isPoDibuat || isDispatched || isDiterima, current: isPoDibuat && !isDispatched && !isDiterima },
+        { label: "Dikirim Supplier", done: isDispatched || isDiterima, current: isDikirim && !isDiterima },
         { label: "Diterima Gudang", done: isDiterima, current: isDiterima },
       ];
     }
@@ -1307,8 +1308,8 @@ export function PurchaseRequestExtras({
                 </Button>
               ) : null)}
 
-            {/* 3. Pembayaran Tunai / Kas (Bayar di Muka sebelum Kirim) */}
-            {!isStockTake && !isDebt && (
+            {/* 3. Pembayaran Tunai / Kas (Khusus Pembelian Ritel Langsung, Bukan PO) */}
+            {!isStockTake && !isDebt && !isViaPo && (
               isPaid ? (
                 <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
                   <CheckCircle2 size={15} color="#10b981" />
@@ -1329,8 +1330,8 @@ export function PurchaseRequestExtras({
               ) : null
             )}
 
-            {/* 4. Pembayaran Tempo / Pelunasan Hutang (Bayar setelah Barang Sampai) */}
-            {isDebt && (
+            {/* 4. Pembayaran Tempo / Pelunasan Hutang (Khusus Pembelian Ritel Langsung, Bukan PO) */}
+            {isDebt && !isViaPo && (
               isPaid ? (
                 <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
                   <CheckCircle2 size={15} color="#10b981" />
@@ -1347,6 +1348,29 @@ export function PurchaseRequestExtras({
                 >
                   <DollarSign size={14} color="#fff" />
                   <Text className="text-xs font-semibold text-white">Unggah Bukti Bayar & Pelunasan</Text>
+                </Button>
+              ) : null
+            )}
+
+            {/* Status Pembayaran untuk Pengadaan via PO Supplier */}
+            {isViaPo && linkedPo && (
+              isPaid ? (
+                <View className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 py-1.5 flex-row items-center gap-1.5">
+                  <CheckCircle2 size={15} color="#10b981" />
+                  <Text className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                    ✓ Tagihan PO Telah Lunas
+                  </Text>
+                </View>
+              ) : isFinance ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onPress={() => router.push(`/supplier-pos/${linkedPo.id}` as any)}
+                >
+                  <FileText size={14} color={colors.primary} />
+                  <Text className="text-xs font-semibold text-primary">
+                    Kelola Tagihan & Bayar di PO ({linkedPo.nomor})
+                  </Text>
                 </Button>
               ) : null
             )}
@@ -1386,7 +1410,7 @@ export function PurchaseRequestExtras({
                     <Truck size={14} color="#fff" />
                     <Text className="text-xs font-semibold text-white">Tandai Barang Dikirim</Text>
                   </Button>
-                ) : isSupplierPo && (isDebt ? isPoDibuat || isApproved : isPaid) && (isProcurement || isGudang) ? (
+                ) : isSupplierPo && (isPoDibuat || isApproved || isPaid) && (isProcurement || isGudang) ? (
                   <Button
                     size="sm"
                     className="bg-sky-600 hover:bg-sky-700"

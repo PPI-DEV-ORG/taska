@@ -119,6 +119,18 @@ export interface JournalLine {
   debit: number;
   kredit: number;
   manualJournalId?: string;
+  /** Metadata entry jurnal untuk modal detail dan tautan dokumen sumber. */
+  journalEntryId?: string;
+  lineNo?: number;
+  source?: string;
+  sourceType?: string;
+  sourceId?: string;
+  event?: string;
+  entryMemo?: string;
+  entryStatus?: string;
+  projectId?: string;
+  partyType?: string;
+  partyId?: string;
 }
 
 export interface ManualJournalLine {

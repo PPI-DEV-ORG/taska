@@ -132,7 +132,8 @@ const MAPS: Record<string, Record<string, string>> = {
     PENERIMAAN_SUPPLIER: "Penerimaan supplier", KELUAR_PROJECT: "Keluar ke project",
     KELUAR_SURAT_JALAN: "Keluar surat jalan", TRANSFER: "Transfer antar gudang",
     RETUR_PROJECT: "Retur dari project", BARANG_TERPAKAI: "Barang terpakai langsung",
-    PENGGANTIAN: "Penggantian unit", PENYESUAIAN_OPNAME: "Penyesuaian opname", LAINNYA: "Lainnya",
+    PENGGANTIAN: "Penggantian unit", PENYESUAIAN_OPNAME: "Penyesuaian opname",
+    SALDO_AWAL: "Saldo awal gudang", LAINNYA: "Lainnya",
   },
 };
 
@@ -1588,7 +1589,7 @@ export function adaptRow(module: string, raw: any): Row {
         project: nameOf(raw.project) ?? "-",
         projectId: idOf(raw.project),
         sn: raw.snList ?? "-",
-        catatan: raw.note ?? "-",
+        catatan: raw.reason ?? raw.note ?? "-",
         oleh: nameOf(raw.creator) ?? "-",
       };
     }
@@ -2491,6 +2492,17 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         String(row.type || row.jenisItem || "").toUpperCase().includes("JASA") ||
         String(row.tipeSN || "").toUpperCase().includes("JASA");
       const sellPriceVal = num(row.hargaJual ?? row.price ?? row.sellPrice);
+      const hasSerial = isJasa ? false : (row.berSN != null ? !!row.berSN : !!row.hasSerial);
+      const initialStock = isJasa ? 0 : num(row.initialStock);
+      const warehouseId =
+        row.warehouseId != null && row.warehouseId !== ""
+          ? Number(row.warehouseId)
+          : findId(db?.warehouses, row.gudang);
+      const serialNumbers = Array.isArray(row.serialNumbers)
+        ? row.serialNumbers.map((sn: any) => String(sn).trim()).filter(Boolean)
+        : typeof row.serialNumbers === "string"
+          ? row.serialNumbers.split(/[\n,;]+/).map((sn) => sn.trim()).filter(Boolean)
+          : undefined;
       let desc = row.deskripsi || row.description || "";
       if (sellPriceVal > 0) {
         if (/SELL:[^;]+/i.test(desc)) {
@@ -2507,10 +2519,17 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         description: desc || undefined,
         unit: row.satuan ?? row.unit ?? (isJasa ? "Jasa" : "Unit"),
         categoryId: row.categoryId != null && row.categoryId !== "" ? Number(row.categoryId) : findId(db?.productCategories, row.kategori),
-        hasSerial: isJasa ? false : (row.berSN != null ? !!row.berSN : !!row.hasSerial),
+        hasSerial,
         minStock: isJasa ? 0 : num(row.min ?? row.minStock),
         warrantyMonths: row.garansi ? parseInt(String(row.garansi), 10) || undefined : undefined,
         purchasePrice: num(row.hargaBeli ?? row.purchasePrice),
+        ...(initialStock > 0
+          ? {
+              initialStock,
+              warehouseId,
+              ...(hasSerial ? { serialNumbers: serialNumbers ?? [] } : {}),
+            }
+          : {}),
         status: "AKTIF",
       };
     }

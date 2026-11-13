@@ -139,6 +139,15 @@ export class ProductDto {
   @IsOptional() @IsBoolean()
   hasSerial?: boolean;
 
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0)
+  initialStock?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
+  warehouseId?: number;
+
+  @IsOptional() @IsArray() @IsString({ each: true })
+  serialNumbers?: string[];
+
   @IsOptional() @IsInt() @Min(0)
   minStock?: number;
 

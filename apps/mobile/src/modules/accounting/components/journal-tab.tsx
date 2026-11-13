@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/taska/basics";
 import { DatePicker } from "@/components/taska/dialogs";
-import { CheckCircle2, FileSpreadsheet, Search, ChevronLeft, ChevronRight, Trash2, RefreshCw } from "lucide-react-native";
+import { CheckCircle2, FileSpreadsheet, Search, ChevronLeft, ChevronRight, Trash2, RefreshCw, Eye } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { JournalLine } from "@/lib/accounting";
+import { JournalEntryDetailDialog } from "./journal-entry-detail-dialog";
 
 interface JournalTabProps {
   fin: any;
@@ -24,6 +25,7 @@ interface JournalTabProps {
   setJournalSourceFilter: (v: string) => void;
   filteredJournal: JournalLine[];
   pagedJournal: JournalLine[];
+  allJournalLines: JournalLine[];
   currentJournalPage: number;
   totalJournalPages: number;
   JOURNAL_PAGE_SIZE: number;
@@ -45,6 +47,7 @@ export function JournalTab({
   setJournalSourceFilter,
   filteredJournal,
   pagedJournal,
+  allJournalLines,
   currentJournalPage,
   totalJournalPages,
   JOURNAL_PAGE_SIZE,
@@ -52,6 +55,8 @@ export function JournalTab({
   onSelectAccount,
   onDeleteManualJournal,
 }: JournalTabProps) {
+  const [selectedLine, setSelectedLine] = React.useState<JournalLine | null>(null);
+
   return (
     <View className="gap-4 w-full">
       <View className="bg-primary/10 border-primary/30 rounded-xl border p-4 flex-row flex-wrap items-center justify-between gap-3">
@@ -80,7 +85,7 @@ export function JournalTab({
         </View>
       </View>
 
-      <Panel title="Daftar Transaksi Ayat Jurnal" subtitle="Pencatatan kronologis debit dan kredit atas seluruh transaksi operasional & manual">
+      <Panel title="Daftar Transaksi Ayat Jurnal" subtitle="Pencatatan kronologis debit dan kredit atas seluruh transaksi operasional & manual · Klik baris untuk melihat detail dan dokumen terkait">
         <View className="gap-3">
           <View className="flex-row flex-wrap items-center gap-2.5 w-full">
             <View className="flex-row items-center gap-2 flex-1 min-w-[200px] bg-card border border-border/80 rounded-xl px-3 h-10 shadow-sm">
@@ -169,7 +174,7 @@ export function JournalTab({
                 <Text className="flex-1 min-w-[220px] text-xs font-bold">Uraian Transaksi</Text>
                 <Text className="w-[135px] text-xs font-bold text-right pr-2">Debit (Rp)</Text>
                 <Text className="w-[135px] text-xs font-bold text-right pr-2">Kredit (Rp)</Text>
-                <Text className="w-[50px] text-xs font-bold text-center">Aksi</Text>
+                <Text className="w-[72px] text-xs font-bold text-center">Aksi</Text>
               </View>
               {filteredJournal.length === 0 ? (
                 <View className="py-12 items-center justify-center">
@@ -180,9 +185,11 @@ export function JournalTab({
                   if (!line) return null;
                   const isCredit = (line.kredit ?? 0) > 0 && (line.debit ?? 0) === 0;
                   return (
-                    <View
+                    <Pressable
                       key={line.id}
-                      className="border-border/50 flex-row items-center border-b px-4 py-2 hover:bg-panel/40 w-full"
+                      onPress={() => setSelectedLine(line)}
+                      accessibilityLabel={`Lihat detail jurnal ${line.journalNo}`}
+                      className="border-border/50 flex-row items-center border-b px-4 py-2 hover:bg-panel/40 active:bg-primary/5 w-full"
                     >
                       <Text className="w-[145px] text-xs font-mono text-muted-foreground" numberOfLines={1}>
                         {line.journalNo}
@@ -194,7 +201,10 @@ export function JournalTab({
                         {line.refNo}
                       </Text>
                       <Pressable
-                        onPress={() => onSelectAccount(line.kodeAkun)}
+                        onPress={(event) => {
+                          event.stopPropagation?.();
+                          onSelectAccount(line.kodeAkun);
+                        }}
                         className="w-[95px] pr-2"
                       >
                         <Text className="text-xs font-bold font-mono text-primary underline">
@@ -216,26 +226,39 @@ export function JournalTab({
                       <Text className="w-[135px] text-xs font-mono text-right font-semibold text-info pr-2">
                         {(line.kredit ?? 0) > 0 ? rupiah(line.kredit) : "-"}
                       </Text>
-                      <View className="w-[50px] items-center justify-center">
+                      <View className="w-[72px] flex-row items-center justify-center gap-1.5">
+                        <Pressable
+                          onPress={(event) => {
+                            event.stopPropagation?.();
+                            setSelectedLine(line);
+                          }}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Detail jurnal ${line.journalNo}`}
+                          className="p-1 rounded-md hover:bg-primary/10 active:opacity-70"
+                        >
+                          <Eye size={13} color={colors.primary} />
+                        </Pressable>
                         {line.manualJournalId && onDeleteManualJournal ? (
                           <Pressable
-                            onPress={() =>
+                            onPress={(event) => {
+                              event.stopPropagation?.();
                               onDeleteManualJournal({
                                 id: line.manualJournalId!,
                                 journalNo: line.journalNo,
                                 keterangan: line.keterangan,
-                              })
-                            }
+                              });
+                            }}
                             hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Hapus jurnal ${line.journalNo}`}
                             className="p-1 rounded-md hover:bg-danger/10 active:opacity-70"
                           >
                             <Trash2 size={13} color={colors.danger} />
                           </Pressable>
-                        ) : (
-                          <Text className="text-[10px] text-muted-foreground/30">-</Text>
-                        )}
+                        ) : null}
                       </View>
-                    </View>
+                    </Pressable>
                   );
                 })
               )}
@@ -308,6 +331,15 @@ export function JournalTab({
           )}
         </View>
       </Panel>
+
+      <JournalEntryDetailDialog
+        open={selectedLine !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedLine(null);
+        }}
+        line={selectedLine}
+        allLines={allJournalLines}
+      />
     </View>
   );
 }
