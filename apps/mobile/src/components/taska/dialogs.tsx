@@ -32,6 +32,8 @@ import {
   SupplierPoSelect,
   PurchaseRequestSelect,
   DraftReceivingSelect,
+  UserSelect,
+  UserMultiSelect,
 } from "./document-select";
 
 /** Format angka saat diketik: "1000000" → "1.000.000". Hanya digit yang disimpan. */
@@ -46,6 +48,7 @@ import {
   findSupplierMatch,
 } from "./supplier-select";
 export { ProductSelect } from "./product-select";
+export { UserSelect, UserMultiSelect } from "./document-select";
 export {
   SupplierSelect,
   formatSupplierLabel,
@@ -1558,6 +1561,45 @@ export function FormDialog({
                       }}
                     />
                   ) : (
+                    f.key === "pm" ||
+                    f.key === "pic" ||
+                    f.key === "pemilik" ||
+                    f.key === "user" ||
+                    f.key === "userId" ||
+                    f.key === "assignee" ||
+                    f.key === "assigneeId" ||
+                    f.key === "karyawan" ||
+                    f.key === "karyawanId" ||
+                    (/(?:^|\b)(?:pm|pic|penanggung\s*jawab|manajer\s*proyek|karyawan|staf)(?:\b|$)/i.test(f.label) &&
+                      !/klien|pelanggan|customer|kontak/i.test(f.label))
+                  ) ? (
+                    <UserSelect
+                      value={vals[f.key]}
+                      userId={vals[`${f.key}Id`]}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      allowClear={!f.required}
+                      title={`Pilih ${f.label}`}
+                      onChange={(user) => {
+                        if (!user) {
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: f.required ? "" : "-",
+                            ...(s[`${f.key}Id`] ? { [`${f.key}Id`]: "" } : {}),
+                          }));
+                          return;
+                        }
+                        const name = user.name || user.nama || "";
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: name,
+                          [`${f.key}Id`]: String(user.id),
+                          ...(f.key === "pm" ? { pmId: String(user.id) } : {}),
+                          ...(f.key === "pic" ? { picId: String(user.id), assigneeId: String(user.id) } : {}),
+                        }));
+                      }}
+                    />
+                  ) : (
                   <View className="gap-1.5">
                     <SearchableSelect
                       value={vals[f.key]}
@@ -1733,13 +1775,37 @@ export function FormDialog({
                   </View>
                   )
                 ) : f.type === "multiselect" ? (
-                  <MultiSelect
-                    values={vals[f.key]?.split(", ").filter(Boolean) ?? []}
-                    onChange={(selectedArr) => setVals((s) => ({ ...s, [f.key]: selectedArr.join(", ") }))}
-                    options={dynamicOptions(f) ?? []}
-                    placeholder={`Pilih ${f.label.toLowerCase()}`}
-                    error={!!errs[f.key]}
-                  />
+                  (
+                    f.key === "tim" ||
+                    f.key === "team" ||
+                    f.key === "members" ||
+                    f.key === "users" ||
+                    f.key === "userIds" ||
+                    f.key === "peserta" ||
+                    f.key === "anggota" ||
+                    /(?:^|\b)(?:tim|anggota|peserta|karyawan|staf|teknisi)(?:\b|$)/i.test(f.label)
+                  ) ? (
+                    <UserMultiSelect
+                      values={vals[f.key]?.split(", ").filter(Boolean) ?? []}
+                      onChange={(selectedArr) =>
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: selectedArr.join(", "),
+                        }))
+                      }
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      title={f.label}
+                      error={!!errs[f.key]}
+                    />
+                  ) : (
+                    <MultiSelect
+                      values={vals[f.key]?.split(", ").filter(Boolean) ?? []}
+                      onChange={(selectedArr) => setVals((s) => ({ ...s, [f.key]: selectedArr.join(", ") }))}
+                      options={dynamicOptions(f) ?? []}
+                      placeholder={`Pilih ${f.label.toLowerCase()}`}
+                      error={!!errs[f.key]}
+                    />
+                  )
                 ) : f.type === "date" ? (
                   <DatePicker
                     value={vals[f.key]}

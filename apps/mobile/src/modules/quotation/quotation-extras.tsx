@@ -12,6 +12,7 @@ import {
   FileText,
   Trash2,
   ExternalLink,
+  Edit2,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -37,6 +38,7 @@ import {
 } from "@/modules/quotation/lib";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
+import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
 import { Line } from "../shared/line";
 
 export function QuotationExtras({
@@ -93,6 +95,8 @@ export function QuotationExtras({
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
 
   const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [itemDialogOpen, setItemDialogOpen] = React.useState(false);
+  const [editingIndex, setEditingIndex] = React.useState<number | null>(null);
 
   // Revisi state
   const [revisiOpen, setRevisiOpen] = React.useState(false);
@@ -436,14 +440,28 @@ export function QuotationExtras({
         title="Daftar & Alokasi Barang Penawaran"
         subtitle="Kelola barang, jasa & nomor seri (SN) untuk penawaran ini agar stok ter-reserve otomatis."
         right={
-          <Button
-            size="sm"
-            onPress={() => setPickerOpen(true)}
-            className="flex-row items-center gap-1"
-          >
-            <Plus size={14} color={colors.background} />
-            <Text className="text-xs">Tambah Barang</Text>
-          </Button>
+          <View className="flex-row items-center gap-1.5 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => {
+                setEditingIndex(null);
+                setItemDialogOpen(true);
+              }}
+              className="h-7 px-2 flex-row items-center gap-1"
+            >
+              <Plus size={12} color={colors.text} />
+              <Text className="text-[11px]">Ketik Manual</Text>
+            </Button>
+            <Button
+              size="sm"
+              onPress={() => setPickerOpen(true)}
+              className="h-7 px-2.5 flex-row items-center gap-1"
+            >
+              <Plus size={12} color={colors.background} />
+              <Text className="text-[11px]">Pilih dari Stok</Text>
+            </Button>
+          </View>
         }
       >
         <ConflictAndSwapBanner row={row} />
@@ -567,7 +585,18 @@ export function QuotationExtras({
                           <Text className="text-[10px] text-danger font-medium">PPh: -{rupiah(itemPph)}</Text>
                         ) : null}
                       </View>
-                      <View className="w-12 items-center">
+                      <View className="flex-row items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onPress={() => {
+                            setEditingIndex(idx);
+                            setItemDialogOpen(true);
+                          }}
+                        >
+                          <Edit2 size={13} color={colors.text} />
+                        </Button>
                         <Button size="icon" variant="ghost" className="size-7" onPress={() => handleDeleteItem(idx)}>
                           <Trash2 size={13} color={colors.danger} />
                         </Button>
@@ -672,6 +701,55 @@ export function QuotationExtras({
         currentQuotationId={row.id}
         existingItems={items}
         onAddItems={handleAddItems}
+      />
+
+      <ItemEditorDialog
+        open={itemDialogOpen}
+        onOpenChange={setItemDialogOpen}
+        item={editingIndex !== null ? items[editingIndex] : null}
+        itemIndex={editingIndex}
+        existingItems={items}
+        isBuyPrice={false}
+        onSave={async (savedItem, idx) => {
+          const formattedItem: QuotationItem = {
+            id: String(savedItem.id || `quo-item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+            item: String(savedItem.item || savedItem.name || "Barang"),
+            qty: Number(savedItem.qty) || 1,
+            satuan: String(savedItem.satuan || savedItem.unit || "Unit"),
+            unit: String(savedItem.unit || savedItem.satuan || "Unit"),
+            harga: Number(savedItem.harga ?? savedItem.price ?? 0),
+            price: Number(savedItem.price ?? savedItem.harga ?? 0),
+            productId: savedItem.productId ? Number(savedItem.productId) : undefined,
+            sku: typeof savedItem.sku === "string" ? savedItem.sku : undefined,
+            kind: savedItem.kind === "SERVICE" ? "SERVICE" : "GOODS",
+            hasSerial: Boolean(savedItem.hasSerial || savedItem.sn || (Array.isArray(savedItem.serialNumbers) && savedItem.serialNumbers.length > 0)),
+            serialNumbers: Array.isArray(savedItem.serialNumbers) ? (savedItem.serialNumbers as string[]) : undefined,
+            pphMode: savedItem.pphMode as PphMode | undefined,
+            tipePph: typeof savedItem.tipePph === "string" ? savedItem.tipePph : undefined,
+          };
+          const updated = [...items];
+          if (idx !== undefined && idx !== null && idx >= 0 && idx < updated.length) {
+            updated[idx] = formattedItem;
+          } else {
+            updated.push(formattedItem);
+          }
+          updateItems(updated);
+          const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
+          const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
+
+          await patchRow("quotations", row.id, {
+            items: updated,
+            total: newTotal,
+            nilai: newTotal,
+            dpp,
+            ppn,
+            pph,
+            totalAfterDisc,
+          });
+          await reload();
+          await onRefresh?.();
+          toast("Rincian barang penawaran berhasil disimpan");
+        }}
       />
 
       {/* Dokumen Penawaran Manual */}

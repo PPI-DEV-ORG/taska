@@ -47,6 +47,7 @@ import { PurchaseRequestExtras } from "@/modules/purchase-request/purchase-reque
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { printOrderDocument } from "@/lib/order-print";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
+import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
 import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 
 // Re-export agar import lama dari "@/screens/module-extras" tetap valid.
@@ -609,24 +610,11 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   const openAddItem = () => {
     setEditingIndex(null);
-    setItemName("");
-    setItemQty("1");
-    setItemSatuan("Unit");
-    setItemHarga("0");
-    setItemSn("");
-    setItemPphMode("none");
     setItemDialogOpen(true);
   };
 
   const openEditItem = (idx: number) => {
-    const target = currentItems[idx];
     setEditingIndex(idx);
-    setItemName(getItemName(target));
-    setItemQty(String(getItemQty(target)));
-    setItemSatuan(getItemUnit(target));
-    setItemHarga(formatThousands(getItemPrice(target)));
-    setItemSn(getItemSn(target));
-    setItemPphMode(target?.pphMode || "none");
     setItemDialogOpen(true);
   };
 
@@ -1341,113 +1329,23 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         </Panel>
       ) : null}
 
-      <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
-        <DialogContent className="max-w-md w-[92vw] sm:w-full">
-          <DialogHeader>
-            <DialogTitle>
-              {editingIndex !== null ? "Edit Barang / Jasa" : "Tambah Barang / Jasa"}
-            </DialogTitle>
-          </DialogHeader>
-          <View className="gap-3 py-2">
-            {((data.products ?? []) as any[]).length > 0 && (
-              <FormField label="Pilih dari Master Stok / Jasa (Opsional)">
-                <SearchableSelect
-                  value={
-                    itemName
-                      ? (((data.products ?? []) as any[]).find((p: any) => p.nama === itemName)
-                        ? `${itemName} (${((data.products ?? []) as any[]).find((p: any) => p.nama === itemName)?.sku})`
-                        : itemName)
-                      : ""
-                  }
-                  options={((data.products ?? []) as any[]).map((p: any) => `${p.nama} (${p.sku})`)}
-                  onChange={(val) => {
-                    const clean = (val.split(" (")[0] ?? val).trim();
-                    const found = ((data.products ?? []) as any[]).find(
-                      (p: any) => `${p.nama} (${p.sku})` === val || p.nama === clean || p.sku === clean,
-                    );
-                    if (found) {
-                      setItemName(found.nama || clean);
-                      if (found.satuan) setItemSatuan(found.satuan);
-                      const rawPrice = found.hargaBeli ?? found.purchasePrice ?? found.price ?? found.harga ?? 0;
-                      setItemHarga(rawPrice > 0 ? formatThousands(rawPrice) : "");
-                    } else {
-                      setItemName(val);
-                    }
-                  }}
-                  placeholder="Pilih item produk / jasa terdaftar..."
-                />
-              </FormField>
-            )}
-
-            <FormField label="Nama Barang / Jasa" required>
-              <Input
-                value={itemName}
-                onChangeText={setItemName}
-                placeholder="Contoh: Router Mikrotik RB750Gr3"
-              />
-            </FormField>
-
-            <View className="flex-row gap-2">
-              <View className="flex-1">
-                <FormField label="Jumlah (Qty)" required>
-                  <Input
-                    value={itemQty}
-                    onChangeText={setItemQty}
-                    keyboardType="numeric"
-                    placeholder="1"
-                  />
-                </FormField>
-              </View>
-              <View className="flex-1">
-                <FormField label="Satuan">
-                  <Input
-                    value={itemSatuan}
-                    onChangeText={setItemSatuan}
-                    placeholder="Unit, Pcs, dll"
-                  />
-                </FormField>
-              </View>
-            </View>
-
-            <FormField label="Harga Satuan (Rp)">
-              <Input
-                value={itemHarga ? formatThousands(itemHarga) : ""}
-                onChangeText={(v) => setItemHarga(formatThousands(v))}
-                keyboardType="numeric"
-                placeholder="0"
-              />
-            </FormField>
-
-            <FormField label="PPh Barang / Jasa (Opsional)" hint="Pilih pemotongan PPh jika ada">
-              <SearchableSelect
-                value={pphModeToTipe(itemPphMode)}
-                options={PPH_MODE_OPTIONS.map((o) => o.label)}
-                onChange={(lbl) => {
-                  const m = PPH_MODE_OPTIONS.find((o) => o.label === lbl);
-                  setItemPphMode(m?.id || "none");
-                }}
-                placeholder="Tanpa PPh"
-              />
-            </FormField>
-
-            <FormField label="Serial Number (SN) / Keterangan (Opsional)">
-              <Input
-                value={itemSn}
-                onChangeText={setItemSn}
-                placeholder="SN12345678 / Keterangan spesifikasi"
-              />
-            </FormField>
-          </View>
-          <DialogFooter>
-            <Button variant="outline" onPress={() => setItemDialogOpen(false)}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleSaveItem} disabled={saving}>
-              <Text className="text-white">{saving ? "Menyimpan..." : "Simpan Item"}</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ItemEditorDialog
+        open={itemDialogOpen}
+        onOpenChange={setItemDialogOpen}
+        item={editingIndex !== null ? currentItems[editingIndex] : null}
+        itemIndex={editingIndex}
+        existingItems={currentItems}
+        isBuyPrice={false}
+        onSave={async (savedItem, idx) => {
+          const updated = [...currentItems];
+          if (idx !== undefined && idx !== null && idx >= 0 && idx < updated.length) {
+            updated[idx] = savedItem;
+          } else {
+            updated.push(savedItem);
+          }
+          await saveItems(updated, true);
+        }}
+      />
 
       <SerialItemPickerModal
         open={pickerOpen}

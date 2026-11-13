@@ -8,7 +8,7 @@ import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect, UserSelect } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { apiBase } from "@/services/api";
@@ -217,7 +217,12 @@ export function TaskDetailDialog({
             </View>
 
             <FormField label="PIC">
-              <SearchableSelect value={pic} onChange={setPic} options={userNames} placeholder="Pilih PIC" />
+              <UserSelect
+                value={pic}
+                onChange={(u) => setPic(u?.name || u?.nama || "")}
+                placeholder="Pilih PIC..."
+                title="Pilih PIC Tugas"
+              />
             </FormField>
             <FormField label="Tenggat Waktu">
               <DatePicker value={tenggat} onChange={setTenggat} />

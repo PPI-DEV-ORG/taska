@@ -2,7 +2,7 @@ import React from "react";
 import { View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { FormField } from "@/components/taska/basics";
-import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
+import { SearchableSelect, DatePicker, UserSelect } from "@/components/taska/dialogs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,24 +58,22 @@ export function ManualAttendanceDialog({
         </DialogHeader>
 
         <View className="gap-3.5 py-2">
-          {/* Dropdown Select Karyawan */}
-          <FormField label="Pilih Karyawan" required hint="Pilih nama karyawan dari daftar staf">
-            <SearchableSelect
+          {/* Tabel Select Karyawan */}
+          <FormField label="Pilih Karyawan" required hint="Pilih nama karyawan dari tabel daftar staf">
+            <UserSelect
               value={manualUserLabel}
-              onChange={(val) => {
-                setManualUserLabel(val);
-                const matched = userOptions.find(
-                  (u) => `${u.id} - ${u.name} (${u.role || u.email || "Karyawan"})` === val
-                );
-                if (matched) {
-                  setManualUserId(String(matched.id));
+              userId={manualUserLabel ? manualUserLabel.split(" - ")[0] : undefined}
+              onChange={(u) => {
+                if (u) {
+                  setManualUserId(String(u.id));
+                  setManualUserLabel(`${u.id} - ${u.name || u.nama} (${u.roleLabel || u.role || "Karyawan"})`);
                 } else {
-                  const id = val.split(" - ")[0] ?? "";
-                  setManualUserId(id);
+                  setManualUserId("");
+                  setManualUserLabel("");
                 }
               }}
-              options={employeeSelectOptions}
-              placeholder="Cari & pilih karyawan..."
+              placeholder="Cari & pilih karyawan dari tabel staf..."
+              title="Pilih Karyawan Presensi"
             />
           </FormField>
 

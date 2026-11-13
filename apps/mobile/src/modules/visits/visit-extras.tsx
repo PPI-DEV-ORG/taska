@@ -22,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect, UserSelect } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, downloadDocumentationPdf } from "@/services/api";
@@ -714,11 +714,11 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
 
             <View style={{ gap: 4 }}>
               <Text style={{ fontSize: 12, fontWeight: "600" }}>Penanggung Jawab (Assignee)</Text>
-              <SearchableSelect
+              <UserSelect
                 value={newActionAssignee}
-                onChange={setNewActionAssignee}
-                options={userOptions}
-                placeholder="Pilih staf penanggung jawab"
+                onChange={(u) => setNewActionAssignee(u?.name || u?.nama || "")}
+                placeholder="Pilih staf penanggung jawab..."
+                title="Pilih Penanggung Jawab Tindak Lanjut"
               />
             </View>
 

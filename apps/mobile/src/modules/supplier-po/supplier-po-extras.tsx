@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View, Linking, Pressable, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { CheckCircle2, Circle, ExternalLink, PackageCheck, Plus, Printer, RotateCcw, Trash2, Check, Receipt, FileText } from "lucide-react-native";
+import { CheckCircle2, Circle, ExternalLink, PackageCheck, Plus, Printer, RotateCcw, Trash2, Check, Receipt, FileText, Edit2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import { PPH_MODE_OPTIONS, pphRateFor, pphModeToTipe, type PphMode } from "@/mod
 import { Line } from "@/modules/shared/line";
 import { printOrderDocument } from "@/lib/order-print";
 import { getKasBankAccounts } from "@/lib/accounting";
+import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
 
 import {
   SupplierInvoiceDetailDialog,
@@ -34,6 +35,63 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   const { user, patchRow, setStatus, addRow, toast, data, reload, refreshModule } = useApp();
   const [showAllPoItems, setShowAllPoItems] = React.useState(false);
   const [selectedPoItemIndices, setSelectedPoItemIndices] = React.useState<number[]>([]);
+  const [poItemModalOpen, setPoItemModalOpen] = React.useState(false);
+  const [editingPoIndex, setEditingPoIndex] = React.useState<number | null>(null);
+
+  const handleSavePoItem = async (savedItem: any) => {
+    const currentItems = Array.isArray(row.items) && row.items.length > 0
+      ? [...row.items]
+      : row.item && row.item !== "-"
+        ? String(row.item).split(", ").map((name: string) => ({ item: name, name, qty: 1, unit: "Unit", price: 0 }))
+        : [];
+
+    const normalized = {
+      ...savedItem,
+      item: savedItem.item || savedItem.name || savedItem.productName || "Barang",
+      name: savedItem.name || savedItem.item || savedItem.productName || "Barang",
+      productName: savedItem.productName || savedItem.name || savedItem.item || "Barang",
+      qty: Number(savedItem.qty) || 1,
+      price: Number(savedItem.price || savedItem.harga || 0),
+      unit: savedItem.unit || savedItem.satuan || "Unit",
+    };
+
+    let updatedList: any[];
+    if (editingPoIndex !== null && editingPoIndex >= 0 && editingPoIndex < currentItems.length) {
+      updatedList = [...currentItems];
+      updatedList[editingPoIndex] = { ...updatedList[editingPoIndex], ...normalized };
+    } else {
+      updatedList = [...currentItems, normalized];
+    }
+
+    const newTotal = updatedList.reduce((s: number, it: any) => s + Number(it.price ? it.price * (it.qty || 1) : 0), 0);
+    const itemNamesStr = updatedList.map((it: any) => it.item || it.name || it.productName || it.customName).filter(Boolean).join(", ");
+
+    await patchRow("supplier-pos", row.id, {
+      items: updatedList,
+      item: itemNamesStr || "-",
+      total: newTotal,
+      nilai: newTotal,
+    });
+    setPoItemModalOpen(false);
+    setEditingPoIndex(null);
+    await reload();
+    onRefresh?.();
+    toast(editingPoIndex !== null ? "Barang berhasil diperbarui" : "Barang berhasil ditambahkan");
+  };
+
+  const currentPoEditingItem = React.useMemo(() => {
+    if (editingPoIndex === null) return null;
+    if (Array.isArray(row.items) && row.items[editingPoIndex]) {
+      return row.items[editingPoIndex];
+    }
+    if (row.item && row.item !== "-") {
+      const sp = String(row.item).split(", ");
+      if (sp[editingPoIndex]) {
+        return { item: sp[editingPoIndex], name: sp[editingPoIndex], qty: 1, unit: "Unit", price: 0 };
+      }
+    }
+    return null;
+  }, [editingPoIndex, row.items, row.item]);
 
   const handleDeleteSelectedPoItems = async () => {
     if (selectedPoItemIndices.length === 0) return;
@@ -729,6 +787,18 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
         title={`Barang di PO ini (${Array.isArray(row.items) && row.items.length > 0 ? row.items.length : (row.item && row.item !== "-" ? String(row.item).split(", ").length : 0)})`}
         right={
           <View className="flex-row items-center gap-1.5 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 flex-row items-center gap-1"
+              onPress={() => {
+                setEditingPoIndex(null);
+                setPoItemModalOpen(true);
+              }}
+            >
+              <Plus size={12} color={colors.text} />
+              <Text className="text-[11px]">Tambah Barang</Text>
+            </Button>
             {selectedPoItemIndices.length > 0 && (
               <Button
                 size="sm"
@@ -804,11 +874,45 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                       <Text className="text-xs text-muted-foreground">{qtyText}</Text>
                     </View>
                   </View>
-                  {showPrice ? (
-                    <Text className="text-sm font-semibold">
-                      {itemTotal > 0 ? rupiah(itemTotal) : <Text className="text-muted-foreground text-xs font-normal">Harga beli tampil</Text>}
-                    </Text>
-                  ) : null}
+                  <View className="flex-row items-center gap-1.5 ml-2">
+                    {showPrice ? (
+                      <Text className="text-sm font-semibold">
+                        {itemTotal > 0 ? rupiah(itemTotal) : <Text className="text-muted-foreground text-xs font-normal">Harga beli tampil</Text>}
+                      </Text>
+                    ) : null}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7"
+                      onPress={() => {
+                        setEditingPoIndex(idx);
+                        setPoItemModalOpen(true);
+                      }}
+                    >
+                      <Edit2 size={13} color={colors.text} />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7"
+                      onPress={async () => {
+                        const updated = row.items.filter((_: any, i: number) => i !== idx);
+                        const newTotal = updated.reduce((s: number, it: any) => s + Number(it.price ? it.price * (it.qty || 1) : 0), 0);
+                        const itemNamesStr = updated.map((it: any) => it.item || it.name || it.productName || it.customName).filter(Boolean).join(", ");
+                        await patchRow("supplier-pos", row.id, {
+                          items: updated,
+                          item: itemNamesStr || "-",
+                          total: newTotal,
+                          nilai: newTotal,
+                        });
+                        await reload();
+                        onRefresh?.();
+                        toast("Barang berhasil dihapus dari PO");
+                      }}
+                    >
+                      <Trash2 size={13} color={colors.danger} />
+                    </Button>
+                  </View>
                 </View>
               );
             })}
@@ -859,7 +963,36 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                         </Pressable>
                         <Text className="text-sm font-medium text-foreground flex-1">{it}</Text>
                       </View>
-                      {showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : null}
+                      <View className="flex-row items-center gap-1.5 ml-2">
+                        {showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : null}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onPress={() => {
+                            setEditingPoIndex(idx);
+                            setPoItemModalOpen(true);
+                          }}
+                        >
+                          <Edit2 size={13} color={colors.text} />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onPress={async () => {
+                            const updated = splitted.filter((_: any, i: number) => i !== idx);
+                            await patchRow("supplier-pos", row.id, {
+                              item: updated.length > 0 ? updated.join(", ") : "-",
+                            });
+                            await reload();
+                            onRefresh?.();
+                            toast("Barang berhasil dihapus dari PO");
+                          }}
+                        >
+                          <Trash2 size={13} color={colors.danger} />
+                        </Button>
+                      </View>
                     </View>
                   );
                 })}
@@ -1483,6 +1616,18 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
         onSuccess={() => {
           setSelectedDetailInv(null);
         }}
+      />
+
+      <ItemEditorDialog
+        open={poItemModalOpen}
+        onOpenChange={(open) => {
+          setPoItemModalOpen(open);
+          if (!open) setEditingPoIndex(null);
+        }}
+        initialItem={currentPoEditingItem}
+        isBuyPrice={true}
+        title={editingPoIndex !== null ? "Edit Barang PO" : "Tambah Barang PO"}
+        onSave={handleSavePoItem}
       />
     </>
   );

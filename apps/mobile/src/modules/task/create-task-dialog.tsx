@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect, UserSelect } from "@/components/taska/dialogs";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { MarkdownView } from "./markdown-view";
@@ -32,6 +32,7 @@ export function CreateTaskDialog({
   const [deskripsi, setDeskripsi] = React.useState("");
   const [parentTask, setParentTask] = React.useState("(Tugas Utama)");
   const [pic, setPic] = React.useState("");
+  const [assigneeId, setAssigneeId] = React.useState<string | number | undefined>(undefined);
   const [tenggat, setTenggat] = React.useState("");
   const [perluBarang, setPerluBarang] = React.useState("Tidak");
   const [editorTab, setEditorTab] = React.useState<"write" | "preview">("write");
@@ -46,6 +47,7 @@ export function CreateTaskDialog({
     setDeskripsi("");
     setParentTask("(Tugas Utama)");
     setPic("");
+    setAssigneeId(undefined);
     setTenggat("");
     setPerluBarang("Tidak");
     setEditorTab("write");
@@ -97,6 +99,7 @@ export function CreateTaskDialog({
         nama: nama.trim(),
         deskripsi: deskripsi.trim() || undefined,
         pic,
+        assigneeId: assigneeId ? Number(assigneeId) : undefined,
         tenggat: tenggat || new Date().toISOString().slice(0, 10),
         perluBarang: perluBarang === "Ya",
         status: "TODO",
@@ -219,11 +222,15 @@ export function CreateTaskDialog({
           </FormField>
 
           <FormField label="PIC Tugas" required>
-            <SearchableSelect
+            <UserSelect
               value={pic}
-              onChange={setPic}
-              options={userNames}
-              placeholder="Pilih PIC tugas"
+              userId={assigneeId}
+              onChange={(user) => {
+                setPic(user?.name || user?.nama || "");
+                setAssigneeId(user?.id);
+              }}
+              placeholder="Cari & pilih PIC tugas..."
+              title="Pilih PIC Tugas"
             />
           </FormField>
 
