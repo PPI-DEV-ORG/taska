@@ -287,6 +287,51 @@ export default function NewDeliveryNoteScreen() {
     return (data.invoices ?? []).find((inv: Row) => String(inv.id) === String(selectedInvoiceId)) ?? null;
   }, [data.invoices, selectedInvoiceId]);
 
+  const editedDnKey = initialExistingDn ? String(initialExistingDn.id) : editId;
+
+  /** SO yang sudah dipakai surat jalan aktif tidak perlu muncul lagi di pilihan. */
+  const linkedSoIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const dn of deliveryNotes ?? []) {
+      const isCurrent = editedDnKey && (String(dn.id) === editedDnKey || String(dn.nomor) === editedDnKey);
+      if (isCurrent) continue;
+      if (String(dn.status || "").toLowerCase().includes("batal")) continue;
+
+      const directId = dn.soId ?? dn.clientPoId;
+      if (directId) ids.add(String(directId));
+
+      const number = String(dn.soNumber || dn.soDisplay || "").trim().toUpperCase();
+      if (!number || number === "-") continue;
+      const match = soList.find((so: Row) => {
+        const candidate = String(so.nomorSo || so.nomor || "").trim().toUpperCase();
+        return candidate === number;
+      });
+      if (match) ids.add(String(match.id));
+    }
+    return ids;
+  }, [deliveryNotes, editedDnKey, soList]);
+
+  /** Invoice yang sudah dipakai surat jalan aktif tidak perlu muncul lagi di pilihan. */
+  const linkedInvoiceIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    const invoiceList = data.invoices ?? [];
+    for (const dn of deliveryNotes ?? []) {
+      const isCurrent = editedDnKey && (String(dn.id) === editedDnKey || String(dn.nomor) === editedDnKey);
+      if (isCurrent) continue;
+      if (String(dn.status || "").toLowerCase().includes("batal")) continue;
+
+      if (dn.invoiceId) ids.add(String(dn.invoiceId));
+
+      const number = String(dn.invoiceNumber || dn.invoiceDisplay || "").trim().toUpperCase();
+      if (!number || number === "-") continue;
+      const match = invoiceList.find(
+        (inv: Row) => String(inv.nomor || "").trim().toUpperCase() === number,
+      );
+      if (match) ids.add(String(match.id));
+    }
+    return ids;
+  }, [data.invoices, deliveryNotes, editedDnKey]);
+
   function handleSelectInvoice(match: Row | null) {
     if (!match) {
       setSelectedInvoiceId(null);
@@ -829,23 +874,25 @@ export default function NewDeliveryNoteScreen() {
             />
           </FormField>
 
-          <FormField label="Terkait Sales Order (SO) (Opsional)" hint="Pilih SO bila surat jalan ini untuk pengiriman pesanan penjualan barang">
+          <FormField label="Terkait Sales Order (SO) (Opsional)" hint="Hanya SO yang belum memiliki Surat Jalan yang ditampilkan">
             <PoClientSelect
               poId={selectedSo?.id}
               value={selectedSo ? (selectedSo.nomorSo || selectedSo.nomor || `SO #${selectedSo.id}`) : undefined}
               onChange={handleSelectSo}
               placeholder="Pilih Sales Order (SO) jika ada..."
               allowClear
+              excludeIds={linkedSoIds}
             />
           </FormField>
 
-          <FormField label="Terkait Invoice Penjualan (Opsional)" hint="Pilih Invoice bila pengiriman langsung dari invoice lunas tanpa SO">
+          <FormField label="Terkait Invoice Penjualan (Opsional)" hint="Hanya Invoice yang belum memiliki Surat Jalan yang ditampilkan">
             <InvoiceSelect
               invoiceId={selectedInvoice?.id}
               value={selectedInvoice ? (selectedInvoice.nomor || `INV #${selectedInvoice.id}`) : undefined}
               onChange={handleSelectInvoice}
               placeholder="Pilih Invoice jika ada..."
               allowClear
+              excludeIds={linkedInvoiceIds}
             />
           </FormField>
 

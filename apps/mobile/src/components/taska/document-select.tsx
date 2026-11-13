@@ -64,6 +64,7 @@ export interface PoClientSelectProps {
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
+  excludeIds?: Iterable<string | number>;
 }
 
 export function PoClientSelect({
@@ -73,13 +74,23 @@ export function PoClientSelect({
   placeholder = "Cari & pilih PO pelanggan (Pesanan Penjualan)...",
   error,
   allowClear = true,
+  excludeIds,
 }: PoClientSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
+  const excludedSet = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const id of excludeIds ?? []) set.add(String(id));
+    return set;
+  }, [excludeIds]);
+
   const poClientData = data["po-client"];
-  const poList: Row[] = React.useMemo(() => poClientData ?? [], [poClientData]);
+  const poList: Row[] = React.useMemo(
+    () => (poClientData ?? []).filter((p: Row) => !excludedSet.has(String(p.id))),
+    [poClientData, excludedSet],
+  );
 
   const selectedPo = React.useMemo(() => {
     if (poId) {
@@ -176,14 +187,14 @@ export function PoClientSelect({
           {/* Table */}
           <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: "100%" }}>
-              <View className="flex-1 min-w-[760px]">
+              <View className="flex-1 min-w-[880px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nomor SO & Tanggal</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Pelanggan & Proyek</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Total Nilai Pesanan</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2 text-center">Status & Tagihan</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px]">Nomor SO & Tanggal</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px] px-2">Pelanggan & Proyek</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-36 shrink-0 text-right pr-3">Total Nilai</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-48 shrink-0 pl-4 pr-2">Status & Tagihan</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-20 shrink-0 text-center">Aksi</Text>
                 </View>
 
                 {/* Rows */}
@@ -214,13 +225,16 @@ export function PoClientSelect({
                         key={p.id}
                         onPress={() => handleSelect(p)}
                         className={cn(
-                          "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
+                          "px-4 py-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center",
                           isSelected && "bg-primary/10"
                         )}
                       >
                         {/* Kolom 1: Nomor SO & Tanggal */}
-                        <View className="w-1/4 min-w-[180px]">
-                          <Text className={cn("text-xs font-bold font-mono text-foreground", isSelected && "text-primary")}>
+                        <View className="flex-1 min-w-[180px]">
+                          <Text
+                            className={cn("text-xs font-bold font-mono text-foreground", isSelected && "text-primary")}
+                            numberOfLines={1}
+                          >
                             {no}
                           </Text>
                           {tgl ? (
@@ -235,7 +249,7 @@ export function PoClientSelect({
                         </View>
 
                         {/* Kolom 2: Customer & Proyek */}
-                        <View className="w-1/4 min-w-[180px] px-2">
+                        <View className="flex-1 min-w-[180px] px-2">
                           <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
                             {p.customer || "-"}
                           </Text>
@@ -250,25 +264,26 @@ export function PoClientSelect({
                         </View>
 
                         {/* Kolom 3: Total Nilai Pesanan */}
-                        <View className="w-36 items-end px-2">
-                          <Text className="text-xs font-bold text-foreground">{rupiah(totalVal)}</Text>
+                        <View className="w-36 shrink-0 items-end pr-3">
+                          <Text className="w-full text-right text-xs font-bold text-foreground" numberOfLines={1}>{rupiah(totalVal)}</Text>
                           {p.ppnMode && p.ppnMode !== "none" ? (
-                            <Text className="text-[10px] text-primary">{p.ppnMode === "include" ? "Inc. PPN" : "+ PPN 11%"}</Text>
+                            <Text className="w-full text-right text-[10px] text-primary" numberOfLines={1}>{p.ppnMode === "include" ? "Inc. PPN" : "+ PPN 11%"}</Text>
                           ) : null}
                         </View>
 
                         {/* Kolom 4: Status & Tagihan */}
-                        <View className="flex-1 min-w-[140px] px-2 items-center">
+                        <View className="w-48 shrink-0 pl-4 pr-2 items-start justify-center">
                           <StatusBadge status={p.paymentStatus || p.status || "Aktif"} />
                           {totalInv > 0 ? (
-                            <Text className="text-[10px] text-muted-foreground mt-0.5">
-                              Terbit: {rupiah(totalInv)} (Sisa: {rupiah(sisa)})
+                            <Text className="w-full text-[10px] text-muted-foreground mt-0.5" numberOfLines={2}>
+                              Terbit: {rupiah(totalInv)}
+                              {sisa > 0 ? `\nSisa: ${rupiah(sisa)}` : ""}
                             </Text>
                           ) : null}
                         </View>
 
                         {/* Kolom 5: Aksi */}
-                        <View className="w-20 items-center">
+                        <View className="w-20 shrink-0 items-center">
                           {isSelected ? (
                             <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
                               <Check size={12} color={colors.primary} />
@@ -287,7 +302,9 @@ export function PoClientSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data PO Client yang cocok dengan &quot;{q}&quot;
+                        {q.trim()
+                          ? `Tidak ada data PO Client yang cocok dengan "${q}"`
+                          : "Tidak ada SO yang tersedia atau semua sudah memiliki Surat Jalan."}
                       </Text>
                     </View>
                   )}
@@ -1035,6 +1052,7 @@ export interface InvoiceSelectProps {
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
+  excludeIds?: Iterable<string | number>;
 }
 
 export function InvoiceSelect({
@@ -1044,14 +1062,26 @@ export function InvoiceSelect({
   placeholder = "Cari & pilih invoice penjualan...",
   error,
   allowClear = true,
+  excludeIds,
 }: InvoiceSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
+  const excludedSet = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const id of excludeIds ?? []) set.add(String(id));
+    return set;
+  }, [excludeIds]);
+
   const invoices: Row[] = React.useMemo(() => {
-    return (data.invoices ?? []).filter((inv: Row) => inv.status !== "Batal" && inv.status !== "BATAL");
-  }, [data.invoices]);
+    return (data.invoices ?? []).filter(
+      (inv: Row) =>
+        inv.status !== "Batal" &&
+        inv.status !== "BATAL" &&
+        !excludedSet.has(String(inv.id)),
+    );
+  }, [data.invoices, excludedSet]);
 
   const selectedInvoice = React.useMemo(() => {
     if (invoiceId) {
@@ -1149,14 +1179,14 @@ export function InvoiceSelect({
           {/* Table */}
           <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: "100%" }}>
-              <View className="flex-1 min-w-[760px]">
+              <View className="flex-1 min-w-[880px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nomor Invoice & Jenis</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">Customer & Proyek</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Total Tagihan</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2 text-center">Status Pembayaran</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[200px]">Nomor Invoice & Jenis</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px] px-2">Customer & Proyek</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-36 shrink-0 text-right pr-3">Total Tagihan</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-48 shrink-0 pl-4 pr-2">Status Pembayaran</Text>
+                  <Text className="text-[11px] font-bold text-muted-foreground w-20 shrink-0 text-center">Aksi</Text>
                 </View>
 
                 {/* Rows */}
@@ -1187,12 +1217,12 @@ export function InvoiceSelect({
                         key={inv.id}
                         onPress={() => handleSelect(inv)}
                         className={cn(
-                          "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
+                          "px-4 py-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center",
                           isSelected && "bg-primary/10"
                         )}
                       >
                         {/* Kolom 1 */}
-                        <View className="w-1/4 min-w-[180px]">
+                        <View className="flex-1 min-w-[200px]">
                           <View className="flex-row items-center gap-1.5 flex-wrap">
                             <Text className={cn("text-xs font-bold font-mono text-foreground", isSelected && "text-primary")}>
                               {no}
@@ -1215,7 +1245,7 @@ export function InvoiceSelect({
                         </View>
 
                         {/* Kolom 2 */}
-                        <View className="w-1/4 min-w-[180px] px-2">
+                        <View className="flex-1 min-w-[180px] px-2">
                           <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
                             {inv.customer || "-"}
                           </Text>
@@ -1227,24 +1257,24 @@ export function InvoiceSelect({
                         </View>
 
                         {/* Kolom 3 */}
-                        <View className="w-36 text-right px-2 items-end">
-                          <Text className="text-xs font-bold text-foreground">
+                        <View className="w-36 shrink-0 items-end pr-3">
+                          <Text className="w-full text-right text-xs font-bold text-foreground" numberOfLines={1}>
                             {rupiah(totalVal)}
                           </Text>
                           {sisa > 0 && terbayar > 0 ? (
-                            <Text className="text-[10px] text-warning mt-0.5">
+                            <Text className="w-full text-right text-[10px] text-warning mt-0.5" numberOfLines={1}>
                               Sisa: {rupiah(sisa)}
                             </Text>
                           ) : null}
                         </View>
 
                         {/* Kolom 4 */}
-                        <View className="flex-1 min-w-[140px] px-2 items-center justify-center">
+                        <View className="w-48 shrink-0 pl-4 pr-2 items-start justify-center">
                           <StatusBadge status={inv.status || "Draf"} />
                         </View>
 
                         {/* Kolom 5 */}
-                        <View className="w-20 items-center justify-center">
+                        <View className="w-20 shrink-0 items-center justify-center">
                           <Button
                             size="sm"
                             variant={isSelected ? "default" : "outline"}
@@ -1260,7 +1290,11 @@ export function InvoiceSelect({
 
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center">
-                      <Text className="text-xs text-muted-foreground">Tidak ada invoice yang sesuai pencarian.</Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {q.trim()
+                          ? "Tidak ada invoice yang sesuai pencarian."
+                          : "Tidak ada invoice yang tersedia atau semua sudah memiliki Surat Jalan."}
+                      </Text>
                     </View>
                   )}
                 </ScrollView>

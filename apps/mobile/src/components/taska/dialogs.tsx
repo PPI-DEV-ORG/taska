@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Search, FileDown, X, Plus } from "lucide-react-native";
+import { Calendar as CalendarIcon, Check, ChevronDown, ChevronLeft, ChevronRight, Clock as ClockIcon, Search, FileDown, X, Plus } from "lucide-react-native";
 import { QuickAddCustomerDialog } from "./quick-add-customer-dialog";
 import { QuickAddSupplierDialog } from "./quick-add-supplier-dialog";
 import { QuickAddDealTypeDialog } from "./quick-add-deal-type-dialog";
@@ -306,6 +306,160 @@ export function DatePicker({
           <DialogFooter>
             <Button variant="outline" onPress={() => setOpen(false)}>
               <Text>Tutup</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+const TIME_HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const TIME_MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+
+function rowsOf<T>(items: T[], size: number): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += size) rows.push(items.slice(i, i + size));
+  return rows;
+}
+
+function parseTimeValue(v?: string): { hour: string; minute: string } {
+  const match = /^(\d{1,2}):(\d{2})/.exec((v ?? "").trim());
+  if (!match) return { hour: "09", minute: "00" };
+  const hour = Math.min(23, Math.max(0, Number(match[1])));
+  const minute = Math.min(59, Math.max(0, Number(match[2])));
+  return {
+    hour: String(hour).padStart(2, "0"),
+    minute: String(minute).padStart(2, "0"),
+  };
+}
+
+function TimeColumn({
+  title,
+  values,
+  selected,
+  onSelect,
+}: {
+  title: string;
+  values: string[];
+  selected: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <View className="flex-1 gap-1.5">
+      <Text className="text-muted-foreground text-xs font-semibold">{title}</Text>
+      <ScrollView
+        className="bg-input/40 border-border max-h-48 rounded-lg border"
+        showsVerticalScrollIndicator
+        nestedScrollEnabled
+      >
+        <View className="gap-0.5 p-1">
+          {rowsOf(values, 4).map((row, rowIndex) => (
+            <View key={`${title}-${rowIndex}`} className="flex-row gap-0.5">
+              {row.map((value) => (
+                <Pressable
+                  key={value}
+                  onPress={() => onSelect(value)}
+                  className={cn(
+                    "min-h-[34px] flex-1 items-center justify-center rounded-md",
+                    value === selected ? "bg-primary" : "hover:bg-panel active:bg-panel",
+                  )}
+                >
+                  <Text
+                    className={cn(
+                      "text-xs font-medium tabular-nums",
+                      value === selected ? "text-background font-bold" : "text-foreground",
+                    )}
+                  >
+                    {value}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+export function TimePicker({
+  value,
+  onChange,
+  placeholder = "Pilih jam",
+  error,
+  className,
+}: {
+  value?: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  error?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const initial = parseTimeValue(value);
+  const [hour, setHour] = React.useState(initial.hour);
+  const [minute, setMinute] = React.useState(initial.minute);
+
+  function openPicker() {
+    const current = parseTimeValue(value);
+    setHour(current.hour);
+    setMinute(current.minute);
+    setOpen(true);
+  }
+
+  function apply() {
+    onChange(`${hour}:${minute}`);
+    setOpen(false);
+  }
+
+  const label = value ? `${parseTimeValue(value).hour}:${parseTimeValue(value).minute}` : "";
+
+  return (
+    <>
+      <Pressable
+        onPress={openPicker}
+        className={cn(
+          "bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3",
+          error && "border-danger",
+          className,
+        )}
+      >
+        <Text
+          className={cn("text-base md:text-sm tabular-nums", !label && "text-muted-foreground")}
+          numberOfLines={1}
+        >
+          {label || placeholder}
+        </Text>
+        <ClockIcon size={16} color={colors.muted} />
+      </Pressable>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Pilih Jam (WIB)</DialogTitle>
+          </DialogHeader>
+
+          <View className="gap-3">
+            <View className="bg-panel/60 border-border items-center rounded-xl border py-3">
+              <Text className="text-foreground text-4xl font-bold tabular-nums">
+                {hour}:{minute}
+              </Text>
+              <Text className="text-muted-foreground text-[11px] font-semibold tracking-wider">WIB</Text>
+            </View>
+
+            <View className="flex-row gap-2.5">
+              <TimeColumn title="Jam" values={TIME_HOURS} selected={hour} onSelect={setHour} />
+              <TimeColumn title="Menit" values={TIME_MINUTES} selected={minute} onSelect={setMinute} />
+            </View>
+          </View>
+
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setOpen(false)}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={apply}>
+              <Text>Gunakan Jam</Text>
             </Button>
           </DialogFooter>
         </DialogContent>
