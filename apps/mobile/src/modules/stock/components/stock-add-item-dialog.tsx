@@ -51,6 +51,11 @@ export function StockAddItemDialog({
     () => initialSerials.split(/[\n,;]+/).map((sn) => sn.trim()).filter(Boolean),
     [initialSerials],
   );
+  const serialCountMismatch =
+    initialStockEnabled &&
+    isSn &&
+    initialStockQty > 0 &&
+    parsedInitialSerials.length !== initialStockQty;
 
   async function handleSaveNewItem() {
     if (!newItemName.trim() || !newItemSku.trim()) {
@@ -285,6 +290,11 @@ export function StockAddItemDialog({
                       label={`Serial Number (${parsedInitialSerials.length}/${initialStockQty})`}
                       required
                       hint="Pisahkan dengan koma atau baris baru. Jumlah SN harus sama dengan qty saldo awal."
+                      error={
+                        serialCountMismatch
+                          ? `Jumlah SN belum sesuai: ${parsedInitialSerials.length} dari ${initialStockQty} unit.`
+                          : undefined
+                      }
                     >
                       <Textarea
                         value={initialSerials}
@@ -332,7 +342,7 @@ export function StockAddItemDialog({
           <Button variant="outline" onPress={() => onOpenChange(false)}>
             <Text>Batal</Text>
           </Button>
-          <Button onPress={handleSaveNewItem}>
+          <Button onPress={handleSaveNewItem} disabled={serialCountMismatch}>
             <Text>Simpan ke Katalog</Text>
           </Button>
         </DialogFooter>
