@@ -383,6 +383,7 @@ export class ExpensesService {
           : {}),
         ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
         ...(dto.fundingSource ? { fundingSource: dto.fundingSource } : {}),
+        ...(dto.paidAccountCode ? { paidAccountCode: dto.paidAccountCode } : {}),
       },
       include: { reporter: { select: { id: true, name: true } } },
     });
