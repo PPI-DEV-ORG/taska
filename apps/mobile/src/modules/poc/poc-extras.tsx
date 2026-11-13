@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Panel } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect, UserSelect } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, downloadDocumentationPdf } from "@/services/api";
@@ -618,11 +618,11 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
             </View>
             <View className="gap-1.5">
               <Text className="text-xs font-semibold">Penanggung Jawab (Assignee)</Text>
-              <SearchableSelect
+              <UserSelect
                 value={newChecklistAssignee}
-                onChange={setNewChecklistAssignee}
-                options={userOptions}
-                placeholder="Pilih staf penanggung jawab"
+                onChange={(u) => setNewChecklistAssignee(u?.name || u?.nama || "")}
+                placeholder="Pilih staf penanggung jawab..."
+                title="Pilih Penanggung Jawab Checklist"
               />
             </View>
             <View className="gap-1.5">

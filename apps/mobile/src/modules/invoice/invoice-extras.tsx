@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Linking, Pressable } from "react-native";
-import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check, Truck, AlertTriangle, Package } from "lucide-react-native";
+import { Plus, Send, FileSpreadsheet, FileText, Paperclip, ExternalLink, CheckCircle2, Printer, RotateCcw, Trash2, Check, Truck, AlertTriangle, Package, Edit2 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -18,6 +18,7 @@ import { buildEfakturCsv } from "@/lib/efaktur";
 import { type Row, hasUserPermission } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
+import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode, getItemAvailableStock } from "@/modules/quotation/lib";
 import { getKasBankAccounts } from "@/lib/accounting";
@@ -53,6 +54,8 @@ export function InvoiceExtras({
   const [isSavingRetur, setIsSavingRetur] = React.useState(false);
 
   const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [itemDialogOpen, setItemDialogOpen] = React.useState(false);
+  const [editingIndex, setEditingIndex] = React.useState<number | null>(null);
   const [showAllItems, setShowAllItems] = React.useState(false);
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
   const [itemsOverride, setItemsOverride] = React.useState<{ rowItems: any; items: QuotationItem[] }>({
@@ -599,14 +602,28 @@ export function InvoiceExtras({
         title="Daftar & Alokasi Barang Terpakai"
         subtitle="Tracking stok barang dan alokasi yang dipakai pada faktur ini agar stok gudang tetap akurat."
         right={
-          <Button
-            size="sm"
-            onPress={() => setPickerOpen(true)}
-            className="flex-row items-center gap-1"
-          >
-            <Plus size={14} color={colors.background} />
-            <Text className="text-xs">Tambah Barang</Text>
-          </Button>
+          <View className="flex-row items-center gap-1.5 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => {
+                setEditingIndex(null);
+                setItemDialogOpen(true);
+              }}
+              className="h-7 px-2 flex-row items-center gap-1"
+            >
+              <Plus size={12} color={colors.text} />
+              <Text className="text-[11px]">Ketik Manual</Text>
+            </Button>
+            <Button
+              size="sm"
+              onPress={() => setPickerOpen(true)}
+              className="h-7 px-2.5 flex-row items-center gap-1"
+            >
+              <Plus size={12} color={colors.background} />
+              <Text className="text-[11px]">Pilih dari Stok</Text>
+            </Button>
+          </View>
         }
       >
         <ConflictAndSwapBanner row={row} />
@@ -730,7 +747,18 @@ export function InvoiceExtras({
                           <Text className="text-[10px] text-danger font-medium">PPh: -{rupiah(itemPph)}</Text>
                         ) : null}
                       </View>
-                      <View className="w-12 items-center">
+                      <View className="flex-row items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7"
+                          onPress={() => {
+                            setEditingIndex(idx);
+                            setItemDialogOpen(true);
+                          }}
+                        >
+                          <Edit2 size={13} color={colors.text} />
+                        </Button>
                         <Button size="icon" variant="ghost" className="size-7" onPress={() => handleDeleteItem(idx)}>
                           <Trash2 size={13} color={colors.danger} />
                         </Button>
@@ -793,6 +821,59 @@ export function InvoiceExtras({
         currentQuotationId={row.quotationId ? Number(row.quotationId) : undefined}
         existingItems={items}
         onAddItems={handleAddItems}
+      />
+
+      <ItemEditorDialog
+        open={itemDialogOpen}
+        onOpenChange={setItemDialogOpen}
+        item={editingIndex !== null ? items[editingIndex] : null}
+        itemIndex={editingIndex}
+        existingItems={items}
+        isBuyPrice={false}
+        onSave={async (savedItem, idx) => {
+          const formattedItem: QuotationItem = {
+            id: String(savedItem.id || `inv-item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+            item: String(savedItem.item || savedItem.name || "Barang"),
+            qty: Number(savedItem.qty) || 1,
+            satuan: String(savedItem.satuan || savedItem.unit || "Unit"),
+            unit: String(savedItem.unit || savedItem.satuan || "Unit"),
+            harga: Number(savedItem.harga ?? savedItem.price ?? 0),
+            price: Number(savedItem.price ?? savedItem.harga ?? 0),
+            productId: savedItem.productId ? Number(savedItem.productId) : undefined,
+            sku: typeof savedItem.sku === "string" ? savedItem.sku : undefined,
+            kind: savedItem.kind === "SERVICE" ? "SERVICE" : "GOODS",
+            hasSerial: Boolean(savedItem.hasSerial || savedItem.sn || (Array.isArray(savedItem.serialNumbers) && savedItem.serialNumbers.length > 0)),
+            serialNumbers: Array.isArray(savedItem.serialNumbers) ? (savedItem.serialNumbers as string[]) : undefined,
+            pphMode: savedItem.pphMode as PphMode | undefined,
+            tipePph: typeof savedItem.tipePph === "string" ? savedItem.tipePph : undefined,
+          };
+          const updated = [...items];
+          if (idx !== undefined && idx !== null && idx >= 0 && idx < updated.length) {
+            updated[idx] = formattedItem;
+          } else {
+            updated.push(formattedItem);
+          }
+          updateItems(updated);
+          const newAmount = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.price || it.harga || 0)), 0);
+          const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
+          const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
+          const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
+          const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
+          const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
+          const total = Math.max(0, (isInclude ? newAmount : dpp + ppn) - pph);
+
+          await patchRow("invoices", row.id, {
+            items: updated,
+            nilai: dpp,
+            amount: dpp,
+            ppn,
+            pph,
+            total,
+          });
+          await reload();
+          if (onRefresh) await onRefresh();
+          toast("Rincian barang invoice berhasil disimpan");
+        }}
       />
 
       {/* Panel Pesanan Penjualan (SO) Terhubung */}

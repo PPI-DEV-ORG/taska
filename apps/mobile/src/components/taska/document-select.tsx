@@ -2222,6 +2222,8 @@ export interface UserSelectProps {
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
+  title?: string;
+  triggerClassName?: string;
 }
 
 export function UserSelect({
@@ -2231,6 +2233,8 @@ export function UserSelect({
   placeholder = "Cari & pilih penanggung jawab...",
   error,
   allowClear = true,
+  title,
+  triggerClassName,
 }: UserSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
@@ -2250,7 +2254,7 @@ export function UserSelect({
             name: u.name,
             nama: u.name,
             email: u.email ?? "",
-            roleLabel: u.roleLabel ?? u.role ?? "Staf",
+            roleLabel: u.position || u.roleLabel || u.role || "Staf",
             gudang: u.warehouseName ?? u.gudang ?? "-",
             status: u.status ?? "Aktif",
           })));
@@ -2272,10 +2276,21 @@ export function UserSelect({
     }
     if (value && value !== "-") {
       const qVal = value.trim().toLowerCase();
+      const parts = value.split(" - ");
+      const idPart = parts.length > 1 ? parts[0]?.trim() ?? null : null;
+      const afterId = parts.length > 1 ? parts.slice(1).join(" - ") : value;
+      const cleanName = (afterId.split("(")[0] ?? "").trim().toLowerCase();
+
       return (
         userList.find((u) => {
+          if (idPart && String(u.id) === idPart) return true;
           const name = String(u.name || u.nama || "").toLowerCase();
-          return name === qVal || String(u.id) === qVal || String(u.email || "").toLowerCase() === qVal;
+          return (
+            name === qVal ||
+            name === cleanName ||
+            String(u.id) === qVal ||
+            String(u.email || "").toLowerCase() === qVal
+          );
         }) || null
       );
     }
@@ -2316,7 +2331,8 @@ export function UserSelect({
         }}
         className={cn(
           "bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3 w-full",
-          error && "border-danger"
+          error && "border-danger",
+          triggerClassName
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
@@ -2340,7 +2356,7 @@ export function UserSelect({
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <UserCog size={20} color={colors.primary} />
-                <DialogTitle>Pilih Penanggung Jawab / User</DialogTitle>
+                <DialogTitle>{title || "Pilih Penanggung Jawab / User"}</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -2453,27 +2469,40 @@ export function UserSelect({
 }
 
 // ==========================================
-// 11. USER MULTI SELECT (PESERTA AGENDA)
+// 11. USER MULTI SELECT (ANGGOTA TIM / PESERTA)
 // ==========================================
 
 export interface UserMultiSelectProps {
-  values?: string[];
-  onChange: (names: string[]) => void;
+  values?: string[] | string;
+  onChange: (names: string[], selectedUsers?: Row[]) => void;
   placeholder?: string;
   error?: boolean;
+  title?: string;
+  triggerClassName?: string;
 }
 
 export function UserMultiSelect({
   values = [],
   onChange,
-  placeholder = "Pilih peserta / pihak terkait...",
+  placeholder = "Pilih anggota tim / peserta...",
   error,
+  title,
+  triggerClassName,
 }: UserMultiSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
   const [fetchedUsers, setFetchedUsers] = React.useState<Row[]>([]);
-  const [selectedNames, setSelectedNames] = React.useState<string[]>(values);
+
+  const normalizedValues = React.useMemo(() => {
+    if (Array.isArray(values)) return values.filter(Boolean);
+    if (typeof values === "string" && values.trim()) {
+      return values.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    return [];
+  }, [values]);
+
+  const [selectedNames, setSelectedNames] = React.useState<string[]>(() => normalizedValues);
 
   React.useEffect(() => {
     let active = true;
@@ -2488,7 +2517,7 @@ export function UserMultiSelect({
             name: u.name,
             nama: u.name,
             email: u.email ?? "",
-            roleLabel: u.roleLabel ?? u.role ?? "Staf",
+            roleLabel: u.position || u.roleLabel || u.role || "Staf",
             gudang: u.warehouseName ?? u.gudang ?? "-",
             status: u.status ?? "Aktif",
           })));
@@ -2510,24 +2539,38 @@ export function UserMultiSelect({
       const name = String(u.name || u.nama || "").toLowerCase();
       const email = String(u.email || "").toLowerCase();
       const role = String(u.roleLabel || u.role || "").toLowerCase();
-      return name.includes(term) || email.includes(term) || role.includes(term);
+      const gudang = String(u.gudang || "").toLowerCase();
+      return name.includes(term) || email.includes(term) || role.includes(term) || gudang.includes(term);
     });
   }, [userList, q]);
 
+  const cleanNorm = (s: string) => (s ? (s.split("(")[0] ?? "").trim().toLowerCase() : "");
+
+  function isUserSelected(name: string) {
+    return selectedNames.some((sn) => cleanNorm(sn) === cleanNorm(name));
+  }
+
   function toggleUser(name: string) {
     setSelectedNames((prev) => {
-      const next = prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name];
-      return next;
+      const exists = prev.some((n) => cleanNorm(n) === cleanNorm(name));
+      if (exists) {
+        return prev.filter((n) => cleanNorm(n) !== cleanNorm(name));
+      }
+      return [...prev, name];
     });
   }
 
   function handleSave() {
-    onChange(selectedNames);
+    const matchedUsers = userList.filter((u) => {
+      const name = u.name || u.nama;
+      return selectedNames.some((sn) => cleanNorm(sn) === cleanNorm(name));
+    });
+    onChange(selectedNames, matchedUsers);
     setOpen(false);
   }
 
   function removeTag(name: string) {
-    const next = values.filter((n) => n !== name);
+    const next = normalizedValues.filter((n) => cleanNorm(n) !== cleanNorm(name));
     onChange(next);
   }
 
@@ -2535,21 +2578,22 @@ export function UserMultiSelect({
     <>
       <Pressable
         onPress={() => {
-          setSelectedNames(values);
+          setSelectedNames(normalizedValues);
           setQ("");
           setOpen(true);
         }}
         className={cn(
           "bg-input border-border min-h-11 flex-row flex-wrap items-center justify-between rounded-lg border p-2 w-full gap-1.5",
-          error && "border-danger"
+          error && "border-danger",
+          triggerClassName
         )}
       >
         <View className="flex-1 flex-row flex-wrap items-center gap-1.5">
-          <Users size={16} color={values.length > 0 ? colors.primary : colors.muted} />
-          {values.length === 0 ? (
+          <Users size={16} color={normalizedValues.length > 0 ? colors.primary : colors.muted} />
+          {normalizedValues.length === 0 ? (
             <Text className="text-base md:text-sm text-muted-foreground">{placeholder}</Text>
           ) : (
-            values.map((name) => (
+            normalizedValues.map((name) => (
               <View
                 key={name}
                 className="bg-primary/15 border border-primary/30 rounded-md px-2 py-0.5 flex-row items-center gap-1"
@@ -2580,21 +2624,46 @@ export function UserMultiSelect({
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Users size={20} color={colors.primary} />
-                <DialogTitle>Pilih Peserta / Pihak Terkait ({selectedNames.length} dipilih)</DialogTitle>
+                <DialogTitle>{title || `Pilih Anggota Tim / Peserta (${selectedNames.length} dipilih)`}</DialogTitle>
               </View>
             </View>
           </DialogHeader>
 
-          {/* Search bar */}
-          <View className="bg-input border-border h-10 flex-row items-center gap-2 rounded-lg border px-3 mt-2">
-            <Search size={16} color={colors.muted} />
-            <Input
-              value={q}
-              onChangeText={setQ}
-              placeholder="Cari berdasarkan nama, email, atau peran..."
-              autoFocus
-              className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
-            />
+          {/* Search bar & quick actions */}
+          <View className="flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-2">
+            <View className="bg-input border-border h-10 flex-row items-center gap-2 rounded-lg border px-3 flex-1">
+              <Search size={16} color={colors.muted} />
+              <Input
+                value={q}
+                onChangeText={setQ}
+                placeholder="Cari berdasarkan nama, email, role, atau gudang..."
+                autoFocus
+                className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
+              />
+            </View>
+            <View className="flex-row items-center gap-1.5 self-end sm:self-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 px-3"
+                onPress={() => {
+                  const allNames = filteredList.map((u) => u.name || u.nama || `User #${u.id}`);
+                  setSelectedNames(Array.from(new Set([...selectedNames, ...allNames])));
+                }}
+              >
+                <Text className="text-xs font-semibold">Pilih Semua ({filteredList.length})</Text>
+              </Button>
+              {selectedNames.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-10 px-3"
+                  onPress={() => setSelectedNames([])}
+                >
+                  <Text className="text-xs text-muted-foreground font-semibold">Reset</Text>
+                </Button>
+              )}
+            </View>
           </View>
 
           {/* Table */}
@@ -2614,7 +2683,7 @@ export function UserMultiSelect({
                 <ScrollView className="max-h-[45vh]" contentContainerClassName="divide-y divide-border/40">
                   {filteredList.map((u) => {
                     const name = u.name || u.nama || `User #${u.id}`;
-                    const isSelected = selectedNames.includes(name);
+                    const isSelected = isUserSelected(name);
                     const email = u.email || "-";
                     const role = u.roleLabel || u.role || "Staf";
                     const gudang = u.gudang || "-";
@@ -2668,7 +2737,7 @@ export function UserMultiSelect({
 
           <View className="flex-row items-center justify-between mt-3 pt-2 border-t border-border/70">
             <Text className="text-xs text-muted-foreground">
-              {selectedNames.length} peserta terpilih
+              {selectedNames.length} anggota terpilih
             </Text>
             <View className="flex-row items-center gap-2">
               <Button variant="outline" size="sm" onPress={() => setOpen(false)}>
