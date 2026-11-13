@@ -170,14 +170,11 @@ export function buildEfakturMasukanCsv(
     const isRetail =
       /retail|ritel|stok|beli langsung|reimbursement/i.test(note) ||
       pr.ppnMode === "exclude" ||
-      pr.ppnMode === "include" ||
-      note.includes("[PPN:");
+      pr.ppnMode === "include";
 
     if (!isRetail) continue;
 
-    const ppnMode =
-      pr.ppnMode ||
-      (note.includes("[PPN:exclude]") ? "exclude" : note.includes("[PPN:include]") ? "include" : "none");
+    const ppnMode = pr.ppnMode || "none";
 
     if (ppnMode === "none") continue;
 

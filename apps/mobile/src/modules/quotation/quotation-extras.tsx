@@ -34,7 +34,13 @@ import {
   type PphMode,
   calcItemPph,
   calcQuotationFinancials,
+  extraDiscountOf,
   getItemAvailableStock,
+  itemDiscount,
+  itemGross,
+  recomputeHeaderDiscount,
+  sumItemDiscounts,
+  sumItemGross,
 } from "@/modules/quotation/lib";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
@@ -64,8 +70,12 @@ export function QuotationExtras({
     fileId?: number | null;
   }[] => (Array.isArray(row._versions) ? row._versions : []), [row._versions]);
 
-  const maxVer = apiVersions.reduce((max, v) => Math.max(max, v.v || 0), Number(row.versi || 0));
+  // Nomor versi dari riwayat yang benar-benar ada (currentVersion bisa naik tanpa baris riwayat).
+  const maxVer = apiVersions.reduce((max, v) => Math.max(max, v.v || 0), 0);
   const nextVersionNum = maxVer + 1;
+  // Versi 1 yang masih kosong / hasil generate otomatis akan diisi oleh upload dokumen pertama.
+  const firstVersionClaimable =
+    apiVersions.length === 1 && (!apiVersions[0]?.fileId || /^Auto-generated/i.test(String(apiVersions[0]?.reason || "")));
   const [ppnMode, setPpnMode] = React.useState<"exclude" | "include" | "none">(
     row.tipePpn === "Include PPN (Sudah termasuk)" || row.ppnMode === "include"
       ? "include"
@@ -90,7 +100,9 @@ export function QuotationExtras({
     setItemsOverride({ rowItems: row.items, items: next });
   }, [row.items]);
 
-  const totalItemsPph = items.reduce((acc, it) => acc + calcItemPph(it), 0);
+  // Satu sumber angka (rumus sama dengan Sales Order & invoice). PPh = dipotong customer saat bayar.
+  const quoteFin = calcQuotationFinancials(Number(row.total || row.nilai || 0), Number(row.disc || 0), ppnMode, "none", items);
+  const totalItemsPph = quoteFin.pph;
   const [showAllItems, setShowAllItems] = React.useState(false);
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
 
@@ -106,11 +118,9 @@ export function QuotationExtras({
   async function handleCreateRevision() {
     const finalTotal = totNum;
     const finalDisc = discNum;
-    const finalPpn = ppnMode === "none" ? 0 : (row.ppn ?? Math.round(netBeforeTax * 0.11));
-    const finalPph = totalItemsPph;
-    const finalGrandTotal = ppnMode === "exclude"
-      ? Math.max(0, calcTotalAfterDisc - finalPph)
-      : Math.max(0, netBeforeTax - finalPph);
+    const finalPpn = quoteFin.ppn;
+    const finalPph = quoteFin.pph;
+    const finalGrandTotal = quoteFin.totalAfterDisc;
 
     try {
       await api("POST", `/quotations/${row.id}/versions`, {
@@ -226,8 +236,19 @@ export function QuotationExtras({
   const totNum = Number(row.total || row.nilai || 0);
   const discNum = Number(row.disc || 0);
   const netBeforeTax = Math.max(0, totNum - discNum);
-  const calcPpn = ppnMode === "exclude" ? Math.round(netBeforeTax * 0.11) : 0;
-  const calcTotalAfterDisc = ppnMode === "exclude" ? netBeforeTax + calcPpn : netBeforeTax;
+  // Diskon header = diskon per item + diskon tambahan (dari form penawaran)
+  const itemDiscTotal = sumItemDiscounts(items);
+  const extraDisc = extraDiscountOf(discNum, items);
+
+  /** Total kotor, diskon header baru, dan pajak setelah daftar item berubah (diskon tambahan tetap). */
+  function totalsForItems(updated: QuotationItem[]) {
+    const newTotal = sumItemGross(updated);
+    const newDisc = recomputeHeaderDiscount(discNum, items, updated);
+    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, newDisc, ppnMode, "none", updated);
+    return { newTotal, newDisc, dpp, ppn, pph, totalAfterDisc };
+  }
+  const calcPpn = quoteFin.ppn;
+  const calcTotalAfterDisc = quoteFin.totalAfterDisc;
 
   const canCreateInvoice = ["finance", "admin", "super_admin", "bos"].includes(
     (user?.role || "").toLowerCase()
@@ -255,13 +276,13 @@ export function QuotationExtras({
 
     const updated = [...items, ...valid];
     updateItems(updated);
-    const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
-    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
+    const { newTotal, newDisc, dpp, ppn, pph, totalAfterDisc } = totalsForItems(updated);
 
     await patchRow("quotations", row.id, {
       items: updated,
       total: newTotal,
       nilai: newTotal,
+      disc: newDisc,
       dpp,
       ppn,
       pph,
@@ -276,13 +297,13 @@ export function QuotationExtras({
   async function handleDeleteItem(idx: number) {
     const updated = items.filter((_, i) => i !== idx);
     updateItems(updated);
-    const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
-    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
+    const { newTotal, newDisc, dpp, ppn, pph, totalAfterDisc } = totalsForItems(updated);
 
     await patchRow("quotations", row.id, {
       items: updated,
       total: newTotal,
       nilai: newTotal,
+      disc: newDisc,
       dpp,
       ppn,
       pph,
@@ -298,13 +319,13 @@ export function QuotationExtras({
     const count = selectedItemIndices.length;
     const updated = items.filter((_, i) => !selectedItemIndices.includes(i));
     updateItems(updated);
-    const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
-    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
+    const { newTotal, newDisc, dpp, ppn, pph, totalAfterDisc } = totalsForItems(updated);
 
     await patchRow("quotations", row.id, {
       items: updated,
       total: newTotal,
       nilai: newTotal,
+      disc: newDisc,
       dpp,
       ppn,
       pph,
@@ -321,13 +342,13 @@ export function QuotationExtras({
       i === idx ? { ...it, pphMode: newPphMode, tipePph: pphModeToTipe(newPphMode) } : it
     );
     updateItems(updated);
-    const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
-    const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
+    const { newTotal, newDisc, dpp, ppn, pph, totalAfterDisc } = totalsForItems(updated);
 
     await patchRow("quotations", row.id, {
       items: updated,
       total: newTotal,
       nilai: newTotal,
+      disc: newDisc,
       dpp,
       ppn,
       pph,
@@ -376,28 +397,43 @@ export function QuotationExtras({
             <>
               <Line left="Nilai Sebelum Diskon (Inc. PPN)" right={<Text className="font-semibold">{rupiah(row.total || row.nilai || 0)}</Text>} />
               {Number(row.disc || 0) > 0 ? (
-                <Line left="DISC (Diskon)" right={<Text className="text-danger font-semibold">- {rupiah(row.disc || 0)}</Text>} />
+                <Line
+                  left="DISC (Diskon)"
+                  sub={itemDiscTotal > 0 ? `Per item ${rupiah(itemDiscTotal)}${extraDisc > 0 ? ` + tambahan ${rupiah(extraDisc)}` : ""}` : undefined}
+                  right={<Text className="text-danger font-semibold">- {rupiah(row.disc || 0)}</Text>}
+                />
               ) : null}
               <Line left="DPP (Harga Sebelum PPN)" right={<Text className="font-semibold">{rupiah(Math.round(netBeforeTax / 1.11))}</Text>} />
               <Line
                 left="PPN 11% (Termasuk)"
                 right={<Text className="text-primary font-semibold">{rupiah(row.ppn ?? Math.max(0, netBeforeTax - Math.round(netBeforeTax / 1.11)))}</Text>}
               />
-              {totalItemsPph > 0 ? (
-                <Line
-                  left="Potongan PPh (Akumulasi Per-Item)"
-                  right={<Text className="text-danger font-semibold">- {rupiah(totalItemsPph)}</Text>}
-                />
-              ) : null}
               <Line
-                left="TOTAL AKHIR (Inc. PPN)"
-                right={<Text className="text-primary text-base font-bold">{rupiah(Math.max(0, netBeforeTax - totalItemsPph))}</Text>}
+                left="TOTAL PENAWARAN (termasuk PPN)"
+                right={<Text className="text-primary text-base font-bold">{rupiah(calcTotalAfterDisc)}</Text>}
               />
+              {totalItemsPph > 0 ? (
+                <>
+                  <Line
+                    left="PPh dipotong customer saat bayar"
+                    sub="Bukti potong dari customer; tidak mengurangi nilai penawaran"
+                    right={<Text className="text-muted-foreground font-semibold">{rupiah(totalItemsPph)}</Text>}
+                  />
+                  <Line
+                    left="Estimasi transfer dari customer"
+                    right={<Text className="font-semibold">{rupiah(quoteFin.netReceived)}</Text>}
+                  />
+                </>
+              ) : null}
             </>
           ) : (
             <>
               <Line left="TOTAL (Sebelum PPN & Disc)" right={<Text className="font-semibold">{rupiah(row.total || row.nilai || 0)}</Text>} />
-              <Line left="DISC (Diskon)" right={<Text className="text-danger font-semibold">- {rupiah(row.disc || 0)}</Text>} />
+              <Line
+                left="DISC (Diskon)"
+                sub={itemDiscTotal > 0 ? `Per item ${rupiah(itemDiscTotal)}${extraDisc > 0 ? ` + tambahan ${rupiah(extraDisc)}` : ""}` : undefined}
+                right={<Text className="text-danger font-semibold">- {rupiah(row.disc || 0)}</Text>}
+              />
               <Line
                 left={ppnMode === "none" ? "PPN (Tanpa PPN)" : "PPN (11%)"}
                 right={
@@ -408,16 +444,23 @@ export function QuotationExtras({
                   </Text>
                 }
               />
-              {totalItemsPph > 0 ? (
-                <Line
-                  left="Potongan PPh (Akumulasi Per-Item)"
-                  right={<Text className="text-danger font-semibold">- {rupiah(totalItemsPph)}</Text>}
-                />
-              ) : null}
               <Line
-                left="TOTAL AFTER DISC (Total Akhir)"
-                right={<Text className="text-primary text-base font-bold">{rupiah(Math.max(0, calcTotalAfterDisc - totalItemsPph))}</Text>}
+                left="TOTAL PENAWARAN"
+                right={<Text className="text-primary text-base font-bold">{rupiah(calcTotalAfterDisc)}</Text>}
               />
+              {totalItemsPph > 0 ? (
+                <>
+                  <Line
+                    left="PPh dipotong customer saat bayar"
+                    sub="Bukti potong dari customer; tidak mengurangi nilai penawaran"
+                    right={<Text className="text-muted-foreground font-semibold">{rupiah(totalItemsPph)}</Text>}
+                  />
+                  <Line
+                    left="Estimasi transfer dari customer"
+                    right={<Text className="font-semibold">{rupiah(quoteFin.netReceived)}</Text>}
+                  />
+                </>
+              ) : null}
             </>
           )}
           <Line left="Status Penawaran" right={<StatusBadge status={row.status || "Not Yet"} />} />
@@ -527,7 +570,8 @@ export function QuotationExtras({
               </View>
               {(showAllItems ? items : items.slice(0, 10)).map((it, idx) => {
                 const itemPrice = Number(it.harga ?? it.price ?? 0);
-                const sub = (Number(it.qty) || 1) * itemPrice;
+                const lineDisc = itemDiscount(it);
+                const sub = itemGross(it) - lineDisc;
                 const snText = Array.isArray(it.serialNumbers) && it.serialNumbers.length > 0
                   ? it.serialNumbers.join(", ")
                   : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
@@ -580,9 +624,17 @@ export function QuotationExtras({
                       <Text className="text-xs text-foreground w-16 text-center">{it.qty} {it.satuan || it.unit || "unit"}</Text>
                       <Text className="text-xs text-foreground w-28 text-right">{rupiah(itemPrice)}</Text>
                       <View className="w-28 items-end">
+                        {lineDisc > 0 ? (
+                          <Text className="text-[10px] text-muted-foreground line-through">{rupiah(itemGross(it))}</Text>
+                        ) : null}
                         <Text className="text-xs font-semibold text-foreground">{rupiah(sub)}</Text>
+                        {lineDisc > 0 ? (
+                          <Text className="text-[10px] text-danger font-medium">
+                            Diskon{Number(it.diskonPct) > 0 ? ` ${it.diskonPct}%` : ""}: -{rupiah(lineDisc)}
+                          </Text>
+                        ) : null}
                         {itemPph > 0 ? (
-                          <Text className="text-[10px] text-danger font-medium">PPh: -{rupiah(itemPph)}</Text>
+                          <Text className="text-[10px] text-muted-foreground">PPh: {rupiah(itemPph)}</Text>
                         ) : null}
                       </View>
                       <View className="flex-row items-center gap-1">
@@ -648,10 +700,16 @@ export function QuotationExtras({
                 <Text className="text-xs text-muted-foreground">Total Nilai Barang & Jasa (Sebelum Pajak):</Text>
                 <Text className="text-xs font-semibold">{rupiah(totNum)}</Text>
               </View>
-              {discNum > 0 ? (
+              {itemDiscTotal > 0 ? (
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-muted-foreground">Diskon Penawaran:</Text>
-                  <Text className="text-xs font-semibold text-danger">- {rupiah(discNum)}</Text>
+                  <Text className="text-xs text-muted-foreground">Diskon per item:</Text>
+                  <Text className="text-xs font-semibold text-danger">- {rupiah(itemDiscTotal)}</Text>
+                </View>
+              ) : null}
+              {extraDisc > 0 ? (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs text-muted-foreground">{itemDiscTotal > 0 ? "Diskon tambahan:" : "Diskon Penawaran:"}</Text>
+                  <Text className="text-xs font-semibold text-danger">- {rupiah(extraDisc)}</Text>
                 </View>
               ) : null}
               {ppnMode !== "none" ? (
@@ -668,20 +726,26 @@ export function QuotationExtras({
               {totalItemsPph > 0 ? (
                 <View className="flex-row justify-between items-center">
                   <Text className="text-xs text-muted-foreground font-medium">
-                    Total Potongan PPh (Akumulasi Per-Item):
+                    PPh dipotong customer saat bayar:
                   </Text>
-                  <Text className="text-xs font-bold text-danger">- {rupiah(totalItemsPph)}</Text>
+                  <Text className="text-xs font-semibold text-muted-foreground">{rupiah(totalItemsPph)}</Text>
                 </View>
               ) : (
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-muted-foreground">Pemotongan PPh:</Text>
+                  <Text className="text-xs text-muted-foreground">PPh dipotong customer:</Text>
                   <Text className="text-xs text-muted-foreground">Rp 0 (Semua Non-PPh)</Text>
                 </View>
               )}
               <View className="border-t border-border/60 pt-2 flex-row justify-between items-center">
-                <Text className="text-xs font-bold text-foreground">Grand Total Akhir Penawaran:</Text>
-                <Text className="text-sm font-bold text-primary">{rupiah(Math.max(0, calcTotalAfterDisc - totalItemsPph))}</Text>
+                <Text className="text-xs font-bold text-foreground">Total Penawaran:</Text>
+                <Text className="text-sm font-bold text-primary">{rupiah(calcTotalAfterDisc)}</Text>
               </View>
+              {totalItemsPph > 0 ? (
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-[11px] text-muted-foreground">Estimasi transfer dari customer (setelah PPh dipotong):</Text>
+                  <Text className="text-[11px] font-semibold text-foreground">{rupiah(quoteFin.netReceived)}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
         ) : (
@@ -710,6 +774,7 @@ export function QuotationExtras({
         itemIndex={editingIndex}
         existingItems={items}
         isBuyPrice={false}
+        allowDiscount
         onSave={async (savedItem, idx) => {
           const formattedItem: QuotationItem = {
             id: String(savedItem.id || `quo-item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
@@ -726,6 +791,8 @@ export function QuotationExtras({
             serialNumbers: Array.isArray(savedItem.serialNumbers) ? (savedItem.serialNumbers as string[]) : undefined,
             pphMode: savedItem.pphMode as PphMode | undefined,
             tipePph: typeof savedItem.tipePph === "string" ? savedItem.tipePph : undefined,
+            diskon: Number(savedItem.diskon) > 0 ? Number(savedItem.diskon) : undefined,
+            diskonPct: Number(savedItem.diskonPct) > 0 ? Number(savedItem.diskonPct) : undefined,
           };
           const updated = [...items];
           if (idx !== undefined && idx !== null && idx >= 0 && idx < updated.length) {
@@ -734,13 +801,13 @@ export function QuotationExtras({
             updated.push(formattedItem);
           }
           updateItems(updated);
-          const newTotal = updated.reduce((s, it) => s + (Number(it.qty || 1) * Number(it.harga ?? it.price ?? 0)), 0);
-          const { dpp, ppn, pph, totalAfterDisc } = calcQuotationFinancials(newTotal, discNum, ppnMode, "none", updated);
+          const { newTotal, newDisc, dpp, ppn, pph, totalAfterDisc } = totalsForItems(updated);
 
           await patchRow("quotations", row.id, {
             items: updated,
             total: newTotal,
             nilai: newTotal,
+            disc: newDisc,
             dpp,
             ppn,
             pph,
@@ -838,7 +905,7 @@ export function QuotationExtras({
                   const uploadedId = await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
                   if (!uploadedId) throw new Error("Gagal mengunggah file ke server");
 
-                  const targetVerNum = apiVersions.length === 0 ? 1 : nextVersionNum;
+                  const targetVerNum = apiVersions.length === 0 || firstVersionClaimable ? 1 : nextVersionNum;
                   await api("POST", `/quotations/${row.id}/versions`, {
                     total: Number(row.total || row.nilai || 0),
                     ppn: Number(row.ppn || 0),
@@ -1264,18 +1331,14 @@ export function QuotationExtras({
               </View>
               {totalItemsPph > 0 ? (
                 <View className="flex-row justify-between">
-                  <Text className="text-xs text-muted-foreground">Potongan PPh:</Text>
-                  <Text className="text-xs font-semibold text-danger">- {rupiah(totalItemsPph)}</Text>
+                  <Text className="text-xs text-muted-foreground">PPh dipotong customer saat bayar:</Text>
+                  <Text className="text-xs font-semibold text-muted-foreground">{rupiah(totalItemsPph)}</Text>
                 </View>
               ) : null}
               <View className="flex-row justify-between border-t border-border/40 pt-1.5 mt-0.5">
                 <Text className="text-xs font-bold text-foreground">Total Harga Penawaran:</Text>
                 <Text className="text-sm font-bold text-primary">
-                  {rupiah(
-                    ppnMode === "exclude"
-                      ? Math.max(0, calcTotalAfterDisc - totalItemsPph)
-                      : Math.max(0, netBeforeTax - totalItemsPph)
-                  )}
+                  {rupiah(calcTotalAfterDisc)}
                 </Text>
               </View>
             </View>

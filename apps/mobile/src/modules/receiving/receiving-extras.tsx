@@ -17,7 +17,7 @@ import { Line } from "@/modules/shared/line";
 
 export function ReceivingExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { data, addRow, patchRow, setStatus, toast } = useApp();
+  const { addRow, patchRow, refreshModule, toast } = useApp();
   const [issueOpen, setIssueOpen] = React.useState(false);
   const [issueType, setIssueType] = React.useState<"Rusak Fisik" | "Cacat Fungsi" | "Salah Tipe" | "Kurang Kuantitas">("Rusak Fisik");
   const [issueItem, setIssueItem] = React.useState<string>(row.item ? (String(row.item).split(",")[0] ?? "") : "");
@@ -157,41 +157,20 @@ export function ReceivingExtras({ row }: { row: Row }) {
         };
       });
 
-      await patchRow("receiving", row.id, {
+      const ok = await patchRow("receiving", row.id, {
         status: "DITERIMA",
         conditionNote: processNotes || row.conditionNote,
         items: payloadItems,
         ...(effectiveFileId ? { fileId: effectiveFileId, receiptFileId: effectiveFileId, photoFileId: effectiveFileId } : {}),
       });
+      // Pesan error sudah ditampilkan oleh patchRow; jangan lanjut dengan pesan sukses.
+      if (!ok) return;
 
-      // Update Purchase Request jika ada relasi
-      const rawReqId = row.requestId || row.requestNumber;
-      const targetReq = (data["purchase-requests"] ?? []).find(
-        (r: Row) => String(r.id) === String(rawReqId) || r.nomor === rawReqId
-      );
-      const effReqId = targetReq?.id ?? (rawReqId && !isNaN(Number(rawReqId)) ? rawReqId : null);
-      if (effReqId) {
-        await patchRow("purchase-requests", String(effReqId), {
-          status: "DITERIMA",
-          ...(effectiveFileId ? { doFileId: effectiveFileId } : {}),
-        }).catch(() => {});
-      }
-
-      // Update Supplier PO jika ada relasi langsung atau via Request
-      const targetPoId =
-        row.supplierPoId && String(row.supplierPoId) !== "-"
-          ? String(row.supplierPoId)
-          : effReqId
-          ? (data["supplier-pos"] ?? []).find((p: Row) => String(p.requestId) === String(effReqId))?.id
-          : undefined;
-
-      if (targetPoId) {
-        await patchRow("supplier-pos", String(targetPoId), {
-          pengiriman: "Sampai",
-          ...(effectiveFileId ? { doFileId: effectiveFileId } : {}),
-        }).catch(() => {});
-        await setStatus("supplier-pos", String(targetPoId), "Sampai").catch(() => {});
-      }
+      // Status Request (Diterima), status pengiriman PO (Sampai), dan file DO di Request/PO
+      // diperbarui otomatis oleh server saat stok dicatat. Dulu layar ini mengirim ulang 3 perubahan itu
+      // sendiri, dan ketiganya ditolak server -> muncul banyak pesan error padahal penerimaan berhasil.
+      void refreshModule("purchase-requests");
+      void refreshModule("supplier-pos");
 
       setProcessOpen(false);
       toast("Penerimaan barang berhasil diproses! Stok gudang telah bertambah.");

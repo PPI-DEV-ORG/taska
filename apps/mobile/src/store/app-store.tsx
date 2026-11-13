@@ -218,6 +218,7 @@ type Ctx = {
   roles: RoleDef[];
   saveRole: (role: Partial<RoleDef> & { name: string }, isEdit?: boolean) => Promise<RoleDef[] | null>;
   deleteRole: (code: string) => Promise<RoleDef[] | null>;
+  applyStandardRoles: (codes?: string[]) => Promise<RoleDef[] | null>;
 };
 
 const AppContext = React.createContext<Ctx | null>(null);
@@ -1650,6 +1651,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [toast],
   );
 
+  const applyStandardRoles = React.useCallback(
+    async (codes?: string[]): Promise<RoleDef[] | null> => {
+      try {
+        const updated = await api<RoleDef[]>("POST", "/settings/roles/apply-standard", codes?.length ? { codes } : {});
+        if (Array.isArray(updated)) {
+          setClientDynamicRoles(updated);
+          setRoles(updated);
+          writeStorageJson(STORAGE_CACHE_ROLES_KEY, updated);
+        }
+        toast(codes?.length === 1 ? "Hak akses standar diterapkan" : "Hak akses standar diterapkan ke semua peran bawaan");
+        return updated;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal menerapkan hak akses standar", "danger");
+        return null;
+      }
+    },
+    [toast],
+  );
+
   const deleteRole = React.useCallback(
     async (code: string): Promise<RoleDef[] | null> => {
       try {
@@ -1691,12 +1711,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       reload, refreshModule, hydrated, theme, toggleTheme,
       companyProfile, updateCompanyProfile,
       docFormats, updateDocFormats,
-      roles, saveRole, deleteRole,
+      roles, saveRole, deleteRole, applyStandardRoles,
     }),
     [user, can, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, loadHistory, approvals, refreshApprovals, decide, myNotifs, unread, markRead, markAllRead,
      toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme,
-     companyProfile, updateCompanyProfile, docFormats, updateDocFormats, roles, saveRole, deleteRole],
+     companyProfile, updateCompanyProfile, docFormats, updateDocFormats, roles, saveRole, deleteRole, applyStandardRoles],
   );
 
   return (

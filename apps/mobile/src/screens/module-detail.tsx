@@ -326,7 +326,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     const rowItems = Array.isArray(row.items) ? row.items : [];
     const itemPph = rowItems.reduce((acc: number, it: any) => acc + calcItemPph(it), 0);
     const pph = rowItems.length > 0 ? itemPph : Math.round(dpp * pphRateFor(pphMode));
-    const total = Math.max(0, (isInclude ? amt : amt + ppn) - pph);
+    // Tagihan = DPP + PPN; PPh dipotong customer saat membayar.
+    const total = isInclude ? amt : amt + ppn;
     return { amt, dpp, ppn, pph, total };
   }, [moduleKey, edits, row, quotationPpnMode, quotationPphMode]);
 

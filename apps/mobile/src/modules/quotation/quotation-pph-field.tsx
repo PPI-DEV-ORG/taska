@@ -39,7 +39,7 @@ export function QuotationPphField({
             </Text>
             {pph > 0 ? (
               <Text className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                Potongan PPh: -{rupiah(pph)} (Customer memotong & menerbitkan Bukti Potong)
+                PPh {rupiah(pph)} dipotong customer saat membayar (bukti potong) — tidak mengurangi nilai penawaran
               </Text>
             ) : (
               <Text className="text-[11px] text-muted-foreground">

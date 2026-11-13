@@ -123,7 +123,7 @@ const MAPS: Record<string, Record<string, string>> = {
     CUSTOMER: "Customer", PRODUCT_RD: "Product/R&D", INTERNAL: "Internal",
     MAINTENANCE: "Maintenance", SUPPORT: "Support", OTHER: "Lainnya",
   },
-  paymentStatus: { BELUM_LUNAS: "Belum lunas", LUNAS: "Lunas" },
+  paymentStatus: { BELUM_LUNAS: "Belum lunas", LUNAS_SEBAGIAN: "Lunas sebagian", LUNAS: "Lunas" },
   damageType: {
     RUSAK: "Rusak", SALAH_BARANG: "Salah barang", KURANG: "Kurang",
   },
@@ -428,18 +428,19 @@ export function adaptRow(module: string, raw: any): Row {
         } else if (raw.ppnMode === "none" || String(raw.tipePpn || "").includes("No") || String(raw.tipePpn || "").includes("Tanpa") || (qRawPpn === 0 && qRawGrand > 0 && Math.abs(qRawGrand - qRawNet) < 2)) {
           qPpnMode = "none";
           qTipePpn = "No PPN (Tanpa PPN)";
-        } else if (qRawPpn > 0 && qRawGrand > 0 && Math.abs(qRawGrand + qRawPph - qRawNet) < 2) {
+        } else if (
+          qRawPpn > 0 &&
+          qRawGrand > 0 &&
+          // harga sudah termasuk PPN: grand = net (data baru) atau net − PPh (data lama)
+          (Math.abs(qRawGrand - qRawNet) < 2 || Math.abs(qRawGrand + qRawPph - qRawNet) < 2)
+        ) {
           qPpnMode = "include";
           qTipePpn = "Include PPN (Sudah termasuk)";
         }
 
-        const qTotalAfterDisc = qRawGrand > 0
-          ? qRawGrand
-          : (qPpnMode === "include"
-              ? Math.max(0, qRawNet - qRawPph)
-              : qPpnMode === "none"
-                ? Math.max(0, qRawNet - qRawPph)
-                : Math.max(0, qRawNet + qRawPpn - qRawPph));
+        // Nilai penawaran = DPP + PPN. PPh tidak mengurangi nilai dokumen (dipotong customer saat membayar).
+        // Dihitung ulang dari komponennya agar data lama (yang dulu dikurangi PPh) tampil sama dengan data baru.
+        const qTotalAfterDisc = qPpnMode === "exclude" ? qRawNet + qRawPpn : qRawNet;
 
         return {
           ...base,
@@ -459,6 +460,7 @@ export function adaptRow(module: string, raw: any): Row {
           ppnMode: qPpnMode,
           tipePpn: qTipePpn,
           totalAfterDisc: qTotalAfterDisc,
+          netReceived: Math.max(0, qTotalAfterDisc - qRawPph),
           status: toLabel("quotations", raw.status),
           versi: n(raw.currentVersion) || 0,
           berlaku: d(raw.validUntil),
@@ -699,6 +701,10 @@ export function adaptRow(module: string, raw: any): Row {
           displayStatus = "Dibayar sebagian";
         }
       }
+      // Proforma bukan tagihan resmi -> status sendiri agar tidak tercampur filter Belum lunas / Lunas
+      if (raw.isProforma && raw.status !== "BATAL") {
+        displayStatus = raw.convertedTo ? "Proforma (sudah jadi invoice)" : raw.status === "DRAFT" ? "Proforma (draft)" : "Proforma";
+      }
       const isPartial = displayStatus === "Dibayar sebagian";
 
       const rawAmt = n(raw.amount);
@@ -793,6 +799,12 @@ export function adaptRow(module: string, raw: any): Row {
         autoSwapLogs: Array.isArray(raw.autoSwapLogs) ? raw.autoSwapLogs : [],
         emergencyPrId: raw.emergencyPrId ?? null,
         emergencyPrNumber: raw.emergencyPrNumber ?? null,
+        // Proforma invoice: bukan tagihan resmi (tidak dijurnal, tidak bisa dibayar)
+        isProforma: !!raw.isProforma,
+        convertedTo: raw.convertedTo ?? null,
+        proformaRef: raw.proforma ?? null,
+        parentInvoiceId: raw.parentInvoiceId ?? null,
+        isContinuation: !!raw.isContinuation,
       };
     }
     case "projects": {
@@ -954,7 +966,8 @@ export function adaptRow(module: string, raw: any): Row {
         paymentProofFileId: raw.paymentProofFileId ?? (raw.paymentProofFile?.id ?? null),
         paymentProofFile: raw.paymentProofFile ?? null,
         fundingSource: raw.fundingSource ?? raw.paymentAccountCode ?? null,
-        ppnMode: raw.ppnMode || (raw.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] ?? "none"),
+        ppnMode: raw.ppnMode ?? "none",
+        isProjectConsumable: Boolean(raw.isProjectConsumable),
         paymentStatus: isPaid ? "DIBAYAR" : "BELUM_DIBAYAR",
         isPaid,
         rejectReason: raw.rejectReason,
@@ -1022,7 +1035,7 @@ export function adaptRow(module: string, raw: any): Row {
         (sum: number, i: any) => sum + (n(i.qty) || 1) * n(i.price ?? i.unitCost),
         0
       );
-      const reqPpnMode = raw.request?.otherNote?.match(/\[PPN:([^\]]+)\]/)?.[1] ?? null;
+      const reqPpnMode = raw.request?.ppnMode ?? null;
       let poPpnMode: "none" | "exclude" | "include" = "none";
       if (raw.ppnMode === "exclude" || raw.ppnMode === "include" || raw.ppnMode === "none") {
         poPpnMode = raw.ppnMode;
@@ -1085,6 +1098,11 @@ export function adaptRow(module: string, raw: any): Row {
         procurementSource: raw.request?.procurementSource ?? "SUPPLIER",
         paymentMethod: effPayMethod,
         paymentTerms: raw.paymentTerms ?? "",
+        // Data dari Request Barang asal: dipakai sebagai default form tagihan supplier (tidak diisi ulang).
+        requestDueDate: raw.request?.dueDate ? String(raw.request.dueDate).slice(0, 10) : null,
+        requestPaid:
+          raw.request?.status === "DIBAYAR" ||
+          String(raw.request?.paymentStatus ?? "").toUpperCase() === "DIBAYAR",
         shipmentStatus: raw.shipmentStatus,
         poStatus: raw.status,
         fileId: raw.fileId ?? null,
@@ -1094,8 +1112,7 @@ export function adaptRow(module: string, raw: any): Row {
       };
     }
     case "receiving": {
-      const matchReqNumber = raw.conditionNote?.match(/Ref Request:\s*([^\s—]+)/)?.[1];
-      const effReqNum = raw.request?.number || matchReqNumber || "-";
+      const effReqNum = raw.request?.number || "-";
       return {
         ...base,
         nomor: raw.number ?? "",
@@ -1149,16 +1166,11 @@ export function adaptRow(module: string, raw: any): Row {
           else if (!matchNama && !matchJabatan) catatanSerahTerima = raw.reportText;
         }
       }
-      const soIdMatch = String(loc?.reason || raw.reportText || "").match(/\[so:(\d+)\]/i);
-      const invIdMatch = String(loc?.reason || raw.reportText || "").match(/\[inv:(\d+)\]/i);
-      const invNumMatch = String(loc?.reason || raw.reportText || "").match(/\[invNum:([^\]]+)\]/i);
-      const soNumMatch =
-        String(loc?.reason || raw.reportText || "").match(/\[soNum:([^\]]+)\]/i) ||
-        String(loc?.reason || raw.reportText || "").match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
-      const resolvedSoId = raw.clientPoId ? String(raw.clientPoId) : (raw.soId ? String(raw.soId) : (soIdMatch ? soIdMatch[1] : undefined));
-      const resolvedSoNum = raw.soNumber || (soNumMatch ? soNumMatch[1] : undefined);
-      const resolvedInvoiceId = raw.invoiceId ? String(raw.invoiceId) : (invIdMatch ? invIdMatch[1] : undefined);
-      const resolvedInvoiceNum = raw.invoiceNumber || (invNumMatch ? invNumMatch[1] : undefined);
+      // Kaitan SO / invoice dari kolom relasi surat jalan (dulu tag "[so:id]" / "[inv:id]" di alasan).
+      const resolvedSoId = raw.clientPoId != null ? String(raw.clientPoId) : undefined;
+      const resolvedSoNum = raw.clientPo?.soNumber || raw.clientPo?.number || undefined;
+      const resolvedInvoiceId = raw.invoiceId != null ? String(raw.invoiceId) : undefined;
+      const resolvedInvoiceNum = raw.invoice?.number || undefined;
 
       return {
         ...base,
@@ -1240,6 +1252,8 @@ export function adaptRow(module: string, raw: any): Row {
         sumberDana:
           raw.fundingSource === "TALANGAN_PRIBADI"
             ? "Talangan Pribadi (Reimbursement)"
+            : raw.fundingSource === "UANG_JALAN"
+            ? "Kas Proyek / Uang Jalan"
             : "Dana Perusahaan",
         reimbursementStatus: raw.reimbursementStatus ?? null,
         approvedAmount: raw.approvedAmount != null ? n(raw.approvedAmount) : null,
@@ -1398,12 +1412,10 @@ export function adaptRow(module: string, raw: any): Row {
       };
     }
     case "damage-reports": {
+      // Jenis, PO asal & catatan penggantian sekarang kolom sendiri (dulu tag di deskripsi).
       const desc = raw.description ?? "";
-      const poMatch = desc.match(/\[PO:\s*([^\]]+)\]/);
-      const snMatch = desc.match(/\[SN:\s*([^\]]+)\]/);
-      const replacedMatch = desc.match(/\[DIGANTI:\s*([^\]]+)\]/i);
-      const isReturSales = /\[RETUR-PENJUALAN\]/i.test(desc);
-      const isReturPurchase = /\[RETUR-PEMBELIAN\]/i.test(desc);
+      const isReturSales = raw.category === "RETUR_PENJUALAN";
+      const isReturPurchase = raw.category === "RETUR_PEMBELIAN";
       const jenisLabel = isReturSales
         ? "Retur Penjualan"
         : isReturPurchase
@@ -1414,29 +1426,24 @@ export function adaptRow(module: string, raw: any): Row {
         : isReturPurchase
         ? "Retur Pembelian"
         : "Kerusakan";
-      const snPengganti =
-        raw.serialUnit?.replacedBy?.sn ??
-        (replacedMatch ? replacedMatch[1].trim() : "-");
+      const snPengganti = raw.serialUnit?.replacedBy?.sn ?? raw.replacementNote ?? "-";
       return {
         ...base,
         tanggal: d(raw.date),
         produk: nameOf(raw.product) ?? "",
         productId: idOf(raw.product),
         hasSerial: !!raw.product?.hasSerial,
-        sn: raw.serialUnit?.sn ?? (snMatch ? snMatch[1].trim() : "-"),
+        sn: raw.serialUnit?.sn ?? "-",
         snPengganti,
         serialUnitId: idOf(raw.serialUnit),
         jenis: jenisLabel,
         kategoriLaporan,
-        po: poMatch ? poMatch[1].trim() : "-",
+        po: raw.supplierPo?.number ? String(raw.supplierPo.number).replace(/^(?:POD|PO-S)\//i, "PO/") : "-",
+        supplierPoId: raw.supplierPoId != null ? String(raw.supplierPoId) : null,
+        category: raw.category ?? "KERUSAKAN",
         pelapor: nameOf(raw.reporter) ?? "",
         status: toLabel("damage-reports", raw.status),
-        keterangan: desc
-          .replace(/\[RETUR-PENJUALAN\]\s*/gi, "")
-          .replace(/\[RETUR-PEMBELIAN\]\s*/gi, "")
-          .replace(/\[PO:\s*[^\]]+\]\s*/g, "")
-          .replace(/\[SN:\s*[^\]]+\]\s*/g, "")
-          .replace(/\[DIGANTI:\s*[^\]]+\]\s*/gi, ""),
+        keterangan: desc,
         qty: n(raw.qty),
         fileId: raw.fileId ?? null,
       };
@@ -1919,10 +1926,10 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         grand = net;
       } else {
         ppn = row.ppn != null ? num(row.ppn) : Math.round(net * 0.11);
-        grand = num(row.totalAfterDisc ?? row.grandTotal) || (net + ppn);
+        grand = net + ppn;
       }
+      // grandTotal = DPP + PPN (nilai penawaran). PPh disimpan terpisah: dipotong customer saat membayar.
       const pph = row.pph != null ? num(row.pph) : 0;
-      grand = Math.max(0, grand - pph);
       return {
         leadId: row.leadId != null && row.leadId !== "" ? Number(row.leadId) : (findId(db?.leads, row.lead) ?? null),
         customerId: row.customerId != null && row.customerId !== "" ? Number(row.customerId) : findId(db?.customers, row.customer ?? row.perusahaan),
@@ -2106,8 +2113,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
     case "invoices": {
       const amt = num(row.nilai ?? row.amount);
       const ppn = row.ppn != null ? num(row.ppn) : Math.round(amt * 0.11);
-      const pph = row.pph != null ? num(row.pph) : 0;
-      const tot = num(row.total) || Math.max(0, amt + ppn - pph);
+      const pph = row.pph != null ? num(row.pph) : 0; // dipotong customer saat membayar
+      const tot = num(row.total) || amt + ppn;
       return {
         number: row.nomor || row.number || undefined,
         customerId:
@@ -2149,7 +2156,13 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         signerTitle: row.signerTitle || undefined,
         dpLabel: row.dpLabel || undefined,
         dpAmount: row.dpAmount != null ? num(row.dpAmount) : undefined,
-        status: "DRAFT",
+        // Dulu tidak terkirim: mode PPN hilang (invoice include PPN jadi exclude) & invoice pelunasan tidak tertaut ke DP-nya.
+        ppnMode: row.ppnMode === "include" || row.ppnMode === "exclude" || row.ppnMode === "none" ? row.ppnMode : undefined,
+        tipePpn: row.tipePpn || undefined,
+        isContinuation: row.isContinuation ? true : undefined,
+        parentInvoiceId: row.parentInvoiceId != null && row.parentInvoiceId !== "" ? Number(row.parentInvoiceId) : undefined,
+        isProforma: row.isProforma ? true : undefined,
+        status: row.isProforma && row.status === "Terkirim" ? "SENT" : "DRAFT",
       };
     }
     case "purchase-requests":
@@ -2158,6 +2171,14 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         costType: String(toEnum("costType", row.costType || row.jenisBiaya) || row.costType || row.jenisBiaya || "STOK").toUpperCase(),
         procurementSource: row.procurementSource ? String(row.procurementSource).toUpperCase() : "SUPPLIER",
         paymentMethod: row.paymentMethod ? String(row.paymentMethod).toUpperCase() : "UTANG",
+        ppnMode: row.ppnMode || undefined,
+        isProjectConsumable: row.isProjectConsumable != null ? Boolean(row.isProjectConsumable) : undefined,
+        // Jatuh tempo pilihan pemohon. Dulu tidak ikut terkirim -> server memakai default "tanggal + 1 bulan",
+        // sehingga yang terlihat di Finance berbeda dari yang dipilih Procurement.
+        dueDate: (() => {
+          const v = row.dueDate || row.jatuhTempo;
+          return v && v !== "-" && /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).slice(0, 10) : undefined;
+        })(),
         projectId: row.projectId != null && row.projectId !== "" ? Number(row.projectId) : findId(db?.projects, row.project),
         supplierId: row.supplierId != null && row.supplierId !== "" ? Number(row.supplierId) : findId(db?.suppliers, row.supplier),
         purpose: row.purpose || row.tujuan || row.item || "Kebutuhan operasional",
@@ -2173,6 +2194,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
                 qty: Number(i.qty) || 1,
                 unitCost: Number(i.unitCost ?? i.price ?? 0),
                 serials: Array.isArray(i.serials) ? i.serials.join(", ") : i.serials ? String(i.serials) : undefined,
+                isConsumable: i.isConsumable != null ? Boolean(i.isConsumable) : undefined,
               }))
             : undefined,
       };
@@ -2265,6 +2287,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         reportText: row.reportText || (row.barang && row.barang !== "-" ? String(row.barang) : undefined),
         scanFileId: row.scanFileId ?? (row.fileId ? Number(row.fileId) : undefined),
         reportFileId: row.reportFileId ? Number(row.reportFileId) : undefined,
+        clientPoId: row.clientPoId ?? row.soId ? Number(row.clientPoId ?? row.soId) : undefined,
+        invoiceId: row.invoiceId ? Number(row.invoiceId) : undefined,
       };
     case "expenses":
       return {
@@ -2464,21 +2488,24 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
           : matchedSn?.id != null
           ? Number(matchedSn.id)
           : undefined;
-      const jenisStr = String(row.jenis || "");
-      const isReturSales = /retur\s*penjualan/i.test(jenisStr);
-      const isReturPurchase = /retur\s*pembelian/i.test(jenisStr);
-      const prefixes: string[] = [];
-      if (isReturSales && !/\[RETUR-PENJUALAN\]/i.test(baseDesc)) prefixes.push("[RETUR-PENJUALAN]");
-      if (isReturPurchase && !/\[RETUR-PEMBELIAN\]/i.test(baseDesc)) prefixes.push("[RETUR-PEMBELIAN]");
-      if (poVal) prefixes.push(`[PO: ${poVal}]`);
-      if (snVal) prefixes.push(`[SN: ${snVal}]`);
+      const jenisStr = String(row.category || row.jenis || "");
+      const isReturSales = /retur[\s_]*penjualan/i.test(jenisStr);
+      const isReturPurchase = /retur[\s_]*pembelian/i.test(jenisStr);
+      const poMatch = poVal
+        ? (db?.["supplier-pos"] ?? []).find((po: any) => String(po.nomor || "").toLowerCase() === poVal.toLowerCase())
+        : null;
+      const supplierPoId =
+        row.supplierPoId != null && row.supplierPoId !== "" ? Number(row.supplierPoId) : poMatch?.id != null ? Number(poMatch.id) : undefined;
+      const category = isReturSales ? "RETUR_PENJUALAN" : isReturPurchase ? "RETUR_PEMBELIAN" : "KERUSAKAN";
       return {
         date: row.tanggal || row.date || today,
         productId: row.productId != null && row.productId !== "" ? Number(row.productId) : findId(db?.products, row.produk),
         serialUnitId,
         type: (isReturSales || isReturPurchase) ? "RUSAK" : (toEnum("damageType", row.jenis) || "RUSAK"),
         qty: num(row.qty) || 1,
-        description: prefixes.length ? `${prefixes.join(" ")} ${baseDesc}` : baseDesc,
+        category,
+        supplierPoId,
+        description: baseDesc,
         fileId: row.fileId ? Number(row.fileId) : undefined,
       };
     }
@@ -2676,10 +2703,10 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "paymentMethod", "costCenterId", "receiptFileId", "paidFileId",
   ],
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "ppnMode", "ppn", "dpp", "pphMode", "tipePph", "pph", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
-  "purchase-requests": ["date", "dueDate", "costType", "procurementSource", "paymentMethod", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "fundingSource", "status", "items"],
+  "purchase-requests": ["date", "dueDate", "costType", "procurementSource", "paymentMethod", "ppnMode", "isProjectConsumable", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "fundingSource", "status", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "requestId", "date", "conditionNote", "receiptFileId", "photoFileId", "status", "items"],
-  "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText", "status"],
-  "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "qty", "description", "status", "fileId"],
+  "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText", "status", "clientPoId", "invoiceId"],
+  "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "category", "supplierPoId", "qty", "description", "status", "fileId"],
   invoiceIn: ["number", "supplierId", "supplierName", "supplierPoId", "amount", "ppn", "pph", "pphMode", "tipePph", "total", "date", "dueDate", "notes", "category", "debitAccount", "items", "fileId", "transferFileId", "paid", "paymentMethod", "paymentReference", "coaAccount", "paymentFileId"],
   followups: ["method", "notes", "date", "nextDate", "status"],
   "poc-reports": [
@@ -3121,21 +3148,21 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
         : null;
       if (matchedSn?.id != null) out.serialUnitId = Number(matchedSn.id);
     }
-    if (patch.po !== undefined || patch.keterangan !== undefined || patch.sn !== undefined || isReturSales || isReturPurchase) {
-      const p = patch.po && patch.po !== "-" ? (String(patch.po).split(" - ")[0] ?? "").trim() : "";
-      const snClean = patch.sn && patch.sn !== "-" ? (String(patch.sn).split(" (")[0] ?? "").trim() : "";
-      const d = patch.keterangan !== undefined ? patch.keterangan : "";
-      const prefixes: string[] = [];
-      if (isReturSales && !/\[RETUR-PENJUALAN\]/i.test(d)) prefixes.push("[RETUR-PENJUALAN]");
-      if (isReturPurchase && !/\[RETUR-PEMBELIAN\]/i.test(d)) prefixes.push("[RETUR-PEMBELIAN]");
-      if (p) prefixes.push(`[PO: ${p}]`);
-      if (snClean) prefixes.push(`[SN: ${snClean}]`);
-      if (prefixes.length) {
-        out.description = `${prefixes.join(" ")} ${d}`.trim();
-      } else if (d) {
-        out.description = d;
-      }
+    // Jenis & PO asal disimpan di kolom sendiri (dulu tag "[RETUR-..]" / "[PO: ..]" di deskripsi).
+    if (patch.jenis !== undefined) {
+      out.category = isReturSales ? "RETUR_PENJUALAN" : isReturPurchase ? "RETUR_PEMBELIAN" : "KERUSAKAN";
     }
+    if (patch.supplierPoId !== undefined) {
+      out.supplierPoId = patch.supplierPoId ? Number(patch.supplierPoId) : null;
+    } else if (patch.po !== undefined) {
+      const p = patch.po && patch.po !== "-" ? (String(patch.po).split(" - ")[0] ?? "").trim() : "";
+      const po = p ? (db?.["supplier-pos"] ?? []).find((x: any) => String(x.nomor || "").toLowerCase() === p.toLowerCase()) : null;
+      out.supplierPoId = po?.id != null ? Number(po.id) : null;
+    }
+    if (patch.keterangan !== undefined) out.description = patch.keterangan || "-";
+    delete out.po;
+    delete out.sn;
+    delete out.keterangan;
   } else if (
     ["customers", "suppliers", "products", "productCategories", "warehouses", "leadSources", "lostReasons", "expenseCategories", "costCenters", "dealTypes"].includes(module)
   ) {

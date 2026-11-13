@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { downloadQuotationPdf } from "@/modules/quotation/quotation-files";
-import { pphRateFor, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
+import { pphRateFor, PPH_MODE_OPTIONS, pphModeToTipe, sumItemDiscounts, type PphMode } from "@/modules/quotation/lib";
 import { MODULES, type CreateField, type ModuleDef, type Row } from "@/constants/modules";
 import {
   CustomerSelect,
@@ -1021,12 +1021,15 @@ export function FormDialog({
       row.ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawNilai - dpp) : Math.round(rawNilai * 0.11);
       const pphRate = pphRateFor(row.pphMode);
       const pph = Math.round(dpp * pphRate);
-      row.pph = pph;
-      row.total = Math.max(0, (isIncludePpn ? rawNilai : rawNilai + row.ppn) - pph);
+      row.pph = pph; // dipotong customer saat membayar
+      row.total = isIncludePpn ? rawNilai : rawNilai + row.ppn;
     }
     if (def?.key === "quotations") {
       const tot = Number(row.nilai || row.total || 0);
-      const disc = Number(row.disc || 0);
+      // Diskon header tidak boleh lebih kecil dari total diskon per item (diskon item diatur di rincian item).
+      const itemDiscFloor = mode === "edit" && Array.isArray(initialRow?.items) ? sumItemDiscounts(initialRow.items) : 0;
+      const disc = Math.max(Number(row.disc || 0), itemDiscFloor);
+      if (itemDiscFloor > 0) row.disc = disc;
       const net = Math.max(0, tot - disc);
       row.tipePpn = vals.tipePpn || "Exclude PPN (11%)";
       row.ppnMode = vals.ppnMode || (row.tipePpn.includes("No") ? "none" : row.tipePpn.includes("Include") ? "include" : "exclude");
@@ -1046,10 +1049,9 @@ export function FormDialog({
         row.ppn = Math.round(net * 0.11);
         row.totalAfterDisc = net + row.ppn;
       }
+      // PPh dipotong customer saat membayar: dicatat terpisah, tidak mengurangi nilai penawaran.
       const pphRate = pphRateFor(row.pphMode);
-      const pph = Math.round(dpp * pphRate);
-      row.pph = pph;
-      row.totalAfterDisc = Math.max(0, row.totalAfterDisc - pph);
+      row.pph = Math.round(dpp * pphRate);
       row.total = tot;
       row.grandTotal = row.totalAfterDisc;
     }
@@ -1166,7 +1168,8 @@ export function FormDialog({
               const previewPpn = isNoPpn ? 0 : isInclude ? Math.max(0, netVal - dppVal) : Math.round(netVal * 0.11);
               const pphRate = pphRateFor(currentPphMode);
               const previewPph = Math.round(dppVal * pphRate);
-              const previewGrand = Math.max(0, (isInclude ? netVal : netVal + previewPpn) - previewPph);
+              // Total = DPP + PPN. PPh dipotong customer saat bayar (info), tidak mengurangi total.
+              const previewGrand = isInclude ? netVal : netVal + previewPpn;
 
               const selectedPphOpt = PPH_MODE_OPTIONS.find((o) => o.id === currentPphMode) || PPH_MODE_OPTIONS[0];
 
@@ -1273,15 +1276,15 @@ export function FormDialog({
                       {previewPph > 0 ? (
                         <View className="flex-row justify-between">
                           <Text className="text-[11px] text-muted-foreground">
-                            {`Potongan PPh (${selectedPphOpt?.label ?? "PPh"}):`}
+                            {`PPh dipotong customer saat bayar (${selectedPphOpt?.label ?? "PPh"}):`}
                           </Text>
-                          <Text className="text-[11px] font-medium text-danger">
-                            - {rupiah(previewPph)}
+                          <Text className="text-[11px] font-medium text-muted-foreground">
+                            {rupiah(previewPph)}
                           </Text>
                         </View>
                       ) : null}
                       <View className="flex-row justify-between border-t border-border/50 pt-1 mt-0.5">
-                        <Text className="text-xs font-bold text-foreground">Estimasi Total Akhir (Net Ditagih):</Text>
+                        <Text className="text-xs font-bold text-foreground">Estimasi Total (DPP + PPN):</Text>
                         <Text className="text-xs font-bold text-primary">{rupiah(previewGrand)}</Text>
                       </View>
                     </View>
@@ -1294,8 +1297,15 @@ export function FormDialog({
               const rawNilai = Number(String(vals.nilai || "").replace(/\D/g, "")) || 0;
               const rawDisc = Number(String(vals.disc || "").replace(/\D/g, "")) || 0;
               const isPercent = vals.discType === "percent";
+              // Diskon header = diskon per item (diatur di rincian item) + diskon tambahan
+              const itemDiscTotal = mode === "edit" && Array.isArray(initialRow?.items) ? sumItemDiscounts(initialRow.items) : 0;
               return (
                 <View key={f.key} className="gap-1.5">
+                  {itemDiscTotal > 0 ? (
+                    <Text className="text-[11px] text-muted-foreground">
+                      {`Sudah termasuk diskon per item ${rupiah(itemDiscTotal)}. Diskon tambahan saat ini ${rupiah(Math.max(0, rawDisc - itemDiscTotal))}.`}
+                    </Text>
+                  ) : null}
                   <View className="flex-row items-center justify-between">
                     <Text className="text-sm font-medium text-foreground">Diskon</Text>
                     <View className="flex-row rounded-lg bg-panel p-0.5 border border-border">

@@ -19,7 +19,7 @@ import { type Row } from "@/constants/modules";
 import { PPH_MODE_OPTIONS, pphRateFor, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import { Line } from "@/modules/shared/line";
 import { printOrderDocument } from "@/lib/order-print";
-import { getKasBankAccounts } from "@/lib/accounting";
+import { useKasBankAccounts } from "@/lib/use-kas-bank";
 import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
 
 import {
@@ -28,11 +28,9 @@ import {
   SupplierInvoicePayDialog,
 } from "@/modules/supplier-po/supplier-invoice-dialogs";
 
-const PRICE_ROLES = ["super_admin", "procurement", "finance", "pm", "bos"];
-
 export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void }) {
   const router = useRouter();
-  const { user, patchRow, setStatus, addRow, toast, data, reload, refreshModule } = useApp();
+  const { can, patchRow, setStatus, addRow, toast, data, reload, refreshModule } = useApp();
   const [showAllPoItems, setShowAllPoItems] = React.useState(false);
   const [selectedPoItemIndices, setSelectedPoItemIndices] = React.useState<number[]>([]);
   const [poItemModalOpen, setPoItemModalOpen] = React.useState(false);
@@ -131,13 +129,39 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
       : currentShipment === "Dikirim" || currentShipment === "Dalam Perjalanan"
       ? 1
       : 0;
-  const showPrice = PRICE_ROLES.includes(user!.role);
+  // Hak akses dari Pengaturan Peran (RBAC), sama dengan pengecekan server. Tombol yang tidak boleh dipakai disembunyikan.
+  const showPrice = can("supplier-pos", "P");
+  const canPay = can("supplier-pos", "V"); // uang keluar ke supplier: Finance
+  const canEditPo = can("supplier-pos", "U");
+  const canRecordInvoice = can("supplier-pos", "C");
+  const canShip = can("supplier-pos", "U") || can("shipments", "U");
+  const canReceive = can("receiving", "C") || can("receiving", "U");
+  const canRetur = can("damage-reports", "C");
+  // Server mengunci isi PO setelah disetujui / dikirim (PO dari Request langsung disetujui).
+  const itemsLocked = row.poStatus === "DISETUJUI" || (!!row.shipmentStatus && row.shipmentStatus !== "DI_SUPPLIER");
+  const canEditItems = canEditPo && !itemsLocked;
+  /** Sudah dibayar di muka (Request Barang dibayar / PO ditandai Lunas): tagihan supplier otomatis dikompensasi. */
+  const isPrepaid = Boolean(row.requestPaid) || row.manualStatus === "LUNAS";
 
+  /** Jatuh tempo default tagihan: dari Request Barang -> syarat bayar PO -> 30 hari. Tidak perlu dipilih ulang. */
+  function defaultInvoiceDue(baseIso: string): string {
+    if (row.requestDueDate) return String(row.requestDueDate);
+    const terms = String(row.paymentTerms || "");
+    const fixed = terms.match(/(\d{4}-\d{2}-\d{2})/);
+    if (fixed?.[1]) return fixed[1];
+    const net = terms.match(/net\s*(\d+)/i);
+    const d = new Date(baseIso);
+    d.setDate(d.getDate() + (net?.[1] ? Number(net[1]) : 30));
+    return d.toISOString().slice(0, 10);
+  }
+  const defaultPayScheme = (): "TEMPO" | "LUNAS" =>
+    !isPrepaid && canPay && String(row.paymentMethod || "").toUpperCase() === "KAS" ? "LUNAS" : "TEMPO";
+
+  // Semua relasi dokumen lewat ID (supplierPoId / requestId), bukan mencocokkan teks nomor dokumen.
   const supplierInvoices: Row[] = (data.invoiceIn ?? []).filter(
-    (inv: Row) => String(inv.supplierPoId) === String(row.id) || inv.po === row.nomor
+    (inv: Row) => inv.supplierPoId != null && String(inv.supplierPoId) === String(row.id)
   );
 
-  const poSuffix = String(row.nomor || "").replace(/^(?:POD|PO-S|PO)\//i, "");
   const linkedReceivings: Row[] = React.useMemo(() => {
     const list: Row[] = [];
     const seen = new Set<string>();
@@ -152,11 +176,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
     (data.receiving ?? []).forEach((rc: Row) => {
       if (
-        String(rc.supplierPoId) === String(row.id) ||
-        (row.nomor && rc.po === row.nomor) ||
-        (row.requestId && String(rc.requestId) === String(row.requestId)) ||
-        (rc.conditionNote && row.nomor && rc.conditionNote.includes(row.nomor)) ||
-        (poSuffix && rc.conditionNote && rc.conditionNote.includes(poSuffix))
+        (rc.supplierPoId != null && String(rc.supplierPoId) === String(row.id)) ||
+        (row.requestId && rc.requestId != null && String(rc.requestId) === String(row.requestId))
       ) {
         addRc(rc);
       }
@@ -177,7 +198,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     }
 
     return list;
-  }, [data.receiving, row.id, row.nomor, row.requestId, row.receivings, poSuffix, row.item]);
+  }, [data.receiving, row.id, row.requestId, row.receivings, row.item]);
   const primaryReceiving = linkedReceivings[0] ?? null;
   const recWithDo = linkedReceivings.find((rc: any) => rc.receiptFileId || rc.photoFileId || rc.fileId);
   const effectiveDoFileId = row.doFileId || recWithDo?.receiptFileId || recWithDo?.photoFileId || recWithDo?.fileId || null;
@@ -270,14 +291,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     formatThousands(String(poJasaDpp || (effectivePoPph > 0 && effectivePoPphMode !== "none" ? Math.round(effectivePoPph / pphRateFor(effectivePoPphMode)) : 0)))
   );
   const [invDate, setInvDate] = React.useState(() => new Date().toISOString().slice(0, 10));
-  const [invDue, setInvDue] = React.useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [invPaymentScheme, setInvPaymentScheme] = React.useState<"TEMPO" | "LUNAS">(
-    row.paymentMethod === "KAS" ? "LUNAS" : "TEMPO"
-  );
+  const [invDue, setInvDue] = React.useState(() => defaultInvoiceDue(new Date().toISOString().slice(0, 10)));
+  const [invPaymentScheme, setInvPaymentScheme] = React.useState<"TEMPO" | "LUNAS">(defaultPayScheme);
   const [invPayMethod, setInvPayMethod] = React.useState<"TRANSFER" | "TUNAI">("TRANSFER");
   const [invCoaAccount, setInvCoaAccount] = React.useState<string>("1000.02");
   const [invFileId, setInvFileId] = React.useState<number | null>(null);
@@ -299,6 +314,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     setInvFileId(null);
     setInvPayProofFileId(null);
     setInvPphMode(effectivePoPphMode);
+    setInvDue(defaultInvoiceDue(invDate));
+    setInvPaymentScheme(defaultPayScheme());
     const defJasa =
       poJasaDpp > 0
         ? poJasaDpp
@@ -359,7 +376,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     }
   }
 
-  const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
+  const kasBankOptions = useKasBankAccounts();
 
   const [selectedDetailInv, setSelectedDetailInv] = React.useState<Row | null>(null);
   const [editTargetInv, setEditTargetInv] = React.useState<Row | null>(null);
@@ -372,13 +389,10 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   const [returNote, setReturNote] = React.useState("");
   const [isSavingRetur, setIsSavingRetur] = React.useState(false);
 
-  const purchaseReturns = React.useMemo(() => {
-    const poNo = String(row.nomor || "").toLowerCase();
-    return (data["damage-reports"] ?? []).filter((dr: Row) => {
-      const ref = String(dr.po || "").toLowerCase();
-      return poNo && ref.includes(poNo);
-    });
-  }, [data, row.nomor]);
+  const purchaseReturns = React.useMemo(
+    () => (data["damage-reports"] ?? []).filter((dr: Row) => dr.supplierPoId != null && String(dr.supplierPoId) === String(row.id)),
+    [data, row.id],
+  );
 
   async function handleSavePurchaseReturn() {
     if (!returProduct) {
@@ -398,6 +412,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
         qty: Number(returQty) || 1,
         tanggal: new Date().toISOString().slice(0, 10),
         po: row.nomor,
+        supplierPoId: row.id,
         keterangan: returNote.trim(),
       });
       toast("Retur pembelian ke pemasok berhasil dicatat");
@@ -417,33 +432,14 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   async function go(s: string) {
     setCurrentShipment(s);
     try {
-      await patchRow("supplier-pos", String(row.id), {
-        pengiriman: s,
-        shipmentStatus: s === "Di Supplier" ? "DI_SUPPLIER" : s === "Dikirim" ? "DIKIRIM" : "SAMPAI",
-      });
-      await setStatus("supplier-pos", String(row.id), s);
-
-      // Sinkronkan otomatis ke Purchase Request terkait
-      const poSuffix = String(row.nomor || "").replace(/^(?:POD|PO-S|PO)\//i, "");
-      const linkedPrId = row.requestId
-        ? String(row.requestId)
-        : (data["purchase-requests"] ?? []).find(
-            (pr: Row) =>
-              (pr.supplierPo && (String(pr.supplierPo.id) === String(row.id) || pr.supplierPo.number === row.nomor)) ||
-              (Array.isArray(pr.supplierPOs) && pr.supplierPOs.some((sp: any) => String(sp.id) === String(row.id) || sp.number === row.nomor)) ||
-              (row.request && row.request !== "-" && String(pr.nomor).toLowerCase() === String(row.request).toLowerCase()) ||
-              (row.nomor && String(pr.otherNote || "").includes(row.nomor)) ||
-              (poSuffix && pr.nomor && String(pr.nomor).replace(/^(?:PNJ|REQ|PR)\//i, "") === poSuffix)
-          )?.id;
-
-      if (linkedPrId) {
-        const prStatus = s === "Dikirim" ? "Dikirim" : s === "Sampai" ? "Diterima" : undefined;
-        if (prStatus) {
-          await patchRow("purchase-requests", String(linkedPrId), { status: prStatus });
-          await setStatus("purchase-requests", String(linkedPrId), prStatus);
-        }
+      // Satu panggilan: server memvalidasi urutan, ikut menandai Request Barang & menyiapkan draf Penerimaan Gudang.
+      const ok = await setStatus("supplier-pos", String(row.id), s);
+      if (!ok) {
+        setCurrentShipment(row.pengiriman || "Di Supplier");
+        return;
       }
-      toast(`Status pengiriman PO dan Request Barang berhasil disinkronkan ke ${s}!`);
+      toast(`Pengiriman PO ditandai ${s}. Request Barang ikut diperbarui.`);
+      void refreshModule("purchase-requests");
       await reload();
       onRefresh?.();
     } catch (e: any) {
@@ -504,7 +500,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     const ppn = calcInvPpn;
     const pph = calcInvPph;
     const total = calcInvTotal;
-    const isLunas = invPaymentScheme === "LUNAS";
+    // "Langsung lunas" hanya untuk yang berhak membayar & bila belum dibayar di muka (yang prepaid dikompensasi server).
+    const isLunas = invPaymentScheme === "LUNAS" && canPay && !isPrepaid;
 
     if (amt <= 0) {
       toast("Nominal tagihan harus lebih dari 0", "danger");
@@ -552,7 +549,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
       pphMode: invPphMode,
       tipePph: pphModeToTipe(invPphMode),
       total,
-      jatuhTempo: isLunas ? invDate : invDue,
+      jatuhTempo: isLunas || isPrepaid ? invDate : invDue,
       fileId: finalInvFileId ?? undefined,
       transferFileId: finalPayProofId ?? undefined,
       paid: isLunas,
@@ -564,6 +561,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     if (created) {
       if (isLunas) {
         toast("Faktur masuk & pelunasan langsung berhasil dicatat (Lunas)");
+      } else if (isPrepaid) {
+        toast("Faktur masuk dicatat & otomatis lunas lewat kompensasi pembayaran di muka (tanpa kas keluar lagi)");
       } else {
         toast("Faktur masuk (Tempo / Utang) berhasil dicatat");
       }
@@ -577,8 +576,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     }
   }
 
-  const canPay = user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin";
-  const canEdit = user?.role === "super_admin" || user?.role === "finance" || user?.role === "bos" || user?.role === "admin" || user?.role === "procurement";
+  const canEdit = canEditPo;
   const hasPoFile = !!row.fileId;
   const hasSoFile = !!row.soFileId;
   const hasDoFile = !!effectiveDoFileId;
@@ -722,7 +720,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                       Buka Penerimaan ({primaryReceiving.nomor})
                     </Text>
                   </Button>
-                ) : (
+                ) : canReceive && cur === 1 ? (
                   <Button
                     size="sm"
                     className="h-7 px-2.5 flex-row items-center gap-1"
@@ -731,7 +729,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                     <PackageCheck size={12} color="#fff" />
                     <Text className="text-[11px] text-white">Terima di Gudang & Upload DO</Text>
                   </Button>
-                )}
+                ) : null}
               </View>
             </View>
             {linkedReceivings.length > 0 ? (
@@ -770,7 +768,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             <Text className={i <= cur ? "text-sm font-medium" : "text-muted-foreground text-sm"}>{statusText(s)}</Text>
           </View>
         ))}
-        {(user!.role === "super_admin" || user!.role === "procurement" || user!.role === "bos" || user!.role === "admin") && cur < 1 && steps[cur + 1] ? (
+        {canShip && row.poStatus === "DISETUJUI" && cur < 1 && steps[cur + 1] ? (
           <Button
             className="mt-2 self-start"
             variant="outline"
@@ -786,6 +784,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
       <Panel
         title={`Barang di PO ini (${Array.isArray(row.items) && row.items.length > 0 ? row.items.length : (row.item && row.item !== "-" ? String(row.item).split(", ").length : 0)})`}
         right={
+          canEditItems ? (
           <View className="flex-row items-center gap-1.5 flex-wrap">
             <Button
               size="sm"
@@ -835,6 +834,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
               </Button>
             )}
           </View>
+          ) : undefined
         }
       >
         {Array.isArray(row.items) && row.items.length > 0 ? (
@@ -852,6 +852,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                   }`}
                 >
                   <View className="flex-row items-center gap-2 flex-1">
+                    {canEditItems ? (
                     <Pressable
                       onPress={() => {
                         setSelectedPoItemIndices((prev) =>
@@ -869,6 +870,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                         {isSelected && <Check size={11} color="#ffffff" />}
                       </View>
                     </Pressable>
+                    ) : null}
                     <View className="flex-1">
                       <Text className="text-sm font-medium text-foreground">{prodName}</Text>
                       <Text className="text-xs text-muted-foreground">{qtyText}</Text>
@@ -880,6 +882,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                         {itemTotal > 0 ? rupiah(itemTotal) : <Text className="text-muted-foreground text-xs font-normal">Harga beli tampil</Text>}
                       </Text>
                     ) : null}
+                    {canEditItems ? (
+                    <>
                     <Button
                       size="icon"
                       variant="ghost"
@@ -912,6 +916,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                     >
                       <Trash2 size={13} color={colors.danger} />
                     </Button>
+                    </>
+                    ) : null}
                   </View>
                 </View>
               );
@@ -944,6 +950,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                       }`}
                     >
                       <View className="flex-row items-center gap-2 flex-1">
+                        {canEditItems ? (
                         <Pressable
                           onPress={() => {
                             setSelectedPoItemIndices((prev) =>
@@ -961,10 +968,13 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                             {isSelected && <Check size={11} color="#ffffff" />}
                           </View>
                         </Pressable>
+                        ) : null}
                         <Text className="text-sm font-medium text-foreground flex-1">{it}</Text>
                       </View>
                       <View className="flex-row items-center gap-1.5 ml-2">
                         {showPrice ? <Text className="text-muted-foreground text-sm">Harga beli tampil</Text> : null}
+                        {canEditItems ? (
+                        <>
                         <Button
                           size="icon"
                           variant="ghost"
@@ -992,6 +1002,8 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                         >
                           <Trash2 size={13} color={colors.danger} />
                         </Button>
+                        </>
+                        ) : null}
                       </View>
                     </View>
                   );
@@ -1065,10 +1077,12 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
           title="Faktur Masuk & Pembayaran ke Pemasok"
           subtitle="Tagihan dari pemasok atas PO ini beserta status pelunasan oleh Finance."
           right={
-            <Button size="sm" variant="outline" onPress={handleOpenInvoiceModal} className="flex-row items-center gap-1">
-              <Plus size={14} color={colors.text} />
-              <Text className="text-xs">Catat Faktur Masuk</Text>
-            </Button>
+            canRecordInvoice ? (
+              <Button size="sm" variant="outline" onPress={handleOpenInvoiceModal} className="flex-row items-center gap-1">
+                <Plus size={14} color={colors.text} />
+                <Text className="text-xs">Catat Faktur Masuk</Text>
+              </Button>
+            ) : undefined
           }
         >
           {supplierInvoices.length === 0 ? (
@@ -1106,6 +1120,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
         title={`Retur Pembelian & Klaim ke Supplier (${purchaseReturns.length})`}
         subtitle="Pengembalian barang rusak / salah kirim ke pemasok (mendukung pemilihan Serial Number unit)"
         right={
+          canRetur ? (
           <Button
             size="sm"
             variant="outline"
@@ -1121,6 +1136,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             <RotateCcw size={13} color={colors.text} />
             <Text className="text-xs">Catat Retur Pembelian</Text>
           </Button>
+          ) : undefined
         }
       >
         {purchaseReturns.length === 0 ? (
@@ -1314,30 +1330,47 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
               </FormField>
             ) : null}
 
-            {/* Skema Pembayaran */}
-            <FormField label="Status Pembayaran Saat Ini" required>
-              <View className="flex-row gap-2">
-                <Button
-                  size="sm"
-                  variant={invPaymentScheme === "TEMPO" ? "default" : "outline"}
-                  onPress={() => setInvPaymentScheme("TEMPO")}
-                  className="flex-1"
-                >
-                  <Text className="text-xs font-semibold">Tempo (Utang)</Text>
-                </Button>
-                <Button
-                  size="sm"
-                  variant={invPaymentScheme === "LUNAS" ? "default" : "outline"}
-                  onPress={() => setInvPaymentScheme("LUNAS")}
-                  className="flex-1"
-                >
-                  <Text className="text-xs font-semibold">Langsung Lunas</Text>
-                </Button>
+            {/* Status bayar: tidak ditanya ulang bila sudah jelas dari Request / hak akses */}
+            {isPrepaid ? (
+              <View className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex-row items-start gap-2">
+                <CheckCircle2 size={16} color={colors.success} />
+                <Text className="text-xs text-foreground flex-1">
+                  Pembelian ini sudah dibayar di muka{row.request && row.request !== "-" ? ` (Request ${row.request})` : ""}. Faktur
+                  ini otomatis tercatat lunas lewat kompensasi — tidak ada kas keluar lagi, tidak perlu isi jatuh tempo.
+                </Text>
               </View>
-            </FormField>
+            ) : canPay ? (
+              <FormField label="Faktur ini sudah dibayar?" required>
+                <View className="flex-row gap-2">
+                  <Button
+                    size="sm"
+                    variant={invPaymentScheme === "TEMPO" ? "default" : "outline"}
+                    onPress={() => setInvPaymentScheme("TEMPO")}
+                    className="flex-1"
+                  >
+                    <Text className="text-xs font-semibold">Belum — bayar saat jatuh tempo</Text>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={invPaymentScheme === "LUNAS" ? "default" : "outline"}
+                    onPress={() => setInvPaymentScheme("LUNAS")}
+                    className="flex-1"
+                  >
+                    <Text className="text-xs font-semibold">Sudah, bayar sekarang</Text>
+                  </Button>
+                </View>
+              </FormField>
+            ) : (
+              <View className="bg-panel/60 border border-border/70 rounded-xl p-3 flex-row items-start gap-2">
+                <FileText size={15} color={colors.text} />
+                <Text className="text-xs text-muted-foreground flex-1">
+                  Faktur dicatat sebagai tagihan (hutang). Pelunasannya dilakukan Finance dari halaman PO ini.
+                </Text>
+              </View>
+            )}
 
             {/* Metode & Akun COA saat Langsung Lunas */}
-            {invPaymentScheme === "LUNAS" ? (
+            {invPaymentScheme === "LUNAS" && canPay && !isPrepaid ? (
               <View className="flex-row flex-wrap gap-3">
                 <View className="flex-1 min-w-[240px]">
                   <FormField label="Metode Pembayaran Lunas">
@@ -1535,9 +1568,18 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                   <DatePicker value={invDate} onChange={setInvDate} />
                 </FormField>
               </View>
-              {invPaymentScheme === "TEMPO" ? (
+              {invPaymentScheme === "TEMPO" && !isPrepaid ? (
                 <View className="flex-1 min-w-[240px]">
-                  <FormField label="Jatuh Tempo *" hint="Batas waktu pembayaran ke pemasok">
+                  <FormField
+                    label="Jatuh Tempo *"
+                    hint={
+                      row.requestDueDate
+                        ? `Otomatis dari Request ${row.request} — ubah hanya bila faktur supplier berbeda`
+                        : row.paymentTerms
+                        ? `Otomatis dari syarat bayar PO (${row.paymentTerms})`
+                        : "Batas waktu pembayaran ke pemasok"
+                    }
+                  >
                     <DatePicker value={invDue} onChange={setInvDue} />
                   </FormField>
                 </View>
@@ -1560,7 +1602,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                   hint="File tagihan faktur resmi dari pemasok"
                 />
               </View>
-              {invPaymentScheme === "LUNAS" ? (
+              {invPaymentScheme === "LUNAS" && canPay && !isPrepaid ? (
                 <View className="flex-1 min-w-[260px]">
                   <FileUploader
                     label="Bukti Bayar / Transfer (Gambar/PDF) *"
@@ -1584,7 +1626,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
               <Text>Batal</Text>
             </Button>
             <Button size="sm" onPress={handleCreateInvoiceIn}>
-              <Text>{invPaymentScheme === "LUNAS" ? "Simpan & Tandai Lunas" : "Simpan Faktur Masuk"}</Text>
+              <Text>{invPaymentScheme === "LUNAS" && canPay && !isPrepaid ? "Simpan & Tandai Lunas" : "Simpan Faktur Masuk"}</Text>
             </Button>
           </DialogFooter>
         </DialogContent>

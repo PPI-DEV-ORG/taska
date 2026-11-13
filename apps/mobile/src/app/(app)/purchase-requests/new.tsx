@@ -160,9 +160,10 @@ export default function NewPurchaseRequestScreen() {
   const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
   const [paymentMethod, setPaymentMethod] = React.useState<"KAS" | "UTANG">("UTANG");
   const [dueDate, setDueDate] = React.useState<string>(() => {
+    // Tanggal lokal (bukan UTC) supaya tidak mundur sehari di WIB sebelum jam 07.00.
     const d = new Date();
     d.setMonth(d.getMonth() + 1);
-    return d.toISOString().slice(0, 10);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [otherDesc, setOtherDesc] = React.useState("");
 
@@ -365,9 +366,9 @@ export default function NewPurchaseRequestScreen() {
 
       const itemsPayload = resolvedItems.map((it: any) => ({
         productId: it.productId,
-        customName: it.isCustom && !it.productId
-          ? (it.isProjectConsumable ? `[PAKAI_HABIS] ${it.nama}` : it.nama)
-          : undefined,
+        customName: it.isCustom && !it.productId ? it.nama : undefined,
+        // Pakai-habis proyek disimpan sebagai kolom (dulu awalan "[PAKAI_HABIS]" di nama barang)
+        isConsumable: Boolean(it.isProjectConsumable),
         customUnit: it.isCustom && !it.productId ? it.satuan : undefined,
         hasSerial: it.berSN,
         qty: it.qty,
@@ -387,13 +388,9 @@ export default function NewPurchaseRequestScreen() {
       const supplierClean = matchedSupplier ? (matchedSupplier.nama || matchedSupplier.name) : cleanSupplierName(supplierName);
       const matchedProj = projects.find((p) => p.nama === projectId || String(p.id) === String(projectId));
 
-      const tags: string[] = [];
-      if (allConsumables) tags.push("[ALL_CONSUMABLES]");
-      if (costType === "Lainnya" || costType === "Internal") {
-        if (otherDesc) tags.push(otherDesc);
-      }
-      tags.push(`[PPN:${ppnMode}]`);
-      const otherNotePayload = tags.length > 0 ? tags.join(" ") : undefined;
+      // Catatan hanya berisi teks dari pemohon. PPN & pakai-habis dikirim sebagai field sendiri (bukan tag di catatan).
+      const otherNotePayload =
+        (costType === "Lainnya" || costType === "Internal") && otherDesc ? otherDesc : undefined;
 
       await addRow("purchase-requests", {
         pemohon: user?.name || "Karyawan",
@@ -411,6 +408,7 @@ export default function NewPurchaseRequestScreen() {
         items: itemsPayload,
         estimasi: totalEstimatedCost,
         ppnMode,
+        isProjectConsumable: Boolean(allConsumables),
         fileId,
         status: "Diajukan",
       });

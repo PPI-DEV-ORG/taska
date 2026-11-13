@@ -398,6 +398,7 @@ export function collectContinuableInvoices(
   const index = buildInvoiceChainIndex(allInvoices, quotations, projects, clientPos);
 
   for (const invoice of allInvoices) {
+    if (invoice.isProforma) continue;
     const chain = getInvoiceChainState(
       invoice,
       allInvoices,

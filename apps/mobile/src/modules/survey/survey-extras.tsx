@@ -17,6 +17,7 @@ import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
+import { CashAdvancePanel } from "@/modules/cash-advance/cash-advance-panel";
 
 export function SurveyExtras({ row }: { row: Row }) {
   const { addRow, patchRow, toast, data, user, companyProfile } = useApp();
@@ -136,6 +137,13 @@ export function SurveyExtras({ row }: { row: Row }) {
 
   return (
     <>
+      <CashAdvancePanel
+        surveyId={Number(row.id)}
+        purpose="SURVEY"
+        defaultDescription={`Biaya survey ${row.lead || ""} ${row.lokasi || row.location || ""}`.trim()}
+        title="Uang Jalan Survey"
+        subtitle="Minta biaya survey ke Finance sebelum berangkat. Setelah survey, laporkan biaya + foto nota."
+      />
       <Panel
         title="Catatan Teknis Lapangan"
         subtitle="Spesifikasi kondisi lapangan untuk pertimbangan estimasi biaya & penawaran teknis."

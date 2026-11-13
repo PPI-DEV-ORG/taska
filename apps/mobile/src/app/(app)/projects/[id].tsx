@@ -32,6 +32,7 @@ import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import { rupiah, tanggal } from "@/lib/format";
 import { ProjectExtras, useProjectExpenses } from "@/modules/project/project-extras";
+import { ProjectWalletCard } from "@/modules/cash-advance/project-wallet-card";
 import { TaskDetailDialog } from "@/modules/task/task-detail-dialog";
 import { CreateTaskDialog } from "@/modules/task/create-task-dialog";
 import { CompleteTaskDialog } from "@/modules/task/complete-task-dialog";
@@ -168,6 +169,30 @@ export default function ProjectDetailScreen() {
 
   const projectExpenses = useProjectExpenses(project?.id, project?.nama);
 
+  const canViewFinancials = ["super_admin", "admin", "bos", "finance", "pm"].includes(user?.role?.toLowerCase() || "");
+  const [serverPnl, setServerPnl] = React.useState<{
+    revenue: number;
+    hppGoods: number;
+    directPurchases: number;
+    expenses: number;
+    cashAdvancePending: number;
+    netProfit: number;
+    netProfitWithPending: number;
+    marginPct: number;
+  } | null>(null);
+  React.useEffect(() => {
+    if (!canViewFinancials || !project?.id || activeTab !== "Biaya") return;
+    let alive = true;
+    api<any>("GET", `/projects/${project.id}/pnl`)
+      .then((res) => {
+        if (alive) setServerPnl(res);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [canViewFinancials, project?.id, activeTab]);
+
   if (!project) {
     return (
       <EmptyState
@@ -205,7 +230,6 @@ export default function ProjectDetailScreen() {
       String(pr.project) === String(project.id)
   );
 
-  const canViewFinancials = ["super_admin", "admin", "bos", "finance", "pm"].includes(user?.role?.toLowerCase() || "");
 
   const remoteInvoices: any[] = (project as any)?._invoices ?? (remoteDetail as any)?._invoices ?? [];
   const projectInvoices = (remoteInvoices.length > 0)
@@ -214,7 +238,8 @@ export default function ProjectDetailScreen() {
         (i: any) =>
           (String(i.projectId) === String(project.id) || (!i.projectId && pName && i.project === pName)) &&
           i.status !== "Batal" &&
-          i.status !== "BATAL"
+          i.status !== "BATAL" &&
+          !i.isProforma
       );
   const revenue = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.total || i.nilai || i.amount || 0), 0);
 
@@ -258,16 +283,8 @@ export default function ProjectDetailScreen() {
     toast("Laporan Untung-Rugi (P&L) proyek berhasil diunduh");
   }
 
-  const isLunas =
-    project.pembayaran === "Lunas" ||
-    String(project.paymentStatus).toUpperCase() === "LUNAS" ||
-    (projectInvoices.length > 0 &&
-      projectInvoices.every(
-        (i: any) =>
-          (Number(i.paidAmount ?? i.dibayar ?? 0) >= Number(i.total ?? i.nilai ?? 0) && Number(i.total ?? i.nilai ?? 0) > 0) ||
-          i.status === "PAID" ||
-          i.status === "Lunas"
-      ));
+  // Status bayar dari server, dibandingkan dengan nilai kontrak (DP lunas saja = Lunas sebagian).
+  const isLunas = project.pembayaran === "Lunas" || String(project.paymentStatus).toUpperCase() === "LUNAS";
   const hasProgressChanged = liveProgress !== currentProgress;
 
   function toggleTask(t: Row) {
@@ -360,6 +377,7 @@ export default function ProjectDetailScreen() {
       {/* Tab 1: Ringkasan */}
       {activeTab === "Ringkasan" && (
         <View className="gap-4">
+          <ProjectWalletCard projectId={Number(project.id)} projectName={String(project.nama || "")} />
           <Panel title="Informasi Proyek">
             <InfoGrid
               fields={[
@@ -867,6 +885,7 @@ export default function ProjectDetailScreen() {
       {/* Tab 6: Biaya & Pengeluaran Lapangan */}
       {activeTab === "Biaya" && (
         <View className="gap-4">
+          <ProjectWalletCard projectId={Number(project.id)} projectName={String(project.nama || "")} />
           {canViewFinancials ? (
             <Panel
               title="Ringkasan Margin Laba-Rugi Proyek"
@@ -879,32 +898,46 @@ export default function ProjectDetailScreen() {
             >
               <View className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Pendapatan (DPP Faktur)</Text>
-                  <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
+                  <Text className="text-xs text-muted-foreground">Pendapatan (DPP)</Text>
+                  <Text className="text-base font-bold mt-1 text-foreground">{rupiah(serverPnl ? serverPnl.revenue : revenue)}</Text>
                   <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice</Text>
                 </View>
                 <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Biaya PO Pemasok</Text>
-                  <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
-                  <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
+                  <Text className="text-xs text-muted-foreground">HPP Barang & Pembelian</Text>
+                  <Text className="text-base font-bold mt-1 text-danger">
+                    {rupiah(serverPnl ? serverPnl.hppGoods + serverPnl.directPurchases : poCost)}
+                  </Text>
+                  <Text className="text-[10px] text-muted-foreground mt-0.5">
+                    {serverPnl ? "Barang dari stok + pembelian proyek" : `${projectPos.length} purchase order`}
+                  </Text>
                 </View>
                 <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Operasional & Reimburse</Text>
-                  <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(expenseCost)}</Text>
-                  <Text className="text-[10px] text-muted-foreground mt-0.5">{expenses.length} pengeluaran</Text>
+                  <Text className="text-xs text-muted-foreground">Biaya Operasional & Kas</Text>
+                  <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(serverPnl ? serverPnl.expenses : expenseCost)}</Text>
+                  <Text className="text-[10px] text-muted-foreground mt-0.5">
+                    {serverPnl && serverPnl.cashAdvancePending > 0
+                      ? `+ ${rupiah(serverPnl.cashAdvancePending)} menunggu verifikasi`
+                      : `${expenses.length} pengeluaran`}
+                  </Text>
                 </View>
                 <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Laba Bersih ({marginPct}%)</Text>
-                  <Text className={`text-base font-bold mt-1 ${netProfit >= 0 ? "text-success" : "text-danger"}`}>{rupiah(netProfit)}</Text>
-                  <Text className="text-[10px] text-muted-foreground mt-0.5">Total Beban: {rupiah(totalCost)}</Text>
+                  <Text className="text-xs text-muted-foreground">Laba Bersih ({serverPnl ? serverPnl.marginPct : marginPct}%)</Text>
+                  <Text className={`text-base font-bold mt-1 ${(serverPnl ? serverPnl.netProfit : netProfit) >= 0 ? "text-success" : "text-danger"}`}>
+                    {rupiah(serverPnl ? serverPnl.netProfit : netProfit)}
+                  </Text>
+                  <Text className="text-[10px] text-muted-foreground mt-0.5">
+                    {serverPnl && serverPnl.cashAdvancePending > 0
+                      ? `Bila biaya pending dihitung: ${rupiah(serverPnl.netProfitWithPending)}`
+                      : `Total Beban: ${rupiah(serverPnl ? serverPnl.revenue - serverPnl.netProfit : totalCost)}`}
+                  </Text>
                 </View>
               </View>
             </Panel>
           ) : null}
 
           <Panel
-            title="Biaya Operasional & Reimbursement Proyek"
-            subtitle="Tracking pengeluaran terhubung, pemisahan dana perusahaan vs talangan pribadi"
+            title="Semua Pengeluaran Proyek"
+            subtitle="Biaya dari kas proyek muncul di sini setelah diverifikasi Finance. Pakai Reimburse bila memakai uang pribadi."
             right={
               <Button
                 size="sm"
@@ -917,7 +950,7 @@ export default function ProjectDetailScreen() {
                 className="gap-1.5"
               >
                 <Plus size={14} color={colors.background} />
-                <Text className="text-xs font-semibold">+ Catat Biaya Proyek</Text>
+                <Text className="text-xs font-semibold">+ Reimburse (pakai uang pribadi)</Text>
               </Button>
             }
           >
@@ -943,6 +976,7 @@ export default function ProjectDetailScreen() {
                 <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
                   {expenses.map((e) => {
                     const isTalangan = e.fundingSource === "TALANGAN_PRIBADI" || e.sumberDana?.includes("Talangan");
+                    const isKas = e.fundingSource === "UANG_JALAN";
                     return (
                       <View key={e.id} className="p-3 flex-row items-center justify-between bg-card/30">
                         <View className="flex-1 pr-2">
@@ -951,13 +985,11 @@ export default function ProjectDetailScreen() {
                             <StatusBadge status={e.status} />
                             <View
                               className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                                isTalangan
-                                  ? "bg-amber-500/15 text-amber-500"
-                                  : "bg-blue-500/15 text-blue-500"
+                                isKas ? "bg-primary/15 text-primary" : isTalangan ? "bg-amber-500/15 text-amber-500" : "bg-blue-500/15 text-blue-500"
                               }`}
                             >
                               <Text className="text-[10px]">
-                                {isTalangan ? "Talangan Pribadi" : "Dana Kantor"}
+                                {isKas ? "Kas Proyek" : isTalangan ? "Talangan Pribadi" : "Dana Kantor"}
                               </Text>
                             </View>
                           </View>

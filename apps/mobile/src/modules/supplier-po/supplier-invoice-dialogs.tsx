@@ -27,7 +27,7 @@ import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-u
 import { useApp } from "@/store/app-store";
 import { api, apiBase } from "@/services/api";
 import { adaptRow } from "@/services/adapters";
-import { getKasBankAccounts } from "@/lib/accounting";
+import { useKasBankAccounts } from "@/lib/use-kas-bank";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -766,7 +766,7 @@ function SupplierInvoicePayForm({
   const payFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
-  const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
+  const kasBankOptions = useKasBankAccounts();
 
   async function handleSubmit() {
     const numAmt = Number(String(amount).replace(/\D/g, "")) || 0;

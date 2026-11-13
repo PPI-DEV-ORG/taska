@@ -68,36 +68,14 @@ export default function NewDeliveryNoteScreen() {
   }, [editId, deliveryNotes]);
 
   const initialMatchInvoice = React.useMemo(() => {
-    const rawReason = String(initialExistingDn?.alasan || initialExistingDn?.reportText || "");
-    const tagInvId = rawReason.match(/\[inv:(\d+)\]/i)?.[1] || "";
-    const tagInvNum = rawReason.match(/\b(INV[\-\/][^\s\)\]]+)\b/i)?.[1] || "";
-    const targetInvId =
-      initialInvoiceId ||
-      (initialExistingDn
-        ? String(initialExistingDn.invoiceId || tagInvId || "")
-        : "");
-    const targetInvNum = initialExistingDn ? String(initialExistingDn.invoiceNumber || tagInvNum || "") : "";
-    if (!targetInvId && !targetInvNum) return null;
-    return (
-      (invoicesList ?? []).find(
-        (inv: Row) =>
-          (targetInvId && String(inv.id) === targetInvId) ||
-          (targetInvNum &&
-            (String(inv.nomor || "").toLowerCase() === targetInvNum.toLowerCase() ||
-              String(inv.number || "").toLowerCase() === targetInvNum.toLowerCase()))
-      ) ?? null
-    );
+    const targetInvId = initialInvoiceId || (initialExistingDn ? String(initialExistingDn.invoiceId || "") : "");
+    if (!targetInvId) return null;
+    return (invoicesList ?? []).find((inv: Row) => String(inv.id) === targetInvId) ?? null;
   }, [initialInvoiceId, initialExistingDn, invoicesList]);
 
   const initialMatchSo = React.useMemo(() => {
-    const rawReason = String(initialExistingDn?.alasan || initialExistingDn?.reportText || "");
-    const tagSoId = rawReason.match(/\[so:(\d+)\]/i)?.[1] || "";
-    const tagSoNum = rawReason.match(/\b(SO[\-\/][^\s\)\]]+)\b/i)?.[1] || "";
-    const targetSoId =
-      initialSoId ||
-      (initialExistingDn
-        ? String(initialExistingDn.soId || initialExistingDn.clientPoId || tagSoId || "")
-        : "");
+    const tagSoNum = "";
+    const targetSoId = initialSoId || (initialExistingDn ? String(initialExistingDn.clientPoId || "") : "");
     const targetSoNum = initialExistingDn ? String(initialExistingDn.soNumber || tagSoNum || "") : "";
     if (!targetSoId && !targetSoNum) return null;
     return (
@@ -656,16 +634,10 @@ export default function NewDeliveryNoteScreen() {
     const invNum = selectedInvoice
       ? (selectedInvoice.nomor || `INV #${selectedInvoice.id}`)
       : undefined;
-    const soTag = selectedSo?.id ? ` [so:${selectedSo.id}]` : "";
-    const invTag = selectedInvoice?.id ? ` [inv:${selectedInvoice.id}] [invNum:${invNum}]` : "";
-    const cleanAlasan = alasan.trim();
-    let finalAlasan = cleanAlasan;
-    if (selectedSo && !finalAlasan.includes("[so:")) {
-      finalAlasan = `${finalAlasan || `Pengiriman Barang SO ${soNum}`}${soTag}`;
-    }
-    if (selectedInvoice && !finalAlasan.includes("[inv:")) {
-      finalAlasan = `${finalAlasan || `Pengiriman Barang Invoice ${invNum}`}${invTag}`;
-    }
+    // Kaitan SO / invoice dikirim sebagai clientPoId / invoiceId (tidak lagi diselipkan sebagai tag di alasan).
+    const finalAlasan =
+      alasan.trim() ||
+      (selectedSo ? `Pengiriman Barang SO ${soNum}` : selectedInvoice ? `Pengiriman Barang Invoice ${invNum}` : "");
 
     const currentStatus = initialExistingDn?.status || "Menunggu pengiriman";
     const isAlreadySentOrDelivered = currentStatus === "Dikirim" || currentStatus === "Diterima";

@@ -1,6 +1,6 @@
 import * as React from "react";
-import { View, ScrollView, Pressable, Platform } from "react-native";
-import { Shield, Plus, Trash2, Check, Copy, RotateCcw } from "lucide-react-native";
+import { View, ScrollView, Pressable, Platform, Alert } from "react-native";
+import { Shield, Plus, Trash2, RotateCcw, ChevronDown, ChevronRight, Search, Check, Lock } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,317 +9,411 @@ import { FormField } from "@/components/taska/basics";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
-import type { ActionCode } from "@/constants/modules";
-import { getDefaultRoleDef } from "@/constants/modules";
+import type { ActionCode, RoleDef } from "@/constants/modules";
+import {
+  ALL_ACTION_CODES,
+  PERMISSION_ALIAS_TO_UI_KEY,
+  getDefaultRoleDef,
+  normalizePermissionMap,
+} from "@/constants/modules";
+import { STANDARD_ROLES } from "@/constants/role-matrix";
 
-const ALIAS_TO_UI_KEY: Record<string, string> = {
-  financeOut: "invoices",
-  requests: "purchase-requests",
-  procurement: "supplier-pos",
-  delivery: "delivery-notes",
-  damageReports: "damage-reports",
-  pocReports: "poc-reports",
-  visitReports: "visit-reports",
-  audit: "audit-log",
-  attendance: "hr",
-  payroll: "hr",
-  masterData: "master-data",
-  settings: "master-data",
-  poClient: "po-client",
+// ─────────────────────────────── Model ───────────────────────────────
+
+type Perms = Record<string, ActionCode[]>;
+type Level = "none" | "view" | "manage" | "full";
+
+/** Level sederhana yang dipilih admin. Kombinasi lain ditampilkan sebagai "Kustom". */
+const LEVELS: { id: Level; label: string; hint: string; actions: ActionCode[] }[] = [
+  { id: "none", label: "Tidak", hint: "Tidak punya akses", actions: [] },
+  { id: "view", label: "Lihat", hint: "Buka menu & lihat data", actions: ["M", "L"] },
+  { id: "manage", label: "Kelola", hint: "Lihat + buat & ubah data", actions: ["M", "L", "C", "U"] },
+  { id: "full", label: "Penuh", hint: "Semua, termasuk hapus, setujui, ekspor & harga", actions: [...ALL_ACTION_CODES] },
+];
+
+const ACTION_LABEL: Record<ActionCode, { label: string; hint: string }> = {
+  M: { label: "Tampil di menu", hint: "Modul muncul di sidebar" },
+  L: { label: "Lihat data", hint: "Baca data & dipakai di pilihan form" },
+  C: { label: "Buat", hint: "Tambah data / dokumen baru" },
+  U: { label: "Ubah", hint: "Edit data & ubah status" },
+  A: { label: "Hapus / batal", hint: "Hapus atau batalkan dokumen" },
+  P: { label: "Lihat harga & laba", hint: "HPP, margin, laba/rugi" },
+  V: { label: "Setujui", hint: "Approve / tolak pengajuan" },
+  E: { label: "Ekspor / cetak", hint: "PDF, Excel, E-Faktur" },
 };
 
-function normalizeRolePermissions(
-  roleCode: string,
-  rawPermissions?: Record<string, any>,
-): Record<string, ActionCode[]> {
-  const norm = (roleCode || "").toUpperCase();
-  const sysDefault = getDefaultRoleDef(norm)?.permissions ?? {};
-  const result: Record<string, ActionCode[]> = {};
+const MODULE_GROUPS: { group: string; items: { key: string; label: string; desc: string }[] }[] = [
+  {
+    group: "Penjualan & CRM",
+    items: [
+      { key: "leads", label: "Leads", desc: "Prospek & pipeline penjualan" },
+      { key: "quotations", label: "Penawaran", desc: "Penawaran harga ke customer" },
+      { key: "surveys", label: "Survey", desc: "Survey teknis lapangan" },
+      { key: "poc-reports", label: "POC & Demo", desc: "Uji coba perangkat" },
+      { key: "visit-reports", label: "Kunjungan", desc: "Laporan kunjungan / MoM" },
+      { key: "customers", label: "Customer", desc: "Data pelanggan & PIC" },
+      { key: "po-client", label: "Sales Order", desc: "PO masuk dari customer" },
+    ],
+  },
+  {
+    group: "Proyek & Pengiriman",
+    items: [
+      { key: "projects", label: "Project", desc: "Progres, BOQ & BAST" },
+      { key: "tasks", label: "Tugas", desc: "Penugasan teknisi" },
+      { key: "delivery-notes", label: "Surat Jalan", desc: "Pengiriman barang ke customer" },
+    ],
+  },
+  {
+    group: "Pembelian & Gudang",
+    items: [
+      { key: "purchase-requests", label: "Request Barang", desc: "Pengajuan pembelian / ambil stok" },
+      { key: "supplier-pos", label: "PO Supplier", desc: "PO ke vendor & tagihan supplier" },
+      { key: "shipments", label: "Pengiriman PO", desc: "Lacak barang dari supplier" },
+      { key: "receiving", label: "Penerimaan Barang", desc: "Cek barang masuk & input SN" },
+      { key: "stock", label: "Stok & SN", desc: "Kartu stok & serial number" },
+      { key: "opname", label: "Stok Opname", desc: "Hitung fisik stok" },
+      { key: "damage-reports", label: "Kerusakan & Retur", desc: "Barang rusak & klaim garansi" },
+      { key: "suppliers", label: "Supplier", desc: "Data vendor" },
+      { key: "warehouses", label: "Gudang", desc: "Lokasi penyimpanan" },
+      { key: "products", label: "Produk & Jasa", desc: "Katalog & harga" },
+    ],
+  },
+  {
+    group: "Keuangan",
+    items: [
+      { key: "invoices", label: "Invoice", desc: "Tagihan ke customer & pembayaran" },
+      { key: "expenses", label: "Pengeluaran", desc: "Biaya operasional & reimburse" },
+      { key: "accounting", label: "Akuntansi", desc: "Jurnal, COA, tutup buku" },
+      { key: "reports", label: "Laporan", desc: "Rekap & analitik" },
+    ],
+  },
+  {
+    group: "SDM",
+    items: [{ key: "hr", label: "Absensi & Payroll", desc: "Kehadiran & slip gaji" }],
+  },
+  {
+    group: "Sistem",
+    items: [
+      { key: "dashboard", label: "Dashboard", desc: "Ringkasan KPI" },
+      { key: "calendar", label: "Kalender", desc: "Jadwal kerja" },
+      { key: "approvals", label: "Persetujuan", desc: "Antrean approval dokumen" },
+      { key: "master-data", label: "Master Data & Pengaturan", desc: "Termasuk atur hak akses ini" },
+      { key: "users", label: "Pengguna", desc: "Akun & role pengguna" },
+      { key: "archive", label: "Arsip", desc: "Berkas dokumen" },
+      { key: "audit-log", label: "Audit Log", desc: "Jejak perubahan data" },
+    ],
+  },
+];
 
-  // Mulai dengan default sistem sesuai hardcoded
-  for (const [k, v] of Object.entries(sysDefault)) {
-    result[k] = Array.isArray(v) ? [...v] : [];
-  }
+const ALL_MODULE_KEYS = MODULE_GROUPS.flatMap((g) => g.items.map((i) => i.key));
 
-  // Jika ada custom permissions, konversi string / array dan simpan
-  if (rawPermissions && typeof rawPermissions === "object") {
-    for (const [k, v] of Object.entries(rawPermissions)) {
-      const uiKey = ALIAS_TO_UI_KEY[k] || k;
-      if (Array.isArray(v)) {
-        result[uiKey] = v as ActionCode[];
-      } else if (typeof v === "string" && v.length > 0) {
-        result[uiKey] = v
-          .split("")
-          .filter((c): c is ActionCode => ["M", "L", "C", "U", "A", "P", "V", "E"].includes(c));
-      }
-    }
-  }
+const sameSet = (a: ActionCode[], b: ActionCode[]) => a.length === b.length && a.every((x) => b.includes(x));
 
-  // Migrasi data legacy: jika di default sistem modul ini punya 'M' dan di permissions tersimpan punya 'L',
-  // pastikan 'M' tetap aktif agar halaman tidak hilang
-  for (const [k, v] of Object.entries(sysDefault)) {
-    if (v.includes("M") && result[k] && result[k].includes("L") && !result[k].includes("M")) {
-      result[k].unshift("M");
-    }
-  }
-
-  return result;
+function levelOf(acts: ActionCode[] = []): Level | "custom" {
+  return LEVELS.find((l) => sameSet(l.actions, acts))?.id ?? "custom";
 }
 
-const ACTION_META: { code: ActionCode; label: string; desc: string }[] = [
-  { code: "M", label: "Menu / Page", desc: "Tampil di sidebar & buka halaman" },
-  { code: "L", label: "Lihat Data", desc: "Akses baca data & dropdown select" },
-  { code: "C", label: "Buat", desc: "Tambah data / buat dokumen baru" },
-  { code: "U", label: "Ubah", desc: "Edit data & ubah status tahapan" },
-  { code: "A", label: "Hapus", desc: "Hapus baris atau batalkan dokumen" },
-  { code: "P", label: "Harga/P&L", desc: "Lihat HPP, margin, & laba/rugi" },
-  { code: "V", label: "Approve", desc: "Setujui / tolak pengajuan dokumen" },
-  { code: "E", label: "Export", desc: "Cetak PDF, Excel, & CSV E-Faktur" },
-];
+/** Izin role dalam kunci UI. Data server = sumber kebenaran; default hanya dipakai bila role belum punya data. */
+function rolePerms(role?: RoleDef): Perms {
+  if (!role) return {};
+  const raw = role.permissions as Record<string, any> | undefined;
+  const source = raw && typeof raw === "object" ? raw : getDefaultRoleDef(role.code)?.permissions;
+  const norm = normalizePermissionMap(source);
+  const out: Perms = {};
+  // Kunci UI menang atas kunci alias lama bila keduanya ada
+  for (const [k, v] of Object.entries(norm)) {
+    const ui = PERMISSION_ALIAS_TO_UI_KEY[k];
+    if (ui && !(ui in norm)) out[ui] = v;
+    else if (!ui) out[k] = v;
+  }
+  return out;
+}
 
-const MODULE_GROUPS: {
-  group: string;
-  subtitle: string;
-  items: { key: string; label: string; desc: string }[];
-}[] = [
-  {
-    group: "CRM & Pra-Penjualan",
-    subtitle: "Peluang bisnis, penawaran harga, survey teknis, demo POC, dan kunjungan klien",
-    items: [
-      { key: "leads", label: "Leads & Peluang", desc: "Prospek penjualan, kualifikasi & tahapan pipeline" },
-      { key: "quotations", label: "Penawaran (Quotation)", desc: "Pembuatan & revisi penawaran harga ke customer" },
-      { key: "surveys", label: "Survey Teknis Lapangan", desc: "Jadwal survey, catatan lapangan & biaya survey" },
-      { key: "poc-reports", label: "Laporan POC & Demo", desc: "Dokumentasi uji coba perangkat & evaluasi POC" },
-      { key: "visit-reports", label: "Laporan Kunjungan (MoM)", desc: "Risalah pertemuan klien & tindak lanjut kunjungan" },
-      { key: "customers", label: "Data Pelanggan (Customer)", desc: "Master profil perusahaan & kontak PIC pelanggan" },
-    ],
-  },
-  {
-    group: "Penjualan & Manajemen Proyek",
-    subtitle: "Pesanan pelanggan (SO), eksekusi proyek, BOQ, tugas teknisi, dan surat jalan",
-    items: [
-      { key: "po-client", label: "Sales Order (SO / PO Masuk)", desc: "Pencatatan PO pelanggan & penerbitan Sales Order" },
-      { key: "projects", label: "Project & BOQ", desc: "Progres proyek, RAB/BOQ, BAST & profitabilitas proyek" },
-      { key: "tasks", label: "Tugas & Tiket Kerja", desc: "Penugasan teknisi/engineer & checklist pekerjaan" },
-      { key: "delivery-notes", label: "Delivery / Surat Jalan", desc: "Pengiriman barang, penyiapan SN & dokumen DO" },
-    ],
-  },
-  {
-    group: "Pengadaan (Procurement) & Gudang",
-    subtitle: "Permintaan barang, PO supplier, penerimaan barang, stok, serial number, dan opname",
-    items: [
-      { key: "purchase-requests", label: "Purchase Request (PR)", desc: "Pengajuan pembelian barang proyek atau stok gudang" },
-      { key: "supplier-pos", label: "Purchase Order (PO Supplier)", desc: "Penerbitan PO ke vendor/supplier & tagihan masuk" },
-      { key: "shipments", label: "Pelacakan Pengiriman PO", desc: "Monitoring status pengiriman barang dari supplier" },
-      { key: "receiving", label: "Penerimaan Barang (GRN)", desc: "Pemeriksaan fisik barang masuk & input Serial Number" },
-      { key: "stock", label: "Stok Barang, Jasa & SN", desc: "Kartu stok, mutasi gudang, reservasi & lacak SN" },
-      { key: "opname", label: "Stok Opname", desc: "Perhitungan fisik stok gudang & penyesuaian selisih" },
-      { key: "damage-reports", label: "Kerusakan & Retur Barang", desc: "Laporan barang rusak, klaim garansi & retur" },
-      { key: "suppliers", label: "Master Supplier / Vendor", desc: "Daftar pemasok, kategori barang & termin bayar" },
-      { key: "warehouses", label: "Master Gudang", desc: "Daftar lokasi penyimpanan & cabang gudang" },
-      { key: "products", label: "Master Produk & Jasa", desc: "Katalog barang/jasa, harga beli (HPP) & harga jual" },
-    ],
-  },
-  {
-    group: "Keuangan & Akuntansi",
-    subtitle: "Penagihan faktur pelanggan, pembayaran, pengeluaran operasional, buku besar, dan laporan",
-    items: [
-      { key: "invoices", label: "Invoice & Kwitansi", desc: "Penagihan piutang customer, pencatatan bayar & E-Faktur" },
-      { key: "expenses", label: "Pengeluaran & Reimbursement", desc: "Biaya operasional, kas kecil & klaim talangan staf" },
-      { key: "accounting", label: "Buku Besar & COA", desc: "Jurnal akuntansi, bagan akun (Chart of Accounts) & neraca" },
-      { key: "reports", label: "Laporan & Analitik", desc: "Rekap penjualan, keuangan, P&L proyek & performa tim" },
-    ],
-  },
-  {
-    group: "SDM / HR & Personalia",
-    subtitle: "Absensi kehadiran, pengajuan cuti/izin, dan pengelolaan slip gaji karyawan",
-    items: [
-      { key: "hr", label: "Absensi & Payroll (HR)", desc: "Rekap kehadiran staf, komponen gaji & cetak slip gaji" },
-    ],
-  },
-  {
-    group: "Operasional, Sistem & Administrasi",
-    subtitle: "Ringkasan eksekutif, kalender kerja, persetujuan dokumen, pengguna, dan log audit",
-    items: [
-      { key: "dashboard", label: "Dashboard Utama", desc: "Ringkasan KPI, grafik aktivitas & metrik sesuai divisi" },
-      { key: "calendar", label: "Kalender Kerja", desc: "Jadwal survey, proyek, kunjungan, POC & jatuh tempo" },
-      { key: "approvals", label: "Pusat Persetujuan (Approval)", desc: "Antrean persetujuan dokumen lintas modul" },
-      { key: "master-data", label: "Master Data & Pengaturan", desc: "Konfigurasi kategori, sumber lead & profil perusahaan" },
-      { key: "users", label: "Pengguna & Hak Akses", desc: "Kelola akun pengguna, penugasan gudang & role" },
-      { key: "archive", label: "Arsip Dokumen Terpusat", desc: "Penyimpanan seluruh berkas PDF, foto & dokumen proyek" },
-      { key: "audit-log", label: "Audit Log Sistem", desc: "Rekam jejak seluruh perubahan data oleh pengguna" },
-    ],
-  },
-];
+function changedKeys(a: Perms, b: Perms): string[] {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].filter((k) => !sameSet(a[k] ?? [], b[k] ?? []));
+}
 
-export function RoleManagementDialog({
-  open,
-  onOpenChange,
+/** Jumlah modul yang berbeda dari matriks standar (null = bukan peran bawaan). */
+function diffFromStandard(code: string, perms: Perms): number | null {
+  const std = STANDARD_ROLES[code];
+  if (!std || code === "SUPER_ADMIN") return null;
+  return changedKeys(perms, normalizePermissionMap(std.permissions)).length;
+}
+
+function confirmAsync(title: string, message: string, okLabel = "Ya, lanjutkan"): Promise<boolean> {
+  if (Platform.OS === "web") {
+    return Promise.resolve(typeof window !== "undefined" ? window.confirm(`${title}\n\n${message}`) : true);
+  }
+  return new Promise((resolve) =>
+    Alert.alert(title, message, [
+      { text: "Batal", style: "cancel", onPress: () => resolve(false) },
+      { text: okLabel, style: "destructive", onPress: () => resolve(true) },
+    ]),
+  );
+}
+
+// ─────────────────────────────── UI kecil ───────────────────────────────
+
+function LevelPicker({
+  value,
+  onChange,
+  disabled,
+  compact,
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
+  value: Level | "custom";
+  onChange: (l: Level) => void;
+  disabled?: boolean;
+  compact?: boolean;
 }) {
-  const { roles, saveRole, deleteRole, toast } = useApp();
+  return (
+    <View className="flex-row rounded-lg border border-border bg-panel/50 p-0.5" style={{ flexShrink: 0 }}>
+      {LEVELS.map((l) => {
+        const active = value === l.id;
+        return (
+          <Pressable
+            key={l.id}
+            disabled={disabled}
+            onPress={() => onChange(l.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={`${l.label}: ${l.hint}`}
+            className={cn(
+              "rounded-md items-center justify-center",
+              compact ? "px-2 min-h-[30px]" : "px-3 min-h-[34px]",
+              active ? (l.id === "none" ? "bg-muted/60" : "bg-primary") : "",
+            )}
+          >
+            <Text
+              className={cn(
+                "text-xs font-semibold",
+                active ? (l.id === "none" ? "text-foreground" : "text-primary-foreground") : "text-muted-foreground",
+              )}
+            >
+              {l.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ActionToggle({ code, checked, onPress }: { code: ActionCode; checked: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      className={cn(
+        "flex-row items-center gap-1.5 rounded-full border px-2.5 min-h-[32px]",
+        checked ? "border-primary bg-primary/15" : "border-border bg-card",
+      )}
+    >
+      <View
+        className={cn(
+          "size-4 rounded-full items-center justify-center border",
+          checked ? "bg-primary border-primary" : "border-muted-foreground/50",
+        )}
+      >
+        {checked ? <Check size={10} color={colors.background} /> : null}
+      </View>
+      <Text className={cn("text-xs", checked ? "text-primary font-semibold" : "text-muted-foreground")}>
+        {ACTION_LABEL[code].label}
+      </Text>
+    </Pressable>
+  );
+}
+
+// ─────────────────────────────── Dialog ───────────────────────────────
+
+export function RoleManagementDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const { roles, saveRole, deleteRole, applyStandardRoles, toast } = useApp();
   const [selectedCode, setSelectedCode] = React.useState<string>("SALES");
   const [creatingNew, setCreatingNew] = React.useState(false);
   const [newName, setNewName] = React.useState("");
   const [newCode, setNewCode] = React.useState("");
-  const [newDesc, setNewDesc] = React.useState("");
   const [cloneFrom, setCloneFrom] = React.useState<string>("SALES");
   const [draftName, setDraftName] = React.useState("");
   const [draftDesc, setDraftDesc] = React.useState("");
-  const [draftPerms, setDraftPerms] = React.useState<Record<string, ActionCode[]>>({});
+  const [draftPerms, setDraftPerms] = React.useState<Perms>({});
+  const [baseline, setBaseline] = React.useState<{ name: string; desc: string; perms: Perms }>({ name: "", desc: "", perms: {} });
   const [saving, setSaving] = React.useState(false);
-  const [draftSource, setDraftSource] = React.useState<{ role: typeof roles[number] | undefined; open: boolean } | null>(null);
+  const [query, setQuery] = React.useState("");
+  const [openGroups, setOpenGroups] = React.useState<Set<string>>(new Set([MODULE_GROUPS[0]!.group]));
+  const [detailOpen, setDetailOpen] = React.useState<Set<string>>(new Set());
+  const loadedRef = React.useRef<RoleDef | null>(null);
 
-  const activeRole = React.useMemo(
-    () => roles.find((r) => r.code === selectedCode) ?? roles[0],
-    [roles, selectedCode],
+  const activeRole = React.useMemo(() => roles.find((r) => r.code === selectedCode) ?? roles[0], [roles, selectedCode]);
+  const isSuperAdmin = !creatingNew && activeRole?.code === "SUPER_ADMIN";
+
+  const changed = React.useMemo(() => changedKeys(draftPerms, baseline.perms), [draftPerms, baseline]);
+  const metaChanged = !creatingNew && (draftName.trim() !== baseline.name || draftDesc.trim() !== baseline.desc);
+  const dirty = creatingNew ? Boolean(newName.trim()) || changed.length > 0 : changed.length > 0 || metaChanged;
+
+  // Peran bawaan yang tersimpan berbeda dari matriks standar terbaru
+  const nonStandard = React.useMemo(
+    () => roles.filter((r) => (diffFromStandard(r.code, rolePerms(r)) ?? 0) > 0),
+    [roles],
   );
+  const draftDiff = !creatingNew && activeRole ? diffFromStandard(activeRole.code, draftPerms) : null;
 
-  if (!creatingNew && open && activeRole && (draftSource?.role !== activeRole || !draftSource.open)) {
-    setDraftName(activeRole.name);
-    setDraftDesc(activeRole.description || "");
-    setDraftPerms(normalizeRolePermissions(activeRole.code, activeRole.permissions));
-    setDraftSource({ role: activeRole, open });
-  } else if (!open && draftSource?.open) {
-    setDraftSource({ role: draftSource.role, open: false });
+  async function handleApplyStandardAll() {
+    if (!(await guardDiscard())) return;
+    const names = nonStandard.map((r) => r.name).join(", ");
+    if (!(await confirmAsync("Terapkan hak akses standar?", `Izin peran berikut akan diganti dengan standar: ${names}.\nPeran kustom tidak berubah.`, "Terapkan"))) return;
+    setSaving(true);
+    try {
+      const updated = await applyStandardRoles();
+      const fresh = updated?.find((r) => r.code === activeRole?.code);
+      if (fresh) loadRole(fresh);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const loadRole = React.useCallback((role: RoleDef) => {
+    const perms = rolePerms(role);
+    setDraftName(role.name);
+    setDraftDesc(role.description || "");
+    setDraftPerms(perms);
+    setBaseline({ name: role.name, desc: role.description || "", perms });
+    setDetailOpen(new Set());
+    loadedRef.current = role;
+  }, []);
+
+  // Muat draft saat dialog dibuka / ganti role / data role dari server berubah (hanya bila tidak ada edit yang belum disimpan)
+  React.useEffect(() => {
+    if (!open) {
+      loadedRef.current = null;
+      return;
+    }
+    if (creatingNew || !activeRole) return;
+    const prev = loadedRef.current;
+    if (!prev || prev.code !== activeRole.code || (prev !== activeRole && !dirty)) loadRole(activeRole);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, creatingNew, activeRole, loadRole]);
+
+  async function guardDiscard(): Promise<boolean> {
+    if (!dirty) return true;
+    return confirmAsync("Buang perubahan?", "Ada perubahan hak akses yang belum disimpan.", "Buang");
+  }
+
+  async function selectRole(code: string) {
+    if (code === activeRole?.code && !creatingNew) return;
+    if (!(await guardDiscard())) return;
+    setCreatingNew(false);
+    loadedRef.current = null;
+    setSelectedCode(code);
+  }
+
+  async function startCreateNew() {
+    if (!(await guardDiscard())) return;
+    const source = roles.find((r) => r.code === cloneFrom) ?? activeRole;
+    setCreatingNew(true);
+    setNewName("");
+    setNewCode("");
+    const perms = rolePerms(source);
+    setDraftPerms(perms);
+    setBaseline({ name: "", desc: "", perms: {} });
+  }
+
+  function pickTemplate(code: string) {
+    setCloneFrom(code);
+    setDraftPerms(rolePerms(roles.find((r) => r.code === code)));
+  }
+
+  async function handleClose(v: boolean) {
+    if (!v && !(await guardDiscard())) return;
+    if (!v) setCreatingNew(false);
+    onOpenChange(v);
+  }
+
+  // ── Ubah izin ──
+  const setModuleLevel = (key: string, level: Level) =>
+    setDraftPerms((p) => ({ ...p, [key]: [...LEVELS.find((l) => l.id === level)!.actions] }));
+
+  const setGroupLevel = (keys: string[], level: Level) =>
+    setDraftPerms((p) => {
+      const next = { ...p };
+      for (const k of keys) next[k] = [...LEVELS.find((l) => l.id === level)!.actions];
+      return next;
+    });
+
+  function toggleAction(key: string, code: ActionCode) {
+    setDraftPerms((prev) => {
+      const s = new Set<ActionCode>(prev[key] ?? []);
+      if (s.has(code)) {
+        s.delete(code);
+        // Tanpa "Lihat data", aksi lain tidak bermakna
+        if (code === "L") ALL_ACTION_CODES.forEach((c) => s.delete(c));
+      } else {
+        s.add(code);
+        s.add("L");
+      }
+      return { ...prev, [key]: ALL_ACTION_CODES.filter((c) => s.has(c)) };
+    });
   }
 
   function resetToDefault() {
     if (!activeRole) return;
-    const defaults = getDefaultRoleDef(activeRole.code);
-    if (!defaults) return;
-    const copy: Record<string, ActionCode[]> = {};
-    for (const [k, v] of Object.entries(defaults.permissions)) {
-      copy[k] = [...v];
+    const def = getDefaultRoleDef(activeRole.code);
+    if (!def) return;
+    setDraftPerms(normalizePermissionMap(def.permissions));
+    toast("Diisi dengan izin default. Tekan Simpan untuk menerapkan.", "info");
+  }
+
+  /** Kirim hanya modul yang punya akses + modul yang sebelumnya diatur lalu dikosongkan (agar pencabutan tersimpan). */
+  function buildPayload(perms: Perms, base: Perms): Perms {
+    const out: Perms = {};
+    for (const k of new Set([...Object.keys(base), ...Object.keys(perms)])) {
+      const acts = perms[k] ?? [];
+      if (acts.length > 0 || k in base) out[k] = acts;
     }
-    setDraftPerms(copy);
-    toast(`Izin untuk ${activeRole.name} dikembalikan ke default sistem`, "info");
-  }
-
-  function startCreateNew() {
-    setCreatingNew(true);
-    setNewName("");
-    setNewCode("");
-    setNewDesc("");
-    const source = roles.find((r) => r.code === cloneFrom);
-    setDraftPerms(normalizeRolePermissions(cloneFrom, source?.permissions));
-  }
-
-  function handleCloneTemplateChange(code: string) {
-    setCloneFrom(code);
-    const source = roles.find((r) => r.code === code);
-    setDraftPerms(normalizeRolePermissions(code, source?.permissions));
-  }
-
-  function togglePermission(moduleKey: string, action: ActionCode) {
-    setDraftPerms((prev) => {
-      const curr = new Set<ActionCode>(prev[moduleKey] ?? []);
-      if (curr.has(action)) {
-        curr.delete(action);
-        // Jika mematikan Lihat Data ('L'), otomatis matikan Menu ('M') dan aksi lainnya
-        if (action === "L") {
-          curr.delete("M");
-          curr.delete("C");
-          curr.delete("U");
-          curr.delete("A");
-          curr.delete("P");
-          curr.delete("V");
-          curr.delete("E");
-        }
-      } else {
-        curr.add(action);
-        // Jika mengaktifkan Menu ('M'), Buat ('C'), Ubah ('U'), dsb, otomatis aktifkan Lihat Data ('L')
-        if (action !== "L") {
-          curr.add("L");
-        }
-      }
-      return {
-        ...prev,
-        [moduleKey]: Array.from(curr),
-      };
-    });
-  }
-
-  function toggleAllForModule(moduleKey: string) {
-    const allCodes = ACTION_META.map((a) => a.code);
-    setDraftPerms((prev) => {
-      const curr = prev[moduleKey] ?? [];
-      const hasAll = allCodes.every((c) => curr.includes(c));
-      return {
-        ...prev,
-        [moduleKey]: hasAll ? [] : [...allCodes],
-      };
-    });
-  }
-
-  function setGroupPermissions(keys: string[], mode: "menu" | "view" | "full" | "clear") {
-    const allCodes = ACTION_META.map((a) => a.code);
-    setDraftPerms((prev) => {
-      const next = { ...prev };
-      for (const k of keys) {
-        if (mode === "clear") {
-          next[k] = [];
-        } else if (mode === "view") {
-          const existing = new Set<ActionCode>(next[k] ?? []);
-          existing.add("L");
-          next[k] = Array.from(existing);
-        } else if (mode === "menu") {
-          const existing = new Set<ActionCode>(next[k] ?? []);
-          existing.add("M");
-          existing.add("L");
-          next[k] = Array.from(existing);
-        } else {
-          next[k] = [...allCodes];
-        }
-      }
-      return next;
-    });
+    return out;
   }
 
   async function handleSave() {
     if (creatingNew) {
       if (!newName.trim()) {
-        toast("Nama peran (role) baru wajib diisi", "danger");
+        toast("Nama peran wajib diisi", "danger");
         return;
       }
-      const generatedCode = (newCode.trim() || newName.trim())
-        .toUpperCase()
-        .replace(/[^A-Z0-9_]/g, "_");
+      const code = (newCode.trim() || newName.trim()).toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+      if (roles.some((r) => r.code === code)) {
+        toast(`Kode ${code} sudah dipakai, ganti nama atau kode`, "danger");
+        return;
+      }
       setSaving(true);
       try {
         const updated = await saveRole(
-          {
-            code: generatedCode,
-            name: newName.trim(),
-            description: newDesc.trim() || `Role kustom ${newName.trim()}`,
-            permissions: draftPerms,
-          },
+          { code, name: newName.trim(), description: `Peran kustom ${newName.trim()}`, permissions: buildPayload(draftPerms, {}) },
           false,
         );
         if (updated) {
           setCreatingNew(false);
-          setSelectedCode(generatedCode);
+          loadedRef.current = null;
+          setSelectedCode(code);
         }
       } finally {
         setSaving(false);
       }
       return;
     }
-
     if (!activeRole) return;
     setSaving(true);
     try {
-      await saveRole(
+      const updated = await saveRole(
         {
           code: activeRole.code,
           name: draftName.trim() || activeRole.name,
           description: draftDesc.trim(),
-          permissions: draftPerms,
+          permissions: buildPayload(draftPerms, baseline.perms),
         },
         true,
       );
+      const fresh = updated?.find((r) => r.code === activeRole.code);
+      if (fresh) loadRole(fresh); // tampilkan persis apa yang tersimpan di server
     } finally {
       setSaving(false);
     }
@@ -327,15 +421,12 @@ export function RoleManagementDialog({
 
   async function handleDelete() {
     if (!activeRole || activeRole.isSystem) return;
-    const ok =
-      typeof window !== "undefined"
-        ? window.confirm(`Hapus role kustom "${activeRole.name}"?`)
-        : true;
-    if (!ok) return;
+    if (!(await confirmAsync(`Hapus peran "${activeRole.name}"?`, "Peran kustom ini akan dihapus permanen.", "Hapus"))) return;
     setSaving(true);
     try {
       const updated = await deleteRole(activeRole.code);
-      if (updated && updated.length > 0) {
+      if (updated?.length) {
+        loadedRef.current = null;
         setSelectedCode(updated[0]!.code);
       }
     } finally {
@@ -343,390 +434,326 @@ export function RoleManagementDialog({
     }
   }
 
-  const isSuperAdminSelected = !creatingNew && activeRole?.code === "SUPER_ADMIN";
+  // ── Turunan tampilan ──
+  const q = query.trim().toLowerCase();
+  const groups = MODULE_GROUPS.map((g) => ({
+    ...g,
+    items: q ? g.items.filter((i) => `${i.label} ${i.desc}`.toLowerCase().includes(q)) : g.items,
+  })).filter((g) => g.items.length > 0);
+  const activeCount = ALL_MODULE_KEYS.filter((k) => (draftPerms[k] ?? []).length > 0).length;
+
+  const toggleGroup = (g: string) =>
+    setOpenGroups((s) => {
+      const n = new Set(s);
+      if (n.has(g)) n.delete(g);
+      else n.add(g);
+      return n;
+    });
+  const toggleDetail = (k: string) =>
+    setDetailOpen((s) => {
+      const n = new Set(s);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => void handleClose(v)}>
       <DialogContent
-        className="w-[92vw] max-w-[840px] h-[82vh] max-h-[82vh] p-4 sm:p-5 overflow-hidden flex flex-col"
+        className="w-[94vw] max-w-[760px] h-[86vh] max-h-[86vh] p-0 overflow-hidden flex flex-col"
         style={Platform.select({
-          web: { width: "92vw", maxWidth: 840, height: "82vh", maxHeight: "82vh" } as any,
-          default: { width: "92%", maxWidth: 840, maxHeight: "85%" },
+          web: { width: "94vw", maxWidth: 760, height: "86vh", maxHeight: "86vh" } as any,
+          default: { width: "94%", maxWidth: 760, maxHeight: "90%" },
         })}
       >
-        <DialogHeader style={{ flexShrink: 0 }}>
-          <View className="flex-row flex-wrap items-center justify-between gap-3 pr-6">
-            <View className="flex-row items-center gap-2.5" style={{ flex: 1, minWidth: 240 }}>
-              <View className="size-9 rounded-xl bg-primary/15 items-center justify-center shrink-0">
-                <Shield size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <DialogTitle className="text-base sm:text-lg font-bold">
-                  Manajemen Peran & Matriks Hak Akses (Dynamic RBAC)
-                </DialogTitle>
-                <Text className="text-xs text-muted-foreground mt-0.5">
-                  Buat role baru sesuai struktur organisasi atau atur hak akses detail per modul dan aksi
-                </Text>
-              </View>
+        {/* Header */}
+        <DialogHeader style={{ flexShrink: 0 }} className="px-4 pt-4 pb-3 border-b border-border">
+          <View className="flex-row items-center gap-2.5 pr-8">
+            <View className="size-9 rounded-xl bg-primary/15 items-center justify-center">
+              <Shield size={18} color={colors.primary} />
             </View>
-            <Button
-              size="sm"
-              variant={creatingNew ? "default" : "outline"}
-              onPress={startCreateNew}
-              className="flex-row items-center gap-1.5 shrink-0"
-            >
-              <Plus size={14} color={creatingNew ? colors.background : colors.primary} />
-              <Text className={creatingNew ? "text-xs font-semibold" : "text-xs font-semibold text-primary"}>
-                Tambah Role Kustom
-              </Text>
-            </Button>
+            <View style={{ flex: 1 }}>
+              <DialogTitle className="text-base font-bold">Hak Akses Peran</DialogTitle>
+              <Text className="text-xs text-muted-foreground">Pilih peran, lalu atur akses tiap modul.</Text>
+            </View>
           </View>
+
+          {/* Pilih role */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingTop: 12 }}>
+            {roles.map((r) => {
+              const active = !creatingNew && r.code === activeRole?.code;
+              return (
+                <Pressable
+                  key={r.code}
+                  onPress={() => void selectRole(r.code)}
+                  className={cn(
+                    "min-h-[34px] justify-center rounded-full border px-3",
+                    active ? "border-primary bg-primary/15" : "border-border bg-card",
+                  )}
+                >
+                  <Text className={cn("text-xs", active ? "text-primary font-semibold" : "text-foreground")}>
+                    {r.name}
+                    {!r.isSystem ? <Text className="text-[10px] text-muted-foreground"> · kustom</Text> : null}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              onPress={() => void startCreateNew()}
+              className={cn(
+                "min-h-[34px] flex-row items-center gap-1 rounded-full border border-dashed px-3",
+                creatingNew ? "border-primary bg-primary/15" : "border-border",
+              )}
+            >
+              <Plus size={13} color={colors.primary} />
+              <Text className="text-xs text-primary font-semibold">Peran baru</Text>
+            </Pressable>
+          </ScrollView>
         </DialogHeader>
 
-        <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ paddingRight: 4, paddingBottom: 8 }}>
-          <View className="gap-3.5 py-1">
-            {/* Daftar Pilihan Role (Wrap penuh agar tidak terpotong) */}
-            <View className="bg-panel/40 border border-border rounded-xl p-2.5 sm:p-3 gap-2">
-              <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Pilih Peran (Role) untuk Dikelola ({roles.length} Role Terdaftar)
+        <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
+          {nonStandard.length > 0 && !creatingNew ? (
+            <View className="rounded-xl border border-warning/40 bg-warning/10 p-3 gap-2">
+              <Text className="text-xs text-foreground">
+                <Text className="text-xs font-semibold">{nonStandard.length} peran bawaan</Text> belum memakai hak akses standar terbaru:{" "}
+                {nonStandard.map((r) => r.name).join(", ")}.
               </Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                {roles.map((r) => {
-                  const active = !creatingNew && r.code === activeRole?.code;
-                  return (
-                    <Pressable
-                      key={r.code}
-                      onPress={() => {
-                        setCreatingNew(false);
-                        setSelectedCode(r.code);
-                      }}
-                      style={{ flexShrink: 0 }}
-                      className={cn(
-                        "px-2.5 py-1 rounded-lg border flex-row items-center gap-1.5",
-                        active
-                          ? "bg-primary/15 border-primary shadow-xs"
-                          : "bg-card border-border hover:bg-panel",
-                      )}
-                    >
-                      <Text className={cn("text-xs font-bold", active ? "text-primary" : "text-foreground")}>
-                        {r.name}
-                      </Text>
-                      <View
-                        className={cn(
-                          "px-1.5 py-0.5 rounded",
-                          r.isSystem ? "bg-muted/70" : "bg-primary/20",
-                        )}
-                      >
-                        <Text className="text-[10px] text-muted-foreground">
-                          {r.isSystem ? "Sistem" : "Kustom"}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={() => void handleApplyStandardAll()}
+                disabled={saving}
+                style={{ alignSelf: "flex-start" }}
+              >
+                <Text className="text-xs font-semibold">Terapkan standar ke semua peran bawaan</Text>
+              </Button>
             </View>
+          ) : null}
 
-            {/* Form Identitas Role */}
-            {creatingNew ? (
-              <View className="bg-primary/5 border border-primary/30 rounded-xl p-4 gap-3">
-                <View className="flex-row flex-wrap items-center justify-between gap-2">
-                  <Text className="text-sm font-bold text-primary">Buat Peran (Role) Kustom Baru</Text>
-                  <Button size="sm" variant="ghost" onPress={() => setCreatingNew(false)}>
-                    <Text className="text-xs text-muted-foreground">Batal Buat Baru</Text>
-                  </Button>
+          {/* Identitas role */}
+          {creatingNew ? (
+            <View className="rounded-xl border border-primary/30 bg-primary/5 p-3 gap-3">
+              <View className="flex-row flex-wrap gap-3">
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <FormField label="Nama peran" required>
+                    <Input value={newName} onChangeText={setNewName} placeholder="Mis. Supervisor Gudang" autoFocus />
+                  </FormField>
                 </View>
-                <View className="flex-row flex-wrap gap-3">
-                  <View style={{ flex: 1, minWidth: 220 }}>
-                    <FormField label="Nama Tampilan Role" required>
-                      <Input
-                        value={newName}
-                        onChangeText={(v) => setNewName(v)}
-                        placeholder="Contoh: Supervisor Gudang / Manager Sales"
-                      />
-                    </FormField>
-                  </View>
-                  <View style={{ flex: 1, minWidth: 220 }}>
-                    <FormField label="Kode Role (Otomatis jika kosong)">
-                      <Input
-                        value={newCode}
-                        onChangeText={(v) => setNewCode(v.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))}
-                        placeholder={
-                          newName
-                            ? newName.toUpperCase().replace(/[^A-Z0-9_]/g, "_")
-                            : "SUPERVISOR_GUDANG"
-                        }
-                      />
-                    </FormField>
-                  </View>
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <FormField label="Kode" hint="Opsional, otomatis dari nama">
+                    <Input
+                      value={newCode}
+                      onChangeText={(v) => setNewCode(v.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))}
+                      placeholder={newName ? newName.toUpperCase().replace(/[^A-Z0-9]+/g, "_") : "SUPERVISOR_GUDANG"}
+                    />
+                  </FormField>
                 </View>
-                <FormField label="Salin Template Awal Dari Role">
-                  <View className="flex-row flex-wrap items-center gap-1.5 pt-1">
-                    {roles.map((r) => (
+              </View>
+              <View className="gap-1.5">
+                <Text className="text-sm font-medium">Mulai dari izin peran</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  {roles
+                    .filter((r) => r.code !== "SUPER_ADMIN")
+                    .map((r) => (
                       <Pressable
                         key={r.code}
-                        onPress={() => handleCloneTemplateChange(r.code)}
+                        onPress={() => pickTemplate(r.code)}
                         className={cn(
-                          "px-2.5 py-1.5 rounded-lg border flex-row items-center gap-1",
-                          cloneFrom === r.code
-                            ? "bg-primary border-primary"
-                            : "bg-card border-border",
+                          "min-h-[32px] justify-center rounded-full border px-3",
+                          cloneFrom === r.code ? "border-primary bg-primary/15" : "border-border bg-card",
                         )}
                       >
-                        <Copy size={11} color={cloneFrom === r.code ? colors.background : colors.muted} />
-                        <Text
-                          className={cn(
-                            "text-[11px] font-medium",
-                            cloneFrom === r.code ? "text-background" : "text-foreground",
-                          )}
-                        >
+                        <Text className={cn("text-xs", cloneFrom === r.code ? "text-primary font-semibold" : "text-foreground")}>
                           {r.name}
                         </Text>
                       </Pressable>
                     ))}
-                  </View>
-                </FormField>
-                <FormField label="Deskripsi & Tanggung Jawab Peran">
-                  <Input
-                    value={newDesc}
-                    onChangeText={setNewDesc}
-                    placeholder="Contoh: Mengawasi stok cabang, menyetujui PR & surat jalan"
-                  />
-                </FormField>
-              </View>
-            ) : activeRole ? (
-              <View className="bg-panel/60 border border-border rounded-xl p-3.5 gap-3">
-                <View className="flex-row flex-wrap items-center justify-between gap-2">
-                  <View style={{ flex: 1, minWidth: 220 }}>
-                    <Text className="text-sm font-bold text-foreground">
-                      {activeRole.name} ({activeRole.code})
-                    </Text>
-                    <Text className="text-xs text-muted-foreground mt-0.5">
-                      {activeRole.description || "Pengaturan hak akses modul dan tindakan pengguna"}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-1.5">
-                    {activeRole.isSystem && activeRole.code !== "SUPER_ADMIN" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onPress={resetToDefault}
-                        className="flex-row items-center gap-1.5 border-border"
-                      >
-                        <RotateCcw size={12} color={colors.primary} />
-                        <Text className="text-xs text-primary font-medium">Reset Default</Text>
-                      </Button>
-                    ) : null}
-                    {!activeRole.isSystem ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onPress={handleDelete}
-                        disabled={saving}
-                        className="border-danger/50 flex-row items-center gap-1"
-                      >
-                        <Trash2 size={13} color={colors.danger} />
-                        <Text className="text-xs text-danger">Hapus Role</Text>
-                      </Button>
-                    ) : null}
-                  </View>
-                </View>
-                <View className="flex-row flex-wrap gap-3">
-                  <View style={{ flex: 1, minWidth: 220 }}>
-                    <FormField label="Nama Tampilan Role">
-                      <Input
-                        value={draftName}
-                        onChangeText={setDraftName}
-                        editable={!isSuperAdminSelected}
-                      />
-                    </FormField>
-                  </View>
-                  <View style={{ flex: 1, minWidth: 240 }}>
-                    <FormField label="Keterangan / Deskripsi Role">
-                      <Input
-                        value={draftDesc}
-                        onChangeText={setDraftDesc}
-                        placeholder="Deskripsi singkat hak akses peran ini"
-                      />
-                    </FormField>
-                  </View>
-                </View>
-              </View>
-            ) : null}
-
-            {/* Legenda Kode Hak Akses */}
-            <View className="bg-panel/40 border border-border/70 rounded-xl p-3 gap-2">
-              <Text className="text-xs font-bold text-foreground">Keterangan Jenis Hak Akses (Granular Permissions):</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {ACTION_META.map((a) => (
-                  <View
-                    key={a.code}
-                    className="bg-card border border-border/80 rounded-lg px-2.5 py-1.5 flex-row items-center gap-1.5"
-                  >
-                    <View className="size-5 rounded bg-primary/15 items-center justify-center">
-                      <Text className="text-[11px] font-bold text-primary">{a.code}</Text>
-                    </View>
-                    <View>
-                      <Text className="text-[11px] font-bold text-foreground">{a.label}</Text>
-                      <Text className="text-[10px] text-muted-foreground">{a.desc}</Text>
-                    </View>
-                  </View>
-                ))}
+                </ScrollView>
               </View>
             </View>
-
-            {/* Matriks Izin Per Kelompok Modul */}
-            {MODULE_GROUPS.map((grp) => {
-              const groupKeys = grp.items.map((it) => it.key);
-              return (
-                <View key={grp.group} className="border border-border rounded-xl overflow-hidden bg-card">
-                  <View
-                    className="bg-panel/80 px-3.5 py-2.5 border-b border-border"
-                    style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}
-                  >
-                    <View style={{ flex: 1, minWidth: 220 }}>
-                      <Text className="text-xs sm:text-sm font-bold text-foreground">{grp.group}</Text>
-                      <Text className="text-[11px] text-muted-foreground">{grp.subtitle}</Text>
-                    </View>
-                    {!isSuperAdminSelected ? (
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                        <Pressable
-                          onPress={() => setGroupPermissions(groupKeys, "menu")}
-                          className="px-2 py-1 rounded-md bg-card border border-border hover:bg-panel"
-                        >
-                          <Text className="text-[11px] font-medium text-foreground">+ Menu & Lihat</Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => setGroupPermissions(groupKeys, "view")}
-                          className="px-2 py-1 rounded-md bg-card border border-border hover:bg-panel"
-                        >
-                          <Text className="text-[11px] font-medium text-muted-foreground">+ Lihat Data</Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => setGroupPermissions(groupKeys, "full")}
-                          className="px-2 py-1 rounded-md bg-primary/15 border border-primary/40"
-                        >
-                          <Text className="text-[11px] font-semibold text-primary">Akses Penuh</Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => setGroupPermissions(groupKeys, "clear")}
-                          className="px-2 py-1 rounded-md bg-card border border-border hover:bg-panel"
-                        >
-                          <Text className="text-[11px] text-muted-foreground">Kosongkan</Text>
-                        </Pressable>
-                      </View>
-                    ) : null}
+          ) : activeRole ? (
+            <View className="rounded-xl border border-border bg-panel/40 p-3 gap-3">
+              <View className="flex-row flex-wrap items-center gap-2">
+                <View style={{ flex: 1, minWidth: 160 }}>
+                  <Text className="text-sm font-bold">{activeRole.name}</Text>
+                  <Text className="text-[11px] text-muted-foreground">
+                    {activeRole.isSystem ? "Peran bawaan" : "Peran kustom"} · {activeRole.code}
+                    {draftDiff === 0 ? " · sesuai standar" : draftDiff ? ` · beda dari standar di ${draftDiff} modul` : ""}
+                  </Text>
+                </View>
+                {activeRole.isSystem && !isSuperAdmin && draftDiff ? (
+                  <Button size="sm" variant="ghost" onPress={resetToDefault} className="flex-row items-center gap-1.5">
+                    <RotateCcw size={13} color={colors.textSecondary} />
+                    <Text className="text-xs text-muted-foreground">Pakai standar</Text>
+                  </Button>
+                ) : null}
+                {!activeRole.isSystem ? (
+                  <Button size="sm" variant="ghost" onPress={() => void handleDelete()} disabled={saving} className="flex-row items-center gap-1.5">
+                    <Trash2 size={13} color={colors.danger} />
+                    <Text className="text-xs text-danger">Hapus peran</Text>
+                  </Button>
+                ) : null}
+              </View>
+              {!isSuperAdmin ? (
+                <View className="flex-row flex-wrap gap-3">
+                  <View style={{ flex: 1, minWidth: 180 }}>
+                    <FormField label="Nama tampilan">
+                      <Input value={draftName} onChangeText={setDraftName} />
+                    </FormField>
                   </View>
-
-                  <View className="divide-y divide-border/60">
-                    {grp.items.map((mod) => {
-                      const activeActions = isSuperAdminSelected
-                        ? ACTION_META.map((a) => a.code)
-                        : (draftPerms[mod.key] ?? []);
-                      const allChecked = ACTION_META.every((a) => activeActions.includes(a.code));
-
-                      return (
-                        <View
-                          key={mod.key}
-                          className="p-3.5 gap-2.5 hover:bg-panel/20"
-                          style={{ flexDirection: "column" }}
-                        >
-                          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-                            <View style={{ flex: 1, minWidth: 240, flexShrink: 0 }}>
-                              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-                                <Text className="text-xs sm:text-sm font-bold text-foreground">{mod.label}</Text>
-                                <View className="bg-panel px-1.5 py-0.5 rounded">
-                                  <Text className="text-[10px] font-mono text-muted-foreground">
-                                    {mod.key}
-                                  </Text>
-                                </View>
-                              </View>
-                              <Text className="text-xs text-muted-foreground mt-0.5" style={{ flexShrink: 0 }}>
-                                {mod.desc}
-                              </Text>
-                            </View>
-
-                            {!isSuperAdminSelected ? (
-                              <Pressable
-                                onPress={() => toggleAllForModule(mod.key)}
-                                style={{ flexShrink: 0 }}
-                                className={cn(
-                                  "px-2.5 py-1 rounded-lg border",
-                                  allChecked
-                                    ? "border-primary/40 bg-primary/10"
-                                    : "border-border bg-panel/50",
-                                )}
-                              >
-                                <Text
-                                  className={cn(
-                                    "text-[11px] font-semibold",
-                                    allChecked ? "text-primary" : "text-muted-foreground",
-                                  )}
-                                >
-                                  {allChecked ? "Batal Pilih Semua" : "Pilih Semua"}
-                                </Text>
-                              </Pressable>
-                            ) : null}
-                          </View>
-
-                          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 5, marginTop: 2 }}>
-                            {ACTION_META.map((act) => {
-                              const checked = activeActions.includes(act.code);
-                              return (
-                                <Pressable
-                                  key={act.code}
-                                  disabled={isSuperAdminSelected}
-                                  onPress={() => togglePermission(mod.key, act.code)}
-                                  style={{ flexShrink: 0 }}
-                                  className={cn(
-                                    "px-2 py-1 rounded-md border flex-row items-center gap-1",
-                                    checked
-                                      ? "bg-primary/15 border-primary"
-                                      : "bg-panel/40 border-border/80 opacity-80",
-                                  )}
-                                >
-                                  <View
-                                    className={cn(
-                                      "size-3.5 rounded items-center justify-center border",
-                                      checked ? "bg-primary border-primary" : "border-muted-foreground/50 bg-transparent",
-                                    )}
-                                  >
-                                    {checked ? <Check size={10} color={colors.background} /> : null}
-                                  </View>
-                                  <Text
-                                    className={cn(
-                                      "text-[11px] font-semibold",
-                                      checked ? "text-primary" : "text-muted-foreground",
-                                    )}
-                                  >
-                                    {act.label}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
-                          </View>
-                        </View>
-                      );
-                    })}
+                  <View style={{ flex: 2, minWidth: 220 }}>
+                    <FormField label="Deskripsi">
+                      <Input value={draftDesc} onChangeText={setDraftDesc} placeholder="Tugas singkat peran ini" />
+                    </FormField>
                   </View>
                 </View>
-              );
-            })}
-          </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {isSuperAdmin ? (
+            <View className="rounded-xl border border-border bg-card p-4 flex-row items-center gap-3">
+              <Lock size={18} color={colors.textSecondary} />
+              <Text className="text-sm text-muted-foreground" style={{ flex: 1 }}>
+                Super Admin selalu punya akses penuh ke semua modul dan tidak bisa dibatasi.
+              </Text>
+            </View>
+          ) : (
+            <>
+              {/* Cari + ringkasan + legenda level */}
+              <View className="gap-2">
+                <View className="flex-row items-center gap-2 rounded-lg border border-border bg-card px-3">
+                  <Search size={15} color={colors.textSecondary} />
+                  <Input
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder="Cari modul… (mis. invoice, stok)"
+                    className="flex-1 border-0 bg-transparent shadow-none px-0"
+                  />
+                </View>
+                <Text className="text-[11px] text-muted-foreground">
+                  {activeCount} dari {ALL_MODULE_KEYS.length} modul aktif · <Text className="text-[11px] font-semibold">Lihat</Text> = buka & baca ·{" "}
+                  <Text className="text-[11px] font-semibold">Kelola</Text> = + buat & ubah · <Text className="text-[11px] font-semibold">Penuh</Text> = semua
+                  aksi
+                </Text>
+              </View>
+
+              {groups.map((g) => {
+                const keys = g.items.map((i) => i.key);
+                const isOpen = Boolean(q) || openGroups.has(g.group);
+                const on = keys.filter((k) => (draftPerms[k] ?? []).length > 0).length;
+                const groupLevel = (() => {
+                  const lv = keys.map((k) => levelOf(draftPerms[k]));
+                  return lv.every((x) => x === lv[0]) ? lv[0]! : "custom";
+                })();
+                return (
+                  <View key={g.group} className="rounded-xl border border-border bg-card overflow-hidden">
+                    <Pressable
+                      onPress={() => toggleGroup(g.group)}
+                      className="flex-row items-center gap-2 px-3 py-2.5"
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: isOpen }}
+                    >
+                      {isOpen ? <ChevronDown size={16} color={colors.text} /> : <ChevronRight size={16} color={colors.text} />}
+                      <View style={{ flex: 1 }}>
+                        <Text className="text-sm font-semibold">{g.group}</Text>
+                        <Text className="text-[11px] text-muted-foreground">
+                          {on}/{keys.length} modul aktif
+                        </Text>
+                      </View>
+                      {isOpen ? (
+                        <View className="items-end gap-0.5">
+                          <Text className="text-[10px] text-muted-foreground">Atur semua</Text>
+                          <LevelPicker compact value={groupLevel} onChange={(l) => setGroupLevel(keys, l)} />
+                        </View>
+                      ) : null}
+                    </Pressable>
+
+                    {isOpen
+                      ? g.items.map((m) => {
+                          const acts = draftPerms[m.key] ?? [];
+                          const lv = levelOf(acts);
+                          const showDetail = detailOpen.has(m.key) || lv === "custom";
+                          const isChanged = changed.includes(m.key);
+                          return (
+                            <View key={m.key} className="border-t border-border/60 px-3 py-2.5 gap-2">
+                              <View className="flex-row flex-wrap items-center gap-2">
+                                <View style={{ flex: 1, minWidth: 150 }}>
+                                  <View className="flex-row items-center gap-1.5">
+                                    <Text className="text-sm font-medium">{m.label}</Text>
+                                    {isChanged ? <View className="size-1.5 rounded-full bg-warning" /> : null}
+                                    {lv === "custom" ? (
+                                      <View className="rounded bg-primary/15 px-1.5 py-0.5">
+                                        <Text className="text-[10px] text-primary">Kustom</Text>
+                                      </View>
+                                    ) : null}
+                                  </View>
+                                  <Text className="text-[11px] text-muted-foreground">{m.desc}</Text>
+                                </View>
+                                <LevelPicker value={lv} onChange={(l) => setModuleLevel(m.key, l)} />
+                              </View>
+
+                              {acts.length > 0 || showDetail ? (
+                                <Pressable onPress={() => toggleDetail(m.key)} hitSlop={6} style={{ alignSelf: "flex-start" }}>
+                                  <Text className="text-[11px] text-primary">{showDetail ? "Sembunyikan detail" : "Atur detail"}</Text>
+                                </Pressable>
+                              ) : null}
+
+                              {showDetail ? (
+                                <View className="gap-1.5">
+                                  <View className="flex-row flex-wrap gap-1.5">
+                                    {ALL_ACTION_CODES.map((c) => (
+                                      <ActionToggle key={c} code={c} checked={acts.includes(c)} onPress={() => toggleAction(m.key, c)} />
+                                    ))}
+                                  </View>
+                                  {acts.includes("L") && !acts.includes("M") ? (
+                                    <Text className="text-[11px] text-muted-foreground">
+                                      Tidak tampil di menu, tapi datanya tetap bisa dipilih di form modul lain.
+                                    </Text>
+                                  ) : null}
+                                </View>
+                              ) : null}
+                            </View>
+                          );
+                        })
+                      : null}
+                  </View>
+                );
+              })}
+            </>
+          )}
         </ScrollView>
 
-        <DialogFooter
-          className="pt-2.5 border-t border-border/60 flex-row flex-wrap items-center justify-end gap-2"
-          style={{ flexShrink: 0 }}
-        >
-          <Button variant="outline" size="sm" onPress={() => onOpenChange(false)}>
-            <Text className="text-xs">Tutup</Text>
-          </Button>
-          {!isSuperAdminSelected ? (
-            <Button size="sm" onPress={handleSave} disabled={saving}>
-              <Text className="text-xs font-semibold">{saving ? "Menyimpan..." : creatingNew ? "Buat & Simpan Role Baru" : "Simpan Perubahan Hak Akses"}</Text>
+        {/* Footer */}
+        <DialogFooter className="px-4 py-3 border-t border-border flex-row flex-wrap items-center gap-2" style={{ flexShrink: 0 }}>
+          <View style={{ flex: 1, minWidth: 140 }}>
+            {isSuperAdmin ? null : dirty ? (
+              <Text className="text-xs text-warning font-medium">
+                {creatingNew ? "Peran baru belum disimpan" : `${changed.length + (metaChanged ? 1 : 0)} perubahan belum disimpan`}
+              </Text>
+            ) : (
+              <Text className="text-xs text-muted-foreground">Semua perubahan tersimpan</Text>
+            )}
+          </View>
+          {dirty && !creatingNew ? (
+            <Button variant="ghost" size="sm" onPress={() => activeRole && loadRole(activeRole)} disabled={saving}>
+              <Text className="text-xs">Batalkan</Text>
             </Button>
           ) : null}
+          {creatingNew ? (
+            <Button variant="ghost" size="sm" onPress={() => { setCreatingNew(false); loadedRef.current = null; }} disabled={saving}>
+              <Text className="text-xs">Batal</Text>
+            </Button>
+          ) : null}
+          {!isSuperAdmin ? (
+            <Button size="sm" onPress={() => void handleSave()} disabled={saving || !dirty}>
+              <Text className="text-xs font-semibold">{saving ? "Menyimpan…" : creatingNew ? "Buat peran" : "Simpan"}</Text>
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onPress={() => onOpenChange(false)}>
+              <Text className="text-xs">Tutup</Text>
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

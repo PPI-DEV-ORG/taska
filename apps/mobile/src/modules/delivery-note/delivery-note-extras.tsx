@@ -41,30 +41,18 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
 
   const poClientList = data["po-client"];
   const matchedSo = React.useMemo(() => {
-    return (poClientList ?? []).find(
-      (so: Row) =>
-        (row.soId && String(so.id) === String(row.soId)) ||
-        (row.clientPoId && String(so.id) === String(row.clientPoId)) ||
-        (so.id && String(row.alasan || "").includes(`[so:${so.id}]`)) ||
-        (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
-        (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo)) ||
-        (row.projectId && so.projectId && String(so.projectId) === String(row.projectId)) ||
-        (row.project && row.project !== "-" && so.project && so.project !== "-" && so.project === row.project)
-    );
-  }, [poClientList, row.soId, row.clientPoId, row.alasan, row.projectId, row.project]);
+    // Relasi lewat ID saja (dulu juga dicocokkan lewat teks alasan / proyek yang sama -> bisa salah SO).
+    return (poClientList ?? []).find((so: Row) => row.clientPoId != null && String(so.id) === String(row.clientPoId));
+  }, [poClientList, row.clientPoId]);
 
   const invoicesList = data["invoices"] || [];
   const matchedInvoice = React.useMemo(() => {
     return (invoicesList ?? []).find(
       (inv: Row) =>
-        (row.invoiceId && String(inv.id) === String(row.invoiceId)) ||
-        (row.invoiceNumber && String(inv.nomor || "").toLowerCase() === String(row.invoiceNumber).toLowerCase()) ||
-        (inv.id && String(row.alasan || "").includes(`[inv:${inv.id}]`)) ||
-        (matchedSo?.id && (String(inv.clientPoId) === String(matchedSo.id) || String(inv.soId) === String(matchedSo.id))) ||
-        (row.projectId && inv.projectId && String(inv.projectId) === String(row.projectId)) ||
-        (row.project && row.project !== "-" && inv.project && inv.project !== "-" && inv.project === row.project)
+        (row.invoiceId != null && String(inv.id) === String(row.invoiceId)) ||
+        (!row.invoiceId && matchedSo?.id != null && String(inv.clientPoId) === String(matchedSo.id)),
     );
-  }, [invoicesList, row.invoiceId, row.invoiceNumber, row.alasan, row.projectId, row.project, matchedSo]);
+  }, [invoicesList, row.invoiceId, matchedSo]);
 
   if (
     previousRecipient.name !== row.penerimaNama ||
@@ -118,12 +106,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
       }
       if (finalFid) {
         const matchedSo = (data["po-client"] ?? []).find(
-          (so: Row) =>
-            (row.soId && String(so.id) === String(row.soId)) ||
-            (row.clientPoId && String(so.id) === String(row.clientPoId)) ||
-            (so.nomor && String(row.alasan || "").includes(so.nomor)) ||
-            (so.nomorSo && so.nomorSo !== "-" && String(row.alasan || "").includes(so.nomorSo)) ||
-            (row.id && String(so.catatan || "").includes(`[do:${row.id}]`))
+          (so: Row) => row.clientPoId != null && String(so.id) === String(row.clientPoId),
         );
         if (matchedSo?.id) {
           await patchRow("po-client", matchedSo.id, { doFileId: finalFid }).catch(() => {});

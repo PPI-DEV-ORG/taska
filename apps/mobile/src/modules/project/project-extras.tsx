@@ -227,7 +227,7 @@ export function ProjectExtras({ row }: { row: Row }) {
     const map = new Map<string, any>();
 
     for (const inv of list) {
-      if (inv.direction === "in" || inv.status === "Batal") continue;
+      if (inv.direction === "in" || inv.status === "Batal" || inv.isProforma) continue;
       const isMatched =
         (row.id && String(inv.projectId) === String(row.id)) ||
         (!inv.projectId && inv.project && inv.project === row.nama) ||
@@ -279,11 +279,8 @@ export function ProjectExtras({ row }: { row: Row }) {
     });
   }, [data.invoiceIn, projectPoIds, projectPoNumbers, row.id]);
 
-  const isAllInvoicesPaid =
-    row.pembayaran === "Lunas" ||
-    row.paymentStatus === "LUNAS" ||
-    (projectInvoices.length > 0 &&
-      projectInvoices.every((i: any) => i.status === "Lunas" || Number(i.terbayar) >= Number(i.total)));
+  // Status bayar dihitung server terhadap NILAI KONTRAK (DP lunas saja = Lunas sebagian, bukan Lunas).
+  const isAllInvoicesPaid = row.pembayaran === "Lunas" || row.paymentStatus === "LUNAS";
 
   const revenueFromInvoices = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
   const revenueFromQuote = Number(linkedQuotation?.totalAfterDisc || linkedQuotation?.nilai || 0);
@@ -739,6 +736,39 @@ export function ProjectExtras({ row }: { row: Row }) {
   const contractRequirements = React.useMemo(() => requirements.filter((m) => !m.isExtra), [requirements]);
   const extraRequirements = React.useMemo(() => requirements.filter((m) => m.isExtra), [requirements]);
 
+  // Laba-rugi dihitung server: pendapatan DPP, HPP barang yang dipakai project (dari stok gudang maupun
+  // pembelian langsung, termasuk yang keluar lewat surat jalan), pembelian non-stok, dan biaya operasional.
+  type ServerPnl = {
+    revenue: number;
+    revenueSource: "INVOICE" | "SO" | "PENAWARAN" | "NONE";
+    hppGoods: number;
+    hppLines: { productId: number; name: string; sku: string | null; unit: string | null; qtyNet: number; qtyReturned: number; unitCost: number; total: number; costSource: string }[];
+    directPurchases: number;
+    directPurchaseLines: { ref: string; name: string; qty: number; unitCost: number; total: number }[];
+    expenses: number;
+    cashAdvanceOutstanding: number;
+    cashAdvancePending: number;
+    netProfitWithPending: number;
+    grossProfit: number;
+    netProfit: number;
+    marginPct: number;
+    missingCostProducts: number;
+  };
+  const [pnl, setPnl] = React.useState<ServerPnl | null>(null);
+  const pnlKey = `${row.id}:${projectInvoices.length}:${projectExpenses.length}:${requirements.length}`;
+  React.useEffect(() => {
+    if (!canViewFinancials || !row.id) return;
+    let alive = true;
+    api<ServerPnl>("GET", `/projects/${row.id}/pnl`)
+      .then((res) => {
+        if (alive) setPnl(res);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [canViewFinancials, row.id, pnlKey]);
+
   const boqTotalValue = React.useMemo(() => {
     const matVal = contractRequirements.reduce((acc, m) => acc + m.neededQty * (m.unitPrice || 0), 0);
     const svcVal = quoServices.reduce((acc, s) => acc + (Number(s.qty) || 1) * (Number(s.price || s.harga) || 0), 0);
@@ -1120,6 +1150,7 @@ export function ProjectExtras({ row }: { row: Row }) {
         </Text>
       </Panel>
 
+
       {canViewFinancials ? (
         <Panel
           title="Analisa Untung-Rugi (P&L Proyek)"
@@ -1143,32 +1174,83 @@ export function ProjectExtras({ row }: { row: Row }) {
           <View className="gap-4">
             <View className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Pendapatan (DPP Faktur)</Text>
-                <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice terbit</Text>
-              </View>
-              <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Beban PO Pemasok</Text>
-                <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
-              </View>
-              <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Beban Tambahan (Di Luar BOQ)</Text>
-                <Text className="text-base font-bold mt-1 text-rose-500">{rupiah(extraItemsCost)}</Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">{extraRequirements.length} item tambahan</Text>
-              </View>
-              <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Biaya Operasional & Reimburse</Text>
-                <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(expenseCost)}</Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectExpenses.length} transaksi</Text>
-              </View>
-              <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Laba Bersih ({marginPct}%)</Text>
-                <Text className={`text-base font-bold mt-1 ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
-                  {rupiah(netProfit)}
+                <Text className="text-xs text-muted-foreground">Pendapatan (DPP)</Text>
+                <Text className="text-base font-bold mt-1 text-foreground">{rupiah(pnl ? pnl.revenue : revenue)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl?.revenueSource === "SO"
+                    ? "Estimasi dari SO (belum ada invoice)"
+                    : pnl?.revenueSource === "PENAWARAN"
+                    ? "Estimasi dari penawaran"
+                    : `${projectInvoices.length} invoice terbit`}
                 </Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">Total Beban: {rupiah(totalCost)}</Text>
               </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">HPP Barang Terpakai</Text>
+                <Text className="text-base font-bold mt-1 text-danger">{rupiah(pnl ? pnl.hppGoods : poCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl ? `${pnl.hppLines.length} produk (stok gudang & pembelian)` : `${projectPos.length} purchase order`}
+                </Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Pembelian Jasa / Non-Stok</Text>
+                <Text className="text-base font-bold mt-1 text-rose-500">{rupiah(pnl ? pnl.directPurchases : extraItemsCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl ? `${pnl.directPurchaseLines.length} item` : `${extraRequirements.length} item tambahan`}
+                </Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Biaya Operasional & Uang Jalan</Text>
+                <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(pnl ? pnl.expenses : expenseCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl && pnl.cashAdvancePending > 0
+                    ? `+ ${rupiah(pnl.cashAdvancePending)} menunggu verifikasi`
+                    : `${projectExpenses.length} transaksi`}
+                </Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Laba Bersih ({pnl ? pnl.marginPct : marginPct}%)</Text>
+                <Text className={`text-base font-bold mt-1 ${(pnl ? pnl.netProfit : netProfit) >= 0 ? "text-success" : "text-danger"}`}>
+                  {rupiah(pnl ? pnl.netProfit : netProfit)}
+                </Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl && pnl.cashAdvancePending > 0
+                    ? `Termasuk biaya belum diverifikasi: ${rupiah(pnl.netProfitWithPending)}`
+                    : pnl
+                    ? `Laba kotor: ${rupiah(pnl.grossProfit)}`
+                    : `Total Beban: ${rupiah(totalCost)}`}
+                </Text>
+              </View>
+            </View>
+
+            {pnl && pnl.hppLines.length > 0 ? (
+              <View className="gap-2 pt-2 border-t border-border">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-xs font-semibold text-foreground">Rincian HPP Barang ({pnl.hppLines.length} produk)</Text>
+                  <Text className="text-xs font-bold text-danger">{rupiah(pnl.hppGoods)}</Text>
+                </View>
+                {pnl.missingCostProducts > 0 ? (
+                  <Text className="text-[11px] text-warning">
+                    {pnl.missingCostProducts} produk belum punya harga pokok (harga beli / rata-rata kosong) sehingga HPP-nya Rp 0. Lengkapi harga beli di master produk.
+                  </Text>
+                ) : null}
+                <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                  {pnl.hppLines.map((l) => (
+                    <View key={l.productId} className="px-3 py-2 flex-row items-center justify-between bg-card/30 gap-2">
+                      <View className="flex-1">
+                        <Text className="text-xs font-semibold text-foreground">{l.name}</Text>
+                        <Text className="text-[10px] text-muted-foreground">
+                          {l.qtyNet} {l.unit || "unit"} × {rupiah(l.unitCost)}
+                          {l.qtyReturned > 0 ? ` (retur ${l.qtyReturned})` : ""}
+                          {l.costSource === "RATA_RATA" ? " · harga rata-rata" : l.costSource === "HARGA_BELI" ? " · harga beli" : l.costSource === "TIDAK_ADA" ? " · harga pokok kosong" : ""}
+                        </Text>
+                      </View>
+                      <Text className="text-xs font-semibold text-foreground">{rupiah(l.total)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+            <View className="hidden">
             </View>
 
             {/* Rincian Material & Jasa Tambahan di Luar BOQ */}

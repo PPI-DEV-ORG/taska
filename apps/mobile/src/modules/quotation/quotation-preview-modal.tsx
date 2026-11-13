@@ -7,6 +7,7 @@ import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
+import { itemDiscount, itemNet, sumItemDiscounts } from "@/modules/quotation/lib";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { useApp } from "@/store/app-store";
 import { apiBase } from "@/services/api";
@@ -61,6 +62,8 @@ export function QuotationPreviewModal({
   onSave?: () => void;
 }) {
   const { companyProfile } = useApp();
+  // Diskon header = diskon per item + diskon tambahan; baris DISC hanya menampilkan diskon tambahan.
+  const lineDiscSum = items.length > 0 ? sumItemDiscounts(items) : 0;
   const activeNotes =
     notesList && notesList.length > 0
       ? notesList
@@ -139,23 +142,30 @@ export function QuotationPreviewModal({
             ).map((it, idx) => (
               <View key={it.id || idx} className="flex-row border-b border-black py-1.5 px-2 bg-white">
                 <Text className="w-8 text-[11px] text-black text-center">{idx + 1}</Text>
-                <Text className="flex-1 text-[11px] text-black">{it.item}</Text>
+                <View className="flex-1">
+                  <Text className="text-[11px] text-black">{it.item}</Text>
+                  {itemDiscount(it) > 0 ? (
+                    <Text className="text-[10px] text-red-600">
+                      Diskon{Number((it as QuotationItem).diskonPct) > 0 ? ` ${(it as QuotationItem).diskonPct}%` : ""} (-{rupiah(itemDiscount(it))})
+                    </Text>
+                  ) : null}
+                </View>
                 <Text className="w-12 text-[11px] text-black text-center">{it.qty}</Text>
                 <Text className="w-16 text-[11px] text-black text-center">{it.satuan}</Text>
                 <Text className="w-24 text-[11px] text-black text-right">{rupiah(it.harga)}</Text>
-                <Text className="w-24 text-[11px] text-black text-right">{rupiah(it.qty * it.harga)}</Text>
+                <Text className="w-24 text-[11px] text-black text-right">{rupiah(itemNet(it))}</Text>
               </View>
             ))}
 
             {/* Total rows */}
             <View className="flex-row border-b border-black bg-white py-1.5 px-2">
               <Text className="flex-1 text-[11px] font-bold text-black text-center">TOTAL</Text>
-              <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(itemsTotal)}</Text>
+              <Text className="w-24 text-[11px] font-bold text-black text-right">{rupiah(itemsTotal - lineDiscSum)}</Text>
             </View>
-            {discNum > 0 ? (
+            {discNum - lineDiscSum > 0 ? (
               <View className="flex-row border-b border-black bg-white py-1.5 px-2">
-                <Text className="flex-1 text-[11px] font-bold text-black text-center">DISC</Text>
-                <Text className="w-24 text-[11px] font-bold text-red-600 text-right">- {rupiah(discNum)}</Text>
+                <Text className="flex-1 text-[11px] font-bold text-black text-center">{lineDiscSum > 0 ? "DISC TAMBAHAN" : "DISC"}</Text>
+                <Text className="w-24 text-[11px] font-bold text-red-600 text-right">- {rupiah(discNum - lineDiscSum)}</Text>
               </View>
             ) : null}
             {calcPpn > 0 ? (
@@ -169,13 +179,13 @@ export function QuotationPreviewModal({
                 <Text className="flex-1 text-[11px] font-bold text-black text-center">
                   PPh {row.tipePph ? `(${row.tipePph})` : ""}
                 </Text>
-                <Text className="w-24 text-[11px] font-bold text-red-600 text-right">- {rupiah(Number(row.pph || 0))}</Text>
+                <Text className="w-24 text-[11px] text-right">{rupiah(Number(row.pph || 0))}</Text>
               </View>
             ) : null}
             <View className="flex-row bg-white py-2 px-2">
               <Text className="flex-1 text-xs font-bold text-black text-center">GRAND TOTAL</Text>
               <Text className="w-24 text-xs font-bold text-black text-right">
-                {rupiah(Math.max(0, itemsTotal - discNum + calcPpn - Number(row.pph || 0)))}
+                {rupiah(Math.max(0, itemsTotal - discNum + calcPpn))}
               </Text>
             </View>
             {dpLabel && dpAmount !== undefined ? (

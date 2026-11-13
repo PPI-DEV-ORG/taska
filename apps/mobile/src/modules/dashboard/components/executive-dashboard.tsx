@@ -76,7 +76,7 @@ export function ExecutiveDashboard({
   });
 
   const riskyProjects = data.projects.filter(
-    (p: any) => p.status === "Terlambat" || p.pembayaran === "Belum lunas"
+    (p: any) => p.status === "Terlambat" || p.pembayaran === "Belum lunas" || p.pembayaran === "Lunas sebagian"
   );
 
   return (

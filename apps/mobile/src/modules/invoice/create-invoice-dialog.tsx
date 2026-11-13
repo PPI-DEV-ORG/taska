@@ -46,6 +46,10 @@ import {
   pphRateFor,
   pphModeToTipe,
   calcItemPph,
+  itemDiscount,
+  recomputeHeaderDiscount,
+  sumItemDiscounts,
+  sumItemGross,
 } from "@/modules/quotation/lib";
 
 function getTodayIso(): string {
@@ -187,6 +191,33 @@ export function CreateInvoiceDialog({
 
 type InvoiceSourceType = "direct_sale" | "direct_purchase" | "po" | "quotation" | "lead" | "customer";
 
+/**
+ * Diskon yang masih "tersisa" di Sales Order: selisih total harga item SO dengan nilai SO sebelum pajak.
+ * SO baru menyimpan harga item yang sudah net -> 0. SO lama yang menyimpan harga kotor -> nilai diskonnya.
+ */
+function soImpliedDiscount(po: Row | null | undefined): number {
+  if (!po || !Array.isArray(po.items) || po.items.length === 0) return 0;
+  const gross = sumItemGross(po.items);
+  const base = getInitialPpnMode(po) === "include" ? Number(po.total || po.nilai || 0) : Number(po.nilai || 0);
+  const diff = Math.round(gross - base);
+  return base > 0 && diff > 2 ? diff : 0;
+}
+
+/** Judul langkah bernomor agar alur form mudah diikuti: sumber → rincian → pembayaran. */
+function StepTitle({ n, title, hint }: { n: number; title: string; hint?: string }) {
+  return (
+    <View className="flex-row items-start gap-2 mb-2 mt-1">
+      <View className="w-6 h-6 rounded-full bg-primary items-center justify-center">
+        <Text className="text-[11px] font-bold text-primary-foreground">{n}</Text>
+      </View>
+      <View className="flex-1">
+        <Text className="text-sm font-bold text-foreground">{title}</Text>
+        {hint ? <Text className="text-[11px] text-muted-foreground">{hint}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 function CreateInvoiceForm({
   initialQuotation,
   initialLead,
@@ -223,13 +254,9 @@ function CreateInvoiceForm({
   const [mode, setMode] = React.useState<"baru" | "lanjut" | "masuk">(() => {
     if (defaultDirectPurchase) return "masuk";
     if (initialPo) {
-      const poNum = String(initialPo.nomor || "").trim();
-      const soNum = String(initialPo.nomorSo || "").trim();
+      // Invoice milik SO ini dicari lewat clientPoId (bukan nomor yang muncul di teks catatan).
       const hasExisting = (data.invoices ?? []).some(
-        (inv: Row) =>
-          (initialPo.id && String(inv.clientPoId) === String(initialPo.id)) ||
-          (poNum && poNum !== "-" && (inv.po === poNum || String(inv.catatan || "").includes(poNum))) ||
-          (soNum && soNum !== "-" && (inv.po === soNum || String(inv.catatan || "").includes(soNum))),
+        (inv: Row) => initialPo.id != null && String(inv.clientPoId) === String(initialPo.id),
       );
       if (hasExisting) return "lanjut";
     }
@@ -387,6 +414,9 @@ function CreateInvoiceForm({
   const [paymentFileId, setPaymentFileId] = React.useState<number | null>(null);
 
   // Payment Status (Belum Bayar vs Langsung Lunas)
+  // Proforma invoice: penagihan awal, tidak dijurnal & tidak bisa dibayar sampai diterbitkan jadi invoice resmi
+  const [isProforma, setIsProforma] = React.useState(false);
+  const [showMoreOptions, setShowMoreOptions] = React.useState(false);
   const [paymentStatus, setPaymentStatus] = React.useState<"UNPAID" | "PAID">(() => {
     if (defaultDirectSale || defaultDirectPurchase || isInitialPoWalkin) return "PAID";
     return "UNPAID";
@@ -471,10 +501,7 @@ function CreateInvoiceForm({
   const [selectedParentInvoiceId, setSelectedParentInvoiceId] = React.useState<string>(() => {
     if (initialPo) {
       const match = continuableInvoiceOptions.find(
-        (o) =>
-          String(o.raw.clientPoId) === String(initialPo.id) ||
-          (initialPo.nomor && (o.raw.po === initialPo.nomor || o.raw.nomorSo === initialPo.nomor)) ||
-          (initialPo.nomorSo && (o.raw.po === initialPo.nomorSo || o.raw.nomorSo === initialPo.nomorSo)),
+        (o) => String(o.raw.clientPoId) === String(initialPo.id),
       );
       if (match) return match.id;
     }
@@ -504,10 +531,7 @@ function CreateInvoiceForm({
     // If starting in lanjut mode, items should be empty so no physical items/cameras are selected!
     if (initialPo) {
       const hasExisting = (data.invoices ?? []).some(
-        (inv: Row) =>
-          String(inv.clientPoId) === String(initialPo.id) ||
-          (initialPo.nomor && (inv.po === initialPo.nomor || String(inv.catatan || "").includes(initialPo.nomor))) ||
-          (initialPo.nomorSo && (inv.po === initialPo.nomorSo || String(inv.catatan || "").includes(initialPo.nomorSo))),
+        (inv: Row) => String(inv.clientPoId) === String(initialPo.id),
       );
       if (hasExisting) return [];
     }
@@ -654,6 +678,7 @@ function CreateInvoiceForm({
       return (data.invoices ?? []).filter((inv: Row) => {
         const st = String(inv.status || "").toUpperCase();
         if (st === "BATAL" || st === "DIBATALKAN") return false;
+        if (inv.isProforma) return false;
 
         // 1. Same ID
         if (String(inv.id) === parentId) return true;
@@ -675,7 +700,6 @@ function CreateInvoiceForm({
 
     const qNomor = activeQuotation?.nomor;
     const qId = activeQuotation?.id;
-    const poNum = activePo?.nomor || activePo?.number || activePo?.nomorSo;
     const poId = activePo?.id;
     const leadId = activeLead?.id;
     const leadName = activeLead?.nama ? String(activeLead.nama).trim().toLowerCase() : "";
@@ -683,11 +707,11 @@ function CreateInvoiceForm({
     return (data.invoices ?? []).filter((inv: Row) => {
       const st = String(inv.status || "").toUpperCase();
       if (st === "BATAL" || st === "DIBATALKAN") return false;
+      if (inv.isProforma) return false;
 
       if (qId && String(inv.quotationId) === String(qId)) return true;
       if (qNomor && qNomor !== "-" && inv.quotation === qNomor) return true;
       if (poId && String(inv.clientPoId) === String(poId)) return true;
-      if (poNum && poNum !== "-" && (inv.po === poNum || inv.nomorSo === poNum)) return true;
       if (leadId && String(inv.leadId) === String(leadId)) return true;
       return false;
     });
@@ -714,19 +738,27 @@ function CreateInvoiceForm({
 
   const terminNumber = relatedExistingInvoices.length + 1;
 
-  // Active quotation discount
+  /**
+   * Diskon awal harus berpasangan dengan sumber harga item:
+   * - Item dari Sales Order sudah harga net (diskon penawaran sudah dibagi ke harga) -> diskon penawaran TIDAK dipakai lagi.
+   * - Item / nilai dari penawaran masih harga kotor -> pakai diskon penawaran (diskon per item + diskon tambahan).
+   */
   const quotationDisc = React.useMemo(() => {
-    const rawDisc =
-      activeQuotation?.disc ??
-      activeQuotation?.discount ??
-      activePo?.discount ??
-      activePo?.disc ??
-      selectedParentInvoice?.discount ??
-      (data.quotations ?? []).find((q: Row) => String(q.id) === String(activePo?.quotationId))?.disc ??
-      (data.quotations ?? []).find((q: Row) => String(q.id) === String(activePo?.quotationId))?.discount ??
-      0;
-    return Number(String(rawDisc).replace(/\D/g, "")) || 0;
-  }, [activeQuotation, activePo, selectedParentInvoice, data.quotations]);
+    const n = (v: unknown) => Number(String(v ?? 0).replace(/\D/g, "")) || 0;
+    const linkedQuote =
+      activeQuotation ||
+      (data.quotations ?? []).find((q: Row) => String(q.id) === String(activePo?.quotationId)) ||
+      null;
+    const quoteDisc = n(linkedQuote?.disc ?? linkedQuote?.discount);
+    const poHasItems = Array.isArray(activePo?.items) && activePo.items.length > 0;
+    if (mode === "lanjut") {
+      if (activeQuotation) return quoteDisc; // dasar kesepakatan = total penawaran (kotor)
+      return poHasItems ? soImpliedDiscount(activePo) : n(selectedParentInvoice?.discount);
+    }
+    if (poHasItems) return soImpliedDiscount(activePo);
+    if (activePo && !(Array.isArray(linkedQuote?.items) && linkedQuote.items.length > 0)) return 0; // nilai SO sudah net
+    return quoteDisc;
+  }, [mode, activeQuotation, activePo, selectedParentInvoice, data.quotations]);
 
   // Total gross items / amount before discount
   const grossDealDpp = React.useMemo(() => {
@@ -778,18 +810,39 @@ function CreateInvoiceForm({
 
   const [discPercent, setDiscPercent] = React.useState<string>(() => {
     const rawDisc = quotationDisc || 0;
-    const base = Number(activePo?.nilai || activeQuotation?.total || activeQuotation?.nilai || 0);
-    if (rawDisc > 0 && base > 0) {
-      return String(Math.round((rawDisc / base) * 100 * 10) / 10);
+    if (rawDisc > 0 && grossDealDpp > 0) {
+      return String(Math.round((rawDisc / grossDealDpp) * 100 * 10) / 10);
     }
     return "";
   });
+  const [showExtraDiscount, setShowExtraDiscount] = React.useState(false);
   const [quickCustomerOpen, setQuickCustomerOpen] = React.useState(false);
   const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
   const [showAllItems, setShowAllItems] = React.useState(false);
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
 
   const effectiveDiscount = Number(String(customDiscount).replace(/\D/g, "")) || 0;
+  const discPctLabel =
+    effectiveDiscount > 0 && grossDealDpp > 0 ? `(${Math.round((effectiveDiscount / grossDealDpp) * 1000) / 10}%)` : "";
+  // Diskon penawaran yang sudah "masuk" ke harga item SO (harga net) -> kolom diskon disembunyikan.
+  const linkedQuoteForDisc =
+    activeQuotation || (data.quotations ?? []).find((q: Row) => String(q.id) === String(activePo?.quotationId)) || null;
+  const discountAlreadyInSoPrices =
+    mode === "baru" &&
+    Array.isArray(activePo?.items) &&
+    activePo.items.length > 0 &&
+    items.length > 0 &&
+    Number(linkedQuoteForDisc?.discount ?? linkedQuoteForDisc?.disc ?? 0) > 0 &&
+    soImpliedDiscount(activePo) === 0;
+
+  /** Ubah daftar item + sesuaikan diskon (diskon item yang dihapus ikut hilang, diskon tambahan tetap). */
+  function editItems(next: QuotationItem[]) {
+    if (sumItemDiscounts(items) > 0 || sumItemDiscounts(next) > 0) {
+      const d = recomputeHeaderDiscount(effectiveDiscount, items, next);
+      setCustomDiscount(d > 0 ? formatThousands(d) : "");
+    }
+    setItems(next);
+  }
 
   // Deal DPP (total dasar setelah diskon)
   const dealDpp = React.useMemo(() => {
@@ -821,6 +874,27 @@ function CreateInvoiceForm({
     return "none";
   });
 
+  /**
+   * Kapan PPh penjualan dipotong:
+   * - "bayar"  : invoice menagih penuh DPP + PPN; PPh dicatat saat pembayaran (bukti potong customer).
+   * - "terbit" : total invoice langsung dikurangi PPh (DPP + PPN − PPh); PPh diakui saat invoice terbit.
+   * Invoice lanjutan (termin/pelunasan) mengikuti cara invoice sebelumnya agar satu proyek konsisten.
+   */
+  const parentIsNetForm = React.useMemo(() => {
+    const p: any = selectedParentInvoice;
+    const pph = Number(p?.pph || 0);
+    if (!p || pph <= 0) return false;
+    return Math.abs(Number(p.nilai || 0) + Number(p.ppn || 0) - pph - Number(p.total || 0)) <= 2;
+  }, [selectedParentInvoice]);
+  type PphTiming = "bayar" | "terbit";
+  // Pilihan manual hanya berlaku untuk konteks (mode + invoice induk) saat dipilih; ganti konteks -> kembali ke default.
+  const pphTimingContext = `${mode}:${mode === "lanjut" ? String((selectedParentInvoice as any)?.id ?? "") : ""}`;
+  const [pphTimingChoice, setPphTimingChoice] = React.useState<{ ctx: string; value: PphTiming } | null>(null);
+  const defaultPphTiming: PphTiming = mode === "lanjut" && parentIsNetForm ? "terbit" : "bayar";
+  const pphTiming: PphTiming = pphTimingChoice?.ctx === pphTimingContext ? pphTimingChoice.value : defaultPphTiming;
+  const setPphTiming = (value: PphTiming) => setPphTimingChoice({ ctx: pphTimingContext, value });
+  const isPurchaseForm = mode === "masuk" || sourceType === "direct_purchase";
+
   const dealPph = React.useMemo(() => {
     if (items.length > 0) {
       const sum = items.reduce((acc, it) => acc + calcItemPph(it), 0);
@@ -849,12 +923,30 @@ function CreateInvoiceForm({
   }, [items, activePo, activeQuotation, pphMode, dealDpp]);
 
   const dealPpn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, dealDpp - Math.round(dealDpp / 1.11)) : Math.round(dealDpp * 0.11);
-  const dealGrandTotal = Math.max(0, (isNoPpn || isIncludePpn ? dealDpp : dealDpp + dealPpn) - dealPph);
+  // Nilai tagihan = DPP + PPN; dikurangi PPh hanya bila PPh dipotong saat invoice terbit (atau tagihan supplier).
+  const dealGross = isNoPpn || isIncludePpn ? dealDpp : dealDpp + dealPpn;
+  const dealGrandTotal = (isPurchaseForm || pphTiming === "terbit") && dealPph < dealGross ? dealGross - dealPph : dealGross;
+  const pphWithheldAtIssue = isPurchaseForm || pphTiming === "terbit";
+  const pphTipeLabel = pphModeToTipe(
+    pphMode !== "none"
+      ? pphMode
+      : (items.find((it: any) => it.pphMode && it.pphMode !== "none")?.pphMode as PphMode) || activePo?.pphMode || "pph23"
+  );
+  const pphLineLabel = isPurchaseForm
+    ? `Potongan ${pphTipeLabel} (kita potong dari supplier)`
+    : pphWithheldAtIssue
+    ? `Potongan ${pphTipeLabel} (dipotong di invoice)`
+    : `${pphTipeLabel} dipotong customer saat bayar`;
 
   // Total already billed in DPP
+  // Harus satuan yang sama dengan dealDpp: bila harga termasuk PPN, dealDpp = nilai termasuk PPN,
+  // jadi yang sudah ditagih juga dihitung DPP + PPN (dulu hanya DPP -> sisa pelunasan kebesaran).
   const alreadyBilledDpp = React.useMemo(() => {
-    return relatedExistingInvoices.reduce((acc: number, inv: Row) => acc + (Number(inv.nilai) || 0), 0);
-  }, [relatedExistingInvoices]);
+    return relatedExistingInvoices.reduce(
+      (acc: number, inv: Row) => acc + (Number(inv.nilai) || 0) + (isIncludePpn ? Number(inv.ppn) || 0 : 0),
+      0,
+    );
+  }, [relatedExistingInvoices, isIncludePpn]);
 
   const remainingDpp = Math.max(0, dealDpp - alreadyBilledDpp);
 
@@ -971,12 +1063,7 @@ function CreateInvoiceForm({
         : "";
       if (!candidateId) {
         if (initialPo) {
-          const match = continuableInvoiceOptions.find(
-            (o) =>
-              String(o.raw.clientPoId) === String(initialPo.id) ||
-              (initialPo.nomor && (o.raw.po === initialPo.nomor || o.raw.nomorSo === initialPo.nomor)) ||
-              (initialPo.nomorSo && (o.raw.po === initialPo.nomorSo || o.raw.nomorSo === initialPo.nomorSo))
-          );
+          const match = continuableInvoiceOptions.find((o) => String(o.raw.clientPoId) === String(initialPo.id));
           if (match) candidateId = match.id;
         }
         if (!candidateId && initialQuotation) {
@@ -997,8 +1084,12 @@ function CreateInvoiceForm({
       if (sourceType === "direct_purchase") setSourceType("po");
       if (activeQuotation?.items && Array.isArray(activeQuotation.items)) {
         setItems(activeQuotation.items);
+        const qd = Number(activeQuotation.discount ?? activeQuotation.disc ?? 0) || 0;
+        setCustomDiscount(qd > 0 ? formatThousands(qd) : "");
       } else if (activePo?.items && Array.isArray(activePo.items)) {
         setItems(activePo.items);
+        const sd = soImpliedDiscount(activePo);
+        setCustomDiscount(sd > 0 ? formatThousands(sd) : "");
       }
       setNomor(generateInvoiceNumber(false, scheme, relatedExistingInvoices, data.invoices?.length || 0, data.invoices));
     }
@@ -1047,7 +1138,8 @@ function CreateInvoiceForm({
     const rawDisc = Number(q.discount ?? q.disc ?? 0);
     if (rawDisc > 0) {
       setCustomDiscount(formatThousands(rawDisc));
-      const baseGross = Number(q.nilai || q.total || 0);
+      // Dasar persen = harga sebelum diskon (total kotor item penawaran)
+      const baseGross = (Array.isArray(q.items) && q.items.length > 0 ? sumItemGross(q.items) : 0) || Number(q.total || q.nilai || 0);
       if (baseGross > 0) {
         setDiscPercent(String(Math.round(((rawDisc / baseGross) * 100) * 10) / 10));
       } else {
@@ -1108,9 +1200,21 @@ function CreateInvoiceForm({
     } else if (match.pphMode && match.pphMode !== "none") {
       setPphMode(match.pphMode as PphMode);
     }
-    if (match.discount || match.disc) {
-      setCustomDiscount(formatThousands(match.discount || match.disc));
+    // Diskon mengikuti sumber item: item SO = harga net; item penawaran = harga kotor + diskon penawaran.
+    let nextDisc = 0;
+    let nextBase = 0;
+    if (Array.isArray(match.items) && match.items.length > 0) {
+      nextDisc = soImpliedDiscount(match);
+      nextBase = sumItemGross(match.items);
+    } else if (match.quotationId) {
+      const linkedQ = (data.quotations ?? []).find((q: Row) => String(q.id) === String(match.quotationId));
+      if (linkedQ && Array.isArray(linkedQ.items) && linkedQ.items.length > 0) {
+        nextDisc = Number(linkedQ.discount ?? linkedQ.disc ?? 0) || 0;
+        nextBase = sumItemGross(linkedQ.items);
+      }
     }
+    setCustomDiscount(nextDisc > 0 ? formatThousands(nextDisc) : "");
+    setDiscPercent(nextDisc > 0 && nextBase > 0 ? String(Math.round((nextDisc / nextBase) * 1000) / 10) : "");
   }
 
   // Select lead handler
@@ -1137,7 +1241,7 @@ function CreateInvoiceForm({
   }
 
   // Calculate current invoice DPP, PPN 11%, PPh, and Total
-  const { currentDpp, currentPpn, currentPph, currentTotal, calculatedPct } = React.useMemo(() => {
+  const { currentDpp, currentBase, currentPpn, currentPph, currentTotal, pphCutAtIssue, calculatedPct } = React.useMemo(() => {
     let dpp = 0;
     let pct = 100;
 
@@ -1230,9 +1334,22 @@ function CreateInvoiceForm({
       }
     }
 
-    const total = Math.max(0, (isIncludePpn ? rawBase : effectiveDpp + ppn) - pph);
-    return { currentDpp: effectiveDpp, currentPpn: ppn, currentPph: pph, currentTotal: total, calculatedPct: pct };
-  }, [mode, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode, items, activePo, activeQuotation]);
+    const gross = isIncludePpn ? rawBase : effectiveDpp + ppn;
+    // Pembelian: kita yang memotong PPh supplier -> tagihan supplier selalu net.
+    // Penjualan: sesuai pilihan "kapan PPh dipotong".
+    const cutAtIssue = pph > 0 && pph < gross && (isPurchaseForm || pphTiming === "terbit");
+    const total = cutAtIssue ? gross - pph : gross;
+    return {
+      currentDpp: effectiveDpp,
+      // Nilai tagihan ini dalam satuan yang sama dengan dealDpp (termasuk PPN bila harga include PPN)
+      currentBase: rawBase,
+      currentPpn: ppn,
+      currentPph: pph,
+      currentTotal: total,
+      pphCutAtIssue: cutAtIssue,
+      calculatedPct: pct,
+    };
+  }, [mode, isPurchaseForm, pphTiming, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode, items, activePo, activeQuotation]);
 
   // Handle Submit
   async function handleSubmit() {
@@ -1250,7 +1367,7 @@ function CreateInvoiceForm({
       toast("File faktur / tagihan pemasok wajib diunggah", "danger");
       return;
     }
-    const isPaidNow = paymentStatus === "PAID";
+    const isPaidNow = !isProforma && paymentStatus === "PAID";
     if (isPurchase && isPaidNow && !paymentFileId) {
       toast("Bukti pembayaran / transfer wajib diunggah untuk status Lunas", "danger");
       return;
@@ -1302,6 +1419,9 @@ function CreateInvoiceForm({
         : scheme === "termin"
         ? `Termin 1 (${calculatedPct}%) - ${refTitle}`
         : `Pembayaran Penuh (100%) - ${refTitle}`;
+    // Keterangan PPN ikut tertulis di setiap termin agar DP & pelunasan konsisten
+    const ppnNote = isNoPpn ? "" : isIncludePpn ? " (Termasuk PPN 11%)" : " (Belum termasuk PPN 11%)";
+    const termItemDesc = `${termDesc}${ppnNote}`;
 
     let fullCatatan = catatan.trim() ? `${termDesc}. ${catatan.trim()}` : termDesc;
     if (activeLead?.id && !fullCatatan.includes(`[lead:${activeLead.id}]`)) {
@@ -1383,7 +1503,9 @@ function CreateInvoiceForm({
       }
 
       const created = await addRow("invoices", {
-        nomor: nomor.trim() || undefined,
+        // Proforma diberi nomor PI/... oleh server
+        nomor: isProforma ? undefined : nomor.trim() || undefined,
+        isProforma: isProforma || undefined,
         customer: custName,
         customerId: isPurchase ? undefined : (selectedCustomerId || (customerObj?.id ? String(customerObj.id) : undefined)),
         supplierId: isPurchase ? (selectedSupplierId ? Number(selectedSupplierId) : undefined) : undefined,
@@ -1409,7 +1531,7 @@ function CreateInvoiceForm({
           : activePo?.nomor || activePo?.nomorSo || activePo?.number || (mode === "lanjut" ? selectedParentInvoice?.po : undefined) || undefined,
         jenis: invoiceType,
         nilai: currentDpp,
-        discount: effectiveDiscount > 0 ? effectiveDiscount : undefined,
+        discount: mode === "lanjut" ? undefined : effectiveDiscount,
         tipePpn: ppnModeToTipe(ppnMode),
         ppnMode,
         ppn: currentPpn,
@@ -1420,11 +1542,12 @@ function CreateInvoiceForm({
         items: mode === "lanjut"
           ? [
               {
-                item: termDesc,
+                item: termItemDesc,
                 qty: 1,
                 satuan: "paket",
-                harga: currentDpp,
-                total: currentDpp,
+                // Harga termasuk PPN -> nilai termin juga termasuk PPN (sama seperti DP dari item penawaran)
+                harga: isIncludePpn ? currentBase : currentDpp,
+                total: isIncludePpn ? currentBase : currentDpp,
                 isContinuation: true,
                 kind: "SERVICE",
               },
@@ -1447,7 +1570,7 @@ function CreateInvoiceForm({
         customerAddress: activeQuotation?.customerAddress || customerObj?.address || customerObj?.alamat,
         tanggal,
         jatuhTempo: isPaidNow ? tanggal : jatuhTempo,
-        status: isPaidNow ? "Lunas" : "Belum dikirim",
+        status: isProforma ? "Terkirim" : isPaidNow ? "Lunas" : "Belum dikirim",
         terbayar: isPaidNow ? currentTotal : 0,
         catatan: isPaidNow
           ? `${fullCatatan} (${isPurchase ? "Pembelian Langsung - Lunas" : "Lunas Langsung"} - ${paymentMethod} [AKUN:${paymentAccountCode}])`
@@ -1457,8 +1580,12 @@ function CreateInvoiceForm({
 
       if (created) {
         if (isPaidNow && created.id && !String(created.id).startsWith("offline-") && currentTotal > 0) {
+          // PPh dipotong saat bayar: customer transfer total − PPh, PPh (bukti potong) ikut melunasi tagihan.
+          // PPh dipotong saat terbit: total invoice sudah net, cukup catat uang yang diterima.
+          const pphCut = !isPurchase && !pphCutAtIssue && currentPph > 0 && currentPph < currentTotal ? currentPph : 0;
           await api("POST", `/invoices/${created.id}/payments`, {
-            amount: currentTotal,
+            amount: currentTotal - pphCut,
+            pph23Amount: pphCut > 0 ? pphCut : undefined,
             date: tanggal,
             method: paymentMethod,
             reference: `LUNAS-${nomor.trim()} [${paymentAccountCode}]`,
@@ -1508,6 +1635,8 @@ function CreateInvoiceForm({
               ? "Buat Faktur Masuk (Tagihan / Pembelian)"
               : sourceType === "direct_sale"
               ? "Faktur Penjualan Langsung"
+              : isProforma
+              ? "Buat Proforma Invoice"
               : "Buat Faktur Penagihan (Faktur Keluar)"}
           </Text>
           {mode === "masuk" ? (
@@ -1539,6 +1668,17 @@ function CreateInvoiceForm({
       </DialogHeader>
 
       <ScrollView className="max-h-[80vh] px-1" showsVerticalScrollIndicator={false}>
+        <StepTitle
+          n={1}
+          title={mode === "masuk" ? "Jenis & sumber tagihan" : "Mau menagih apa?"}
+          hint={
+            mode === "lanjut"
+              ? "Pilih invoice DP / termin sebelumnya — nilai kontrak, PPN, dan diskon mengikuti invoice itu."
+              : mode === "masuk"
+              ? "Tagihan dari supplier / operasional."
+              : "Pilih SO atau penawaran — item, harga, diskon & PPN terisi otomatis."
+          }
+        />
         {/* Mode Switcher (3 Tab: Invoice Keluar Baru | Lanjutkan Termin / DP | Invoice Masuk) */}
         <View className="flex-row flex-wrap rounded-lg bg-panel p-1 border border-border mb-4 gap-1">
           <Button
@@ -1572,6 +1712,35 @@ function CreateInvoiceForm({
             </Text>
           </Button>
         </View>
+
+        {mode === "baru" && sourceType !== "direct_purchase" ? (
+          <View className="mb-4 gap-1.5">
+            <Text className="text-xs font-semibold text-foreground">Jenis dokumen</Text>
+            <View className="flex-row gap-2">
+              {([
+                { key: false, title: "Invoice resmi", desc: "Masuk piutang & jurnal, bisa dicatat pembayarannya" },
+                { key: true, title: "Proforma Invoice", desc: "Penagihan awal. Belum dijurnal; terbitkan invoice resmi setelah disetujui / dibayar" },
+              ] as const).map((opt) => {
+                const active = isProforma === opt.key;
+                return (
+                  <Pressable
+                    key={String(opt.key)}
+                    onPress={() => setIsProforma(opt.key)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    className={`flex-1 rounded-lg border px-3 py-2 ${active ? "border-primary bg-primary/10" : "border-border bg-background"}`}
+                  >
+                    <View className="flex-row items-center gap-1.5">
+                      {active ? <Check size={12} color={colors.primary} /> : null}
+                      <Text className={`text-xs font-semibold ${active ? "text-primary" : "text-foreground"}`}>{opt.title}</Text>
+                    </View>
+                    <Text className="text-[10px] text-muted-foreground mt-0.5">{opt.desc}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
 
         {/* Source Link Section or Continuation Invoice Selector or Invoice Masuk Section */}
         {mode === "masuk" ? (
@@ -1967,7 +2136,7 @@ function CreateInvoiceForm({
 
             <View className="bg-card p-2 rounded-lg gap-1 border border-border">
               <View className="flex-row justify-between">
-                <Text className="text-xs text-muted-foreground">Total Nilai Dasar (DPP):</Text>
+                <Text className="text-xs text-muted-foreground">{isIncludePpn ? "Nilai Kontrak (Termasuk PPN):" : "Total Nilai Dasar (DPP):"}</Text>
                 <Text className="text-xs font-bold">{rupiah(dealDpp)}</Text>
               </View>
               <View className="flex-row justify-between">
@@ -1975,7 +2144,7 @@ function CreateInvoiceForm({
                 <Text className="text-xs font-semibold text-success">{rupiah(alreadyBilledDpp)}</Text>
               </View>
               <View className="flex-row justify-between pt-1 border-t border-border">
-                <Text className="text-xs font-bold text-foreground">Sisa Belum Ditagih (DPP):</Text>
+                <Text className="text-xs font-bold text-foreground">{isIncludePpn ? "Sisa Belum Ditagih (Termasuk PPN):" : "Sisa Belum Ditagih (DPP):"}</Text>
                 <Text className="text-xs font-bold text-primary">{rupiah(remainingDpp)}</Text>
               </View>
             </View>
@@ -2096,21 +2265,8 @@ function CreateInvoiceForm({
         ) : null}
 
         {/* Form Fields */}
+        <StepTitle n={2} title="Rincian & nilai tagihan" hint="Cek tanggal, item, diskon, dan PPN. Ringkasan angka ada di bawah." />
         <View className="gap-3 mb-4">
-          <FormField
-            label={
-              mode === "masuk"
-                ? "Nomor Faktur Masuk / No. Tagihan (Kosongkan untuk otomatis)"
-                : "Nomor Faktur (Kosongkan untuk otomatis)"
-            }
-          >
-            <Input
-              value={nomor}
-              onChangeText={setNomor}
-              placeholder={mode === "masuk" ? "Contoh: INV-IN/2026/11/001 atau No. Tagihan PLN/IndiHome" : "Otomatis oleh sistem"}
-            />
-          </FormField>
-
           <View className="flex-row gap-2">
             <View className="flex-1">
               <FormField label={mode === "masuk" ? "Tanggal Tagihan" : "Tanggal Terbit"} required>
@@ -2197,7 +2353,7 @@ function CreateInvoiceForm({
                     size="sm"
                     variant="ghost"
                     className="h-6 px-2"
-                    onPress={() => setItems([])}
+                    onPress={() => editItems([])}
                   >
                     <Text className="text-xs text-danger">Hapus Rincian Item</Text>
                   </Button>
@@ -2233,7 +2389,7 @@ function CreateInvoiceForm({
                     size="sm"
                     className="h-7 px-2.5 bg-danger flex-row items-center gap-1"
                     onPress={() => {
-                      setItems((prev) => prev.filter((_, i) => !selectedItemIndices.includes(i)));
+                      editItems(items.filter((_, i) => !selectedItemIndices.includes(i)));
                       setSelectedItemIndices([]);
                     }}
                   >
@@ -2272,7 +2428,8 @@ function CreateInvoiceForm({
                 {(showAllItems ? items : items.slice(0, 10)).map((it, idx) => {
                   const itPph = calcItemPph(it);
                   const itemPrice = Number(it.harga || it.price || 0);
-                  const sub = (Number(it.qty) || 1) * itemPrice;
+                  const lineDisc = itemDiscount(it);
+                  const sub = (Number(it.qty) || 1) * itemPrice - lineDisc;
                   const isSelected = selectedItemIndices.includes(idx);
                   return (
                     <View
@@ -2312,15 +2469,20 @@ function CreateInvoiceForm({
                         </View>
                         <View className="items-end gap-0.5">
                           <Text className="text-xs font-semibold">{rupiah(sub)}</Text>
+                          {lineDisc > 0 ? (
+                            <Text className="text-[10px] text-danger font-medium">
+                              Diskon{Number(it.diskonPct) > 0 ? ` ${it.diskonPct}%` : ""}: -{rupiah(lineDisc)}
+                            </Text>
+                          ) : null}
                           {itPph > 0 ? (
-                            <Text className="text-[10px] text-danger font-medium">{it.tipePph || "PPh"}: -{rupiah(itPph)}</Text>
+                            <Text className="text-[10px] text-muted-foreground">{it.tipePph || "PPh"}: {rupiah(itPph)}</Text>
                           ) : null}
                         </View>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-6 px-1.5"
-                          onPress={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
+                          onPress={() => editItems(items.filter((_, i) => i !== idx))}
                         >
                           <Trash2 size={13} color={colors.danger} />
                         </Button>
@@ -2391,17 +2553,27 @@ function CreateInvoiceForm({
               <View className="p-3 rounded-xl bg-card border border-border flex-row items-center justify-between">
                 <Text className="text-xs font-semibold text-foreground">Diskon Kontrak Awal</Text>
                 <Text className="text-xs font-semibold text-danger">
-                  - {rupiah(effectiveDiscount)} {discPercent ? `(${discPercent}%)` : ""}
+                  - {rupiah(effectiveDiscount)} {discPctLabel}
                 </Text>
               </View>
             ) : null
+          ) : discountAlreadyInSoPrices && effectiveDiscount === 0 && !showExtraDiscount ? (
+            <View className="p-3 rounded-xl bg-card border border-border gap-1.5">
+              <Text className="text-xs font-semibold text-foreground">Diskon</Text>
+              <Text className="text-[11px] text-muted-foreground">
+                {`Diskon penawaran ${rupiah(Number(linkedQuoteForDisc?.discount ?? linkedQuoteForDisc?.disc ?? 0))} sudah termasuk di harga barang SO, jadi tidak dipotong lagi di invoice.`}
+              </Text>
+              <Pressable onPress={() => setShowExtraDiscount(true)} accessibilityRole="button" className="self-start">
+                <Text className="text-xs font-semibold text-primary">+ Tambah diskon lain</Text>
+              </Pressable>
+            </View>
           ) : (
             <View className="p-3 rounded-xl bg-card border border-border gap-2">
               <View className="flex-row items-center justify-between">
                 <Text className="text-xs font-semibold text-foreground">Diskon Pemotongan</Text>
                 {effectiveDiscount > 0 ? (
                   <Text className="text-xs font-semibold text-danger">
-                    - {rupiah(effectiveDiscount)} {discPercent ? `(${discPercent}%)` : ""}
+                    - {rupiah(effectiveDiscount)} {discPctLabel}
                   </Text>
                 ) : null}
               </View>
@@ -2448,7 +2620,17 @@ function CreateInvoiceForm({
           )}
 
           {/* Status Pembayaran */}
-          <View className="p-3 rounded-xl bg-panel border border-border gap-2">
+          <StepTitle n={3} title={mode === "masuk" ? "Pembayaran tagihan" : "Pembayaran"} hint={isProforma && mode !== "masuk" ? undefined : "Biasanya \"Belum bayar\". Pilih \"Langsung lunas\" bila uang sudah diterima."} />
+          {isProforma && mode !== "masuk" ? (
+            <View className="p-3 rounded-xl bg-panel border border-border gap-1">
+              <Text className="text-xs font-semibold text-foreground">Pembayaran</Text>
+              <Text className="text-[11px] text-muted-foreground">
+                Proforma tidak bisa langsung dibayar. Setelah customer setuju / membayar, buka proforma lalu tekan
+                &quot;Terbitkan Invoice&quot; — pembayaran dicatat di invoice resmi.
+              </Text>
+            </View>
+          ) : null}
+          <View className={`p-3 rounded-xl bg-panel border border-border gap-2 ${isProforma && mode !== "masuk" ? "hidden" : ""}`}>
             <FormField
               label={
                 mode === "masuk"
@@ -2534,6 +2716,40 @@ function CreateInvoiceForm({
             ) : null}
           </View>
 
+          {/* Opsi lainnya: nomor manual, lampiran, catatan (jarang diubah) */}
+          <View className="rounded-xl border border-border">
+            <Pressable
+              onPress={() => setShowMoreOptions((v) => !v)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showMoreOptions }}
+              className="flex-row items-center justify-between px-3 py-2.5"
+            >
+              <Text className="text-xs font-semibold text-foreground">
+                Opsi lainnya{" "}
+                <Text className="text-[11px] font-normal text-muted-foreground">(nomor manual, lampiran, catatan)</Text>
+              </Text>
+              <Text className="text-xs text-primary">{showMoreOptions ? "Tutup" : "Buka"}</Text>
+            </Pressable>
+            {showMoreOptions ? (
+              <View className="gap-3 px-3 pb-3">
+          <FormField
+            label={
+              mode === "masuk"
+                ? "Nomor Faktur Masuk / No. Tagihan (Kosongkan untuk otomatis)"
+                : "Nomor Faktur (Kosongkan untuk otomatis)"
+            }
+          >
+            {isProforma && mode !== "masuk" ? (
+              <Text className="text-xs text-muted-foreground py-2">Nomor proforma (PI/...) dibuat otomatis oleh sistem.</Text>
+            ) : (
+              <Input
+                value={nomor}
+                onChangeText={setNomor}
+                placeholder={mode === "masuk" ? "Contoh: INV-IN/2026/11/001 atau No. Tagihan PLN/IndiHome" : "Otomatis oleh sistem"}
+              />
+            )}
+          </FormField>
+
           <FormField
             label={
               mode === "masuk"
@@ -2576,6 +2792,10 @@ function CreateInvoiceForm({
               }
             />
           </FormField>
+
+              </View>
+            ) : null}
+          </View>
 
           {/* Ketentuan PPN */}
           <View className="w-full sm:w-1/2 px-2 py-2">
@@ -2652,21 +2872,43 @@ function CreateInvoiceForm({
             </Text>
             <Text className="text-xs font-medium">{rupiah(dealPpn)}</Text>
           </View>
+          {!isPurchaseForm && (dealPph > 0 || currentPph > 0) ? (
+            <View className="gap-1.5 py-1.5">
+              <Text className="text-xs font-semibold text-foreground">Kapan {pphTipeLabel} dipotong?</Text>
+              <View className="flex-row gap-2">
+                {([
+                  { key: "bayar", title: "Saat customer bayar", desc: "Invoice tagih penuh, PPh dicatat dari bukti potong" },
+                  { key: "terbit", title: "Saat kirim invoice", desc: "Total invoice langsung dikurangi PPh" },
+                ] as const).map((opt) => {
+                  const active = pphTiming === opt.key;
+                  return (
+                    <Pressable
+                      key={opt.key}
+                      onPress={() => setPphTiming(opt.key)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: active }}
+                      className={`flex-1 rounded-lg border px-2.5 py-2 ${active ? "border-primary bg-primary/10" : "border-border bg-background"}`}
+                    >
+                      <View className="flex-row items-center gap-1.5">
+                        {active ? <Check size={12} color={colors.primary} /> : null}
+                        <Text className={`text-xs font-semibold ${active ? "text-primary" : "text-foreground"}`}>{opt.title}</Text>
+                      </View>
+                      <Text className="text-[10px] text-muted-foreground mt-0.5">{opt.desc}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {mode === "lanjut" && selectedParentInvoice ? (
+                <Text className="text-[10px] text-muted-foreground">Mengikuti invoice sebelumnya agar satu proyek konsisten.</Text>
+              ) : null}
+            </View>
+          ) : null}
           {dealPph > 0 ? (
             <View className="flex-row justify-between">
-              <Text className="text-xs text-amber-600 dark:text-amber-400">
-                Potongan PPh Kesepakatan (
-                {pphModeToTipe(
-                  pphMode !== "none"
-                    ? pphMode
-                    : items.find((it: any) => it.pphMode && it.pphMode !== "none")?.pphMode ||
-                      activePo?.pphMode ||
-                      "pph23"
-                )}
-                ):
-              </Text>
+              <Text className="text-xs text-amber-600 dark:text-amber-400 flex-1 pr-2">{pphLineLabel}:</Text>
               <Text className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                -{rupiah(dealPph)}
+                {pphWithheldAtIssue ? "- " : ""}
+                {rupiah(dealPph)}
               </Text>
             </View>
           ) : null}
@@ -2690,39 +2932,46 @@ function CreateInvoiceForm({
           </View>
           {currentPph > 0 ? (
             <View className="flex-row justify-between">
-              <Text className="text-xs text-amber-600 dark:text-amber-400">
-                Potongan PPh (
-                {pphModeToTipe(
-                  pphMode !== "none"
-                    ? pphMode
-                    : items.find((it: any) => it.pphMode && it.pphMode !== "none")?.pphMode ||
-                      activePo?.pphMode ||
-                      "pph23"
-                )}
-                ):
-              </Text>
+              <Text className="text-xs text-amber-600 dark:text-amber-400 flex-1 pr-2">{pphLineLabel}:</Text>
               <Text className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                -{rupiah(currentPph)}
+                {pphCutAtIssue ? "- " : ""}
+                {rupiah(currentPph)}
               </Text>
             </View>
           ) : null}
           <View className="flex-row justify-between pt-1 border-t border-border">
-            <Text className="text-sm font-bold text-foreground">Total Tagihan Bersih Faktur Ini:</Text>
+            <Text className="text-sm font-bold text-foreground">Total Tagihan Faktur Ini:</Text>
             <Text className="text-sm font-bold text-primary">{rupiah(currentTotal)}</Text>
           </View>
+          {currentPph > 0 && !isPurchaseForm ? (
+            <View className="flex-row justify-between">
+              <Text className="text-[11px] text-muted-foreground">
+                {pphCutAtIssue ? "Customer transfer:" : "Estimasi transfer dari customer:"}
+              </Text>
+              <Text className="text-[11px] font-semibold">
+                {rupiah(pphCutAtIssue ? currentTotal : Math.max(0, currentTotal - currentPph))}
+              </Text>
+            </View>
+          ) : null}
 
-          {dealDpp - currentDpp > 0 ? (
+          {dealDpp - currentBase > 0 ? (
             <View className="flex-row justify-between pt-1 border-t border-dashed border-border">
               <Text className="text-xs text-muted-foreground">Sisa yang Belum Ditagih:</Text>
               <Text className="text-xs font-semibold text-amber-600">
-                {rupiah(Math.max(0, dealDpp - (alreadyBilledDpp + currentDpp)))}
+                {rupiah(Math.max(0, dealDpp - (alreadyBilledDpp + currentBase)))}
               </Text>
             </View>
           ) : null}
         </View>
       </ScrollView>
 
-      <DialogFooter>
+      <DialogFooter className="flex-row flex-wrap items-center gap-2">
+        <View className="flex-1 min-w-[160px]">
+          <Text className="text-[11px] text-muted-foreground">
+            {isProforma && mode !== "masuk" ? "Total proforma" : mode === "masuk" ? "Total tagihan masuk" : "Total tagihan invoice ini"}
+          </Text>
+          <Text className="text-base font-bold text-primary">{rupiah(currentTotal)}</Text>
+        </View>
         <Button variant="outline" onPress={onClose}>
           <Text>Batal</Text>
         </Button>
@@ -2732,7 +2981,9 @@ function CreateInvoiceForm({
               ? "Menyimpan..."
               : mode === "masuk"
               ? "Simpan Faktur Masuk"
-              : "Simpan & Buat Faktur"}
+              : isProforma
+              ? "Simpan Proforma"
+              : "Terbitkan Invoice"}
           </Text>
         </Button>
       </DialogFooter>
@@ -2768,7 +3019,7 @@ function CreateInvoiceForm({
             toast(`Barang/item dengan SN (${duplicates.join(", ")}) sudah ada di invoice`, "danger");
           }
           if (valid.length > 0) {
-            setItems((prev) => [...prev, ...valid]);
+            editItems([...items, ...valid]);
           }
         }}
       />

@@ -28,6 +28,7 @@ import {
 } from "@/modules/invoice/invoice-chain";
 import { CreateSupplierPoDialog } from "@/modules/supplier-po/create-po-dialog";
 import { CreateSalesOrderDialog } from "@/modules/sales-order/create-so-dialog";
+import { CreateQuotationDialog } from "@/modules/quotation/create-quotation-dialog";
 import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
@@ -574,6 +575,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         <CreateSupplierPoDialog open={open} onOpenChange={setOpen} />
       ) : def.key === "po-client" ? (
         <CreateSalesOrderDialog open={open} onOpenChange={setOpen} />
+      ) : def.key === "quotations" ? (
+        <CreateQuotationDialog open={open} onOpenChange={setOpen} />
       ) : def.createFields ? (
         <FormDialog def={def} open={open} onOpenChange={setOpen} />
       ) : null}

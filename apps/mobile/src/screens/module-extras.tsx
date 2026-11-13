@@ -48,7 +48,8 @@ import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { printOrderDocument } from "@/lib/order-print";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
-import { calcItemPph, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
+import { CashAdvancePanel } from "@/modules/cash-advance/cash-advance-panel";
+import { calcItemPph, distributeDiscountToPrices, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 
 // Re-export agar import lama dari "@/screens/module-extras" tetap valid.
 export { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
@@ -398,6 +399,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
   const linkedInvoices = (data.invoices ?? []).filter(
     (inv: Row) =>
       inv.direction !== "in" &&
+      !inv.isProforma &&
       ((inv.clientPoId && String(inv.clientPoId) === String(row.id)) ||
         (inv.po && inv.po !== "-" && (
           String(inv.po).toLowerCase() === String(row.nomor || "").toLowerCase() ||
@@ -455,18 +457,14 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   const itemsTotal = currentItems.reduce((acc, it) => acc + getItemQty(it) * getItemPrice(it), 0);
 
-  // Hitung diskon yang berlaku dari SO atau Penawaran
-  const rawQuoDisc = Number(linkedQuotation?.disc || linkedQuotation?.discount || 0);
+  // Diskon SO = selisih harga item dengan nilai SO sebelum pajak.
+  // SO dari penawaran menyimpan harga item yang sudah net (diskon penawaran sudah dibagi ke harga),
+  // jadi diskon penawaran TIDAK ditampilkan/dipotong lagi di sini.
   const rawRowDisc = Number(row.discount || row.disc || 0);
-  const soNilai = Number(row.nilai || 0);
-  const effectiveDiscount =
-    rawRowDisc > 0
-      ? rawRowDisc
-      : rawQuoDisc > 0
-        ? rawQuoDisc
-        : soNilai > 0 && itemsTotal > soNilai
-          ? itemsTotal - soNilai
-          : 0;
+  const soPpnMode = row.ppnMode || (Number(row.ppn || 0) > 0 ? "exclude" : "none");
+  const soBaseBeforeTax = soPpnMode === "include" ? Number(row.total || row.nilai || 0) : Number(row.nilai || 0);
+  const impliedSoDisc = soBaseBeforeTax > 0 && itemsTotal - soBaseBeforeTax > 2 ? Math.round(itemsTotal - soBaseBeforeTax) : 0;
+  const effectiveDiscount = rawRowDisc > 0 ? rawRowDisc : impliedSoDisc;
 
   // Dialog state
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
@@ -575,20 +573,21 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     }
   };
 
-  const saveItems = async (newItems: any[], updateAmount = true) => {
+  const saveItems = async (newItems: any[], updateAmount = true, keepDiscount = effectiveDiscount) => {
     updateItems(newItems);
     setSaving(true);
     try {
       const patchPayload: Record<string, any> = { items: newItems };
       if (updateAmount) {
-        const sum = newItems.reduce((acc, it) => acc + getItemQty(it) * getItemPrice(it), 0);
+        // Diskon lama SO (bila harga item masih kotor) tetap dipertahankan saat item diubah.
+        const sum = Math.max(0, newItems.reduce((acc, it) => acc + getItemQty(it) * getItemPrice(it), 0) - keepDiscount);
         if (sum > 0) {
           const currentPpnMode = row.ppnMode || (Number(row.ppn || 0) > 0 ? "exclude" : "none");
           const isInclude = currentPpnMode === "include";
           const dpp = isInclude ? Math.round(sum / 1.11) : sum;
           const ppn = currentPpnMode === "none" ? 0 : isInclude ? Math.max(0, sum - dpp) : Math.round(sum * 0.11);
           const pph = newItems.reduce((acc, it) => acc + calcItemPph(it), 0);
-          const total = Math.max(0, (isInclude ? sum : sum + ppn) - pph);
+          const total = isInclude ? sum : sum + ppn; // nilai SO = DPP + PPN; PPh dipotong customer saat bayar
 
           patchPayload.nilai = dpp;
           patchPayload.amount = dpp;
@@ -694,7 +693,8 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       toast("Penawaran terkait tidak memiliki item");
       return;
     }
-    await saveItems(quoItems, true);
+    // Harga item SO = harga net (diskon item + diskon tambahan penawaran sudah dibagi ke harga).
+    await saveItems(distributeDiscountToPrices(quoItems, linkedQuotation?.disc ?? linkedQuotation?.discount ?? 0), true, 0);
   };
 
   const pullFromInvoice = async () => {
@@ -705,7 +705,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     await saveItems(invoiceItems, true);
   };
 
-  const effectiveOrderTotal = Number(row.total) || (Number(row.nilai || 0) + Number(row.ppn || 0) - Number(row.pph || 0));
+  const effectiveOrderTotal = Number(row.total) || Number(row.nilai || 0) + Number(row.ppn || 0);
   const sisa = effectiveOrderTotal - Number(row.totalInvoice || 0);
   const linkedProjects = (data.projects ?? []).filter(
     (p: Row) =>
@@ -1160,7 +1160,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               </View>
               {effectiveDiscount > 0 && (
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-danger font-medium">Diskon Penawaran / SO</Text>
+                  <Text className="text-xs text-danger font-medium">Diskon SO</Text>
                   <Text className="text-xs font-semibold text-danger">-{rupiah(effectiveDiscount)}</Text>
                 </View>
               )}
@@ -1172,8 +1172,8 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               )}
               {Number(row.pph || 0) > 0 && (
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-danger font-medium">Pemotongan {row.tipePph || "PPh"}</Text>
-                  <Text className="text-xs font-semibold text-danger">-{rupiah(row.pph)}</Text>
+                  <Text className="text-xs text-muted-foreground font-medium">{row.tipePph || "PPh"} dipotong customer saat bayar</Text>
+                  <Text className="text-xs font-semibold text-muted-foreground">{rupiah(row.pph)}</Text>
                 </View>
               )}
               <View className="flex-row justify-between items-center pt-1 border-t border-border/40">
@@ -1666,7 +1666,18 @@ function ModuleExtrasBody({
   }
 
   if (moduleKey === "delivery-notes") {
-    return <DeliveryNotesExtras row={row} onRefresh={onRefresh} />;
+    return (
+      <>
+        <CashAdvancePanel
+          deliveryNoteId={Number(row.id)}
+          purpose="PENGIRIMAN"
+          defaultDescription={`Uang jalan pengiriman ${row.nomor || ""}`.trim()}
+          title="Uang Jalan Pengiriman"
+          subtitle="Alokasikan biaya kirim / ambil barang. Finance menyerahkan uang ke admin gudang / kurir yang ditugaskan."
+        />
+        <DeliveryNotesExtras row={row} onRefresh={onRefresh} />
+      </>
+    );
   }
 
   if (moduleKey === "expenses") {

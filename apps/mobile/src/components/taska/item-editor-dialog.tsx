@@ -92,6 +92,8 @@ export interface ItemEditorDialogProps {
   title?: string;
   isBuyPrice?: boolean; // true for PO, false for SO / Penawaran / Invoice
   existingItems?: ItemEditorDialogItem[];
+  /** Tampilkan input diskon per item (Rp / %). Dipakai di penawaran. */
+  allowDiscount?: boolean;
 }
 
 const COMMON_UNITS = ["Unit", "Pcs", "Paket", "Titik", "Set", "Meter", "Roll", "Box"];
@@ -117,6 +119,7 @@ function ItemEditorInner({
   title,
   isBuyPrice = false,
   existingItems = [],
+  allowDiscount = false,
 }: ItemEditorDialogProps) {
   const item = rawItem ?? initialItem;
   const { data, toast } = useApp();
@@ -140,6 +143,15 @@ function ItemEditorInner({
   const [sn, setSn] = React.useState(() => snStrInitial);
   const [notes, setNotes] = React.useState(() => (item?.notes || item?.keterangan || item?.note || ""));
   const [saving, setSaving] = React.useState(false);
+  // Diskon per item: persen atau nominal Rp (untuk seluruh qty baris ini)
+  const [discType, setDiscType] = React.useState<"percent" | "nominal">(() =>
+    Number(item?.diskonPct) > 0 || !(Number(item?.diskon) > 0) ? "percent" : "nominal"
+  );
+  const [discInput, setDiscInput] = React.useState<string>(() => {
+    if (Number(item?.diskonPct) > 0) return String(item?.diskonPct);
+    if (Number(item?.diskon) > 0) return formatThousands(Number(item?.diskon));
+    return "";
+  });
 
   // Selected product object from master store
   const selectedProductObj = React.useMemo(() => {
@@ -198,9 +210,17 @@ function ItemEditorInner({
   // Financial preview calculation
   const parsedQty = Math.max(0.001, parseFloat(qty.replace(/,/g, ".")) || 1);
   const parsedPrice = parseFloat(String(price).replace(/\D/g, "")) || 0;
-  const subtotal = parsedQty * parsedPrice;
+  const grossLine = parsedQty * parsedPrice;
+  const discPct = allowDiscount && discType === "percent" ? Math.min(100, Math.max(0, parseFloat(discInput.replace(",", ".")) || 0)) : 0;
+  const discAmount = !allowDiscount
+    ? 0
+    : discType === "percent"
+    ? Math.round((grossLine * discPct) / 100)
+    : Math.min(grossLine, Number(String(discInput).replace(/\D/g, "")) || 0);
+  const subtotal = Math.max(0, grossLine - discAmount);
   const itemPphAmount = Math.round(subtotal * pphRateFor(pphMode));
-  const totalNet = Math.max(0, subtotal - itemPphAmount);
+  // Penjualan: PPh dipotong customer saat bayar -> tidak mengurangi nilai item. Pembelian: kita yang memotong.
+  const totalNet = isBuyPrice ? Math.max(0, subtotal - itemPphAmount) : subtotal;
 
   // Submit save
   async function handleSave() {
@@ -244,6 +264,9 @@ function ItemEditorInner({
       price: parsedPrice,
       subtotal,
       total: subtotal,
+      ...(allowDiscount
+        ? { diskon: discAmount > 0 ? discAmount : undefined, diskonPct: discPct > 0 ? discPct : undefined }
+        : {}),
       sn: cleanSn || undefined,
       serialNumbers: cleanSn ? cleanSn.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined,
       itemType: isJasa ? ("JASA" as const) : ("BARANG" as const),
@@ -452,6 +475,57 @@ function ItemEditorInner({
             />
           </FormField>
 
+          {/* Diskon per item (opsional) */}
+          {allowDiscount ? (
+            <View className="gap-1.5">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-sm font-medium text-foreground">Diskon Item Ini (Opsional)</Text>
+                <View className="flex-row rounded-lg bg-panel p-0.5 border border-border">
+                  {([
+                    { id: "percent", label: "Persen (%)" },
+                    { id: "nominal", label: "Nominal (Rp)" },
+                  ] as const).map((opt) => {
+                    const active = discType === opt.id;
+                    return (
+                      <Pressable
+                        key={opt.id}
+                        onPress={() => {
+                          if (active) return;
+                          // Konversi nilai yang sudah diisi agar tidak hilang saat ganti tipe
+                          if (opt.id === "nominal") setDiscInput(discAmount > 0 ? formatThousands(discAmount) : "");
+                          else setDiscInput(grossLine > 0 && discAmount > 0 ? String(Math.round((discAmount / grossLine) * 1000) / 10) : "");
+                          setDiscType(opt.id);
+                        }}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: active }}
+                        className={cn("h-6 px-2.5 rounded-md items-center justify-center", active ? "bg-primary" : "")}
+                      >
+                        <Text className={cn("text-xs", active ? "text-primary-foreground font-semibold" : "text-muted-foreground")}>
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              <Input
+                value={discInput}
+                onChangeText={(v) =>
+                  setDiscInput(discType === "percent" ? v.replace(/[^\d.,]/g, "") : formatThousands(v))
+                }
+                keyboardType="numeric"
+                placeholder={discType === "percent" ? "Contoh: 10" : "Contoh: 250.000"}
+              />
+              {discAmount > 0 ? (
+                <Text className="text-[11px] text-muted-foreground">
+                  {discType === "percent"
+                    ? `Potongan ${rupiah(discAmount)} untuk ${parsedQty} ${unit}`
+                    : `Setara ${grossLine > 0 ? Math.round((discAmount / grossLine) * 1000) / 10 : 0}% dari nilai baris`}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* PPh Barang / Jasa (Opsional) */}
           <FormField label="PPh Barang / Jasa (Opsional)" hint="Pilih pemotongan PPh jika ada">
             <SearchableSelect
@@ -546,16 +620,27 @@ function ItemEditorInner({
                 {parsedQty} {unit} × {rupiah(parsedPrice)}
               </Text>
             </View>
+            {discAmount > 0 ? (
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-danger font-medium">
+                  Diskon item{discType === "percent" && discPct > 0 ? ` (${discPct}%)` : ""}:
+                </Text>
+                <Text className="text-xs font-semibold text-danger">-{rupiah(discAmount)}</Text>
+              </View>
+            ) : null}
             <View className="flex-row justify-between items-center">
               <Text className="text-xs text-muted-foreground">Subtotal DPP:</Text>
               <Text className="text-xs font-semibold text-foreground">{rupiah(subtotal)}</Text>
             </View>
             {itemPphAmount > 0 && (
               <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-danger font-medium">
-                  Potongan {pphModeToTipe(pphMode)}:
+                <Text className={cn("text-xs font-medium", isBuyPrice ? "text-danger" : "text-muted-foreground")}>
+                  {isBuyPrice ? `Potongan ${pphModeToTipe(pphMode)}:` : `${pphModeToTipe(pphMode)} dipotong customer saat bayar:`}
                 </Text>
-                <Text className="text-xs font-semibold text-danger">-{rupiah(itemPphAmount)}</Text>
+                <Text className={cn("text-xs font-semibold", isBuyPrice ? "text-danger" : "text-muted-foreground")}>
+                  {isBuyPrice ? "-" : ""}
+                  {rupiah(itemPphAmount)}
+                </Text>
               </View>
             )}
             <View className="flex-row justify-between items-center pt-1 border-t border-border/60 mt-0.5">

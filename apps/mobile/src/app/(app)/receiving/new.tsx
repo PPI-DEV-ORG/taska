@@ -511,7 +511,7 @@ export default function NewReceivingScreen() {
     // Alur 1: Melanjutkan Draft Penerimaan yang sudah ada
     if (sourceType === "DRAFT" && selectedDraft) {
       const effectiveFileId = fileId ?? selectedDraft.fileId;
-      await patchRow("receiving", String(selectedDraft.id), {
+      const ok = await patchRow("receiving", String(selectedDraft.id), {
         status: "DITERIMA",
         conditionNote: notes || selectedDraft.conditionNote,
         catatan: notes || selectedDraft.conditionNote,
@@ -520,6 +520,7 @@ export default function NewReceivingScreen() {
         ...(effectiveFileId ? { fileId: effectiveFileId, receiptFileId: effectiveFileId, photoFileId: effectiveFileId } : {}),
       });
 
+      if (!ok) return; // pesan error sudah ditampilkan
       toast("Penerimaan barang berhasil diproses! Stok bertambah dan dokumen diperbarui.");
       router.replace("/stock");
       return;
@@ -545,7 +546,7 @@ export default function NewReceivingScreen() {
         photoFileId: fileId,
       };
 
-      await addRow("receiving", row);
+      if (!(await addRow("receiving", row))) return;
       toast("Penerimaan dari Permintaan Barang berhasil disimpan & stok bertambah!");
       router.replace("/stock");
       return;
@@ -571,7 +572,7 @@ export default function NewReceivingScreen() {
       photoFileId: fileId,
     };
 
-    await addRow("receiving", row);
+    if (!(await addRow("receiving", row))) return;
     toast("Penerimaan barang berhasil disimpan, stok bertambah & DO terhubung ke PO");
     router.replace("/stock");
   }

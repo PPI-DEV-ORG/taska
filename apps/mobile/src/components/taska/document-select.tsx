@@ -312,6 +312,8 @@ export interface QuotationSelectProps {
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
+  /** Batasi penawaran yang bisa dipilih (mis. hanya yang masih berlaku). */
+  filter?: (quotation: Row) => boolean;
 }
 
 export function QuotationSelect({
@@ -321,12 +323,17 @@ export function QuotationSelect({
   placeholder = "Cari & pilih dokumen penawaran...",
   error,
   allowClear = false,
+  filter,
 }: QuotationSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
-  const quotations: Row[] = React.useMemo(() => data.quotations ?? [], [data.quotations]);
+  const allQuotations: Row[] = React.useMemo(() => data.quotations ?? [], [data.quotations]);
+  const quotations: Row[] = React.useMemo(
+    () => (filter ? allQuotations.filter(filter) : allQuotations),
+    [allQuotations, filter],
+  );
 
   const selectedQuotation = React.useMemo(() => {
     if (quotationId) {
