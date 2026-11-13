@@ -404,13 +404,20 @@ function SupplierInvoiceEditForm({
       ? String(invoice.jatuhTempo).slice(0, 10)
       : new Date().toISOString().slice(0, 10)
   );
-  const [dppStr, setDppStr] = React.useState<string>(() =>
-    formatThousands(String(invoice.nilai || invoice.total || 0))
-  );
-  const [ppnMode, setPpnMode] = React.useState<"none" | "exclude" | "include">(() => {
-    const ppnNum = Number(invoice.ppn || 0);
-    return ppnNum > 0 ? "exclude" : "none";
-  });
+  // Mode PPN tersimpan (tagihan dari PO = mode PPN PO); nominal ditampilkan dalam satuan yang sama dengan PO.
+  const initialPpnMode: "none" | "exclude" | "include" =
+    invoice.ppnMode === "include" || invoice.ppnMode === "exclude" || invoice.ppnMode === "none"
+      ? invoice.ppnMode
+      : Number(invoice.ppn || 0) > 0
+      ? "exclude"
+      : "none";
+  const initialBase =
+    initialPpnMode === "include"
+      ? Number(invoice.nilai || 0) + Number(invoice.ppn || 0)
+      : Number(invoice.nilai || invoice.total || 0);
+  const ppnLockedToPo = !!invoice.supplierPoId;
+  const [dppStr, setDppStr] = React.useState<string>(() => formatThousands(String(initialBase)));
+  const [ppnMode, setPpnMode] = React.useState<"none" | "exclude" | "include">(initialPpnMode);
   const [catatan, setCatatan] = React.useState<string>(() => String(invoice.catatan || ""));
   const [fileId, setFileId] = React.useState<number | null>(() =>
     invoice.fileId ? Number(invoice.fileId) : null
@@ -428,14 +435,21 @@ function SupplierInvoiceEditForm({
 
   const rawBase = Number(String(dppStr).replace(/\D/g, "")) || 0;
   const pphNum = Number(invoice.pph || 0);
-  const effectiveDpp = ppnMode === "include" ? Math.round(rawBase / 1.11) : rawBase;
-  const effectivePpn =
-    ppnMode === "none"
-      ? 0
-      : ppnMode === "include"
-      ? Math.max(0, rawBase - effectiveDpp)
-      : Math.round(rawBase * 0.11);
-  const effectiveTotal = Math.max(0, (ppnMode === "include" ? rawBase : effectiveDpp + effectivePpn) - pphNum);
+  // Nominal tidak diubah -> pertahankan DPP & PPN tersimpan (angka dari PO), tidak dihitung ulang.
+  const unchangedAmount = rawBase === initialBase && ppnMode === initialPpnMode;
+  const effectiveDpp = unchangedAmount
+    ? Number(invoice.nilai || 0)
+    : ppnMode === "include"
+    ? Math.round(rawBase / 1.11)
+    : rawBase;
+  const effectivePpn = unchangedAmount
+    ? Number(invoice.ppn || 0)
+    : ppnMode === "none"
+    ? 0
+    : ppnMode === "include"
+    ? Math.max(0, rawBase - effectiveDpp)
+    : Math.round(rawBase * 0.11);
+  const effectiveTotal = Math.max(0, effectiveDpp + effectivePpn - pphNum);
 
   async function handleSave() {
     if (!nomor.trim()) {
@@ -591,6 +605,7 @@ function SupplierInvoiceEditForm({
                   size="sm"
                   variant={ppnMode === opt.id ? "default" : "outline"}
                   onPress={() => setPpnMode(opt.id)}
+                  disabled={ppnLockedToPo && opt.id !== ppnMode}
                   className="h-8 px-2.5"
                 >
                   <Text className="text-xs">{opt.label}</Text>

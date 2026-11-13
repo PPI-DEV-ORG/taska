@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { getDynamicRoles, setDynamicRoles, type RoleDefinition } from "../rbac/permissions.js";
+import { ROLE_MATRIX_VERSION, STANDARD_ROLES } from "../rbac/role-matrix.js";
 
 export const DEFAULTS: Record<string, string> = {
   "ambang.persetujuan": "100000000000",
@@ -52,12 +53,27 @@ export interface CompanyProfile {
 }
 
 @Injectable()
-export class SettingsService implements OnModuleInit {
+export class SettingsService implements OnModuleInit, OnModuleDestroy {
   private readonly cache = new Map<string, { value: string; expiresAt: number }>();
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private rolesTimer?: ReturnType<typeof setInterval>;
+
   async onModuleInit() {
+    await this.reloadRoles();
+    // Matriks RBAC disimpan di DB tapi dicek dari memori (guard sinkron). Muat ulang berkala agar
+    // perubahan dari instance/proses lain juga berlaku tanpa restart server.
+    this.rolesTimer = setInterval(() => void this.reloadRoles(), 30_000);
+    this.rolesTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.rolesTimer) clearInterval(this.rolesTimer);
+  }
+
+  /** Muat matriks peran dari DB ke memori. */
+  async reloadRoles(): Promise<void> {
     try {
       const row = await this.prisma.main.systemSetting.findUnique({ where: { key: "rbac.roles" } });
       if (row?.value) {
@@ -66,8 +82,8 @@ export class SettingsService implements OnModuleInit {
           setDynamicRoles(parsed);
         }
       }
-    } catch {
-      /* gunakan default role matrix */
+    } catch (e) {
+      console.warn("Gagal memuat matriks peran (RBAC) dari database:", (e as Error).message);
     }
   }
 
@@ -236,23 +252,35 @@ export class SettingsService implements OnModuleInit {
   }
 
   async getRoles(): Promise<RoleDefinition[]> {
+    await this.reloadRoles();
     return getDynamicRoles();
   }
 
-  async saveRole(role: RoleDefinition, user: RequestUser): Promise<RoleDefinition[]> {
+  async saveRole(role: RoleDefinition, user: RequestUser, opts: { isNew?: boolean } = {}): Promise<RoleDefinition[]> {
     if (!role || !role.code || !role.name) {
       throw new BadRequestException("Kode dan Nama Peran wajib diisi");
     }
     const normCode = String(role.code).toUpperCase().trim().replace(/[\s\-]+/g, "_");
+    if (!/^[A-Z0-9_]+$/.test(normCode)) {
+      throw new BadRequestException("Kode peran hanya boleh huruf, angka, dan garis bawah");
+    }
+    if (normCode === "SUPER_ADMIN" || normCode === "SUPERADMIN") {
+      throw new BadRequestException("Peran Super Admin selalu memiliki akses penuh dan tidak bisa diubah");
+    }
+    // Pastikan memakai versi terbaru dari DB sebelum menimpa (hindari menimpa perubahan orang lain)
+    await this.reloadRoles();
     const current = getDynamicRoles();
     const idx = current.findIndex((r) => r.code === normCode);
+    if (opts.isNew && idx >= 0) {
+      throw new BadRequestException(`Kode peran ${normCode} sudah dipakai. Gunakan kode lain.`);
+    }
     const updated = [...current];
     if (idx >= 0) {
       updated[idx] = {
         ...updated[idx]!,
         name: role.name.trim(),
         description: role.description ?? updated[idx]!.description,
-        permissions: role.permissions || updated[idx]!.permissions,
+        permissions: role.permissions && typeof role.permissions === "object" ? role.permissions : updated[idx]!.permissions,
       };
     } else {
       updated.push({
@@ -269,6 +297,27 @@ export class SettingsService implements OnModuleInit {
     return nextRoles;
   }
 
+  /**
+   * Terapkan matriks hak akses standar (role-matrix.ts) ke peran bawaan.
+   * Peran yang sudah pernah disimpan di DB tidak ikut berubah otomatis saat matriks diperbarui,
+   * jadi admin menerapkannya lewat sini (semua peran bawaan, atau kode tertentu). Peran kustom tidak disentuh.
+   */
+  async applyStandardRoles(codes: string[] | undefined, user: RequestUser): Promise<RoleDefinition[]> {
+    await this.reloadRoles();
+    const wanted = codes?.length
+      ? new Set(codes.map((c) => String(c).toUpperCase().trim().replace(/[\s\-]+/g, "_")))
+      : null;
+    const next = getDynamicRoles().map((r) => {
+      const std = STANDARD_ROLES[r.code];
+      if (!std || (wanted && !wanted.has(r.code))) return r;
+      return { ...r, name: std.name, description: std.description, isSystem: true, permissions: { ...std.permissions } };
+    });
+    setDynamicRoles(next);
+    const nextRoles = getDynamicRoles();
+    await this.set("rbac.roles", JSON.stringify(nextRoles), user, `Matriks Peran & Hak Akses (RBAC) — standar v${ROLE_MATRIX_VERSION}`);
+    return nextRoles;
+  }
+
   async deleteRole(code: string, user: RequestUser): Promise<RoleDefinition[]> {
     const normCode = String(code || "").toUpperCase().trim().replace(/[\s\-]+/g, "_");
     const current = getDynamicRoles();
@@ -278,6 +327,14 @@ export class SettingsService implements OnModuleInit {
     }
     if (target.isSystem) {
       throw new BadRequestException("Peran bawaan sistem tidak dapat dihapus (namun hak aksesnya dapat disesuaikan)");
+    }
+    // Kolom User.role berupa VARCHAR (role kustom), sedangkan Prisma memvalidasi enum -> pakai query mentah.
+    const usedRows = await this.prisma.main
+      .$queryRaw<Array<{ c: bigint | number }>>`SELECT COUNT(*) AS c FROM \`User\` WHERE \`role\` = ${normCode}`
+      .catch(() => [{ c: 0 }]);
+    const usedBy = Number(usedRows[0]?.c ?? 0);
+    if (usedBy > 0) {
+      throw new BadRequestException(`Peran ini masih dipakai ${usedBy} pengguna. Pindahkan pengguna ke peran lain dulu.`);
     }
     const next = current.filter((r) => r.code !== normCode);
     setDynamicRoles(next);

@@ -25,6 +25,13 @@ export class ProjectsController {
     return this.service.list(q, user);
   }
 
+  /** Laba-rugi project: pendapatan, HPP barang (termasuk dari stok), pembelian non-stok, biaya. */
+  @Get(":id/pnl")
+  @Require("projects", "L")
+  pnl(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
+    return this.service.pnl(id, user);
+  }
+
   @Get(":id")
   @Require("projects", "L")
   get(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {

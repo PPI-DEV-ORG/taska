@@ -116,6 +116,17 @@ export class DeliveryCreateDto {
 
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => DeliveryItemDto)
   items?: DeliveryItemDto[];
+
+  /** Sales Order yang dikirim (dulu tag "[so:id]" di alasan). "soId" diterima sebagai alias. */
+  @IsOptional() @Type(() => Number) @IsInt()
+  clientPoId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  soId?: number;
+
+  /** Invoice yang dikirim (dulu tag "[inv:id]"). */
+  @IsOptional() @Type(() => Number) @IsInt()
+  invoiceId?: number;
 }
 
 export class GoodsDto {

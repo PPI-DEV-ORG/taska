@@ -1682,6 +1682,13 @@ export function adaptRow(module: string, raw: any): Row {
         direction: "in",
         nilai: n(raw.amount),
         ppn: n(raw.ppn),
+        // Tagihan dari PO mengikuti mode PPN PO; tanpa PO: ada PPN = exclude
+        ppnMode:
+          raw.supplierPo?.ppnMode === "include" || raw.supplierPo?.ppnMode === "exclude" || raw.supplierPo?.ppnMode === "none"
+            ? raw.supplierPo.ppnMode
+            : n(raw.ppn) > 0
+            ? "exclude"
+            : "none",
         pph: n(raw.pph),
         pphMode: raw.pphMode ?? "none",
         tipePph: raw.tipePph ?? "",

@@ -1,3 +1,4 @@
+import { netUnitCost, receivingPpnInfo, receivingUnitCost } from "../accounting/purchase-vat.js";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -844,7 +845,8 @@ export class ReceivingsService {
         });
 
         const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
-        const poPrice = Number(poItem?.price ?? 0);
+        // Harga pokok produk disimpan sebelum PPN
+        const poPrice = netUnitCost(Number(poItem?.price ?? 0), receiving.supplierPo?.ppnMode ?? (receiving as any).request?.ppnMode);
         if (poPrice > 0) {
           // Hitung rata-rata tertimbang Product.avgCost
           const prod = await this.prisma.main.product.findUnique({
@@ -938,6 +940,7 @@ export class ReceivingsService {
           ...(fullyReceived ? { status: "DITERIMA" as const } : {}),
         },
       });
+      // File DO tidak disalin ke Request / PO: keduanya membaca file DO dari Penerimaan ini (satu sumber).
       reqIdsToNotify.add(Number(directReqId));
     }
 
@@ -1081,23 +1084,8 @@ export class ReceivingsService {
 
       let totalVal = 0;
       for (const item of (receiving.items || [])) {
-        const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
-        const reqItem = (receiving as any).request?.items?.find((ri: any) => ri.productId === item.productId);
-        let pPrice = Number(poItem?.price ?? reqItem?.unitCost ?? item.product?.purchasePrice ?? item.product?.avgCost ?? 0);
-        if (pPrice <= 0 && item.productId) {
-          const lastPo = await this.prisma.main.supplierPOItem.findFirst({
-            where: { productId: item.productId, price: { gt: 0 } },
-            orderBy: { id: "desc" },
-          }).catch(() => null);
-          if (lastPo?.price && Number(lastPo.price) > 0) {
-            pPrice = Number(lastPo.price);
-          }
-        }
-        if (pPrice <= 0 && receiving.supplierPo?.total) {
-          const totalPo = Number(receiving.supplierPo.total);
-          const totalQty = (receiving.items || []).reduce((s, it) => s + (Number(it.qtyReceived) || 1), 0) || 1;
-          pPrice = Math.round(totalPo / totalQty);
-        }
+        // Harga sebelum PPN: harga "include PPN" dibagi 1,11 — PPN-nya masuk PPN Masukan, bukan Persediaan.
+        let pPrice = await receivingUnitCost(this.prisma.main, receiving as any, item);
         if (pPrice <= 0) {
           pPrice = 100_000;
         }
@@ -1128,6 +1116,7 @@ export class ReceivingsService {
           supplierId: receiving.supplierPo?.supplierId || 0,
           totalValue: Math.round(totalVal),
           projectId: receiving.projectId,
+          ppn: receivingPpnInfo(receiving as any, totalVal),
         },
         mappings,
       );
@@ -1137,7 +1126,7 @@ export class ReceivingsService {
         event: "received",
         source: "RECEIVING",
         date: receiving.date,
-        memo: `Penerimaan Barang BPB ${receiving.number}`,
+        memo: rLines[0].memo || `Penerimaan Barang BPB ${receiving.number}`,
         refNo: receiving.number,
         projectId: receiving.projectId,
         createdById: userId ?? receiving.receiverId,

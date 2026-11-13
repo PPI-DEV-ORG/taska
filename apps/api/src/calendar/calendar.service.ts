@@ -750,7 +750,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     if (all || FINANCE_ROLES.includes(role) || PROCUREMENT_ROLES.includes(role)) {
       const [invoicesOut, invoicesIn, prsDebt] = await Promise.all([
         this.db.invoiceOut.findMany({
-          where: { dueDate: { gte: from, lte: to }, status: { notIn: ["PAID", "BATAL", "DRAFT"] } },
+          where: { dueDate: { gte: from, lte: to }, isProforma: false, status: { notIn: ["PAID", "BATAL", "DRAFT"] } },
           include: { customer: { select: { name: true } } },
         }),
         this.db.invoiceIn.findMany({
@@ -1048,6 +1048,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         this.db.invoiceOut.findMany({
           where: {
             dueDate: { gte: startOfDayWibInUtc, lte: endOfDayWibInUtc },
+            isProforma: false,
             status: { notIn: ["PAID", "BATAL", "DRAFT"] },
           },
           include: { customer: { select: { name: true } } },

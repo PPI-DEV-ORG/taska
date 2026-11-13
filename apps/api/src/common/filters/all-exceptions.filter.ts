@@ -28,10 +28,28 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const map: Record<string, { status: number; message: string }> = {
         P2002: { status: 409, message: "Data sudah ada (duplikat)" },
         P2025: { status: 404, message: "Data tidak ditemukan" },
-        P2003: { status: 409, message: "Relasi data tidak valid" },
+        P2003: {
+          status: 409,
+          message:
+            req.method === "DELETE"
+              ? "Data ini masih dipakai dokumen lain sehingga tidak bisa dihapus. Nonaktifkan saja, atau hapus dokumen terkaitnya dulu."
+              : "Data yang dipilih tidak ditemukan (mungkin sudah dihapus). Muat ulang lalu pilih lagi.",
+        },
         P2007: { status: 409, message: "Operasi database gagal" },
       };
       const mapped = map[exception.code] ?? { status: 400, message: `Database error ${exception.code}` };
+      if (exception.code === "P2002") {
+        // Pesan spesifik per constraint unik (lihat migrasi data_integrity_fk_unique)
+        const where = `${exception.message} ${JSON.stringify(exception.meta ?? {})}`;
+        const unique: Array<[RegExp, string]> = [
+          [/Supplier_name_key|Supplier.*\bname\b/, "Nama supplier sudah terdaftar. Pilih supplier yang sudah ada."],
+          [/Customer_name_key|Customer.*\bname\b/, "Nama customer sudah terdaftar. Pilih customer yang sudah ada."],
+          [/InvoiceIn_supplierId_number_key/, "Nomor tagihan ini sudah dicatat untuk supplier yang sama."],
+          [/Product_sku_key/, "SKU sudah dipakai produk lain."],
+        ];
+        const hit = unique.find(([re]) => re.test(where));
+        if (hit) mapped.message = hit[1];
+      }
       this.logger.error(
         `[Prisma ${exception.code}] ${route} — ${exception.message} meta=${JSON.stringify(exception.meta ?? {})}`,
       );

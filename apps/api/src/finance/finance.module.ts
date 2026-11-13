@@ -7,14 +7,16 @@ import { InvoiceInService } from "./invoice-in.service.js";
 import { InvoiceInController } from "./invoice-in.controller.js";
 import { ExpensesService } from "./expenses.service.js";
 import { ExpensesController } from "./expenses.controller.js";
+import { CashAdvancesService } from "./cash-advances.service.js";
+import { CashAdvancesController } from "./cash-advances.controller.js";
 import { ApprovalsModule } from "../approvals/approvals.module.js";
 import { UploadModule } from "../upload/upload.module.js";
 import { StockModule } from "../stock/stock.module.js";
 
 @Module({
   imports: [ApprovalsModule, UploadModule, StockModule],
-  providers: [ClientPoService, InvoiceOutService, InvoiceInService, ExpensesService],
-  controllers: [ClientPoController, InvoiceOutController, InvoiceInController, ExpensesController],
+  providers: [ClientPoService, InvoiceOutService, InvoiceInService, ExpensesService, CashAdvancesService],
+  controllers: [ClientPoController, InvoiceOutController, InvoiceInController, ExpensesController, CashAdvancesController],
   exports: [InvoiceOutService, ExpensesService],
 })
 export class FinanceModule {}

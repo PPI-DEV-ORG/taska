@@ -62,6 +62,18 @@ export class InvoiceInController {
     return this.service.addPayment(id, dto, user);
   }
 
+  /** Void pembayaran yang salah / dobel: jurnal dibalik, sisa hutang kembali. */
+  @Delete(":id/payments/:paymentId")
+  @Require("procurement", "U")
+  voidPayment(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("paymentId", ParseIntPipe) paymentId: number,
+    @Query("reason") reason: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.voidPayment(id, paymentId, reason, user);
+  }
+
   @Delete(":id")
   @Require("procurement", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {

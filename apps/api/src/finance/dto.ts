@@ -280,6 +280,33 @@ export class InvoiceOutDto {
 
   @IsOptional() @IsInt()
   parentInvoiceId?: number;
+
+  /** Mode PPN invoice: exclude | include | none (dulu terbuang karena tidak ada di DTO -> invoice pelunasan salah PPN). */
+  @IsOptional() @IsIn(["exclude", "include", "none"])
+  ppnMode?: "exclude" | "include" | "none";
+
+  @IsOptional() @IsString()
+  tipePpn?: string;
+
+  /** Proforma invoice: tidak dijurnal, tidak masuk piutang, tidak bisa dibayar. */
+  @IsOptional() @IsBoolean()
+  isProforma?: boolean;
+}
+
+/** Terbitkan invoice resmi dari proforma. */
+export class ConvertProformaDto {
+  @IsOptional() @IsString()
+  date?: string;
+
+  @IsOptional() @IsString()
+  dueDate?: string;
+
+  @IsOptional() @IsString()
+  number?: string;
+
+  /** Langsung kirim (SENT) atau simpan sebagai draft. Default SENT. */
+  @IsOptional() @IsBoolean()
+  send?: boolean;
 }
 
 export class InvoiceInDto {

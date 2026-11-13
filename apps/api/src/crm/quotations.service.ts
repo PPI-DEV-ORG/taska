@@ -27,6 +27,13 @@ import {
   type QuotationMeta,
 } from "./quotation-excel.js";
 import { quotationMetaFromRow, quotationMetaToData } from "./quotation-meta.js";
+import { itemDiscountFields } from "./item-discount.js";
+
+/** Harga penawaran sudah termasuk PPN bila grand total = total − diskon (PPN berada di dalam harga). */
+function quotationPpnIncluded(row: { total: unknown; discount: unknown; ppn: unknown; grandTotal: unknown }): boolean {
+  const net = Number(row.total || 0) - Number(row.discount || 0);
+  return Number(row.ppn || 0) > 0 && net > 0 && Math.abs(Number(row.grandTotal || 0) - net) < 2;
+}
 
 const MANUAL_STATUSES = [
   "NOT_YET",
@@ -48,6 +55,9 @@ function normalizeQuotationStatus(status?: string): string | undefined {
   return status;
 }
 
+
+/** Tarif PPh — sama dengan PPH_MODE_OPTIONS di aplikasi (modules/quotation/lib.ts). */
+const PPH_RATES: Record<string, number> = { pph23: 0.02, pph4_2: 0.0175, pph21: 0.025, pph22: 0.015 };
 @Injectable()
 export class QuotationsService {
   constructor(
@@ -107,6 +117,7 @@ export class QuotationsService {
       ...(it.outOfStockAutoSwap ? { outOfStockAutoSwap: true } : {}),
       ...(it.pphMode ? { pphMode: String(it.pphMode) } : {}),
       ...(it.tipePph ? { tipePph: String(it.tipePph) } : {}),
+      ...itemDiscountFields(it),
     };
   }
 
@@ -314,14 +325,14 @@ export class QuotationsService {
     const ppn = dto?.ppn !== undefined ? dto.ppn : Math.round(netBeforeTax * 0.11);
     const itemsPph = items.reduce((acc, it) => {
       const mode = (it as any).pphMode || "none";
-      const rate = mode === "pph21" ? 0.005 : mode === "pph23" ? 0.02 : mode === "pph4_2" ? 0.0175 : mode === "pph22" ? 0.015 : 0;
+      const rate = PPH_RATES[mode] ?? 0;
       return acc + Math.round((Number(it.qty) || 0) * (Number(it.harga) || 0) * rate);
     }, 0);
     const pph = dto?.pph !== undefined ? dto.pph : itemsPph;
     const grandTotal =
       dto?.grandTotal !== undefined
         ? dto.grandTotal
-        : Math.max(0, netBeforeTax + ppn - pph);
+        : netBeforeTax + ppn; // nilai penawaran = DPP + PPN; PPh dipotong customer saat membayar
     const mappedStatus =
       normalizeQuotationStatus(dto?.status) ?? (grandTotal > 0 || items.length > 0 ? "DRAFT" : "NOT_YET");
 
@@ -375,6 +386,21 @@ export class QuotationsService {
         },
         user?.id,
       );
+      // Dokumen yang diupload saat membuat penawaran = Versi 1 di riwayat
+      await this.prisma.main.quotationVersion.create({
+        data: {
+          quotationId: row.id,
+          version: 1,
+          fileId: dto.fileId,
+          total,
+          ppn,
+          discount,
+          grandTotal,
+          note: `Dokumen Penawaran: ${f?.originalName || "File"}`,
+          createdById: user.id,
+        },
+      });
+      await this.prisma.main.quotation.update({ where: { id: row.id }, data: { currentVersion: 1 } });
     }
 
     if (items.length > 0) {
@@ -429,14 +455,14 @@ export class QuotationsService {
         : Math.round(netBeforeTax * 0.11);
     const itemsPph = activeItems.reduce((acc, it) => {
       const mode = (it as any).pphMode || "none";
-      const rate = mode === "pph21" ? 0.005 : mode === "pph23" ? 0.02 : mode === "pph4_2" ? 0.0175 : mode === "pph22" ? 0.015 : 0;
+      const rate = PPH_RATES[mode] ?? 0;
       return acc + Math.round((Number(it.qty) || 0) * (Number(it.harga) || 0) * rate);
     }, 0);
     const pph = dto.pph !== undefined ? dto.pph : (itemsPph > 0 ? itemsPph : Number((existingMeta as any)?.pph ?? 0));
     const grandTotal =
       dto.grandTotal !== undefined
         ? dto.grandTotal
-        : Math.max(0, netBeforeTax + ppn - pph);
+        : netBeforeTax + ppn; // nilai penawaran = DPP + PPN; PPh dipotong customer saat membayar
 
     const mappedStatus = normalizeQuotationStatus(dto.status);
     const nextVersion =
@@ -644,6 +670,7 @@ export class QuotationsService {
       ppn: Number(row.ppn),
       discount: Number(row.discount),
       grandTotal: Number(row.grandTotal),
+      ppnIncluded: quotationPpnIncluded(row),
       notes: mergedMeta.notes,
       signerName: mergedMeta.signerName || row.owner?.name || "Sales",
       signerTitle: mergedMeta.signerTitle,
@@ -725,6 +752,7 @@ export class QuotationsService {
       ppn: Number(row.ppn),
       discount: Number(row.discount),
       grandTotal: Number(row.grandTotal),
+      ppnIncluded: quotationPpnIncluded(row),
       notes: meta?.notes ?? DEFAULT_QUOTATION_NOTES,
       signerName: meta?.signerName || row.owner?.name || "Sales",
       signerTitle: meta?.signerTitle,
@@ -765,6 +793,7 @@ export class QuotationsService {
       ppn: Number(row.ppn),
       discount: Number(row.discount),
       grandTotal: Number(row.grandTotal),
+      ppnIncluded: quotationPpnIncluded(row),
       notes: meta?.notes ?? DEFAULT_QUOTATION_NOTES,
       signerName: meta?.signerName || row.owner?.name || "Sales",
       signerTitle: meta?.signerTitle,
@@ -943,21 +972,17 @@ export class QuotationsService {
         ? parsed.grandTotal
         : netBeforeTax + ppn;
 
-    const nextVer = (row.currentVersion || 0) + 1;
-
-    await this.prisma.main.quotationVersion.create({
-      data: {
-        quotationId: id,
-        version: nextVer,
-        fileId: savedFile.id,
-        total,
-        ppn,
-        discount,
-        grandTotal,
-        note: `Upload file ${savedFile.originalName}`,
-        createdById: user.id,
-      },
-    });
+    // Upload pertama mengisi Versi 1 yang masih kosong / auto-generate; berikutnya = versi baru.
+    const claim = await this.claimableFirstVersion(id);
+    const nextVer = claim ? 1 : await this.nextVersionNumber(id);
+    const verData = { fileId: savedFile.id, total, ppn, discount, grandTotal, note: `Upload file ${savedFile.originalName}` };
+    if (claim) {
+      await this.prisma.main.quotationVersion.update({ where: { id: claim.id }, data: verData });
+    } else {
+      await this.prisma.main.quotationVersion.create({
+        data: { quotationId: id, version: nextVer, ...verData, createdById: user.id },
+      });
+    }
 
     await this.prisma.main.quotation.update({
       where: { id },
@@ -1098,14 +1123,33 @@ export class QuotationsService {
     return updated;
   }
 
+  /**
+   * Versi 1 yang belum berisi dokumen dari user (masih kosong / hanya Excel hasil generate otomatis)
+   * dipakai oleh upload dokumen pertama, supaya upload pertama = Versi 1 (bukan langsung Versi 2).
+   */
+  private async claimableFirstVersion(quotationId: number) {
+    const versions = await this.prisma.main.quotationVersion.findMany({
+      where: { quotationId },
+      orderBy: { version: "asc" },
+      select: { id: true, version: true, fileId: true, note: true },
+    });
+    const v = versions[0];
+    if (versions.length === 1 && v && v.version === 1 && (!v.fileId || /^Auto-generated/i.test(v.note || ""))) return v;
+    return null;
+  }
+
+  /** Nomor versi berikutnya diambil dari riwayat yang benar-benar ada (bukan currentVersion yang bisa naik tanpa riwayat). */
+  private async nextVersionNumber(quotationId: number) {
+    const agg = await this.prisma.main.quotationVersion.aggregate({ where: { quotationId }, _max: { version: true } });
+    return (agg._max.version ?? 0) + 1;
+  }
+
   /** Revisi = versi baru, riwayat tidak boleh hilang (PRD #14). */
   async addVersion(id: number, dto: VersionDto, user: RequestUser) {
     const row = await this.getEditable(id, user);
 
-    // Jika versi 1 sudah ada tapi belum memiliki fileId dan belum ada versi 2+, update fileId di versi 1
-    const v1WithoutFile = await this.prisma.main.quotationVersion.findFirst({
-      where: { quotationId: id, version: 1, fileId: null },
-    });
+    // Upload dokumen pertama mengisi Versi 1 yang masih kosong / auto-generate
+    const v1WithoutFile = dto.fileId ? await this.claimableFirstVersion(id) : null;
     const totalVersions = await this.prisma.main.quotationVersion.count({ where: { quotationId: id } });
 
     if (totalVersions === 1 && v1WithoutFile && dto.fileId) {
@@ -1120,6 +1164,7 @@ export class QuotationsService {
           note: dto.note?.trim() ? `[STATUS:Menunggu] ${dto.note.trim()}` : v1WithoutFile.note,
         },
       });
+      await this.prisma.main.quotation.update({ where: { id }, data: { currentVersion: 1 } });
       const f = await this.attachFile(id, dto.fileId);
       await this.saveMeta(
         id,
@@ -1133,14 +1178,14 @@ export class QuotationsService {
       return this.get(id);
     }
 
-    const version = (row.currentVersion || 0) + 1;
+    const version = await this.nextVersionNumber(id);
 
     // Bekukan status versi sebelumnya jika ada
-    if (row.currentVersion > 0) {
+    if (version > 1) {
       const prevStatusLabel = row.status === "REJECTED" ? "Ditolak" : row.status === "APPROVED" ? "Disetujui" : "Ditolak";
       await this.prisma.main.quotationVersion.updateMany({
-        where: { quotationId: id, version: row.currentVersion },
-        data: { note: `[STATUS:${prevStatusLabel}] Versi ${row.currentVersion}` },
+        where: { quotationId: id, version: version - 1 },
+        data: { note: `[STATUS:${prevStatusLabel}] Versi ${version - 1}` },
       }).catch(() => {});
     }
 

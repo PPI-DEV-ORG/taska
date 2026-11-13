@@ -1,5 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { PostingService } from "../accounting/posting.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
 
@@ -20,7 +21,10 @@ const DEFAULT_DEAL_TYPES = [
 
 @Injectable()
 export class LookupsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly postingService: PostingService,
+  ) {}
 
   private async getDealTypes(): Promise<Array<{ id: number; name: string; status: string }>> {
     const row = await this.prisma.main.systemSetting.findUnique({ where: { key: "master.dealTypes" } });
@@ -258,7 +262,11 @@ export class LookupsService {
     return { items: rows };
   }
 
-  async createManualJournal(dto: any) {
+  /**
+   * Jurnal manual lewat mesin posting resmi: debit = kredit dicek, periode diambil dari tanggal (ditolak bila periode
+   * sudah ditutup), nomor jurnal resmi. Dulu ditulis langsung ke tabel dengan periodId 1 tanpa validasi.
+   */
+  async createManualJournal(dto: any, userId?: number) {
     const date = dto.tanggal || dto.date || new Date();
     const memo = String(dto.keterangan || dto.description || "Jurnal Manual");
     const refNo = dto.refNo ? String(dto.refNo) : undefined;
@@ -270,38 +278,27 @@ export class LookupsService {
       memo: l.memo || l.keterangan,
     }));
 
-    const entry = await (this.prisma.main as any).journalEntry.create({
-      data: {
-        number: String(dto.journalNo || `JU-MANUAL-${Date.now()}`),
-        date: new Date(date),
-        source: "MANUAL",
-        sourceType: "MANUAL",
-        memo,
-        refNo,
-        periodId: 1,
-        lines: {
-          create: lines.map((l: any, idx: number) => ({
-            lineNo: idx + 1,
-            accountCode: l.accountCode,
-            debit: l.debit,
-            credit: l.credit,
-            memo: l.memo || memo,
-          })),
-        },
-      },
-    }).catch(() => null);
-
-    return { success: true, journalNo: entry?.number || dto.journalNo };
+    if (lines.length < 2) throw new BadRequestException("Jurnal manual minimal punya dua baris (debit & kredit)");
+    const entry = await this.postingService.post({
+      date: new Date(date),
+      source: "MANUAL",
+      sourceType: "MANUAL",
+      memo,
+      refNo,
+      createdById: userId,
+      lines: lines.map((l: any) => ({ ...l, memo: l.memo || memo })),
+    });
+    return { success: true, id: entry?.id, journalNo: entry?.number };
   }
 
-  async removeManualJournal(id: string) {
+  /** Hapus jurnal manual = buat jurnal pembalik (jejak audit tetap ada), bukan sekadar mengubah status. */
+  async removeManualJournal(id: string, userId?: number, reason?: string) {
     const numId = parseInt(id, 10);
-    if (!isNaN(numId)) {
-      await (this.prisma.main as any).journalEntry.update({
-        where: { id: numId },
-        data: { status: "REVERSED" },
-      }).catch(() => {});
-    }
+    if (isNaN(numId)) throw new BadRequestException("ID jurnal tidak valid");
+    const row = await (this.prisma.main as any).journalEntry.findUnique({ where: { id: numId }, select: { source: true } });
+    if (!row) throw new NotFoundException("Jurnal tidak ditemukan");
+    if (row.source !== "MANUAL") throw new BadRequestException("Hanya jurnal manual yang bisa dihapus dari sini");
+    await this.postingService.reverse(numId, reason?.trim() || "Jurnal manual dihapus", userId);
     return { success: true };
   }
 }

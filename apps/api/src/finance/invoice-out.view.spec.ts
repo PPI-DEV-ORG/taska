@@ -40,8 +40,8 @@ describe("InvoiceOutService.viewMany (baca-saja & batch)", () => {
     });
     const out = await svc.viewMany(rows);
     expect(out).toHaveLength(50);
-    // 1 query invoice DP/Termin lunas + 1 query jumlah invoice per PO + 1 query nilai PO = 3, bukan 50x
-    expect(invoiceOut.findMany.mock.calls.length + clientPO.findMany.mock.calls.length).toBe(3);
+    // 1 query jumlah invoice per PO + 1 query nilai PO = 2, bukan 50x
+    expect(invoiceOut.findMany.mock.calls.length + clientPO.findMany.mock.calls.length).toBe(2);
     expect(invoiceOut.update).not.toHaveBeenCalled();
     expect(invoiceOut.updateMany).not.toHaveBeenCalled();
   });
@@ -53,15 +53,28 @@ describe("InvoiceOutService.viewMany (baca-saja & batch)", () => {
     expect(invoiceOut.update).not.toHaveBeenCalled();
   });
 
-  it("termin yang sudah tertutup pelunasan tampil Lunas (tanpa menulis)", async () => {
+  it("termin yang belum dibayar TIDAK ikut lunas hanya karena invoice pelunasan sudah dibayar", async () => {
+    // Tagihan bertahap: tiap invoice menagih porsinya sendiri. Menganggapnya lunas = piutang hilang tanpa uang masuk.
     const row = inv({ id: 1, number: "INV/2026/11/001/1", type: "TERMIN", projectId: 5 });
     const { svc, invoiceOut } = makeService({
       paidClosers: [{ id: 2, number: "INV/2026/11/001/2", type: "PELUNASAN", description: "", projectId: 5 }],
     });
     const [v] = await svc.viewMany([row]);
-    expect(v.status).toBe("PAID");
-    expect(Number(v.paidAmount)).toBe(1000);
+    expect(v.status).toBe("SENT");
+    expect(Number(v.paidAmount)).toBe(0);
     expect(invoiceOut.update).not.toHaveBeenCalled();
+  });
+
+  it("status Lunas hanya dari uang yang tercatat", async () => {
+    const { svc } = makeService({});
+    const [paid, partial, legacyForced] = await svc.viewMany([
+      inv({ id: 1, paidAmount: 1000 }),
+      inv({ id: 2, paidAmount: 400 }),
+      inv({ id: 3, status: "PAID", paidAmount: 0 }),
+    ]);
+    expect(paid.status).toBe("PAID");
+    expect(partial.status).toBe("PARTIAL");
+    expect(legacyForced.status).toBe("SENT");
   });
 
   it("peringatan muncul bila total invoice melebihi nilai PO", async () => {

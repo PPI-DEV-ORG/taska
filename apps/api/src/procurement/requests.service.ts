@@ -1,3 +1,4 @@
+import { splitPurchasePayment } from "../accounting/purchase-vat.js";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -8,6 +9,7 @@ import { StockService } from "../stock/stock.service.js";
 import { PostingService } from "../accounting/posting.service.js";
 import { MappingService } from "../accounting/mapping.service.js";
 import { PostingRules } from "../accounting/posting.rules.js";
+import { findActiveSupplierInvoices, hasSupplierInvoiceCashPayment } from "../accounting/purchase-payment.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
@@ -16,7 +18,28 @@ import {
   REQUEST_CREATOR_ROLES,
   assertPrEditable,
   assertPrTransition,
+  toPaymentMethod,
+  toPpnMode,
+  toProcurementSource,
 } from "./purchase-flow.js";
+
+/**
+ * Aplikasi versi lama masih menyelipkan "[PPN:x]" / "[ALL_CONSUMABLES]" di catatan dan "[PAKAI_HABIS]" di nama barang.
+ * Tag itu dibaca sekali di sini, disimpan ke kolomnya, lalu dibuang dari teks — tidak ada data ganda di database.
+ */
+function extractNoteTags(note: string | null | undefined) {
+  const s = String(note ?? "");
+  const ppn = s.match(/\[PPN:(none|exclude|include)\]/i)?.[1];
+  const allConsumables = /\[ALL_CONSUMABLES\]/i.test(s);
+  const clean = s.replace(/\[(PPN:[a-z]+|ALL_CONSUMABLES)\]/gi, "").replace(/\s{2,}/g, " ").trim();
+  return { ppnMode: ppn ? toPpnMode(ppn) : undefined, allConsumables, note: clean || null };
+}
+function extractItemTag(name: string | null | undefined) {
+  const s = String(name ?? "");
+  const tagged = /\[(PAKAI_HABIS|CONSUMABLE)\]/i.test(s);
+  return { tagged, name: tagged ? s.replace(/\[(PAKAI_HABIS|CONSUMABLE)\]/gi, "").trim() : name ?? null };
+}
+import { cleanName } from "../common/utils/names.js";
 
 @Injectable()
 export class RequestsService {
@@ -165,6 +188,8 @@ export class RequestsService {
       ...row,
       evidenceFile,
       doFile,
+      // DO diturunkan dari PO / Penerimaan (tidak disalin ke request)
+      doFileId: doFile?.id ?? null,
       approval,
       stock,
       paymentProofFile,
@@ -254,14 +279,24 @@ export class RequestsService {
     if (costType === "PROJECT" && !projectId) {
       throw new BadRequestException("Request untuk project wajib memilih project");
     }
-    const source = String(dto.procurementSource ?? "SUPPLIER").toUpperCase();
-    if (!["SUPPLIER", "RETAIL", "GUDANG"].includes(source)) {
+    const source = toProcurementSource(dto.procurementSource);
+    if (!source) {
       throw new BadRequestException("Sumber pengadaan harus Supplier, Ritel, atau Gudang");
     }
+    const paymentMethod = toPaymentMethod(dto.paymentMethod ?? "UTANG");
     const purpose = dto.purpose || "Kebutuhan operasional";
-    const otherNote = costType === "LAINNYA" && !dto.otherNote?.trim() ? purpose : dto.otherNote;
+    const tags = extractNoteTags(dto.otherNote);
+    const ppnMode = dto.ppnMode !== undefined ? toPpnMode(dto.ppnMode) : (tags.ppnMode ?? "none");
+    const otherNote = costType === "LAINNYA" && !tags.note ? purpose : tags.note;
 
-    const items = dto.items ?? [];
+    const items = (dto.items ?? []).map((i) => {
+      const t = extractItemTag(i.customName);
+      return { ...i, customName: t.name ?? undefined, isConsumable: Boolean(i.isConsumable) || t.tagged };
+    });
+    const isProjectConsumable =
+      Boolean(dto.isProjectConsumable) ||
+      tags.allConsumables ||
+      (Boolean(projectId) && items.length > 0 && items.every((i) => i.isConsumable));
     if (!items.length) throw new BadRequestException("Request minimal berisi satu barang");
     if (items.some((i) => !i.productId && !i.customName?.trim())) {
       throw new BadRequestException("Setiap barang harus memilih produk atau mengisi nama barang");
@@ -269,10 +304,9 @@ export class RequestsService {
 
     const number = await this.docnum.next("permintaan");
     const rawItemsSum = items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0);
-    const hasPpnExclude = String(otherNote || "").includes("[PPN:exclude]");
     const estimated = dto.estimatedCost != null && Number(dto.estimatedCost) > 0
       ? Number(dto.estimatedCost)
-      : hasPpnExclude
+      : ppnMode === "exclude"
       ? Math.round(rawItemsSum * 1.11)
       : rawItemsSum;
 
@@ -280,7 +314,7 @@ export class RequestsService {
     let dueDate: Date | null = null;
     if (dto.dueDate) {
       dueDate = new Date(dto.dueDate);
-    } else if ((dto.paymentMethod ?? "UTANG") === "UTANG") {
+    } else if (paymentMethod === "UTANG") {
       dueDate = new Date(reqDate);
       dueDate.setMonth(dueDate.getMonth() + 1);
     }
@@ -293,7 +327,9 @@ export class RequestsService {
         requesterId: user.id,
         costType,
         procurementSource: source,
-        paymentMethod: dto.paymentMethod ?? "UTANG",
+        paymentMethod,
+        ppnMode,
+        isProjectConsumable,
         projectId,
         taskId: dto.taskId,
         supplierId: dto.supplierId,
@@ -311,6 +347,7 @@ export class RequestsService {
             qty: i.qty,
             unitCost: i.unitCost ?? 0,
             serials: i.serials ?? null,
+            isConsumable: i.isConsumable,
           })),
         },
       },
@@ -371,40 +408,52 @@ export class RequestsService {
     if (!row) throw new NotFoundException("Request tidak ditemukan");
     // Status, pembayaran, dan surat jalan hanya berubah lewat /status agar alur tidak terlompati.
     assertPrEditable(row, user);
+    const updTags = dto.otherNote !== undefined ? extractNoteTags(dto.otherNote) : null;
+    const effPpnMode = dto.ppnMode !== undefined ? toPpnMode(dto.ppnMode) : (updTags?.ppnMode ?? row.ppnMode);
 
     const updated = await this.prisma.main.purchaseRequest.update({
       where: { id },
       data: {
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.costType ? { costType: dto.costType } : {}),
-        ...(dto.procurementSource !== undefined ? { procurementSource: dto.procurementSource } : {}),
-        ...(dto.paymentMethod !== undefined ? { paymentMethod: dto.paymentMethod } : {}),
+        ...(dto.procurementSource !== undefined && toProcurementSource(dto.procurementSource)
+          ? { procurementSource: toProcurementSource(dto.procurementSource)! }
+          : {}),
+        ...(dto.paymentMethod !== undefined ? { paymentMethod: toPaymentMethod(dto.paymentMethod) } : {}),
+        ...(dto.ppnMode !== undefined ? { ppnMode: toPpnMode(dto.ppnMode) } : {}),
+        ...(dto.isProjectConsumable !== undefined ? { isProjectConsumable: dto.isProjectConsumable } : {}),
         ...(dto.dueDate !== undefined ? { dueDate: dto.dueDate ? new Date(dto.dueDate) : null } : {}),
         ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
         ...(dto.taskId !== undefined ? { taskId: dto.taskId } : {}),
         ...(dto.supplierId !== undefined ? { supplierId: dto.supplierId } : {}),
         ...(dto.condition ? { condition: dto.condition } : {}),
         ...(dto.purpose !== undefined ? { purpose: dto.purpose } : {}),
-        ...(dto.otherNote !== undefined ? { otherNote: dto.otherNote } : {}),
+        ...(updTags ? { otherNote: updTags.note } : {}),
+        ...(updTags?.ppnMode && dto.ppnMode === undefined ? { ppnMode: updTags.ppnMode } : {}),
+        ...(updTags?.allConsumables && dto.isProjectConsumable === undefined ? { isProjectConsumable: true } : {}),
         ...(dto.evidenceFileId !== undefined ? { evidenceFileId: dto.evidenceFileId } : {}),
         ...(dto.items?.length
           ? {
               estimatedCost:
                 dto.estimatedCost != null && Number(dto.estimatedCost) > 0
                   ? Number(dto.estimatedCost)
-                  : String(dto.otherNote ?? row.otherNote ?? "").includes("[PPN:exclude]")
+                  : effPpnMode === "exclude"
                   ? Math.round(dto.items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0) * 1.11)
                   : dto.items.reduce((s, i) => s + i.qty * (i.unitCost ?? 0), 0),
               items: {
                 deleteMany: {},
-                create: dto.items.map((i) => ({
-                  productId: i.productId ?? null,
-                  customName: i.customName ?? null,
-                  customUnit: i.customUnit ?? null,
-                  qty: i.qty,
-                  unitCost: i.unitCost ?? 0,
-                  serials: i.serials ?? null,
-                })),
+                create: dto.items.map((i) => {
+                  const t = extractItemTag(i.customName);
+                  return {
+                    productId: i.productId ?? null,
+                    customName: t.name,
+                    customUnit: i.customUnit ?? null,
+                    qty: i.qty,
+                    unitCost: i.unitCost ?? 0,
+                    serials: i.serials ?? null,
+                    isConsumable: Boolean(i.isConsumable) || t.tagged,
+                  };
+                }),
               },
             }
           : {}),
@@ -501,9 +550,7 @@ export class RequestsService {
     const activePos = (row.supplierPOs ?? []).filter((p) => !["DITOLAK", "DIBATALKAN"].includes(p.status));
     const isProjectConsumable =
       Boolean(row.projectId) &&
-      (String(row.otherNote || "").includes("[ALL_CONSUMABLES]") ||
-        (row.items.length > 0 &&
-          row.items.every((it) => String(it.customName || "").includes("[PAKAI_HABIS]"))));
+      (row.isProjectConsumable || (row.items.length > 0 && row.items.every((it) => it.isConsumable)));
 
     assertPrTransition(row, dto.status, user, {
       activePoCount: activePos.length,
@@ -688,6 +735,35 @@ export class RequestsService {
       await this.syncConsumablesToProject(id);
     }
 
+    // Satu pembelian = satu jalur kas. Bila PO-nya sudah dibayar lewat Invoice Supplier / ditandai Lunas,
+    // pembayaran ulang di Request Barang ditolak (dulu menghasilkan kas keluar dobel).
+    const isExplicitPayment = dto.status === "DIBAYAR" || dto.status === "LUNAS" || dto.paymentStatus === "DIBAYAR";
+    let paidElsewhere = false;
+    if (isPurchase && (isExplicitPayment || isMarkingPaid)) {
+      const viaInvoice = await hasSupplierInvoiceCashPayment(this.prisma.main, { requestId: row.id });
+      const viaPo = activePos.length
+        ? await (this.prisma.main as any).journalEntry.count({
+            where: { sourceType: "SupplierPO", event: "paid", status: "POSTED", sourceId: { in: activePos.map((p) => p.id) } },
+          })
+        : 0;
+      paidElsewhere = viaInvoice || viaPo > 0;
+      if (paidElsewhere && isExplicitPayment) {
+        throw new BadRequestException(
+          `Pembelian untuk request ${row.number} sudah dibayar lewat ${viaInvoice ? "Invoice Supplier" : "PO Supplier (ditandai Lunas)"}. Pembayaran tidak dicatat dua kali.`,
+        );
+      }
+      // Sudah ada tagihan supplier -> bayar di tagihan itu, bukan di sini (satu pembelian, satu tempat bayar)
+      if (isExplicitPayment) {
+        const bills = await findActiveSupplierInvoices(this.prisma.main, { requestId: row.id });
+        if (bills.length) {
+          throw new BadRequestException(
+            `Sudah ada Tagihan Supplier ${bills.map((b) => b.number || `#${b.id}`).join(", ")} untuk PO request ini. ` +
+              `Lakukan pembayaran lewat tagihan tersebut di halaman PO Supplier.`,
+          );
+        }
+      }
+    }
+
     // Material pakai habis proyek yang dibayar langsung selesai (DITERIMA) tanpa perlu kirim & terima gudang
     let targetStatus = dto.status;
     if (isProjectConsumable && isMarkingPaid) {
@@ -718,7 +794,8 @@ export class RequestsService {
       include: { project: { select: { id: true, name: true, picId: true } }, requester: true },
     });
     // Posting Akuntansi E7b: Pembelian Ritel via Request Barang (tanpa PO)
-    if (isMarkingPaid) {
+    // Hanya untuk request PEMBELIAN (ritel/supplier); request ambil stok gudang tidak mengeluarkan kas.
+    if (isMarkingPaid && isPurchase && !paidElsewhere) {
       try {
         const mappings = await this.mappingService.getAll();
         const payAccount = dto.paymentAccountCode || dto.fundingSource || updated.paymentAccountCode || mappings.CASH_DEFAULT || "1000.02";
@@ -726,6 +803,12 @@ export class RequestsService {
           (row.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0);
 
         if (estimatedCost > 0) {
+          // Harga "include PPN": bagian PPN masuk PPN Masukan, bukan ke nilai barang / HPP.
+          const split = splitPurchasePayment({
+            paid: estimatedCost,
+            itemsSum: (row.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0),
+            mode: row.ppnMode,
+          });
           if (row.projectId && isProjectConsumable) {
             // A. Non-stok habis pakai proyek: Dr 5101 Cr Kas/Bank
             await this.postingService.post({
@@ -739,7 +822,8 @@ export class RequestsService {
               projectId: row.projectId,
               createdById: user.id,
               lines: [
-                { accountCode: mappings.COGS_PROJECT || "5101", debit: estimatedCost, credit: 0, memo: `HPP Material Proyek #${row.number}`, projectId: row.projectId },
+                { accountCode: mappings.COGS_PROJECT || "5101", debit: split.goods, credit: 0, memo: `HPP Material Proyek #${row.number}`, projectId: row.projectId },
+                ...(split.vat > 0 ? [{ accountCode: mappings.VAT_IN || "1600", debit: split.vat, credit: 0, memo: `PPN Masukan Pembelian #${row.number}`, projectId: row.projectId }] : []),
                 { accountCode: payAccount, debit: 0, credit: estimatedCost, memo: `Kas Keluar Ritel #${row.number}`, projectId: row.projectId },
               ],
             });
@@ -747,13 +831,8 @@ export class RequestsService {
             // B. Pembelian Toko Online / Ritel / Masuk Gudang: Dr 2108 (GRNI) & Dr 1600 (PPN Masukan jika ada) Cr Kas/Bank
             // Karena saat penerimaan barang (BPB), dicatat: Dr 1200 (Persediaan) Cr 2108 (GRNI) sebesar harga barang (DPP),
             // maka jurnal pembayaran mendebit 2108 (GRNI) sebesar DPP dan PPN Masukan jika ada selisih PPN, sehingga saldo kliring pas nol.
-            const itemsDpp = (row.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0);
-            let grniAmount = estimatedCost;
-            let vatAmount = 0;
-            if (itemsDpp > 0 && estimatedCost > itemsDpp) {
-              grniAmount = itemsDpp;
-              vatAmount = Math.max(0, Math.round(estimatedCost - itemsDpp));
-            }
+            const grniAmount = split.goods;
+            const vatAmount = split.vat;
 
             await this.postingService.post({
               sourceType: "PurchaseRequest",
@@ -892,7 +971,7 @@ export class RequestsService {
             let pId = it.productId;
             if (!pId && it.customName) {
               let p = await this.prisma.main.product.findFirst({
-                where: { name: { equals: it.customName } },
+                where: { name: { equals: cleanName(it.customName) } },
               });
               let wasCreated = false;
               if (!p) {
@@ -902,8 +981,8 @@ export class RequestsService {
                   : /kamera|cctv|dvr|nvr|switch|router|access point|server|ups|ip cam/i.test(it.customName);
                 p = await this.prisma.main.product.create({
                   data: {
-                    sku: `SKU-${Date.now().toString().slice(-6)}`,
-                    name: it.customName,
+                    sku: `SKU-${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase()}`,
+                    name: cleanName(it.customName),
                     unit: it.customUnit || "unit",
                     ...(defaultCat?.id ? { category: { connect: { id: defaultCat.id } } } : {}),
                     purchasePrice: Number(it.unitCost) || 0,

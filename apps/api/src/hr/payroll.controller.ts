@@ -71,7 +71,7 @@ export class PayrollController {
   }
 
   @Post("generate")
-  @Require("payroll", "C")
+  @Require("payroll", "V") // kelola gaji = HR/Finance; "Buat" di modul HR dipakai karyawan untuk absen
   generate(@Body() dto: GeneratePayrollDto) {
     return this.payroll.generateSlips(dto);
   }

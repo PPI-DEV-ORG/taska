@@ -11,6 +11,9 @@ import { AssignDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, Pr
 import { StockService } from "../stock/stock.service.js";
 import { UploadService } from "../upload/upload.service.js";
 import { renderPdf } from "../common/pdf.js";
+import { cleanName } from "../common/utils/names.js";
+import { syncProjectPaymentStatus } from "./project-payment.js";
+import { computeProjectPnl } from "./project-pnl.js";
 
 const MANAGER_ROLES = ["PM", "ADMIN", "BOS", "SUPER_ADMIN"];
 const MEMBER_ROLES = ["PM", "SE", "TEKNISI", "SUPER_ADMIN"];
@@ -125,22 +128,9 @@ export class ProjectsService {
 
   private async syncPayment(projectId: number): Promise<Project> {
     await this.linkProjectInvoices(projectId);
-
-    const invoices = await this.prisma.main.invoiceOut.findMany({
-      where: { projectId, status: { not: "BATAL" } },
-      select: { total: true, paidAmount: true, status: true },
-    });
-    const allPaid =
-      invoices.length > 0 &&
-      invoices.every(
-        (i) => (Number(i.paidAmount) >= Number(i.total) && Number(i.total) > 0) || i.status === "PAID",
-      );
-    const current = await this.prisma.main.project.findUniqueOrThrow({ where: { id: projectId } });
-    if ((allPaid ? "LUNAS" : "BELUM_LUNAS") === current.paymentStatus) return current;
-    return this.prisma.main.project.update({
-      where: { id: projectId },
-      data: { paymentStatus: allPaid ? "LUNAS" : "BELUM_LUNAS" },
-    });
+    // Dibandingkan dengan nilai kontrak: DP saja yang dibayar = Lunas sebagian, bukan Lunas.
+    await syncProjectPaymentStatus(this.prisma.main, projectId);
+    return this.prisma.main.project.findUniqueOrThrow({ where: { id: projectId } });
   }
 
   /** Progres project ditentukan secara manual oleh PM. Jika project SELESAI, selalu 100%. */
@@ -258,7 +248,7 @@ export class ProjectsService {
 
     // Tahapan project dihitung di server agar identik untuk semua role (PM, Procurement, dll.)
     const [invoiceCount, poCount, clientPoCount, surveyCount] = await Promise.all([
-      this.prisma.main.invoiceOut.count({ where: { projectId: id, status: { not: "BATAL" as never } } }).catch(() => 0),
+      this.prisma.main.invoiceOut.count({ where: { projectId: id, isProforma: false, status: { not: "BATAL" as never } } }).catch(() => 0),
       this.prisma.main.supplierPO.count({ where: { projectId: id, status: { notIn: ["DITOLAK", "DIBATALKAN"] as never } } }).catch(() => 0),
       project.quotationId
         ? this.prisma.main.clientPO.count({ where: { quotationId: project.quotationId } }).catch(() => 0)
@@ -281,6 +271,18 @@ export class ProjectsService {
       counts: { requirements: row.requirements.length, surveys: surveyCount, clientPos: clientPoCount, supplierPos: poCount, invoices: invoiceCount },
     };
     return { ...row, paymentStatus: synced.paymentStatus, prdFile, bahpFile, bastFile, doFile, boqFile, stages };
+  }
+
+  /** Laba-rugi project (hanya untuk peran yang boleh melihat keuangan project). */
+  async pnl(id: number, user: RequestUser) {
+    const project = await this.prisma.main.project.findUnique({ where: { id } });
+    if (!project) throw new NotFoundException("Project tidak ditemukan");
+    await this.access(project, user);
+    const role = (user.role || "").toUpperCase();
+    if (!["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "PM"].includes(role)) {
+      throw new ForbiddenException("Laba-rugi project hanya untuk PM, Finance, Admin, atau Bos");
+    }
+    return computeProjectPnl(this.prisma.main, id);
   }
 
   async create(dto: ProjectDto, user: RequestUser) {
@@ -933,7 +935,7 @@ export class ProjectsService {
     let productId = dto.productId;
     if (!productId && dto.name) {
       let prod = await this.prisma.main.product.findFirst({
-        where: { name: dto.name.trim() },
+        where: { name: cleanName(dto.name) },
       });
       const effectiveCost = dto.costPrice !== undefined ? Number(dto.costPrice) : (dto.price !== undefined ? Number(dto.price) : 0);
       const descParts: string[] = [];
@@ -946,7 +948,7 @@ export class ProjectsService {
         prod = await this.prisma.main.product.create({
           data: {
             sku,
-            name: dto.name.trim(),
+            name: cleanName(dto.name),
             unit: dto.unit || "unit",
             purchasePrice: effectiveCost,
             description: descStr,

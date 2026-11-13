@@ -356,6 +356,15 @@ export class PayrollService {
 
     const paidAccount = dto.paidAccountCode || "1000.02";
 
+    // Atomik: hanya slip yang BELUM dibayar yang bisa ditandai dibayar (cegah gaji terbayar dua kali)
+    const guard = await (this.prisma.main as any).payrollSlip.updateMany({
+      where: { id, NOT: { status: "PAID" } },
+      data: { status: "PAID" },
+    });
+    if (guard.count === 0) {
+      throw new BadRequestException("Slip gaji ini sudah dibayar. Pembayaran tidak dicatat dua kali.");
+    }
+
     const updated = await (this.prisma.main as any).payrollSlip.update({
       where: { id },
       data: {

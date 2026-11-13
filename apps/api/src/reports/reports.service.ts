@@ -276,7 +276,7 @@ export class ReportsService {
   private async incomeStatement(q: ReportQuery): Promise<ReportData> {
     const [invoices, supplierPos, expenses] = await Promise.all([
       this.prisma.main.invoiceOut.findMany({
-        where: { status: { not: "BATAL" }, ...this.dateRange(q, "date") },
+        where: { status: { not: "BATAL" }, isProforma: false, ...this.dateRange(q, "date") },
       }),
       this.prisma.main.supplierPO.findMany({
         where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, ...this.dateRange(q, "date") },
@@ -337,7 +337,7 @@ export class ReportsService {
   private async balanceSheet(q: ReportQuery): Promise<ReportData> {
     const [invoices, supplierPos, expenses, stockSummary] = await Promise.all([
       this.prisma.main.invoiceOut.findMany({
-        where: { status: { not: "BATAL" }, ...this.dateRange(q, "date") },
+        where: { status: { not: "BATAL" }, isProforma: false, ...this.dateRange(q, "date") },
       }),
       this.prisma.main.supplierPO.findMany({
         where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, ...this.dateRange(q, "date") },
@@ -423,7 +423,7 @@ export class ReportsService {
   private async cashFlow(q: ReportQuery): Promise<ReportData> {
     const [invoices, supplierPos, expenses] = await Promise.all([
       this.prisma.main.invoiceOut.findMany({
-        where: { status: { not: "BATAL" }, ...this.dateRange(q, "date") },
+        where: { status: { not: "BATAL" }, isProforma: false, ...this.dateRange(q, "date") },
         include: { customer: { select: { name: true } }, project: { select: { name: true } } },
         orderBy: { date: "desc" },
       }),

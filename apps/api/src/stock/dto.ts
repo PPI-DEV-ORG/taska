@@ -260,6 +260,16 @@ export class DamageCreateDto {
   @IsOptional() @IsString()
   description?: string;
 
+  /** Jenis laporan (pengganti tag "[RETUR-PEMBELIAN]" / "[RETUR-PENJUALAN]" di deskripsi). */
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim().toUpperCase().replace(/[\s-]/g, "_") : value))
+  @IsIn(["KERUSAKAN", "RETUR_PENJUALAN", "RETUR_PEMBELIAN"])
+  category?: "KERUSAKAN" | "RETUR_PENJUALAN" | "RETUR_PEMBELIAN";
+
+  /** PO supplier asal retur pembelian (pengganti tag "[PO: ...]"). */
+  @IsOptional() @Type(() => Number) @IsInt()
+  supplierPoId?: number;
+
   @IsOptional() @Type(() => Number) @IsInt()
   fileId?: number;
 

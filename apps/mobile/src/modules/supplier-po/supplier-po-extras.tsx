@@ -282,7 +282,9 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
   const [invOpen, setInvOpen] = React.useState(false);
   const [invNumber, setInvNumber] = React.useState(`INV-SUP-${row.nomor || row.id}`);
-  const [invAmount, setInvAmount] = React.useState(() => formatThousands(String(effectivePoDpp || 0)));
+  const [invAmount, setInvAmount] = React.useState(() =>
+    formatThousands(String((effectivePoPpnMode === "include" ? effectivePoDpp + effectivePoPpn : effectivePoDpp) || 0))
+  );
   const [invPpnMode, setInvPpnMode] = React.useState<"none" | "exclude" | "include">(() =>
     effectivePoPpnMode === "none" ? "none" : "exclude"
   );
@@ -303,8 +305,16 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   const poAlreadyBilledDpp = React.useMemo(() => {
     return supplierInvoices.reduce((acc, inv) => acc + (Number(inv.nilai ?? inv.amount ?? 0)), 0);
   }, [supplierInvoices]);
+  const poAlreadyBilledPpn = React.useMemo(() => {
+    return supplierInvoices.reduce((acc, inv) => acc + (Number(inv.ppn ?? 0)), 0);
+  }, [supplierInvoices]);
 
   const poRemainingDpp = Math.max(0, effectivePoDpp - poAlreadyBilledDpp);
+  // Nominal tagihan diisi dalam satuan yang sama dengan PO: include = termasuk PPN, exclude / tanpa PPN = DPP.
+  const poIsInclude = effectivePoPpnMode === "include";
+  const poBase = poIsInclude ? effectivePoDpp + effectivePoPpn : effectivePoDpp;
+  const poAlreadyBilledBase = poIsInclude ? poAlreadyBilledDpp + poAlreadyBilledPpn : poAlreadyBilledDpp;
+  const poRemainingBase = Math.max(0, poBase - poAlreadyBilledBase);
 
   const [invTagihanScheme, setInvTagihanScheme] = React.useState<"SEKALIGUS" | "DP" | "TERMIN" | "PELUNASAN">("SEKALIGUS");
   const [invDpPercent, setInvDpPercent] = React.useState<string>("50");
@@ -329,49 +339,44 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
     if (supplierInvoices.length > 0) {
       setInvTagihanScheme("PELUNASAN");
-      setInvAmount(formatThousands(String(poRemainingDpp)));
+      setInvAmount(formatThousands(String(poRemainingBase)));
       setInvNumber(`INV-SUP-${row.nomor || row.id}/PELUNASAN`);
     } else if (dpMatch) {
       const pct = dpMatch[1] || "50";
       setInvTagihanScheme("DP");
       setInvDpPercent(pct);
-      const dpAmt = Math.round(effectivePoDpp * (Number(pct) / 100));
+      const dpAmt = Math.round(poBase * (Number(pct) / 100));
       setInvAmount(formatThousands(String(dpAmt)));
       setInvNumber(`INV-SUP-${row.nomor || row.id}/DP`);
     } else {
       setInvTagihanScheme("SEKALIGUS");
-      setInvAmount(formatThousands(String(effectivePoDpp || 0)));
+      setInvAmount(formatThousands(String(poBase || 0)));
       setInvNumber(`INV-SUP-${row.nomor || row.id}`);
     }
 
-    if (effectivePoPpnMode === "include") {
-      setInvPpnMode("include");
-    } else if (effectivePoPpnMode === "exclude") {
-      setInvPpnMode("exclude");
-    } else {
-      setInvPpnMode("none");
-    }
+    // Mode PPN tagihan = mode PPN PO
+    setInvPpnMode(effectivePoPpnMode);
     setInvOpen(true);
   }
 
   function handleSwitchTagihanScheme(newScheme: "SEKALIGUS" | "DP" | "TERMIN" | "PELUNASAN", customPct?: string) {
     setInvTagihanScheme(newScheme);
     if (newScheme === "SEKALIGUS") {
-      setInvAmount(formatThousands(String(effectivePoDpp)));
+      setInvAmount(formatThousands(String(poBase)));
       setInvNumber(`INV-SUP-${row.nomor || row.id}`);
     } else if (newScheme === "DP") {
       const pct = Number(customPct ?? invDpPercent) || 50;
-      setInvAmount(formatThousands(String(Math.round(effectivePoDpp * (pct / 100)))));
+      setInvAmount(formatThousands(String(Math.round(poBase * (pct / 100)))));
       setInvNumber(`INV-SUP-${row.nomor || row.id}/DP`);
     } else if (newScheme === "TERMIN") {
       const pct = Number(customPct ?? invTerminPercent) || 30;
       const termAmt = supplierInvoices.length > 0
-        ? Math.min(poRemainingDpp, Math.round(effectivePoDpp * (pct / 100)))
-        : Math.round(effectivePoDpp * (pct / 100));
+        ? Math.min(poRemainingBase, Math.round(poBase * (pct / 100)))
+        : Math.round(poBase * (pct / 100));
       setInvAmount(formatThousands(String(termAmt)));
       setInvNumber(`INV-SUP-${row.nomor || row.id}/${supplierInvoices.length + 1}`);
     } else if (newScheme === "PELUNASAN") {
-      setInvAmount(formatThousands(String(poRemainingDpp)));
+      setInvAmount(formatThousands(String(poRemainingBase)));
       setInvNumber(`INV-SUP-${row.nomor || row.id}/PELUNASAN`);
     }
   }
@@ -450,13 +455,23 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
   const rawInvInput = Number(String(invAmount).replace(/\D/g, "")) || 0;
   const rawJasaInput = Number(String(invJasaDpp).replace(/\D/g, "")) || 0;
-  const calcInvDpp = invPpnMode === "include" ? Math.round(rawInvInput / 1.11) : rawInvInput;
-  const calcInvPpn =
-    invPpnMode === "none"
-      ? 0
-      : invPpnMode === "include"
-        ? Math.max(0, rawInvInput - calcInvDpp)
-        : Math.round(rawInvInput * 0.11);
+  // DPP & PPN mengacu angka PO: proporsional untuk DP/termin, sisa DPP & PPN PO untuk tagihan terakhir.
+  const invFromPo = invPpnMode === effectivePoPpnMode && invPpnMode !== "none" && effectivePoPpn > 0 && effectivePoDpp > 0;
+  const invIsFinal = rawInvInput >= poRemainingBase && poRemainingBase > 0;
+  let calcInvDpp = invPpnMode === "include" ? Math.round(rawInvInput / 1.11) : rawInvInput;
+  let calcInvPpn =
+    invPpnMode === "none" ? 0 : invPpnMode === "include" ? Math.max(0, rawInvInput - calcInvDpp) : Math.round(rawInvInput * 0.11);
+  if (invFromPo) {
+    if (invIsFinal) {
+      calcInvDpp = Math.max(0, effectivePoDpp - poAlreadyBilledDpp);
+      calcInvPpn = Math.max(0, effectivePoPpn - poAlreadyBilledPpn);
+    } else if (invPpnMode === "include") {
+      calcInvDpp = Math.round((rawInvInput * effectivePoDpp) / (effectivePoDpp + effectivePoPpn));
+      calcInvPpn = Math.max(0, rawInvInput - calcInvDpp);
+    } else {
+      calcInvPpn = Math.round((rawInvInput * effectivePoPpn) / effectivePoDpp);
+    }
+  }
 
   // PPh dihitung KHUSUS dari DPP Jasa
   const effJasaDpp = rawJasaInput > 0
@@ -474,7 +489,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
   const calcInvTotal = Math.max(
     0,
-    (invPpnMode === "include" ? rawInvInput : calcInvDpp + calcInvPpn) - calcInvPph
+    (invFromPo || invPpnMode !== "include" ? calcInvDpp + calcInvPpn : rawInvInput) - calcInvPph
   );
 
   async function handleCreateInvoiceIn() {
@@ -1239,18 +1254,22 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             {/* Ringkasan Nilai PO & Syarat Pembayaran */}
             <View className="bg-card p-3 rounded-xl border border-border gap-1.5">
               <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-muted-foreground">Nilai Dasar PO (DPP):</Text>
-                <Text className="text-xs font-bold text-foreground">{rupiah(effectivePoDpp)}</Text>
+                <Text className="text-xs text-muted-foreground">
+                  {poIsInclude ? "Nilai PO (Termasuk PPN):" : "Nilai Dasar PO (DPP):"}
+                </Text>
+                <Text className="text-xs font-bold text-foreground">{rupiah(poBase)}</Text>
               </View>
               {supplierInvoices.length > 0 ? (
                 <>
                   <View className="flex-row justify-between items-center">
                     <Text className="text-xs text-muted-foreground">Sudah Ditagihkan ({supplierInvoices.length} invoice):</Text>
-                    <Text className="text-xs font-semibold text-emerald-600">{rupiah(poAlreadyBilledDpp)}</Text>
+                    <Text className="text-xs font-semibold text-emerald-600">{rupiah(poAlreadyBilledBase)}</Text>
                   </View>
                   <View className="flex-row justify-between items-center pt-1 border-t border-border/60">
-                    <Text className="text-xs font-bold text-foreground">Sisa Belum Ditagih (DPP):</Text>
-                    <Text className="text-xs font-bold text-primary">{rupiah(poRemainingDpp)}</Text>
+                    <Text className="text-xs font-bold text-foreground">
+                      {poIsInclude ? "Sisa Belum Ditagih (Termasuk PPN):" : "Sisa Belum Ditagih (DPP):"}
+                    </Text>
+                    <Text className="text-xs font-bold text-primary">{rupiah(poRemainingBase)}</Text>
                   </View>
                 </>
               ) : null}
@@ -1478,6 +1497,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                       key={opt.id}
                       size="sm"
                       variant={invPpnMode === opt.id ? "default" : "outline"}
+                      disabled={opt.id !== effectivePoPpnMode}
                       onPress={() => {
                         if (opt.id === "include" && invPpnMode !== "include") {
                           setInvAmount(formatThousands(String(calcInvDpp + calcInvPpn || rawInvInput)));

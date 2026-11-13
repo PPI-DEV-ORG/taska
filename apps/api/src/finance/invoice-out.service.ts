@@ -1,6 +1,6 @@
 import { Prisma } from "../generated/prisma/client.js";
 import { quotationMetaFromRow } from "../crm/quotation-meta.js";
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DocumentNumberService } from "../document-number/document-number.service.js";
@@ -11,12 +11,14 @@ import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { InvoiceOut } from "../generated/prisma/client.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
-import { InvoiceOutDto, PaymentDto } from "./dto.js";
+import { ConvertProformaDto, InvoiceOutDto, PaymentDto } from "./dto.js";
 
 import { UploadService } from "../upload/upload.service.js";
 import { PostingService } from "../accounting/posting.service.js";
 import { MappingService } from "../accounting/mapping.service.js";
-import { PostingRules } from "../accounting/posting.rules.js";
+import { PostingRules, withheldTax } from "../accounting/posting.rules.js";
+import { itemDiscountFields } from "../crm/item-discount.js";
+import { syncProjectPaymentStatus } from "../projects/project-payment.js";
 
 type StatusFilter = "DRAFT" | "SENT" | "PARTIAL" | "PAID" | "OVERDUE" | "BATAL";
 
@@ -34,13 +36,18 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     private readonly mappingService: MappingService,
   ) {}
 
-  /** Status dihitung dari pembayaran + jatuh tempo (PRD: Unpaid/Partial/Paid/Overdue otomatis). */
+  /**
+   * Status dihitung HANYA dari uang yang benar-benar tercatat (paidAmount = jumlah baris Payment) + jatuh tempo.
+   * Tiap invoice (DP / Termin / Pelunasan) adalah piutang tersendiri untuk porsinya masing-masing,
+   * jadi invoice DP tidak otomatis "lunas" hanya karena invoice pelunasan sudah dibayar.
+   */
   private compute(row: InvoiceOut): StatusFilter {
     if (row.status === "BATAL") return "BATAL";
-    if (row.status === "DRAFT") return "DRAFT";
     const total = Number(row.total);
     const paid = Number(row.paidAmount);
-    if (row.status === "PAID" || (paid >= total && total > 0)) return "PAID";
+    if (total > 0 && paid >= total) return "PAID";
+    if (total <= 0 && row.status === "PAID") return "PAID";
+    if (row.status === "DRAFT" && paid <= 0) return "DRAFT";
     if (paid > 0) return "PARTIAL";
     const past = new Date(row.dueDate).getTime() < Date.now();
     if (past) return "OVERDUE";
@@ -48,39 +55,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async sync(row: InvoiceOut): Promise<InvoiceOut & { status: StatusFilter; warning?: string }> {
-    let status = this.compute(row);
-    if (status !== "PAID" && (row.type === "DP" || row.type === "TERMIN")) {
-      const match = row.number.match(/^(INV\/\d{4}\/\d{2}\/\d+)(?:\/(\d+))?$/i);
-      const basePrefix = match ? match[1] : null;
-      const termNum = match?.[2] ? Number(match[2]) : 1;
-      if (basePrefix || row.projectId) {
-        const paidSubsequent = await this.prisma.main.invoiceOut.findFirst({
-          where: {
-            id: { not: row.id },
-            status: "PAID",
-            OR: [
-              ...(basePrefix ? [{ number: { startsWith: basePrefix } }] : []),
-              ...(row.projectId ? [{ projectId: row.projectId }] : []),
-            ],
-            type: { in: ["PELUNASAN", "TERMIN"] },
-          },
-        });
-        if (paidSubsequent) {
-          const subMatch = paidSubsequent.number.match(/\/(\d+)$/);
-          const subTermNum = subMatch ? Number(subMatch[1]) : 1;
-          if (paidSubsequent.type === "PELUNASAN" || subTermNum > termNum || /pelunasan/i.test(paidSubsequent.description || "")) {
-            status = "PAID";
-            if (Number(row.paidAmount) < Number(row.total)) {
-              await this.prisma.main.invoiceOut.update({
-                where: { id: row.id },
-                data: { status: "PAID", paidAmount: row.total },
-              });
-              return { ...row, status: "PAID", paidAmount: row.total, ...(await this.warningFor(row)) };
-            }
-          }
-        }
-      }
-    }
+    const status = this.compute(row);
     if (status !== row.status) {
       await this.prisma.main.invoiceOut.update({ where: { id: row.id }, data: { status } });
       if (status === "OVERDUE") await this.notifyOverdue(row);
@@ -119,60 +94,14 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Tampilan baca-saja untuk daftar/detail: status turunan + peringatan, tanpa menulis ke database dan tanpa notifikasi.
-   * Invoice DP/Termin yang sudah "tertutup" pelunasan/termin lanjutan dicari dengan SATU query untuk seluruh halaman.
-   * Perubahan status yang sebenarnya dipersist oleh jalur tulis (pembayaran/ubah status) dan penjadwal jatuh tempo.
+   * Status murni dari pembayaran tercatat (lihat compute()).
    */
   private async viewMany(rows: InvoiceOut[]): Promise<Array<InvoiceOut & { status: StatusFilter; warning?: string }>> {
-    const views = rows.map((row) => ({
-      row,
-      status: this.compute(row) as StatusFilter,
-      paidAmount: row.paidAmount as unknown as InvoiceOut["paidAmount"],
-      prefix: null as string | null,
-      termNum: 1,
-    }));
-
-    const pending = views.filter((v) => {
-      if (v.status === "PAID" || (v.row.type !== "DP" && v.row.type !== "TERMIN")) return false;
-      const match = v.row.number.match(/^(INV\/\d{4}\/\d{2}\/\d+)(?:\/(\d+))?$/i);
-      v.prefix = match ? match[1]! : null;
-      v.termNum = match?.[2] ? Number(match[2]) : 1;
-      return Boolean(v.prefix || v.row.projectId);
-    });
-    if (pending.length) {
-      const prefixes = [...new Set(pending.map((v) => v.prefix).filter((s): s is string => !!s))];
-      const projectIds = [...new Set(pending.map((v) => v.row.projectId).filter((n): n is number => n != null))];
-      const paid = await this.prisma.main.invoiceOut.findMany({
-        where: {
-          status: "PAID",
-          type: { in: ["PELUNASAN", "TERMIN"] },
-          OR: [
-            ...prefixes.map((x) => ({ number: { startsWith: x } })),
-            ...(projectIds.length ? [{ projectId: { in: projectIds } }] : []),
-          ],
-        },
-        select: { id: true, number: true, type: true, description: true, projectId: true },
-      });
-      for (const v of pending) {
-        const closing = paid.find((c) => {
-          if (c.id === v.row.id) return false;
-          if (!((v.prefix && c.number.startsWith(v.prefix)) || (v.row.projectId && c.projectId === v.row.projectId))) return false;
-          const subMatch = c.number.match(/\/(\d+)$/);
-          const subTermNum = subMatch ? Number(subMatch[1]) : 1;
-          return c.type === "PELUNASAN" || subTermNum > v.termNum || /pelunasan/i.test(c.description || "");
-        });
-        if (closing) {
-          v.status = "PAID";
-          v.paidAmount = v.row.total;
-        }
-      }
-    }
-
     const warnings = await this.warningsFor(rows);
-    return views.map((v) => ({
-      ...v.row,
-      status: v.status,
-      paidAmount: v.paidAmount,
-      ...(warnings.has(v.row.id) ? { warning: warnings.get(v.row.id) } : {}),
+    return rows.map((row) => ({
+      ...row,
+      status: this.compute(row),
+      ...(warnings.has(row.id) ? { warning: warnings.get(row.id) } : {}),
     }));
   }
 
@@ -210,7 +139,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
   /** Invoice belum dibayar sama sekali yang lewat jatuh tempo -> OVERDUE, dan Finance/Bos diberi tahu sekali. */
   async markOverdueInvoices(): Promise<number> {
     const rows = await this.prisma.main.invoiceOut.findMany({
-      where: { status: "SENT", dueDate: { lt: new Date() } },
+      where: { status: "SENT", isProforma: false, dueDate: { lt: new Date() } },
     });
     for (const r of rows) {
       const res = await this.prisma.main.invoiceOut.updateMany({ where: { id: r.id, status: "SENT" }, data: { status: "OVERDUE" } });
@@ -222,21 +151,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
 
   private async syncProjectPayment(projectId: number | null | undefined) {
     if (!projectId) return;
-    const invoices = await this.prisma.main.invoiceOut.findMany({
-      where: { projectId, status: { not: "BATAL" } },
-      select: { total: true, paidAmount: true, status: true },
-    });
-    const allPaid =
-      invoices.length > 0 &&
-      invoices.every(
-        (i) => (Number(i.paidAmount) >= Number(i.total) && Number(i.total) > 0) || i.status === "PAID",
-      );
-    await this.prisma.main.project
-      .update({
-        where: { id: projectId },
-        data: { paymentStatus: allPaid ? "LUNAS" : "BELUM_LUNAS" },
-      })
-      .catch(() => {});
+    // Lunas / Lunas sebagian / Belum lunas dibandingkan dengan nilai kontrak project (SO / penawaran).
+    await syncProjectPaymentStatus(this.prisma.main, projectId).catch(() => {});
   }
 
   private where(
@@ -330,16 +246,23 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
               id: true,
               number: true,
               amount: true,
+              ppnMode: true,
               quotationId: true,
               quotation: {
                 select: {
                   id: true,
                   number: true,
+                  total: true,
+                  discount: true,
+                  ppn: true,
+                  grandTotal: true,
                   lead: { select: { id: true, name: true } },
                 },
               },
             },
           },
+          parentInvoice: { select: { ppnMode: true } },
+          quotation: { select: { total: true, discount: true, ppn: true, grandTotal: true } },
           project: {
             select: {
               id: true,
@@ -355,6 +278,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
             },
           },
           payments: { orderBy: { date: "desc" } },
+          convertedTo: { select: { id: true, number: true, status: true } },
+          proforma: { select: { id: true, number: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "dueDate", "createdAt"], "dueDate"),
         ...pageSkip(q),
@@ -389,8 +314,11 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         const synced = viewById.get(r.id)!;
         const meta = metaMap.get(r.id) || {};
         const effectivePpn = Number(synced.ppn);
-        const effectiveTipePpn = meta.tipePpn ?? (effectivePpn > 0 ? "Exclude PPN (11%)" : "No PPN (Tanpa PPN)");
-        const effectivePpnMode = meta.ppnMode ?? (effectivePpn > 0 ? "exclude" : "none");
+        const { ppnMode: effectivePpnMode, tipePpn: effectiveTipePpn } = this.resolvePpnMode(meta.ppnMode, effectivePpn, {
+          soPpnMode: r.clientPo?.ppnMode,
+          parentPpnMode: (r as any).parentInvoice?.ppnMode,
+          quote: (r as any).quotation ?? r.clientPo?.quotation ?? null,
+        });
         const qId = meta.quotationId ?? r.clientPo?.quotationId ?? r.project?.quotationId ?? undefined;
         let qNum = meta.quotation ?? r.clientPo?.quotation?.number ?? r.project?.quotation?.number ?? undefined;
         if (!qNum && r.description) {
@@ -428,10 +356,40 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
           autoSwapLogs: Array.isArray(meta.autoSwapLogs) ? meta.autoSwapLogs : [],
           emergencyPrId: meta.emergencyPrId ?? null,
           emergencyPrNumber: meta.emergencyPrNumber ?? null,
+          isProforma: Boolean(r.isProforma),
+          convertedTo: (r as any).convertedTo ?? null,
+          proforma: (r as any).proforma ?? null,
         };
       }),
     );
     return paginate(items, total, q);
+  }
+
+/**
+   * Mode PPN invoice. Dulu mode PPN TIDAK tersimpan saat invoice dibuat (field terbuang validasi), sehingga invoice
+   * "include PPN" tampil sebagai exclude dan invoice pelunasan yang mewarisinya salah hitung. Urutan sumber:
+   * tersimpan di invoice → mode SO → mode invoice induk (DP) → penawaran (grand total = total − diskon berarti harga
+   * sudah termasuk PPN) → ada PPN = exclude.
+   */
+  private resolvePpnMode(
+    stored: string | null | undefined,
+    ppn: number,
+    ctx: {
+      soPpnMode?: string | null;
+      parentPpnMode?: string | null;
+      quote?: { total?: unknown; discount?: unknown; ppn?: unknown; grandTotal?: unknown } | null;
+    },
+  ): { ppnMode: "exclude" | "include" | "none"; tipePpn: string } {
+    type Mode = "exclude" | "include" | "none";
+    const norm = (m?: string | null): Mode | null => (m === "include" || m === "exclude" || m === "none" ? m : null);
+    let mode: Mode | null = norm(stored) ?? norm(ctx.soPpnMode) ?? norm(ctx.parentPpnMode);
+    if (!mode && ctx.quote && Number(ctx.quote.ppn || 0) > 0) {
+      const net = Number(ctx.quote.total || 0) - Number(ctx.quote.discount || 0);
+      if (net > 0 && Math.abs(Number(ctx.quote.grandTotal || 0) - net) < 2) mode = "include";
+    }
+    if (!mode) mode = ppn > 0 ? "exclude" : "none";
+    const tipePpn = mode === "include" ? "Include PPN (Sudah termasuk)" : mode === "exclude" ? "Exclude PPN (11%)" : "No PPN (Tanpa PPN)";
+    return { ppnMode: mode, tipePpn };
   }
 
   /** Bentuk metadata lama (dipakai banyak pemanggil) yang dibaca dari kolom InvoiceOut. */
@@ -546,6 +504,9 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
           },
         },
         payments: { orderBy: { date: "desc" } },
+        convertedTo: { select: { id: true, number: true, status: true } },
+        proforma: { select: { id: true, number: true } },
+        parentInvoice: { select: { ppnMode: true } },
       },
     });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
@@ -622,8 +583,11 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
 
     const synced = (await this.viewMany([row]))[0]!;
     const effectivePpn = Number(synced.ppn);
-    const effectiveTipePpn = meta.tipePpn ?? (effectivePpn > 0 ? "Exclude PPN (11%)" : "No PPN (Tanpa PPN)");
-    const effectivePpnMode = meta.ppnMode ?? (effectivePpn > 0 ? "exclude" : "none");
+    const { ppnMode: effectivePpnMode, tipePpn: effectiveTipePpn } = this.resolvePpnMode(meta.ppnMode, effectivePpn, {
+      soPpnMode: row.clientPo?.ppnMode,
+      parentPpnMode: (row as any).parentInvoice?.ppnMode,
+      quote: relatedQuote ?? null,
+    });
 
     return {
       ...synced,
@@ -639,9 +603,13 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       pphMode: meta.pphMode ?? "none",
       tipePph: meta.tipePph ?? "Tanpa PPh",
       items: meta.items ?? (meta.isContinuation ? [] : (quoteMeta?.items ?? [])),
+      isProforma: Boolean(row.isProforma),
+      convertedTo: (row as any).convertedTo ?? null,
+      proforma: (row as any).proforma ?? null,
       isContinuation: Boolean(meta.isContinuation),
       parentInvoiceId: meta.parentInvoiceId ?? null,
-      discount: Number(meta.discount ?? quoteMeta?.discount ?? quoteMeta?.disc ?? relatedQuote?.discount ?? 0),
+      // Diskon penawaran hanya berlaku bila invoice memakai item penawaran (harga kotor). Item SO sudah harga net.
+      discount: Number(meta.discount ?? (meta.items == null && !meta.isContinuation ? relatedQuote?.discount ?? 0 : 0)),
       quotationId: meta.quotationId ?? relatedQuote?.id ?? undefined,
       quotation: meta.quotation ?? relatedQuote?.number ?? (row.description ? row.description.match(/(?:QUO|PNW)[-\w\/]+/i)?.[0] : undefined),
       subject: meta.subject ?? quoteMeta?.subject ?? "INVOICE PENAGIHAN",
@@ -705,6 +673,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
           ...(it.outOfStockAutoSwap ? { outOfStockAutoSwap: true } : {}),
           ...(it.pphMode ? { pphMode: String(it.pphMode) } : {}),
           ...(it.tipePph ? { tipePph: String(it.tipePph) } : {}),
+          ...itemDiscountFields(it),
         };
       });
   }
@@ -771,16 +740,17 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     if (number) {
       const dup = await this.prisma.main.invoiceOut.findFirst({ where: { number } });
       if (dup) {
-        const isAutoPattern = /^INV\/\d{4}\/\d{2}\/\d+(\/\d+)?$/i.test(number);
+        const isAutoPattern = /^(?:INV|PI)\/\d{4}\/\d{2}\/\d+(\/\d+)?$/i.test(number);
         if (isAutoPattern) {
-          number = await this.docnum.next("invoiceOut", dto.date ? new Date(dto.date) : new Date());
+          number = await this.docnum.next(dto.isProforma ? "proforma" : "invoiceOut", dto.date ? new Date(dto.date) : new Date());
         } else {
           throw new BadRequestException(`Nomor ${number} sudah dipakai`);
         }
       }
     } else {
-      number = await this.docnum.next("invoiceOut", dto.date ? new Date(dto.date) : new Date());
+      number = await this.docnum.next(dto.isProforma ? "proforma" : "invoiceOut", dto.date ? new Date(dto.date) : new Date());
     }
+    const isProforma = Boolean(dto.isProforma);
 
     const customer = dto.customerId
       ? await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } })
@@ -822,14 +792,12 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       Boolean(dto.parentInvoiceId) ||
       dto.items?.some((it: any) => it.isContinuation);
 
+    // Uang masuk HANYA dicatat lewat addPayment (baris Payment + jurnal kas). Invoice yang dibuat dengan
+    // status Lunas/Sebagian diterbitkan sebagai SENT; pembayarannya dicatat terpisah oleh pemanggil.
     let initialStatus = dto.status ?? "DRAFT";
-    if (
-      initialStatus === "PAID" &&
-      !isContinuation &&
-      (dto.type === "DP" || /dp/i.test(dto.type || "") || /^\d+$/.test(number.split("/").pop() || ""))
-    ) {
-      initialStatus = "PARTIAL";
-    }
+    if (["PAID", "PARTIAL", "OVERDUE"].includes(initialStatus)) initialStatus = "SENT";
+    // Proforma tidak pernah "lunas": pembayaran dicatat di invoice resmi hasil konversinya.
+    if (isProforma && initialStatus !== "DRAFT") initialStatus = "SENT";
 
     const row = await this.prisma.main.invoiceOut.create({
       data: {
@@ -842,11 +810,12 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         amount,
         ppn,
         total,
-        paidAmount: dto.paidAmount ?? (dto.status === "PAID" ? total : 0),
+        paidAmount: 0,
         date,
         dueDate,
-        status: initialStatus,
+        status: initialStatus as never,
         fileId: dto.fileId,
+        isProforma,
       },
       include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
     });
@@ -905,6 +874,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       dto.pph !== undefined ||
       dto.pphMode !== undefined ||
       dto.tipePph !== undefined ||
+      dto.ppnMode !== undefined ||
+      dto.tipePpn !== undefined ||
       dto.paidFileId !== undefined ||
       dto.paymentFileId !== undefined
     ) {
@@ -914,11 +885,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         ...(resolvedItems.length > 0 || dto.items !== undefined ? { items: resolvedItems } : {}),
         ...(isContinuation ? { isContinuation: true } : {}),
         ...(dto.parentInvoiceId ? { parentInvoiceId: dto.parentInvoiceId } : {}),
-        ...(dto.discount !== undefined
-          ? { discount: dto.discount }
-          : relatedInfo.quoteMeta?.discount !== undefined
-            ? { discount: relatedInfo.quoteMeta.discount }
-            : {}),
+        // Diskon tidak diwarisi otomatis dari penawaran: item SO sudah harga net (diskon dobel).
+        ...(dto.discount !== undefined ? { discount: dto.discount } : {}),
         ...(effectiveQuotationId !== undefined ? { quotationId: effectiveQuotationId } : {}),
         ...(effectiveQuotationNum !== undefined ? { quotation: effectiveQuotationNum } : {}),
         ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
@@ -935,13 +903,15 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
         ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
         ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+        ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
+        ...(dto.tipePpn !== undefined ? { tipePpn: dto.tipePpn } : {}),
         ...(pfId !== undefined ? { paidFileId: pfId } : {}),
       });
     }
 
     // Reserve SN untuk invoice ini & cek apakah ada SN yang sudah terkunci oleh Invoice Lunas lain
     // PENTING: Invoice lanjutan/termin/pelunasan TIDAK boleh mereserve atau mengambil SN baru!
-    if (!isContinuation && resolvedItems.length > 0) {
+    if (!isContinuation && !isProforma && resolvedItems.length > 0) {
       await this.checkAndSwapAgainstAlreadyPaidInvoices(row, resolvedItems, user).catch(() => {});
       const latestMeta = (await this.getMeta(row.id)) || {};
       const finalItems = Array.isArray(latestMeta.items) ? latestMeta.items : resolvedItems;
@@ -977,8 +947,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       .notify({
         roles: ["FINANCE", "BOS", "SALES"],
         kind: "APPROVAL",
-        title: "Invoice Penjualan Baru",
-        text: `Invoice ${number} dibuat${customer ? ` untuk ${customer.name}` : dto.customer ? ` untuk ${dto.customer}` : ""} senilai Rp${Number(total).toLocaleString("id-ID")}`,
+        title: isProforma ? "Proforma Invoice Baru" : "Invoice Penjualan Baru",
+        text: `${isProforma ? "Proforma invoice" : "Invoice"} ${number} dibuat${customer ? ` untuk ${customer.name}` : dto.customer ? ` untuk ${dto.customer}` : ""} senilai Rp${Number(total).toLocaleString("id-ID")}`,
         href: `/invoices/${row.id}`,
       })
       .catch(() => {});
@@ -1005,6 +975,37 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     const amount = dto.amount ?? Number(row.amount);
     const ppn = dto.ppn ?? Number(row.ppn);
     const total = dto.total ?? (dto.amount !== undefined || dto.ppn !== undefined ? amount + ppn : Number(row.total));
+    const paid = Number(row.paidAmount);
+
+    // paidAmount TIDAK bisa diubah lewat edit: hanya lewat pencatatan / void pembayaran.
+    if (row.status === "BATAL" && dto.status !== undefined && dto.status !== "BATAL") {
+      throw new BadRequestException("Invoice batal tidak bisa diubah. Buat invoice baru.");
+    }
+    if (paid > 0 && total < paid) {
+      throw new BadRequestException(
+        `Total invoice (Rp${total.toLocaleString("id-ID")}) tidak boleh lebih kecil dari yang sudah dibayar (Rp${paid.toLocaleString("id-ID")}). Void pembayaran terlebih dahulu.`,
+      );
+    }
+    const requestedStatus = dto.status && dto.status !== row.status ? dto.status : undefined;
+    if (requestedStatus) this.assertManualStatus(requestedStatus, { paid, total });
+
+    const financialChange =
+      Number(row.total) !== Number(total) ||
+      Number(row.amount) !== Number(amount) ||
+      Number(row.ppn) !== Number(ppn) ||
+      (dto.type !== undefined && dto.type !== row.type) ||
+      (dto.date !== undefined && new Date(dto.date).getTime() !== new Date(row.date).getTime());
+    if (financialChange) await this.assertJournalEditable(id);
+    const reversesJournal = requestedStatus === "BATAL" || (requestedStatus === "DRAFT" && row.status !== "DRAFT");
+    if (reversesJournal) {
+      // Balik jurnal penerbitan DULU; bila gagal (periode tutup) perubahan status tidak tersimpan.
+      await this.postingService.reverseAllForSource(
+        "InvoiceOut",
+        id,
+        requestedStatus === "BATAL" ? "Invoice dibatalkan" : "Invoice dikembalikan ke draft",
+        user.id,
+      );
+    }
 
     const updated = await this.prisma.main.invoiceOut.update({
       where: { id },
@@ -1018,10 +1019,9 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         amount,
         ppn,
         total,
-        ...(dto.paidAmount !== undefined ? { paidAmount: dto.paidAmount } : dto.status === "PAID" ? { paidAmount: total } : {}),
         date: dto.date ? new Date(dto.date) : row.date,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : row.dueDate,
-        ...(dto.status ? { status: dto.status } : {}),
+        ...(requestedStatus && ["DRAFT", "SENT", "BATAL"].includes(requestedStatus) ? { status: requestedStatus as never } : {}),
         fileId: dto.fileId !== undefined ? dto.fileId : row.fileId,
       },
       include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
@@ -1068,6 +1068,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       dto.pph !== undefined ||
       dto.pphMode !== undefined ||
       dto.tipePph !== undefined ||
+      dto.ppnMode !== undefined ||
+      dto.tipePpn !== undefined ||
       pfId !== undefined
     ) {
       await this.saveMeta(id, {
@@ -1089,6 +1091,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         ...(dto.pph !== undefined ? { pph: dto.pph } : {}),
         ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
         ...(dto.tipePph !== undefined ? { tipePph: dto.tipePph } : {}),
+        ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
+        ...(dto.tipePpn !== undefined ? { tipePpn: dto.tipePpn } : {}),
         ...(pfId !== undefined ? { paidFileId: pfId } : {}),
       });
     }
@@ -1122,11 +1126,57 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     if (row.projectId && row.projectId !== updated.projectId) {
       await this.syncProjectPayment(row.projectId);
     }
-    if (dto.status === "PAID" || (dto.paidAmount !== undefined && Number(dto.paidAmount) >= total)) {
-      await this.syncRelatedInvoicesOnPaid(updated, user);
+    if (!reversesJournal && requestedStatus !== "DRAFT") {
+      await this.postInvoiceJournalIfEligible(id, user.id);
     }
-    await this.postInvoiceJournalIfEligible(id, user.id);
+    await this.sync(await this.prisma.main.invoiceOut.findUniqueOrThrow({ where: { id } }));
     return this.get(id);
+  }
+
+  /**
+   * Aturan ubah status manual. PAID/PARTIAL/OVERDUE adalah status turunan dari pembayaran,
+   * jadi tidak bisa "dipaksa" tanpa uang yang tercatat.
+   */
+  /**
+   * Baris "POTONGAN PPh" di PDF/Excel hanya untuk invoice yang PPh-nya dipotong saat invoice terbit
+   * (total = DPP + PPN − PPh). Bila PPh dipotong customer saat bayar, dokumen menagih penuh DPP + PPN.
+   */
+  /** Judul dokumen: proforma selalu berjudul PROFORMA INVOICE agar tidak tertukar dengan tagihan resmi. */
+  private exportSubject(row: { isProforma?: boolean }, subject?: string | null): string {
+    if (!row.isProforma) return subject || "INVOICE PENAGIHAN";
+    return subject && /proforma/i.test(subject) ? subject : `PROFORMA INVOICE${subject ? ` - ${subject}` : ""}`;
+  }
+
+  private exportPphFields(row: { amount: unknown; ppn: unknown; total: unknown; pph?: unknown; tipePph?: string | null }) {
+    const pph = withheldTax({ dpp: Number(row.amount || 0), ppn: Number(row.ppn || 0), total: Number(row.total || 0), pph: Number(row.pph || 0) });
+    return pph > 0 ? { pph, tipePph: row.tipePph || "PPh" } : {};
+  }
+
+  private assertManualStatus(status: string, s: { paid: number; total: number }) {
+    const sisa = Math.max(0, s.total - s.paid);
+    if (status === "PAID" && s.total > 0 && sisa > 0) {
+      throw new BadRequestException(
+        `Masih ada sisa tagihan Rp${sisa.toLocaleString("id-ID")}. Catat pembayaran lewat menu Pembayaran agar kas & piutang tercatat.`,
+      );
+    }
+    if (["DRAFT", "SENT", "BATAL"].includes(status) && s.paid > 0) {
+      throw new BadRequestException(
+        `Invoice sudah menerima pembayaran Rp${s.paid.toLocaleString("id-ID")}. Void pembayarannya terlebih dahulu sebelum mengubah ke ${status}.`,
+      );
+    }
+  }
+
+  /** Tolak perubahan nilai bila jurnal penerbitannya berada di periode yang sudah ditutup. */
+  private async assertJournalEditable(invoiceId: number) {
+    const closed = await (this.prisma.main as any).journalEntry.findFirst({
+      where: { sourceType: "InvoiceOut", sourceId: invoiceId, status: "POSTED", period: { status: "CLOSED" } },
+      select: { number: true },
+    });
+    if (closed) {
+      throw new BadRequestException(
+        `Nilai invoice tidak bisa diubah: jurnal ${closed.number} sudah masuk periode pembukuan yang ditutup.`,
+      );
+    }
   }
 
   private async findSiblingInvoices(row: InvoiceOut): Promise<InvoiceOut[]> {
@@ -1259,132 +1309,175 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Dipanggil setelah sebuah invoice LUNAS: kunci SN & auto-swap FIFO pada dokumen lain yang belum dibayar.
+   *
+   * Catatan: versi lama juga "melunasi otomatis" invoice DP/Termin sebelumnya dengan membuat baris Payment
+   * palsu ("Auto-settle via pelunasan"). Itu salah: tagihan bertahap masing-masing hanya menagih porsinya sendiri,
+   * dan baris palsu itu kemudian dijurnal sebagai kas masuk -> kas & pendapatan tercatat ganda. Sudah dihapus.
+   */
   private async syncRelatedInvoicesOnPaid(invoice: InvoiceOut, user: RequestUser) {
-    const isPelunasan =
-      invoice.type === "PELUNASAN" ||
-      /pelunasan/i.test(invoice.description || "");
-
-    const matchSuffix = invoice.number.match(/\/(\d+)$/);
-    const termNum = matchSuffix ? Number(matchSuffix[1]) : 1;
-    const isSubsequent = termNum > 1;
-
-    // Settle prior siblings if this is a pelunasan, subsequent installment, or final payment
-    if (isPelunasan || isSubsequent) {
-      const siblings = await this.findSiblingInvoices(invoice);
-      for (const sib of siblings) {
-        const sibMatch = sib.number.match(/\/(\d+)$/);
-        const sibTermNum = sibMatch ? Number(sibMatch[1]) : 1;
-
-        if (isPelunasan || sibTermNum < termNum) {
-          if (sib.status !== "PAID" || Number(sib.paidAmount) < Number(sib.total)) {
-            const sisa = Number(sib.total) - Number(sib.paidAmount);
-            if (sisa > 0) {
-              await this.prisma.main.payment.create({
-                data: {
-                  invoiceOutId: sib.id,
-                  amount: sisa,
-                  date: new Date(),
-                  method: "TRANSFER",
-                  reference: `Auto-settle via pelunasan ${invoice.number}`,
-                  createdById: user.id,
-                },
-              }).catch(() => {});
-            }
-            await this.prisma.main.invoiceOut.update({
-              where: { id: sib.id },
-              data: {
-                status: "PAID",
-                paidAmount: sib.total,
-              },
-            });
-            await this.audit.log({
-              actor: user,
-              action: "UBAH_STATUS_INVOICE",
-              entityType: "invoice-out",
-              entityId: sib.id,
-              detail: `${sib.number}: otomatis LUNAS karena invoice ${invoice.number} telah lunas`,
-            });
-          }
-        }
-      }
-    }
-
-    // Lock SN pada invoice lunas ini & auto-swap FIFO pada penawaran/invoice lain yang belum dibayar
     await this.lockAndAutoSwapOnPaid(invoice, user).catch(() => {});
   }
 
-  async addPayment(id: number, dto: PaymentDto, user: RequestUser) {
+  /** Status turunan setelah paidAmount berubah. */
+  private statusAfterPayment(row: { status: string; total: unknown; paidAmount: unknown; dueDate: Date }): StatusFilter {
+    const total = Number(row.total);
+    const paid = Number(row.paidAmount);
+    if (total > 0 && paid >= total) return "PAID";
+    if (paid > 0) return "PARTIAL";
+    return new Date(row.dueDate).getTime() < Date.now() ? "OVERDUE" : "SENT";
+  }
+
+  /**
+   * Catat pembayaran invoice keluar.
+   * - Satu-satunya jalur uang masuk: baris Payment + jurnal kas (E3) dibuat dalam SATU transaksi.
+   * - Pengaman bayar ganda: paidAmount dinaikkan secara atomik dengan syarat sisa tagihan masih cukup,
+   *   sehingga dua klik / dua perangkat bersamaan tidak bisa melebihi total invoice.
+   * - `pph23Amount` (opsional): PPh yang dipotong customer saat bayar; ikut mengurangi sisa piutang.
+   */
+  async addPayment(id: number, dto: PaymentDto, user: RequestUser, opts: { skipStockCheck?: boolean } = {}) {
     this.assertFinanceOrAdmin(user, "Hanya tim Finance yang dapat mencatat pembayaran invoice");
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
     if (row.status === "BATAL") throw new BadRequestException("Invoice dibatalkan");
-    const paymentsBefore = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
-    const paidBefore = paymentsBefore.reduce((s, p) => s + Number(p.amount), 0);
-    if (paidBefore + Number(dto.amount) > Number(row.total) && Number(row.total) > 0) {
+    if (row.isProforma) {
       throw new BadRequestException(
-        `Total bayar melebihi tagihan invoice (sisa Rp${Number(row.total) - paidBefore})`,
+        `${row.number} adalah proforma invoice. Terbitkan invoice resmi dari proforma ini dulu, lalu catat pembayarannya di invoice resmi.`,
       );
     }
 
-    const isWillBePaid = paidBefore + Number(dto.amount) >= Number(row.total) && Number(row.total) > 0;
-    if (isWillBePaid) {
+    const total = Number(row.total);
+    if (!(total > 0)) throw new BadRequestException("Invoice bernilai Rp0 tidak memerlukan pembayaran");
+
+    let cash = Math.round(Number(dto.amount) * 100) / 100;
+    const pph23 = Math.max(0, Math.round(Number(dto.pph23Amount || 0) * 100) / 100);
+    if (!(cash > 0)) throw new BadRequestException("Nominal pembayaran harus lebih dari 0");
+    if (pph23 > 0) {
+      // Invoice lama yang totalnya sudah dikurangi PPh: PPh sudah diakui saat invoice terbit -> jangan dicatat dua kali.
+      const alreadyNet = withheldTax({
+        dpp: Number(row.amount),
+        ppn: Number(row.ppn || 0),
+        total: Number(row.total),
+        pph: Number((row as any).pph || 0),
+      });
+      if (alreadyNet > 0) {
+        throw new BadRequestException(
+          `Total invoice ${row.number} sudah dikurangi PPh (Rp${alreadyNet.toLocaleString("id-ID")}). Isi PPh dipotong = 0; cukup catat uang yang diterima.`,
+        );
+      }
+    }
+    let settle = cash + pph23;
+
+    const paidBefore = Number(row.paidAmount);
+    const remaining = Math.max(0, Math.round((total - paidBefore) * 100) / 100);
+    if (remaining <= 0) {
+      throw new BadRequestException(
+        `Invoice ${row.number} sudah lunas (dibayar Rp${paidBefore.toLocaleString("id-ID")}). Pembayaran tidak dicatat agar tidak dobel.`,
+      );
+    }
+    if (settle > remaining) {
+      // Toleransi pembulatan rupiah (mis. sisa Rp1.234,50 dibayar Rp1.235)
+      if (settle - remaining <= 1) {
+        cash = Math.max(0, cash - (settle - remaining));
+        settle = remaining;
+      } else {
+        throw new BadRequestException(
+          `Pembayaran Rp${settle.toLocaleString("id-ID")} melebihi sisa tagihan Rp${remaining.toLocaleString("id-ID")} ` +
+            `(sudah dibayar Rp${paidBefore.toLocaleString("id-ID")} dari Rp${total.toLocaleString("id-ID")}).`,
+        );
+      }
+    }
+
+    const isWillBePaid = settle >= remaining;
+    if (isWillBePaid && !opts.skipStockCheck) {
       await this.assertStockAvailabilityForInvoice(row);
     }
 
-    const finalReference = dto.coaAccount
-      ? (dto.reference?.includes(`[AKUN:`) ? dto.reference : `[AKUN:${dto.coaAccount}] ${dto.reference || ""}`.trim())
+    // Pastikan jurnal penerbitan invoice (E1 / E2) sudah ada sebelum pelunasan
+    if (row.status !== "DRAFT") await this.postInvoiceJournalIfEligible(row.id, user.id);
+
+    const mappings = await this.mappingService.getAll();
+    const chosenAccount = dto.paidAccountCode || dto.accountCode || dto.coaAccount || mappings.CASH_DEFAULT || "1000.02";
+    const baseRef = dto.coaAccount
+      ? dto.reference?.includes(`[AKUN:`)
+        ? dto.reference
+        : `[AKUN:${dto.coaAccount}] ${dto.reference || ""}`.trim()
       : dto.reference;
+    const finalReference = pph23 > 0 ? `${baseRef ?? ""} [PPh23:${pph23}]`.trim() : baseRef;
+    const payDate = dto.date ? new Date(dto.date) : new Date();
+    const maxPaidBefore = new Prisma.Decimal(total).minus(settle);
 
-    const chosenAccount = dto.paidAccountCode || dto.accountCode || dto.coaAccount || null;
+    const { updated } = await this.prisma.main.$transaction(
+      async (tx) => {
+        // Atomik: hanya berhasil bila paidAmount saat ini + pembayaran ini <= total.
+        const guard = await tx.invoiceOut.updateMany({
+          where: { id, status: { not: "BATAL" }, paidAmount: { lte: maxPaidBefore } },
+          data: { paidAmount: { increment: settle } },
+        });
+        if (guard.count === 0) {
+          throw new ConflictException(
+            "Pembayaran untuk invoice ini baru saja dicatat oleh proses lain atau sisa tagihannya sudah berubah. Muat ulang lalu cek sisa tagihan.",
+          );
+        }
 
-    const createdPayment = await this.prisma.main.payment.create({
-      data: {
-        invoiceOutId: id,
-        amount: dto.amount,
-        date: dto.date ? new Date(dto.date) : new Date(),
-        method: dto.method ?? "TRANSFER",
-        reference: finalReference,
-        accountCode: chosenAccount,
-        fileId: dto.fileId,
-        createdById: user.id,
+        const payment = await tx.payment.create({
+          data: {
+            invoiceOutId: id,
+            amount: settle,
+            date: payDate,
+            method: dto.method ?? "TRANSFER",
+            reference: finalReference,
+            accountCode: chosenAccount,
+            fileId: dto.fileId,
+            createdById: user.id,
+          },
+        });
+
+        // Jurnal E3 wajib berhasil; kalau gagal (akun tidak ada / periode tutup) pembayaran ikut dibatalkan.
+        await this.postingService.post(
+          {
+            sourceType: "Payment",
+            sourceId: payment.id,
+            event: "received",
+            source: "INVOICE_OUT_PAYMENT",
+            date: payDate,
+            memo: `Penerimaan Pembayaran Inv ${row.number}`,
+            refNo: `${row.number}/PAY`,
+            projectId: row.projectId,
+            createdById: user.id,
+            lines: PostingRules.buildCustomerPaymentLines(
+              {
+                id: payment.id,
+                sourceType: "INVOICE_OUT",
+                sourceId: row.id,
+                amount: cash,
+                accountCode: chosenAccount,
+                pph23Amount: pph23,
+                partyType: "CUSTOMER",
+                partyId: row.customerId ?? undefined,
+                projectId: row.projectId,
+              },
+              mappings,
+            ),
+          },
+          tx,
+        );
+
+        const fresh = await tx.invoiceOut.findUniqueOrThrow({ where: { id } });
+        const updated = await tx.invoiceOut.update({
+          where: { id },
+          data: { status: this.statusAfterPayment(fresh) },
+          include: { customer: true, payments: { orderBy: { date: "desc" } } },
+        });
+        return { payment, updated };
       },
-    });
+      { timeout: 20_000 },
+    );
 
-    // Pastikan jurnal terbit invoice (E1 / E2) sudah diposting sebelum mencatat pelunasan
-    await this.postInvoiceJournalIfEligible(row.id, user.id);
+    // Invoice draft yang dibayar dianggap terbit: pastikan jurnal penerbitannya ada
+    if (row.status === "DRAFT") await this.postInvoiceJournalIfEligible(row.id, user.id);
 
-    // Posting Akuntansi E3: Pelunasan Invoice Keluar
-    try {
-      const mappings = await this.mappingService.getAll();
-      const pLines = PostingRules.buildCustomerPaymentLines(
-        {
-          id: createdPayment.id,
-          sourceType: "INVOICE_OUT",
-          sourceId: row.id,
-          amount: Number(dto.amount),
-          accountCode: chosenAccount || mappings.CASH_DEFAULT || "1000.02",
-          pph23Amount: Number(dto.pph23Amount || 0),
-          partyType: "CUSTOMER",
-          partyId: row.customerId!,
-          projectId: row.projectId,
-        },
-        mappings,
-      );
-      await this.postingService.post({
-        sourceType: "Payment",
-        sourceId: createdPayment.id,
-        event: "received",
-        source: "INVOICE_OUT_PAYMENT",
-        date: dto.date ? new Date(dto.date) : new Date(),
-        memo: `Penerimaan Pembayaran Inv ${row.number}`,
-        refNo: `${row.number}/PAY`,
-        projectId: row.projectId,
-        createdById: user.id,
-        lines: pLines,
-      });
-    } catch (err) {
-      console.error("Posting payment error:", err);
-    }
     if (dto.coaAccount) {
       await this.saveMeta(id, { coaAccount: dto.coaAccount }).catch(() => {});
     }
@@ -1395,59 +1488,15 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       }).catch(() => {});
     }
 
-    const payments = await this.prisma.main.payment.findMany({ where: { invoiceOutId: id } });
-    const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
-    const isNowPaid = paid >= Number(row.total) && Number(row.total) > 0;
-
-    let targetStatus = isNowPaid ? "PAID" : row.status;
-    if (isNowPaid && (row.type === "DP" || row.type === "TERMIN")) {
-      const match = row.number.match(/^(INV\/\d{4}\/\d{2}\/\d+)(?:\/(\d+))?$/i);
-      const basePrefix = match ? match[1] : null;
-      const termNum = match?.[2] ? Number(match[2]) : 1;
-      let hasPaidPelunasan = false;
-      if (basePrefix || row.projectId) {
-        const paidSubsequent = await this.prisma.main.invoiceOut.findFirst({
-          where: {
-            id: { not: row.id },
-            status: "PAID",
-            OR: [
-              ...(basePrefix ? [{ number: { startsWith: basePrefix } }] : []),
-              ...(row.projectId ? [{ projectId: row.projectId }] : []),
-            ],
-            type: { in: ["PELUNASAN", "TERMIN"] },
-          },
-        });
-        if (paidSubsequent) {
-          const subMatch = paidSubsequent.number.match(/\/(\d+)$/);
-          const subTermNum = subMatch ? Number(subMatch[1]) : 1;
-          if (paidSubsequent.type === "PELUNASAN" || subTermNum > termNum || /pelunasan/i.test(paidSubsequent.description || "")) {
-            hasPaidPelunasan = true;
-          }
-        }
-      }
-      if (!hasPaidPelunasan) {
-        targetStatus = "PARTIAL";
-      }
-    }
-
-    const updated = await this.prisma.main.invoiceOut.update({
-      where: { id },
-      data: {
-        paidAmount: paid,
-        status: targetStatus,
-      },
-      include: { customer: true, payments: { orderBy: { date: "desc" } } },
-    });
-
-    // Pastikan jurnal penerbitan invoice sudah tercatat
-    await this.postInvoiceJournalIfEligible(id, user.id);
+    const paid = Number(updated.paidAmount);
+    const isNowPaid = updated.status === "PAID";
 
     await this.audit.log({
       actor: user,
       action: "BAYAR_INVOICE_KELUAR",
       entityType: "invoice-out",
       entityId: id,
-      detail: `Rp${dto.amount} (${row.number}) total bayar Rp${paid}`,
+      detail: `Rp${settle}${pph23 > 0 ? ` (kas Rp${cash} + PPh23 Rp${pph23})` : ""} (${row.number}) total bayar Rp${paid}`,
     });
     await this.syncProjectPayment(row.projectId);
     if (isNowPaid) {
@@ -1460,12 +1509,126 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         title: isNowPaid ? "Invoice Lunas" : "Pembayaran Invoice Diterima",
         text: isNowPaid
           ? `Invoice ${row.number} telah LUNAS (total Rp${Number(paid).toLocaleString("id-ID")})`
-          : `Pembayaran Rp${Number(dto.amount).toLocaleString("id-ID")} diterima untuk Invoice ${row.number}`,
+          : `Pembayaran Rp${Number(settle).toLocaleString("id-ID")} diterima untuk Invoice ${row.number}`,
         href: `/invoices/${id}`,
       })
       .catch(() => {});
     this.notifications.dataChange("invoices", "update", id);
     return this.sync(updated);
+  }
+
+  /**
+   * Void (batalkan) satu pembayaran yang salah catat / dobel.
+   * Jurnal kasnya dibalik, baris Payment dihapus, dan sisa tagihan invoice kembali bertambah.
+   */
+  async voidPayment(id: number, paymentId: number, reason: string | undefined, user: RequestUser) {
+    this.assertFinanceOrAdmin(user, "Hanya tim Finance yang dapat membatalkan pembayaran invoice");
+    const why = reason?.trim() || "Pembayaran dibatalkan (void)";
+    const pay = await this.prisma.main.payment.findFirst({ where: { id: paymentId, invoiceOutId: id } });
+    if (!pay) throw new NotFoundException("Pembayaran tidak ditemukan pada invoice ini");
+    const row = await this.prisma.main.invoiceOut.findUniqueOrThrow({ where: { id } });
+
+    const updated = await this.prisma.main.$transaction(
+      async (tx) => {
+        await this.postingService.reverseAllForSource("Payment", pay.id, why, user.id, tx);
+        await tx.payment.delete({ where: { id: pay.id } });
+        let fresh = await tx.invoiceOut.update({ where: { id }, data: { paidAmount: { decrement: pay.amount } } });
+        if (Number(fresh.paidAmount) < 0) {
+          fresh = await tx.invoiceOut.update({ where: { id }, data: { paidAmount: 0 } });
+        }
+        return tx.invoiceOut.update({
+          where: { id },
+          data: { status: fresh.status === "BATAL" ? "BATAL" : this.statusAfterPayment(fresh) },
+          include: { customer: true, payments: { orderBy: { date: "desc" } } },
+        });
+      },
+      { timeout: 20_000 },
+    );
+
+    await this.audit.log({
+      actor: user,
+      action: "VOID_PEMBAYARAN_INVOICE_KELUAR",
+      entityType: "invoice-out",
+      entityId: id,
+      detail: `${row.number}: pembayaran #${pay.id} Rp${Number(pay.amount)} dibatalkan — ${why}`,
+    });
+    await this.syncProjectPayment(row.projectId);
+    this.notifications.dataChange("invoices", "update", id);
+    return this.sync(updated);
+  }
+
+  /**
+   * Terbitkan invoice resmi dari proforma: semua isi (item, nilai, pajak, diskon, kop) disalin,
+   * invoice resmi mendapat nomor INV sendiri dan baru dijurnal saat terbit. Proforma tetap tersimpan
+   * sebagai riwayat dan tidak bisa dikonversi dua kali.
+   */
+  async convertProforma(id: number, dto: ConvertProformaDto, user: RequestUser) {
+    const pf = await this.prisma.main.invoiceOut.findUnique({
+      where: { id },
+      include: { convertedTo: { select: { id: true, number: true } } },
+    });
+    if (!pf) throw new NotFoundException("Proforma invoice tidak ditemukan");
+    if (!pf.isProforma) throw new BadRequestException(`${pf.number} bukan proforma invoice`);
+    if (pf.status === "BATAL") throw new BadRequestException("Proforma yang dibatalkan tidak bisa diterbitkan");
+    if (pf.convertedTo) {
+      throw new BadRequestException(`Proforma ${pf.number} sudah diterbitkan menjadi invoice ${pf.convertedTo.number}`);
+    }
+
+    const cleanDesc = String(pf.description || "")
+      .replace(/\[by:\d+\]/g, "")
+      .trim();
+    const subject = pf.subject && !/proforma/i.test(pf.subject) ? pf.subject : undefined;
+    const created: any = await this.create(
+      {
+        number: dto.number,
+        clientPoId: pf.clientPoId ?? undefined,
+        projectId: pf.projectId ?? undefined,
+        customerId: pf.customerId ?? undefined,
+        quotationId: pf.quotationId ?? undefined,
+        description: cleanDesc ? `${cleanDesc} (dari proforma ${pf.number})` : `Invoice dari proforma ${pf.number}`,
+        type: pf.type,
+        amount: Number(pf.amount),
+        ppn: Number(pf.ppn),
+        total: Number(pf.total),
+        discount: pf.discount != null ? Number(pf.discount) : 0,
+        pph: pf.pph != null ? Number(pf.pph) : undefined,
+        pphMode: pf.pphMode ?? undefined,
+        tipePph: pf.tipePph ?? undefined,
+        date: dto.date ?? new Date().toISOString().slice(0, 10),
+        dueDate: dto.dueDate ?? pf.dueDate.toISOString().slice(0, 10),
+        status: dto.send === false ? "DRAFT" : "SENT",
+        items: Array.isArray(pf.items) ? (pf.items as any[]) : undefined,
+        subject,
+        intro: pf.intro ?? undefined,
+        notesList: Array.isArray(pf.notesList) ? (pf.notesList as string[]) : undefined,
+        city: pf.city ?? undefined,
+        kopText: pf.kopText ?? undefined,
+        kopLogoUrl: pf.kopLogoUrl ?? undefined,
+        customerAddress: pf.customerAddress ?? undefined,
+        signerName: pf.signerName ?? undefined,
+        signerTitle: pf.signerTitle ?? undefined,
+        dpLabel: pf.dpLabel ?? undefined,
+        dpAmount: pf.dpAmount != null ? Number(pf.dpAmount) : undefined,
+        isContinuation: pf.isContinuation,
+        parentInvoiceId: pf.parentInvoiceId ?? undefined,
+        isProforma: false,
+      } as InvoiceOutDto,
+      user,
+    );
+
+    await this.prisma.main.invoiceOut.update({
+      where: { id: created.id },
+      data: { proformaId: pf.id, tipePpn: pf.tipePpn, ppnMode: pf.ppnMode },
+    });
+    await this.audit.log({
+      actor: user,
+      action: "TERBITKAN_DARI_PROFORMA",
+      entityType: "invoice-out",
+      entityId: created.id,
+      detail: `${pf.number} → ${created.number}`,
+    });
+    this.notifications.dataChange("invoices", "update", pf.id);
+    return { ...created, proformaId: pf.id, proformaNumber: pf.number };
   }
 
   async setStatus(id: number, status: string, user: RequestUser) {
@@ -1477,16 +1640,33 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     }
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
-    if (status === "PAID") {
-      await this.assertStockAvailabilityForInvoice(row);
+    if (row.status === "BATAL" && status !== "BATAL") {
+      throw new BadRequestException("Invoice batal tidak bisa diaktifkan lagi. Buat invoice baru.");
     }
+
+    const paid = Number(row.paidAmount);
+    const total = Number(row.total);
+    this.assertManualStatus(status, { paid, total });
+
+    // PARTIAL / OVERDUE / PAID adalah status turunan pembayaran -> dihitung ulang, bukan dipaksa.
+    const target: StatusFilter =
+      status === "DRAFT" || status === "SENT" || status === "BATAL"
+        ? (status as StatusFilter)
+        : this.statusAfterPayment({ ...row, status: row.status === "DRAFT" ? "SENT" : row.status });
+
+    if (target === "BATAL" || (target === "DRAFT" && row.status !== "DRAFT")) {
+      // Balik jurnal penerbitan (+ pelepasan DP) dulu; bila periode sudah tutup, perubahan status ditolak.
+      await this.postingService.reverseAllForSource(
+        "InvoiceOut",
+        id,
+        target === "BATAL" ? "Invoice dibatalkan" : "Invoice dikembalikan ke draft",
+        user.id,
+      );
+    }
+
     const updated = await this.prisma.main.invoiceOut.update({
       where: { id },
-      data: {
-        status: status as never,
-        ...(status === "PAID" ? { paidAmount: row.total } : {}),
-        ...(status === "SENT" && Number(row.paidAmount) >= Number(row.total) ? { paidAmount: 0 } : {}),
-      },
+      data: { status: target as never },
       include: { customer: true, clientPo: { select: { id: true, number: true, amount: true } } },
     });
     await this.audit.log({
@@ -1494,17 +1674,15 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       action: "UBAH_STATUS_INVOICE",
       entityType: "invoice-out",
       entityId: id,
-      detail: `${row.number}: ${row.status} → ${status}`,
+      detail: `${row.number}: ${row.status} → ${target}`,
     });
     await this.syncProjectPayment(row.projectId);
-    if (status === "BATAL") {
+    if (target === "BATAL") {
       await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
-      // Pembalik Jurnal Akuntansi jika invoice dibatalkan
-      await this.postingService.reverse("InvoiceOut", id, "issued", "Invoice dibatalkan", user.id).catch(() => {});
-    } else if (["SENT", "PAID", "PARTIAL", "OVERDUE"].includes(status)) {
+    } else if (target !== "DRAFT") {
       await this.postInvoiceJournalIfEligible(id, user.id);
     }
-    if (status === "PAID") {
+    if (target === "PAID" && row.status !== "PAID") {
       await this.syncRelatedInvoicesOnPaid(updated, user);
     }
     return this.sync(updated);
@@ -1514,12 +1692,18 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     this.assertFinanceOrAdmin(user, "Hanya tim Finance yang dapat menghapus invoice");
     const row = await this.prisma.main.invoiceOut.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
-    await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
+    const payCount = await this.prisma.main.payment.count({ where: { invoiceOutId: id } });
+    if (payCount > 0 || Number(row.paidAmount) > 0) {
+      throw new BadRequestException(
+        "Invoice yang sudah menerima pembayaran tidak bisa dihapus. Void pembayarannya dulu, atau batalkan invoice.",
+      );
+    }
     await this.prisma.main.$transaction(async (tx) => {
-      await this.postingService.reverse("InvoiceOut", id, "issued", "Invoice dihapus", user.id, tx).catch(() => {});
-      await tx.payment.deleteMany({ where: { invoiceOutId: id } });
+      // Wajib berhasil: jangan sampai invoice hilang tapi jurnal piutangnya tertinggal
+      await this.postingService.reverseAllForSource("InvoiceOut", id, "Invoice dihapus", user.id, tx);
       await tx.invoiceOut.delete({ where: { id } });
     });
+    await this.reservations.releaseForDocument({ invoiceId: id }).catch(() => {});
     await this.audit.log({
       actor: user,
       action: "HAPUS_INVOICE_KELUAR",
@@ -2190,6 +2374,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         customer: true,
         clientPo: { include: { quotation: true } },
         project: { include: { quotation: true } },
+        parentInvoice: { select: { ppnMode: true } },
       },
     });
     if (!row) throw new NotFoundException("Invoice tidak ditemukan");
@@ -2224,7 +2409,8 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       },
     ];
 
-    const discount = Number(meta.discount ?? quoteMeta?.discount ?? quoteMeta?.disc ?? relatedQuote?.discount ?? 0);
+    // Diskon penawaran hanya berlaku bila item yang dicetak berasal dari penawaran (harga kotor).
+    const discount = Number(meta.discount ?? (meta.items == null ? relatedQuote?.discount ?? 0 : 0));
     const itemsGrossTotal = items.reduce((acc: number, it: any) => acc + (Number(it.qty) || 0) * (Number(it.harga) || 0), 0);
     const isDp = row.type === "DP" || /dp/i.test(String(row.description || ""));
     const isTermin = row.type === "TERMIN" || /termin/i.test(String(row.description || ""));
@@ -2244,7 +2430,13 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       "Bekasi Barat Bintara Jaya Bekasi",
     ];
 
-    return { row, meta, quoteMeta, items, discount, itemsGrossTotal, dpLabel, dpAmount, notes };
+    const ppnIncluded =
+      this.resolvePpnMode(meta.ppnMode, Number(row.ppn || 0), {
+        soPpnMode: row.clientPo?.ppnMode,
+        parentPpnMode: (row as any).parentInvoice?.ppnMode,
+        quote: relatedQuote ?? null,
+      }).ppnMode === "include";
+    return { row, meta, quoteMeta, items, discount, itemsGrossTotal, dpLabel, dpAmount, notes, ppnIncluded };
   }
 
   async exportExcel(id: number): Promise<{ buffer: Buffer; filename: string }> {
@@ -2258,13 +2450,15 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       customerAddress: ctx.meta.customerAddress || ctx.quoteMeta?.customerAddress || ctx.row.customer?.address || "Di Tempat",
       leadName: ctx.row.project?.name || ctx.row.clientPo?.number || "Pekerjaan",
       kopText: ctx.meta.kopText || ctx.quoteMeta?.kopText,
-      subject: ctx.meta.subject || "INVOICE PENAGIHAN",
+      subject: this.exportSubject(ctx.row, ctx.meta.subject),
       intro: ctx.meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
       items: ctx.items,
       total: ctx.itemsGrossTotal > 0 ? ctx.itemsGrossTotal : Number(ctx.row.amount),
       discount: ctx.discount,
       ppn: Number(ctx.row.ppn),
       grandTotal: Number(ctx.row.total),
+      ...this.exportPphFields(ctx.row),
+      ppnIncluded: ctx.ppnIncluded,
       dpLabel: ctx.dpLabel,
       dpAmount: ctx.dpAmount,
       notes: ctx.notes,
@@ -2272,7 +2466,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       signerTitle: ctx.meta.signerTitle || "Finance & Accounting",
     });
 
-    const filename = `Invoice-${ctx.row.number.replace(/\//g, "-")}.xlsx`;
+    const filename = `${ctx.row.isProforma ? "Proforma" : "Invoice"}-${ctx.row.number.replace(/\//g, "-")}.xlsx`;
     return { buffer, filename };
   }
 
@@ -2288,13 +2482,15 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       leadName: ctx.row.project?.name || ctx.row.clientPo?.number || "Pekerjaan",
       kopText: ctx.meta.kopText || ctx.quoteMeta?.kopText,
       kopLogoUrl: ctx.meta.kopLogoUrl || ctx.quoteMeta?.kopLogoUrl,
-      subject: ctx.meta.subject || "INVOICE PENAGIHAN",
+      subject: this.exportSubject(ctx.row, ctx.meta.subject),
       intro: ctx.meta.intro || "Bersama surat ini kami sampaikan invoice penagihan untuk pekerjaan berikut :",
       items: ctx.items,
       total: ctx.itemsGrossTotal > 0 ? ctx.itemsGrossTotal : Number(ctx.row.amount),
       discount: ctx.discount,
       ppn: Number(ctx.row.ppn),
       grandTotal: Number(ctx.row.total),
+      ...this.exportPphFields(ctx.row),
+      ppnIncluded: ctx.ppnIncluded,
       dpLabel: ctx.dpLabel,
       dpAmount: ctx.dpAmount,
       notes: ctx.notes,
@@ -2302,12 +2498,21 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       signerTitle: ctx.meta.signerTitle || "Finance & Accounting",
     });
 
-    const filename = `Invoice-${ctx.row.number.replace(/\//g, "-")}.pdf`;
+    const filename = `${ctx.row.isProforma ? "Proforma" : "Invoice"}-${ctx.row.number.replace(/\//g, "-")}.pdf`;
     return { buffer, filename };
   }
 
+  /** Klasifikasi item invoice untuk pemisahan pendapatan barang vs jasa. */
+  private revenueItems(rawItems: any[]) {
+    return rawItems.map((it: any) => ({
+      type: /jasa|instalasi|service|pasang/i.test(it.name || it.item || it.productName || "") ? "SERVICE" : "PRODUCT",
+      amount: Number(it.subtotal || it.amount || (Number(it.harga || it.price || 0) * Number(it.qty || 1)) || 0),
+    }));
+  }
+
   /**
-   * Posting Jurnal Penerbitan Invoice Keluar (E1 / E2)
+   * Posting Jurnal Penerbitan Invoice Keluar (E1 / E2) + pelepasan uang muka (E2b) untuk invoice pelunasan.
+   * Memakai repost(): bila nilai invoice berubah, jurnal lama dibalik & versi baru diposting; bila sama, tidak ada perubahan.
    */
   async postInvoiceJournalIfEligible(invoiceId: number, userId?: number): Promise<void> {
     try {
@@ -2316,18 +2521,16 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         include: { customer: true },
       });
       if (!inv || inv.status === "BATAL") return;
+      // Proforma bukan tagihan resmi: tidak ada piutang / pendapatan / PPN keluaran.
+      if (inv.isProforma) return;
       const hasPayment = Number(inv.paidAmount) > 0;
       if (inv.status === "DRAFT" && !hasPayment) return;
 
-      const meta = (await this.getMeta(inv.id)) || {};
-      const rawItems = Array.isArray(meta.items) && meta.items.length > 0
-        ? meta.items
-        : Array.isArray((inv as any).items)
-        ? (inv as any).items
-        : [];
+      const rawItems: any[] = Array.isArray((inv as any).items) ? (inv as any).items : [];
       const mappings = await this.mappingService.getAll();
 
       const targetDpp = Number(inv.amount || (Number(inv.total) - Number(inv.ppn || 0)));
+      const pph = Number((inv as any).pph || 0);
       const lines = (inv.type === "DP")
         ? PostingRules.buildCustomerDpLines(
             {
@@ -2337,6 +2540,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
               dpp: targetDpp,
               ppn: Number(inv.ppn || 0),
               total: Number(inv.total),
+              pph,
             },
             mappings,
           )
@@ -2350,13 +2554,11 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
               dpp: targetDpp,
               ppn: Number(inv.ppn || 0),
               total: Number(inv.total),
-              dpApplied: Number(meta.dpApplied || 0),
-              retentionPercent: Number(meta.retentionPercent || 0),
-              retentionAmount: Number(meta.retentionAmount || 0),
-              items: rawItems.map((it: any) => ({
-                type: /jasa|instalasi|service|pasang/i.test(it.name || it.item || it.productName || "") ? "SERVICE" : "PRODUCT",
-                amount: Number(it.subtotal || it.amount || (Number(it.harga || it.price || 0) * Number(it.qty || 1)) || 0),
-              })),
+              dpApplied: Number((inv as any).dpApplied || 0),
+              retentionPercent: Number((inv as any).retentionPercent || 0),
+              retentionAmount: Number((inv as any).retentionAmount || 0),
+              pph,
+              items: this.revenueItems(rawItems),
             },
             mappings,
           );
@@ -2366,7 +2568,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         : (inv.createdAt ? new Date(inv.createdAt) : new Date());
       const validDate = isNaN(effectiveDate.getTime()) ? new Date() : effectiveDate;
 
-      await this.postingService.post({
+      await this.postingService.repost({
         sourceType: "InvoiceOut",
         sourceId: inv.id,
         event: "issued",
@@ -2378,8 +2580,81 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         createdById: userId,
         lines,
       });
+
+      if (inv.type === "PELUNASAN") {
+        await this.postDpRelease(inv, validDate, mappings, userId);
+      }
     } catch (err) {
       console.error(`Posting invoice out #${invoiceId} error:`, err);
     }
+  }
+
+  /**
+   * E2b: Saat invoice pelunasan terbit, uang muka (invoice DP) pada kontrak yang sama diakui menjadi pendapatan.
+   * Kontrak yang sama = penawaran / SO / nomor induk invoice / invoice induk yang sama (bukan sekadar satu project).
+   * Tiap DP hanya dilepas sekali (ditandai [dp:id] di memo jurnal).
+   */
+  private async postDpRelease(inv: InvoiceOut, date: Date, mappings: Record<string, string>, userId?: number) {
+    const base = inv.number.match(/^(INV\/\d{4}\/\d{2}\/\d+)/i)?.[1] ?? null;
+    const siblings = await this.findSiblingInvoices(inv);
+    const dps = siblings.filter(
+      (s) =>
+        s.type === "DP" &&
+        s.status !== "BATAL" &&
+        s.status !== "DRAFT" &&
+        ((inv.quotationId && s.quotationId === inv.quotationId) ||
+          (inv.clientPoId && s.clientPoId === inv.clientPoId) ||
+          (base && s.number.startsWith(base)) ||
+          (inv.parentInvoiceId && s.id === inv.parentInvoiceId)),
+    );
+
+    const otherReleases = await (this.prisma.main as any).journalEntry.findMany({
+      where: { sourceType: "InvoiceOut", event: "dp-release", status: "POSTED", NOT: { sourceId: inv.id } },
+      select: { memo: true },
+    });
+    const alreadyReleased = new Set<number>();
+    for (const r of otherReleases) {
+      const m = String(r.memo || "").match(/\[dp:([\d,]+)\]/);
+      for (const idStr of m?.[1]?.split(",") ?? []) alreadyReleased.add(Number(idStr));
+    }
+
+    let amount = 0;
+    let service = 0;
+    const used: number[] = [];
+    for (const d of dps) {
+      if (alreadyReleased.has(d.id)) continue;
+      const dDpp = Number(d.amount || Number(d.total) - Number(d.ppn || 0));
+      const withheld = withheldTax({ dpp: dDpp, ppn: Number(d.ppn || 0), total: Number(d.total), pph: Number((d as any).pph || 0) });
+      const advance = Math.max(0, Math.round(Number(d.total) + withheld - Number(d.ppn || 0)));
+      if (advance <= 0) continue;
+      const items = this.revenueItems(Array.isArray((d as any).items) ? (d as any).items : []);
+      const itemsTotal = items.reduce((s, it) => s + it.amount, 0);
+      const srvTotal = items.filter((it) => it.type === "SERVICE").reduce((s, it) => s + it.amount, 0);
+      service += itemsTotal > 0 ? Math.round(advance * (srvTotal / itemsTotal)) : 0;
+      amount += advance;
+      used.push(d.id);
+    }
+
+    if (amount <= 0) {
+      // Tidak ada DP (lagi) -> pastikan tidak ada sisa jurnal pelepasan versi lama
+      await this.postingService.reverse("InvoiceOut", inv.id, "dp-release", "Tidak ada uang muka untuk dilepas", userId).catch(() => {});
+      return;
+    }
+
+    await this.postingService.repost({
+      sourceType: "InvoiceOut",
+      sourceId: inv.id,
+      event: "dp-release",
+      source: "INVOICE_OUT",
+      date,
+      memo: `Pelepasan Uang Muka Penjualan ke Pendapatan via ${inv.number} [dp:${used.join(",")}]`,
+      refNo: inv.number,
+      projectId: inv.projectId,
+      createdById: userId,
+      lines: PostingRules.buildDpReleaseLines(
+        { number: inv.number, customerId: inv.customerId || 0, projectId: inv.projectId, amount, serviceAmount: service },
+        mappings,
+      ),
+    });
   }
 }

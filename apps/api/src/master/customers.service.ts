@@ -1,8 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
 import { CustomerDto } from "./dto.js";
+import { cleanName } from "../common/utils/names.js";
 
 @Injectable()
 export class CustomersService {
@@ -43,10 +44,12 @@ export class CustomersService {
   }
 
   create(dto: CustomerDto) {
+    const name = cleanName(dto.name);
+    if (!name) throw new BadRequestException("Nama customer wajib diisi");
     return this.prisma.main.customer.create({
       data: {
         ...dto,
-        name: dto.name || "Customer Baru",
+        name,
         pic: dto.pic || "-",
       },
     });
@@ -54,7 +57,9 @@ export class CustomersService {
 
   async update(id: number, dto: CustomerDto) {
     await this.get(id);
-    return this.prisma.main.customer.update({ where: { id }, data: dto });
+    const data = dto.name !== undefined ? { ...dto, name: cleanName(dto.name) } : dto;
+    if (data.name !== undefined && !data.name) throw new BadRequestException("Nama customer wajib diisi");
+    return this.prisma.main.customer.update({ where: { id }, data });
   }
 
   async remove(id: number) {

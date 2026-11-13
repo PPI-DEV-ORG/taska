@@ -1,3 +1,4 @@
+import { receivingPpnInfo, receivingUnitCost, splitPurchasePayment } from "./purchase-vat.js";
 import {
   Injectable,
   Inject,
@@ -10,6 +11,19 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { MappingService } from "./mapping.service.js";
 import { PeriodService } from "./period.service.js";
 import { PostRequest, JournalLineSpec, round, CUTOFF_DATE } from "./accounting.types.js";
+import { PREPAID_OFFSET_REF, getDirectPrepayment, hasSupplierInvoiceCashPayment } from "./purchase-payment.js";
+
+/** Referensi baris Payment palsu buatan versi lama saat invoice pelunasan dibayar. */
+export const LEGACY_AUTO_SETTLE_REF = "Auto-settle via pelunasan";
+
+/** Ambil kode akun kas/bank dari referensi lama, mis. "[AKUN:1000.02] ..." atau "LUNAS-SO-x [1000.02]". */
+export function accountFromReference(ref?: string | null): string | null {
+  const m = String(ref || "").match(/\[(?:AKUN:)?\s*(\d{3,}(?:\.\d+)*)\s*\]/i);
+  return m ? m[1]! : null;
+}
+
+/** Filter: abaikan entri pembalik (event "...:rev"), tetap ikutkan event kosong. */
+const NOT_REVERSAL_EVENT = { OR: [{ event: null }, { NOT: { event: { endsWith: ":rev" } } }] };
 
 @Injectable()
 export class PostingService {
@@ -142,31 +156,33 @@ export class PostingService {
         period = await this.periodService.assertPeriodOpen(entryDate, undefined, client);
       }
 
-      // 4. Idempotensi
-      if (request.sourceType && request.sourceId && request.event) {
-        const existing = await (client as any).journalEntry.findFirst({
-          where: {
-            sourceType: request.sourceType,
-            sourceId: request.sourceId,
-            event: request.event,
-            status: "POSTED",
-          },
-          include: { lines: true },
-          orderBy: { version: "desc" },
-        });
-
+      // 4. Idempotensi: satu dokumen + event hanya boleh punya SATU jurnal aktif.
+      //    - isi sama  -> kembalikan jurnal lama (aman dipanggil berulang / double click)
+      //    - isi beda  -> tolak; perubahan nilai wajib lewat repost() (balik jurnal lama, posting versi baru)
+      const keyed = Boolean(request.sourceType && request.sourceId && request.event);
+      let version = 1;
+      if (keyed) {
+        const existing = await this.findActive(client, request.sourceType!, request.sourceId!, request.event!);
         if (existing) {
-          const exDebit = existing.lines.reduce((s: number, l: any) => s + Number(l.debit), 0);
-          const exCredit = existing.lines.reduce((s: number, l: any) => s + Number(l.credit), 0);
-          if (round(exDebit) === totalDebit && round(exCredit) === totalCredit) {
-            return existing;
-          }
+          if (PostingService.sameLines(existing.lines, cleanLines)) return existing;
+          throw new ConflictException(
+            `Jurnal ${existing.number} untuk dokumen ini (${request.sourceType} #${request.sourceId}, ${request.event}) sudah ada dengan nilai berbeda. ` +
+              `Koreksi harus lewat pembalikan & posting ulang agar tidak tercatat ganda.`,
+          );
         }
+        const last = await (client as any).journalEntry.findFirst({
+          where: { sourceType: request.sourceType, sourceId: request.sourceId, event: request.event },
+          orderBy: { version: "desc" },
+          select: { version: true },
+        });
+        version = (last?.version ?? 0) + 1;
       }
 
       // 5. Simpan Journal Entry & Lines
       const number = await this.generateJournalNumber(entryDate, client);
-      const entry = await (client as any).journalEntry.create({
+      let entry: any;
+      try {
+        entry = await (client as any).journalEntry.create({
         data: {
           number,
           date: entryDate,
@@ -174,6 +190,7 @@ export class PostingService {
           sourceType: request.sourceType,
           sourceId: request.sourceId,
           event: request.event,
+          version,
           memo: request.memo,
           refNo: request.refNo,
           projectId: request.projectId,
@@ -194,7 +211,17 @@ export class PostingService {
           },
         },
         include: { lines: true },
-      });
+        });
+      } catch (err: any) {
+        // Dua request bersamaan (double submit) untuk dokumen + event yang sama: unique index
+        // (sourceType, sourceId, event, version) menolak yang kedua. Kembalikan jurnal pemenang bila isinya sama.
+        if (keyed && err?.code === "P2002") {
+          const winner = await this.findActive(client, request.sourceType!, request.sourceId!, request.event!);
+          if (winner && PostingService.sameLines(winner.lines, cleanLines)) return winner;
+          throw new ConflictException("Jurnal dokumen ini sedang/sudah diposting oleh proses lain. Muat ulang lalu coba lagi.");
+        }
+        throw err;
+      }
 
       return entry;
     };
@@ -204,6 +231,58 @@ export class PostingService {
     } else {
       return this.prisma.main.$transaction(async (client) => runInTx(client));
     }
+  }
+
+  /** Jurnal aktif (POSTED, versi terbaru) untuk sebuah dokumen + event. */
+  private async findActive(client: any, sourceType: string, sourceId: number, event: string) {
+    return (client as any).journalEntry.findFirst({
+      where: { sourceType, sourceId, event, status: "POSTED" },
+      include: { lines: true, period: true },
+      orderBy: { version: "desc" },
+    });
+  }
+
+  /** Bandingkan isi jurnal per akun (net debit - kredit), bukan hanya total, agar ganti akun kas/bank ikut terdeteksi. */
+  static sameLines(a: Array<{ accountCode: string; debit?: any; credit?: any }>, b: Array<{ accountCode: string; debit?: any; credit?: any }>): boolean {
+    const net = (lines: typeof a) => {
+      const m = new Map<string, number>();
+      for (const l of lines) m.set(l.accountCode, round((m.get(l.accountCode) ?? 0) + Number(l.debit || 0) - Number(l.credit || 0)));
+      // Selisih ≤ 2 rupiah (baris pembulatan otomatis) diabaikan
+      for (const [k, v] of m) if (Math.abs(v) <= 2) m.delete(k);
+      return m;
+    };
+    const ma = net(a);
+    const mb = net(b);
+    if (ma.size !== mb.size) return false;
+    for (const [k, v] of ma) if (Math.abs((mb.get(k) ?? 0) - v) > 2) return false;
+    return true;
+  }
+
+  /** Ada jurnal aktif untuk dokumen ini (opsional: event tertentu)? */
+  async hasPosted(sourceType: string, sourceId: number, event?: string, tx?: any): Promise<boolean> {
+    const client = tx || this.prisma.main;
+    const count = await (client as any).journalEntry.count({
+      where: { sourceType, sourceId, status: "POSTED", ...(event ? { event } : NOT_REVERSAL_EVENT) },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Balik SEMUA jurnal aktif milik sebuah dokumen (semua event, kecuali entri pembalik itu sendiri).
+   * Dipakai saat dokumen dibatalkan / pembayaran di-void.
+   */
+  async reverseAllForSource(sourceType: string, sourceId: number, reason: string, userId?: number, tx?: any): Promise<number> {
+    const run = async (client: any) => {
+      const entries = await (client as any).journalEntry.findMany({
+        where: { sourceType, sourceId, status: "POSTED", ...NOT_REVERSAL_EVENT },
+        select: { id: true },
+      });
+      for (const e of entries) {
+        await this.reverse(e.id, reason, userId, undefined, undefined, client);
+      }
+      return entries.length;
+    };
+    return tx ? run(tx) : this.prisma.main.$transaction(async (client) => run(client));
   }
 
   /**
@@ -234,7 +313,7 @@ export class PostingService {
           where: {
             sourceType: sourceTypeOrId,
             sourceId: Number(sourceIdOrReason),
-            event: typeof eventOrUserId === "string" ? eventOrUserId : undefined,
+            ...(typeof eventOrUserId === "string" ? { event: eventOrUserId } : NOT_REVERSAL_EVENT),
             status: "POSTED",
           },
           include: { lines: true, period: true },
@@ -258,9 +337,9 @@ export class PostingService {
         );
       }
 
-      // Pastikan periode reversal OPEN
+      // Pastikan periode reversal OPEN (jurnal pembalik dicatat di periode tanggal pembalikan, bukan periode jurnal asal)
       const reversalDate = new Date();
-      await this.periodService.assertPeriodOpen(reversalDate, undefined, client);
+      const reversalPeriod = await this.periodService.assertPeriodOpen(reversalDate, undefined, client);
 
       const reverseLines: JournalLineSpec[] = existing.lines.map((l: any) => ({
         accountCode: l.accountCode,
@@ -285,7 +364,7 @@ export class PostingService {
           memo: `Pembalikan Jurnal ${existing.number}: ${effectiveReason}`,
           refNo: existing.number,
           projectId: existing.projectId,
-          periodId: existing.periodId,
+          periodId: reversalPeriod?.id ?? existing.periodId,
           createdById: effectiveUserId,
           reversalOfId: existing.id,
           status: "POSTED",
@@ -326,23 +405,16 @@ export class PostingService {
   }
 
   /**
-   * Repost (Reverse versi lama jika ada, lalu post versi baru dengan version naik)
+   * Repost: bila isi jurnal tidak berubah -> tidak melakukan apa-apa.
+   * Bila berubah -> balik versi lama, lalu posting versi baru (version naik).
    */
   async repost(request: PostRequest, tx?: any): Promise<any> {
     const runInTx = async (client: any) => {
-      if (request.sourceType && request.sourceId) {
-        const existing = await (client as any).journalEntry.findFirst({
-          where: {
-            sourceType: request.sourceType,
-            sourceId: request.sourceId,
-            event: request.event,
-            status: "POSTED",
-          },
-          include: { period: true },
-          orderBy: { version: "desc" },
-        });
+      if (request.sourceType && request.sourceId && request.event) {
+        const existing = await this.findActive(client, request.sourceType, request.sourceId, request.event);
 
         if (existing) {
+          if (PostingService.sameLines(existing.lines, request.lines)) return existing;
           if (existing.period?.status === "CLOSED") {
             throw new ConflictException(
               "Dokumen tidak dapat diubah karena periode pembukuan sudah ditutup (CLOSED).",
@@ -597,6 +669,7 @@ export class PostingService {
           { payments: { some: {} } },
         ],
         NOT: { status: "BATAL" },
+        isProforma: false,
       },
       include: { customer: true, payments: true },
     });
@@ -639,6 +712,7 @@ export class PostingService {
                   dpp: targetDpp,
                   ppn: Number(inv.ppn || 0),
                   total: Number(inv.total),
+                  pph: Number(inv.pph || 0),
                 },
                 mappings,
               )
@@ -655,6 +729,7 @@ export class PostingService {
                   dpApplied: Number(inv.dpApplied || 0),
                   retentionPercent: Number(inv.retentionPercent || 0),
                   retentionAmount: Number(inv.retentionAmount || 0),
+                  pph: Number(inv.pph || 0),
                   items: rawItems.map((it: any) => ({
                     type: /jasa|instalasi|service|pasang/i.test(it.name || it.item || it.productName || "") ? "SERVICE" : "PRODUCT",
                     amount: Number(it.subtotal || it.amount || (Number(it.harga || it.price || 0) * Number(it.qty || 1)) || 0),
@@ -684,13 +759,15 @@ export class PostingService {
       // Sync pembayaran faktur yang belum tercatat jurnalnya
       if (Array.isArray(inv.payments)) {
         for (const p of inv.payments) {
+          // Baris "Auto-settle via pelunasan" (versi lama) BUKAN uang masuk sungguhan: jangan dijurnal sebagai kas.
+          if (String(p.reference || "").startsWith(LEGACY_AUTO_SETTLE_REF)) continue;
           const existingPayJournal = await (this.prisma.main as any).journalEntry.findFirst({
             where: {
               sourceType: "Payment",
               sourceId: p.id,
-              status: "POSTED",
             },
           });
+          // Pernah dijurnal (meski sudah dibalik karena void) -> jangan diposting ulang.
           if (!existingPayJournal && Number(p.amount) > 0) {
             try {
               const mappings = await this.mappingService.getAll();
@@ -700,7 +777,7 @@ export class PostingService {
                   sourceType: "INVOICE_OUT",
                   sourceId: inv.id,
                   amount: Number(p.amount),
-                  accountCode: p.accountCode || mappings.CASH_DEFAULT || "1000.02",
+                  accountCode: p.accountCode || accountFromReference(p.reference) || mappings.CASH_DEFAULT || "1000.02",
                   pph23Amount: 0,
                   partyType: "CUSTOMER",
                   partyId: inv.customerId || 0,
@@ -744,59 +821,15 @@ export class PostingService {
 
     for (const dn of eligibleDeliveries) {
       try {
-        // 1. Ekstrak kaitan dokumen SO / ClientPO / Invoice
-        const fullText = [
-          dn.reportText || "",
-          ...(dn.locations || []).map((l: any) => `${l.destination || ""} ${l.reason || ""}`),
-        ].join(" ");
-
-        const soIdMatch = fullText.match(/\[so:(\d+)\]/i);
-        const invIdMatch = fullText.match(/\[inv:(\d+)\]/i);
-        const invNumMatch = fullText.match(/\[invNum:([^\]]+)\]/i);
-        const soNumMatch = fullText.match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
-
-        let clientPo: any = null;
-        if (soIdMatch?.[1]) {
-          clientPo = await (this.prisma.main as any).clientPO.findUnique({
-            where: { id: parseInt(soIdMatch[1], 10) },
-            include: { invoices: true },
-          }).catch(() => null);
-        } else if (soNumMatch?.[1]) {
-          clientPo = await (this.prisma.main as any).clientPO.findFirst({
-            where: { OR: [{ number: soNumMatch[1] }, { soNumber: soNumMatch[1] }] },
-            include: { invoices: true },
-          }).catch(() => null);
-        }
-
-        let invoice: any = null;
-        if (invIdMatch?.[1]) {
-          invoice = await (this.prisma.main as any).invoiceOut.findUnique({
-            where: { id: parseInt(invIdMatch[1], 10) },
-          }).catch(() => null);
-        } else if (invNumMatch?.[1]) {
-          invoice = await (this.prisma.main as any).invoiceOut.findFirst({
-            where: { number: invNumMatch[1] },
-          }).catch(() => null);
-        } else if (clientPo?.invoices?.length) {
-          invoice = clientPo.invoices[0];
-        }
-
+        // 1. Kaitan SO / Invoice dari kolom relasi surat jalan (bukan tag teks / nama tujuan yang mirip)
+        const invoice: any = dn.invoiceId
+          ? await (this.prisma.main as any).invoiceOut.findUnique({ where: { id: dn.invoiceId } }).catch(() => null)
+          : null;
+        const clientPoId = dn.clientPoId ?? invoice?.clientPoId ?? null;
+        const clientPo: any = clientPoId
+          ? await (this.prisma.main as any).clientPO.findUnique({ where: { id: clientPoId }, include: { invoices: true } }).catch(() => null)
+          : null;
         const firstLocation = dn.locations[0];
-        if (!clientPo && firstLocation?.destination && firstLocation.destination !== "-") {
-          clientPo = await (this.prisma.main as any).clientPO.findFirst({
-            where: {
-              OR: [
-                { customer: { name: { contains: firstLocation.destination.trim() } } },
-                { notes: { contains: firstLocation.destination.trim() } },
-              ],
-            },
-            orderBy: { id: "desc" },
-            include: { invoices: true },
-          }).catch(() => null);
-          if (!invoice && clientPo?.invoices?.length) {
-            invoice = clientPo.invoices[0];
-          }
-        }
 
         // 2. Tentukan item yang dikirim & agregasi kuantitas sebenarnya
         const poItems = Array.isArray(clientPo?.items) ? (clientPo.items as any[]) : [];
@@ -1071,23 +1104,8 @@ export class PostingService {
         try {
           let totalVal = 0;
           for (const item of (rec.items || [])) {
-            const poItem = rec.supplierPo?.items?.find((p: any) => p.productId === item.productId);
-            const reqItem = rec.request?.items?.find((ri: any) => ri.productId === item.productId);
-            let pPrice = Number(poItem?.price ?? reqItem?.unitCost ?? item.product?.purchasePrice ?? item.product?.avgCost ?? 0);
-            if (pPrice <= 0 && item.productId) {
-              const lastPo = await (this.prisma.main as any).supplierPOItem.findFirst({
-                where: { productId: item.productId, price: { gt: 0 } },
-                orderBy: { id: "desc" },
-              }).catch(() => null);
-              if (lastPo?.price && Number(lastPo.price) > 0) {
-                pPrice = Number(lastPo.price);
-              }
-            }
-            if (pPrice <= 0 && rec.supplierPo?.total) {
-              const totalPo = Number(rec.supplierPo.total);
-              const totalQty = (rec.items || []).reduce((s: number, it: any) => s + (Number(it.qtyReceived) || 1), 0) || 1;
-              pPrice = Math.round(totalPo / totalQty);
-            }
+            // Harga sebelum PPN (harga include PPN dibagi 1,11)
+            let pPrice = await receivingUnitCost(this.prisma.main, rec, item);
             if (pPrice <= 0) {
               pPrice = 100_000;
             }
@@ -1117,6 +1135,7 @@ export class PostingService {
                 supplierId: rec.supplierPo?.supplierId || 0,
                 totalValue: Math.round(totalVal),
                 projectId: rec.projectId,
+                ppn: receivingPpnInfo(rec, totalVal),
               },
               mappings,
             );
@@ -1126,7 +1145,7 @@ export class PostingService {
               event: "received",
               source: "RECEIVING",
               date: rec.date,
-              memo: `Penerimaan Barang BPB ${rec.number}`,
+              memo: rLines[0].memo || `Penerimaan Barang BPB ${rec.number}`,
               refNo: rec.number,
               projectId: rec.projectId,
               createdById: rec.receiverId,
@@ -1144,10 +1163,10 @@ export class PostingService {
     let syncedInvoiceIns = 0;
     const eligibleInvoiceIns = await (this.prisma.main as any).invoiceIn.findMany({
       where: {
-        status: { in: ["UNPAID", "PAID"] },
+        status: { in: ["UNPAID", "PARTIAL", "PAID", "OVERDUE"] },
         date: { gte: CUTOFF_DATE },
       },
-      include: { supplier: true },
+      include: { supplier: true, payments: true },
     });
 
     for (const invIn of eligibleInvoiceIns) {
@@ -1171,6 +1190,8 @@ export class PostingService {
               total: Number(invIn.total),
               isExpense: !invIn.supplierPoId,
               expenseAccountCode: invIn.debitAccount || invIn.coaAccount || undefined,
+              pph: Number(invIn.pph || 0),
+              pphMode: invIn.pphMode || invIn.tipePph,
             },
             mappings,
           );
@@ -1188,6 +1209,61 @@ export class PostingService {
           syncedInvoiceIns++;
         } catch (err) {
           console.error(`Gagal sync jurnal invoice in #${invIn.id}:`, err);
+        }
+      }
+
+      // Pembayaran invoice supplier yang belum punya jurnal (mis. invoice dibuat langsung "Lunas" di versi lama)
+      for (const p of invIn.payments ?? []) {
+        if (Number(p.amount) <= 0) continue;
+        const anyJournal = await (this.prisma.main as any).journalEntry.findFirst({
+          where: { sourceType: "Payment", sourceId: p.id },
+          select: { id: true },
+        });
+        if (anyJournal) continue;
+        try {
+          const mappings = await this.mappingService.getAll();
+          const isOffset = String(p.reference || "").startsWith(PREPAID_OFFSET_REF);
+          // Jangan keluarkan kas lagi bila pembelian ini sudah dibayar langsung (PR / PO lunas)
+          const prepaid = !isOffset && invIn.supplierPoId
+            ? await getDirectPrepayment(this.prisma.main, { supplierPoId: invIn.supplierPoId }, mappings)
+            : null;
+          if (prepaid && prepaid.amount > 0) {
+            console.warn(
+              `Lewati sync jurnal payment #${p.id} (invoice supplier #${invIn.id}): pembelian sudah dibayar langsung (${prepaid.journals.join(", ")}). Periksa manual.`,
+            );
+            continue;
+          }
+          const lines = isOffset
+            ? PostingRules.buildPrepaidOffsetLines(
+                { number: invIn.number || `INV-IN-${invIn.id}`, amount: Number(p.amount), supplierId: invIn.supplierId },
+                mappings,
+              )
+            : PostingRules.buildSupplierPaymentLines(
+                {
+                  id: p.id,
+                  sourceType: "INVOICE_IN",
+                  sourceId: invIn.id,
+                  amount: Number(p.amount),
+                  accountCode: p.accountCode || accountFromReference(p.reference) || mappings.CASH_DEFAULT || "1000.02",
+                  partyType: "SUPPLIER",
+                  partyId: invIn.supplierId,
+                },
+                mappings,
+              );
+          const pDate = p.date ? new Date(p.date) : new Date();
+          await this.post({
+            sourceType: "Payment",
+            sourceId: p.id,
+            event: "settled",
+            source: "INVOICE_IN_PAYMENT",
+            date: isNaN(pDate.getTime()) || pDate < CUTOFF_DATE ? new Date() : pDate,
+            memo: `Pembayaran Tagihan Supplier #${invIn.number || invIn.id}`,
+            refNo: `${invIn.number || `INV-IN-${invIn.id}`}/PAY`,
+            createdById: userId,
+            lines,
+          });
+        } catch (err) {
+          console.error(`Gagal sync jurnal payment invoice in #${invIn.id}:`, err);
         }
       }
     }
@@ -1221,6 +1297,19 @@ export class PostingService {
 
       if (!existing) {
         try {
+          // Status "DIBAYAR" di request juga disetel otomatis saat invoice supplier / PO dibayar.
+          // Dalam kasus itu kas SUDAH keluar lewat jurnal lain -> jangan posting kas keluar kedua kalinya.
+          if (await hasSupplierInvoiceCashPayment(this.prisma.main, { requestId: pr.id })) continue;
+          const poPaid = await (this.prisma.main as any).journalEntry.count({
+            where: { sourceType: "SupplierPO", event: "paid", status: "POSTED", sourceId: { in: (await (this.prisma.main as any).supplierPO.findMany({ where: { requestId: pr.id }, select: { id: true } })).map((x: any) => x.id) } },
+          });
+          if (poPaid > 0) continue;
+          // Pernah dijurnal lalu dibalik (pembatalan) -> jangan dihidupkan lagi otomatis.
+          const everPosted = await (this.prisma.main as any).journalEntry.count({
+            where: { sourceType: "PurchaseRequest", sourceId: pr.id, event: "paid" },
+          });
+          if (everPosted > 0) continue;
+
           const mappings = await this.mappingService.getAll();
           const payAccount = pr.paymentAccountCode || mappings.CASH_DEFAULT || "1000.02";
           const costTotal = Number(pr.estimatedCost || 0) ||
@@ -1229,26 +1318,22 @@ export class PostingService {
           if (costTotal > 0) {
             const isProjectConsumable =
               Boolean(pr.projectId) &&
-              (String(pr.otherNote || "").includes("[ALL_CONSUMABLES]") ||
-                (pr.items.length > 0 &&
-                  pr.items.every((it: any) => String(it.customName || "").includes("[PAKAI_HABIS]"))));
+              (Boolean(pr.isProjectConsumable) ||
+                (pr.items.length > 0 && pr.items.every((it: any) => Boolean(it.isConsumable))));
 
-            const itemsDpp = (pr.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0);
-            let grniAmount = costTotal;
-            let vatAmount = 0;
-            if (itemsDpp > 0 && costTotal > itemsDpp) {
-              grniAmount = itemsDpp;
-              vatAmount = Math.max(0, Math.round(costTotal - itemsDpp));
-            }
+            const itemsSum = (pr.items || []).reduce((acc: number, it: any) => acc + (Number(it.unitCost || 0) * Number(it.qty || 1)), 0);
+            const { goods: grniAmount, vat: vatAmount } = splitPurchasePayment({ paid: costTotal, itemsSum, mode: pr.ppnMode });
+            const vatLine = vatAmount > 0 ? [{ accountCode: mappings.VAT_IN || "1600", debit: vatAmount, credit: 0, memo: `PPN Masukan Pembelian #${pr.number}`, projectId: pr.projectId }] : [];
 
             const lines = (pr.projectId && isProjectConsumable)
               ? [
-                  { accountCode: mappings.COGS_PROJECT || "5101", debit: costTotal, credit: 0, memo: `HPP Material Proyek #${pr.number}`, projectId: pr.projectId },
+                  { accountCode: mappings.COGS_PROJECT || "5101", debit: grniAmount, credit: 0, memo: `HPP Material Proyek #${pr.number}`, projectId: pr.projectId },
+                  ...vatLine,
                   { accountCode: payAccount, debit: 0, credit: costTotal, memo: `Kas Keluar #${pr.number}`, projectId: pr.projectId },
                 ]
               : [
                   { accountCode: mappings.GRNI || "2108", debit: grniAmount, credit: 0, memo: `Kliring GRNI Pembelian #${pr.number}`, projectId: pr.projectId },
-                  ...(vatAmount > 0 ? [{ accountCode: mappings.VAT_IN || "1600", debit: vatAmount, credit: 0, memo: `PPN Masukan Pembelian #${pr.number}`, projectId: pr.projectId }] : []),
+                  ...vatLine,
                   { accountCode: payAccount, debit: 0, credit: costTotal, memo: `Kas Keluar Pembelian #${pr.number}`, projectId: pr.projectId },
                 ];
 

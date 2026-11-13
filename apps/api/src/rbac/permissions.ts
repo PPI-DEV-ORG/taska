@@ -1,3 +1,5 @@
+import { STANDARD_ROLES } from "./role-matrix.js";
+
 export type Action = "M" | "L" | "C" | "U" | "A" | "P" | "V" | "E";
 
 export type ModuleKey =
@@ -319,19 +321,10 @@ export type RoleDefinition = {
   permissions: Record<string, string>;
 };
 
-export const ROLE_METADATA: Record<string, { name: string; description: string }> = {
-  SUPER_ADMIN: { name: "Super Admin", description: "Akses penuh ke seluruh modul, pengaturan sistem, dan manajemen peran" },
-  ADMIN: { name: "Admin", description: "Administrator operasional kantor dengan akses seluruh modul" },
-  BOS: { name: "Direktur / Bos", description: "Pimpinan perusahaan dengan akses persetujuan, laporan P&L, dan seluruh modul" },
-  SALES: { name: "Sales", description: "Tim penjualan: mengelola leads, survey, penawaran, SO, dan relasi customer" },
-  PM: { name: "Project Manager", description: "Manajer proyek: mengelola jalannya proyek, tugas tim, P&L proyek, dan BAST" },
-  TEKNISI: { name: "Teknisi", description: "Tim teknis lapangan: eksekusi tugas proyek, survey lokasi, dan instalasi" },
-  PROCUREMENT: { name: "Procurement / Purchasing", description: "Tim pengadaan: mengelola PR, PO Supplier, penerimaan barang, dan harga vendor" },
-  FINANCE: { name: "Finance & Accounting", description: "Tim keuangan: mengelola invoice keluar/masuk, pembayaran, pengeluaran, COA, dan P&L" },
-  GUDANG: { name: "Admin Gudang", description: "Tim logistik & gudang: mengelola stok, serial number, opname, penerimaan, dan surat jalan" },
-  SE: { name: "System Engineer / Presales", description: "Tim presales & solusi teknis: POC, demo, survey, dan pendampingan teknis" },
-  HR: { name: "HR / Personalia", description: "Tim SDM: mengelola data karyawan, rekap absensi, lembur, dan slip gaji (payroll)" },
-};
+/** Nama & deskripsi peran bawaan (dari matriks standar). */
+export const ROLE_METADATA: Record<string, { name: string; description: string }> = Object.fromEntries(
+  Object.entries(STANDARD_ROLES).map(([code, r]) => [code, { name: r.name, description: r.description }]),
+);
 
 const MODULE_ALIASES: Record<string, string[]> = {
   financeOut: ["financeOut", "invoices", "poClient", "po-client", "accounting"],
@@ -402,209 +395,10 @@ const MODULE_ALIASES: Record<string, string[]> = {
   shipments: ["shipments", "supplier-pos", "procurement"],
 };
 
-export const DEFAULT_UI_PERMISSIONS: Record<string, Record<string, string>> = {
-  SUPER_ADMIN: Object.fromEntries(
-    [
-      "leads", "quotations", "surveys", "poc-reports", "visit-reports", "customers",
-      "po-client", "projects", "tasks", "delivery-notes",
-      "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports", "suppliers", "warehouses", "products",
-      "invoices", "expenses", "accounting", "reports",
-      "hr",
-      "dashboard", "calendar", "approvals", "master-data", "users", "archive", "audit-log",
-    ].map((k) => [k, "MLCUAPVE"])
-  ),
-  ADMIN: Object.fromEntries(
-    [
-      "leads", "quotations", "surveys", "poc-reports", "visit-reports", "customers",
-      "po-client", "projects", "tasks", "delivery-notes",
-      "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports", "suppliers", "warehouses", "products",
-      "invoices", "expenses", "accounting", "reports",
-      "hr",
-      "dashboard", "calendar", "approvals", "master-data", "users", "archive", "audit-log",
-    ].map((k) => [k, "MLCUAPVE"])
-  ),
-  BOS: Object.fromEntries(
-    [
-      "leads", "quotations", "surveys", "poc-reports", "visit-reports", "customers",
-      "po-client", "projects", "tasks", "delivery-notes",
-      "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports", "suppliers", "warehouses", "products",
-      "invoices", "expenses", "accounting", "reports",
-      "hr",
-      "dashboard", "calendar", "approvals", "master-data", "users", "archive", "audit-log",
-    ].map((k) => [k, "MLCUAPVE"])
-  ),
-  SALES: {
-    dashboard: "ML",
-    calendar: "MLCUA",
-    leads: "MLCUAEP",
-    quotations: "MLCUPEA",
-    surveys: "MLCUA",
-    "poc-reports": "MLCUA",
-    "visit-reports": "MLCUA",
-    customers: "MLCUA",
-    "po-client": "MLCU",
-    "delivery-notes": "ML",
-    expenses: "MLCU",
-    hr: "MLC",
-    "master-data": "ML",
-    products: "L",
-    stock: "L",
-    projects: "L",
-    suppliers: "L",
-    reports: "L",
-    invoices: "L",
-  },
-  PM: {
-    dashboard: "ML",
-    calendar: "MLCUA",
-    projects: "MLCUPE",
-    tasks: "MLCU",
-    surveys: "MLCUAP",
-    "poc-reports": "MLCUAP",
-    "visit-reports": "MLCUAP",
-    "purchase-requests": "MLCU",
-    "delivery-notes": "MLCU",
-    expenses: "MLCU",
-    hr: "MLC",
-    quotations: "L",
-    leads: "L",
-    customers: "LCU",
-    stock: "L",
-    products: "L",
-    suppliers: "L",
-    reports: "L",
-  },
-  TEKNISI: {
-    dashboard: "ML",
-    calendar: "MLCUA",
-    tasks: "MLU",
-    projects: "ML",
-    surveys: "MLCUA",
-    "poc-reports": "MLCUA",
-    "visit-reports": "MLCUA",
-    "purchase-requests": "MLC",
-    "delivery-notes": "ML",
-    expenses: "MLC",
-    hr: "MLC",
-    customers: "LC",
-    stock: "L",
-    products: "L",
-    warehouses: "L",
-  },
-  PROCUREMENT: {
-    dashboard: "ML",
-    calendar: "MLCUA",
-    approvals: "MLVA",
-    "purchase-requests": "MLCUV",
-    "supplier-pos": "MLCUAPE",
-    shipments: "MLCU",
-    receiving: "MLCUA",
-    stock: "MLCUP",
-    opname: "MLCU",
-    "damage-reports": "MLCU",
-    suppliers: "MLCUA",
-    warehouses: "MLCU",
-    products: "MLCUP",
-    "delivery-notes": "MLCU",
-    expenses: "MLCU",
-    hr: "MLC",
-    "master-data": "ML",
-    customers: "LC",
-    projects: "L",
-    reports: "L",
-    invoices: "L",
-    quotations: "L",
-    "po-client": "L",
-  },
-  FINANCE: {
-    dashboard: "ML",
-    calendar: "MLCUA",
-    approvals: "MLVA",
-    invoices: "MLCUAPVE",
-    accounting: "MLCUAPVE",
-    expenses: "MLCUAPVE",
-    hr: "MLCUAPVE",
-    "po-client": "MLCUP",
-    "purchase-requests": "MLUV",
-    "supplier-pos": "MLCUPVE",
-    "delivery-notes": "MLC",
-    reports: "MLPE",
-    quotations: "LPE",
-    projects: "LP",
-    archive: "L",
-    customers: "LCU",
-    suppliers: "LCU",
-    leads: "L",
-    products: "L",
-    receiving: "L",
-    shipments: "L",
-    stock: "L",
-  },
-  GUDANG: {
-    dashboard: "ML",
-    calendar: "MLCUA",
-    approvals: "MLVA",
-    stock: "MLCU",
-    opname: "MLCUA",
-    receiving: "MLCUA",
-    "delivery-notes": "MLCU",
-    "damage-reports": "MLCUA",
-    "purchase-requests": "MLCU",
-    "supplier-pos": "ML",
-    warehouses: "MLCUA",
-    products: "MLCUA",
-    expenses: "MLCUA",
-    hr: "MLC",
-    "master-data": "ML",
-    customers: "L",
-    suppliers: "L",
-    shipments: "L",
-    invoices: "L",
-    quotations: "L",
-    projects: "L",
-    "po-client": "L",
-  },
-  SE: {
-    dashboard: "ML",
-    calendar: "MLCUA",
-    "poc-reports": "MLCUA",
-    "visit-reports": "MLCUA",
-    surveys: "MLCU",
-    projects: "MLCU",
-    tasks: "MLCU",
-    "delivery-notes": "ML",
-    "purchase-requests": "MLCU",
-    expenses: "MLC",
-    hr: "MLC",
-    leads: "L",
-    quotations: "L",
-    customers: "L",
-    suppliers: "L",
-    products: "L",
-    stock: "L",
-  },
-  HR: {
-    dashboard: "ML",
-    calendar: "MLCUA",
-    hr: "MLCUAPVE",
-    users: "MLCU",
-    expenses: "MLCU",
-    "purchase-requests": "MLC",
-    reports: "ML",
-    "visit-reports": "ML",
-    "poc-reports": "ML",
-    customers: "L",
-    suppliers: "L",
-    products: "L",
-    stock: "L",
-    projects: "L",
-    leads: "L",
-    quotations: "L",
-    invoices: "L",
-    "delivery-notes": "L",
-    surveys: "L",
-  },
-};
+/** Izin default per peran bawaan, dalam kunci modul UI (lihat role-matrix.ts). */
+export const DEFAULT_UI_PERMISSIONS: Record<string, Record<string, string>> = Object.fromEntries(
+  Object.entries(STANDARD_ROLES).map(([code, r]) => [code, { ...r.permissions }]),
+);
 
 function buildRoleDefinition(code: string, perms?: Record<string, any>, isSys: boolean = true): RoleDefinition {
   const norm = code.toUpperCase();
@@ -652,23 +446,56 @@ export function setDynamicRoles(roles: RoleDefinition[]) {
     const normCode = String(r.code).toUpperCase().trim().replace(/[\s\-]+/g, "_");
     const isSys = Boolean(DEFAULT_UI_PERMISSIONS[normCode]);
     const existing = byCode.get(normCode);
-    const hasCustomPerms = r.permissions && Object.keys(r.permissions).length > 0;
+    // Objek permissions yang dikirim adalah sumber kebenaran, TERMASUK bila kosong / ada modul bernilai "".
+    // (Dulu objek kosong diabaikan & modul kosong diisi default lagi -> perubahan "tidak tersimpan".)
+    const hasPermObject = r.permissions && typeof r.permissions === "object" && !Array.isArray(r.permissions);
 
     byCode.set(normCode, {
       code: normCode,
       name: r.name || existing?.name || normCode,
       description: r.description ?? existing?.description ?? "",
       isSystem: isSys,
-      permissions: hasCustomPerms
-        ? Object.fromEntries(
-            Object.entries(r.permissions).map(([k, v]) => [k, Array.isArray(v) ? v.join("") : String(v)])
-          )
-        : (existing?.permissions ?? {}),
+      permissions: hasPermObject ? normalizePermissionTable(r.permissions) : (existing?.permissions ?? {}),
     });
   }
 
   dynamicRolesStore = Array.from(byCode.values());
 }
+
+const VALID_ACTIONS = new Set<string>(["M", "L", "C", "U", "A", "P", "V", "E"]);
+
+/** Normalisasi tabel izin: nilai array/string -> string berisi kode aksi valid tanpa duplikat. */
+export function normalizePermissionTable(perms: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(perms ?? {})) {
+    if (!k) continue;
+    const raw = Array.isArray(v) ? v.join("") : typeof v === "string" ? v : "";
+    out[k] = [...new Set(raw.toUpperCase().split(""))].filter((c) => VALID_ACTIONS.has(c)).join("");
+  }
+  return out;
+}
+
+/**
+ * Kunci modul di layar Hak Akses (UI) untuk tiap kunci modul API.
+ * Bila role punya entri untuk kunci ini, entri itulah yang menentukan (tidak dicampur dengan modul alias lain),
+ * sehingga mencabut hak di satu modul benar-benar berlaku.
+ */
+const UI_TWIN: Record<string, string> = {
+  financeOut: "invoices",
+  invoices: "invoices",
+  poClient: "po-client",
+  procurement: "supplier-pos",
+  requests: "purchase-requests",
+  delivery: "delivery-notes",
+  damageReports: "damage-reports",
+  pocReports: "poc-reports",
+  visitReports: "visit-reports",
+  audit: "audit-log",
+  attendance: "hr",
+  payroll: "hr",
+  masterData: "master-data",
+  settings: "master-data",
+};
 
 export function can(role: string, module: ModuleKey | string, action: Action): boolean {
   const norm = (role || "").toUpperCase().trim().replace(/[\s\-]+/g, "_");
@@ -678,7 +505,11 @@ export function can(role: string, module: ModuleKey | string, action: Action): b
   const table: Record<string, string | string[] | undefined> = dynRole?.permissions ?? PERMISSIONS[norm] ?? PERMISSIONS[role] ?? {};
   if (!table) return false;
 
-  const candidates = MODULE_ALIASES[module] ?? [module as string];
+  // Entri spesifik modul (kunci API atau kunci UI kembarannya) bersifat menentukan.
+  // Alias lain hanya dipakai sebagai cadangan bila role sama sekali tidak punya entri untuk modul ini.
+  const own = [module as string, UI_TWIN[module as string]].filter((k): k is string => Boolean(k));
+  const ownPresent = own.filter((k) => Object.prototype.hasOwnProperty.call(table, k));
+  const candidates = ownPresent.length ? ownPresent : (MODULE_ALIASES[module] ?? [module as string]);
   for (const mod of candidates) {
     const rawActions = table[mod];
     if (rawActions) {
@@ -701,12 +532,13 @@ export function can(role: string, module: ModuleKey | string, action: Action): b
     }
   }
 
-  // Jika cek modul approvals untuk persetujuan ('A' atau 'V'), izinkan jika role punya hak Approve pada modul pengadaan/keuangan apapun
-  if (module === "approvals" && (action === "A" || action === "V")) {
+  // Role yang belum punya pengaturan modul Persetujuan sama sekali: boleh menyetujui bila punya hak Setujui ('V')
+  // di modul lain. 'A' TIDAK dihitung: di matriks sekarang 'A' berarti Hapus/Batal, bukan Approve.
+  if (module === "approvals" && (action === "A" || action === "V") && !Object.prototype.hasOwnProperty.call(table, "approvals")) {
     const hasAnyApprove = Object.values(table).some((acts) => {
       if (!acts) return false;
       const list = Array.isArray(acts) ? acts : grant(String(acts));
-      return list.includes("V") || list.includes("A");
+      return list.includes("V");
     });
     if (hasAnyApprove) return true;
   }

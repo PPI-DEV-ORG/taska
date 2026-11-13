@@ -80,7 +80,7 @@ export class DashboardService {
       const [projects, paymentDue, requests, overdueTasks] = await Promise.all([
         this.prisma.main.project.count({ where: mine }),
         this.prisma.main.project.count({
-          where: { picId: user.id, paymentStatus: "BELUM_LUNAS", status: { not: "SELESAI" } },
+          where: { picId: user.id, paymentStatus: { not: "LUNAS" }, status: { not: "SELESAI" } },
         }),
         this.prisma.main.purchaseRequest.count({
           where: { status: { in: ["DIAJUKAN", "CEK_STOK", "DISETUJUI"] } },
@@ -136,7 +136,7 @@ export class DashboardService {
     if (role === "FINANCE") {
       const [invoicesDue, expenses, approvals] = await Promise.all([
         this.prisma.main.invoiceOut.findMany({
-          where: { dueDate: { lte: today }, status: { notIn: ["PAID", "BATAL"] } },
+          where: { dueDate: { lte: today }, isProforma: false, status: { notIn: ["PAID", "BATAL"] } },
           include: { customer: { select: { name: true } } },
           orderBy: { dueDate: "asc" },
           take: 10,
@@ -206,7 +206,7 @@ export class DashboardService {
     const [projects, leads, invoices, expenses, requests, deliveries] = await Promise.all([
       this.prisma.main.project.count({ where: { status: { in: ["BERJALAN", "DITUNDA", "TERLAMBAT"] as never } } }),
       this.prisma.main.lead.count({ where: { stage: { notIn: ["WON", "LOST"] } } }),
-      this.prisma.main.invoiceOut.count({ where: { dueDate: { lte: today }, status: { notIn: ["PAID", "BATAL"] } } }),
+      this.prisma.main.invoiceOut.count({ where: { dueDate: { lte: today }, isProforma: false, status: { notIn: ["PAID", "BATAL"] } } }),
       this.prisma.main.expense.count({ where: { status: "DILAPORKAN" } }),
       this.prisma.main.purchaseRequest.count({ where: { status: { in: ["DIAJUKAN", "CEK_STOK"] } } }),
       this.prisma.main.deliveryNote.count({ where: { status: "PENDING" } }),

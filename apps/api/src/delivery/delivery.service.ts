@@ -56,7 +56,25 @@ export class DeliveryService implements OnModuleInit {
     return { number: await this.docnum.suggest("suratJalan") };
   }
 
+  /**
+   * Kaitan SO / invoice disimpan di kolom. Aplikasi lama masih mengirim tag "[so:id]" / "[inv:id]" di alasan:
+   * tag dibaca sekali, dipakai bila kolomnya kosong, lalu dibuang dari teks.
+   */
+  private takeLinks(dto: DeliveryCreateDto) {
+    const tagRe = /\s*\[(so|soNum|inv|invNum):[^\]]*\]/gi;
+    const texts = [dto.reportText ?? "", ...(dto.locations ?? []).map((l) => l.reason ?? "")].join(" ");
+    const soTag = texts.match(/\[so:(\d+)\]/i)?.[1];
+    const invTag = texts.match(/\[inv:(\d+)\]/i)?.[1];
+    const clientPoId = dto.clientPoId ?? dto.soId ?? (soTag ? Number(soTag) : undefined);
+    const invoiceId = dto.invoiceId ?? (invTag ? Number(invTag) : undefined);
+    const locations = dto.locations?.map((l) => ({ ...l, reason: (l.reason ?? "").replace(tagRe, "").trim() || "Pengiriman barang" }));
+    const reportText = dto.reportText !== undefined ? dto.reportText.replace(tagRe, "").trim() : undefined;
+    return { clientPoId, invoiceId, locations, reportText };
+  }
+
   async create(dto: DeliveryCreateDto, user: RequestUser) {
+    const links = this.takeLinks(dto);
+    dto = { ...dto, locations: links.locations ?? dto.locations, reportText: links.reportText ?? dto.reportText };
     const locations = dto.locations?.length ? dto.locations : [{ destination: "-", reason: "Dinas luar" }];
     const withGoods = dto.withGoods === true || dto.withGoods === "true";
     const date = dto.date ? new Date(dto.date) : new Date();
@@ -83,6 +101,8 @@ export class DeliveryService implements OnModuleInit {
       withGoods,
       date,
       status: (dto.status ?? "PENDING") as any,
+      clientPoId: links.clientPoId ?? null,
+      invoiceId: links.invoiceId ?? null,
       reportText: dto.reportText,
       reportFileId: dto.reportFileId,
       scanFileId,
@@ -106,6 +126,8 @@ export class DeliveryService implements OnModuleInit {
     };
     const includeSelect = {
       creator: { select: { name: true, role: true } },
+      clientPo: { select: { id: true, number: true, soNumber: true } },
+      invoice: { select: { id: true, number: true } },
       locations: { include: { project: { select: { name: true } } } },
       items: {
         include: {
@@ -114,25 +136,11 @@ export class DeliveryService implements OnModuleInit {
       },
     };
 
-    let row;
-    try {
-      row = await this.prisma.main.deliveryNote.create({
-        data: createData,
-        include: includeSelect,
-      });
-    } catch (err: any) {
-      if (err?.code === "P2000" || err?.message?.includes("reportText") || err?.message?.includes("too long")) {
-        await this.prisma.main
-          .$executeRawUnsafe("ALTER TABLE `DeliveryNote` MODIFY COLUMN `reportText` LONGTEXT NULL")
-          .catch(() => {});
-        row = await this.prisma.main.deliveryNote.create({
-          data: createData,
-          include: includeSelect,
-        });
-      } else {
-        throw err;
-      }
-    }
+    // reportText sudah LONGTEXT di skema; tidak ada lagi ALTER TABLE saat runtime.
+    const row = await this.prisma.main.deliveryNote.create({
+      data: createData,
+      include: includeSelect,
+    });
 
     if (scanFileId) {
       await this.prisma.main.file.update({
@@ -168,6 +176,8 @@ export class DeliveryService implements OnModuleInit {
       include: { locations: true },
     });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
+    const links = this.takeLinks(dto);
+    dto = { ...dto, locations: links.locations ?? dto.locations, reportText: links.reportText ?? dto.reportText };
 
     if (dto.status === "DITERIMA") {
       const hasProof = dto.scanFileId ?? dto.fileId ?? row.scanFileId;
@@ -186,6 +196,8 @@ export class DeliveryService implements OnModuleInit {
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.withGoods !== undefined ? { withGoods: dto.withGoods === true || dto.withGoods === "true" } : {}),
         ...(dto.status ? { status: dto.status } : {}),
+        ...(links.clientPoId !== undefined ? { clientPoId: links.clientPoId } : {}),
+        ...(links.invoiceId !== undefined ? { invoiceId: links.invoiceId } : {}),
         ...(dto.reportText !== undefined ? { reportText: dto.reportText, reportAt: new Date() } : {}),
         ...(dto.reportFileId !== undefined ? { reportFileId: dto.reportFileId } : {}),
         ...(dto.scanFileId !== undefined || dto.fileId !== undefined ? { scanFileId: dto.scanFileId ?? dto.fileId } : {}),
@@ -217,6 +229,8 @@ export class DeliveryService implements OnModuleInit {
       },
       include: {
         creator: { select: { name: true, role: true } },
+        clientPo: { select: { id: true, number: true, soNumber: true } },
+        invoice: { select: { id: true, number: true } },
         locations: { include: { project: { select: { name: true } } } },
         items: {
           include: {
@@ -377,6 +391,8 @@ export class DeliveryService implements OnModuleInit {
         where,
         include: {
           creator: { select: { name: true, role: true } },
+          clientPo: { select: { id: true, number: true, soNumber: true } },
+          invoice: { select: { id: true, number: true } },
           locations: { include: { project: { select: { name: true } } } },
           items: {
             include: {
@@ -400,6 +416,8 @@ export class DeliveryService implements OnModuleInit {
       where: { id },
       include: {
         creator: { select: { id: true, name: true, role: true } },
+        clientPo: { select: { id: true, number: true, soNumber: true } },
+        invoice: { select: { id: true, number: true } },
         locations: { include: { project: { select: { id: true, name: true } } } },
         items: {
           include: {
@@ -884,59 +902,18 @@ export class DeliveryService implements OnModuleInit {
         return;
       }
 
-      // 1. Ekstrak kaitan dokumen SO / ClientPO / Invoice
-      const fullText = [
-        row.reportText || "",
-        ...(row.locations || []).map((l) => `${l.destination || ""} ${l.reason || ""}`),
-      ].join(" ");
-
-      const soIdMatch = fullText.match(/\[so:(\d+)\]/i);
-      const invIdMatch = fullText.match(/\[inv:(\d+)\]/i);
-      const invNumMatch = fullText.match(/\[invNum:([^\]]+)\]/i);
-      const soNumMatch = fullText.match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
-
-      let clientPo: any = null;
-      if (soIdMatch?.[1]) {
-        clientPo = await this.prisma.main.clientPO.findUnique({
-          where: { id: parseInt(soIdMatch[1], 10) },
-          include: { invoices: true },
-        }).catch(() => null);
-      } else if (soNumMatch?.[1]) {
-        clientPo = await this.prisma.main.clientPO.findFirst({
-          where: { OR: [{ number: soNumMatch[1] }, { soNumber: soNumMatch[1] }] },
-          include: { invoices: true },
-        }).catch(() => null);
-      }
-
-      let invoice: any = null;
-      if (invIdMatch?.[1]) {
-        invoice = await this.prisma.main.invoiceOut.findUnique({
-          where: { id: parseInt(invIdMatch[1], 10) },
-        }).catch(() => null);
-      } else if (invNumMatch?.[1]) {
-        invoice = await this.prisma.main.invoiceOut.findFirst({
-          where: { number: invNumMatch[1] },
-        }).catch(() => null);
-      } else if (clientPo?.invoices?.length) {
-        invoice = clientPo.invoices[0];
-      }
-
+      // 1. Kaitan dokumen SO / Invoice dari kolom relasi (bukan dari tag teks)
+      // Tidak lagi menebak SO dari nama tujuan (dulu bisa nyambung ke SO customer lain yang namanya mirip).
+      const invoice: any = row.invoiceId
+        ? await this.prisma.main.invoiceOut.findUnique({ where: { id: row.invoiceId } }).catch(() => null)
+        : null;
+      const clientPo: any =
+        row.clientPoId || invoice?.clientPoId
+          ? await this.prisma.main.clientPO
+              .findUnique({ where: { id: (row.clientPoId ?? invoice?.clientPoId)! }, include: { invoices: true } })
+              .catch(() => null)
+          : null;
       const firstLocation = row.locations[0];
-      if (!clientPo && firstLocation?.destination && firstLocation.destination !== "-") {
-        clientPo = await this.prisma.main.clientPO.findFirst({
-          where: {
-            OR: [
-              { customer: { name: { contains: firstLocation.destination.trim() } } },
-              { notes: { contains: firstLocation.destination.trim() } },
-            ],
-          },
-          orderBy: { id: "desc" },
-          include: { invoices: true },
-        }).catch(() => null);
-        if (!invoice && clientPo?.invoices?.length) {
-          invoice = clientPo.invoices[0];
-        }
-      }
 
       // 2. Tentukan item yang dikirim & agregasi kuantitas sebenarnya
       const poItems = Array.isArray(clientPo?.items) ? (clientPo.items as any[]) : [];

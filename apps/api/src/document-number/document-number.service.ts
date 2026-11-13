@@ -10,6 +10,8 @@ export const DOC_TYPES = {
   suratJalan: "nomor.suratJalan",
   penerimaan: "nomor.penerimaan",
   invoiceOut: "nomor.pelanggan",
+  proforma: "nomor.proforma",
+  uangJalan: "nomor.uangJalan",
   invoiceIn: "nomor.supplier",
   proyek: "nomor.proyek",
 } as const;
@@ -24,6 +26,8 @@ export const FORMAT_UMUM: Record<DocType, string> = {
   suratJalan: "SJN/YYYY/MM/NNN",
   penerimaan: "RCP/YYYY/MM/NNN",
   invoiceOut: "INV/YYYY/MM/NNN",
+  proforma: "PI/YYYY/MM/NNN",
+  uangJalan: "UJ/YYYY/MM/NNN",
   invoiceIn: "RNC/YYYY/MM/NNN",
   proyek: "PRJ/YYYY/NNN",
 };
@@ -87,7 +91,10 @@ export class DocumentNumberService {
         case "penerimaan":
           return Boolean(await this.prisma.main.receiving.findFirst({ where: { number: candidate } }));
         case "invoiceOut":
+        case "proforma":
           return Boolean(await this.prisma.main.invoiceOut.findFirst({ where: { number: candidate } }));
+        case "uangJalan":
+          return Boolean(await this.prisma.main.cashAdvance.findFirst({ where: { number: candidate } }));
         case "invoiceIn":
           return Boolean(await this.prisma.main.invoiceIn.findFirst({ where: { number: candidate } }));
         case "proyek":

@@ -39,6 +39,7 @@ export class DamagesService {
               replacedBy: { select: { id: true, sn: true, status: true } },
             },
           },
+          supplierPo: { select: { id: true, number: true } },
           reporter: { select: { name: true } },
         },
         orderBy: [{ date: "desc" }, { id: "desc" }],
@@ -47,6 +48,36 @@ export class DamagesService {
       }),
     ]);
     return { items: rows, total, page: q.page, limit: q.limit };
+  }
+
+  /**
+   * Aplikasi versi lama mengirim jenis laporan, nomor PO, SN, dan SN pengganti sebagai tag di deskripsi.
+   * Tag dibaca sekali di sini lalu disimpan ke kolomnya; deskripsi yang tersimpan bersih dari tag.
+   */
+  private async parseLegacyTags(description: string | undefined) {
+    const s = String(description ?? "");
+    const category = /\[RETUR-PEMBELIAN\]/i.test(s)
+      ? ("RETUR_PEMBELIAN" as const)
+      : /\[RETUR-PENJUALAN\]/i.test(s)
+        ? ("RETUR_PENJUALAN" as const)
+        : undefined;
+    const poNumber = s.match(/\[PO:\s*([^\]]+)\]/i)?.[1]?.trim();
+    const sn = s.match(/\[SN:\s*([^\]]+)\]/i)?.[1]?.trim();
+    let supplierPoId: number | undefined;
+    if (poNumber) {
+      const variants = [poNumber, poNumber.replace(/^PO\//i, "POD/"), poNumber.replace(/^PO\//i, "PO-S/")];
+      const po = await this.prisma.main.supplierPO.findFirst({ where: { number: { in: variants } }, select: { id: true } });
+      supplierPoId = po?.id;
+    }
+    const clean =
+      s
+        .replace(/\[(RETUR-PENJUALAN|RETUR-PEMBELIAN|DIGANTI:[^\]]*)\]/gi, "")
+        // Tag PO dibuang hanya bila PO-nya ketemu (tersimpan di supplierPoId); kalau tidak, teksnya dibiarkan.
+        .replace(/\[PO:[^\]]*\]/gi, (m) => (supplierPoId ? "" : m))
+        .replace(/\[SN:[^\]]*\]/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim() || "-";
+    return { category, supplierPoId, sn, description: clean };
   }
 
   async create(dto: DamageCreateDto, user: RequestUser) {
@@ -58,19 +89,18 @@ export class DamagesService {
     if (dto.serialUnitId) {
       serial = await this.prisma.main.serialUnit.findUnique({ where: { id: dto.serialUnitId } });
       if (!serial) throw new NotFoundException("Serial number tidak ditemukan");
-    } else if (dto.description) {
-      const snMatch = dto.description.match(/\[SN:\s*([^\]]+)\]/i);
-      if (snMatch?.[1]) {
-        serial = await this.prisma.main.serialUnit.findUnique({
-          where: { sn: snMatch[1].trim() },
-        });
-      }
+    }
+    const legacy = await this.parseLegacyTags(dto.description);
+    if (!serial && legacy.sn) {
+      serial = await this.prisma.main.serialUnit.findUnique({ where: { sn: legacy.sn } });
     }
 
     const type = dto.type ?? "RUSAK";
-    const description = dto.description || "-";
-    const isReturPenjualan = description.includes("[RETUR-PENJUALAN]");
-    const isReturPembelian = description.includes("[RETUR-PEMBELIAN]");
+    const description = legacy.description;
+    const category = dto.category ?? legacy.category ?? "KERUSAKAN";
+    const supplierPoId = dto.supplierPoId ?? legacy.supplierPoId ?? null;
+    const isReturPenjualan = category === "RETUR_PENJUALAN";
+    const isReturPembelian = category === "RETUR_PEMBELIAN";
     const qty = dto.qty ?? 1;
 
     // Cek apakah SN sebelumnya berada di gudang (stok aktif) sehingga harus dikurangi dari stockBalance
@@ -89,6 +119,8 @@ export class DamagesService {
           productId: product.id,
           serialUnitId: serial?.id ?? dto.serialUnitId ?? null,
           type,
+          category,
+          supplierPoId,
           qty,
           description,
           status: dto.status ?? "DILAPORKAN",
@@ -251,9 +283,7 @@ export class DamagesService {
         where: { id: row.id },
         data: {
           status: "SELESAI",
-          description: row.description.includes("[DIGANTI:")
-            ? row.description
-            : `${row.description} [DIGANTI: ${newUnit.sn}]`,
+          replacementNote: row.replacementNote ?? newUnit.sn,
         },
         include: {
           product: { select: { id: true, name: true, sku: true, unit: true, hasSerial: true } },
@@ -306,7 +336,7 @@ export class DamagesService {
         where: { id: row.id },
         data: {
           status: "SELESAI",
-          description: `${row.description} [DIGANTI: ${cleanNewSn}]`,
+          replacementNote: cleanNewSn,
         },
         include: {
           product: { select: { id: true, name: true, sku: true, unit: true, hasSerial: true } },
@@ -359,7 +389,7 @@ export class DamagesService {
       where: { id: row.id },
       data: {
         status: "SELESAI",
-        description: `${row.description} [DIGANTI: ${replaceQty} ${row.product?.unit ?? "unit"}]`,
+        replacementNote: `${replaceQty} ${row.product?.unit ?? "unit"}`,
       },
       include: {
         product: { select: { id: true, name: true, sku: true, unit: true, hasSerial: true } },
@@ -402,6 +432,7 @@ export class DamagesService {
             replacedBy: { select: { id: true, sn: true, status: true } },
           },
         },
+        supplierPo: { select: { id: true, number: true } },
         reporter: { select: { id: true, name: true } },
       },
     });
@@ -418,6 +449,7 @@ export class DamagesService {
   async update(id: number, dto: DamageCreateDto) {
     const row = await this.prisma.main.damageReport.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Laporan tidak ditemukan");
+    const legacy = dto.description !== undefined ? await this.parseLegacyTags(dto.description) : null;
     const updated = await this.prisma.main.damageReport.update({
       where: { id },
       data: {
@@ -426,7 +458,11 @@ export class DamagesService {
         ...(dto.serialUnitId !== undefined ? { serialUnitId: dto.serialUnitId } : {}),
         ...(dto.type ? { type: dto.type } : {}),
         ...(dto.qty !== undefined ? { qty: dto.qty } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(legacy ? { description: legacy.description } : {}),
+        ...(dto.category ?? legacy?.category ? { category: dto.category ?? legacy!.category } : {}),
+        ...(dto.supplierPoId !== undefined || legacy?.supplierPoId
+          ? { supplierPoId: dto.supplierPoId ?? legacy?.supplierPoId ?? null }
+          : {}),
         ...(dto.status ? { status: dto.status } : {}),
         ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
       },

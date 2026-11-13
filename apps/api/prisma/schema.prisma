@@ -127,7 +127,26 @@ enum ProjectStatus {
 
 enum PaymentStatus {
   BELUM_LUNAS
+  LUNAS_SEBAGIAN
   LUNAS
+}
+
+/// Uang jalan / kasbon operasional karyawan (survey, pengiriman barang, dll.)
+enum CashAdvanceStatus {
+  DIAJUKAN
+  DISETUJUI
+  DITOLAK
+  DICAIRKAN
+  DILAPORKAN
+  SELESAI
+  DIBATALKAN
+}
+
+enum CashAdvancePurpose {
+  SURVEY
+  PENGIRIMAN
+  PROJECT
+  LAINNYA
 }
 
 enum TaskStatus {
@@ -264,6 +283,40 @@ enum DamageStatus {
   SELESAI
 }
 
+// ─── Enum pembelian (dulu teks bebas) ───
+enum ProcurementSource {
+  SUPPLIER
+  RETAIL
+  GUDANG
+}
+
+enum PurchasePaymentMethod {
+  KAS
+  UTANG
+}
+
+enum PrPaymentStatus {
+  BELUM_DIBAYAR
+  DIBAYAR
+}
+
+enum PpnMode {
+  none
+  exclude
+  include
+}
+
+enum PoManualStatus {
+  LUNAS
+  SAMPAI_BELUM_LUNAS
+}
+
+enum DamageCategory {
+  KERUSAKAN
+  RETUR_PENJUALAN
+  RETUR_PEMBELIAN
+}
+
 enum IssueType {
   RUSAK
   SALAH_BARANG
@@ -314,40 +367,55 @@ model User {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  refreshTokens  RefreshToken[]
-  files          File[]              @relation("FileUploader")
-  auditLogs      AuditLog[]
-  notifications  Notification[]
-  ownedLeads     Lead[]              @relation("LeadOwner")
-  followUps      FollowUp[]
-  surveysReq     Survey[]            @relation("SurveyRequester")
-  surveysApprove Survey[]            @relation("SurveyApprover")
-  surveyMembers  SurveyMember[]
-  quotations     Quotation[]         @relation("QuotationOwner")
-  quoteVersions  QuotationVersion[]
-  projects       Project[]           @relation("ProjectPic")
-  projectMembers ProjectMember[]
-  tasks          Task[]              @relation("TaskAssignee")
-  expenses       Expense[]           @relation("ExpenseReporter")
-  pocReports     PocReport[]         @relation("PocOwner")
-  pocMembers     PocMember[]
-  visitReports   VisitReport[]       @relation("VisitOwner")
-  visitMembers   VisitMember[]
-  calendarCreated   CalendarEvent[]    @relation("CalendarCreator")
-  calendarAssigned  CalendarEvent[]    @relation("CalendarAssignee")
-  calendarAttendees CalendarAttendee[]
-  createdDN      DeliveryNote[]      @relation("DNCreator")
-  movements      StockMovement[]
-  serialHist     SerialUnitHistory[]
-  opnames        StockOpname[]
-  receivings     Receiving[]
-  purchases      PurchaseRequest[]   @relation("PRRequester")
-  supplierPOs    SupplierPO[]        @relation("POCreator")
-  approvalsReq   Approval[]        @relation("ApprovalRequester")
-  damageReports  DamageReport[]
-  issueReports   IssueReport[]
-  auditAsActor   AuditLog[]          @relation("AuditActor")
-  settings       SystemSetting[]
+  refreshTokens         RefreshToken[]
+  files                 File[]              @relation("FileUploader")
+  notifications         Notification[]
+  ownedLeads            Lead[]              @relation("LeadOwner")
+  followUps             FollowUp[]
+  surveysReq            Survey[]            @relation("SurveyRequester")
+  surveysApprove        Survey[]            @relation("SurveyApprover")
+  surveyMembers         SurveyMember[]
+  quotations            Quotation[]         @relation("QuotationOwner")
+  quoteVersions         QuotationVersion[]
+  projects              Project[]           @relation("ProjectPic")
+  projectMembers        ProjectMember[]
+  tasks                 Task[]              @relation("TaskAssignee")
+  expenses              Expense[]           @relation("ExpenseReporter")
+  pocReports            PocReport[]         @relation("PocOwner")
+  pocMembers            PocMember[]
+  visitReports          VisitReport[]       @relation("VisitOwner")
+  visitMembers          VisitMember[]
+  calendarCreated       CalendarEvent[]     @relation("CalendarCreator")
+  calendarAssigned      CalendarEvent[]     @relation("CalendarAssignee")
+  calendarAttendees     CalendarAttendee[]
+  createdDN             DeliveryNote[]      @relation("DNCreator")
+  movements             StockMovement[]
+  serialHist            SerialUnitHistory[]
+  opnames               StockOpname[]
+  receivings            Receiving[]
+  purchases             PurchaseRequest[]   @relation("PRRequester")
+  supplierPOs           SupplierPO[]        @relation("POCreator")
+  approvalsReq          Approval[]          @relation("ApprovalRequester")
+  damageReports         DamageReport[]
+  issueReports          IssueReport[]
+  auditAsActor          AuditLog[]          @relation("AuditActor")
+  settings              SystemSetting[]
+  attendances           Attendance[]        @relation("AttendanceUser")
+  payrollSlips          PayrollSlip[]       @relation("PayrollSlipUser")
+  salaryConfig          SalaryConfig?       @relation("SalaryConfigUser")
+  paymentsCreated       Payment[]           @relation("PaymentCreator")
+  approvalDecisions     ApprovalStep[]      @relation("ApprovalStepDecider")
+  expensesPaid          Expense[]           @relation("ExpensePayer")
+  deliveryNotesReceived DeliveryNote[]      @relation("DNReceiver")
+  pocCreated            PocReport[]         @relation("PocCreator")
+  visitsCreated         VisitReport[]       @relation("VisitCreator")
+  visitActions          VisitActionItem[]   @relation("VisitActionAssignee")
+  pocChecklists         PocChecklist[]      @relation("PocChecklistAssignee")
+  cashAdvancesHeld      CashAdvance[]       @relation("CashAdvanceEmployee")
+  cashAdvancesRequested CashAdvance[]       @relation("CashAdvanceRequester")
+  cashAdvancesApproved  CashAdvance[]       @relation("CashAdvanceApprover")
+  cashAdvancesDisbursed CashAdvance[]       @relation("CashAdvanceDisburser")
+  cashAdvancesSettled   CashAdvance[]       @relation("CashAdvanceSettler")
 
   @@index([role, status])
   @@index([warehouseId])
@@ -380,7 +448,46 @@ model File {
   uploader     User?    @relation("FileUploader", fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())
 
-  docPhotos DocumentationPhoto[]
+  docPhotos                        DocumentationPhoto[]
+  purchaseRequest_evidenceFile     PurchaseRequest[]    @relation("PurchaseRequest_evidenceFileId")
+  purchaseRequest_doFile           PurchaseRequest[]    @relation("PurchaseRequest_doFileId")
+  purchaseRequest_paymentProofFile PurchaseRequest[]    @relation("PurchaseRequest_paymentProofFileId")
+  supplierPO_file                  SupplierPO[]         @relation("SupplierPO_fileId")
+  supplierPO_doFile                SupplierPO[]         @relation("SupplierPO_doFileId")
+  supplierPO_soFile                SupplierPO[]         @relation("SupplierPO_soFileId")
+  receiving_receiptFile            Receiving[]          @relation("Receiving_receiptFileId")
+  receiving_photoFile              Receiving[]          @relation("Receiving_photoFileId")
+  invoiceIn_file                   InvoiceIn[]          @relation("InvoiceIn_fileId")
+  invoiceIn_transferFile           InvoiceIn[]          @relation("InvoiceIn_transferFileId")
+  invoiceOut_file                  InvoiceOut[]         @relation("InvoiceOut_fileId")
+  invoiceOut_paidFile              InvoiceOut[]         @relation("InvoiceOut_paidFileId")
+  invoiceOut_latestFile            InvoiceOut[]         @relation("InvoiceOut_latestFileId")
+  payment_file                     Payment[]            @relation("Payment_fileId")
+  clientPO_file                    ClientPO[]           @relation("ClientPO_fileId")
+  clientPO_soFile                  ClientPO[]           @relation("ClientPO_soFileId")
+  clientPO_paymentProofFile        ClientPO[]           @relation("ClientPO_paymentProofFileId")
+  expense_receiptFile              Expense[]            @relation("Expense_receiptFileId")
+  expense_paidFile                 Expense[]            @relation("Expense_paidFileId")
+  project_prdFile                  Project[]            @relation("Project_prdFileId")
+  project_bahpFile                 Project[]            @relation("Project_bahpFileId")
+  project_bastFile                 Project[]            @relation("Project_bastFileId")
+  project_doFile                   Project[]            @relation("Project_doFileId")
+  project_boqFile                  Project[]            @relation("Project_boqFileId")
+  task_bahpFile                    Task[]               @relation("Task_bahpFileId")
+  task_bastFile                    Task[]               @relation("Task_bastFileId")
+  task_doFile                      Task[]               @relation("Task_doFileId")
+  quotation_latestFile             Quotation[]          @relation("Quotation_latestFileId")
+  quotationVersion_file            QuotationVersion[]   @relation("QuotationVersion_fileId")
+  issueReport_file                 IssueReport[]        @relation("IssueReport_fileId")
+  damageReport_file                DamageReport[]       @relation("DamageReport_fileId")
+  deliveryNote_scanFile            DeliveryNote[]       @relation("DeliveryNote_scanFileId")
+  deliveryNote_reportFile          DeliveryNote[]       @relation("DeliveryNote_reportFileId")
+  pocReport_logoFile               PocReport[]          @relation("PocReport_logoFileId")
+  pocReport_documentFile           PocReport[]          @relation("PocReport_documentFileId")
+  visitReport_logoFile             VisitReport[]        @relation("VisitReport_logoFileId")
+  visitReport_documentFile         VisitReport[]        @relation("VisitReport_documentFileId")
+  cashAdvance_disburseFile         CashAdvance[]        @relation("CashAdvance_disburseFileId")
+  cashAdvance_returnFile           CashAdvance[]        @relation("CashAdvance_returnFileId")
 
   @@index([refType, refId])
 }
@@ -409,8 +516,6 @@ model AuditLog {
   entityId   String
   detail     String?  @db.Text
   createdAt  DateTime @default(now())
-  user       User?    @relation(fields: [userId], references: [id])
-  userId     Int?
 
   @@index([entityType, entityId])
   @@index([actorId])
@@ -478,6 +583,7 @@ model ApprovalStep {
   approverRole Role
   status       ApprovalStatus @default(MENUNGGU)
   decidedById  Int?
+  decidedBy    User?          @relation("ApprovalStepDecider", fields: [decidedById], references: [id], onDelete: SetNull)
   decidedAt    DateTime?
   reason       String?
 
@@ -489,7 +595,7 @@ model ApprovalStep {
 
 model Customer {
   id        Int          @id @default(autoincrement())
-  name      String
+  name      String       @unique
   company   String?
   pic       String
   email     String?
@@ -501,21 +607,21 @@ model Customer {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  leads      Lead[]
-  projects   Project[]
-  quotations Quotation[]
-  clientPOs  ClientPO[]
-  invoices   InvoiceOut[]
-  pocReports PocReport[]
-  visitReports VisitReport[]
+  leads          Lead[]
+  projects       Project[]
+  quotations     Quotation[]
+  clientPOs      ClientPO[]
+  invoices       InvoiceOut[]
+  pocReports     PocReport[]
+  visitReports   VisitReport[]
+  calendarEvents CalendarEvent[] @relation("CalendarCustomer")
 
-  @@index([name])
   @@index([status])
 }
 
 model Supplier {
   id           Int          @id @default(autoincrement())
-  name         String
+  name         String       @unique
   pic          String?
   email        String?
   phone        String?
@@ -532,8 +638,7 @@ model Supplier {
   supplierPOs      SupplierPO[]
   clientPOs        ClientPO[]
   invoiceIns       InvoiceIn[]
-
-  @@index([name])
+  calendarEvents   CalendarEvent[]   @relation("CalendarSupplier")
 }
 
 model SupplierItemTag {
@@ -577,17 +682,17 @@ model Product {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  balances       StockBalance[]
-  movements      StockMovement[]
-  serials        SerialUnit[]
-  reservations   StockReservation[]
-  prItems        PurchaseRequestItem[]
-  poItems        SupplierPOItem[]
-  receivingItems ReceivingItem[]
-  opnameDetails  StockOpnameDetail[]
-  requirements   ProjectRequirement[]
-  damageReports  DamageReport[]
-  issueReports   IssueReport[]
+  balances          StockBalance[]
+  movements         StockMovement[]
+  serials           SerialUnit[]
+  reservations      StockReservation[]
+  prItems           PurchaseRequestItem[]
+  poItems           SupplierPOItem[]
+  receivingItems    ReceivingItem[]
+  opnameDetails     StockOpnameDetail[]
+  requirements      ProjectRequirement[]
+  damageReports     DamageReport[]
+  issueReports      IssueReport[]
   deliveryNoteItems DeliveryNoteItem[]
 
   @@index([name])
@@ -604,11 +709,12 @@ model Warehouse {
 
   users         User[]
   balances      StockBalance[]
-  fromMovements StockMovement[] @relation("MoveFrom")
-  toMovements   StockMovement[] @relation("MoveTo")
+  fromMovements StockMovement[]     @relation("MoveFrom")
+  toMovements   StockMovement[]     @relation("MoveTo")
   serials       SerialUnit[]
   receivings    Receiving[]
   opnames       StockOpname[]
+  serialHistory SerialUnitHistory[] @relation("SerialHistWarehouse")
 
   @@index([name])
 }
@@ -628,18 +734,19 @@ model LostReason {
 }
 
 model VisitActivityType {
-  id      Int          @id @default(autoincrement())
-  name    String       @unique
-  status  ActiveStatus @default(AKTIF)
-  visits  VisitReport[]
+  id     Int           @id @default(autoincrement())
+  name   String        @unique
+  status ActiveStatus  @default(AKTIF)
+  visits VisitReport[]
 }
 
 model ExpenseCategory {
-  id         Int          @id @default(autoincrement())
-  name       String       @unique
-  coaAccount String?
-  status     ActiveStatus @default(AKTIF)
-  expenses   Expense[]
+  id               Int               @id @default(autoincrement())
+  name             String            @unique
+  coaAccount       String?
+  status           ActiveStatus      @default(AKTIF)
+  expenses         Expense[]
+  cashAdvanceItems CashAdvanceItem[]
 }
 
 model CostCenter {
@@ -674,11 +781,12 @@ model Lead {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  followUps  FollowUp[]
-  surveys    Survey[]
-  quotations Quotation[]
-  pocReports PocReport[]
-  visitReports VisitReport[]
+  followUps      FollowUp[]
+  surveys        Survey[]
+  quotations     Quotation[]
+  pocReports     PocReport[]
+  visitReports   VisitReport[]
+  calendarEvents CalendarEvent[] @relation("CalendarLead")
 
   @@index([stage])
   @@index([owner_id])
@@ -731,8 +839,9 @@ model Survey {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  members  SurveyMember[]
-  expenses Expense[]
+  members      SurveyMember[]
+  expenses     Expense[]
+  cashAdvances CashAdvance[]
 
   @@index([status])
   @@index([scheduleAt])
@@ -770,30 +879,32 @@ model Quotation {
   sentAt         DateTime?
 
   // Isi & template penawaran (dulu JSON di SystemSetting "quotation.meta.<id>")
-  items          Json?
-  subject        String?
-  intro          String?   @db.Text
+  items                Json?
+  subject              String?
+  intro                String?          @db.Text
   // Catatan kaki. Null = pakai catatan bawaan.
-  notes          Json?
-  city           String?
-  kopText        String?   @db.Text
-  customerAddress String?  @db.Text
-  signerName     String?
-  signerTitle    String?
-  pph            Decimal?  @db.Decimal(18, 2)
-  pphMode        String?
-  tipePph        String?
+  notes                Json?
+  city                 String?
+  kopText              String?          @db.Text
+  customerAddress      String?          @db.Text
+  signerName           String?
+  signerTitle          String?
+  pph                  Decimal?         @db.Decimal(18, 2)
+  pphMode              String?
+  tipePph              String?
   // Berkas terakhir yang dihasilkan / diunggah
-  latestFileId   Int?
-  latestFileName String?
+  latestFileId         Int?
+  latestFile           File?            @relation("Quotation_latestFileId", fields: [latestFileId], references: [id], onDelete: SetNull)
+  latestFileName       String?
   // Konflik stok / auto-swap SN
-  stockConflictFlag    Boolean @default(false)
-  stockConflictMessage String? @db.Text
+  stockConflictFlag    Boolean          @default(false)
+  stockConflictMessage String?          @db.Text
   autoSwapLogs         Json?
   emergencyPrId        Int?
+  emergencyPr          PurchaseRequest? @relation("QuotationEmergencyPr", fields: [emergencyPrId], references: [id], onDelete: SetNull)
   emergencyPrNumber    String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
   versions     QuotationVersion[]
   clientPOs    ClientPO[]
@@ -813,6 +924,7 @@ model QuotationVersion {
   quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   version     Int
   fileId      Int?
+  file        File?     @relation("QuotationVersion_fileId", fields: [fileId], references: [id], onDelete: SetNull)
   total       Decimal   @default(0) @db.Decimal(18, 2)
   ppn         Decimal   @default(0) @db.Decimal(18, 2)
   discount    Decimal   @default(0) @db.Decimal(18, 2)
@@ -839,34 +951,38 @@ model ClientPO {
   amount      Decimal    @db.Decimal(18, 2)
   date        DateTime   @db.Date
   fileId      Int?
+  file        File?      @relation("ClientPO_fileId", fields: [fileId], references: [id], onDelete: SetNull)
   notes       String?
 
   // Metadata Sales Order (dulu JSON di SystemSetting "client-po:meta:<id>")
   // Nomor SO / nomor PO dari customer; "number" tetap nomor utama dokumen.
-  soNumber        String?
-  poClientNumber  String?
-  docMode         String?   // SO | PO | BOTH
-  soFileId        Int?
-  items           Json?
-  projectId       Int?
-  project         Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  ppn             Decimal?  @db.Decimal(18, 2)
-  tipePpn         String?
-  ppnMode         String?
-  pph             Decimal?  @db.Decimal(18, 2)
-  tipePph         String?
-  pphMode         String?
+  soNumber           String?
+  poClientNumber     String?
+  docMode            String? // SO | PO | BOTH
+  soFileId           Int?
+  soFile             File?     @relation("ClientPO_soFileId", fields: [soFileId], references: [id], onDelete: SetNull)
+  items              Json?
+  projectId          Int?
+  project            Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  ppn                Decimal?  @db.Decimal(18, 2)
+  tipePpn            String?
+  ppnMode            String?
+  pph                Decimal?  @db.Decimal(18, 2)
+  tipePph            String?
+  pphMode            String?
   // Pelunasan langsung (tanpa invoice)
-  paymentStatus        String?   // PENDING | LUNAS
-  settlementType       String?   // LANGSUNG | TEMPO
-  paymentProofFileId   Int?
-  coaAccount           String?
-  settledAt            DateTime?
-  goodsDispatched      Boolean   @default(false)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  paymentStatus      String? // PENDING | LUNAS
+  settlementType     String? // LANGSUNG | TEMPO
+  paymentProofFileId Int?
+  paymentProofFile   File?     @relation("ClientPO_paymentProofFileId", fields: [paymentProofFileId], references: [id], onDelete: SetNull)
+  coaAccount         String?
+  settledAt          DateTime?
+  goodsDispatched    Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  invoices InvoiceOut[]
+  invoices      InvoiceOut[]
+  deliveryNotes DeliveryNote[]
 
   @@index([customerId])
   @@index([supplierId])
@@ -885,6 +1001,11 @@ model InvoiceOut {
   customer    Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
   description String?
   type        InvoiceType      @default(TERMIN)
+  // Proforma invoice: penagihan awal / penawaran tagihan. TIDAK dijurnal, tidak masuk piutang,
+  // tidak bisa dibayar langsung. Diterbitkan menjadi invoice resmi lewat konversi (proformaId di invoice resmi).
+  isProforma  Boolean          @default(false)
+  proformaId  Int?             @unique
+  proforma    InvoiceOut?      @relation("ProformaConversion", fields: [proformaId], references: [id], onDelete: SetNull)
   amount      Decimal          @db.Decimal(18, 2)
   ppn         Decimal          @default(0) @db.Decimal(18, 2)
   total       Decimal          @db.Decimal(18, 2)
@@ -893,56 +1014,66 @@ model InvoiceOut {
   dueDate     DateTime         @db.Date
   status      InvoiceOutStatus @default(DRAFT)
   fileId      Int?
+  file        File?            @relation("InvoiceOut_fileId", fields: [fileId], references: [id], onDelete: SetNull)
 
   // Metadata invoice (dulu JSON di SystemSetting "invoice:meta:<id>")
-  quotationId     Int?
-  quotation       Quotation?  @relation(fields: [quotationId], references: [id], onDelete: SetNull)
-  parentInvoiceId Int?
-  isContinuation  Boolean     @default(false)
-  discount         Decimal?    @db.Decimal(18, 2)
-  dpLabel          String?
-  dpAmount         Decimal?    @db.Decimal(18, 2)
-  dpApplied        Decimal     @default(0) @db.Decimal(18, 2)
-  retentionPercent Decimal?    @db.Decimal(5, 2)
-  retentionAmount  Decimal?    @db.Decimal(18, 2)
-  pph              Decimal?    @db.Decimal(18, 2)
-  pphMode         String?
-  tipePph         String?
-  tipePpn         String?
-  ppnMode         String?
-  coaAccount      String?
+  quotationId          Int?
+  quotation            Quotation?       @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  parentInvoiceId      Int?
+  parentInvoice        InvoiceOut?      @relation("InvoiceContinuation", fields: [parentInvoiceId], references: [id], onDelete: SetNull)
+  isContinuation       Boolean          @default(false)
+  discount             Decimal?         @db.Decimal(18, 2)
+  dpLabel              String?
+  dpAmount             Decimal?         @db.Decimal(18, 2)
+  dpApplied            Decimal          @default(0) @db.Decimal(18, 2)
+  retentionPercent     Decimal?         @db.Decimal(5, 2)
+  retentionAmount      Decimal?         @db.Decimal(18, 2)
+  pph                  Decimal?         @db.Decimal(18, 2)
+  pphMode              String?
+  tipePph              String?
+  tipePpn              String?
+  ppnMode              String?
+  coaAccount           String?
   // Berkas bukti bayar. Bila ada baris Payment, berkas Payment terbaru yang dipakai.
-  paidFileId      Int?
+  paidFileId           Int?
+  paidFile             File?            @relation("InvoiceOut_paidFileId", fields: [paidFileId], references: [id], onDelete: SetNull)
   // Tampilan dokumen (kop, penandatangan, teks)
-  subject         String?
-  intro           String?     @db.Text
-  city            String?
-  kopText         String?     @db.Text
-  kopLogoUrl      String?     @db.LongText
-  customerAddress String?     @db.Text
-  signerName      String?
-  signerTitle     String?
-  notesList       Json?
-  items           Json?
+  subject              String?
+  intro                String?          @db.Text
+  city                 String?
+  kopText              String?          @db.Text
+  kopLogoUrl           String?          @db.LongText
+  customerAddress      String?          @db.Text
+  signerName           String?
+  signerTitle          String?
+  notesList            Json?
+  items                Json?
   // Konflik stok / auto-swap SN
-  stockConflictFlag    Boolean @default(false)
-  stockConflictMessage String? @db.Text
+  stockConflictFlag    Boolean          @default(false)
+  stockConflictMessage String?          @db.Text
   autoSwapLogs         Json?
   emergencyPrId        Int?
+  emergencyPr          PurchaseRequest? @relation("InvoiceEmergencyPr", fields: [emergencyPrId], references: [id], onDelete: SetNull)
   emergencyPrNumber    String?
   latestFileId         Int?
+  latestFile           File?            @relation("InvoiceOut_latestFileId", fields: [latestFileId], references: [id], onDelete: SetNull)
   latestFileName       String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
-  payments     Payment[]
-  reservations StockReservation[]
+  payments       Payment[]
+  reservations   StockReservation[]
+  continuations  InvoiceOut[]       @relation("InvoiceContinuation")
+  convertedTo    InvoiceOut?        @relation("ProformaConversion")
+  calendarEvents CalendarEvent[]    @relation("CalendarInvoice")
+  deliveryNotes  DeliveryNote[]
 
   @@index([status])
   @@index([dueDate])
   @@index([customerId])
   @@index([projectId])
   @@index([quotationId])
+  @@index([isProforma])
 }
 
 model InvoiceIn {
@@ -959,23 +1090,26 @@ model InvoiceIn {
   dueDate        DateTime        @db.Date
   status         InvoiceInStatus @default(UNPAID)
   fileId         Int?
+  file           File?           @relation("InvoiceIn_fileId", fields: [fileId], references: [id], onDelete: SetNull)
   transferFileId Int?
+  transferFile   File?           @relation("InvoiceIn_transferFileId", fields: [transferFileId], references: [id], onDelete: SetNull)
 
   // Metadata (dulu JSON di SystemSetting "invoice-in:meta:<id>"). Berkas tetap di fileId / transferFileId.
-  notes        String?  @db.Text
+  notes        String?   @db.Text
   category     String?
   debitAccount String?
   date         DateTime? @db.Date
   items        Json?
   coaAccount   String?
-  pph          Decimal? @db.Decimal(18, 2)
+  pph          Decimal?  @db.Decimal(18, 2)
   pphMode      String?
   tipePph      String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   payments Payment[]
 
+  @@unique([supplierId, number])
   @@index([status])
   @@index([dueDate])
   @@index([supplierId])
@@ -993,7 +1127,9 @@ model Payment {
   accountCode  String?
   reference    String?
   fileId       Int?
+  file         File?         @relation("Payment_fileId", fields: [fileId], references: [id], onDelete: SetNull)
   createdById  Int?
+  creator      User?         @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt    DateTime      @default(now())
 
   @@index([invoiceOutId])
@@ -1001,41 +1137,47 @@ model Payment {
 }
 
 model Expense {
-  id             Int              @id @default(autoincrement())
-  date           DateTime         @db.Date
-  reporterId     Int
-  reporter       User             @relation("ExpenseReporter", fields: [reporterId], references: [id])
-  categoryId     Int?
-  category       ExpenseCategory? @relation(fields: [categoryId], references: [id])
-  amount         Decimal          @db.Decimal(18, 2)
-  description    String
-  status         ExpenseStatus    @default(DILAPORKAN)
-  projectId      Int?
-  project        Project?         @relation(fields: [projectId], references: [id])
-  surveyId       Int?
-  survey         Survey?          @relation(fields: [surveyId], references: [id])
-  deliveryNoteId Int?
-  deliveryNote   DeliveryNote?    @relation(fields: [deliveryNoteId], references: [id])
-  pocReportId    Int?
-  pocReport      PocReport?       @relation(fields: [pocReportId], references: [id])
-  visitReportId  Int?
-  visitReport    VisitReport?     @relation(fields: [visitReportId], references: [id])
-  costCenterId   Int?
-  costCenter     CostCenter?      @relation(fields: [costCenterId], references: [id])
-  receiptFileId  Int?
-  receiptFileIds String?          @db.Text
-  paidFileId     Int?
-  paidAt         DateTime?
-  rejectReason   String?
-  fundingSource  String           @default("PERUSAHAAN")
+  id                  Int              @id @default(autoincrement())
+  date                DateTime         @db.Date
+  reporterId          Int
+  reporter            User             @relation("ExpenseReporter", fields: [reporterId], references: [id])
+  categoryId          Int?
+  category            ExpenseCategory? @relation(fields: [categoryId], references: [id])
+  amount              Decimal          @db.Decimal(18, 2)
+  description         String
+  status              ExpenseStatus    @default(DILAPORKAN)
+  projectId           Int?
+  project             Project?         @relation(fields: [projectId], references: [id])
+  surveyId            Int?
+  survey              Survey?          @relation(fields: [surveyId], references: [id])
+  deliveryNoteId      Int?
+  deliveryNote        DeliveryNote?    @relation(fields: [deliveryNoteId], references: [id])
+  pocReportId         Int?
+  pocReport           PocReport?       @relation(fields: [pocReportId], references: [id])
+  visitReportId       Int?
+  visitReport         VisitReport?     @relation(fields: [visitReportId], references: [id])
+  costCenterId        Int?
+  costCenter          CostCenter?      @relation(fields: [costCenterId], references: [id])
+  receiptFileId       Int?
+  receiptFile         File?            @relation("Expense_receiptFileId", fields: [receiptFileId], references: [id], onDelete: SetNull)
+  receiptFileIds      String?          @db.Text
+  paidFileId          Int?
+  paidFile            File?            @relation("Expense_paidFileId", fields: [paidFileId], references: [id], onDelete: SetNull)
+  paidAt              DateTime?
+  rejectReason        String?
+  fundingSource       String           @default("PERUSAHAAN")
   reimbursementStatus String?
-  paymentMethod  String?
-  approvedAmount Decimal?         @db.Decimal(18, 2)
-  paidAmount     Decimal?         @db.Decimal(18, 2)
-  paidAccountCode String?
-  paidById       Int?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  paymentMethod       String?
+  approvedAmount      Decimal?         @db.Decimal(18, 2)
+  paidAmount          Decimal?         @db.Decimal(18, 2)
+  paidAccountCode     String?
+  paidById            Int?
+  paidBy              User?            @relation("ExpensePayer", fields: [paidById], references: [id], onDelete: SetNull)
+  // Biaya yang dibayar dari uang jalan (jurnalnya mengurangi Uang Muka Karyawan, bukan hutang reimbursement)
+  cashAdvanceId       Int?
+  cashAdvance         CashAdvance?     @relation(fields: [cashAdvanceId], references: [id], onDelete: SetNull)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   @@index([status])
   @@index([reporterId])
@@ -1045,6 +1187,87 @@ model Expense {
   @@index([pocReportId])
   @@index([visitReportId])
   @@index([deliveryNoteId])
+  @@index([cashAdvanceId])
+}
+
+// ─────────────────────────────── Uang Jalan ───────────────────────────────
+
+/// Uang jalan / kasbon: diajukan karyawan, disetujui & dicairkan Finance (masuk "kantong" karyawan =
+/// Uang Muka Karyawan), lalu karyawan melaporkan biayanya. Saat laporan diverifikasi, biaya diakui &
+/// sisa dikembalikan ke kas (atau kelebihan dibayar perusahaan).
+model CashAdvance {
+  id                  Int                @id @default(autoincrement())
+  number              String             @unique
+  purpose             CashAdvancePurpose @default(LAINNYA)
+  description         String             @db.Text
+  surveyId            Int?
+  survey              Survey?            @relation(fields: [surveyId], references: [id], onDelete: SetNull)
+  deliveryNoteId      Int?
+  deliveryNote        DeliveryNote?      @relation(fields: [deliveryNoteId], references: [id], onDelete: SetNull)
+  projectId           Int?
+  project             Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  // Karyawan pemegang uang (yang berangkat survey / admin gudang / kurir)
+  employeeId          Int
+  employee            User               @relation("CashAdvanceEmployee", fields: [employeeId], references: [id])
+  requestedById       Int
+  requestedBy         User               @relation("CashAdvanceRequester", fields: [requestedById], references: [id])
+  amount              Decimal            @db.Decimal(18, 2)
+  neededDate          DateTime?          @db.Date
+  status              CashAdvanceStatus  @default(DIAJUKAN)
+  // Persetujuan
+  approvedAmount      Decimal?           @db.Decimal(18, 2)
+  approvedById        Int?
+  approvedBy          User?              @relation("CashAdvanceApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt          DateTime?
+  rejectReason        String?            @db.Text
+  // Pencairan (kas keluar)
+  disbursedAmount     Decimal?           @db.Decimal(18, 2)
+  disbursedAt         DateTime?          @db.Date
+  disburseAccountCode String?
+  disburseMethod      String?
+  disburseFileId      Int?
+  disburseFile        File?              @relation("CashAdvance_disburseFileId", fields: [disburseFileId], references: [id], onDelete: SetNull)
+  disbursedById       Int?
+  disbursedBy         User?              @relation("CashAdvanceDisburser", fields: [disbursedById], references: [id], onDelete: SetNull)
+  // Laporan & penyelesaian
+  reportedAt          DateTime?
+  reportNote          String?            @db.Text
+  settledAt           DateTime?
+  settledById         Int?
+  settledBy           User?              @relation("CashAdvanceSettler", fields: [settledById], references: [id], onDelete: SetNull)
+  spentAmount         Decimal?           @db.Decimal(18, 2)
+  returnedAmount      Decimal?           @db.Decimal(18, 2)
+  returnAccountCode   String?
+  returnFileId        Int?
+  returnFile          File?              @relation("CashAdvance_returnFileId", fields: [returnFileId], references: [id], onDelete: SetNull)
+  reimbursedAmount    Decimal?           @db.Decimal(18, 2)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  items    CashAdvanceItem[]
+  expenses Expense[]
+
+  @@index([status])
+  @@index([employeeId])
+  @@index([surveyId])
+  @@index([deliveryNoteId])
+  @@index([projectId])
+}
+
+/// Rincian biaya yang dilaporkan dari uang jalan (bensin, tol, parkir, makan, dll.) + foto nota.
+model CashAdvanceItem {
+  id             Int              @id @default(autoincrement())
+  cashAdvanceId  Int
+  cashAdvance    CashAdvance      @relation(fields: [cashAdvanceId], references: [id], onDelete: Cascade)
+  date           DateTime         @db.Date
+  description    String
+  amount         Decimal          @db.Decimal(18, 2)
+  categoryId     Int?
+  category       ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  receiptFileIds Json?
+  createdAt      DateTime         @default(now())
+
+  @@index([cashAdvanceId])
 }
 
 // ─────────────────────────────── Project ───────────────────────────────
@@ -1065,10 +1288,15 @@ model Project {
   progress      Int           @default(0)
   paymentStatus PaymentStatus @default(BELUM_LUNAS)
   prdFileId     Int?
+  prdFile       File?         @relation("Project_prdFileId", fields: [prdFileId], references: [id], onDelete: SetNull)
   bahpFileId    Int?
+  bahpFile      File?         @relation("Project_bahpFileId", fields: [bahpFileId], references: [id], onDelete: SetNull)
   bastFileId    Int?
+  bastFile      File?         @relation("Project_bastFileId", fields: [bastFileId], references: [id], onDelete: SetNull)
   doFileId      Int?
+  doFile        File?         @relation("Project_doFileId", fields: [doFileId], references: [id], onDelete: SetNull)
   boqFileId     Int?
+  boqFile       File?         @relation("Project_boqFileId", fields: [boqFileId], references: [id], onDelete: SetNull)
   notes         String?
   completedAt   DateTime?
   createdAt     DateTime      @default(now())
@@ -1088,11 +1316,14 @@ model Project {
   serialUnits      SerialUnit[]
   supplierPOs      SupplierPO[]
   receivings       Receiving[]
+  serialHistory    SerialUnitHistory[]    @relation("SerialHistProject")
+  calendarEvents   CalendarEvent[]        @relation("CalendarProject")
+  clientPOs        ClientPO[]
+  cashAdvances     CashAdvance[]
 
   @@index([status])
   @@index([picId])
   @@index([customerId])
-  clientPOs ClientPO[]
 }
 
 model ProjectMember {
@@ -1122,8 +1353,11 @@ model Task {
   progress      Int        @default(0)
   needsPurchase Boolean    @default(false)
   bahpFileId    Int?
+  bahpFile      File?      @relation("Task_bahpFileId", fields: [bahpFileId], references: [id], onDelete: SetNull)
   bastFileId    Int?
+  bastFile      File?      @relation("Task_bastFileId", fields: [bastFileId], references: [id], onDelete: SetNull)
   doFileId      Int?
+  doFile        File?      @relation("Task_doFileId", fields: [doFileId], references: [id], onDelete: SetNull)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -1136,19 +1370,20 @@ model Task {
 }
 
 model ProjectRequirement {
-  id          Int               @id @default(autoincrement())
-  projectId   Int
-  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  taskId      Int?
-  task        Task?             @relation(fields: [taskId], references: [id])
-  productId   Int
-  product     Product           @relation(fields: [productId], references: [id])
-  qty         Int
-  reservedQty Int               @default(0)
-  serials     String?           @db.LongText
-  status      RequirementStatus @default(DIBUTUHKAN)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id           Int                @id @default(autoincrement())
+  projectId    Int
+  project      Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId       Int?
+  task         Task?              @relation(fields: [taskId], references: [id])
+  productId    Int
+  product      Product            @relation(fields: [productId], references: [id])
+  qty          Int
+  reservedQty  Int                @default(0)
+  serials      String?            @db.LongText
+  status       RequirementStatus  @default(DIBUTUHKAN)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  reservations StockReservation[] @relation("ReservationRequirement")
 
   @@index([projectId])
   @@index([productId])
@@ -1157,40 +1392,49 @@ model ProjectRequirement {
 // ─────────────────────────────── Procurement ───────────────────────────────
 
 model PurchaseRequest {
-  id                Int           @id @default(autoincrement())
-  number            String        @unique
-  date              DateTime      @db.Date
-  requesterId       Int
-  requester         User          @relation("PRRequester", fields: [requesterId], references: [id])
-  costType          CostType
-  procurementSource String?       @default("SUPPLIER")
-  paymentMethod     String?       @default("UTANG")
-  projectId         Int?
-  project           Project?      @relation(fields: [projectId], references: [id])
-  taskId            Int?
-  task              Task?         @relation(fields: [taskId], references: [id])
-  supplierId        Int?
-  supplier          Supplier?     @relation(fields: [supplierId], references: [id])
-  condition         ItemCondition @default(BARU)
-  estimatedCost     Decimal       @default(0) @db.Decimal(18, 2)
-  purpose           String
-  otherNote         String?
-  evidenceFileId    Int?
-  doFileId          Int?
-  paymentProofFileId Int?
-  paymentStatus     String?       @default("BELUM_DIBAYAR")
+  id                  Int                   @id @default(autoincrement())
+  number              String                @unique
+  date                DateTime              @db.Date
+  requesterId         Int
+  requester           User                  @relation("PRRequester", fields: [requesterId], references: [id])
+  costType            CostType
+  procurementSource   ProcurementSource     @default(SUPPLIER)
+  paymentMethod       PurchasePaymentMethod @default(UTANG)
+  // Mode PPN harga barang (dulu tag "[PPN:x]" di otherNote)
+  ppnMode             PpnMode               @default(none)
+  // Semua barang pakai-habis untuk proyek (dulu tag "[ALL_CONSUMABLES]" di otherNote)
+  isProjectConsumable Boolean               @default(false)
+  projectId           Int?
+  project             Project?              @relation(fields: [projectId], references: [id])
+  taskId              Int?
+  task                Task?                 @relation(fields: [taskId], references: [id])
+  supplierId          Int?
+  supplier            Supplier?             @relation(fields: [supplierId], references: [id])
+  condition           ItemCondition         @default(BARU)
+  estimatedCost       Decimal               @default(0) @db.Decimal(18, 2)
+  purpose             String
+  otherNote           String?
+  evidenceFileId      Int?
+  evidenceFile        File?                 @relation("PurchaseRequest_evidenceFileId", fields: [evidenceFileId], references: [id], onDelete: SetNull)
+  doFileId            Int?
+  doFile              File?                 @relation("PurchaseRequest_doFileId", fields: [doFileId], references: [id], onDelete: SetNull)
+  paymentProofFileId  Int?
+  paymentProofFile    File?                 @relation("PurchaseRequest_paymentProofFileId", fields: [paymentProofFileId], references: [id], onDelete: SetNull)
+  paymentStatus       PrPaymentStatus       @default(BELUM_DIBAYAR)
   // Kode akun kas/bank sumber pembayaran (mis. 1000.01). Satu-satunya tempat; dulu disisipkan sebagai tag di otherNote.
-  paymentAccountCode String?
-  dueDate           DateTime?     @db.Date
-  status            PrStatus      @default(DIAJUKAN)
-  rejectReason      String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  paymentAccountCode  String?
+  dueDate             DateTime?             @db.Date
+  status              PrStatus              @default(DIAJUKAN)
+  rejectReason        String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 
-  items        PurchaseRequestItem[]
-  supplierPOs  SupplierPO[]
-  reservations StockReservation[]
-  receivings   Receiving[]
+  items               PurchaseRequestItem[]
+  supplierPOs         SupplierPO[]
+  reservations        StockReservation[]
+  receivings          Receiving[]
+  emergencyQuotations Quotation[]           @relation("QuotationEmergencyPr")
+  emergencyInvoices   InvoiceOut[]          @relation("InvoiceEmergencyPr")
 
   @@index([status])
   @@index([projectId])
@@ -1199,57 +1443,63 @@ model PurchaseRequest {
 }
 
 model PurchaseRequestItem {
-  id         Int             @id @default(autoincrement())
-  requestId  Int
-  request    PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  productId  Int?
-  product    Product?        @relation(fields: [productId], references: [id])
-  customName String?
-  customUnit String?
-  qty        Int
-  unitCost   Decimal         @default(0) @db.Decimal(18, 2)
-  serials    String?         @db.LongText
+  id           Int             @id @default(autoincrement())
+  requestId    Int
+  request      PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  productId    Int?
+  product      Product?        @relation(fields: [productId], references: [id])
+  customName   String?
+  customUnit   String?
+  qty          Int
+  unitCost     Decimal         @default(0) @db.Decimal(18, 2)
+  serials      String?         @db.LongText
+  // Barang pakai-habis proyek (dulu awalan "[PAKAI_HABIS]" di customName)
+  isConsumable Boolean         @default(false)
 
   @@index([requestId])
 }
 
 model SupplierPO {
-  id             Int              @id @default(autoincrement())
-  number         String           @unique
-  supplierId     Int
-  supplier       Supplier         @relation(fields: [supplierId], references: [id])
-  requestId      Int?
-  request        PurchaseRequest? @relation(fields: [requestId], references: [id])
-  projectId      Int?
-  project        Project?         @relation(fields: [projectId], references: [id])
-  date           DateTime         @db.Date
-  eta            DateTime?        @db.Date
-  paymentTerms   String?
-  total          Decimal          @db.Decimal(18, 2)
-  status         PoStatus         @default(MENUNGGU_PERSETUJUAN)
-  shipmentStatus ShipmentStatus   @default(DI_SUPPLIER)
-  fileId         Int?
-  doFileId       Int?
-  createdById    Int?
-  creator        User?            @relation("POCreator", fields: [createdById], references: [id])
-  arrivedAt      DateTime?
+  id               Int              @id @default(autoincrement())
+  number           String           @unique
+  supplierId       Int
+  supplier         Supplier         @relation(fields: [supplierId], references: [id])
+  requestId        Int?
+  request          PurchaseRequest? @relation(fields: [requestId], references: [id])
+  projectId        Int?
+  project          Project?         @relation(fields: [projectId], references: [id])
+  date             DateTime         @db.Date
+  eta              DateTime?        @db.Date
+  paymentTerms     String?
+  total            Decimal          @db.Decimal(18, 2)
+  status           PoStatus         @default(MENUNGGU_PERSETUJUAN)
+  shipmentStatus   ShipmentStatus   @default(DI_SUPPLIER)
+  fileId           Int?
+  file             File?            @relation("SupplierPO_fileId", fields: [fileId], references: [id], onDelete: SetNull)
+  doFileId         Int?
+  doFile           File?            @relation("SupplierPO_doFileId", fields: [doFileId], references: [id], onDelete: SetNull)
+  createdById      Int?
+  creator          User?            @relation("POCreator", fields: [createdById], references: [id])
+  arrivedAt        DateTime?
   // Metadata PO (dulu JSON di SystemSetting "supplier-po:meta:<id>")
   supplierSoNumber String?
-  soFileId       Int?
-  // Penanda pembayaran manual dari Finance: LUNAS | SAMPAI_BELUM_LUNAS
-  manualStatus   String?
-  ppnMode        String?
-  dpp            Decimal?         @db.Decimal(18, 2)
-  ppn            Decimal?         @db.Decimal(18, 2)
-  pphMode        String?
-  tipePph        String?
-  pph            Decimal?         @db.Decimal(18, 2)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  soFileId         Int?
+  soFile           File?            @relation("SupplierPO_soFileId", fields: [soFileId], references: [id], onDelete: SetNull)
+  // Penanda pembayaran manual dari Finance
+  manualStatus     PoManualStatus?
+  ppnMode          PpnMode?
+  dpp              Decimal?         @db.Decimal(18, 2)
+  ppn              Decimal?         @db.Decimal(18, 2)
+  pphMode          String?
+  tipePph          String?
+  pph              Decimal?         @db.Decimal(18, 2)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   items      SupplierPOItem[]
   receivings Receiving[]
   invoiceIns InvoiceIn[]
+  returns    DamageReport[]
 
   @@index([status])
   @@index([shipmentStatus])
@@ -1272,29 +1522,32 @@ model SupplierPOItem {
 }
 
 model Receiving {
-  id            Int             @id @default(autoincrement())
-  number        String          @unique
+  id            Int              @id @default(autoincrement())
+  number        String           @unique
   supplierPoId  Int?
-  supplierPo    SupplierPO?     @relation(fields: [supplierPoId], references: [id])
+  supplierPo    SupplierPO?      @relation(fields: [supplierPoId], references: [id])
   requestId     Int?
   request       PurchaseRequest? @relation(fields: [requestId], references: [id])
   supplierName  String?
   warehouseId   Int?
-  warehouse     Warehouse?      @relation(fields: [warehouseId], references: [id])
+  warehouse     Warehouse?       @relation(fields: [warehouseId], references: [id])
   projectId     Int?
-  project       Project?        @relation(fields: [projectId], references: [id])
-  date          DateTime        @db.Date
+  project       Project?         @relation(fields: [projectId], references: [id])
+  date          DateTime         @db.Date
   receiverId    Int
-  receiver      User            @relation(fields: [receiverId], references: [id])
-  status        ReceivingStatus @default(MENUNGGU)
-  conditionNote String?         @db.Text
+  receiver      User             @relation(fields: [receiverId], references: [id])
+  status        ReceivingStatus  @default(MENUNGGU)
+  conditionNote String?          @db.Text
   receiptFileId Int?
+  receiptFile   File?            @relation("Receiving_receiptFileId", fields: [receiptFileId], references: [id], onDelete: SetNull)
   photoFileId   Int?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  photoFile     File?            @relation("Receiving_photoFileId", fields: [photoFileId], references: [id], onDelete: SetNull)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   items        ReceivingItem[]
   issueReports IssueReport[]
+  movements    StockMovement[] @relation("MovementReceiving")
 
   @@index([status])
   @@index([supplierPoId])
@@ -1327,6 +1580,7 @@ model IssueReport {
   qty         Int          @default(1)
   description String
   fileId      Int?
+  file        File?        @relation("IssueReport_fileId", fields: [fileId], references: [id], onDelete: SetNull)
   reporterId  Int
   reporter    User         @relation(fields: [reporterId], references: [id])
   status      DamageStatus @default(DILAPORKAN)
@@ -1373,6 +1627,7 @@ model StockMovement {
   deliveryNoteId  Int?
   deliveryNote    DeliveryNote?    @relation(fields: [deliveryNoteId], references: [id])
   receivingId     Int?
+  receiving       Receiving?       @relation("MovementReceiving", fields: [receivingId], references: [id], onDelete: SetNull)
   reason          String?
   createdById     Int?
   creator         User?            @relation(fields: [createdById], references: [id])
@@ -1419,7 +1674,9 @@ model SerialUnitHistory {
   serialUnit   SerialUnit   @relation(fields: [serialUnitId], references: [id], onDelete: Cascade)
   status       SerialStatus
   warehouseId  Int?
+  warehouse    Warehouse?   @relation("SerialHistWarehouse", fields: [warehouseId], references: [id], onDelete: SetNull)
   projectId    Int?
+  project      Project?     @relation("SerialHistProject", fields: [projectId], references: [id], onDelete: SetNull)
   note         String?
   changedById  Int?
   changer      User?        @relation(fields: [changedById], references: [id])
@@ -1429,23 +1686,24 @@ model SerialUnitHistory {
 }
 
 model StockReservation {
-  id                Int              @id @default(autoincrement())
+  id                Int                 @id @default(autoincrement())
   projectId         Int?
-  project           Project?         @relation(fields: [projectId], references: [id])
+  project           Project?            @relation(fields: [projectId], references: [id])
   quotationId       Int?
-  quotation         Quotation?       @relation(fields: [quotationId], references: [id])
+  quotation         Quotation?          @relation(fields: [quotationId], references: [id])
   invoiceId         Int?
-  invoice           InvoiceOut?      @relation(fields: [invoiceId], references: [id])
+  invoice           InvoiceOut?         @relation(fields: [invoiceId], references: [id])
   purchaseRequestId Int?
-  purchaseRequest   PurchaseRequest? @relation(fields: [purchaseRequestId], references: [id])
+  purchaseRequest   PurchaseRequest?    @relation(fields: [purchaseRequestId], references: [id])
   productId         Int?
-  product           Product?         @relation(fields: [productId], references: [id])
+  product           Product?            @relation(fields: [productId], references: [id])
   serialUnitId      Int?
-  serialUnit        SerialUnit?      @relation(fields: [serialUnitId], references: [id])
-  qty               Int              @default(1)
+  serialUnit        SerialUnit?         @relation(fields: [serialUnitId], references: [id])
+  qty               Int                 @default(1)
   requirementId     Int?
+  requirement       ProjectRequirement? @relation("ReservationRequirement", fields: [requirementId], references: [id], onDelete: SetNull)
   releasedAt        DateTime?
-  createdAt         DateTime         @default(now())
+  createdAt         DateTime            @default(now())
 
   @@index([projectId])
   @@index([quotationId])
@@ -1489,23 +1747,32 @@ model StockOpnameDetail {
 }
 
 model DamageReport {
-  id           Int          @id @default(autoincrement())
-  date         DateTime     @db.Date
-  productId    Int
-  product      Product      @relation(fields: [productId], references: [id])
-  serialUnitId Int?
-  serialUnit   SerialUnit?  @relation(fields: [serialUnitId], references: [id])
-  type         IssueType
-  qty          Int          @default(1)
-  description  String
-  fileId       Int?
-  reporterId   Int
-  reporter     User         @relation(fields: [reporterId], references: [id])
-  status       DamageStatus @default(DILAPORKAN)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id              Int            @id @default(autoincrement())
+  date            DateTime       @db.Date
+  productId       Int
+  product         Product        @relation(fields: [productId], references: [id])
+  serialUnitId    Int?
+  serialUnit      SerialUnit?    @relation(fields: [serialUnitId], references: [id])
+  type            IssueType
+  // Jenis laporan & PO asal retur (dulu tag "[RETUR-PEMBELIAN]" / "[PO: ...]" di description)
+  category        DamageCategory @default(KERUSAKAN)
+  supplierPoId    Int?
+  supplierPo      SupplierPO?    @relation(fields: [supplierPoId], references: [id], onDelete: SetNull)
+  qty             Int            @default(1)
+  description     String
+  // Catatan penggantian (dulu tag "[DIGANTI: ...]" di description)
+  replacementNote String?
+  fileId          Int?
+  file            File?          @relation("DamageReport_fileId", fields: [fileId], references: [id], onDelete: SetNull)
+  reporterId      Int
+  reporter        User           @relation(fields: [reporterId], references: [id])
+  status          DamageStatus   @default(DILAPORKAN)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   @@index([status])
+  @@index([supplierPoId])
+  @@index([category])
 }
 
 // ─────────────────────────────── Surat jalan ───────────────────────────────
@@ -1518,23 +1785,34 @@ model DeliveryNote {
   withGoods    Boolean        @default(false)
   date         DateTime       @db.Date
   status       DeliveryStatus @default(PENDING)
+  // Dokumen penjualan yang dikirim (dulu tag "[so:id]" / "[inv:id]" di alasan surat jalan)
+  clientPoId   Int?
+  clientPo     ClientPO?      @relation(fields: [clientPoId], references: [id], onDelete: SetNull)
+  invoiceId    Int?
+  invoice      InvoiceOut?    @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   receiveById  Int?
+  receivedBy   User?          @relation("DNReceiver", fields: [receiveById], references: [id], onDelete: SetNull)
   receivedAt   DateTime?
   scanFileId   Int?
+  scanFile     File?          @relation("DeliveryNote_scanFileId", fields: [scanFileId], references: [id], onDelete: SetNull)
   reportText   String?        @db.LongText
   reportFileId Int?
+  reportFile   File?          @relation("DeliveryNote_reportFileId", fields: [reportFileId], references: [id], onDelete: SetNull)
   reportAt     DateTime?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  locations DeliveryNoteLocation[]
-  items     DeliveryNoteItem[]
-  movements StockMovement[]
-  expenses  Expense[]
+  locations    DeliveryNoteLocation[]
+  items        DeliveryNoteItem[]
+  movements    StockMovement[]
+  expenses     Expense[]
+  cashAdvances CashAdvance[]
 
   @@index([status])
   @@index([creatorId])
   @@index([date])
+  @@index([clientPoId])
+  @@index([invoiceId])
 }
 
 model DeliveryNoteLocation {
@@ -1570,6 +1848,7 @@ model DeliveryNoteItem {
 model Attendance {
   id            Int       @id @default(autoincrement())
   userId        Int
+  user          User      @relation("AttendanceUser", fields: [userId], references: [id], onDelete: Restrict)
   date          DateTime  @db.Date
   checkIn       DateTime?
   checkOut      DateTime?
@@ -1585,6 +1864,7 @@ model Attendance {
 
 model SalaryConfig {
   userId      Int      @id
+  user        User     @relation("SalaryConfigUser", fields: [userId], references: [id], onDelete: Cascade)
   basicSalary Decimal  @default(0) @db.Decimal(18, 2)
   allowance   Decimal  @default(0) @db.Decimal(18, 2)
   ptkp        String   @default("TK/0")
@@ -1594,26 +1874,27 @@ model SalaryConfig {
 }
 
 model PayrollSlip {
-  id            Int       @id @default(autoincrement())
-  period        String
-  userId        Int
-  basicSalary   Decimal   @default(0) @db.Decimal(18, 2)
-  allowance     Decimal   @default(0) @db.Decimal(18, 2)
-  overtimePay   Decimal   @default(0) @db.Decimal(18, 2)
-  absentDeduct  Decimal   @default(0) @db.Decimal(18, 2)
-  grossSalary   Decimal   @default(0) @db.Decimal(18, 2)
-  bpjs          Decimal   @default(0) @db.Decimal(18, 2)
-  pph21         Decimal   @default(0) @db.Decimal(18, 2)
-  netSalary     Decimal   @default(0) @db.Decimal(18, 2)
-  workDays      Int       @default(0)
-  presentDays   Int       @default(0)
-  absentDays    Int       @default(0)
+  id              Int       @id @default(autoincrement())
+  period          String
+  userId          Int
+  user            User      @relation("PayrollSlipUser", fields: [userId], references: [id], onDelete: Restrict)
+  basicSalary     Decimal   @default(0) @db.Decimal(18, 2)
+  allowance       Decimal   @default(0) @db.Decimal(18, 2)
+  overtimePay     Decimal   @default(0) @db.Decimal(18, 2)
+  absentDeduct    Decimal   @default(0) @db.Decimal(18, 2)
+  grossSalary     Decimal   @default(0) @db.Decimal(18, 2)
+  bpjs            Decimal   @default(0) @db.Decimal(18, 2)
+  pph21           Decimal   @default(0) @db.Decimal(18, 2)
+  netSalary       Decimal   @default(0) @db.Decimal(18, 2)
+  workDays        Int       @default(0)
+  presentDays     Int       @default(0)
+  absentDays      Int       @default(0)
   lateCount       Int       @default(0)
   status          String    @default("DRAFT")
   paidAccountCode String?
   paidAt          DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@unique([period, userId])
   @@index([period])
@@ -1622,48 +1903,51 @@ model PayrollSlip {
 // ─────────────────────────────── POC (Proof of Concept / Demo / Expo) ───────────────────────────────
 
 model PocReport {
-  id                  Int            @id @default(autoincrement())
-  number              String         @unique
+  id                  Int       @id @default(autoincrement())
+  number              String    @unique
   title               String
-  description         String?        @db.Text
-  date                DateTime       @db.Date
-  endDate             DateTime?      @db.Date
+  description         String?   @db.Text
+  date                DateTime  @db.Date
+  endDate             DateTime? @db.Date
   location            String?
-  type                String         @default("DEMO_CLIENT")
-  status              String         @default("Draft")
+  type                String    @default("DEMO_CLIENT")
+  status              String    @default("Draft")
   resultStatus        String?
   clientName          String?
   customerId          Int?
-  customer            Customer?      @relation(fields: [customerId], references: [id])
+  customer            Customer? @relation(fields: [customerId], references: [id])
   projectId           Int?
-  project             Project?       @relation(fields: [projectId], references: [id])
+  project             Project?  @relation(fields: [projectId], references: [id])
   leadId              Int?
-  lead                Lead?          @relation(fields: [leadId], references: [id])
-  targetCriteria      String?        @db.Text
-  productsTested      String?        @db.Text
-  budget              Decimal        @default(0) @db.Decimal(18, 2)
-  actualCost          Decimal        @default(0) @db.Decimal(18, 2)
-  actualExecutionDate DateTime?      @db.Date
-  actualAttendees     String?        @db.Text
-  activitiesDone      String?        @db.Text
-  testResults         String?        @db.Text
-  issuesFound         String?        @db.Text
-  followUpNeeded      String?        @db.Text
-  conclusion          String?        @db.Text
-  recommendations     String?        @db.Text
+  lead                Lead?     @relation(fields: [leadId], references: [id])
+  targetCriteria      String?   @db.Text
+  productsTested      String?   @db.Text
+  budget              Decimal   @default(0) @db.Decimal(18, 2)
+  actualCost          Decimal   @default(0) @db.Decimal(18, 2)
+  actualExecutionDate DateTime? @db.Date
+  actualAttendees     String?   @db.Text
+  activitiesDone      String?   @db.Text
+  testResults         String?   @db.Text
+  issuesFound         String?   @db.Text
+  followUpNeeded      String?   @db.Text
+  conclusion          String?   @db.Text
+  recommendations     String?   @db.Text
   companyHeader       String?
   logoFileId          Int?
+  logoFile            File?     @relation("PocReport_logoFileId", fields: [logoFileId], references: [id], onDelete: SetNull)
   documentFileId      Int?
+  documentFile        File?     @relation("PocReport_documentFileId", fields: [documentFileId], references: [id], onDelete: SetNull)
   ownerId             Int
-  owner               User           @relation("PocOwner", fields: [ownerId], references: [id])
+  owner               User      @relation("PocOwner", fields: [ownerId], references: [id])
   createdById         Int
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  createdBy           User      @relation("PocCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  members             PocMember[]
-  checklists          PocChecklist[]
-  expenses            Expense[]
-  followUps           FollowUp[]
+  members    PocMember[]
+  checklists PocChecklist[]
+  expenses   Expense[]
+  followUps  FollowUp[]
 
   @@index([status])
   @@index([date])
@@ -1692,6 +1976,7 @@ model PocChecklist {
   isDone      Boolean   @default(false)
   dueDate     DateTime? @db.Date
   assigneeId  Int?
+  assignee    User?     @relation("PocChecklistAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   notes       String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -1702,53 +1987,56 @@ model PocChecklist {
 // ─────────────────────────────── Kunjungan / Offline Meeting ───────────────────────────────
 
 model VisitReport {
-  id                     Int                @id @default(autoincrement())
-  number                 String             @unique
-  title                  String
-  activityTypeId         Int?
-  activityType           VisitActivityType? @relation(fields: [activityTypeId], references: [id])
-  activityTypeName       String?
-  status                 String             @default("Planned")
-  date                   DateTime           @db.Date
-  endDate                DateTime?          @db.Date
-  location               String?
-  clientName             String?
-  clientContact          String?
-  customerId             Int?
-  customer               Customer?          @relation(fields: [customerId], references: [id])
-  leadId                 Int?
-  lead                   Lead?              @relation(fields: [leadId], references: [id])
-  projectId              Int?
-  project                Project?           @relation(fields: [projectId], references: [id])
-  purpose                String?            @db.Text
-  description            String?            @db.Text
+  id               Int                @id @default(autoincrement())
+  number           String             @unique
+  title            String
+  activityTypeId   Int?
+  activityType     VisitActivityType? @relation(fields: [activityTypeId], references: [id])
+  activityTypeName String?
+  status           String             @default("Planned")
+  date             DateTime           @db.Date
+  endDate          DateTime?          @db.Date
+  location         String?
+  clientName       String?
+  clientContact    String?
+  customerId       Int?
+  customer         Customer?          @relation(fields: [customerId], references: [id])
+  leadId           Int?
+  lead             Lead?              @relation(fields: [leadId], references: [id])
+  projectId        Int?
+  project          Project?           @relation(fields: [projectId], references: [id])
+  purpose          String?            @db.Text
+  description      String?            @db.Text
 
   // Minutes of Meeting (MoM)
-  summary                String?            @db.Text
-  clientNeeds            String?            @db.Text
-  productsIntroduced     String?            @db.Text
-  clientFeedback         String?            @db.Text
-  agreements             String?            @db.Text
-  potentialOpportunities String?            @db.Text
-  obstacles              String?            @db.Text
-  conclusion             String?            @db.Text
+  summary                String? @db.Text
+  clientNeeds            String? @db.Text
+  productsIntroduced     String? @db.Text
+  clientFeedback         String? @db.Text
+  agreements             String? @db.Text
+  potentialOpportunities String? @db.Text
+  obstacles              String? @db.Text
+  conclusion             String? @db.Text
 
   // Custom PDF Header & Logo
-  companyHeader          String?
-  logoFileId             Int?
-  documentFileId         Int?
+  companyHeader  String?
+  logoFileId     Int?
+  logoFile       File?   @relation("VisitReport_logoFileId", fields: [logoFileId], references: [id], onDelete: SetNull)
+  documentFileId Int?
+  documentFile   File?   @relation("VisitReport_documentFileId", fields: [documentFileId], references: [id], onDelete: SetNull)
 
   // PIC & Metadata
-  ownerId                Int
-  owner                  User               @relation("VisitOwner", fields: [ownerId], references: [id])
-  createdById            Int
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  ownerId     Int
+  owner       User     @relation("VisitOwner", fields: [ownerId], references: [id])
+  createdById Int
+  createdBy   User     @relation("VisitCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  members                VisitMember[]
-  actions                VisitActionItem[]
-  expenses               Expense[]
-  followUps              FollowUp[]
+  members   VisitMember[]
+  actions   VisitActionItem[]
+  expenses  Expense[]
+  followUps FollowUp[]
 
   @@index([status])
   @@index([date])
@@ -1777,6 +2065,7 @@ model VisitActionItem {
   visitReport   VisitReport @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
   task          String      @db.Text
   assigneeId    Int?
+  assignee      User?       @relation("VisitActionAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   dueDate       DateTime?   @db.Date
   status        String      @default("Open")
   notes         String?     @db.Text
@@ -1789,34 +2078,39 @@ model VisitActionItem {
 
 // ─────────────────────────────── Kalender Kerja ───────────────────────────────
 model CalendarEvent {
-  id              Int      @id @default(autoincrement())
-  number          String   @unique
-  title           String
-  description     String?  @db.Text
-  category        String   @default("MEETING")
-  status          String   @default("NOT_STARTED")
-  priority        String   @default("MEDIUM")
-  startDate       DateTime
-  endDate         DateTime?
-  isAllDay        Boolean  @default(false)
-  recurrence      String   @default("NONE")
-  recurrenceUntil DateTime?
-  reminderMinutes Int?
-  lastRemindedAt  DateTime?
-  completionNote  String?  @db.Text
-  creatorId       Int
-  creator         User     @relation("CalendarCreator", fields: [creatorId], references: [id])
-  assigneeId      Int?
-  assignee        User?    @relation("CalendarAssignee", fields: [assigneeId], references: [id])
+  id                Int         @id @default(autoincrement())
+  number            String      @unique
+  title             String
+  description       String?     @db.Text
+  category          String      @default("MEETING")
+  status            String      @default("NOT_STARTED")
+  priority          String      @default("MEDIUM")
+  startDate         DateTime
+  endDate           DateTime?
+  isAllDay          Boolean     @default(false)
+  recurrence        String      @default("NONE")
+  recurrenceUntil   DateTime?
+  reminderMinutes   Int?
+  lastRemindedAt    DateTime?
+  completionNote    String?     @db.Text
+  creatorId         Int
+  creator           User        @relation("CalendarCreator", fields: [creatorId], references: [id])
+  assigneeId        Int?
+  assignee          User?       @relation("CalendarAssignee", fields: [assigneeId], references: [id])
   customerId        Int?
+  customer          Customer?   @relation("CalendarCustomer", fields: [customerId], references: [id], onDelete: SetNull)
   projectId         Int?
+  project           Project?    @relation("CalendarProject", fields: [projectId], references: [id], onDelete: SetNull)
   leadId            Int?
+  lead              Lead?       @relation("CalendarLead", fields: [leadId], references: [id], onDelete: SetNull)
   invoiceId         Int?
+  invoice           InvoiceOut? @relation("CalendarInvoice", fields: [invoiceId], references: [id], onDelete: SetNull)
   supplierId        Int?
-  excludedDates     String?   @db.Text
+  supplier          Supplier?   @relation("CalendarSupplier", fields: [supplierId], references: [id], onDelete: SetNull)
+  excludedDates     String?     @db.Text
   overdueNotifiedAt DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
   attendees CalendarAttendee[]
 
@@ -1850,24 +2144,24 @@ enum PeriodStatus {
 }
 
 model CoaAccount {
-  id            Int              @id @default(autoincrement())
-  code          String           @unique
+  id            Int          @id @default(autoincrement())
+  code          String       @unique
   name          String
   category      String
-  normalBalance String           @default("DEBIT")
+  normalBalance String       @default("DEBIT")
   type          String?
   parentCode    String?
-  parent        CoaAccount?      @relation("CoaHierarchy", fields: [parentCode], references: [code], onDelete: SetNull)
-  children      CoaAccount[]     @relation("CoaHierarchy")
-  isPostable    Boolean          @default(true)
-  isCash        Boolean          @default(false)
-  isSystem      Boolean          @default(false)
-  status        String           @default("AKTIF")
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  parent        CoaAccount?  @relation("CoaHierarchy", fields: [parentCode], references: [code], onDelete: SetNull)
+  children      CoaAccount[] @relation("CoaHierarchy")
+  isPostable    Boolean      @default(true)
+  isCash        Boolean      @default(false)
+  isSystem      Boolean      @default(false)
+  status        String       @default("AKTIF")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
-  lines         JournalLine[]
-  mappings      AccountMapping[]
+  lines    JournalLine[]
+  mappings AccountMapping[]
 
   @@index([parentCode])
   @@index([category])
@@ -1958,20 +2252,3 @@ model AccountMapping {
   account     CoaAccount @relation(fields: [accountCode], references: [code])
   updatedAt   DateTime   @updatedAt
 }
-
-// ─────────────────────────────── Jurnal Umum Manual (Legacy) ───────────────────────────────
-model ManualJournal {
-  id          Int      @id @default(autoincrement())
-  journalNo   String   @unique
-  date        String
-  refNo       String?
-  description String   @db.Text
-  project     String?
-  lines       String   @db.LongText
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([date])
-}
-

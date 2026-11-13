@@ -262,6 +262,9 @@ export class ExpensesService {
   async update(id: number, dto: ExpenseDto, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
+    if (row.cashAdvanceId) {
+      throw new BadRequestException("Pengeluaran ini berasal dari laporan uang jalan dan dikelola lewat menu Uang Jalan.");
+    }
     const role = (user.role || "").toUpperCase();
     const isReporter = !row.reporterId || row.reporterId === user.id;
     const canEditExpense =
@@ -358,6 +361,9 @@ export class ExpensesService {
   async setStatus(id: number, dto: ExpenseStatusDto, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
+    if (row.cashAdvanceId) {
+      throw new BadRequestException("Pengeluaran ini berasal dari laporan uang jalan dan dikelola lewat menu Uang Jalan.");
+    }
 
     if (dto.paidFileId) {
       await this.prisma.main.file.update({
@@ -366,7 +372,28 @@ export class ExpensesService {
       }).catch(() => {});
     }
 
-    const isPaid = Boolean(dto.paidFileId || dto.status === "DIBAYAR");
+    // Pengeluaran yang sudah DIBAYAR tidak bisa dibayar ulang / dimundurkan (kas sudah keluar).
+    if (row.status === "DIBAYAR") {
+      if (dto.status !== "DIBAYAR") {
+        throw new BadRequestException("Pengeluaran sudah dibayar dan tidak bisa diubah statusnya. Buat jurnal koreksi bila perlu.");
+      }
+      // Hanya melengkapi bukti bayar; tidak ada jurnal / kas keluar baru.
+      const kept = await this.prisma.main.expense.update({
+        where: { id },
+        data: { ...(dto.paidFileId ? { paidFileId: dto.paidFileId } : {}) },
+        include: { reporter: { select: { id: true, name: true } } },
+      });
+      return { ...kept, receiptFile: null, paidFile: null };
+    }
+    if (dto.status === "DIBAYAR" && row.status === "DITOLAK") {
+      throw new BadRequestException("Pengeluaran yang ditolak tidak bisa dibayar");
+    }
+    // Disetujui lalu ditolak / dikembalikan: balik jurnal pengakuan beban agar beban & hutang tidak menggantung.
+    if (row.status === "DISETUJUI" && (dto.status === "DITOLAK" || dto.status === "DILAPORKAN")) {
+      await this.postingService.reverseAllForSource("Expense", id, `Pengeluaran ${dto.status === "DITOLAK" ? "ditolak" : "dikembalikan"}`, user.id);
+    }
+
+    const isPaid = Boolean(dto.status === "DIBAYAR");
     const updated = await this.prisma.main.expense.update({
       where: { id },
       data: {
@@ -546,7 +573,15 @@ export class ExpensesService {
   async remove(id: number, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
+    if (row.cashAdvanceId) {
+      throw new BadRequestException("Pengeluaran ini berasal dari laporan uang jalan dan dikelola lewat menu Uang Jalan.");
+    }
+    if (row.status === "DIBAYAR") {
+      throw new BadRequestException("Pengeluaran yang sudah dibayar tidak bisa dihapus (kas sudah keluar). Buat jurnal koreksi bila perlu.");
+    }
     await this.prisma.main.$transaction(async (tx) => {
+      // Beban yang sudah diakui (disetujui) dibalik dulu agar tidak tertinggal di buku besar
+      await this.postingService.reverseAllForSource("Expense", id, "Pengeluaran dihapus", user.id, tx);
       await tx.approval.deleteMany({ where: { kind: "PENGELUARAN", entityId: id } });
       await tx.expense.delete({ where: { id } });
     });

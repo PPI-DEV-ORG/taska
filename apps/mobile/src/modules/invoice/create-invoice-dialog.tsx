@@ -309,6 +309,19 @@ function CreateInvoiceForm({
     return (data.invoiceIn ?? []).find((inv: Row) => String(inv.id) === String(selectedParentInvoiceInId)) || null;
   }, [data.invoiceIn, selectedParentInvoiceInId]);
 
+  // Tagihan supplier dari PO: DPP & PPN mengacu angka PO (bukan dihitung ulang) supaya PPN tidak dobel / bergeser.
+  const supplierPoRef = React.useMemo(() => {
+    if (mode !== "masuk") return null;
+    const poId = selectedSupplierPoId || (selectedParentInvoiceIn?.supplierPoId ? String(selectedParentInvoiceIn.supplierPoId) : "");
+    if (!poId) return null;
+    const po = (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(poId));
+    if (!po) return null;
+    const dpp = Number(po.dpp || 0);
+    const ppn = Number(po.ppn || 0);
+    const poMode: PpnMode = po.ppnMode === "include" || po.ppnMode === "exclude" ? po.ppnMode : "none";
+    return dpp > 0 ? { nomor: String(po.nomor || po.number || ""), dpp, ppn: poMode === "none" ? 0 : ppn, mode: poMode } : null;
+  }, [mode, data, selectedSupplierPoId, selectedParentInvoiceIn]);
+
   const continuableInvoiceInOptions: { id: string; label: string; raw: Row }[] = React.useMemo(() => {
     return (data.invoiceIn ?? [])
       .filter((inv: Row) => {
@@ -763,6 +776,8 @@ function CreateInvoiceForm({
   // Total gross items / amount before discount
   const grossDealDpp = React.useMemo(() => {
     if (mode === "masuk") {
+      // Tagihan dari PO: dasar = DPP PO (paling akurat, juga untuk lanjutan DP/termin)
+      if (supplierPoRef) return supplierPoRef.mode === "include" ? supplierPoRef.dpp + supplierPoRef.ppn : supplierPoRef.dpp;
       if (selectedParentInvoiceIn) {
         const pctMatch = String(selectedParentInvoiceIn.catatan || selectedParentInvoiceIn.notes || selectedParentInvoiceIn.dpLabel || "").match(/(\d+)%/);
         const pct = pctMatch ? Number(pctMatch[1]) : 0;
@@ -770,10 +785,6 @@ function CreateInvoiceForm({
           return Math.round((Number(selectedParentInvoiceIn.nilai) / pct) * 100);
         }
         if (selectedParentInvoiceIn.nilai) return Number(selectedParentInvoiceIn.nilai);
-      }
-      const suppPoObj = (data["supplier-pos"] ?? []).find((p: Row) => String(p.id) === String(selectedSupplierPoId));
-      if (suppPoObj?.total || suppPoObj?.nilai || suppPoObj?.dpp) {
-        return Number(suppPoObj.dpp || suppPoObj.total || suppPoObj.nilai);
       }
       if (items.length > 0) {
         return items.reduce((acc, curr) => acc + (Number(curr.qty) || 1) * (Number(curr.harga) || Number((curr as any).price) || 0), 0);
@@ -802,7 +813,7 @@ function CreateInvoiceForm({
     }
     if (activeLead?.nilai) return Number(activeLead.nilai);
     return Number(String(customDpp).replace(/\D/g, "")) || 0;
-  }, [items, mode, activeQuotation, activePo, activeLead, customDpp, selectedParentInvoice, sourceType]);
+  }, [items, mode, activeQuotation, activePo, activeLead, customDpp, selectedParentInvoice, sourceType, supplierPoRef, selectedParentInvoiceIn]);
 
   const [customDiscount, setCustomDiscount] = React.useState<string>(() =>
     quotationDisc > 0 ? formatThousands(quotationDisc) : "",
@@ -849,7 +860,7 @@ function CreateInvoiceForm({
     return Math.max(0, grossDealDpp - effectiveDiscount);
   }, [grossDealDpp, effectiveDiscount]);
 
-  const [ppnMode, setPpnMode] = React.useState<PpnMode>(() => {
+  const [ppnModeState, setPpnMode] = React.useState<PpnMode>(() => {
     if (initialPo?.ppnMode) return initialPo.ppnMode as PpnMode;
     if (initialPo?.tipePpn) return getInitialPpnMode(initialPo);
     if (initialPo?.quotationId) {
@@ -858,6 +869,8 @@ function CreateInvoiceForm({
     }
     return getInitialPpnMode(initialQuotation);
   });
+  // Tagihan supplier dari PO: mode PPN mengikuti PO (Exclude / Include / Tanpa PPN)
+  const ppnMode: PpnMode = supplierPoRef ? supplierPoRef.mode : ppnModeState;
   const isNoPpn = ppnMode === "none";
   const isIncludePpn = ppnMode === "include";
 
@@ -1286,8 +1299,25 @@ function CreateInvoiceForm({
     }
 
     const rawBase = dpp;
-    const effectiveDpp = isIncludePpn ? Math.round(rawBase / 1.11) : rawBase;
-    const ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawBase - effectiveDpp) : Math.round(rawBase * 0.11);
+    let effectiveDpp = isIncludePpn ? Math.round(rawBase / 1.11) : rawBase;
+    let ppn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, rawBase - effectiveDpp) : Math.round(rawBase * 0.11);
+    // Tagihan supplier dari PO: DPP & PPN diambil dari angka PO (proporsional untuk DP/termin, sisa PO untuk tagihan terakhir)
+    let fromPo = false;
+    if (mode === "masuk" && supplierPoRef && !isNoPpn && supplierPoRef.ppn > 0) {
+      const billedDpp = relatedExistingInvoices.reduce((s: number, inv: Row) => s + (Number(inv.nilai) || 0), 0);
+      const billedPpn = relatedExistingInvoices.reduce((s: number, inv: Row) => s + (Number(inv.ppn) || 0), 0);
+      const isFinal = rawBase >= remainingDpp && remainingDpp > 0;
+      if (isFinal) {
+        effectiveDpp = Math.max(0, supplierPoRef.dpp - billedDpp);
+        ppn = Math.max(0, supplierPoRef.ppn - billedPpn);
+      } else if (isIncludePpn) {
+        effectiveDpp = Math.round((rawBase * supplierPoRef.dpp) / (supplierPoRef.dpp + supplierPoRef.ppn));
+        ppn = Math.max(0, rawBase - effectiveDpp);
+      } else {
+        ppn = Math.round((rawBase * supplierPoRef.ppn) / supplierPoRef.dpp);
+      }
+      fromPo = true;
+    }
 
     // Cari porsi DPP Jasa yang terkena PPh dari item SO / penawaran
     const sourceItems =
@@ -1334,7 +1364,7 @@ function CreateInvoiceForm({
       }
     }
 
-    const gross = isIncludePpn ? rawBase : effectiveDpp + ppn;
+    const gross = fromPo ? effectiveDpp + ppn : isIncludePpn ? rawBase : effectiveDpp + ppn;
     // Pembelian: kita yang memotong PPh supplier -> tagihan supplier selalu net.
     // Penjualan: sesuai pilihan "kapan PPh dipotong".
     const cutAtIssue = pph > 0 && pph < gross && (isPurchaseForm || pphTiming === "terbit");
@@ -1349,7 +1379,7 @@ function CreateInvoiceForm({
       pphCutAtIssue: cutAtIssue,
       calculatedPct: pct,
     };
-  }, [mode, isPurchaseForm, pphTiming, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode, items, activePo, activeQuotation]);
+  }, [mode, isPurchaseForm, pphTiming, scheme, dpPercent, terminPercent, dealDpp, continuationType, remainingDpp, isNoPpn, isIncludePpn, pphMode, items, activePo, activeQuotation, supplierPoRef, relatedExistingInvoices]);
 
   // Handle Submit
   async function handleSubmit() {
@@ -1877,6 +1907,12 @@ function CreateInvoiceForm({
                 )}
                 placeholder="Kosongkan jika bukan dari PO Pemasok..."
               />
+              {supplierPoRef ? (
+                <Text className="text-[11px] text-muted-foreground mt-1">
+                  Mengacu PO {supplierPoRef.nomor} ({supplierPoRef.mode === "include" ? "Include PPN" : supplierPoRef.mode === "exclude" ? "Exclude PPN" : "Tanpa PPN"}): DPP{" "}
+                  {rupiah(supplierPoRef.dpp)} · PPN {rupiah(supplierPoRef.ppn)} · Total {rupiah(supplierPoRef.dpp + supplierPoRef.ppn)}
+                </Text>
+              ) : null}
             </FormField>
 
             {continuableInvoiceInOptions.length > 0 ? (
@@ -1893,6 +1929,8 @@ function CreateInvoiceForm({
                       if (inv.supplierId) setSelectedSupplierId(String(inv.supplierId));
                       if (inv.supplier) setCustomSupplierName(inv.supplier);
                       if (inv.supplierPoId) setSelectedSupplierPoId(String(inv.supplierPoId));
+                      // Lanjutan tagihan tanpa PO: ikuti tagihan sebelumnya (dengan PO: otomatis mengikuti PO)
+                      setPpnMode(inv.ppnMode === "include" || inv.ppnMode === "exclude" ? inv.ppnMode : Number(inv.ppn || 0) > 0 ? "exclude" : "none");
                       if (inv.debitAccount) setPurchaseCategoryCode(inv.debitAccount);
                       if (inv.category) {
                         const matchCat = invoiceInCategoryOptions.find((c) => c.category === inv.category);
@@ -2814,12 +2852,16 @@ function CreateInvoiceForm({
                       size="sm"
                       variant={ppnMode === opt.id ? "default" : "outline"}
                       onPress={() => setPpnMode(opt.id)}
+                      disabled={!!supplierPoRef && opt.id !== ppnMode}
                       className="h-9 px-3"
                     >
                       <Text className="text-xs">{opt.label}</Text>
                     </Button>
                   ))}
                 </View>
+                {supplierPoRef ? (
+                  <Text className="text-[11px] text-muted-foreground">Mengikuti ketentuan PPN di PO {supplierPoRef.nomor}.</Text>
+                ) : null}
                 <View className="bg-card border-border/50 gap-1 rounded-lg border p-2.5">
                   <Text className="text-[11px] text-muted-foreground">
                     {ppnMode === "exclude"

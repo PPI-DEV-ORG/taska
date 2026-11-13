@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { InvoiceOutService } from "./invoice-out.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { Prisma } from "../generated/prisma/client.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -8,6 +9,8 @@ import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { StockService } from "../stock/stock.service.js";
 import { ClientPoDirectSettlementDto, ClientPoDto } from "./dto.js";
+import { withheldTax } from "../accounting/posting.rules.js";
+import { invoiceSettledGross } from "./settlement.js";
 
 type ClientPoMeta = {
   soNumber?: string | null;
@@ -37,6 +40,7 @@ export class ClientPoService {
     private readonly audit: AuditService,
     private readonly docnum: DocumentNumberService,
     private readonly stock: StockService,
+    private readonly invoiceOut: InvoiceOutService,
   ) {}
 
   private defaultSoNumber(id: number, date?: Date | null): string {
@@ -151,15 +155,14 @@ export class ClientPoService {
     const paymentProofFile = meta.paymentProofFileId ? fileMap.get(Number(meta.paymentProofFileId)) ?? null : null;
 
     // Total tidak disimpan di metadata (dulu bisa basi setelah amount diubah): selalu dihitung dari kolom + pajak.
-    const effectiveTotal = Number(row.amount || 0) + Number(meta.ppn ?? 0) - Number(meta.pph ?? 0);
+    // Nilai SO = DPP + PPN. PPh dipotong customer saat membayar (bukti potong), tidak mengurangi nilai SO.
+    const effectiveTotal = Number(row.amount || 0) + Number(meta.ppn ?? 0);
 
     const activeInvoices = Array.isArray(row.invoices)
       ? row.invoices.filter((i: any) => i.status !== "BATAL")
       : [];
-    const totalPaid = activeInvoices.reduce((sum: number, i: any) => {
-      const p = Number(i.paidAmount ?? (i.status === "PAID" ? i.total : 0));
-      return sum + (Number.isFinite(p) ? p : 0);
-    }, 0);
+    // Uang diterima + PPh yang dipotong customer (invoice lama yang totalnya sudah net PPh ikut dihitung bruto).
+    const totalPaid = activeInvoices.reduce((sum: number, i: any) => sum + invoiceSettledGross(i), 0);
     const hasPaidPelunasan = activeInvoices.some(
       (i: any) => i.status === "PAID" && i.type === "PELUNASAN" && Number(i.total) > 0,
     );
@@ -243,7 +246,10 @@ export class ClientPoService {
           customer: { select: { id: true, name: true } },
           supplier: { select: { id: true, name: true } },
           quotation: { select: { id: true, number: true } },
-          invoices: { select: { id: true, total: true, paidAmount: true, status: true, type: true } },
+          invoices: {
+            where: { isProforma: false },
+            select: { id: true, total: true, amount: true, ppn: true, pph: true, paidAmount: true, status: true, type: true },
+          },
           _count: { select: { invoices: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
@@ -277,7 +283,7 @@ export class ClientPoService {
         customer: true,
         supplier: true,
         quotation: { select: { id: true, number: true } },
-        invoices: true,
+        invoices: { where: { isProforma: false } },
       },
     });
     if (!row) throw new NotFoundException("Sales Order / PO client tidak ditemukan");
@@ -328,18 +334,33 @@ export class ClientPoService {
       primaryNumber = await this.docnum.next("clientPO", date);
     }
 
-    const customer = dto.customerId
-      ? await this.prisma.main.customer.findUnique({ where: { id: dto.customerId } })
+    // SO dari penawaran: customer, proyek & item diambil dari penawaran bila tidak dikirim (tidak perlu diisi ulang).
+    const quote = dto.quotationId
+      ? await this.prisma.main.quotation.findUnique({
+          where: { id: Number(dto.quotationId) },
+          select: { id: true, number: true, status: true, customerId: true, items: true },
+        })
       : null;
+    if (dto.quotationId && !quote) throw new NotFoundException("Penawaran tidak ditemukan");
+    if (quote && (quote.status === "REJECTED" || quote.status === "EXPIRED")) {
+      throw new BadRequestException(
+        `Penawaran ${quote.number} sudah ${quote.status === "REJECTED" ? "ditolak" : "kedaluwarsa"}, tidak bisa dibuatkan SO`,
+      );
+    }
+    const customerIdEff = dto.customerId ?? quote?.customerId ?? undefined;
+    const customer = customerIdEff
+      ? await this.prisma.main.customer.findUnique({ where: { id: customerIdEff } })
+      : null;
+    if (dto.projectId === undefined && quote) {
+      const proj = await this.prisma.main.project.findFirst({ where: { quotationId: quote.id }, select: { id: true } });
+      if (proj) dto = { ...dto, projectId: proj.id };
+    }
     const supplier = dto.supplierId
       ? await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } })
       : null;
 
     let items = Array.isArray(dto.items) ? dto.items : [];
-    if (!items.length && dto.quotationId) {
-      const quoteRow = await this.prisma.main.quotation.findUnique({ where: { id: Number(dto.quotationId) }, select: { items: true } });
-      if (Array.isArray(quoteRow?.items) && quoteRow.items.length > 0) items = quoteRow.items as any[];
-    }
+    if (!items.length && Array.isArray(quote?.items) && quote.items.length > 0) items = quote.items as any[];
 
     let calculatedAmount = dto.amount;
     if ((calculatedAmount === undefined || calculatedAmount === null || calculatedAmount === 0) && items.length > 0) {
@@ -532,6 +553,9 @@ export class ClientPoService {
   async directSettlement(id: number, dto: ClientPoDirectSettlementDto, user: RequestUser) {
     const row = await this.get(id);
     const settlementDate = dto.date ? new Date(dto.date) : new Date();
+    if ((row as any).paymentStatus === "LUNAS" && (row as any).settlementType === "LANGSUNG") {
+      throw new BadRequestException(`Sales Order ${row.number} sudah dilunasi langsung. Pelunasan tidak dicatat dua kali.`);
+    }
 
     let items = Array.isArray(row.items) ? row.items : [];
     if (!items.length && row.quotationId) {
@@ -564,6 +588,7 @@ export class ClientPoService {
       data: {
         number: dnNumber,
         creatorId: user.id,
+        clientPoId: row.id,
         withGoods: true,
         date: settlementDate,
         status: "PENDING",
@@ -573,7 +598,7 @@ export class ClientPoService {
           create: [
             {
               destination: partyName,
-              reason: `Pengiriman Barang SO ${row.number} [so:${row.id}]`,
+              reason: `Pengiriman Barang SO ${row.number}`,
             },
           ],
         },
@@ -621,10 +646,11 @@ export class ClientPoService {
           amount: row.amount,
           ppn: effectivePpn,
           total: effectiveTotal,
-          paidAmount: effectiveTotal,
+          // Uang masuk dicatat lewat addPayment di bawah (baris Payment + jurnal kas dalam satu transaksi)
+          paidAmount: 0,
           date: settlementDate,
           dueDate: settlementDate,
-          status: "PAID",
+          status: "SENT",
           fileId: dto.fileId ?? null,
           // Metadata invoice sebagai kolom (ppn & total sudah kolom sendiri di atas)
           tipePpn: effectiveTipePpn,
@@ -636,19 +662,32 @@ export class ClientPoService {
         },
       });
 
-      // Catat payment record pada invoice agar bukti bayar dan riwayat terdata lengkap
-      if (effectiveTotal > 0) {
-        await this.prisma.main.payment.create({
-          data: {
-            invoiceOutId: inv.id,
-            amount: effectiveTotal,
-            date: settlementDate,
+      // Jurnal piutang (E1) lalu pelunasan (E3) ke akun kas/bank yang dipilih
+      await this.invoiceOut.postInvoiceJournalIfEligible(inv.id, user.id);
+      if (Number(effectiveTotal) > 0) {
+        // Total SO = DPP + PPN: PPh (bila ada) dipotong customer -> uang diterima = total − PPh, sisanya bukti potong.
+        // SO lama yang totalnya sudah dikurangi PPh: PPh sudah diakui saat invoice terbit, uang diterima = total.
+        const pphCut =
+          Number(effectivePph) > 0 &&
+          withheldTax({ dpp: Number(row.amount), ppn: Number(effectivePpn), total: Number(effectiveTotal), pph: Number(effectivePph) }) === 0 &&
+          Number(effectivePph) < Number(effectiveTotal)
+            ? Number(effectivePph)
+            : 0;
+        await this.invoiceOut.addPayment(
+          inv.id,
+          {
+            amount: Number(effectiveTotal) - pphCut,
+            pph23Amount: pphCut > 0 ? pphCut : undefined,
+            date: settlementDate.toISOString().slice(0, 10),
             method: "TRANSFER",
-            reference: `LUNAS-SO-${row.number} [${dto.coaAccount}]`,
-            fileId: dto.fileId ?? null,
-            createdById: user.id,
+            reference: `LUNAS-SO-${row.number}`,
+            coaAccount: dto.coaAccount,
+            accountCode: dto.coaAccount,
+            fileId: dto.fileId ?? undefined,
           },
-        }).catch(() => {});
+          user,
+          { skipStockCheck: true },
+        );
       }
     }
 
