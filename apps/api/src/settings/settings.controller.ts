@@ -28,6 +28,10 @@ class UpdateCompanyDto implements Partial<CompanyProfile> {
   @IsOptional() @IsString() signatoryTitle?: string;
   @IsOptional() @IsString() logoFileId?: string;
   @IsOptional() @IsString() stampFileId?: string;
+  @IsOptional() @IsString() tagline?: string;
+  @IsOptional() @IsString() city?: string;
+  @IsOptional() @IsString() letterheadFileId?: string;
+  @IsOptional() @IsString() poTerms?: string;
 }
 
 class SaveRoleDto {

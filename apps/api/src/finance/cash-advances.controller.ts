@@ -11,11 +11,13 @@ import {
   RejectCashAdvanceDto,
   SettleCashAdvanceDto,
   SubmitReportDto,
+  TopUpPettyCashDto,
   UpdateCashAdvanceDto,
+  WithdrawPettyCashDto,
 } from "./cash-advances.dto.js";
 
 /**
- * Uang jalan memakai izin modul Pengeluaran:
+ * Petty cash memakai izin modul Pengeluaran:
  *  L/C/U = semua karyawan (ajukan & laporkan miliknya), A = setujui/tolak, P = cairkan & verifikasi laporan.
  */
 @Controller("cash-advances")
@@ -32,6 +34,26 @@ export class CashAdvancesController {
   @Require("expenses", "L")
   wallet(@CurrentUser() user: RequestUser, @Query("employeeId") employeeId?: string) {
     return this.service.wallet(user, employeeId ? Number(employeeId) : undefined);
+  }
+
+  @Get("wallet/history")
+  @Require("expenses", "L")
+  walletHistory(@Query("employeeId") employeeId: string | undefined, @CurrentUser() user: RequestUser) {
+    return this.service.walletHistory(user, employeeId ? Number(employeeId) : undefined);
+  }
+
+  /** Finance mengisi saldo petty cash karyawan (tanpa pengajuan). */
+  @Post("topup")
+  @Require("expenses", "P")
+  topUp(@Body() dto: TopUpPettyCashDto, @CurrentUser() user: RequestUser) {
+    return this.service.topUp(dto, user);
+  }
+
+  /** Sisa saldo petty cash dikembalikan ke kas. */
+  @Post("withdraw")
+  @Require("expenses", "P")
+  withdraw(@Body() dto: WithdrawPettyCashDto, @CurrentUser() user: RequestUser) {
+    return this.service.withdraw(dto, user);
   }
 
   @Get(":id")

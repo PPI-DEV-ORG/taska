@@ -16,10 +16,15 @@ import { PeriodService } from "./period.service.js";
 import { AccountingReportService } from "./accounting-report.service.js";
 import { TaxService } from "./tax.service.js";
 import { CurrentUser } from "../common/decorators/current-user.decorator.js";
-import { Require } from "../common/decorators/require-permission.decorator.js";
+import { AnyLoggedInUser, Require } from "../common/decorators/require-permission.decorator.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 
+/**
+ * Semua endpoint akuntansi (jurnal, buku besar, neraca saldo, laba rugi, neraca, arus kas, pajak)
+ * minimal butuh hak Lihat di modul Buku Besar. Dulu endpoint baca tanpa @Require bisa dibuka peran apa pun.
+ */
 @Controller("accounting")
+@Require("accounting", "L")
 export class AccountingController {
   constructor(
     private readonly accountsService: AccountsService,
@@ -32,6 +37,7 @@ export class AccountingController {
   ) {}
 
   @Get("accounts")
+  @AnyLoggedInUser() // nama & kode akun (tanpa saldo) dipakai di pilihan akun kas pada form pembayaran
   async listAccounts(
     @Query("cash") isCash?: string,
     @Query("postable") isPostable?: string,
@@ -59,6 +65,7 @@ export class AccountingController {
   }
 
   @Get("mappings")
+  @AnyLoggedInUser()
   async getMappings() {
     return this.mappingService.getAll();
   }
@@ -131,7 +138,9 @@ export class AccountingController {
             entry.refNo = isPay ? `${expCode}/PAY` : expCode;
           }
 
-          if (exp) {
+          // Hanya jurnal pengakuan / pembayaran biaya biasa; reklasifikasi HPP & pemakaian petty cash memakai memo tersimpan
+          const rewrite = (!entry.event || entry.event === "approved" || entry.event === "paid") && exp?.fundingSource !== "PETTY_CASH";
+          if (exp && rewrite) {
             const pelapor = exp.reporter?.name || "Karyawan";
             const kategori = exp.category?.name || "Operasional";
             const deskripsi = exp.description ? `: ${exp.description}` : "";
@@ -146,12 +155,13 @@ export class AccountingController {
                 }
               });
             } else {
-              entry.memo = `Beban ${kategori}${deskripsi} (${pelapor})`;
+              const jenis = exp.projectId ? "HPP project" : "Beban";
+              entry.memo = `${jenis} ${kategori}${deskripsi} (${pelapor})`;
               (entry.lines || []).forEach((line: any) => {
                 if (line.accountCode === "2103") {
                   line.memo = `Kewajiban Biaya/Reimbursement ${kategori} — ${pelapor}`;
                 } else {
-                  line.memo = `Beban ${kategori}${deskripsi} (${pelapor})`;
+                  line.memo = `${jenis} ${kategori}${deskripsi} (${pelapor})`;
                 }
               });
             }

@@ -22,6 +22,9 @@ export function accountFromReference(ref?: string | null): string | null {
   return m ? m[1]! : null;
 }
 
+/** Kolom JournalLine.memo = VARCHAR(191); potong agar posting tidak gagal karena keterangan panjang. */
+const clipLineMemo = (m?: string | null) => (m && m.length > 191 ? `${m.slice(0, 190)}…` : m);
+
 /** Filter: abaikan entri pembalik (event "...:rev"), tetap ikutkan event kosong. */
 const NOT_REVERSAL_EVENT = { OR: [{ event: null }, { NOT: { event: { endsWith: ":rev" } } }] };
 
@@ -203,7 +206,7 @@ export class PostingService {
               accountCode: line.accountCode,
               debit: line.debit,
               credit: line.credit,
-              memo: line.memo || request.memo,
+              memo: clipLineMemo(line.memo || request.memo),
               projectId: line.projectId || request.projectId,
               partyType: line.partyType,
               partyId: line.partyId,
@@ -345,7 +348,7 @@ export class PostingService {
         accountCode: l.accountCode,
         debit: Number(l.credit),
         credit: Number(l.debit),
-        memo: `[REVERSAL] ${l.memo || existing.memo}`,
+        memo: clipLineMemo(`[REVERSAL] ${l.memo || existing.memo}`),
         projectId: l.projectId,
         partyType: l.partyType,
         partyId: l.partyId,
@@ -374,7 +377,7 @@ export class PostingService {
               accountCode: line.accountCode,
               debit: line.debit,
               credit: line.credit,
-              memo: line.memo,
+              memo: clipLineMemo(line.memo),
               projectId: line.projectId,
               partyType: line.partyType,
               partyId: line.partyId,

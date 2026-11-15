@@ -1609,12 +1609,17 @@ function ModuleExtrasBody({
   onRefresh,
   invoicePayOpen,
   onInvoicePayOpenChange,
+  onEditInfo,
+  editInfoOpen,
 }: {
   moduleKey: string;
   row: Row;
   onRefresh?: () => Promise<void> | void;
   invoicePayOpen?: boolean;
   onInvoicePayOpenChange?: (open: boolean) => void;
+  /** Survey: buka/tutup form ubah data umum. */
+  onEditInfo?: () => void;
+  editInfoOpen?: boolean;
 }) {
   const { data } = useApp();
 
@@ -1627,7 +1632,7 @@ function ModuleExtrasBody({
   }
 
   if (moduleKey === "surveys") {
-    return <SurveyExtras row={row} />;
+    return <SurveyExtras row={row} onRefresh={onRefresh} onEditInfo={onEditInfo} editInfoOpen={editInfoOpen} />;
   }
 
   if (moduleKey === "poc-reports") {
@@ -1671,8 +1676,8 @@ function ModuleExtrasBody({
         <CashAdvancePanel
           deliveryNoteId={Number(row.id)}
           purpose="PENGIRIMAN"
-          defaultDescription={`Uang jalan pengiriman ${row.nomor || ""}`.trim()}
-          title="Uang Jalan Pengiriman"
+          defaultDescription={`Petty cash pengiriman ${row.nomor || ""}`.trim()}
+          title="Petty Cash Pengiriman"
           subtitle="Alokasikan biaya kirim / ambil barang. Finance menyerahkan uang ke admin gudang / kurir yang ditugaskan."
         />
         <DeliveryNotesExtras row={row} onRefresh={onRefresh} />

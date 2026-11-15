@@ -136,7 +136,8 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     const isGlobal = this.isGlobal(user);
     const canSeeFinanceTax = this.isFinanceOrTaxAuthorized(user);
     const all = isGlobal && q.scope === "all";
-    const includeTeam = all || q.scope === "team";
+    // Non-pimpinan yang meminta "all" diperlakukan sebagai "team" (bukan malah kosong).
+    const includeTeam = all || q.scope === "team" || q.scope === "all";
     const me = Number(user.id);
     const inMyProject = {
       OR: [{ picId: me }, { members: { some: { userId: me } } }],
@@ -323,13 +324,17 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       this.db.survey.findMany({
         where: {
           AND: [
-            ...(all
+            // Jadwal survey milik: pengaju, tim survey yang ditugaskan, pemilik prospek, dan penyetujunya.
+            // PM (koordinator lapangan) melihat seluruh survey di mode "Tim".
+            ...(all || (includeTeam && role === "PM")
               ? []
               : [
                   {
                     OR: [
                       { requestedById: me },
-                      ...(includeTeam ? [{ members: { some: { userId: me } } }] : []),
+                      { members: { some: { userId: me } } },
+                      { lead: { owner_id: me } },
+                      { approvedById: me },
                     ],
                   },
                 ]),
@@ -339,6 +344,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         include: {
           lead: { select: { name: true } },
           requester: { select: { id: true, name: true, role: true } },
+          members: { select: { user: { select: { id: true, name: true, role: true } } } },
         },
       }),
       this.db.project.findMany({
@@ -574,13 +580,17 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     // 4. Surveys
     for (const s of surveys) {
       const status = normStatus(s.status);
+      const team = (s.members ?? []).map((m: any) => m.user).filter(Boolean);
+      // PIC = tim lapangan yang ditugaskan (anggota pertama); bila belum ada, pengaju survey.
+      const pic = team[0] ?? s.requester;
       items.push({
         key: `survey-${s.id}`, sourceModule: "surveys", sourceId: s.id,
-        title: `Survey: ${s.lead?.name ?? s.location}`, subtitle: s.location,
+        title: `Survey: ${s.lead?.name ?? s.location}`,
+        subtitle: [s.location, team.length ? `Tim: ${team.map((m: any) => m.name).join(", ")}` : null].filter(Boolean).join(" · "),
         category: "SURVEY", start: iso(s.scheduleAt)!, end: null,
         occurrenceDate: wibDateKey(s.scheduleAt), isAllDay: false,
-        status, priority: "MEDIUM", picId: s.requester?.id ?? null, picName: s.requester?.name ?? null,
-        picRole: s.requester?.role ?? null,
+        status, priority: "MEDIUM", picId: pic?.id ?? null, picName: pic?.name ?? null,
+        picRole: pic?.role ?? null,
         routePath: `/surveys/${s.id}`, isOverdue: overdueOf(s.scheduleAt, status, false),
         editable: false,
       });

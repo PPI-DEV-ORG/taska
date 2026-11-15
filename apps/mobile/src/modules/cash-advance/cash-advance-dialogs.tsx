@@ -18,7 +18,7 @@ import { formatThousands, rupiah, tanggal } from "@/lib/format";
 
 // ─────────────── Tipe & label ───────────────
 
-export type CashAdvancePurpose = "SURVEY" | "PENGIRIMAN" | "PROJECT" | "LAINNYA";
+export type CashAdvancePurpose = "SURVEY" | "PENGIRIMAN" | "PROJECT" | "LAINNYA" | "ISI_SALDO" | "TARIK_SALDO";
 export type CashAdvanceStatus = "DIAJUKAN" | "DISETUJUI" | "DITOLAK" | "DICAIRKAN" | "DILAPORKAN" | "SELESAI" | "DIBATALKAN";
 
 export type CashAdvance = {
@@ -63,6 +63,8 @@ export const PURPOSE_LABEL: Record<CashAdvancePurpose, string> = {
   PENGIRIMAN: "Kirim / Ambil Barang",
   PROJECT: "Kas Proyek",
   LAINNYA: "Lainnya",
+  ISI_SALDO: "Isi saldo",
+  TARIK_SALDO: "Tarik saldo",
 };
 
 export const STATUS_LABEL: Record<CashAdvanceStatus, string> = {
@@ -85,7 +87,7 @@ const parseRp = (v: string) => Number(String(v).replace(/\D/g, "")) || 0;
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** Akun kas / bank aktif dari server (sumber dana pencairan / tujuan pengembalian). */
-function useCashAccounts() {
+export function useCashAccounts() {
   const [accounts, setAccounts] = React.useState<{ code: string; name: string }[]>([]);
   React.useEffect(() => {
     let alive = true;
@@ -102,7 +104,7 @@ function useCashAccounts() {
   return accounts;
 }
 
-function AccountSelect({ value, onChange, accounts, placeholder }: { value: string; onChange: (code: string) => void; accounts: { code: string; name: string }[]; placeholder?: string }) {
+export function AccountSelect({ value, onChange, accounts, placeholder }: { value: string; onChange: (code: string) => void; accounts: { code: string; name: string }[]; placeholder?: string }) {
   const label = (a: { code: string; name: string }) => `${a.name} [${a.code}]`;
   const current = accounts.find((a) => a.code === value);
   return (
@@ -149,7 +151,7 @@ function openFile(fileId: number) {
   else Linking.openURL(url).catch(() => {});
 }
 
-// ─────────────── Ajukan uang jalan ───────────────
+// ─────────────── Ajukan petty cash ───────────────
 
 export function CreateCashAdvanceDialog({
   open,
@@ -193,8 +195,8 @@ function CreateInner({
 
   async function submit() {
     const amt = parseRp(amount);
-    if (!description.trim()) return toast("Isi keperluan uang jalan", "danger");
-    if (amt <= 0) return toast("Isi nominal uang jalan", "danger");
+    if (!description.trim()) return toast("Isi keperluan petty cash", "danger");
+    if (amt <= 0) return toast("Isi nominal petty cash", "danger");
     if (!employee) return toast("Pilih karyawan yang memegang uang", "danger");
     if (needsProject && !project) return toast("Pilih project untuk kas proyek ini", "danger");
     setSaving(true);
@@ -209,11 +211,11 @@ function CreateInner({
         projectId: defaults?.projectId ?? (project ? Number(project.id) : undefined),
         neededDate,
       });
-      toast(`Uang jalan ${row.number} diajukan ke Finance`);
+      toast(`Petty cash ${row.number} diajukan ke Finance`);
       onCreated?.(row);
       onOpenChange(false);
     } catch (e: any) {
-      toast(e?.message ?? "Gagal mengajukan uang jalan", "danger");
+      toast(e?.message ?? "Gagal mengajukan petty cash", "danger");
     } finally {
       setSaving(false);
     }
@@ -222,7 +224,7 @@ function CreateInner({
   return (
     <DialogContent className="w-[94vw] max-w-lg max-h-[92vh]">
       <DialogHeader>
-        <DialogTitle>{defaults?.title || "Ajukan Uang Jalan"}</DialogTitle>
+        <DialogTitle>{defaults?.title || "Ajukan Petty Cash"}</DialogTitle>
       </DialogHeader>
       <ScrollView className="max-h-[70vh]" showsVerticalScrollIndicator={false}>
         <View className="gap-3 py-1">
@@ -241,7 +243,7 @@ function CreateInner({
             </FormField>
           ) : null}
           {needsProject ? (
-            <FormField label="Project" hint="Biaya dari uang jalan ini masuk ke P&L project yang dipilih" required>
+            <FormField label="Project" hint="Biaya dari petty cash ini masuk ke P&L project yang dipilih" required>
               <ProjectSelect
                 value={project?.name}
                 projectId={project?.id}
@@ -267,7 +269,7 @@ function CreateInner({
             <DatePicker value={neededDate} onChange={setNeededDate} />
           </FormField>
           <Text className="text-[11px] text-muted-foreground">
-            Setelah disetujui, Finance mencairkan uang dari akun kas/bank dan uangnya masuk ke kantong uang jalan karyawan.
+            Setelah disetujui, Finance mencairkan uang dari akun kas/bank dan uangnya masuk ke saldo petty cash karyawan.
             Simpan nota/struk, lalu laporkan biayanya setelah tugas selesai.
           </Text>
         </View>
@@ -321,7 +323,8 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   const accounts = useCashAccounts();
   const [row, setRow] = React.useState<CashAdvance | null>(null);
   const [busy, setBusy] = React.useState(false);
-  const [panel, setPanel] = React.useState<null | "approve" | "reject" | "disburse" | "item" | "settle">(null);
+  const [panel, setPanel] = React.useState<null | "reject" | "disburse" | "item" | "settle">(null);
+  const [disMore, setDisMore] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
@@ -329,7 +332,7 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
       .then((res) => {
         if (alive) setRow(res);
       })
-      .catch((e: any) => toast(e?.message ?? "Gagal memuat uang jalan", "danger"));
+      .catch((e: any) => toast(e?.message ?? "Gagal memuat petty cash", "danger"));
     return () => {
       alive = false;
     };
@@ -350,7 +353,6 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   }
 
   // form state
-  const [approveAmount, setApproveAmount] = React.useState("");
   const [rejectReason, setRejectReason] = React.useState("");
   const [disAccount, setDisAccount] = React.useState("");
   const [disAmount, setDisAmount] = React.useState("");
@@ -365,7 +367,7 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   const [itFiles, setItFiles] = React.useState<number[]>([]);
   const [itKey, setItKey] = React.useState(0);
   const [reportNote, setReportNote] = React.useState("");
-  const [leftover, setLeftover] = React.useState<"RETURN" | "KEEP">("RETURN");
+  const [leftover, setLeftover] = React.useState<"RETURN" | "KEEP">("KEEP");
   const [shortageFrom, setShortageFrom] = React.useState<"CASH" | "WALLET">("CASH");
   const [retAccount, setRetAccount] = React.useState("");
   const [retFileId, setRetFileId] = React.useState<number | null>(null);
@@ -386,6 +388,34 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   const leftoverAmt = Math.max(0, disbursed - row.reportedTotal);
   const shortageAmt = Math.max(0, row.reportedTotal - disbursed);
 
+  // Alur ringkas: Diajukan → Dicairkan (Finance setujui & cairkan sekaligus) → Dilaporkan → Selesai
+  const FLOW: { key: string; label: string }[] = [
+    { key: "DIAJUKAN", label: "Diajukan" },
+    { key: "DICAIRKAN", label: "Dicairkan" },
+    { key: "DILAPORKAN", label: "Dilaporkan" },
+    { key: "SELESAI", label: "Selesai" },
+  ];
+  const stepIdx = row.status === "DISETUJUI" ? 0 : FLOW.findIndex((f) => f.key === row.status);
+  const closed = row.status === "DITOLAK" || row.status === "DIBATALKAN";
+  const nextHint = closed
+    ? row.status === "DITOLAK"
+      ? "Pengajuan ditolak Finance."
+      : "Pengajuan dibatalkan."
+    : row.status === "DIAJUKAN" || row.status === "DISETUJUI"
+    ? isFinance
+      ? "Periksa nominal, pilih akun kas, lalu Setujui & Cairkan."
+      : "Menunggu Finance menyetujui & mencairkan uang."
+    : row.status === "DICAIRKAN"
+    ? Number(user?.id) === row.employeeId
+      ? "Catat setiap biaya + foto nota, lalu kirim laporan ke Finance."
+      : `Menunggu ${row.employee.name} melaporkan biaya.`
+    : row.status === "DILAPORKAN"
+    ? isFinance
+      ? "Cek nota, lalu verifikasi. Sisa uang otomatis tetap di saldo petty cash karyawan."
+      : "Menunggu Finance memverifikasi laporan."
+    : "Selesai — biaya sudah dibukukan.";
+  const canDisburse = isFinance && (row.status === "DIAJUKAN" || row.status === "DISETUJUI");
+
   return (
     <DialogContent className="w-[94vw] max-w-xl max-h-[92vh]">
       <DialogHeader>
@@ -396,6 +426,40 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
       </DialogHeader>
       <ScrollView className="max-h-[74vh]" showsVerticalScrollIndicator={false}>
         <View className="gap-3 py-1">
+          {/* Tahapan & langkah berikutnya */}
+          <View className="gap-2">
+            {!closed ? (
+              <View className="flex-row items-center">
+                {FLOW.map((f, i) => (
+                  <React.Fragment key={f.key}>
+                    <View className="items-center" style={{ width: 66 }}>
+                      <View
+                        className={`size-6 rounded-full items-center justify-center border ${
+                          i < stepIdx || row.status === "SELESAI"
+                            ? "bg-emerald-600 border-emerald-600"
+                            : i === stepIdx
+                            ? "bg-primary border-primary"
+                            : "bg-card border-border"
+                        }`}
+                      >
+                        {i < stepIdx || row.status === "SELESAI" ? (
+                          <Check size={12} color="#fff" />
+                        ) : (
+                          <Text className={`text-[10px] font-bold ${i === stepIdx ? "text-white" : "text-muted-foreground"}`}>{i + 1}</Text>
+                        )}
+                      </View>
+                      <Text className={`text-[10px] mt-1 ${i === stepIdx ? "text-primary font-semibold" : "text-muted-foreground"}`}>{f.label}</Text>
+                    </View>
+                    {i < FLOW.length - 1 ? <View className={`h-[2px] flex-1 -mt-3.5 ${i < stepIdx ? "bg-emerald-600" : "bg-border"}`} /> : null}
+                  </React.Fragment>
+                ))}
+              </View>
+            ) : null}
+            <View className={`rounded-lg px-3 py-2 ${closed ? "bg-destructive/10" : "bg-primary/5"}`}>
+              <Text className="text-xs text-foreground">{nextHint}</Text>
+            </View>
+          </View>
+
           {/* Ringkasan */}
           <View className="rounded-xl border border-border bg-panel p-3 gap-0.5">
             <Row2 label="Keperluan" value={`${PURPOSE_LABEL[row.purpose]} — ${row.description}`} />
@@ -427,12 +491,12 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
             {row.rejectReason ? <Row2 label="Alasan ditolak" value={row.rejectReason} /> : null}
           </View>
 
-          {/* Kantong uang jalan dokumen ini */}
+          {/* Petty cash dokumen ini */}
           {row.disbursedAmount != null ? (
             <View className="rounded-xl border border-primary/30 bg-primary/5 p-3 gap-0.5">
               <View className="flex-row items-center gap-1.5 mb-1">
                 <Wallet size={14} color={colors.primary} />
-                <Text className="text-xs font-bold text-foreground">Pemakaian uang jalan</Text>
+                <Text className="text-xs font-bold text-foreground">Pemakaian petty cash</Text>
               </View>
               <Row2 label="Uang diterima" value={rupiah(disbursed)} />
               <Row2 label="Biaya dilaporkan" value={rupiah(row.reportedTotal)} />
@@ -440,7 +504,7 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                 <>
                   {row.returnedAmount > 0 ? <Row2 label="Sisa dikembalikan ke kas" value={rupiah(row.returnedAmount)} /> : null}
                   {row.reimbursedAmount > 0 ? <Row2 label="Kekurangan dibayar perusahaan" value={rupiah(row.reimbursedAmount)} /> : null}
-                  {row.remaining > 0 ? <Row2 label="Sisa disimpan di kantong" value={rupiah(row.remaining)} strong /> : null}
+                  {row.remaining > 0 ? <Row2 label="Sisa disimpan di saldo petty cash" value={rupiah(row.remaining)} strong /> : null}
                 </>
               ) : (
                 <Row2
@@ -576,16 +640,7 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
 
           {/* ── Aksi per status ── */}
           {row.status === "DIAJUKAN" && isFinance ? (
-            panel === "approve" ? (
-              <View className="rounded-xl border border-border p-3 gap-2">
-                <FormField label="Nominal disetujui (Rp)">
-                  <Input value={approveAmount} onChangeText={(v) => setApproveAmount(formatThousands(v))} keyboardType="numeric" placeholder={formatThousands(row.amount)} />
-                </FormField>
-                <Button disabled={busy} onPress={() => run(() => api<CashAdvance>("POST", `/cash-advances/${row.id}/approve`, { approvedAmount: parseRp(approveAmount) || undefined }), "Uang jalan disetujui")}>
-                  <Text className="text-white font-semibold">Setujui</Text>
-                </Button>
-              </View>
-            ) : panel === "reject" ? (
+            panel === "reject" ? (
               <View className="rounded-xl border border-border p-3 gap-2">
                 <FormField label="Alasan ditolak" required>
                   <Input value={rejectReason} onChangeText={setRejectReason} placeholder="Contoh: nominal terlalu besar" />
@@ -601,56 +656,75 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
             ) : null
           ) : null}
 
-          {row.status === "DISETUJUI" && isFinance && panel === "disburse" ? (
-            <View className="rounded-xl border border-border p-3 gap-2.5">
-              <FormField label="Sumber dana (akun kas / bank)" required>
-                <AccountSelect value={disAccount} onChange={setDisAccount} accounts={accounts} />
+          {canDisburse && panel === "disburse" ? (
+            <View className="rounded-xl border border-primary/40 p-3 gap-3">
+              <Text className="text-sm font-semibold text-foreground">Setujui & cairkan</Text>
+              <FormField label="1. Nominal diberikan (Rp)" hint={`Diajukan ${rupiah(row.amount)}. Ubah bila disetujui lebih kecil.`}>
+                <Input
+                  value={disAmount}
+                  onChangeText={(v) => setDisAmount(formatThousands(v))}
+                  keyboardType="numeric"
+                  placeholder={formatThousands(row.approvedAmount ?? row.amount)}
+                />
               </FormField>
-              <View className="flex-row gap-2">
-                <View className="flex-1">
-                  <FormField label="Nominal dicairkan (Rp)">
-                    <Input value={disAmount} onChangeText={(v) => setDisAmount(formatThousands(v))} keyboardType="numeric" placeholder={formatThousands(row.approvedAmount ?? row.amount)} />
-                  </FormField>
-                </View>
-                <View className="flex-1">
+              <FormField label="2. Uang diambil dari" required>
+                <AccountSelect
+                  value={disAccount}
+                  onChange={(code) => {
+                    setDisAccount(code);
+                    const acc = accounts.find((a) => a.code === code);
+                    if (acc) setDisMethod(/kas|tunai|petty/i.test(acc.name) && !/bank/i.test(acc.name) ? "TUNAI" : "TRANSFER");
+                  }}
+                  accounts={accounts}
+                />
+              </FormField>
+              <FormField label="3. Bukti transfer / serah terima (opsional)">
+                <FileUploader label="Pilih foto / PDF bukti" kind="semua" category="uang-jalan" autoFlush onUploaded={(fid) => setDisFileId(fid)} />
+              </FormField>
+              <Pressable onPress={() => setDisMore((v) => !v)} className="self-start">
+                <Text className="text-xs font-semibold text-primary">{disMore ? "Sembunyikan detail" : "Ubah tanggal / cara / penerima"}</Text>
+              </Pressable>
+              {disMore ? (
+                <View className="gap-2.5">
                   <FormField label="Tanggal">
                     <DatePicker value={disDate} onChange={setDisDate} />
                   </FormField>
+                  <FormField label="Cara pemberian">
+                    <ChoiceRow value={disMethod} onChange={setDisMethod} options={[{ key: "TRANSFER", title: "Transfer" }, { key: "TUNAI", title: "Tunai" }]} />
+                  </FormField>
+                  <FormField label="Diserahkan kepada" hint="Bisa diganti ke admin gudang / kurir yang ditugaskan">
+                    <UserSelect
+                      value={disEmployee?.name ?? row.employee.name}
+                      userId={disEmployee?.id ?? row.employeeId}
+                      onChange={(u) => setDisEmployee(u ? { id: String(u.id), name: String(u.nama || u.name || "-") } : null)}
+                      allowClear={false}
+                    />
+                  </FormField>
                 </View>
-              </View>
-              <FormField label="Cara pemberian">
-                <ChoiceRow value={disMethod} onChange={setDisMethod} options={[{ key: "TRANSFER", title: "Transfer" }, { key: "TUNAI", title: "Tunai" }]} />
-              </FormField>
-              <FormField label="Diserahkan kepada" hint="Bisa diganti ke admin gudang / kurir yang ditugaskan">
-                <UserSelect
-                  value={disEmployee?.name ?? row.employee.name}
-                  userId={disEmployee?.id ?? row.employeeId}
-                  onChange={(u) => setDisEmployee(u ? { id: String(u.id), name: String(u.nama || u.name || "-") } : null)}
-                  allowClear={false}
-                />
-              </FormField>
-              <FormField label="Foto bukti transfer / serah terima uang">
-                <FileUploader label="Pilih foto / PDF bukti" kind="semua" category="uang-jalan" autoFlush onUploaded={(fid) => setDisFileId(fid)} />
-              </FormField>
+              ) : null}
               <Button
                 disabled={busy}
                 onPress={() => {
                   if (!disAccount) return toast("Pilih akun kas / bank sumber dana", "danger");
-                  void run(
-                    () =>
-                      api<CashAdvance>("POST", `/cash-advances/${row.id}/disburse`, {
-                        accountCode: disAccount,
-                        amount: parseRp(disAmount) || undefined,
-                        method: disMethod,
-                        date: disDate,
-                        fileId: disFileId ?? undefined,
-                        employeeId: disEmployee ? Number(disEmployee.id) : undefined,
-                      }),
-                    "Uang jalan dicairkan",
-                  );
+                  const amount = parseRp(disAmount) || row.approvedAmount || row.amount;
+                  if (!(amount > 0)) return toast("Nominal harus lebih dari 0", "danger");
+                  void run(async () => {
+                    if (row.status === "DIAJUKAN") {
+                      // simpan status DISETUJUI dulu — bila pencairan gagal, tombol ulang cukup mencairkan saja
+                      setRow(await api<CashAdvance>("POST", `/cash-advances/${row.id}/approve`, { approvedAmount: amount }));
+                    }
+                    return api<CashAdvance>("POST", `/cash-advances/${row.id}/disburse`, {
+                      accountCode: disAccount,
+                      amount,
+                      method: disMethod,
+                      date: disDate,
+                      fileId: disFileId ?? undefined,
+                      employeeId: disEmployee ? Number(disEmployee.id) : undefined,
+                    });
+                  }, `Petty cash ${rupiah(amount)} dicairkan ke ${disEmployee?.name ?? row.employee.name}`);
                 }}
               >
-                <Text className="text-white font-semibold">Cairkan uang jalan</Text>
+                <Text className="text-white font-semibold">Setujui & Cairkan</Text>
               </Button>
             </View>
           ) : null}
@@ -678,8 +752,8 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                       value={leftover}
                       onChange={setLeftover}
                       options={[
+                        { key: "KEEP", title: "Tetap di saldo petty cash", desc: "Dipakai untuk tugas berikutnya (disarankan)" },
                         { key: "RETURN", title: "Dikembalikan ke kas", desc: "Karyawan menyetor sisa uang" },
-                        { key: "KEEP", title: "Simpan di kantong", desc: "Dipakai untuk tugas berikutnya" },
                       ]}
                     />
                   </FormField>
@@ -697,13 +771,13 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
               ) : null}
               {shortageAmt > 0 ? (
                 <>
-                  <FormField label={`Biaya lebih besar ${rupiah(shortageAmt)} dari uang jalan`}>
+                  <FormField label={`Biaya lebih besar ${rupiah(shortageAmt)} dari petty cash`}>
                     <ChoiceRow
                       value={shortageFrom}
                       onChange={setShortageFrom}
                       options={[
                         { key: "CASH", title: "Dibayar dari kas", desc: "Finance mengganti kekurangan" },
-                        { key: "WALLET", title: "Potong saldo kantong", desc: "Pakai sisa uang jalan sebelumnya" },
+                        { key: "WALLET", title: "Potong saldo petty cash", desc: "Pakai sisa petty cash sebelumnya" },
                       ]}
                     />
                   </FormField>
@@ -714,7 +788,7 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                   ) : null}
                 </>
               ) : null}
-              {leftoverAmt === 0 && shortageAmt === 0 ? <Text className="text-xs text-muted-foreground">Biaya sama persis dengan uang jalan. Tidak ada sisa / kekurangan.</Text> : null}
+              {leftoverAmt === 0 && shortageAmt === 0 ? <Text className="text-xs text-muted-foreground">Biaya sama persis dengan petty cash. Tidak ada sisa / kekurangan.</Text> : null}
               <Button
                 disabled={busy}
                 onPress={() => {
@@ -745,14 +819,11 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
             <Button variant="outline" onPress={() => setPanel(panel === "reject" ? null : "reject")} disabled={busy}>
               <Text className="text-danger">Tolak</Text>
             </Button>
-            <Button onPress={() => setPanel(panel === "approve" ? null : "approve")} disabled={busy}>
-              <Text className="text-white font-semibold">Setujui</Text>
-            </Button>
           </>
         ) : null}
-        {row.status === "DISETUJUI" && isFinance && panel !== "disburse" ? (
+        {canDisburse && panel !== "disburse" ? (
           <Button onPress={() => setPanel("disburse")} disabled={busy}>
-            <Text className="text-white font-semibold">Cairkan uang</Text>
+            <Text className="text-white font-semibold">Setujui & Cairkan</Text>
           </Button>
         ) : null}
         {row.status === "DILAPORKAN" && isFinance && panel !== "settle" ? (

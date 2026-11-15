@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { usePathname, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import {
-  Bell, Boxes, Camera, CheckSquare, CheckCheck, Ellipsis, FileSignature, KeyRound, ListChecks, LogOut, Menu, Moon, PanelLeftClose,
+  Bell, Boxes, Camera, CheckSquare, CheckCheck, ChevronDown, ChevronRight, Ellipsis, FileSignature, KeyRound, ListChecks, LogOut, Menu, Moon, PanelLeftClose,
   Sun, Target, Truck, WifiOff,
   Search, MessageSquare,
 } from "lucide-react-native";
@@ -24,6 +24,31 @@ import { kelompokHari, waktuRelatif } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const NOTIF_ICON = { approval: CheckSquare, stok: Boxes, pengiriman: Truck, lead: Target, tugas: ListChecks, surat: FileSignature };
+
+/** Menu dikelompokkan sesuai alur kerja, supaya tidak berupa daftar panjang. */
+const NAV_GROUPS: { title: string; keys: string[] }[] = [
+  { title: "", keys: ["dashboard", "calendar", "approvals", "reports"] },
+  { title: "Penjualan", keys: ["leads", "customers", "quotations", "poc-reports", "visit-reports", "po-client"] },
+  { title: "Proyek", keys: ["surveys", "projects", "tasks"] },
+  { title: "Pembelian", keys: ["purchase-requests", "supplier-pos", "purchase-orders", "shipments"] },
+  { title: "Gudang", keys: ["receiving", "stock", "delivery-notes", "opname", "damage-reports"] },
+  { title: "Keuangan", keys: ["invoices", "accounting"] },
+  // Milik tiap karyawan: saldo petty cash, pengeluaran & absensi sendiri
+  { title: "Pribadi", keys: ["cash-advances", "expenses", "hr"] },
+  { title: "Pengaturan", keys: ["master-data", "users", "archive", "audit-log"] },
+];
+
+function groupNav(items: NavItem[]): { title: string; items: NavItem[] }[] {
+  const used = new Set<NavItem>();
+  const groups = NAV_GROUPS.map((g) => {
+    const list = g.keys.flatMap((k) => items.filter((i) => i.key === k && !used.has(i)));
+    list.forEach((i) => used.add(i));
+    return { title: g.title, items: list };
+  });
+  const rest = items.filter((i) => !used.has(i));
+  if (rest.length) groups.push({ title: "Lainnya", items: rest });
+  return groups.filter((g) => g.items.length > 0);
+}
 
 function useNav() {
   const { user, roles } = useApp();
@@ -81,6 +106,15 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
   const router = useRouter();
   const { user, logout, data } = useApp();
   const { items, active } = useNav();
+  const groups = React.useMemo(() => groupNav(items), [items]);
+  const activeGroup = groups.find((g) => g.title && g.items.some(active))?.title ?? null;
+  const [openGroup, setOpenGroup] = React.useState<string | null>(activeGroup);
+  // Pindah halaman ke kelompok lain -> kelompok itu yang terbuka
+  const [lastActiveGroup, setLastActiveGroup] = React.useState(activeGroup);
+  if (activeGroup !== lastActiveGroup) {
+    setLastActiveGroup(activeGroup);
+    if (activeGroup) setOpenGroup(activeGroup);
+  }
   const recentProjects = React.useMemo(() => {
     return (data.projects ?? [])
       .filter((p): p is any => Boolean(p && typeof p === "object" && (p.id || p.nama || p.name)))
@@ -101,32 +135,52 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
         </View>
 
         <ScrollView className="flex-1 px-3" contentContainerClassName="gap-1 py-3" showsVerticalScrollIndicator={false}>
-          {!compact ? (
-            <Text className="text-[10px] font-bold tracking-wider text-muted-foreground/70 uppercase px-3 py-1.5">
-              Navigation
-            </Text>
-          ) : null}
-
-          {items.map((i) => {
-            const on = active(i);
-            const Icon = i.icon;
+          {groups.map((g, gi) => {
+            const isOpen = compact || !g.title || openGroup === g.title;
+            const hasActive = g.items.some(active);
             return (
-              <Pressable
-                key={i.label}
-                onPress={() => router.push(i.href as any)}
-                className={cn(
-                  "min-h-[42px] flex-row items-center gap-3 rounded-xl px-3 transition-colors",
-                  on ? "bg-primary/15 text-primary font-semibold shadow-sm" : "hover:bg-panel/70 active:bg-panel",
-                  compact && "justify-center px-0 min-h-[44px]"
-                )}
-              >
-                <Icon size={18} color={on ? colors.primary : colors.textSecondary} />
-                {compact ? null : (
-                  <Text className={cn("text-sm", on ? "text-primary font-semibold" : "text-text-secondary")}>
-                    {i.label}
-                  </Text>
-                )}
-              </Pressable>
+              <View key={g.title || "utama"} className={cn(gi > 0 && (compact ? "mt-1 pt-1 border-t border-border/40" : "mt-1"))}>
+                {g.title && !compact ? (
+                  <Pressable
+                    onPress={() => setOpenGroup((cur) => (cur === g.title ? null : g.title))}
+                    className="flex-row items-center justify-between rounded-lg px-3 py-2 hover:bg-panel/50"
+                  >
+                    <Text
+                      className={cn(
+                        "text-[11px] font-bold tracking-wider uppercase",
+                        hasActive ? "text-primary" : "text-muted-foreground/80",
+                      )}
+                    >
+                      {g.title}
+                    </Text>
+                    {isOpen ? <ChevronDown size={14} color={colors.muted} /> : <ChevronRight size={14} color={colors.muted} />}
+                  </Pressable>
+                ) : null}
+                {isOpen
+                  ? g.items.map((i) => {
+                      const on = active(i);
+                      const Icon = i.icon;
+                      return (
+                        <Pressable
+                          key={i.label}
+                          onPress={() => router.push(i.href as any)}
+                          className={cn(
+                            "min-h-[40px] flex-row items-center gap-3 rounded-xl px-3 transition-colors",
+                            on ? "bg-primary/15 text-primary font-semibold shadow-sm" : "hover:bg-panel/70 active:bg-panel",
+                            compact && "justify-center px-0 min-h-[44px]"
+                          )}
+                        >
+                          <Icon size={18} color={on ? colors.primary : colors.textSecondary} />
+                          {compact ? null : (
+                            <Text className={cn("text-sm", on ? "text-primary font-semibold" : "text-text-secondary")}>
+                              {i.short && i.label.length > 22 ? i.short : i.label}
+                            </Text>
+                          )}
+                        </Pressable>
+                      );
+                    })
+                  : null}
+              </View>
             );
           })}
 
@@ -603,22 +657,30 @@ function MoreDialog({ open, onOpenChange, onNotif }: { open: boolean; onOpenChan
   const router = useRouter();
   const { items, active } = useNav();
   const { theme, toggleTheme } = useApp();
-  const rest = items.slice(4);
+  const restGroups = groupNav(items.slice(4));
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader><DialogTitle>Menu lainnya</DialogTitle></DialogHeader>
-        <ScrollView style={{ maxHeight: 420 }}>
-          {rest.map((i) => {
-            const Icon = i.icon;
-            const on = active(i);
-            return (
-              <Pressable key={i.label} onPress={() => { onOpenChange(false); router.push(i.href as any); }} className={cn("min-h-[48px] flex-row items-center gap-3 rounded-lg px-2", on && "bg-primary/15")}>
-                <Icon size={20} color={on ? colors.primary : colors.textSecondary} />
-                <Text className={cn("text-base", on && "text-primary font-semibold")}>{i.label}</Text>
-              </Pressable>
-            );
-          })}
+        <ScrollView style={{ maxHeight: 460 }}>
+          {restGroups.map((g) => (
+            <View key={g.title || "utama"} className="mb-2">
+              {g.title ? (
+                <Text className="text-[11px] font-bold tracking-wider uppercase text-muted-foreground px-2 pt-2 pb-1">{g.title}</Text>
+              ) : null}
+              {g.items.map((i) => {
+                const Icon = i.icon;
+                const on = active(i);
+                return (
+                  <Pressable key={i.label} onPress={() => { onOpenChange(false); router.push(i.href as any); }} className={cn("min-h-[46px] flex-row items-center gap-3 rounded-lg px-2", on && "bg-primary/15")}>
+                    <Icon size={20} color={on ? colors.primary : colors.textSecondary} />
+                    <Text className={cn("text-base", on && "text-primary font-semibold")}>{i.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+          <View className="border-t border-border/60 mt-1 pt-1" />
           <Pressable onPress={() => { onOpenChange(false); onNotif(); }} className="min-h-[48px] flex-row items-center gap-3 rounded-lg px-2">
             <Bell size={20} color={colors.textSecondary} /><Text className="text-base">Notifikasi</Text>
           </Pressable>

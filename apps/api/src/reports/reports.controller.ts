@@ -3,6 +3,7 @@ import { ReportsService, REPORT_TYPES } from "./reports.service.js";
 import { exportMeta, toDocx, toPdf, toXlsx } from "./exporters.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
+import { can, hasMenu, type Action } from "../rbac/permissions.js";
 import { IsDateString, IsIn, IsOptional, IsString } from "class-validator";
 
 class ReportQueryDto {
@@ -33,17 +34,48 @@ class ExportQueryDto extends ReportQueryDto {
   format?: "xlsx" | "pdf" | "docx";
 }
 
-const FINANCIAL_REPORT_TYPES = new Set([
-  "profit-loss",
-  "income-statement",
-  "balance-sheet",
-  "cash-flow",
-  "general-journal",
-]);
+/**
+ * Hak yang dibutuhkan tiap laporan (mengikuti Pengaturan Peran, bukan nama peran) — hanya untuk peran yang
+ * memegang bidangnya. "M" = punya menu modul itu (bukan sekadar data untuk pilihan form).
+ * Laporan keuangan = modul Buku Besar; pengeluaran seluruh karyawan = hak Setujui pengeluaran (Finance / pimpinan).
+ */
+const REPORT_PERMISSION: Record<string, [string, Action]> = {
+  leads: ["leads", "M"],
+  followups: ["leads", "M"],
+  projects: ["projects", "M"], // progres + status pembayaran project (kolom Nilai hanya bila punya hak P)
+  "delivery-notes": ["delivery-notes", "C"], // yang membuat & mengelola surat jalan
+  stock: ["stock", "M"],
+  approvals: ["approvals", "V"],
+  expenses: ["expenses", "V"],
+  "profit-loss": ["accounting", "L"],
+  "income-statement": ["accounting", "L"],
+  "balance-sheet": ["accounting", "L"],
+  "cash-flow": ["accounting", "L"],
+  "general-journal": ["accounting", "L"],
+};
 
-function canAccessFinancialReports(user?: RequestUser): boolean {
-  const r = (user?.role ?? "").toLowerCase();
-  return ["super_admin", "admin", "bos", "finance"].includes(r);
+function canAccessReport(type: string, user?: RequestUser): boolean {
+  const [mod, act] = REPORT_PERMISSION[type] ?? ["accounting", "L"];
+  if (!user) return false;
+  return act === "M" ? hasMenu(user.role, mod) : can(user.role, mod, act);
+}
+
+/** Sembunyikan angka uang di laporan Proyek bagi peran tanpa hak lihat harga project (mis. PM). */
+function redactReport<T extends { columns: string[]; rows: unknown[][] }>(type: string, data: T, user?: RequestUser): T {
+  if (type !== "projects" || (user && can(user.role, "projects", "P"))) return data;
+  const idx = data.columns.indexOf("Nilai");
+  if (idx < 0) return data;
+  return { ...data, columns: data.columns.filter((_, i) => i !== idx), rows: data.rows.map((r) => r.filter((_, i) => i !== idx)) };
+}
+
+function assertReport(type: string, user?: RequestUser) {
+  if (!canAccessReport(type, user)) {
+    throw new ForbiddenException(
+      REPORT_PERMISSION[type]?.[0] === "accounting"
+        ? "Laporan keuangan hanya untuk Finance & pimpinan"
+        : "Laporan ini bukan bagian dari tugas peran Anda",
+    );
+  }
 }
 
 @Controller("reports")
@@ -53,11 +85,7 @@ export class ReportsController {
   @Get()
   @Require("reports", "L")
   types(@CurrentUser() user?: RequestUser) {
-    const isFinancial = canAccessFinancialReports(user);
-    const available = isFinancial
-      ? REPORT_TYPES
-      : REPORT_TYPES.filter((t) => !FINANCIAL_REPORT_TYPES.has(t));
-    return { reports: available };
+    return { reports: REPORT_TYPES.filter((t) => canAccessReport(t, user)) };
   }
 
   @Get("archive")
@@ -73,10 +101,8 @@ export class ReportsController {
     @Query() q: ExportQueryDto,
     @CurrentUser() user?: RequestUser,
   ): Promise<StreamableFile> {
-    if (FINANCIAL_REPORT_TYPES.has(type) && !canAccessFinancialReports(user)) {
-      throw new ForbiddenException("Laporan Keuangan & Akuntansi hanya dapat diakses oleh Finance, Admin, Bos, dan Super Admin");
-    }
-    const data = await this.service.build(type, q);
+    assertReport(type, user);
+    const data = redactReport(type, await this.service.build(type, q), user);
     const format = q.format ?? "xlsx";
     const meta = exportMeta(format, data.title);
     const buffer =
@@ -89,14 +115,12 @@ export class ReportsController {
 
   @Get(":type")
   @Require("reports", "L")
-  data(
+  async data(
     @Param("type") type: string,
     @Query() q: ReportQueryDto,
     @CurrentUser() user?: RequestUser,
   ) {
-    if (FINANCIAL_REPORT_TYPES.has(type) && !canAccessFinancialReports(user)) {
-      throw new ForbiddenException("Laporan Keuangan & Akuntansi hanya dapat diakses oleh Finance, Admin, Bos, dan Super Admin");
-    }
-    return this.service.build(type, q);
+    assertReport(type, user);
+    return redactReport(type, await this.service.build(type, q), user);
   }
 }

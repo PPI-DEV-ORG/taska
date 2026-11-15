@@ -6,6 +6,11 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
+import { can } from "../rbac/permissions.js";
+import { ProjectCostService } from "./project-cost.js";
+
+/** Harga jual, nilai kontrak, faktur & laba-rugi project: Finance / pimpinan (hak P di Proyek), bukan PM / tim lapangan. */
+const canSeeProjectMoney = (user: RequestUser) => can(user.role, "projects", "P");
 import type { Project } from "../generated/prisma/client.js";
 import { AssignDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
 import { StockService } from "../stock/stock.service.js";
@@ -27,6 +32,7 @@ export class ProjectsService {
     private readonly reservations: ReservationsService,
     private readonly stock: StockService,
     private readonly upload: UploadService,
+    private readonly projectCost: ProjectCostService,
   ) {}
 
   private async access(project: Project, user: RequestUser, forWrite = false) {
@@ -270,7 +276,20 @@ export class ProjectsService {
       bast: project.status === "SELESAI" || !!project.bastFileId,
       counts: { requirements: row.requirements.length, surveys: surveyCount, clientPos: clientPoCount, supplierPos: poCount, invoices: invoiceCount },
     };
-    return { ...row, paymentStatus: synced.paymentStatus, prdFile, bahpFile, bastFile, doFile, boqFile, stages };
+    const money = canSeeProjectMoney(user);
+    return {
+      ...row,
+      // Tanpa hak lihat harga: nilai penawaran & nominal faktur tidak dikirim (status tetap terlihat)
+      quotation: row.quotation && !money ? { ...row.quotation, grandTotal: null } : row.quotation,
+      invoices: money ? row.invoices : row.invoices.map((i) => ({ id: i.id, number: i.number, status: i.status, dueDate: i.dueDate })),
+      paymentStatus: synced.paymentStatus,
+      prdFile,
+      bahpFile,
+      bastFile,
+      doFile,
+      boqFile,
+      stages,
+    };
   }
 
   /** Laba-rugi project (hanya untuk peran yang boleh melihat keuangan project). */
@@ -278,9 +297,8 @@ export class ProjectsService {
     const project = await this.prisma.main.project.findUnique({ where: { id } });
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user);
-    const role = (user.role || "").toUpperCase();
-    if (!["SUPER_ADMIN", "ADMIN", "BOS", "FINANCE", "PM"].includes(role)) {
-      throw new ForbiddenException("Laba-rugi project hanya untuk PM, Finance, Admin, atau Bos");
+    if (!canSeeProjectMoney(user)) {
+      throw new ForbiddenException("Laba-rugi project hanya untuk Finance & pimpinan");
     }
     return computeProjectPnl(this.prisma.main, id);
   }
@@ -373,6 +391,8 @@ export class ProjectsService {
       await this.syncQuotationRequirements(project.id, project.quotationId, user).catch((err) => {
         console.warn("Gagal auto-sync BOQ penawaran ke proyek:", err);
       });
+      // Biaya survey prospek ini pindah ke HPP project
+      await this.projectCost.reclassProject(project.id, user.id).catch((err) => console.warn("Reklasifikasi biaya survey gagal:", err?.message));
     }
     return project;
   }
@@ -482,6 +502,7 @@ export class ProjectsService {
       await this.syncQuotationRequirements(id, dto.quotationId, user).catch((err) => {
         console.warn("Gagal auto-sync BOQ penawaran ke proyek:", err);
       });
+      await this.projectCost.reclassProject(id, user.id).catch((err) => console.warn("Reklasifikasi biaya survey gagal:", err?.message));
     }
     await this.linkProjectInvoices(id);
     await this.syncPayment(id).catch(() => {});

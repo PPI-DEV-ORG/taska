@@ -1,3 +1,4 @@
+import { projectCostAccount } from "./project-cost.rules.js";
 import { JournalLineSpec, round } from "./accounting.types.js";
 
 export interface InvoiceOutContext {
@@ -430,7 +431,8 @@ export class PostingRules {
 
     if (inv.isExpense) {
       lines.push({
-        accountCode: inv.expenseAccountCode || map.EXPENSE_DEFAULT || "6202.07",
+        // Tagihan jasa / biaya vendor untuk project = HPP project
+        accountCode: projectCostAccount(map, inv.projectId, inv.expenseAccountCode || map.EXPENSE_DEFAULT || "6202.07"),
         debit: dpp,
         credit: 0,
         memo: `Beban Operasional Tagihan #${inv.number}`,
@@ -647,10 +649,11 @@ export class PostingRules {
 
     return [
       {
-        accountCode: exp.expenseAccountCode || map.EXPENSE_DEFAULT || "6202.07",
+        // Biaya untuk project = HPP project; selain itu beban operasional sesuai kategori
+        accountCode: projectCostAccount(map, exp.projectId, exp.expenseAccountCode || map.EXPENSE_DEFAULT || "6202.07"),
         debit: amount,
         credit: 0,
-        memo: `Beban ${kategori}${deskripsi} (${pelapor})`.slice(0, 255),
+        memo: `${exp.projectId ? "HPP project" : "Beban"} ${kategori}${deskripsi} (${pelapor})`.slice(0, 255),
         partyType: "EMPLOYEE",
         partyId: exp.partyId,
         projectId: exp.projectId,
@@ -795,6 +798,9 @@ export class PostingRules {
       netSalary: number;
       paidAccountCode: string;
       employeeId?: number;
+      /** Potongan cicilan pinjaman / kasbon (mengurangi piutang karyawan). */
+      otherDeduction?: number;
+      employeeName?: string;
     },
     map: Record<string, string>,
   ): JournalLineSpec[] {
@@ -848,11 +854,23 @@ export class PostingRules {
       });
     }
 
+    const otherDed = round(Number(pay.otherDeduction || 0));
+    if (otherDed > 0) {
+      lines.push({
+        accountCode: map.EMPLOYEE_RECEIVABLE || "1108",
+        debit: 0,
+        credit: otherDed,
+        memo: `Potongan cicilan pinjaman / kasbon Slip ${pay.slipNumber}`,
+        partyType: "EMPLOYEE",
+        partyId: pay.employeeId,
+      });
+    }
+
     lines.push({
       accountCode: pay.paidAccountCode || map.CASH_DEFAULT || "1000.02",
       debit: 0,
       credit: net,
-      memo: `Kas Keluar Gaji Bersih Slip ${pay.slipNumber}`,
+      memo: `Gaji bersih ${pay.employeeName ? `${pay.employeeName} ` : ""}Slip ${pay.slipNumber}`,
       partyType: "EMPLOYEE",
       partyId: pay.employeeId,
     });

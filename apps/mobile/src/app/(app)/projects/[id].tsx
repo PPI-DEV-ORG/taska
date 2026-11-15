@@ -2,7 +2,6 @@ import * as React from "react";
 import { View, Pressable, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-  AlertTriangle,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -11,19 +10,26 @@ import {
   Plus,
   Minus,
   Pencil,
-  ShoppingCart,
   Trash2,
   Upload,
   FileSpreadsheet,
   RotateCcw,
+  Circle,
+  Users,
+  CalendarDays,
+  Package,
+  ListChecks,
+  FolderOpen,
+  Wallet,
+  Truck,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Panel, Chip, EmptyState, InfoGrid, Timeline } from "@/components/taska/basics";
+import { PageHeader, Panel, Chip, EmptyState, Timeline } from "@/components/taska/basics";
 import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { DocumentViewerList, DocumentViewerItem, resolveModuleDocs } from "@/components/taska/document-viewer";
+import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { adaptRow, toLabel } from "@/services/adapters";
@@ -37,23 +43,19 @@ import { TaskDetailDialog } from "@/modules/task/task-detail-dialog";
 import { CreateTaskDialog } from "@/modules/task/create-task-dialog";
 import { CompleteTaskDialog } from "@/modules/task/complete-task-dialog";
 
-const TABS = [
-  "Ringkasan",
-  "Komersial & BOQ",
-  "Tugas",
-  "Barang",
-  "Pengiriman",
-  "Dokumen",
-  "Biaya",
-  "Riwayat",
-] as const;
+const TABS = ["Ringkasan", "Tugas", "Barang", "Dokumen", "Biaya", "Riwayat"] as const;
 
 type TabKey = typeof TABS[number];
+
+/** Sisa hari sampai tanggal target (negatif = terlambat). */
+function daysUntil(date: string): number {
+  return Math.ceil((new Date(date).getTime() - Date.now()) / 86_400_000);
+}
 
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { data, user, addRow, setStatus, patchRow, deleteRow, history, loadHistory, toast, reload, refreshModule } = useApp();
+  const { data, user, addRow, setStatus, patchRow, deleteRow, history, loadHistory, toast, reload, refreshModule, can } = useApp();
 
   const [activeTab, setActiveTab] = React.useState<TabKey>("Ringkasan");
   const [taskModalOpen, setTaskModalOpen] = React.useState(false);
@@ -64,6 +66,7 @@ export default function ProjectDetailScreen() {
   const [requirements, setRequirements] = React.useState<any[]>([]);
   const [detailTask, setDetailTask] = React.useState<Row | null>(null);
   const [completeTask, setCompleteTask] = React.useState<Row | null>(null);
+  const [progressEditOpen, setProgressEditOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (id) {
@@ -169,29 +172,8 @@ export default function ProjectDetailScreen() {
 
   const projectExpenses = useProjectExpenses(project?.id, project?.nama);
 
-  const canViewFinancials = ["super_admin", "admin", "bos", "finance", "pm"].includes(user?.role?.toLowerCase() || "");
-  const [serverPnl, setServerPnl] = React.useState<{
-    revenue: number;
-    hppGoods: number;
-    directPurchases: number;
-    expenses: number;
-    cashAdvancePending: number;
-    netProfit: number;
-    netProfitWithPending: number;
-    marginPct: number;
-  } | null>(null);
-  React.useEffect(() => {
-    if (!canViewFinancials || !project?.id || activeTab !== "Biaya") return;
-    let alive = true;
-    api<any>("GET", `/projects/${project.id}/pnl`)
-      .then((res) => {
-        if (alive) setServerPnl(res);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [canViewFinancials, project?.id, activeTab]);
+  // Laba-rugi, harga jual & nilai kontrak: Finance / pimpinan (hak P di Proyek) — PM cukup melihat biaya proyek
+  const canViewFinancials = can("projects", "P");
 
   if (!project) {
     return (
@@ -214,12 +196,6 @@ export default function ProjectDetailScreen() {
   const expenses = data.expenses.filter(
     (e) => (pName && e.project === pName) || String(e.projectId) === String(project.id)
   );
-  const companyExpenseCost = expenses
-    .filter((e) => e.fundingSource === "PERUSAHAAN" || e.sumberDana?.includes("Perusahaan") || (!e.fundingSource && !e.sumberDana?.includes("Talangan")))
-    .reduce((acc, e) => acc + (Number(e.nominal || e.amount) || 0), 0);
-  const personalExpenseCost = expenses
-    .filter((e) => e.fundingSource === "TALANGAN_PRIBADI" || e.sumberDana?.includes("Talangan"))
-    .reduce((acc, e) => acc + (Number(e.nominal || e.amount) || 0), 0);
   const deliveryNotes = data["delivery-notes"].filter(
     (dn) => (pName && dn.project === pName) || String(dn.projectId) === String(project.id)
   );
@@ -323,6 +299,59 @@ export default function ProjectDetailScreen() {
     setLiveProgress(currentProgress);
   }
 
+  // ── Ringkasan ──
+  const pr = project as Row;
+  const role = (user?.role || "").toLowerCase();
+  const canCloseProject = ["super_admin", "pm", "bos", "admin"].includes(role);
+  const canSeeInvoiceStage = ["super_admin", "admin", "bos", "finance"].includes(role);
+  const openTasks = tasks.filter((t) => t.status !== "DONE").length;
+  const shortageCount = requirements.filter((r: any) => Number(r.shortageQty) > 0).length;
+
+  const targetInfo = (() => {
+    if (project.status === "Selesai") return { label: "Selesai", late: false };
+    if (!pr.selesai) return { label: "Target selesai belum diisi", late: false };
+    const days = daysUntil(String(pr.selesai));
+    if (Number.isNaN(days)) return { label: `Target ${tanggal(pr.selesai)}`, late: false };
+    if (days < 0) return { label: `Terlambat ${-days} hari (target ${tanggal(pr.selesai)})`, late: true };
+    return { label: days === 0 ? "Target selesai hari ini" : `${days} hari lagi · target ${tanggal(pr.selesai)}`, late: false };
+  })();
+
+  // Tahapan dari server (project.stages); fallback hitung lokal bila belum ada
+  const stages = (project as any).stages as { boq: boolean; penawaran: boolean; po: boolean; progress: boolean; invoice: boolean; bast: boolean } | null;
+  const hasClientPo = (data["po-client"] ?? []).some((po: any) => String(po.projectId) === String(project.id));
+  const stageSteps: { key: string; label: string; done: boolean; hint: string; action: string; tab: TabKey }[] = [
+    { key: "penawaran", label: "Penawaran", done: stages ? stages.penawaran : !!project.quotationId, hint: "tautkan penawaran ke proyek ini.", action: "Buka dokumen", tab: "Dokumen" },
+    { key: "po", label: "PO Pelanggan", done: stages ? stages.po : hasClientPo, hint: "catat PO / pesanan dari pelanggan.", action: "Catat PO", tab: "Dokumen" },
+    { key: "boq", label: "Barang", done: stages ? stages.boq : requirements.length > 0, hint: "isi kebutuhan barang proyek.", action: "Isi barang", tab: "Barang" },
+    { key: "progress", label: "Pengerjaan", done: stages ? stages.progress : currentProgress > 0, hint: "bagi tugas ke tim & update progres.", action: "Atur tugas", tab: "Tugas" },
+    ...(canSeeInvoiceStage
+      ? [{ key: "invoice", label: "Faktur", done: stages ? stages.invoice : projectInvoices.length > 0, hint: "buat faktur ke pelanggan.", action: "Buat faktur", tab: "Dokumen" as TabKey }]
+      : []),
+    { key: "bast", label: "Serah terima", done: stages ? stages.bast : project.status === "Selesai" || !!pr.bastFileId, hint: "buat BAST setelah pekerjaan selesai.", action: "Buat BAST", tab: "Dokumen" },
+  ];
+  const nextStage = project.status === "Selesai" ? undefined : stageSteps.find((x) => !x.done);
+
+  const shortcutCards: { tab: TabKey; icon: typeof ListChecks; label: string; value: string; sub: string; warn?: boolean }[] = [
+    { tab: "Tugas", icon: ListChecks, label: "Tugas", value: `${openTasks} terbuka`, sub: `dari ${tasks.length} tugas` },
+    {
+      tab: "Barang",
+      icon: Package,
+      label: "Barang",
+      value: shortageCount > 0 ? `${shortageCount} kurang` : `${requirements.length} item`,
+      sub: shortageCount > 0 ? "sedang diadakan Procurement" : "stok aman",
+      warn: shortageCount > 0,
+    },
+    { tab: "Barang", icon: Truck, label: "Pengiriman", value: `${deliveryNotes.length} surat jalan`, sub: "ke lokasi proyek" },
+    { tab: "Biaya", icon: Wallet, label: "Biaya", value: rupiah(expenseCost), sub: `${projectExpenses.length} pengeluaran` },
+  ];
+  const infoRows = [
+    { icon: Users, label: "Manajer proyek", value: pr.pm },
+    { icon: Users, label: "Tim lapangan", value: pr.tim && pr.tim !== "-" ? pr.tim : "Belum ditentukan" },
+    { icon: FileText, label: "Penawaran", value: pr.penawaran },
+    { icon: CalendarDays, label: "Jadwal", value: `${pr.mulai ? tanggal(pr.mulai) : "-"} → ${pr.selesai ? tanggal(pr.selesai) : "-"}` },
+    { icon: FolderOpen, label: "Jenis", value: project.jenis },
+  ].filter((r) => r.value && r.value !== "-");
+
   return (
     <View className="gap-5">
       <PageHeader
@@ -333,25 +362,12 @@ export default function ProjectDetailScreen() {
         onRefresh={loadRequirements}
         action={
           <View className="flex-row flex-wrap items-center gap-2">
-            {!isLunas ? (
-              <View className="bg-warning/15 flex-row items-center gap-1.5 rounded-full px-3 py-1">
-                <AlertTriangle size={14} color={colors.warning} />
-                <Text className="text-warning text-xs font-medium">Belum lunas (Handover dicatat)</Text>
-              </View>
-            ) : null}
-            {canViewFinancials ? (
-              <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="flex-row items-center gap-1.5">
-                <FileSpreadsheet size={14} color={colors.success} />
-                <Text>Laporan Untung-Rugi (P&L)</Text>
-              </Button>
-            ) : null}
             <Button size="sm" variant="outline" onPress={() => setEditProjectOpen(true)}>
               <Pencil size={14} color={colors.text} />
               <Text>Ubah</Text>
             </Button>
-            <Button size="sm" variant="outline" onPress={() => setDeleteProjectOpen(true)}>
+            <Button size="sm" variant="ghost" onPress={() => setDeleteProjectOpen(true)} accessibilityLabel="Hapus proyek">
               <Trash2 size={14} color={colors.danger} />
-              <Text className="text-danger">Hapus</Text>
             </Button>
             {project.status !== "Selesai" && (user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "admin") ? (
               <Button size="sm" onPress={markCompleted}>
@@ -377,197 +393,201 @@ export default function ProjectDetailScreen() {
       {/* Tab 1: Ringkasan */}
       {activeTab === "Ringkasan" && (
         <View className="gap-4">
-          <ProjectWalletCard projectId={Number(project.id)} projectName={String(project.nama || "")} />
-          <Panel title="Informasi Proyek">
-            <InfoGrid
-              fields={[
-                { label: "Manajer Proyek (PIC)", key: "pm" },
-                { label: "Tim Lapangan (SE / Teknisi)", key: "tim" },
-                { label: "Penawaran Terkait", key: "penawaran" },
-                { label: "Prospek CRM Terkait", key: "lead" },
-                { label: "Tanggal Mulai", key: "mulai", fmt: "date" },
-                { label: "Target Selesai", key: "selesai", fmt: "date" },
-                { label: "Status Logistik Barang", key: "barang" },
-                { label: "Status Pembayaran", key: "pembayaran" },
-                { label: "Progres Pekerjaan", key: "progres", fmt: "pct" },
-              ]}
-              row={{
-                ...project,
-                pembayaran: isLunas ? "Lunas" : project.pembayaran,
-                progres: project.status === "Selesai" ? 100 : (project.progres ?? 0),
-              }}
-            />
-
-            <View className="mt-4 pt-3 border-t border-border/70 gap-3">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-2">
-                  <Text className="text-xs font-semibold text-foreground">Progres Proyek</Text>
-                  {hasProgressChanged ? (
-                    <View className="bg-primary/10 border border-primary/30 px-2 py-0.5 rounded-full">
-                      <Text className="text-[10px] font-medium text-primary">Belum disimpan</Text>
-                    </View>
-                  ) : null}
+          {/* Progres + target */}
+          <Panel>
+            <View className="gap-3">
+              <View className="flex-row flex-wrap items-end justify-between gap-2">
+                <View>
+                  <Text className="text-xs text-muted-foreground">Progres pekerjaan</Text>
+                  <Text className="text-3xl font-bold text-primary">{currentProgress}%</Text>
                 </View>
-                <View className="flex-row items-center gap-1.5">
-                  <Text className="text-sm font-bold text-primary">{liveProgress}%</Text>
-                  {liveProgress === 100 ? (
-                    <View className="bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                      <Text className="text-[10px] font-bold text-emerald-500">Selesai</Text>
-                    </View>
-                  ) : null}
+                <View className="items-end gap-1">
+                  <StatusBadge status={isLunas ? "Lunas" : project.pembayaran || "Belum lunas"} />
+                  <Text className={cn("text-xs", targetInfo.late ? "text-danger font-semibold" : "text-muted-foreground")}>{targetInfo.label}</Text>
                 </View>
               </View>
-
-              {/* Slider Progres dengan Handle & Tombol Plus/Minus di kedua ujung */}
-              <View className="flex-row items-center gap-2.5">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-8 rounded-lg shrink-0 border-border/80 hover:bg-panel active:bg-panel"
-                  disabled={liveProgress <= 0}
-                  onPress={() => setLiveProgress((prev) => Math.max(0, prev - 1))}
-                  accessibilityLabel="Turunkan progres 1%"
-                >
-                  <Minus size={14} color={liveProgress <= 0 ? colors.muted : colors.text} />
-                </Button>
-
-                <Slider
-                  value={liveProgress}
-                  min={0}
-                  max={100}
-                  step={1}
-                  onChange={(val) => setLiveProgress(val)}
+              <View className="h-2.5 rounded-full bg-panel overflow-hidden">
+                <View
+                  className={cn("h-full rounded-full", currentProgress >= 100 ? "bg-emerald-600" : "bg-primary")}
+                  style={{ width: `${Math.min(100, currentProgress)}%` }}
                 />
-
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-8 rounded-lg shrink-0 border-border/80 hover:bg-panel active:bg-panel"
-                  disabled={liveProgress >= 100}
-                  onPress={() => setLiveProgress((prev) => Math.min(100, prev + 1))}
-                  accessibilityLabel="Naikkan progres 1%"
-                >
-                  <Plus size={14} color={liveProgress >= 100 ? colors.muted : colors.text} />
-                </Button>
               </View>
-
-              {/* Preset Nilai & Tombol Simpan */}
-              <View className="flex-row flex-wrap items-center justify-between gap-2">
-                <View className="flex-row flex-wrap gap-1.5 items-center">
-                  {[10, 25, 50, 75, 100].map((pct) => (
+              {project.status !== "Selesai" ? (
+                <Pressable onPress={() => setProgressEditOpen((v) => !v)} className="self-start flex-row items-center gap-1">
+                  <Pencil size={12} color={colors.primary} />
+                  <Text className="text-xs font-semibold text-primary">{progressEditOpen ? "Tutup" : "Ubah progres"}</Text>
+                </Pressable>
+              ) : null}
+              {progressEditOpen ? (
+                <View className="gap-3 rounded-xl border border-border p-3">
+                  {/* Slider Progres dengan Handle & Tombol Plus/Minus di kedua ujung */}
+                  <View className="flex-row items-center gap-2.5">
                     <Button
-                      key={pct}
-                      size="sm"
-                      variant={liveProgress === pct ? "default" : "outline"}
-                      className="h-8 px-3"
-                      onPress={() => setLiveProgress(pct)}
-                    >
-                      <Text className="text-xs">{pct === 100 ? "100% (Selesai)" : `${pct}%`}</Text>
-                    </Button>
-                  ))}
-                </View>
-
-                <View className="flex-row items-center gap-2">
-                  {hasProgressChanged && (
-                    <Button
-                      size="sm"
                       variant="outline"
-                      className="h-8 px-3"
-                      onPress={resetProgress}
-                      disabled={savingProgress}
+                      size="icon"
+                      className="size-8 rounded-lg shrink-0 border-border/80 hover:bg-panel active:bg-panel"
+                      disabled={liveProgress <= 0}
+                      onPress={() => setLiveProgress((prev) => Math.max(0, prev - 1))}
+                      accessibilityLabel="Turunkan progres 1%"
                     >
-                      <Text className="text-xs">Batal</Text>
+                      <Minus size={14} color={liveProgress <= 0 ? colors.muted : colors.text} />
                     </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant={hasProgressChanged ? "default" : "outline"}
+
+                    <Slider
+                      value={liveProgress}
+                      min={0}
+                      max={100}
+                      step={1}
+                      onChange={(val) => setLiveProgress(val)}
+                    />
+
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="size-8 rounded-lg shrink-0 border-border/80 hover:bg-panel active:bg-panel"
+                      disabled={liveProgress >= 100}
+                      onPress={() => setLiveProgress((prev) => Math.min(100, prev + 1))}
+                      accessibilityLabel="Naikkan progres 1%"
+                    >
+                      <Plus size={14} color={liveProgress >= 100 ? colors.muted : colors.text} />
+                    </Button>
+                  </View>
+
+                  {/* Preset Nilai & Tombol Simpan */}
+                  <View className="flex-row flex-wrap items-center justify-between gap-2">
+                    <View className="flex-row flex-wrap gap-1.5 items-center">
+                      {[10, 25, 50, 75, 100].map((pct) => (
+                        <Button
+                          key={pct}
+                          size="sm"
+                          variant={liveProgress === pct ? "default" : "outline"}
+                          className="h-8 px-3"
+                          onPress={() => setLiveProgress(pct)}
+                        >
+                          <Text className="text-xs">{pct === 100 ? "100% (Selesai)" : `${pct}%`}</Text>
+                        </Button>
+                      ))}
+                    </View>
+
+                    <View className="flex-row items-center gap-2">
+                      {hasProgressChanged && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3"
+                          onPress={resetProgress}
+                          disabled={savingProgress}
+                        >
+                          <Text className="text-xs">Batal</Text>
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant={hasProgressChanged ? "default" : "outline"}
+                        className={cn(
+                          "h-8 px-3 flex-row items-center gap-1.5",
+                          !hasProgressChanged && "opacity-50"
+                        )}
+                        onPress={saveProgress}
+                        disabled={!hasProgressChanged || savingProgress}
+                      >
+                        <Check size={14} color={hasProgressChanged ? colors.background : colors.muted} />
+                        <Text className={cn("text-xs font-bold", hasProgressChanged ? "text-primary-foreground" : "text-muted-foreground")}>
+                          {savingProgress ? "Menyimpan..." : "Simpan Progres"}
+                        </Text>
+                      </Button>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+            </View>
+          </Panel>
+
+          {/* Tahapan + langkah berikutnya */}
+          <Panel title="Tahapan Proyek">
+            <View className="gap-3">
+              <View className="flex-row flex-wrap gap-2">
+                {stageSteps.map((stp) => (
+                  <View
+                    key={stp.key}
                     className={cn(
-                      "h-8 px-3 flex-row items-center gap-1.5",
-                      !hasProgressChanged && "opacity-50"
+                      "flex-row items-center gap-1.5 rounded-full border px-3 py-1.5",
+                      stp.done
+                        ? "border-emerald-600/40 bg-emerald-600/10"
+                        : stp.key === nextStage?.key
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-card",
                     )}
-                    onPress={saveProgress}
-                    disabled={!hasProgressChanged || savingProgress}
                   >
-                    <Check size={14} color={hasProgressChanged ? colors.background : colors.muted} />
-                    <Text className={cn("text-xs font-bold", hasProgressChanged ? "text-primary-foreground" : "text-muted-foreground")}>
-                      {savingProgress ? "Menyimpan..." : "Simpan Progres"}
+                    {stp.done ? (
+                      <CheckCircle2 size={13} color={colors.success} />
+                    ) : (
+                      <Circle size={13} color={stp.key === nextStage?.key ? colors.primary : colors.muted} />
+                    )}
+                    <Text
+                      className={cn(
+                        "text-xs",
+                        stp.done ? "text-foreground" : stp.key === nextStage?.key ? "text-primary font-semibold" : "text-muted-foreground",
+                      )}
+                    >
+                      {stp.label}
                     </Text>
+                  </View>
+                ))}
+              </View>
+              <View className="flex-row flex-wrap items-center gap-3 rounded-xl bg-primary/5 px-3 py-2.5">
+                <Text className="text-sm text-foreground flex-1 min-w-[200px]">
+                  {nextStage
+                    ? `Langkah berikutnya: ${nextStage.hint}`
+                    : project.status === "Selesai"
+                    ? "Proyek selesai."
+                    : "Semua tahapan lengkap — proyek siap ditutup."}
+                </Text>
+                {nextStage ? (
+                  <Button size="sm" onPress={() => setActiveTab(nextStage.tab)}>
+                    <Text className="text-xs font-semibold text-white">{nextStage.action}</Text>
                   </Button>
-                </View>
+                ) : project.status !== "Selesai" && canCloseProject ? (
+                  <Button size="sm" onPress={markCompleted}>
+                    <Text className="text-xs font-semibold text-white">Selesaikan proyek</Text>
+                  </Button>
+                ) : null}
               </View>
             </View>
           </Panel>
 
-          <ProjectExtras row={project} />
+          {/* Pintasan ke tab */}
+          <View className="flex-row flex-wrap gap-3">
+            {shortcutCards.map((c) => (
+              <Pressable
+                key={c.label}
+                onPress={() => setActiveTab(c.tab)}
+                className="flex-1 min-w-[150px] rounded-2xl border border-border bg-card p-3 gap-1 active:opacity-80"
+              >
+                <View className="flex-row items-center gap-1.5">
+                  <c.icon size={14} color={c.warn ? colors.warning : colors.primary} />
+                  <Text className="text-xs text-muted-foreground">{c.label}</Text>
+                </View>
+                <Text className={cn("text-base font-bold", c.warn ? "text-warning" : "text-foreground")}>{c.value}</Text>
+                <Text className="text-[11px] text-muted-foreground">{c.sub}</Text>
+              </Pressable>
+            ))}
+          </View>
 
-          <Panel title="Handover & Serah Terima Dokumen">
-            <Text className="text-text-secondary text-sm">
-              Handover dilakukan setelah invoice lunas. Sistem mencatat dokumen serah terima (BAST/BAHP) tanpa memblokir penutupan project bila ada kesepakatan internal.
-            </Text>
-            <View className="mt-4">
-              <DocumentViewerItem
-                item={resolveModuleDocs("projects", "Berita Acara Serah Terima (BAST)", project)}
-              />
+          {/* Info proyek */}
+          <Panel title="Info Proyek">
+            <View className="gap-0.5">
+              {infoRows.map((r) => (
+                <View key={r.label} className="flex-row items-start gap-2.5 py-1.5">
+                  <r.icon size={15} color={colors.muted} style={{ marginTop: 2 }} />
+                  <View className="flex-1">
+                    <Text className="text-[11px] text-muted-foreground">{r.label}</Text>
+                    <Text className="text-sm text-foreground">{String(r.value)}</Text>
+                  </View>
+                </View>
+              ))}
             </View>
           </Panel>
-
-          {canViewFinancials ? (
-            <Panel
-              title="Analisa Untung-Rugi (P&L Proyek)"
-              subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan faktur dan pengeluaran beban riil."
-              right={
-                <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="flex-row items-center gap-1.5">
-                  <FileSpreadsheet size={13} color={colors.success} />
-                  <Text className="text-xs">Download CSV P&L</Text>
-                </Button>
-              }
-            >
-              <View className="divide-y divide-border/60">
-                <View className="flex-row items-center justify-between py-2">
-                  <View>
-                    <Text className="text-sm">Pendapatan Proyek (DPP Faktur)</Text>
-                    <Text className="text-xs text-muted-foreground">{projectInvoices.length} invoice tercatat</Text>
-                  </View>
-                  <Text className="text-sm font-semibold">{rupiah(revenue)}</Text>
-                </View>
-                <View className="flex-row items-center justify-between py-2">
-                  <View>
-                    <Text className="text-sm">Biaya PO Pemasok (Material)</Text>
-                    <Text className="text-xs text-muted-foreground">{projectPos.length} purchase order</Text>
-                  </View>
-                  <Text className="text-sm font-semibold text-danger">{rupiah(poCost)}</Text>
-                </View>
-                <View className="flex-row items-center justify-between py-2">
-                  <View>
-                    <Text className="text-sm">Biaya Operasional & Reimburse</Text>
-                    <Text className="text-xs text-muted-foreground">{projectExpenses.length} transaksi operasional</Text>
-                  </View>
-                  <Text className="text-sm font-semibold text-danger">{rupiah(expenseCost)}</Text>
-                </View>
-                <View className="flex-row items-center justify-between py-2">
-                  <Text className="text-sm font-medium">Total Beban & Biaya</Text>
-                  <Text className="text-sm font-bold text-danger">{rupiah(totalCost)}</Text>
-                </View>
-                <View className="flex-row items-center justify-between py-2.5 bg-panel/50 px-2 rounded-lg mt-1">
-                  <View>
-                    <Text className="text-sm font-bold">Laba Bersih Proyek (Net Profit)</Text>
-                    <Text className="text-xs text-muted-foreground">Margin Keuntungan: {marginPct}%</Text>
-                  </View>
-                  <Text className={`text-base font-bold ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
-                    {rupiah(netProfit)}
-                  </Text>
-                </View>
-              </View>
-            </Panel>
-          ) : null}
-        </View>
-      )}
-
-      {/* Tab: Komersial & BOQ */}
-      {activeTab === "Komersial & BOQ" && (
-        <View className="gap-4">
-          <ProjectExtras row={project} />
         </View>
       )}
 
@@ -575,19 +595,13 @@ export default function ProjectDetailScreen() {
       {activeTab === "Tugas" && (
         <View className="gap-4">
           <Panel
-            title="Daftar Tugas Bertingkat"
-            subtitle="Tugas induk dan sub-tugas proyek"
+            title="Tugas"
+            subtitle={tasks.length ? `${openTasks} terbuka dari ${tasks.length} · ketuk tugas untuk detail` : "Bagi pekerjaan ke tim lapangan"}
             right={
-              <View className="flex-row gap-2">
-                <Button size="sm" onPress={() => setTaskModalOpen(true)}>
-                  <Plus size={14} color={colors.background} />
-                  <Text className="text-xs">Tambah Tugas</Text>
-                </Button>
-                <Button size="sm" variant="outline" onPress={() => router.push("/purchase-requests/new" as any)}>
-                  <ShoppingCart size={14} color={colors.text} />
-                  <Text className="text-xs">Permintaan Barang</Text>
-                </Button>
-              </View>
+              <Button size="sm" onPress={() => setTaskModalOpen(true)}>
+                <Plus size={14} color={colors.background} />
+                <Text className="text-xs">Tambah tugas</Text>
+              </Button>
             }
           >
             {tasks.length === 0 ? (
@@ -601,28 +615,22 @@ export default function ProjectDetailScreen() {
                   }`}
                 >
                   <View className="flex-row items-center justify-between">
-                    <View className="flex-1 pr-3">
-                      <Text className="text-sm font-semibold">{t.nama || t.name}</Text>
+                    <Pressable className="flex-1 pr-3" onPress={() => setDetailTask(t)}>
+                      <Text className={cn("text-sm font-semibold", t.status === "DONE" && "line-through text-muted-foreground")}>{t.nama || t.name}</Text>
                       {t.deskripsi ? (
                         <Text className="text-muted-foreground text-xs mt-0.5" numberOfLines={2}>
                           {t.deskripsi}
                         </Text>
                       ) : null}
                       <Text className="text-text-secondary text-xs mt-1">
-                        PIC: {t.pic} · Tenggat: {tanggal(t.tenggat)}
-                        {t.perluBarang ? " · (Perlu pembelian barang)" : ""}
+                        {t.pic} · tenggat {tanggal(t.tenggat)}
+                        {t.perluBarang ? " · perlu barang" : ""}
                       </Text>
-                    </View>
+                    </Pressable>
                     <View className="flex-row items-center gap-2">
                       <StatusBadge status={t.status} />
-                      <Button variant="outline" size="sm" onPress={() => setDetailTask(t)}>
-                        <Text className="text-xs">Detail / Edit</Text>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onPress={() => toggleTask(t)}
-                      >
+                      <Button variant={t.status === "DONE" ? "ghost" : "outline"} size="sm" onPress={() => toggleTask(t)}>
+                        {t.status === "DONE" ? null : <Check size={13} color={colors.success} />}
                         <Text className="text-xs">{t.status === "DONE" ? "Buka lagi" : "Selesai"}</Text>
                       </Button>
                       <Button
@@ -657,8 +665,8 @@ export default function ProjectDetailScreen() {
       {activeTab === "Barang" && (
         <View className="gap-4">
           <Panel
-            title="Kebutuhan Barang Proyek"
-            subtitle="Sistem otomatis mengecek stok, menahan (reserve) yang tersedia, dan mengajukan kekurangan ke Procurement"
+            title="Kebutuhan Barang"
+            subtitle="Stok yang ada langsung disiapkan; yang kurang otomatis diajukan ke Procurement"
             right={
               <View className="flex-row flex-wrap gap-2">
                 {project.quotationId ? (
@@ -682,26 +690,23 @@ export default function ProjectDetailScreen() {
                       }
                     }}
                   >
-                    <Text className="text-xs">Tarik dari Penawaran</Text>
+                    <Text className="text-xs">Ambil dari penawaran</Text>
                   </Button>
                 ) : null}
                 <Button size="sm" onPress={() => setReqModalOpen(true)}>
                   <Plus size={14} color={colors.background} />
-                  <Text className="text-xs">Isi Kebutuhan Barang</Text>
-                </Button>
-                <Button size="sm" variant="outline" onPress={() => router.push("/purchase-requests/new" as any)}>
-                  <Text className="text-xs">Permintaan Manual</Text>
+                  <Text className="text-xs">Tambah barang</Text>
                 </Button>
                 <Button size="sm" variant="outline" onPress={() => setReturnModalOpen(true)}>
                   <RotateCcw size={14} color={colors.text} />
-                  <Text className="text-xs">Retur Sisa Barang</Text>
+                  <Text className="text-xs">Retur sisa</Text>
                 </Button>
               </View>
             }
           >
             {requirements.length === 0 ? (
               <Text className="text-muted-foreground py-4 text-center text-sm">
-                Belum ada kebutuhan barang untuk project ini. Klik &quot;Isi Kebutuhan Barang&quot; untuk menambahkan.
+                Belum ada kebutuhan barang. Tekan &quot;Tambah barang&quot; atau ambil dari penawaran.
               </Text>
             ) : (
               requirements.map((r: any) => (
@@ -710,14 +715,13 @@ export default function ProjectDetailScreen() {
                     <View className="flex-row justify-between">
                       <Text className="text-sm font-medium">{r.product?.name ?? "Barang"}</Text>
                       <Text className="text-sm font-semibold">
-                        Dibutuhkan: {r.neededQty ?? r.qty} {r.product?.unit ?? "unit"}
+                        {r.neededQty ?? r.qty} {r.product?.unit ?? "unit"}
                       </Text>
                     </View>
                     <Text className={Number(r.shortageQty) > 0 ? "text-warning text-xs mt-0.5" : "text-success text-xs mt-0.5"}>
-                      Tersedia & Di-reserve: {r.reservedQty} {r.product?.unit ?? "unit"}
                       {Number(r.shortageQty) > 0
-                        ? ` · Kekurangan: ${r.shortageQty} ${r.product?.unit ?? "unit"} (Otomatis masuk Request Procurement)`
-                        : " (Stok aman, siap pasang)"}
+                        ? `Siap ${r.reservedQty} · kurang ${r.shortageQty} ${r.product?.unit ?? "unit"} (sedang diadakan)`
+                        : "Stok siap dipakai"}
                     </Text>
                   </View>
                   <Button
@@ -744,8 +748,8 @@ export default function ProjectDetailScreen() {
 
           {/* Panel 2: Daftar Request Barang / Pengadaan Project */}
           <Panel
-            title={`Request Barang Project (${projectRequests.length})`}
-            subtitle="Daftar pengajuan permintaan barang ke Gudang / Pengadaan terkait proyek ini"
+            title={`Permintaan Barang (${projectRequests.length})`}
+            subtitle="Pengajuan barang ke Gudang / Procurement untuk proyek ini"
             right={
               <Button
                 size="sm"
@@ -816,17 +820,13 @@ export default function ProjectDetailScreen() {
               ))
             )}
           </Panel>
-        </View>
-      )}
 
-      {/* Tab 4: Pengiriman & Surat Jalan */}
-      {activeTab === "Pengiriman" && (
-        <View className="gap-4">
           <Panel
-            title="Surat Jalan & Pengiriman Lapangan"
+            title="Pengiriman ke Lokasi"
+            subtitle="Surat jalan barang untuk proyek ini"
             right={
               <Button size="sm" variant="outline" onPress={() => router.push("/delivery-notes/new" as any)}>
-                <Text>Buat Surat Jalan</Text>
+                <Text className="text-xs">Buat surat jalan</Text>
               </Button>
             }
           >
@@ -848,13 +848,16 @@ export default function ProjectDetailScreen() {
               ))
             )}
           </Panel>
+
+          <ProjectExtras row={project} section="boq" />
         </View>
       )}
 
       {/* Tab 5: Dokumen (PRD, BAST, DO) */}
       {activeTab === "Dokumen" && (
         <View className="gap-4">
-          <Panel title="File & Lampiran Dokumen Proyek">
+          <ProjectExtras row={project} section="dokumen" />
+          <Panel title="File Proyek" subtitle="PRD, BAHP, BAST & DO bertanda tangan">
             <DocumentViewerList
               moduleKey="projects"
               docs={[
@@ -887,57 +890,18 @@ export default function ProjectDetailScreen() {
         <View className="gap-4">
           <ProjectWalletCard projectId={Number(project.id)} projectName={String(project.nama || "")} />
           {canViewFinancials ? (
-            <Panel
-              title="Ringkasan Margin Laba-Rugi Proyek"
-              right={
-                <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="flex-row items-center gap-1.5">
-                  <FileSpreadsheet size={13} color={colors.success} />
-                  <Text className="text-xs">Download CSV P&L</Text>
-                </Button>
-              }
-            >
-              <View className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Pendapatan (DPP)</Text>
-                  <Text className="text-base font-bold mt-1 text-foreground">{rupiah(serverPnl ? serverPnl.revenue : revenue)}</Text>
-                  <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice</Text>
-                </View>
-                <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">HPP Barang & Pembelian</Text>
-                  <Text className="text-base font-bold mt-1 text-danger">
-                    {rupiah(serverPnl ? serverPnl.hppGoods + serverPnl.directPurchases : poCost)}
-                  </Text>
-                  <Text className="text-[10px] text-muted-foreground mt-0.5">
-                    {serverPnl ? "Barang dari stok + pembelian proyek" : `${projectPos.length} purchase order`}
-                  </Text>
-                </View>
-                <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Biaya Operasional & Kas</Text>
-                  <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(serverPnl ? serverPnl.expenses : expenseCost)}</Text>
-                  <Text className="text-[10px] text-muted-foreground mt-0.5">
-                    {serverPnl && serverPnl.cashAdvancePending > 0
-                      ? `+ ${rupiah(serverPnl.cashAdvancePending)} menunggu verifikasi`
-                      : `${expenses.length} pengeluaran`}
-                  </Text>
-                </View>
-                <View className="p-3 bg-card/60 border border-border rounded-lg">
-                  <Text className="text-xs text-muted-foreground">Laba Bersih ({serverPnl ? serverPnl.marginPct : marginPct}%)</Text>
-                  <Text className={`text-base font-bold mt-1 ${(serverPnl ? serverPnl.netProfit : netProfit) >= 0 ? "text-success" : "text-danger"}`}>
-                    {rupiah(serverPnl ? serverPnl.netProfit : netProfit)}
-                  </Text>
-                  <Text className="text-[10px] text-muted-foreground mt-0.5">
-                    {serverPnl && serverPnl.cashAdvancePending > 0
-                      ? `Bila biaya pending dihitung: ${rupiah(serverPnl.netProfitWithPending)}`
-                      : `Total Beban: ${rupiah(serverPnl ? serverPnl.revenue - serverPnl.netProfit : totalCost)}`}
-                  </Text>
-                </View>
-              </View>
-            </Panel>
+            <View className="gap-2">
+              <Button size="sm" variant="outline" onPress={downloadProjectPnl} className="self-end flex-row items-center gap-1.5">
+                <FileSpreadsheet size={13} color={colors.success} />
+                <Text className="text-xs">Unduh laba-rugi (CSV)</Text>
+              </Button>
+              <ProjectExtras row={project} section="biaya" />
+            </View>
           ) : null}
 
           <Panel
-            title="Semua Pengeluaran Proyek"
-            subtitle="Biaya dari kas proyek muncul di sini setelah diverifikasi Finance. Pakai Reimburse bila memakai uang pribadi."
+            title="Pengeluaran"
+            subtitle={expenses.length ? `Total ${rupiah(expenseCost)}` : "Biaya operasional proyek (bensin, makan, material kecil, dll.)"}
             right={
               <Button
                 size="sm"
@@ -950,25 +914,11 @@ export default function ProjectDetailScreen() {
                 className="gap-1.5"
               >
                 <Plus size={14} color={colors.background} />
-                <Text className="text-xs font-semibold">+ Reimburse (pakai uang pribadi)</Text>
+                <Text className="text-xs font-semibold">Catat biaya</Text>
               </Button>
             }
           >
             <View className="gap-4">
-              <View className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <View className="p-3 rounded-lg bg-card/60 border border-border">
-                  <Text className="text-xs text-muted-foreground">Total Pengeluaran</Text>
-                  <Text className="text-base font-bold mt-1 text-primary">{rupiah(expenseCost)}</Text>
-                </View>
-                <View className="p-3 rounded-lg bg-card/60 border border-border">
-                  <Text className="text-xs text-muted-foreground">Dana Perusahaan</Text>
-                  <Text className="text-base font-bold mt-1">{rupiah(companyExpenseCost)}</Text>
-                </View>
-                <View className="p-3 rounded-lg bg-card/60 border border-border">
-                  <Text className="text-xs text-muted-foreground">Talangan Pribadi (Klaim)</Text>
-                  <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(personalExpenseCost)}</Text>
-                </View>
-              </View>
 
               {expenses.length === 0 ? (
                 <Text className="text-muted-foreground py-4 text-center text-sm">Belum ada pengeluaran yang dicatat untuk proyek ini.</Text>
@@ -989,12 +939,12 @@ export default function ProjectDetailScreen() {
                               }`}
                             >
                               <Text className="text-[10px]">
-                                {isKas ? "Kas Proyek" : isTalangan ? "Talangan Pribadi" : "Dana Kantor"}
+                                {isKas || e.fundingSource === "PETTY_CASH" ? "Petty cash" : isTalangan ? "Uang sendiri" : "Dana kantor"}
                               </Text>
                             </View>
                           </View>
                           <Text className="text-xs text-muted-foreground mt-1">
-                            {tanggal(e.tanggal || e.date)} • Pelapor: {e.pelapor || "Karyawan"} • Kategori: {e.kategori || "-"}
+                            {tanggal(e.tanggal || e.date)} · {e.pelapor || "Karyawan"}{e.kategori ? ` · ${e.kategori}` : ""}
                           </Text>
                         </View>
                         <Text className="text-sm font-bold text-foreground">{rupiah(e.nominal || e.amount || 0)}</Text>

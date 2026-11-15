@@ -123,7 +123,7 @@ export class SubmitReportDto {
 }
 
 export class SettleCashAdvanceDto {
-  /** Sisa uang: dikembalikan ke kas (RETURN) atau tetap di kantong karyawan untuk tugas berikutnya (KEEP). */
+  /** Sisa uang: dikembalikan ke kas (RETURN) atau tetap di saldo petty cash karyawan untuk tugas berikutnya (KEEP). */
   @IsOptional() @IsIn(["RETURN", "KEEP"])
   leftoverAction?: "RETURN" | "KEEP";
 
@@ -133,10 +133,39 @@ export class SettleCashAdvanceDto {
   @IsOptional() @Type(() => Number) @IsInt()
   returnFileId?: number;
 
-  /** Biaya melebihi uang jalan: dibayar dari kas (CASH) atau dipotong dari saldo kantong karyawan (WALLET). */
+  /** Biaya melebihi petty cash: dibayar dari kas (CASH) atau dipotong dari saldo petty cash karyawan (WALLET). */
   @IsOptional() @IsIn(["CASH", "WALLET"])
   shortageFrom?: "CASH" | "WALLET";
 
   @IsOptional() @IsString()
   reimburseAccountCode?: string;
 }
+
+/** Finance mengisi saldo petty cash karyawan (langsung, tanpa pengajuan). */
+export class TopUpPettyCashDto {
+  @Type(() => Number) @IsInt()
+  employeeId!: number;
+
+  @Type(() => Number) @IsNumber() @Min(1)
+  amount!: number;
+
+  /** Akun kas / bank sumber dana. */
+  @IsString()
+  accountCode!: string;
+
+  @IsOptional() @IsString() @MaxLength(2000)
+  description?: string;
+
+  @IsOptional() @IsIn(["TRANSFER", "TUNAI"])
+  method?: "TRANSFER" | "TUNAI";
+
+  @IsOptional() @IsString()
+  date?: string;
+
+  /** Bukti transfer / foto serah terima uang. */
+  @IsOptional() @Type(() => Number) @IsInt()
+  fileId?: number;
+}
+
+/** Sisa saldo petty cash dikembalikan karyawan ke kas perusahaan. */
+export class WithdrawPettyCashDto extends TopUpPettyCashDto {}

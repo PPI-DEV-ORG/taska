@@ -63,7 +63,8 @@ export function StockProductsTab({
           return {
             ...p,
             tipeDisplay: isJasa ? "Jasa" : p.berSN ? "Barang Ber-SN" : "Barang Non-SN",
-            totalDisplay: isJasa ? `${rupiah(p.hargaBeli || 0)} / ${satuan || "lot"}` : `${total} ${satuan}`,
+            // tarif jasa hanya tampil bila server mengirim harga (peran dengan hak harga)
+            totalDisplay: isJasa ? (p.hargaBeli ? `${rupiah(p.hargaBeli)} / ${satuan || "lot"}` : "-") : `${total} ${satuan}`,
             minDisplay: isJasa ? "-" : `${p.min ?? 0} ${satuan}`,
             statusStok: isJasa ? "Aktif" : total < Number(p.min ?? 0) ? "Stok Menipis" : "Tersedia",
           };

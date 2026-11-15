@@ -27,7 +27,7 @@ export const FORMAT_UMUM: Record<DocType, string> = {
   penerimaan: "RCP/YYYY/MM/NNN",
   invoiceOut: "INV/YYYY/MM/NNN",
   proforma: "PI/YYYY/MM/NNN",
-  uangJalan: "UJ/YYYY/MM/NNN",
+  uangJalan: "PC/YYYY/MM/NNN",
   invoiceIn: "RNC/YYYY/MM/NNN",
   proyek: "PRJ/YYYY/NNN",
 };

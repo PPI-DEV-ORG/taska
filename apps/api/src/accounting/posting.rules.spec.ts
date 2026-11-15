@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { PostingRules } from "./posting.rules.js";
+import { calculateSlip } from "../hr/payroll.calc.js";
 
 describe("PostingRules Unit Tests (11.1)", () => {
   const map: Record<string, string> = {
@@ -131,6 +132,36 @@ describe("PostingRules Unit Tests (11.1)", () => {
     expect(lines.find((l) => l.accountCode === "5106")?.debit).toBe(200_000);
     expect(lines.find((l) => l.accountCode === "1600")?.debit).toBe(1_122_000);
     expect(lines.find((l) => l.accountCode === "210102")?.credit).toBe(11_322_000);
+  });
+
+  it("E10: slip hasil kalkulator payroll (BPJS perusahaan + potongan pinjaman) → jurnal seimbang", () => {
+    const slip = calculateSlip(
+      { basicSalary: 8_000_000, allowance: 1_000_000, mealAllowance: 25_000, ptkp: "TK/0" },
+      { presentDays: 20, absentDays: 0, overtimeHours: 0 },
+      { otherIncome: 500_000, otherDeduction: 300_000 },
+    );
+    const lines = PostingRules.buildPayrollLines(
+      {
+        id: 9,
+        slipNumber: "PAY-2026-11-9",
+        grossSalary: slip.grossSalary,
+        bpjsCompany: slip.bpjsCompany,
+        pph21: slip.pph21,
+        bpjsEmployee: slip.bpjs,
+        netSalary: slip.netSalary,
+        otherDeduction: slip.otherDeduction,
+        paidAccountCode: "1000.02",
+        employeeId: 9,
+      },
+      { ...map, EMPLOYEE_RECEIVABLE: "1108" },
+    );
+    const debit = lines.reduce((s, l) => s + (l.debit || 0), 0);
+    const credit = lines.reduce((s, l) => s + (l.credit || 0), 0);
+    expect(debit).toBe(credit);
+    expect(debit).toBe(slip.grossSalary + slip.bpjsCompany);
+    expect(lines.find((l) => l.accountCode === "1108")?.credit).toBe(300_000);
+    expect(lines.find((l) => l.accountCode === "2107")?.credit).toBe(slip.bpjs + slip.bpjsCompany);
+    expect(lines.find((l) => l.accountCode === "1000.02")?.credit).toBe(slip.netSalary);
   });
 
   it("E10: Payroll with BPJS Company portion and PPh 21", () => {

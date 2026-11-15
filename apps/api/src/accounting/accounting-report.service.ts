@@ -93,7 +93,9 @@ export class AccountingReportService {
           refNo = isPay ? `${expCode}/PAY` : expCode;
         }
 
-        if (exp) {
+        const ev = l.entry.event;
+        // Hanya jurnal pengakuan / pembayaran biaya biasa; reklasifikasi HPP & pemakaian petty cash memakai memo tersimpan
+        if (exp && (!ev || ev === "approved" || ev === "paid") && exp.fundingSource !== "PETTY_CASH") {
           const pelapor = exp.reporter?.name || "Karyawan";
           const kategori = exp.category?.name || "Operasional";
           const deskripsi = exp.description ? `: ${exp.description}` : "";
@@ -105,7 +107,7 @@ export class AccountingReportService {
           } else {
             memo = l.accountCode === "2103"
               ? `Kewajiban Biaya/Reimbursement ${kategori} — ${pelapor}`
-              : `Beban ${kategori}${deskripsi} (${pelapor})`;
+              : `${exp.projectId ? "HPP project" : "Beban"} ${kategori}${deskripsi} (${pelapor})`;
           }
         }
       }

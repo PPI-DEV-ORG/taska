@@ -24,6 +24,12 @@ export const DEFAULTS: Record<string, string> = {
   "company.signatory_title": "Direktur",
   "company.logo_file_id": "",
   "company.stamp_file_id": "",
+  "company.tagline": "",
+  "company.city": "",
+  /** Gambar kop surat penuh (opsional) — bila diisi, dipakai sebagai kepala dokumen cetak. */
+  "company.letterhead_file_id": "",
+  /** Syarat & ketentuan bawaan yang tercetak di setiap PO ke supplier. */
+  "company.po_terms": "",
   // Format Nomor Dokumen Default
   "nomor.penawaran": "PNW/YYYY/MM/NNN",
   "nomor.clientPO": "SO/YYYY/MM/NNN",
@@ -50,6 +56,10 @@ export interface CompanyProfile {
   signatoryTitle: string;
   logoFileId: string;
   stampFileId: string;
+  tagline: string;
+  city: string;
+  letterheadFileId: string;
+  poTerms: string;
 }
 
 @Injectable()
@@ -62,6 +72,7 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     await this.reloadRoles();
+    await this.upgradeRoleMatrix();
     // Matriks RBAC disimpan di DB tapi dicek dari memori (guard sinkron). Muat ulang berkala agar
     // perubahan dari instance/proses lain juga berlaku tanpa restart server.
     this.rolesTimer = setInterval(() => void this.reloadRoles(), 30_000);
@@ -70,6 +81,40 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy() {
     if (this.rolesTimer) clearInterval(this.rolesTimer);
+  }
+
+  /**
+   * Migrasi data hak akses: bila versi matriks di database lebih lama dari ROLE_MATRIX_VERSION,
+   * peran BAWAAN diset ulang ke matriks standar (peran kustom tidak disentuh), lalu versinya dicatat.
+   * Berjalan sekali per versi — seperti migration, tapi untuk JSON hak akses di SystemSetting "rbac.roles".
+   */
+  async upgradeRoleMatrix(): Promise<void> {
+    try {
+      const verRow = await this.prisma.main.systemSetting.findUnique({ where: { key: "rbac.matrixVersion" } });
+      const current = Number(verRow?.value ?? 0);
+      if (current >= ROLE_MATRIX_VERSION) return;
+      const rolesRow = await this.prisma.main.systemSetting.findUnique({ where: { key: "rbac.roles" } });
+      if (rolesRow?.value) {
+        const next = getDynamicRoles().map((r) => {
+          const std = STANDARD_ROLES[r.code];
+          return std ? { ...r, name: std.name, description: std.description, isSystem: true, permissions: { ...std.permissions } } : r;
+        });
+        setDynamicRoles(next);
+        await this.prisma.main.systemSetting.update({
+          where: { key: "rbac.roles" },
+          data: { value: JSON.stringify(getDynamicRoles()) },
+        });
+      }
+      await this.prisma.main.systemSetting.upsert({
+        where: { key: "rbac.matrixVersion" },
+        create: { key: "rbac.matrixVersion", value: String(ROLE_MATRIX_VERSION), description: "Versi matriks hak akses standar yang sudah diterapkan" },
+        update: { value: String(ROLE_MATRIX_VERSION) },
+      });
+      this.cache.delete("rbac.roles");
+      console.log(`Matriks hak akses peran bawaan diperbarui ke v${ROLE_MATRIX_VERSION}`);
+    } catch (e) {
+      console.warn("Gagal memperbarui matriks hak akses:", (e as Error).message);
+    }
   }
 
   /** Muat matriks peran dari DB ke memori. */
@@ -167,6 +212,10 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
       signatoryTitle,
       logoFileId,
       stampFileId,
+      tagline,
+      city,
+      letterheadFileId,
+      poTerms,
     ] = await Promise.all([
       this.getSafe("company.name"),
       this.getSafe("company.address"),
@@ -181,6 +230,10 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
       this.getSafe("company.signatory_title"),
       this.getSafe("company.logo_file_id"),
       this.getSafe("company.stamp_file_id"),
+      this.getSafe("company.tagline"),
+      this.getSafe("company.city"),
+      this.getSafe("company.letterhead_file_id"),
+      this.getSafe("company.po_terms"),
     ]);
     return {
       name,
@@ -196,6 +249,10 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
       signatoryTitle,
       logoFileId,
       stampFileId,
+      tagline,
+      city,
+      letterheadFileId,
+      poTerms,
     };
   }
 
@@ -214,6 +271,10 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
       ["signatoryTitle", "company.signatory_title"],
       ["logoFileId", "company.logo_file_id"],
       ["stampFileId", "company.stamp_file_id"],
+      ["tagline", "company.tagline"],
+      ["city", "company.city"],
+      ["letterheadFileId", "company.letterhead_file_id"],
+      ["poTerms", "company.po_terms"],
     ];
     for (const [prop, key] of map) {
       if (dto[prop] !== undefined) {

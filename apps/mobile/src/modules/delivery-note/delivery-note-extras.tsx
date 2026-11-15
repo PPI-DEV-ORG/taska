@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View, Image, Pressable, Linking } from "react-native";
 import { useRouter } from "expo-router";
-import { CheckCircle2, Download, ExternalLink, Eye, FileText, Image as ImageIcon, Printer, ShoppingCart } from "lucide-react-native";
+import { Check, CheckCircle2, Download, ExternalLink, Eye, FileText, Image as ImageIcon, MapPin, Printer, ShoppingCart, Truck, UserCheck, Warehouse } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -12,11 +12,11 @@ import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-u
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { tanggal } from "@/lib/format";
-import { apiBase } from "@/services/api";
+import { apiBase, openDeliveryNotePdf } from "@/services/api";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
-import { Line } from "@/modules/shared/line";
 import { printOrderDocument } from "@/lib/order-print";
+import { SenderFields, parseSender, senderPayload, validateSender, type SenderValue } from "./delivery-signers-form";
 
 export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promise<void> | void }) {
   const router = useRouter();
@@ -35,6 +35,8 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
     title: row.penerimaJabatan,
   });
   const [handoverNotes, setHandoverNotes] = React.useState("");
+  const [senderVal, setSenderVal] = React.useState<SenderValue | null>(null);
+  const [savingSender, setSavingSender] = React.useState(false);
   const [handoverFileId, setHandoverFileId] = React.useState<number | null>(null);
   const fileUploaderRef = React.useRef<FileUploaderHandle | null>(null);
 
@@ -128,12 +130,16 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
   function handlePrintDo() {
     const printableItems =
       Array.isArray(row.items) && row.items.length > 0
-        ? row.items.map((it: any) => ({
-            name: it.product?.name || it.name || "Barang",
-            qty: Number(it.qty) || 1,
-            unit: it.product?.unit || it.unit || "Unit",
-            sn: it.serials || undefined,
-          }))
+        ? Object.values(
+            // Diringkas per barang, tanpa rincian SN
+            row.items.reduce((acc: Record<string, { name: string; qty: number; unit: string }>, it: any) => {
+              const name = it.product?.name || it.name || it.note || "Barang";
+              const g = acc[name] ?? { name, qty: 0, unit: it.product?.unit || it.unit || "Unit" };
+              g.qty += Number(it.qty) || 1;
+              acc[name] = g;
+              return acc;
+            }, {}),
+          )
         : row.barang && row.barang !== "-"
           ? String(row.barang)
               .split(", ")
@@ -154,198 +160,204 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
     });
   }
 
+  const status = String(row.status || "Menunggu pengiriman");
+  const cancelled = status === "Dibatalkan";
+  const FLOW = ["Menunggu pengiriman", "Dikirim", "Diterima"] as const;
+  const FLOW_LABEL = ["Disiapkan", "Dikirim", "Diterima"];
+  const stepIdx = isDelivered ? 2 : Math.max(0, FLOW.indexOf(status as (typeof FLOW)[number]));
+  const isMeRecipient = row.penerimaId != null && String(row.penerimaId) === String(user?.id);
+  const canHandover =
+    !isDelivered &&
+    !cancelled &&
+    (isMeRecipient || ["super_admin", "teknisi", "pm", "bos", "finance", "procurement", "admin", "gudang"].includes(String(user?.role)));
+  const items: any[] = Array.isArray(row.items) ? row.items : [];
+  const totalQty = items.reduce((a, it) => a + (Number(it.qty) || 0), 0);
+  const nextHint = cancelled
+    ? "Surat jalan dibatalkan."
+    : isDelivered
+    ? `Barang sudah diterima${row.penerimaNama ? ` oleh ${row.penerimaNama}` : ""}.`
+    : status === "Dikirim"
+    ? `Barang dalam perjalanan. ${row.penerimaNama || "Penerima"} menerima di lokasi lalu catat tanda terima + foto surat jalan yang sudah di-TTD.`
+    : hasGoods
+    ? "Gudang menyiapkan barang & SN, cetak surat jalan, lalu berangkat."
+    : "Cetak surat jalan, lalu berangkat.";
+
+  async function handlePrint(mode: "print" | "download") {
+    const ok = await openDeliveryNotePdf(row.id, row.nomor, mode);
+    if (!ok) {
+      toast("PDF server tidak tersedia — memakai cetak cepat", "danger");
+      handlePrintDo();
+    }
+  }
+
+  const externalSender = !!row.pengirimEkspedisi && !row.pengirimId;
+  const senderKind = externalSender ? (/gosend|gojek|grab|maxim|lalamove|spx|shopee/i.test(String(row.pengirimEkspedisi)) ? "Ojol" : "Ekspedisi") : "";
+
+  async function saveSender() {
+    if (!senderVal) return;
+    const err = validateSender(senderVal);
+    if (err) return toast(err, "danger");
+    setSavingSender(true);
+    try {
+      const ok = await patchRow("delivery-notes", row.id, senderPayload(senderVal));
+      if (ok) {
+        toast("Pengirim diperbarui");
+        setSenderVal(null);
+        await onRefresh?.();
+      }
+    } finally {
+      setSavingSender(false);
+    }
+  }
+
+  const info: { icon: any; label: string; value: string; sub?: string; onEdit?: () => void }[] = [
+    { icon: MapPin, label: "Kirim ke", value: row.tujuan || "-", sub: [row.project && row.project !== "-" ? `Proyek ${row.project}` : "", row.alasan].filter(Boolean).join(" · ") },
+    {
+      icon: UserCheck,
+      label: "Diterima oleh",
+      value: row.penerimaNama || "Belum ditentukan",
+      sub: [row.penerimaJabatan, row.penerimaKontak].filter(Boolean).join(" · "),
+    },
+    {
+      icon: Truck,
+      label: "Dikirim oleh",
+      value: row.pengirim || row.pembuat || "-",
+      sub: [senderKind, row.kendaraan ? `${senderKind === "Ekspedisi" ? "Resi / plat" : "Plat"} ${row.kendaraan}` : ""].filter(Boolean).join(" · "),
+      onEdit: cancelled ? undefined : () => setSenderVal(parseSender(row, null)),
+    },
+    { icon: Warehouse, label: "Dikeluarkan oleh", value: row.petugasGudang || "Petugas gudang (belum)", sub: row.gudang || "" },
+  ];
+
   return (
     <>
-      {matchedSo ? (
-        <View className="p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between mb-3">
-          <View className="flex-row items-center gap-2.5 flex-1 pr-2">
-            <View className="size-8 rounded-lg bg-primary/10 items-center justify-center">
-              <ShoppingCart size={16} color={colors.primary} />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xs font-bold text-foreground">
-                Terkait Sales Order: {matchedSo.nomorSo || matchedSo.nomor || `SO #${matchedSo.id}`}
-              </Text>
-              <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-                {matchedSo.customer || "Pelanggan"} · Nilai: Rp{(Number(matchedSo.nilai || matchedSo.amount || 0)).toLocaleString("id-ID")}
-              </Text>
-            </View>
-          </View>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 px-3"
-            onPress={() => router.push(`/po-client/${matchedSo.id}` as any)}
-          >
-            <Text className="text-xs">Buka SO</Text>
-          </Button>
-        </View>
-      ) : null}
-
-      {matchedInvoice ? (
-        <View className="p-3 bg-panel border border-border/80 rounded-xl flex-row items-center justify-between mb-4">
-          <View className="flex-row items-center gap-2.5 flex-1 pr-2">
-            <View className="size-8 rounded-lg bg-success/10 items-center justify-center">
-              <FileText size={16} color={colors.success} />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xs font-bold text-foreground">
-                Terkait Invoice: {matchedInvoice.nomor || `INV #${matchedInvoice.id}`} ({matchedInvoice.status || "Status"})
-              </Text>
-              <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-                {matchedInvoice.customer || "Customer"} · Total: Rp{(Number(matchedInvoice.total || matchedInvoice.nilai || 0)).toLocaleString("id-ID")}
-              </Text>
-            </View>
-          </View>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 px-3"
-            onPress={() => router.push(`/invoices/${matchedInvoice.id}` as any)}
-          >
-            <Text className="text-xs">Buka Invoice</Text>
-          </Button>
-        </View>
-      ) : null}
-
-      <Panel
-        title="Barang yang Dibawa & Dokumen Delivery Order (DO)"
-        subtitle={hasGoods ? "Surat jalan membawa barang fisik / unit ber-SN (Stok otomatis berkurang saat status Dikirim)" : "Surat jalan penugasan tanpa barang"}
-        right={
-          <View className="flex-row items-center gap-2 flex-wrap">
-            {row.status !== "Dibatalkan" ? (
-              <Button
-                size="sm"
-                variant="default"
-                onPress={() => router.push(`/delivery-notes/new?id=${row.id}${matchedSo?.id ? `&soId=${matchedSo.id}` : ""}` as any)}
-                className="flex-row items-center gap-1.5 bg-primary"
-              >
-                <Text className="text-xs text-primary-foreground font-semibold">Edit Surat Jalan & List Barang</Text>
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              variant="outline"
-              onPress={handlePrintDo}
-              className="flex-row items-center gap-1"
-            >
-              <Printer size={13} color={colors.text} />
-              <Text className="text-xs">Buat / Cetak PDF DO</Text>
-            </Button>
-            {(user?.role === "super_admin" || user?.role === "pm" || user?.role === "bos" || user?.role === "gudang" || user?.role === "finance" || user?.role === "procurement") && !isDelivered ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onPress={() => {
-                  const next = !hasGoods;
-                  patchRow("delivery-notes", row.id, {
-                    withGoods: next,
-                    barang: next ? (row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional") : "-",
-                  });
-                  toast(`Surat jalan diubah menjadi ${next ? "Membawa Barang" : "Tanpa Barang"}`);
-                }}
-              >
-                <Text className="text-xs">{hasGoods ? "Ubah ke Tanpa Barang" : "Ubah ke Bawa Barang"}</Text>
-              </Button>
-            ) : null}
-          </View>
-        }
-      >
-        {!hasGoods ? (
-          <Text className="text-muted-foreground text-sm">Surat jalan ini untuk penugasan tanpa barang.</Text>
-        ) : (
-          <View className="gap-3">
-            {Array.isArray(row.items) && row.items.length > 0 ? (
-              <View className="gap-2">
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Daftar Barang Surat Jalan ({row.items.length} item)
-                  </Text>
-                  {row.items.length > 10 && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2"
-                      onPress={() => setShowAllItems((v) => !v)}
-                    >
-                      <Text className="text-xs text-primary font-medium">
-                        {showAllItems ? "Sembunyikan" : `Lihat Semua (${row.items.length})`}
-                      </Text>
-                    </Button>
-                  )}
-                </View>
-                {(showAllItems ? row.items : row.items.slice(0, 10)).map((it: any, idx: number) => {
-                  const prod = it.product;
-                  const snText = Array.isArray(it.serials)
-                    ? it.serials.filter(Boolean).join(", ")
-                    : it.serials
-                      ? String(it.serials).trim()
-                      : "";
-                  return (
-                    <View
-                      key={it.id ?? idx}
-                      className="p-3 bg-panel/40 border border-border/70 rounded-xl flex-row items-center justify-between"
-                    >
-                      <View className="flex-1 pr-2">
-                        <View className="flex-row items-center gap-2 flex-wrap">
-                          <Text className="text-sm font-semibold text-foreground">
-                            {prod?.name ?? it.name ?? it.note ?? "Barang"}
-                          </Text>
-                          {prod?.brand ? (
-                            <View className="bg-panel border border-border/60 rounded px-1.5 py-0.5">
-                              <Text className="text-[10px] font-medium text-muted-foreground">{prod.brand}</Text>
-                            </View>
-                          ) : null}
-                          {snText ? (
-                            <View className="bg-primary/10 border border-primary/30 rounded px-2 py-0.5">
-                              <Text className="text-[11px] font-semibold text-primary">SN: {snText}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                        <Text className="text-xs text-muted-foreground mt-0.5">
-                          Tipe: {prod?.hasSerial ? "Lacak Serial Number (SN)" : "Barang Curah / Tanpa SN"}
-                          {snText ? ` · Nomor Seri: ${snText}` : prod?.hasSerial ? " · Belum ada SN terinput" : ""}
-                        </Text>
+      {/* Ringkasan + langkah berikutnya */}
+      <Panel>
+        <View className="gap-4">
+          {!cancelled ? (
+            <View className="flex-row items-center">
+              {FLOW.map((f, i) => {
+                const done = i < stepIdx || isDelivered;
+                const current = i === stepIdx && !isDelivered;
+                return (
+                  <React.Fragment key={f}>
+                    <View className="items-center" style={{ width: 76 }}>
+                      <View className={`size-7 rounded-full items-center justify-center border ${done ? "bg-emerald-600 border-emerald-600" : current ? "bg-primary border-primary" : "bg-card border-border"}`}>
+                        {done ? <Check size={14} color="#fff" /> : <Text className={`text-xs font-bold ${current ? "text-white" : "text-muted-foreground"}`}>{i + 1}</Text>}
                       </View>
-                      <View className="items-end">
-                        <Text className="text-sm font-bold text-foreground">
-                          {it.qty} {prod?.unit ?? "unit"}
-                        </Text>
-                      </View>
+                      <Text className={`text-[11px] mt-1 ${current ? "text-primary font-semibold" : "text-muted-foreground"}`}>{FLOW_LABEL[i]}</Text>
                     </View>
-                  );
-                })}
-                {!showAllItems && row.items.length > 10 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-1 h-8"
-                    onPress={() => setShowAllItems(true)}
-                  >
-                    <Text className="text-xs font-medium">
-                      Lihat Semua ({row.items.length} barang)
-                    </Text>
-                  </Button>
-                )}
+                    {i < FLOW.length - 1 ? <View className={`h-[2px] flex-1 -mt-4 ${i < stepIdx || isDelivered ? "bg-emerald-600" : "bg-border"}`} /> : null}
+                  </React.Fragment>
+                );
+              })}
+            </View>
+          ) : null}
+
+          <View className={`gap-3 rounded-xl px-3 py-2.5 ${cancelled ? "bg-destructive/10" : "bg-primary/5"}`}>
+            <Text className="text-sm text-foreground">{nextHint}</Text>
+            <View className="flex-row flex-wrap gap-2">
+              <Button size="sm" onPress={() => void handlePrint("print")} className="flex-row items-center gap-1.5">
+                <Printer size={14} color="#fff" />
+                <Text className="text-xs font-semibold text-white">Cetak Surat Jalan</Text>
+              </Button>
+              <Button size="sm" variant="outline" onPress={() => void handlePrint("download")} className="flex-row items-center gap-1.5">
+                <Download size={14} color={colors.text} />
+                <Text className="text-xs">Unduh PDF</Text>
+              </Button>
+              {canHandover && status === "Dikirim" ? (
+                <Button size="sm" variant="outline" onPress={() => setHandoverOpen(true)} className="flex-row items-center gap-1.5">
+                  <CheckCircle2 size={14} color={colors.success} />
+                  <Text className="text-xs">Catat diterima</Text>
+                </Button>
+              ) : null}
+              {!isDelivered && !cancelled ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onPress={() => router.push(`/delivery-notes/new?id=${row.id}${matchedSo?.id ? `&soId=${matchedSo.id}` : ""}` as any)}
+                >
+                  <Text className="text-xs">{status === "Menunggu pengiriman" && hasGoods ? "Siapkan barang / ubah" : "Ubah"}</Text>
+                </Button>
+              ) : null}
+            </View>
+          </View>
+
+          <View className="flex-row flex-wrap gap-x-4">
+            {info.map((r) => (
+              <View key={r.label} className="flex-row items-start gap-2.5 py-1.5 flex-1 min-w-[220px]">
+                <r.icon size={15} color={colors.muted} style={{ marginTop: 2 }} />
+                <View className="flex-1">
+                  <Text className="text-[11px] text-muted-foreground">{r.label}</Text>
+                  <Text className="text-sm text-foreground">{r.value}</Text>
+                  {r.sub ? <Text className="text-[11px] text-muted-foreground">{r.sub}</Text> : null}
+                </View>
+                {r.onEdit ? (
+                  <Pressable onPress={r.onEdit} className="self-center px-1">
+                    <Text className="text-xs font-semibold text-primary">Ubah</Text>
+                  </Pressable>
+                ) : null}
               </View>
-            ) : (
-              <Line left={row.barang && row.barang !== "-" ? row.barang : "Membawa barang operasional"} sub="Daftar barang operasional surat jalan" />
-            )}
+            ))}
+          </View>
+
+          {matchedSo || matchedInvoice ? (
+            <View className="flex-row flex-wrap gap-2 pt-1 border-t border-border/60">
+              {matchedSo ? (
+                <Pressable onPress={() => router.push(`/po-client/${matchedSo.id}` as any)} className="flex-row items-center gap-1.5 rounded-full border border-border px-3 py-1.5">
+                  <ShoppingCart size={12} color={colors.primary} />
+                  <Text className="text-xs text-primary">SO {matchedSo.nomorSo || matchedSo.nomor || matchedSo.id}</Text>
+                </Pressable>
+              ) : null}
+              {matchedInvoice ? (
+                <Pressable onPress={() => router.push(`/invoices/${matchedInvoice.id}` as any)} className="flex-row items-center gap-1.5 rounded-full border border-border px-3 py-1.5">
+                  <FileText size={12} color={colors.primary} />
+                  <Text className="text-xs text-primary">Invoice {matchedInvoice.nomor || matchedInvoice.id}</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      </Panel>
+
+      {/* Barang */}
+      <Panel title={hasGoods ? `Barang (${items.length ? `${items.length} baris · ${totalQty} unit` : "belum diisi"})` : "Tanpa barang"}>
+        {!hasGoods ? (
+          <Text className="text-muted-foreground text-sm">Surat jalan penugasan (survey, meeting, instalasi) tanpa membawa barang.</Text>
+        ) : items.length === 0 ? (
+          <Text className="text-muted-foreground text-sm">{row.barang && row.barang !== "-" ? row.barang : "Daftar barang belum diisi — tekan Siapkan barang."}</Text>
+        ) : (
+          <View className="border border-border rounded-xl overflow-hidden">
+            {(showAllItems ? items : items.slice(0, 8)).map((it: any, idx: number) => {
+              const prod = it.product;
+              const snText = Array.isArray(it.serials) ? it.serials.filter(Boolean).join(", ") : it.serials ? String(it.serials).trim() : "";
+              return (
+                <View key={it.id ?? idx} className={`px-3 py-2.5 flex-row items-center gap-3 ${idx > 0 ? "border-t border-border/60" : ""}`}>
+                  <View className="flex-1">
+                    <Text className="text-sm text-foreground" numberOfLines={1}>
+                      {prod?.name ?? it.name ?? it.note ?? "Barang"}
+                    </Text>
+                    <Text className="text-[11px] text-muted-foreground" numberOfLines={2}>
+                      {snText ? `SN: ${snText}` : prod?.hasSerial ? "SN belum diisi" : prod?.sku || "Tanpa SN"}
+                    </Text>
+                  </View>
+                  <Text className="text-sm font-semibold text-foreground">
+                    {it.qty} {prod?.unit ?? "unit"}
+                  </Text>
+                </View>
+              );
+            })}
+            {items.length > 8 ? (
+              <Pressable onPress={() => setShowAllItems((v) => !v)} className="py-2 items-center border-t border-border/60">
+                <Text className="text-xs font-semibold text-primary">{showAllItems ? "Ringkas" : `Lihat semua (${items.length})`}</Text>
+              </Pressable>
+            ) : null}
           </View>
         )}
       </Panel>
 
       <Panel
-        title="Laporan Hasil Kunjungan & Serah Terima Lapangan"
-        subtitle="Dokumentasi penerimaan barang di lokasi klien beserta tanda tangan atau foto bukti."
-        right={
-          !isDelivered && (user!.role === "super_admin" || user!.role === "teknisi" || user!.role === "pm" || user!.role === "bos" || user!.role === "finance" || user!.role === "procurement") ? (
-            <Button size="sm" onPress={() => setHandoverOpen(true)} className="flex-row items-center gap-1">
-              <CheckCircle2 size={14} color={colors.background} />
-              <Text className="text-xs">Catat Tanda Terima</Text>
-            </Button>
-          ) : undefined
-        }
+        title="Serah Terima"
+        subtitle="Bukti barang diterima di lokasi: nama penerima + foto surat jalan yang sudah ditandatangani"
       >
         {isDelivered ? (
           <View className="bg-success/10 border-success/30 rounded-xl border p-3.5 gap-2.5">
@@ -449,8 +461,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         ) : (
           <View className="gap-2">
             <Text className="text-xs text-muted-foreground leading-relaxed">
-              Surat jalan sedang dalam perjalanan menuju lokasi: <b>{row.tujuan}</b>.
-              Setelah teknisi menyerahkan barang kepada pihak klien, catat tanda terima untuk menyelesaikan surat jalan.
+              Belum diterima. Setelah barang diserahkan di {row.tujuan}, tekan &quot;Catat diterima&quot; di atas dan lampirkan foto surat jalan yang sudah ditandatangani penerima.
             </Text>
           </View>
         )}
@@ -459,9 +470,31 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
       <DocumentationPhotosPanel
         kind="delivery-note"
         entityId={row.id}
-        title="Foto Bukti Serah Terima & Dokumentasi Surat Jalan"
-        subtitle="Lampirkan foto penerimaan barang di lokasi tujuan dan unduh PDF kompilasi resmi."
+        title="Foto Pengiriman"
+        subtitle="Foto barang & penerimaan di lokasi."
       />
+
+      {/* Modal Ubah Pengirim */}
+      <Dialog open={!!senderVal} onOpenChange={(v) => !v && setSenderVal(null)}>
+        <DialogContent className="w-[94vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ubah Pengirim</DialogTitle>
+          </DialogHeader>
+          {senderVal ? (
+            <View className="py-2">
+              <SenderFields value={senderVal} onChange={setSenderVal} />
+            </View>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onPress={() => setSenderVal(null)} disabled={savingSender}>
+              <Text>Batal</Text>
+            </Button>
+            <Button onPress={saveSender} disabled={savingSender}>
+              <Text className="text-white font-semibold">{savingSender ? "Menyimpan..." : "Simpan"}</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Catat Tanda Terima Lapangan */}
       <Dialog open={handoverOpen} onOpenChange={setHandoverOpen}>

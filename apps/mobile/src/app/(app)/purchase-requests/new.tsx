@@ -1,7 +1,23 @@
 import * as React from "react";
 import { View, Pressable } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, ArrowRight, Check, Plus, Trash2 } from "lucide-react-native";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Boxes,
+  Briefcase,
+  Building2,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  Search,
+  ShoppingBag,
+  Trash2,
+  Truck,
+  Warehouse,
+  type LucideIcon,
+} from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,59 +44,39 @@ import type { Row } from "@/constants/modules";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 
-const STEPS = ["Jenis & Pembayaran", "Pilih Barang", "Cek & Ajukan"];
+/**
+ * Form permintaan barang — dibuat sesederhana mungkin untuk orang baru:
+ *   1. Untuk apa?   (proyek / stok gudang / kantor)  +  dapat dari mana? (stok / toko / supplier)
+ *   2. Barang apa saja?  (cari dari katalog, atau ketik barang baru)
+ *   3. Cek & kirim
+ */
 
-const PROCUREMENT_MODES = [
-  {
-    key: "PROJECT_SUPPLIER",
-    label: "Proyek — beli lewat PO Pemasok",
-    costType: "Project",
-    source: "SUPPLIER",
-    desc: "Pesan ke pemasok resmi dengan PO.",
-  },
-  {
-    key: "PROJECT_RETAIL",
-    label: "Proyek — beli di toko / online",
-    costType: "Project",
-    source: "RETAIL",
-    desc: "Beli langsung, Finance bayar dulu.",
-  },
-  {
-    key: "PROJECT_STOCK",
-    label: "Proyek — ambil dari stok gudang",
-    costType: "Project",
-    source: "GUDANG",
-    desc: "Barang sudah ada di gudang, tanpa pembelian.",
-  },
-  {
-    key: "STOK_SUPPLIER",
-    label: "Restock gudang — lewat PO Pemasok",
-    costType: "Stok",
-    source: "SUPPLIER",
-    desc: "Isi stok gudang dari pemasok.",
-  },
-  {
-    key: "STOK_RETAIL",
-    label: "Restock gudang — beli di toko / online",
-    costType: "Stok",
-    source: "RETAIL",
-    desc: "Isi stok gudang, beli langsung.",
-  },
-  {
-    key: "INTERNAL",
-    label: "Kebutuhan internal kantor",
-    costType: "Internal",
-    source: "RETAIL",
-    desc: "Perlengkapan kantor / operasional.",
-  },
+const STEPS = ["Untuk apa?", "Barang apa saja?", "Cek & kirim"];
+
+type Purpose = "PROJECT" | "STOK" | "INTERNAL";
+type Source = "GUDANG" | "RETAIL" | "SUPPLIER";
+
+const PURPOSES: { key: Purpose; label: string; desc: string; icon: LucideIcon }[] = [
+  { key: "PROJECT", label: "Proyek", desc: "Barang untuk dipasang / dipakai di proyek", icon: Briefcase },
+  { key: "STOK", label: "Stok gudang", desc: "Menambah persediaan di gudang", icon: Warehouse },
+  { key: "INTERNAL", label: "Kantor", desc: "Perlengkapan & operasional kantor", icon: Building2 },
 ];
 
-const COST_TYPE_MAP: Record<string, string> = {
-  Project: "PROJECT",
-  Stok: "STOK",
-  Internal: "INTERNAL",
-  Lainnya: "LAINNYA",
+const SOURCES: Record<Source, { label: string; desc: string; icon: LucideIcon }> = {
+  GUDANG: { label: "Ambil dari stok gudang", desc: "Barang sudah ada di gudang — tidak perlu beli", icon: Boxes },
+  RETAIL: { label: "Beli di toko / online", desc: "Beli langsung, Finance yang membayar", icon: ShoppingBag },
+  SUPPLIER: { label: "Pesan ke supplier", desc: "Dibuatkan PO resmi oleh Procurement", icon: Truck },
 };
+
+/** Sumber yang masuk akal per tujuan. */
+const SOURCES_FOR: Record<Purpose, Source[]> = {
+  PROJECT: ["GUDANG", "RETAIL", "SUPPLIER"],
+  STOK: ["RETAIL", "SUPPLIER"],
+  INTERNAL: ["RETAIL"],
+};
+
+const COST_TYPE: Record<Purpose, string> = { PROJECT: "PROJECT", STOK: "STOK", INTERNAL: "INTERNAL" };
+const PURPOSE_LABEL: Record<Purpose, string> = { PROJECT: "Proyek", STOK: "Restock gudang", INTERNAL: "Kebutuhan kantor" };
 
 interface CustomItemRow {
   id: string;
@@ -127,6 +123,58 @@ function generateCustomItemId(): string {
   return `CUST-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+/** Kartu pilihan besar (satu ketukan). */
+function ChoiceCard({
+  active,
+  onPress,
+  icon: Icon,
+  label,
+  desc,
+}: {
+  active: boolean;
+  onPress: () => void;
+  icon: LucideIcon;
+  label: string;
+  desc: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: active }}
+      className={`flex-1 min-w-[150px] flex-row items-center gap-3 rounded-xl border p-3 ${
+        active ? "bg-primary/10 border-primary" : "bg-card border-border/70 active:bg-muted"
+      }`}
+    >
+      <View className={`size-9 rounded-lg items-center justify-center ${active ? "bg-primary" : "bg-muted"}`}>
+        <Icon size={18} color={active ? "#fff" : colors.muted} />
+      </View>
+      <View className="flex-1">
+        <Text className={`text-sm font-semibold ${active ? "text-primary" : "text-foreground"}`}>{label}</Text>
+        <Text className="text-[11px] text-muted-foreground">{desc}</Text>
+      </View>
+      {active ? <Check size={16} color={colors.primary} /> : null}
+    </Pressable>
+  );
+}
+
+/** Tombol kembali / lanjut di bawah tiap langkah. */
+function Footer({ onBack, next }: { onBack?: () => void; next: React.ReactNode }) {
+  return (
+    <View className="mt-2 flex-row items-center justify-between gap-2">
+      {onBack ? (
+        <Button variant="outline" onPress={onBack}>
+          <ArrowLeft size={16} color={colors.text} />
+          <Text>Kembali</Text>
+        </Button>
+      ) : (
+        <View />
+      )}
+      {next}
+    </View>
+  );
+}
+
 export default function NewPurchaseRequestScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ projectId?: string }>();
@@ -147,13 +195,16 @@ export default function NewPurchaseRequestScreen() {
       const found = projects.find((p) => String(p.id) === String(params.projectId));
       if (found?.nama) return String(found.nama);
     }
-    return projects[0]?.nama ? String(projects[0].nama) : "";
+    return "";
   }, [params.projectId, projects]);
 
-  const [procModeKey, setProcModeKey] = React.useState("PROJECT_SUPPLIER");
-  const activeMode = PROCUREMENT_MODES.find((m) => m.key === procModeKey) ?? PROCUREMENT_MODES[0]!;
-  const costType = activeMode.costType;
-  const procurementSource = activeMode.source;
+  // ── Langkah 1: untuk apa & dari mana ──
+  const [purpose, setPurpose] = React.useState<Purpose>("PROJECT");
+  const [sourceChoice, setSourceChoice] = React.useState<Source>("SUPPLIER");
+  const allowedSources = SOURCES_FOR[purpose];
+  const procurementSource: Source = allowedSources.includes(sourceChoice) ? sourceChoice : allowedSources[0]!;
+  const isProject = purpose === "PROJECT";
+  const isStockTakeMode = procurementSource === "GUDANG";
 
   const [projectId, setProjectId] = React.useState(initialProj);
   const [supplierName, setSupplierName] = React.useState("");
@@ -165,17 +216,16 @@ export default function NewPurchaseRequestScreen() {
     d.setMonth(d.getMonth() + 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
-  const [otherDesc, setOtherDesc] = React.useState("");
 
-  // Step 2: Master items start EMPTY (fixes pre-selected Konektor RJ45 bug)
+  // ── Langkah 2: barang ──
   const [selectedNames, setSelectedNames] = React.useState<string[]>([]);
   const [itemQuantities, setItemQuantities] = React.useState<Record<string, string>>({});
   const [itemPrices, setItemPrices] = React.useState<Record<string, string>>({});
   const [itemSerials, setItemSerials] = React.useState<Record<string, string[]>>({});
-  const [catFilter, setCatFilter] = React.useState<string>("Semua");
 
-  // Step 2: Non-master (custom / retail) items
   const [customItems, setCustomItems] = React.useState<CustomItemRow[]>([]);
+  const [newOpen, setNewOpen] = React.useState(false);
+  const [moreOpen, setMoreOpen] = React.useState(false);
   const [newCustomName, setNewCustomName] = React.useState("");
   const [newCustomMerk, setNewCustomMerk] = React.useState("");
   const [newCustomSku, setNewCustomSku] = React.useState("");
@@ -187,7 +237,9 @@ export default function NewPurchaseRequestScreen() {
   const [newCustomBerSN, setNewCustomBerSN] = React.useState(false);
   /** Barang pakai habis untuk project (paku, selotip, dll) — tidak masuk master stok. */
   const [newCustomConsumable, setNewCustomConsumable] = React.useState(false);
+  const [ppnMode, setPpnMode] = React.useState<"none" | "exclude" | "include">("none");
 
+  // ── Langkah 3 ──
   const [tujuan, setTujuan] = React.useState("");
 
   const categoryOptions = React.useMemo(() => {
@@ -196,7 +248,7 @@ export default function NewPurchaseRequestScreen() {
       .map((c: any) => String(c.nama || c.name || "").trim())
       .filter(Boolean);
     const fromProducts = products.map((p) => String(p.kategori || "").trim()).filter(Boolean);
-    return ["Semua", ...Array.from(new Set([...fromMaster, ...fromProducts]))];
+    return Array.from(new Set([...fromMaster, ...fromProducts]));
   }, [data.productCategories, products]);
 
   const selectedMasterItems: SelectedItemRow[] = selectedNames.map((name) => {
@@ -206,9 +258,8 @@ export default function NewPurchaseRequestScreen() {
           .filter((s: any) => String(s.productId) === String(prod.id))
           .reduce((a: number, s: any) => a + Number(s.saldo ?? 0), 0)
       : 0;
-    const isTakeFromStock = procurementSource === "GUDANG";
-    const chosenSns = isTakeFromStock ? (itemSerials[name] ?? []) : [];
-    const q = isTakeFromStock && prod?.berSN && chosenSns.length > 0 ? chosenSns.length : (Number(itemQuantities[name]) || 1);
+    const chosenSns = isStockTakeMode ? (itemSerials[name] ?? []) : [];
+    const q = isStockTakeMode && prod?.berSN && chosenSns.length > 0 ? chosenSns.length : (Number(itemQuantities[name]) || 1);
     const defaultPrice = Number(prod?.hargaBeli ?? 0);
     const unitPrice = itemPrices[name] !== undefined ? (Number(itemPrices[name]) || 0) : defaultPrice;
     const availSns = prod?.berSN
@@ -250,7 +301,7 @@ export default function NewPurchaseRequestScreen() {
       customId: ci.id,
       productId: undefined,
       nama: ci.nama,
-      merk: ci.merk || (ci.isProjectConsumable ? "Khusus Proyek (Pakai Habis — Non-Master)" : "Non-Master / Ritel"),
+      merk: ci.merk || "",
       sku: ci.sku,
       kategori: ci.kategori,
       hargaJual: ci.hargaJual,
@@ -265,17 +316,14 @@ export default function NewPurchaseRequestScreen() {
     };
   });
 
-  const [ppnMode, setPpnMode] = React.useState<"none" | "exclude" | "include">("none");
-
   const selectedItems = [...selectedMasterItems, ...mappedCustomItems];
   const itemsSubtotal = selectedItems.reduce((acc, it) => acc + it.subtotal, 0);
+  const effectivePpn = isStockTakeMode ? "none" : ppnMode;
+  const dppCost = effectivePpn === "include" ? Math.round(itemsSubtotal / 1.11) : itemsSubtotal;
+  const ppnCost = effectivePpn === "none" ? 0 : effectivePpn === "include" ? Math.max(0, itemsSubtotal - dppCost) : Math.round(itemsSubtotal * 0.11);
+  const totalEstimatedCost = effectivePpn === "exclude" ? itemsSubtotal + ppnCost : itemsSubtotal;
 
-  const dppCost = ppnMode === "include" ? Math.round(itemsSubtotal / 1.11) : itemsSubtotal;
-  const ppnCost = ppnMode === "none" ? 0 : ppnMode === "include" ? Math.max(0, itemsSubtotal - dppCost) : Math.round(itemsSubtotal * 0.11);
-  const totalEstimatedCost = ppnMode === "exclude" ? itemsSubtotal + ppnCost : itemsSubtotal;
-
-  const isStockTakeMode = procurementSource === "GUDANG";
-  // Ritel selalu dibayar Finance dulu; hanya supplier yang bisa tempo. Gudang tanpa pembayaran.
+  // Ritel selalu dibayar Finance dulu; hanya supplier yang bisa tempo. Ambil stok tanpa pembayaran.
   const effectivePayment: "KAS" | "UTANG" | undefined =
     procurementSource === "SUPPLIER" ? paymentMethod : procurementSource === "RETAIL" ? "KAS" : undefined;
   const isAllConsumablesPreview = selectedItems.length > 0 && selectedItems.every((it: any) => it.isProjectConsumable);
@@ -286,34 +334,10 @@ export default function NewPurchaseRequestScreen() {
     isPaid: false,
     poCount: 0,
     poApproved: false,
-    isProjectConsumable: costType === "Project" && isAllConsumablesPreview,
+    isProjectConsumable: isProject && isAllConsumablesPreview,
   });
 
-  function handleAddCustomItem() {
-    const trimmed = newCustomName.trim();
-    if (!trimmed) {
-      toast("Masukkan nama barang terlebih dahulu", "danger");
-      return;
-    }
-    const autoSku = generateAutoSku(newCustomSku);
-    const chosenCat = newCustomCategory.trim() || (categoryOptions.length > 1 ? categoryOptions[1] : "Umum");
-
-    setCustomItems((prev) => [
-      ...prev,
-      {
-        id: generateCustomItemId(),
-        nama: trimmed,
-        merk: newCustomMerk.trim() || undefined,
-        sku: autoSku,
-        kategori: chosenCat,
-        satuan: newCustomUnit.trim() || "unit",
-        qty: newCustomQty.replace(/\D/g, "") || "1",
-        hargaBeli: newCustomPrice.replace(/\D/g, "") || "0",
-        hargaJual: newCustomSellPrice.replace(/\D/g, "") || "0",
-        berSN: newCustomBerSN && !newCustomConsumable,
-        isProjectConsumable: costType === "Project" && newCustomConsumable,
-      },
-    ]);
+  function resetNewItem() {
     setNewCustomName("");
     setNewCustomMerk("");
     setNewCustomSku("");
@@ -324,11 +348,55 @@ export default function NewPurchaseRequestScreen() {
     setNewCustomSellPrice("");
     setNewCustomBerSN(false);
     setNewCustomConsumable(false);
+    setMoreOpen(false);
+  }
+
+  function handleAddCustomItem() {
+    const trimmed = newCustomName.trim();
+    if (!trimmed) {
+      toast("Isi nama barangnya dulu", "danger");
+      return;
+    }
+    setCustomItems((prev) => [
+      ...prev,
+      {
+        id: generateCustomItemId(),
+        nama: trimmed,
+        merk: newCustomMerk.trim() || undefined,
+        sku: generateAutoSku(newCustomSku),
+        kategori: newCustomCategory.trim() || categoryOptions[0] || "Umum",
+        satuan: newCustomUnit.trim() || "unit",
+        qty: newCustomQty.replace(/\D/g, "") || "1",
+        hargaBeli: newCustomPrice.replace(/\D/g, "") || "0",
+        hargaJual: newCustomSellPrice.replace(/\D/g, "") || "0",
+        berSN: newCustomBerSN && !newCustomConsumable,
+        isProjectConsumable: isProject && newCustomConsumable,
+      },
+    ]);
+    resetNewItem();
+    setNewOpen(false);
+  }
+
+  function removeItem(item: SelectedItemRow) {
+    if (item.isCustom) setCustomItems((prev) => prev.filter((c) => c.id !== item.customId));
+    else setSelectedNames((prev) => prev.filter((n) => n !== item.nama));
+  }
+
+  function setQty(item: SelectedItemRow, v: string) {
+    const clean = v.replace(/\D/g, "") || "1";
+    if (item.isCustom) setCustomItems((prev) => prev.map((c) => (c.id === item.customId ? { ...c, qty: clean } : c)));
+    else setItemQuantities((prev) => ({ ...prev, [item.nama]: clean }));
+  }
+
+  function setPrice(item: SelectedItemRow, v: string) {
+    const clean = v.replace(/\D/g, "") || "0";
+    if (item.isCustom) setCustomItems((prev) => prev.map((c) => (c.id === item.customId ? { ...c, hargaBeli: clean } : c)));
+    else setItemPrices((prev) => ({ ...prev, [item.nama]: clean }));
   }
 
   async function submit() {
     if (selectedItems.length === 0) {
-      toast("Pilih atau tambahkan minimal satu barang terlebih dahulu", "danger");
+      toast("Tambahkan minimal satu barang", "danger");
       return;
     }
     setBusy(true);
@@ -336,15 +404,14 @@ export default function NewPurchaseRequestScreen() {
       const fileId = (await fileHandle.current?.flush()) ?? undefined;
       const allConsumables = selectedItems.length > 0 && selectedItems.every((it: any) => it.isProjectConsumable);
 
-      // Otomatis daftarkan barang non-master (yang bukan pakai habis) ke master data produk
+      // Barang baru (bukan pakai habis) otomatis didaftarkan ke Master Barang
       const resolvedItems: any[] = [];
       for (const it of selectedItems) {
         let finalProdId = it.productId;
         if (it.isCustom && !it.isProjectConsumable && !finalProdId) {
-          const autoSku = generateAutoSku(it.sku);
           const createdProduct = await addRow("products", {
             nama: it.nama,
-            sku: autoSku,
+            sku: generateAutoSku(it.sku),
             merk: it.merk || undefined,
             kategori: it.kategori || "Umum",
             satuan: it.satuan || "unit",
@@ -353,21 +420,14 @@ export default function NewPurchaseRequestScreen() {
             berSN: !!it.berSN,
             status: "AKTIF",
           }).catch(() => null);
-
-          if (createdProduct?.id) {
-            finalProdId = Number(createdProduct.id);
-          }
+          if (createdProduct?.id) finalProdId = Number(createdProduct.id);
         }
-        resolvedItems.push({
-          ...it,
-          productId: finalProdId,
-        });
+        resolvedItems.push({ ...it, productId: finalProdId });
       }
 
       const itemsPayload = resolvedItems.map((it: any) => ({
         productId: it.productId,
         customName: it.isCustom && !it.productId ? it.nama : undefined,
-        // Pakai-habis proyek disimpan sebagai kolom (dulu awalan "[PAKAI_HABIS]" di nama barang)
         isConsumable: Boolean(it.isProjectConsumable),
         customUnit: it.isCustom && !it.productId ? it.satuan : undefined,
         hasSerial: it.berSN,
@@ -387,34 +447,32 @@ export default function NewPurchaseRequestScreen() {
       const matchedSupplier = findSupplierMatch(suppliers, supplierName);
       const supplierClean = matchedSupplier ? (matchedSupplier.nama || matchedSupplier.name) : cleanSupplierName(supplierName);
       const matchedProj = projects.find((p) => p.nama === projectId || String(p.id) === String(projectId));
-
-      // Catatan hanya berisi teks dari pemohon. PPN & pakai-habis dikirim sebagai field sendiri (bukan tag di catatan).
-      const otherNotePayload =
-        (costType === "Lainnya" || costType === "Internal") && otherDesc ? otherDesc : undefined;
+      const defaultPurpose = `${PURPOSE_LABEL[purpose]} — ${SOURCES[procurementSource].label.toLowerCase()}`;
 
       await addRow("purchase-requests", {
         pemohon: user?.name || "Karyawan",
-        project: costType === "Project" ? (matchedProj?.nama || projectId) : "-",
-        projectId: costType === "Project" && matchedProj ? Number(matchedProj.id) : undefined,
-        costType: COST_TYPE_MAP[costType] || costType.toUpperCase(),
+        project: isProject ? (matchedProj?.nama || projectId) : "-",
+        projectId: isProject && matchedProj ? Number(matchedProj.id) : undefined,
+        costType: COST_TYPE[purpose],
         procurementSource,
         paymentMethod: effectivePayment ?? "KAS",
         dueDate: effectivePayment === "UTANG" ? (dueDate || undefined) : undefined,
         supplier: procurementSource === "SUPPLIER" ? supplierClean || undefined : undefined,
         supplierId: procurementSource === "SUPPLIER" && matchedSupplier?.id ? String(matchedSupplier.id) : undefined,
-        otherNote: otherNotePayload,
-        purpose: tujuan || activeMode.label,
+        otherNote: purpose === "INTERNAL" && tujuan ? tujuan : undefined,
+        purpose: tujuan.trim() || defaultPurpose,
         item: itemDesc,
         items: itemsPayload,
         estimasi: totalEstimatedCost,
-        ppnMode,
+        ppnMode: effectivePpn,
         isProjectConsumable: Boolean(allConsumables),
         fileId,
         status: "Diajukan",
       });
+      toast("Permintaan barang terkirim. Pantau prosesnya di halaman detail.");
       router.replace("/purchase-requests");
     } catch (e: any) {
-      toast(e?.message ?? "Gagal mengajukan permintaan", "danger");
+      toast(e?.message ?? "Gagal mengirim permintaan", "danger");
     } finally {
       setBusy(false);
     }
@@ -422,35 +480,32 @@ export default function NewPurchaseRequestScreen() {
 
   return (
     <View className="w-full gap-5">
-      <PageHeader
-        back
-        title="Buat Permintaan Barang"
-        subtitle="Pengajuan pengadaan barang proyek, pembelian ritel/toko, atau pengisian stok gudang"
-      />
+      <PageHeader back title="Minta Barang" subtitle="Isi 3 langkah singkat — tim terkait akan memprosesnya" />
 
       <Stepper steps={STEPS} current={step} />
 
+      {/* ───────── Langkah 1: Untuk apa? ───────── */}
       {step === 0 && (
-        <Panel title="Untuk apa dan beli dari mana?">
-          <View className="gap-4">
+        <Panel>
+          <View className="gap-5">
             <View className="gap-2">
-              {PROCUREMENT_MODES.map((m) => {
-                const active = procModeKey === m.key;
-                return (
-                  <Pressable
-                    key={m.key}
-                    onPress={() => setProcModeKey(m.key)}
-                    className={`rounded-xl border p-3 ${active ? "bg-primary/10 border-primary" : "bg-card border-border/70"}`}
-                  >
-                    <Text className={`text-sm font-bold ${active ? "text-primary" : "text-foreground"}`}>{m.label}</Text>
-                    <Text className="text-xs text-muted-foreground mt-0.5">{m.desc}</Text>
-                  </Pressable>
-                );
-              })}
+              <Text className="text-sm font-semibold text-foreground">Barangnya untuk apa?</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {PURPOSES.map((p) => (
+                  <ChoiceCard
+                    key={p.key}
+                    active={purpose === p.key}
+                    onPress={() => setPurpose(p.key)}
+                    icon={p.icon}
+                    label={p.label}
+                    desc={p.desc}
+                  />
+                ))}
+              </View>
             </View>
 
-            {costType === "Project" && (
-              <FormField label="Proyek" required>
+            {isProject ? (
+              <FormField label="Proyek yang mana?" required>
                 <ProjectSelect
                   value={projectId}
                   allowClear={false}
@@ -458,563 +513,410 @@ export default function NewPurchaseRequestScreen() {
                   placeholder="Pilih proyek..."
                 />
               </FormField>
+            ) : null}
+
+            {allowedSources.length > 1 ? (
+              <View className="gap-2">
+                <Text className="text-sm font-semibold text-foreground">Barangnya didapat dari mana?</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {allowedSources.map((s) => (
+                    <ChoiceCard
+                      key={s}
+                      active={procurementSource === s}
+                      onPress={() => setSourceChoice(s)}
+                      icon={SOURCES[s].icon}
+                      label={SOURCES[s].label}
+                      desc={SOURCES[s].desc}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <Text className="text-xs text-muted-foreground">Dibeli langsung di toko / online, Finance yang membayar.</Text>
             )}
 
             {procurementSource === "SUPPLIER" ? (
-              <>
-                <FormField label="Pemasok" hint="Boleh dikosongkan, Procurement memilih saat membuat PO">
+              <View className="gap-3 rounded-xl border border-border/70 bg-muted/30 p-3">
+                <FormField label="Supplier (opsional)" hint="Kosongkan bila belum tahu — Procurement yang memilih">
                   <SupplierSelect
                     value={supplierName}
                     onChange={(val) => setSupplierName(val)}
                     onAddNew={() => setQuickSupplierOpen(true)}
-                    addNewLabel="+ Tambah Pemasok Baru"
-                    placeholder="Pilih pemasok..."
+                    addNewLabel="+ Tambah supplier baru"
+                    placeholder="Pilih supplier..."
                   />
                 </FormField>
-                <FormField label="Pembayaran ke pemasok" required>
-                  <View className="flex-row gap-2.5">
+                <FormField label="Cara bayar ke supplier">
+                  <View className="flex-row gap-2">
                     {(
                       [
-                        { v: "KAS", t: "Tunai", d: "Finance bayar dulu, baru barang dikirim" },
-                        { v: "UTANG", t: "Tempo", d: "Barang diterima dulu, bayar belakangan" },
+                        { v: "UTANG", t: "Tempo", d: "Barang datang dulu, bayar belakangan" },
+                        { v: "KAS", t: "Tunai", d: "Dibayar dulu, baru barang dikirim" },
                       ] as const
                     ).map((o) => (
                       <Pressable
                         key={o.v}
                         onPress={() => setPaymentMethod(o.v)}
-                        className={`flex-1 rounded-xl border p-3 ${paymentMethod === o.v ? "bg-primary/10 border-primary" : "bg-card border-border/70"}`}
+                        className={`flex-1 rounded-xl border p-2.5 ${paymentMethod === o.v ? "bg-primary/10 border-primary" : "bg-card border-border/70"}`}
                       >
-                        <Text className={`text-sm font-bold ${paymentMethod === o.v ? "text-primary" : "text-foreground"}`}>{o.t}</Text>
-                        <Text className="text-xs text-muted-foreground mt-0.5">{o.d}</Text>
+                        <Text className={`text-sm font-semibold ${paymentMethod === o.v ? "text-primary" : "text-foreground"}`}>{o.t}</Text>
+                        <Text className="text-[11px] text-muted-foreground">{o.d}</Text>
                       </Pressable>
                     ))}
                   </View>
                 </FormField>
-                {paymentMethod === "UTANG" && (
-                  <FormField label="Jatuh tempo" required hint="Pengingat muncul di kalender">
-                    <DatePicker value={dueDate} onChange={(v) => setDueDate(v)} placeholder="Pilih tanggal jatuh tempo" />
+                {paymentMethod === "UTANG" ? (
+                  <FormField label="Jatuh tempo">
+                    <DatePicker value={dueDate} onChange={(v) => setDueDate(v)} placeholder="Pilih tanggal" />
                   </FormField>
-                )}
-              </>
+                ) : null}
+              </View>
             ) : null}
 
-            {(costType === "Lainnya" || costType === "Internal") && (
-              <FormField label="Keterangan" hint="Jelaskan kebutuhan pembelian internal">
-                <Textarea value={otherDesc} onChangeText={setOtherDesc} placeholder="Tujuan dan alasan pembelian" />
-              </FormField>
-            )}
-
-            <View className="rounded-xl border border-border bg-panel/40 p-4">
-              <Text className="mb-3 text-xs font-bold uppercase tracking-wider text-primary">Alur setelah diajukan</Text>
-              <FlowTracker flow={previewFlow} compact />
-            </View>
-
-            <View className="mt-2 flex-row justify-end">
-              <Button
-                onPress={() => {
-                  if (costType === "Project" && !projectId) return toast("Pilih proyek terlebih dahulu", "danger");
-                  setStep(1);
-                }}
-              >
-                <Text>Lanjut: Pilih Barang</Text>
-                <ArrowRight size={16} color={colors.background} />
-              </Button>
-            </View>
+            <Footer
+              next={
+                <Button
+                  onPress={() => {
+                    if (isProject && !projectId) return toast("Pilih proyeknya dulu", "danger");
+                    setStep(1);
+                  }}
+                >
+                  <Text>Lanjut</Text>
+                  <ArrowRight size={16} color={colors.background} />
+                </Button>
+              }
+            />
           </View>
         </Panel>
       )}
 
+      {/* ───────── Langkah 2: Barang apa saja? ───────── */}
       {step === 1 && (
-        <Panel title="Langkah 2: Pilih Barang Master atau Tambah Barang Non-Master (Ritel)">
+        <Panel>
           <View className="gap-4">
-            {/* Bagian A: Pilih dari Master Barang */}
-            <View className="bg-panel/30 border-border/70 rounded-xl border p-3.5 gap-3">
-              <Text className="text-xs font-bold uppercase tracking-wider text-primary">
-                A. Pilih dari Master Barang (Ber-SN maupun Non-SN)
+            {/* Cari dari katalog */}
+            <View className="gap-1.5">
+              <Text className="text-sm font-semibold text-foreground">
+                {isStockTakeMode ? "Pilih barang dari stok gudang" : "Cari barang di katalog"}
               </Text>
-              <FormField
-                label="Pilih Barang Master (Tabel Katalog)"
-                hint="Klik untuk membuka katalog master stok dan memilih satu atau beberapa barang"
-              >
-                <ProductSelect
-                  multiple
-                  selectedNames={selectedNames}
-                  onToggleMultiple={(prod) => {
-                    const name = String(prod.nama || prod.name);
-                    setSelectedNames((prev) => {
-                      if (prev.includes(name)) {
-                        return prev.filter((n) => n !== name);
-                      } else {
-                        setItemQuantities((qPrev) => ({ ...qPrev, [name]: qPrev[name] || "1" }));
-                        return [...prev, name];
-                      }
-                    });
-                  }}
-                  placeholder="Klik untuk membuka tabel katalog & memilih barang master..."
-                />
-              </FormField>
+              <ProductSelect
+                multiple
+                selectedNames={selectedNames}
+                onToggleMultiple={(prod) => {
+                  const name = String(prod.nama || prod.name);
+                  setSelectedNames((prev) => {
+                    if (prev.includes(name)) return prev.filter((n) => n !== name);
+                    setItemQuantities((qPrev) => ({ ...qPrev, [name]: qPrev[name] || "1" }));
+                    return [...prev, name];
+                  });
+                }}
+                placeholder="Ketuk untuk mencari & memilih barang..."
+              />
             </View>
 
-            {/* Barang di luar master (ritel / ketik manual) — lengkap seperti master produk baru */}
-            {!isStockTakeMode && (
-              <View className="bg-panel/30 border-border/70 rounded-xl border p-4 gap-3.5">
-                <View>
-                  <Text className="text-xs font-bold uppercase tracking-wider text-info">
-                    B. Barang di luar master (Daftar Produk Baru)
-                  </Text>
-                  <Text className="text-xs text-muted-foreground mt-0.5">
-                    Item yang belum terdaftar di katalog. Barang akan otomatis ditambahkan ke Master Produk saat pengajuan disimpan.
-                  </Text>
-                </View>
+            {/* Barang baru (belum ada di katalog) */}
+            {!isStockTakeMode ? (
+              newOpen ? (
+                <View className="gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
+                  <Text className="text-sm font-semibold text-foreground">Barang baru</Text>
+                  <FormField label="Nama barang" required>
+                    <Input value={newCustomName} onChangeText={setNewCustomName} placeholder="Contoh: Kabel UTP Cat6 1 roll" autoFocus />
+                  </FormField>
+                  <View className="flex-row gap-2">
+                    <View className="w-24">
+                      <FormField label="Jumlah">
+                        <Input value={newCustomQty} onChangeText={(v) => setNewCustomQty(v.replace(/\D/g, ""))} keyboardType="numeric" placeholder="1" />
+                      </FormField>
+                    </View>
+                    <View className="w-28">
+                      <FormField label="Satuan">
+                        <SearchableSelect
+                          value={newCustomUnit}
+                          options={["unit", "pcs", "roll", "meter", "box", "pack", "set", "lot"]}
+                          onChange={setNewCustomUnit}
+                          placeholder="unit"
+                        />
+                      </FormField>
+                    </View>
+                    <View className="flex-1">
+                      <FormField label="Perkiraan harga / satuan">
+                        <Input
+                          value={formatThousands(newCustomPrice)}
+                          onChangeText={(v) => setNewCustomPrice(v.replace(/\D/g, ""))}
+                          keyboardType="numeric"
+                          placeholder="Rp"
+                        />
+                      </FormField>
+                    </View>
+                  </View>
 
-                {/* Baris 1: Nama Produk & Merk */}
-                <View className="flex-col sm:flex-row gap-3">
-                  <View className="flex-1">
-                    <FormField label="Nama Barang / Produk *" required>
-                      <Input
-                        value={newCustomName}
-                        onChangeText={setNewCustomName}
-                        placeholder="Contoh: Kamera IP UNV 4MP Bullet Outdoor"
-                      />
-                    </FormField>
-                  </View>
-                  <View className="flex-1 sm:max-w-[240px]">
-                    <FormField label="Merk / Brand (Pabrikan)">
-                      <Input
-                        value={newCustomMerk}
-                        onChangeText={setNewCustomMerk}
-                        placeholder="Contoh: Uniview, Belden, Hikvision"
-                      />
-                    </FormField>
-                  </View>
-                </View>
+                  <Pressable onPress={() => setMoreOpen((v) => !v)} className="flex-row items-center gap-1 self-start">
+                    {moreOpen ? <ChevronUp size={14} color={colors.primary} /> : <ChevronDown size={14} color={colors.primary} />}
+                    <Text className="text-xs font-semibold text-primary">{moreOpen ? "Sembunyikan detail" : "Detail lain (opsional)"}</Text>
+                  </Pressable>
+                  {moreOpen ? (
+                    <View className="gap-3">
+                      <View className="flex-row flex-wrap gap-2">
+                        <View className="flex-1 min-w-[140px]">
+                          <FormField label="Merk">
+                            <Input value={newCustomMerk} onChangeText={setNewCustomMerk} placeholder="Contoh: Belden" />
+                          </FormField>
+                        </View>
+                        <View className="flex-1 min-w-[140px]">
+                          <FormField label="Kategori">
+                            <SearchableSelect value={newCustomCategory} options={categoryOptions} onChange={setNewCustomCategory} placeholder="Pilih kategori" />
+                          </FormField>
+                        </View>
+                      </View>
+                      <View className="flex-row flex-wrap gap-2">
+                        <View className="flex-1 min-w-[140px]">
+                          <FormField label="Kode barang (SKU)" hint="Kosongkan = otomatis">
+                            <Input value={newCustomSku} onChangeText={setNewCustomSku} placeholder="Otomatis" />
+                          </FormField>
+                        </View>
+                        <View className="flex-1 min-w-[140px]">
+                          <FormField label="Perkiraan harga jual">
+                            <Input
+                              value={formatThousands(newCustomSellPrice)}
+                              onChangeText={(v) => setNewCustomSellPrice(v.replace(/\D/g, ""))}
+                              keyboardType="numeric"
+                              placeholder="Rp"
+                            />
+                          </FormField>
+                        </View>
+                      </View>
+                      <View className="flex-row flex-wrap gap-2">
+                        <Button size="sm" variant={newCustomBerSN ? "default" : "outline"} onPress={() => setNewCustomBerSN((v) => !v)}>
+                          <Text className="text-xs">{newCustomBerSN ? "✓ " : ""}Punya nomor seri (SN)</Text>
+                        </Button>
+                        {isProject ? (
+                          <Button size="sm" variant={newCustomConsumable ? "default" : "outline"} onPress={() => setNewCustomConsumable((v) => !v)}>
+                            <Text className="text-xs">{newCustomConsumable ? "✓ " : ""}Barang habis pakai (paku, selotip, dll)</Text>
+                          </Button>
+                        ) : null}
+                      </View>
+                    </View>
+                  ) : null}
 
-                {/* Baris 2: Kategori, Kode SKU, Satuan */}
-                <View className="flex-col sm:flex-row gap-3">
-                  <View className="flex-1">
-                    <FormField label="Kategori Produk">
-                      <SearchableSelect
-                        value={newCustomCategory}
-                        options={categoryOptions.filter((c) => c !== "Semua")}
-                        onChange={setNewCustomCategory}
-                        placeholder="Pilih atau cari kategori..."
-                      />
-                    </FormField>
-                  </View>
-                  <View className="flex-1 sm:max-w-[180px]">
-                    <FormField label="Kode SKU (Opsional)" hint="Kosongkan untuk otomatis">
-                      <Input
-                        value={newCustomSku}
-                        onChangeText={setNewCustomSku}
-                        placeholder="Contoh: CAM-UNV-4K"
-                      />
-                    </FormField>
-                  </View>
-                  <View className="w-full sm:w-28">
-                    <FormField label="Satuan" required>
-                      <SearchableSelect
-                        value={newCustomUnit}
-                        options={["unit", "pcs", "roll", "meter", "box", "pack", "set", "lot"]}
-                        onChange={setNewCustomUnit}
-                        placeholder="unit"
-                      />
-                    </FormField>
-                  </View>
-                </View>
-
-                {/* Baris 3: Qty, Harga Beli Satuan, Estimasi Harga Jual */}
-                <View className="flex-col sm:flex-row gap-3">
-                  <View className="w-full sm:w-24">
-                    <FormField label="Qty *" required>
-                      <Input
-                        value={newCustomQty}
-                        onChangeText={(v) => setNewCustomQty(v.replace(/\D/g, ""))}
-                        keyboardType="numeric"
-                        placeholder="1"
-                      />
-                    </FormField>
-                  </View>
-                  <View className="flex-1">
-                    <FormField label="Harga Beli Satuan (Rp) *" required>
-                      <Input
-                        value={formatThousands(newCustomPrice)}
-                        onChangeText={(v) => setNewCustomPrice(v.replace(/\D/g, ""))}
-                        keyboardType="numeric"
-                        placeholder="Contoh: 850.000"
-                      />
-                    </FormField>
-                  </View>
-                  <View className="flex-1">
-                    <FormField label="Estimasi Harga Jual (Rp)">
-                      <Input
-                        value={formatThousands(newCustomSellPrice)}
-                        onChangeText={(v) => setNewCustomSellPrice(v.replace(/\D/g, ""))}
-                        keyboardType="numeric"
-                        placeholder="Opsional (Jual)"
-                      />
-                    </FormField>
-                  </View>
-                </View>
-
-                {/* Opsi Tipe Barang & Tombol Tambah */}
-                <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/50">
-                  <View className="flex-row flex-wrap items-center gap-2">
+                  <View className="flex-row justify-end gap-2">
                     <Button
                       size="sm"
-                      variant={newCustomBerSN ? "default" : "outline"}
-                      onPress={() => setNewCustomBerSN((v) => !v)}
-                      className="h-9 px-3"
+                      variant="outline"
+                      onPress={() => {
+                        resetNewItem();
+                        setNewOpen(false);
+                      }}
                     >
-                      <Text className="text-xs">{newCustomBerSN ? "✓ " : ""}Lacak Nomor Seri (SN)</Text>
+                      <Text className="text-xs">Batal</Text>
                     </Button>
-                    {costType === "Project" ? (
-                      <Button
-                        size="sm"
-                        variant={newCustomConsumable ? "default" : "outline"}
-                        onPress={() => setNewCustomConsumable((v) => !v)}
-                        className="h-9 px-3"
-                      >
-                        <Text className="text-xs">{newCustomConsumable ? "✓ " : ""}Pakai habis (Barang Tambahan Proyek)</Text>
-                      </Button>
-                    ) : null}
+                    <Button size="sm" onPress={handleAddCustomItem}>
+                      <Plus size={14} color="#fff" />
+                      <Text className="text-xs font-semibold text-white">Tambahkan</Text>
+                    </Button>
                   </View>
-                  <Button size="sm" onPress={handleAddCustomItem} className="h-9 px-4 gap-1.5 bg-primary">
-                    <Plus size={15} color="#fff" />
-                    <Text className="text-xs font-semibold text-white">Tambahkan ke Daftar</Text>
-                  </Button>
                 </View>
+              ) : (
+                <Pressable onPress={() => setNewOpen(true)} className="flex-row items-center gap-2 self-start py-1">
+                  <Search size={14} color={colors.primary} />
+                  <Text className="text-xs font-semibold text-primary">Barang tidak ada di katalog? Ketik barang baru</Text>
+                </Pressable>
+              )
+            ) : null}
+
+            {/* Daftar barang */}
+            {selectedItems.length === 0 ? (
+              <View className="items-center rounded-xl border border-dashed border-border p-6">
+                <Text className="text-xs text-muted-foreground text-center">Belum ada barang. Cari di katalog di atas.</Text>
               </View>
-            )}
-
-            {selectedItems.length > 0 ? (
-              <View className="gap-3 pt-1">
-                <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Daftar Barang Dipilih ({selectedItems.length} item)
-                </Text>
-
-                {selectedItems.map((item) => {
-                  const itemKey = item.isCustom ? (item as any).customId : item.nama;
+            ) : (
+              <View className="rounded-xl border border-border">
+                {selectedItems.map((item, idx) => {
+                  const key = item.isCustom ? item.customId! : item.nama;
                   return (
-                    <View
-                      key={itemKey}
-                      className="bg-card border-border/70 rounded-xl border p-3.5 gap-2.5"
-                    >
-                      <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-2 flex-1 pr-2">
-                          <Text className="text-sm font-bold text-foreground" numberOfLines={1}>
+                    <View key={key} className={`p-3 gap-2 ${idx > 0 ? "border-t border-border/60" : ""}`}>
+                      <View className="flex-row items-start justify-between gap-2">
+                        <View className="flex-1 min-w-0">
+                          <Text className="text-sm font-medium text-foreground" numberOfLines={2}>
                             {item.nama}
                           </Text>
-                          <View
-                            className={`rounded px-1.5 py-0.5 border ${
-                              (item as any).isProjectConsumable
-                                ? "bg-amber-500/20 border-amber-500/50"
-                                : item.isCustom
-                                ? "bg-amber-500/15 border-amber-500/40"
-                                : item.berSN
-                                ? "bg-primary/15 border-primary/40"
-                                : "bg-panel border-border/60"
-                            }`}
-                          >
-                            <Text className="text-[10px] font-medium text-foreground">
-                              {item.isCustom
-                                ? (item as any).isProjectConsumable
-                                  ? "Khusus Proyek · Pakai Habis"
-                                  : `Non-Master · ${item.berSN ? "Ber-SN" : "Non-SN"}`
-                                : item.berSN
-                                ? "Master · Ber-SN"
-                                : `Master · Non-SN`}
-                            </Text>
-                          </View>
+                          <Text className="text-[11px] text-muted-foreground">
+                            {item.isCustom
+                              ? item.isProjectConsumable
+                                ? "Barang baru · habis pakai"
+                                : "Barang baru · otomatis masuk katalog"
+                              : `Stok gudang: ${item.stock} ${item.satuan}`}
+                          </Text>
                         </View>
-                        <Pressable
-                          onPress={() => {
-                            if (item.isCustom) {
-                              setCustomItems((prev) => prev.filter((c) => c.id !== (item as any).customId));
-                            } else {
-                              setSelectedNames((prev) => prev.filter((n) => n !== item.nama));
-                            }
-                          }}
-                          hitSlop={8}
-                          className="size-7 items-center justify-center rounded-lg hover:bg-danger/10 active:bg-danger/10"
-                        >
+                        <Pressable onPress={() => removeItem(item)} hitSlop={8} className="size-7 items-center justify-center rounded-lg active:bg-danger/10">
                           <Trash2 size={15} color={colors.danger} />
                         </Pressable>
                       </View>
 
-                      {item.isCustom ? (
-                        <View className="bg-panel/40 border-border/60 rounded-lg border p-2 flex-row flex-wrap justify-between gap-2">
-                          <Text className="text-xs text-muted-foreground">
-                            Merk: <Text className="font-semibold text-foreground">{item.merk || "-"}</Text>
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            Kategori: <Text className="font-semibold text-foreground">{item.kategori || "-"}</Text>
-                          </Text>
-                          {item.sku ? (
-                            <Text className="text-xs text-muted-foreground">
-                              SKU: <Text className="font-semibold font-mono text-foreground">{item.sku}</Text>
-                            </Text>
-                          ) : null}
-                        </View>
-                      ) : (
-                        <View className="bg-panel/40 border-border/60 rounded-lg border p-2 flex-row flex-wrap justify-between gap-1">
-                          <Text className="text-xs text-muted-foreground">
-                            Stok gudang: <Text className="font-semibold text-foreground">{item.stock} {item.satuan}</Text>
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            Harga acuan: <Text className="font-semibold text-foreground">{rupiah(item.hargaBeli)} / {item.satuan}</Text>
-                          </Text>
-                        </View>
-                      )}
-
-                      <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1">
-                        <View className="flex-row items-center gap-2">
-                          <Text className="text-xs text-muted-foreground">Qty:</Text>
+                      <View className="flex-row flex-wrap items-center gap-2">
+                        <View className="flex-row items-center gap-1.5">
                           <Input
-                            value={
-                              item.isCustom
-                                ? String(item.qty)
-                                : (itemQuantities[item.nama] ?? "1")
-                            }
-                            onChangeText={(v) => {
-                              const clean = v.replace(/\D/g, "") || "1";
-                              if (item.isCustom) {
-                                setCustomItems((prev) =>
-                                  prev.map((c) => (c.id === (item as any).customId ? { ...c, qty: clean } : c)),
-                                );
-                              } else {
-                                setItemQuantities((prev) => ({ ...prev, [item.nama]: clean }));
-                              }
-                            }}
+                            value={item.isCustom ? String(item.qty) : (itemQuantities[item.nama] ?? "1")}
+                            onChangeText={(v) => setQty(item, v)}
                             keyboardType="numeric"
-                            className="w-20 h-9 text-center text-sm font-semibold"
+                            className="w-16 h-9 text-center text-sm"
+                            editable={!(isStockTakeMode && item.berSN && item.chosenSns.length > 0)}
                           />
                           <Text className="text-xs text-muted-foreground">{item.satuan}</Text>
                         </View>
-
-                        <View className="flex-row items-center gap-2">
-                          <Text className="text-xs text-muted-foreground">Harga Satuan:</Text>
-                          <Input
-                            value={formatThousands(item.hargaBeli)}
-                            onChangeText={(v) => {
-                              const clean = v.replace(/\D/g, "") || "0";
-                              if (item.isCustom) {
-                                setCustomItems((prev) =>
-                                  prev.map((c) => (c.id === (item as any).customId ? { ...c, hargaBeli: clean } : c)),
-                                );
-                              } else {
-                                setItemPrices((prev) => ({ ...prev, [item.nama]: clean }));
-                              }
-                            }}
-                            keyboardType="numeric"
-                            className="w-32 h-9 text-right text-sm font-semibold"
-                          />
-                        </View>
-
-                        <View className="items-end">
-                          <Text className="text-[11px] text-muted-foreground">Subtotal</Text>
-                          <Text className="text-sm font-bold text-primary">
-                            {rupiah(item.subtotal)}
-                          </Text>
-                        </View>
+                        {!isStockTakeMode ? (
+                          <>
+                            <Text className="text-xs text-muted-foreground">×</Text>
+                            <Input
+                              value={formatThousands(item.hargaBeli)}
+                              onChangeText={(v) => setPrice(item, v)}
+                              keyboardType="numeric"
+                              placeholder="Perkiraan harga"
+                              className="w-32 h-9 text-right text-sm"
+                            />
+                            <Text className="ml-auto text-sm font-semibold text-foreground">{rupiah(item.subtotal)}</Text>
+                          </>
+                        ) : null}
                       </View>
 
-                      {item.berSN && (
-                        <View className="pt-2 border-t border-border/50">
-                          {procurementSource === "GUDANG" ? (
-                            <FormField
-                              label={`Pilih Unit SN dari Stok Gudang (${item.availSns.length} unit tersedia)`}
-                            >
-                              <MultiSelect
-                                values={item.chosenSns}
-                                options={item.availSns}
-                                onChange={(sns) => {
-                                  setItemSerials((prev) => ({ ...prev, [item.nama]: sns }));
-                                  if (sns.length > 0) {
-                                    setItemQuantities((prev) => ({ ...prev, [item.nama]: String(sns.length) }));
-                                  }
-                                }}
-                                placeholder="Pilih unit SN dari gudang..."
-                              />
-                            </FormField>
-                          ) : (
-                            <View className="bg-primary/5 border border-primary/20 rounded-lg p-2.5">
-                              <Text className="text-xs text-muted-foreground leading-relaxed">
-                                ℹ️ <Text className="font-semibold text-foreground">Barang Ber-SN (Pengadaan Baru):</Text> Unit Serial Number tidak perlu dipilih sekarang karena barang belum ada di gudang. Unit SN akan diinput/discan oleh Gudang saat penerimaan barang fisik.
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      )}
+                      {/* Ambil dari stok: pilih unit SN */}
+                      {isStockTakeMode && item.berSN ? (
+                        <MultiSelect
+                          values={item.chosenSns}
+                          options={item.availSns}
+                          onChange={(sns) => {
+                            setItemSerials((prev) => ({ ...prev, [item.nama]: sns }));
+                            if (sns.length > 0) setItemQuantities((prev) => ({ ...prev, [item.nama]: String(sns.length) }));
+                          }}
+                          placeholder={`Pilih nomor seri (${item.availSns.length} tersedia) — opsional`}
+                        />
+                      ) : null}
                     </View>
                   );
                 })}
-
-                {/* Pilihan Skema PPN */}
-                <View className="bg-panel/40 border-border/70 rounded-xl border p-3.5 gap-2 mt-2">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-xs font-semibold text-foreground">Skema Pajak (PPN)</Text>
-                    <Text className="text-[11px] text-muted-foreground">
-                      {ppnMode === "none"
-                        ? "Tanpa PPN (Non-PKP / Final)"
-                        : ppnMode === "exclude"
-                        ? "+11% PPN ditambahkan"
-                        : "Harga sudah termasuk PPN 11%"}
-                    </Text>
-                  </View>
-                  <View className="flex-row flex-wrap gap-2">
-                    {[
-                      { id: "none", label: "No PPN" },
-                      { id: "exclude", label: "PPN (11%)" },
-                      { id: "include", label: "PPN Included" },
-                    ].map((opt) => (
-                      <Button
-                        key={opt.id}
-                        size="sm"
-                        variant={ppnMode === opt.id ? "default" : "outline"}
-                        onPress={() => setPpnMode(opt.id as any)}
-                        className="h-8 px-3"
-                      >
-                        <Text className="text-xs">{opt.label}</Text>
-                      </Button>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Total Kalkulasi Card */}
-                <View className="bg-primary/10 border-primary/30 rounded-xl border p-3.5 gap-2 mt-1">
-                  <View className="flex-row justify-between items-center">
-                    <View>
-                      <Text className="text-xs font-semibold text-primary">Total Estimasi Pengadaan</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {selectedItems.length} macam barang
-                        {ppnMode === "exclude" ? " · Termasuk PPN 11%" : ppnMode === "include" ? " · PPN Included" : " · Non-PPN"}
-                      </Text>
-                    </View>
-                    <Text className="text-lg font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
-                  </View>
-
-                  {ppnMode !== "none" ? (
-                    <View className="border-t border-primary/20 pt-2 flex-row justify-between text-xs">
-                      <Text className="text-xs text-muted-foreground">
-                        DPP: <Text className="font-semibold text-foreground">{rupiah(dppCost)}</Text>
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        PPN Masukan (11%): <Text className="font-semibold text-primary">{rupiah(ppnCost)}</Text>
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              </View>
-            ) : (
-              <View className="bg-panel/40 border-border/60 rounded-xl border p-4 items-center">
-                <Text className="text-xs text-muted-foreground">
-                  Belum ada barang dipilih. Pilih dari Master Barang di atas atau tambahkan Barang Non-Master (Ritel).
-                </Text>
               </View>
             )}
 
-            <FormField label="Tujuan / Catatan Kebutuhan">
-              <Input
-                value={tujuan}
-                onChangeText={setTujuan}
-                placeholder="Contoh: Pengadaan Smartbox & CCTV Kantor RW / Stok Retail"
-              />
-            </FormField>
+            {/* PPN & total (bukan untuk ambil stok) */}
+            {selectedItems.length > 0 && !isStockTakeMode ? (
+              <View className="gap-3">
+                <View className="gap-1.5">
+                  <Text className="text-xs font-semibold text-foreground">Harga di atas sudah termasuk PPN?</Text>
+                  <View className="flex-row flex-wrap gap-1.5">
+                    {(
+                      [
+                        { id: "none", label: "Tidak ada PPN" },
+                        { id: "exclude", label: "Belum (+11%)" },
+                        { id: "include", label: "Sudah termasuk" },
+                      ] as const
+                    ).map((opt) => (
+                      <Pressable
+                        key={opt.id}
+                        onPress={() => setPpnMode(opt.id)}
+                        className={`rounded-full border px-3 py-1.5 ${ppnMode === opt.id ? "bg-primary border-primary" : "bg-card border-border"}`}
+                      >
+                        <Text className={`text-xs ${ppnMode === opt.id ? "text-white font-semibold" : "text-foreground"}`}>{opt.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+                <View className="flex-row items-center justify-between rounded-xl bg-primary/10 px-4 py-3">
+                  <View>
+                    <Text className="text-xs text-muted-foreground">Perkiraan total</Text>
+                    {effectivePpn !== "none" ? (
+                      <Text className="text-[11px] text-muted-foreground">
+                        {effectivePpn === "include" ? "Sudah termasuk" : "Termasuk"} PPN {rupiah(ppnCost)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text className="text-lg font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
+                </View>
+              </View>
+            ) : null}
 
-            <View className="mt-4 flex-row justify-between">
-              <Button variant="outline" onPress={() => setStep(0)}>
-                <ArrowLeft size={16} color={colors.text} />
-                <Text>Kembali</Text>
-              </Button>
-              <Button
-                onPress={() => {
-                  if (selectedItems.length === 0) {
-                    toast("Pilih atau tambahkan minimal satu barang terlebih dahulu", "danger");
-                    return;
-                  }
-                  setStep(2);
-                }}
-              >
-                <Text>Lanjut: Ringkasan</Text>
-                <ArrowRight size={16} color={colors.background} />
-              </Button>
-            </View>
+            <Footer
+              onBack={() => setStep(0)}
+              next={
+                <Button
+                  onPress={() => {
+                    if (selectedItems.length === 0) return toast("Tambahkan minimal satu barang", "danger");
+                    setStep(2);
+                  }}
+                >
+                  <Text>Lanjut</Text>
+                  <ArrowRight size={16} color={colors.background} />
+                </Button>
+              }
+            />
           </View>
         </Panel>
       )}
 
+      {/* ───────── Langkah 3: Cek & kirim ───────── */}
       {step === 2 && (
-        <Panel title="Cek lalu ajukan">
+        <Panel>
           <View className="gap-4">
-            <View className="bg-panel/40 border-border rounded-xl border p-4 gap-2.5">
-              <View className="flex-row justify-between gap-3">
-                <Text className="text-muted-foreground text-sm">Jenis</Text>
-                <Text className="text-sm font-semibold flex-1 text-right">{activeMode.label}</Text>
-              </View>
-              {costType === "Project" ? (
-                <View className="flex-row justify-between gap-3">
-                  <Text className="text-muted-foreground text-sm">Proyek</Text>
-                  <Text className="text-sm font-semibold flex-1 text-right">{projectId}</Text>
+            <View className="rounded-xl border border-border p-3 gap-2">
+              {[
+                ["Untuk", isProject ? `Proyek ${projectId}` : PURPOSE_LABEL[purpose]],
+                ["Dari", SOURCES[procurementSource].label],
+                ...(procurementSource === "SUPPLIER" && supplierName ? [["Supplier", supplierName]] : []),
+                ...(effectivePayment
+                  ? [["Pembayaran", effectivePayment === "KAS" ? "Dibayar Finance dulu" : `Tempo, jatuh tempo ${dueDate}`]]
+                  : []),
+              ].map(([k, v]) => (
+                <View key={k} className="flex-row justify-between gap-3">
+                  <Text className="text-xs text-muted-foreground">{k}</Text>
+                  <Text className="text-xs font-semibold text-foreground flex-1 text-right">{v}</Text>
                 </View>
-              ) : null}
-              {effectivePayment ? (
-                <View className="flex-row justify-between gap-3">
-                  <Text className="text-muted-foreground text-sm">Pembayaran</Text>
-                  <Text className="text-sm font-semibold">
-                    {effectivePayment === "KAS" ? "Dibayar Finance dulu" : `Tempo, jatuh tempo ${dueDate}`}
-                  </Text>
-                </View>
-              ) : null}
-
-              <View className="border-t border-border/60 my-1 pt-2 gap-1.5">
-                <Text className="text-xs font-semibold text-muted-foreground uppercase">
-                  Barang ({selectedItems.length})
-                </Text>
+              ))}
+              <View className="border-t border-border/60 pt-2 gap-1">
                 {selectedItems.map((item, idx) => (
-                  <View key={`${item.nama}-${idx}`} className="flex-row justify-between text-sm py-0.5">
-                    <Text className="text-sm text-foreground flex-1 pr-2" numberOfLines={1}>
-                      {item.nama}{" "}
-                      <Text className="text-muted-foreground">
-                        ({item.qty} {item.satuan} · {item.isCustom ? "Non-Master" : "Master"})
-                      </Text>
+                  <View key={`${item.nama}-${idx}`} className="flex-row justify-between gap-2">
+                    <Text className="text-sm text-foreground flex-1" numberOfLines={1}>
+                      {item.nama} <Text className="text-xs text-muted-foreground">× {item.qty} {item.satuan}</Text>
                     </Text>
-                    <Text className="text-sm font-medium">{rupiah(item.subtotal)}</Text>
+                    {!isStockTakeMode ? <Text className="text-sm text-foreground">{rupiah(item.subtotal)}</Text> : null}
                   </View>
                 ))}
               </View>
-
-              <View className="border-t border-border/60 pt-2 flex-row justify-between items-center">
-                <Text className="text-sm font-bold text-foreground">Total Perkiraan Biaya:</Text>
-                <Text className="text-base font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
-              </View>
-              {ppnMode !== "none" ? (
-                <View className="flex-row justify-between text-xs pt-0.5">
-                  <Text className="text-xs text-muted-foreground">DPP: {rupiah(dppCost)}</Text>
-                  <Text className="text-xs text-muted-foreground">PPN (11%): {rupiah(ppnCost)}</Text>
+              {!isStockTakeMode ? (
+                <View className="border-t border-border/60 pt-2 flex-row justify-between">
+                  <Text className="text-sm font-semibold text-foreground">Perkiraan total</Text>
+                  <Text className="text-sm font-bold text-primary">{rupiah(totalEstimatedCost)}</Text>
                 </View>
               ) : null}
             </View>
 
+            <FormField label="Catatan (opsional)" hint="Contoh: untuk pemasangan CCTV lantai 2, dibutuhkan Senin">
+              <Textarea value={tujuan} onChangeText={setTujuan} placeholder="Jelaskan singkat kebutuhannya..." />
+            </FormField>
+
             <FileUploader
-              label="Lampirkan Bukti Permintaan / Nota Ritel (Foto, PDF, BOQ, atau Struk)"
+              label="Lampiran (opsional)"
               kind="semua"
               accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
               allowedExtensions={["jpg", "jpeg", "png", "webp", "pdf"]}
               category="request-barang"
-              hint="Format gambar (JPG, PNG) atau dokumen (PDF, BOQ)"
-              handleRef={(h) => { fileHandle.current = h; }}
+              hint="Foto / PDF: chat WA, BOQ, atau penawaran toko"
+              handleRef={(h) => {
+                fileHandle.current = h;
+              }}
             />
 
-            <View className="mt-4 flex-row justify-between">
-              <Button variant="outline" onPress={() => setStep(1)}>
-                <ArrowLeft size={16} color={colors.text} />
-                <Text>Kembali</Text>
-              </Button>
-              <Button onPress={submit} disabled={busy}>
-                <Check size={16} color={colors.background} />
-                <Text>{busy ? "Mengajukan..." : "Ajukan Permintaan Barang"}</Text>
-              </Button>
+            <View className="rounded-xl border border-border bg-muted/30 p-3 gap-2">
+              <Text className="text-xs font-semibold text-foreground">Setelah dikirim</Text>
+              <FlowTracker flow={previewFlow} compact />
             </View>
+
+            <Footer
+              onBack={() => setStep(1)}
+              next={
+                <Button onPress={submit} disabled={busy}>
+                  <Check size={16} color={colors.background} />
+                  <Text>{busy ? "Mengirim..." : "Kirim Permintaan"}</Text>
+                </Button>
+              }
+            />
           </View>
         </Panel>
       )}

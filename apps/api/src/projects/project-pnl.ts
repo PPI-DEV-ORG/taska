@@ -3,7 +3,7 @@ import { netUnitCost } from "../accounting/purchase-vat.js";
 
 type Db = Pick<
   PrismaClient,
-  "project" | "invoiceOut" | "stockMovement" | "supplierPO" | "purchaseRequest" | "expense" | "clientPO" | "deliveryNote" | "cashAdvance"
+  "project" | "invoiceOut" | "stockMovement" | "supplierPO" | "purchaseRequest" | "expense" | "clientPO" | "deliveryNote" | "cashAdvance" | "survey"
 >;
 
 /** Kategori pergerakan stok yang berarti barang dipakai / dikirim ke project (HPP). */
@@ -27,12 +27,17 @@ export type ProjectPnl = {
   }>;
   directPurchases: number;
   directPurchaseLines: Array<{ ref: string; name: string; qty: number; unitCost: number; total: number }>;
+  /** Biaya langsung project (operasional lapangan, petty cash, survey prospeknya) — bagian dari HPP. */
   expenses: number;
-  /** Uang jalan / kas proyek yang sudah dicairkan dan belum diselesaikan (masih dipegang tim). */
+  /** Porsi biaya survey (survey prospek sebelum menjadi project) di dalam `expenses`. */
+  surveyCost: number;
+  /** Total HPP project = barang + pembelian jasa/non-stok + biaya langsung. */
+  hppTotal: number;
+  /** Petty cash / kas proyek yang sudah dicairkan dan belum diselesaikan (masih dipegang tim). */
   cashAdvanceOutstanding: number;
-  /** Biaya dari uang jalan yang sudah dilaporkan tapi BELUM diverifikasi Finance (belum masuk laba resmi). */
+  /** Biaya dari petty cash yang sudah dilaporkan tapi BELUM diverifikasi Finance (belum masuk laba resmi). */
   cashAdvancePending: number;
-  /** Laba bila biaya uang jalan yang menunggu verifikasi ikut dihitung. */
+  /** Laba bila biaya petty cash yang menunggu verifikasi ikut dihitung. */
   netProfitWithPending: number;
   grossProfit: number;
   netProfit: number;
@@ -48,7 +53,9 @@ const round = (n: number) => Math.round(n);
  *   HPP barang  = semua barang yang keluar ke project — DARI STOK GUDANG maupun pembelian langsung —
  *                 dikurangi retur, dinilai dengan harga pokok (mutasi → rata-rata → harga beli).
  *   Pembelian non-stok = jasa / material non-master yang dibeli khusus project (tidak lewat stok).
- *   Biaya operasional = pengeluaran disetujui / dibayar (termasuk biaya dari uang jalan).
+ *   Biaya langsung = pengeluaran project disetujui / dibayar (termasuk petty cash & survey prospeknya).
+ *   HPP project = HPP barang + pembelian non-stok + biaya langsung  →  Laba project = Pendapatan − HPP project.
+ *   (Overhead kantor tidak dibebankan ke project.)
  * PPN tidak dihitung (PPN keluaran/masukan bukan pendapatan/biaya).
  */
 export async function computeProjectPnl(db: Db, projectId: number): Promise<ProjectPnl> {
@@ -57,10 +64,14 @@ export async function computeProjectPnl(db: Db, projectId: number): Promise<Proj
     select: {
       id: true,
       quotationId: true,
-      quotation: { select: { total: true, discount: true, ppn: true, grandTotal: true } },
+      quotation: { select: { total: true, discount: true, ppn: true, grandTotal: true, leadId: true } },
     },
   });
   if (!project) throw new Error("Project tidak ditemukan");
+  // Survey prospek project ini (biayanya biaya project walau terjadi sebelum project dibuat)
+  const surveyIds = project.quotation?.leadId
+    ? (await db.survey.findMany({ where: { leadId: project.quotation.leadId }, select: { id: true } })).map((sv) => sv.id)
+    : [];
 
   const [invoices, sos] = await Promise.all([
     db.invoiceOut.findMany({
@@ -122,11 +133,17 @@ export async function computeProjectPnl(db: Db, projectId: number): Promise<Proj
       select: { id: true, number: true, ppnMode: true, items: { select: { productId: true, customName: true, qty: true, unitCost: true } } },
     }),
     db.expense.findMany({
-      where: { projectId, status: { in: ["DISETUJUI", "DIBAYAR"] } },
-      select: { amount: true },
+      where: {
+        status: { in: ["DISETUJUI", "DIBAYAR"] },
+        OR: [{ projectId }, ...(surveyIds.length ? [{ projectId: null, surveyId: { in: surveyIds } }] : [])],
+      },
+      select: { amount: true, surveyId: true },
     }),
     db.cashAdvance.findMany({
-      where: { projectId, status: { in: ["DICAIRKAN", "DILAPORKAN"] } },
+      where: {
+        status: { in: ["DICAIRKAN", "DILAPORKAN"] },
+        OR: [{ projectId }, ...(surveyIds.length ? [{ surveyId: { in: surveyIds } }] : [])],
+      },
       select: { disbursedAmount: true, items: { select: { amount: true } } },
     }),
   ]);
@@ -227,8 +244,11 @@ export async function computeProjectPnl(db: Db, projectId: number): Promise<Proj
   const directPurchases = directPurchaseLines.reduce((s, l) => s + l.total, 0);
 
   const expenseTotal = round(expenses.reduce((s, e) => s + Number(e.amount || 0), 0));
-  const grossProfit = round(revenue - hppGoods - directPurchases);
-  const netProfit = round(grossProfit - expenseTotal);
+  const surveyCost = round(expenses.filter((e) => e.surveyId && surveyIds.includes(e.surveyId)).reduce((s, e) => s + Number(e.amount || 0), 0));
+  // Semua biaya project masuk HPP: laba project = pendapatan − (barang + non-stok + biaya langsung)
+  const hppTotal = round(hppGoods + directPurchases + expenseTotal);
+  const grossProfit = round(revenue - hppTotal);
+  const netProfit = grossProfit;
   const marginPct = revenue > 0 ? Math.round((netProfit / revenue) * 1000) / 10 : 0;
   const cashAdvanceOutstanding = round(advances.reduce((s, a) => s + Number(a.disbursedAmount || 0), 0));
   const cashAdvancePending = round(advances.reduce((s, a) => s + a.items.reduce((t, it) => t + Number(it.amount || 0), 0), 0));
@@ -241,6 +261,8 @@ export async function computeProjectPnl(db: Db, projectId: number): Promise<Proj
     directPurchases,
     directPurchaseLines,
     expenses: expenseTotal,
+    surveyCost,
+    hppTotal,
     cashAdvanceOutstanding,
     cashAdvancePending,
     netProfitWithPending: round(netProfit - cashAdvancePending),

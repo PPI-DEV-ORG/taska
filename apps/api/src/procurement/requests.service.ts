@@ -384,7 +384,7 @@ export class RequestsService {
       action: "BUAT_REQUEST_BARANG",
       entityType: "purchase-request",
       entityId: row.id,
-      detail: `${number} — ${purpose} Rp${estimated}`,
+      detail: `${number} — ${purpose} (estimasi Rp${estimated})`,
     });
     await this.notifications.notify({
       roles: ["PROCUREMENT", "GUDANG"],

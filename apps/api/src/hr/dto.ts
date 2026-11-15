@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateIf } from "class-validator";
+import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateIf, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 export class CheckInDto {
@@ -59,6 +59,71 @@ export class UpdateSalaryConfigDto {
   @ValidateIf((_, val) => val !== null && val !== undefined)
   @IsNumber()
   pph21Rate?: number | null;
+
+  @IsOptional() @IsNumber() @Min(0)
+  mealAllowance?: number;
+
+  @IsOptional() @IsBoolean()
+  bpjsKes?: boolean;
+
+  @IsOptional() @IsBoolean()
+  bpjsTk?: boolean;
+
+  @IsOptional() @IsBoolean()
+  bpjsJp?: boolean;
+}
+
+/** Data karyawan (profil kepegawaian) + jabatan + pengaturan gaji dalam satu simpan. */
+export class UpdateEmployeeDto {
+  @IsOptional() @IsString() position?: string;
+  @IsOptional() @IsString() department?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() employeeNo?: string;
+  @IsOptional() @IsString() nik?: string;
+  @IsOptional() @IsString() npwp?: string;
+  @IsOptional() @IsString() birthPlace?: string;
+  @IsOptional() @IsString() birthDate?: string;
+  @IsOptional() @IsString() gender?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() joinDate?: string;
+  @IsOptional() @IsString() employmentType?: string;
+  @IsOptional() @IsString() contractEndDate?: string;
+  @IsOptional() @IsString() bankName?: string;
+  @IsOptional() @IsString() bankAccountNo?: string;
+  @IsOptional() @IsString() bankAccountName?: string;
+  @IsOptional() @IsString() bpjsKesNo?: string;
+  @IsOptional() @IsString() bpjsTkNo?: string;
+  @IsOptional() @IsString() emergencyName?: string;
+  @IsOptional() @IsString() emergencyPhone?: string;
+  @IsOptional() @ValidateNested() @Type(() => UpdateSalaryConfigDto) salary?: UpdateSalaryConfigDto;
+}
+
+/** Penyesuaian slip DRAFT: bonus / potongan / catatan. */
+export class AdjustSlipDto {
+  @IsOptional() @IsNumber() @Min(0) otherIncome?: number;
+  @IsOptional() @IsNumber() @Min(0) otherDeduction?: number;
+  @IsOptional() @IsString() note?: string;
+}
+
+export class PayPeriodDto {
+  @IsString() period!: string;
+  @IsOptional() @IsString() paidAccountCode?: string;
+}
+
+export class PayrollSettingsDto {
+  @IsOptional() @IsNumber() @Min(1) workDays?: number;
+  @IsOptional() @IsNumber() @Min(1) overtimeDivisor?: number;
+  @IsOptional() @IsNumber() @Min(0) kesWageCap?: number;
+  @IsOptional() @IsNumber() @Min(0) jpWageCap?: number;
+  @IsOptional() @IsNumber() @Min(0) kesEmployeePct?: number;
+  @IsOptional() @IsNumber() @Min(0) kesCompanyPct?: number;
+  @IsOptional() @IsNumber() @Min(0) jhtEmployeePct?: number;
+  @IsOptional() @IsNumber() @Min(0) jhtCompanyPct?: number;
+  @IsOptional() @IsNumber() @Min(0) jpEmployeePct?: number;
+  @IsOptional() @IsNumber() @Min(0) jpCompanyPct?: number;
+  @IsOptional() @IsNumber() @Min(0) jkkPct?: number;
+  @IsOptional() @IsNumber() @Min(0) jkmPct?: number;
+  @IsOptional() @IsNumber() @Min(0) noNpwpSurchargePct?: number;
 }
 
 export class SaveSalaryConfigDto extends UpdateSalaryConfigDto {

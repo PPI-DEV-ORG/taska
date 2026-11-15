@@ -101,6 +101,10 @@ export type CompanyProfile = {
   signatoryTitle: string;
   logoFileId: string;
   stampFileId: string;
+  /** Gambar kop surat penuh (opsional) untuk dokumen cetak. */
+  letterheadFileId: string;
+  /** Syarat & ketentuan bawaan di setiap PO ke supplier. */
+  poTerms: string;
 };
 
 export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
@@ -119,6 +123,8 @@ export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
   signatoryTitle: "Direktur",
   logoFileId: "",
   stampFileId: "",
+  letterheadFileId: "",
+  poTerms: "",
 };
 
 export const ROLE_LABEL: Record<string, string> = {
@@ -665,7 +671,7 @@ export const MODULES: Record<string, ModuleDef> = {
     createFields: [
       { key: "nominal", label: "Nominal pengeluaran (Rp)", type: "number", required: true },
       { key: "kategori", label: "Kategori pengeluaran", type: "select", required: true, options: [] },
-      { key: "sumberDana", label: "Sumber pendanaan", type: "select", options: ["Dana Perusahaan", "Talangan Pribadi (Reimbursement)"] },
+      { key: "sumberDana", label: "Sumber pendanaan", type: "select", options: ["Dana Perusahaan", "Talangan Pribadi (Reimbursement)", "Saldo Petty Cash"] },
       { key: "project", label: "Proyek terkait (opsional)", type: "select", options: ["-"] },
       { key: "survey", label: "Survey terkait (opsional)", type: "select", options: ["-"] },
       { key: "pocReport", label: "Kegiatan POC / Demo terkait (opsional)", type: "select", options: ["-"] },
@@ -1008,7 +1014,7 @@ const N = {
   opname: { key: "opname", label: "Stok Opname", href: "/opname", icon: ClipboardCheck },
   delivery: { key: "delivery-notes", label: "Surat Jalan", short: "Surat Jalan", href: "/delivery-notes", icon: FileSignature },
   expenses: { key: "expenses", label: "Pengeluaran", short: "Biaya", href: "/expenses", icon: Wallet },
-  cashAdvances: { key: "cash-advances", label: "Uang Jalan", short: "Uang Jalan", href: "/cash-advances", icon: HandCoins },
+  cashAdvances: { key: "cash-advances", label: "Petty Cash", short: "Petty Cash", href: "/cash-advances", icon: HandCoins },
   accounting: { key: "accounting", label: "Buku Besar & COA", short: "Akuntansi", href: "/accounting", icon: BookOpen },
   damage: { key: "damage-reports", label: "Kerusakan & Retur", short: "Retur", href: "/damage-reports", icon: TriangleAlert },
   reports: { key: "reports", label: "Laporan", href: "/reports", icon: BarChart3 },
@@ -1026,19 +1032,19 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     N.stock, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
-  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
+  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
   bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
   sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.customers, N.expenses, N.cashAdvances, N.hr, N.master],
   pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
   teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
   procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.opname, N.damage, N.expenses, N.cashAdvances, N.visitReports, N.hr, N.master],
   finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.poClient, N.surveys, N.pocReports, N.visitReports, N.invoices, N.quotations, N.delivery, N.accounting, N.hr, N.stock, N.expenses, N.cashAdvances, N.opname, N.reports],
-  gudang: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.stock, N.receiving, N.delivery, N.cashAdvances, N.opname, N.damage, N.hr, N.master],
+  gudang: [N.dashboard, N.calendar, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.expenses, N.cashAdvances, N.hr, N.master],
   se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  hr: [N.dashboard, N.calendar, N.hr, N.users, N.expenses, N.cashAdvances, N.visitReports, N.pocReports, N.requests, N.reports],
+  hr: [N.dashboard, N.calendar, N.hr, N.users, N.expenses, N.cashAdvances, N.visitReports, N.pocReports, N.requests],
 };
 
-export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "gudang", "procurement"];
+export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "procurement"];
 
 const ALL_NAV_ORDERED: NavItem[] = [
   N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.customers,
@@ -1182,7 +1188,7 @@ export function hasUserPermission(
 ): boolean {
   if (!user?.role) return false;
   const roleLower = String(user.role).toLowerCase();
-  if (roleLower === "super_admin" || roleLower === "admin" || roleLower === "bos") return true;
+  if (roleLower === "super_admin") return true;
 
   const dyn = findRoleDefForUser(user);
   if (dyn && dyn.permissions) {
@@ -1250,14 +1256,14 @@ export function canUserApprove(user: User | null | undefined): boolean {
 export function getNavForUser(user: User | null | undefined): NavItem[] {
   if (!user?.role) return NAV_BY_ROLE.sales;
   const roleLower = String(user.role).toLowerCase();
-  if (roleLower === "super_admin" || roleLower === "admin" || roleLower === "bos") {
+  if (roleLower === "super_admin") {
     return NAV_BY_ROLE[roleLower] ?? ALL_NAV_ORDERED;
   }
 
   const dyn = findRoleDefForUser(user);
   if (dyn && dyn.permissions && Object.keys(dyn.permissions).length > 0) {
     const filtered = ALL_NAV_ORDERED.filter((item) => {
-      // Uang jalan memakai izin modul Pengeluaran (sama dengan server)
+      // Petty cash memakai izin modul Pengeluaran (sama dengan server)
       return hasUserPermission(user, item.key === "cash-advances" ? "expenses" : item.key, "M");
     });
     // Jika role punya modul navigasi selain hanya dashboard/calendar, gunakan hasil matriks

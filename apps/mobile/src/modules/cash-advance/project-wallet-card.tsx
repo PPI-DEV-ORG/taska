@@ -26,7 +26,7 @@ const isOpen = (r: CashAdvance) => r.status === "DICAIRKAN" || r.status === "DIL
 const isWaiting = (r: CashAdvance) => r.status === "DIAJUKAN" || r.status === "DISETUJUI";
 
 /**
- * Kantong kas proyek di halaman detail project: lihat saldo, catat pengeluaran langsung dari kantong,
+ * Petty cash proyek di halaman detail project: lihat saldo, catat pengeluaran langsung dari petty cash,
  * ajukan kas / top-up, dan kirim laporan ke Finance — tanpa pindah halaman.
  */
 export function ProjectWalletCard({ projectId, projectName }: { projectId: number; projectName: string }) {
@@ -86,7 +86,7 @@ export function ProjectWalletCard({ projectId, projectName }: { projectId: numbe
         <View className="gap-0.5 min-w-[180px]">
           <View className="flex-row items-center gap-1.5">
             <Wallet size={16} color={colors.primary} />
-            <Text className="text-sm font-bold text-foreground">Kantong kas proyek saya</Text>
+            <Text className="text-sm font-bold text-foreground">Petty cash proyek saya</Text>
           </View>
           <Text className={`text-2xl font-bold ${remaining < 0 ? "text-danger" : "text-primary"}`}>{rupiah(Math.max(0, remaining))}</Text>
           <Text className="text-[11px] text-muted-foreground">
@@ -195,7 +195,7 @@ export function ProjectWalletCard({ projectId, projectName }: { projectId: numbe
   );
 }
 
-/** Catat satu pengeluaran (nota) langsung dari kantong kas proyek. */
+/** Catat satu pengeluaran (nota) langsung dari petty cash proyek. */
 function QuickExpenseDialog({
   open,
   onOpenChange,

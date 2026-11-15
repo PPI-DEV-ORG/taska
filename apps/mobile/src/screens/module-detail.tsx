@@ -119,6 +119,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   }, [remoteRow, rowFromStore, moduleKey]);
   const lostReasons: string[] = (data.lostReasons ?? []).map((r: any) => String(r.nama)).filter(Boolean);
   const [menu, setMenu] = React.useState(false);
+  const [infoFormOpen, setInfoFormOpen] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [approveExpenseOpen, setApproveExpenseOpen] = React.useState(false);
@@ -158,6 +159,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (!def || moduleKey === "poc-reports") return [];
     return def.fields.filter((f) => {
       if (editableKeySet.has(f.key) || f.key === def.statusKey) return false;
+      if (moduleKey === "purchase-requests" && (f.key === "item" || f.key === "estimasi")) return false;
       if (moduleKey === "suppliers" && (f.key === "tagSummary" || f.key === "tagInput" || f.key === "tags")) return false;
       return true;
     });
@@ -806,11 +808,8 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         if (st && st !== "DIAJUKAN") return false;
       }
     }
-    if (moduleKey === "surveys" && a.label === "Laporkan biaya survey") {
-      const st = String(row.status ?? "");
-      const biaya = Number(row.biaya || 0);
-      if (st === "Selesai" || st === "Dibatalkan" || biaya > 0) return false;
-    }
+    // Biaya survey sekarang lewat Petty Cash / "Pakai uang sendiri" di panel survey
+    if (moduleKey === "surveys" && a.label === "Laporkan biaya survey") return false;
     if (moduleKey === "delivery-notes") {
       const st = String(row.status ?? "");
       if (st === "Dibatalkan") return false;
@@ -962,10 +961,12 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
             <View className="flex-row items-center justify-between flex-wrap gap-3">
               <View className="gap-1 flex-1 min-w-[200px]">
                 <Text className="text-sm font-semibold text-foreground">
-                  Persetujuan & Reimbursement Finance
+                  {row?.fundingSource === "PETTY_CASH" ? "Verifikasi Pemakaian Petty Cash" : "Persetujuan & Reimbursement Finance"}
                 </Text>
                 <Text className="text-xs text-muted-foreground">
-                  {status === "Disetujui"
+                  {row?.fundingSource === "PETTY_CASH"
+                    ? "Dibayar dari saldo petty cash karyawan. Cek nota, lalu verifikasi — saldo petty cash karyawan langsung berkurang, tanpa kas keluar lagi."
+                    : status === "Disetujui"
                     ? "Pengeluaran sudah disetujui. Silakan selesaikan pembayaran dan lampirkan bukti transfer reimbursement."
                     : "Periksa bukti nota pengeluaran dan tentukan persetujuan atau pembayaran reimbursement."}
                 </Text>
@@ -974,17 +975,29 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 <Button variant="outline" onPress={() => setRejectExpenseOpen(true)}>
                   <Text className="text-danger font-medium">Tolak</Text>
                 </Button>
-                <Button
-                  onPress={() => {
-                    setExpenseFundSource(
-                      row?.paymentMethod && /bank/i.test(String(row.paymentMethod)) ? "Bank" : "Kas Kecil"
-                    );
-                    setApproveExpenseOpen(true);
-                  }}
-                >
-                  <Check size={15} color={colors.background} className="mr-1.5" />
-                  <Text>Setujui & Bayar</Text>
-                </Button>
+                {row?.fundingSource === "PETTY_CASH" ? (
+                  <Button
+                    onPress={async () => {
+                      await setStatus("expenses", id, "Disetujui");
+                      await handleRefresh();
+                    }}
+                  >
+                    <Check size={15} color={colors.background} className="mr-1.5" />
+                    <Text>Verifikasi</Text>
+                  </Button>
+                ) : (
+                  <Button
+                    onPress={() => {
+                      setExpenseFundSource(
+                        row?.paymentMethod && /bank/i.test(String(row.paymentMethod)) ? "Bank" : "Kas Kecil"
+                      );
+                      setApproveExpenseOpen(true);
+                    }}
+                  >
+                    <Check size={15} color={colors.background} className="mr-1.5" />
+                    <Text>Setujui & Bayar</Text>
+                  </Button>
+                )}
               </View>
             </View>
           </View>
@@ -1012,7 +1025,21 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           />
         ) : null}
 
-        {!canEdit ? (
+        {moduleKey === "purchase-requests" || moduleKey === "surveys" || moduleKey === "delivery-notes" ? (
+          <ModuleExtras
+            moduleKey={moduleKey}
+            row={row}
+            onRefresh={handleRefresh}
+            invoicePayOpen={invoicePayOpen}
+            onInvoicePayOpenChange={setInvoicePayOpen}
+            onEditInfo={() => setInfoFormOpen((v) => !v)}
+            editInfoOpen={infoFormOpen}
+          />
+        ) : null}
+
+        {/* Survey: data umum sudah tampil di ringkasan; form ubah hanya dibuka saat diminta */}
+        {/* Survey & surat jalan: data umum sudah tampil di ringkasan; ubah lewat tombol Ubah */}
+        {((moduleKey === "surveys" && !infoFormOpen) || moduleKey === "delivery-notes") && !isDirty ? null : !canEdit ? (
           <Panel
             title="Informasi"
             subtitle={
@@ -1027,13 +1054,15 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
               fields={
                 moduleKey === "suppliers"
                   ? def.fields.filter((f) => f.key !== "tagSummary" && f.key !== "tagInput" && f.key !== "tags")
+                  : moduleKey === "purchase-requests"
+                  ? def.fields.filter((f) => f.key !== "item" && f.key !== "estimasi")
                   : def.fields
               }
               row={row}
             />
           </Panel>
         ) : editableFields.length > 0 || readOnlyFields.length > 0 ? (
-          <Panel title="Informasi">
+          <Panel title={moduleKey === "surveys" ? "Ubah Data Survey" : "Informasi"}>
             {readOnlyFields.length > 0 ? (
               <View className="mb-4 p-3 bg-panel/40 rounded-xl border border-border/70 flex-row flex-wrap gap-y-3">
                 {readOnlyFields.map((f) => (
@@ -1448,16 +1477,18 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           </Panel>
         ) : null}
 
-        <ModuleExtras
-          moduleKey={moduleKey}
-          row={row}
-          onRefresh={handleRefresh}
-          invoicePayOpen={invoicePayOpen}
-          onInvoicePayOpenChange={setInvoicePayOpen}
-        />
+        {moduleKey !== "purchase-requests" && moduleKey !== "surveys" && moduleKey !== "delivery-notes" ? (
+          <ModuleExtras
+            moduleKey={moduleKey}
+            row={row}
+            onRefresh={handleRefresh}
+            invoicePayOpen={invoicePayOpen}
+            onInvoicePayOpenChange={setInvoicePayOpen}
+          />
+        ) : null}
 
         {def.docs?.length ? (
-          <Panel title="File & Bukti Pendukung">
+          <Panel title={moduleKey === "surveys" ? "Dokumen Lain" : "File & Bukti Pendukung"}>
             <DocumentViewerList
               moduleKey={moduleKey}
               docs={def.docs}

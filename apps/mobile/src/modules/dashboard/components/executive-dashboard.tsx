@@ -11,6 +11,7 @@ import { colors } from "@/tokens";
 import { rupiah, rupiahShort } from "@/lib/format";
 import { formatAuditAction } from "@/lib/audit-format";
 import { ROLE_LABEL, type Role } from "@/constants/modules";
+import { useApp } from "@/store/app-store";
 import { DashboardGreeting } from "./dashboard-greeting";
 import { ProjectOverviewCard } from "./project-overview-card";
 import { QuickActionsCard } from "./quick-actions-card";
@@ -33,6 +34,10 @@ export function ExecutiveDashboard({
 }: ExecutiveDashboardProps) {
   const router = useRouter();
   const role = user.role as Role;
+  const { can } = useApp();
+  // Pendapatan & piutang = laporan keuangan -> hanya peran dengan hak Buku Besar
+  const seeFinance = can("accounting", "L");
+  const pendingRequests = (data["purchase-requests"] ?? []).filter((r: any) => ["Diajukan", "Cek stok"].includes(r.status)).length;
 
   const pipelineVal = data.leads
     .filter((l: any) => l.status !== "Lost" && l.status !== "Won")
@@ -107,14 +112,25 @@ export function ExecutiveDashboard({
           icon={ClipboardCheck}
           onPress={() => router.push("/approvals")}
         />
-        <KpiCard
-          label="Faktur Belum Dibayar"
-          value={rupiahShort(unpaidInv)}
-          hint="Outstanding balance"
-          tone="warning"
-          icon={Wallet}
-          onPress={() => router.push("/invoices")}
-        />
+        {seeFinance ? (
+          <KpiCard
+            label="Faktur Belum Dibayar"
+            value={rupiahShort(unpaidInv)}
+            hint="Outstanding balance"
+            tone="warning"
+            icon={Wallet}
+            onPress={() => router.push("/invoices")}
+          />
+        ) : (
+          <KpiCard
+            label="Permintaan Barang"
+            value={String(pendingRequests)}
+            hint="Menunggu diproses"
+            tone="warning"
+            icon={Wallet}
+            onPress={() => router.push("/purchase-requests")}
+          />
+        )}
       </KpiRow>
 
       {/* Main Grid: Project Overview & Antrean Persetujuan */}
@@ -180,16 +196,18 @@ export function ExecutiveDashboard({
         <ChartCard title="Funnel Prospek" subtitle="Pergerakan dari Prospecting ke Won">
           <Funnel data={funnelData} />
         </ChartCard>
-        <ChartCard title="Pendapatan vs Faktur Terbayar" subtitle="Dalam jutaan Rupiah">
-          <BarChart
-            data={revenueBars}
-            series={[
-              { name: "Nilai Faktur", color: colors.info },
-              { name: "Terbayar", color: colors.success },
-            ]}
-            format={(n) => `${n} jt`}
-          />
-        </ChartCard>
+        {seeFinance ? (
+          <ChartCard title="Pendapatan vs Faktur Terbayar" subtitle="Dalam jutaan Rupiah">
+            <BarChart
+              data={revenueBars}
+              series={[
+                { name: "Nilai Faktur", color: colors.info },
+                { name: "Terbayar", color: colors.success },
+              ]}
+              format={(n) => `${n} jt`}
+            />
+          </ChartCard>
+        ) : null}
       </View>
 
       {/* Risky Projects & Audit Log */}

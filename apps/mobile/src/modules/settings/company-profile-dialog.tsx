@@ -123,17 +123,17 @@ export function CompanyProfileDialog({
     setForm((prev) => ({ ...prev, [k]: v }));
   };
 
-  async function handleLogoPicked(file: { name: string; blob?: Blob; uri?: string }) {
+  async function handleLogoPicked(file: { name: string; blob?: Blob; uri?: string }, field: "logoFileId" | "letterheadFileId" = "logoFileId") {
     setUploadingLogo(true);
     try {
       const payload =
         file.blob ?? (file.uri ? { uri: file.uri, name: file.name, type: "image/png" } : file);
       const uploadedId = await uploadFile(payload, "foto", "lainnya");
       if (uploadedId) {
-        setForm((prev) => ({ ...prev, logoFileId: String(uploadedId) }));
-        toast("Logo perusahaan berhasil diunggah");
+        setForm((prev) => ({ ...prev, [field]: String(uploadedId) }));
+        toast(field === "letterheadFileId" ? "Gambar kop surat berhasil diunggah" : "Logo perusahaan berhasil diunggah");
       } else {
-        toast("Gagal mengunggah logo", "danger");
+        toast("Gagal mengunggah gambar", "danger");
       }
     } catch (e: any) {
       toast(e?.message ?? "Gagal mengunggah logo", "danger");
@@ -161,6 +161,7 @@ export function CompanyProfileDialog({
   }
 
   const logoPreviewUrl = form.logoFileId ? `${apiBase()}/files/${form.logoFileId}` : "";
+  const letterheadPreviewUrl = form.letterheadFileId ? `${apiBase()}/files/${form.letterheadFileId}` : "";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -264,8 +265,46 @@ export function CompanyProfileDialog({
                         : "Unggah Logo Perusahaan (PNG / JPG)"
                   }
                   kind="foto"
-                  onFilePicked={handleLogoPicked}
+                  onFilePicked={(f) => handleLogoPicked(f, "logoFileId")}
                 />
+              </View>
+
+              {/* Kop surat & ketentuan PO */}
+              <View className="bg-panel/50 border border-border rounded-xl p-4 gap-3">
+                <View>
+                  <Text className="text-sm font-bold text-foreground">Kop Surat Dokumen Cetak</Text>
+                  <Text className="text-xs text-muted-foreground mt-0.5">
+                    Opsional. Bila sudah punya desain kop sendiri, unggah sebagai gambar (lebar, mis. 2000×300 px). Kop ini dipakai
+                    utuh di bagian atas PO & surat jalan. Bila kosong, kop disusun otomatis dari logo, nama, alamat & telepon di bawah.
+                  </Text>
+                </View>
+                {letterheadPreviewUrl ? (
+                  <View className="gap-2">
+                    <View className="bg-white border border-border rounded-xl p-2">
+                      <Image source={{ uri: letterheadPreviewUrl }} style={{ width: "100%", height: 80, resizeMode: "contain" }} />
+                    </View>
+                    <Button size="sm" variant="outline" className="self-start" onPress={() => setField("letterheadFileId", "")}>
+                      <Trash2 size={14} color={colors.danger} />
+                      <Text className="text-xs text-destructive">Hapus kop, pakai kop otomatis</Text>
+                    </Button>
+                  </View>
+                ) : null}
+                <FileUploader
+                  label={form.letterheadFileId ? "Ganti gambar kop surat" : "Unggah gambar kop surat (PNG / JPG)"}
+                  kind="foto"
+                  onFilePicked={(f) => handleLogoPicked(f, "letterheadFileId")}
+                />
+                <FormField
+                  label="Syarat & ketentuan di PO"
+                  hint="Tercetak di bagian bawah setiap PO ke supplier. Satu poin per baris."
+                >
+                  <Textarea
+                    value={form.poTerms}
+                    onChangeText={(v) => setField("poTerms", v)}
+                    placeholder={"Contoh:\nBarang dikirim sesuai spesifikasi & jumlah di PO\nSertakan surat jalan & nomor PO saat pengiriman\nTagihan dikirim ke bagian Finance"}
+                    numberOfLines={4}
+                  />
+                </FormField>
               </View>
 
               {/* Identitas Utama */}

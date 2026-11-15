@@ -325,9 +325,16 @@ export class InvoiceInService {
         paidAmount: 0,
         fileId: dto.fileId,
         transferFileId: payFileId,
+        taxInvoiceFileId: dto.taxInvoiceFileId ?? null,
+        taxInvoiceNumber: dto.taxInvoiceNumber?.trim() || null,
       },
       include: { supplier: true },
     });
+    if (dto.taxInvoiceFileId) {
+      await this.prisma.main.file
+        .update({ where: { id: dto.taxInvoiceFileId }, data: { refType: "invoiceIn-tax", refId: String(row.id) } })
+        .catch(() => {});
+    }
 
     const meta = await this.saveMeta(row.id, {
       notes: dto.notes || undefined,
@@ -479,9 +486,16 @@ export class InvoiceInService {
         ...(dto.dueDate ? { dueDate: new Date(dto.dueDate) } : {}),
         ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
         ...(payFileId !== undefined ? { transferFileId: payFileId } : {}),
+        ...(dto.taxInvoiceFileId !== undefined ? { taxInvoiceFileId: dto.taxInvoiceFileId || null } : {}),
+        ...(dto.taxInvoiceNumber !== undefined ? { taxInvoiceNumber: dto.taxInvoiceNumber?.trim() || null } : {}),
       },
       include: { supplier: true, supplierPo: true, payments: { orderBy: { date: "desc" } } },
     });
+    if (dto.taxInvoiceFileId) {
+      await this.prisma.main.file
+        .update({ where: { id: dto.taxInvoiceFileId }, data: { refType: "invoiceIn-tax", refId: String(id) } })
+        .catch(() => {});
+    }
     const meta = await this.saveMeta(id, {
       ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
       ...(dto.category !== undefined ? { category: dto.category } : {}),

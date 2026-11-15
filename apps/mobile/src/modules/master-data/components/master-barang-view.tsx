@@ -12,6 +12,7 @@ import { DataTable } from "@/components/taska/data-table";
 import { BatchSerialRegisterModal } from "@/components/taska/serial-item-picker";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
+import { useApp } from "@/store/app-store";
 import type { MasterKey } from "../types";
 
 interface MasterBarangViewProps {
@@ -36,6 +37,9 @@ export function MasterBarangView({
   renderActions,
 }: MasterBarangViewProps) {
   const router = useRouter();
+  const { can } = useApp();
+  // Gudang dll. tanpa hak "harga & laba": kolom & isian harga disembunyikan (server juga menyaringnya)
+  const canPrice = can("products", "P");
   const [barangOpen, setBarangOpen] = React.useState(false);
   const [barangNama, setBarangNama] = React.useState("");
   const [barangMerk, setBarangMerk] = React.useState("");
@@ -128,10 +132,7 @@ export function MasterBarangView({
         kategori: editCategoryVal,
         categoryId: matchedCat?.id ? Number(matchedCat.id) : undefined,
         garansi: editGaransiVal,
-        hargaBeli: cleanPrice,
-        purchasePrice: cleanPrice,
-        hargaJual: cleanSellPrice,
-        price: cleanSellPrice,
+        ...(canPrice ? { hargaBeli: cleanPrice, purchasePrice: cleanPrice, hargaJual: cleanSellPrice, price: cleanSellPrice } : {}),
         min: cleanMin,
         minStock: cleanMin,
       });
@@ -171,9 +172,13 @@ export function MasterBarangView({
       satuan: satuanDisplay,
       isiPerUnit: barangIsiUnit ? Number(barangIsiUnit) : undefined,
       satuanDasar: barangSatuan,
-      hargaBeli: Number(barangHargaBeli.replace(/\D/g, "")) || 0,
-      hargaJual: Number(barangHargaJual.replace(/\D/g, "")) || 0,
-      price: Number(barangHargaJual.replace(/\D/g, "")) || 0,
+      ...(canPrice
+        ? {
+            hargaBeli: Number(barangHargaBeli.replace(/\D/g, "")) || 0,
+            hargaJual: Number(barangHargaJual.replace(/\D/g, "")) || 0,
+            price: Number(barangHargaJual.replace(/\D/g, "")) || 0,
+          }
+        : {}),
       min: isJasa ? 0 : (Number(barangMinStok) || 0),
       garansi: isJasa ? "Tanpa garansi" : barangGaransi,
       berSN: isJasa ? false : barangSN.includes("Ya"),
@@ -240,8 +245,12 @@ export function MasterBarangView({
           { key: "sku", label: "SKU / Kode", flex: 1 },
           { key: "kategori", label: "Kategori", flex: 1 },
           { key: "satuan", label: "Satuan", flex: 0.7 },
-          { key: "hargaDisplay", label: "Harga Beli", flex: 1.1 },
-          { key: "hargaJualDisplay", label: "Harga Jual", flex: 1.1 },
+          ...(canPrice
+            ? [
+                { key: "hargaDisplay", label: "Harga Beli", flex: 1.1 },
+                { key: "hargaJualDisplay", label: "Harga Jual", flex: 1.1 },
+              ]
+            : []),
           { key: "stokDisplay", label: "Stok Fisik", flex: 0.9 },
           { key: "minDisplay", label: "Min Stok", flex: 0.8 },
           { key: "tipeSN", label: "Tipe Item", flex: 1 },
@@ -344,22 +353,26 @@ export function MasterBarangView({
                 />
               </FormField>
             ) : null}
-            <FormField label="Estimasi Harga Beli (Rp)">
-              <Input
-                value={barangHargaBeli ? formatThousands(barangHargaBeli) : ""}
-                onChangeText={(v) => setBarangHargaBeli(v.replace(/\D/g, ""))}
-                keyboardType="numeric"
-                placeholder="Contoh: 1.200.000"
-              />
-            </FormField>
-            <FormField label="Harga Jual Acuan (Rp)">
-              <Input
-                value={barangHargaJual ? formatThousands(barangHargaJual) : ""}
-                onChangeText={(v) => setBarangHargaJual(v.replace(/\D/g, ""))}
-                keyboardType="numeric"
-                placeholder="Contoh: 1.500.000"
-              />
-            </FormField>
+            {canPrice ? (
+              <>
+                <FormField label="Estimasi Harga Beli (Rp)">
+                  <Input
+                    value={barangHargaBeli ? formatThousands(barangHargaBeli) : ""}
+                    onChangeText={(v) => setBarangHargaBeli(v.replace(/\D/g, ""))}
+                    keyboardType="numeric"
+                    placeholder="Contoh: 1.200.000"
+                  />
+                </FormField>
+                <FormField label="Harga Jual Acuan (Rp)">
+                  <Input
+                    value={barangHargaJual ? formatThousands(barangHargaJual) : ""}
+                    onChangeText={(v) => setBarangHargaJual(v.replace(/\D/g, ""))}
+                    keyboardType="numeric"
+                    placeholder="Contoh: 1.500.000"
+                  />
+                </FormField>
+              </>
+            ) : null}
             <FormField label="Stok Minimum Peringatan">
               <Input
                 value={barangMinStok}
@@ -466,6 +479,7 @@ export function MasterBarangView({
                 </View>
               </View>
 
+              {canPrice ? (
               <View className="flex-row flex-wrap gap-3">
                 <View className="flex-1 min-w-[200px]">
                   <FormField label="Harga Beli / Acuan (Rp)" required>
@@ -489,6 +503,7 @@ export function MasterBarangView({
                   </FormField>
                 </View>
               </View>
+              ) : null}
 
               {editingProduct?.type !== "JASA" && (
                 <FormField

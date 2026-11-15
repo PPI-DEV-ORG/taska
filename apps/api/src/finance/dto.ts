@@ -367,6 +367,14 @@ export class InvoiceInDto {
   @IsOptional() @IsInt()
   transferFileId?: number;
 
+  /** File faktur pajak (e-Faktur) dari supplier. */
+  @IsOptional() @IsInt()
+  taxInvoiceFileId?: number;
+
+  /** Nomor seri faktur pajak (NSFP). */
+  @IsOptional() @IsString()
+  taxInvoiceNumber?: string;
+
   @IsOptional() @IsBoolean()
   paid?: boolean;
 

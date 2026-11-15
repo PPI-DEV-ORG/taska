@@ -72,6 +72,54 @@ export class DeliveryService implements OnModuleInit {
     return { clientPoId, invoiceId, locations, reportText };
   }
 
+  /**
+   * Penanda tangan surat jalan: pengirim, petugas gudang & penerima.
+   * Bawaan: pengirim = pembuat; petugas gudang = pembuat bila dia Gudang; penerima surat jalan project = PM project.
+   */
+  private async signerData(
+    dto: DeliveryCreateDto,
+    locations: { projectId?: number | null }[] | undefined,
+    user: RequestUser,
+    current?: { senderId: number | null; senderName: string | null; recipientUserId: number | null; recipientName: string | null } | null,
+  ) {
+    const txt = (v: unknown) => (v === undefined ? undefined : v && String(v).trim() ? String(v).trim() : null);
+    const data: Record<string, unknown> = {};
+    if (dto.senderId !== undefined) data.senderId = dto.senderId || null;
+    if (dto.senderName !== undefined) data.senderName = txt(dto.senderName);
+    if (dto.vehicleNo !== undefined) data.vehicleNo = txt(dto.vehicleNo);
+    if (dto.warehouseId !== undefined) data.warehouseId = dto.warehouseId || null;
+    if (dto.warehouseStaffId !== undefined) data.warehouseStaffId = dto.warehouseStaffId || null;
+    if (dto.recipientUserId !== undefined) data.recipientUserId = dto.recipientUserId || null;
+    if (dto.recipientName !== undefined) data.recipientName = txt(dto.recipientName);
+    if (dto.recipientTitle !== undefined) data.recipientTitle = txt(dto.recipientTitle);
+    if (dto.recipientPhone !== undefined) data.recipientPhone = txt(dto.recipientPhone);
+
+    if (!current) {
+      if (data.senderId === undefined && !data.senderName) data.senderId = user.id;
+      if (data.warehouseStaffId === undefined && String(user.role).toUpperCase() === "GUDANG") data.warehouseStaffId = user.id;
+    }
+    // Penerima bawaan: PM project tujuan
+    const hasRecipient = data.recipientUserId || data.recipientName || (data.recipientUserId === undefined && data.recipientName === undefined && (current?.recipientUserId || current?.recipientName));
+    const projectId = locations?.find((l) => l.projectId)?.projectId;
+    if (!hasRecipient && projectId) {
+      const pj = await this.prisma.main.project.findUnique({ where: { id: projectId }, select: { pic: { select: { id: true, name: true, phone: true } } } });
+      if (pj?.pic) {
+        data.recipientUserId = pj.pic.id;
+        data.recipientName = pj.pic.name;
+        if (!data.recipientTitle) data.recipientTitle = "Project Manager";
+        if (!data.recipientPhone && pj.pic.phone) data.recipientPhone = pj.pic.phone;
+      }
+    }
+    if (data.recipientUserId && !data.recipientName) {
+      const u = await this.prisma.main.user.findUnique({ where: { id: Number(data.recipientUserId) }, select: { name: true, phone: true } });
+      if (u) {
+        data.recipientName = u.name;
+        if (!data.recipientPhone && u.phone) data.recipientPhone = u.phone;
+      }
+    }
+    return data;
+  }
+
   async create(dto: DeliveryCreateDto, user: RequestUser) {
     const links = this.takeLinks(dto);
     dto = { ...dto, locations: links.locations ?? dto.locations, reportText: links.reportText ?? dto.reportText };
@@ -95,7 +143,9 @@ export class DeliveryService implements OnModuleInit {
     }
 
     const scanFileId = dto.scanFileId ?? dto.fileId;
+    const signers = await this.signerData(dto, locations, user, null);
     const createData = {
+      ...signers,
       number,
       creatorId: user.id,
       withGoods,
@@ -158,6 +208,19 @@ export class DeliveryService implements OnModuleInit {
       href: `/delivery-notes/${row.id}`,
     });
 
+    // PM project / penerima internal diberi tahu ada barang menuju lokasinya
+    const recipientUserId = (signers.recipientUserId as number | null | undefined) ?? null;
+    if (recipientUserId && recipientUserId !== user.id) {
+      await this.notifications
+        .notify({
+          userIds: [recipientUserId],
+          kind: "SURAT",
+          text: `Surat jalan ${number} menuju ${locations[0].destination} — Anda penerima barangnya di lokasi`,
+          href: `/delivery-notes/${row.id}`,
+        })
+        .catch(() => {});
+    }
+
     if (withGoods) {
       await this.notifications.notify({
         roles: ["GUDANG"],
@@ -190,9 +253,11 @@ export class DeliveryService implements OnModuleInit {
       await this.postingService.reverse("DeliveryNote", id, "shipped", dto.reason || "Surat jalan dibatalkan", user.id).catch(() => {});
     }
 
+    const signers = await this.signerData(dto, dto.locations ?? row.locations, user, row);
     const updated = await this.prisma.main.deliveryNote.update({
       where: { id },
       data: {
+        ...signers,
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.withGoods !== undefined ? { withGoods: dto.withGoods === true || dto.withGoods === "true" } : {}),
         ...(dto.status ? { status: dto.status } : {}),
@@ -391,7 +456,11 @@ export class DeliveryService implements OnModuleInit {
         where,
         include: {
           creator: { select: { name: true, role: true } },
-          clientPo: { select: { id: true, number: true, soNumber: true } },
+          sender: { select: { id: true, name: true, role: true, phone: true } },
+          warehouseStaff: { select: { id: true, name: true, role: true } },
+          warehouse: { select: { id: true, name: true } },
+          recipientUser: { select: { id: true, name: true, role: true, phone: true } },
+        clientPo: { select: { id: true, number: true, soNumber: true } },
           invoice: { select: { id: true, number: true } },
           locations: { include: { project: { select: { name: true } } } },
           items: {
@@ -416,6 +485,10 @@ export class DeliveryService implements OnModuleInit {
       where: { id },
       include: {
         creator: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, name: true, role: true, phone: true } },
+        warehouseStaff: { select: { id: true, name: true, role: true } },
+        warehouse: { select: { id: true, name: true } },
+        recipientUser: { select: { id: true, name: true, role: true, phone: true } },
         clientPo: { select: { id: true, number: true, soNumber: true } },
         invoice: { select: { id: true, number: true } },
         locations: { include: { project: { select: { id: true, name: true } } } },
@@ -669,9 +742,20 @@ export class DeliveryService implements OnModuleInit {
       }
     }
 
+    // Petugas gudang yang mengeluarkan barang & gudang asal (untuk tanda tangan surat jalan)
+    const firstOut = await this.prisma.main.stockMovement.findFirst({
+      where: { deliveryNoteId: id, fromWarehouseId: { not: null } },
+      select: { fromWarehouseId: true },
+      orderBy: { id: "asc" },
+    });
+    const current = await this.prisma.main.deliveryNote.findUnique({ where: { id }, select: { warehouseStaffId: true, warehouseId: true } });
     await this.prisma.main.deliveryNote.update({
       where: { id },
-      data: { status: "DIKIRIM" },
+      data: {
+        status: "DIKIRIM",
+        ...(current?.warehouseStaffId ? {} : { warehouseStaffId: user.id }),
+        ...(current?.warehouseId || !firstOut?.fromWarehouseId ? {} : { warehouseId: firstOut.fromWarehouseId }),
+      },
     });
 
     // Posting Akuntansi E7: Pengiriman Barang Surat Jalan -> Dr HPP Cr Persediaan (1200)
@@ -846,41 +930,61 @@ export class DeliveryService implements OnModuleInit {
     return updated;
   }
 
-  private company = async (): Promise<string> => {
+  private companyProfile = async (): Promise<{ name: string; address: string; phone: string }> => {
     try {
-      const profile = await this.settings.getCompanyProfile();
-      if (profile?.name) return profile.name;
-      return await this.settings.getValue("nama.perusahaan");
+      const profile: any = await this.settings.getCompanyProfile();
+      return {
+        name: profile?.name || (await this.settings.getValue("nama.perusahaan").catch(() => "")) || "Taska",
+        address: profile?.address || "",
+        phone: profile?.phone || "",
+      };
     } catch {
-      return "Taska";
+      return { name: "Taska", address: "", phone: "" };
     }
   };
 
-  /** PDF surat jalan (dicetak, ditandatangani, discan ulang). */
+  /** Data cetak surat jalan: identitas, tujuan, barang (+SN), dan 3 penanda tangan (gudang, pengirim, penerima). */
   async toPdf(id: number) {
-    const row = await this.get(id);
-    const company = await this.company();
-    const fmt = (d: Date | null) => (d ? new Date(d).toLocaleDateString("id-ID") : "-");
-    const locations = row.locations.map((l, i) => [
-      String(i + 1),
-      l.destination,
-      l.reason,
-      l.project?.name ?? "-",
-    ]);
-    const goods = row.movements
-      .filter((m) => m.serialUnit)
-      .map((m, i) => [String(i + 1), m.serialUnit!.sn, m.product.name, m.fromWarehouse?.name ?? "-"]);
+    const row: any = await this.get(id);
+    const company = await this.companyProfile();
+    const fmt = (d: Date | null) => (d ? new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }) : "-");
+    const loc = row.locations?.[0];
+    const project = row.locations?.find((l: any) => l.project)?.project?.name ?? null;
 
+    // Barang diringkas per produk (qty dijumlah) — tanpa rincian Serial Number di surat jalan
+    const grouped = new Map<string, { name: string; sku: string; unit: string; qty: number }>();
+    for (const it of row.items ?? []) {
+      const key = it.productId ? `p${it.productId}` : `n${it.note ?? it.id}`;
+      const g = grouped.get(key) ?? { name: it.product?.name ?? it.note ?? "Barang", sku: it.product?.sku ?? "-", unit: it.product?.unit ?? "unit", qty: 0 };
+      g.qty += Number(it.qty) || 1;
+      grouped.set(key, g);
+    }
+    const goods: string[][] = Array.from(grouped.values()).map((g, i) => [String(i + 1), g.name, g.sku, String(g.qty), g.unit]);
+
+    const senderName = row.sender?.name ?? row.senderName ?? row.creator?.name ?? "";
+    const ojol = /gosend|gojek|grab|maxim|lalamove|spx|shopee/i.test(String(row.senderName ?? ""));
     return {
       company,
       number: row.number,
       date: fmt(new Date(row.date)),
       status: row.status,
-      creator: row.creator.name,
+      destination: loc?.destination ?? "-",
+      reason: loc?.reason ?? "-",
+      extraLocations: (row.locations ?? []).slice(1).map((l: any) => `${l.destination} — ${l.reason}`),
+      project,
+      reference: [row.clientPo ? `SO ${row.clientPo.soNumber || row.clientPo.number}` : null, row.invoice ? `Invoice ${row.invoice.number}` : null].filter(Boolean).join(" · ") || "-",
       withGoods: row.withGoods,
-      locations,
       goods,
-      reportText: row.reportText ?? "",
+      warehouse: row.warehouse?.name ?? null,
+      warehouseStaff: row.warehouseStaff?.name ?? "",
+      sender: senderName,
+      senderTitle: row.sender ? "Pengirim" : row.senderName ? (ojol ? "Kurir online" : "Ekspedisi") : "Pengirim",
+      vehicleLabel: row.senderName && !row.sender && !ojol ? "No. resi / plat" : "Plat kendaraan",
+      vehicleNo: row.vehicleNo ?? null,
+      recipient: row.recipientName ?? row.recipientUser?.name ?? "",
+      recipientTitle: row.recipientTitle ?? (row.recipientUser ? "Project Manager" : ""),
+      recipientPhone: row.recipientPhone ?? row.recipientUser?.phone ?? null,
+      receivedAt: row.receivedAt ? fmt(new Date(row.receivedAt)) : null,
       approval: row.approval?.status ?? "-",
     };
   }

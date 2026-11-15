@@ -6,6 +6,7 @@ import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FormField } from "@/components/taska/basics";
 import { SearchableSelect } from "@/components/taska/dialogs";
+import { useApp } from "@/store/app-store";
 import type { ItemKind } from "../types";
 
 interface StockAddItemDialogProps {
@@ -23,6 +24,9 @@ export function StockAddItemDialog({
   onSave,
   toast,
 }: StockAddItemDialogProps) {
+  const { can } = useApp();
+  // Gudang tanpa hak "harga & laba": isian harga disembunyikan & tidak dikirim
+  const canPrice = can("products", "P");
   const [newItemKind, setNewItemKind] = React.useState<ItemKind>("BARANG_SN");
   const [newItemName, setNewItemName] = React.useState("");
   const [newItemSku, setNewItemSku] = React.useState("");
@@ -48,8 +52,12 @@ export function StockAddItemDialog({
       merk: isJasa ? "-" : (newItemBrand.trim() || undefined),
       kategori: newItemCategory || categories?.[0]?.nama || "Umum",
       satuan: newItemUnit || (isJasa ? "lot" : "unit"),
-      hargaBeli: Number(String(newItemPrice).replace(/\D/g, "")) || 0,
-      hargaJual: Number(String(newItemSellPrice).replace(/\D/g, "")) || 0,
+      ...(canPrice
+        ? {
+            hargaBeli: Number(String(newItemPrice).replace(/\D/g, "")) || 0,
+            hargaJual: Number(String(newItemSellPrice).replace(/\D/g, "")) || 0,
+          }
+        : {}),
       min: isJasa ? 0 : (Number(newItemMin) || 0),
       berSN: isSn,
     });
@@ -128,15 +136,19 @@ export function StockAddItemDialog({
                 />
               </FormField>
             </View>
-            <View className="flex-1">
-              <FormField label={newItemKind === "JASA" ? "Tarif Dasar Jasa (Rp)" : "Harga Beli / HPP (Rp)"}>
-                <Input value={newItemPrice} onChangeText={setNewItemPrice} keyboardType="numeric" placeholder="0" />
-              </FormField>
-            </View>
+            {canPrice ? (
+              <View className="flex-1">
+                <FormField label={newItemKind === "JASA" ? "Tarif Dasar Jasa (Rp)" : "Harga Beli / HPP (Rp)"}>
+                  <Input value={newItemPrice} onChangeText={setNewItemPrice} keyboardType="numeric" placeholder="0" />
+                </FormField>
+              </View>
+            ) : null}
           </View>
-          <FormField label={newItemKind === "JASA" ? "Harga Jual Jasa (Rp)" : "Harga Jual Produk (Rp)"} hint="Harga acuan default saat dimasukkan ke Penawaran / SO">
-            <Input value={newItemSellPrice} onChangeText={setNewItemSellPrice} keyboardType="numeric" placeholder="Contoh: 1.500.000" />
-          </FormField>
+          {canPrice ? (
+            <FormField label={newItemKind === "JASA" ? "Harga Jual Jasa (Rp)" : "Harga Jual Produk (Rp)"} hint="Harga acuan default saat dimasukkan ke Penawaran / SO">
+              <Input value={newItemSellPrice} onChangeText={setNewItemSellPrice} keyboardType="numeric" placeholder="Contoh: 1.500.000" />
+            </FormField>
+          ) : null}
           {newItemKind !== "JASA" ? (
             <FormField label="Batas Stok Minimum">
               <Input value={newItemMin} onChangeText={setNewItemMin} keyboardType="numeric" placeholder="5" />

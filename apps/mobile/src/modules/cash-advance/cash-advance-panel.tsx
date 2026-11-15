@@ -16,7 +16,7 @@ import {
 } from "./cash-advance-dialogs";
 
 /**
- * Uang jalan untuk satu survey / surat jalan: ajukan sebelum berangkat, pantau pencairan & laporan biayanya.
+ * Petty cash untuk satu survey / surat jalan: ajukan sebelum berangkat, pantau pencairan & laporan biayanya.
  */
 export function CashAdvancePanel({
   surveyId,
@@ -26,6 +26,7 @@ export function CashAdvancePanel({
   defaultDescription,
   title,
   subtitle,
+  refreshKey = 0,
 }: {
   surveyId?: number;
   deliveryNoteId?: number;
@@ -34,6 +35,8 @@ export function CashAdvancePanel({
   defaultDescription?: string;
   title: string;
   subtitle: string;
+  /** Naikkan nilainya untuk memuat ulang daftar (mis. setelah biaya dicatat dari luar panel). */
+  refreshKey?: number;
 }) {
   const [rows, setRows] = React.useState<CashAdvance[]>([]);
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -62,7 +65,7 @@ export function CashAdvancePanel({
     return () => {
       alive = false;
     };
-  }, [surveyId, deliveryNoteId, projectId, version]);
+  }, [surveyId, deliveryNoteId, projectId, version, refreshKey]);
 
   const active = rows.filter((r) => !["DITOLAK", "DIBATALKAN"].includes(r.status));
   // Ringkasan kas yang masih dipegang tim untuk dokumen / project ini
@@ -77,7 +80,7 @@ export function CashAdvancePanel({
       right={
         <Button size="sm" variant={active.length ? "outline" : "default"} onPress={() => setCreateOpen(true)} className="flex-row items-center gap-1.5">
           <HandCoins size={14} color={active.length ? undefined : "#fff"} />
-          <Text className={`text-xs font-semibold ${active.length ? "" : "text-white"}`}>Ajukan Uang Jalan</Text>
+          <Text className={`text-xs font-semibold ${active.length ? "" : "text-white"}`}>Ajukan Petty Cash</Text>
         </Button>
       }
     >
@@ -95,7 +98,7 @@ export function CashAdvancePanel({
         </View>
       ) : null}
       {rows.length === 0 ? (
-        <Text className="text-xs text-muted-foreground">Belum ada uang jalan. Ajukan ke Finance sebelum berangkat.</Text>
+        <Text className="text-xs text-muted-foreground">Belum ada petty cash. Ajukan ke Finance sebelum berangkat.</Text>
       ) : (
         <View className="gap-1.5">
           {rows.map((r) => (
@@ -123,7 +126,7 @@ export function CashAdvancePanel({
       <CreateCashAdvanceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        defaults={{ purpose, surveyId, deliveryNoteId, projectId, description: defaultDescription, title: purpose === "SURVEY" ? "Minta Uang Jalan Survey" : purpose === "PROJECT" ? "Ajukan Kas Proyek" : "Alokasikan Uang Jalan Pengiriman" }}
+        defaults={{ purpose, surveyId, deliveryNoteId, projectId, description: defaultDescription, title: purpose === "SURVEY" ? "Minta Petty Cash Survey" : purpose === "PROJECT" ? "Ajukan Kas Proyek" : "Alokasikan Petty Cash Pengiriman" }}
         onCreated={() => load()}
       />
       <CashAdvanceDetailDialog id={detailId} onOpenChange={(v) => !v && setDetailId(null)} onChanged={() => load()} />

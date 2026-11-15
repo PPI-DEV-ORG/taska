@@ -3,6 +3,8 @@ import {
   buildCashAdvanceDisburseLines,
   buildCashAdvanceReturnLines,
   buildCashAdvanceSettleLines,
+  buildPettyCashSpendLines,
+  pettyCashUsage,
   splitSettlement,
 } from "./cash-advance.rules.js";
 
@@ -32,9 +34,35 @@ describe("uang jalan", () => {
     const ret = buildCashAdvanceReturnLines({ ...party, amount: split.returned, cashAccountCode: "1000.01" }, map);
     expect(balanced(settle)).toBe(true);
     expect(balanced(ret)).toBe(true);
-    expect(sum(settle, "6202", "debit") + sum(settle, "6203", "debit")).toBe(350_000);
+    // Petty cash project: semua biayanya HPP project (5103), bukan beban operasional
+    expect(sum(settle, "5103", "debit")).toBe(350_000);
+    expect(sum(settle, "6202", "debit") + sum(settle, "6203", "debit")).toBe(0);
     // Saldo 1107: +500.000 (cair) − 350.000 (biaya) − 150.000 (kembali) = 0
     expect(500_000 - sum(settle, "1107", "credit") - sum(ret, "1107", "credit")).toBe(0);
+  });
+
+  it("petty cash non-project: biaya tetap ke akun beban kategorinya", () => {
+    const settle = buildCashAdvanceSettleLines(
+      {
+        ...party,
+        projectId: null,
+        coveredByAdvance: 350_000,
+        reimbursed: 0,
+        expenses: [{ amount: 200_000, description: "Bensin" }, { amount: 150_000, description: "Tol", accountCode: "6203" }],
+      },
+      map,
+    );
+    expect(sum(settle, "6202", "debit")).toBe(200_000);
+    expect(sum(settle, "6203", "debit")).toBe(150_000);
+    expect(sum(settle, "5103", "debit")).toBe(0);
+  });
+
+  it("pemakaian saldo petty cash untuk project → HPP project", () => {
+    const lines = buildPettyCashSpendLines({ number: "EXP-001", amount: 75_000, employeeId: 7, projectId: 3, expenseAccountCode: "6202.07" }, map);
+    expect(sum(lines, "5103", "debit")).toBe(75_000);
+    expect(sum(lines, "1107", "credit")).toBe(75_000);
+    const kantor = buildPettyCashSpendLines({ number: "EXP-002", amount: 50_000, employeeId: 7, expenseAccountCode: "6202.07" }, map);
+    expect(sum(kantor, "6202.07", "debit")).toBe(50_000);
   });
 
   it("sisa disimpan di kantong: tidak ada pengembalian kas", () => {
@@ -65,5 +93,22 @@ describe("uang jalan", () => {
       returned: 0,
       keptInWallet: -100_000,
     });
+  });
+});
+
+describe("keperluan petty cash di keterangan jurnal", () => {
+  it("survey: nama prospek + lokasi", () => {
+    expect(pettyCashUsage({ survey: { location: "Subang", lead: { name: "CCTV Pak Ujang" } } })).toBe("Survey CCTV Pak Ujang (Subang)");
+  });
+  it("proyek / surat jalan / uraian", () => {
+    expect(pettyCashUsage({ project: { name: "Gedung A" } })).toBe("Proyek Gedung A");
+    expect(pettyCashUsage({ deliveryNote: { number: "SJ/001" } })).toBe("Pengiriman SJ/001");
+    expect(pettyCashUsage({ description: "Operasional kantor" })).toBe("Operasional kantor");
+    expect(pettyCashUsage({})).toBe("");
+  });
+  it("memo akun 1107 memuat keperluannya", () => {
+    const lines = buildCashAdvanceDisburseLines({ ...party, usage: "Survey PT ABC (Bandung)", amount: 100_000, cashAccountCode: "1000.02" }, map);
+    expect(lines[0]!.memo).toContain("untuk Survey PT ABC (Bandung)");
+    expect(lines.every((l) => String(l.memo).length <= 191)).toBe(true);
   });
 });

@@ -124,7 +124,7 @@ export function MasterPengaturanSistemView({
 
       <Panel
         title="Profil Perusahaan, Logo & Kop Dokumen (White-Label)"
-        subtitle="Nama perusahaan, logo, alamat, rekening bank, dan penandatangan default untuk seluruh cetakan dokumen."
+        subtitle="Nama perusahaan, logo, gambar kop surat & ketentuan PO, alamat, rekening bank, dan penandatangan untuk seluruh cetakan dokumen."
         right={
           canEditSettings ? (
             <Button
@@ -137,7 +137,7 @@ export function MasterPengaturanSistemView({
               className="flex-row items-center gap-1.5"
             >
               <Building2 size={14} color={colors.primary} />
-              <Text className="text-xs font-semibold text-primary">Atur Profil & Logo Perusahaan</Text>
+              <Text className="text-xs font-semibold text-primary">Atur Profil, Logo & Kop Surat</Text>
             </Button>
           ) : null
         }

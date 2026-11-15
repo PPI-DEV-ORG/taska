@@ -217,6 +217,29 @@ export function SupplierInvoiceDetailDialog({
             </View>
           </View>
 
+          {/* Faktur pajak (bila ber-PPN) */}
+          {Number(displayInvoice.ppn || 0) > 0 ? (
+            <View
+              className={`flex-row items-center justify-between gap-2 p-3 rounded-xl border ${
+                displayInvoice.taxInvoiceFileId ? "border-border bg-panel" : "border-amber-500/40 bg-amber-500/10"
+              }`}
+            >
+              <View className="flex-1">
+                <Text className="text-xs font-semibold text-foreground">Faktur pajak</Text>
+                <Text className="text-[11px] text-muted-foreground">
+                  {displayInvoice.taxInvoiceFileId
+                    ? displayInvoice.taxInvoiceNumber || "File terlampir"
+                    : "Belum ada — unggah lewat Edit tagihan agar PPN Masukan bisa dikreditkan"}
+                </Text>
+              </View>
+              {displayInvoice.taxInvoiceFileId ? (
+                <Button size="sm" variant="outline" className="h-7 px-2.5" onPress={() => openDownloadFile(displayInvoice.taxInvoiceFileId)}>
+                  <Text className="text-xs">Buka</Text>
+                </Button>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* Lampiran File Tagihan */}
           <View className="gap-1.5">
             <Text className="text-xs font-semibold text-foreground">File Dokumen Tagihan / Faktur Masuk</Text>
@@ -431,6 +454,10 @@ function SupplierInvoiceEditForm({
   });
   const docUploaderRef = React.useRef<FileUploaderHandle | null>(null);
   const payUploaderRef = React.useRef<FileUploaderHandle | null>(null);
+  // Faktur pajak (e-Faktur) — bisa diunggah belakangan bila faktur pajak dari supplier datang setelah tagihan
+  const [taxFileId, setTaxFileId] = React.useState<number | null>(() => (invoice.taxInvoiceFileId ? Number(invoice.taxInvoiceFileId) : null));
+  const [taxNumber, setTaxNumber] = React.useState<string>(() => String(invoice.taxInvoiceNumber || ""));
+  const taxUploaderRef = React.useRef<FileUploaderHandle | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
   const rawBase = Number(String(dppStr).replace(/\D/g, "")) || 0;
@@ -472,6 +499,11 @@ function SupplierInvoiceEditForm({
         const flushedPay = await payUploaderRef.current.flush();
         if (flushedPay) finalTransferFileId = Number(flushedPay);
       }
+      let finalTaxFileId = taxFileId;
+      if (taxUploaderRef.current?.hasStaged()) {
+        const flushedTax = await taxUploaderRef.current.flush();
+        if (flushedTax) finalTaxFileId = Number(flushedTax);
+      }
 
       const targetId = String((invoice as any).rawId ?? String(invoice.id).replace(/^in-/, ""));
       const selectedCatOpt =
@@ -497,6 +529,7 @@ function SupplierInvoiceEditForm({
         fileId: finalFileId ?? undefined,
         transferFileId: finalTransferFileId ?? undefined,
         paymentFileId: finalTransferFileId ?? undefined,
+        ...(ppnMode !== "none" ? { taxInvoiceFileId: finalTaxFileId ?? undefined, taxInvoiceNumber: taxNumber.trim() } : {}),
       });
 
       await reload();
@@ -668,6 +701,31 @@ function SupplierInvoiceEditForm({
               onUploaded={(id: number | null) => setFileId(id)}
             />
           </FormField>
+
+          {ppnMode !== "none" ? (
+            <View className="gap-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
+              <Text className="text-xs font-semibold text-foreground">Faktur pajak (e-Faktur)</Text>
+              <FormField label="Nomor faktur pajak (NSFP)">
+                <Input value={taxNumber} onChangeText={setTaxNumber} placeholder="Contoh: 010.000-26.12345678" />
+              </FormField>
+              {taxFileId ? (
+                <View className="flex-row items-center justify-between rounded-lg border border-border bg-card p-2">
+                  <Text className="text-xs text-foreground flex-1">✓ File faktur pajak terlampir</Text>
+                  <Button size="sm" variant="outline" className="h-7 px-2" onPress={() => openDownloadFile(taxFileId)}>
+                    <Text className="text-xs">Buka</Text>
+                  </Button>
+                </View>
+              ) : null}
+              <FileUploader
+                label={taxFileId ? "Ganti file faktur pajak" : "Unggah file faktur pajak"}
+                kind="semua"
+                category="faktur-pajak"
+                autoFlush
+                handleRef={(h) => { taxUploaderRef.current = h; }}
+                onUploaded={(id: number | null) => setTaxFileId(id)}
+              />
+            </View>
+          ) : null}
 
           <FormField label="Upload / Ganti Bukti Pembayaran (Opsional)">
             {transferFileId ? (

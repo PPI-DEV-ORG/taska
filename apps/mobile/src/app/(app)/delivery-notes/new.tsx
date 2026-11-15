@@ -18,6 +18,7 @@ import { colors } from "@/tokens";
 import type { QuotationItem } from "@/modules/quotation/types";
 import { Row } from "@/constants/modules";
 import { adaptRow } from "@/services/adapters";
+import { DeliverySignersForm, initialSigners, signersPayload, validateSigners, type SignersValue } from "@/modules/delivery-note/delivery-signers-form";
 
 function playScanBeep(ok: boolean) {
   if (Platform.OS !== "web") return;
@@ -109,6 +110,10 @@ export default function NewDeliveryNoteScreen() {
   const [selectedProject, setSelectedProject] = React.useState(() => (initialExistingDn?.project && initialExistingDn.project !== "-") ? initialExistingDn.project : "-");
   const [selectedSoId, setSelectedSoId] = React.useState<string | number | null>(() => initialMatchSo?.id ?? initialExistingDn?.soId ?? initialExistingDn?.clientPoId ?? null);
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | number | null>(() => initialMatchInvoice?.id ?? initialExistingDn?.invoiceId ?? null);
+
+  // Penanda tangan: gudang, pengirim, penerima (null = ikut data surat jalan yang diedit)
+  const [signersState, setSigners] = React.useState<SignersValue | null>(null);
+  const signers = signersState ?? initialSigners(initialExistingDn, user ? { id: user.id, name: user.name } : null);
 
   const [hasGoodsState, setHasGoods] = React.useState<boolean | null>(null);
   const hasGoods =
@@ -595,6 +600,12 @@ export default function NewDeliveryNoteScreen() {
       toast("Tambahkan minimal satu barang yang dibawa", "danger");
       return;
     }
+    const signerError = validateSigners(signers);
+    if (signerError) {
+      toast(signerError, "danger");
+      return;
+    }
+    const signerFields = signersPayload(signers, activeProject);
 
     setSubmitting(true);
     let fileId: number | undefined;
@@ -667,6 +678,7 @@ export default function NewDeliveryNoteScreen() {
           reportText: hasGoods && items.length > 0 ? itemsSummary : undefined,
           items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
           status: nextStatus,
+          ...signerFields,
           ...(fileId ? { fileId, scanFileId: Number(fileId) } : {}),
         });
 
@@ -717,6 +729,7 @@ export default function NewDeliveryNoteScreen() {
         items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
         status: willShip ? "Dikirim" : "Menunggu pengiriman",
         persetujuan: "Menunggu persetujuan",
+        ...signerFields,
         fileId,
         scanFileId: fileId ? Number(fileId) : undefined,
       };
@@ -832,6 +845,8 @@ export default function NewDeliveryNoteScreen() {
           </FormField>
         </View>
       </Panel>
+
+      <DeliverySignersForm value={signers} onChange={setSigners} project={activeProject} />
 
       <Panel
         title="Barang yang Dibawa"

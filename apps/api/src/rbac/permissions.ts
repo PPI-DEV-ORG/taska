@@ -546,6 +546,19 @@ export function can(role: string, module: ModuleKey | string, action: Action): b
   return false;
 }
 
+/**
+ * Peran memegang menu modul ini (hak "M" eksplisit di matriks)? Lebih ketat dari can(..., "M") yang
+ * demi kompatibilitas menganggap "L" juga cukup — padahal "L" saja hanya untuk isi pilihan di form.
+ */
+export function hasMenu(role: string, uiModule: string): boolean {
+  const norm = (role || "").toUpperCase().trim().replace(/[s-]+/g, "_");
+  if (norm === "SUPER_ADMIN" || norm === "SUPERADMIN") return true;
+  const dynRole = dynamicRolesStore.find((r) => r.code === norm);
+  const raw = dynRole?.permissions?.[uiModule];
+  const list = Array.isArray(raw) ? raw : grant(String(raw ?? ""));
+  return list.includes("M");
+}
+
 export function visibleModules(role: string): ModuleKey[] {
   const norm = (role || "").toUpperCase().trim().replace(/[\s\-]+/g, "_");
   const dynRole = dynamicRolesStore.find((r) => r.code === norm);

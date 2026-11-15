@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { can } from "./permissions.js";
+import { can, hasMenu } from "./permissions.js";
 import { ROLE_MODULE_KEYS, STANDARD_ROLES } from "./role-matrix.js";
 
 describe("Matriks hak akses standar", () => {
@@ -47,7 +47,7 @@ const EXPECT: Array<[string, string, string, boolean]> = [
 
   // Project Manager
   ["PM", "projects", "U", true], ["PM", "tasks", "C", true], ["PM", "requests", "C", true],
-  ["PM", "delivery", "C", true], ["PM", "approvals", "V", true], ["PM", "projects", "P", true],
+  ["PM", "delivery", "C", true], ["PM", "approvals", "V", true], ["PM", "projects", "P", false],
   ["PM", "financeOut", "C", false], ["PM", "procurement", "C", false], ["PM", "accounting", "C", false],
 
   // Teknisi
@@ -72,12 +72,43 @@ const EXPECT: Array<[string, string, string, boolean]> = [
 
   // Admin Gudang
   ["GUDANG", "stock", "C", true], ["GUDANG", "receiving", "C", true], ["GUDANG", "delivery", "C", true],
-  ["GUDANG", "opname", "C", true], ["GUDANG", "warehouses", "C", true], ["GUDANG", "approvals", "V", true],
+  ["GUDANG", "opname", "C", true], ["GUDANG", "warehouses", "C", true], ["GUDANG", "approvals", "V", false],
+  // v5: Gudang tanpa Persetujuan, Pembelian, Keuangan & Proyek; tetap pengeluaran / petty cash sendiri
+  ["GUDANG", "receiving", "V", false], ["GUDANG", "requests", "C", false], ["GUDANG", "requests", "U", true],
+  ["GUDANG", "invoices", "L", false], ["GUDANG", "expenses", "C", true], ["GUDANG", "expenses", "L", true],
   ["GUDANG", "procurement", "U", false], ["GUDANG", "financeOut", "C", false], ["GUDANG", "accounting", "L", false],
 
   // HR
   ["HR", "users", "C", true], ["HR", "financeOut", "L", false], ["HR", "procurement", "C", false],
+  ["HR", "reports", "L", false],
+
+  // v3: laporan keuangan / buku besar hanya Finance & pimpinan
+  ...["ADMIN", "SALES", "PM", "TEKNISI", "SE", "PROCUREMENT", "GUDANG", "HR"].map(
+    (r) => [r, "accounting", "L", false] as [string, string, string, boolean],
+  ),
+  ["FINANCE", "accounting", "L", true], ["BOS", "accounting", "L", true], ["SUPER_ADMIN", "accounting", "L", true],
+  // Kelola gaji bukan tugas Admin; harga beli bukan tugas Gudang; PM tidak mengelola prospek
+  ["ADMIN", "payroll", "V", false], ["ADMIN", "users", "C", true], ["ADMIN", "procurement", "U", true],
+  ["GUDANG", "products", "P", false], ["PROCUREMENT", "products", "P", true],
+  ["PM", "leads", "C", false],
 ];
+
+describe("Menu per peran (v4)", () => {
+  it("Gudang tidak punya menu PO Keluar / Pengiriman, tapi tetap bisa membaca data PO untuk penerimaan", () => {
+    expect(hasMenu("GUDANG", "supplier-pos")).toBe(false);
+    expect(hasMenu("GUDANG", "shipments")).toBe(false);
+    expect(hasMenu("GUDANG", "receiving")).toBe(true);
+    expect(can("GUDANG", "procurement", "L")).toBe(true);
+    expect(hasMenu("PROCUREMENT", "supplier-pos")).toBe(true);
+  });
+
+  it("v5: Gudang tanpa menu Persetujuan, Pembelian, Keuangan & Proyek; tetap Pengeluaran / Petty Cash", () => {
+    for (const m of ["approvals", "purchase-requests", "supplier-pos", "invoices", "accounting", "projects"]) {
+      expect(hasMenu("GUDANG", m), m).toBe(false);
+    }
+    for (const m of ["receiving", "stock", "delivery-notes", "expenses"]) expect(hasMenu("GUDANG", m), m).toBe(true);
+  });
+});
 
 describe("Hak akses efektif per peran (sesuai alur bisnis)", () => {
   it.each(EXPECT)("%s · %s:%s -> %s", (role, mod, act, allowed) => {

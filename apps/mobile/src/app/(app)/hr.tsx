@@ -6,6 +6,7 @@ import {
   Calendar,
   CreditCard,
   History,
+  Users,
   Settings,
   Plus,
 } from "lucide-react-native";
@@ -14,16 +15,15 @@ import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { PageHeader } from "@/components/taska/basics";
 import { Button } from "@/components/ui/button";
-import { formatThousands } from "@/lib/format";
 
-import { TabType, formatPeriodLabel } from "@/modules/hr/types";
+import { TabType } from "@/modules/hr/types";
 import { MyAttendanceTab } from "@/modules/hr/components/my-attendance-tab";
 import { TeamAttendanceTab } from "@/modules/hr/components/team-attendance-tab";
 import { PayrollTab } from "@/modules/hr/components/payroll-tab";
 import { PayrollHistoryTab } from "@/modules/hr/components/payroll-history-tab";
-import { PayrollConfigTab } from "@/modules/hr/components/payroll-config-tab";
+import { EmployeeMasterTab } from "@/modules/hr/components/employee-master-tab";
+import { PayrollPayDialog, type PayTarget } from "@/modules/hr/components/payroll-pay-dialog";
 import { SalarySlipDialog } from "@/modules/hr/components/salary-slip-dialog";
-import { EditSalaryConfigDialog } from "@/modules/hr/components/edit-salary-config-dialog";
 import { ManualAttendanceDialog } from "@/modules/hr/components/manual-attendance-dialog";
 import { AttendanceDetailDialog } from "@/modules/hr/components/attendance-detail-dialog";
 import { ScheduleSettingsDialog } from "@/modules/hr/components/schedule-settings-dialog";
@@ -105,14 +105,7 @@ export default function HrScreen() {
 
   // ── State: Konfigurasi Gaji ──
   const [configs, setConfigs] = React.useState<any[]>([]);
-  const [loadingConfigs, setLoadingConfigs] = React.useState(false);
-  const [editConfigModalOpen, setEditConfigModalOpen] = React.useState(false);
-  const [editConfigTarget, setEditConfigTarget] = React.useState<any>(null);
-  const [editBasicSalary, setEditBasicSalary] = React.useState("");
-  const [editAllowance, setEditAllowance] = React.useState("");
-  const [editPtkp, setEditPtkp] = React.useState("TK/0");
-  const [editHasNpwpLabel, setEditHasNpwpLabel] = React.useState("Punya NPWP");
-  const [editCustomRate, setEditCustomRate] = React.useState("");
+  const [payTarget, setPayTarget] = React.useState<PayTarget | null>(null);
 
   // Users options
   const [userOptions, setUserOptions] = React.useState<any[]>([]);
@@ -175,18 +168,6 @@ export default function HrScreen() {
     }
   }, []);
 
-  const fetchConfigs = React.useCallback(async () => {
-    try {
-      setLoadingConfigs(true);
-      const res = await api<any[]>("GET", "/hr/payroll/configs");
-      setConfigs(res || []);
-      setUserOptions((res || []).map((c: any) => c.user).filter(Boolean));
-    } catch (e: any) {
-      console.warn("Error fetching configs:", e?.message);
-    } finally {
-      setLoadingConfigs(false);
-    }
-  }, []);
 
   const fetchScheduleSettings = React.useCallback(async () => {
     try {
@@ -375,7 +356,11 @@ export default function HrScreen() {
     try {
       setLoadingSlips(true);
       const res = await api<any>("POST", "/hr/payroll/generate", { period: payrollPeriod });
-      toast(`Slip gaji periode ${payrollPeriod} berhasil di-generate (${res?.generated || 0} staf)`, "success");
+      const notes = [
+        res?.skippedNoSalary ? `${res.skippedNoSalary} karyawan belum diisi gajinya` : "",
+        res?.skippedPaid ? `${res.skippedPaid} slip sudah dibayar (tidak diubah)` : "",
+      ].filter(Boolean);
+      toast(`Gaji ${res?.generated || 0} karyawan dihitung${notes.length ? ` · ${notes.join(" · ")}` : ""}`, "success");
       fetchSlips();
     } catch (e: any) {
       toast(e?.message || "Gagal men-generate slip gaji", "danger");
@@ -384,37 +369,15 @@ export default function HrScreen() {
     }
   };
 
-  const handlePaySlip = async (slipId: string | number) => {
-    try {
-      await api("POST", `/hr/payroll/slips/${slipId}/pay`, {});
-      toast("Slip gaji berhasil ditandai telah dibayarkan!", "success");
-      if (selectedSlip && selectedSlip.id === slipId) {
-        setSelectedSlip({ ...selectedSlip, status: "PAID", paidAt: new Date().toISOString() });
-      }
-      if (activeTab === "payroll") fetchSlips();
-      if (activeTab === "payroll-history") fetchHistorySlips();
-    } catch (e: any) {
-      toast(e?.message || "Gagal memperbarui status slip", "danger");
-    }
+  // Bayar: pilih akun kas / bank dulu di dialog
+  const handlePaySlip = (slipId: string | number) => {
+    const slip = [selectedSlip, ...slips, ...historySlips].find((x: any) => x && String(x.id) === String(slipId));
+    setPayTarget({ mode: "one", id: slipId, name: slip?.user?.name || "karyawan", amount: Number(slip?.netSalary || 0) });
   };
 
-  const handleSaveConfig = async () => {
-    if (!editConfigTarget) return;
-    try {
-      await api("POST", "/hr/payroll/configs", {
-        userId: editConfigTarget.userId,
-        basicSalary: Number(String(editBasicSalary).replace(/\D/g, "")) || 0,
-        allowance: Number(String(editAllowance).replace(/\D/g, "")) || 0,
-        ptkp: editPtkp,
-        hasNpwp: editHasNpwpLabel.startsWith("Punya"),
-        pph21Rate: editCustomRate ? Number(editCustomRate) : null,
-      });
-      toast("Konfigurasi gaji karyawan berhasil disimpan", "success");
-      setEditConfigModalOpen(false);
-      fetchConfigs();
-    } catch (e: any) {
-      toast(e?.message || "Gagal menyimpan konfigurasi", "danger");
-    }
+  const refreshPayroll = () => {
+    if (activeTab === "payroll") fetchSlips();
+    if (activeTab === "payroll-history") fetchHistorySlips();
   };
 
   // ── Computations ──
@@ -573,8 +536,8 @@ export default function HrScreen() {
               },
               {
                 id: "config",
-                label: "Setting Gaji",
-                icon: Settings,
+                label: "Data Karyawan",
+                icon: Users,
                 count: configs.length,
                 hide: !isFinanceOrAdmin,
               },
@@ -673,6 +636,10 @@ export default function HrScreen() {
             slips={slips}
             setSelectedSlip={setSelectedSlip}
             handlePaySlip={handlePaySlip}
+            onPayAll={() => {
+              const drafts = slips.filter((x: any) => x.status !== "PAID");
+              setPayTarget({ mode: "all", period: payrollPeriod, count: drafts.length, amount: drafts.reduce((a: number, x: any) => a + Number(x.netSalary || 0), 0) });
+            }}
           />
         )}
 
@@ -698,22 +665,7 @@ export default function HrScreen() {
         )}
 
         {/* ──────────────── TAB 5: CONFIG GAJI KARYAWAN ──────────────── */}
-        {activeTab === "config" && isFinanceOrAdmin && (
-          <PayrollConfigTab
-            loadingConfigs={loadingConfigs}
-            configs={configs}
-            fetchConfigs={fetchConfigs}
-            onEditConfig={(c) => {
-              setEditConfigTarget(c);
-              setEditBasicSalary(c.basicSalary ? formatThousands(c.basicSalary) : "");
-              setEditAllowance(c.allowance ? formatThousands(c.allowance) : "");
-              setEditPtkp(c.ptkp || "TK/0");
-              setEditHasNpwpLabel(c.hasNpwp ? "Punya NPWP" : "Tidak Ada (+20% Tarif)");
-              setEditCustomRate(c.pph21Rate ? String(c.pph21Rate) : "");
-              setEditConfigModalOpen(true);
-            }}
-          />
-        )}
+        {activeTab === "config" && isFinanceOrAdmin && <EmployeeMasterTab />}
       </View>
 
       {/* ──────────────── DIALOGS ──────────────── */}
@@ -722,23 +674,16 @@ export default function HrScreen() {
         setSelectedSlip={setSelectedSlip}
         isFinanceOrAdmin={isFinanceOrAdmin}
         handlePaySlip={handlePaySlip}
+        onChanged={refreshPayroll}
       />
 
-      <EditSalaryConfigDialog
-        open={editConfigModalOpen}
-        onOpenChange={setEditConfigModalOpen}
-        target={editConfigTarget}
-        basicSalary={editBasicSalary}
-        setBasicSalary={setEditBasicSalary}
-        allowance={editAllowance}
-        setAllowance={setEditAllowance}
-        ptkp={editPtkp}
-        setPtkp={setEditPtkp}
-        hasNpwpLabel={editHasNpwpLabel}
-        setHasNpwpLabel={setEditHasNpwpLabel}
-        customRate={editCustomRate}
-        setCustomRate={setEditCustomRate}
-        onSave={handleSaveConfig}
+      <PayrollPayDialog
+        target={payTarget}
+        onClose={() => setPayTarget(null)}
+        onPaid={(slip) => {
+          if (slip && selectedSlip && String(selectedSlip.id) === String(slip.id)) setSelectedSlip(slip);
+          refreshPayroll();
+        }}
       />
 
       <ManualAttendanceDialog

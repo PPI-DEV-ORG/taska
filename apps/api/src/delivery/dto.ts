@@ -127,6 +127,33 @@ export class DeliveryCreateDto {
   /** Invoice yang dikirim (dulu tag "[inv:id]"). */
   @IsOptional() @Type(() => Number) @IsInt()
   invoiceId?: number;
+
+  /** Pengirim: karyawan, atau nama ekspedisi / kurir luar. */
+  @IsOptional() @Type(() => Number) @IsInt()
+  senderId?: number | null;
+
+  @IsOptional() @IsString()
+  senderName?: string | null;
+
+  @IsOptional() @IsString()
+  vehicleNo?: string | null;
+
+  /** Petugas gudang yang mengeluarkan barang (tanda tangan "Dikeluarkan oleh"). */
+  @IsOptional() @Type(() => Number) @IsInt()
+  warehouseStaffId?: number | null;
+
+  /** Penerima di lokasi. Surat jalan project: PM project (otomatis bila kosong). */
+  @IsOptional() @Type(() => Number) @IsInt()
+  recipientUserId?: number | null;
+
+  @IsOptional() @IsString()
+  recipientName?: string | null;
+
+  @IsOptional() @IsString()
+  recipientTitle?: string | null;
+
+  @IsOptional() @IsString()
+  recipientPhone?: string | null;
 }
 
 export class GoodsDto {

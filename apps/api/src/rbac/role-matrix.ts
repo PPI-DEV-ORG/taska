@@ -12,9 +12,19 @@
  *
  * "L" tanpa "M" = data boleh dipakai di pilihan form (dropdown), tapi menunya tidak tampil.
  * Pembatasan "hanya data milik sendiri" (mis. pengeluaran, absensi, slip gaji) tetap diatur di masing-masing modul.
+ *
+ * Prinsip v3 — tiap peran hanya memegang tugas pokoknya:
+ *   - Laporan keuangan (laba rugi, neraca, arus kas, jurnal, pajak) = modul "accounting": hanya Finance, Bos & Super Admin.
+ *   - Kelola absensi & gaji (modul "hr" selain absen sendiri) hanya HR & Finance.
+ *   - Menu "Laporan" untuk peran lain hanya berisi laporan operasional bidangnya (prospek, proyek, stok, surat jalan).
+ *   - v4: Gudang tidak memegang menu PO Keluar / Pengiriman Pemasok — barang yang dikirim muncul di Penerimaan Barang.
+ *   - v5: Gudang tanpa Persetujuan, Pembelian, Keuangan & Proyek. Tetap: pengeluaran & petty cash miliknya sendiri.
+ *
+ * Menaikkan versi ini membuat server menerapkan ulang matriks standar ke peran bawaan sekali saat start
+ * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
  */
 
-export const ROLE_MATRIX_VERSION = 2;
+export const ROLE_MATRIX_VERSION = 6;
 
 export const ROLE_MODULE_KEYS = [
   "leads", "quotations", "surveys", "poc-reports", "visit-reports", "customers", "po-client",
@@ -49,8 +59,13 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
   },
   ADMIN: {
     name: "Admin",
-    description: "Administrator operasional kantor dengan akses seluruh modul",
-    permissions: all(FULL),
+    description: "Administrator operasional kantor: seluruh modul operasional, tanpa buku besar / laporan keuangan & penggajian",
+    permissions: {
+      ...all(FULL),
+      accounting: "", // laporan keuangan & jurnal hanya Finance / Bos
+      hr: "MLC", // absen sendiri; kelola absensi & gaji oleh HR / Finance
+      reports: "MLE", // laporan operasional saja
+    },
   },
   BOS: {
     name: "Direktur / Bos",
@@ -83,10 +98,10 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
 
   PM: {
     name: "Project Manager",
-    description: "Kelola project, tugas tim, kebutuhan material, surat jalan project & laba/rugi project",
+    description: "Kelola project, tugas tim, kebutuhan material & surat jalan project (tanpa harga jual / laba-rugi)",
     permissions: {
       ...EMPLOYEE,
-      projects: "MLCUPE",
+      projects: "MLCUE", // tanpa P: harga jual, nilai kontrak & laba-rugi hanya Finance / pimpinan
       tasks: "MLCUA",
       surveys: "MLCUV", // menyetujui permintaan survey
       "poc-reports": "MLCU",
@@ -95,17 +110,17 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "delivery-notes": "MLCU",
       "damage-reports": "MLC",
       approvals: "MLV",
-      leads: "ML",
-      quotations: "ML",
+      leads: "L",
+      quotations: "L", // lihat penawaran yang terkait project
       "po-client": "L",
-      invoices: "L",
-      customers: "LCU",
+      invoices: "L", // status tagihan project (tanpa menu Faktur)
+      customers: "L",
       stock: "ML",
-      products: "LP",
+      products: "L",
       warehouses: "L",
       suppliers: "L",
       receiving: "L",
-      reports: "MLP",
+      reports: "ML", // laporan proyek
     },
   },
 
@@ -167,7 +182,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       projects: "L",
       quotations: "L",
       "po-client": "L",
-      reports: "MLE",
+      reports: "ML", // laporan stok & surat jalan
     },
   },
 
@@ -210,20 +225,23 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       ...EMPLOYEE,
       stock: "MLCU",
       opname: "MLCU",
-      receiving: "MLCUV", // persetujuan penerimaan tahap 1
+      receiving: "MLCU", // konfirmasi fisik barang; persetujuan oleh Procurement
       "delivery-notes": "MLCU",
       "damage-reports": "MLCU",
-      "purchase-requests": "MLCU",
-      "supplier-pos": "ML",
-      shipments: "ML",
+      // Tanpa menu Pembelian. Lihat & ubah tetap perlu untuk cek stok & serah barang stok ke proyek
+      // (tugas Gudang — tampil di dashboard Gudang), bukan untuk membuat permintaan pembelian.
+      "purchase-requests": "LU",
+      "supplier-pos": "L", // data PO untuk penerimaan (tanpa menu PO Keluar)
+      shipments: "L", // barang yang dikirim tampil di Penerimaan Barang
       warehouses: "MLCU",
-      products: "MLCUP",
-      approvals: "MLV",
+      products: "MLCU", // tanpa harga beli / laba
+      approvals: "", // tanpa akses Persetujuan
       "master-data": "ML",
-      projects: "L",
-      "po-client": "L",
-      invoices: "L",
+      projects: "L", // hanya untuk pilihan proyek tujuan surat jalan (tanpa menu / ringkasan proyek)
+      "po-client": "L", // pilih SO saat membuat surat jalan
+      invoices: "", // tanpa akses Keuangan
       suppliers: "L",
+      reports: "ML", // laporan stok & surat jalan
     },
   },
 
@@ -235,7 +253,6 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       hr: FULL,
       users: "MLCU",
       "purchase-requests": "MLC",
-      reports: "ML",
       projects: "L",
     },
   },

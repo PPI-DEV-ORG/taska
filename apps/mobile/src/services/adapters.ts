@@ -1141,17 +1141,17 @@ export function adaptRow(module: string, raw: any): Row {
     }
     case "delivery-notes": {
       const loc = raw.locations?.[0];
-      let penerimaNama = raw.penerimaNama || "";
-      let penerimaJabatan = raw.penerimaJabatan || "";
-      let penerimaKontak = raw.penerimaKontak || "";
+      let penerimaNama = raw.recipientName || raw.penerimaNama || "";
+      let penerimaJabatan = raw.recipientTitle || raw.penerimaJabatan || "";
+      let penerimaKontak = raw.recipientPhone || raw.penerimaKontak || "";
       let catatanSerahTerima = raw.catatanSerahTerima || "";
       if (raw.reportText) {
         try {
           const parsed = JSON.parse(raw.reportText);
           if (parsed && typeof parsed === "object") {
-            if (parsed.penerimaNama) penerimaNama = parsed.penerimaNama;
-            if (parsed.penerimaJabatan) penerimaJabatan = parsed.penerimaJabatan;
-            if (parsed.penerimaKontak) penerimaKontak = parsed.penerimaKontak;
+            if (parsed.penerimaNama && !raw.recipientName) penerimaNama = parsed.penerimaNama;
+            if (parsed.penerimaJabatan && !raw.recipientTitle) penerimaJabatan = parsed.penerimaJabatan;
+            if (parsed.penerimaKontak && !raw.recipientPhone) penerimaKontak = parsed.penerimaKontak;
             if (parsed.catatanSerahTerima) catatanSerahTerima = parsed.catatanSerahTerima;
           }
         } catch {
@@ -1159,9 +1159,9 @@ export function adaptRow(module: string, raw: any): Row {
           const matchJabatan = raw.reportText.match(/\(([^)]+)\)/);
           const matchKontak = raw.reportText.match(/\[(?:Telp|Kontak):\s*([^\]]+)\]/i);
           const matchCatatan = raw.reportText.match(/-\s*(.+)$/);
-          if (matchNama) penerimaNama = matchNama[1].trim();
-          if (matchJabatan) penerimaJabatan = matchJabatan[1].trim();
-          if (matchKontak) penerimaKontak = matchKontak[1].trim();
+          if (matchNama && !raw.recipientName) penerimaNama = matchNama[1].trim();
+          if (matchJabatan && !raw.recipientTitle) penerimaJabatan = matchJabatan[1].trim();
+          if (matchKontak && !raw.recipientPhone) penerimaKontak = matchKontak[1].trim();
           if (matchCatatan) catatanSerahTerima = matchCatatan[1].trim();
           else if (!matchNama && !matchJabatan) catatanSerahTerima = raw.reportText;
         }
@@ -1210,7 +1210,17 @@ export function adaptRow(module: string, raw: any): Row {
         penerimaNama,
         penerimaJabatan,
         penerimaKontak,
+        penerimaId: raw.recipientUserId != null ? String(raw.recipientUserId) : null,
         catatanSerahTerima,
+        // Penanda tangan surat jalan
+        pengirim: nameOf(raw.sender) ?? raw.senderName ?? nameOf(raw.creator) ?? "",
+        pengirimId: raw.senderId != null ? String(raw.senderId) : null,
+        pengirimEkspedisi: raw.senderName ?? "",
+        kendaraan: raw.vehicleNo ?? "",
+        gudang: nameOf(raw.warehouse) ?? "",
+        gudangId: raw.warehouseId != null ? String(raw.warehouseId) : null,
+        petugasGudang: nameOf(raw.warehouseStaff) ?? "",
+        petugasGudangId: raw.warehouseStaffId != null ? String(raw.warehouseStaffId) : null,
         tanggalDiterima: raw.receivedAt ? d(raw.receivedAt) : (raw.tanggalDiterima ? d(raw.tanggalDiterima) : null),
         soDisplay: resolvedSoNum || (resolvedSoId ? `SO #${resolvedSoId}` : "-"),
         invoiceDisplay: resolvedInvoiceNum || (resolvedInvoiceId ? `INV #${resolvedInvoiceId}` : "-"),
@@ -1252,8 +1262,10 @@ export function adaptRow(module: string, raw: any): Row {
         sumberDana:
           raw.fundingSource === "TALANGAN_PRIBADI"
             ? "Talangan Pribadi (Reimbursement)"
+            : raw.fundingSource === "PETTY_CASH"
+            ? "Saldo Petty Cash"
             : raw.fundingSource === "UANG_JALAN"
-            ? "Kas Proyek / Uang Jalan"
+            ? "Kas Proyek / Petty Cash"
             : "Dana Perusahaan",
         reimbursementStatus: raw.reimbursementStatus ?? null,
         approvedAmount: raw.approvedAmount != null ? n(raw.approvedAmount) : null,
@@ -1701,6 +1713,8 @@ export function adaptRow(module: string, raw: any): Row {
         file: raw.file ?? null,
         transferFileId: raw.transferFileId ?? (raw.payments ?? []).find((p: any) => p.fileId)?.fileId ?? null,
         transferFile: raw.transferFile ?? null,
+        taxInvoiceFileId: raw.taxInvoiceFileId ?? null,
+        taxInvoiceNumber: raw.taxInvoiceNumber ?? "",
         _payments: (raw.payments ?? []).map((p: any) => ({
           id: String(p.id),
           amount: n(p.amount),
@@ -2296,6 +2310,15 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         reportFileId: row.reportFileId ? Number(row.reportFileId) : undefined,
         clientPoId: row.clientPoId ?? row.soId ? Number(row.clientPoId ?? row.soId) : undefined,
         invoiceId: row.invoiceId ? Number(row.invoiceId) : undefined,
+        senderId: row.senderId ? Number(row.senderId) : undefined,
+        senderName: row.senderName || undefined,
+        vehicleNo: row.vehicleNo || undefined,
+        warehouseId: row.warehouseId ? Number(row.warehouseId) : undefined,
+        warehouseStaffId: row.warehouseStaffId ? Number(row.warehouseStaffId) : undefined,
+        recipientUserId: row.recipientUserId ? Number(row.recipientUserId) : undefined,
+        recipientName: row.recipientName || undefined,
+        recipientTitle: row.recipientTitle || undefined,
+        recipientPhone: row.recipientPhone || undefined,
       };
     case "expenses":
       return {
@@ -2349,8 +2372,12 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
             : undefined,
         fundingSource:
           row.fundingSource ||
-          (row.sumberDana && String(row.sumberDana).toLowerCase().includes("talangan")
+          (row.sumberDana
+            ? String(row.sumberDana).toLowerCase().includes("talangan")
             ? "TALANGAN_PRIBADI"
+            : String(row.sumberDana).toLowerCase().includes("petty")
+            ? "PETTY_CASH"
+            : "PERUSAHAAN"
             : "PERUSAHAAN"),
         reimbursementStatus: row.reimbursementStatus || undefined,
         paymentMethod: row.paymentMethod || undefined,
@@ -2617,6 +2644,8 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         paymentReference: row.paymentReference || undefined,
         coaAccount: row.coaAccount || undefined,
         paymentFileId: row.paymentFileId ? Number(row.paymentFileId) : (row.transferFileId ? Number(row.transferFileId) : undefined),
+        taxInvoiceFileId: row.taxInvoiceFileId ? Number(row.taxInvoiceFileId) : undefined,
+        taxInvoiceNumber: row.taxInvoiceNumber ? String(row.taxInvoiceNumber) : undefined,
       };
     }
     default:
@@ -2712,9 +2741,12 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   "supplier-pos": ["number", "supplierSoNumber", "supplierId", "requestId", "projectId", "date", "eta", "paymentTerms", "total", "ppnMode", "ppn", "dpp", "pphMode", "tipePph", "pph", "fileId", "soFileId", "doFileId", "status", "shipmentStatus", "items"],
   "purchase-requests": ["date", "dueDate", "costType", "procurementSource", "paymentMethod", "ppnMode", "isProjectConsumable", "projectId", "taskId", "supplierId", "condition", "purpose", "otherNote", "evidenceFileId", "doFileId", "paymentProofFileId", "paymentStatus", "fundingSource", "status", "items"],
   receiving: ["supplierPoId", "warehouseId", "projectId", "requestId", "date", "conditionNote", "receiptFileId", "photoFileId", "status", "items"],
-  "delivery-notes": ["number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText", "status", "clientPoId", "invoiceId"],
+  "delivery-notes": [
+    "number", "date", "withGoods", "locations", "items", "scanFileId", "signedFileId", "reportFileId", "reportText", "status", "clientPoId", "invoiceId",
+    "senderId", "senderName", "vehicleNo", "warehouseId", "warehouseStaffId", "recipientUserId", "recipientName", "recipientTitle", "recipientPhone",
+  ],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "category", "supplierPoId", "qty", "description", "status", "fileId"],
-  invoiceIn: ["number", "supplierId", "supplierName", "supplierPoId", "amount", "ppn", "pph", "pphMode", "tipePph", "total", "date", "dueDate", "notes", "category", "debitAccount", "items", "fileId", "transferFileId", "paid", "paymentMethod", "paymentReference", "coaAccount", "paymentFileId"],
+  invoiceIn: ["number", "supplierId", "supplierName", "supplierPoId", "amount", "ppn", "pph", "pphMode", "tipePph", "total", "date", "dueDate", "notes", "category", "debitAccount", "items", "fileId", "transferFileId", "paid", "paymentMethod", "paymentReference", "coaAccount", "paymentFileId", "taxInvoiceFileId", "taxInvoiceNumber"],
   followups: ["method", "notes", "date", "nextDate", "status"],
   "poc-reports": [
     "title", "description", "type", "date", "endDate", "location", "status", "resultStatus",
@@ -2877,8 +2909,10 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.sumberDana !== undefined) {
       out.fundingSource =
         String(patch.sumberDana).toLowerCase().includes("talangan")
-          ? "TALANGAN_PRIBADI"
-          : "PERUSAHAAN";
+            ? "TALANGAN_PRIBADI"
+            : String(patch.sumberDana).toLowerCase().includes("petty")
+            ? "PETTY_CASH"
+            : "PERUSAHAAN";
     }
     if (patch.fundingSource !== undefined) out.fundingSource = patch.fundingSource;
     if (patch.paymentMethod !== undefined) out.paymentMethod = patch.paymentMethod;
@@ -3122,6 +3156,10 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.withGoods !== undefined) {
       out.withGoods = patch.withGoods === true || patch.withGoods === "true";
     }
+    // Tanda terima lapangan: simpan juga ke kolom penerima (dipakai cetak surat jalan)
+    if (patch.penerimaNama !== undefined) out.recipientName = patch.penerimaNama || null;
+    if (patch.penerimaJabatan !== undefined) out.recipientTitle = patch.penerimaJabatan || null;
+    if (patch.penerimaKontak !== undefined) out.recipientPhone = patch.penerimaKontak || null;
     if (patch.penerimaNama || patch.catatanSerahTerima || patch.penerimaJabatan || patch.penerimaKontak) {
       out.reportText = [
         patch.penerimaNama ? `Penerima: ${patch.penerimaNama}` : "",

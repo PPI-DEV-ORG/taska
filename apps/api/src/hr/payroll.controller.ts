@@ -1,12 +1,38 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query } from "@nestjs/common";
 import { PayrollService } from "./payroll.service.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
-import { GeneratePayrollDto, PaySlipDto, SaveSalaryConfigDto, UpdateSalaryConfigDto } from "./dto.js";
+import { AdjustSlipDto, GeneratePayrollDto, PayPeriodDto, PayrollSettingsDto, PaySlipDto, SaveSalaryConfigDto, UpdateEmployeeDto, UpdateSalaryConfigDto } from "./dto.js";
 
 @Controller("hr/payroll")
 export class PayrollController {
   constructor(private readonly payroll: PayrollService) {}
+
+  // ── Master data karyawan (HR / Finance) ──
+  @Get("employees")
+  @Require("payroll", "U")
+  employees(@Query("all") all?: string) {
+    return this.payroll.listEmployees(all === "1");
+  }
+
+  @Put("employees/:userId")
+  @Require("payroll", "U")
+  updateEmployee(@Param("userId", ParseIntPipe) userId: number, @Body() dto: UpdateEmployeeDto) {
+    return this.payroll.updateEmployee(userId, dto);
+  }
+
+  // ── Aturan BPJS & PPh 21 ──
+  @Get("settings")
+  @Require("payroll", "U")
+  settings() {
+    return this.payroll.getSettings();
+  }
+
+  @Put("settings")
+  @Require("payroll", "U")
+  updateSettings(@Body() dto: PayrollSettingsDto, @CurrentUser() user: RequestUser) {
+    return this.payroll.updateSettings(dto, user.id);
+  }
 
   @Get("configs")
   @Require("payroll", "U")
@@ -76,13 +102,26 @@ export class PayrollController {
     return this.payroll.generateSlips(dto);
   }
 
+  @Patch("slips/:id")
+  @Require("payroll", "U")
+  adjustSlip(@Param("id", ParseIntPipe) id: number, @Body() dto: AdjustSlipDto) {
+    return this.payroll.adjustSlip(id, dto);
+  }
+
   @Post("slips/:id/pay")
   @Require("payroll", "U")
   markPaid(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: PaySlipDto,
+    @CurrentUser() user: RequestUser,
   ) {
-    return this.payroll.markPaid(id, dto);
+    return this.payroll.markPaid(id, dto, user.id);
+  }
+
+  @Post("pay-period")
+  @Require("payroll", "U")
+  payPeriod(@Body() dto: PayPeriodDto, @CurrentUser() user: RequestUser) {
+    return this.payroll.payPeriod(dto, user.id);
   }
 
   @Delete("slips/:id")

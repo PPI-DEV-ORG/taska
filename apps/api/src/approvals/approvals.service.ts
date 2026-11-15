@@ -19,7 +19,9 @@ type ApprovalWithSteps = Approval & { steps: ApprovalStep[] };
 function plan(kind: ApprovalKind, needsBos: boolean): Group[] {
   switch (kind) {
     case "PENERIMAAN":
-      return [{ roles: ["GUDANG"], mode: "all" }, { roles: ["PROCUREMENT"], mode: "all" }];
+      // Gudang mengonfirmasi fisik barang saat membuat penerimaan (bukan lewat menu Persetujuan);
+      // persetujuan cukup Procurement. Langkah GUDANG pada data lama otomatis diabaikan (lihat evaluate).
+      return [{ roles: ["PROCUREMENT"], mode: "all" }];
     case "OPNAME":
       return [{ roles: ["PROCUREMENT", "FINANCE", "BOS"], mode: "any" }];
     case "PERMINTAAN_SURVEY":

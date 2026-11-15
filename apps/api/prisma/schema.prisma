@@ -147,6 +147,10 @@ enum CashAdvancePurpose {
   PENGIRIMAN
   PROJECT
   LAINNYA
+  /// Finance mengisi saldo petty cash karyawan langsung (tanpa pengajuan)
+  ISI_SALDO
+  /// Sisa saldo petty cash dikembalikan karyawan ke kas
+  TARIK_SALDO
 }
 
 enum TaskStatus {
@@ -403,10 +407,14 @@ model User {
   attendances           Attendance[]        @relation("AttendanceUser")
   payrollSlips          PayrollSlip[]       @relation("PayrollSlipUser")
   salaryConfig          SalaryConfig?       @relation("SalaryConfigUser")
+  employeeProfile       EmployeeProfile?    @relation("EmployeeProfileUser")
   paymentsCreated       Payment[]           @relation("PaymentCreator")
   approvalDecisions     ApprovalStep[]      @relation("ApprovalStepDecider")
   expensesPaid          Expense[]           @relation("ExpensePayer")
   deliveryNotesReceived DeliveryNote[]      @relation("DNReceiver")
+  deliveryNotesSent     DeliveryNote[]      @relation("DNSender")
+  deliveryNotesIssued   DeliveryNote[]      @relation("DNWarehouseStaff")
+  deliveryNotesToPm     DeliveryNote[]      @relation("DNRecipient")
   pocCreated            PocReport[]         @relation("PocCreator")
   visitsCreated         VisitReport[]       @relation("VisitCreator")
   visitActions          VisitActionItem[]   @relation("VisitActionAssignee")
@@ -459,6 +467,7 @@ model File {
   receiving_photoFile              Receiving[]          @relation("Receiving_photoFileId")
   invoiceIn_file                   InvoiceIn[]          @relation("InvoiceIn_fileId")
   invoiceIn_transferFile           InvoiceIn[]          @relation("InvoiceIn_transferFileId")
+  invoiceIn_taxInvoiceFile         InvoiceIn[]          @relation("InvoiceIn_taxInvoiceFileId")
   invoiceOut_file                  InvoiceOut[]         @relation("InvoiceOut_fileId")
   invoiceOut_paidFile              InvoiceOut[]         @relation("InvoiceOut_paidFileId")
   invoiceOut_latestFile            InvoiceOut[]         @relation("InvoiceOut_latestFileId")
@@ -715,6 +724,7 @@ model Warehouse {
   receivings    Receiving[]
   opnames       StockOpname[]
   serialHistory SerialUnitHistory[] @relation("SerialHistWarehouse")
+  deliveryNotes DeliveryNote[]
 
   @@index([name])
 }
@@ -1093,6 +1103,11 @@ model InvoiceIn {
   file           File?           @relation("InvoiceIn_fileId", fields: [fileId], references: [id], onDelete: SetNull)
   transferFileId Int?
   transferFile   File?           @relation("InvoiceIn_transferFileId", fields: [transferFileId], references: [id], onDelete: SetNull)
+  /// Faktur pajak (e-Faktur) dari supplier — dasar mengkreditkan PPN Masukan
+  taxInvoiceFileId Int?
+  taxInvoiceFile   File?         @relation("InvoiceIn_taxInvoiceFileId", fields: [taxInvoiceFileId], references: [id], onDelete: SetNull)
+  /// Nomor seri faktur pajak (NSFP)
+  taxInvoiceNumber String?
 
   // Metadata (dulu JSON di SystemSetting "invoice-in:meta:<id>"). Berkas tetap di fileId / transferFileId.
   notes        String?   @db.Text
@@ -1793,6 +1808,22 @@ model DeliveryNote {
   receiveById  Int?
   receivedBy   User?          @relation("DNReceiver", fields: [receiveById], references: [id], onDelete: SetNull)
   receivedAt   DateTime?
+  /// Pengirim: karyawan (senderId) atau ekspedisi / kurir luar (senderName) + no. kendaraan
+  senderId         Int?
+  sender           User?      @relation("DNSender", fields: [senderId], references: [id], onDelete: SetNull)
+  senderName       String?
+  vehicleNo        String?
+  /// Gudang asal & petugas gudang yang mengeluarkan barang (menandatangani surat jalan)
+  warehouseId      Int?
+  warehouse        Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  warehouseStaffId Int?
+  warehouseStaff   User?      @relation("DNWarehouseStaff", fields: [warehouseStaffId], references: [id], onDelete: SetNull)
+  /// Penerima di lokasi. Surat jalan project: PM project (recipientUserId).
+  recipientUserId  Int?
+  recipientUser    User?      @relation("DNRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  recipientName    String?
+  recipientTitle   String?
+  recipientPhone   String?
   scanFileId   Int?
   scanFile     File?          @relation("DeliveryNote_scanFileId", fields: [scanFileId], references: [id], onDelete: SetNull)
   reportText   String?        @db.LongText
@@ -1813,6 +1844,7 @@ model DeliveryNote {
   @@index([date])
   @@index([clientPoId])
   @@index([invoiceId])
+  @@index([recipientUserId])
 }
 
 model DeliveryNoteLocation {
@@ -1862,15 +1894,47 @@ model Attendance {
   @@index([date])
 }
 
+/// Data kepegawaian karyawan (master data karyawan). Akun login & jabatan ada di User.
+model EmployeeProfile {
+  userId          Int       @id
+  user            User      @relation("EmployeeProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+  employeeNo      String?   @unique
+  nik             String?
+  npwp            String?
+  birthPlace      String?
+  birthDate       DateTime? @db.Date
+  gender          String?
+  address         String?   @db.Text
+  joinDate        DateTime? @db.Date
+  /// TETAP | KONTRAK | HARIAN | MAGANG
+  employmentType  String    @default("TETAP")
+  contractEndDate DateTime? @db.Date
+  bankName        String?
+  bankAccountNo   String?
+  bankAccountName String?
+  bpjsKesNo       String?
+  bpjsTkNo        String?
+  emergencyName   String?
+  emergencyPhone  String?
+  updatedAt       DateTime  @updatedAt
+}
+
 model SalaryConfig {
-  userId      Int      @id
-  user        User     @relation("SalaryConfigUser", fields: [userId], references: [id], onDelete: Cascade)
-  basicSalary Decimal  @default(0) @db.Decimal(18, 2)
-  allowance   Decimal  @default(0) @db.Decimal(18, 2)
-  ptkp        String   @default("TK/0")
-  hasNpwp     Boolean  @default(true)
-  pph21Rate   Decimal? @db.Decimal(6, 3)
-  updatedAt   DateTime @updatedAt
+  userId        Int      @id
+  user          User     @relation("SalaryConfigUser", fields: [userId], references: [id], onDelete: Cascade)
+  basicSalary   Decimal  @default(0) @db.Decimal(18, 2)
+  /// Tunjangan tetap per bulan (ikut dasar BPJS)
+  allowance     Decimal  @default(0) @db.Decimal(18, 2)
+  /// Uang makan / transport per hari hadir (tunjangan tidak tetap)
+  mealAllowance Decimal  @default(0) @db.Decimal(18, 2)
+  ptkp          String   @default("TK/0")
+  hasNpwp       Boolean  @default(true)
+  pph21Rate     Decimal? @db.Decimal(6, 3)
+  /// Ikut BPJS Kesehatan / BPJS Ketenagakerjaan (JHT, JKK, JKM) / Jaminan Pensiun
+  bpjsKes       Boolean  @default(true)
+  bpjsTk        Boolean  @default(true)
+  bpjsJp        Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
 }
 
 model PayrollSlip {
@@ -1882,10 +1946,26 @@ model PayrollSlip {
   allowance       Decimal   @default(0) @db.Decimal(18, 2)
   overtimePay     Decimal   @default(0) @db.Decimal(18, 2)
   absentDeduct    Decimal   @default(0) @db.Decimal(18, 2)
+  /// Uang makan / transport (per hari hadir)
+  mealAllowance   Decimal   @default(0) @db.Decimal(18, 2)
+  /// Bonus / insentif / THR / penghasilan lain periode ini (diisi manual sebelum dibayar)
+  otherIncome     Decimal   @default(0) @db.Decimal(18, 2)
   grossSalary     Decimal   @default(0) @db.Decimal(18, 2)
+  /// Total iuran BPJS porsi karyawan (dipotong dari gaji)
   bpjs            Decimal   @default(0) @db.Decimal(18, 2)
+  /// Total iuran BPJS porsi perusahaan (beban perusahaan, tidak dipotong)
+  bpjsCompany     Decimal   @default(0) @db.Decimal(18, 2)
+  /// Dasar PPh 21 (bruto + premi JKK/JKM/Kesehatan yang dibayar perusahaan)
+  taxBase         Decimal   @default(0) @db.Decimal(18, 2)
+  terCategory     String?
+  terRate         Decimal   @default(0) @db.Decimal(6, 3)
   pph21           Decimal   @default(0) @db.Decimal(18, 2)
+  /// Potongan lain: cicilan pinjaman / kasbon karyawan
+  otherDeduction  Decimal   @default(0) @db.Decimal(18, 2)
   netSalary       Decimal   @default(0) @db.Decimal(18, 2)
+  /// Rincian BPJS per program (JHT, JP, JKK, JKM, Kesehatan) — porsi karyawan & perusahaan
+  detail          Json?
+  note            String?   @db.Text
   workDays        Int       @default(0)
   presentDays     Int       @default(0)
   absentDays      Int       @default(0)
