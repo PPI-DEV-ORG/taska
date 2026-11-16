@@ -1,3 +1,4 @@
+import { syncSurveyApprovalAmount } from "./survey-approval.js";
 import {
   BadRequestException,
   ForbiddenException,
@@ -103,6 +104,8 @@ export class SurveysService {
       where: { refType: "survey", refId: String(id) },
       select: { id: true, originalName: true, mimeType: true, size: true, kind: true, createdAt: true },
     });
+    // Persetujuan lama bernilai Rp 0: samakan dengan biaya / petty cash survey
+    await syncSurveyApprovalAmount(this.prisma.main, id);
     let approval = await this.approvals.getFor("PERMINTAAN_SURVEY", id);
     if (!approval && survey.status === "DIMINTA") {
       const requester = (survey as any).requester ?? { id: survey.requestedById, name: "Staf", role: "SALES" };
@@ -242,6 +245,8 @@ export class SurveysService {
         members: { include: { user: { select: { id: true, name: true, role: true } } } },
       },
     });
+
+    if (payload.cost !== undefined) await syncSurveyApprovalAmount(this.prisma.main, id);
 
     const anyDto = dto as Record<string, any>;
     if (anyDto.evidenceFileId) {

@@ -11,6 +11,7 @@ import { useApp } from "@/store/app-store";
 import { hasUserPermission, findRoleDefForUser, type ModuleDef, type Role, type Row, type User } from "@/constants/modules";
 import { RoleManagementDialog } from "@/modules/users/role-management-dialog";
 import { CompanyProfileDialog } from "@/modules/settings/company-profile-dialog";
+import { PendingSupplierBills } from "@/modules/invoice/pending-supplier-bills";
 import { colors } from "@/tokens";
 import {
   SupplierInvoiceDetailDialog,
@@ -28,6 +29,7 @@ import {
 } from "@/modules/invoice/invoice-chain";
 import { CreateSupplierPoDialog } from "@/modules/supplier-po/create-po-dialog";
 import { CreateSalesOrderDialog } from "@/modules/sales-order/create-so-dialog";
+import { CreateQuotationDialog } from "@/modules/quotation/create-quotation-dialog";
 import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
@@ -463,6 +465,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
           />
         </View>
       ) : null}
+      {def.key === "invoices" && (invoiceTab === "all" || invoiceTab === "in") ? <PendingSupplierBills /> : null}
       {def.key === "damage-reports" ? (
         <View className="flex-row flex-wrap items-center gap-2 mb-3">
           <Chip
@@ -574,6 +577,8 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
         <CreateSupplierPoDialog open={open} onOpenChange={setOpen} />
       ) : def.key === "po-client" ? (
         <CreateSalesOrderDialog open={open} onOpenChange={setOpen} />
+      ) : def.key === "quotations" ? (
+        <CreateQuotationDialog open={open} onOpenChange={setOpen} />
       ) : def.createFields ? (
         <FormDialog def={def} open={open} onOpenChange={setOpen} />
       ) : null}

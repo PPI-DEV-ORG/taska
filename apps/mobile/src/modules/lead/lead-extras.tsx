@@ -28,6 +28,7 @@ import { Panel } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { DatePicker } from "@/components/taska/dialogs";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
+import { CreateQuotationDialog } from "@/modules/quotation/create-quotation-dialog";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
@@ -38,7 +39,9 @@ import { getItemAvailableStock } from "@/modules/quotation/lib";
 
 export function LeadExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { toast, data, addRow, patchRow, setStatus, pushHistory, user, reload, refreshModule, createQuotationFromLead } = useApp();
+  const { toast, data, addRow, patchRow, setStatus, pushHistory, user, reload, refreshModule } = useApp();
+  // Penawaran dibuat lewat form lengkap (item, diskon, PPN) — bukan penawaran kosong
+  const [quoteOpen, setQuoteOpen] = React.useState(false);
   
   const leadQuotations = React.useMemo(
     () =>
@@ -498,17 +501,7 @@ export function LeadExtras({ row }: { row: Row }) {
         right={
           <Button
             size="sm"
-            onPress={async () => {
-              try {
-                const created = await createQuotationFromLead(row);
-                if (created?.id) {
-                  toast("Penawaran berhasil dibuat!");
-                  router.push(`/quotations/${created.id}` as any);
-                }
-              } catch (e: any) {
-                toast(e?.message || "Gagal membuat penawaran", "danger");
-              }
-            }}
+            onPress={() => setQuoteOpen(true)}
             className="flex-row items-center gap-1"
           >
             <Plus size={14} color={colors.background} />
@@ -565,17 +558,7 @@ export function LeadExtras({ row }: { row: Row }) {
             </Text>
             <Button
               size="sm"
-              onPress={async () => {
-                try {
-                  const created = await createQuotationFromLead(row);
-                  if (created?.id) {
-                    toast("Penawaran berhasil dibuat!");
-                    router.push(`/quotations/${created.id}` as any);
-                  }
-                } catch (e: any) {
-                  toast(e?.message || "Gagal membuat penawaran", "danger");
-                }
-              }}
+              onPress={() => setQuoteOpen(true)}
               className="self-start flex-row items-center gap-1.5"
             >
               <Plus size={14} color={colors.background} />
@@ -984,6 +967,7 @@ export function LeadExtras({ row }: { row: Row }) {
         }}
       />
 
+      <CreateQuotationDialog open={quoteOpen} onOpenChange={setQuoteOpen} defaultLead={row} />
     </>
   );
 }

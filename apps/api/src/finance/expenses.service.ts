@@ -1,3 +1,7 @@
+import { can } from "../rbac/permissions.js";
+import { PETTY_CASH_SOURCE, pettyCashAvailable } from "./petty-cash-wallet.js";
+import { buildPettyCashSpendLines, pettyCashUsage } from "../accounting/cash-advance.rules.js";
+import { projectIdForSurvey } from "../accounting/project-cost.rules.js";
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -65,7 +69,12 @@ export class ExpensesService {
   ) {
     const role = (user.role || "").toUpperCase();
     const scope =
-      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) || q.surveyId || q.projectId || q.pocReportId || q.visitReportId
+      ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) ||
+      q.surveyId ||
+      // semua pengeluaran satu proyek hanya untuk pengelola proyek (PM / pimpinan); karyawan lain tetap miliknya sendiri
+      (q.projectId && can(user.role, "projects", "U")) ||
+      q.pocReportId ||
+      q.visitReportId
         ? {}
         : { reporterId: user.id };
     return {
@@ -185,6 +194,15 @@ export class ExpensesService {
     const amount = dto.amount ?? 0;
     const description = dto.description || "Pengeluaran operasional";
     const date = dto.date ? new Date(dto.date) : new Date();
+    const isPettyCash = dto.fundingSource === PETTY_CASH_SOURCE;
+    if (isPettyCash) {
+      const available = await pettyCashAvailable(this.prisma.main, user.id);
+      if (Number(amount) > available) {
+        throw new BadRequestException(
+          `Saldo petty cash Anda tidak cukup (tersedia Rp${available.toLocaleString("id-ID")}). Minta Finance mengisi saldo terlebih dahulu.`,
+        );
+      }
+    }
 
     const row = await this.prisma.main.expense.create({
       data: {
@@ -237,7 +255,7 @@ export class ExpensesService {
     await this.approvals.request({
       kind: "PENGELUARAN",
       entityId: row.id,
-      title: `Pengeluaran ${row.project?.name ?? "harian"} — Rp${amount}`,
+      title: `${isPettyCash ? "Pemakaian petty cash" : "Pengeluaran"} ${row.project?.name ?? "harian"} — Rp${amount}`,
       amount: Number(amount),
       requestedBy: user,
       href: `/expenses/${row.id}`,
@@ -263,6 +281,9 @@ export class ExpensesService {
   async update(id: number, dto: ExpenseDto, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
+    if (row.cashAdvanceId) {
+      throw new BadRequestException("Pengeluaran ini berasal dari laporan petty cash dan dikelola lewat menu Petty Cash.");
+    }
     const role = (user.role || "").toUpperCase();
     const isReporter = !row.reporterId || row.reporterId === user.id;
     const canEditExpense =
@@ -270,6 +291,17 @@ export class ExpensesService {
       (["SALES", "PROCUREMENT", "PM", "TEKNISI", "SE"].includes(role) && isReporter && row.status !== "DIBAYAR");
     if (!canEditExpense) {
       throw new BadRequestException("Hanya Finance atau pelapor pengeluaran yang memiliki hak untuk mengubah data pengeluaran ini");
+    }
+
+    const nextSource = dto.fundingSource !== undefined ? dto.fundingSource : row.fundingSource;
+    if (nextSource === PETTY_CASH_SOURCE && row.status === "DILAPORKAN") {
+      const nextAmount = Number(dto.amount ?? row.amount);
+      // saldo tersedia sudah dikurangi nilai lama pengeluaran ini (bila sebelumnya juga petty cash)
+      const available =
+        (await pettyCashAvailable(this.prisma.main, row.reporterId)) + (row.fundingSource === PETTY_CASH_SOURCE ? Number(row.amount) : 0);
+      if (nextAmount > available) {
+        throw new BadRequestException(`Saldo petty cash tidak cukup (tersedia Rp${available.toLocaleString("id-ID")})`);
+      }
     }
 
     if (dto.receiptFileId && dto.receiptFileId !== row.receiptFileId) {
@@ -360,6 +392,9 @@ export class ExpensesService {
   async setStatus(id: number, dto: ExpenseStatusDto, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
+    if (row.cashAdvanceId) {
+      throw new BadRequestException("Pengeluaran ini berasal dari laporan petty cash dan dikelola lewat menu Petty Cash.");
+    }
 
     if (dto.paidFileId) {
       await this.prisma.main.file.update({
@@ -368,11 +403,35 @@ export class ExpensesService {
       }).catch(() => {});
     }
 
-    const isPaid = Boolean(dto.paidFileId || dto.status === "DIBAYAR");
+    // Pengeluaran yang sudah DIBAYAR tidak bisa dibayar ulang / dimundurkan (kas sudah keluar).
+    if (row.status === "DIBAYAR") {
+      if (dto.status !== "DIBAYAR") {
+        throw new BadRequestException("Pengeluaran sudah dibayar dan tidak bisa diubah statusnya. Buat jurnal koreksi bila perlu.");
+      }
+      // Hanya melengkapi bukti bayar; tidak ada jurnal / kas keluar baru.
+      const kept = await this.prisma.main.expense.update({
+        where: { id },
+        data: { ...(dto.paidFileId ? { paidFileId: dto.paidFileId } : {}) },
+        include: { reporter: { select: { id: true, name: true } } },
+      });
+      return { ...kept, receiptFile: null, paidFile: null };
+    }
+    if (dto.status === "DIBAYAR" && row.status === "DITOLAK") {
+      throw new BadRequestException("Pengeluaran yang ditolak tidak bisa dibayar");
+    }
+    // Disetujui lalu ditolak / dikembalikan: balik jurnal pengakuan beban agar beban & hutang tidak menggantung.
+    if (row.status === "DISETUJUI" && (dto.status === "DITOLAK" || dto.status === "DILAPORKAN")) {
+      await this.postingService.reverseAllForSource("Expense", id, `Pengeluaran ${dto.status === "DITOLAK" ? "ditolak" : "dikembalikan"}`, user.id);
+    }
+
+    // Pemakaian petty cash: uangnya sudah dipegang karyawan, jadi "disetujui" = langsung selesai (tanpa pembayaran lagi).
+    const isPettyCash = row.fundingSource === PETTY_CASH_SOURCE;
+    const effStatus = isPettyCash && (dto.status === "DISETUJUI" || dto.status === "DIBAYAR") ? "DIBAYAR" : dto.status;
+    const isPaid = Boolean(effStatus === "DIBAYAR");
     const updated = await this.prisma.main.expense.update({
       where: { id },
       data: {
-        status: dto.status,
+        status: effStatus,
         ...(dto.reason ? { rejectReason: dto.reason } : {}),
         ...(dto.paidFileId ? { paidFileId: dto.paidFileId } : {}),
         ...(isPaid
@@ -381,11 +440,12 @@ export class ExpensesService {
               paidById: user.id,
               paidAmount: row.amount,
               reimbursementStatus: row.fundingSource === "TALANGAN_PRIBADI" ? "DIBAYAR" : undefined,
+              ...(isPettyCash ? { paidAccountCode: null } : {}),
             }
           : {}),
         ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
-        ...(dto.fundingSource ? { fundingSource: dto.fundingSource } : {}),
-        ...(dto.paidAccountCode ? { paidAccountCode: dto.paidAccountCode } : {}),
+        ...(dto.fundingSource && !isPettyCash ? { fundingSource: dto.fundingSource } : {}),
+        ...(dto.paidAccountCode && !isPettyCash ? { paidAccountCode: dto.paidAccountCode } : {}),
       },
       include: { reporter: { select: { id: true, name: true } } },
     });
@@ -402,20 +462,31 @@ export class ExpensesService {
       action: "UBAH_STATUS_PENGELUARAN",
       entityType: "expense",
       entityId: id,
-      detail: `${row.status} → ${dto.status}${dto.reason ? ` (${dto.reason})` : ""}`,
+      detail: `${row.status} → ${effStatus}${dto.reason ? ` (${dto.reason})` : ""}`,
     });
     await this.notifications.notify({
       userIds: [row.reporterId],
       kind: "APPROVAL",
-      text: `Pengeluaran #${id}: ${dto.status}${dto.reason ? ` — ${dto.reason}` : ""}`,
+      text: isPettyCash && effStatus === "DIBAYAR"
+        ? `Pemakaian petty cash #${id} diverifikasi Finance. Saldo petty cash Anda berkurang Rp${Number(row.amount).toLocaleString("id-ID")}.`
+        : `Pengeluaran #${id}: ${effStatus}${dto.reason ? ` — ${dto.reason}` : ""}`,
       href: `/expenses/${id}`,
     });
     const pendingAppr = await this.approvals.getFor("PENGELUARAN", id);
     if (pendingAppr && pendingAppr.status === "MENUNGGU") {
-      if (dto.status === "DISETUJUI" || dto.status === "DIBAYAR") {
+      if (effStatus === "DISETUJUI" || effStatus === "DIBAYAR") {
         await this.approvals.decide(pendingAppr.id, user, true, dto.reason).catch(() => {});
       } else if (dto.status === "DITOLAK") {
         await this.approvals.decide(pendingAppr.id, user, false, dto.reason).catch(() => {});
+      }
+    }
+
+    // Biaya survey untuk prospek yang sudah menjadi project = biaya project (HPP project)
+    if (!row.projectId && row.surveyId && (effStatus === "DISETUJUI" || effStatus === "DIBAYAR")) {
+      const pid = await projectIdForSurvey(this.prisma.main, row.surveyId).catch(() => null);
+      if (pid) {
+        await this.prisma.main.expense.update({ where: { id }, data: { projectId: pid } });
+        (row as any).projectId = pid;
       }
     }
 
@@ -430,7 +501,46 @@ export class ExpensesService {
       const who = updated.reporter?.name || undefined;
       const what = row.description || cat?.name || undefined;
 
-      if (dto.status === "DISETUJUI") {
+      if (isPettyCash) {
+        if (effStatus === "DIBAYAR") {
+          // keperluan (survey / proyek / surat jalan) supaya buku besar Uang Muka Karyawan jelas dipakai untuk apa
+          const usage = pettyCashUsage({
+            survey: row.surveyId
+              ? await this.prisma.main.survey.findUnique({ where: { id: row.surveyId }, select: { location: true, lead: { select: { name: true } } } })
+              : null,
+            project: row.projectId ? await this.prisma.main.project.findUnique({ where: { id: row.projectId }, select: { name: true } }) : null,
+            deliveryNote: row.deliveryNoteId
+              ? await this.prisma.main.deliveryNote.findUnique({ where: { id: row.deliveryNoteId }, select: { number: true } })
+              : null,
+          });
+          // Dr Beban  Cr Uang Muka Karyawan (saldo petty cash berkurang) — tanpa kas keluar
+          await this.postingService.post({
+            sourceType: "Expense",
+            sourceId: row.id,
+            event: "approved",
+            source: "EXPENSE",
+            date: row.date,
+            memo: `Pemakaian petty cash ${expCode} — ${what || "operasional"}${usage ? ` untuk ${usage}` : ""} (${who || "Karyawan"})`,
+            refNo: expCode,
+            projectId: row.projectId,
+            createdById: user.id,
+            lines: buildPettyCashSpendLines(
+              {
+                number: expCode,
+                amount: Number(row.amount),
+                employeeId: row.reporterId,
+                employeeName: who,
+                expenseAccountCode: expenseCoa,
+                projectId: row.projectId,
+                description: row.description,
+                categoryName: cat?.name,
+                usage,
+              },
+              mappings,
+            ),
+          });
+        }
+      } else if (effStatus === "DISETUJUI") {
         const aLines = PostingRules.buildExpenseApprovedLines(
           {
             id: row.id,
@@ -457,7 +567,7 @@ export class ExpensesService {
           createdById: user.id,
           lines: aLines,
         });
-      } else if (dto.status === "DIBAYAR") {
+      } else if (effStatus === "DIBAYAR") {
         // Jika belum ada jurnal pengakuan beban (misal langsung bypass DIBAYAR), catat dulu pengakuan bebannya
         const existingAccrual = await (this.prisma.main as any).journalEntry.findFirst({
           where: {
@@ -549,7 +659,15 @@ export class ExpensesService {
   async remove(id: number, user: RequestUser) {
     const row = await this.prisma.main.expense.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
+    if (row.cashAdvanceId) {
+      throw new BadRequestException("Pengeluaran ini berasal dari laporan petty cash dan dikelola lewat menu Petty Cash.");
+    }
+    if (row.status === "DIBAYAR") {
+      throw new BadRequestException("Pengeluaran yang sudah dibayar tidak bisa dihapus (kas sudah keluar). Buat jurnal koreksi bila perlu.");
+    }
     await this.prisma.main.$transaction(async (tx) => {
+      // Beban yang sudah diakui (disetujui) dibalik dulu agar tidak tertinggal di buku besar
+      await this.postingService.reverseAllForSource("Expense", id, "Pengeluaran dihapus", user.id, tx);
       await tx.approval.deleteMany({ where: { kind: "PENGELUARAN", entityId: id } });
       await tx.expense.delete({ where: { id } });
     });

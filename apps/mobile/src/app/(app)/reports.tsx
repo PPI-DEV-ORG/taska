@@ -57,9 +57,9 @@ function formatJournalDateTime(dateVal: any, createdAtVal?: any): string {
 }
 
 export default function ReportsScreen() {
-  const { data, approvals, user, toast } = useApp();
-  const roleLower = (user?.role || "").toLowerCase();
-  const canAccessFinancials = ["super_admin", "admin", "bos", "finance"].includes(roleLower);
+  const { data, approvals, toast, can } = useApp();
+  // Laporan keuangan mengikuti hak modul Buku Besar (accounting) di Pengaturan Peran — bukan nama peran.
+  const canAccessFinancials = can("accounting", "L");
   const params = useLocalSearchParams<{ tab?: ReportTab }>();
 
   const [selectedTab, setSelectedTab] = React.useState<ReportTab>(
@@ -622,8 +622,19 @@ export default function ReportsScreen() {
       },
     );
 
-    return cards;
-  }, [data, approvals, canAccessFinancials, fin]);
+    // Tiap laporan hanya untuk peran yang memegang bidangnya
+    const allowed: Record<string, boolean> = {
+      invoices: canAccessFinancials, // piutang = laporan keuangan
+      expenses: can("expenses", "V"), // pengeluaran seluruh karyawan = Finance / pimpinan
+      projects: can("projects", "P"), // progres + status pembayaran project
+      leads: can("leads", "M"),
+      followups: can("leads", "M"),
+      "delivery-notes": can("delivery-notes", "C"),
+      stock: can("stock", "M"),
+      approvals: can("approvals", "V"),
+    };
+    return cards.filter((c) => allowed[c.type] ?? canAccessFinancials);
+  }, [data, approvals, canAccessFinancials, fin, can]);
 
   function handleDownload(type: string, title: string, format: DownloadFormat) {
     void downloadReport({

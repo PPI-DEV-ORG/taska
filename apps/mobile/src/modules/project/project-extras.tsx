@@ -61,7 +61,13 @@ const PPH_OPTIONS = [
   { id: "pph22", label: "PPh 22 (1.5%)" },
 ];
 
-export function ProjectExtras({ row }: { row: Row }) {
+/**
+ * section: tampilkan sebagian panel saja sesuai tab detail proyek
+ *   "boq" → BOQ kontrak + barang tambahan · "dokumen" → dokumen komersial, foto, BAST · "biaya" → laba-rugi.
+ * Tanpa section: semua panel (perilaku lama).
+ */
+export function ProjectExtras({ row, section }: { row: Row; section?: "boq" | "dokumen" | "biaya" }) {
+  const show = (s: "flow" | "boq" | "dokumen" | "biaya") => (section ? section === s : true);
   const router = useRouter();
   const { toast, data, reload, refreshModule, user, patchRow, companyProfile } = useApp();
   const products: Row[] = data.products ?? [];
@@ -136,7 +142,8 @@ export function ProjectExtras({ row }: { row: Row }) {
   const normalizedRole = String(user?.role || "").toLowerCase().replace(/[\s-]/g, "_");
   const isSales = normalizedRole === "sales";
   const canViewBoqPricing = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole) || hasUserPermission(user, "projects", "P");
-  const canViewFinancials = ["super_admin", "superadmin", "bos", "finance", "pm", "admin"].includes(normalizedRole) || hasUserPermission(user, "projects", "P");
+  // PM / tim lapangan: lihat isi pekerjaan & biaya, tanpa harga jual, nilai kontrak & laba-rugi
+  const canViewFinancials = canViewBoqPricing;
   const canManageInvoice = ["super_admin", "superadmin", "bos", "finance", "admin"].includes(normalizedRole) || hasUserPermission(user, "invoices", "C");
 
   const [quotationDetail, setQuotationDetail] = React.useState<any>(null);
@@ -227,7 +234,7 @@ export function ProjectExtras({ row }: { row: Row }) {
     const map = new Map<string, any>();
 
     for (const inv of list) {
-      if (inv.direction === "in" || inv.status === "Batal") continue;
+      if (inv.direction === "in" || inv.status === "Batal" || inv.isProforma) continue;
       const isMatched =
         (row.id && String(inv.projectId) === String(row.id)) ||
         (!inv.projectId && inv.project && inv.project === row.nama) ||
@@ -279,11 +286,8 @@ export function ProjectExtras({ row }: { row: Row }) {
     });
   }, [data.invoiceIn, projectPoIds, projectPoNumbers, row.id]);
 
-  const isAllInvoicesPaid =
-    row.pembayaran === "Lunas" ||
-    row.paymentStatus === "LUNAS" ||
-    (projectInvoices.length > 0 &&
-      projectInvoices.every((i: any) => i.status === "Lunas" || Number(i.terbayar) >= Number(i.total)));
+  // Status bayar dihitung server terhadap NILAI KONTRAK (DP lunas saja = Lunas sebagian, bukan Lunas).
+  const isAllInvoicesPaid = row.pembayaran === "Lunas" || row.paymentStatus === "LUNAS";
 
   const revenueFromInvoices = projectInvoices.reduce((sum: number, i: any) => sum + Number(i.nilai || i.amount || 0), 0);
   const revenueFromQuote = Number(linkedQuotation?.totalAfterDisc || linkedQuotation?.nilai || 0);
@@ -739,6 +743,41 @@ export function ProjectExtras({ row }: { row: Row }) {
   const contractRequirements = React.useMemo(() => requirements.filter((m) => !m.isExtra), [requirements]);
   const extraRequirements = React.useMemo(() => requirements.filter((m) => m.isExtra), [requirements]);
 
+  // Laba-rugi dihitung server: pendapatan DPP, HPP barang yang dipakai project (dari stok gudang maupun
+  // pembelian langsung, termasuk yang keluar lewat surat jalan), pembelian non-stok, dan biaya operasional.
+  type ServerPnl = {
+    revenue: number;
+    revenueSource: "INVOICE" | "SO" | "PENAWARAN" | "NONE";
+    hppGoods: number;
+    hppLines: { productId: number; name: string; sku: string | null; unit: string | null; qtyNet: number; qtyReturned: number; unitCost: number; total: number; costSource: string }[];
+    directPurchases: number;
+    directPurchaseLines: { ref: string; name: string; qty: number; unitCost: number; total: number }[];
+    expenses: number;
+    surveyCost?: number;
+    hppTotal?: number;
+    cashAdvanceOutstanding: number;
+    cashAdvancePending: number;
+    netProfitWithPending: number;
+    grossProfit: number;
+    netProfit: number;
+    marginPct: number;
+    missingCostProducts: number;
+  };
+  const [pnl, setPnl] = React.useState<ServerPnl | null>(null);
+  const pnlKey = `${row.id}:${projectInvoices.length}:${projectExpenses.length}:${requirements.length}`;
+  React.useEffect(() => {
+    if (!canViewFinancials || !row.id) return;
+    let alive = true;
+    api<ServerPnl>("GET", `/projects/${row.id}/pnl`)
+      .then((res) => {
+        if (alive) setPnl(res);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [canViewFinancials, row.id, pnlKey]);
+
   const boqTotalValue = React.useMemo(() => {
     const matVal = contractRequirements.reduce((acc, m) => acc + m.neededQty * (m.unitPrice || 0), 0);
     const svcVal = quoServices.reduce((acc, s) => acc + (Number(s.qty) || 1) * (Number(s.price || s.harga) || 0), 0);
@@ -768,6 +807,7 @@ export function ProjectExtras({ row }: { row: Row }) {
 
   return (
     <>
+      {show("flow") ? (
       <Panel
         title="Alur Terpadu Proyek (End-to-End)"
         subtitle={canManageInvoice ? "Pantau kelengkapan 7 tahapan proyek mulai dari BOQ, Survey, Penawaran, PO, Progress, Faktur, hingga BAST" : "Pantau kelengkapan tahapan proyek mulai dari BOQ, Survey, Penawaran, PO, Progress, hingga BAST"}
@@ -793,11 +833,14 @@ export function ProjectExtras({ row }: { row: Row }) {
           ))}
         </View>
       </Panel>
+      ) : null}
 
+      {show("boq") ? (
+      <>
       {/* 1. BOQ Kontrak Awal dari Penawaran Resmi (Read-Only) */}
       <Panel
-        title="1. BOQ (Bill of Quantities) & Reservasi Material Proyek"
-        subtitle="Daftar seluruh kebutuhan barang serta jasa instalasi dari penawaran resmi (Read-Only)."
+        title="BOQ dari Penawaran"
+        subtitle="Barang & jasa sesuai kontrak (dari penawaran resmi)."
         right={
           activeQuotation || linkedQuotation ? (
             <Button
@@ -873,8 +916,8 @@ export function ProjectExtras({ row }: { row: Row }) {
 
       {/* 1.B Barang & Jasa Tambahan di Luar BOQ Awal */}
       <Panel
-        title="Barang & Jasa Tambahan (Di Luar BOQ Awal)"
-        subtitle="Daftar material, barang ritel, dan jasa tambahan yang diajukan di luar penawaran kontrak awal. Beban modal masuk ke P&L proyek."
+        title="Barang & Jasa Tambahan"
+        subtitle="Di luar BOQ awal — biayanya masuk ke laba-rugi proyek."
         right={
           <Button
             size="sm"
@@ -941,10 +984,14 @@ export function ProjectExtras({ row }: { row: Row }) {
           )}
         </View>
       </Panel>
+      </>
+      ) : null}
 
+      {show("dokumen") ? (
+      <>
       <Panel
-        title={canManageInvoice ? "2–6. Dokumen Komersial Proyek (Survey, Penawaran, PO & Faktur Proyek)" : "2–5. Dokumen Terkait Proyek (Survey, Penawaran & PO)"}
-        subtitle="Integrasi dokumen komersial proyek dalam satu tampilan terpadu"
+        title="Dokumen Terkait"
+        subtitle={canManageInvoice ? "Survey, penawaran, PO & faktur proyek ini" : "Survey, penawaran & PO proyek ini"}
         right={
           canManageInvoice ? (
             <Button size="sm" onPress={() => setCreateInvOpen(true)} className="flex-row items-center gap-1 bg-primary">
@@ -977,11 +1024,13 @@ export function ProjectExtras({ row }: { row: Row }) {
           left="Penawaran Proyek (Quotation)"
           sub={
             linkedQuotation
-              ? `${linkedQuotation.nomor} · Nilai: ${rupiah(linkedQuotation.totalAfterDisc || linkedQuotation.nilai || 0)} (${linkedQuotation.status})`
+              ? canViewBoqPricing
+                ? `${linkedQuotation.nomor} · Nilai: ${rupiah(linkedQuotation.totalAfterDisc || linkedQuotation.nilai || 0)} (${linkedQuotation.status})`
+                : `${linkedQuotation.nomor} (${linkedQuotation.status}) · isi pekerjaan ada di tab Barang (BOQ)`
               : "Belum ada penawaran yang ditautkan"
           }
           right={
-            linkedQuotation ? (
+            !canViewBoqPricing ? undefined : linkedQuotation ? (
               <Button size="sm" variant="outline" onPress={() => router.push(`/quotations/${linkedQuotation.id}` as any)}>
                 <ExternalLink size={12} color={colors.text} />
                 <Text className="text-xs">Buka Penawaran</Text>
@@ -998,7 +1047,7 @@ export function ProjectExtras({ row }: { row: Row }) {
           left="PO Proyek — Pesanan Penjualan / PO Pelanggan"
           sub={
             linkedClientPos.length > 0
-              ? linkedClientPos.map((po: Row) => `${po.nomor} (${rupiah(po.nilai)})`).join(", ")
+              ? linkedClientPos.map((po: Row) => (canViewBoqPricing ? `${po.nomor} (${rupiah(po.nilai)})` : po.nomor)).join(", ")
               : "Belum ada PO Client tercatat"
           }
           right={
@@ -1099,13 +1148,13 @@ export function ProjectExtras({ row }: { row: Row }) {
       <DocumentationPhotosPanel
         kind="project"
         entityId={row.id}
-        title="Dokumentasi Foto Instalasi & Progress Proyek"
-        subtitle="Galeri foto pemasangan perangkat di lapangan yang terkompilasi ke laporan PDF."
+        title="Foto Pekerjaan"
+        subtitle="Foto pemasangan di lapangan — ikut masuk laporan PDF."
       />
 
       <Panel
-        title="Berita Acara Serah Terima (BAST)"
-        subtitle="Dokumen legal serah terima pekerjaan selesai kepada klien."
+        title="Serah Terima (BAST)"
+        subtitle="Dibuat setelah pekerjaan selesai & diuji bersama klien."
         right={
           <Button size="sm" variant="outline" onPress={openBastDialog} className="flex-row items-center gap-1.5">
             <Printer size={14} color={colors.text} />
@@ -1119,11 +1168,13 @@ export function ProjectExtras({ row }: { row: Row }) {
           Setelah seluruh item pekerjaan diuji coba dan disetujui klien, cetak draf BAST resmi untuk ditandatangani kedua belah pihak.
         </Text>
       </Panel>
+      </>
+      ) : null}
 
-      {canViewFinancials ? (
+      {canViewFinancials && show("biaya") ? (
         <Panel
-          title="Analisa Untung-Rugi (P&L Proyek)"
-          subtitle="Ringkasan margin laba bersih proyek berdasarkan realisasi tagihan dan pengeluaran beban riil"
+          title="Untung-Rugi Proyek"
+          subtitle="Pendapatan − HPP project (barang, jasa & semua biaya langsung termasuk survey)"
           right={
             <Button
               size="sm"
@@ -1143,32 +1194,85 @@ export function ProjectExtras({ row }: { row: Row }) {
           <View className="gap-4">
             <View className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Pendapatan (DPP Faktur)</Text>
-                <Text className="text-base font-bold mt-1 text-foreground">{rupiah(revenue)}</Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectInvoices.length} invoice terbit</Text>
-              </View>
-              <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Beban PO Pemasok</Text>
-                <Text className="text-base font-bold mt-1 text-danger">{rupiah(poCost)}</Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectPos.length} purchase order</Text>
-              </View>
-              <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Beban Tambahan (Di Luar BOQ)</Text>
-                <Text className="text-base font-bold mt-1 text-rose-500">{rupiah(extraItemsCost)}</Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">{extraRequirements.length} item tambahan</Text>
-              </View>
-              <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Biaya Operasional & Reimburse</Text>
-                <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(expenseCost)}</Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">{projectExpenses.length} transaksi</Text>
-              </View>
-              <View className="p-3 rounded-lg bg-card/60 border border-border">
-                <Text className="text-xs text-muted-foreground">Laba Bersih ({marginPct}%)</Text>
-                <Text className={`text-base font-bold mt-1 ${netProfit >= 0 ? "text-success" : "text-danger"}`}>
-                  {rupiah(netProfit)}
+                <Text className="text-xs text-muted-foreground">Pendapatan (DPP)</Text>
+                <Text className="text-base font-bold mt-1 text-foreground">{rupiah(pnl ? pnl.revenue : revenue)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl?.revenueSource === "SO"
+                    ? "Estimasi dari SO (belum ada invoice)"
+                    : pnl?.revenueSource === "PENAWARAN"
+                    ? "Estimasi dari penawaran"
+                    : `${projectInvoices.length} invoice terbit`}
                 </Text>
-                <Text className="text-[10px] text-muted-foreground mt-0.5">Total Beban: {rupiah(totalCost)}</Text>
               </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">HPP Barang Terpakai</Text>
+                <Text className="text-base font-bold mt-1 text-danger">{rupiah(pnl ? pnl.hppGoods : poCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl ? `${pnl.hppLines.length} produk (stok gudang & pembelian)` : `${projectPos.length} purchase order`}
+                </Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Pembelian Jasa / Non-Stok</Text>
+                <Text className="text-base font-bold mt-1 text-rose-500">{rupiah(pnl ? pnl.directPurchases : extraItemsCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl ? `${pnl.directPurchaseLines.length} item` : `${extraRequirements.length} item tambahan`}
+                </Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Biaya Langsung Project</Text>
+                <Text className="text-base font-bold mt-1 text-amber-500">{rupiah(pnl ? pnl.expenses : expenseCost)}</Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl && pnl.cashAdvancePending > 0
+                    ? `+ ${rupiah(pnl.cashAdvancePending)} menunggu verifikasi`
+                    : pnl?.surveyCost
+                    ? `termasuk survey ${rupiah(pnl.surveyCost)}`
+                    : `${projectExpenses.length} transaksi · masuk HPP`}
+                </Text>
+              </View>
+              <View className="p-3 rounded-lg bg-card/60 border border-border">
+                <Text className="text-xs text-muted-foreground">Laba Project ({pnl ? pnl.marginPct : marginPct}%)</Text>
+                <Text className={`text-base font-bold mt-1 ${(pnl ? pnl.netProfit : netProfit) >= 0 ? "text-success" : "text-danger"}`}>
+                  {rupiah(pnl ? pnl.netProfit : netProfit)}
+                </Text>
+                <Text className="text-[10px] text-muted-foreground mt-0.5">
+                  {pnl && pnl.cashAdvancePending > 0
+                    ? `Termasuk biaya belum diverifikasi: ${rupiah(pnl.netProfitWithPending)}`
+                    : pnl
+                    ? `Total HPP: ${rupiah(pnl.hppTotal ?? pnl.revenue - pnl.netProfit)}`
+                    : `Total HPP: ${rupiah(totalCost)}`}
+                </Text>
+              </View>
+            </View>
+
+            {pnl && pnl.hppLines.length > 0 ? (
+              <View className="gap-2 pt-2 border-t border-border">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-xs font-semibold text-foreground">Rincian HPP Barang ({pnl.hppLines.length} produk)</Text>
+                  <Text className="text-xs font-bold text-danger">{rupiah(pnl.hppGoods)}</Text>
+                </View>
+                {pnl.missingCostProducts > 0 ? (
+                  <Text className="text-[11px] text-warning">
+                    {pnl.missingCostProducts} produk belum punya harga pokok (harga beli / rata-rata kosong) sehingga HPP-nya Rp 0. Lengkapi harga beli di master produk.
+                  </Text>
+                ) : null}
+                <View className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                  {pnl.hppLines.map((l) => (
+                    <View key={l.productId} className="px-3 py-2 flex-row items-center justify-between bg-card/30 gap-2">
+                      <View className="flex-1">
+                        <Text className="text-xs font-semibold text-foreground">{l.name}</Text>
+                        <Text className="text-[10px] text-muted-foreground">
+                          {l.qtyNet} {l.unit || "unit"} × {rupiah(l.unitCost)}
+                          {l.qtyReturned > 0 ? ` (retur ${l.qtyReturned})` : ""}
+                          {l.costSource === "RATA_RATA" ? " · harga rata-rata" : l.costSource === "HARGA_BELI" ? " · harga beli" : l.costSource === "TIDAK_ADA" ? " · harga pokok kosong" : ""}
+                        </Text>
+                      </View>
+                      <Text className="text-xs font-semibold text-foreground">{rupiah(l.total)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+            <View className="hidden">
             </View>
 
             {/* Rincian Material & Jasa Tambahan di Luar BOQ */}
@@ -1219,8 +1323,8 @@ export function ProjectExtras({ row }: { row: Row }) {
               )}
             </View>
 
-            {/* Rincian Operasional & Reimbursement */}
-            <View className="gap-2 pt-2 border-t border-border mt-1">
+            {/* Rincian Operasional & Reimbursement (di tab Biaya sudah ada daftar pengeluaran sendiri) */}
+            <View className={`gap-2 pt-2 border-t border-border mt-1 ${section === "biaya" ? "hidden" : ""}`}>
               <Text className="text-xs font-semibold text-foreground">
                 Rincian Biaya Operasional & Reimbursement ({projectExpenses.length} pengeluaran)
               </Text>

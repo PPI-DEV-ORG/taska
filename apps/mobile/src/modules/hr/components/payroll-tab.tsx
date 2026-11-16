@@ -20,6 +20,8 @@ interface PayrollTabProps {
   slips: any[];
   setSelectedSlip: (slip: any) => void;
   handlePaySlip: (id: string | number) => void;
+  /** Bayar semua slip DRAFT periode ini. */
+  onPayAll?: () => void;
 }
 
 export function PayrollTab({
@@ -36,7 +38,11 @@ export function PayrollTab({
   slips,
   setSelectedSlip,
   handlePaySlip,
+  onPayAll,
 }: PayrollTabProps) {
+  const companyBpjs = slips.reduce((s, r) => s + Number(r.bpjsCompany || 0), 0);
+  const drafts = slips.filter((r) => r.status !== "PAID");
+  const draftNet = drafts.reduce((s, r) => s + Number(r.netSalary || 0), 0);
   return (
     <View className="gap-4 w-full">
       {/* KPI Cards Finansial */}
@@ -54,9 +60,11 @@ export function PayrollTab({
         </View>
 
         <View className="bg-card border-border/80 rounded-2xl border p-4 shadow-sm">
-          <Text className="text-muted-foreground text-xs font-medium">Potongan BPJS</Text>
-          <Text className="text-blue-500 text-lg md:text-xl font-bold mt-1">{formatRupiah(totalBpjs)}</Text>
-          <Text className="text-muted-foreground text-[11px] mt-0.5">Iuran BPJS Karyawan</Text>
+          <Text className="text-muted-foreground text-xs font-medium">BPJS</Text>
+          <Text className="text-blue-500 text-lg md:text-xl font-bold mt-1">{formatRupiah(totalBpjs + companyBpjs)}</Text>
+          <Text className="text-muted-foreground text-[11px] mt-0.5">
+            Karyawan {formatRupiah(totalBpjs)} · perusahaan {formatRupiah(companyBpjs)}
+          </Text>
         </View>
 
         <View className="bg-card border-border/80 rounded-2xl border p-4 shadow-sm">
@@ -90,16 +98,19 @@ export function PayrollTab({
         </View>
 
         {isFinanceOrAdmin && (
-          <Button
-            size="sm"
-            onPress={handleGenerateSlips}
-            className="gap-2 h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700"
-          >
-            <DollarSign size={14} color="#FFFFFF" />
-            <Text className="text-xs font-bold text-white">
-              Hitung & Generate Slip Gaji Bulan Ini
-            </Text>
-          </Button>
+          <View className="flex-row flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onPress={handleGenerateSlips} className="gap-2 h-9 px-3.5">
+              <DollarSign size={14} />
+              <Text className="text-xs font-semibold">{slips.length ? "Hitung ulang gaji" : "Hitung gaji periode ini"}</Text>
+            </Button>
+            {drafts.length && onPayAll ? (
+              <Button size="sm" onPress={onPayAll} className="h-9 px-3.5 bg-emerald-600">
+                <Text className="text-xs font-bold text-white">
+                  Bayar semua ({drafts.length}) · {formatRupiah(draftNet)}
+                </Text>
+              </Button>
+            ) : null}
+          </View>
         )}
       </View>
 
@@ -133,7 +144,7 @@ export function PayrollTab({
             ) : slips.length === 0 ? (
               <View className="py-12 items-center justify-center">
                 <Text className="text-xs text-muted-foreground">
-                  Belum ada slip gaji yang dibuat untuk periode {payrollPeriod}. Tekan tombol &quot;Hitung & Generate Slip Gaji&quot;.
+                  Belum ada slip gaji periode {payrollPeriod}. Isi gaji karyawan di tab Data Karyawan, lalu tekan &quot;Hitung gaji periode ini&quot;.
                 </Text>
               </View>
             ) : (

@@ -56,7 +56,73 @@ export class DeliveryService implements OnModuleInit {
     return { number: await this.docnum.suggest("suratJalan") };
   }
 
+  /**
+   * Kaitan SO / invoice disimpan di kolom. Aplikasi lama masih mengirim tag "[so:id]" / "[inv:id]" di alasan:
+   * tag dibaca sekali, dipakai bila kolomnya kosong, lalu dibuang dari teks.
+   */
+  private takeLinks(dto: DeliveryCreateDto) {
+    const tagRe = /\s*\[(so|soNum|inv|invNum):[^\]]*\]/gi;
+    const texts = [dto.reportText ?? "", ...(dto.locations ?? []).map((l) => l.reason ?? "")].join(" ");
+    const soTag = texts.match(/\[so:(\d+)\]/i)?.[1];
+    const invTag = texts.match(/\[inv:(\d+)\]/i)?.[1];
+    const clientPoId = dto.clientPoId ?? dto.soId ?? (soTag ? Number(soTag) : undefined);
+    const invoiceId = dto.invoiceId ?? (invTag ? Number(invTag) : undefined);
+    const locations = dto.locations?.map((l) => ({ ...l, reason: (l.reason ?? "").replace(tagRe, "").trim() || "Pengiriman barang" }));
+    const reportText = dto.reportText !== undefined ? dto.reportText.replace(tagRe, "").trim() : undefined;
+    return { clientPoId, invoiceId, locations, reportText };
+  }
+
+  /**
+   * Penanda tangan surat jalan: pengirim, petugas gudang & penerima.
+   * Bawaan: pengirim = pembuat; petugas gudang = pembuat bila dia Gudang; penerima surat jalan project = PM project.
+   */
+  private async signerData(
+    dto: DeliveryCreateDto,
+    locations: { projectId?: number | null }[] | undefined,
+    user: RequestUser,
+    current?: { senderId: number | null; senderName: string | null; recipientUserId: number | null; recipientName: string | null } | null,
+  ) {
+    const txt = (v: unknown) => (v === undefined ? undefined : v && String(v).trim() ? String(v).trim() : null);
+    const data: Record<string, unknown> = {};
+    if (dto.senderId !== undefined) data.senderId = dto.senderId || null;
+    if (dto.senderName !== undefined) data.senderName = txt(dto.senderName);
+    if (dto.vehicleNo !== undefined) data.vehicleNo = txt(dto.vehicleNo);
+    if (dto.warehouseId !== undefined) data.warehouseId = dto.warehouseId || null;
+    if (dto.warehouseStaffId !== undefined) data.warehouseStaffId = dto.warehouseStaffId || null;
+    if (dto.recipientUserId !== undefined) data.recipientUserId = dto.recipientUserId || null;
+    if (dto.recipientName !== undefined) data.recipientName = txt(dto.recipientName);
+    if (dto.recipientTitle !== undefined) data.recipientTitle = txt(dto.recipientTitle);
+    if (dto.recipientPhone !== undefined) data.recipientPhone = txt(dto.recipientPhone);
+
+    if (!current) {
+      if (data.senderId === undefined && !data.senderName) data.senderId = user.id;
+      if (data.warehouseStaffId === undefined && String(user.role).toUpperCase() === "GUDANG") data.warehouseStaffId = user.id;
+    }
+    // Penerima bawaan: PM project tujuan
+    const hasRecipient = data.recipientUserId || data.recipientName || (data.recipientUserId === undefined && data.recipientName === undefined && (current?.recipientUserId || current?.recipientName));
+    const projectId = locations?.find((l) => l.projectId)?.projectId;
+    if (!hasRecipient && projectId) {
+      const pj = await this.prisma.main.project.findUnique({ where: { id: projectId }, select: { pic: { select: { id: true, name: true, phone: true } } } });
+      if (pj?.pic) {
+        data.recipientUserId = pj.pic.id;
+        data.recipientName = pj.pic.name;
+        if (!data.recipientTitle) data.recipientTitle = "Project Manager";
+        if (!data.recipientPhone && pj.pic.phone) data.recipientPhone = pj.pic.phone;
+      }
+    }
+    if (data.recipientUserId && !data.recipientName) {
+      const u = await this.prisma.main.user.findUnique({ where: { id: Number(data.recipientUserId) }, select: { name: true, phone: true } });
+      if (u) {
+        data.recipientName = u.name;
+        if (!data.recipientPhone && u.phone) data.recipientPhone = u.phone;
+      }
+    }
+    return data;
+  }
+
   async create(dto: DeliveryCreateDto, user: RequestUser) {
+    const links = this.takeLinks(dto);
+    dto = { ...dto, locations: links.locations ?? dto.locations, reportText: links.reportText ?? dto.reportText };
     const locations = dto.locations?.length ? dto.locations : [{ destination: "-", reason: "Dinas luar" }];
     const withGoods = dto.withGoods === true || dto.withGoods === "true";
     const date = dto.date ? new Date(dto.date) : new Date();
@@ -77,12 +143,16 @@ export class DeliveryService implements OnModuleInit {
     }
 
     const scanFileId = dto.scanFileId ?? dto.fileId;
+    const signers = await this.signerData(dto, locations, user, null);
     const createData = {
+      ...signers,
       number,
       creatorId: user.id,
       withGoods,
       date,
       status: (dto.status ?? "PENDING") as any,
+      clientPoId: links.clientPoId ?? null,
+      invoiceId: links.invoiceId ?? null,
       reportText: dto.reportText,
       reportFileId: dto.reportFileId,
       scanFileId,
@@ -106,6 +176,8 @@ export class DeliveryService implements OnModuleInit {
     };
     const includeSelect = {
       creator: { select: { name: true, role: true } },
+      clientPo: { select: { id: true, number: true, soNumber: true } },
+      invoice: { select: { id: true, number: true } },
       locations: { include: { project: { select: { name: true } } } },
       items: {
         include: {
@@ -114,25 +186,11 @@ export class DeliveryService implements OnModuleInit {
       },
     };
 
-    let row;
-    try {
-      row = await this.prisma.main.deliveryNote.create({
-        data: createData,
-        include: includeSelect,
-      });
-    } catch (err: any) {
-      if (err?.code === "P2000" || err?.message?.includes("reportText") || err?.message?.includes("too long")) {
-        await this.prisma.main
-          .$executeRawUnsafe("ALTER TABLE `DeliveryNote` MODIFY COLUMN `reportText` LONGTEXT NULL")
-          .catch(() => {});
-        row = await this.prisma.main.deliveryNote.create({
-          data: createData,
-          include: includeSelect,
-        });
-      } else {
-        throw err;
-      }
-    }
+    // reportText sudah LONGTEXT di skema; tidak ada lagi ALTER TABLE saat runtime.
+    const row = await this.prisma.main.deliveryNote.create({
+      data: createData,
+      include: includeSelect,
+    });
 
     if (scanFileId) {
       await this.prisma.main.file.update({
@@ -149,6 +207,19 @@ export class DeliveryService implements OnModuleInit {
       requestedBy: user,
       href: `/delivery-notes/${row.id}`,
     });
+
+    // PM project / penerima internal diberi tahu ada barang menuju lokasinya
+    const recipientUserId = (signers.recipientUserId as number | null | undefined) ?? null;
+    if (recipientUserId && recipientUserId !== user.id) {
+      await this.notifications
+        .notify({
+          userIds: [recipientUserId],
+          kind: "SURAT",
+          text: `Surat jalan ${number} menuju ${locations[0].destination} — Anda penerima barangnya di lokasi`,
+          href: `/delivery-notes/${row.id}`,
+        })
+        .catch(() => {});
+    }
 
     if (withGoods) {
       await this.notifications.notify({
@@ -168,6 +239,8 @@ export class DeliveryService implements OnModuleInit {
       include: { locations: true },
     });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
+    const links = this.takeLinks(dto);
+    dto = { ...dto, locations: links.locations ?? dto.locations, reportText: links.reportText ?? dto.reportText };
 
     if (dto.status === "DITERIMA") {
       const hasProof = dto.scanFileId ?? dto.fileId ?? row.scanFileId;
@@ -180,12 +253,16 @@ export class DeliveryService implements OnModuleInit {
       await this.postingService.reverse("DeliveryNote", id, "shipped", dto.reason || "Surat jalan dibatalkan", user.id).catch(() => {});
     }
 
+    const signers = await this.signerData(dto, dto.locations ?? row.locations, user, row);
     const updated = await this.prisma.main.deliveryNote.update({
       where: { id },
       data: {
+        ...signers,
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.withGoods !== undefined ? { withGoods: dto.withGoods === true || dto.withGoods === "true" } : {}),
         ...(dto.status ? { status: dto.status } : {}),
+        ...(links.clientPoId !== undefined ? { clientPoId: links.clientPoId } : {}),
+        ...(links.invoiceId !== undefined ? { invoiceId: links.invoiceId } : {}),
         ...(dto.reportText !== undefined ? { reportText: dto.reportText, reportAt: new Date() } : {}),
         ...(dto.reportFileId !== undefined ? { reportFileId: dto.reportFileId } : {}),
         ...(dto.scanFileId !== undefined || dto.fileId !== undefined ? { scanFileId: dto.scanFileId ?? dto.fileId } : {}),
@@ -217,6 +294,8 @@ export class DeliveryService implements OnModuleInit {
       },
       include: {
         creator: { select: { name: true, role: true } },
+        clientPo: { select: { id: true, number: true, soNumber: true } },
+        invoice: { select: { id: true, number: true } },
         locations: { include: { project: { select: { name: true } } } },
         items: {
           include: {
@@ -377,6 +456,12 @@ export class DeliveryService implements OnModuleInit {
         where,
         include: {
           creator: { select: { name: true, role: true } },
+          sender: { select: { id: true, name: true, role: true, phone: true } },
+          warehouseStaff: { select: { id: true, name: true, role: true } },
+          warehouse: { select: { id: true, name: true } },
+          recipientUser: { select: { id: true, name: true, role: true, phone: true } },
+        clientPo: { select: { id: true, number: true, soNumber: true } },
+          invoice: { select: { id: true, number: true } },
           locations: { include: { project: { select: { name: true } } } },
           items: {
             include: {
@@ -400,6 +485,12 @@ export class DeliveryService implements OnModuleInit {
       where: { id },
       include: {
         creator: { select: { id: true, name: true, role: true } },
+        sender: { select: { id: true, name: true, role: true, phone: true } },
+        warehouseStaff: { select: { id: true, name: true, role: true } },
+        warehouse: { select: { id: true, name: true } },
+        recipientUser: { select: { id: true, name: true, role: true, phone: true } },
+        clientPo: { select: { id: true, number: true, soNumber: true } },
+        invoice: { select: { id: true, number: true } },
         locations: { include: { project: { select: { id: true, name: true } } } },
         items: {
           include: {
@@ -651,9 +742,20 @@ export class DeliveryService implements OnModuleInit {
       }
     }
 
+    // Petugas gudang yang mengeluarkan barang & gudang asal (untuk tanda tangan surat jalan)
+    const firstOut = await this.prisma.main.stockMovement.findFirst({
+      where: { deliveryNoteId: id, fromWarehouseId: { not: null } },
+      select: { fromWarehouseId: true },
+      orderBy: { id: "asc" },
+    });
+    const current = await this.prisma.main.deliveryNote.findUnique({ where: { id }, select: { warehouseStaffId: true, warehouseId: true } });
     await this.prisma.main.deliveryNote.update({
       where: { id },
-      data: { status: "DIKIRIM" },
+      data: {
+        status: "DIKIRIM",
+        ...(current?.warehouseStaffId ? {} : { warehouseStaffId: user.id }),
+        ...(current?.warehouseId || !firstOut?.fromWarehouseId ? {} : { warehouseId: firstOut.fromWarehouseId }),
+      },
     });
 
     // Posting Akuntansi E7: Pengiriman Barang Surat Jalan -> Dr HPP Cr Persediaan (1200)
@@ -828,41 +930,61 @@ export class DeliveryService implements OnModuleInit {
     return updated;
   }
 
-  private company = async (): Promise<string> => {
+  private companyProfile = async (): Promise<{ name: string; address: string; phone: string }> => {
     try {
-      const profile = await this.settings.getCompanyProfile();
-      if (profile?.name) return profile.name;
-      return await this.settings.getValue("nama.perusahaan");
+      const profile: any = await this.settings.getCompanyProfile();
+      return {
+        name: profile?.name || (await this.settings.getValue("nama.perusahaan").catch(() => "")) || "Taska",
+        address: profile?.address || "",
+        phone: profile?.phone || "",
+      };
     } catch {
-      return "Taska";
+      return { name: "Taska", address: "", phone: "" };
     }
   };
 
-  /** PDF surat jalan (dicetak, ditandatangani, discan ulang). */
+  /** Data cetak surat jalan: identitas, tujuan, barang (+SN), dan 3 penanda tangan (gudang, pengirim, penerima). */
   async toPdf(id: number) {
-    const row = await this.get(id);
-    const company = await this.company();
-    const fmt = (d: Date | null) => (d ? new Date(d).toLocaleDateString("id-ID") : "-");
-    const locations = row.locations.map((l, i) => [
-      String(i + 1),
-      l.destination,
-      l.reason,
-      l.project?.name ?? "-",
-    ]);
-    const goods = row.movements
-      .filter((m) => m.serialUnit)
-      .map((m, i) => [String(i + 1), m.serialUnit!.sn, m.product.name, m.fromWarehouse?.name ?? "-"]);
+    const row: any = await this.get(id);
+    const company = await this.companyProfile();
+    const fmt = (d: Date | null) => (d ? new Date(d).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }) : "-");
+    const loc = row.locations?.[0];
+    const project = row.locations?.find((l: any) => l.project)?.project?.name ?? null;
 
+    // Barang diringkas per produk (qty dijumlah) — tanpa rincian Serial Number di surat jalan
+    const grouped = new Map<string, { name: string; sku: string; unit: string; qty: number }>();
+    for (const it of row.items ?? []) {
+      const key = it.productId ? `p${it.productId}` : `n${it.note ?? it.id}`;
+      const g = grouped.get(key) ?? { name: it.product?.name ?? it.note ?? "Barang", sku: it.product?.sku ?? "-", unit: it.product?.unit ?? "unit", qty: 0 };
+      g.qty += Number(it.qty) || 1;
+      grouped.set(key, g);
+    }
+    const goods: string[][] = Array.from(grouped.values()).map((g, i) => [String(i + 1), g.name, g.sku, String(g.qty), g.unit]);
+
+    const senderName = row.sender?.name ?? row.senderName ?? row.creator?.name ?? "";
+    const ojol = /gosend|gojek|grab|maxim|lalamove|spx|shopee/i.test(String(row.senderName ?? ""));
     return {
       company,
       number: row.number,
       date: fmt(new Date(row.date)),
       status: row.status,
-      creator: row.creator.name,
+      destination: loc?.destination ?? "-",
+      reason: loc?.reason ?? "-",
+      extraLocations: (row.locations ?? []).slice(1).map((l: any) => `${l.destination} — ${l.reason}`),
+      project,
+      reference: [row.clientPo ? `SO ${row.clientPo.soNumber || row.clientPo.number}` : null, row.invoice ? `Invoice ${row.invoice.number}` : null].filter(Boolean).join(" · ") || "-",
       withGoods: row.withGoods,
-      locations,
       goods,
-      reportText: row.reportText ?? "",
+      warehouse: row.warehouse?.name ?? null,
+      warehouseStaff: row.warehouseStaff?.name ?? "",
+      sender: senderName,
+      senderTitle: row.sender ? "Pengirim" : row.senderName ? (ojol ? "Kurir online" : "Ekspedisi") : "Pengirim",
+      vehicleLabel: row.senderName && !row.sender && !ojol ? "No. resi / plat" : "Plat kendaraan",
+      vehicleNo: row.vehicleNo ?? null,
+      recipient: row.recipientName ?? row.recipientUser?.name ?? "",
+      recipientTitle: row.recipientTitle ?? (row.recipientUser ? "Project Manager" : ""),
+      recipientPhone: row.recipientPhone ?? row.recipientUser?.phone ?? null,
+      receivedAt: row.receivedAt ? fmt(new Date(row.receivedAt)) : null,
       approval: row.approval?.status ?? "-",
     };
   }
@@ -884,59 +1006,18 @@ export class DeliveryService implements OnModuleInit {
         return;
       }
 
-      // 1. Ekstrak kaitan dokumen SO / ClientPO / Invoice
-      const fullText = [
-        row.reportText || "",
-        ...(row.locations || []).map((l) => `${l.destination || ""} ${l.reason || ""}`),
-      ].join(" ");
-
-      const soIdMatch = fullText.match(/\[so:(\d+)\]/i);
-      const invIdMatch = fullText.match(/\[inv:(\d+)\]/i);
-      const invNumMatch = fullText.match(/\[invNum:([^\]]+)\]/i);
-      const soNumMatch = fullText.match(/\b(SO[\-\/][^\s\)\]]+)\b/i);
-
-      let clientPo: any = null;
-      if (soIdMatch?.[1]) {
-        clientPo = await this.prisma.main.clientPO.findUnique({
-          where: { id: parseInt(soIdMatch[1], 10) },
-          include: { invoices: true },
-        }).catch(() => null);
-      } else if (soNumMatch?.[1]) {
-        clientPo = await this.prisma.main.clientPO.findFirst({
-          where: { OR: [{ number: soNumMatch[1] }, { soNumber: soNumMatch[1] }] },
-          include: { invoices: true },
-        }).catch(() => null);
-      }
-
-      let invoice: any = null;
-      if (invIdMatch?.[1]) {
-        invoice = await this.prisma.main.invoiceOut.findUnique({
-          where: { id: parseInt(invIdMatch[1], 10) },
-        }).catch(() => null);
-      } else if (invNumMatch?.[1]) {
-        invoice = await this.prisma.main.invoiceOut.findFirst({
-          where: { number: invNumMatch[1] },
-        }).catch(() => null);
-      } else if (clientPo?.invoices?.length) {
-        invoice = clientPo.invoices[0];
-      }
-
+      // 1. Kaitan dokumen SO / Invoice dari kolom relasi (bukan dari tag teks)
+      // Tidak lagi menebak SO dari nama tujuan (dulu bisa nyambung ke SO customer lain yang namanya mirip).
+      const invoice: any = row.invoiceId
+        ? await this.prisma.main.invoiceOut.findUnique({ where: { id: row.invoiceId } }).catch(() => null)
+        : null;
+      const clientPo: any =
+        row.clientPoId || invoice?.clientPoId
+          ? await this.prisma.main.clientPO
+              .findUnique({ where: { id: (row.clientPoId ?? invoice?.clientPoId)! }, include: { invoices: true } })
+              .catch(() => null)
+          : null;
       const firstLocation = row.locations[0];
-      if (!clientPo && firstLocation?.destination && firstLocation.destination !== "-") {
-        clientPo = await this.prisma.main.clientPO.findFirst({
-          where: {
-            OR: [
-              { customer: { name: { contains: firstLocation.destination.trim() } } },
-              { notes: { contains: firstLocation.destination.trim() } },
-            ],
-          },
-          orderBy: { id: "desc" },
-          include: { invoices: true },
-        }).catch(() => null);
-        if (!invoice && clientPo?.invoices?.length) {
-          invoice = clientPo.invoices[0];
-        }
-      }
 
       // 2. Tentukan item yang dikirim & agregasi kuantitas sebenarnya
       const poItems = Array.isArray(clientPo?.items) ? (clientPo.items as any[]) : [];

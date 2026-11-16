@@ -3,7 +3,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { IsIn } from "class-validator";
 import { InvoiceOutService } from "./invoice-out.service.js";
-import { FinanceListQuery, InvoiceOutDto, PaymentDto } from "./dto.js";
+import { ConvertProformaDto, FinanceListQuery, InvoiceOutDto, PaymentDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { Public } from "../common/decorators/public.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
@@ -135,10 +135,29 @@ export class InvoiceOutController {
     return this.service.setStatus(id, dto.status, user);
   }
 
+  /** Terbitkan invoice resmi dari proforma invoice. */
+  @Post(":id/convert-proforma")
+  @Require("invoices", "C")
+  convertProforma(@Param("id", ParseIntPipe) id: number, @Body() dto: ConvertProformaDto, @CurrentUser() user: RequestUser) {
+    return this.service.convertProforma(id, dto, user);
+  }
+
   @Post(":id/payments")
   @Require("financeOut", "C")
   pay(@Param("id", ParseIntPipe) id: number, @Body() dto: PaymentDto, @CurrentUser() user: RequestUser) {
     return this.service.addPayment(id, dto, user);
+  }
+
+  /** Void pembayaran yang salah / dobel: jurnal kas dibalik, sisa tagihan kembali. */
+  @Delete(":id/payments/:paymentId")
+  @Require("financeOut", "U")
+  voidPayment(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("paymentId", ParseIntPipe) paymentId: number,
+    @Query("reason") reason: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.voidPayment(id, paymentId, reason, user);
   }
 
   @Delete(":id")

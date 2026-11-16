@@ -5,7 +5,6 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Panel, KpiCard, KpiRow } from "@/components/taska/basics";
 import { FolderKanban, Calendar, ShoppingCart, AlertTriangle } from "lucide-react-native";
-import { rupiah } from "@/lib/format";
 import { ROLE_LABEL, type Role } from "@/constants/modules";
 import { DashboardGreeting } from "./dashboard-greeting";
 import { ProjectOverviewCard } from "./project-overview-card";
@@ -82,7 +81,7 @@ export function PmDashboard({ user, data, isMobile }: PmDashboardProps) {
                 <View key={l.id} className="bg-card border-border/70 rounded-xl border p-3.5 gap-2">
                   <Text className="text-sm font-bold text-foreground" numberOfLines={1}>Lead Won Siap Project: {l.nama}</Text>
                   <Text className="text-muted-foreground text-xs" numberOfLines={2}>
-                    {l.perusahaan} · Potensi: {rupiah(l.nilai)}. Siap dialokasikan tim lapangan.
+                    {l.perusahaan}. Siap dialokasikan tim lapangan.
                   </Text>
                   <Button size="sm" className="mt-1 h-8" onPress={() => router.push("/projects")}>
                     <Text className="text-xs">Buka & Setup Proyek</Text>

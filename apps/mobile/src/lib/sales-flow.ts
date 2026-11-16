@@ -19,7 +19,6 @@ export const SALES_STEPS: FlowStepDef[] = [
 ];
 
 const same = (a: unknown, b: unknown) => a != null && b != null && a !== "" && a !== "-" && String(a) === String(b);
-const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
 
 export function evaluateSales(
   moduleKey: string,
@@ -42,84 +41,39 @@ export function evaluateSales(
   let linkedSos: Row[] = [];
   let linkedInvoices: Row[] = [];
 
+  // Semua kaitan dokumen lewat ID relasi (quotationId, clientPoId, invoiceId) — tidak lagi menebak dari
+  // nomor dokumen, isi teks alasan, atau nama proyek yang sama (dulu bisa menyambungkan dokumen yang tidak berhubungan).
   if (moduleKey === "quotations") {
     quote = row;
-  } else if (moduleKey === "po-client") {
-    quote = quotations.find((q) => same(q.id, row.quotationId) || (row.penawaran && norm(q.nomor) === norm(row.penawaran)));
-  } else if (moduleKey === "invoices") {
-    quote = quotations.find((q) => same(q.id, row.quotationId) || (row.penawaran && norm(q.nomor) === norm(row.penawaran)));
+  } else if (moduleKey === "po-client" || moduleKey === "invoices") {
+    quote = quotations.find((q) => same(q.id, row.quotationId));
   }
 
   if (moduleKey === "po-client") {
     linkedSos = [row];
   } else if (moduleKey === "invoices") {
-    linkedSos = sos.filter((s) => {
-      if (same(s.id, row.clientPoId)) return true;
-      if (same(s.id, (row as any).poId)) return true;
-      if (
-        row.po &&
-        (norm(s.nomorPoClient) === norm(row.po) ||
-          norm(s.nomorSo) === norm(row.po) ||
-          norm(s.nomor) === norm(row.po))
-      ) {
-        return true;
-      }
-      if (row.quotationId && same(s.quotationId, row.quotationId)) return true;
-      if (row.projectId && same(s.projectId, row.projectId)) return true;
-      return false;
-    });
+    linkedSos = sos.filter((s) => same(s.id, row.clientPoId));
   } else if (quote) {
-    linkedSos = sos.filter(
-      (s) => same(s.quotationId, quote!.id) || (s.penawaran && norm(s.penawaran) === norm(quote!.nomor)),
-    );
+    linkedSos = sos.filter((s) => same(s.quotationId, quote!.id));
   } else if (moduleKey === "delivery-notes") {
-    linkedSos = sos.filter((s) => {
-      if (same(s.id, row.clientPoId) || same(s.id, row.soId)) return true;
-      if (row.soNumber && (norm(s.nomorSo) === norm(row.soNumber) || norm(s.nomor) === norm(row.soNumber))) return true;
-      if (row.poClientNumber && norm(s.nomorPoClient) === norm(row.poClientNumber)) return true;
-      if (row.project && row.project !== "-" && norm(s.project) === norm(row.project)) return true;
-      return false;
-    });
+    linkedSos = sos.filter((s) => same(s.id, row.clientPoId));
   }
 
   if (moduleKey === "invoices") {
     linkedInvoices = [row];
   } else {
-    linkedInvoices = invoices.filter((i) => {
-      if (linkedSos.some((s) => same(i.clientPoId, s.id))) return true;
-      if (quote && (same(i.quotationId, quote.id) || (i.penawaran && norm(i.penawaran) === norm(quote.nomor)))) {
-        return true;
-      }
-      if (linkedSos.some((s) => s.nomorPoClient && norm(i.po) === norm(s.nomorPoClient))) return true;
-      return false;
-    });
+    linkedInvoices = invoices.filter(
+      (i) =>
+        linkedSos.some((s) => same(i.clientPoId, s.id)) ||
+        (quote != null && same(i.quotationId, quote.id)) ||
+        (moduleKey === "delivery-notes" && same(i.id, row.invoiceId)),
+    );
   }
 
-  const project = moduleKey === "delivery-notes" ? row.project : linkedSos[0]?.project ?? row.project;
   const linkedNotes = notes.filter((n) => {
     if (moduleKey === "delivery-notes" && same(n.id, row.id)) return true;
-    if (linkedInvoices.some((i) => same(n.invoiceId, i.id) || String(n.alasan || "").includes(`[inv:${i.id}]`))) {
-      return true;
-    }
-    if (linkedSos.some((s) => same(n.clientPoId, s.id) || same(n.soId, s.id))) return true;
-    if (
-      linkedSos.some(
-        (s) => s.nomorSo && (norm(n.soNumber) === norm(s.nomorSo) || String(n.alasan || "").includes(s.nomorSo)),
-      )
-    ) {
-      return true;
-    }
-    if (
-      linkedSos.some(
-        (s) =>
-          s.nomorPoClient &&
-          (norm(n.poClientNumber) === norm(s.nomorPoClient) || String(n.alasan || "").includes(s.nomorPoClient)),
-      )
-    ) {
-      return true;
-    }
-    if (project && project !== "-" && norm(n.project) === norm(project)) return true;
-    return false;
+    if (linkedInvoices.some((i) => same(n.invoiceId, i.id))) return true;
+    return linkedSos.some((s) => same(n.clientPoId, s.id));
   });
 
   const qStatus = String(quote?.status ?? "");

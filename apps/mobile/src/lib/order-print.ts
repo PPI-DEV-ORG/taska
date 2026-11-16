@@ -50,16 +50,35 @@ export function printOrderDocument(opts: {
   notes?: string;
   paymentTerms?: string;
   senderName?: string;
+  /** Jabatan / peran penerbit dokumen (mis. karyawan yang mencetak). */
+  senderTitle?: string;
   recipientName?: string;
   companyName?: string;
   companyTagline?: string;
   companyAddress?: string;
   companyPhone?: string;
   companyLogoUrl?: string;
+  /** Rincian di atas total, mis. DPP / PPN / potongan PPh. */
+  summaryLines?: { label: string; amount: number }[];
+  /** Perkiraan tiba / tanggal kirim yang diminta (PO). */
+  deliveryDate?: string;
 }) {
   if (typeof window === "undefined") return;
 
   const profile = readCachedCompanyProfile();
+  // Kop surat: gambar kop dari Pengaturan (bila ada) atau disusun dari logo + identitas perusahaan
+  const letterheadUrl = profile.letterheadFileId ? `${apiBase()}/files/${profile.letterheadFileId}` : "";
+  // PO: penerbit = karyawan yang mencetak (bila dikirim), bukan penanda tangan default profil perusahaan
+  const signatoryTitle = escapeHtml(opts.senderName ? opts.senderTitle || "" : profile.signatoryTitle || "");
+  const poTermsHtml =
+    opts.docType === "PO" && profile.poTerms?.trim()
+      ? profile.poTerms
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => `<li>${escapeHtml(l)}</li>`)
+          .join("")
+      : "";
   const compName = escapeHtml(opts.companyName || profile.name || "PT Samtek");
   const compTagline = escapeHtml(opts.companyTagline || profile.tagline || "TASKA ERP System");
   const compAddress = escapeHtml(opts.companyAddress ?? profile.address ?? "");
@@ -158,7 +177,8 @@ export function printOrderDocument(opts: {
   <title>${title} - ${safeDocNumber}</title>
   <style>
     body { font-family: Arial, sans-serif; color: #111827; margin: 32px; font-size: 13px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111827; padding-bottom: 14px; margin-bottom: 20px; }
+    .kop { border-bottom: 3px double #111827; padding-bottom: 10px; margin-bottom: 16px; }
+    .header { display: flex; justify-content: center; text-align: center; margin-bottom: 18px; }
     .title { font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
     .subtitle { font-size: 12px; color: #4b5563; margin-top: 4px; }
     .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
@@ -179,18 +199,22 @@ export function printOrderDocument(opts: {
   </style>
 </head>
 <body>
+  ${
+    letterheadUrl
+      ? `<div class="kop"><img src="${escapeHtml(letterheadUrl)}" style="width:100%;max-height:150px;object-fit:contain;display:block;" /></div>`
+      : `<div class="kop" style="display:flex;align-items:center;gap:14px;">
+          ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" style="max-height:56px;max-width:140px;object-fit:contain;" />` : ""}
+          <div>
+            <div style="font-weight:800;font-size:17px;">${compName.toUpperCase()}</div>
+            ${compTagline ? `<div style="font-size:11px;color:#4b5563;">${compTagline}</div>` : ""}
+            ${compAddress || compPhone ? `<div style="font-size:10.5px;color:#4b5563;">${compAddress}${compPhone ? `${compAddress ? " · " : ""}Telp: ${compPhone}` : ""}</div>` : ""}
+          </div>
+        </div>`
+  }
   <div class="header">
     <div>
       <div class="title">${title}</div>
       <div class="subtitle">${subtitle}</div>
-    </div>
-    <div style="text-align:right;display:flex;align-items:center;gap:12px;">
-      ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" style="max-height:48px;max-width:120px;object-fit:contain;" />` : ""}
-      <div>
-        <div style="font-weight:800;font-size:15px;">${compName.toUpperCase()}</div>
-        <div style="font-size:11px;color:#6b7280;">${compTagline}</div>
-        ${compAddress ? `<div style="font-size:10.5px;color:#6b7280;">${compAddress}${compPhone ? ` · Telp: ${compPhone}` : ""}</div>` : ""}
-      </div>
     </div>
   </div>
 
@@ -214,6 +238,14 @@ export function printOrderDocument(opts: {
         <div class="meta-label">Tanggal Dokumen</div>
         <div class="meta-val">${opts.date ? escapeHtml(tanggal(opts.date)) : "-"}</div>
       </div>
+      ${
+        opts.deliveryDate && opts.deliveryDate !== "-"
+          ? `<div class="meta-item" style="margin-top:8px;">
+              <div class="meta-label">Dikirim Paling Lambat</div>
+              <div class="meta-val">${escapeHtml(tanggal(opts.deliveryDate))}</div>
+            </div>`
+          : ""
+      }
     </div>
   </div>
 
@@ -247,6 +279,12 @@ export function printOrderDocument(opts: {
       ? ""
       : `<div class="total-box">
           <div class="total-card">
+            ${(opts.summaryLines ?? [])
+              .map(
+                (l) =>
+                  `<div style="display:flex;justify-content:space-between;font-size:12px;color:#374151;margin-bottom:4px;"><span>${escapeHtml(l.label)}</span><span>${l.amount < 0 ? "-" : ""}${rupiah(Math.abs(l.amount))}</span></div>`,
+              )
+              .join("")}
             <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;">
               <span>TOTAL NILAI</span>
               <span>${rupiah(totalAmount)}</span>
@@ -260,6 +298,15 @@ export function printOrderDocument(opts: {
     safeNotes
       ? `<div style="margin-top:16px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">
           <strong>Catatan / Instruksi:</strong><br/>${safeNotes}
+         </div>`
+      : ""
+  }
+
+  ${
+    poTermsHtml
+      ? `<div style="margin-top:16px;font-size:11.5px;color:#374151;">
+          <strong>Syarat &amp; Ketentuan:</strong>
+          <ol style="margin:6px 0 0 18px;padding:0;">${poTermsHtml}</ol>
          </div>`
       : ""
   }
@@ -283,7 +330,8 @@ export function printOrderDocument(opts: {
       : `<div class="sign-grid">
           <div>
             <div>Diterbitkan Oleh,</div>
-            <div class="sign-line">${compName}</div>
+            <div class="sign-line">${opts.docType === "PO" ? compSignatory : compName}</div>
+            ${opts.docType === "PO" && signatoryTitle ? `<div style="font-size:11px;color:#4b5563;">${signatoryTitle} · ${compName}</div>` : ""}
           </div>
           <div>
             <div>Disetujui / Dikonfirmasi Oleh,</div>

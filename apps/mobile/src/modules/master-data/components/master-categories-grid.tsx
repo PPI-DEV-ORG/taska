@@ -152,7 +152,7 @@ export function MasterCategoriesGrid({
     {
       id: "pengaturan-sistem" as MasterKey,
       title: "Pengaturan Kebijakan ERP",
-      desc: "Ambang batas persetujuan Bos, tarif PPN 11%, format penomoran",
+      desc: "Profil & kop surat perusahaan, ambang persetujuan, format penomoran",
       count: "Sistem",
       icon: Settings,
       tag: "Dikelola Admin / Bos",

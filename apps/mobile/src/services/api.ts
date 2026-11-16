@@ -354,6 +354,37 @@ export async function downloadDocumentationPdf(
   return true;
 }
 
+/**
+ * Surat jalan resmi (PDF dari server: kop, barang + SN, TTD gudang · pengirim · penerima).
+ * mode "print" membuka PDF di tab baru siap dicetak; "download" menyimpan file.
+ */
+export async function openDeliveryNotePdf(id: string | number, number?: string, mode: "print" | "download" = "print"): Promise<boolean> {
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
+  await hydrateTokens();
+  const token = getAccess();
+  const res = await fetch(`${apiBase()}/delivery-notes/${id}/pdf`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return false;
+  const blob = new Blob([await res.blob()], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  if (mode === "print") {
+    const w = window.open(url, "_blank");
+    if (w) {
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return true;
+    }
+  }
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `surat-jalan-${String(number || id).replace(/[^\w.-]+/g, "-")}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return true;
+}
+
 // ─── Modul Akuntansi Backend (/accounting/*) ───
 
 export async function fetchAccounts(params?: { cash?: boolean; postable?: boolean; category?: string; search?: string }) {

@@ -88,6 +88,14 @@ const ACTION_LABELS: Record<string, string> = {
   BUAT_REQUEST_BARANG: "Membuat permintaan barang",
   UBAH_STATUS_REQUEST: "Mengubah status permintaan barang",
   HAPUS_REQUEST_BARANG: "Menghapus permintaan barang",
+  // Petty cash
+  AJUKAN_UANG_JALAN: "Mengajukan petty cash",
+  BATAL_UANG_JALAN: "Membatalkan petty cash",
+  SETUJUI_UANG_JALAN: "Menyetujui petty cash",
+  TOLAK_UANG_JALAN: "Menolak petty cash",
+  CAIRKAN_UANG_JALAN: "Mencairkan petty cash",
+  LAPOR_UANG_JALAN: "Melaporkan pemakaian petty cash",
+  SELESAI_UANG_JALAN: "Menyelesaikan petty cash",
   // PO supplier
   BUAT_PO_SUPPLIER: "Membuat PO supplier",
   UBAH_STATUS_PENGIRIMAN: "Mengubah status pengiriman",
@@ -130,6 +138,37 @@ const ACTION_LABELS: Record<string, string> = {
   IMPORT_EXCEL: "Mengimpor data Excel",
 };
 
+/** Nama status (enum server) dalam bahasa sehari-hari. */
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Draft",
+  DIAJUKAN: "Diajukan",
+  CEK_STOK: "Cek stok",
+  MENUNGGU: "Menunggu",
+  MENUNGGU_PERSETUJUAN: "Menunggu persetujuan",
+  DISETUJUI: "Disetujui",
+  DITOLAK: "Ditolak",
+  DIBATALKAN: "Dibatalkan",
+  BATAL: "Batal",
+  PO_DIBUAT: "PO dibuat",
+  DIBAYAR: "Dibayar",
+  LUNAS: "Lunas",
+  BELUM_LUNAS: "Belum lunas",
+  DIKIRIM: "Dikirim",
+  SAMPAI: "Sampai",
+  SAMPAI_BELUM_LUNAS: "Sampai (belum lunas)",
+  DI_SUPPLIER: "Di supplier",
+  DITERIMA: "Diterima",
+  DITERIMA_SEBAGIAN: "Diterima sebagian",
+  DICAIRKAN: "Dicairkan",
+  DILAPORKAN: "Dilaporkan",
+  SELESAI: "Selesai",
+  PAID: "Lunas",
+  PARTIAL: "Dibayar sebagian",
+  UNPAID: "Belum lunas",
+  OVERDUE: "Terlambat",
+  SENT: "Terkirim",
+};
+
 const ENTITY_LABELS: Record<string, string> = {
   leads: "lead",
   quotations: "penawaran",
@@ -144,6 +183,9 @@ const ENTITY_LABELS: Record<string, string> = {
   projects: "project",
   tasks: "tugas",
   "purchase-requests": "permintaan barang",
+  "purchase-request": "permintaan barang",
+  requests: "permintaan barang",
+  "cash-advances": "petty cash",
   "supplier-pos": "PO supplier",
   "supplier-po": "PO supplier",
   receiving: "penerimaan barang",
@@ -425,6 +467,8 @@ function entityLabel(path: string): string | null {
 }
 
 function humanizeEnum(value: string): string {
+  const known = STATUS_LABELS[String(value).trim().toUpperCase()];
+  if (known) return known;
   const text = String(value).replace(/_/g, " ").trim();
   if (!text) return text;
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
@@ -458,7 +502,10 @@ function beautifyDetail(detail: string): string {
       .map(humanizeEnum)
       .join(" → ");
   }
-  return text;
+  return text.replace(
+    /\b([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)\s*(?:→|->)\s*([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)\b/g,
+    (_, a: string, b: string) => `${humanizeEnum(a)} → ${humanizeEnum(b)}`,
+  );
 }
 
 /** Ubah detail mentah menjadi teks yang aman ditampilkan. */
@@ -476,6 +523,23 @@ function statusChangeText(payload: Record<string, any>): string {
   if (!status) return "";
   const note = payload.note ?? payload.reason;
   return `Mengubah status menjadi ${status}${note ? ` (${note})` : ""}`;
+}
+
+/** "PNJ/2026/11/001: DIAJUKAN → DISETUJUI — alasan" */
+const STATUS_CHANGE =
+  /^(?:(.+?):\s*)?([A-Z][A-Z0-9_]*)\s*(?:→|->)\s*([A-Z][A-Z0-9_]*)(?:\s*[—-]\s*(.+))?$/;
+
+function statusChangeSentence(label: string, detail: string): string | null {
+  const m = STATUS_CHANGE.exec(detail.trim());
+  if (!m) return null;
+  const [, ref, from, to, reason] = m;
+  const base = `${label}${ref ? ` ${ref.trim()}` : ""} dari ${humanizeEnum(from!)} menjadi ${humanizeEnum(to!)}`;
+  return reason ? `${base}. Alasan: ${reason.trim()}` : base;
+}
+
+/** Log otomatis dari AuditInterceptor ("POST /api/..."): disembunyikan bila ada log yang lebih jelas. */
+export function isHttpAuditAction(action?: string | null): boolean {
+  return /^(POST|PUT|PATCH|DELETE)\s+\//i.test(String(action ?? "").trim());
 }
 
 export function formatAuditAction(
@@ -509,22 +573,36 @@ export function formatAuditAction(
       if (method === "PATCH" || method === "PUT") {
         if (parsed.status) return statusChangeText(parsed);
         const summary = summarizePayload(parsed);
-        return summary ? `Mengedit data: ${summary}` : "Mengedit data";
+        const base = entity ? `Memperbarui ${entity}` : "Memperbarui data";
+        return summary ? `${base}: ${summary}` : base;
       }
       const summary = summarizePayload(parsed);
       const base = entity ? `Menambahkan ${entity}` : "Menambahkan data";
       return summary ? `${base}: ${summary}` : base;
     }
 
-    if (method === "PATCH" || method === "PUT") return "Mengedit data";
+    if (method === "PATCH" || method === "PUT") return entity ? `Memperbarui ${entity}` : "Memperbarui data";
     return entity ? `Menambahkan ${entity}` : "Menambahkan data";
   }
 
-  // Detail berupa JSON walau aksinya berupa kode (mis. log lama/manual).
-  const detailLabel = cleanDetail(detailText);
-
   const label =
     ACTION_LABELS[rawAction] ?? ACTION_LABELS[rawAction.toUpperCase()];
+
+  // Keputusan persetujuan: "Persetujuan disetujui oleh Budi (alasan)" -> nama sudah tampil di riwayat
+  const decision = /^Persetujuan\s+(disetujui|ditolak)\s+oleh\s+.+?(?:\s*\((.+)\))?$/i.exec(detailText);
+  if (decision) {
+    const ok = decision[1]!.toLowerCase() === "disetujui";
+    const reason = decision[2];
+    return `${ok ? "Menyetujui" : "Menolak"} pengajuan${reason ? `. Alasan: ${reason}` : ""}`;
+  }
+
+  if (label && /^Mengubah status/.test(label)) {
+    const sentence = statusChangeSentence(label, detailText);
+    if (sentence) return sentence;
+  }
+
+  // Detail berupa JSON walau aksinya berupa kode (mis. log lama/manual).
+  const detailLabel = cleanDetail(detailText).replace(/\s+dihapus$/i, "");
   if (label) return detailLabel ? `${label}: ${detailLabel}` : label;
 
   if (/^LAPORAN_WA_/i.test(rawAction)) {

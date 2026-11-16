@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { EmptyState } from "@/components/taska/basics";
 import { ModuleList } from "@/screens/module-list";
+import { IncomingShipments } from "@/modules/receiving/incoming-shipments";
 import { MODULES, hasUserPermission } from "@/constants/modules";
 import { useApp } from "@/store/app-store";
 
@@ -16,5 +17,7 @@ export default function ModuleIndex() {
   }
 
   const title = def.key === "projects" && (user!.role === "teknisi" || user!.role === "se") ? "Proyek saya" : undefined;
-  return <ModuleList def={def} title={title} />;
+  // Penerimaan: barang yang sedang dikirim tampil di atas tabel
+  const headerExtra = def.key === "receiving" ? <IncomingShipments /> : undefined;
+  return <ModuleList def={def} title={title} headerExtra={headerExtra} />;
 }

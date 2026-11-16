@@ -9,37 +9,37 @@ export class ClientPoController {
   constructor(private readonly service: ClientPoService) {}
 
   @Get()
-  @Require("financeOut", "L")
+  @Require("poClient", "L")
   list(@Query() q: FinanceListQuery) {
     return this.service.list(q);
   }
 
   @Get("suggest-number")
-  @Require("financeOut", "L")
+  @Require("poClient", "L")
   suggestNumber() {
     return this.service.suggestNumber();
   }
 
   @Get(":id")
-  @Require("financeOut", "L")
+  @Require("poClient", "L")
   get(@Param("id", ParseIntPipe) id: number) {
     return this.service.get(id);
   }
 
   @Post()
-  @Require("financeOut", "C")
+  @Require("poClient", "C")
   create(@Body() dto: ClientPoDto, @CurrentUser() user: RequestUser) {
     return this.service.create(dto, user);
   }
 
   @Put(":id")
-  @Require("financeOut", "U")
+  @Require("poClient", "U")
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: ClientPoDto, @CurrentUser() user: RequestUser) {
     return this.service.update(id, dto, user);
   }
 
   @Patch(":id")
-  @Require("financeOut", "U")
+  @Require("poClient", "U")
   patch(@Param("id", ParseIntPipe) id: number, @Body() dto: ClientPoDto, @CurrentUser() user: RequestUser) {
     return this.service.update(id, dto, user);
   }
@@ -55,7 +55,7 @@ export class ClientPoController {
   }
 
   @Delete(":id")
-  @Require("financeOut", "U")
+  @Require("poClient", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }

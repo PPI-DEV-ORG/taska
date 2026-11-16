@@ -62,7 +62,8 @@ export default function CalendarScreen() {
   const [view, setView] = React.useState<CalendarView>("month");
   const [cursor, setCursor] = React.useState(() => new Date());
   const [selected, setSelected] = React.useState(() => ymd(new Date()));
-  const [scope, setScope] = React.useState<"me" | "team" | "all">("me");
+  // Pimpinan langsung melihat seluruh jadwal perusahaan, PM jadwal tim lapangannya; selain itu agenda sendiri.
+  const [scope, setScope] = React.useState<"me" | "team" | "all">(() => (canViewAll ? "all" : role === "pm" ? "team" : "me"));
   const [cats, setCats] = React.useState<string[]>([]);
   const [status, setStatus] = React.useState("");
   const [onlyOverdue, setOnlyOverdue] = React.useState(false);

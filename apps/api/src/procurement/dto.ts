@@ -56,6 +56,10 @@ export class RequestItemDto {
 
   @IsOptional() @IsString()
   serials?: string;
+
+  /** Barang pakai-habis proyek (pengganti awalan "[PAKAI_HABIS]" di nama). */
+  @IsOptional() @IsBoolean()
+  isConsumable?: boolean;
 }
 
 export class RequestDto {
@@ -75,11 +79,26 @@ export class RequestDto {
   @IsIn(["PROJECT", "STOK", "INTERNAL", "LAINNYA"])
   costType?: "PROJECT" | "STOK" | "INTERNAL" | "LAINNYA";
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim().toUpperCase() : value))
+  @IsIn(["SUPPLIER", "RETAIL", "GUDANG"])
   procurementSource?: string;
 
-  @IsOptional() @IsString()
+  /** KAS | UTANG (TUNAI/CASH dianggap KAS). */
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? (/KAS|TUNAI|CASH/i.test(value) ? "KAS" : "UTANG") : value))
+  @IsIn(["KAS", "UTANG"])
   paymentMethod?: string;
+
+  /** Mode PPN harga barang (pengganti tag "[PPN:x]" di catatan). */
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim().toLowerCase() : value))
+  @IsIn(["none", "exclude", "include"])
+  ppnMode?: string;
+
+  /** Semua barang pakai-habis proyek (pengganti tag "[ALL_CONSUMABLES]"). */
+  @IsOptional() @IsBoolean()
+  isProjectConsumable?: boolean;
 
   @IsOptional() @IsDateString()
   dueDate?: string;

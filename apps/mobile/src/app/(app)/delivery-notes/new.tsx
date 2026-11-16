@@ -18,6 +18,7 @@ import { colors } from "@/tokens";
 import type { QuotationItem } from "@/modules/quotation/types";
 import { Row } from "@/constants/modules";
 import { adaptRow } from "@/services/adapters";
+import { DeliverySignersForm, initialSigners, signersPayload, validateSigners, type SignersValue } from "@/modules/delivery-note/delivery-signers-form";
 
 function playScanBeep(ok: boolean) {
   if (Platform.OS !== "web") return;
@@ -68,36 +69,14 @@ export default function NewDeliveryNoteScreen() {
   }, [editId, deliveryNotes]);
 
   const initialMatchInvoice = React.useMemo(() => {
-    const rawReason = String(initialExistingDn?.alasan || initialExistingDn?.reportText || "");
-    const tagInvId = rawReason.match(/\[inv:(\d+)\]/i)?.[1] || "";
-    const tagInvNum = rawReason.match(/\b(INV[\-\/][^\s\)\]]+)\b/i)?.[1] || "";
-    const targetInvId =
-      initialInvoiceId ||
-      (initialExistingDn
-        ? String(initialExistingDn.invoiceId || tagInvId || "")
-        : "");
-    const targetInvNum = initialExistingDn ? String(initialExistingDn.invoiceNumber || tagInvNum || "") : "";
-    if (!targetInvId && !targetInvNum) return null;
-    return (
-      (invoicesList ?? []).find(
-        (inv: Row) =>
-          (targetInvId && String(inv.id) === targetInvId) ||
-          (targetInvNum &&
-            (String(inv.nomor || "").toLowerCase() === targetInvNum.toLowerCase() ||
-              String(inv.number || "").toLowerCase() === targetInvNum.toLowerCase()))
-      ) ?? null
-    );
+    const targetInvId = initialInvoiceId || (initialExistingDn ? String(initialExistingDn.invoiceId || "") : "");
+    if (!targetInvId) return null;
+    return (invoicesList ?? []).find((inv: Row) => String(inv.id) === targetInvId) ?? null;
   }, [initialInvoiceId, initialExistingDn, invoicesList]);
 
   const initialMatchSo = React.useMemo(() => {
-    const rawReason = String(initialExistingDn?.alasan || initialExistingDn?.reportText || "");
-    const tagSoId = rawReason.match(/\[so:(\d+)\]/i)?.[1] || "";
-    const tagSoNum = rawReason.match(/\b(SO[\-\/][^\s\)\]]+)\b/i)?.[1] || "";
-    const targetSoId =
-      initialSoId ||
-      (initialExistingDn
-        ? String(initialExistingDn.soId || initialExistingDn.clientPoId || tagSoId || "")
-        : "");
+    const tagSoNum = "";
+    const targetSoId = initialSoId || (initialExistingDn ? String(initialExistingDn.clientPoId || "") : "");
     const targetSoNum = initialExistingDn ? String(initialExistingDn.soNumber || tagSoNum || "") : "";
     if (!targetSoId && !targetSoNum) return null;
     return (
@@ -131,6 +110,10 @@ export default function NewDeliveryNoteScreen() {
   const [selectedProject, setSelectedProject] = React.useState(() => (initialExistingDn?.project && initialExistingDn.project !== "-") ? initialExistingDn.project : "-");
   const [selectedSoId, setSelectedSoId] = React.useState<string | number | null>(() => initialMatchSo?.id ?? initialExistingDn?.soId ?? initialExistingDn?.clientPoId ?? null);
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | number | null>(() => initialMatchInvoice?.id ?? initialExistingDn?.invoiceId ?? null);
+
+  // Penanda tangan: gudang, pengirim, penerima (null = ikut data surat jalan yang diedit)
+  const [signersState, setSigners] = React.useState<SignersValue | null>(null);
+  const signers = signersState ?? initialSigners(initialExistingDn, user ? { id: user.id, name: user.name } : null);
 
   const [hasGoodsState, setHasGoods] = React.useState<boolean | null>(null);
   const hasGoods =
@@ -662,6 +645,12 @@ export default function NewDeliveryNoteScreen() {
       toast("Tambahkan minimal satu barang yang dibawa", "danger");
       return;
     }
+    const signerError = validateSigners(signers);
+    if (signerError) {
+      toast(signerError, "danger");
+      return;
+    }
+    const signerFields = signersPayload(signers, activeProject);
 
     setSubmitting(true);
     let fileId: number | undefined;
@@ -701,16 +690,10 @@ export default function NewDeliveryNoteScreen() {
     const invNum = selectedInvoice
       ? (selectedInvoice.nomor || `INV #${selectedInvoice.id}`)
       : undefined;
-    const soTag = selectedSo?.id ? ` [so:${selectedSo.id}]` : "";
-    const invTag = selectedInvoice?.id ? ` [inv:${selectedInvoice.id}] [invNum:${invNum}]` : "";
-    const cleanAlasan = alasan.trim();
-    let finalAlasan = cleanAlasan;
-    if (selectedSo && !finalAlasan.includes("[so:")) {
-      finalAlasan = `${finalAlasan || `Pengiriman Barang SO ${soNum}`}${soTag}`;
-    }
-    if (selectedInvoice && !finalAlasan.includes("[inv:")) {
-      finalAlasan = `${finalAlasan || `Pengiriman Barang Invoice ${invNum}`}${invTag}`;
-    }
+    // Kaitan SO / invoice dikirim sebagai clientPoId / invoiceId (tidak lagi diselipkan sebagai tag di alasan).
+    const finalAlasan =
+      alasan.trim() ||
+      (selectedSo ? `Pengiriman Barang SO ${soNum}` : selectedInvoice ? `Pengiriman Barang Invoice ${invNum}` : "");
 
     const currentStatus = initialExistingDn?.status || "Menunggu pengiriman";
     const isAlreadySentOrDelivered = currentStatus === "Dikirim" || currentStatus === "Diterima";
@@ -740,6 +723,7 @@ export default function NewDeliveryNoteScreen() {
           reportText: hasGoods && items.length > 0 ? itemsSummary : undefined,
           items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
           status: nextStatus,
+          ...signerFields,
           ...(fileId ? { fileId, scanFileId: Number(fileId) } : {}),
         });
 
@@ -790,6 +774,7 @@ export default function NewDeliveryNoteScreen() {
         items: hasGoods && itemsList.length > 0 ? itemsList : undefined,
         status: willShip ? "Dikirim" : "Menunggu pengiriman",
         persetujuan: "Menunggu persetujuan",
+        ...signerFields,
         fileId,
         scanFileId: fileId ? Number(fileId) : undefined,
       };
@@ -907,6 +892,8 @@ export default function NewDeliveryNoteScreen() {
           </FormField>
         </View>
       </Panel>
+
+      <DeliverySignersForm value={signers} onChange={setSigners} project={activeProject} />
 
       <Panel
         title="Barang yang Dibawa"

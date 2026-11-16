@@ -3,6 +3,7 @@ import { IsOptional, IsString, MinLength } from "class-validator";
 import { LookupsService, type LookupModel } from "./lookups.service.js";
 import { ListQuery } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
+import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import type { ModuleKey } from "../rbac/permissions.js";
 
 class NameDto {
@@ -95,12 +96,15 @@ export class CoaAccountsController {
     return this.service.listCoa();
   }
 
+  // Dulu tanpa cek hak akses: siapa pun yang login bisa menambah / menonaktifkan akun COA.
   @Post()
+  @Require("accounting", "U")
   create(@Body() dto: CoaAccountDto) {
     return this.service.upsertCoa(dto);
   }
 
   @Delete(":code")
+  @Require("accounting", "U")
   remove(@Param("code") code: string) {
     return this.service.removeCoa(code);
   }
@@ -111,17 +115,20 @@ export class ManualJournalsController {
   constructor(readonly service: LookupsService) {}
 
   @Get()
+  @Require("accounting", "L")
   list() {
     return this.service.listManualJournals();
   }
 
   @Post()
-  create(@Body() dto: any) {
-    return this.service.createManualJournal(dto);
+  @Require("accounting", "C")
+  create(@Body() dto: any, @CurrentUser() user: RequestUser) {
+    return this.service.createManualJournal(dto, user?.id);
   }
 
   @Delete(":id")
-  remove(@Param("id") id: string) {
-    return this.service.removeManualJournal(id);
+  @Require("accounting", "U")
+  remove(@Param("id") id: string, @Query("reason") reason: string | undefined, @CurrentUser() user: RequestUser) {
+    return this.service.removeManualJournal(id, user?.id, reason);
   }
 }

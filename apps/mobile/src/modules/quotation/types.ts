@@ -17,4 +17,8 @@ export type QuotationItem = {
   outOfStockAutoSwap?: boolean;
   pphMode?: PphMode;
   tipePph?: string;
+  /** Diskon baris dalam Rupiah (untuk seluruh qty). */
+  diskon?: number;
+  /** Diskon baris dalam persen; bila diisi, `diskon` dihitung ulang dari harga terbaru. */
+  diskonPct?: number;
 };

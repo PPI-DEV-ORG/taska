@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { itemLineDiscount } from "./item-discount.js";
 
 export type QuotationItemData = {
   id: string;
@@ -15,7 +16,17 @@ export type QuotationItemData = {
   outOfStockAutoSwap?: boolean;
   pphMode?: string;
   tipePph?: string;
+  /** Diskon baris (Rp, seluruh qty). */
+  diskon?: number;
+  /** Diskon baris (%); bila ada, nominal dihitung ulang dari qty × harga. */
+  diskonPct?: number;
 };
+
+function itemDiscountLabel(it: QuotationItemData, lineDisc: number): string {
+  if (!(lineDisc > 0)) return "";
+  const pct = Number(it.diskonPct) || 0;
+  return pct > 0 ? `Diskon ${pct}% (-Rp ${lineDisc.toLocaleString("id-ID")})` : `Diskon -Rp ${lineDisc.toLocaleString("id-ID")}`;
+}
 
 export type QuotationMeta = {
   items: QuotationItemData[];
@@ -96,6 +107,8 @@ export async function buildQuotationXlsx(params: {
   tipePph?: string;
   discount?: number;
   grandTotal?: number;
+  /** Harga item sudah termasuk PPN: baris PPN hanya informasi, tidak ditambahkan lagi ke grand total. */
+  ppnIncluded?: boolean;
   dpLabel?: string;
   dpAmount?: number;
   notes?: string[];
@@ -227,14 +240,18 @@ export async function buildQuotationXlsx(params: {
 
   const firstItemRow = 18;
   let calcSum = 0;
+  let lineDiscSum = 0;
 
   effectiveItems.forEach((it, idx) => {
     const rIdx = firstItemRow + idx;
     const row = ws.getRow(rIdx);
     const qty = Number(it.qty) || 1;
     const harga = Number(it.harga) || 0;
-    const lineTotal = qty * harga;
+    const lineDisc = itemLineDiscount({ ...it, qty });
+    const lineTotal = qty * harga - lineDisc;
     calcSum += lineTotal;
+    lineDiscSum += lineDisc;
+    const discText = itemDiscountLabel(it, lineDisc);
 
     const cNo = row.getCell(1);
     cNo.value = idx + 1;
@@ -247,7 +264,7 @@ export async function buildQuotationXlsx(params: {
       !it.serialNumbers.every((sn) => (it.item || "").includes(sn))
         ? ` (SN: ${it.serialNumbers.join(", ")})`
         : "";
-    cItem.value = `${it.item || ""}${snSuffix}`;
+    cItem.value = `${it.item || ""}${snSuffix}${discText ? `\n${discText}` : ""}`;
     cItem.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 
     const cQty = row.getCell(3);
@@ -264,7 +281,7 @@ export async function buildQuotationXlsx(params: {
     cHarga.alignment = { horizontal: "right", vertical: "middle" };
 
     const cTotal = row.getCell(6);
-    cTotal.value = { formula: `C${rIdx}*E${rIdx}`, result: lineTotal };
+    cTotal.value = { formula: lineDisc > 0 ? `C${rIdx}*E${rIdx}-${lineDisc}` : `C${rIdx}*E${rIdx}`, result: lineTotal };
     cTotal.numFmt = '"Rp"* #,##0';
     cTotal.alignment = { horizontal: "right", vertical: "middle" };
 
@@ -277,7 +294,7 @@ export async function buildQuotationXlsx(params: {
 
   const lastItemRow = firstItemRow + effectiveItems.length - 1;
   const finalTotal = rawItems.length > 0 ? calcSum : Number(params.total ?? calcSum) || 0;
-  const finalDisc = Number(params.discount ?? 0) || 0;
+  const finalDisc = Math.max(0, (Number(params.discount ?? 0) || 0) - (rawItems.length > 0 ? lineDiscSum : 0));
   const netBeforeTax = Math.max(0, finalTotal - finalDisc);
   const finalPpn =
     params.ppn !== undefined ? Number(params.ppn) : Math.round(netBeforeTax * 0.11);
@@ -285,7 +302,7 @@ export async function buildQuotationXlsx(params: {
   const finalGrandTotal =
     params.grandTotal !== undefined && Number(params.grandTotal) > 0
       ? Number(params.grandTotal)
-      : Math.max(0, netBeforeTax + finalPpn - finalPph);
+      : Math.max(0, netBeforeTax + (params.ppnIncluded ? 0 : finalPpn) - finalPph);
 
   // 8. Summary Rows (TOTAL, PPN (11%), optional DISC, optional PPH, GRAND TOTAL)
   let currRow = lastItemRow + 1;
@@ -310,7 +327,7 @@ export async function buildQuotationXlsx(params: {
   if (finalDisc > 0) {
     discRowIdx = currRow++;
     const lblDisc = ws.getCell(discRowIdx, 5);
-    lblDisc.value = "DISC";
+    lblDisc.value = lineDiscSum > 0 ? "DISC TAMBAHAN" : "DISC";
     lblDisc.font = { name: "Calibri", size: 10, bold: true };
     lblDisc.alignment = { horizontal: "right", vertical: "middle" };
     lblDisc.border = thinBorder;
@@ -326,13 +343,15 @@ export async function buildQuotationXlsx(params: {
   // PPN (11%)
   const ppnRowIdx = currRow++;
   const lblPpn = ws.getCell(ppnRowIdx, 5);
-  lblPpn.value = finalPpn > 0 ? "PPN (11%)" : "PPN";
+  lblPpn.value = finalPpn > 0 ? (params.ppnIncluded ? "PPN 11% (SUDAH TERMASUK)" : "PPN (11%)") : "PPN";
   lblPpn.font = { name: "Calibri", size: 10, bold: true };
   lblPpn.alignment = { horizontal: "right", vertical: "middle" };
   lblPpn.border = thinBorder;
 
   const valPpn = ws.getCell(ppnRowIdx, 6);
-  if (finalPpn > 0) {
+  if (finalPpn > 0 && params.ppnIncluded) {
+    valPpn.value = finalPpn;
+  } else if (finalPpn > 0) {
     const formulaStr = discRowIdx ? `(F${totalRowIdx}-F${discRowIdx})*0.11` : `F${totalRowIdx}*0.11`;
     valPpn.value = { formula: formulaStr, result: finalPpn };
   } else {
@@ -370,9 +389,8 @@ export async function buildQuotationXlsx(params: {
   lblGrand.border = thinBorder;
 
   const valGrand = ws.getCell(grandRowIdx, 6);
-  let grandFormula = discRowIdx
-    ? `F${totalRowIdx}-F${discRowIdx}+F${ppnRowIdx}`
-    : `F${totalRowIdx}+F${ppnRowIdx}`;
+  const ppnTerm = params.ppnIncluded ? "" : `+F${ppnRowIdx}`;
+  let grandFormula = discRowIdx ? `F${totalRowIdx}-F${discRowIdx}${ppnTerm}` : `F${totalRowIdx}${ppnTerm}`;
   if (pphRowIdx) {
     grandFormula += `+F${pphRowIdx}`; // valPph bernilai negatif
   }
@@ -784,6 +802,8 @@ export async function buildQuotationPdf(params: {
   tipePph?: string;
   discount?: number;
   grandTotal?: number;
+  /** Harga item sudah termasuk PPN: baris PPN hanya informasi, tidak ditambahkan lagi ke grand total. */
+  ppnIncluded?: boolean;
   dpLabel?: string;
   dpAmount?: number;
   notes?: string[];
@@ -807,6 +827,7 @@ export async function buildQuotationPdf(params: {
         ];
 
   let calcSum = 0;
+  let lineDiscSum = 0;
   const tableBody: any[] = [
     [
       { text: "No.", bold: true, alignment: "center", fillColor: "#00ffff", fontSize: 9 },
@@ -821,8 +842,11 @@ export async function buildQuotationPdf(params: {
   effectiveItems.forEach((it, idx) => {
     const qty = Number(it.qty) || 1;
     const harga = Number(it.harga) || 0;
-    const lineTotal = qty * harga;
+    const lineDisc = itemLineDiscount({ ...it, qty });
+    const lineTotal = qty * harga - lineDisc;
     calcSum += lineTotal;
+    lineDiscSum += lineDisc;
+    const discText = itemDiscountLabel(it, lineDisc);
 
     const snSuffix =
       Array.isArray(it.serialNumbers) &&
@@ -833,7 +857,7 @@ export async function buildQuotationPdf(params: {
 
     tableBody.push([
       { text: String(idx + 1), alignment: "center", fontSize: 9 },
-      { text: `${it.item || "-"}${snSuffix}`, fontSize: 9 },
+      { text: `${it.item || "-"}${snSuffix}${discText ? `\n${discText}` : ""}`, fontSize: 9 },
       { text: String(qty), alignment: "center", fontSize: 9 },
       { text: it.satuan || "Unit", alignment: "center", fontSize: 9 },
       { text: `Rp ${harga.toLocaleString("id-ID")}`, alignment: "right", fontSize: 9 },
@@ -842,7 +866,7 @@ export async function buildQuotationPdf(params: {
   });
 
   const finalTotal = rawItems.length > 0 ? calcSum : Number(params.total ?? calcSum) || 0;
-  const finalDisc = Number(params.discount ?? 0) || 0;
+  const finalDisc = Math.max(0, (Number(params.discount ?? 0) || 0) - (rawItems.length > 0 ? lineDiscSum : 0));
   const netBeforeTax = Math.max(0, finalTotal - finalDisc);
   const finalPpn =
     params.ppn !== undefined
@@ -852,7 +876,7 @@ export async function buildQuotationPdf(params: {
   const finalGrandTotal =
     params.grandTotal !== undefined && Number(params.grandTotal) > 0
       ? Number(params.grandTotal)
-      : Math.max(0, netBeforeTax + finalPpn - finalPph);
+      : Math.max(0, netBeforeTax + (params.ppnIncluded ? 0 : finalPpn) - finalPph);
 
   tableBody.push([
     { text: "", colSpan: 4, border: [false, true, false, false] },
@@ -869,7 +893,7 @@ export async function buildQuotationPdf(params: {
       {},
       {},
       {},
-      { text: "DISC", bold: true, alignment: "right", fontSize: 9 },
+      { text: lineDiscSum > 0 ? "DISC TAMBAHAN" : "DISC", bold: true, alignment: "right", fontSize: 9 },
       { text: `Rp ${finalDisc.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
     ]);
   }
@@ -879,7 +903,7 @@ export async function buildQuotationPdf(params: {
     {},
     {},
     {},
-    { text: finalPpn > 0 ? "PPN (11%)" : "PPN", bold: true, alignment: "right", fontSize: 9 },
+    { text: finalPpn > 0 ? (params.ppnIncluded ? "PPN 11% (SUDAH TERMASUK)" : "PPN (11%)") : "PPN", bold: true, alignment: "right", fontSize: 9 },
     { text: `Rp ${finalPpn.toLocaleString("id-ID")}`, bold: true, alignment: "right", fontSize: 9 },
   ]);
 

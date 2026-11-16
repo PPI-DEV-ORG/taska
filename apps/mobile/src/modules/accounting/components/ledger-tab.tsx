@@ -151,7 +151,7 @@ export function LedgerTab({
                       <Text className="w-[140px] text-xs text-muted-foreground" numberOfLines={1}>
                         {l.sumber}
                       </Text>
-                      <Text className="flex-1 min-w-[200px] text-xs text-foreground pr-3" numberOfLines={1}>
+                      <Text className="flex-1 min-w-[200px] text-xs text-foreground pr-3" numberOfLines={2}>
                         {l.keterangan}
                       </Text>
                       <Text className="w-[125px] text-xs font-mono text-right font-semibold pr-2">

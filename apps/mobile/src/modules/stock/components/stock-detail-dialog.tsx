@@ -33,7 +33,9 @@ export function StockDetailDialog({
   onOpenReplacement,
 }: StockDetailDialogProps) {
   const router = useRouter();
-  const { data } = useApp();
+  const { data, can } = useApp();
+  // Harga beli / jual hanya untuk peran dengan hak "harga & laba" (Gudang tidak)
+  const canPrice = can("products", "P");
   const warehouses = propWarehouses ?? data.warehouses ?? [];
   const [showShipped, setShowShipped] = React.useState(false);
   const [showInstalled, setShowInstalled] = React.useState(false);
@@ -134,6 +136,7 @@ export function StockDetailDialog({
                 </View>
               </View>
 
+              {canPrice ? (
               <View className="flex-col sm:flex-row gap-3">
                 {p.hargaBeli ? (
                   <View className="flex-1 bg-card border-border rounded-lg border p-3">
@@ -148,6 +151,7 @@ export function StockDetailDialog({
                   </Text>
                 </View>
               </View>
+              ) : null}
 
               {/* Sebaran Stok per Gudang */}
               <View className="gap-2">

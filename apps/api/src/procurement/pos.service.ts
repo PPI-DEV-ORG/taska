@@ -1,3 +1,4 @@
+import { splitPurchasePayment } from "../accounting/purchase-vat.js";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -9,16 +10,24 @@ import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { PoDto, PoListQuery, ShipmentDto } from "./dto.js";
 import { can } from "../rbac/permissions.js";
+import { PostingService } from "../accounting/posting.service.js";
+import { MappingService } from "../accounting/mapping.service.js";
+import { findActiveSupplierInvoices, getDirectPrepayment, hasSupplierInvoiceCashPayment } from "../accounting/purchase-payment.js";
 import {
+  assertCanPaySupplier,
+  toPpnMode,
+  type PpnModeValue,
   assertPoCanBeCreatedFromPr,
   assertPoShipmentTransition,
+  paymentTermsFromRequest,
 } from "./purchase-flow.js";
+import { cleanName } from "../common/utils/names.js";
 
 type PoMeta = {
   supplierSoNumber?: string | null;
   soFileId: number | null;
-  manualStatus: string | null;
-  ppnMode: string | null;
+  manualStatus: "LUNAS" | "SAMPAI_BELUM_LUNAS" | null;
+  ppnMode: PpnModeValue | null;
   dpp: number | null;
   ppn: number | null;
   pphMode: string | null;
@@ -34,6 +43,8 @@ export class PosService {
     private readonly notifications: NotificationsService,
     private readonly docnum: DocumentNumberService,
     private readonly approvals: ApprovalsService,
+    private readonly postingService: PostingService,
+    private readonly mappingService: MappingService,
   ) {
     this.approvals.onChange("SUPPLIER_PO", (entityId, status) => this.onApproval(entityId, status));
   }
@@ -84,8 +95,8 @@ export class PosService {
   private metaOf(row: {
     supplierSoNumber?: string | null;
     soFileId?: number | null;
-    manualStatus?: string | null;
-    ppnMode?: string | null;
+    manualStatus?: "LUNAS" | "SAMPAI_BELUM_LUNAS" | null;
+    ppnMode?: PpnModeValue | null;
     dpp?: unknown;
     ppn?: unknown;
     pphMode?: string | null;
@@ -147,7 +158,7 @@ export class PosService {
         where,
         include: {
           supplier: { select: { id: true, name: true } },
-          request: { select: { id: true, number: true, purpose: true, status: true, paymentStatus: true, paymentProofFileId: true, otherNote: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
+          request: { select: { id: true, number: true, purpose: true, status: true, paymentStatus: true, paymentProofFileId: true, otherNote: true, costType: true, procurementSource: true, paymentMethod: true, ppnMode: true, dueDate: true, projectId: true } },
           project: { select: { id: true, name: true } },
           creator: { select: { id: true, name: true } },
           items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
@@ -229,7 +240,7 @@ export class PosService {
       include: {
         supplier: true,
         creator: { select: { id: true, name: true } },
-        request: { select: { id: true, number: true, purpose: true, status: true, paymentStatus: true, paymentProofFileId: true, otherNote: true, costType: true, procurementSource: true, paymentMethod: true, projectId: true } },
+        request: { select: { id: true, number: true, purpose: true, status: true, paymentStatus: true, paymentProofFileId: true, otherNote: true, costType: true, procurementSource: true, paymentMethod: true, ppnMode: true, dueDate: true, projectId: true } },
         project: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, sku: true, name: true, unit: true, hasSerial: true } } } },
         receivings: {
@@ -299,19 +310,29 @@ export class PosService {
     if (!can(user.role, "procurement", "C")) {
       throw new ForbiddenException("Anda tidak memiliki hak akses (RBAC) untuk membuat PO supplier");
     }
-    let parentPr: { id: number; status: string; procurementSource: string | null } | null = null;
+    let parentPr: {
+      id: number;
+      status: string;
+      procurementSource: string | null;
+      paymentMethod: string | null;
+      dueDate: Date | null;
+      supplierId: number | null;
+    } | null = null;
     if (dto.requestId) {
       parentPr = await this.prisma.main.purchaseRequest.findUnique({
         where: { id: dto.requestId },
-        select: { id: true, status: true, procurementSource: true },
+        select: { id: true, status: true, procurementSource: true, paymentMethod: true, dueDate: true, supplierId: true },
       });
       if (!parentPr) throw new NotFoundException("Request barang tidak ditemukan");
       assertPoCanBeCreatedFromPr(parentPr);
     }
-    const supplier = dto.supplierId
-      ? await this.prisma.main.supplier.findUnique({ where: { id: dto.supplierId } })
-      : await this.prisma.main.supplier.findFirst({ where: { status: "AKTIF" } });
+    // Supplier: pilihan di form PO -> supplier di Request Barang. Tidak lagi diam-diam memakai supplier pertama.
+    const supplierId = dto.supplierId ?? parentPr?.supplierId ?? null;
+    if (!supplierId) throw new BadRequestException("Supplier wajib dipilih");
+    const supplier = await this.prisma.main.supplier.findUnique({ where: { id: supplierId } });
     if (!supplier) throw new NotFoundException("Supplier tidak ditemukan");
+    // PO dari Request Barang: cara bayar & jatuh tempo sudah dipilih di Request, jadi syarat bayar PO ikut Request.
+    const paymentTerms = parentPr ? paymentTermsFromRequest(parentPr) : dto.paymentTerms;
 
     let projectId = dto.projectId;
     if (!projectId && dto.requestId) {
@@ -337,7 +358,7 @@ export class PosService {
         /^\[(JASA|NON[-_ ]?STOK)\]/i.test(String(i.customName || (i as any).name || ""))
       );
       if (!prodId && !isNonInv && (i.customName || (i as any).name)) {
-        const prodName = String(i.customName || (i as any).name).trim();
+        const prodName = cleanName(i.customName || (i as any).name);
         const existing = await this.prisma.main.product.findFirst({
           where: { name: { equals: prodName } },
         });
@@ -398,7 +419,7 @@ export class PosService {
         projectId,
         date: dto.date ? new Date(dto.date) : new Date(),
         eta: dto.eta ? new Date(dto.eta) : undefined,
-        paymentTerms: dto.paymentTerms,
+        paymentTerms,
         total,
         status: targetStatus,
         shipmentStatus: dto.shipmentStatus ?? "DI_SUPPLIER",
@@ -455,7 +476,7 @@ export class PosService {
       await this.saveMeta(row.id, {
         ...(dto.supplierSoNumber !== undefined ? { supplierSoNumber: dto.supplierSoNumber } : {}),
         ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
-        ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
+        ...(dto.ppnMode !== undefined ? { ppnMode: toPpnMode(dto.ppnMode) } : {}),
         ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
         ...(dto.dpp !== undefined ? { dpp: dto.dpp } : {}),
         ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
@@ -563,7 +584,8 @@ export class PosService {
         ...(dto.projectId !== undefined ? { projectId: dto.projectId } : {}),
         ...(dto.date ? { date: new Date(dto.date) } : {}),
         ...(dto.eta !== undefined ? { eta: dto.eta ? new Date(dto.eta) : null } : {}),
-        ...(dto.paymentTerms !== undefined ? { paymentTerms: dto.paymentTerms } : {}),
+        // PO dari Request Barang: syarat bayar mengikuti Request (cara bayar + jatuh tempo), tidak diubah terpisah.
+        ...(dto.paymentTerms !== undefined && !row.requestId ? { paymentTerms: dto.paymentTerms } : {}),
         ...(dto.total !== undefined ? { total: dto.total } : {}),
         ...(poStatus ? { status: poStatus } : {}),
         ...(shipmentStatus ? { shipmentStatus, ...(shipmentStatus === "SAMPAI" ? { arrivedAt: new Date() } : {}) } : {}),
@@ -615,7 +637,7 @@ export class PosService {
       await this.saveMeta(id, {
         ...(dto.supplierSoNumber !== undefined ? { supplierSoNumber: dto.supplierSoNumber } : {}),
         ...(dto.soFileId !== undefined ? { soFileId: dto.soFileId } : {}),
-        ...(dto.ppnMode !== undefined ? { ppnMode: dto.ppnMode } : {}),
+        ...(dto.ppnMode !== undefined ? { ppnMode: toPpnMode(dto.ppnMode) } : {}),
         ...(dto.ppn !== undefined ? { ppn: dto.ppn } : {}),
         ...(dto.dpp !== undefined ? { dpp: dto.dpp } : {}),
         ...(dto.pphMode !== undefined ? { pphMode: dto.pphMode } : {}),
@@ -633,7 +655,7 @@ export class PosService {
     return this.get(id);
   }
 
-  async setStatus(id: number, status: string, user: RequestUser) {
+  async setStatus(id: number, status: string, user: RequestUser, paidAccountCode?: string) {
     const row = await this.prisma.main.supplierPO.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("PO supplier tidak ditemukan");
     const shipmentStatuses = ["BELUM_DIKIRIM", "DIKIRIM", "DALAM_PERJALANAN", "SAMPAI", "DI_SUPPLIER"];
@@ -657,16 +679,66 @@ export class PosService {
       throw new BadRequestException(`Status PO "${status}" tidak dapat diubah manual`);
     }
 
-    // Pembayaran PO: dicek lewat izin RBAC financeOut atau procurement
-    if (!can(user.role, "financeOut", "U") && !can(user.role, "procurement", "U")) {
-      throw new ForbiddenException("Anda tidak memiliki hak akses (RBAC) untuk mencatat pembayaran PO");
-    }
+    // Pembayaran PO: hak "Setujui" (V) di menu PO Supplier — sama dengan pelunasan tagihan supplier.
+    assertCanPaySupplier(user.role);
     if (row.status !== "DISETUJUI") {
       throw new BadRequestException("PO belum disetujui, pembayaran belum bisa dicatat");
     }
     if (isBelumLunas && row.shipmentStatus !== "SAMPAI") {
       throw new BadRequestException("Barang belum diterima Gudang, status 'Sampai (Belum Lunas)' belum berlaku");
     }
+    // Jurnal kas untuk "tandai PO Lunas" (pembayaran langsung tanpa Invoice Supplier).
+    // Satu pembelian hanya boleh punya satu jalur kas: lewati bila sudah dibayar via Invoice Supplier / Request Barang.
+    const mappings = await this.mappingService.getAll();
+    if (isLunas) {
+      // PO yang sudah punya Tagihan Supplier dilunasi lewat tagihan itu (bukti bayar + akun kas), bukan status manual.
+      const bills = await findActiveSupplierInvoices(this.prisma.main, { supplierPoId: id });
+      if (bills.length) {
+        throw new BadRequestException(
+          `PO ${row.number} sudah punya Tagihan Supplier ${bills.map((b) => b.number || `#${b.id}`).join(", ")}. ` +
+            `Lunasi lewat tagihan tersebut agar pembayaran tidak tercatat dua kali.`,
+        );
+      }
+      const viaInvoice = await hasSupplierInvoiceCashPayment(this.prisma.main, { supplierPoId: id });
+      const prepaid = await getDirectPrepayment(this.prisma.main, { supplierPoId: id }, mappings);
+      const alreadyPaidHere = await this.postingService.hasPosted("SupplierPO", id, "paid");
+      if (!viaInvoice && !alreadyPaidHere && prepaid.amount <= 0 && Number(row.total) > 0) {
+        const payAccount = paidAccountCode || mappings.CASH_DEFAULT || "1000.02";
+        // PPN PO masuk PPN Masukan; GRNI dikliring sebesar nilai barang (sama dengan jurnal terima barang).
+        const poItems = await this.prisma.main.supplierPOItem.findMany({ where: { poId: id }, select: { qty: true, price: true } });
+        const reqMode = row.requestId
+          ? (await this.prisma.main.purchaseRequest.findUnique({ where: { id: row.requestId }, select: { ppnMode: true } }))?.ppnMode
+          : null;
+        const split = splitPurchasePayment({
+          paid: Number(row.total),
+          itemsSum: poItems.reduce((s, it) => s + it.qty * Number(it.price || 0), 0),
+          mode: (row as any).ppnMode ?? reqMode,
+          ppn: (row as any).ppn != null ? Number((row as any).ppn) : null,
+        });
+        await this.postingService.post({
+          sourceType: "SupplierPO",
+          sourceId: id,
+          event: "paid",
+          source: "SUPPLIER_PO_PAYMENT",
+          date: new Date(),
+          memo: `Pembayaran Langsung PO Supplier ${row.number}`,
+          refNo: row.number,
+          projectId: row.projectId,
+          createdById: user.id,
+          lines: [
+            { accountCode: mappings.GRNI || "2108", debit: split.goods, credit: 0, memo: `Kliring GRNI PO ${row.number}`, partyType: "SUPPLIER", partyId: row.supplierId, projectId: row.projectId },
+            ...(split.vat > 0
+              ? [{ accountCode: mappings.VAT_IN || "1600", debit: split.vat, credit: 0, memo: `PPN Masukan PO ${row.number}`, partyType: "SUPPLIER" as const, partyId: row.supplierId, projectId: row.projectId }]
+              : []),
+            { accountCode: payAccount, debit: 0, credit: Number(row.total), memo: `Kas Keluar Pembayaran PO ${row.number}`, partyType: "SUPPLIER", partyId: row.supplierId, projectId: row.projectId },
+          ],
+        });
+      }
+    } else if (await this.postingService.hasPosted("SupplierPO", id, "paid")) {
+      // Koreksi dari "Lunas" ke "Sampai (Belum Lunas)": balik jurnal kas keluar sebelumnya
+      await this.postingService.reverse("SupplierPO", id, "paid", "Status PO dikoreksi menjadi belum lunas", user.id);
+    }
+
     await this.saveMeta(id, { manualStatus: isLunas ? "LUNAS" : "SAMPAI_BELUM_LUNAS" });
 
     if (row.requestId && isLunas) {

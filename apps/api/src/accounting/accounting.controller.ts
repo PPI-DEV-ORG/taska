@@ -16,9 +16,15 @@ import { PeriodService } from "./period.service.js";
 import { AccountingReportService } from "./accounting-report.service.js";
 import { TaxService } from "./tax.service.js";
 import { CurrentUser } from "../common/decorators/current-user.decorator.js";
+import { AnyLoggedInUser, Require } from "../common/decorators/require-permission.decorator.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 
+/**
+ * Semua endpoint akuntansi (jurnal, buku besar, neraca saldo, laba rugi, neraca, arus kas, pajak)
+ * minimal butuh hak Lihat di modul Buku Besar. Dulu endpoint baca tanpa @Require bisa dibuka peran apa pun.
+ */
 @Controller("accounting")
+@Require("accounting", "L")
 export class AccountingController {
   constructor(
     private readonly accountsService: AccountsService,
@@ -31,6 +37,7 @@ export class AccountingController {
   ) {}
 
   @Get("accounts")
+  @AnyLoggedInUser() // nama & kode akun (tanpa saldo) dipakai di pilihan akun kas pada form pembayaran
   async listAccounts(
     @Query("cash") isCash?: string,
     @Query("postable") isPostable?: string,
@@ -46,21 +53,25 @@ export class AccountingController {
   }
 
   @Post("accounts")
+  @Require("accounting", "C")
   async createAccount(@Body() dto: any) {
     return this.accountsService.create(dto);
   }
 
   @Put("accounts/:code")
+  @Require("accounting", "U")
   async updateAccount(@Param("code") code: string, @Body() dto: any) {
     return this.accountsService.update(code, dto);
   }
 
   @Get("mappings")
+  @AnyLoggedInUser()
   async getMappings() {
     return this.mappingService.getAll();
   }
 
   @Post("mappings")
+  @Require("accounting", "U")
   async setMapping(@Body() body: { key: string; accountCode: string }) {
     await this.mappingService.set(body.key, body.accountCode);
     return { success: true, key: body.key, accountCode: body.accountCode };
@@ -74,8 +85,9 @@ export class AccountingController {
     @Query("endDate") endDate?: string,
     @Query("status") status?: string,
   ) {
-    // Sinkronisasi otomatis untuk invoice atau surat jalan terbit/terkirim yang belum tercatat jurnal
-    await this.postingService.syncUnpostedDocuments().catch(() => {});
+    // Catatan: sinkronisasi dokumen yang belum terjurnal TIDAK dijalankan di sini lagi.
+    // Membuka daftar jurnal tidak boleh memposting jurnal baru (dulu memicu kas keluar/masuk ganda).
+    // Gunakan POST /accounting/sync-unposted secara sadar bila diperlukan.
 
     const p = Math.max(1, parseInt(page, 10));
     const l = Math.min(100, Math.max(1, parseInt(limit, 10)));
@@ -126,7 +138,9 @@ export class AccountingController {
             entry.refNo = isPay ? `${expCode}/PAY` : expCode;
           }
 
-          if (exp) {
+          // Hanya jurnal pengakuan / pembayaran biaya biasa; reklasifikasi HPP & pemakaian petty cash memakai memo tersimpan
+          const rewrite = (!entry.event || entry.event === "approved" || entry.event === "paid") && exp?.fundingSource !== "PETTY_CASH";
+          if (exp && rewrite) {
             const pelapor = exp.reporter?.name || "Karyawan";
             const kategori = exp.category?.name || "Operasional";
             const deskripsi = exp.description ? `: ${exp.description}` : "";
@@ -141,12 +155,13 @@ export class AccountingController {
                 }
               });
             } else {
-              entry.memo = `Beban ${kategori}${deskripsi} (${pelapor})`;
+              const jenis = exp.projectId ? "HPP project" : "Beban";
+              entry.memo = `${jenis} ${kategori}${deskripsi} (${pelapor})`;
               (entry.lines || []).forEach((line: any) => {
                 if (line.accountCode === "2103") {
                   line.memo = `Kewajiban Biaya/Reimbursement ${kategori} — ${pelapor}`;
                 } else {
-                  line.memo = `Beban ${kategori}${deskripsi} (${pelapor})`;
+                  line.memo = `${jenis} ${kategori}${deskripsi} (${pelapor})`;
                 }
               });
             }
@@ -159,6 +174,7 @@ export class AccountingController {
   }
 
   @Post("journals/manual")
+  @Require("accounting", "C")
   async createManualJournal(@Body() body: any, @CurrentUser() user: any) {
     return this.postingService.post({
       date: body.date || new Date(),
@@ -173,6 +189,7 @@ export class AccountingController {
   }
 
   @Post("journals/:id/reverse")
+  @Require("accounting", "U")
   async reverseJournal(
     @Param("id") id: string,
     @Body("reason") reason: string,
@@ -183,6 +200,7 @@ export class AccountingController {
   }
 
   @Post("sync-unposted")
+  @Require("accounting", "U")
   async syncUnposted(@CurrentUser() user: any) {
     return this.postingService.syncUnpostedDocuments(user?.id);
   }
@@ -198,6 +216,7 @@ export class AccountingController {
   }
 
   @Post("periods/:year/:month/request-close")
+  @Require("accounting", "U")
   async requestClose(
     @Param("year") year: string,
     @Param("month") month: string,
@@ -207,6 +226,7 @@ export class AccountingController {
   }
 
   @Post("periods/:year/:month/approve-close")
+  @Require("accounting", "V")
   async approveClose(
     @Param("year") year: string,
     @Param("month") month: string,
@@ -216,6 +236,7 @@ export class AccountingController {
   }
 
   @Post("periods/:year/:month/reopen")
+  @Require("accounting", "V")
   async reopenPeriod(
     @Param("year") year: string,
     @Param("month") month: string,
@@ -226,6 +247,7 @@ export class AccountingController {
   }
 
   @Post("fiscal-years/:year/close")
+  @Require("accounting", "V")
   async closeFiscalYear(
     @Param("year") year: string,
     @Body("taxEstimated") taxEstimated: number,
@@ -235,6 +257,7 @@ export class AccountingController {
   }
 
   @Post("fiscal-years/:year/reopen")
+  @Require("accounting", "V")
   async reopenFiscalYear(
     @Param("year") year: string,
     @Body("reopenReason") reopenReason: string,
@@ -252,21 +275,25 @@ export class AccountingController {
   }
 
   @Post("tax/vat-settlement")
+  @Require("accounting", "C")
   async settleVat(@Body() body: any, @CurrentUser() user: any) {
     return this.taxService.settleVat(body, user);
   }
 
   @Post("tax/withholding-remittance")
+  @Require("accounting", "C")
   async remitWithholding(@Body() body: any, @CurrentUser() user: any) {
     return this.taxService.remitWithholding(body, user);
   }
 
   @Post("returns/sales")
+  @Require("accounting", "C")
   async createSalesReturn(@Body() body: any, @CurrentUser() user: any) {
     return this.postingService.postSalesReturn(body, user?.id);
   }
 
   @Post("returns/purchase")
+  @Require("accounting", "C")
   async createPurchaseReturn(@Body() body: any, @CurrentUser() user: any) {
     return this.postingService.postPurchaseReturn(body, user?.id);
   }

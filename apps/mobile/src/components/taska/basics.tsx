@@ -316,6 +316,16 @@ export function InfoGrid({ fields, row }: { fields: { label: string; key: string
   );
 }
 
+const BULAN_SINGKAT = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+/** "14 Nov 2026, 10.20" */
+function waktuPersis(when: string): string {
+  const d = new Date(when);
+  if (Number.isNaN(d.getTime())) return "";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${d.getDate()} ${BULAN_SINGKAT[d.getMonth()]} ${d.getFullYear()}, ${hh}.${mm}`;
+}
+
 export function Timeline({ items }: { items: { id: string; who: string; what: string; when: string }[] }) {
   const [showAll, setShowAll] = React.useState(false);
   const displayItems = showAll || items.length <= 10 ? items : items.slice(0, 10);
@@ -338,7 +348,10 @@ export function Timeline({ items }: { items: { id: string; who: string; what: st
                 ? it.what.charAt(0).toLowerCase() + it.what.slice(1)
                 : it.what}
             </Text>
-            <Text className="text-muted-foreground text-[13px]">{waktuRelatif(it.when)}</Text>
+            <Text className="text-muted-foreground text-xs mt-0.5">
+              {waktuRelatif(it.when)}
+              {waktuPersis(it.when) ? ` · ${waktuPersis(it.when)}` : ""}
+            </Text>
           </View>
         </View>
       ))}

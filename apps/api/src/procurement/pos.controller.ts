@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
-import { IsString } from "class-validator";
+import { IsOptional, IsString } from "class-validator";
 import { PosService } from "./pos.service.js";
 import { PoDto, PoListQuery, ShipmentDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
@@ -8,6 +8,10 @@ import { CurrentUser, type RequestUser } from "../common/decorators/current-user
 class PoStatusDto {
   @IsString()
   status!: string;
+
+  /** Akun kas/bank sumber pembayaran saat PO ditandai Lunas (default: CASH_DEFAULT). */
+  @IsOptional() @IsString()
+  paidAccountCode?: string;
 }
 
 @Controller("supplier-pos")
@@ -51,7 +55,7 @@ export class PosController {
     @Body() dto: PoStatusDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.service.setStatus(id, dto.status, user);
+    return this.service.setStatus(id, dto.status, user, dto.paidAccountCode);
   }
 
   @Post(":id/shipment")

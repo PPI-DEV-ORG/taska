@@ -33,7 +33,7 @@ import {
   syncServiceWorkerAuth,
 } from "@/services/notify";
 import { setThemePalette } from "@/tokens";
-import { formatAuditAction } from "@/lib/audit-format";
+import { formatAuditAction, isHttpAuditAction } from "@/lib/audit-format";
 import {
   PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow, normalizeNotifHref,
   apiUserToRow, buildCreateBody, buildPatchBody, buildStatusBody, statusEnumFor,
@@ -74,6 +74,42 @@ export type DB = {
   reservations: Row[];
   [k: string]: Row[] | any;
 };
+
+/**
+ * Log otomatis ("POST /api/...") disembunyikan bila dalam 3 menit ada log bernama jelas
+ * (mis. BUAT_REQUEST_BARANG / UBAH_STATUS_REQUEST) — supaya riwayat tidak dobel.
+ */
+function dropDuplicateHttpLogs<T>(logs: T[], actionOf: (l: T) => unknown, timeOf: (l: T) => unknown): T[] {
+  const named = logs
+    .filter((l) => !isHttpAuditAction(actionOf(l) as string))
+    .map((l) => new Date(String(timeOf(l) ?? "")).getTime())
+    .filter((t) => !Number.isNaN(t));
+  return logs.filter((l) => {
+    if (!isHttpAuditAction(actionOf(l) as string)) return true;
+    const t = new Date(String(timeOf(l) ?? "")).getTime();
+    if (Number.isNaN(t)) return true;
+    return !named.some((n) => Math.abs(n - t) <= 3 * 60 * 1000);
+  });
+}
+
+/**
+ * Catatan lokal (pushHistory) hanya penanda sementara sampai log server dimuat.
+ * Dibuang bila server sudah punya log; disimpan hanya bila lebih baru dari log server terakhir
+ * (mis. aksi saat offline yang belum tercatat di server).
+ */
+function dropLocalCoveredByServer<T extends { id: string; when: string }>(items: T[]): T[] {
+  const serverTimes = items
+    .filter((x) => String(x.id).startsWith("al-"))
+    .map((x) => new Date(x.when).getTime())
+    .filter((t) => !Number.isNaN(t));
+  if (!serverTimes.length) return items;
+  const newest = Math.max(...serverTimes);
+  return items.filter((x) => {
+    if (String(x.id).startsWith("al-") || x.id === "d1") return true;
+    const t = new Date(x.when).getTime();
+    return !Number.isNaN(t) && t > newest + 3 * 60 * 1000;
+  });
+}
 
 export type HistoryItem = { id: string; who: string; what: string; when: string };
 
@@ -218,6 +254,7 @@ type Ctx = {
   roles: RoleDef[];
   saveRole: (role: Partial<RoleDef> & { name: string }, isEdit?: boolean) => Promise<RoleDef[] | null>;
   deleteRole: (code: string) => Promise<RoleDef[] | null>;
+  applyStandardRoles: (codes?: string[]) => Promise<RoleDef[] | null>;
 };
 
 const AppContext = React.createContext<Ctx | null>(null);
@@ -907,7 +944,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         const rawLogs = await api<any[]>("GET", `/audit-logs/entity/${module}/${id}`);
         if (!Array.isArray(rawLogs) || rawLogs.length === 0) return;
-        const items: HistoryItem[] = rawLogs.map((log: any) => ({
+        const items: HistoryItem[] = dropDuplicateHttpLogs(rawLogs, (l) => l.action, (l) => l.createdAt).map((log: any) => ({
           id: `al-${log.id}`,
           who: log.actorName || "Sistem",
           what: formatAuditAction(log.action, log.detail),
@@ -916,7 +953,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const k = `${module}:${id}`;
         setHist((h) => {
           const localOnly = (h[k] ?? []).filter((x) => !String(x.id).startsWith("al-"));
-          const merged = [...items, ...localOnly].sort(
+          const merged = dropLocalCoveredByServer([...items, ...localOnly]).sort(
             (a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()
           );
           const next = { ...h, [k]: merged };
@@ -1526,7 +1563,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const row = (data[module] as Row[] | undefined)?.find((r: any) => String(r.id) === String(id));
       const owner = row?.pemilik ?? row?.pembuat ?? row?.pemohon ?? row?.pelapor ?? row?.pm ?? "Sistem";
 
-      const auditItems = (data["audit-log"] ?? [])
+      const auditItems = dropDuplicateHttpLogs(
+        data["audit-log"] ?? [],
+        (al: any) => al.aksi,
+        (al: any) => al.waktu,
+      )
         .filter((al: any) => {
           const m = String(al.jenis || "").toLowerCase().replace(/[-_]/g, "");
           const mod = String(module || "").toLowerCase().replace(/[-_]/g, "");
@@ -1546,11 +1587,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           when: al.waktu || new Date().toISOString(),
         }));
 
-      const all = [
-        ...custom,
-        ...auditItems,
-        { id: "d1", who: owner, what: "Membuat data", when: row?.createdAt ?? new Date().toISOString() },
-      ];
+      const logged = dropLocalCoveredByServer([...custom, ...auditItems]);
+      // Entri "dibuat" bawaan hanya bila belum ada log pembuatan dari server
+      const hasCreate = logged.some((x) => /^(Membuat|Menambahkan|Mengajukan)\b/.test(x.what));
+      const all = hasCreate
+        ? logged
+        : [...logged, { id: "d1", who: owner, what: "Membuat data", when: row?.createdAt ?? new Date().toISOString() }];
 
       const seen = new Set<string>();
       const result: HistoryItem[] = [];
@@ -1650,6 +1692,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [toast],
   );
 
+  const applyStandardRoles = React.useCallback(
+    async (codes?: string[]): Promise<RoleDef[] | null> => {
+      try {
+        const updated = await api<RoleDef[]>("POST", "/settings/roles/apply-standard", codes?.length ? { codes } : {});
+        if (Array.isArray(updated)) {
+          setClientDynamicRoles(updated);
+          setRoles(updated);
+          writeStorageJson(STORAGE_CACHE_ROLES_KEY, updated);
+        }
+        toast(codes?.length === 1 ? "Hak akses standar diterapkan" : "Hak akses standar diterapkan ke semua peran bawaan");
+        return updated;
+      } catch (e: any) {
+        toast(e?.message ?? "Gagal menerapkan hak akses standar", "danger");
+        return null;
+      }
+    },
+    [toast],
+  );
+
   const deleteRole = React.useCallback(
     async (code: string): Promise<RoleDef[] | null> => {
       try {
@@ -1691,12 +1752,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       reload, refreshModule, hydrated, theme, toggleTheme,
       companyProfile, updateCompanyProfile,
       docFormats, updateDocFormats,
-      roles, saveRole, deleteRole,
+      roles, saveRole, deleteRole, applyStandardRoles,
     }),
     [user, can, login, logout, updateProfile, data, addRow, patchRow, setStatus, createQuotationFromLead, deleteRow,
      history, pushHistory, loadHistory, approvals, refreshApprovals, decide, myNotifs, unread, markRead, markAllRead,
      toast, offline, pendingQueue.length, syncOfflineQueue, reload, refreshModule, hydrated, theme, toggleTheme,
-     companyProfile, updateCompanyProfile, docFormats, updateDocFormats, roles, saveRole, deleteRole],
+     companyProfile, updateCompanyProfile, docFormats, updateDocFormats, roles, saveRole, deleteRole, applyStandardRoles],
   );
 
   return (

@@ -45,6 +45,20 @@ export type PrFlowContext = {
   isProjectConsumable?: boolean;
 };
 
+// ── Normalisasi nilai enum dari klien (teks bebas lama -> nilai enum database) ──
+export type PpnModeValue = "none" | "exclude" | "include";
+export function toPpnMode(v: unknown): PpnModeValue {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "exclude" || s === "include" ? s : "none";
+}
+export function toPaymentMethod(v: unknown): "KAS" | "UTANG" {
+  return /KAS|TUNAI|CASH/i.test(String(v ?? "")) ? "KAS" : "UTANG";
+}
+export function toProcurementSource(v: unknown): "SUPPLIER" | "RETAIL" | "GUDANG" | null {
+  const s = String(v ?? "SUPPLIER").trim().toUpperCase();
+  return s === "SUPPLIER" || s === "RETAIL" || s === "GUDANG" ? s : null;
+}
+
 export const isPurchaseSource = (src?: string | null) => {
   const s = String(src ?? "SUPPLIER").toUpperCase();
   return s === "RETAIL" || s === "SUPPLIER";
@@ -66,6 +80,33 @@ export function isPaid(pr: PrFlowRow) {
 
 /** Status pembelian yang masih boleh dibuatkan PO supplier. */
 export const PO_ELIGIBLE_STATUSES = ["DISETUJUI", "PO_DIBUAT", "DIBAYAR"];
+
+/**
+ * Hak MEMBAYAR pembelian = aksi "Setujui" (V) di menu terkait, sama dengan yang diatur di Pengaturan Peran:
+ *   - Request Barang  -> purchase-requests V   (standar: Finance, Bos, Admin)
+ *   - PO / Tagihan Supplier -> supplier-pos V  (standar: Finance, Bos, Admin)
+ * Procurement boleh membuat PO & mencatat tagihan, tetapi uang keluar tetap dicatat Finance.
+ */
+export function canPayRequest(role: string) {
+  return can(role, "requests", "V");
+}
+export function canPaySupplier(role: string) {
+  return can(role, "procurement", "V");
+}
+export function assertCanPaySupplier(role: string) {
+  if (!canPaySupplier(role)) {
+    throw new ForbiddenException(
+      "Pembayaran ke supplier dicatat Finance (butuh hak 'Setujui' di menu PO Supplier). Simpan tagihan sebagai tempo, Finance yang melunasi.",
+    );
+  }
+}
+
+/** Syarat pembayaran PO diturunkan dari Request Barang (cara bayar + jatuh tempo) — tidak diisi ulang. */
+export function paymentTermsFromRequest(pr: { paymentMethod?: string | null; procurementSource?: string | null; dueDate?: Date | string | null }) {
+  if (needsPrepayment(pr)) return "Tunai (dibayar di muka)";
+  const due = pr.dueDate ? new Date(pr.dueDate as any) : null;
+  return due && !Number.isNaN(due.getTime()) ? `Tempo s/d ${due.toISOString().slice(0, 10)}` : "Tempo";
+}
 
 const forbid = (msg: string) => new ForbiddenException(msg);
 const invalid = (msg: string) => new BadRequestException(msg);
@@ -99,7 +140,9 @@ export function assertPrTransition(
   // Pembayaran bisa dicatat setelah barang diterima (utang), tanpa mengubah status DITERIMA.
   if (to === "DIBAYAR" || to === "LUNAS") {
     if (!purchase) throw invalid("Request ambil stok gudang tidak memerlukan pembayaran");
-    requireRole(user.role, FINANCE_ROLES, "Hanya Finance yang dapat mencatat pembayaran");
+    if (!canPayRequest(user.role)) {
+      throw forbid("Hanya Finance (hak 'Setujui' di menu Request Barang) yang dapat mencatat pembayaran");
+    }
     if (!["DISETUJUI", "PO_DIBUAT", "DIKIRIM", "DITERIMA"].includes(from)) {
       throw invalid(`Request berstatus ${from} belum bisa dibayar — harus disetujui Finance terlebih dahulu`);
     }
@@ -143,8 +186,10 @@ export function assertPrTransition(
         requireRole(user.role, WAREHOUSE_ROLES, "Hanya Gudang yang dapat menyerahkan barang stok");
         return;
       }
-      if (!can(user.role, "procurement", "U") && !can(user.role, "requests", "U") && !can(user.role, "shipments", "U")) {
-        throw forbid("Anda tidak memiliki hak akses (RBAC) untuk menandai barang dikirim");
+      // Hak ubah Request Barang saja TIDAK cukup (PM/Gudang bisa mengedit request-nya sendiri):
+      // menandai barang dikirim adalah tugas Procurement / pengelola pengiriman PO.
+      if (!can(user.role, "procurement", "U") && !can(user.role, "shipments", "U")) {
+        throw forbid("Hanya Procurement (hak ubah PO Supplier / Pengiriman PO) yang dapat menandai barang dikirim");
       }
       if (isSupplierSource(pr.procurementSource)) {
         if (ctx.activePoCount === 0) throw invalid("Buat PO supplier dulu sebelum menandai barang dikirim");
@@ -160,7 +205,9 @@ export function assertPrTransition(
         if (!ctx.isProjectConsumable) {
           throw invalid("Penerimaan barang pembelian dikonfirmasi Gudang lewat menu Penerimaan Barang");
         }
-        requireRole(user.role, FINANCE_ROLES, "Hanya Finance yang dapat mengonfirmasi pembayaran dan penerimaan material proyek");
+        if (!canPayRequest(user.role)) {
+          throw forbid("Hanya Finance yang dapat mengonfirmasi pembayaran dan penerimaan material proyek");
+        }
         if (!ctx.paymentProofProvided && !pr.paymentProofFileId) {
           throw invalid("Bukti pembayaran wajib dilampirkan");
         }

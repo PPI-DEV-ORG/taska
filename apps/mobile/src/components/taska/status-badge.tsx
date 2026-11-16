@@ -32,7 +32,9 @@ add("info", Send, ["Terkirim", "Dikirim", "Keluar"]);
 add("info", Play, ["Berjalan", "IN PROGRESS", "In Progress", "Inprogress", "TESTED", "Tested", "tested", "In Review", "Qualification", "Proposal", "Negotiation", "PO dibuat", "Preparation", "Ready"]);
 add("info", Truck, ["Di gudang", "Terpasang"]);
 add("info", ArrowLeftRight, ["Transfer"]);
-add("neutral", Info, ["Kebutuhan"]);
+add("neutral", Info, ["Kebutuhan", "Proforma", "Proforma (draft)"]);
+add("success", CheckCircle2, ["Proforma (sudah jadi invoice)"]);
+add("warning", Clock, ["Diajukan", "Menunggu pencairan"]);
 
 export function statusTone(status: string): Tone {
   return (S[status] ?? ["neutral"])[0];

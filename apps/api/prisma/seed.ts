@@ -4,6 +4,7 @@ dotenv.config();
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import bcrypt from "bcryptjs";
+import { ROLE_MATRIX_VERSION, STANDARD_ROLES } from "../src/rbac/role-matrix.js";
 
 function adapter(url: string | undefined) {
   if (!url) throw new Error("DATABASE_URL tidak di-set");
@@ -503,7 +504,9 @@ async function main() {
     { code: "110303", name: "Piutang Retensi Proyek", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1100" },
     { code: "1105.01", name: "Uang Muka PPh 23 (Dipotong Customer)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1100" },
     { code: "1105.02", name: "Uang Muka PPh 25 (Angsuran Bulanan)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1100" },
+    { code: "1107", name: "Uang Muka Karyawan (Petty Cash)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1100" },
     { code: "1106", name: "Piutang Kelebihan Bayar Pajak", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1100" },
+    { code: "1108", name: "Piutang Karyawan (Pinjaman / Kasbon)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1100" },
     { code: "1200", name: "Persediaan barang dagang", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: null },
     { code: "1300", name: "Perlengkapan", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: false, parentCode: null },
     { code: "1600", name: "Ppn masukan", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: null },
@@ -532,6 +535,7 @@ async function main() {
     { code: "5000", name: "Beban Pokok Penjualan (HPP - Header)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: false, isCash: false, isSystem: true, parentCode: null },
     { code: "5101", name: "HPP Project", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "5000" },
     { code: "5102", name: "HPP Retail", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "5000" },
+    { code: "5103", name: "HPP Biaya Langsung Project", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "5000" },
     { code: "5104", name: "Selisih Inventaris (Stock Opname Loss)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "5000" },
     { code: "5105", name: "Kerusakan Barang (Inventory Damage)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "5000" },
     { code: "5106", name: "Selisih Harga Pembelian (PPV)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "5000" },
@@ -584,17 +588,20 @@ async function main() {
     SALES_DISCOUNT: "4000.05",
     COGS_PROJECT: "5101",
     COGS_RETAIL: "5102",
+    PROJECT_DIRECT_COST: "5103",
     CUSTOMER_DP: "210202",
     SUPPLIER_DP: "1100.02",
     STOCK_OPNAME_DIFF: "5104",
     STOCK_DAMAGE: "5105",
     PURCHASE_PRICE_VARIANCE: "5106",
     EXPENSE_PAYABLE: "2103",
+    EMPLOYEE_ADVANCE: "1107",
     EXPENSE_DEFAULT: "6202",
     WAGES_EXPENSE: "6201.01",
     BPJS_EXPENSE: "6201.05",
     PPH21_PAYABLE: "2105",
     BPJS_PAYABLE: "2107",
+    EMPLOYEE_RECEIVABLE: "1108",
     PREPAID_PPH23: "1105.01",
     PREPAID_PPH25: "1105.02",
     TAX_REFUND_RECEIVABLE: "1106",
@@ -612,6 +619,35 @@ async function main() {
     });
   }
   console.log(`Seed OK: ${Object.keys(defaultMappings).length} Account Mappings`);
+
+  // ── Hak akses peran bawaan (matriks standar). Peran kustom yang sudah ada di DB dipertahankan. ──
+  const rolesRow = await prisma.systemSetting.findUnique({ where: { key: "rbac.roles" } });
+  let existingRoles: Array<{ code: string }> = [];
+  try {
+    existingRoles = rolesRow?.value ? JSON.parse(rolesRow.value) : [];
+  } catch {
+    existingRoles = [];
+  }
+  const customRoles = (Array.isArray(existingRoles) ? existingRoles : []).filter((r) => r?.code && !STANDARD_ROLES[r.code]);
+  const systemRoles = Object.entries(STANDARD_ROLES).map(([code, r]) => ({
+    code,
+    name: r.name,
+    description: r.description,
+    isSystem: true,
+    permissions: { ...r.permissions },
+  }));
+  const rolesValue = JSON.stringify([...systemRoles, ...customRoles]);
+  await prisma.systemSetting.upsert({
+    where: { key: "rbac.roles" },
+    update: { value: rolesValue },
+    create: { key: "rbac.roles", value: rolesValue, description: "Matriks Peran & Hak Akses (RBAC)" },
+  });
+  await prisma.systemSetting.upsert({
+    where: { key: "rbac.matrixVersion" },
+    update: { value: String(ROLE_MATRIX_VERSION) },
+    create: { key: "rbac.matrixVersion", value: String(ROLE_MATRIX_VERSION), description: "Versi matriks hak akses standar yang sudah diterapkan" },
+  });
+  console.log(`Seed OK: hak akses ${systemRoles.length} peran bawaan (matriks v${ROLE_MATRIX_VERSION}), ${customRoles.length} peran kustom dipertahankan`);
 
   await prisma.$disconnect();
 }

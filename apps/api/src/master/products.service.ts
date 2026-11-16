@@ -7,8 +7,10 @@ import { MappingService } from "../accounting/mapping.service.js";
 import { PostingService } from "../accounting/posting.service.js";
 import { PostingRules } from "../accounting/posting.rules.js";
 import { ProductDto } from "./dto.js";
+import { can } from "../rbac/permissions.js";
 
-const PRICE_ROLES = new Set(["PROCUREMENT", "FINANCE", "PM", "BOS", "ADMIN", "SUPER_ADMIN", "GUDANG"]);
+/** Harga beli & harga pokok rata-rata hanya untuk peran dengan hak "harga & laba" (P) di Master Barang. */
+const canSeeCost = (user: RequestUser) => can(user.role, "products", "P");
 const INCLUDE = { category: { select: { id: true, name: true } } } as const;
 
 type Row = Awaited<ReturnType<PrismaService["main"]["product"]["findFirst"]>> & {
@@ -24,8 +26,8 @@ export class ProductsService {
   ) {}
 
   private shape(row: Row, user: RequestUser) {
-    const { purchasePrice, ...rest } = row ?? ({} as Row);
-    return PRICE_ROLES.has(user.role) ? { ...rest, purchasePrice } : rest;
+    const { purchasePrice, avgCost, ...rest } = row ?? ({} as Row);
+    return canSeeCost(user) ? { ...rest, purchasePrice, avgCost } : rest;
   }
 
   private async stockMap(ids: number[]) {
@@ -134,6 +136,7 @@ export class ProductsService {
     if (dto.hargaBeli !== undefined && dto.purchasePrice === undefined) {
       dto.purchasePrice = dto.hargaBeli;
     }
+    if (dto.purchasePrice !== undefined && user && !canSeeCost(user)) delete (dto as any).purchasePrice;
     delete (dto as any).hargaBeli;
 
     const sku = dto.sku || `SKU-${Date.now()}`;
@@ -316,8 +319,9 @@ export class ProductsService {
       dto.minStock = dto.min;
     }
     delete (dto as any).min;
-    if (dto.purchasePrice !== undefined && !PRICE_ROLES.has(user.role)) {
-      throw new ConflictException("Harga beli hanya untuk Procurement, Finance, PM, Bos, dan Gudang");
+    // Peran tanpa hak harga (mis. Gudang) tetap boleh mengubah data barang; harga belinya diabaikan.
+    if (dto.purchasePrice !== undefined && !canSeeCost(user)) {
+      delete (dto as any).purchasePrice;
     }
     if (dto.sku && dto.sku !== row.sku) {
       const dup = await this.prisma.main.product.findUnique({ where: { sku: dto.sku } });

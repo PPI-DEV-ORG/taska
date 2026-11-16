@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react-native";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { TodayAgendaCard } from "./today-agenda-card";
+import { WorkflowMap } from "./workflow-map";
 
 export function DashboardGreeting({ name, roleTitle }: { name: string; roleTitle: string }) {
   const { reload, toast } = useApp();
@@ -40,6 +41,7 @@ export function DashboardGreeting({ name, roleTitle }: { name: string; roleTitle
           <Text>{refreshing ? "Memuat..." : "Refresh"}</Text>
         </Button>
       </View>
+      <WorkflowMap />
       <TodayAgendaCard refreshKey={refreshKey} />
     </View>
   );

@@ -6,11 +6,19 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
+import { can } from "../rbac/permissions.js";
+import { ProjectCostService } from "./project-cost.js";
+
+/** Harga jual, nilai kontrak, faktur & laba-rugi project: Finance / pimpinan (hak P di Proyek), bukan PM / tim lapangan. */
+const canSeeProjectMoney = (user: RequestUser) => can(user.role, "projects", "P");
 import type { Project } from "../generated/prisma/client.js";
 import { AssignDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
 import { StockService } from "../stock/stock.service.js";
 import { UploadService } from "../upload/upload.service.js";
 import { renderPdf } from "../common/pdf.js";
+import { cleanName } from "../common/utils/names.js";
+import { syncProjectPaymentStatus } from "./project-payment.js";
+import { computeProjectPnl } from "./project-pnl.js";
 
 const MANAGER_ROLES = ["PM", "ADMIN", "BOS", "SUPER_ADMIN"];
 const MEMBER_ROLES = ["PM", "SE", "TEKNISI", "SUPER_ADMIN"];
@@ -24,6 +32,7 @@ export class ProjectsService {
     private readonly reservations: ReservationsService,
     private readonly stock: StockService,
     private readonly upload: UploadService,
+    private readonly projectCost: ProjectCostService,
   ) {}
 
   private async access(project: Project, user: RequestUser, forWrite = false) {
@@ -125,22 +134,9 @@ export class ProjectsService {
 
   private async syncPayment(projectId: number): Promise<Project> {
     await this.linkProjectInvoices(projectId);
-
-    const invoices = await this.prisma.main.invoiceOut.findMany({
-      where: { projectId, status: { not: "BATAL" } },
-      select: { total: true, paidAmount: true, status: true },
-    });
-    const allPaid =
-      invoices.length > 0 &&
-      invoices.every(
-        (i) => (Number(i.paidAmount) >= Number(i.total) && Number(i.total) > 0) || i.status === "PAID",
-      );
-    const current = await this.prisma.main.project.findUniqueOrThrow({ where: { id: projectId } });
-    if ((allPaid ? "LUNAS" : "BELUM_LUNAS") === current.paymentStatus) return current;
-    return this.prisma.main.project.update({
-      where: { id: projectId },
-      data: { paymentStatus: allPaid ? "LUNAS" : "BELUM_LUNAS" },
-    });
+    // Dibandingkan dengan nilai kontrak: DP saja yang dibayar = Lunas sebagian, bukan Lunas.
+    await syncProjectPaymentStatus(this.prisma.main, projectId);
+    return this.prisma.main.project.findUniqueOrThrow({ where: { id: projectId } });
   }
 
   /** Progres project ditentukan secara manual oleh PM. Jika project SELESAI, selalu 100%. */
@@ -258,7 +254,7 @@ export class ProjectsService {
 
     // Tahapan project dihitung di server agar identik untuk semua role (PM, Procurement, dll.)
     const [invoiceCount, poCount, clientPoCount, surveyCount] = await Promise.all([
-      this.prisma.main.invoiceOut.count({ where: { projectId: id, status: { not: "BATAL" as never } } }).catch(() => 0),
+      this.prisma.main.invoiceOut.count({ where: { projectId: id, isProforma: false, status: { not: "BATAL" as never } } }).catch(() => 0),
       this.prisma.main.supplierPO.count({ where: { projectId: id, status: { notIn: ["DITOLAK", "DIBATALKAN"] as never } } }).catch(() => 0),
       project.quotationId
         ? this.prisma.main.clientPO.count({ where: { quotationId: project.quotationId } }).catch(() => 0)
@@ -280,7 +276,31 @@ export class ProjectsService {
       bast: project.status === "SELESAI" || !!project.bastFileId,
       counts: { requirements: row.requirements.length, surveys: surveyCount, clientPos: clientPoCount, supplierPos: poCount, invoices: invoiceCount },
     };
-    return { ...row, paymentStatus: synced.paymentStatus, prdFile, bahpFile, bastFile, doFile, boqFile, stages };
+    const money = canSeeProjectMoney(user);
+    return {
+      ...row,
+      // Tanpa hak lihat harga: nilai penawaran & nominal faktur tidak dikirim (status tetap terlihat)
+      quotation: row.quotation && !money ? { ...row.quotation, grandTotal: null } : row.quotation,
+      invoices: money ? row.invoices : row.invoices.map((i) => ({ id: i.id, number: i.number, status: i.status, dueDate: i.dueDate })),
+      paymentStatus: synced.paymentStatus,
+      prdFile,
+      bahpFile,
+      bastFile,
+      doFile,
+      boqFile,
+      stages,
+    };
+  }
+
+  /** Laba-rugi project (hanya untuk peran yang boleh melihat keuangan project). */
+  async pnl(id: number, user: RequestUser) {
+    const project = await this.prisma.main.project.findUnique({ where: { id } });
+    if (!project) throw new NotFoundException("Project tidak ditemukan");
+    await this.access(project, user);
+    if (!canSeeProjectMoney(user)) {
+      throw new ForbiddenException("Laba-rugi project hanya untuk Finance & pimpinan");
+    }
+    return computeProjectPnl(this.prisma.main, id);
   }
 
   async create(dto: ProjectDto, user: RequestUser) {
@@ -371,6 +391,8 @@ export class ProjectsService {
       await this.syncQuotationRequirements(project.id, project.quotationId, user).catch((err) => {
         console.warn("Gagal auto-sync BOQ penawaran ke proyek:", err);
       });
+      // Biaya survey prospek ini pindah ke HPP project
+      await this.projectCost.reclassProject(project.id, user.id).catch((err) => console.warn("Reklasifikasi biaya survey gagal:", err?.message));
     }
     return project;
   }
@@ -480,6 +502,7 @@ export class ProjectsService {
       await this.syncQuotationRequirements(id, dto.quotationId, user).catch((err) => {
         console.warn("Gagal auto-sync BOQ penawaran ke proyek:", err);
       });
+      await this.projectCost.reclassProject(id, user.id).catch((err) => console.warn("Reklasifikasi biaya survey gagal:", err?.message));
     }
     await this.linkProjectInvoices(id);
     await this.syncPayment(id).catch(() => {});
@@ -933,7 +956,7 @@ export class ProjectsService {
     let productId = dto.productId;
     if (!productId && dto.name) {
       let prod = await this.prisma.main.product.findFirst({
-        where: { name: dto.name.trim() },
+        where: { name: cleanName(dto.name) },
       });
       const effectiveCost = dto.costPrice !== undefined ? Number(dto.costPrice) : (dto.price !== undefined ? Number(dto.price) : 0);
       const descParts: string[] = [];
@@ -946,7 +969,7 @@ export class ProjectsService {
         prod = await this.prisma.main.product.create({
           data: {
             sku,
-            name: dto.name.trim(),
+            name: cleanName(dto.name),
             unit: dto.unit || "unit",
             purchasePrice: effectiveCost,
             description: descStr,

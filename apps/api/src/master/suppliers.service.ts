@@ -1,8 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip, searchWhere } from "../common/utils/query.js";
 import { SupplierDto } from "./dto.js";
+import { cleanName } from "../common/utils/names.js";
 
 @Injectable()
 export class SuppliersService {
@@ -48,10 +49,12 @@ export class SuppliersService {
 
   async create(dto: SupplierDto) {
     const { tags, ...supplierData } = dto;
+    const name = cleanName(dto.name);
+    if (!name) throw new BadRequestException("Nama supplier wajib diisi");
     return (this.prisma.main.supplier as any).create({
       data: {
         ...supplierData,
-        name: dto.name || "Supplier Baru",
+        name,
         taxStatus: dto.taxStatus || "NON_PKP",
         ...(Array.isArray(tags) && tags.length > 0
           ? {
@@ -85,6 +88,10 @@ export class SuppliersService {
           })),
         }).catch(() => {});
       }
+    }
+    if (supplierData.name !== undefined) {
+      supplierData.name = cleanName(supplierData.name);
+      if (!supplierData.name) throw new BadRequestException("Nama supplier wajib diisi");
     }
     return (this.prisma.main.supplier as any).update({
       where: { id },

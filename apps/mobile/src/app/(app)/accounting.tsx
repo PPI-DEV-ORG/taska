@@ -294,6 +294,8 @@ export default function AccountingScreen() {
                   ? "Pelunasan PO"
                   : entry.source === "MANUAL"
                   ? "Jurnal Manual"
+                  : entry.source === "CASH_ADVANCE"
+                  ? "Petty Cash"
                   : (entry.source || "Jurnal"),
               keterangan: line.memo || entry.memo || "-",
               project: line.projectId ? `Project #${line.projectId}` : entry.projectId ? `Project #${entry.projectId}` : "-",
@@ -723,6 +725,8 @@ export default function AccountingScreen() {
             ? "PO Pemasok"
             : l.source === "INVOICE_IN_PAYMENT"
             ? "Pelunasan PO"
+            : l.source === "CASH_ADVANCE"
+            ? "Petty Cash"
             : l.source || (l.partyType ? `${l.partyType} #${l.partyId}` : "Jurnal");
 
         return {

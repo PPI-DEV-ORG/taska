@@ -104,7 +104,7 @@ export class SerialsService {
       this.prisma.main.serialUnit.findMany({
         where,
         include: {
-          product: { select: { id: true, name: true, sku: true, unit: true, brand: true, purchasePrice: true } },
+          product: { select: { id: true, name: true, sku: true, unit: true, brand: true } },
           warehouse: { select: { id: true, name: true } },
           project: { select: { id: true, name: true } },
           reservations: {

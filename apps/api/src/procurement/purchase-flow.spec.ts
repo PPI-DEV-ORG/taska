@@ -5,7 +5,10 @@ import {
   assertPrEditable,
   assertPrTransition,
   assertReceivable,
+  canPayRequest,
+  canPaySupplier,
   needsPrepayment,
+  paymentTermsFromRequest,
 } from "./purchase-flow.js";
 
 const user = (role: string, id = 1) => ({ id, role });
@@ -119,4 +122,28 @@ describe("assertReceivable", () => {
     expect(() => assertReceivable(pr({ status: "DITERIMA" }))).toThrow(/sudah diterima/);
     expect(() => assertReceivable(null)).not.toThrow();
   });
+});
+
+describe("hak bayar pembelian (RBAC Setujui)", () => {
+  it("Finance boleh bayar request & tagihan supplier", () => {
+    expect(canPayRequest("FINANCE")).toBe(true);
+    expect(canPaySupplier("FINANCE")).toBe(true);
+  });
+  it("Procurement tidak boleh mencatat uang keluar", () => {
+    expect(canPayRequest("PROCUREMENT")).toBe(false);
+    expect(canPaySupplier("PROCUREMENT")).toBe(false);
+  });
+  it("Gudang & Sales tidak boleh bayar", () => {
+    expect(canPaySupplier("GUDANG")).toBe(false);
+    expect(canPaySupplier("SALES")).toBe(false);
+  });
+  it("Procurement ditolak saat menandai request dibayar", () =>
+    expect(() => assertPrTransition(pr(), "DIBAYAR", user("PROCUREMENT"), ctx({ paymentProofProvided: true }))).toThrow());
+});
+
+describe("paymentTermsFromRequest", () => {
+  it("tempo ikut jatuh tempo request", () =>
+    expect(paymentTermsFromRequest({ procurementSource: "SUPPLIER", paymentMethod: "UTANG", dueDate: new Date("2026-12-01") })).toBe("Tempo s/d 2026-12-01"));
+  it("tempo tanpa tanggal", () => expect(paymentTermsFromRequest({ procurementSource: "SUPPLIER", paymentMethod: "UTANG" })).toBe("Tempo"));
+  it("tunai", () => expect(paymentTermsFromRequest({ procurementSource: "SUPPLIER", paymentMethod: "KAS" })).toBe("Tunai (dibayar di muka)"));
 });
