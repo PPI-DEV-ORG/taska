@@ -108,12 +108,16 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
   const { items, active } = useNav();
   const groups = React.useMemo(() => groupNav(items), [items]);
   const activeGroup = groups.find((g) => g.title && g.items.some(active))?.title ?? null;
-  const [openGroup, setOpenGroup] = React.useState<string | null>(activeGroup);
-  // Pindah halaman ke kelompok lain -> kelompok itu yang terbuka
+  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>(() =>
+    activeGroup ? { [activeGroup]: true } : {},
+  );
+  // Pindah halaman ke kelompok lain -> pastikan kelompok itu terbuka tanpa menutup yang lain
   const [lastActiveGroup, setLastActiveGroup] = React.useState(activeGroup);
   if (activeGroup !== lastActiveGroup) {
     setLastActiveGroup(activeGroup);
-    if (activeGroup) setOpenGroup(activeGroup);
+    if (activeGroup && !openGroups[activeGroup]) {
+      setOpenGroups((prev) => ({ ...prev, [activeGroup]: true }));
+    }
   }
   const recentProjects = React.useMemo(() => {
     return (data.projects ?? [])
@@ -136,13 +140,15 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
 
         <ScrollView className="flex-1 px-3" contentContainerClassName="gap-1 py-3" showsVerticalScrollIndicator={false}>
           {groups.map((g, gi) => {
-            const isOpen = compact || !g.title || openGroup === g.title;
+            const isOpen = compact || !g.title || Boolean(openGroups[g.title]);
             const hasActive = g.items.some(active);
             return (
               <View key={g.title || "utama"} className={cn(gi > 0 && (compact ? "mt-1 pt-1 border-t border-border/40" : "mt-1"))}>
                 {g.title && !compact ? (
                   <Pressable
-                    onPress={() => setOpenGroup((cur) => (cur === g.title ? null : g.title))}
+                    onPress={() =>
+                      setOpenGroups((cur) => ({ ...cur, [g.title]: !cur[g.title] }))
+                    }
                     className="flex-row items-center justify-between rounded-lg px-3 py-2 hover:bg-panel/50"
                   >
                     <Text

@@ -103,7 +103,7 @@ export class AccountingController {
       (this.prisma.main as any).journalEntry.count({ where }),
       (this.prisma.main as any).journalEntry.findMany({
         where,
-        include: { lines: true },
+        include: { lines: { include: { account: { select: { name: true, category: true } } } } },
         orderBy: { id: "desc" },
         skip: (p - 1) * l,
         take: l,
@@ -317,11 +317,9 @@ export class AccountingController {
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
   ) {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     return this.reportService.getIncomeStatement({
-      startDate: startDate || firstDay.toISOString(),
-      endDate: endDate || now.toISOString(),
+      startDate,
+      endDate,
     });
   }
 
@@ -335,11 +333,9 @@ export class AccountingController {
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
   ) {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     return this.reportService.getCashFlow({
-      startDate: startDate || firstDay.toISOString(),
-      endDate: endDate || now.toISOString(),
+      startDate,
+      endDate,
     });
   }
 

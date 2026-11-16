@@ -479,7 +479,7 @@ export function RoleManagementDialog({ open, onOpenChange }: { open: boolean; on
           </View>
 
           {/* Pilih role */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingTop: 12 }}>
+          <View className="flex-row flex-wrap gap-1.5 pt-3">
             {roles.map((r) => {
               const active = !creatingNew && r.code === activeRole?.code;
               return (
@@ -508,7 +508,7 @@ export function RoleManagementDialog({ open, onOpenChange }: { open: boolean; on
               <Plus size={13} color={colors.primary} />
               <Text className="text-xs text-primary font-semibold">Peran baru</Text>
             </Pressable>
-          </ScrollView>
+          </View>
         </DialogHeader>
 
         <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
@@ -551,7 +551,7 @@ export function RoleManagementDialog({ open, onOpenChange }: { open: boolean; on
               </View>
               <View className="gap-1.5">
                 <Text className="text-sm font-medium">Mulai dari izin peran</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                <View className="flex-row flex-wrap gap-1.5">
                   {roles
                     .filter((r) => r.code !== "SUPER_ADMIN")
                     .map((r) => (
@@ -568,7 +568,7 @@ export function RoleManagementDialog({ open, onOpenChange }: { open: boolean; on
                         </Text>
                       </Pressable>
                     ))}
-                </ScrollView>
+                </View>
               </View>
             </View>
           ) : activeRole ? (
@@ -648,26 +648,28 @@ export function RoleManagementDialog({ open, onOpenChange }: { open: boolean; on
                 })();
                 return (
                   <View key={g.group} className="rounded-xl border border-border bg-card overflow-hidden">
-                    <Pressable
-                      onPress={() => toggleGroup(g.group)}
-                      className="flex-row items-center gap-2 px-3 py-2.5"
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: isOpen }}
-                    >
-                      {isOpen ? <ChevronDown size={16} color={colors.text} /> : <ChevronRight size={16} color={colors.text} />}
-                      <View style={{ flex: 1 }}>
-                        <Text className="text-sm font-semibold">{g.group}</Text>
-                        <Text className="text-[11px] text-muted-foreground">
-                          {on}/{keys.length} modul aktif
-                        </Text>
-                      </View>
+                    <View className="flex-row items-center gap-2 px-3 py-2.5">
+                      <Pressable
+                        onPress={() => toggleGroup(g.group)}
+                        className="flex-1 flex-row items-center gap-2"
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: isOpen }}
+                      >
+                        {isOpen ? <ChevronDown size={16} color={colors.text} /> : <ChevronRight size={16} color={colors.text} />}
+                        <View style={{ flex: 1 }}>
+                          <Text className="text-sm font-semibold">{g.group}</Text>
+                          <Text className="text-[11px] text-muted-foreground">
+                            {on}/{keys.length} modul aktif
+                          </Text>
+                        </View>
+                      </Pressable>
                       {isOpen ? (
                         <View className="items-end gap-0.5">
                           <Text className="text-[10px] text-muted-foreground">Atur semua</Text>
                           <LevelPicker compact value={groupLevel} onChange={(l) => setGroupLevel(keys, l)} />
                         </View>
                       ) : null}
-                    </Pressable>
+                    </View>
 
                     {isOpen
                       ? g.items.map((m) => {

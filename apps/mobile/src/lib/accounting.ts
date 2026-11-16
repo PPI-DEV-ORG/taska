@@ -38,6 +38,8 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
   "1105.01": { code: "1105.01", name: "Uang Muka PPh 23 (Dipotong Customer)", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1100" },
   "1105.02": { code: "1105.02", name: "Uang Muka PPh 25 (Angsuran Bulanan)", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1100" },
   "1106": { code: "1106", name: "Piutang Kelebihan Bayar Pajak", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1100" },
+  "1107": { code: "1107", name: "Uang Muka Karyawan (Petty Cash)", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1100" },
+  "1108": { code: "1108", name: "Piutang Karyawan", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1100" },
   "1105": { code: "1105", name: "Uang Muka PPh / Pajak Dibayar Dimuka", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1100" },
 
   // 1200 ASSET & PERSEDIAAN
@@ -77,6 +79,7 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
   "5000": { code: "5000", name: "Beban Pokok Penjualan (HPP - Header)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: false },
   "5101": { code: "5101", name: "HPP Project", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
   "5102": { code: "5102", name: "HPP Retail", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
+  "5103": { code: "5103", name: "HPP Biaya Langsung Project", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
   "5104": { code: "5104", name: "Selisih Inventaris (Stock Opname Loss)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
   "5105": { code: "5105", name: "Kerusakan Barang (Inventory Damage)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
   "5106": { code: "5106", name: "Selisih Harga Pembelian (PPV)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", parentCode: "5000" },
@@ -245,6 +248,7 @@ export function getKasBankAccounts(): { code: string; name: string; rawName: str
 export interface ProjectPnlRow {
   project: string;
   customer: string;
+  pic?: string;
   revenueGross: number;
   revenueDpp: number;
   ppnKeluaran: number;
@@ -255,21 +259,28 @@ export interface ProjectPnlRow {
   grossProfit: number;
   netProfit: number;
   marginPct: number;
-  statusKesehatan: "Sehat" | "Waspada" | "Rugi";
+  statusKesehatan: "SEHAT" | "WASPADA" | "RUGI" | "Sehat" | "Waspada" | "Rugi";
 }
 
 export interface IncomeStatementSummary {
   revenueGross: number;
   revenueDpp: number;
   ppnKeluaran: number;
+  revenueAccounts?: { code: string; name: string; amount: number }[];
   cogsProject: number;
   cogsRetail: number;
+  cogsDirect?: number;
   cogsTotal: number;
+  cogsAccounts?: { code: string; name: string; amount: number }[];
   grossProfit: number;
   grossMarginPct: number;
-  opexByCategory: { kategori: string; nominal: number; count: number }[];
+  opexByCategory: { code?: string; kategori: string; nominal: number; count: number }[];
   opexTotal: number;
   operatingProfit: number;
+  otherRevenueTotal?: number;
+  otherRevenueAccounts?: { code: string; name: string; amount: number }[];
+  otherExpenseTotal?: number;
+  otherExpenseAccounts?: { code: string; name: string; amount: number }[];
   netProfit: number;
   netMarginPct: number;
   projectRows: ProjectPnlRow[];
@@ -283,20 +294,20 @@ export interface BalanceSheetSummary {
     uangMukaPph: number;
     ppnMasukan?: number;
     totalAsetLancar: number;
-    items?: Array<{ code: string; name: string; category?: string; amount: number }>;
+    items?: { code: string; name: string; category?: string; amount: number }[];
   };
   liabilities: {
     hutangSupplier: number;
     hutangReimbursement: number;
     hutangPpnKeluaran: number;
     totalKewajiban: number;
-    items?: Array<{ code: string; name: string; category?: string; amount: number }>;
+    items?: { code: string; name: string; category?: string; amount: number }[];
   };
   equity: {
     modalKerjaAwal: number;
     labaBerjalan: number;
     totalEkuitas: number;
-    items?: Array<{ code: string; name: string; category?: string; amount: number }>;
+    items?: { code: string; name: string; category?: string; amount: number }[];
   };
   totalPasiva: number;
   isBalanced: boolean;
@@ -357,13 +368,16 @@ export interface FinancialStatementsBundle {
  */
 export function buildCoaTree(
   accountsMap: Record<string, CoaAccount>,
-  trialBalanceRows?: Array<{
+  trialBalanceRows?: {
     code: string;
+    name?: string;
+    category?: string;
+    normalBalance?: "DEBIT" | "KREDIT";
     totalDebit?: number;
     totalCredit?: number;
     balanceDebit?: number;
     balanceCredit?: number;
-  }>,
+  }[],
   deletedCodes: string[] = []
 ): CoaTrialBalanceRow[] {
   const deletedSet = new Set(deletedCodes);
@@ -372,6 +386,23 @@ export function buildCoaTree(
   for (const [code, acc] of Object.entries(accountsMap)) {
     if (!acc || deletedSet.has(code) || deletedSet.has(acc.code)) continue;
     uniqueAccounts[acc.code] = { ...acc };
+  }
+
+  if (Array.isArray(trialBalanceRows)) {
+    for (const r of trialBalanceRows) {
+      if (!r?.code || deletedSet.has(r.code)) continue;
+      const existingAcc = uniqueAccounts[r.code];
+      if (!existingAcc) {
+        uniqueAccounts[r.code] = {
+          code: r.code,
+          name: r.name || r.code,
+          category: (r.category as CoaAccount["category"]) || "Aset Lancar",
+          normalBalance: r.normalBalance === "KREDIT" ? "KREDIT" : "DEBIT",
+        };
+      } else if (r.name && existingAcc.name === r.code) {
+        existingAcc.name = r.name;
+      }
+    }
   }
 
   // Infer parent for dot notation (e.g. 1000.01 -> 1000, 6201.02 -> 6201) if not explicitly set
@@ -472,7 +503,7 @@ export function buildCoaTree(
 }
 
 /**
- * Fallback empty financial bundle when waiting for server response
+ * Fallback financial bundle when waiting for server response
  */
 export function computeFinancialStatements(
   _data?: Record<string, any[]>,
@@ -485,6 +516,67 @@ export function computeFinancialStatements(
     mergedMap[acc.code] = acc;
   });
   const coaBalances = buildCoaTree(mergedMap, [], _deletedCoaCodes);
+
+  const projects = _data?.projects ?? [];
+  const invoices = _data?.invoices ?? [];
+  const supplierPos = _data?.["supplier-pos"] ?? [];
+  const expenses = _data?.expenses ?? [];
+
+  const projectRows: ProjectPnlRow[] = projects.map((p: any) => {
+    const pId = String(p.id ?? "");
+    const pName = String(p.nama || p.name || `Project #${pId}`);
+    const pInvs = invoices.filter(
+      (i: any) =>
+        !i.isProforma &&
+        i.status !== "Dibatalkan" &&
+        i.status !== "BATAL" &&
+        (String(i.projectId ?? "") === pId || (pName && i.project === pName))
+    );
+    const pPos = supplierPos.filter(
+      (po: any) =>
+        po.status !== "Dibatalkan" &&
+        po.status !== "Ditolak" &&
+        (String(po.projectId ?? "") === pId || (pName && po.project === pName))
+    );
+    const pExps = expenses.filter(
+      (e: any) =>
+        (e.status === "Disetujui" || e.status === "Dibayar" || e.status === "DISETUJUI" || e.status === "DIBAYAR") &&
+        (String(e.projectId ?? "") === pId || (pName && e.project === pName))
+    );
+
+    const revenueDpp = pInvs.reduce((s: number, i: any) => s + Number(i.nilai || i.amount || 0), 0);
+    const ppnKeluaran = pInvs.reduce((s: number, i: any) => s + Number(i.ppn || 0), 0);
+    const revenueGross = pInvs.reduce((s: number, i: any) => s + Number(i.total || 0), 0) || revenueDpp + ppnKeluaran;
+    const paidCashIn = pInvs.reduce((s: number, i: any) => {
+      const tot = Number(i.total || 0);
+      const paid = Number(i.terbayar ?? i.paidAmount ?? 0);
+      return s + (i.status === "Lunas" || i.status === "PAID" ? Math.max(paid, tot) : Math.min(tot || paid, paid));
+    }, 0);
+    const arOutstanding = Math.max(0, revenueGross - paidCashIn);
+    const cogsPo = pPos.reduce((s: number, po: any) => s + Number(po.dpp || po.total || 0), 0);
+    const opexExpense = pExps.reduce((s: number, e: any) => s + Number(e.nominal || e.amount || 0), 0);
+    const grossProfit = revenueDpp - cogsPo;
+    const netProfit = grossProfit - opexExpense;
+    const marginPct = revenueDpp > 0 ? Number(((netProfit / revenueDpp) * 100).toFixed(1)) : 0;
+    const statusKesehatan = netProfit < 0 ? "RUGI" : marginPct >= 15 ? "SEHAT" : "WASPADA";
+
+    return {
+      project: pName,
+      customer: p.customer || "-",
+      pic: p.pm || p.pic || "-",
+      revenueGross,
+      revenueDpp,
+      ppnKeluaran,
+      paidCashIn,
+      arOutstanding,
+      cogsPo,
+      opexExpense,
+      grossProfit,
+      netProfit,
+      marginPct,
+      statusKesehatan,
+    };
+  });
 
   return {
     journalLines: [],
@@ -506,7 +598,7 @@ export function computeFinancialStatements(
       operatingProfit: 0,
       netProfit: 0,
       netMarginPct: 0,
-      projectRows: [],
+      projectRows,
     },
     balanceSheet: {
       assets: {

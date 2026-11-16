@@ -65,7 +65,7 @@ export function CashFlowTab({ fin, onDownload }: CashFlowTabProps) {
         >
           <View className="min-w-full w-full gap-1">
             <View className="bg-panel border-border flex-row items-center border-b px-4 py-2.5 rounded-t-lg w-full">
-              <Text className="w-[110px] text-xs font-bold">Tanggal</Text>
+              <Text className="w-[135px] text-xs font-bold">Tanggal & Waktu</Text>
               <Text className="w-[140px] text-xs font-bold">No. Referensi</Text>
               <Text className="w-[160px] text-xs font-bold">Kategori Arus Kas</Text>
               <Text className="w-[180px] text-xs font-bold">Pihak Terkait</Text>
@@ -78,7 +78,7 @@ export function CashFlowTab({ fin, onDownload }: CashFlowTabProps) {
                 key={item.id}
                 className="border-border/60 flex-row items-center border-b px-4 py-2.5 hover:bg-panel/40 w-full"
               >
-                <Text className="w-[110px] text-xs font-mono text-text-secondary">
+                <Text className="w-[135px] text-xs font-mono text-text-secondary">
                   {item.tanggal}
                 </Text>
                 <Text className="w-[140px] text-xs font-semibold font-mono" numberOfLines={1}>

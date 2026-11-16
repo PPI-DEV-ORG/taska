@@ -53,18 +53,31 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
             </Text>
             <View className="flex-row justify-between items-center py-1">
               <Text className="text-sm text-text-secondary">
-                [4101] Nilai Tagihan Kotor Invoice Pelanggan (Termasuk PPN)
+                Nilai Tagihan Kotor Invoice Pelanggan (Termasuk PPN)
               </Text>
               <Text className="text-sm font-mono">{rupiah(fin.incomeStatement.revenueGross)}</Text>
             </View>
             <View className="flex-row justify-between items-center py-1">
               <Text className="text-sm text-text-secondary">
-                [2102] Dikurangi: PPN Keluaran 11% (Kewajiban Pajak DJP)
+                [2100] Dikurangi: PPN Keluaran 11% (Kewajiban Pajak DJP)
               </Text>
               <Text className="text-sm font-mono text-warning">
                 ({rupiah(fin.incomeStatement.ppnKeluaran)})
               </Text>
             </View>
+            {Array.isArray(fin.incomeStatement.revenueAccounts) &&
+            fin.incomeStatement.revenueAccounts.length > 0
+              ? fin.incomeStatement.revenueAccounts.map((acc: any) => (
+                  <View key={acc.code} className="flex-row justify-between items-center py-1">
+                    <Text className="text-sm text-text-secondary">
+                      [{acc.code}] {acc.name}
+                    </Text>
+                    <Text className="text-sm font-mono">
+                      {acc.amount >= 0 ? rupiah(acc.amount) : `(${rupiah(Math.abs(acc.amount))})`}
+                    </Text>
+                  </View>
+                ))
+              : null}
             <View className="border-border border-t pt-2 flex-row justify-between items-center">
               <Text className="text-sm font-semibold">
                 Total Pendapatan Bersih Operasional (DPP)
@@ -80,25 +93,51 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
             <Text className="text-xs font-bold uppercase tracking-wider text-info">
               II. HARGA POKOK PENJUALAN & PENGADAAN (HPP / COGS)
             </Text>
-            <View className="flex-row justify-between items-center py-1">
-              <Text className="text-sm text-text-secondary">
-                [5101] HPP Project (Pengadaan Barang & Material Proyek)
-              </Text>
-              <Text className="text-sm font-mono text-danger">
-                ({rupiah(fin.incomeStatement.cogsProject ?? fin.incomeStatement.cogsTotal)})
-              </Text>
-            </View>
-            <View className="flex-row justify-between items-center py-1">
-              <Text className="text-sm text-text-secondary">
-                [5102] HPP Retail (Harga Pokok Penjualan Barang Stok)
-              </Text>
-              <Text className="text-sm font-mono text-danger">
-                ({rupiah(fin.incomeStatement.cogsRetail ?? 0)})
-              </Text>
-            </View>
+            {Array.isArray(fin.incomeStatement.cogsAccounts) &&
+            fin.incomeStatement.cogsAccounts.length > 0 ? (
+              fin.incomeStatement.cogsAccounts.map((acc: any) => (
+                <View key={acc.code} className="flex-row justify-between items-center py-1">
+                  <Text className="text-sm text-text-secondary">
+                    [{acc.code}] {acc.name}
+                  </Text>
+                  <Text className="text-sm font-mono text-danger">
+                    ({rupiah(acc.amount)})
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <>
+                <View className="flex-row justify-between items-center py-1">
+                  <Text className="text-sm text-text-secondary">
+                    [5101] HPP Project (Pengadaan Barang & Material Proyek)
+                  </Text>
+                  <Text className="text-sm font-mono text-danger">
+                    ({rupiah(fin.incomeStatement.cogsProject ?? 0)})
+                  </Text>
+                </View>
+                <View className="flex-row justify-between items-center py-1">
+                  <Text className="text-sm text-text-secondary">
+                    [5102] HPP Retail (Harga Pokok Penjualan Barang Stok)
+                  </Text>
+                  <Text className="text-sm font-mono text-danger">
+                    ({rupiah(fin.incomeStatement.cogsRetail ?? 0)})
+                  </Text>
+                </View>
+                {(fin.incomeStatement.cogsDirect || 0) > 0 ? (
+                  <View className="flex-row justify-between items-center py-1">
+                    <Text className="text-sm text-text-secondary">
+                      [5103] HPP Biaya Langsung Project
+                    </Text>
+                    <Text className="text-sm font-mono text-danger">
+                      ({rupiah(fin.incomeStatement.cogsDirect)})
+                    </Text>
+                  </View>
+                ) : null}
+              </>
+            )}
             <View className="border-border/60 border-t pt-1.5 flex-row justify-between items-center">
               <Text className="text-xs font-semibold text-muted-foreground">
-                [5000] Total Beban Pokok Penjualan (HPP Project + HPP Retail)
+                [5000] Total Beban Pokok Penjualan (HPP)
               </Text>
               <Text className="text-xs font-bold font-mono text-danger">
                 ({rupiah(fin.incomeStatement.cogsTotal)})
@@ -120,9 +159,9 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
               III. BEBAN OPERASIONAL & LAPANGAN (OPEX)
             </Text>
             {(fin.incomeStatement.opexByCategory || []).map((cat: any) => (
-              <View key={cat.kategori} className="flex-row justify-between items-center py-1">
+              <View key={`${cat.code || "6101"}-${cat.kategori}`} className="flex-row justify-between items-center py-1">
                 <Text className="text-sm text-text-secondary">
-                  [6101] Beban {cat.kategori} ({cat.count} pengajuan)
+                  [{cat.code || "6101"}] Beban {cat.kategori}
                 </Text>
                 <Text className="text-sm font-mono text-text-secondary">
                   ({rupiah(cat.nominal)})
@@ -136,6 +175,35 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
               </Text>
             </View>
           </View>
+
+          {((fin.incomeStatement.otherRevenueAccounts || []).length > 0 ||
+            (fin.incomeStatement.otherExpenseAccounts || []).length > 0) && (
+            <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2">
+              <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                IV. PENDAPATAN & BEBAN DILUAR USAHA
+              </Text>
+              {(fin.incomeStatement.otherRevenueAccounts || []).map((acc: any) => (
+                <View key={acc.code} className="flex-row justify-between items-center py-1">
+                  <Text className="text-sm text-text-secondary">
+                    [{acc.code}] {acc.name}
+                  </Text>
+                  <Text className="text-sm font-mono text-success">
+                    {rupiah(acc.amount)}
+                  </Text>
+                </View>
+              ))}
+              {(fin.incomeStatement.otherExpenseAccounts || []).map((acc: any) => (
+                <View key={acc.code} className="flex-row justify-between items-center py-1">
+                  <Text className="text-sm text-text-secondary">
+                    [{acc.code}] {acc.name}
+                  </Text>
+                  <Text className="text-sm font-mono text-danger">
+                    ({rupiah(acc.amount)})
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Section: Net Profit */}
           <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-row justify-between items-center">
@@ -182,54 +250,63 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
               <Text className="w-[75px] text-xs font-bold text-center">Margin</Text>
               <Text className="w-[95px] text-xs font-bold text-center">Status</Text>
             </View>
-            {fin.incomeStatement.projectRows.map((r: any) => (
-              <View
-                key={r.project}
-                className="border-border/60 flex-row items-center border-b px-3 py-2.5"
-              >
-                <Text className="w-[170px] text-xs font-semibold font-mono" numberOfLines={1}>
-                  {r.project}
-                </Text>
-                <Text className="w-[150px] text-xs text-text-secondary" numberOfLines={1}>
-                  {r.customer}
-                </Text>
-                <Text className="w-[125px] text-xs font-mono text-right">
-                  {rupiah(r.revenueDpp)}
-                </Text>
-                <Text className="w-[110px] text-xs font-mono text-right text-success">
-                  {rupiah(r.paidCashIn)}
-                </Text>
-                <Text className="w-[110px] text-xs font-mono text-right text-warning">
-                  {rupiah(r.arOutstanding)}
-                </Text>
-                <Text className="w-[120px] text-xs font-mono text-right text-danger">
-                  {rupiah(r.cogsPo)}
-                </Text>
-                <Text className="w-[115px] text-xs font-mono text-right text-text-secondary">
-                  {rupiah(r.opexExpense)}
-                </Text>
-                <Text
-                  className={`w-[125px] text-xs font-bold font-mono text-right ${
-                    r.netProfit >= 0 ? "text-success" : "text-danger"
-                  }`}
-                >
-                  {rupiah(r.netProfit)}
-                </Text>
-                <Text className="w-[75px] text-xs font-bold text-center">{r.marginPct}%</Text>
-                <View className="w-[95px] items-center">
-                  <Pill
-                    label={r.statusKesehatan}
-                    tone={
-                      r.statusKesehatan === "SEHAT"
-                        ? "success"
-                        : r.statusKesehatan === "WASPADA"
-                          ? "warning"
-                          : "danger"
-                    }
-                  />
-                </View>
+            {(fin.incomeStatement.projectRows || []).length === 0 ? (
+              <View className="py-8 items-center justify-center">
+                <Text className="text-xs text-text-secondary">Belum ada data proyek untuk dianalisis</Text>
               </View>
-            ))}
+            ) : (
+              fin.incomeStatement.projectRows.map((r: any, idx: number) => {
+                const stUpper = String(r.statusKesehatan || "").toUpperCase();
+                return (
+                  <View
+                    key={`${r.project}-${idx}`}
+                    className="border-border/60 flex-row items-center border-b px-3 py-2.5"
+                  >
+                    <Text className="w-[170px] text-xs font-semibold font-mono" numberOfLines={1}>
+                      {r.project}
+                    </Text>
+                    <Text className="w-[150px] text-xs text-text-secondary" numberOfLines={1}>
+                      {r.customer}
+                    </Text>
+                    <Text className="w-[125px] text-xs font-mono text-right">
+                      {rupiah(r.revenueDpp)}
+                    </Text>
+                    <Text className="w-[110px] text-xs font-mono text-right text-success">
+                      {rupiah(r.paidCashIn)}
+                    </Text>
+                    <Text className="w-[110px] text-xs font-mono text-right text-warning">
+                      {rupiah(r.arOutstanding)}
+                    </Text>
+                    <Text className="w-[120px] text-xs font-mono text-right text-danger">
+                      {rupiah(r.cogsPo)}
+                    </Text>
+                    <Text className="w-[115px] text-xs font-mono text-right text-text-secondary">
+                      {rupiah(r.opexExpense)}
+                    </Text>
+                    <Text
+                      className={`w-[125px] text-xs font-bold font-mono text-right ${
+                        r.netProfit >= 0 ? "text-success" : "text-danger"
+                      }`}
+                    >
+                      {rupiah(r.netProfit)}
+                    </Text>
+                    <Text className="w-[75px] text-xs font-bold text-center">{r.marginPct}%</Text>
+                    <View className="w-[95px] items-center">
+                      <Pill
+                        label={stUpper || "WASPADA"}
+                        tone={
+                          stUpper === "SEHAT"
+                            ? "success"
+                            : stUpper === "WASPADA"
+                              ? "warning"
+                              : "danger"
+                        }
+                      />
+                    </View>
+                  </View>
+                );
+              })
+            )}
           </View>
         </ScrollView>
       </Panel>
