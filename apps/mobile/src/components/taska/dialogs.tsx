@@ -29,6 +29,7 @@ import {
   SurveySelect,
   PocSelect,
   VisitSelect,
+  MaintenanceSelect,
   SupplierPoSelect,
   PurchaseRequestSelect,
   DraftReceivingSelect,
@@ -66,6 +67,7 @@ export {
   SurveySelect,
   PocSelect,
   VisitSelect,
+  MaintenanceSelect,
   SupplierPoSelect,
   PurchaseRequestSelect,
   DraftReceivingSelect,
@@ -1701,6 +1703,30 @@ export function FormDialog({
                           ...s,
                           [f.key]: lbl,
                           visitReportId: String(visit.id),
+                        }));
+                      }}
+                    />
+                  ) : (f.key === "maintenanceReport" || f.key === "maintenance" || f.key === "maintenanceId" || f.key === "maintenanceReportId") ? (
+                    <MaintenanceSelect
+                      value={vals[f.key]}
+                      maintenanceId={vals.maintenanceReportId || vals.maintenanceId}
+                      allowClear={!f.required}
+                      placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                      error={!!errs[f.key]}
+                      onChange={(m) => {
+                        if (!m) {
+                          setVals((s) => ({
+                            ...s,
+                            [f.key]: f.required ? "" : "-",
+                            ...(s.maintenanceReportId ? { maintenanceReportId: "" } : {}),
+                          }));
+                          return;
+                        }
+                        const lbl = `MTN ${m.nomor || m.number} - ${m.judul || m.title}`;
+                        setVals((s) => ({
+                          ...s,
+                          [f.key]: lbl,
+                          maintenanceReportId: String(m.id),
                         }));
                       }}
                     />

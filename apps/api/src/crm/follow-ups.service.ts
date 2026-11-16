@@ -18,15 +18,17 @@ export class FollowUpsService {
   private async ensureColumns() {
     await this.prisma.main.$executeRawUnsafe("ALTER TABLE `FollowUp` ADD COLUMN `pocReportId` INT NULL").catch(() => {});
     await this.prisma.main.$executeRawUnsafe("ALTER TABLE `FollowUp` ADD COLUMN `visitReportId` INT NULL").catch(() => {});
+    await this.prisma.main.$executeRawUnsafe("ALTER TABLE `FollowUp` ADD COLUMN `maintenanceReportId` INT NULL").catch(() => {});
   }
 
-  async list(q: PageQuery & { leadId?: number; quotationId?: number; pocReportId?: number; visitReportId?: number; status?: string }) {
+  async list(q: PageQuery & { leadId?: number; quotationId?: number; pocReportId?: number; visitReportId?: number; maintenanceReportId?: number; status?: string }) {
     await this.ensureColumns();
     const where = {
       ...(q.leadId ? { leadId: q.leadId } : {}),
       ...(q.quotationId ? { quotationId: q.quotationId } : {}),
       ...(q.pocReportId ? { pocReportId: q.pocReportId } : {}),
       ...(q.visitReportId ? { visitReportId: q.visitReportId } : {}),
+      ...(q.maintenanceReportId ? { maintenanceReportId: q.maintenanceReportId } : {}),
       ...(q.status ? { status: q.status as never } : {}),
       ...(q.q ? { notes: { contains: q.q } } : {}),
     };
@@ -37,6 +39,7 @@ export class FollowUpsService {
           lead: { select: { id: true, name: true } },
           pocReport: { select: { id: true, number: true, title: true } },
           visitReport: { select: { id: true, number: true, title: true } },
+          maintenanceReport: { select: { id: true, number: true, title: true } },
           creator: { select: { id: true, name: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
@@ -49,8 +52,8 @@ export class FollowUpsService {
 
   async create(dto: FollowUpDto, user: RequestUser) {
     await this.ensureColumns();
-    if (!dto.leadId && !dto.quotationId && !dto.pocReportId && !dto.visitReportId) {
-      throw new NotFoundException("Follow-up harus tertaut ke lead, penawaran, POC, atau kunjungan");
+    if (!dto.leadId && !dto.quotationId && !dto.pocReportId && !dto.visitReportId && !dto.maintenanceReportId) {
+      throw new NotFoundException("Follow-up harus tertaut ke lead, penawaran, POC, kunjungan, atau maintenance");
     }
     const row = await this.prisma.main.followUp.create({
       data: {
@@ -58,6 +61,7 @@ export class FollowUpsService {
         quotationId: dto.quotationId,
         pocReportId: dto.pocReportId,
         visitReportId: dto.visitReportId,
+        maintenanceReportId: dto.maintenanceReportId,
         date: new Date(dto.date),
         method: dto.method,
         notes: dto.notes,
@@ -69,6 +73,7 @@ export class FollowUpsService {
         lead: { select: { id: true, name: true } },
         pocReport: { select: { id: true, number: true, title: true } },
         visitReport: { select: { id: true, number: true, title: true } },
+        maintenanceReport: { select: { id: true, number: true, title: true } },
         creator: { select: { id: true, name: true } },
       },
     });
@@ -76,6 +81,7 @@ export class FollowUpsService {
       row.lead?.name ??
       row.pocReport?.number ??
       row.visitReport?.number ??
+      (row as any).maintenanceReport?.number ??
       "-";
     await this.audit.log({
       actor: user,
@@ -108,6 +114,7 @@ export class FollowUpsService {
         lead: { select: { id: true, name: true } },
         pocReport: { select: { id: true, number: true, title: true } },
         visitReport: { select: { id: true, number: true, title: true } },
+        maintenanceReport: { select: { id: true, number: true, title: true } },
       },
     });
     await this.audit.log({

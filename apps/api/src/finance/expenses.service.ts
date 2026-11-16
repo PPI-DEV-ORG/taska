@@ -61,6 +61,7 @@ export class ExpensesService {
       deliveryNoteId?: number;
       pocReportId?: number;
       visitReportId?: number;
+      maintenanceReportId?: number;
       fundingSource?: string;
       from?: string;
       to?: string;
@@ -74,7 +75,8 @@ export class ExpensesService {
       // semua pengeluaran satu proyek hanya untuk pengelola proyek (PM / pimpinan); karyawan lain tetap miliknya sendiri
       (q.projectId && can(user.role, "projects", "U")) ||
       q.pocReportId ||
-      q.visitReportId
+      q.visitReportId ||
+      q.maintenanceReportId
         ? {}
         : { reporterId: user.id };
     return {
@@ -85,6 +87,7 @@ export class ExpensesService {
       ...(q.surveyId ? { surveyId: q.surveyId } : {}),
       ...(q.pocReportId ? { pocReportId: q.pocReportId } : {}),
       ...(q.visitReportId ? { visitReportId: q.visitReportId } : {}),
+      ...(q.maintenanceReportId ? { maintenanceReportId: q.maintenanceReportId } : {}),
       ...(q.fundingSource ? { fundingSource: q.fundingSource } : {}),
       ...(q.deliveryNoteId ? { deliveryNoteId: q.deliveryNoteId } : {}),
       ...(q.from || q.to
@@ -119,6 +122,7 @@ export class ExpensesService {
           deliveryNote: { select: { id: true, number: true } },
           pocReport: { select: { id: true, number: true, title: true } },
           visitReport: { select: { id: true, number: true, title: true } },
+          maintenanceReport: { select: { id: true, number: true, title: true } },
         },
         orderBy: orderBy(q.sort, q.dir, ["date", "createdAt"], "date"),
         ...pageSkip(q),
@@ -163,6 +167,7 @@ export class ExpensesService {
         deliveryNote: { select: { id: true, number: true } },
         pocReport: { select: { id: true, number: true, title: true } },
         visitReport: { select: { id: true, number: true, title: true } },
+        maintenanceReport: { select: { id: true, number: true, title: true } },
       },
     });
     if (!row) throw new NotFoundException("Pengeluaran tidak ditemukan");
@@ -186,7 +191,7 @@ export class ExpensesService {
 
   async create(dto: ExpenseDto, user: RequestUser) {
     let costCenterId = dto.projectId ? undefined : dto.costCenterId;
-    if (!dto.projectId && !dto.surveyId && !dto.deliveryNoteId && !dto.pocReportId && !dto.visitReportId && !costCenterId) {
+    if (!dto.projectId && !dto.surveyId && !dto.deliveryNoteId && !dto.pocReportId && !dto.visitReportId && !dto.maintenanceReportId && !costCenterId) {
       const cc = await this.prisma.main.costCenter.findFirst();
       costCenterId = cc?.id;
     }
@@ -216,6 +221,7 @@ export class ExpensesService {
         deliveryNoteId: dto.deliveryNoteId,
         pocReportId: dto.pocReportId,
         visitReportId: dto.visitReportId,
+        maintenanceReportId: dto.maintenanceReportId,
         fundingSource: dto.fundingSource ?? "PERUSAHAAN",
         reimbursementStatus: dto.fundingSource === "TALANGAN_PRIBADI" ? (dto.reimbursementStatus ?? "DRAFT") : null,
         paymentMethod: dto.paymentMethod,
@@ -235,6 +241,7 @@ export class ExpensesService {
         survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
         pocReport: { select: { id: true, number: true, title: true } },
         visitReport: { select: { id: true, number: true, title: true } },
+        maintenanceReport: { select: { id: true, number: true, title: true } },
       },
     });
 
@@ -329,6 +336,7 @@ export class ExpensesService {
         deliveryNoteId: dto.deliveryNoteId !== undefined ? dto.deliveryNoteId : row.deliveryNoteId,
         pocReportId: dto.pocReportId !== undefined ? dto.pocReportId : row.pocReportId,
         visitReportId: dto.visitReportId !== undefined ? dto.visitReportId : row.visitReportId,
+        maintenanceReportId: dto.maintenanceReportId !== undefined ? dto.maintenanceReportId : row.maintenanceReportId,
         fundingSource: dto.fundingSource !== undefined ? dto.fundingSource : row.fundingSource,
         reimbursementStatus: dto.reimbursementStatus !== undefined ? dto.reimbursementStatus : row.reimbursementStatus,
         paymentMethod: dto.paymentMethod !== undefined ? dto.paymentMethod : row.paymentMethod,
@@ -348,6 +356,7 @@ export class ExpensesService {
         survey: { select: { id: true, location: true, lead: { select: { id: true, name: true } } } },
         pocReport: { select: { id: true, number: true, title: true } },
         visitReport: { select: { id: true, number: true, title: true } },
+        maintenanceReport: { select: { id: true, number: true, title: true } },
       },
     });
 

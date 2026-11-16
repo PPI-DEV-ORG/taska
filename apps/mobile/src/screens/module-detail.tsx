@@ -16,6 +16,7 @@ import {
   SurveySelect,
   PocSelect,
   VisitSelect,
+  MaintenanceSelect,
 } from "@/components/taska/document-select";
 import { SupplierSelect } from "@/components/taska/supplier-select";
 import { DocumentViewerList } from "@/components/taska/document-viewer";
@@ -258,6 +259,21 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         );
         if (match) {
           return `VISIT ${match.nomor || match.number} - ${match.judul || match.title}`;
+        }
+      }
+      if (f.key === "maintenanceReport" || f.key === "maintenance" || f.key === "maintenanceId" || f.key === "maintenanceReportId") {
+        const mId = r.maintenanceReportId ?? r.maintenanceId;
+        const match = (data?.["maintenance-reports"] ?? []).find(
+          (m: any) =>
+            (mId != null && String(m.id) === String(mId)) ||
+            (rawVal && rawVal !== "-" && (
+              m.nomor === rawVal ||
+              m.number === rawVal ||
+              `MTN ${m.nomor || m.number} - ${m.judul || m.title}` === rawVal
+            ))
+        );
+        if (match) {
+          return `MTN ${match.nomor || match.number} - ${match.judul || match.title}`;
         }
       }
       if (f.key === "lead" || f.key === "leadId") {
@@ -517,6 +533,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (edits.surveyId !== undefined) patch.surveyId = edits.surveyId;
     if (edits.pocReportId !== undefined) patch.pocReportId = edits.pocReportId;
     if (edits.visitReportId !== undefined) patch.visitReportId = edits.visitReportId;
+    if (edits.maintenanceReportId !== undefined) patch.maintenanceReportId = edits.maintenanceReportId;
 
     setSaving(true);
     try {
@@ -1347,6 +1364,24 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                                 const lbl = `VISIT ${visit.nomor || visit.number} - ${visit.judul || visit.title}`;
                                 setFieldValue(f.key, lbl);
                                 setFieldValue("visitReportId", visit.id);
+                              }}
+                            />
+                          ) : (f.key === "maintenanceReport" || f.key === "maintenance" || f.key === "maintenanceId" || f.key === "maintenanceReportId") ? (
+                            <MaintenanceSelect
+                              value={getFieldValue(f)}
+                              maintenanceId={edits.maintenanceReportId ?? edits.maintenanceId ?? row.maintenanceReportId ?? row.maintenanceId}
+                              allowClear={!f.required}
+                              placeholder={`Pilih ${f.label.toLowerCase()}...`}
+                              error={!!errs[f.key]}
+                              onChange={(m) => {
+                                if (!m) {
+                                  setFieldValue(f.key, f.required ? "" : "-");
+                                  setFieldValue("maintenanceReportId", null);
+                                  return;
+                                }
+                                const lbl = `MTN ${m.nomor || m.number} - ${m.judul || m.title}`;
+                                setFieldValue(f.key, lbl);
+                                setFieldValue("maintenanceReportId", m.id);
                               }}
                             />
                           ) : (

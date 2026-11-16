@@ -11,7 +11,7 @@ import {
 } from "class-validator";
 
 export const CAL_CATEGORIES = [
-  "MEETING", "SALES", "KUNJUNGAN", "POC", "SURVEY", "PROJECT", "TASK",
+  "MEETING", "SALES", "KUNJUNGAN", "MAINTENANCE", "POC", "SURVEY", "PROJECT", "TASK",
   "FINANCE", "TAX", "PROCUREMENT", "OPERATIONAL", "OTHER",
 ] as const;
 export const CAL_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "PENDING", "COMPLETED", "CANCELLED"] as const;

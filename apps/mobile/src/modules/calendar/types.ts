@@ -34,6 +34,7 @@ export const CATEGORY_META: Record<string, { label: string; color: string }> = {
   KUNJUNGAN: { label: "Kunjungan", color: "#2DD4BF" },
   POC: { label: "POC & Demo", color: "#A78BFA" },
   SURVEY: { label: "Survey", color: colors.warning },
+  MAINTENANCE: { label: "Maintenance", color: "#F97316" },
   PROJECT: { label: "Proyek", color: colors.primary },
   TASK: { label: "Tugas", color: colors.success },
   FINANCE: { label: "Keuangan", color: colors.danger },
@@ -45,7 +46,7 @@ export const CATEGORY_META: Record<string, { label: string; color: string }> = {
 
 export const CATEGORY_KEYS = Object.keys(CATEGORY_META);
 export const MANUAL_CATEGORY_KEYS = [
-  "MEETING", "SALES", "KUNJUNGAN", "POC", "SURVEY", "PROJECT", "TASK",
+  "MEETING", "SALES", "KUNJUNGAN", "POC", "SURVEY", "MAINTENANCE", "PROJECT", "TASK",
   "FINANCE", "TAX", "PROCUREMENT", "OPERATIONAL", "OTHER",
 ];
 

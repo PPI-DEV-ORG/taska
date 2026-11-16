@@ -21,7 +21,7 @@ import { colors } from "@/tokens";
 import { type Row } from "@/constants/modules";
 
 type FollowUpPanelProps = {
-  moduleKey: "leads" | "poc-reports" | "visit-reports";
+  moduleKey: "leads" | "poc-reports" | "visit-reports" | "maintenance-reports";
   entityId: string | number;
   initialFollowUps?: any[];
   subtitle?: string;
@@ -52,7 +52,9 @@ export function FollowUpPanel({
       ? `leadId=${entityId}`
       : moduleKey === "poc-reports"
         ? `pocReportId=${entityId}`
-        : `visitReportId=${entityId}`;
+        : moduleKey === "maintenance-reports"
+          ? `maintenanceReportId=${entityId}`
+          : `visitReportId=${entityId}`;
 
   const reloadFollowups = React.useCallback(async () => {
     try {
@@ -88,6 +90,7 @@ export function FollowUpPanel({
         if (moduleKey === "leads") return String(f.leadId) === String(entityId);
         if (moduleKey === "poc-reports") return String(f.pocReportId) === String(entityId);
         if (moduleKey === "visit-reports") return String(f.visitReportId) === String(entityId);
+        if (moduleKey === "maintenance-reports") return String(f.maintenanceReportId) === String(entityId);
         return false;
       })
       .map((f: Row) => ({
@@ -140,6 +143,7 @@ export function FollowUpPanel({
     if (moduleKey === "leads") payload.leadId = Number(entityId);
     if (moduleKey === "poc-reports") payload.pocReportId = Number(entityId);
     if (moduleKey === "visit-reports") payload.visitReportId = Number(entityId);
+    if (moduleKey === "maintenance-reports") payload.maintenanceReportId = Number(entityId);
 
     const created = await addRow("followups", payload);
     if (created) {

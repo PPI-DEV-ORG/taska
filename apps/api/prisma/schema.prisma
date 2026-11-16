@@ -390,6 +390,10 @@ model User {
   pocMembers            PocMember[]
   visitReports          VisitReport[]       @relation("VisitOwner")
   visitMembers          VisitMember[]
+  maintenanceReports    MaintenanceReport[] @relation("MaintenanceOwner")
+  maintenanceCreated    MaintenanceReport[] @relation("MaintenanceCreator")
+  maintenanceMembers    MaintenanceMember[]
+  maintenanceActions    MaintenanceActionItem[] @relation("MaintenanceActionAssignee")
   calendarCreated       CalendarEvent[]     @relation("CalendarCreator")
   calendarAssigned      CalendarEvent[]     @relation("CalendarAssignee")
   calendarAttendees     CalendarAttendee[]
@@ -496,6 +500,8 @@ model File {
   pocReport_documentFile           PocReport[]          @relation("PocReport_documentFileId")
   visitReport_logoFile             VisitReport[]        @relation("VisitReport_logoFileId")
   visitReport_documentFile         VisitReport[]        @relation("VisitReport_documentFileId")
+  maintenanceReport_logoFile       MaintenanceReport[]  @relation("MaintenanceReport_logoFileId")
+  maintenanceReport_documentFile   MaintenanceReport[]  @relation("MaintenanceReport_documentFileId")
   cashAdvance_disburseFile         CashAdvance[]        @relation("CashAdvance_disburseFileId")
   cashAdvance_returnFile           CashAdvance[]        @relation("CashAdvance_returnFileId")
 
@@ -624,6 +630,7 @@ model Customer {
   invoices       InvoiceOut[]
   pocReports     PocReport[]
   visitReports   VisitReport[]
+  maintenanceReports MaintenanceReport[]
   calendarEvents CalendarEvent[] @relation("CalendarCustomer")
 
   @@index([status])
@@ -797,6 +804,7 @@ model Lead {
   quotations     Quotation[]
   pocReports     PocReport[]
   visitReports   VisitReport[]
+  maintenanceReports MaintenanceReport[]
   calendarEvents CalendarEvent[] @relation("CalendarLead")
 
   @@index([stage])
@@ -812,8 +820,10 @@ model FollowUp {
   quotationId   Int?
   pocReportId   Int?
   pocReport     PocReport?     @relation(fields: [pocReportId], references: [id], onDelete: Cascade)
-  visitReportId Int?
-  visitReport   VisitReport?   @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
+  visitReportId       Int?
+  visitReport         VisitReport?       @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
+  maintenanceReportId Int?
+  maintenanceReport   MaintenanceReport? @relation(fields: [maintenanceReportId], references: [id], onDelete: Cascade)
   date          DateTime       @db.Date
   method        FollowUpMethod
   notes         String
@@ -828,6 +838,7 @@ model FollowUp {
   @@index([quotationId])
   @@index([pocReportId])
   @@index([visitReportId])
+  @@index([maintenanceReportId])
   @@index([date])
 }
 
@@ -1172,6 +1183,8 @@ model Expense {
   pocReport           PocReport?       @relation(fields: [pocReportId], references: [id])
   visitReportId       Int?
   visitReport         VisitReport?     @relation(fields: [visitReportId], references: [id])
+  maintenanceReportId Int?
+  maintenanceReport   MaintenanceReport? @relation(fields: [maintenanceReportId], references: [id])
   costCenterId        Int?
   costCenter          CostCenter?      @relation(fields: [costCenterId], references: [id])
   receiptFileId       Int?
@@ -1202,6 +1215,7 @@ model Expense {
   @@index([surveyId])
   @@index([pocReportId])
   @@index([visitReportId])
+  @@index([maintenanceReportId])
   @@index([deliveryNoteId])
   @@index([cashAdvanceId])
 }
@@ -1327,6 +1341,7 @@ model Project {
   expenses         Expense[]
   pocReports       PocReport[]
   visitReports     VisitReport[]
+  maintenanceReports MaintenanceReport[]
   dnLocations      DeliveryNoteLocation[]
   purchaseRequests PurchaseRequest[]
   serialUnits      SerialUnit[]
@@ -2154,6 +2169,91 @@ model VisitActionItem {
   updatedAt     DateTime    @updatedAt
 
   @@index([visitReportId])
+  @@index([assigneeId])
+}
+
+// ─────────────────────────────── Laporan Maintenance ───────────────────────────────
+
+model MaintenanceReport {
+  id              Int       @id @default(autoincrement())
+  number          String    @unique
+  title           String
+  maintenanceType String    @default("Preventive")
+  status          String    @default("Scheduled")
+  startDate       DateTime  @db.Date
+  endDate         DateTime? @db.Date
+  location        String?
+  clientName      String?
+  clientContact   String?
+  customerId      Int?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  leadId          Int?
+  lead            Lead?     @relation(fields: [leadId], references: [id])
+  projectId       Int?
+  project         Project?  @relation(fields: [projectId], references: [id])
+  purpose         String?   @db.Text
+  description     String?   @db.Text
+
+  // Technical findings & actions
+  findings        String?   @db.Text
+  actionsTaken    String?   @db.Text
+  recommendations String?   @db.Text
+  conclusion      String?   @db.Text
+
+  // Custom PDF Header & Logo / Document
+  companyHeader   String?
+  logoFileId      Int?
+  logoFile        File?     @relation("MaintenanceReport_logoFileId", fields: [logoFileId], references: [id], onDelete: SetNull)
+  documentFileId  Int?
+  documentFile    File?     @relation("MaintenanceReport_documentFileId", fields: [documentFileId], references: [id], onDelete: SetNull)
+
+  // PIC & Creator
+  ownerId         Int
+  owner           User      @relation("MaintenanceOwner", fields: [ownerId], references: [id])
+  createdById     Int
+  createdBy       User      @relation("MaintenanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  members         MaintenanceMember[]
+  actions         MaintenanceActionItem[]
+  expenses        Expense[]
+  followUps       FollowUp[]
+
+  @@index([status])
+  @@index([startDate])
+  @@index([ownerId])
+  @@index([projectId])
+  @@index([customerId])
+  @@index([leadId])
+}
+
+model MaintenanceMember {
+  id                  Int               @id @default(autoincrement())
+  maintenanceReportId Int
+  maintenanceReport   MaintenanceReport @relation(fields: [maintenanceReportId], references: [id], onDelete: Cascade)
+  userId              Int
+  user                User              @relation(fields: [userId], references: [id])
+
+  @@unique([maintenanceReportId, userId])
+  @@index([maintenanceReportId])
+  @@index([userId])
+}
+
+model MaintenanceActionItem {
+  id                  Int               @id @default(autoincrement())
+  maintenanceReportId Int
+  maintenanceReport   MaintenanceReport @relation(fields: [maintenanceReportId], references: [id], onDelete: Cascade)
+  task                String            @db.Text
+  assigneeId          Int?
+  assignee            User?             @relation("MaintenanceActionAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  dueDate             DateTime?         @db.Date
+  status              String            @default("Open")
+  notes               String?           @db.Text
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([maintenanceReportId])
   @@index([assigneeId])
 }
 

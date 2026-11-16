@@ -24,7 +24,7 @@ export function DocumentationPhotosPanel({
   title,
   subtitle,
 }: {
-  kind: "survey" | "project" | "delivery-note" | "poc" | "visit";
+  kind: "survey" | "project" | "delivery-note" | "poc" | "visit" | "maintenance";
   entityId: string | number;
   title: string;
   subtitle?: string;

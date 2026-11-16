@@ -81,6 +81,12 @@ export class AuditService {
       variants.add("visit-reports");
       variants.add("visit-report");
       variants.add("visit");
+    } else if (rawType.startsWith("maintenance") || rawType === "maintenance-reports" || rawType === "maintenance-report") {
+      variants.add("maintenanceReport");
+      variants.add("maintenanceReports");
+      variants.add("maintenance-reports");
+      variants.add("maintenance-report");
+      variants.add("maintenance");
     } else if (
       rawType === "po" ||
       rawType === "pos" ||
