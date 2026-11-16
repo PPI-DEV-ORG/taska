@@ -19,6 +19,7 @@ import { MappingService } from "../accounting/mapping.service.js";
 import { PostingRules, withheldTax } from "../accounting/posting.rules.js";
 import { itemDiscountFields } from "../crm/item-discount.js";
 import { syncProjectPaymentStatus } from "../projects/project-payment.js";
+import { deriveQuotationTaxBreakdown } from "./settlement.js";
 
 type StatusFilter = "DRAFT" | "SENT" | "PARTIAL" | "PAID" | "OVERDUE" | "BATAL";
 
@@ -123,8 +124,10 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
   }
 
   private overdueTimer?: ReturnType<typeof setInterval>;
+  private repairPromise?: Promise<void>;
 
   onModuleInit() {
+    void this.ensureTaxDataRepaired();
     // Jatuh tempo ditandai oleh penjadwal (bukan saat daftar dibuka). Jalan sekali setelah start, lalu tiap 6 jam.
     const run = () => void this.markOverdueInvoices().catch((e) => console.warn("Gagal menandai invoice jatuh tempo:", (e as Error).message));
     setTimeout(run, 30_000).unref?.();
@@ -134,6 +137,226 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy() {
     if (this.overdueTimer) clearInterval(this.overdueTimer);
+  }
+
+  /**
+   * Sinkronisasi & perbaikan otomatis data SO, Invoice, Pembayaran, dan Jurnal COA
+   * untuk dokumen yang dibuat dari Penawaran namun kehilangan rincian PPN / PPh / Diskon.
+   */
+  async ensureTaxDataRepaired(): Promise<void> {
+    if (!this.repairPromise) {
+      this.repairPromise = this.runTaxDataRepair().catch((err) => {
+        console.warn("Gagal menjalankan sinkronisasi pajak SO/Invoice/COA:", (err as Error)?.message || err);
+        this.repairPromise = undefined;
+      });
+    }
+    return this.repairPromise;
+  }
+
+  private async runTaxDataRepair(): Promise<void> {
+    const mappings = await this.mappingService.getAll();
+
+    // 1. Perbaiki ClientPO (SO) yang terhubung ke Quotation namun kehilangan PPN / PPh / DPP / diskon item
+    const pos = await this.prisma.main.clientPO.findMany({
+      where: { quotationId: { not: null } },
+      include: { quotation: true },
+    });
+
+    for (const po of pos) {
+      if (!po.quotation) continue;
+      const qTax = deriveQuotationTaxBreakdown(po.quotation, Array.isArray(po.items) ? (po.items as any[]) : []);
+      if (qTax.total <= 0) continue;
+
+      const curAmount = Number(po.amount || 0);
+      const curPpn = Number(po.ppn || 0);
+      const curPph = Number(po.pph || 0);
+      const curTotal = curAmount + curPpn;
+
+      const matchesQuotationTotal = Math.abs(curTotal - qTax.total) <= 2 || Math.abs(curAmount - qTax.total) <= 2;
+      const missingPpn = qTax.ppn > 0 && (curPpn === 0 || po.ppnMode !== qTax.ppnMode);
+      const wrongPph = qTax.pph > 0 && curPph !== qTax.pph;
+
+      if (matchesQuotationTotal && (missingPpn || wrongPph)) {
+        await this.prisma.main.clientPO
+          .update({
+            where: { id: po.id },
+            data: {
+              amount: qTax.dpp,
+              ppn: qTax.ppn,
+              ppnMode: qTax.ppnMode,
+              tipePpn: qTax.tipePpn,
+              pph: qTax.pph,
+              pphMode: qTax.pphMode,
+              tipePph: qTax.tipePph,
+              items: qTax.items as Prisma.InputJsonValue,
+            },
+          })
+          .catch(() => {});
+      }
+    }
+
+    // 2. Perbaiki InvoiceOut + Payment + JournalEntry (COA) yang dibuat dari SO/Penawaran namun kehilangan PPN / PPh / Diskon
+    const invoices = await this.prisma.main.invoiceOut.findMany({
+      where: { status: { not: "BATAL" }, isProforma: false },
+      include: {
+        quotation: true,
+        clientPo: { include: { quotation: true } },
+        payments: { orderBy: { id: "asc" } },
+      },
+    });
+
+    for (const inv of invoices) {
+      if (inv.type === "DP" || inv.isContinuation) continue;
+      const quote = inv.quotation ?? inv.clientPo?.quotation ?? null;
+      if (!quote) continue;
+
+      const qTax = deriveQuotationTaxBreakdown(quote, Array.isArray(inv.items) ? (inv.items as any[]) : []);
+      if (qTax.total <= 0) continue;
+
+      const invTotal = Number(inv.total || 0);
+      if (Math.abs(invTotal - qTax.total) > 2) continue;
+
+      const curPpn = Number(inv.ppn || 0);
+      const curPph = Number(inv.pph || 0);
+      const curDisc = Number(inv.discount || 0);
+      const needsInvUpdate =
+        (qTax.ppn > 0 && (curPpn === 0 || inv.ppnMode !== qTax.ppnMode || Number(inv.amount) !== qTax.dpp)) ||
+        (qTax.pph > 0 && curPph !== qTax.pph) ||
+        (qTax.discount > 0 && curDisc !== qTax.discount);
+
+      if (needsInvUpdate) {
+        await this.prisma.main.invoiceOut
+          .update({
+            where: { id: inv.id },
+            data: {
+              amount: qTax.dpp,
+              discount: qTax.discount,
+              ppn: qTax.ppn,
+              ppnMode: qTax.ppnMode,
+              tipePpn: qTax.tipePpn,
+              pph: qTax.pph,
+              pphMode: qTax.pphMode,
+              tipePph: qTax.tipePph,
+              total: qTax.total,
+              quotationId: inv.quotationId ?? quote.id,
+              items: this.normalizeInvoiceItems(qTax.items) as Prisma.InputJsonValue,
+            },
+          })
+          .catch(() => {});
+      }
+
+      // Perbaiki baris Jurnal Penerbitan Invoice (E1) langsung di tabel JournalLine agar COA akurat tanpa jurnal pembalik ganda
+      const expectedInvLines = PostingRules.buildInvoiceOutLines(
+        {
+          id: inv.id,
+          number: inv.number,
+          type: inv.type,
+          customerId: inv.customerId || 0,
+          projectId: inv.projectId,
+          dpp: qTax.dpp,
+          ppn: qTax.ppn,
+          total: qTax.total,
+          dpApplied: Number((inv as any).dpApplied || 0),
+          retentionPercent: Number((inv as any).retentionPercent || 0),
+          retentionAmount: Number((inv as any).retentionAmount || 0),
+          pph: qTax.pph,
+          items: this.revenueItems(qTax.items),
+        },
+        mappings,
+      );
+
+      const invEntry = await (this.prisma.main as any).journalEntry.findFirst({
+        where: { sourceType: "InvoiceOut", sourceId: inv.id, event: "issued", status: "POSTED" },
+        include: { lines: true },
+        orderBy: { version: "desc" },
+      });
+
+      if (invEntry && !PostingService.sameLines(invEntry.lines, expectedInvLines)) {
+        await this.prisma.main.$transaction(async (tx) => {
+          await (tx as any).journalLine.deleteMany({ where: { entryId: invEntry.id } });
+          await (tx as any).journalLine.createMany({
+            data: expectedInvLines.map((line, idx) => ({
+              entryId: invEntry.id,
+              lineNo: idx + 1,
+              accountCode: line.accountCode,
+              debit: line.debit,
+              credit: line.credit,
+              memo: line.memo ? String(line.memo).slice(0, 190) : invEntry.memo,
+              projectId: line.projectId ?? inv.projectId,
+              partyType: line.partyType ?? null,
+              partyId: line.partyId ?? null,
+            })),
+          });
+        });
+      } else if (!invEntry && inv.status !== "DRAFT") {
+        await this.postInvoiceJournalIfEligible(inv.id);
+      }
+
+      // 3. Perbaiki Payment & Jurnal Pelunasan (E3) bila pembayaran dicatat penuh (mis. 5.000.000) tanpa potongan PPh
+      if (qTax.pph > 0 && inv.payments.length === 1) {
+        const pm = inv.payments[0]!;
+        const pmAmount = Number(pm.amount || 0);
+        const refStr = String(pm.reference || "");
+        const hasPphTag = /\[PPh23:[\d.]+\]/.test(refStr);
+
+        if (Math.abs(pmAmount - qTax.total) <= 2) {
+          const updatedRef = hasPphTag
+            ? refStr.replace(/\[PPh23:[\d.]+\]/, `[PPh23:${qTax.pph}]`)
+            : `${refStr.trim()} [PPh23:${qTax.pph}]`.trim();
+
+          if (updatedRef !== refStr) {
+            await this.prisma.main.payment
+              .update({
+                where: { id: pm.id },
+                data: { reference: updatedRef },
+              })
+              .catch(() => {});
+          }
+
+          const cashReceived = Math.max(0, qTax.total - qTax.pph);
+          const chosenAccount = pm.accountCode || mappings.CASH_DEFAULT || "1000.02";
+          const expectedPayLines = PostingRules.buildCustomerPaymentLines(
+            {
+              id: pm.id,
+              sourceType: "INVOICE_OUT",
+              sourceId: inv.id,
+              amount: cashReceived,
+              accountCode: chosenAccount,
+              pph23Amount: qTax.pph,
+              partyType: "CUSTOMER",
+              partyId: inv.customerId ?? undefined,
+              projectId: inv.projectId,
+            },
+            mappings,
+          );
+
+          const payEntry = await (this.prisma.main as any).journalEntry.findFirst({
+            where: { sourceType: "Payment", sourceId: pm.id, event: "received", status: "POSTED" },
+            include: { lines: true },
+            orderBy: { version: "desc" },
+          });
+
+          if (payEntry && !PostingService.sameLines(payEntry.lines, expectedPayLines)) {
+            await this.prisma.main.$transaction(async (tx) => {
+              await (tx as any).journalLine.deleteMany({ where: { entryId: payEntry.id } });
+              await (tx as any).journalLine.createMany({
+                data: expectedPayLines.map((line, idx) => ({
+                  entryId: payEntry.id,
+                  lineNo: idx + 1,
+                  accountCode: line.accountCode,
+                  debit: line.debit,
+                  credit: line.credit,
+                  memo: line.memo ? String(line.memo).slice(0, 190) : payEntry.memo,
+                  projectId: line.projectId ?? inv.projectId,
+                  partyType: line.partyType ?? null,
+                  partyId: line.partyId ?? null,
+                })),
+              });
+            });
+          }
+        }
+      }
+    }
   }
 
   /** Invoice belum dibayar sama sekali yang lewat jatuh tempo -> OVERDUE, dan Finance/Bos diberi tahu sekali. */
@@ -196,6 +419,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     q: PageQuery & { status?: string; customerId?: number; projectId?: number; clientPoId?: number; from?: string; to?: string },
     user?: RequestUser,
   ) {
+    await this.ensureTaxDataRepaired();
     let salesScope: any = {};
     if (user && user.role === "SALES") {
       const [auditLogs, salesLeads] = await Promise.all([
@@ -489,6 +713,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
   }
 
   async get(id: number) {
+    await this.ensureTaxDataRepaired();
     const row = await this.prisma.main.invoiceOut.findUnique({
       where: { id },
       include: {
@@ -2506,10 +2731,25 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
 
   /** Klasifikasi item invoice untuk pemisahan pendapatan barang vs jasa. */
   private revenueItems(rawItems: any[]) {
-    return rawItems.map((it: any) => ({
-      type: /jasa|instalasi|service|pasang/i.test(it.name || it.item || it.productName || "") ? "SERVICE" : "PRODUCT",
-      amount: Number(it.subtotal || it.amount || (Number(it.harga || it.price || 0) * Number(it.qty || 1)) || 0),
-    }));
+    return rawItems.map((it: any) => {
+      const name = String(it.name || it.item || it.productName || "").trim();
+      const unit = String(it.unit || it.satuan || "").trim().toLowerCase();
+      const isService =
+        it.kind === "SERVICE" ||
+        it.type === "SERVICE" ||
+        it.itemType === "JASA" ||
+        it.tipe === "JASA" ||
+        /jasa|instalasi|service|pasang|delivery|ongkir|ongkos\s*kirim|pengiriman|setting|konfigurasi|maintenance/i.test(name) ||
+        (["paket", "ls", "lot", "titik", "jam", "hari", "jasa"].includes(unit) && !it.productId && !it.hasSerial);
+      const gross = (Number(it.harga ?? it.price ?? 0) || 0) * (Number(it.qty) || 1);
+      const pct = Number(it.diskonPct) || 0;
+      const lineDisc = pct > 0 ? Math.round((gross * Math.min(100, pct)) / 100) : Math.max(0, Number(it.diskon) || 0);
+      const net = Math.max(0, gross - Math.min(gross, lineDisc));
+      return {
+        type: isService ? "SERVICE" : "PRODUCT",
+        amount: net || Number(it.subtotal || it.amount || 0),
+      };
+    });
   }
 
   /**

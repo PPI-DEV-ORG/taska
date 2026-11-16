@@ -42,11 +42,14 @@ import {
   PPH_MODE_OPTIONS,
   calcItemPph,
   calcQuotationFinancials,
-  distributeDiscountToPrices,
+  getInitialPpnMode,
   pphModeToTipe,
+  ppnModeToTipe,
+  recomputeHeaderDiscount,
   sumItemGross,
   type PphMode,
 } from "@/modules/quotation/lib";
+import { adaptRow } from "@/services/adapters";
 import { useKasBankAccounts } from "@/lib/use-kas-bank";
 import type { Row } from "@/constants/modules";
 
@@ -68,6 +71,8 @@ export interface SoItemEntry {
   /** SN yang sudah dipesan di penawaran (dibawa ke SO). */
   serialNumbers?: string[];
   serialUnitIds?: number[];
+  diskon?: number;
+  diskonPct?: number;
   /** Berasal dari penawaran -> harga dikunci. */
   fromQuotation?: boolean;
 }
@@ -104,13 +109,12 @@ const PPN_LABEL: Record<PpnMode, string> = {
 function itemsFromQuotation(q: Row): { items: SoItemEntry[]; discount: number } {
   const raw: any[] = Array.isArray(q.items) ? q.items : [];
   const discount = Math.min(sumItemGross(raw), Math.max(0, Number(q.discount ?? q.disc ?? 0)));
-  // Harga net per baris: diskon item + diskon tambahan sudah dibagi ke harga (rumus bersama).
-  const netPrices = distributeDiscountToPrices(raw, discount).map((it) => it.price);
 
   const items: SoItemEntry[] = raw.map((it, idx) => {
     const isJasa = it.kind === "SERVICE" || /^\[JASA\]/i.test(String(it.item || ""));
     const pphMode: PphMode = (it.pphMode as PphMode) || "none";
     const qty = Number(it.qty) || 1;
+    const origPrice = Number(it.harga ?? it.price ?? 0);
     return {
       id: `q-${q.id}-${idx}`,
       productId: it.productId != null ? String(it.productId) : undefined,
@@ -120,13 +124,15 @@ function itemsFromQuotation(q: Row): { items: SoItemEntry[]; discount: number } 
       hasSerial: Boolean(it.hasSerial),
       qty,
       maxQty: qty,
-      price: netPrices[idx] ?? 0,
+      price: origPrice,
       itemType: isJasa ? "JASA" : "BARANG",
       isNonInventory: isJasa || it.productId == null,
       pphMode,
       tipePph: it.tipePph || pphModeToTipe(pphMode),
       serialNumbers: Array.isArray(it.serialNumbers) ? it.serialNumbers : undefined,
       serialUnitIds: Array.isArray(it.serialUnitIds) ? it.serialUnitIds : undefined,
+      diskon: Number(it.diskon) > 0 ? Number(it.diskon) : undefined,
+      diskonPct: Number(it.diskonPct) > 0 ? Number(it.diskonPct) : undefined,
       fromQuotation: true,
     };
   });
@@ -261,14 +267,17 @@ function CreateSalesOrderForm({
         let full: Row = q;
         if (!Array.isArray(q.items) || q.items.length === 0) {
           const res = await api<any>("GET", `/quotations/${q.id}`).catch(() => null);
-          if (res && Array.isArray(res.items)) full = { ...q, items: res.items, discount: res.discount ?? q.discount };
+          if (res) {
+            const adapted = adaptRow("quotations", res);
+            full = { ...q, ...adapted, items: Array.isArray(res.items) ? res.items : q.items };
+          }
         }
         const { items: qItems, discount } = itemsFromQuotation(full);
         setQuotationSource(full);
         setQuotationItems(qItems);
         setItems(qItems);
         setQuotationDiscount(discount);
-        setPpnMode((q.ppnMode as PpnMode) || "exclude");
+        setPpnMode(getInitialPpnMode(full));
         setCustomerId(q.customerId ? String(q.customerId) : "");
         setCustomerName(q.customer && q.customer !== "-" ? String(q.customer) : "");
         const proj = (data.projects ?? []).find((p: Row) => String(p.quotationId) === String(q.id));
@@ -402,21 +411,32 @@ function CreateSalesOrderForm({
 
   // ── Hitungan: rumus yang SAMA dengan penawaran (calcQuotationFinancials) ──
   // Selama item belum diubah, angka dihitung dari isi penawaran asli -> persis sama dengan penawaran.
+  const effectiveHeaderDisc =
+    source === "quotation" && quotationSource
+      ? itemsChanged
+        ? recomputeHeaderDiscount(
+            quotationDiscount,
+            quotationItems.map((it) => ({ qty: it.qty, harga: it.price, diskon: it.diskon, diskonPct: it.diskonPct })),
+            items.map((it) => ({ qty: it.qty, harga: it.price, diskon: it.diskon, diskonPct: it.diskonPct })),
+          )
+        : Number(quotationSource.discount ?? quotationSource.disc ?? quotationDiscount ?? 0)
+      : recomputeHeaderDiscount(0, [], items.map((it) => ({ qty: it.qty, harga: it.price, diskon: it.diskon, diskonPct: it.diskonPct })));
+
   const fin =
     source === "quotation" && quotationSource && !itemsChanged
       ? calcQuotationFinancials(
-          Number(quotationSource.total ?? quotationSource.nilai ?? 0),
-          Number(quotationSource.discount ?? quotationSource.disc ?? 0),
+          Number(quotationSource.total ?? quotationSource.nilai ?? sumItemGross(items)),
+          effectiveHeaderDisc,
           ppnMode,
           "none",
           Array.isArray(quotationSource.items) ? quotationSource.items : [],
         )
       : calcQuotationFinancials(
           items.reduce((s, it) => s + it.qty * it.price, 0),
-          0,
+          effectiveHeaderDisc,
           ppnMode,
           "none",
-          items.map((it) => ({ qty: it.qty, harga: it.price, pphMode: it.pphMode })),
+          items.map((it) => ({ qty: it.qty, harga: it.price, pphMode: it.pphMode, diskon: it.diskon, diskonPct: it.diskonPct })),
         );
   const dpp = fin.dpp;
   const ppnAmount = fin.ppn;
@@ -465,6 +485,8 @@ function CreateSalesOrderForm({
         pph: calcItemPph(it),
         serialNumbers: it.serialNumbers,
         serialUnitIds: it.serialUnitIds,
+        ...(Number(it.diskon) > 0 ? { diskon: Number(it.diskon) } : {}),
+        ...(Number(it.diskonPct) > 0 ? { diskonPct: Number(it.diskonPct) } : {}),
       }));
       const firstPph = lines.find((it) => it.pphMode && it.pphMode !== "none");
       const number = (manualNumberOpen && nomorSo.trim()) || suggestedSoNumber || undefined;
@@ -481,14 +503,15 @@ function CreateSalesOrderForm({
         tanggal,
         eta,
         nilai: dpp,
+        amount: dpp,
+        discount: fin.discNum,
         ppn: ppnAmount,
-        tipePpn: ppnMode === "none" ? "Non PPN" : ppnMode === "include" ? "PPN Included (11%)" : "Exclude PPN (11%)",
+        tipePpn: ppnModeToTipe(ppnMode),
         ppnMode,
         pph: totalPph,
         tipePph: firstPph?.tipePph || "Tanpa PPh",
         pphMode: firstPph?.pphMode || "none",
         total: grandTotal,
-        amount: grandTotal,
         catatan: catatan.trim() || undefined,
         notes: catatan.trim() || undefined,
         items: itemsPayload,

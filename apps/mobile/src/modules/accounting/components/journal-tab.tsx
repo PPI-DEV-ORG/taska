@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/taska/basics";
 import { DatePicker } from "@/components/taska/dialogs";
-import { CheckCircle2, FileSpreadsheet, Search, ChevronLeft, ChevronRight, Trash2, RefreshCw, Eye } from "lucide-react-native";
+import { CheckCircle2, FileSpreadsheet, Search, ChevronLeft, ChevronRight, Trash2, RefreshCw, Eye, ArrowDownWideNarrow, ArrowUpNarrowWide } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { JournalLine } from "@/lib/accounting";
@@ -19,6 +19,8 @@ interface JournalTabProps {
   setJournalQuery: (v: string) => void;
   journalDate?: string;
   setJournalDate?: (v: string) => void;
+  journalSortOrder?: "newest" | "oldest";
+  setJournalSortOrder?: (v: "newest" | "oldest") => void;
   journalPage: number;
   setJournalPage: React.Dispatch<React.SetStateAction<number>>;
   journalSourceFilter: string;
@@ -42,6 +44,8 @@ export function JournalTab({
   setJournalQuery,
   journalDate,
   setJournalDate,
+  journalSortOrder = "newest",
+  setJournalSortOrder,
   setJournalPage,
   journalSourceFilter,
   setJournalSourceFilter,
@@ -112,6 +116,46 @@ export function JournalTab({
                   clearable
                   className="h-10 min-w-[160px] max-w-[220px] rounded-xl bg-card border-border/80 shadow-sm px-3"
                 />
+              </View>
+            ) : null}
+            {setJournalSortOrder ? (
+              <View className="flex-row items-center bg-card border border-border/80 rounded-xl p-1 h-10 shadow-sm gap-1">
+                <Pressable
+                  onPress={() => {
+                    setJournalSortOrder("newest");
+                    setJournalPage(1);
+                  }}
+                  className={`flex-row items-center gap-1.5 px-2.5 h-8 rounded-lg ${
+                    journalSortOrder === "newest" ? "bg-primary" : "hover:bg-panel"
+                  }`}
+                >
+                  <ArrowDownWideNarrow size={13} color={journalSortOrder === "newest" ? "#FFFFFF" : colors.textSecondary} />
+                  <Text
+                    className={`text-xs font-semibold ${
+                      journalSortOrder === "newest" ? "text-white" : "text-muted-foreground"
+                    }`}
+                  >
+                    Terbaru
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setJournalSortOrder("oldest");
+                    setJournalPage(1);
+                  }}
+                  className={`flex-row items-center gap-1.5 px-2.5 h-8 rounded-lg ${
+                    journalSortOrder === "oldest" ? "bg-primary" : "hover:bg-panel"
+                  }`}
+                >
+                  <ArrowUpNarrowWide size={13} color={journalSortOrder === "oldest" ? "#FFFFFF" : colors.textSecondary} />
+                  <Text
+                    className={`text-xs font-semibold ${
+                      journalSortOrder === "oldest" ? "text-white" : "text-muted-foreground"
+                    }`}
+                  >
+                    Terlama
+                  </Text>
+                </Pressable>
               </View>
             ) : null}
           </View>

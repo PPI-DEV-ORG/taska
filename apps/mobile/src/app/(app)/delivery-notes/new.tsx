@@ -40,10 +40,40 @@ function playScanBeep(ok: boolean) {
 function isServiceItem(it: any): boolean {
   if (!it) return false;
   if (it.itemType === "JASA" || it.kind === "SERVICE" || it.isJasa) return true;
+  if (it.product?.type === "JASA" || it.product?.jenisItem === "Jasa") return true;
   if (it.isNonInventory && !it.productId) return true;
-  const name = String(it.customName || it.item || it.name || it.nama || it.product?.name || it.note || "").trim();
-  if (/^\[(JASA)\]/i.test(name)) return true;
+  if (it.pphMode && it.pphMode !== "none" && !it.hasSerial && !it.berSN) return true;
+  const name = String(it.note || it.customName || it.item || it.name || it.nama || it.product?.name || "").trim();
+  if (
+    /^(\[jasa\]|jasa\b|instalasi\b|pemasangan\b|delivery\b|ongkir\b|ongkos\s*kirim\b|biaya\s*kirim\b|pengiriman\b|setting\b|konfigurasi\b|maintenance\b|service\b|subkon\b|akomodasi\b|transport\b)/i.test(
+      name,
+    )
+  ) {
+    return true;
+  }
+  const unit = String(it.customUnit || it.satuan || it.unit || it.product?.unit || "").trim().toLowerCase();
+  if (["jasa", "lot", "pekerjaan", "layanan", "sesi", "kunjungan"].includes(unit) && !it.hasSerial && !it.berSN) {
+    return true;
+  }
   return false;
+}
+
+function isUnverifiedAutoSoItems(dn: any): boolean {
+  if (!dn) return false;
+  const st = String(dn.status || "").toUpperCase();
+  const isPending = st === "PENDING" || st === "MENUNGGU PENGIRIMAN";
+  if (!isPending) return false;
+  const hasLinkedDoc = Boolean(dn.clientPoId || dn.soId || dn.soNumber || dn.invoiceId);
+  if (!hasLinkedDoc) return false;
+  const rpt = String(dn.reportText || dn.barang || "");
+  if (/menunggu verifikasi barang/i.test(rpt)) return true;
+  const rawItems = Array.isArray(dn.items) ? dn.items : [];
+  if (rawItems.length === 0) return false;
+  const anySerialFilled = rawItems.some((it: any) => {
+    const rawSns = it.serialNumbers || it.serials;
+    return Array.isArray(rawSns) ? rawSns.length > 0 : Boolean(rawSns && String(rawSns).trim());
+  });
+  return !anySerialFilled;
 }
 
 export default function NewDeliveryNoteScreen() {
@@ -125,6 +155,10 @@ export default function NewDeliveryNoteScreen() {
         (Array.isArray(initialMatchInvoice?.items) && initialMatchInvoice.items.filter((it: any) => !isServiceItem(it)).length > 0)
     );
   const [items, setItems] = React.useState<QuotationItem[]>(() => {
+    // Jika Surat Jalan masih berstatus Menunggu Pengiriman dari SO dan belum diverifikasi/diisi Gudang, biarkan kosong
+    if (isUnverifiedAutoSoItems(initialExistingDn)) {
+      return [];
+    }
     // Jika edit Surat Jalan yang SUDAH memiliki scan/pilihan unit fisik, muat unit fisik yang sudah ter-scan
     if (Array.isArray(initialExistingDn?.items) && initialExistingDn.items.length > 0) {
       const physicalExisting = initialExistingDn.items.filter((it: any) => !isServiceItem(it));
@@ -168,7 +202,9 @@ export default function NewDeliveryNoteScreen() {
         if (adapted.alasan && adapted.alasan !== "-") setAlasan(adapted.alasan);
         if (adapted.project && adapted.project !== "-") setSelectedProject(adapted.project);
         if (adapted.withGoods !== undefined) setHasGoods(Boolean(adapted.withGoods));
-        if (Array.isArray(adapted.items) && adapted.items.length > 0) {
+        if (isUnverifiedAutoSoItems({ ...raw, ...adapted })) {
+          setItems([]);
+        } else if (Array.isArray(adapted.items) && adapted.items.length > 0) {
           const mapped = adapted.items
             .filter((it: any) => !isServiceItem(it))
             .map((it: any, idx: number) => {

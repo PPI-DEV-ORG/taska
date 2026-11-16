@@ -12,6 +12,13 @@ import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import type { Row } from "@/constants/modules";
+import {
+  calcQuotationFinancials,
+  getInitialPphMode,
+  getInitialPpnMode,
+  pphModeToTipe,
+  ppnModeToTipe,
+} from "@/modules/quotation/lib";
 
 interface RecordClientPoDialogProps {
   open: boolean;
@@ -109,6 +116,19 @@ function RecordClientPoForm({
         uploadedFileId = await fileHandleRef.current.flush();
       }
 
+      const qPpnMode = activeQuotation ? getInitialPpnMode(activeQuotation) : "none";
+      const qPphMode = activeQuotation ? getInitialPphMode(activeQuotation) : "none";
+      const qFin = activeQuotation
+        ? calcQuotationFinancials(
+            activeQuotation.nilai ?? activeQuotation.total ?? 0,
+            activeQuotation.disc ?? activeQuotation.discount ?? 0,
+            qPpnMode,
+            qPphMode,
+            linkedItems,
+          )
+        : null;
+      const matchesQuoTotal = qFin && Math.abs(cleanAmount - qFin.totalAfterDisc) <= 2;
+
       const created = await addRow("po-client", {
         nomor: poNumber.trim() || undefined,
         nomorPoClient: poNumber.trim() || undefined,
@@ -117,7 +137,20 @@ function RecordClientPoForm({
         customerId: project.customerId ? Number(project.customerId) : activeQuotation?.customerId ? Number(activeQuotation.customerId) : undefined,
         penawaran: quotationNumber,
         quotationId: activeQuotation?.id ? Number(activeQuotation.id) : project.quotationId ? Number(project.quotationId) : undefined,
-        nilai: cleanAmount,
+        nilai: matchesQuoTotal && qFin ? qFin.dpp : cleanAmount,
+        amount: matchesQuoTotal && qFin ? qFin.dpp : cleanAmount,
+        ...(matchesQuoTotal && qFin
+          ? {
+              discount: qFin.discNum,
+              ppn: qFin.ppn,
+              ppnMode: qPpnMode,
+              tipePpn: ppnModeToTipe(qPpnMode),
+              pph: qFin.pph,
+              pphMode: qPphMode,
+              tipePph: activeQuotation?.tipePph || pphModeToTipe(qPphMode),
+              total: qFin.totalAfterDisc,
+            }
+          : {}),
         tanggal: date,
         catatan: notes ? `[project:${project.id}] ${notes}` : `[project:${project.id}] Catat PO Customer untuk ${project.nama}`,
         projectId: Number(project.id),
