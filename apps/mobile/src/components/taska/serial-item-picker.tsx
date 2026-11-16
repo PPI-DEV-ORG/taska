@@ -31,7 +31,7 @@ import { StatusBadge } from "@/components/taska/status-badge";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
-import { formatThousands } from "@/lib/format";
+import { formatThousands, rupiah } from "@/lib/format";
 import { pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import type { QuotationItem } from "@/modules/quotation/types";
 
@@ -97,6 +97,8 @@ export function SerialItemPickerModal({
   const [goodsPrice, setGoodsPrice] = React.useState("");
   const [customItemLabel, setCustomItemLabel] = React.useState("");
   const [goodsPphMode, setGoodsPphMode] = React.useState<PphMode>("none");
+  const [goodsDiscType, setGoodsDiscType] = React.useState<"percent" | "nominal">("percent");
+  const [goodsDiscInput, setGoodsDiscInput] = React.useState("");
 
   const allowedInvSet = React.useMemo(() => {
     const set = new Set<string>();
@@ -119,6 +121,8 @@ export function SerialItemPickerModal({
   const [serviceUnit, setServiceUnit] = React.useState("Lot");
   const [servicePrice, setServicePrice] = React.useState("");
   const [servicePphMode, setServicePphMode] = React.useState<PphMode>("none");
+  const [serviceDiscType, setServiceDiscType] = React.useState<"percent" | "nominal">("percent");
+  const [serviceDiscInput, setServiceDiscInput] = React.useState("");
 
   // Quick batch register modal inside picker
   const [batchRegisterOpen, setBatchRegisterOpen] = React.useState(false);
@@ -137,6 +141,8 @@ export function SerialItemPickerModal({
   const handleClose = () => {
     setGoodsPphMode("none");
     setServicePphMode("none");
+    setGoodsDiscInput("");
+    setServiceDiscInput("");
     onClose();
   };
 
@@ -569,6 +575,15 @@ export function SerialItemPickerModal({
       }
       const qty = Math.max(1, Number(serviceQty) || 1);
       const harga = Math.max(0, Number(String(servicePrice).replace(/\D/g, "")) || 0);
+      const srvGross = qty * harga;
+      const srvDiscPct =
+        serviceDiscType === "percent"
+          ? Math.min(100, Math.max(0, parseFloat(serviceDiscInput.replace(",", ".")) || 0))
+          : 0;
+      const srvDiscAmt =
+        serviceDiscType === "percent"
+          ? Math.round((srvGross * srvDiscPct) / 100)
+          : Math.min(srvGross, Number(String(serviceDiscInput).replace(/\D/g, "")) || 0);
       onAddItems([
         {
           id: `srv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -580,12 +595,15 @@ export function SerialItemPickerModal({
           hasSerial: false,
           pphMode: servicePphMode,
           tipePph: pphModeToTipe(servicePphMode),
+          ...(srvDiscAmt > 0 ? { diskon: srvDiscAmt } : {}),
+          ...(srvDiscPct > 0 ? { diskonPct: srvDiscPct } : {}),
         },
       ]);
       setServiceName("");
       setServiceQty("1");
       setServicePrice("");
       setServicePphMode("none");
+      setServiceDiscInput("");
       onClose();
       return;
     }
@@ -600,10 +618,20 @@ export function SerialItemPickerModal({
     const baseName = customItemLabel.trim() || selectedProduct.nama;
     const isSerialProduct = !!selectedProduct.berSN;
     const isSerialSelectionActive = mode === "serial" && isSerialProduct;
+    const gdsDiscPct =
+      goodsDiscType === "percent"
+        ? Math.min(100, Math.max(0, parseFloat(goodsDiscInput.replace(",", ".")) || 0))
+        : 0;
+    const gdsDiscRawNom = Number(String(goodsDiscInput).replace(/\D/g, "")) || 0;
 
     if (isSerialSelectionActive) {
       if (splitMode === "QTY_ONLY") {
         const qty = Math.max(1, Number(goodsQty) || 1);
+        const gross = qty * harga;
+        const discAmt =
+          goodsDiscType === "percent"
+            ? Math.round((gross * gdsDiscPct) / 100)
+            : Math.min(gross, gdsDiscRawNom);
         onAddItems([
           {
             id: `gds-${Date.now()}-${selectedProduct.id}`,
@@ -619,6 +647,8 @@ export function SerialItemPickerModal({
             serialNumbers: [],
             pphMode: goodsPphMode,
             tipePph: pphModeToTipe(goodsPphMode),
+            ...(discAmt > 0 ? { diskon: discAmt } : {}),
+            ...(gdsDiscPct > 0 ? { diskonPct: gdsDiscPct } : {}),
           },
         ]);
         setGoodsQty("1");
@@ -643,6 +673,10 @@ export function SerialItemPickerModal({
       }
 
       if (splitMode === "PER_SN") {
+        const perUnitDiscAmt =
+          goodsDiscType === "percent"
+            ? Math.round((harga * gdsDiscPct) / 100)
+            : Math.min(harga, Math.round(gdsDiscRawNom / Math.max(1, chosenRows.length)));
         const newItems: QuotationItem[] = chosenRows.map((sRow, idx) => ({
           id: `gds-${Date.now()}-${idx}-${sRow.id}`,
           item: `${baseName} (SN: ${sRow.sn})`,
@@ -657,11 +691,18 @@ export function SerialItemPickerModal({
           serialNumbers: [String(sRow.sn)],
           pphMode: goodsPphMode,
           tipePph: pphModeToTipe(goodsPphMode),
+          ...(perUnitDiscAmt > 0 ? { diskon: perUnitDiscAmt } : {}),
+          ...(gdsDiscPct > 0 ? { diskonPct: gdsDiscPct } : {}),
         }));
         onAddItems(newItems);
       } else {
         const sns = chosenRows.map((s) => String(s.sn));
         const sIds = chosenRows.map((s) => Number(s.id));
+        const gross = sns.length * harga;
+        const discAmt =
+          goodsDiscType === "percent"
+            ? Math.round((gross * gdsDiscPct) / 100)
+            : Math.min(gross, gdsDiscRawNom);
         onAddItems([
           {
             id: `gds-${Date.now()}-${selectedProduct.id}`,
@@ -677,11 +718,18 @@ export function SerialItemPickerModal({
             serialNumbers: sns,
             pphMode: goodsPphMode,
             tipePph: pphModeToTipe(goodsPphMode),
+            ...(discAmt > 0 ? { diskon: discAmt } : {}),
+            ...(gdsDiscPct > 0 ? { diskonPct: gdsDiscPct } : {}),
           },
         ]);
       }
     } else {
       const qty = Math.max(1, Number(goodsQty) || 1);
+      const gross = qty * harga;
+      const discAmt =
+        goodsDiscType === "percent"
+          ? Math.round((gross * gdsDiscPct) / 100)
+          : Math.min(gross, gdsDiscRawNom);
       onAddItems([
         {
           id: `gds-${Date.now()}-${selectedProduct.id}`,
@@ -695,6 +743,8 @@ export function SerialItemPickerModal({
           hasSerial: isSerialProduct,
           pphMode: goodsPphMode,
           tipePph: pphModeToTipe(goodsPphMode),
+          ...(discAmt > 0 ? { diskon: discAmt } : {}),
+          ...(gdsDiscPct > 0 ? { diskonPct: gdsDiscPct } : {}),
         },
       ]);
     }
@@ -814,6 +864,47 @@ export function SerialItemPickerModal({
                       />
                     </FormField>
                   </View>
+                </View>
+
+                <View className="gap-1.5 pt-1">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-xs text-muted-foreground font-medium">Diskon Item Ini (Opsional)</Text>
+                    <View className="flex-row rounded-lg bg-panel p-0.5 border border-border">
+                      {([
+                        { id: "percent", label: "Persen (%)" },
+                        { id: "nominal", label: "Nominal (Rp)" },
+                      ] as const).map((opt) => {
+                        const active = serviceDiscType === opt.id;
+                        const srvGross = (Math.max(1, Number(serviceQty) || 1)) * (Number(String(servicePrice).replace(/\D/g, "")) || 0);
+                        const srvPct = Math.min(100, Math.max(0, parseFloat(serviceDiscInput.replace(",", ".")) || 0));
+                        const srvAmt = serviceDiscType === "percent" ? Math.round((srvGross * srvPct) / 100) : Math.min(srvGross, Number(String(serviceDiscInput).replace(/\D/g, "")) || 0);
+                        return (
+                          <Pressable
+                            key={opt.id}
+                            onPress={() => {
+                              if (active) return;
+                              if (opt.id === "nominal") setServiceDiscInput(srvAmt > 0 ? formatThousands(srvAmt) : "");
+                              else setServiceDiscInput(srvGross > 0 && srvAmt > 0 ? String(Math.round((srvAmt / srvGross) * 1000) / 10) : "");
+                              setServiceDiscType(opt.id);
+                            }}
+                            className={`h-6 px-2.5 rounded-md items-center justify-center ${active ? "bg-primary" : ""}`}
+                          >
+                            <Text className={`text-xs ${active ? "text-primary-foreground font-semibold" : "text-muted-foreground"}`}>
+                              {opt.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                  <Input
+                    value={serviceDiscInput}
+                    onChangeText={(v) =>
+                      setServiceDiscInput(serviceDiscType === "percent" ? v.replace(/[^\d.,]/g, "") : formatThousands(v))
+                    }
+                    keyboardType="numeric"
+                    placeholder={serviceDiscType === "percent" ? "Contoh: 10" : "Contoh: 250.000"}
+                  />
                 </View>
 
                 <View className="gap-1.5 pt-1">
@@ -996,6 +1087,64 @@ export function SerialItemPickerModal({
                           />
                         </FormField>
                       </View>
+                    </View>
+
+                    <View className="gap-1.5">
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-xs text-muted-foreground font-medium">Diskon Item Ini (Opsional)</Text>
+                        <View className="flex-row rounded-lg bg-panel p-0.5 border border-border">
+                          {([
+                            { id: "percent", label: "Persen (%)" },
+                            { id: "nominal", label: "Nominal (Rp)" },
+                          ] as const).map((opt) => {
+                            const active = goodsDiscType === opt.id;
+                            const gdsQtyNum = Math.max(1, Number(goodsQty) || 1);
+                            const gdsPriceNum = Number(String(goodsPrice).replace(/\D/g, "")) || 0;
+                            const gdsGross = gdsQtyNum * gdsPriceNum;
+                            const gdsPct = Math.min(100, Math.max(0, parseFloat(goodsDiscInput.replace(",", ".")) || 0));
+                            const gdsAmt = goodsDiscType === "percent" ? Math.round((gdsGross * gdsPct) / 100) : Math.min(gdsGross, Number(String(goodsDiscInput).replace(/\D/g, "")) || 0);
+                            return (
+                              <Pressable
+                                key={opt.id}
+                                onPress={() => {
+                                  if (active) return;
+                                  if (opt.id === "nominal") setGoodsDiscInput(gdsAmt > 0 ? formatThousands(gdsAmt) : "");
+                                  else setGoodsDiscInput(gdsGross > 0 && gdsAmt > 0 ? String(Math.round((gdsAmt / gdsGross) * 1000) / 10) : "");
+                                  setGoodsDiscType(opt.id);
+                                }}
+                                className={`h-6 px-2.5 rounded-md items-center justify-center ${active ? "bg-primary" : ""}`}
+                              >
+                                <Text className={`text-xs ${active ? "text-primary-foreground font-semibold" : "text-muted-foreground"}`}>
+                                  {opt.label}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </View>
+                      <Input
+                        value={goodsDiscInput}
+                        onChangeText={(v) =>
+                          setGoodsDiscInput(goodsDiscType === "percent" ? v.replace(/[^\d.,]/g, "") : formatThousands(v))
+                        }
+                        keyboardType="numeric"
+                        placeholder={goodsDiscType === "percent" ? "Contoh: 10" : "Contoh: 250.000"}
+                      />
+                      {(() => {
+                        const gdsQtyNum = Math.max(1, Number(goodsQty) || 1);
+                        const gdsPriceNum = Number(String(goodsPrice).replace(/\D/g, "")) || 0;
+                        const gdsGross = gdsQtyNum * gdsPriceNum;
+                        const gdsPct = Math.min(100, Math.max(0, parseFloat(goodsDiscInput.replace(",", ".")) || 0));
+                        const gdsAmt = goodsDiscType === "percent" ? Math.round((gdsGross * gdsPct) / 100) : Math.min(gdsGross, Number(String(goodsDiscInput).replace(/\D/g, "")) || 0);
+                        if (gdsAmt <= 0) return null;
+                        return (
+                          <Text className="text-[11px] text-muted-foreground">
+                            {goodsDiscType === "percent"
+                              ? `Potongan ${rupiah(gdsAmt)} untuk ${gdsQtyNum} ${goodsUnit}`
+                              : `Setara ${gdsGross > 0 ? Math.round((gdsAmt / gdsGross) * 1000) / 10 : 0}% dari nilai baris`}
+                          </Text>
+                        );
+                      })()}
                     </View>
 
                     <View className="gap-1.5">
