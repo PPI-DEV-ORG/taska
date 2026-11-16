@@ -1224,7 +1224,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
       </Dialog>
 
       <Dialog open={invOpen} onOpenChange={setInvOpen}>
-        <DialogContent className="max-w-md max-h-[92vh] p-0 overflow-hidden">
+        <DialogContent className="w-[94vw] max-w-[calc(100%-1.5rem)] sm:w-[640px] md:w-[760px] lg:w-[880px] max-h-[92vh] p-0 overflow-hidden">
           <DialogHeader className="px-4 pt-4 pb-3 border-b border-border/60">
             <DialogTitle>Catat Tagihan Supplier</DialogTitle>
             <Text className="text-xs text-muted-foreground mt-0.5">

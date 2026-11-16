@@ -7,6 +7,7 @@ import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { SearchableSelect } from "@/components/taska/dialogs";
 import { Panel, FormField } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
@@ -17,7 +18,8 @@ import { Line } from "@/modules/shared/line";
 
 export function ReceivingExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { addRow, patchRow, refreshModule, toast } = useApp();
+  const { addRow, patchRow, refreshModule, toast, data } = useApp();
+  const warehouses = React.useMemo(() => (data.warehouses ?? []) as any[], [data.warehouses]);
   const [issueOpen, setIssueOpen] = React.useState(false);
   const [issueType, setIssueType] = React.useState<"Rusak Fisik" | "Cacat Fungsi" | "Salah Tipe" | "Kurang Kuantitas">("Rusak Fisik");
   const [issueItem, setIssueItem] = React.useState<string>(row.item ? (String(row.item).split(",")[0] ?? "") : "");
@@ -30,6 +32,18 @@ export function ReceivingExtras({ row }: { row: Row }) {
   const [processOpen, setProcessOpen] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [processNotes, setProcessNotes] = React.useState(row.conditionNote ? String(row.conditionNote) : "");
+  const [receiveWarehouseId, setReceiveWarehouseId] = React.useState<string>(() => {
+    if (row.warehouseId) return String(row.warehouseId);
+    const byName = warehouses.find((w) => String(w.nama ?? "") === String(row.warehouse ?? ""));
+    if (byName?.id) return String(byName.id);
+    return "";
+  });
+  // Jika data gudang baru termuat setelah modal dirender, tetap pilih otomatis saat hanya ada satu gudang.
+  const effectiveWarehouseId =
+    receiveWarehouseId || (warehouses.length === 1 ? String(warehouses[0]?.id ?? "") : "");
+  const selectedWarehouseName =
+    warehouses.find((w) => String(w.id) === effectiveWarehouseId)?.nama ?? "";
+  const isProjectReceiving = !!row.projectId;
   const receiveDoFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const receivePhotoFileHandle = React.useRef<FileUploaderHandle | null>(null);
 
@@ -119,6 +133,17 @@ export function ReceivingExtras({ row }: { row: Row }) {
   async function handleConfirmReceive() {
     setIsSubmitting(true);
     try {
+      if (!isProjectReceiving && !effectiveWarehouseId) {
+        toast(
+          warehouses.length === 0
+            ? "Belum ada gudang aktif. Tambahkan gudang dulu di Master Data > Gudang, lalu ulangi penerimaan."
+            : "Pilih gudang penerima terlebih dahulu",
+          "danger",
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       // Validasi SN jika ada produk ber-SN: jumlah SN yang dimasukkan harus sama persis dengan kuantitas (qty)
       for (const item of receiveItems) {
         if (item.hasSerial) {
@@ -167,6 +192,7 @@ export function ReceivingExtras({ row }: { row: Row }) {
 
       const ok = await patchRow("receiving", row.id, {
         status: "DITERIMA",
+        ...(effectiveWarehouseId ? { warehouseId: Number(effectiveWarehouseId) } : {}),
         conditionNote: processNotes || row.conditionNote,
         items: payloadItems,
         ...(effectiveDoFileId ? { fileId: effectiveDoFileId, receiptFileId: effectiveDoFileId } : {}),
@@ -359,6 +385,28 @@ export function ReceivingExtras({ row }: { row: Row }) {
                 <Text className="text-xs text-primary font-medium">Ref Request: {row.requestNumber}</Text>
               )}
             </View>
+
+            <FormField
+              label={isProjectReceiving ? "Gudang Penerima (opsional)" : "Gudang Penerima"}
+              required={!isProjectReceiving}
+              hint={
+                isProjectReceiving
+                  ? "Penerimaan proyek bisa langsung dibebankan ke proyek. Pilih gudang bila barang fisik tetap disimpan di gudang."
+                  : warehouses.length === 0
+                    ? "Belum ada gudang. Tambahkan dulu di Master Data > Gudang."
+                    : undefined
+              }
+            >
+              <SearchableSelect
+                value={selectedWarehouseName}
+                onChange={(name) => {
+                  const wh = warehouses.find((w) => String(w.nama ?? "") === name);
+                  setReceiveWarehouseId(wh?.id ? String(wh.id) : "");
+                }}
+                options={warehouses.map((w) => String(w.nama ?? ""))}
+                placeholder={warehouses.length === 0 ? "Belum ada gudang" : "Pilih gudang penerima..."}
+              />
+            </FormField>
 
             <View className="gap-2.5">
               <Text className="text-xs font-bold text-foreground">Daftar Barang yang Diterima:</Text>
