@@ -1,4 +1,4 @@
-import { netUnitCost, receivingPpnInfo, receivingUnitCost } from "../accounting/purchase-vat.js";
+import { netUnitCost, poItemNetUnit, receivingPpnInfo, receivingUnitCost } from "../accounting/purchase-vat.js";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -847,7 +847,7 @@ export class ReceivingsService {
 
         const poItem = receiving.supplierPo?.items?.find((p) => p.productId === item.productId);
         // Harga pokok produk disimpan sebelum PPN
-        const poPrice = netUnitCost(Number(poItem?.price ?? 0), receiving.supplierPo?.ppnMode ?? (receiving as any).request?.ppnMode);
+        const poPrice = netUnitCost(poItemNetUnit(poItem), receiving.supplierPo?.ppnMode ?? (receiving as any).request?.ppnMode);
         if (poPrice > 0) {
           // Hitung rata-rata tertimbang Product.avgCost
           const prod = await this.prisma.main.product.findUnique({

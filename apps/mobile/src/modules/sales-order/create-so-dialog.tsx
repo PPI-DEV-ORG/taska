@@ -524,12 +524,20 @@ function CreateSalesOrderForm({
       if (paymentFlow === "WALK_IN" && created.id) {
         let proofId: number | null = null;
         if (walkinFileHandleRef.current?.hasStaged()) proofId = await walkinFileHandleRef.current.flush();
-        await api("POST", `/client-po/${created.id}/direct-settlement`, {
-          coaAccount: walkinCoaAccount,
-          fileId: proofId || fileId || undefined,
-          notes: `Penjualan langsung lunas SO ${soNo}`,
-        }).catch((e) => toast(e?.message || "SO tersimpan, tapi pelunasan langsung gagal dicatat", "danger"));
-        toast(`Sales Order ${soNo} tersimpan & langsung lunas`);
+        try {
+          await api("POST", `/client-po/${created.id}/direct-settlement`, {
+            coaAccount: walkinCoaAccount,
+            fileId: proofId || fileId || undefined,
+            notes: `Penjualan langsung lunas SO ${soNo}`,
+          });
+          toast(`Sales Order ${soNo} tersimpan & langsung lunas`);
+        } catch (e: any) {
+          toast(
+            e?.message ||
+              `Sales Order ${soNo} tersimpan, tetapi pelunasan langsung gagal dicatat. Buka detail SO untuk mencatat pembayaran.`,
+            "danger"
+          );
+        }
       } else {
         toast(`Sales Order ${soNo} berhasil diterbitkan`);
       }

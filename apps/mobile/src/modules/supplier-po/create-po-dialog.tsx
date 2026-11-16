@@ -18,7 +18,7 @@ import {
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
-import { PPH_MODE_OPTIONS, pphRateFor, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
+import { PPH_MODE_OPTIONS, itemNet, pphRateFor, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
@@ -37,6 +37,8 @@ export interface PoItemEntry {
   categoryName?: string;
   qty: number;
   price: number;
+  diskon?: number;
+  diskonPct?: number;
   sellPrice?: number;
   isNewItem?: boolean;
   isNonInventory?: boolean;
@@ -335,7 +337,7 @@ function CreateSupplierPoForm({
 
   // Calculations
   const subtotalDpp = React.useMemo(() => {
-    return items.reduce((sum, item) => sum + item.qty * item.price, 0);
+    return items.reduce((sum, item) => sum + itemNet(item), 0);
   }, [items]);
 
   const ppnAmount = React.useMemo(() => {
@@ -409,6 +411,8 @@ function CreateSupplierPoForm({
           customUnit: item.unit,
           qty: item.qty,
           price: item.price,
+          diskon: item.diskon,
+          diskonPct: item.diskonPct,
           hasSerial: item.hasSerial,
           isNonInventory: item.isNonInventory,
           itemType: item.itemType,
@@ -661,13 +665,13 @@ function CreateSupplierPoForm({
                         </View>
                         <Text className="text-[11px] text-muted-foreground mt-0.5">
                           {item.sku ? `SKU: ${item.sku} · ` : ""}{item.qty} {item.unit} × {rupiah(item.price)}
-                          {item.pph && item.pph > 0 ? ` (Bersih: ${rupiah(item.qty * item.price - item.pph)})` : ""}
+                          {item.pph && item.pph > 0 ? ` (Bersih: ${rupiah(itemNet(item) - item.pph)})` : ""}
                         </Text>
                       </View>
 
                       <View className="flex-row items-center gap-3">
                         <Text className="text-xs font-bold text-foreground">
-                          {rupiah(item.qty * item.price)}
+                          {rupiah(itemNet(item))}
                         </Text>
                         <Pressable
                           onPress={() => handleRemoveItem(item.id)}

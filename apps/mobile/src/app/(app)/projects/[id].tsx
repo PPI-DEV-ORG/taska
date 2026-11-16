@@ -825,7 +825,13 @@ export default function ProjectDetailScreen() {
             title="Pengiriman ke Lokasi"
             subtitle="Surat jalan barang untuk proyek ini"
             right={
-              <Button size="sm" variant="outline" onPress={() => router.push("/delivery-notes/new" as any)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onPress={() =>
+                  router.push(`/delivery-notes/new?projectId=${project.id}` as any)
+                }
+              >
                 <Text className="text-xs">Buat surat jalan</Text>
               </Button>
             }

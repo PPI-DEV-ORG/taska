@@ -22,6 +22,7 @@ import {
   paymentTermsFromRequest,
 } from "./purchase-flow.js";
 import { cleanName } from "../common/utils/names.js";
+import { itemDiscountFields, itemLineDiscount } from "../crm/item-discount.js";
 
 type PoMeta = {
   supplierSoNumber?: string | null;
@@ -382,12 +383,22 @@ export class PosService {
           this.notifications.dataChange("products", "create", createdProd.id);
         }
       }
+      const qty = Number(i.qty) || 1;
+      const price = Number(i.price) || 0;
+      const discount = itemDiscountFields({
+        qty,
+        harga: price,
+        diskon: i.diskon,
+        diskonPct: i.diskonPct,
+      });
       resolvedItems.push({
         productId: prodId,
         customName: i.customName ?? (i as any).name ?? null,
         customUnit: i.customUnit ?? (i as any).unit ?? null,
-        qty: Number(i.qty) || 1,
-        price: Number(i.price) || 0,
+        qty,
+        price,
+        diskon: discount.diskon ?? 0,
+        diskonPct: discount.diskonPct ?? null,
       });
     }
 
@@ -405,7 +416,14 @@ export class PosService {
     } else {
       number = await this.docnum.next("pesanan", dto.date ? new Date(dto.date) : new Date());
     }
-    const total = dto.total ?? resolvedItems.reduce((s, i) => s + i.qty * i.price, 0);
+    // Nilai baris = qty × harga − diskon item. Total dari klien tetap diutamakan karena sudah
+    // memperhitungkan PPN/PPh, tetapi tanpa total dari klien server menghitung dari nilai bersih.
+    const total =
+      dto.total ??
+      resolvedItems.reduce(
+        (s, i) => s + itemLineDiscount({ qty: i.qty, harga: i.price, diskon: i.diskon }),
+        0,
+      );
 
     // PO dari request yang sudah disetujui Finance otomatis disetujui. PO mandiri wajib melalui persetujuan;
     // klien tidak boleh menyetujui sendiri lewat body.
@@ -433,6 +451,8 @@ export class PosService {
             customUnit: i.customUnit ?? null,
             qty: i.qty,
             price: i.price,
+            diskon: i.diskon,
+            diskonPct: i.diskonPct,
           })),
         },
       },
@@ -554,19 +574,38 @@ export class PosService {
       throw new BadRequestException("PO yang sudah disetujui / dikirim tidak bisa diubah isinya");
     }
 
-    if (Array.isArray(dto.items) && dto.items.length > 0) {
+    const nextItems = Array.isArray(dto.items) && dto.items.length > 0
+      ? dto.items.map((i) => {
+          const qty = Number(i.qty) || 1;
+          const price = Number(i.price) || 0;
+          const discount = itemDiscountFields({
+            qty,
+            harga: price,
+            diskon: i.diskon,
+            diskonPct: i.diskonPct,
+          });
+          return {
+            poId: id,
+            productId: i.productId ?? null,
+            customName: i.customName ?? null,
+            customUnit: i.customUnit ?? null,
+            qty,
+            price,
+            diskon: discount.diskon ?? 0,
+            diskonPct: discount.diskonPct ?? null,
+          };
+        })
+      : null;
+    if (nextItems) {
       await this.prisma.main.supplierPOItem.deleteMany({ where: { poId: id } });
-      await this.prisma.main.supplierPOItem.createMany({
-        data: dto.items.map((i) => ({
-          poId: id,
-          productId: i.productId ?? null,
-          customName: i.customName ?? null,
-          customUnit: i.customUnit ?? null,
-          qty: i.qty,
-          price: i.price,
-        })),
-      });
+      await this.prisma.main.supplierPOItem.createMany({ data: nextItems });
     }
+    const nextItemsTotal = nextItems
+      ? nextItems.reduce(
+          (s, i) => s + itemLineDiscount({ qty: i.qty, harga: i.price, diskon: i.diskon }),
+          0,
+        )
+      : null;
 
     // Perubahan status lewat body sudah ditangani/ditolak di atas; tidak ditulis langsung ke database.
     if (dto.status && dto.status !== row.status) {
@@ -586,7 +625,11 @@ export class PosService {
         ...(dto.eta !== undefined ? { eta: dto.eta ? new Date(dto.eta) : null } : {}),
         // PO dari Request Barang: syarat bayar mengikuti Request (cara bayar + jatuh tempo), tidak diubah terpisah.
         ...(dto.paymentTerms !== undefined && !row.requestId ? { paymentTerms: dto.paymentTerms } : {}),
-        ...(dto.total !== undefined ? { total: dto.total } : {}),
+        ...(dto.total !== undefined
+          ? { total: dto.total }
+          : nextItemsTotal !== null
+            ? { total: nextItemsTotal }
+            : {}),
         ...(poStatus ? { status: poStatus } : {}),
         ...(shipmentStatus ? { shipmentStatus, ...(shipmentStatus === "SAMPAI" ? { arrivedAt: new Date() } : {}) } : {}),
         ...(dto.fileId !== undefined ? { fileId: dto.fileId } : {}),
@@ -705,13 +748,26 @@ export class PosService {
       if (!viaInvoice && !alreadyPaidHere && prepaid.amount <= 0 && Number(row.total) > 0) {
         const payAccount = paidAccountCode || mappings.CASH_DEFAULT || "1000.02";
         // PPN PO masuk PPN Masukan; GRNI dikliring sebesar nilai barang (sama dengan jurnal terima barang).
-        const poItems = await this.prisma.main.supplierPOItem.findMany({ where: { poId: id }, select: { qty: true, price: true } });
+        const poItems = await this.prisma.main.supplierPOItem.findMany({
+          where: { poId: id },
+          select: { qty: true, price: true, diskon: true, diskonPct: true },
+        });
         const reqMode = row.requestId
           ? (await this.prisma.main.purchaseRequest.findUnique({ where: { id: row.requestId }, select: { ppnMode: true } }))?.ppnMode
           : null;
         const split = splitPurchasePayment({
           paid: Number(row.total),
-          itemsSum: poItems.reduce((s, it) => s + it.qty * Number(it.price || 0), 0),
+          itemsSum: poItems.reduce(
+            (s, it) =>
+              s +
+              itemLineDiscount({
+                qty: it.qty,
+                harga: it.price,
+                diskon: it.diskon,
+                diskonPct: it.diskonPct,
+              }),
+            0,
+          ),
           mode: (row as any).ppnMode ?? reqMode,
           ppn: (row as any).ppn != null ? Number((row as any).ppn) : null,
         });
