@@ -119,7 +119,7 @@ function ItemEditorInner({
   title,
   isBuyPrice = false,
   existingItems = [],
-  allowDiscount = false,
+  allowDiscount = true,
 }: ItemEditorDialogProps) {
   const item = rawItem ?? initialItem;
   const { data, toast } = useApp();
@@ -294,7 +294,7 @@ function ItemEditorInner({
   const dialogHeading = title || (isEditing ? "Edit Rincian Barang / Jasa" : "Tambah Barang / Jasa");
 
   return (
-    <DialogContent className="max-w-lg w-[94vw] sm:w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6">
+    <DialogContent className="sm:max-w-2xl md:max-w-3xl w-[94vw] sm:w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6">
       <DialogHeader>
         <DialogTitle>{dialogHeading}</DialogTitle>
       </DialogHeader>

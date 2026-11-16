@@ -62,7 +62,11 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
       updatedList = [...currentItems, normalized];
     }
 
-    const newTotal = updatedList.reduce((s: number, it: any) => s + Number(it.price ? it.price * (it.qty || 1) : 0), 0);
+    const newTotal = updatedList.reduce(
+      (s: number, it: any) =>
+        s + Math.max(0, Number(it.price ? it.price * (it.qty || 1) : 0) - Number(it.diskon || 0)),
+      0,
+    );
     const itemNamesStr = updatedList.map((it: any) => it.item || it.name || it.productName || it.customName).filter(Boolean).join(", ");
 
     await patchRow("supplier-pos", row.id, {
