@@ -1,35 +1,51 @@
 import * as React from "react";
-import { View, ScrollView, TextInput, Pressable } from "react-native";
+import { View, TextInput, Pressable } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel, KpiCard } from "@/components/taska/basics";
+import { Panel } from "@/components/taska/basics";
 import { rupiah } from "@/lib/format";
+import { getKasBankAccounts } from "@/lib/accounting";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
-import { RotateCcw, ArrowDownLeft, ArrowUpRight, CheckCircle2 } from "lucide-react-native";
+import { ArrowDownLeft, ArrowUpRight, CheckCircle2 } from "lucide-react-native";
 import { colors } from "@/tokens";
 
 interface ReturnTabProps {
   onRefreshParent?: () => void;
+  activeType?: "SALES" | "PURCHASE";
+  onChangeType?: (type: "SALES" | "PURCHASE") => void;
 }
 
-export function ReturnTab({ onRefreshParent }: ReturnTabProps) {
+function buildReturnNumber(type: "SALES" | "PURCHASE") {
+  const prefix = type === "SALES" ? "RET-SALES" : "RET-PURCHASE";
+  return `${prefix}/${new Date().getFullYear()}/${Date.now().toString().slice(-4)}`;
+}
+
+export function ReturnTab({ onRefreshParent, activeType, onChangeType }: ReturnTabProps) {
   const { toast } = useApp();
-  const [returnType, setReturnType] = React.useState<"SALES" | "PURCHASE">("SALES");
-  const [number, setNumber] = React.useState("");
+  const [internalType, setInternalType] = React.useState<"SALES" | "PURCHASE">(activeType ?? "SALES");
+  const returnType = activeType ?? internalType;
+  const kasBankAccounts = React.useMemo(() => getKasBankAccounts(), []);
+  const [number, setNumber] = React.useState(() => buildReturnNumber(returnType));
+  const [prevReturnType, setPrevReturnType] = React.useState(returnType);
+  if (prevReturnType !== returnType) {
+    setPrevReturnType(returnType);
+    setNumber(buildReturnNumber(returnType));
+  }
+  const setReturnType = (t: "SALES" | "PURCHASE") => {
+    setInternalType(t);
+    setPrevReturnType(t);
+    setNumber(buildReturnNumber(t));
+    onChangeType?.(t);
+  };
   const [refInv, setRefInv] = React.useState("");
   const [dppStr, setDppStr] = React.useState("");
   const [ppnStr, setPpnStr] = React.useState("");
   const [costStr, setCostStr] = React.useState("");
   const [isCashRefund, setIsCashRefund] = React.useState(false);
-  const [paidAccountCode, setPaidAccountCode] = React.useState("1000.02");
+  const [paidAccountCode, setPaidAccountCode] = React.useState(() => kasBankAccounts[0]?.code || "1000.02");
   const [memo, setMemo] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
-
-  React.useEffect(() => {
-    const prefix = returnType === "SALES" ? "RET-SALES" : "RET-PURCHASE";
-    setNumber(`${prefix}/${new Date().getFullYear()}/${Date.now().toString().slice(-4)}`);
-  }, [returnType]);
 
   const dpp = parseFloat(dppStr.replace(/\D/g, "") || "0");
   const ppn = parseFloat(ppnStr.replace(/\D/g, "") || "0");
@@ -215,11 +231,24 @@ export function ReturnTab({ onRefreshParent }: ReturnTabProps) {
             </View>
 
             {isCashRefund && (
-              <View className="pt-2 flex-row items-center gap-2">
+              <View className="pt-2 flex-row flex-wrap items-center gap-2">
                 <Text className="text-xs text-muted-foreground">Rekening Kas/Bank:</Text>
-                <View className="bg-card border border-border px-2.5 py-1 rounded-lg">
-                  <Text className="text-xs font-mono text-foreground">[1000.02] Bank Mandiri PT GMP</Text>
-                </View>
+                {kasBankAccounts.map((acc) => {
+                  const selected = paidAccountCode === acc.code;
+                  return (
+                    <Pressable
+                      key={acc.code}
+                      onPress={() => setPaidAccountCode(acc.code)}
+                      className={`px-2.5 py-1 rounded-lg border ${
+                        selected ? "bg-primary/10 border-primary" : "bg-card border-border"
+                      }`}
+                    >
+                      <Text className={`text-xs font-mono ${selected ? "text-primary font-semibold" : "text-foreground"}`}>
+                        [{acc.code}] {acc.rawName}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             )}
           </View>

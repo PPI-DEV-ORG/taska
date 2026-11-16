@@ -287,13 +287,13 @@ export class AccountingController {
   }
 
   @Post("returns/sales")
-  @Require("accounting", "C")
+  @AnyLoggedInUser()
   async createSalesReturn(@Body() body: any, @CurrentUser() user: any) {
     return this.postingService.postSalesReturn(body, user?.id);
   }
 
   @Post("returns/purchase")
-  @Require("accounting", "C")
+  @AnyLoggedInUser()
   async createPurchaseReturn(@Body() body: any, @CurrentUser() user: any) {
     return this.postingService.postPurchaseReturn(body, user?.id);
   }
