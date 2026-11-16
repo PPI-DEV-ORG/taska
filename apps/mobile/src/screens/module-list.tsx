@@ -30,6 +30,7 @@ import {
 import { CreateSupplierPoDialog } from "@/modules/supplier-po/create-po-dialog";
 import { CreateSalesOrderDialog } from "@/modules/sales-order/create-so-dialog";
 import { CreateQuotationDialog } from "@/modules/quotation/create-quotation-dialog";
+import { ReturnTab } from "@/modules/accounting/components/return-tab";
 import { compareDesc } from "@/lib/format";
 
 const CREATE: Record<string, Role[]> = {
@@ -467,27 +468,36 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
       ) : null}
       {def.key === "invoices" && (invoiceTab === "all" || invoiceTab === "in") ? <PendingSupplierBills /> : null}
       {def.key === "damage-reports" ? (
-        <View className="flex-row flex-wrap items-center gap-2 mb-3">
-          <Chip
-            label={`Semua (${data["damage-reports"]?.length || 0})`}
-            active={damageTab === "all"}
-            onPress={() => setDamageTab("all")}
-          />
-          <Chip
-            label="Laporan Kerusakan"
-            active={damageTab === "kerusakan"}
-            onPress={() => setDamageTab("kerusakan")}
-          />
-          <Chip
-            label="Retur Penjualan (Pelanggan)"
-            active={damageTab === "retur-sales"}
-            onPress={() => setDamageTab("retur-sales")}
-          />
-          <Chip
-            label="Retur Pembelian (Pemasok)"
-            active={damageTab === "retur-purchase"}
-            onPress={() => setDamageTab("retur-purchase")}
-          />
+        <View className="gap-4 mb-3">
+          <View className="flex-row flex-wrap items-center gap-2">
+            <Chip
+              label={`Semua (${data["damage-reports"]?.length || 0})`}
+              active={damageTab === "all"}
+              onPress={() => setDamageTab("all")}
+            />
+            <Chip
+              label="Laporan Kerusakan"
+              active={damageTab === "kerusakan"}
+              onPress={() => setDamageTab("kerusakan")}
+            />
+            <Chip
+              label="Retur Penjualan (Pelanggan)"
+              active={damageTab === "retur-sales"}
+              onPress={() => setDamageTab("retur-sales")}
+            />
+            <Chip
+              label="Retur Pembelian (Pemasok)"
+              active={damageTab === "retur-purchase"}
+              onPress={() => setDamageTab("retur-purchase")}
+            />
+          </View>
+          {(damageTab === "retur-sales" || damageTab === "retur-purchase") && (
+            <ReturnTab
+              activeType={damageTab === "retur-purchase" ? "PURCHASE" : "SALES"}
+              onChangeType={(t) => setDamageTab(t === "PURCHASE" ? "retur-purchase" : "retur-sales")}
+              onRefreshParent={() => void refreshModule("damage-reports")}
+            />
+          )}
         </View>
       ) : null}
       <FilterBar

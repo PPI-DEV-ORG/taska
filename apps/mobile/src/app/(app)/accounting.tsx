@@ -39,7 +39,6 @@ import { LedgerTab } from "@/modules/accounting/components/ledger-tab";
 import { SummaryTab } from "@/modules/accounting/components/summary-tab";
 import { TaxTab } from "@/modules/accounting/components/tax-tab";
 import { PeriodTab } from "@/modules/accounting/components/period-tab";
-import { ReturnTab } from "@/modules/accounting/components/return-tab";
 import { ManualJournalDialog } from "@/modules/accounting/components/manual-journal-dialog";
 import { CreateCoaDialog } from "@/modules/accounting/components/create-coa-dialog";
 
@@ -918,7 +917,6 @@ export default function AccountingScreen() {
               { id: "summary", label: "Ringkasan Saldo", icon: TrendingUp, count: null },
               { id: "tax", label: "Pajak & PPN", icon: Scale, count: null },
               { id: "period", label: "Tutup Buku", icon: BookOpen, count: null },
-              { id: "return", label: "Retur Barang", icon: BookOpen, count: null },
             ].map((t) => {
               const active = activeTab === t.id;
               const IconComp = t.icon;
@@ -1054,9 +1052,6 @@ export default function AccountingScreen() {
 
         {/* TAB 6: TUTUP BUKU */}
         {activeTab === "period" && <PeriodTab onRefreshParent={refreshAccountingData} />}
-
-        {/* TAB 7: RETUR BARANG */}
-        {activeTab === "return" && <ReturnTab onRefreshParent={refreshAccountingData} />}
       </View>
 
       {/* MODAL: INPUT JURNAL MANUAL */}

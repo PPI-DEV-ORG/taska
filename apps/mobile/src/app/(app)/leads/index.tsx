@@ -40,6 +40,8 @@ export default function LeadsScreen() {
   const [form, setForm] = React.useState(false);
   const [lost, setLost] = React.useState<Row | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
+  const [expandedCols, setExpandedCols] = React.useState<Record<string, boolean>>({});
+  const INITIAL_COL_LIMIT = 5;
 
   if (!hasUserPermission(user, "leads", "M")) {
     return <EmptyState title="Akses Ditolak" text="Akun kamu tidak memiliki akses untuk membuka halaman prospek." />;
@@ -85,25 +87,39 @@ export default function LeadsScreen() {
         onDate={setDateFilter}
         placeholder="Cari prospek atau perusahaan"
       />
-      <ScrollView horizontal showsHorizontalScrollIndicator contentContainerClassName="gap-3 pb-3">
+      <ScrollView horizontal showsHorizontalScrollIndicator contentContainerClassName="gap-3 pb-3 items-start">
         {LEAD_STAGES.map((stage, si) => {
           const col = leads.filter((l) => l.status === stage);
           const sum = col.reduce((a, l) => a + l.nilai, 0);
+          const isExpanded = Boolean(expandedCols[stage]);
+          const visibleCol = isExpanded ? col : col.slice(0, INITIAL_COL_LIMIT);
+          const hiddenCount = Math.max(0, col.length - visibleCol.length);
           return (
-            <View key={stage} className="bg-card/60 border-border w-[272px] rounded-xl border">
-              <View className="border-border gap-1 border-b p-3">
+            <View
+              key={stage}
+              className="bg-card/60 border-border w-[272px] rounded-xl border overflow-hidden"
+              style={{ maxHeight: 620 }}
+            >
+              <View className="border-border bg-card/90 gap-1 border-b p-3">
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-2">
                     <View className="size-2.5 rounded-full" style={{ backgroundColor: chartSeries[si] }} />
                     <Text className="text-sm font-semibold">{stage}</Text>
                   </View>
-                  <Text className="text-muted-foreground text-sm">{col.length}</Text>
+                  <View className="bg-panel border-border/60 rounded-full border px-2 py-0.5">
+                    <Text className="text-muted-foreground text-xs font-semibold">{col.length}</Text>
+                  </View>
                 </View>
                 <Text className="text-muted-foreground text-[13px]">{rupiahShort(sum)}</Text>
               </View>
-              <View className="gap-2 p-2">
+              <ScrollView
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                style={{ maxHeight: 540 }}
+                contentContainerClassName="gap-2 p-2"
+              >
                 {col.length === 0 ? <Text className="text-muted-foreground px-2 py-4 text-center text-[13px]">Belum ada prospek</Text> : null}
-                {col.map((l) => (
+                {visibleCol.map((l) => (
                   <View key={l.id} className="bg-card border-border gap-2 rounded-lg border p-3">
                     <View className="flex-row items-start gap-2">
                       <Pressable onPress={() => router.push(`/leads/${l.id}` as any)} className="min-w-0 flex-1 gap-1">
@@ -184,7 +200,21 @@ export default function LeadsScreen() {
                     ) : null}
                   </View>
                 ))}
-              </View>
+                {col.length > INITIAL_COL_LIMIT ? (
+                  <Pressable
+                    onPress={() =>
+                      setExpandedCols((prev) => ({ ...prev, [stage]: !prev[stage] }))
+                    }
+                    className="bg-panel/70 border-border hover:bg-panel items-center justify-center rounded-lg border py-2 px-3 mt-1"
+                  >
+                    <Text className="text-primary text-xs font-semibold">
+                      {isExpanded
+                        ? "Ringkas tampilan (5 teratas)"
+                        : `Lihat ${hiddenCount} prospek lainnya`}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </ScrollView>
             </View>
           );
         })}
