@@ -400,6 +400,7 @@ export class RequestsService {
       requestedBy: user,
       href: `/requests/${row.id}`,
     });
+    this.notifications.dataChange("purchase-requests", "create", row.id);
     return row;
   }
 
@@ -474,6 +475,7 @@ export class RequestsService {
         .catch(() => {});
     }
 
+    this.notifications.dataChange("purchase-requests", "update", id);
     return updated;
   }
 
@@ -1163,6 +1165,8 @@ export class RequestsService {
       entityId: id,
       detail: `${row.number} dihapus`,
     });
+    this.notifications.dataChange("purchase-requests", "delete", id);
+    this.notifications.dataChange("approvals", "delete", id);
     return { id, deleted: true };
   }
 

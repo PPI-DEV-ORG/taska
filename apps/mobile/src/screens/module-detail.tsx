@@ -21,6 +21,7 @@ import { SupplierSelect } from "@/components/taska/supplier-select";
 import { DocumentViewerList } from "@/components/taska/document-viewer";
 import { StatusBadge } from "@/components/taska/status-badge";
 import { ModuleExtras } from "@/screens/module-extras";
+import { getKasBankAccounts } from "@/lib/accounting";
 import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
 import { QuotationPpnField } from "@/modules/quotation/quotation-ppn-field";
 import { QuotationPphField } from "@/modules/quotation/quotation-pph-field";
@@ -122,10 +123,13 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
   const [infoFormOpen, setInfoFormOpen] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const kasBankOptions = React.useMemo(() => getKasBankAccounts(), []);
   const [approveExpenseOpen, setApproveExpenseOpen] = React.useState(false);
   const [rejectExpenseOpen, setRejectExpenseOpen] = React.useState(false);
   const [expenseTransferNote, setExpenseTransferNote] = React.useState("");
-  const [expenseFundSource, setExpenseFundSource] = React.useState<string>("Kas Kecil");
+  const [expenseFundSource, setExpenseFundSource] = React.useState<string>(() => {
+    return kasBankOptions[0]?.code || "1000.02";
+  });
   const [submittingExpense, setSubmittingExpense] = React.useState(false);
   const expenseFileHandle = React.useRef<FileUploaderHandle | null>(null);
   const [deliveryDocOpen, setDeliveryDocOpen] = React.useState(false);
@@ -988,9 +992,13 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 ) : (
                   <Button
                     onPress={() => {
-                      setExpenseFundSource(
-                        row?.paymentMethod && /bank/i.test(String(row.paymentMethod)) ? "Bank" : "Kas Kecil"
-                      );
+                      const defaultAcc =
+                        (row?.paidAccountCode && kasBankOptions.find((o) => o.code === row.paidAccountCode)) ||
+                        (row?.paymentMethod && /kas/i.test(String(row.paymentMethod))
+                          ? kasBankOptions.find((o) => o.code === "1000.01" || /kas/i.test(o.rawName))
+                          : kasBankOptions.find((o) => o.code === "1000.02" || /bank|mandiri/i.test(o.rawName))) ||
+                        kasBankOptions[0];
+                      setExpenseFundSource(defaultAcc?.code || "1000.02");
                       setApproveExpenseOpen(true);
                     }}
                   >
@@ -1498,16 +1506,18 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 try {
                   const patchPayload: Record<string, any> = { [fieldKey]: fileId };
                   if (
-                    fieldKey === "receiptFileId" ||
-                    fieldKey === "photoFileId" ||
-                    fieldKey === "scanFileId" ||
-                    fieldKey === "evidenceFileId" ||
-                    fieldKey === "documentFileId" ||
-                    fieldKey === "latestFileId" ||
-                    fieldKey === "doFileId" ||
-                    fieldKey === "prdFileId" ||
-                    fieldKey === "bahpFileId" ||
-                    fieldKey === "bastFileId"
+                    fieldKey !== "photoFileId" &&
+                    (
+                      fieldKey === "receiptFileId" ||
+                      fieldKey === "scanFileId" ||
+                      fieldKey === "evidenceFileId" ||
+                      fieldKey === "documentFileId" ||
+                      fieldKey === "latestFileId" ||
+                      fieldKey === "doFileId" ||
+                      fieldKey === "prdFileId" ||
+                      fieldKey === "bahpFileId" ||
+                      fieldKey === "bastFileId"
+                    )
                   ) {
                     patchPayload.fileId = fileId;
                   }
@@ -1519,7 +1529,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                     await patchRow(moduleKey, id, patchPayload);
                     if (
                       moduleKey === "receiving" &&
-                      (fieldKey === "receiptFileId" || fieldKey === "photoFileId") &&
+                      fieldKey === "receiptFileId" &&
                       row?.supplierPoId
                     ) {
                       await patchRow("supplier-pos", String(row.supplierPoId), {
@@ -1627,9 +1637,13 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         open={approveExpenseOpen}
         onOpenChange={(open) => {
           if (open) {
-            setExpenseFundSource(
-              row?.paymentMethod && /bank/i.test(String(row.paymentMethod)) ? "Bank" : "Kas Kecil"
-            );
+            const defaultAcc =
+              (row?.paidAccountCode && kasBankOptions.find((o) => o.code === row.paidAccountCode)) ||
+              (row?.paymentMethod && /kas/i.test(String(row.paymentMethod))
+                ? kasBankOptions.find((o) => o.code === "1000.01" || /kas/i.test(o.rawName))
+                : kasBankOptions.find((o) => o.code === "1000.02" || /bank|mandiri/i.test(o.rawName))) ||
+              kasBankOptions[0];
+            setExpenseFundSource(defaultAcc?.code || "1000.02");
           }
           setApproveExpenseOpen(open);
         }}
@@ -1643,12 +1657,26 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
           </DialogHeader>
 
           <View className="gap-3 py-2">
-            <FormField label="Sumber Dana (Kas Kecil / Bank)" required>
+            <FormField
+              label="Pilih Akun Kas / Bank (CoA) *"
+              hint="Rekening kas atau bank yang digunakan untuk membayar reimbursement (Kredit Kas/Bank)"
+              required
+            >
               <SearchableSelect
-                value={expenseFundSource}
-                options={["Kas Kecil", "Bank"]}
-                onChange={setExpenseFundSource}
-                placeholder="Pilih sumber dana..."
+                value={
+                  kasBankOptions.find((o) => o.code === expenseFundSource)?.name ||
+                  kasBankOptions.find((o) => o.name === expenseFundSource)?.name ||
+                  kasBankOptions[0]?.name ||
+                  ""
+                }
+                options={kasBankOptions.map((o) => o.name)}
+                onChange={(val) => {
+                  const match = kasBankOptions.find((o) => o.name === val || val.includes(o.code));
+                  if (match) {
+                    setExpenseFundSource(match.code);
+                  }
+                }}
+                placeholder="Pilih akun Kas / Bank..."
               />
             </FormField>
 
@@ -1679,17 +1707,22 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 setSubmittingExpense(true);
                 try {
                   const paidFileId = (await expenseFileHandle.current?.flush()) ?? undefined;
-                  const targetStatus = paidFileId ? "Dibayar" : "Disetujui";
+                  const targetStatus = "Dibayar";
+                  const selectedAcc = kasBankOptions.find((o) => o.code === expenseFundSource) || kasBankOptions[0];
+                  const isCash = selectedAcc?.code === "1000.01" || /kas/i.test(selectedAcc?.rawName || "");
+                  const paymentMethodLabel = isCash ? "Kas Kecil" : "Transfer Bank";
+
                   await setStatus("expenses", id, targetStatus, expenseTransferNote.trim() || undefined, {
                     paidFileId,
-                    paymentMethod: expenseFundSource,
+                    paymentMethod: paymentMethodLabel,
+                    paidAccountCode: selectedAcc?.code || expenseFundSource,
                   });
                   const path = PATHS[moduleKey];
                   if (path) {
                     const fresh = await api<any>("GET", `${path}/${id}`).catch(() => null);
                     if (fresh) setRemoteRow(adaptRow(moduleKey, fresh));
                   }
-                  toast(paidFileId ? "Reimbursement berhasil dibayar & bukti transfer dilampirkan" : "Pengeluaran disetujui");
+                  toast(paidFileId ? "Reimbursement berhasil dibayar & bukti transfer dilampirkan" : "Reimbursement berhasil dibayar");
                   setApproveExpenseOpen(false);
                   setExpenseTransferNote("");
                 } catch (e: any) {

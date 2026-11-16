@@ -337,8 +337,17 @@ export default function StockScreen() {
         open={addItemOpen}
         onOpenChange={setAddItemOpen}
         categories={data.productCategories || []}
+        warehouses={warehouses}
         onSave={async (payload) => {
-          await addRow("products", payload);
+          const created = await addRow("products", payload);
+          if (!created) throw new Error("Gagal menyimpan produk");
+          if (Number(payload.initialStock ?? 0) > 0) {
+            await Promise.all([
+              refreshModule("products"),
+              refreshModule("serials"),
+              refreshModule("movements"),
+            ]).catch(() => {});
+          }
         }}
         toast={toast}
       />

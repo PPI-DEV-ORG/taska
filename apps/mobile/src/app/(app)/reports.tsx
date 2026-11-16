@@ -20,6 +20,7 @@ import {
   loadManualJournals,
   loadCustomCoa,
   loadDeletedCoaCodes,
+  saveCustomCoa,
   saveManualJournals,
   type ManualJournal,
   type CoaAccount,
@@ -71,11 +72,33 @@ export default function ReportsScreen() {
   const setActiveTab = setSelectedTab;
 
   const [manualJournals, setManualJournals] = React.useState<ManualJournal[]>(() => loadManualJournals());
-  const [customAccounts] = React.useState<CoaAccount[]>(() => loadCustomCoa());
+  const [customAccounts, setCustomAccounts] = React.useState<CoaAccount[]>(() => loadCustomCoa());
   const [deletedCoaCodes] = React.useState<string[]>(() => loadDeletedCoaCodes());
 
   React.useEffect(() => {
     let active = true;
+    api<{ items?: any[] }>("GET", "/coa-accounts")
+      .then((res) => {
+        if (!active || !Array.isArray(res?.items) || res.items.length === 0) return;
+        const dbAccounts: CoaAccount[] = res.items.map((item: any) => ({
+          code: String(item.code),
+          name: String(item.name),
+          category: item.category as CoaAccount["category"],
+          normalBalance: (item.normalBalance === "KREDIT" ? "KREDIT" : "DEBIT") as "DEBIT" | "KREDIT",
+          ...(item.type ? { type: String(item.type) } : {}),
+          ...(item.parentCode ? { parentCode: String(item.parentCode) } : {}),
+        }));
+        setCustomAccounts((prev) => {
+          const mergedMap = new Map<string, CoaAccount>();
+          prev.forEach((a) => mergedMap.set(a.code, a));
+          dbAccounts.forEach((a) => mergedMap.set(a.code, a));
+          const merged = Array.from(mergedMap.values());
+          saveCustomCoa(merged);
+          return merged;
+        });
+      })
+      .catch(() => {});
+
     api<{ items?: any[] }>("GET", "/manual-journals")
       .then((res) => {
         if (!active || !Array.isArray(res?.items) || res.items.length === 0) return;
@@ -113,6 +136,10 @@ export default function ReportsScreen() {
   const [serverCashFlow, setServerCashFlow] = React.useState<any>(null);
   const [serverTrialBalance, setServerTrialBalance] = React.useState<any>(null);
   const [serverJournalLines, setServerJournalLines] = React.useState<any[] | null>(null);
+
+  const supplierPosData = data["supplier-pos"];
+  const deliveryNotesData = data["delivery-notes"];
+  const purchaseRequestsData = data["purchase-requests"];
 
   React.useEffect(() => {
     if (!canAccessFinancials) return;
@@ -152,6 +179,14 @@ export default function ReportsScreen() {
     void api<any>("GET", `/accounting/journals${jStr ? `?${jStr}` : ""}`)
       .then((res) => {
         if (!active || !Array.isArray(res?.items)) return;
+        const coaLookup: Record<string, CoaAccount> = { ...CHART_OF_ACCOUNTS };
+        customAccounts.forEach((acc) => {
+          coaLookup[acc.code] = acc;
+        });
+        const projNameMap = new Map<string, string>();
+        (data.projects || []).forEach((p: any) => {
+          if (p?.id != null) projNameMap.set(String(p.id), String(p.nama || p.name || `Project #${p.id}`));
+        });
         const mappedLines: any[] = [];
         res.items.forEach((entry: any) => {
           let entryRef = entry.refNo || "-";
@@ -160,6 +195,12 @@ export default function ReportsScreen() {
             entryRef = entry.event === "paid" || entry.source === "EXPENSE_PAYMENT" ? `${expCode}/PAY` : expCode;
           }
           (entry.lines || []).forEach((line: any) => {
+            const acc = coaLookup[line.accountCode];
+            const rawProjId = line.projectId ?? entry.projectId;
+            const projLabel =
+              rawProjId != null
+                ? projNameMap.get(String(rawProjId)) || `Project #${rawProjId}`
+                : "-";
             mappedLines.push({
               id: String(line.id),
               journalNo: entry.number || `JU-${entry.id}`,
@@ -184,13 +225,17 @@ export default function ReportsScreen() {
                   ? "PO Pemasok"
                   : entry.source === "INVOICE_IN_PAYMENT"
                   ? "Pelunasan PO"
+                  : entry.source === "CASH_ADVANCE"
+                  ? "Petty Cash"
+                  : entry.source === "PAYROLL"
+                  ? "Payroll & Gaji"
                   : entry.source === "MANUAL"
                   ? "Jurnal Manual"
                   : (entry.source || "Jurnal"),
               keterangan: line.memo || entry.memo || "-",
-              project: line.projectId ? `Project #${line.projectId}` : entry.projectId ? `Project #${entry.projectId}` : "-",
+              project: projLabel,
               kodeAkun: line.accountCode,
-              namaAkun: line.memo || line.accountCode,
+              namaAkun: line.account?.name || acc?.name || line.accountCode,
               debit: Number(line.debit || 0),
               kredit: Number(line.credit || 0),
             });
@@ -203,7 +248,17 @@ export default function ReportsScreen() {
     return () => {
       active = false;
     };
-  }, [canAccessFinancials, reportDate]);
+  }, [
+    canAccessFinancials,
+    reportDate,
+    data.invoices,
+    data.expenses,
+    supplierPosData,
+    deliveryNotesData,
+    purchaseRequestsData,
+    data.projects,
+    customAccounts,
+  ]);
 
   const filteredData = React.useMemo(() => {
     if (!reportDate) return data;
@@ -250,20 +305,34 @@ export default function ReportsScreen() {
       const revTotal = Number(serverIncomeStatement.revenue?.total || 0);
       const cogsTotal = Number(serverIncomeStatement.cogs?.total || 0);
       const opexTotal = Number(serverIncomeStatement.operatingExpense?.total || 0);
-      const grossProfit = Number(serverIncomeStatement.grossProfit || (revTotal - cogsTotal));
-      const netProfit = Number(serverIncomeStatement.netProfit || (grossProfit - opexTotal));
+      const otherRevenueTotal = Number(serverIncomeStatement.otherRevenue?.total || 0);
+      const otherExpenseTotal = Number(serverIncomeStatement.otherExpense?.total || 0);
+      const grossProfit = Number(serverIncomeStatement.grossProfit ?? revTotal - cogsTotal);
+      const operatingProfit = Number(serverIncomeStatement.operatingProfit ?? grossProfit - opexTotal);
+      const netProfit = Number(
+        serverIncomeStatement.netProfit ?? operatingProfit + otherRevenueTotal - otherExpenseTotal,
+      );
       const grossMarginPct = revTotal > 0 ? Number(((grossProfit / revTotal) * 100).toFixed(1)) : 0;
       const netMarginPct = revTotal > 0 ? Number(((netProfit / revTotal) * 100).toFixed(1)) : 0;
 
-      const ppnKeluaran = sumAccounts(serverBalanceSheet?.liabilities?.items, ["2100", "2102"]);
-      const revenueGross = revTotal + ppnKeluaran;
+      const ppnKeluaran =
+        serverIncomeStatement.ppnKeluaran != null
+          ? Number(serverIncomeStatement.ppnKeluaran)
+          : sumAccounts(serverBalanceSheet?.liabilities?.items, ["2100", "2102"]);
+      const revenueGross =
+        serverIncomeStatement.revenueGross != null
+          ? Number(serverIncomeStatement.revenueGross)
+          : revTotal + ppnKeluaran;
 
-      const cogsProject = (serverIncomeStatement.cogs?.accounts || []).find((a: any) => a.code === "5101")?.amount ?? cogsTotal;
-      const cogsRetail = (serverIncomeStatement.cogs?.accounts || []).find((a: any) => a.code === "5102")?.amount ?? 0;
+      const cogsAccounts = serverIncomeStatement.cogs?.accounts || [];
+      const cogsProject = cogsAccounts.find((a: any) => a.code === "5101")?.amount ?? 0;
+      const cogsRetail = cogsAccounts.find((a: any) => a.code === "5102")?.amount ?? 0;
+      const cogsDirect = cogsAccounts.find((a: any) => a.code === "5103")?.amount ?? 0;
 
       const opexByCategory = (serverIncomeStatement.operatingExpense?.accounts || [])
-        .filter((a: any) => Number(a.amount || 0) > 0)
+        .filter((a: any) => Number(a.amount || 0) !== 0)
         .map((a: any) => ({
+          code: a.code,
           kategori: a.name.replace(/^Biaya\s+/i, "").replace(/^Beban\s+/i, ""),
           nominal: Number(a.amount || 0),
           count: 1,
@@ -274,15 +343,27 @@ export default function ReportsScreen() {
         revenueGross,
         revenueDpp: revTotal,
         ppnKeluaran,
+        revenueAccounts: serverIncomeStatement.revenue?.accounts || [],
         cogsProject,
         cogsRetail,
+        cogsDirect,
         cogsTotal,
+        cogsAccounts,
         grossProfit,
         grossMarginPct,
         opexByCategory,
         opexTotal,
+        operatingProfit,
+        otherRevenueTotal,
+        otherRevenueAccounts: serverIncomeStatement.otherRevenue?.accounts || [],
+        otherExpenseTotal,
+        otherExpenseAccounts: serverIncomeStatement.otherExpense?.accounts || [],
         netProfit,
         netMarginPct,
+        projectRows:
+          Array.isArray(serverIncomeStatement.projectRows) && serverIncomeStatement.projectRows.length > 0
+            ? serverIncomeStatement.projectRows
+            : localFin.incomeStatement.projectRows,
       };
     } else if (merged.coaBalances && merged.coaBalances.length > 0) {
       const coaRevenue = merged.coaBalances
@@ -444,27 +525,52 @@ export default function ReportsScreen() {
       const rawItems = serverCashFlow.items || [];
       const mappedItems = rawItems.map((item: any) => ({
         id: String(item.id),
-        tanggal: item.date ? String(item.date).slice(0, 10) : item.tanggal || "-",
+        tanggal:
+          item.tanggal && String(item.tanggal).includes(":")
+            ? String(item.tanggal)
+            : formatJournalDateTime(item.date ?? item.tanggal, item.createdAt),
         refNo: item.refNo || "-",
         kategori: item.kategori || (item.source === "EXPENSE_PAYMENT" ? "Operasional" : item.source === "MANUAL" ? "Modal / Kas" : "Kas/Bank"),
         pihak: item.pihak || (item.accountName || "Kas/Bank"),
+        project: item.project || "-",
         keterangan: item.memo || item.keterangan || "-",
         masuk: Number(item.inflow ?? item.masuk ?? 0),
         keluar: Number(item.outflow ?? item.keluar ?? 0),
       }));
 
-      const cashInCustomers = mappedItems.filter((i: any) => i.masuk > 0).reduce((s: number, i: any) => s + i.masuk, 0);
-      const cashOutExpenses = mappedItems.filter((i: any) => i.keluar > 0 && (i.kategori.includes("Operasional") || (i.refNo && i.refNo.includes("EXP")))).reduce((s: number, i: any) => s + i.keluar, 0);
-      const cashOutSuppliers = mappedItems.filter((i: any) => i.keluar > 0 && !i.kategori.includes("Operasional") && !(i.refNo && i.refNo.includes("EXP"))).reduce((s: number, i: any) => s + i.keluar, 0);
+      const cashInCustomers =
+        serverCashFlow.cashInCustomers != null
+          ? Number(serverCashFlow.cashInCustomers)
+          : mappedItems
+              .filter((i: any) => i.masuk > 0 && !String(i.kategori || "").includes("Modal"))
+              .reduce((s: number, i: any) => s + i.masuk, 0);
+      const cashOutExpenses =
+        serverCashFlow.cashOutExpenses != null
+          ? Number(serverCashFlow.cashOutExpenses)
+          : mappedItems
+              .filter((i: any) => i.keluar > 0 && (i.kategori.includes("Operasional") || i.kategori.includes("Payroll") || (i.refNo && i.refNo.includes("EXP"))))
+              .reduce((s: number, i: any) => s + i.keluar, 0);
+      const cashOutSuppliers =
+        serverCashFlow.cashOutSuppliers != null
+          ? Number(serverCashFlow.cashOutSuppliers)
+          : mappedItems
+              .filter((i: any) => i.keluar > 0 && (i.kategori.includes("Pemasok") || i.kategori.includes("PO")))
+              .reduce((s: number, i: any) => s + i.keluar, 0);
+
+      const totalCashIn = Number(serverCashFlow.totalInflow ?? cashInCustomers);
+      const totalCashOut = Number(serverCashFlow.totalOutflow ?? cashOutSuppliers + cashOutExpenses);
+      const revGross = Number(merged.incomeStatement?.revenueGross || 0);
+      const cashConversionRatePct =
+        revGross > 0 ? Number(((cashInCustomers / revGross) * 100).toFixed(1)) : 0;
 
       merged.cashFlow = {
         cashInCustomers,
         cashOutSuppliers,
         cashOutExpenses,
-        totalCashIn: Number(serverCashFlow.totalInflow || cashInCustomers),
-        totalCashOut: Number(serverCashFlow.totalOutflow || (cashOutSuppliers + cashOutExpenses)),
-        netCashFlow: Number(serverCashFlow.netCashFlow || 0),
-        cashConversionRatePct: 0,
+        totalCashIn,
+        totalCashOut,
+        netCashFlow: Number(serverCashFlow.netCashFlow ?? totalCashIn - totalCashOut),
+        cashConversionRatePct,
         items: mappedItems,
       };
     }
@@ -642,9 +748,10 @@ export default function ReportsScreen() {
       title,
       format,
       fin,
-      data,
+      data: filteredData,
       approvals,
       canAccessFinancials,
+      reportDate,
       toast,
     });
   }

@@ -42,6 +42,7 @@ type ChecklistItem = {
 export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void }) {
   const router = useRouter();
   const { data, user, toast, patchRow, setStatus, refreshModule, companyProfile } = useApp();
+  const pocRows = data["poc-reports"];
 
   const [pdfBusy, setPdfBusy] = React.useState(false);
   const [checklist, setChecklist] = React.useState<ChecklistItem[]>(() =>
@@ -115,7 +116,7 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
     return () => {
       active = false;
     };
-  }, [row.id]);
+  }, [row.id, pocRows]);
 
   // Expenses for this POC
   const pocExpenses = React.useMemo(() => {

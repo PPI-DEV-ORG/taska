@@ -1,6 +1,50 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { round } from "./accounting.types.js";
+import { computeProjectPnl } from "../projects/project-pnl.js";
+
+function parseStartDate(d?: string | Date): Date | undefined {
+  if (!d) return undefined;
+  if (d instanceof Date) return isNaN(d.getTime()) ? undefined : d;
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return new Date(`${s}T00:00:00.000Z`);
+  }
+  const parsed = new Date(s);
+  return isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function parseEndDate(d?: string | Date): Date | undefined {
+  if (!d) return undefined;
+  if (d instanceof Date) return isNaN(d.getTime()) ? undefined : d;
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return new Date(`${s}T23:59:59.999Z`);
+  }
+  const parsed = new Date(s);
+  return isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function formatEntryDateTime(dateVal: any, createdAtVal?: any): string {
+  const dSource = createdAtVal ? new Date(createdAtVal) : dateVal ? new Date(dateVal) : null;
+  if (!dSource || isNaN(dSource.getTime())) {
+    return dateVal ? String(dateVal).slice(0, 10) : "-";
+  }
+  let yyyy = dSource.getFullYear();
+  let mm = String(dSource.getMonth() + 1).padStart(2, "0");
+  let dd = String(dSource.getDate()).padStart(2, "0");
+  if (dateVal) {
+    const dDate = new Date(dateVal);
+    if (!isNaN(dDate.getTime())) {
+      yyyy = dDate.getFullYear();
+      mm = String(dDate.getMonth() + 1).padStart(2, "0");
+      dd = String(dDate.getDate()).padStart(2, "0");
+    }
+  }
+  const hh = String(dSource.getHours()).padStart(2, "0");
+  const min = String(dSource.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
 
 @Injectable()
 export class AccountingReportService {
@@ -41,10 +85,12 @@ export class AccountingReportService {
       where.accountCode = { in: Array.from(targetCodes) };
     }
 
-    if (params.startDate || params.endDate) {
+    const start = parseStartDate(params.startDate);
+    const end = parseEndDate(params.endDate);
+    if (start || end) {
       where.entry.date = {};
-      if (params.startDate) where.entry.date.gte = new Date(params.startDate);
-      if (params.endDate) where.entry.date.lte = new Date(params.endDate);
+      if (start) where.entry.date.gte = start;
+      if (end) where.entry.date.lte = end;
     }
 
     const lines = await (this.prisma.main as any).journalLine.findMany({
@@ -137,7 +183,7 @@ export class AccountingReportService {
    * Neraca Saldo (Trial Balance)
    */
   async getTrialBalance(params: { asOfDate?: string | Date }) {
-    const asOf = params.asOfDate ? new Date(params.asOfDate) : new Date();
+    const asOf = parseEndDate(params.asOfDate);
 
     const accounts = await (this.prisma.main as any).coaAccount.findMany({
       where: { status: "AKTIF" },
@@ -148,7 +194,7 @@ export class AccountingReportService {
       where: {
         entry: {
           status: "POSTED",
-          date: { lte: asOf },
+          ...(asOf ? { date: { lte: asOf } } : {}),
         },
       },
       select: {
@@ -199,7 +245,7 @@ export class AccountingReportService {
     });
 
     return {
-      asOfDate: asOf,
+      asOfDate: asOf || new Date(),
       rows,
       grandTotalDebit,
       grandTotalCredit,
@@ -211,9 +257,10 @@ export class AccountingReportService {
   /**
    * Laporan Laba Rugi (Income Statement)
    */
-  async getIncomeStatement(params: { startDate: string | Date; endDate: string | Date }) {
-    const start = new Date(params.startDate);
-    const end = new Date(params.endDate);
+  async getIncomeStatement(params: { startDate?: string | Date; endDate?: string | Date }) {
+    const start = parseStartDate(params.startDate);
+    const end = parseEndDate(params.endDate);
+    const dateFilter = start || end ? { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) } : undefined;
 
     const accounts = await (this.prisma.main as any).coaAccount.findMany({
       where: {
@@ -231,30 +278,62 @@ export class AccountingReportService {
       orderBy: { code: "asc" },
     });
 
-    const lines = await (this.prisma.main as any).journalLine.findMany({
-      where: {
-        entry: {
-          status: "POSTED",
-          date: { gte: start, lte: end },
-        },
-        account: {
-          category: {
-            in: [
-              "Pendapatan",
-              "Beban Pokok (HPP)",
-              "Beban Operasional",
-              "Pendapatan Diluar Usaha",
-              "Beban Diluar Usaha",
-            ],
+    const [lines, ppnLines, projects] = await Promise.all([
+      (this.prisma.main as any).journalLine.findMany({
+        where: {
+          entry: {
+            status: "POSTED",
+            ...(dateFilter ? { date: dateFilter } : {}),
+          },
+          account: {
+            category: {
+              in: [
+                "Pendapatan",
+                "Beban Pokok (HPP)",
+                "Beban Operasional",
+                "Pendapatan Diluar Usaha",
+                "Beban Diluar Usaha",
+              ],
+            },
           },
         },
-      },
-      select: {
-        accountCode: true,
-        debit: true,
-        credit: true,
-      },
-    });
+        select: {
+          accountCode: true,
+          debit: true,
+          credit: true,
+        },
+      }),
+      (this.prisma.main as any).journalLine.findMany({
+        where: {
+          accountCode: { in: ["2100", "2102"] },
+          entry: {
+            status: "POSTED",
+            ...(dateFilter ? { date: dateFilter } : {}),
+          },
+        },
+        select: {
+          debit: true,
+          credit: true,
+        },
+      }),
+      this.prisma.main.project.findMany({
+        where: dateFilter ? { startDate: dateFilter } : {},
+        include: {
+          customer: { select: { name: true } },
+          pic: { select: { name: true } },
+          invoices: {
+            where: { status: { not: "BATAL" }, isProforma: false },
+            select: { amount: true, ppn: true, pph: true, total: true, paidAmount: true, status: true },
+          },
+        },
+        orderBy: { startDate: "desc" },
+      }),
+    ]);
+
+    const ppnKeluaran = Math.max(
+      0,
+      round(ppnLines.reduce((s: number, l: any) => s + Number(l.credit || 0) - Number(l.debit || 0), 0)),
+    );
 
     const sumMap = new Map<string, number>();
     for (const l of lines) {
@@ -307,9 +386,57 @@ export class AccountingReportService {
       operatingProfit + categories.otherRevenue.total - categories.otherExpense.total,
     );
 
+    const projectRows = await Promise.all(
+      projects.map(async (p) => {
+        const pnl = await computeProjectPnl(this.prisma.main, p.id).catch(() => null);
+        const validInvs = p.invoices || [];
+        const invPpn = round(validInvs.reduce((s, i) => s + Number(i.ppn || 0), 0));
+        const invGross = round(validInvs.reduce((s, i) => s + Number(i.total || 0), 0));
+        const paidCashIn = round(
+          validInvs.reduce((s, i) => {
+            const tot = Number(i.total || 0);
+            const paid = Number(i.paidAmount || 0);
+            return s + (i.status === "PAID" ? Math.max(paid, tot) : Math.min(tot || paid, paid));
+          }, 0),
+        );
+        const arOutstanding = Math.max(0, round(invGross - paidCashIn));
+        const revenueDpp = pnl ? pnl.revenue : round(validInvs.reduce((s, i) => s + Number(i.amount || 0), 0));
+        const cogsPo = pnl ? round(pnl.hppGoods + pnl.directPurchases) : 0;
+        const opexExpense = pnl ? round(pnl.expenses) : 0;
+        const projGrossProfit = round(revenueDpp - cogsPo);
+        const projNetProfit = pnl ? pnl.netProfit : round(revenueDpp - cogsPo - opexExpense);
+        const marginPct = pnl ? pnl.marginPct : revenueDpp > 0 ? Number(((projNetProfit / revenueDpp) * 100).toFixed(1)) : 0;
+        const statusKesehatan = projNetProfit < 0 ? "RUGI" : marginPct >= 15 ? "SEHAT" : "WASPADA";
+
+        return {
+          id: p.id,
+          project: p.name,
+          customer: p.customer?.name || "-",
+          pic: p.pic?.name || "-",
+          status: p.status,
+          revenueGross: invGross || revenueDpp + invPpn,
+          revenueDpp,
+          ppnKeluaran: invPpn,
+          paidCashIn,
+          arOutstanding,
+          hppGoods: pnl?.hppGoods ?? 0,
+          directPurchases: pnl?.directPurchases ?? 0,
+          cogsPo,
+          opexExpense,
+          hppTotal: pnl?.hppTotal ?? (cogsPo + opexExpense),
+          grossProfit: projGrossProfit,
+          netProfit: projNetProfit,
+          marginPct,
+          statusKesehatan,
+        };
+      }),
+    );
+
     return {
-      period: { startDate: start, endDate: end },
+      period: { startDate: start || null, endDate: end || new Date() },
       revenue: categories.revenue,
+      ppnKeluaran,
+      revenueGross: round(categories.revenue.total + ppnKeluaran),
       cogs: categories.cogs,
       grossProfit,
       operatingExpense: categories.operatingExpense,
@@ -317,6 +444,7 @@ export class AccountingReportService {
       otherRevenue: categories.otherRevenue,
       otherExpense: categories.otherExpense,
       netProfit,
+      projectRows,
     };
   }
 
@@ -324,7 +452,7 @@ export class AccountingReportService {
    * Laporan Neraca (Balance Sheet)
    */
   async getBalanceSheet(params: { asOfDate?: string | Date }) {
-    const asOf = params.asOfDate ? new Date(params.asOfDate) : new Date();
+    const asOf = parseEndDate(params.asOfDate);
 
     const accounts = await (this.prisma.main as any).coaAccount.findMany({
       where: {
@@ -347,7 +475,7 @@ export class AccountingReportService {
       where: {
         entry: {
           status: "POSTED",
-          date: { lte: asOf },
+          ...(asOf ? { date: { lte: asOf } } : {}),
         },
       },
       include: {
@@ -426,7 +554,7 @@ export class AccountingReportService {
     const totalLiabilitiesAndEquity = round(totalLiabilities + totalEquity);
 
     return {
-      asOfDate: asOf,
+      asOfDate: asOf || new Date(),
       assets: { items: assets, total: totalAssets },
       liabilities: { items: liabilities, total: totalLiabilities },
       equity: { items: equity, total: totalEquity },
@@ -440,9 +568,10 @@ export class AccountingReportService {
    * Arus Kas (Cash Flow Statement - Metode Langsung)
    * Membaca langsung mutasi akun isCash=true dari JournalLine
    */
-  async getCashFlow(params: { startDate: string | Date; endDate: string | Date }) {
-    const start = new Date(params.startDate);
-    const end = new Date(params.endDate);
+  async getCashFlow(params: { startDate?: string | Date; endDate?: string | Date }) {
+    const start = parseStartDate(params.startDate);
+    const end = parseEndDate(params.endDate);
+    const dateFilter = start || end ? { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) } : undefined;
 
     const cashAccounts = await (this.prisma.main as any).coaAccount.findMany({
       where: { isCash: true, status: "AKTIF" },
@@ -450,45 +579,201 @@ export class AccountingReportService {
     });
     const cashCodes = new Set<string>(cashAccounts.map((a: any) => a.code));
 
-    const cashLines = await (this.prisma.main as any).journalLine.findMany({
-      where: {
-        accountCode: { in: Array.from(cashCodes) },
-        entry: {
-          status: "POSTED",
-          date: { gte: start, lte: end },
+    const [cashLines, customers, suppliers, users, projects, expenses, invoicesOut, purchaseRequests] = await Promise.all([
+      (this.prisma.main as any).journalLine.findMany({
+        where: {
+          accountCode: { in: Array.from(cashCodes) },
+          entry: {
+            status: "POSTED",
+            ...(dateFilter ? { date: dateFilter } : {}),
+          },
         },
-      },
-      include: {
-        entry: true,
-        account: true,
-      },
-      orderBy: [{ entry: { date: "asc" } }, { entry: { createdAt: "asc" } }, { id: "asc" }],
-    });
+        include: {
+          entry: true,
+          account: true,
+        },
+        orderBy: [{ entry: { date: "desc" } }, { entry: { createdAt: "desc" } }, { id: "desc" }],
+      }),
+      this.prisma.main.customer.findMany({ select: { id: true, name: true } }).catch(() => []),
+      this.prisma.main.supplier.findMany({ select: { id: true, name: true } }).catch(() => []),
+      this.prisma.main.user.findMany({ select: { id: true, name: true } }).catch(() => []),
+      this.prisma.main.project.findMany({ select: { id: true, name: true } }).catch(() => []),
+      this.prisma.main.expense
+        .findMany({
+          include: {
+            reporter: { select: { name: true } },
+            category: { select: { name: true } },
+            project: { select: { name: true } },
+          },
+        })
+        .catch(() => []),
+      this.prisma.main.invoiceOut
+        .findMany({
+          select: {
+            id: true,
+            number: true,
+            customer: { select: { name: true } },
+            project: { select: { name: true } },
+          },
+        })
+        .catch(() => []),
+      this.prisma.main.purchaseRequest
+        .findMany({
+          select: {
+            id: true,
+            number: true,
+            supplier: { select: { name: true } },
+            requester: { select: { name: true } },
+            project: { select: { name: true } },
+          },
+        })
+        .catch(() => []),
+    ]);
+
+    const customerMap = new Map(customers.map((c) => [c.id, c.name]));
+    const supplierMap = new Map(suppliers.map((s) => [s.id, s.name]));
+    const userMap = new Map(users.map((u) => [u.id, u.name]));
+    const projectMap = new Map(projects.map((p) => [p.id, p.name]));
+    const expenseMap = new Map(expenses.map((e) => [e.id, e]));
+    const invoiceOutByIdMap = new Map(invoicesOut.map((inv) => [inv.id, inv]));
+    const invoiceOutByNumMap = new Map(invoicesOut.map((inv) => [inv.number, inv]));
+    const prByIdMap = new Map(purchaseRequests.map((pr) => [pr.id, pr]));
+    const prByNumMap = new Map(purchaseRequests.map((pr) => [pr.number, pr]));
 
     let totalInflow = 0;
     let totalOutflow = 0;
+    let cashInCustomers = 0;
+    let cashOutSuppliers = 0;
+    let cashOutExpenses = 0;
+
     const items = cashLines.map((l: any) => {
       const debit = Number(l.debit);
       const credit = Number(l.credit);
       totalInflow = round(totalInflow + debit);
       totalOutflow = round(totalOutflow + credit);
+
+      const src = String(l.entry.source || "").toUpperCase();
+      const srcType = String(l.entry.sourceType || "");
       const memoText = l.memo || l.entry.memo || "-";
-      let refText = l.entry.refNo || "-";
-      let pihak = l.partyType ? `${l.partyType} #${l.partyId}` : (l.entry.sourceType || "Perusahaan");
-      if (l.entry.sourceType === "Expense" && l.entry.sourceId) {
-        const expCode = `EXP-${String(l.entry.sourceId).padStart(3, "0")}`;
-        refText = l.entry.event === "paid" || l.entry.source === "EXPENSE_PAYMENT" ? `${expCode}/PAY` : expCode;
+      let refText = l.entry.refNo || l.entry.number || "-";
+      const projId = l.projectId ?? l.entry.projectId;
+      let projectName = projId ? projectMap.get(Number(projId)) || `Project #${projId}` : "-";
+
+      let pihak = l.account?.name || "Kas/Bank";
+      if (l.partyType === "CUSTOMER") {
+        if (l.partyId) {
+          pihak = customerMap.get(Number(l.partyId)) || `Pelanggan #${l.partyId}`;
+        } else {
+          const cleanRef = String(refText).replace(/\/PAY$/i, "");
+          const inv =
+            (l.entry.sourceId ? invoiceOutByIdMap.get(Number(l.entry.sourceId)) : undefined) ||
+            invoiceOutByNumMap.get(cleanRef);
+          pihak = inv?.customer?.name || "Pelanggan Walk-in / Umum";
+          if (inv?.project?.name && projectName === "-") projectName = inv.project.name;
+        }
+      } else if (l.partyType === "SUPPLIER") {
+        if (l.partyId) {
+          pihak = supplierMap.get(Number(l.partyId)) || `Pemasok #${l.partyId}`;
+        } else {
+          pihak = "Pemasok / Vendor";
+        }
+      } else if (l.partyType === "EMPLOYEE" && l.partyId) {
+        pihak = userMap.get(Number(l.partyId)) || `Karyawan #${l.partyId}`;
       }
+
+      if (srcType === "Expense" && l.entry.sourceId) {
+        const exp = expenseMap.get(Number(l.entry.sourceId));
+        const expCode = `EXP-${String(l.entry.sourceId).padStart(3, "0")}`;
+        refText = l.entry.event === "paid" || src === "EXPENSE_PAYMENT" ? `${expCode}/PAY` : expCode;
+        if (exp?.reporter?.name) pihak = exp.reporter.name;
+        if (exp?.project?.name && projectName === "-") projectName = exp.project.name;
+      } else if (srcType === "PurchaseRequest" || src === "RETAIL_PURCHASE" || src === "PURCHASE_REQUEST") {
+        const cleanRef = String(refText).replace(/\/PAY$/i, "");
+        const pr =
+          (l.entry.sourceId ? prByIdMap.get(Number(l.entry.sourceId)) : undefined) ||
+          prByNumMap.get(cleanRef);
+        if (pr) {
+          pihak = pr.supplier?.name || pr.requester?.name || "Pembelian Ritel / Toko";
+          if (pr.project?.name && projectName === "-") projectName = pr.project.name;
+        } else if (pihak === (l.account?.name || "Kas/Bank")) {
+          pihak = "Pembelian Ritel / Toko";
+        }
+      } else if ((src === "INVOICE_OUT_PAYMENT" || src === "INVOICE_OUT" || srcType === "InvoiceOut") && pihak === (l.account?.name || "Kas/Bank")) {
+        const cleanRef = String(refText).replace(/\/PAY$/i, "");
+        const inv =
+          (l.entry.sourceId ? invoiceOutByIdMap.get(Number(l.entry.sourceId)) : undefined) ||
+          invoiceOutByNumMap.get(cleanRef);
+        pihak = inv?.customer?.name || "Pelanggan Walk-in / Umum";
+        if (inv?.project?.name && projectName === "-") projectName = inv.project.name;
+      }
+
+      let kategori = "Kas/Bank";
+      const isCustomerInflow =
+        debit > 0 &&
+        (src === "INVOICE_OUT_PAYMENT" ||
+          src === "INVOICE_OUT" ||
+          srcType === "InvoiceOut" ||
+          l.partyType === "CUSTOMER");
+      const isSupplierOutflow =
+        credit > 0 &&
+        (src === "INVOICE_IN_PAYMENT" ||
+          src === "INVOICE_IN" ||
+          src === "PURCHASE_REQUEST" ||
+          src === "RETAIL_PURCHASE" ||
+          srcType === "InvoiceIn" ||
+          srcType === "SupplierPO" ||
+          srcType === "PurchaseRequest" ||
+          l.partyType === "SUPPLIER");
+      const isExpenseOutflow =
+        credit > 0 &&
+        (src === "EXPENSE_PAYMENT" ||
+          src === "EXPENSE" ||
+          src === "CASH_ADVANCE" ||
+          src === "PAYROLL" ||
+          srcType === "Expense" ||
+          srcType === "CashAdvance" ||
+          srcType === "Payroll");
+
+      if (debit > 0) {
+        if (isCustomerInflow) {
+          kategori = "Penerimaan Pelanggan";
+          cashInCustomers = round(cashInCustomers + debit);
+        } else if (src === "CASH_ADVANCE" || srcType === "CashAdvance") {
+          kategori = "Pengembalian Petty Cash";
+        } else if (src === "MANUAL") {
+          kategori = "Modal / Kas Masuk";
+        } else {
+          kategori = "Kas Masuk Operasional";
+          cashInCustomers = round(cashInCustomers + debit);
+        }
+      } else if (credit > 0) {
+        if (isSupplierOutflow) {
+          kategori = "Pelunasan Pemasok PO";
+          cashOutSuppliers = round(cashOutSuppliers + credit);
+        } else if (isExpenseOutflow) {
+          kategori = src === "PAYROLL" || srcType === "Payroll" ? "Payroll & Gaji" : "Biaya Operasional";
+          cashOutExpenses = round(cashOutExpenses + credit);
+        } else if (src === "MANUAL") {
+          kategori = "Penarikan / Kas Keluar";
+          cashOutExpenses = round(cashOutExpenses + credit);
+        } else {
+          kategori = "Kas Keluar Operasional";
+          cashOutExpenses = round(cashOutExpenses + credit);
+        }
+      }
+
       return {
         id: l.id,
         date: l.entry.date,
-        tanggal: l.entry.date ? String(l.entry.date).slice(0, 10) : "-",
+        createdAt: l.entry.createdAt,
+        tanggal: formatEntryDateTime(l.entry.date, l.entry.createdAt),
         journalNumber: l.entry.number,
         refNo: refText,
         accountCode: l.accountCode,
         accountName: l.account?.name || "",
-        kategori: l.entry.source === "EXPENSE_PAYMENT" ? "Operasional" : l.entry.source === "MANUAL" ? "Modal / Kas" : (l.entry.source || "Kas/Bank"),
+        kategori,
         pihak,
+        project: projectName,
         keterangan: memoText,
         memo: memoText,
         masuk: debit,
@@ -502,7 +787,10 @@ export class AccountingReportService {
     const netCashFlow = round(totalInflow - totalOutflow);
 
     return {
-      period: { startDate: start, endDate: end },
+      period: { startDate: start || null, endDate: end || new Date() },
+      cashInCustomers,
+      cashOutSuppliers,
+      cashOutExpenses,
       totalInflow,
       totalOutflow,
       netCashFlow,

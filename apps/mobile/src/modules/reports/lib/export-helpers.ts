@@ -16,50 +16,92 @@ export function generateCsvByType(type: string, title: string, fin: any, data: a
 
   if (type === "income-statement" || title.includes("Laba Rugi Standar")) {
     const inc = fin.incomeStatement;
+    const revAccs = Array.isArray(inc.revenueAccounts) && inc.revenueAccounts.length > 0
+      ? inc.revenueAccounts.map((a: any) => `"${a.code}","${a.name}","I. Pendapatan Usaha (DPP)","${a.amount}"`)
+      : [`"4000","Pendapatan Proyek & Integrasi Sistem (DPP Bersih)","I. Pendapatan Usaha (DPP)","${inc.revenueDpp}"`];
+    const cogsAccs = Array.isArray(inc.cogsAccounts) && inc.cogsAccounts.length > 0
+      ? inc.cogsAccounts.map((a: any) => `"${a.code}","${a.name}","II. Beban Pokok (HPP)","-${a.amount}"`)
+      : [`"5101","Harga Pokok Penjualan / Pengadaan (HPP)","II. Beban Pokok (HPP)","-${inc.cogsTotal}"`];
+    const opexAccs = (inc.opexByCategory || []).map(
+      (c: any) => `"${c.code || "6101"}","Beban Operasional: ${c.kategori}","III. Beban Operasional (OPEX)","-${c.nominal}"`
+    );
+    const otherRevAccs = (inc.otherRevenueAccounts || []).map(
+      (a: any) => `"${a.code}","${a.name}","IV. Pendapatan Diluar Usaha","${a.amount}"`
+    );
+    const otherExpAccs = (inc.otherExpenseAccounts || []).map(
+      (a: any) => `"${a.code}","${a.name}","IV. Beban Diluar Usaha","-${a.amount}"`
+    );
     const lines = [
-      `"4101","Pendapatan Proyek & Integrasi Sistem (DPP Bersih)","Pendapatan","${inc.revenueDpp}"`,
-      `"2102","PPN Keluaran Terpungut (11% — Titipan Pajak)","Informasi Pajak","${inc.ppnKeluaran}"`,
-      `"-","Total Nilai Tagihan Kotor (Gross Invoiced)","Informasi Tagihan","${inc.revenueGross}"`,
-      `"5101","Harga Pokok Penjualan / Pengadaan PO Pemasok (HPP)","Beban Pokok (HPP)","-${inc.cogsTotal}"`,
-      `"=","LABA KOTOR (GROSS PROFIT) — Margin ${inc.grossMarginPct}%","Subtotal","${inc.grossProfit}"`,
-      ...inc.opexByCategory.map(
-        (c: any) => `"6101","Beban Operasional: ${c.kategori} (${c.count} transaksi)","Beban Operasional (OPEX)","-${c.nominal}"`
-      ),
-      `"=","TOTAL BEBAN OPERASIONAL (OPEX)","Subtotal","-${inc.opexTotal}"`,
+      `"-","Nilai Tagihan Kotor Invoice Pelanggan (Termasuk PPN)","Informasi Tagihan","${inc.revenueGross}"`,
+      `"2100","Dikurangi: PPN Keluaran 11% (Kewajiban Pajak DJP)","Informasi Pajak","-${inc.ppnKeluaran}"`,
+      ...revAccs,
+      `"=","TOTAL PENDAPATAN BERSIH OPERASIONAL (DPP)","Subtotal Pendapatan","${inc.revenueDpp}"`,
+      ...cogsAccs,
+      `"=","TOTAL BEBAN POKOK PENJUALAN (HPP)","Subtotal HPP","-${inc.cogsTotal}"`,
+      `"=","LABA KOTOR (GROSS PROFIT) — Margin ${inc.grossMarginPct}%","Subtotal Laba Kotor","${inc.grossProfit}"`,
+      ...opexAccs,
+      `"=","TOTAL BEBAN OPERASIONAL (OPEX)","Subtotal OPEX","-${inc.opexTotal}"`,
+      ...otherRevAccs,
+      ...otherExpAccs,
       `"=","LABA BERSIH OPERASIONAL (NET PROFIT) — Margin ${inc.netMarginPct}%","Total Akhir","${inc.netProfit}"`,
     ];
     return headerPrefix + "Kode Akun,Komponen Laporan Laba Rugi,Kelompok,Nominal (Rp)\n" + lines.join("\n");
   }
 
   if (type === "profit-loss" || title.includes("Untung-Rugi") || title.includes("P&L")) {
-    const rows = fin.incomeStatement.projectRows.map(
+    const rows = (fin.incomeStatement.projectRows || []).map(
       (r: any) =>
-        `"${r.project}","${r.customer}","${r.revenueDpp}","${r.ppnKeluaran}","${r.paidCashIn}","${r.arOutstanding}","${r.cogsPo}","${r.opexExpense}","${r.netProfit}","${r.marginPct}%","${r.statusKesehatan}"`
+        `"${r.project}","${r.customer}","${r.revenueDpp}","${r.ppnKeluaran || 0}","${r.paidCashIn}","${r.arOutstanding}","${r.cogsPo}","${r.opexExpense}","${r.netProfit}","${r.marginPct}%","${r.statusKesehatan}"`
     );
     return (
       headerPrefix +
-      "Kode Project,Customer,Pendapatan DPP (Rp),PPN 11% (Rp),Kas Diterima (Rp),Sisa Piutang (Rp),HPP PO Supplier (Rp),Biaya Operasional (Rp),Laba Bersih (Rp),Margin (%),Status Kesehatan\n" +
+      "Kode Project,Customer,Pendapatan DPP (Rp),PPN 11% (Rp),Kas Diterima (Rp),Sisa Piutang (Rp),HPP Barang & PO (Rp),Biaya Lapangan (Rp),Laba Bersih (Rp),Margin (%),Status Kesehatan\n" +
       rows.join("\n")
     );
   }
 
   if (type === "balance-sheet" || title.includes("Neraca")) {
     const bs = fin.balanceSheet;
+    const assetItems = Array.isArray(bs.assets?.items) && bs.assets.items.length > 0
+      ? bs.assets.items
+          .filter((it: any) => Number(it.amount || 0) !== 0)
+          .map((it: any) => `"${it.code}","${it.name}","AKTIVA — ${(it.category || "ASET LANCAR").toUpperCase()}","${it.amount}"`)
+      : [
+          `"1000","Kas & Bank Operasional","AKTIVA — ASET LANCAR","${bs.assets.kasDanBank}"`,
+          `"1100","Piutang Usaha Pelanggan (Accounts Receivable)","AKTIVA — ASET LANCAR","${bs.assets.piutangUsaha}"`,
+          `"1200","Persediaan Barang Gudang (Inventory Valuation)","AKTIVA — ASET LANCAR","${bs.assets.persediaanBarang}"`,
+          `"1105","Uang Muka PPh / Pajak Dibayar Dimuka (Prepaid Tax)","AKTIVA — ASET LANCAR","${bs.assets.uangMukaPph || 0}"`,
+          `"1600","PPN Masukan (Kredit Pajak Masukan / Input VAT)","AKTIVA — ASET LANCAR","${bs.assets.ppnMasukan || 0}"`,
+        ];
+    const liabItems = Array.isArray(bs.liabilities?.items) && bs.liabilities.items.length > 0
+      ? bs.liabilities.items
+          .filter((it: any) => Number(it.amount || 0) !== 0)
+          .map((it: any) => `"${it.code}","${it.name}","PASIVA — ${(it.category || "KEWAJIBAN JANGKA PENDEK").toUpperCase()}","${it.amount}"`)
+      : [
+          `"2101","Hutang Usaha Pemasok (Accounts Payable)","PASIVA — KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangSupplier}"`,
+          `"2100","Hutang PPN Keluaran (Output VAT)","PASIVA — KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangPpnKeluaran}"`,
+          `"2103","Hutang Biaya & Reimbursement Operasional","PASIVA — KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangReimbursement}"`,
+        ];
+    const eqItems = Array.isArray(bs.equity?.items) && bs.equity.items.length > 0
+      ? bs.equity.items
+          .filter((it: any) => Number(it.amount || 0) !== 0)
+          .map((it: any) => `"${it.code}","${it.name}","PASIVA — EKUITAS (MODAL & LABA DITAHAN)","${it.amount}"`)
+      : [
+          `"3101","Modal Disetor / Modal Kerja Awal","PASIVA — EKUITAS (MODAL & LABA DITAHAN)","${bs.equity.modalKerjaAwal}"`,
+          `"3102-AUTO","Laba Bersih Berjalan (Otomatis)","PASIVA — EKUITAS (MODAL & LABA DITAHAN)","${bs.equity.labaBerjalan}"`,
+        ];
+    const ppnKel = Number(bs.liabilities?.hutangPpnKeluaran || 0);
+    const ppnMas = Number(bs.assets?.ppnMasukan || 0);
+    const selisihPpn = ppnKel - ppnMas;
     const lines = [
-      `"1101","Kas & Bank Operasional","ASET LANCAR (AKTIVA)","${bs.assets.kasDanBank}"`,
-      `"1102","Piutang Usaha Pelanggan (Accounts Receivable)","ASET LANCAR (AKTIVA)","${bs.assets.piutangUsaha}"`,
-      `"1103","Persediaan Barang Gudang (Inventory Valuation)","ASET LANCAR (AKTIVA)","${bs.assets.persediaanBarang}"`,
-      `"1105","Uang Muka PPh / Pajak Dibayar Dimuka (Prepaid Tax)","ASET LANCAR (AKTIVA)","${bs.assets.uangMukaPph || 0}"`,
-      `"1600","PPN Masukan (Kredit Pajak Masukan / Input VAT)","ASET LANCAR (AKTIVA)","${bs.assets.ppnMasukan || 0}"`,
-      `"=","TOTAL ASET (AKTIVA)","TOTAL AKTIVA","${bs.assets.totalAsetLancar}"`,
-      `"2101","Hutang Usaha Pemasok (Accounts Payable)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangSupplier}"`,
-      `"2102","Hutang PPN Keluaran (Output VAT)","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangPpnKeluaran}"`,
-      `"2103","Hutang Biaya & Reimbursement Operasional","KEWAJIBAN JANGKA PENDEK","${bs.liabilities.hutangReimbursement}"`,
-      `"=","TOTAL KEWAJIBAN (LIABILITAS)","SUBTOTAL KEWAJIBAN","${bs.liabilities.totalKewajiban}"`,
-      `"3101","Modal Kerja & Cadangan Persediaan Awal","EKUITAS (MODAL)","${bs.equity.modalKerjaAwal}"`,
-      `"3102","Laba Ditahan / Laba Bersih Tahun Berjalan","EKUITAS (MODAL)","${bs.equity.labaBerjalan}"`,
-      `"=","TOTAL EKUITAS (MODAL)","SUBTOTAL EKUITAS","${bs.equity.totalEkuitas}"`,
-      `"=","TOTAL KEWAJIBAN & EKUITAS (PASIVA)","TOTAL PASIVA","${bs.totalPasiva}"`,
+      ...assetItems,
+      `"=","TOTAL AKTIVA (ASET PERUSAHAAN)","TOTAL AKTIVA","${bs.assets.totalAsetLancar}"`,
+      ...liabItems,
+      `"=","SUBTOTAL KEWAJIBAN (LIABILITIES)","SUBTOTAL KEWAJIBAN","${bs.liabilities.totalKewajiban}"`,
+      ...eqItems,
+      `"=","SUBTOTAL EKUITAS (MODAL)","SUBTOTAL EKUITAS","${bs.equity.totalEkuitas}"`,
+      `"=","TOTAL PASIVA (KEWAJIBAN + EKUITAS)","TOTAL PASIVA","${bs.totalPasiva}"`,
+      `"PAJAK","${selisihPpn > 0 ? "PPN Kurang Bayar (Setor Kas Negara)" : selisihPpn < 0 ? "PPN Lebih Bayar (Kompensasi)" : "PPN Nihil"}","Rekapitulasi PPN DJP","${Math.abs(selisihPpn)}"`,
     ];
     return headerPrefix + "Kode Akun,Pos Neraca,Kelompok,Saldo (Rp)\n" + lines.join("\n");
   }
@@ -185,6 +227,7 @@ export async function downloadReport({
   data,
   approvals,
   canAccessFinancials,
+  reportDate,
   toast,
 }: {
   type: string;
@@ -194,6 +237,7 @@ export async function downloadReport({
   data: any;
   approvals: any[];
   canAccessFinancials: boolean;
+  reportDate?: string;
   toast: (msg: string, type?: "success" | "danger" | "info" | "warning") => void;
 }) {
   if (FINANCIAL_TYPES.has(type) && !canAccessFinancials) {
@@ -206,27 +250,31 @@ export async function downloadReport({
   }
 
   const safeName = title.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
-  if (!title.includes("Piutang")) {
-    try {
-      const token = getAccess();
-      const res = await fetch(`${apiBase()}/reports/${type}/export?format=${format}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${safeName}-${new Date().toISOString().slice(0, 10)}.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        toast(`Laporan ${title} berhasil diunduh (.${format})`);
-        return;
-      }
-    } catch {}
-  }
+  try {
+    const token = getAccess();
+    const params = new URLSearchParams({ format });
+    if (reportDate) {
+      const d = reportDate.slice(0, 10);
+      params.set("from", `${d}T00:00:00.000Z`);
+      params.set("to", `${d}T23:59:59.999Z`);
+    }
+    const res = await fetch(`${apiBase()}/reports/${type}/export?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${safeName}-${new Date().toISOString().slice(0, 10)}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast(`Laporan ${title} berhasil diunduh (.${format})`);
+      return;
+    }
+  } catch {}
 
   const csvData = generateCsvByType(type, title, fin, data, approvals);
 

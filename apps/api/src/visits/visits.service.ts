@@ -244,6 +244,7 @@ export class VisitsService {
       entityId: report.id,
       detail: `Membuat laporan kunjungan ${report.number}: ${report.title}`,
     });
+    this.notifications.dataChange("visit-reports", "create", report.id);
 
     return this.get(report.id, user);
   }
@@ -313,6 +314,7 @@ export class VisitsService {
       entityId: id,
       detail: `Memperbarui laporan kunjungan ${existing.number}`,
     });
+    this.notifications.dataChange("visit-reports", "update", id);
 
     return this.get(id, user);
   }
@@ -335,6 +337,7 @@ export class VisitsService {
       entityId: id,
       detail: `Mengubah status kunjungan ${existing.number} menjadi ${dto.status}`,
     });
+    this.notifications.dataChange("visit-reports", "status", id);
 
     return updated;
   }
@@ -357,6 +360,7 @@ export class VisitsService {
       entityId: id,
       detail: `Menghapus laporan kunjungan ${existing.number}`,
     });
+    this.notifications.dataChange("visit-reports", "delete", id);
 
     return { success: true };
   }
@@ -379,6 +383,7 @@ export class VisitsService {
         notes: dto.notes,
       },
     });
+    this.notifications.dataChange("visit-reports", "update", visitReportId);
 
     return action;
   }
@@ -400,6 +405,7 @@ export class VisitsService {
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
       },
     });
+    this.notifications.dataChange("visit-reports", "update", action.visitReportId);
 
     return updated;
   }
@@ -412,6 +418,7 @@ export class VisitsService {
     if (!action) throw new NotFoundException("Tindak lanjut tidak ditemukan");
 
     await this.db.visitActionItem.delete({ where: { id: actionId } });
+    this.notifications.dataChange("visit-reports", "update", action.visitReportId);
     return { success: true };
   }
 

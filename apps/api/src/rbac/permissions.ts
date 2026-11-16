@@ -521,10 +521,6 @@ export function can(role: string, module: ModuleKey | string, action: Action): b
       if (action === "L" && actionsList.includes("M")) {
         return true;
       }
-      // Backward compatibility: jika role legacy hanya punya 'L'
-      if (action === "M" && actionsList.includes("L") && !actionsList.includes("M")) {
-        return true;
-      }
       // Saling kompatibel antara 'V' (Approve di UI) dan 'A' (Approve legacy) pada modul approvals
       if (module === "approvals" && (action === "A" || action === "V") && (actionsList.includes("V") || actionsList.includes("A"))) {
         return true;

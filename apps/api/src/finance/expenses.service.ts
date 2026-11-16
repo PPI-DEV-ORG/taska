@@ -268,6 +268,7 @@ export class ExpensesService {
       entityId: row.id,
       detail: `Rp${amount} — ${description.slice(0, 120)}`,
     });
+    this.notifications.dataChange("expenses", "create", row.id);
     const receiptFile = dto.receiptFileId
       ? await this.prisma.main.file.findUnique({
           where: { id: dto.receiptFileId },
@@ -370,6 +371,7 @@ export class ExpensesService {
       entityId: id,
       detail: `Rp${updated.amount} — ${updated.description.slice(0, 120)}`,
     });
+    this.notifications.dataChange("expenses", "update", id);
     const [receiptFile, paidFile] = await Promise.all([
       updated.receiptFileId
         ? this.prisma.main.file.findUnique({
@@ -443,6 +445,7 @@ export class ExpensesService {
           : {}),
         ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
         ...(dto.fundingSource && !isPettyCash ? { fundingSource: dto.fundingSource } : {}),
+        ...(dto.paidAccountCode && !isPettyCash ? { paidAccountCode: dto.paidAccountCode } : {}),
       },
       include: { reporter: { select: { id: true, name: true } } },
     });

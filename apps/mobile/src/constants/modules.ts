@@ -1266,15 +1266,7 @@ export function getNavForUser(user: User | null | undefined): NavItem[] {
       // Petty cash memakai izin modul Pengeluaran (sama dengan server)
       return hasUserPermission(user, item.key === "cash-advances" ? "expenses" : item.key, "M");
     });
-    // Jika role punya modul navigasi selain hanya dashboard/calendar, gunakan hasil matriks
-    if (filtered.length > 2 || (filtered.length > 0 && !filtered.every((i) => i.key === "dashboard" || i.key === "calendar"))) {
-      return filtered;
-    }
-    // Jika role sistem bawaan belum memiliki 'M' yang terdefinisi pada modul utamanya, fallback ke default navigasi role
-    if (NAV_BY_ROLE[roleLower]) {
-      return NAV_BY_ROLE[roleLower];
-    }
-    if (filtered.length > 0) return filtered;
+    return filtered;
   }
 
   return NAV_BY_ROLE[roleLower] ?? [N.dashboard, N.calendar];

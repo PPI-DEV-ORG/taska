@@ -134,6 +134,43 @@ describe("PostingRules Unit Tests (11.1)", () => {
     expect(lines.find((l) => l.accountCode === "210102")?.credit).toBe(11_322_000);
   });
 
+  it("E4a: Saldo awal persediaan seimbang dan memakai akun cadangan", () => {
+    const lines = PostingRules.buildInitialStockLines(
+      {
+        productId: 21,
+        productName: "Kamera IP UNV 4MP",
+        qty: 5,
+        cost: 1_250_000,
+        unit: "unit",
+      },
+      map,
+    );
+
+    const totalDebit = lines.reduce((s, l) => s + (l.debit || 0), 0);
+    const totalCredit = lines.reduce((s, l) => s + (l.credit || 0), 0);
+    expect(totalDebit).toBe(6_250_000);
+    expect(totalCredit).toBe(6_250_000);
+    expect(lines.find((l) => l.accountCode === "1200")?.debit).toBe(6_250_000);
+    expect(lines.find((l) => l.accountCode === "3101")?.credit).toBe(6_250_000);
+    expect(lines[0]?.memo).toBe("Saldo Awal Persediaan Gudang: Kamera IP UNV 4MP (5 unit)");
+  });
+
+  it("E4a: Saldo awal memakai mapping ekuitas khusus jika tersedia", () => {
+    const lines = PostingRules.buildInitialStockLines(
+      {
+        productId: 22,
+        productName: "Kabel Belden",
+        qty: 10,
+        cost: 50_000,
+        unit: "roll",
+      },
+      { ...map, EQUITY_INITIAL: "310001" },
+    );
+
+    expect(lines.find((l) => l.accountCode === "310001")?.credit).toBe(500_000);
+    expect(lines.find((l) => l.accountCode === "3101")).toBeUndefined();
+  });
+
   it("E10: slip hasil kalkulator payroll (BPJS perusahaan + potongan pinjaman) → jurnal seimbang", () => {
     const slip = calculateSlip(
       { basicSalary: 8_000_000, allowance: 1_000_000, mealAllowance: 25_000, ptkp: "TK/0" },

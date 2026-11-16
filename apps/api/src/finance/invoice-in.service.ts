@@ -378,6 +378,7 @@ export class InvoiceInService {
         where: { approvalId: approval.id },
         data: { status: "DISETUJUI", decidedById: user.id, decidedAt: new Date() },
       }).catch(() => {});
+      this.notifications.dataChange("approvals", "update", approval.id);
     }
 
     // Posting Akuntansi E5: Tagihan Supplier Masuk (Invoice In)
@@ -415,6 +416,7 @@ export class InvoiceInService {
       entityId: row.id,
       detail: `total Rp${dto.total} — ${supplier.name}${isPaid ? " (Langsung Lunas)" : ""}${offset > 0 ? ` — dikompensasi pembayaran di muka Rp${offset}` : ""}`,
     });
+    this.notifications.dataChange("invoiceIn", "create", row.id);
     const finalRow = await this.prisma.main.invoiceIn.findUniqueOrThrow({ where: { id: row.id }, include: { supplier: true } });
     return { ...(await this.sync(finalRow)), ...meta };
   }
@@ -532,6 +534,7 @@ export class InvoiceInService {
       detail: updated.number ?? `invoice #${id}`,
     });
     await this.postInvoiceInJournalIfEligible(id, user.id);
+    this.notifications.dataChange("invoiceIn", "update", id);
     return this.get(id);
   }
 
@@ -563,6 +566,8 @@ export class InvoiceInService {
       entityId: id,
       detail: row.number ?? `invoice #${id}`,
     });
+    this.notifications.dataChange("invoiceIn", "delete", id);
+    this.notifications.dataChange("approvals", "delete", id);
     return { deleted: true, id };
   }
 
@@ -786,6 +791,7 @@ export class InvoiceInService {
       entityId: id,
       detail: `Rp${amount} — ${row.supplierId ? `supplier #${row.supplierId}` : ""}`,
     });
+    this.notifications.dataChange("invoiceIn", "update", id);
     return this.sync(updated);
   }
 
@@ -857,6 +863,7 @@ export class InvoiceInService {
       entityId: id,
       detail: `${row.status} → ${updated.status}`,
     });
+    this.notifications.dataChange("invoiceIn", "status", id);
     return this.sync(updated);
   }
 

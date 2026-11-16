@@ -9,7 +9,7 @@ import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FormField, Panel, Timeline } from "@/components/taska/basics";
 import { StatusBadge } from "@/components/taska/status-badge";
-import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog, SupplierSelect } from "@/components/taska/dialogs";
+import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog, SupplierSelect, TimePicker } from "@/components/taska/dialogs";
 import {
   CustomerSelect,
   LeadSelect,
@@ -289,7 +289,7 @@ export function EventFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[90vh] flex flex-col p-6">
+      <DialogContent className="sm:max-w-xl md:max-w-3xl max-h-[90vh] flex flex-col p-6">
         <DialogHeader className="shrink-0 mb-1">
           <DialogTitle>{eventId ? "Edit Agenda" : "Buat Agenda"}</DialogTitle>
         </DialogHeader>
@@ -343,13 +343,13 @@ export function EventFormDialog({
                 </Pressable>
               ))}
             </View>
-            <View className="flex-row gap-3">
+            <View className="flex-col gap-3 md:flex-row">
               <View className="flex-1"><FormField label="Tanggal mulai" required><DatePicker value={startDate} onChange={setStartDate} /></FormField></View>
-              {!allDay ? <View className="w-28"><FormField label="Jam mulai (WIB)"><Input value={startTime} onChangeText={setStartTime} placeholder="09:00" /></FormField></View> : null}
+              {!allDay ? <View className="flex-1"><FormField label="Jam mulai (WIB)"><TimePicker value={startTime} onChange={setStartTime} placeholder="09:00" /></FormField></View> : null}
             </View>
-            <View className="flex-row gap-3">
+            <View className="flex-col gap-3 md:flex-row">
               <View className="flex-1"><FormField label="Tanggal selesai / deadline"><DatePicker value={endDate} onChange={setEndDate} clearable /></FormField></View>
-              {!allDay ? <View className="w-28"><FormField label="Jam selesai (WIB)"><Input value={endTime} onChangeText={setEndTime} placeholder="10:00" /></FormField></View> : null}
+              {!allDay ? <View className="flex-1"><FormField label="Jam selesai (WIB)"><TimePicker value={endTime} onChange={setEndTime} placeholder="10:00" /></FormField></View> : null}
             </View>
             <FormField label="Penanggung jawab">
               <UserSelect

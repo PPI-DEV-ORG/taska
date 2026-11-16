@@ -241,6 +241,7 @@ export class PocService {
       entityId: row.id,
       detail: `${row.number} — ${row.title}`,
     });
+    this.notifications.dataChange("poc-reports", "create", row.id);
 
     return row;
   }
@@ -287,6 +288,7 @@ export class PocService {
       entityId: id,
       detail: `${row.number} — ${row.title}`,
     });
+    this.notifications.dataChange("poc-reports", "update", id);
 
     return row;
   }
@@ -312,6 +314,7 @@ export class PocService {
       entityId: id,
       detail: `${row.number} — Status: ${row.status}, Hasil: ${row.resultStatus ?? "-"}${noteText}`,
     });
+    this.notifications.dataChange("poc-reports", "status", id);
 
     return row;
   }
@@ -329,6 +332,7 @@ export class PocService {
       entityId: id,
       detail: `${existing.number} — ${existing.title}`,
     });
+    this.notifications.dataChange("poc-reports", "delete", id);
 
     return { deleted: true, id };
   }
@@ -348,6 +352,7 @@ export class PocService {
         notes: dto.notes ?? null,
       },
     });
+    this.notifications.dataChange("poc-reports", "update", pocId);
 
     return item;
   }
@@ -373,6 +378,7 @@ export class PocService {
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
       },
     });
+    this.notifications.dataChange("poc-reports", "update", pocId);
 
     return updated;
   }
@@ -388,10 +394,12 @@ export class PocService {
     });
     if (!item) throw new NotFoundException("Item checklist tidak ditemukan");
 
-    return this.db.pocChecklist.update({
+    const updated = await this.db.pocChecklist.update({
       where: { id: checklistId },
       data: { isDone },
     });
+    this.notifications.dataChange("poc-reports", "update", pocId);
+    return updated;
   }
 
   async deleteChecklist(pocId: number, checklistId: number, user: RequestUser) {
@@ -401,6 +409,7 @@ export class PocService {
     if (!item) throw new NotFoundException("Item checklist tidak ditemukan");
 
     await this.db.pocChecklist.delete({ where: { id: checklistId } });
+    this.notifications.dataChange("poc-reports", "update", pocId);
     return { deleted: true, id: checklistId };
   }
 }

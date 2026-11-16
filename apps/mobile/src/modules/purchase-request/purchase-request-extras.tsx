@@ -237,6 +237,7 @@ export function PurchaseRequestExtras({
     row.status === "PO dibuat" ||
     localStatus === "PO_DIBUAT" ||
     linkedPos.length > 0;
+  const isViaPo = isSupplierPo || isPoDibuat || Boolean(linkedPo);
 
   const isDiterima =
     effectiveRaw === "DITERIMA" ||
@@ -601,9 +602,9 @@ export function PurchaseRequestExtras({
     if (isSupplierPo && !isDebt) {
       return [
         { label: "Diajukan", done: true, current: isDiajukan },
-        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPaid && !isDispatched && !isDiterima },
-        { label: "Dibayar (Kas)", done: isPaid, current: (effectiveRaw === "DIBAYAR" || isPaid) && !isDispatched && !isDiterima },
-        { label: "Dikirim Supplier", done: isDispatched, current: isDikirim && !isDiterima },
+        { label: "Disetujui", done: isApproved, current: isDisetujui && !isPoDibuat && !isDispatched && !isDiterima },
+        { label: "PO Pemasok", done: isPoDibuat || isDispatched || isDiterima, current: isPoDibuat && !isDispatched && !isDiterima },
+        { label: "Dikirim Supplier", done: isDispatched || isDiterima, current: isDikirim && !isDiterima },
         { label: "Diterima Gudang", done: isDiterima, current: isDiterima },
       ];
     }
@@ -841,22 +842,27 @@ export function PurchaseRequestExtras({
                     </Button>,
                   );
                 }
-                // Pembayaran: satu tempat. Bila sudah ada tagihan supplier, bayar di tagihan itu.
+                // Pembayaran: satu tempat. Bila lewat PO supplier, bayar di PO / tagihan supplier, bukan di PR.
                 const payDue = !isStockTake && !isPaid && (isCash ? isApproved : isDiterima);
+                const targetPayPo = billPo ?? linkedPo;
                 if (payDue && canPay) {
-                  actions.push(
-                    billPo ? (
-                      <Button key="bill" size="sm" variant="outline" onPress={() => router.push(`/supplier-pos/${billPo.id}` as any)}>
-                        <FileText size={14} color={colors.text} />
-                        <Text className="text-xs">Bayar lewat tagihan di PO {billPo.nomor}</Text>
-                      </Button>
-                    ) : (
+                  if (isViaPo) {
+                    if (targetPayPo) {
+                      actions.push(
+                        <Button key="bill" size="sm" variant="outline" onPress={() => router.push(`/supplier-pos/${targetPayPo.id}` as any)}>
+                          <FileText size={14} color={colors.text} />
+                          <Text className="text-xs">Kelola tagihan & bayar di PO {targetPayPo.nomor}</Text>
+                        </Button>,
+                      );
+                    }
+                  } else {
+                    actions.push(
                       <Button key="pay" size="sm" className="bg-emerald-600" onPress={() => setPayModalOpen(true)} disabled={loading}>
                         <DollarSign size={14} color="#fff" />
                         <Text className="text-xs font-semibold text-white">{isCash ? "Bayar" : "Lunasi"}</Text>
-                      </Button>
-                    ),
-                  );
+                      </Button>,
+                    );
+                  }
                 }
                 if (isStockTake && isApproved && !isDispatched && isGudang) {
                   actions.push(
@@ -870,7 +876,7 @@ export function PurchaseRequestExtras({
                   !isStockTake &&
                   !isProjectConsumableRequest &&
                   !isDispatched &&
-                  (isSupplierFlow ? isPoDibuat && (isDebt || isPaid) : isCash ? isPaid : isApproved);
+                  (isSupplierFlow ? isPoDibuat || isApproved || isPaid : isCash ? isPaid : isApproved);
                 if (shipReady && canShip) {
                   actions.push(
                     <Button key="ship" size="sm" onPress={() => setConfirmSendOpen(true)} disabled={loading}>

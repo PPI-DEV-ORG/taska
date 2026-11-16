@@ -47,6 +47,7 @@ const REPORT_PERMISSION: Record<string, [string, Action]> = {
   stock: ["stock", "M"],
   approvals: ["approvals", "V"],
   expenses: ["expenses", "V"],
+  invoices: ["accounting", "L"],
   "profit-loss": ["accounting", "L"],
   "income-statement": ["accounting", "L"],
   "balance-sheet": ["accounting", "L"],

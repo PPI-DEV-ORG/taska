@@ -46,6 +46,7 @@ type ActionItem = {
 export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void }) {
   const router = useRouter();
   const { data, user, toast, patchRow, setStatus, refreshModule, companyProfile } = useApp();
+  const visitRows = data["visit-reports"];
 
   const [pdfBusy, setPdfBusy] = React.useState(false);
   const [actions, setActions] = React.useState<ActionItem[]>(() =>
@@ -96,7 +97,7 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
     return () => {
       active = false;
     };
-  }, [row.id]);
+  }, [row.id, visitRows]);
 
   // Expenses for this Visit
   const visitExpenses = React.useMemo(() => {

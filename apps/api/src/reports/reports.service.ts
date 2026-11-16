@@ -21,6 +21,7 @@ export const REPORT_TYPES = [
   "leads",
   "followups",
   "projects",
+  "invoices",
   "profit-loss",
   "income-statement",
   "balance-sheet",
@@ -52,6 +53,8 @@ export class ReportsService {
         return this.followups(q);
       case "projects":
         return this.projects(q);
+      case "invoices":
+        return this.invoices(q);
       case "profit-loss":
         return this.profitLoss(q);
       case "income-statement":
@@ -187,86 +190,128 @@ export class ReportsService {
     };
   }
 
-  private async profitLoss(q: ReportQuery): Promise<ReportData> {
-    const rows = await this.prisma.main.project.findMany({
+  private async invoices(q: ReportQuery): Promise<ReportData> {
+    const rows = await this.prisma.main.invoiceOut.findMany({
       where: {
+        isProforma: false,
         ...(q.status ? { status: q.status as never } : {}),
-        ...(q.q ? { name: { contains: q.q } } : {}),
-        ...this.dateRange(q, "startDate"),
+        ...(q.q ? { number: { contains: q.q } } : {}),
+        ...this.dateRange(q, "date"),
       },
       include: {
         customer: { select: { name: true } },
-        pic: { select: { name: true } },
-        invoices: {
-          select: { amount: true, ppn: true, total: true, paidAmount: true, status: true },
-        },
-        supplierPOs: {
-          select: { total: true, status: true },
-        },
-        expenses: {
-          select: { amount: true, status: true },
-        },
+        project: { select: { name: true } },
       },
-      orderBy: { startDate: "desc" },
+      orderBy: { date: "desc" },
       take: MAX_ROWS,
     });
 
+    let totalTagihan = 0;
+    let totalTerbayar = 0;
+    let totalSisa = 0;
+
+    const dataRows: ReportData["rows"] = rows.map((inv) => {
+      const total = Number(inv.total || 0);
+      const paid = inv.status === "PAID" ? Math.max(Number(inv.paidAmount || 0), total) : Number(inv.paidAmount || 0);
+      const sisa = inv.status === "BATAL" ? 0 : Math.max(0, total - paid);
+      if (inv.status !== "BATAL") {
+        totalTagihan += total;
+        totalTerbayar += paid;
+        totalSisa += sisa;
+      }
+      return [
+        inv.number,
+        new Date(inv.date).toLocaleDateString("id-ID"),
+        inv.customer?.name || "-",
+        inv.project?.name || "-",
+        inv.type,
+        `Rp ${Number(inv.amount || 0).toLocaleString("id-ID")}`,
+        `Rp ${Number(inv.ppn || 0).toLocaleString("id-ID")}`,
+        `Rp ${total.toLocaleString("id-ID")}`,
+        `Rp ${paid.toLocaleString("id-ID")}`,
+        `Rp ${sisa.toLocaleString("id-ID")}`,
+        inv.dueDate ? new Date(inv.dueDate).toLocaleDateString("id-ID") : "-",
+        inv.status,
+      ];
+    });
+
+    return {
+      title: "Laporan Piutang & Faktur Keluar",
+      columns: [
+        "Nomor Invoice",
+        "Tanggal",
+        "Customer",
+        "Project",
+        "Jenis Termin",
+        "DPP (Rp)",
+        "PPN (Rp)",
+        "Total Tagihan (Rp)",
+        "Sudah Dibayar (Rp)",
+        "Sisa Piutang (Rp)",
+        "Jatuh Tempo",
+        "Status",
+      ],
+      note: `Total Tagihan: Rp ${totalTagihan.toLocaleString("id-ID")} | Terbayar: Rp ${totalTerbayar.toLocaleString("id-ID")} | Sisa Piutang: Rp ${totalSisa.toLocaleString("id-ID")}`,
+      rows: dataRows,
+    };
+  }
+
+  private async profitLoss(q: ReportQuery): Promise<ReportData> {
+    const inc = await this.accountingReport.getIncomeStatement({
+      startDate: q.from,
+      endDate: q.to,
+    });
+    const projectRows = (inc.projectRows || []).filter((r: any) => {
+      if (q.status && r.status !== q.status) return false;
+      if (q.q && !String(r.project || "").toLowerCase().includes(q.q.toLowerCase())) return false;
+      return true;
+    });
+
     let grandRevenue = 0;
-    let grandPoCost = 0;
-    let grandExpCost = 0;
+    let grandCogs = 0;
+    let grandOpex = 0;
     let grandNetProfit = 0;
 
-    const dataRows = rows.map((p) => {
-      const validInvoices = (p.invoices || []).filter((i) => i.status !== "BATAL");
-      const revenue = validInvoices.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
-
-      const validPos = (p.supplierPOs || []).filter(
-        (po) => po.status !== "DIBATALKAN" && po.status !== "DITOLAK",
-      );
-      const poCost = validPos.reduce((acc, po) => acc + (Number(po.total) || 0), 0);
-
-      const validExp = (p.expenses || []).filter((e) => e.status !== "DITOLAK");
-      const expCost = validExp.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
-
-      const totalCost = poCost + expCost;
-      const netProfit = revenue - totalCost;
-      const marginPct = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(1) + "%" : "0.0%";
-
-      grandRevenue += revenue;
-      grandPoCost += poCost;
-      grandExpCost += expCost;
-      grandNetProfit += netProfit;
+    const dataRows: ReportData["rows"] = projectRows.map((r: any) => {
+      grandRevenue += Number(r.revenueDpp || 0);
+      grandCogs += Number(r.cogsPo || 0);
+      grandOpex += Number(r.opexExpense || 0);
+      grandNetProfit += Number(r.netProfit || 0);
 
       return [
-        p.name,
-        p.customer?.name ?? "-",
-        p.pic?.name ?? "-",
-        p.status,
-        `Rp ${revenue.toLocaleString("id-ID")}`,
-        `Rp ${poCost.toLocaleString("id-ID")}`,
-        `Rp ${expCost.toLocaleString("id-ID")}`,
-        `Rp ${netProfit.toLocaleString("id-ID")}`,
-        marginPct,
+        r.project,
+        r.customer,
+        r.pic || "-",
+        `Rp ${Number(r.revenueDpp || 0).toLocaleString("id-ID")}`,
+        `Rp ${Number(r.paidCashIn || 0).toLocaleString("id-ID")}`,
+        `Rp ${Number(r.arOutstanding || 0).toLocaleString("id-ID")}`,
+        `Rp ${Number(r.cogsPo || 0).toLocaleString("id-ID")}`,
+        `Rp ${Number(r.opexExpense || 0).toLocaleString("id-ID")}`,
+        `Rp ${Number(r.netProfit || 0).toLocaleString("id-ID")}`,
+        `${r.marginPct}%`,
+        r.statusKesehatan,
       ];
     });
 
     const overallMargin =
       grandRevenue > 0 ? ((grandNetProfit / grandRevenue) * 100).toFixed(1) + "%" : "0.0%";
 
-    const summary = `Total Pendapatan: Rp ${grandRevenue.toLocaleString("id-ID")} | Total Biaya PO: Rp ${grandPoCost.toLocaleString("id-ID")} | Total Biaya Operasional: Rp ${grandExpCost.toLocaleString("id-ID")} | Laba Bersih Keseluruhan: Rp ${grandNetProfit.toLocaleString("id-ID")} (Margin: ${overallMargin})`;
+    const summary = `Total Pendapatan DPP: Rp ${grandRevenue.toLocaleString("id-ID")} | Total HPP Barang & PO: Rp ${grandCogs.toLocaleString("id-ID")} | Total Biaya Lapangan: Rp ${grandOpex.toLocaleString("id-ID")} | Laba Bersih Proyek: Rp ${grandNetProfit.toLocaleString("id-ID")} (Margin: ${overallMargin})`;
 
     return {
-      title: "Laporan Untung-Rugi (P&L) per Project & Overall",
+      title: "Laporan Untung-Rugi (P&L) per Proyek",
       columns: [
-        "Nama Project",
-        "Customer",
+        "Proyek",
+        "Pelanggan",
         "PIC",
-        "Status",
-        "Pendapatan (Revenue)",
-        "Biaya PO Supplier",
-        "Biaya Operasional",
-        "Laba Bersih",
+        "Pendapatan DPP (Rp)",
+        "Kas Diterima (Rp)",
+        "Sisa Piutang (Rp)",
+        "HPP Barang & PO (Rp)",
+        "Biaya Lapangan (Rp)",
+        "Laba Bersih (Rp)",
         "Margin (%)",
+        "Status Kesehatan",
       ],
       note: summary,
       rows: dataRows,
@@ -274,262 +319,203 @@ export class ReportsService {
   }
 
   private async incomeStatement(q: ReportQuery): Promise<ReportData> {
-    const [invoices, supplierPos, expenses] = await Promise.all([
-      this.prisma.main.invoiceOut.findMany({
-        where: { status: { not: "BATAL" }, isProforma: false, ...this.dateRange(q, "date") },
-      }),
-      this.prisma.main.supplierPO.findMany({
-        where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, ...this.dateRange(q, "date") },
-      }),
-      this.prisma.main.expense.findMany({
-        where: { status: { in: ["DISETUJUI", "DIBAYAR"] }, ...this.dateRange(q, "date") },
-        include: { category: { select: { name: true } } },
-      }),
-    ]);
+    const inc = await this.accountingReport.getIncomeStatement({
+      startDate: q.from,
+      endDate: q.to,
+    });
 
-    const revDpp = invoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    const revPpn = invoices.reduce((s, i) => s + (Number(i.ppn) || 0), 0);
-    const revGross = invoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
-    const cogsProject = supplierPos
-      .filter((po) => !!(po.projectId))
-      .reduce((s, po) => s + (Number(po.total) || 0), 0);
-    const cogsRetail = 0;
-    const cogs = cogsProject + cogsRetail;
-    const grossProfit = revDpp - cogs;
-
-    const catMap = new Map<string, number>();
-    let opexTotal = 0;
-    for (const ex of expenses) {
-      const cat = ex.category?.name || "Operasional Umum";
-      const amt = Number(ex.amount) || 0;
-      opexTotal += amt;
-      catMap.set(cat, (catMap.get(cat) || 0) + amt);
-    }
-
-    const netProfit = grossProfit - opexTotal;
+    const revDpp = Number(inc.revenue?.total || 0);
+    const revPpn = Number(inc.ppnKeluaran || 0);
+    const revGross = Number(inc.revenueGross ?? revDpp + revPpn);
+    const cogsTotal = Number(inc.cogs?.total || 0);
+    const grossProfit = Number(inc.grossProfit ?? revDpp - cogsTotal);
+    const opexTotal = Number(inc.operatingExpense?.total || 0);
+    const otherRevTotal = Number(inc.otherRevenue?.total || 0);
+    const otherExpTotal = Number(inc.otherExpense?.total || 0);
+    const netProfit = Number(inc.netProfit ?? grossProfit - opexTotal + otherRevTotal - otherExpTotal);
+    const grossMargin = revDpp > 0 ? ((grossProfit / revDpp) * 100).toFixed(1) + "%" : "0.0%";
     const netMargin = revDpp > 0 ? ((netProfit / revDpp) * 100).toFixed(1) + "%" : "0.0%";
 
+    const revAccounts = inc.revenue?.accounts || [];
+    const cogsAccounts = inc.cogs?.accounts || [];
+    const opexAccounts = inc.operatingExpense?.accounts || [];
+    const otherRevAccounts = inc.otherRevenue?.accounts || [];
+    const otherExpAccounts = inc.otherExpense?.accounts || [];
+
     const rows: ReportData["rows"] = [
-      ["4101", "Pendapatan Proyek & Integrasi (DPP Bersih)", "Pendapatan", `Rp ${revDpp.toLocaleString("id-ID")}`],
-      ["2102", "PPN Keluaran Terpungut (11% — titipan pajak)", "Informasi Pajak", `Rp ${revPpn.toLocaleString("id-ID")}`],
-      ["-", "Total Tagihan Kotor (Gross Invoiced)", "Pendapatan Kotor", `Rp ${revGross.toLocaleString("id-ID")}`],
-      ["5101", "HPP Project (Pengadaan Barang & Material Proyek)", "Beban Pokok (HPP)", `(Rp ${cogsProject.toLocaleString("id-ID")})`],
-      ["5102", "HPP Retail (Harga Pokok Penjualan Barang Stok)", "Beban Pokok (HPP)", `(Rp ${cogsRetail.toLocaleString("id-ID")})`],
-      ["=", "LABA KOTOR (GROSS PROFIT)", "Subtotal", `Rp ${grossProfit.toLocaleString("id-ID")}`],
-      ...Array.from(catMap.entries()).map(([cat, amt]) => [
-        "6101",
-        `Beban Operasional — ${cat}`,
-        "Beban Operasional (OPEX)",
-        `(Rp ${amt.toLocaleString("id-ID")})`,
+      ["-", "Nilai Tagihan Kotor Invoice Pelanggan (Termasuk PPN)", "Informasi Tagihan", `Rp ${revGross.toLocaleString("id-ID")}`],
+      ["2100", "Dikurangi: PPN Keluaran 11% (Kewajiban Pajak DJP)", "Informasi Pajak", `(Rp ${revPpn.toLocaleString("id-ID")})`],
+      ...(revAccounts.length > 0
+        ? revAccounts.map((a: any) => [
+            a.code,
+            a.name,
+            "I. Pendapatan Usaha (DPP)",
+            a.amount >= 0
+              ? `Rp ${Number(a.amount).toLocaleString("id-ID")}`
+              : `(Rp ${Math.abs(Number(a.amount)).toLocaleString("id-ID")})`,
+          ])
+        : [["4000", "Pendapatan Operasional (DPP Bersih)", "I. Pendapatan Usaha (DPP)", `Rp ${revDpp.toLocaleString("id-ID")}`]]),
+      ["=", "TOTAL PENDAPATAN BERSIH OPERASIONAL (DPP)", "Subtotal Pendapatan", `Rp ${revDpp.toLocaleString("id-ID")}`],
+      ...(cogsAccounts.length > 0
+        ? cogsAccounts.map((a: any) => [
+            a.code,
+            a.name,
+            "II. Beban Pokok Penjualan (HPP)",
+            `(Rp ${Number(a.amount).toLocaleString("id-ID")})`,
+          ])
+        : [
+            ["5101", "HPP Project (Pengadaan Barang & Material Proyek)", "II. Beban Pokok Penjualan (HPP)", "Rp 0"],
+            ["5102", "HPP Retail (Harga Pokok Penjualan Barang Stok)", "II. Beban Pokok Penjualan (HPP)", "Rp 0"],
+          ]),
+      ["=", "TOTAL BEBAN POKOK PENJUALAN (HPP)", "Subtotal HPP", `(Rp ${cogsTotal.toLocaleString("id-ID")})`],
+      ["=", `LABA KOTOR (GROSS PROFIT) — Margin ${grossMargin}`, "Subtotal Laba Kotor", `Rp ${grossProfit.toLocaleString("id-ID")}`],
+      ...opexAccounts.map((a: any) => [
+        a.code,
+        a.name,
+        "III. Beban Operasional (OPEX)",
+        `(Rp ${Number(a.amount).toLocaleString("id-ID")})`,
       ]),
-      ["=", "TOTAL BEBAN OPERASIONAL (OPEX)", "Subtotal", `(Rp ${opexTotal.toLocaleString("id-ID")})`],
-      ["=", "LABA BERSIH OPERASIONAL (NET PROFIT)", "Total Akhir", `Rp ${netProfit.toLocaleString("id-ID")} (${netMargin})`],
+      ["=", "TOTAL BEBAN OPERASIONAL (OPEX)", "Subtotal OPEX", `(Rp ${opexTotal.toLocaleString("id-ID")})`],
+      ...otherRevAccounts.map((a: any) => [
+        a.code,
+        a.name,
+        "IV. Pendapatan Diluar Usaha",
+        `Rp ${Number(a.amount).toLocaleString("id-ID")}`,
+      ]),
+      ...otherExpAccounts.map((a: any) => [
+        a.code,
+        a.name,
+        "IV. Beban Diluar Usaha",
+        `(Rp ${Number(a.amount).toLocaleString("id-ID")})`,
+      ]),
+      ["=", `LABA BERSIH OPERASIONAL (NET PROFIT) — Margin ${netMargin}`, "Total Akhir", `Rp ${netProfit.toLocaleString("id-ID")}`],
     ];
 
     return {
       title: "Laporan Laba Rugi Standar Akuntansi (Income Statement)",
       columns: ["Kode Akun", "Komponen Laporan Laba Rugi", "Kelompok", "Nominal (Rp)"],
-      note: `Pendapatan DPP: Rp ${revDpp.toLocaleString("id-ID")} | HPP: Rp ${cogs.toLocaleString("id-ID")} | OPEX: Rp ${opexTotal.toLocaleString("id-ID")} | Laba Bersih: Rp ${netProfit.toLocaleString("id-ID")} (${netMargin})`,
+      note: `Pendapatan DPP: Rp ${revDpp.toLocaleString("id-ID")} | HPP: Rp ${cogsTotal.toLocaleString("id-ID")} | OPEX: Rp ${opexTotal.toLocaleString("id-ID")} | Laba Bersih: Rp ${netProfit.toLocaleString("id-ID")} (${netMargin})`,
       rows,
     };
   }
 
   private async balanceSheet(q: ReportQuery): Promise<ReportData> {
-    const [invoices, supplierPos, expenses, stockSummary] = await Promise.all([
-      this.prisma.main.invoiceOut.findMany({
-        where: { status: { not: "BATAL" }, isProforma: false, ...this.dateRange(q, "date") },
-      }),
-      this.prisma.main.supplierPO.findMany({
-        where: { status: { notIn: ["DIBATALKAN", "DITOLAK"] }, ...this.dateRange(q, "date") },
-      }),
-      this.prisma.main.expense.findMany({
-        where: { status: { in: ["DISETUJUI", "DIBAYAR"] }, ...this.dateRange(q, "date") },
-      }),
-      this.movements.summary({ page: 1, limit: MAX_ROWS, dir: "desc" }).catch(() => ({ items: [] })),
-    ]);
+    const bs = await this.accountingReport.getBalanceSheet({ asOfDate: q.to || q.from });
+    const assetsItems = bs.assets?.items || [];
+    const liabItems = bs.liabilities?.items || [];
+    const eqItems = bs.equity?.items || [];
 
-    const products = await this.prisma.main.product.findMany({ select: { id: true, buyPrice: true } }).catch(() => []);
-    const priceMap = new Map(products.map((p) => [p.id, Number(p.buyPrice) || 0]));
+    const totalAset = Number(bs.assets?.total || 0);
+    const totalKewajiban = Number(bs.liabilities?.total || 0);
+    const totalEkuitas = Number(bs.equity?.total || 0);
+    const totalPasiva = Number(bs.totalLiabilitiesAndEquity ?? totalKewajiban + totalEkuitas);
+    const isBalanced = Boolean(bs.isBalanced);
 
-    let persediaan = 0;
-    for (const item of stockSummary.items) {
-      const unitCost = priceMap.get(item.productId) || 0;
-      persediaan += Math.max(0, Number(item.saldo) || 0) * unitCost;
-    }
-
-    const revGross = invoices.reduce((s, i) => s + (Number(i.amount) || 0) + (Number(i.ppn) || 0), 0);
-    const revDpp = invoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    const ppnKeluaran = invoices.reduce((s, i) => s + (Number(i.ppn) || 0), 0);
-    const uangMukaPph = invoices.reduce((s, i) => {
-      const expFull = (Number(i.amount) || 0) + (Number(i.ppn) || 0);
-      const tot = Number(i.total) > 0 ? Number(i.total) : expFull;
-      return s + Math.max(0, expFull - tot);
-    }, 0);
-    const cashIn = invoices.reduce((s, i) => {
-      const expFull = (Number(i.amount) || 0) + (Number(i.ppn) || 0);
-      const tot = Number(i.total) > 0 ? Number(i.total) : expFull;
-      const paid = Number(i.paidAmount) || 0;
-      return s + (i.status === "PAID" ? Math.max(paid, tot) : Math.min(tot, paid));
-    }, 0);
-    const piutangUsaha = Math.max(0, (revGross - uangMukaPph) - cashIn);
-
-    const cogsTotal = supplierPos.reduce((s, po) => s + (Number(po.total) || 0), 0);
-    const poPaid = supplierPos
-      .filter((po) => po.status === "DISETUJUI")
-      .reduce((s, po) => s + (Number(po.total) || 0), 0);
-    const hutangSupplier = Math.max(0, cogsTotal - poPaid);
-
-    const opexTotal = expenses.reduce((s, ex) => s + (Number(ex.amount) || 0), 0);
-    const expPaid = expenses
-      .filter((ex) => ex.status === "DIBAYAR")
-      .reduce((s, ex) => s + (Number(ex.amount) || 0), 0);
-    const hutangReimbursement = Math.max(0, opexTotal - expPaid);
-
-    const netCashFlow = cashIn - (poPaid + expPaid);
-    const baseWorkingCapital = netCashFlow < 0 ? Math.abs(netCashFlow) + 25_000_000 : 0;
-    const kasDanBank = netCashFlow + baseWorkingCapital;
-    const modalKerjaAwal = persediaan + baseWorkingCapital;
-    const labaBerjalan = revDpp - cogsTotal - opexTotal;
-
-    const totalAset = kasDanBank + piutangUsaha + persediaan + uangMukaPph;
-    const totalKewajiban = hutangSupplier + hutangReimbursement + ppnKeluaran;
-    const totalEkuitas = modalKerjaAwal + labaBerjalan;
-    const totalPasiva = totalKewajiban + totalEkuitas;
+    const ppnMasukan = assetsItems
+      .filter((i: any) => i.code === "1600" || i.code === "1104" || String(i.code).startsWith("1600."))
+      .reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+    const ppnKeluaran = liabItems
+      .filter((i: any) => i.code === "2100" || i.code === "2102" || String(i.code).startsWith("2100."))
+      .reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+    const selisihPpn = ppnKeluaran - ppnMasukan;
 
     const rows: ReportData["rows"] = [
-      ["1101", "Kas & Bank Operasional", "ASET LANCAR (AKTIVA)", `Rp ${kasDanBank.toLocaleString("id-ID")}`],
-      ["1102", "Piutang Usaha Pelanggan (Accounts Receivable)", "ASET LANCAR (AKTIVA)", `Rp ${piutangUsaha.toLocaleString("id-ID")}`],
-      ["1103", "Persediaan Barang Gudang (Inventory)", "ASET LANCAR (AKTIVA)", `Rp ${persediaan.toLocaleString("id-ID")}`],
-      ...(uangMukaPph > 0 ? [["1105", "Uang Muka PPh / Pajak Dibayar Dimuka", "ASET LANCAR (AKTIVA)", `Rp ${uangMukaPph.toLocaleString("id-ID")}`]] : []),
-      ["=", "TOTAL ASET (AKTIVA)", "TOTAL AKTIVA", `Rp ${totalAset.toLocaleString("id-ID")}`],
-      ["2101", "Hutang Usaha Supplier (Accounts Payable)", "KEWAJIBAN JANGKA PENDEK", `Rp ${hutangSupplier.toLocaleString("id-ID")}`],
-      ["2102", "Hutang PPN Keluaran (Output VAT)", "KEWAJIBAN JANGKA PENDEK", `Rp ${ppnKeluaran.toLocaleString("id-ID")}`],
-      ["2103", "Hutang Biaya & Reimbursement Operasional", "KEWAJIBAN JANGKA PENDEK", `Rp ${hutangReimbursement.toLocaleString("id-ID")}`],
-      ["=", "TOTAL KEWAJIBAN (LIABILITAS)", "SUBTOTAL PASIVA", `Rp ${totalKewajiban.toLocaleString("id-ID")}`],
-      ["3101", "Modal Kerja & Cadangan Persediaan Awal", "EKUITAS (MODAL)", `Rp ${modalKerjaAwal.toLocaleString("id-ID")}`],
-      ["3102", "Laba Ditahan / Laba Bersih Tahun Berjalan", "EKUITAS (MODAL)", `Rp ${labaBerjalan.toLocaleString("id-ID")}`],
-      ["=", "TOTAL EKUITAS", "SUBTOTAL EKUITAS", `Rp ${totalEkuitas.toLocaleString("id-ID")}`],
-      ["=", "TOTAL KEWAJIBAN & EKUITAS (PASIVA)", "TOTAL PASIVA", `Rp ${totalPasiva.toLocaleString("id-ID")}`],
+      ...assetsItems.map((it: any) => [
+        it.code,
+        it.name,
+        `AKTIVA — ${(it.category || "ASET LANCAR").toUpperCase()}`,
+        `Rp ${Number(it.amount || 0).toLocaleString("id-ID")}`,
+      ]),
+      ["=", "TOTAL AKTIVA (ASET PERUSAHAAN)", "TOTAL AKTIVA", `Rp ${totalAset.toLocaleString("id-ID")}`],
+      ...liabItems.map((it: any) => [
+        it.code,
+        it.name,
+        `PASIVA — ${(it.category || "KEWAJIBAN JANGKA PENDEK").toUpperCase()}`,
+        `Rp ${Number(it.amount || 0).toLocaleString("id-ID")}`,
+      ]),
+      ["=", "SUBTOTAL KEWAJIBAN (LIABILITIES)", "SUBTOTAL KEWAJIBAN", `Rp ${totalKewajiban.toLocaleString("id-ID")}`],
+      ...eqItems.map((it: any) => [
+        it.code,
+        it.name,
+        "PASIVA — EKUITAS (MODAL & LABA DITAHAN)",
+        `Rp ${Number(it.amount || 0).toLocaleString("id-ID")}`,
+      ]),
+      ["=", "SUBTOTAL EKUITAS (MODAL)", "SUBTOTAL EKUITAS", `Rp ${totalEkuitas.toLocaleString("id-ID")}`],
+      ["=", "TOTAL PASIVA (KEWAJIBAN + EKUITAS)", "TOTAL PASIVA", `Rp ${totalPasiva.toLocaleString("id-ID")}`],
+      [
+        "PAJAK",
+        selisihPpn > 0
+          ? "Posisi PPN DJP: PPN Kurang Bayar (Setor Kas Negara)"
+          : selisihPpn < 0
+          ? "Posisi PPN DJP: PPN Lebih Bayar (Kompensasi)"
+          : "Posisi PPN DJP: PPN Nihil",
+        `PPN Keluaran Rp ${ppnKeluaran.toLocaleString("id-ID")} vs PPN Masukan Rp ${ppnMasukan.toLocaleString("id-ID")}`,
+        `Rp ${Math.abs(selisihPpn).toLocaleString("id-ID")}`,
+      ],
     ];
 
     return {
       title: "Laporan Posisi Keuangan / Neraca (Balance Sheet)",
       columns: ["Kode Akun", "Nama Akun Neraca", "Kelompok Pos", "Saldo (Rp)"],
-      note: `Total Aset: Rp ${totalAset.toLocaleString("id-ID")} | Total Kewajiban + Ekuitas: Rp ${totalPasiva.toLocaleString("id-ID")} | Status: SEIMBANG (BALANCED)`,
+      note: `Total Aktiva: Rp ${totalAset.toLocaleString("id-ID")} | Total Pasiva: Rp ${totalPasiva.toLocaleString("id-ID")} | Status: ${isBalanced ? "SEIMBANG (BALANCED)" : `SELISIH Rp ${Math.abs(totalAset - totalPasiva).toLocaleString("id-ID")}`}`,
       rows,
     };
   }
 
   private async cashFlow(q: ReportQuery): Promise<ReportData> {
-    const [invoices, supplierPos, expenses] = await Promise.all([
-      this.prisma.main.invoiceOut.findMany({
-        where: { status: { not: "BATAL" }, isProforma: false, ...this.dateRange(q, "date") },
-        include: { customer: { select: { name: true } }, project: { select: { name: true } } },
-        orderBy: { date: "desc" },
-      }),
-      this.prisma.main.supplierPO.findMany({
-        where: { status: "DISETUJUI", ...this.dateRange(q, "date") },
-        include: { supplier: { select: { name: true } }, project: { select: { name: true } } },
-        orderBy: { date: "desc" },
-      }),
-      this.prisma.main.expense.findMany({
-        where: { status: "DIBAYAR", ...this.dateRange(q, "date") },
-        include: {
-          reporter: { select: { name: true } },
-          category: { select: { name: true } },
-          project: { select: { name: true } },
-        },
-        orderBy: { date: "desc" },
-      }),
-    ]);
+    const cf = await this.accountingReport.getCashFlow({
+      startDate: q.from,
+      endDate: q.to,
+    });
 
-    const rows: ReportData["rows"] = [];
-    let totalIn = 0;
-    let totalOut = 0;
+    const totalIn = Number(cf.totalInflow || 0);
+    const totalOut = Number(cf.totalOutflow || 0);
+    const netCash = Number(cf.netCashFlow || 0);
 
-    for (const inv of invoices) {
-      const tot = Number(inv.total) || 0;
-      const paid = inv.status === "PAID" ? Math.max(Number(inv.paidAmount) || 0, tot) : Number(inv.paidAmount) || 0;
-      if (paid > 0) {
-        totalIn += paid;
-        rows.push([
-          new Date(inv.date).toLocaleDateString("id-ID"),
-          inv.number,
-          "Arus Kas Masuk (Pelanggan)",
-          inv.customer?.name ?? "-",
-          inv.project?.name ?? "-",
-          `Penerimaan Pembayaran Invoice ${inv.number}`,
-          `Rp ${paid.toLocaleString("id-ID")}`,
-          "Rp 0",
-        ]);
-      }
-    }
-
-    for (const po of supplierPos) {
-      const tot = Number(po.total) || 0;
-      if (tot > 0) {
-        totalOut += tot;
-        rows.push([
-          new Date(po.date).toLocaleDateString("id-ID"),
-          po.number,
-          "Arus Kas Keluar (Supplier PO)",
-          (po as any).supplier?.name ?? "-",
-          (po as any).project?.name ?? "-",
-          `Pelunasan PO Supplier ${po.number}`,
-          "Rp 0",
-          `Rp ${tot.toLocaleString("id-ID")}`,
-        ]);
-      }
-    }
-
-    for (const ex of expenses) {
-      const amt = Number(ex.amount) || 0;
-      if (amt > 0) {
-        totalOut += amt;
-        rows.push([
-          new Date(ex.date).toLocaleDateString("id-ID"),
-          `EXP-${String(ex.id).padStart(3, "0")}`,
-          "Arus Kas Keluar (Biaya Operasional)",
-          ex.reporter?.name ?? "-",
-          ex.project?.name ?? "-",
-          `Reimbursement ${ex.category?.name ?? "Operasional"}: ${ex.description}`,
-          "Rp 0",
-          `Rp ${amt.toLocaleString("id-ID")}`,
-        ]);
-      }
-    }
-
-    const netCash = totalIn - totalOut;
+    const rows: ReportData["rows"] = [
+      ...(cf.items || []).map((item: any) => [
+        item.tanggal,
+        item.refNo,
+        item.kategori,
+        item.pihak,
+        item.project || "-",
+        item.keterangan,
+        item.masuk > 0 ? `Rp ${Number(item.masuk).toLocaleString("id-ID")}` : "Rp 0",
+        item.keluar > 0 ? `Rp ${Number(item.keluar).toLocaleString("id-ID")}` : "Rp 0",
+      ]),
+      [
+        "TOTAL",
+        "REKAP",
+        "RINGKASAN ARUS KAS",
+        "-",
+        "-",
+        `Arus Kas Bersih (Net Cash Flow): Rp ${netCash.toLocaleString("id-ID")}`,
+        `Rp ${totalIn.toLocaleString("id-ID")}`,
+        `Rp ${totalOut.toLocaleString("id-ID")}`,
+      ],
+    ];
 
     return {
       title: "Laporan Arus Kas / Cash Flow Statement (Metode Langsung)",
-      columns: ["Tanggal", "No. Referensi", "Kategori Arus Kas", "Pihak Terkait", "Project", "Keterangan", "Kas Masuk (Inflow)", "Kas Keluar (Outflow)"],
+      columns: [
+        "Tanggal",
+        "No. Referensi",
+        "Kategori Arus Kas",
+        "Pihak Terkait",
+        "Project",
+        "Keterangan",
+        "Kas Masuk (Inflow)",
+        "Kas Keluar (Outflow)",
+      ],
       note: `Total Kas Masuk: Rp ${totalIn.toLocaleString("id-ID")} | Total Kas Keluar: Rp ${totalOut.toLocaleString("id-ID")} | Arus Kas Bersih (Net Cash Flow): Rp ${netCash.toLocaleString("id-ID")}`,
       rows,
     };
   }
 
   private async generalJournal(q: ReportQuery): Promise<ReportData> {
-    const lines = await (this.prisma.main as any).journalLine.findMany({
-      where: {
-        entry: {
-          status: "POSTED",
-          ...(q.from || q.to
-            ? {
-                date: {
-                  ...(q.from ? { gte: new Date(q.from) } : {}),
-                  ...(q.to ? { lte: new Date(q.to) } : {}),
-                },
-              }
-            : {}),
-        },
-      },
-      include: {
-        entry: true,
-        account: true,
-      },
-      orderBy: [{ entry: { date: "asc" } }, { entryId: "asc" }, { lineNo: "asc" }],
-      take: MAX_ROWS,
+    const lines = await this.accountingReport.getGeneralLedger({
+      startDate: q.from,
+      endDate: q.to,
     });
 
     const rows: ReportData["rows"] = [];
@@ -542,17 +528,29 @@ export class ReportsService {
       totalDebit += d;
       totalKredit += c;
       rows.push([
-        l.entry.number,
-        new Date(l.entry.date).toLocaleDateString("id-ID"),
-        l.entry.refNo || "-",
+        l.entryNumber,
+        new Date(l.date).toLocaleDateString("id-ID"),
+        l.refNo || "-",
         l.projectId ? `Project #${l.projectId}` : "-",
         l.accountCode,
-        l.account?.name || "-",
-        l.memo || l.entry.memo,
+        l.accountName || "-",
+        l.memo || "-",
         `Rp ${d.toLocaleString("id-ID")}`,
         `Rp ${c.toLocaleString("id-ID")}`,
       ]);
     }
+
+    rows.push([
+      "TOTAL",
+      "-",
+      "-",
+      "-",
+      "-",
+      "TOTAL DEBIT & KREDIT",
+      totalDebit === totalKredit ? "SEIMBANG (BALANCED)" : "SELISIH",
+      `Rp ${totalDebit.toLocaleString("id-ID")}`,
+      `Rp ${totalKredit.toLocaleString("id-ID")}`,
+    ]);
 
     return {
       title: "Laporan Jurnal Umum (General Journal - Double Entry DB)",

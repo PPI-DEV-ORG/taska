@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView } from "react-native";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { AlertTriangle, Check, Plus, RefreshCw } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { FormDialog, SearchableSelect } from "@/components/taska/dialogs";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
-import { MODULES, hasUserPermission, type Role, type Row } from "@/constants/modules";
+import { MODULES, hasUserPermission, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
 
 export default function StockOpnameScreen() {
@@ -21,11 +21,11 @@ export default function StockOpnameScreen() {
 
   const isAllowed = hasUserPermission(user, "opname", "M");
 
-  const products: Row[] = data.products ?? [];
-  const warehouses: Row[] = data.warehouses ?? [];
-  const stockSummary: any[] = data.stockSummary ?? [];
-  const serials: Row[] = data.serials ?? [];
-  const damageReports: Row[] = data["damage-reports"] ?? [];
+  const products: Row[] = React.useMemo(() => data.products ?? [], [data.products]);
+  const warehouses: Row[] = React.useMemo(() => data.warehouses ?? [], [data.warehouses]);
+  const stockSummary: any[] = React.useMemo(() => data.stockSummary ?? [], [data.stockSummary]);
+  const serials: Row[] = React.useMemo(() => data.serials ?? [], [data.serials]);
+  const damageReports: Row[] = React.useMemo(() => data["damage-reports"] ?? [], [data]);
 
   const [reportDamageOpen, setReportDamageOpen] = React.useState(false);
   const [replacementOpen, setReplacementOpen] = React.useState(false);
@@ -119,14 +119,12 @@ export default function StockOpnameScreen() {
     setCounts((prev) => ({ ...prev, [pid]: val }));
   }
 
-  let itemsCounted = 0;
   let itemsMatch = 0;
   let itemsDiff = 0;
   products.forEach((p) => {
     const systemQty = systemQtyOf(String(p.id));
     const physQtyStr = counts[String(p.id)];
     if (physQtyStr !== undefined) {
-      itemsCounted++;
       const physQty = Number(physQtyStr) || 0;
       if (physQty === systemQty) itemsMatch++;
       else itemsDiff++;
@@ -256,10 +254,10 @@ export default function StockOpnameScreen() {
                 onChangeText={setSearchQuery}
                 placeholder="Cari nama barang, SKU, atau merk..."
               />
-              <View className="gap-2">
-                <View className="flex-row items-center gap-2">
-                  <Text className="text-xs font-semibold text-muted-foreground w-16">Kategori:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1.5 py-0.5">
+              <View className="gap-2.5">
+                <View className="flex-row items-start gap-2">
+                  <Text className="text-xs font-semibold text-muted-foreground w-16 pt-1.5">Kategori:</Text>
+                  <View className="flex-1 flex-row flex-wrap gap-1.5">
                     {availableCategories.map((c) => (
                       <Button
                         key={c}
@@ -271,13 +269,13 @@ export default function StockOpnameScreen() {
                         <Text className="text-xs">{c}</Text>
                       </Button>
                     ))}
-                  </ScrollView>
+                  </View>
                 </View>
 
                 {availableBrands.length > 2 && (
-                  <View className="flex-row items-center gap-2">
-                    <Text className="text-xs font-semibold text-muted-foreground w-16">Merk:</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1.5 py-0.5">
+                  <View className="flex-row items-start gap-2">
+                    <Text className="text-xs font-semibold text-muted-foreground w-16 pt-1.5">Merk:</Text>
+                    <View className="flex-1 flex-row flex-wrap gap-1.5">
                       {availableBrands.map((b) => (
                         <Button
                           key={b}
@@ -289,7 +287,7 @@ export default function StockOpnameScreen() {
                           <Text className="text-xs">{b}</Text>
                         </Button>
                       ))}
-                    </ScrollView>
+                    </View>
                   </View>
                 )}
               </View>
