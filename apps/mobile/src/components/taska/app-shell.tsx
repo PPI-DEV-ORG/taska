@@ -29,7 +29,7 @@ const NOTIF_ICON = { approval: CheckSquare, stok: Boxes, pengiriman: Truck, lead
 const NAV_GROUPS: { title: string; keys: string[] }[] = [
   { title: "", keys: ["dashboard", "calendar", "approvals", "reports"] },
   { title: "Penjualan", keys: ["leads", "customers", "quotations", "poc-reports", "visit-reports", "po-client"] },
-  { title: "Proyek", keys: ["surveys", "projects", "tasks"] },
+  { title: "Proyek", keys: ["surveys", "projects", "maintenance-reports", "tasks"] },
   { title: "Pembelian", keys: ["purchase-requests", "supplier-pos", "purchase-orders", "shipments"] },
   { title: "Gudang", keys: ["receiving", "stock", "delivery-notes", "opname", "damage-reports"] },
   { title: "Keuangan", keys: ["invoices", "accounting"] },

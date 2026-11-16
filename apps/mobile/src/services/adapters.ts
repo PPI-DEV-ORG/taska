@@ -51,6 +51,7 @@ export const PATHS: Record<string, string> = {
   invoiceIn: "/invoice-in",
   "poc-reports": "/poc-reports",
   "visit-reports": "/visit-reports",
+  "maintenance-reports": "/maintenance-reports",
   "visit-activity-types": "/visit-activity-types",
   payrollSlips: "/hr/payroll/slips",
 };
@@ -69,6 +70,12 @@ const MAPS: Record<string, Record<string, string>> = {
   },
   "visit-reports": {
     Planned: "Planned",
+    Completed: "Completed",
+    Cancelled: "Cancelled",
+  },
+  "maintenance-reports": {
+    Scheduled: "Scheduled",
+    In_Progress: "In_Progress",
     Completed: "Completed",
     Cancelled: "Cancelled",
   },
@@ -1261,6 +1268,15 @@ export function adaptRow(module: string, raw: any): Row {
             : raw.visitReportId != null
             ? `VISIT #${raw.visitReportId}`
             : "-",
+        maintenanceReportId: raw.maintenanceReportId != null ? String(raw.maintenanceReportId) : null,
+        maintenanceReport:
+          typeof raw.maintenanceReport === "string" && raw.maintenanceReport !== "-"
+            ? raw.maintenanceReport
+            : raw.maintenanceReport && typeof raw.maintenanceReport === "object"
+            ? `MTN ${raw.maintenanceReport.number || raw.maintenanceReport.nomor || `#${raw.maintenanceReport.id}`} - ${raw.maintenanceReport.title || raw.maintenanceReport.judul || "Maintenance"}`
+            : raw.maintenanceReportId != null
+            ? `MTN #${raw.maintenanceReportId}`
+            : "-",
         fundingSource: raw.fundingSource || "PERUSAHAAN",
         sumberDana:
           raw.fundingSource === "TALANGAN_PRIBADI"
@@ -1415,6 +1431,65 @@ export function adaptRow(module: string, raw: any): Row {
         agreements: raw.agreements ?? "",
         potentialOpportunities: raw.potentialOpportunities ?? "",
         obstacles: raw.obstacles ?? "",
+        conclusion: raw.conclusion ?? "",
+        companyHeader: raw.companyHeader ?? "",
+        logoFileId: raw.logoFileId ?? null,
+        documentFileId: raw.documentFileId ?? null,
+        actions: raw.actions ?? [],
+        followUps: raw.followUps ?? [],
+        _followUps: raw.followUps ?? [],
+        expenses: raw.expenses ?? [],
+        expenseSummary: raw.expenseSummary ?? null,
+      };
+    }
+    case "maintenance-reports": {
+      const clientNameDisplay =
+        raw.clientName ||
+        (raw.customer ? nameOf(raw.customer) : null) ||
+        (raw.lead ? `Lead: ${nameOf(raw.lead)}` : null) ||
+        "-";
+      const membersList = Array.isArray(raw.members)
+        ? raw.members.map((m: any) => m.user?.name || nameOf(m)).filter(Boolean).join(", ")
+        : "-";
+      const totalBiaya = raw.expenseSummary?.total ?? (Array.isArray(raw.expenses) ? raw.expenses.reduce((s: number, e: any) => s + Number(e.amount || 0), 0) : (raw.totalBiaya || 0));
+
+      return {
+        ...base,
+        nomor: raw.number || `MTN #${raw.id}`,
+        judul: raw.title || "-",
+        title: raw.title || "-",
+        deskripsi: raw.description ?? "",
+        description: raw.description ?? "",
+        tipe: raw.maintenanceType || "Preventive",
+        maintenanceType: raw.maintenanceType || "Preventive",
+        tanggal: d(raw.startDate),
+        startDate: raw.startDate ? String(raw.startDate).slice(0, 10) : "",
+        tanggalSelesai: raw.endDate ? d(raw.endDate) : "-",
+        endDate: raw.endDate ? String(raw.endDate).slice(0, 10) : "",
+        lokasi: raw.location ?? "-",
+        location: raw.location ?? "",
+        status: raw.status || "Scheduled",
+        klien: clientNameDisplay,
+        clientName: raw.clientName || clientNameDisplay,
+        kontakKlien: raw.clientContact ?? "-",
+        clientContact: raw.clientContact ?? "",
+        customerId: idOf(raw.customer) ?? raw.customerId,
+        customer: nameOf(raw.customer) ?? "-",
+        projectId: idOf(raw.project) ?? raw.projectId,
+        project: nameOf(raw.project) ?? "-",
+        leadId: idOf(raw.lead) ?? raw.leadId,
+        lead: nameOf(raw.lead) ?? "-",
+        pemilik: nameOf(raw.owner) ?? "",
+        ownerId: idOf(raw.owner) ?? raw.ownerId,
+        tim: membersList,
+        members: raw.members ?? [],
+        memberUserIds: Array.isArray(raw.members) ? raw.members.map((m: any) => m.userId || m.user?.id) : [],
+        tujuan: raw.purpose ?? "",
+        purpose: raw.purpose ?? "",
+        totalBiaya,
+        findings: raw.findings ?? "",
+        actionsTaken: raw.actionsTaken ?? "",
+        recommendations: raw.recommendations ?? "",
         conclusion: raw.conclusion ?? "",
         companyHeader: raw.companyHeader ?? "",
         logoFileId: raw.logoFileId ?? null,
@@ -1647,6 +1722,7 @@ export function adaptRow(module: string, raw: any): Row {
         quotationId: raw.quotationId != null ? String(raw.quotationId) : null,
         pocReportId: raw.pocReportId != null ? String(raw.pocReportId) : idOf(raw.pocReport),
         visitReportId: raw.visitReportId != null ? String(raw.visitReportId) : idOf(raw.visitReport),
+        maintenanceReportId: raw.maintenanceReportId != null ? String(raw.maintenanceReportId) : idOf(raw.maintenanceReport),
         tanggal: d(raw.date),
         date: d(raw.date),
         metode: toLabel("followupMethod", raw.method),
@@ -2377,6 +2453,22 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
                 findId(db?.["visit-reports"], row.visitReport)
               ) || undefined
             : undefined,
+        maintenanceReportId:
+          row.maintenanceReportId != null && row.maintenanceReportId !== "" && row.maintenanceReportId !== "-"
+            ? Number(row.maintenanceReportId)
+            : row.maintenanceReport && row.maintenanceReport !== "-"
+            ? Number(
+                String(row.maintenanceReport).match(/#(\d+)/)?.[1] ||
+                (db?.["maintenance-reports"] ?? []).find(
+                  (p: any) =>
+                    `MTN ${p.nomor || p.number} - ${p.judul || p.title}` === row.maintenanceReport ||
+                    p.nomor === row.maintenanceReport ||
+                    p.number === row.maintenanceReport ||
+                    p.judul === row.maintenanceReport
+                )?.id ||
+                findId(db?.["maintenance-reports"], row.maintenanceReport)
+              ) || undefined
+            : undefined,
         fundingSource:
           row.fundingSource ||
           (row.sumberDana
@@ -2516,6 +2608,54 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         memberUserIds: memberIds,
       };
     }
+    case "maintenance-reports": {
+      const memberIds =
+        resolveMemberIds(row, db) ||
+        (Array.isArray(row.memberUserIds)
+          ? row.memberUserIds.map(Number)
+          : Array.isArray(row.members)
+            ? row.members.map((m: any) => Number(m.userId || m.id || m)).filter(Boolean)
+            : undefined);
+
+      return {
+        title: row.judul || row.title || "Laporan Maintenance",
+        maintenanceType: row.tipe || row.maintenanceType || "Preventive",
+        status: row.status || "Scheduled",
+        startDate: row.startDate || row.tanggal || today,
+        endDate: row.endDate || (row.tanggalSelesai && row.tanggalSelesai !== "-" ? row.tanggalSelesai : undefined),
+        location: row.location || (row.lokasi && row.lokasi !== "-" ? row.lokasi : undefined),
+        clientName: row.clientName || (row.klien && row.klien !== "-" ? row.klien : undefined),
+        clientContact: row.clientContact || (row.kontakKlien && row.kontakKlien !== "-" ? row.kontakKlien : undefined),
+        customerId:
+          row.customerId != null && row.customerId !== ""
+            ? Number(row.customerId)
+            : row.customer && row.customer !== "-"
+              ? findId(db?.customers, row.customer)
+              : undefined,
+        projectId:
+          row.projectId != null && row.projectId !== ""
+            ? Number(row.projectId)
+            : row.project && row.project !== "-"
+              ? findId(db?.projects, row.project)
+              : undefined,
+        leadId:
+          row.leadId != null && row.leadId !== ""
+            ? Number(row.leadId)
+            : row.lead && row.lead !== "-"
+              ? findId(db?.leads, row.lead)
+              : undefined,
+        purpose: row.purpose || row.tujuan || undefined,
+        description: row.description || row.deskripsi || undefined,
+        findings: row.findings || undefined,
+        actionsTaken: row.actionsTaken || undefined,
+        recommendations: row.recommendations || undefined,
+        conclusion: row.conclusion || undefined,
+        companyHeader: row.companyHeader || undefined,
+        logoFileId: row.logoFileId ? Number(row.logoFileId) : undefined,
+        documentFileId: row.documentFileId ? Number(row.documentFileId) : undefined,
+        memberUserIds: memberIds,
+      };
+    }
     case "damage-reports": {
       const baseDesc = row.keterangan || row.description || "-";
       const poVal = row.po && row.po !== "-" ? (String(row.po).split(" - ")[0] ?? "").trim() : "";
@@ -2623,6 +2763,7 @@ export function buildCreateBody(module: string, row: Record<string, any>, db?: R
         quotationId: row.quotationId != null && row.quotationId !== "" ? Number(row.quotationId) : undefined,
         pocReportId: row.pocReportId != null && row.pocReportId !== "" ? Number(row.pocReportId) : undefined,
         visitReportId: row.visitReportId != null && row.visitReportId !== "" ? Number(row.visitReportId) : undefined,
+        maintenanceReportId: row.maintenanceReportId != null && row.maintenanceReportId !== "" ? Number(row.maintenanceReportId) : undefined,
         date: row.date || row.tanggal || today,
         method,
         notes: row.notes || row.catatan || "-",
@@ -2772,7 +2913,7 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
   ],
   "damage-reports": ["date", "productId", "serialUnitId", "warehouseId", "receivingId", "type", "category", "supplierPoId", "qty", "description", "status", "fileId"],
   invoiceIn: ["number", "supplierId", "supplierName", "supplierPoId", "amount", "ppn", "pph", "pphMode", "tipePph", "total", "date", "dueDate", "notes", "category", "debitAccount", "items", "fileId", "transferFileId", "paid", "paymentMethod", "paymentReference", "coaAccount", "paymentFileId", "taxInvoiceFileId", "taxInvoiceNumber"],
-  followups: ["method", "notes", "date", "nextDate", "status"],
+  followups: ["method", "notes", "date", "nextDate", "status", "leadId", "quotationId", "pocReportId", "visitReportId", "maintenanceReportId"],
   "poc-reports": [
     "title", "description", "type", "date", "endDate", "location", "status", "resultStatus",
     "clientName", "customerId", "leadId", "projectId", "targetCriteria", "productsTested",
@@ -2785,6 +2926,12 @@ const PATCH_FIELDS: Record<string, readonly string[]> = {
     "location", "clientName", "clientContact", "customerId", "leadId", "projectId",
     "purpose", "description", "summary", "clientNeeds", "productsIntroduced",
     "clientFeedback", "agreements", "potentialOpportunities", "obstacles", "conclusion",
+    "companyHeader", "logoFileId", "documentFileId", "ownerId", "memberUserIds",
+  ],
+  "maintenance-reports": [
+    "title", "maintenanceType", "status", "startDate", "endDate",
+    "location", "clientName", "clientContact", "customerId", "leadId", "projectId",
+    "purpose", "description", "findings", "actionsTaken", "recommendations", "conclusion",
     "companyHeader", "logoFileId", "documentFileId", "ownerId", "memberUserIds",
   ],
 };
@@ -2931,6 +3078,23 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
             ) || null;
     }
     if (patch.visitReportId !== undefined) out.visitReportId = patch.visitReportId ? Number(patch.visitReportId) : null;
+    if (patch.maintenanceReport !== undefined) {
+      out.maintenanceReportId =
+        patch.maintenanceReport === "-" || !patch.maintenanceReport
+          ? null
+          : Number(
+              String(patch.maintenanceReport).match(/#(\d+)/)?.[1] ||
+              (db?.["maintenance-reports"] ?? []).find(
+                (p: any) =>
+                  `MTN ${p.nomor || p.number} - ${p.judul || p.title}` === patch.maintenanceReport ||
+                  p.nomor === patch.maintenanceReport ||
+                  p.number === patch.maintenanceReport ||
+                  p.judul === patch.maintenanceReport
+              )?.id ||
+              findId(db?.["maintenance-reports"], patch.maintenanceReport)
+            ) || null;
+    }
+    if (patch.maintenanceReportId !== undefined) out.maintenanceReportId = patch.maintenanceReportId ? Number(patch.maintenanceReportId) : null;
     if (patch.sumberDana !== undefined) {
       out.fundingSource =
         String(patch.sumberDana).toLowerCase().includes("talangan")
@@ -3368,6 +3532,29 @@ export function buildPatchBody(module: string, patch: Record<string, any>, db?: 
     if (patch.agreements !== undefined) out.agreements = patch.agreements;
     if (patch.potentialOpportunities !== undefined) out.potentialOpportunities = patch.potentialOpportunities;
     if (patch.obstacles !== undefined) out.obstacles = patch.obstacles;
+    if (patch.conclusion !== undefined) out.conclusion = patch.conclusion;
+    if (patch.companyHeader !== undefined) out.companyHeader = patch.companyHeader;
+    if (patch.logoFileId !== undefined) out.logoFileId = patch.logoFileId ? Number(patch.logoFileId) : null;
+    if (patch.project !== undefined) out.projectId = findId(db?.projects, patch.project);
+    if (patch.customer !== undefined) out.customerId = findId(db?.customers, patch.customer);
+    if (patch.lead !== undefined) {
+      out.leadId = patch.lead === "-" || !patch.lead ? null : (findId(db?.leads, patch.lead) || null);
+    }
+    if (patch.leadId !== undefined) out.leadId = patch.leadId ? Number(patch.leadId) : null;
+    if (patch.tim !== undefined) out.memberUserIds = resolveMemberIds(patch, db);
+  } else if (module === "maintenance-reports") {
+    if (patch.title !== undefined || patch.judul !== undefined) out.title = patch.title || patch.judul;
+    if (patch.tipe !== undefined || patch.maintenanceType !== undefined) out.maintenanceType = patch.tipe || patch.maintenanceType;
+    if (patch.date !== undefined || patch.tanggal !== undefined || patch.startDate !== undefined) out.startDate = patch.startDate || patch.date || patch.tanggal;
+    if (patch.endDate !== undefined || patch.tanggalSelesai !== undefined) out.endDate = patch.endDate ?? patch.tanggalSelesai;
+    if (patch.location !== undefined || patch.lokasi !== undefined) out.location = patch.location ?? patch.lokasi;
+    if (patch.clientName !== undefined || patch.klien !== undefined) out.clientName = patch.clientName ?? patch.klien;
+    if (patch.clientContact !== undefined || patch.kontakKlien !== undefined) out.clientContact = patch.clientContact ?? patch.kontakKlien;
+    if (patch.purpose !== undefined || patch.tujuan !== undefined) out.purpose = patch.purpose ?? patch.tujuan;
+    if (patch.description !== undefined || patch.deskripsi !== undefined) out.description = patch.description ?? patch.deskripsi;
+    if (patch.findings !== undefined) out.findings = patch.findings;
+    if (patch.actionsTaken !== undefined) out.actionsTaken = patch.actionsTaken;
+    if (patch.recommendations !== undefined) out.recommendations = patch.recommendations;
     if (patch.conclusion !== undefined) out.conclusion = patch.conclusion;
     if (patch.companyHeader !== undefined) out.companyHeader = patch.companyHeader;
     if (patch.logoFileId !== undefined) out.logoFileId = patch.logoFileId ? Number(patch.logoFileId) : null;

@@ -60,6 +60,7 @@ const MODULE_GROUPS: { group: string; items: { key: string; label: string; desc:
     items: [
       { key: "projects", label: "Project", desc: "Progres, BOQ & BAST" },
       { key: "tasks", label: "Tugas", desc: "Penugasan teknisi" },
+      { key: "maintenance-reports", label: "Laporan Maintenance", desc: "Perawatan & servis rutin perangkat di lapangan" },
       { key: "delivery-notes", label: "Surat Jalan", desc: "Pengiriman barang ke customer" },
     ],
   },

@@ -14,6 +14,7 @@ import {
   SurveySelect,
   PocSelect,
   VisitSelect,
+  MaintenanceSelect,
 } from "@/components/taska/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
 import { useApp } from "@/store/app-store";
@@ -51,6 +52,9 @@ export default function NewExpenseScreen() {
     visitId?: string;
     visitReportId?: string;
     visit?: string;
+    maintenanceId?: string;
+    maintenanceReportId?: string;
+    maintenance?: string;
   }>();
 
   const [tanggalNota, setTanggalNota] = React.useState(new Date().toISOString().slice(0, 10));
@@ -95,15 +99,27 @@ export default function NewExpenseScreen() {
     return "-";
   }, [params.visit, params.visitId, params.visitReportId, data]);
 
+  const defaultMaintenance = React.useMemo(() => {
+    const mId = params.maintenanceId || params.maintenanceReportId;
+    if (params.maintenance) return String(params.maintenance);
+    if (mId) {
+      const match = ((data as any)["maintenance-reports"] ?? []).find((m: any) => String(m.id) === String(mId));
+      return match ? `MTN ${match.nomor || match.number} - ${match.judul || match.title}` : "-";
+    }
+    return "-";
+  }, [params.maintenance, params.maintenanceId, params.maintenanceReportId, data]);
+
   const [customProject, setCustomProject] = React.useState<string | null>(null);
   const [customSurvey, setCustomSurvey] = React.useState<string | null>(null);
   const [customPoc, setCustomPoc] = React.useState<string | null>(null);
   const [customVisit, setCustomVisit] = React.useState<string | null>(null);
+  const [customMaintenance, setCustomMaintenance] = React.useState<string | null>(null);
 
   const selectedProject = customProject ?? defaultProject;
   const selectedSurvey = customSurvey ?? defaultSurvey;
   const selectedPoc = customPoc ?? defaultPoc;
   const selectedVisit = customVisit ?? defaultVisit;
+  const selectedMaintenance = customMaintenance ?? defaultMaintenance;
 
   const [sumberDana, setSumberDana] = React.useState<"Dana Perusahaan" | "Talangan Pribadi (Reimbursement)">("Dana Perusahaan");
   const [alasan, setAlasan] = React.useState("");
@@ -195,6 +211,19 @@ export default function NewExpenseScreen() {
           ? Number(vId)
           : undefined;
 
+    const maintenanceList = ((data as any)["maintenance-reports"] ?? []);
+    const mId = params.maintenanceId || params.maintenanceReportId;
+    const foundMaintenance = maintenanceList.find((m: any) => {
+      const opt = `MTN ${m.nomor || m.number} - ${m.judul || m.title}`;
+      return opt === selectedMaintenance || (mId && String(m.id) === String(mId));
+    });
+    const resolvedMaintenanceReportId =
+      foundMaintenance?.id != null
+        ? Number(foundMaintenance.id)
+        : mId
+          ? Number(mId)
+          : undefined;
+
     const isTalangan = sumberDana === "Talangan Pribadi (Reimbursement)";
     const fundingSource = isTalangan ? "TALANGAN_PRIBADI" : "PERUSAHAAN";
     const reimbursementStatus = isTalangan ? "SUBMITTED" : null;
@@ -212,6 +241,8 @@ export default function NewExpenseScreen() {
       pocReportId: resolvedPocReportId,
       visitReport: selectedVisit,
       visitReportId: resolvedVisitReportId,
+      maintenanceReport: selectedMaintenance,
+      maintenanceReportId: resolvedMaintenanceReportId,
       fundingSource,
       sumberDana,
       reimbursementStatus,
@@ -324,6 +355,18 @@ export default function NewExpenseScreen() {
               placeholder="Pilih aktivitas kunjungan jika ada..."
               onChange={(v) => {
                 setCustomVisit(v ? `VISIT ${v.nomor || v.number} - ${v.judul || v.title}` : "-");
+              }}
+            />
+          </FormField>
+
+          <FormField label="Terkait Laporan Maintenance (Opsional)">
+            <MaintenanceSelect
+              value={selectedMaintenance}
+              maintenanceId={params.maintenanceId || params.maintenanceReportId}
+              allowClear={true}
+              placeholder="Pilih laporan maintenance jika ada..."
+              onChange={(m) => {
+                setCustomMaintenance(m ? `MTN ${m.nomor || m.number} - ${m.judul || m.title}` : "-");
               }}
             />
           </FormField>

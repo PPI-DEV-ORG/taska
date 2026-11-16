@@ -42,6 +42,7 @@ export type ModuleKey =
   | "payroll"
   | "pocReports"
   | "visitReports"
+  | "maintenanceReports"
   | "masterData";
 
 const ALL: Record<ModuleKey, Action[]> = {
@@ -84,6 +85,7 @@ const ALL: Record<ModuleKey, Action[]> = {
   payroll: ["M", "L", "C", "U", "A", "P", "V", "E"],
   pocReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   visitReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  maintenanceReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   masterData: ["M", "L", "C", "U", "A", "P", "V", "E"],
 };
 
@@ -123,6 +125,7 @@ export const PERMISSIONS: Record<string, Table> = {
     expenses: "LCU",
     pocReports: "LCU",
     visitReports: "LCU",
+    maintenanceReports: "MLCUAPVE",
     reports: "L",
   },
 
@@ -152,6 +155,7 @@ export const PERMISSIONS: Record<string, Table> = {
     expenses: "LCU",
     pocReports: "LCU",
     visitReports: "LCU",
+    maintenanceReports: "MLCUAPVE",
     reports: "L",
   },
 
@@ -173,6 +177,7 @@ export const PERMISSIONS: Record<string, Table> = {
     expenses: "LCU",
     pocReports: "LCU",
     visitReports: "LCU",
+    maintenanceReports: "MLCUAPVE",
     reports: "L",
   },
 
@@ -196,6 +201,7 @@ export const PERMISSIONS: Record<string, Table> = {
     expenses: "LCU",
     pocReports: "LCU",
     visitReports: "LCU",
+    maintenanceReports: "LCU",
     approvals: "LA",
     reports: "L",
   },
@@ -224,6 +230,7 @@ export const PERMISSIONS: Record<string, Table> = {
     expenses: "LCUA",
     pocReports: "LCUA",
     visitReports: "LCUA",
+    maintenanceReports: "LCUA",
     approvals: "LCUA",
     reports: "L",
     archive: "L",
@@ -249,6 +256,7 @@ export const PERMISSIONS: Record<string, Table> = {
     expenses: "LCU",
     pocReports: "LCU",
     visitReports: "LCU",
+    maintenanceReports: "LCU",
     approvals: "LA",
     reports: "L",
   },
@@ -269,6 +277,7 @@ export const PERMISSIONS: Record<string, Table> = {
     expenses: "LCU",
     pocReports: "LCU",
     visitReports: "LCU",
+    maintenanceReports: "MLCUAPVE",
     reports: "L",
   },
 
@@ -288,6 +297,7 @@ export const PERMISSIONS: Record<string, Table> = {
     requests: "LC",
     pocReports: "LCU",
     visitReports: "LCU",
+    maintenanceReports: "LCU",
     reports: "L",
   },
 };
@@ -341,6 +351,8 @@ const MODULE_ALIASES: Record<string, string[]> = {
   "poc-reports": ["poc-reports", "pocReports"],
   visitReports: ["visitReports", "visit-reports"],
   "visit-reports": ["visit-reports", "visitReports"],
+  maintenanceReports: ["maintenanceReports", "maintenance-reports"],
+  "maintenance-reports": ["maintenance-reports", "maintenanceReports"],
   damageReports: ["damageReports", "damage-reports", "stock"],
   "damage-reports": ["damage-reports", "damageReports", "stock"],
   audit: ["audit", "audit-log"],
@@ -490,6 +502,7 @@ const UI_TWIN: Record<string, string> = {
   damageReports: "damage-reports",
   pocReports: "poc-reports",
   visitReports: "visit-reports",
+  maintenanceReports: "maintenance-reports",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

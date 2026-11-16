@@ -117,6 +117,9 @@ export class FollowUpDto {
   @IsOptional() @Type(() => Number) @IsInt()
   visitReportId?: number;
 
+  @IsOptional() @Type(() => Number) @IsInt()
+  maintenanceReportId?: number;
+
   @IsDateString()
   date!: string;
 
@@ -145,6 +148,9 @@ export class UpdateFollowUpDto {
 
   @IsOptional() @Type(() => Number) @IsInt()
   visitReportId?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  maintenanceReportId?: number;
 
   @IsOptional() @IsDateString()
   date?: string;

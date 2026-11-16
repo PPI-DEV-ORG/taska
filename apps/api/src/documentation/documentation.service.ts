@@ -15,6 +15,7 @@ const MODULE_FOR: Record<DocKind, ModuleKey> = {
   "delivery-note": "delivery",
   poc: "pocReports",
   visit: "visitReports",
+  maintenance: "maintenanceReports",
 };
 
 const TITLE_FOR: Record<DocKind, string> = {
@@ -23,6 +24,7 @@ const TITLE_FOR: Record<DocKind, string> = {
   "delivery-note": "Laporan Dokumentasi Surat Jalan",
   poc: "Laporan Proof of Concept (POC) / Demo",
   visit: "Laporan Kunjungan & Offline Meeting",
+  maintenance: "Laporan Dokumentasi Maintenance",
 };
 
 type PhotoWithFile = DocumentationPhoto & {
@@ -80,6 +82,11 @@ export class DocumentationService {
       const visit = await (this.prisma.main as any).visitReport.findUnique({ where: { id: entityId } });
       if (!visit) throw new NotFoundException("Laporan kunjungan tidak ditemukan");
       return { label: `Kunjungan ${visit.number} — ${visit.title}` };
+    }
+    if (kind === "maintenance") {
+      const m = await (this.prisma.main as any).maintenanceReport.findUnique({ where: { id: entityId } });
+      if (!m) throw new NotFoundException("Laporan maintenance tidak ditemukan");
+      return { label: `Maintenance ${m.number} — ${m.title}` };
     }
     const d = await this.prisma.main.deliveryNote.findUnique({ where: { id: entityId } });
     if (!d) throw new NotFoundException("Surat jalan tidak ditemukan");

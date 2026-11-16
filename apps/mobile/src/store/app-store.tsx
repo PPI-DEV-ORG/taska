@@ -267,7 +267,7 @@ const emptyDB = (): DB => ({
   productCategories: [], leadSources: [], lostReasons: [], expenseCategories: [], costCenters: [], dealTypes: [],
   followups: [], issueReports: [], opname: [], users: [], "audit-log": [],
   serials: [], movements: [], reservations: [], invoiceIn: [], "poc-reports": [],
-  "visit-reports": [], "visit-activity-types": [],
+  "visit-reports": [], "visit-activity-types": [], "maintenance-reports": [],
 });
 
 /** Modul yang diambil per halaman aktif agar tidak memanggil seluruh 28 endpoint sekaligus saat refresh/pindah halaman. */
@@ -276,11 +276,11 @@ const ROUTE_MODULES_BY_SEGMENT: Record<string, readonly string[]> = {
     "users", "customers", "suppliers",
     "leads", "quotations", "surveys", "po-client", "invoices", "projects", "tasks",
     "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses",
-    "damage-reports", "products", "serials", "warehouses", "opname", "poc-reports", "visit-reports",
+    "damage-reports", "products", "serials", "warehouses", "opname", "poc-reports", "visit-reports", "maintenance-reports",
   ],
   calendar: [
     "users", "customers", "suppliers",
-    "surveys", "projects", "tasks", "poc-reports", "visit-reports",
+    "surveys", "projects", "tasks", "poc-reports", "visit-reports", "maintenance-reports",
     "invoices", "supplier-pos", "delivery-notes", "followups", "leads",
   ],
   approvals: [
@@ -292,11 +292,12 @@ const ROUTE_MODULES_BY_SEGMENT: Record<string, readonly string[]> = {
   surveys: ["surveys", "leads", "projects", "customers", "users", "expenses"],
   "poc-reports": ["poc-reports", "projects", "leads", "customers", "users", "products"],
   "visit-reports": ["visit-reports", "visit-activity-types", "projects", "leads", "customers", "users"],
+  "maintenance-reports": ["maintenance-reports", "projects", "leads", "customers", "users"],
   customers: ["customers"],
   projects: [
     "projects", "tasks", "leads", "quotations", "po-client", "invoices", "invoiceIn",
     "purchase-requests", "supplier-pos", "expenses", "delivery-notes", "products",
-    "serials", "customers", "users", "surveys", "poc-reports", "visit-reports",
+    "serials", "customers", "users", "surveys", "poc-reports", "visit-reports", "maintenance-reports",
   ],
   tasks: ["tasks", "projects", "users"],
   "purchase-requests": ["purchase-requests", "projects", "products", "serials", "suppliers", "supplier-pos", "expenses", "warehouses", "invoiceIn"],
@@ -308,14 +309,14 @@ const ROUTE_MODULES_BY_SEGMENT: Record<string, readonly string[]> = {
   "delivery-notes": ["delivery-notes", "projects", "products", "serials", "warehouses", "invoices", "po-client", "customers"],
   "po-client": ["po-client", "quotations", "leads", "customers", "projects", "invoices", "products", "serials", "supplier-pos"],
   invoices: ["invoices", "invoiceIn", "po-client", "quotations", "projects", "customers", "products", "serials", "damage-reports", "delivery-notes", "supplier-pos"],
-  expenses: ["expenses", "projects", "surveys", "expenseCategories", "costCenters", "users", "poc-reports", "visit-reports"],
+  expenses: ["expenses", "projects", "surveys", "expenseCategories", "costCenters", "users", "poc-reports", "visit-reports", "maintenance-reports"],
   accounting: ["invoices", "invoiceIn", "expenses", "supplier-pos", "po-client", "projects", "payrollSlips"],
   "damage-reports": ["damage-reports", "products", "serials", "warehouses", "suppliers", "customers", "invoices", "supplier-pos", "receiving"],
   reports: ["leads", "quotations", "po-client", "invoices", "invoiceIn", "projects", "purchase-requests", "supplier-pos", "expenses", "products", "customers", "suppliers", "users"],
   hr: ["users", "payrollSlips", "expenses"],
   "master-data": ["customers", "suppliers", "warehouses", "products", "productCategories", "leadSources", "dealTypes", "lostReasons", "expenseCategories", "costCenters", "visit-activity-types"],
   users: ["users", "warehouses"],
-  archive: ["leads", "quotations", "po-client", "invoices", "projects", "surveys", "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses", "damage-reports", "poc-reports", "visit-reports"],
+  archive: ["leads", "quotations", "po-client", "invoices", "projects", "surveys", "purchase-requests", "supplier-pos", "receiving", "delivery-notes", "expenses", "damage-reports", "poc-reports", "visit-reports", "maintenance-reports"],
   "audit-log": ["audit-log", "users"],
 };
 
@@ -331,7 +332,7 @@ const EAGER_MODULES = [
   "damage-reports", "customers", "suppliers", "warehouses", "products",
   "productCategories", "leadSources", "dealTypes", "lostReasons", "expenseCategories", "costCenters",
   "opname", "users", "audit-log", "serials", "movements", "reservations", "followups", "invoiceIn",
-  "poc-reports", "visit-reports", "visit-activity-types", "payrollSlips",
+  "poc-reports", "visit-reports", "maintenance-reports", "visit-activity-types", "payrollSlips",
 ] as const;
 
 async function fetchList(module: string): Promise<Row[]> {

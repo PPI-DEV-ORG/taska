@@ -27,7 +27,7 @@
 export const ROLE_MATRIX_VERSION = 6;
 
 export const ROLE_MODULE_KEYS = [
-  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "customers", "po-client",
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "customers", "po-client",
   "projects", "tasks", "delivery-notes",
   "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports",
   "suppliers", "warehouses", "products",
@@ -83,6 +83,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       surveys: "MLCU",
       "poc-reports": "MLCU",
       "visit-reports": "MLCUE",
+      "maintenance-reports": FULL,
       customers: "MLCUA",
       "po-client": "MLCUE",
       invoices: "MLCUE", // buat & kirim tagihan; catat bayar / lunas / batal tetap Finance
@@ -106,6 +107,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       surveys: "MLCUV", // menyetujui permintaan survey
       "poc-reports": "MLCU",
       "visit-reports": "MLCU",
+      "maintenance-reports": FULL,
       "purchase-requests": "MLCU",
       "delivery-notes": "MLCU",
       "damage-reports": "MLC",
@@ -134,6 +136,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       surveys: "MLCU",
       "poc-reports": "MLCU",
       "visit-reports": "MLCU",
+      "maintenance-reports": FULL,
       "purchase-requests": "MLC",
       "delivery-notes": "MLU",
       "damage-reports": "MLC",
@@ -149,6 +152,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       ...EMPLOYEE,
       "poc-reports": "MLCUAE",
       "visit-reports": "MLCUE",
+      "maintenance-reports": "MLCUAE",
       surveys: "MLCU",
       leads: "ML",
       quotations: "ML",
@@ -177,6 +181,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       products: "MLCUAP",
       warehouses: "MLCU",
       "delivery-notes": "ML",
+      "maintenance-reports": "ML",
       approvals: "MLV",
       "master-data": "ML",
       projects: "L",
@@ -203,6 +208,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       opname: "MLV",
       "damage-reports": "MLV",
       surveys: "MLV",
+      "maintenance-reports": "ML",
       receiving: "ML",
       shipments: "L",
       stock: "MLP",
@@ -253,6 +259,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       hr: FULL,
       users: "MLCU",
       "purchase-requests": "MLC",
+      "maintenance-reports": "ML",
       projects: "L",
     },
   },

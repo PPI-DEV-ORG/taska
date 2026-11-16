@@ -448,6 +448,9 @@ export class ExpenseDto {
   @IsOptional() @IsInt()
   visitReportId?: number;
 
+  @IsOptional() @IsInt()
+  maintenanceReportId?: number;
+
   @IsOptional() @IsString()
   fundingSource?: string;
 

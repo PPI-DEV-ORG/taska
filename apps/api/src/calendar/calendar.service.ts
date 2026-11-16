@@ -127,6 +127,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     if (this.followUpColsReady) return;
     await this.db.$executeRawUnsafe("ALTER TABLE `FollowUp` ADD COLUMN `pocReportId` INT NULL").catch(() => {});
     await this.db.$executeRawUnsafe("ALTER TABLE `FollowUp` ADD COLUMN `visitReportId` INT NULL").catch(() => {});
+    await this.db.$executeRawUnsafe("ALTER TABLE `FollowUp` ADD COLUMN `maintenanceReportId` INT NULL").catch(() => {});
     this.followUpColsReady = true;
   }
 
@@ -171,6 +172,8 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       manual,
       visits,
       visitActions,
+      maintenances,
+      maintenanceActions,
       pocs,
       pocChecklists,
       surveys,
@@ -266,6 +269,59 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         },
         include: {
           visitReport: { select: { id: true, number: true, title: true, owner: { select: { id: true, name: true, role: true } } } },
+        },
+      }),
+      this.db.maintenanceReport.findMany({
+        where: {
+          AND: [
+            ...(all
+              ? []
+              : [
+                  {
+                    OR: [
+                      { ownerId: me },
+                      { createdById: me },
+                      ...(includeTeam
+                        ? [
+                            { members: { some: { userId: me } } },
+                            { project: inMyProject },
+                          ]
+                        : []),
+                    ],
+                  },
+                ]),
+            { startDate: { lte: to } },
+            {
+              OR: [{ endDate: { gte: from } }, { endDate: null, startDate: { gte: from } }],
+            },
+          ],
+        },
+        include: { owner: { select: { id: true, name: true, role: true } } },
+      }),
+      this.db.maintenanceActionItem.findMany({
+        where: {
+          AND: [
+            ...(all
+              ? []
+              : [
+                  {
+                    OR: [
+                      { assigneeId: me },
+                      ...(includeTeam
+                        ? [
+                            { maintenanceReport: { ownerId: me } },
+                            { maintenanceReport: { members: { some: { userId: me } } } },
+                            { maintenanceReport: { project: inMyProject } },
+                          ]
+                        : []),
+                    ],
+                  },
+                ]),
+            { dueDate: { gte: from, lte: to } },
+          ],
+        },
+        include: {
+          maintenanceReport: { select: { id: true, number: true, title: true, owner: { select: { id: true, name: true, role: true } } } },
         },
       }),
       this.db.pocReport.findMany({
@@ -430,6 +486,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           quotation: { select: { id: true, number: true } },
           pocReport: { select: { id: true, number: true, title: true, owner: { select: { id: true, name: true, role: true } } } },
           visitReport: { select: { id: true, number: true, title: true, owner: { select: { id: true, name: true, role: true } } } },
+          maintenanceReport: { select: { id: true, number: true, title: true, owner: { select: { id: true, name: true, role: true } } } },
         },
       }),
       this.db.quotation.findMany({
@@ -546,6 +603,37 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
+    // 2b. Maintenance Reports & Maintenance Action Items
+    for (const m of maintenances) {
+      const status = normStatus(m.status);
+      items.push({
+        key: `maintenance-${m.id}`, sourceModule: "maintenance-reports", sourceId: m.id,
+        title: m.title, subtitle: [m.number, m.clientName, m.location].filter(Boolean).join(" · "),
+        category: "MAINTENANCE", start: iso(m.startDate)!, end: iso(m.endDate),
+        occurrenceDate: wibDateKey(m.startDate), isAllDay: true,
+        status, priority: "MEDIUM", picId: m.owner?.id ?? null, picName: m.owner?.name ?? null,
+        picRole: m.owner?.role ?? null,
+        routePath: `/maintenance-reports/${m.id}`, isOverdue: overdueOf(m.endDate ?? m.startDate, status, true),
+        editable: false,
+      });
+    }
+    for (const ma of maintenanceActions) {
+      if (!ma.dueDate) continue;
+      const status = normStatus(ma.status);
+      const owner = ma.maintenanceReport?.owner;
+      items.push({
+        key: `maintenance-action-${ma.id}`, sourceModule: "maintenance-reports", sourceId: ma.maintenanceReportId,
+        title: `Tindak lanjut maintenance: ${ma.task}`,
+        subtitle: ma.maintenanceReport ? `${ma.maintenanceReport.number} · ${ma.maintenanceReport.title}` : ma.notes ?? null,
+        category: "MAINTENANCE", start: iso(ma.dueDate)!, end: null,
+        occurrenceDate: wibDateKey(ma.dueDate), isAllDay: true,
+        status, priority: "MEDIUM", picId: ma.assigneeId ?? owner?.id ?? null,
+        picName: owner?.name ?? null, picRole: owner?.role ?? null,
+        routePath: `/maintenance-reports/${ma.maintenanceReportId}`, isOverdue: overdueOf(ma.dueDate, status, true),
+        editable: false,
+      });
+    }
+
     // 3. POC Reports & POC Preparation Checklists
     for (const p of pocs) {
       const status = normStatus(p.status);
@@ -612,35 +700,42 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       });
     }
     for (const f of followUps) {
-      const owner = f.creator ?? f.pocReport?.owner ?? f.visitReport?.owner ?? f.lead?.owner;
+      const owner = f.creator ?? f.pocReport?.owner ?? f.visitReport?.owner ?? (f as any).maintenanceReport?.owner ?? f.lead?.owner;
       const isPoc = !!f.pocReportId;
       const isVisit = !!f.visitReportId;
-      const isQuote = !isPoc && !isVisit && !!f.quotationId;
+      const isMaintenance = !!f.maintenanceReportId;
+      const isQuote = !isPoc && !isVisit && !isMaintenance && !!f.quotationId;
       const sourceModule = isPoc
         ? "poc-reports"
         : isVisit
           ? "visit-reports"
-          : isQuote
-            ? "quotations"
-            : "leads";
-      const sourceId = f.pocReportId ?? f.visitReportId ?? f.quotationId ?? f.leadId ?? f.id;
-      const category = isPoc ? "POC" : isVisit ? "KUNJUNGAN" : "SALES";
+          : isMaintenance
+            ? "maintenance-reports"
+            : isQuote
+              ? "quotations"
+              : "leads";
+      const sourceId = f.pocReportId ?? f.visitReportId ?? f.maintenanceReportId ?? f.quotationId ?? f.leadId ?? f.id;
+      const category = isPoc ? "POC" : isVisit ? "KUNJUNGAN" : isMaintenance ? "MAINTENANCE" : "SALES";
       const route = isPoc
         ? `/poc-reports/${f.pocReportId}`
         : isVisit
           ? `/visit-reports/${f.visitReportId}`
-          : isQuote
-            ? `/quotations/${f.quotationId}`
-            : f.leadId
-              ? `/leads/${f.leadId}`
-              : null;
+          : isMaintenance
+            ? `/maintenance-reports/${f.maintenanceReportId}`
+            : isQuote
+              ? `/quotations/${f.quotationId}`
+              : f.leadId
+                ? `/leads/${f.leadId}`
+                : null;
       const refLabel = isPoc
         ? `POC ${f.pocReport?.number ?? ""} - ${f.pocReport?.title ?? ""}`
         : isVisit
           ? `Kunjungan ${f.visitReport?.number ?? ""} - ${f.visitReport?.title ?? ""}`
-          : isQuote
-            ? `Penawaran ${f.quotation?.number ?? ""}`
-            : f.lead?.name ?? "Prospek";
+          : isMaintenance
+            ? `Maintenance ${(f as any).maintenanceReport?.number ?? ""} - ${(f as any).maintenanceReport?.title ?? ""}`
+            : isQuote
+              ? `Penawaran ${f.quotation?.number ?? ""}`
+              : f.lead?.name ?? "Prospek";
 
       const isScheduledForNext =
         f.status === "TERJADWAL" &&

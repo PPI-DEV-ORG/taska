@@ -38,6 +38,7 @@ import { QuotationExtras } from "@/modules/quotation/quotation-extras";
 import { SurveyExtras } from "@/modules/survey/survey-extras";
 import { PocExtras } from "@/modules/poc/poc-extras";
 import { VisitExtras } from "@/modules/visits/visit-extras";
+import { MaintenanceExtras } from "@/modules/maintenance/maintenance-extras";
 import { ReceivingExtras } from "@/modules/receiving/receiving-extras";
 import { DeliveryNotesExtras } from "@/modules/delivery-note/delivery-note-extras";
 import { ProjectExtras } from "@/modules/project/project-extras";
@@ -1773,6 +1774,10 @@ function ModuleExtrasBody({
 
   if (moduleKey === "visit-reports") {
     return <VisitExtras row={row} onRefresh={onRefresh} />;
+  }
+
+  if (moduleKey === "maintenance-reports") {
+    return <MaintenanceExtras row={row} onRefresh={onRefresh} />;
   }
 
   if (moduleKey === "projects") {
