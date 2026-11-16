@@ -577,7 +577,7 @@ export function adaptRow(module: string, raw: any): Row {
 
       const effectiveTotal =
         n(raw.total) ||
-        (n(raw.ppn) || n(raw.pph) ? n(raw.amount) + n(raw.ppn) - n(raw.pph) : n(raw.amount));
+        (n(raw.ppn) ? n(raw.amount) + n(raw.ppn) : n(raw.amount));
       const activeInvs = Array.isArray(raw.invoices)
         ? raw.invoices.filter((b: any) => b.status !== "BATAL")
         : [];
@@ -621,6 +621,8 @@ export function adaptRow(module: string, raw: any): Row {
         penawaran: raw.quotation?.number ?? "-",
         quotationId: idOf(raw.quotation),
         nilai: n(raw.amount),
+        discount: n(raw.discount || raw.quotation?.discount || 0),
+        disc: n(raw.discount || raw.quotation?.discount || 0),
         ppn: n(raw.ppn),
         tipePpn: raw.tipePpn ?? (n(raw.ppn) > 0 ? "PPN 11%" : "Non PPN"),
         ppnMode: raw.ppnMode ?? (n(raw.ppn) > 0 ? "exclude" : "none"),
@@ -1694,6 +1696,8 @@ export function adaptRow(module: string, raw: any): Row {
         items: raw.items ?? [],
         direction: "in",
         nilai: n(raw.amount),
+        discount: n(raw.discount || raw.quotation?.discount || 0),
+        disc: n(raw.discount || raw.quotation?.discount || 0),
         ppn: n(raw.ppn),
         // Tagihan dari PO mengikuti mode PPN PO; tanpa PO: ada PPN = exclude
         ppnMode:

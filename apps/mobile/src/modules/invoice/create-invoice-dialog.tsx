@@ -47,6 +47,7 @@ import {
   pphModeToTipe,
   calcItemPph,
   itemDiscount,
+  itemNet,
   recomputeHeaderDiscount,
   sumItemDiscounts,
   sumItemGross,
@@ -196,11 +197,14 @@ type InvoiceSourceType = "direct_sale" | "direct_purchase" | "po" | "quotation" 
  * SO baru menyimpan harga item yang sudah net -> 0. SO lama yang menyimpan harga kotor -> nilai diskonnya.
  */
 function soImpliedDiscount(po: Row | null | undefined): number {
-  if (!po || !Array.isArray(po.items) || po.items.length === 0) return 0;
+  if (!po) return 0;
+  const explicitDisc = Number(po.discount || po.disc || 0);
+  if (!Array.isArray(po.items) || po.items.length === 0) return explicitDisc;
   const gross = sumItemGross(po.items);
+  const itemDisc = sumItemDiscounts(po.items);
   const base = getInitialPpnMode(po) === "include" ? Number(po.total || po.nilai || 0) : Number(po.nilai || 0);
-  const diff = Math.round(gross - base);
-  return base > 0 && diff > 2 ? diff : 0;
+  const diff = base > 0 && gross - base > 2 ? Math.round(gross - base) : 0;
+  return Math.max(explicitDisc, itemDisc, diff);
 }
 
 /** Judul langkah bernomor agar alur form mudah diikuti: sumber → rincian → pembayaran. */
@@ -861,12 +865,13 @@ function CreateInvoiceForm({
   }, [grossDealDpp, effectiveDiscount]);
 
   const [ppnModeState, setPpnMode] = React.useState<PpnMode>(() => {
-    if (initialPo?.ppnMode) return initialPo.ppnMode as PpnMode;
-    if (initialPo?.tipePpn) return getInitialPpnMode(initialPo);
+    if (initialPo?.ppnMode && initialPo.ppnMode !== "none") return initialPo.ppnMode as PpnMode;
     if (initialPo?.quotationId) {
       const q = (data.quotations ?? []).find((x: Row) => String(x.id) === String(initialPo.quotationId));
-      if (q) return getInitialPpnMode(q);
+      if (q && (Number(initialPo.ppn || 0) > 0 || Number(q.ppn || 0) > 0)) return getInitialPpnMode(q);
     }
+    if (initialPo?.ppnMode) return initialPo.ppnMode as PpnMode;
+    if (initialPo?.tipePpn) return getInitialPpnMode(initialPo);
     return getInitialPpnMode(initialQuotation);
   });
   // Tagihan supplier dari PO: mode PPN mengikuti PO (Exclude / Include / Tanpa PPN)
@@ -909,31 +914,45 @@ function CreateInvoiceForm({
   const isPurchaseForm = mode === "masuk" || sourceType === "direct_purchase";
 
   const dealPph = React.useMemo(() => {
-    if (items.length > 0) {
-      const sum = items.reduce((acc, it) => acc + calcItemPph(it), 0);
-      if (sum > 0) return sum;
-    }
-    if (Array.isArray(activePo?.items) && activePo.items.length > 0) {
-      const sum = activePo.items.reduce((acc: number, it: any) => acc + calcItemPph(it), 0);
+    const dealEffectiveDpp = isIncludePpn ? Math.round(dealDpp / 1.11) : dealDpp;
+    const sourceItems =
+      items.length > 0
+        ? items
+        : Array.isArray(activePo?.items) && activePo.items.length > 0
+          ? activePo.items
+          : Array.isArray(activeQuotation?.items) && activeQuotation.items.length > 0
+            ? activeQuotation.items
+            : [];
+    if (sourceItems.length > 0) {
+      const netSum = sourceItems.reduce((s: number, it: any) => s + itemNet(it), 0);
+      const factor = netSum > 0 ? dealEffectiveDpp / netSum : dealDpp > 0 ? dealEffectiveDpp / dealDpp : 1;
+      const sum = sourceItems.reduce((acc: number, it: any) => {
+        const mode = (it?.pphMode || "none") as PphMode;
+        if (mode === "none") return acc;
+        return acc + Math.round(itemNet(it) * factor * pphRateFor(mode));
+      }, 0);
       if (sum > 0) return sum;
     }
     if (Number(activePo?.pph) > 0) return Number(activePo?.pph);
     if (Number(activeQuotation?.pph) > 0) return Number(activeQuotation?.pph);
     const effRate = pphRateFor(pphMode);
     if (effRate > 0) {
-      const sourceItems = items.length > 0 ? items : ((activePo?.items as any[]) || (activeQuotation?.items as any[]) || []);
       const serviceDpp = sourceItems.reduce((acc: number, it: any) => {
         const isJasa =
           (it as any).itemType === "JASA" ||
           !it.productId ||
           /^\[(JASA)\]/i.test(String((it as any).customName || it.name || it.item || ""));
-        return isJasa ? acc + (Number(it.qty) || 1) * Number(it.harga ?? (it as any).price ?? 0) : acc;
+        return isJasa ? acc + itemNet(it) : acc;
       }, 0);
-      if (serviceDpp > 0) return Math.round(serviceDpp * effRate);
-      return Math.round(dealDpp * effRate);
+      if (serviceDpp > 0) {
+        const netSum = sourceItems.reduce((s: number, it: any) => s + itemNet(it), 0);
+        const factor = netSum > 0 ? dealEffectiveDpp / netSum : 1;
+        return Math.round(serviceDpp * factor * effRate);
+      }
+      return Math.round(dealEffectiveDpp * effRate);
     }
     return 0;
-  }, [items, activePo, activeQuotation, pphMode, dealDpp]);
+  }, [items, activePo, activeQuotation, pphMode, dealDpp, isIncludePpn]);
 
   const dealPpn = isNoPpn ? 0 : isIncludePpn ? Math.max(0, dealDpp - Math.round(dealDpp / 1.11)) : Math.round(dealDpp * 0.11);
   // Nilai tagihan = DPP + PPN; dikurangi PPh hanya bila PPh dipotong saat invoice terbit (atau tagihan supplier).
@@ -1204,10 +1223,17 @@ function CreateInvoiceForm({
     } else {
       setItems([]);
     }
-    if (match.tipePpn || match.ppnMode) {
+    const linkedQ = match.quotationId
+      ? (data.quotations ?? []).find((q: Row) => String(q.id) === String(match.quotationId))
+      : null;
+    if (match.ppnMode && match.ppnMode !== "none") {
+      setPpnMode(getInitialPpnMode(match));
+    } else if (linkedQ && Number(linkedQ.ppn || 0) > 0) {
+      setPpnMode(getInitialPpnMode(linkedQ));
+    } else if (match.tipePpn || match.ppnMode) {
       setPpnMode(getInitialPpnMode(match));
     }
-    const detectedPph = getInitialPphMode(match);
+    const detectedPph = getInitialPphMode(match) !== "none" ? getInitialPphMode(match) : getInitialPphMode(linkedQ);
     if (detectedPph !== "none") {
       setPphMode(detectedPph);
     } else if (match.pphMode && match.pphMode !== "none") {
@@ -1217,14 +1243,11 @@ function CreateInvoiceForm({
     let nextDisc = 0;
     let nextBase = 0;
     if (Array.isArray(match.items) && match.items.length > 0) {
-      nextDisc = soImpliedDiscount(match);
+      nextDisc = soImpliedDiscount(match) || (linkedQ ? Number(linkedQ.discount ?? linkedQ.disc ?? 0) || 0 : 0);
       nextBase = sumItemGross(match.items);
-    } else if (match.quotationId) {
-      const linkedQ = (data.quotations ?? []).find((q: Row) => String(q.id) === String(match.quotationId));
-      if (linkedQ && Array.isArray(linkedQ.items) && linkedQ.items.length > 0) {
-        nextDisc = Number(linkedQ.discount ?? linkedQ.disc ?? 0) || 0;
-        nextBase = sumItemGross(linkedQ.items);
-      }
+    } else if (linkedQ && Array.isArray(linkedQ.items) && linkedQ.items.length > 0) {
+      nextDisc = Number(linkedQ.discount ?? linkedQ.disc ?? 0) || 0;
+      nextBase = sumItemGross(linkedQ.items);
     }
     setCustomDiscount(nextDisc > 0 ? formatThousands(nextDisc) : "");
     setDiscPercent(nextDisc > 0 && nextBase > 0 ? String(Math.round((nextDisc / nextBase) * 1000) / 10) : "");
@@ -1351,13 +1374,21 @@ function CreateInvoiceForm({
     }
 
     const effPphRate = pphRateFor(pphMode);
-    const itemPphSum = items.reduce((acc, it) => acc + calcItemPph(it), 0);
+    const netItemsSum = items.reduce((s, it) => s + itemNet(it), 0);
+    const dppFactor = netItemsSum > 0 ? effectiveDpp / netItemsSum : rawBase > 0 ? effectiveDpp / rawBase : 1;
+    const itemPphSum = items.reduce((acc, it) => {
+      const mode = (it.pphMode || "none") as PphMode;
+      if (mode === "none") return acc;
+      return acc + Math.round(itemNet(it) * dppFactor * pphRateFor(mode));
+    }, 0);
     let pph = 0;
     if (itemPphSum > 0) {
-      pph = pct === 100 ? itemPphSum : Math.round(itemPphSum * (pct / 100));
+      pph = itemPphSum;
     } else if (effPphRate > 0) {
       if (totalServiceDpp > 0) {
-        const invoiceServiceDpp = Math.min(effectiveDpp, Math.round(totalServiceDpp * (pct / 100)));
+        const srcNetSum = sourceItems.reduce((s: number, it: any) => s + itemNet(it), 0);
+        const srcDppFactor = srcNetSum > 0 ? effectiveDpp / srcNetSum : 1;
+        const invoiceServiceDpp = Math.min(effectiveDpp, Math.round(totalServiceDpp * srcDppFactor));
         pph = Math.round(invoiceServiceDpp * effPphRate);
       } else {
         pph = Math.round(effectiveDpp * effPphRate);

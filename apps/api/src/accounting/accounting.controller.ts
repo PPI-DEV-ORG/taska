@@ -80,17 +80,19 @@ export class AccountingController {
   @Get("journals")
   async listJournals(
     @Query("page") page = "1",
-    @Query("limit") limit = "50",
+    @Query("limit") limit = "200",
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
     @Query("status") status?: string,
+    @Query("sort") sort: "newest" | "oldest" = "newest",
   ) {
     // Catatan: sinkronisasi dokumen yang belum terjurnal TIDAK dijalankan di sini lagi.
     // Membuka daftar jurnal tidak boleh memposting jurnal baru (dulu memicu kas keluar/masuk ganda).
     // Gunakan POST /accounting/sync-unposted secara sadar bila diperlukan.
 
     const p = Math.max(1, parseInt(page, 10));
-    const l = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const l = Math.min(500, Math.max(1, parseInt(limit, 10)));
+    const dir = sort === "oldest" ? "asc" : "desc";
     const where: any = {};
     if (status) where.status = status;
     if (startDate || endDate) {
@@ -103,8 +105,13 @@ export class AccountingController {
       (this.prisma.main as any).journalEntry.count({ where }),
       (this.prisma.main as any).journalEntry.findMany({
         where,
-        include: { lines: { include: { account: { select: { name: true, category: true } } } } },
-        orderBy: { id: "desc" },
+        include: {
+          lines: {
+            include: { account: { select: { name: true, category: true } } },
+            orderBy: { lineNo: "asc" },
+          },
+        },
+        orderBy: [{ date: dir }, { createdAt: dir }, { id: dir }],
         skip: (p - 1) * l,
         take: l,
       }),

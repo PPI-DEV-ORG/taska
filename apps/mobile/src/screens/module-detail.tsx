@@ -638,7 +638,18 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
             (quot.lead && row.nama && quot.lead.trim().toLowerCase() === row.nama.trim().toLowerCase())
         );
       const quoItems = Array.isArray(matchedQuo?.items) ? matchedQuo.items : [];
-      const amount = Number(matchedQuo?.totalAfterDisc || matchedQuo?.total || row.nilai || 0);
+      const qPpnMode = matchedQuo ? getInitialPpnMode(matchedQuo) : "none";
+      const qPphMode = matchedQuo ? getInitialPphMode(matchedQuo) : "none";
+      const qFin = matchedQuo
+        ? calcQuotationFinancials(
+            matchedQuo.nilai ?? matchedQuo.total ?? 0,
+            matchedQuo.disc ?? matchedQuo.discount ?? 0,
+            qPpnMode,
+            qPphMode,
+            quoItems,
+          )
+        : null;
+      const dppVal = qFin ? qFin.dpp : Number(row.nilai || 0);
       const custName = row.perusahaan || row.customer || matchedQuo?.customer || "-";
 
       const createdSo = await addRow("po-client", {
@@ -646,7 +657,20 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         customerId: row.customerId ? Number(row.customerId) : matchedQuo?.customerId ? Number(matchedQuo.customerId) : undefined,
         penawaran: matchedQuo?.nomor ? `${matchedQuo.nomor} - ${custName}` : "-",
         quotationId: matchedQuo?.id ? Number(matchedQuo.id) : undefined,
-        nilai: amount,
+        nilai: dppVal,
+        amount: dppVal,
+        ...(qFin
+          ? {
+              discount: qFin.discNum,
+              ppn: qFin.ppn,
+              ppnMode: qPpnMode,
+              tipePpn: ppnModeToTipe(qPpnMode),
+              pph: qFin.pph,
+              pphMode: qPphMode,
+              tipePph: matchedQuo?.tipePph || pphModeToTipe(qPphMode),
+              total: qFin.totalAfterDisc,
+            }
+          : {}),
         tanggal: getTodayIso(),
         catatan: `[lead:${row.id}] Dibuat dari Lead: ${row.nama}${row.need ? ` — ${row.need}` : ""}`,
         items: quoItems,

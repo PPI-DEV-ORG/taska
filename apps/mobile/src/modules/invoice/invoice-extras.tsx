@@ -21,13 +21,18 @@ import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska
 import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
 import { type QuotationItem } from "@/modules/quotation/types";
 import {
-  calcItemPph,
+  calcQuotationFinancials,
+  extraDiscountOf,
   PPH_MODE_OPTIONS,
   pphModeToTipe,
+  pphRateFor,
   type PphMode,
+  type PpnMode,
   getItemAvailableStock,
   itemDiscount,
+  itemNet,
   recomputeHeaderDiscount,
+  sumItemDiscounts,
   sumItemGross,
 } from "@/modules/quotation/lib";
 import { useKasBankAccounts } from "@/lib/use-kas-bank";
@@ -81,6 +86,20 @@ export function InvoiceExtras({
     setItemsOverride({ rowItems: row.items, items: next });
   }, [row.items]);
 
+  const invPpnMode: PpnMode =
+    row.ppnMode === "include" || String(row.tipePpn || "").includes("Include")
+      ? "include"
+      : row.ppnMode === "none" || String(row.tipePpn || "").includes("No") || String(row.tipePpn || "").includes("Tanpa")
+        ? "none"
+        : "exclude";
+
+  function computeUpdatedInvoiceFinancials(updatedItems: QuotationItem[]) {
+    const newDisc = recomputeHeaderDiscount(row.discount, items, updatedItems);
+    const fin = calcQuotationFinancials(sumItemGross(updatedItems), newDisc, invPpnMode, "none", updatedItems);
+    const total = totalKeepingPphForm(fin.totalAfterDisc, fin.pph);
+    return { newDisc, dpp: fin.dpp, ppn: fin.ppn, pph: fin.pph, total };
+  }
+
   async function handleAddItems(newItems: QuotationItem[]) {
     const existingSnSet = new Set<string>();
     items.forEach((it) => {
@@ -103,15 +122,7 @@ export function InvoiceExtras({
 
     const updated = [...items, ...valid];
     updateItems(updated);
-    // Diskon item ikut dihitung ulang; diskon tambahan invoice tetap.
-    const newDisc = recomputeHeaderDiscount(row.discount, items, updated);
-    const newAmount = Math.max(0, sumItemGross(updated) - newDisc);
-    const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
-    const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
-    const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
-    const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
-    const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
-    const total = totalKeepingPphForm(isInclude ? newAmount : dpp + ppn, pph);
+    const { newDisc, dpp, ppn, pph, total } = computeUpdatedInvoiceFinancials(updated);
 
     await patchRow("invoices", row.id, {
       items: updated,
@@ -130,15 +141,7 @@ export function InvoiceExtras({
   async function handleDeleteItem(idx: number) {
     const updated = items.filter((_, i) => i !== idx);
     updateItems(updated);
-    // Diskon item ikut dihitung ulang; diskon tambahan invoice tetap.
-    const newDisc = recomputeHeaderDiscount(row.discount, items, updated);
-    const newAmount = Math.max(0, sumItemGross(updated) - newDisc);
-    const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
-    const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
-    const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
-    const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
-    const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
-    const total = totalKeepingPphForm(isInclude ? newAmount : dpp + ppn, pph);
+    const { newDisc, dpp, ppn, pph, total } = computeUpdatedInvoiceFinancials(updated);
 
     await patchRow("invoices", row.id, {
       items: updated,
@@ -159,15 +162,7 @@ export function InvoiceExtras({
     const count = selectedItemIndices.length;
     const updated = items.filter((_, i) => !selectedItemIndices.includes(i));
     updateItems(updated);
-    // Diskon item ikut dihitung ulang; diskon tambahan invoice tetap.
-    const newDisc = recomputeHeaderDiscount(row.discount, items, updated);
-    const newAmount = Math.max(0, sumItemGross(updated) - newDisc);
-    const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
-    const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
-    const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
-    const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
-    const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
-    const total = totalKeepingPphForm(isInclude ? newAmount : dpp + ppn, pph);
+    const { newDisc, dpp, ppn, pph, total } = computeUpdatedInvoiceFinancials(updated);
 
     await patchRow("invoices", row.id, {
       items: updated,
@@ -189,15 +184,7 @@ export function InvoiceExtras({
       i === idx ? { ...it, pphMode: newPphMode, tipePph: pphModeToTipe(newPphMode) } : it
     );
     updateItems(updated);
-    // Diskon item ikut dihitung ulang; diskon tambahan invoice tetap.
-    const newDisc = recomputeHeaderDiscount(row.discount, items, updated);
-    const newAmount = Math.max(0, sumItemGross(updated) - newDisc);
-    const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
-    const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
-    const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
-    const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
-    const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
-    const total = totalKeepingPphForm(isInclude ? newAmount : dpp + ppn, pph);
+    const { newDisc, dpp, ppn, pph, total } = computeUpdatedInvoiceFinancials(updated);
 
     await patchRow("invoices", row.id, {
       items: updated,
@@ -372,8 +359,10 @@ export function InvoiceExtras({
   const [payCoaAccount, setPayCoaAccount] = React.useState<string>(() => {
     return kasBankOptions[0]?.code || "1000.02";
   });
-  const [payAmount, setPayAmount] = React.useState(formatThousands(sisa || row.total || 0));
-  const [payPph, setPayPph] = React.useState("0");
+  const [payAmountOverride, setPayAmount] = React.useState<string | null>(null);
+  const [payPphOverride, setPayPph] = React.useState<string | null>(null);
+  const payPph = payPphOverride !== null ? payPphOverride : formatThousands(pphDue);
+  const payAmount = payAmountOverride !== null ? payAmountOverride : formatThousands(Math.max(0, sisa - pphDue));
   const [payDate, setPayDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [payMethod, setPayMethod] = React.useState<"TRANSFER" | "TUNAI" | "QRIS" | "LAINNYA">("TRANSFER");
   const [payRef, setPayRef] = React.useState("");
@@ -410,8 +399,8 @@ export function InvoiceExtras({
 
   function openPayModal() {
     // Default: customer transfer (sisa − PPh) dan menyerahkan bukti potong PPh
-    setPayPph(formatThousands(pphDue));
-    setPayAmount(formatThousands(Math.max(0, sisa - pphDue)));
+    setPayPph(null);
+    setPayAmount(null);
     setPayFileId(null);
     setPayHasFile(false);
     payFileHandle.current = null;
@@ -420,6 +409,20 @@ export function InvoiceExtras({
     if (defaultAcc) setPayCoaAccount(defaultAcc.code);
     setPayOpen(true);
   }
+
+  const itemsGrossForInv = sumItemGross(items);
+  const invGrossBeforeDisc = itemsGrossForInv > 0 ? itemsGrossForInv : invGrossTotal + Number(row.discount || row.disc || 0);
+  const invItemDiscTotal = sumItemDiscounts(items);
+  const invEffectiveDisc = Math.max(Number(row.discount || row.disc || 0), invItemDiscTotal);
+  const invExtraDisc = extraDiscountOf(invEffectiveDisc, items);
+  const invDppVal =
+    invPpnMode === "include"
+      ? Number(row.nilai) > 0 && Number(row.nilai) < invGrossTotal
+        ? Number(row.nilai)
+        : Math.round(invGrossTotal / 1.11)
+      : Number(row.nilai || 0);
+  const invNetItemsSum = items.reduce((s, it) => s + itemNet(it), 0);
+  const invDppFactor = invNetItemsSum > 0 ? invDppVal / invNetItemsSum : invGrossBeforeDisc > 0 ? invDppVal / invGrossBeforeDisc : 1;
 
   async function handleSavePayment() {
     const amt = Number(String(payAmount).replace(/\D/g, "")) || 0;
@@ -483,6 +486,8 @@ export function InvoiceExtras({
           : `Pembayaran ${rupiah(amt)} berhasil dicatat`,
       );
       setPayOpen(false);
+      setPayAmount(null);
+      setPayPph(null);
       setPayRef("");
       setPayFileId(null);
       setPayHasFile(false);
@@ -626,15 +631,34 @@ export function InvoiceExtras({
           </View>
         }
       >
+        {invEffectiveDisc > 0 ? (
+          <>
+            <Line
+              left={invPpnMode === "include" ? "Nilai Sebelum Diskon (Inc. PPN)" : "Nilai Sebelum Diskon"}
+              right={<Text className="text-sm font-medium">{rupiah(invGrossBeforeDisc)}</Text>}
+            />
+            <Line
+              left="DISC (Diskon)"
+              sub={
+                invItemDiscTotal > 0 && invExtraDisc > 0
+                  ? `Per item ${rupiah(invItemDiscTotal)} + tambahan ${rupiah(invExtraDisc)}`
+                  : invItemDiscTotal > 0
+                    ? "Total diskon per item"
+                    : undefined
+              }
+              right={<Text className="text-sm font-semibold text-danger">- {rupiah(invEffectiveDisc)}</Text>}
+            />
+          </>
+        ) : null}
         {row.ppnMode === "include" || String(row.tipePpn || "").includes("Include") ? (
           <>
             <Line
-              left="Harga Sebelum PPN (DPP)"
-              right={<Text className="text-sm font-medium">{rupiah(Math.round(invGrossTotal / 1.11) || Math.round((Number(row.nilai) || 0) / 1.11))}</Text>}
+              left="DPP (Harga Sebelum PPN)"
+              right={<Text className="text-sm font-medium">{rupiah(invDppVal)}</Text>}
             />
             <Line
               left="PPN 11% (Termasuk)"
-              right={<Text className="text-sm font-semibold text-primary">{rupiah(Number(row.ppn) || Math.max(0, invGrossTotal - Math.round(invGrossTotal / 1.11)))}</Text>}
+              right={<Text className="text-sm font-semibold text-primary">{rupiah(Number(row.ppn) || Math.max(0, invGrossTotal - invDppVal))}</Text>}
             />
             {invPph > 0 && isNetFormInvoice ? (
               <Line
@@ -643,18 +667,24 @@ export function InvoiceExtras({
                 right={<Text className="text-sm font-semibold text-danger">- {rupiah(invPph)}</Text>}
               />
             ) : null}
-            <Line left="Total Tagihan (Inc. PPN)" right={<Text className="text-sm font-bold text-primary">{rupiah(row.total || 0)}</Text>} />
+            <Line left="Total Tagihan (termasuk PPN)" right={<Text className="text-sm font-bold text-primary">{rupiah(row.total || 0)}</Text>} />
             {invPph > 0 && !isNetFormInvoice ? (
-              <Line
-                left={`${row.tipePph || "PPh"} dipotong customer saat bayar`}
-                sub={`Estimasi transfer dari customer ${rupiah(Math.max(0, Number(row.total || 0) - invPph))}`}
-                right={<Text className="text-sm text-muted-foreground">{rupiah(invPph)}</Text>}
-              />
+              <>
+                <Line
+                  left={`${row.tipePph || "PPh"} dipotong customer saat bayar`}
+                  sub="Bukti potong dari customer; tidak mengurangi nilai tagihan"
+                  right={<Text className="text-sm text-muted-foreground">{rupiah(invPph)}</Text>}
+                />
+                <Line
+                  left="Estimasi transfer dari customer"
+                  right={<Text className="text-sm font-bold">{rupiah(Math.max(0, Number(row.total || 0) - invPph))}</Text>}
+                />
+              </>
             ) : null}
           </>
         ) : (
           <>
-            <Line left="Nilai Sebelum PPN" right={<Text className="text-sm font-medium">{rupiah(row.nilai || 0)}</Text>} />
+            <Line left="DPP (Harga Sebelum PPN)" right={<Text className="text-sm font-medium">{rupiah(row.nilai || 0)}</Text>} />
             <Line
               left={row.ppnMode === "none" || String(row.tipePpn || "").includes("No") || String(row.tipePpn || "").includes("Tanpa") ? "PPN (Tanpa PPN)" : "PPN (11%)"}
               right={<Text className="text-sm font-medium">{rupiah(row.ppn || (Number(row.total || 0) > Number(row.nilai || 0) ? Number(row.total || 0) - Number(row.nilai || 0) : 0))}</Text>}
@@ -668,15 +698,35 @@ export function InvoiceExtras({
             ) : null}
             <Line left="Total Tagihan" right={<Text className="text-sm font-bold">{rupiah(row.total || 0)}</Text>} />
             {invPph > 0 && !isNetFormInvoice ? (
-              <Line
-                left={`${row.tipePph || "PPh"} dipotong customer saat bayar`}
-                sub={`Estimasi transfer dari customer ${rupiah(Math.max(0, Number(row.total || 0) - invPph))}`}
-                right={<Text className="text-sm text-muted-foreground">{rupiah(invPph)}</Text>}
-              />
+              <>
+                <Line
+                  left={`${row.tipePph || "PPh"} dipotong customer saat bayar`}
+                  sub="Bukti potong dari customer; tidak mengurangi nilai tagihan"
+                  right={<Text className="text-sm text-muted-foreground">{rupiah(invPph)}</Text>}
+                />
+                <Line
+                  left="Estimasi transfer dari customer"
+                  right={<Text className="text-sm font-bold">{rupiah(Math.max(0, Number(row.total || 0) - invPph))}</Text>}
+                />
+              </>
             ) : null}
           </>
         )}
-        <Line left="Sudah Dibayar" right={<Text className="text-success text-sm font-medium">{rupiah(row.terbayar || 0)}</Text>} />
+        {pphWithheldSoFar > 0 ? (
+          <>
+            <Line
+              left="Sudah Dibayar (Transfer Diterima)"
+              sub={`Ditambah bukti potong ${row.tipePph || "PPh"} ${rupiah(pphWithheldSoFar)} → Total pelunasan ${rupiah(row.terbayar || 0)}`}
+              right={<Text className="text-success text-sm font-bold">{rupiah(Math.max(0, Number(row.terbayar || 0) - pphWithheldSoFar))}</Text>}
+            />
+            <Line
+              left={`Bukti Potong ${row.tipePph || "PPh"} Tercatat`}
+              right={<Text className="text-sm font-medium text-muted-foreground">{rupiah(pphWithheldSoFar)}</Text>}
+            />
+          </>
+        ) : (
+          <Line left="Sudah Dibayar" right={<Text className="text-success text-sm font-medium">{rupiah(row.terbayar || 0)}</Text>} />
+        )}
         <Line left="Sisa Tagihan" right={<Text className="text-sm font-semibold">{rupiah(sisa)}</Text>} />
         {row.fileId ? (
           <Line
@@ -815,7 +865,10 @@ export function InvoiceExtras({
                   : (String(it.item).match(/\(SN:\s*([^\)]+)\)/i)?.[1] || null);
                 const isSelected = selectedItemIndices.includes(idx);
 
-                const itemPph = calcItemPph(it);
+                const itemPph =
+                  it.pphMode && it.pphMode !== "none"
+                    ? Math.round(itemNet(it) * invDppFactor * pphRateFor(it.pphMode as PphMode))
+                    : 0;
                 const stockInfo = getItemAvailableStock(it, data.products, data.serials, data.stockSummary);
                 const isOutOfStock = stockInfo.isOutOfStock;
                 return (
@@ -982,15 +1035,7 @@ export function InvoiceExtras({
             updated.push(formattedItem);
           }
           updateItems(updated);
-          // Diskon item ikut dihitung ulang; diskon tambahan invoice tetap.
-          const newDisc = recomputeHeaderDiscount(row.discount, items, updated);
-          const newAmount = Math.max(0, sumItemGross(updated) - newDisc);
-          const isInclude = row.ppnMode === "include" || String(row.tipePpn || "").includes("Include");
-          const isNoPpn = row.ppnMode === "none" || String(row.tipePpn || "").includes("No");
-          const dpp = isInclude ? Math.round(newAmount / 1.11) : newAmount;
-          const ppn = isNoPpn ? 0 : isInclude ? Math.max(0, newAmount - dpp) : Math.round(newAmount * 0.11);
-          const pph = updated.reduce((s, it) => s + calcItemPph(it), 0);
-          const total = totalKeepingPphForm(isInclude ? newAmount : dpp + ppn, pph);
+          const { newDisc, dpp, ppn, pph, total } = computeUpdatedInvoiceFinancials(updated);
 
           await patchRow("invoices", row.id, {
             items: updated,
@@ -1631,30 +1676,46 @@ export function InvoiceExtras({
       </Dialog>
 
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Catat Pembayaran Invoice ({row.nomor})</DialogTitle>
           </DialogHeader>
-          <View className="gap-3 py-2">
-            <FormField label="Uang diterima / transfer (Rp)" required>
-              <Input
-                value={payAmount}
-                onChangeText={(v) => setPayAmount(formatThousands(v))}
-                keyboardType="numeric"
-              />
-            </FormField>
-            {invPph > 0 && !isNetFormInvoice ? (
-              <FormField
-                label={`${row.tipePph || "PPh"} dipotong customer (bukti potong)`}
-                hint={
-                  pphWithheldSoFar > 0
-                    ? `Sudah dicatat ${rupiah(pphWithheldSoFar)} dari ${rupiah(invPph)}`
-                    : "Isi 0 bila customer tidak memotong PPh"
-                }
-              >
-                <Input value={payPph} onChangeText={(v) => setPayPph(formatThousands(v))} keyboardType="numeric" />
-              </FormField>
-            ) : null}
+          <View className="gap-3 py-1">
+            <View className="flex-col sm:flex-row gap-3">
+              <View className="flex-1">
+                <FormField label="Uang diterima / transfer (Rp)" required>
+                  <Input
+                    value={payAmount}
+                    onChangeText={(v) => setPayAmount(formatThousands(v))}
+                    keyboardType="numeric"
+                  />
+                </FormField>
+              </View>
+              {invPph > 0 && !isNetFormInvoice ? (
+                <View className="flex-1">
+                  <FormField
+                    label={`${row.tipePph || "PPh"} dipotong customer`}
+                    hint={
+                      pphWithheldSoFar > 0
+                        ? `Sudah dicatat ${rupiah(pphWithheldSoFar)} dari ${rupiah(invPph)}`
+                        : "Isi 0 bila tidak dipotong"
+                    }
+                  >
+                    <Input
+                      value={payPph}
+                      onChangeText={(v) => {
+                        const cleanPph = Number(String(v).replace(/\D/g, "")) || 0;
+                        setPayPph(formatThousands(v));
+                        if (sisa > 0 && cleanPph <= sisa) {
+                          setPayAmount(formatThousands(Math.max(0, sisa - cleanPph)));
+                        }
+                      }}
+                      keyboardType="numeric"
+                    />
+                  </FormField>
+                </View>
+              ) : null}
+            </View>
             {invPph > 0 && !isNetFormInvoice ? (
               <View className="flex-row justify-between rounded-lg bg-panel border border-border px-3 py-2">
                 <Text className="text-xs text-muted-foreground">Melunasi tagihan sebesar</Text>
@@ -1663,9 +1724,18 @@ export function InvoiceExtras({
                 </Text>
               </View>
             ) : null}
-            <FormField label="Tanggal Pembayaran" required>
-              <DatePicker value={payDate} onChange={setPayDate} placeholder="Pilih tanggal bayar" />
-            </FormField>
+            <View className="flex-col sm:flex-row gap-3">
+              <View className="flex-1">
+                <FormField label="Tanggal Pembayaran" required>
+                  <DatePicker value={payDate} onChange={setPayDate} placeholder="Pilih tanggal bayar" />
+                </FormField>
+              </View>
+              <View className="flex-1">
+                <FormField label="Nomor Referensi / Rekening">
+                  <Input value={payRef} onChangeText={setPayRef} placeholder="Contoh: TRF-BCA-992811" />
+                </FormField>
+              </View>
+            </View>
             <FormField label="Metode Pembayaran" required>
               <View className="flex-row flex-wrap gap-1.5">
                 {(["TRANSFER", "TUNAI", "QRIS", "LAINNYA"] as const).map((m) => (
@@ -1691,7 +1761,7 @@ export function InvoiceExtras({
               </View>
             </FormField>
             <FormField
-              label="Pilih Akun Kas / Bank (CoA) Penerima *"
+              label="Pilih Akun Kas / Bank (CoA) Penerima"
               hint="Rekening kas atau bank penerima dana (Debit Kas/Bank)"
               required
             >
@@ -1712,9 +1782,6 @@ export function InvoiceExtras({
                 }}
                 placeholder="Pilih rekening kas / bank penerima..."
               />
-            </FormField>
-            <FormField label="Nomor Referensi / Rekening">
-              <Input value={payRef} onChangeText={setPayRef} placeholder="Contoh: TRF-BCA-992811" />
             </FormField>
             <View>
               <FileUploader

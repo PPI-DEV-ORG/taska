@@ -110,6 +110,7 @@ export default function AccountingScreen() {
   // Tab 1: Journal filters & pagination
   const [journalQuery, setJournalQuery] = React.useState("");
   const [journalDate, setJournalDate] = React.useState("");
+  const [journalSortOrder, setJournalSortOrder] = React.useState<"newest" | "oldest">("newest");
   const [journalSourceFilter, setJournalSourceFilter] = React.useState<string>("Semua");
   const [journalPage, setJournalPage] = React.useState(1);
   const [JOURNAL_PAGE_SIZE, setJournalPageSize] = React.useState(20);
@@ -231,7 +232,8 @@ export default function AccountingScreen() {
       jParams.set("startDate", `${journalDate.slice(0, 10)}T00:00:00Z`);
       jParams.set("endDate", `${journalDate.slice(0, 10)}T23:59:59Z`);
     }
-    jParams.set("limit", "150");
+    jParams.set("limit", "500");
+    jParams.set("sort", journalSortOrder);
     const jStr = jParams.toString();
     api<any>("GET", `/accounting/journals${jStr ? `?${jStr}` : ""}`)
       .then((res) => {
@@ -345,7 +347,7 @@ export default function AccountingScreen() {
     return () => {
       active = false;
     };
-  }, [journalDate, refreshTrigger]);
+  }, [journalDate, journalSortOrder, refreshTrigger]);
 
   React.useEffect(() => {
     let active = true;
@@ -611,24 +613,41 @@ export default function AccountingScreen() {
 
   // Filtered Journal & Pagination
   const effectiveJournalLines = serverJournalLines && serverJournalLines.length > 0 ? serverJournalLines : fin.journalLines;
-  const filteredJournal = effectiveJournalLines.filter((l) => {
-    if (!l) return false;
-    if (journalSourceFilter !== "Semua" && l.sumber !== journalSourceFilter) return false;
-    if (journalDate) {
-      const target = journalDate.slice(0, 10);
-      if (!l.tanggal?.startsWith(target)) return false;
-    }
-    if (!journalQuery.trim()) return true;
-    const q = journalQuery.toLowerCase();
-    return (
-      (l.journalNo || "").toLowerCase().includes(q) ||
-      (l.refNo || "").toLowerCase().includes(q) ||
-      (l.kodeAkun || "").toLowerCase().includes(q) ||
-      (l.namaAkun || "").toLowerCase().includes(q) ||
-      (l.keterangan || "").toLowerCase().includes(q) ||
-      (l.project || "").toLowerCase().includes(q)
-    );
-  });
+  const filteredJournal = React.useMemo(() => {
+    const matched = effectiveJournalLines.filter((l) => {
+      if (!l) return false;
+      if (journalSourceFilter !== "Semua" && l.sumber !== journalSourceFilter) return false;
+      if (journalDate) {
+        const target = journalDate.slice(0, 10);
+        if (!l.tanggal?.startsWith(target)) return false;
+      }
+      if (!journalQuery.trim()) return true;
+      const q = journalQuery.toLowerCase();
+      return (
+        (l.journalNo || "").toLowerCase().includes(q) ||
+        (l.refNo || "").toLowerCase().includes(q) ||
+        (l.kodeAkun || "").toLowerCase().includes(q) ||
+        (l.namaAkun || "").toLowerCase().includes(q) ||
+        (l.keterangan || "").toLowerCase().includes(q) ||
+        (l.project || "").toLowerCase().includes(q)
+      );
+    });
+
+    const dir = journalSortOrder === "oldest" ? 1 : -1;
+    return [...matched].sort((a, b) => {
+      const sameEntry =
+        (a.journalEntryId && b.journalEntryId && a.journalEntryId === b.journalEntryId) ||
+        (!a.journalEntryId && !b.journalEntryId && a.journalNo && a.journalNo === b.journalNo);
+      if (sameEntry) {
+        return (Number(a.lineNo) || 0) - (Number(b.lineNo) || 0);
+      }
+      const dateCmp = String(a.tanggal || "").localeCompare(String(b.tanggal || ""));
+      if (dateCmp !== 0) return dateCmp * dir;
+      const entryIdCmp = (Number(a.journalEntryId) || 0) - (Number(b.journalEntryId) || 0);
+      if (entryIdCmp !== 0) return entryIdCmp * dir;
+      return String(a.journalNo || "").localeCompare(String(b.journalNo || "")) * dir;
+    });
+  }, [effectiveJournalLines, journalSourceFilter, journalDate, journalQuery, journalSortOrder]);
 
   const totalJournalPages = Math.max(1, Math.ceil(filteredJournal.length / JOURNAL_PAGE_SIZE));
   const currentJournalPage = Math.min(Math.max(1, journalPage), totalJournalPages);
@@ -971,6 +990,8 @@ export default function AccountingScreen() {
             setJournalQuery={setJournalQuery}
             journalDate={journalDate}
             setJournalDate={setJournalDate}
+            journalSortOrder={journalSortOrder}
+            setJournalSortOrder={setJournalSortOrder}
             journalPage={journalPage}
             setJournalPage={setJournalPage}
             journalSourceFilter={journalSourceFilter}

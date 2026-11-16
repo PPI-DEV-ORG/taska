@@ -11,7 +11,7 @@ import { StockService } from "../stock/stock.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { ClientPoDirectSettlementDto, ClientPoDto } from "./dto.js";
 import { withheldTax } from "../accounting/posting.rules.js";
-import { invoiceSettledGross } from "./settlement.js";
+import { deriveQuotationTaxBreakdown, invoiceSettledGross } from "./settlement.js";
 
 type ClientPoMeta = {
   soNumber?: string | null;
@@ -156,9 +156,38 @@ export class ClientPoService {
     const soFile = meta.soFileId ? fileMap.get(Number(meta.soFileId)) ?? null : null;
     const paymentProofFile = meta.paymentProofFileId ? fileMap.get(Number(meta.paymentProofFileId)) ?? null : null;
 
+    const qTax = row.quotation ? deriveQuotationTaxBreakdown(row.quotation, meta.items) : null;
+    const needsQuotationTaxFallback =
+      qTax &&
+      ((qTax.ppn > 0 && Number(meta.ppn ?? 0) === 0 && Math.abs(Number(row.amount || 0) - qTax.total) <= 2) ||
+        (qTax.pph > 0 && Number(meta.pph ?? 0) === 0));
+
+    const effectiveAmount = needsQuotationTaxFallback && qTax ? qTax.dpp : Number(row.amount || 0);
+    const effectivePpn = needsQuotationTaxFallback && qTax ? qTax.ppn : Number(meta.ppn ?? 0);
+    const effectivePpnMode =
+      (needsQuotationTaxFallback && qTax ? qTax.ppnMode : meta.ppnMode) ??
+      (qTax && qTax.ppn > 0 ? qTax.ppnMode : effectivePpn > 0 ? "exclude" : null);
+    const effectiveTipePpn =
+      (needsQuotationTaxFallback && qTax ? qTax.tipePpn : meta.tipePpn) ??
+      (effectivePpnMode === "include"
+        ? "Include PPN (Sudah termasuk)"
+        : effectivePpnMode === "exclude"
+          ? "Exclude PPN (11%)"
+          : null);
+    const effectivePph =
+      needsQuotationTaxFallback && qTax
+        ? qTax.pph
+        : qTax && qTax.pph > 0 && Math.abs(Number(meta.pph ?? 0) - qTax.pph) > 0 && Number(meta.pph ?? 0) > qTax.pph
+          ? qTax.pph
+          : Number(meta.pph ?? 0);
+    const effectivePphMode = (needsQuotationTaxFallback && qTax ? qTax.pphMode : meta.pphMode) ?? (qTax?.pphMode || null);
+    const effectiveTipePph = (needsQuotationTaxFallback && qTax ? qTax.tipePph : meta.tipePph) ?? (qTax?.tipePph || null);
+    const effectiveItems = qTax ? qTax.items : Array.isArray(meta.items) ? meta.items : [];
+    const effectiveDiscount = qTax ? qTax.discount : 0;
+
     // Total tidak disimpan di metadata (dulu bisa basi setelah amount diubah): selalu dihitung dari kolom + pajak.
     // Nilai SO = DPP + PPN. PPh dipotong customer saat membayar (bukti potong), tidak mengurangi nilai SO.
-    const effectiveTotal = Number(row.amount || 0) + Number(meta.ppn ?? 0);
+    const effectiveTotal = effectiveAmount + effectivePpn;
 
     const activeInvoices = Array.isArray(row.invoices)
       ? row.invoices.filter((i: any) => i.status !== "BATAL")
@@ -193,13 +222,15 @@ export class ClientPoService {
 
     return {
       ...row,
+      amount: effectiveAmount,
+      discount: effectiveDiscount,
       soNumber: soNumber || "-",
       poClientNumber: poClientNumber || "-",
       docMode: meta.docMode || (soNumber !== "-" && poClientNumber !== "-" ? "BOTH" : soNumber !== "-" ? "SO" : "PO"),
       projectId: meta.projectId ?? null,
       projectName: meta.projectId ? projectNames?.get(Number(meta.projectId)) ?? null : null,
       soFileId: meta.soFileId ?? null,
-      items: Array.isArray(meta.items) ? meta.items : [],
+      items: effectiveItems,
       paymentStatus: computedPaymentStatus,
       paidAmount: isDirectSettled ? effectiveTotal : totalPaid,
       settlementType: meta.settlementType ?? null,
@@ -208,12 +239,12 @@ export class ClientPoService {
       coaAccount: meta.coaAccount ?? null,
       settledAt: meta.settledAt ?? null,
       goodsDispatched: meta.goodsDispatched ?? false,
-      ppn: meta.ppn ?? 0,
-      tipePpn: meta.tipePpn ?? null,
-      ppnMode: meta.ppnMode ?? null,
-      pph: meta.pph ?? 0,
-      tipePph: meta.tipePph ?? null,
-      pphMode: meta.pphMode ?? null,
+      ppn: effectivePpn,
+      tipePpn: effectiveTipePpn,
+      ppnMode: effectivePpnMode,
+      pph: effectivePph,
+      tipePph: effectiveTipePph,
+      pphMode: effectivePphMode,
       total: effectiveTotal,
       file,
       soFile,
@@ -221,6 +252,7 @@ export class ClientPoService {
   }
 
   async list(q: PageQuery & { customerId?: number; from?: string; to?: string }) {
+    await this.invoiceOut.ensureTaxDataRepaired();
     const where = {
       ...(q.customerId ? { customerId: q.customerId } : {}),
       ...(q.from || q.to
@@ -247,7 +279,20 @@ export class ClientPoService {
         include: {
           customer: { select: { id: true, name: true } },
           supplier: { select: { id: true, name: true } },
-          quotation: { select: { id: true, number: true } },
+          quotation: {
+            select: {
+              id: true,
+              number: true,
+              total: true,
+              discount: true,
+              ppn: true,
+              grandTotal: true,
+              pph: true,
+              pphMode: true,
+              tipePph: true,
+              items: true,
+            },
+          },
           invoices: {
             where: { isProforma: false },
             select: { id: true, total: true, amount: true, ppn: true, pph: true, paidAmount: true, status: true, type: true },
@@ -279,12 +324,26 @@ export class ClientPoService {
   }
 
   async get(id: number) {
+    await this.invoiceOut.ensureTaxDataRepaired();
     const row = await this.prisma.main.clientPO.findUnique({
       where: { id },
       include: {
         customer: true,
         supplier: true,
-        quotation: { select: { id: true, number: true } },
+        quotation: {
+          select: {
+            id: true,
+            number: true,
+            total: true,
+            discount: true,
+            ppn: true,
+            grandTotal: true,
+            pph: true,
+            pphMode: true,
+            tipePph: true,
+            items: true,
+          },
+        },
         invoices: { where: { isProforma: false } },
       },
     });
@@ -340,7 +399,20 @@ export class ClientPoService {
     const quote = dto.quotationId
       ? await this.prisma.main.quotation.findUnique({
           where: { id: Number(dto.quotationId) },
-          select: { id: true, number: true, status: true, customerId: true, items: true },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            customerId: true,
+            total: true,
+            discount: true,
+            ppn: true,
+            grandTotal: true,
+            pph: true,
+            pphMode: true,
+            tipePph: true,
+            items: true,
+          },
         })
       : null;
     if (dto.quotationId && !quote) throw new NotFoundException("Penawaran tidak ditemukan");
@@ -363,6 +435,33 @@ export class ClientPoService {
 
     let items = Array.isArray(dto.items) ? dto.items : [];
     if (!items.length && Array.isArray(quote?.items) && quote.items.length > 0) items = quote.items as any[];
+
+    const qTax = quote ? deriveQuotationTaxBreakdown(quote, items) : null;
+    if (qTax) {
+      items = qTax.items;
+      const shouldInheritTax =
+        (!dto.ppnMode || dto.ppnMode === "none") &&
+        (dto.ppn === undefined || Number(dto.ppn) === 0) &&
+        qTax.ppn > 0 &&
+        (dto.amount === undefined || dto.amount === null || dto.amount === 0 || Math.abs(Number(dto.amount) - qTax.total) <= 2);
+      if (shouldInheritTax) {
+        dto = {
+          ...dto,
+          amount: qTax.dpp,
+          ppn: qTax.ppn,
+          ppnMode: qTax.ppnMode,
+          tipePpn: qTax.tipePpn,
+        };
+      }
+      if ((dto.pph === undefined || Number(dto.pph) === 0) && qTax.pph > 0) {
+        dto = {
+          ...dto,
+          pph: qTax.pph,
+          pphMode: qTax.pphMode,
+          tipePph: qTax.tipePph,
+        };
+      }
+    }
 
     let calculatedAmount = dto.amount;
     if ((calculatedAmount === undefined || calculatedAmount === null || calculatedAmount === 0) && items.length > 0) {
@@ -568,26 +667,9 @@ export class ClientPoService {
       if (Array.isArray(quoteRow?.items) && quoteRow.items.length > 0) items = quoteRow.items as any[];
     }
 
-    // 1. Catat Surat Jalan (Delivery Note) dengan status PENDING agar tim Gudang dapat mengalokasikan unit SN fisik & melakukan pengiriman
+    // 1. Catat Surat Jalan (Delivery Note) dengan status PENDING (daftar barang kosong, target diambil dari SO untuk diisi/scan oleh Gudang)
     const dnNumber = await this.docnum.next("suratJalan", settlementDate);
     const partyName = row.customer?.name ?? (row.supplier?.name ? `${row.supplier.name} (Supplier)` : "Pelanggan");
-    const mappedDnItems = items
-      .filter(
-        (it: any) =>
-          it.itemType !== "JASA" &&
-          !it.isNonInventory &&
-          !/^\[JASA\]/i.test(String(it.customName || it.name || it.item || "")),
-      )
-      .map((it: any) => {
-        const sn = it.sn || (Array.isArray(it.serialNumbers) ? it.serialNumbers.join(",") : "");
-        return {
-          productId: Number(it.productId) || 1,
-          qty: Number(it.qty) || 1,
-          serials: sn || undefined,
-          note: it.item || it.name || it.productName || "Barang",
-        };
-      })
-      .filter((x: any) => x.productId > 0);
 
     const deliveryNote = await this.prisma.main.deliveryNote.create({
       data: {
@@ -607,16 +689,6 @@ export class ClientPoService {
             },
           ],
         },
-        items: mappedDnItems.length > 0
-          ? {
-              create: mappedDnItems.map((mi: any) => ({
-                productId: mi.productId,
-                qty: mi.qty,
-                serials: mi.serials ?? null,
-                note: mi.note ?? null,
-              })),
-            }
-          : undefined,
       },
     }).catch(() => null);
 

@@ -49,7 +49,24 @@ import { printOrderDocument } from "@/lib/order-print";
 import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
 import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
 import { CashAdvancePanel } from "@/modules/cash-advance/cash-advance-panel";
-import { calcItemPph, distributeDiscountToPrices, PPH_MODE_OPTIONS, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
+import {
+  calcItemPph,
+  calcQuotationFinancials,
+  extraDiscountOf,
+  getInitialPphMode,
+  getInitialPpnMode,
+  itemDiscount,
+  itemNet,
+  PPH_MODE_OPTIONS,
+  pphModeToTipe,
+  pphRateFor,
+  ppnModeToTipe,
+  recomputeHeaderDiscount,
+  sumItemDiscounts,
+  sumItemGross,
+  type PphMode,
+  type PpnMode,
+} from "@/modules/quotation/lib";
 
 // Re-export agar import lama dari "@/screens/module-extras" tetap valid.
 export { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
@@ -457,14 +474,37 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
   const itemsTotal = currentItems.reduce((acc, it) => acc + getItemQty(it) * getItemPrice(it), 0);
 
-  // Diskon SO = selisih harga item dengan nilai SO sebelum pajak.
-  // SO dari penawaran menyimpan harga item yang sudah net (diskon penawaran sudah dibagi ke harga),
-  // jadi diskon penawaran TIDAK ditampilkan/dipotong lagi di sini.
-  const rawRowDisc = Number(row.discount || row.disc || 0);
-  const soPpnMode = row.ppnMode || (Number(row.ppn || 0) > 0 ? "exclude" : "none");
-  const soBaseBeforeTax = soPpnMode === "include" ? Number(row.total || row.nilai || 0) : Number(row.nilai || 0);
-  const impliedSoDisc = soBaseBeforeTax > 0 && itemsTotal - soBaseBeforeTax > 2 ? Math.round(itemsTotal - soBaseBeforeTax) : 0;
-  const effectiveDiscount = rawRowDisc > 0 ? rawRowDisc : impliedSoDisc;
+  const soPpnMode: PpnMode =
+    row.ppnMode === "include" || String(row.tipePpn || "").toLowerCase().includes("include")
+      ? "include"
+      : row.ppnMode === "exclude" || String(row.tipePpn || "").toLowerCase().includes("exclude")
+        ? "exclude"
+        : linkedQuotation && Number(row.ppn || 0) === 0 && Number(linkedQuotation.ppn || 0) > 0
+          ? getInitialPpnMode(linkedQuotation)
+          : Number(row.ppn || 0) > 0
+            ? "exclude"
+            : "none";
+
+  const rawRowDisc = Number(row.discount || row.disc || linkedQuotation?.discount || linkedQuotation?.disc || 0);
+  const itemDiscTotal = sumItemDiscounts(currentItems);
+  const soBaseBeforeTax =
+    soPpnMode === "include"
+      ? Number(row.total || 0) || Number(row.nilai || 0) + Number(row.ppn || 0)
+      : Number(row.nilai || 0);
+  const impliedSoDisc =
+    soBaseBeforeTax > 0 && itemsTotal - soBaseBeforeTax > 2 ? Math.round(itemsTotal - soBaseBeforeTax) : 0;
+  const effectiveDiscount = Math.max(rawRowDisc, itemDiscTotal, impliedSoDisc);
+  const extraDisc = extraDiscountOf(effectiveDiscount, currentItems);
+
+  const soFin = calcQuotationFinancials(
+    itemsTotal > 0 ? itemsTotal : Number(row.total || row.nilai || 0) + effectiveDiscount,
+    effectiveDiscount,
+    soPpnMode,
+    getInitialPphMode(row.pph ? row : linkedQuotation || row),
+    currentItems,
+  );
+  const netItemsSum = currentItems.reduce((s, it) => s + itemNet(it), 0);
+  const dppFactor = netItemsSum > 0 ? soFin.dpp / netItemsSum : itemsTotal > 0 ? soFin.dpp / itemsTotal : 1;
 
   // Dialog state
   const [selectedItemIndices, setSelectedItemIndices] = React.useState<number[]>([]);
@@ -573,27 +613,40 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     }
   };
 
-  const saveItems = async (newItems: any[], updateAmount = true, keepDiscount = effectiveDiscount) => {
+  const saveItems = async (newItems: any[], updateAmount = true, keepDiscount?: number) => {
+    const prevItems = currentItems;
     updateItems(newItems);
     setSaving(true);
     try {
       const patchPayload: Record<string, any> = { items: newItems };
       if (updateAmount) {
-        // Diskon lama SO (bila harga item masih kotor) tetap dipertahankan saat item diubah.
-        const sum = Math.max(0, newItems.reduce((acc, it) => acc + getItemQty(it) * getItemPrice(it), 0) - keepDiscount);
-        if (sum > 0) {
-          const currentPpnMode = row.ppnMode || (Number(row.ppn || 0) > 0 ? "exclude" : "none");
-          const isInclude = currentPpnMode === "include";
-          const dpp = isInclude ? Math.round(sum / 1.11) : sum;
-          const ppn = currentPpnMode === "none" ? 0 : isInclude ? Math.max(0, sum - dpp) : Math.round(sum * 0.11);
-          const pph = newItems.reduce((acc, it) => acc + calcItemPph(it), 0);
-          const total = isInclude ? sum : sum + ppn; // nilai SO = DPP + PPN; PPh dipotong customer saat bayar
+        const nextDisc =
+          keepDiscount !== undefined
+            ? keepDiscount
+            : recomputeHeaderDiscount(effectiveDiscount, prevItems, newItems);
+        const gross = sumItemGross(newItems);
+        if (gross > 0) {
+          const fin = calcQuotationFinancials(
+            gross,
+            nextDisc,
+            soPpnMode,
+            getInitialPphMode({ ...row, items: newItems }),
+            newItems,
+          );
+          const firstPphItem = newItems.find((it) => it?.pphMode && it.pphMode !== "none");
+          const nextPphMode = firstPphItem?.pphMode || row.pphMode || "none";
+          const nextTipePph = firstPphItem?.tipePph || row.tipePph || pphModeToTipe(nextPphMode);
 
-          patchPayload.nilai = dpp;
-          patchPayload.amount = dpp;
-          patchPayload.ppn = ppn;
-          patchPayload.pph = pph;
-          patchPayload.total = total;
+          patchPayload.nilai = fin.dpp;
+          patchPayload.amount = fin.dpp;
+          patchPayload.discount = fin.discNum;
+          patchPayload.ppn = fin.ppn;
+          patchPayload.ppnMode = soPpnMode;
+          patchPayload.tipePpn = ppnModeToTipe(soPpnMode);
+          patchPayload.pph = fin.pph;
+          patchPayload.pphMode = nextPphMode;
+          patchPayload.tipePph = nextTipePph;
+          patchPayload.total = fin.totalAfterDisc;
         }
       }
       await patchRow("po-client", row.id, patchPayload);
@@ -693,8 +746,8 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       toast("Penawaran terkait tidak memiliki item");
       return;
     }
-    // Harga item SO = harga net (diskon item + diskon tambahan penawaran sudah dibagi ke harga).
-    await saveItems(distributeDiscountToPrices(quoItems, linkedQuotation?.disc ?? linkedQuotation?.discount ?? 0), true, 0);
+    const qDisc = Number(linkedQuotation?.disc ?? linkedQuotation?.discount ?? 0);
+    await saveItems(quoItems, true, qDisc);
   };
 
   const pullFromInvoice = async () => {
@@ -705,7 +758,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
     await saveItems(invoiceItems, true);
   };
 
-  const effectiveOrderTotal = Number(row.total) || Number(row.nilai || 0) + Number(row.ppn || 0);
+  const effectiveOrderTotal = soFin.totalAfterDisc || Number(row.total) || Number(row.nilai || 0) + Number(row.ppn || 0);
   const sisa = effectiveOrderTotal - Number(row.totalInvoice || 0);
   const linkedProjects = (data.projects ?? []).filter(
     (p: Row) =>
@@ -721,35 +774,38 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
       (dn.soNumber && ((row.nomorSo && dn.soNumber === row.nomorSo) || (row.nomor && dn.soNumber === row.nomor)))
   );
 
+  const isSoServiceItem = React.useCallback(
+    (it: any) => {
+      if (!it) return false;
+      if (it.itemType === "JASA" || it.kind === "SERVICE" || it.isJasa) return true;
+      if (it.isNonInventory && !it.productId) return true;
+      if (it.pphMode && it.pphMode !== "none" && !it.hasSerial && !it.berSN) return true;
+      const name = String(getItemName(it) || "").trim();
+      if (
+        /^(\[jasa\]|jasa\b|instalasi\b|pemasangan\b|delivery\b|ongkir\b|ongkos\s*kirim\b|biaya\s*kirim\b|pengiriman\b|setting\b|konfigurasi\b|maintenance\b|service\b|subkon\b|akomodasi\b|transport\b)/i.test(
+          name,
+        )
+      ) {
+        return true;
+      }
+      const unit = String(getItemUnit(it) || "").trim().toLowerCase();
+      if (["jasa", "lot", "pekerjaan", "layanan", "sesi", "kunjungan"].includes(unit) && !it.hasSerial && !it.berSN) {
+        return true;
+      }
+      return false;
+    },
+    [],
+  );
+
   const handleCreateDoFromSo = async () => {
     const targetTujuan = doTujuan.trim() || (row.customer && row.customer !== "-" ? String(row.customer) : "Lokasi Pelanggan");
     setCreatingDo(true);
     try {
-      const productsList = (data.products ?? []) as any[];
-      const mappedItems = currentItems
-        .map((it) => {
-          const name = getItemName(it);
-          const clean = (name.split(" (")[0] ?? name).trim().toLowerCase();
-          const matchedProd = productsList.find(
-            (p) =>
-              (it.productId && Number(p.id) === Number(it.productId)) ||
-              String(p.nama || p.name || "").trim().toLowerCase() === clean ||
-              String(p.sku || "").trim().toLowerCase() === clean
-          );
-          const sn = getItemSn(it);
-          return {
-            productId: matchedProd?.id ? Number(matchedProd.id) : (Number(productsList[0]?.id) || 1),
-            qty: getItemQty(it),
-            serials: sn || undefined,
-            note: name,
-          };
-        })
-        .filter((x) => x.productId > 0);
-
+      const physicalItems = currentItems.filter((it) => !isSoServiceItem(it));
       const soNum = row.nomorSo && row.nomorSo !== "-" ? row.nomorSo : (row.nomor || `SO #${row.id}`);
       const barangSummary =
-        currentItems.length > 0
-          ? currentItems.map((it) => `${getItemName(it)} x ${getItemQty(it)} ${getItemUnit(it)}`).join(", ")
+        physicalItems.length > 0
+          ? physicalItems.map((it) => `${getItemName(it)} x ${getItemQty(it)} ${getItemUnit(it)}`).join(", ")
           : `Barang pesanan SO ${soNum}`;
       const baseAlasan = doAlasan.trim() || `Pengiriman Barang SO ${soNum}`;
       const finalAlasan = baseAlasan.includes("[so:") ? baseAlasan : `${baseAlasan} [so:${row.id}]`;
@@ -764,9 +820,9 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         projectId: linkedProjects[0]?.id ? Number(linkedProjects[0].id) : undefined,
         project: linkedProjects[0]?.nama || "-",
         withGoods: true,
-        barang: barangSummary,
+        barang: `Menunggu verifikasi barang & SN oleh Gudang (${barangSummary})`,
+        reportText: `Menunggu verifikasi barang & SN oleh Gudang (${barangSummary})`,
         status: "Menunggu pengiriman",
-        items: mappedItems.length > 0 ? mappedItems : undefined,
       });
       if (createdDn) {
         setCreateDoOpen(false);
@@ -967,19 +1023,58 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
         </View>
 
         <View className="mt-3 pt-2 border-t border-border/60">
-          {Number(row.ppn || 0) > 0 || Number(row.pph || 0) > 0 ? (
+          {soFin.discNum > 0 ? (
             <>
-              <Line left="Harga Sebelum PPN (DPP)" right={<Text className="text-sm font-medium">{rupiah(row.nilai)}</Text>} />
-              {Number(row.ppn || 0) > 0 ? (
-                <Line left={row.tipePpn || "PPN 11%"} right={<Text className="text-sm font-medium text-primary">{rupiah(row.ppn)}</Text>} />
+              <Line
+                left={soPpnMode === "include" ? "Nilai Sebelum Diskon (Inc. PPN)" : "Nilai Sebelum Diskon"}
+                right={<Text className="text-sm font-semibold">{rupiah(soFin.totNum)}</Text>}
+              />
+              <Line
+                left="DISC (Diskon)"
+                sub={
+                  itemDiscTotal > 0 && extraDisc > 0
+                    ? `Per item ${rupiah(itemDiscTotal)} + tambahan ${rupiah(extraDisc)}`
+                    : itemDiscTotal > 0
+                      ? "Total diskon per item"
+                      : undefined
+                }
+                right={<Text className="text-sm font-semibold text-danger">- {rupiah(soFin.discNum)}</Text>}
+              />
+            </>
+          ) : null}
+          {soPpnMode !== "none" || soFin.ppn > 0 || soFin.pph > 0 || soFin.discNum > 0 ? (
+            <>
+              <Line left="DPP (Harga Sebelum PPN)" right={<Text className="text-sm font-semibold">{rupiah(soFin.dpp)}</Text>} />
+              <Line
+                left={
+                  soPpnMode === "include"
+                    ? "PPN 11% (Termasuk)"
+                    : soPpnMode === "exclude"
+                      ? "PPN 11% (Exclude)"
+                      : "PPN (Tanpa PPN)"
+                }
+                right={<Text className="text-sm font-semibold text-primary">{rupiah(soFin.ppn)}</Text>}
+              />
+              <Line
+                left={soPpnMode !== "none" ? "Total Nilai Pesanan (termasuk PPN)" : "Total Nilai Pesanan (PO / SO)"}
+                right={<Text className="text-sm font-bold text-primary">{rupiah(effectiveOrderTotal)}</Text>}
+              />
+              {soFin.pph > 0 ? (
+                <>
+                  <Line
+                    left={`${row.tipePph && row.tipePph !== "Tanpa PPh" ? row.tipePph : "PPh"} dipotong customer saat bayar`}
+                    sub="Bukti potong dari customer; tidak mengurangi nilai pesanan"
+                    right={<Text className="text-sm font-medium text-muted-foreground">{rupiah(soFin.pph)}</Text>}
+                  />
+                  <Line
+                    left="Estimasi transfer dari customer"
+                    right={<Text className="text-sm font-bold">{rupiah(soFin.netReceived)}</Text>}
+                  />
+                </>
               ) : null}
-              {Number(row.pph || 0) > 0 ? (
-                <Line left={`Pemotongan ${row.tipePph || "PPh"}`} right={<Text className="text-sm font-semibold text-danger">- {rupiah(row.pph)}</Text>} />
-              ) : null}
-              <Line left="Total Tagihan (Inc. PPN)" right={<Text className="text-sm font-bold">{rupiah(effectiveOrderTotal)}</Text>} />
             </>
           ) : (
-            <Line left="Total Nilai Pesanan (PO / SO)" right={<Text className="text-sm font-semibold">{rupiah(row.total || row.nilai)}</Text>} />
+            <Line left="Total Nilai Pesanan (PO / SO)" right={<Text className="text-sm font-semibold">{rupiah(effectiveOrderTotal)}</Text>} />
           )}
           <Line left="Total Faktur / Faktur Terbit" right={<Text className="text-sm font-medium">{rupiah(row.totalInvoice)}</Text>} />
           <Line left="Sisa Belum Ditagih" right={<Text className="text-sm font-medium text-primary">{rupiah(Math.max(0, sisa))}</Text>} />
@@ -1063,9 +1158,14 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
               const qty = getItemQty(it);
               const unit = getItemUnit(it);
               const price = getItemPrice(it);
-              const sub = qty * price;
+              const lineDisc = itemDiscount(it);
+              const sub = qty * price - lineDisc;
               const sn = getItemSn(it);
               const isSelected = selectedItemIndices.includes(idx);
+              const itemPphVal =
+                it.pphMode && it.pphMode !== "none"
+                  ? Math.round(itemNet(it) * dppFactor * pphRateFor(it.pphMode as PphMode))
+                  : 0;
 
               return (
                 <View
@@ -1106,9 +1206,14 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                     <Text className="text-[11px] text-muted-foreground mt-0.5">
                       {price > 0 ? `${rupiah(price)} / ${unit}` : "Harga belum ditentukan"}
                     </Text>
-                    {it.pphMode && it.pphMode !== "none" ? (
+                    {lineDisc > 0 ? (
                       <Text className="text-[10px] text-danger font-medium mt-0.5">
-                        Potongan {it.tipePph || it.pphMode} (-{rupiah(calcItemPph(it))})
+                        Diskon item{Number(it.diskonPct) > 0 ? ` (${it.diskonPct}%)` : ""}: -{rupiah(lineDisc)}
+                      </Text>
+                    ) : null}
+                    {itemPphVal > 0 ? (
+                      <Text className="text-[10px] text-danger font-medium mt-0.5">
+                        Potongan {it.tipePph || it.pphMode} (-{rupiah(itemPphVal)})
                       </Text>
                     ) : null}
                   </View>
@@ -1155,33 +1260,60 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
 
             <View className="mt-2 pt-2 border-t border-border/60 gap-1.5">
               <View className="flex-row justify-between items-center">
-                <Text className="text-xs text-muted-foreground">Subtotal Rincian Item (DPP)</Text>
-                <Text className="text-xs font-semibold text-foreground">{rupiah(itemsTotal)}</Text>
+                <Text className="text-xs text-muted-foreground">
+                  {soPpnMode === "include" ? "Nilai Sebelum Diskon (Inc. PPN)" : "Nilai Sebelum Diskon"}
+                </Text>
+                <Text className="text-xs font-semibold text-foreground">{rupiah(soFin.totNum)}</Text>
               </View>
-              {effectiveDiscount > 0 && (
+              {soFin.discNum > 0 && (
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-danger font-medium">Diskon SO</Text>
-                  <Text className="text-xs font-semibold text-danger">-{rupiah(effectiveDiscount)}</Text>
+                  <View>
+                    <Text className="text-xs text-danger font-medium">DISC (Diskon SO)</Text>
+                    {itemDiscTotal > 0 && extraDisc > 0 ? (
+                      <Text className="text-[10px] text-muted-foreground">
+                        Per item {rupiah(itemDiscTotal)} + tambahan {rupiah(extraDisc)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text className="text-xs font-semibold text-danger">-{rupiah(soFin.discNum)}</Text>
                 </View>
               )}
-              {Number(row.ppn || 0) > 0 && (
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-muted-foreground">DPP (Harga Sebelum PPN)</Text>
+                <Text className="text-xs font-semibold text-foreground">{rupiah(soFin.dpp)}</Text>
+              </View>
+              {soFin.ppn > 0 && (
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-primary font-medium">{row.tipePpn || "PPN 11%"}</Text>
-                  <Text className="text-xs font-semibold text-primary">+{rupiah(row.ppn)}</Text>
-                </View>
-              )}
-              {Number(row.pph || 0) > 0 && (
-                <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-muted-foreground font-medium">{row.tipePph || "PPh"} dipotong customer saat bayar</Text>
-                  <Text className="text-xs font-semibold text-muted-foreground">{rupiah(row.pph)}</Text>
+                  <Text className="text-xs text-primary font-medium">
+                    {soPpnMode === "include" ? "PPN 11% (Termasuk)" : "PPN 11% (Exclude)"}
+                  </Text>
+                  <Text className="text-xs font-semibold text-primary">
+                    {soPpnMode === "include" ? rupiah(soFin.ppn) : `+${rupiah(soFin.ppn)}`}
+                  </Text>
                 </View>
               )}
               <View className="flex-row justify-between items-center pt-1 border-t border-border/40">
-                <Text className="text-xs font-bold text-foreground">Total Nilai SO</Text>
+                <Text className="text-xs font-bold text-foreground">
+                  {soPpnMode !== "none" ? "Total Nilai SO (termasuk PPN)" : "Total Nilai SO"}
+                </Text>
                 <Text className="text-xs font-bold text-primary">
-                  {rupiah(effectiveOrderTotal || Math.max(0, itemsTotal - effectiveDiscount))}
+                  {rupiah(soFin.totalAfterDisc)}
                 </Text>
               </View>
+              {soFin.pph > 0 && (
+                <>
+                  <View className="flex-row justify-between items-center">
+                    <Text className="text-xs text-muted-foreground font-medium">
+                      {row.tipePph && row.tipePph !== "Tanpa PPh" ? row.tipePph : "PPh"} dipotong customer saat bayar
+                    </Text>
+                    <Text className="text-xs font-semibold text-muted-foreground">{rupiah(soFin.pph)}</Text>
+                  </View>
+                  <View className="flex-row justify-between items-center">
+                    <Text className="text-xs font-bold text-foreground">Estimasi transfer dari customer</Text>
+                    <Text className="text-xs font-bold text-foreground">{rupiah(soFin.netReceived)}</Text>
+                  </View>
+                </>
+              )}
             </View>
           </View>
         )}
@@ -1204,7 +1336,7 @@ function ClientPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () => Promis
                   date: row.tanggal,
                   counterpartyLabel: "Penerima (Pelanggan)",
                   counterpartyName: row.customer && row.customer !== "-" ? row.customer : "-",
-                  items: currentItems,
+                  items: currentItems.filter((it) => !isSoServiceItem(it)),
                   notes: row.catatan,
                 })
               }
