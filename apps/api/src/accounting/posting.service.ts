@@ -1,4 +1,4 @@
-import { receivingPpnInfo, receivingUnitCost, splitPurchasePayment } from "./purchase-vat.js";
+import { poItemNetUnit, receivingPpnInfo, receivingUnitCost, splitPurchasePayment } from "./purchase-vat.js";
 import {
   Injectable,
   Inject,
@@ -971,7 +971,7 @@ export class PostingService {
               orderBy: { id: "desc" },
             }).catch(() => null);
             if (lastPo?.price && Number(lastPo.price) > 0) {
-              unitCost = Number(lastPo.price);
+              unitCost = poItemNetUnit(lastPo);
             }
           }
 

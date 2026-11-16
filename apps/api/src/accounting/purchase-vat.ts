@@ -19,6 +19,18 @@ export function netUnitCost(price: number, mode: unknown): number {
   return purchasePpnMode(mode) === "include" ? p / (1 + PPN_RATE) : p;
 }
 
+/** Harga satuan PO setelah diskon per item (persen dihitung dari qty × harga baris). */
+export function poItemNetUnit(item: { price?: unknown; qty?: unknown; diskon?: unknown; diskonPct?: unknown } | null | undefined): number {
+  const qty = Math.max(1, Number(item?.qty) || 1);
+  const gross = (Number(item?.price) || 0) * qty;
+  const pct = Number(item?.diskonPct) || 0;
+  const discount = Math.max(
+    0,
+    Math.min(gross, pct > 0 ? (gross * Math.min(100, pct)) / 100 : Number(item?.diskon) || 0),
+  );
+  return (gross - discount) / qty;
+}
+
 /**
  * Pecah pembayaran pembelian menjadi kliring GRNI (= nilai barang sebelum PPN, sama dengan jurnal terima barang)
  * dan PPN Masukan.
@@ -58,7 +70,11 @@ export function receivingPpnInfo(rec: { supplierPo?: { ppnMode?: unknown } | nul
 }
 
 type ReceivingLike = {
-  supplierPo?: { total?: unknown; ppnMode?: unknown; items?: Array<{ productId: number | null; price: unknown }> } | null;
+  supplierPo?: {
+    total?: unknown;
+    ppnMode?: unknown;
+    items?: Array<{ productId: number | null; price: unknown; qty?: unknown; diskon?: unknown; diskonPct?: unknown }>;
+  } | null;
   request?: { ppnMode?: unknown; items?: Array<{ productId: number | null; unitCost: unknown }> } | null;
   items?: Array<{ qtyReceived?: unknown }>;
 };
@@ -74,7 +90,7 @@ export async function receivingUnitCost(
 ): Promise<number> {
   const poMode = rec.supplierPo?.ppnMode ?? rec.request?.ppnMode;
   const poItem = rec.supplierPo?.items?.find((p) => p.productId === item.productId);
-  if (poItem && Number(poItem.price) > 0) return netUnitCost(Number(poItem.price), poMode);
+  if (poItem && Number(poItem.price) > 0) return netUnitCost(poItemNetUnit(poItem), poMode);
 
   const reqItem = rec.request?.items?.find((r) => r.productId === item.productId);
   if (reqItem && Number(reqItem.unitCost) > 0) return netUnitCost(Number(reqItem.unitCost), rec.request?.ppnMode);
@@ -88,11 +104,17 @@ export async function receivingUnitCost(
       .findFirst({
         where: { productId: item.productId, price: { gt: 0 } },
         orderBy: { id: "desc" },
-        select: { price: true, po: { select: { ppnMode: true, request: { select: { ppnMode: true } } } } },
+        select: {
+          price: true,
+          qty: true,
+          diskon: true,
+          diskonPct: true,
+          po: { select: { ppnMode: true, request: { select: { ppnMode: true } } } },
+        },
       })
       .catch(() => null);
     if (lastPo && Number(lastPo.price) > 0) {
-      return netUnitCost(Number(lastPo.price), lastPo.po?.ppnMode ?? lastPo.po?.request?.ppnMode);
+      return netUnitCost(poItemNetUnit(lastPo), lastPo.po?.ppnMode ?? lastPo.po?.request?.ppnMode);
     }
   }
 

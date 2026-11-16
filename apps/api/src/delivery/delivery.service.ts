@@ -9,6 +9,7 @@ import { SettingsService } from "../settings/settings.service.js";
 import { PostingService } from "../accounting/posting.service.js";
 import { MappingService } from "../accounting/mapping.service.js";
 import { PostingRules } from "../accounting/posting.rules.js";
+import { poItemNetUnit } from "../accounting/purchase-vat.js";
 import { can } from "../rbac/permissions.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import type {
@@ -540,11 +541,16 @@ export class DeliveryService implements OnModuleInit {
       include: {
         locations: true,
         items: { include: { product: true } },
+        clientPo: { select: { projectId: true } },
+        invoice: { select: { projectId: true } },
       },
     });
     if (!row) throw new NotFoundException("Surat jalan tidak ditemukan");
 
     const firstLocation = row.locations[0];
+    // Project dari lokasi surat jalan; jika kosong, ikuti project SO / Invoice yang dikirim.
+    const effectiveProjectId =
+      firstLocation?.projectId ?? row.clientPo?.projectId ?? row.invoice?.projectId ?? null;
     // Guard Stok Negatif (Poin 4 & 5 E7): Verifikasi saldo stok fisik gudang sebelum Surat Jalan dikirim
     const itemsToCheck = dto.items?.length ? dto.items : row.items;
     for (const it of itemsToCheck) {
@@ -605,7 +611,7 @@ export class DeliveryService implements OnModuleInit {
             qty: 1,
             serialUnitId: u.id,
             deliveryNoteId: row.id,
-            projectId: firstLocation?.projectId ?? null,
+            projectId: effectiveProjectId,
             reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
             createdById: user.id,
           });
@@ -664,7 +670,7 @@ export class DeliveryService implements OnModuleInit {
               qty: 1,
               serialUnitId: u.id,
               deliveryNoteId: row.id,
-              projectId: firstLocation?.projectId ?? null,
+              projectId: effectiveProjectId,
               reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason}` : null,
               createdById: user.id,
             });
@@ -708,7 +714,7 @@ export class DeliveryService implements OnModuleInit {
             fromWarehouseId: warehouseId,
             qty: remainingQty,
             deliveryNoteId: row.id,
-            projectId: firstLocation?.projectId ?? null,
+            projectId: effectiveProjectId,
             reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason} (Barang SN belum scan)` : null,
             createdById: user.id,
           }).catch(() => {});
@@ -734,7 +740,7 @@ export class DeliveryService implements OnModuleInit {
           fromWarehouseId: warehouseId,
           qty: remainingQty,
           deliveryNoteId: row.id,
-          projectId: firstLocation?.projectId ?? null,
+          projectId: effectiveProjectId,
           reason: firstLocation ? `${firstLocation.destination} — ${firstLocation.reason} (Barang curah)` : null,
           createdById: user.id,
         }).catch(() => {});
@@ -1018,6 +1024,9 @@ export class DeliveryService implements OnModuleInit {
               .catch(() => null)
           : null;
       const firstLocation = row.locations[0];
+      // Project COA: utamakan pilihan di surat jalan, lalu project SO / Invoice terkait.
+      const projectId =
+        firstLocation?.projectId ?? clientPo?.projectId ?? invoice?.projectId ?? null;
 
       // 2. Tentukan item yang dikirim & agregasi kuantitas sebenarnya
       const poItems = Array.isArray(clientPo?.items) ? (clientPo.items as any[]) : [];
@@ -1160,7 +1169,7 @@ export class DeliveryService implements OnModuleInit {
             orderBy: { id: "desc" },
           }).catch(() => null);
           if (lastPo?.price && Number(lastPo.price) > 0) {
-            unitCost = Number(lastPo.price);
+            unitCost = poItemNetUnit(lastPo);
           }
         }
 
@@ -1236,10 +1245,18 @@ export class DeliveryService implements OnModuleInit {
 
       if (existing) {
         const exDebit = existing.lines.reduce((s: number, l: any) => s + Number(l.debit), 0);
-        if (Math.round(exDebit) === Math.round(costTotal)) {
-          return; // Sudah cocok & seimbang
+        const exProjectId = existing.lines.find((l: any) => l.projectId != null)?.projectId ?? null;
+        const projectChanged =
+          (exProjectId != null ? Number(exProjectId) : null) !==
+          (projectId != null ? Number(projectId) : null);
+        if (Math.round(exDebit) === Math.round(costTotal) && !projectChanged) {
+          return; // Sudah cocok, seimbang, dan project COA tidak berubah
         }
-        await this.postingService.reverse(existing.id, "Koreksi nilai HPP Surat Jalan", userId);
+        await this.postingService.reverse(
+          existing.id,
+          projectChanged ? "Koreksi project COA Surat Jalan" : "Koreksi nilai HPP Surat Jalan",
+          userId,
+        );
       }
 
       const mappings = await this.mappingService.getAll();
@@ -1247,8 +1264,8 @@ export class DeliveryService implements OnModuleInit {
         {
           number: row.number,
           costTotal: Math.round(costTotal),
-          isProject: !!firstLocation?.projectId,
-          projectId: firstLocation?.projectId,
+          isProject: !!projectId,
+          projectId,
           customerId: clientPo?.customerId ?? invoice?.customerId,
         },
         mappings,
@@ -1262,7 +1279,7 @@ export class DeliveryService implements OnModuleInit {
         date: row.date,
         memo: `HPP Pengiriman Barang SJ ${row.number}`,
         refNo: row.number,
-        projectId: firstLocation?.projectId,
+        projectId,
         createdById: userId,
         lines: dLines,
       });

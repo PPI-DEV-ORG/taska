@@ -16,7 +16,7 @@ import { api, apiBase } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { ROLE_LABEL, type Row } from "@/constants/modules";
-import { PPH_MODE_OPTIONS, pphRateFor, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
+import { PPH_MODE_OPTIONS, itemNet, pphRateFor, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import { Line } from "@/modules/shared/line";
 import { printOrderDocument } from "@/lib/order-print";
 import { useKasBankAccounts } from "@/lib/use-kas-bank";
@@ -62,11 +62,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
       updatedList = [...currentItems, normalized];
     }
 
-    const newTotal = updatedList.reduce(
-      (s: number, it: any) =>
-        s + Math.max(0, Number(it.price ? it.price * (it.qty || 1) : 0) - Number(it.diskon || 0)),
-      0,
-    );
+    const newTotal = updatedList.reduce((s: number, it: any) => s + itemNet(it), 0);
     const itemNamesStr = updatedList.map((it: any) => it.item || it.name || it.productName || it.customName).filter(Boolean).join(", ");
 
     await patchRow("supplier-pos", row.id, {
@@ -101,7 +97,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
     const count = selectedPoItemIndices.length;
     if (Array.isArray(row.items) && row.items.length > 0) {
       const updated = row.items.filter((_: any, i: number) => !selectedPoItemIndices.includes(i));
-      const newTotal = updated.reduce((s: number, it: any) => s + Number(it.price ? it.price * (it.qty || 1) : 0), 0);
+      const newTotal = updated.reduce((s: number, it: any) => s + itemNet(it), 0);
       await patchRow("supplier-pos", row.id, {
         items: updated,
         total: newTotal,
@@ -209,7 +205,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
   const poItemsSubtotal = React.useMemo(() => {
     if (Array.isArray(row.items) && row.items.length > 0) {
-      return row.items.reduce((s: number, it: any) => s + (Number(it.qty) || 1) * Number(it.price || 0), 0);
+      return row.items.reduce((s: number, it: any) => s + itemNet(it), 0);
     }
     return Number(row.total || 0);
   }, [row.items, row.total]);
@@ -258,7 +254,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
           (it.pphMode && it.pphMode !== "none") ||
           (Number(it.pph) > 0) ||
           /^\[(JASA)\]/i.test(String(it.customName || it.name || ""));
-        return isJasa ? s + (Number(it.qty) || 1) * Number(it.price || 0) : s;
+        return isJasa ? s + itemNet(it) : s;
       }, 0);
       if (nonProdItemsSum > 0) return nonProdItemsSum;
     }
@@ -845,7 +841,9 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
             {(showAllPoItems ? row.items : row.items.slice(0, 10)).map((it: any, idx: number) => {
               const prodName = it.product?.name || it.customName || it.productName || it.name || it.product?.sku || `Barang #${idx + 1}`;
               const qtyText = `${it.qty || 1} ${it.product?.unit || it.customUnit || it.unit || "Unit"}`;
-              const itemTotal = Number(it.price ? it.price * (it.qty || 1) : 0);
+              const itemTotal = itemNet(it);
+              const itemDiscount =
+                (Number(it.qty) || 1) * Number(it.price || 0) - itemTotal;
               const isSelected = selectedPoItemIndices.includes(idx);
               return (
                 <View
@@ -877,6 +875,11 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                     <View className="flex-1">
                       <Text className="text-sm font-medium text-foreground">{prodName}</Text>
                       <Text className="text-xs text-muted-foreground">{qtyText}</Text>
+                      {itemDiscount > 0 ? (
+                        <Text className="text-[11px] text-emerald-600">
+                          Diskon {Number(it.diskonPct) > 0 ? `${Number(it.diskonPct)}%` : rupiah(itemDiscount)} · Net {rupiah(itemTotal)}
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
                   <View className="flex-row items-center gap-1.5 ml-2">
@@ -904,7 +907,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
                       className="size-7"
                       onPress={async () => {
                         const updated = row.items.filter((_: any, i: number) => i !== idx);
-                        const newTotal = updated.reduce((s: number, it: any) => s + Number(it.price ? it.price * (it.qty || 1) : 0), 0);
+                        const newTotal = updated.reduce((s: number, it: any) => s + itemNet(it), 0);
                         const itemNamesStr = updated.map((it: any) => it.item || it.name || it.productName || it.customName).filter(Boolean).join(", ");
                         await patchRow("supplier-pos", row.id, {
                           items: updated,

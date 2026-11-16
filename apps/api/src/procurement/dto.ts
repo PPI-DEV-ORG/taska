@@ -256,6 +256,12 @@ export class PoItemDto {
 
   @IsNumber() @Min(0)
   price!: number;
+
+  @IsOptional() @IsNumber() @Min(0)
+  diskon?: number;
+
+  @IsOptional() @IsNumber() @Min(0)
+  diskonPct?: number;
 }
 
 export class PoDto {

@@ -78,10 +78,11 @@ function isUnverifiedAutoSoItems(dn: any): boolean {
 
 export default function NewDeliveryNoteScreen() {
   const router = useRouter();
-  const searchParams = useLocalSearchParams<{ id?: string; editId?: string; soId?: string; invoiceId?: string }>();
+  const searchParams = useLocalSearchParams<{ id?: string; editId?: string; soId?: string; invoiceId?: string; projectId?: string }>();
   const editId = searchParams?.editId ? String(searchParams.editId) : searchParams?.id ? String(searchParams.id) : null;
   const initialSoId = searchParams?.soId ? String(searchParams.soId) : null;
   const initialInvoiceId = searchParams?.invoiceId ? String(searchParams.invoiceId) : null;
+  const initialProjectId = searchParams?.projectId ? String(searchParams.projectId) : null;
 
   const { data, user, addRow, patchRow, toast, refreshModule, pushHistory, reload } = useApp();
   const fileHandle = React.useRef<FileUploaderHandle | null>(null);
@@ -137,7 +138,11 @@ export default function NewDeliveryNoteScreen() {
         : initialMatchInvoice
         ? `Pengiriman Barang Invoice ${initialMatchInvoice.nomor || initialMatchInvoice.id}`
         : ""));
-  const [selectedProject, setSelectedProject] = React.useState(() => (initialExistingDn?.project && initialExistingDn.project !== "-") ? initialExistingDn.project : "-");
+  const [selectedProject, setSelectedProject] = React.useState(() =>
+    initialExistingDn?.project && initialExistingDn.project !== "-"
+      ? initialExistingDn.project
+      : initialProjectId || "-"
+  );
   const [selectedSoId, setSelectedSoId] = React.useState<string | number | null>(() => initialMatchSo?.id ?? initialExistingDn?.soId ?? initialExistingDn?.clientPoId ?? null);
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | number | null>(() => initialMatchInvoice?.id ?? initialExistingDn?.invoiceId ?? null);
 
@@ -500,6 +505,25 @@ export default function NewDeliveryNoteScreen() {
       })
       .catch(() => {});
   }
+
+  // Dibuka dari tab Barang project: pilih project otomatis dan muat kebutuhan barangnya.
+  const autoSelectedProjectRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!initialProjectId || editId) return;
+    if (autoSelectedProjectRef.current === initialProjectId) return;
+    const project = (data.projects ?? []).find(
+      (p: Row) => String(p.id) === initialProjectId
+    );
+    if (!project) return;
+    // Ditunda agar pemilihan project (state + target kebutuhan) tidak memicu render berantai di effect.
+    const timer = setTimeout(() => {
+      if (autoSelectedProjectRef.current === initialProjectId) return;
+      autoSelectedProjectRef.current = initialProjectId;
+      handleSelectProject(project);
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProjectId, editId, data.projects]);
 
   function handleQuickScan(rawText: string) {
     const tokens = rawText

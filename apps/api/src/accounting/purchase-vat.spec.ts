@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { netUnitCost, receivingUnitCost, splitPurchasePayment } from "./purchase-vat.js";
+import { netUnitCost, poItemNetUnit, receivingUnitCost, splitPurchasePayment } from "./purchase-vat.js";
 import { PostingRules } from "./posting.rules.js";
 
 const noDb = { supplierPOItem: { findFirst: async () => null } };
@@ -26,6 +26,18 @@ describe("PPN pembelian", () => {
     expect(Math.round(await receivingUnitCost(noDb, rec, { productId: 5 }))).toBe(1_000_000);
     const recEx = { supplierPo: { ppnMode: "exclude", items: [{ productId: 5, price: 1_000_000 }] } };
     expect(await receivingUnitCost(noDb, recEx, { productId: 5 })).toBe(1_000_000);
+  });
+
+  it("diskon item PO mengurangi harga pokok satuan", async () => {
+    expect(poItemNetUnit({ price: 1_000_000, qty: 2, diskon: 500_000 })).toBe(750_000);
+    expect(poItemNetUnit({ price: 1_000_000, qty: 2, diskonPct: 10 })).toBe(900_000);
+    const rec = {
+      supplierPo: {
+        ppnMode: "exclude",
+        items: [{ productId: 5, price: 1_000_000, qty: 2, diskon: 500_000 }],
+      },
+    };
+    expect(await receivingUnitCost(noDb, rec, { productId: 5 })).toBe(750_000);
   });
 
   it("bayar request include PPN: GRNI = nilai barang, sisanya PPN Masukan", () => {

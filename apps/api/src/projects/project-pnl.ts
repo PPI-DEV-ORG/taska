@@ -1,5 +1,5 @@
 import type { PrismaClient } from "../generated/prisma/client.js";
-import { netUnitCost } from "../accounting/purchase-vat.js";
+import { netUnitCost, poItemNetUnit } from "../accounting/purchase-vat.js";
 
 type Db = Pick<
   PrismaClient,
@@ -125,7 +125,16 @@ export async function computeProjectPnl(db: Db, projectId: number): Promise<Proj
         requestId: true,
         ppnMode: true,
         request: { select: { ppnMode: true } },
-        items: { select: { productId: true, customName: true, qty: true, price: true } },
+        items: {
+          select: {
+            productId: true,
+            customName: true,
+            qty: true,
+            price: true,
+            diskon: true,
+            diskonPct: true,
+          },
+        },
       },
     }),
     db.purchaseRequest.findMany({
@@ -227,7 +236,7 @@ export async function computeProjectPnl(db: Db, projectId: number): Promise<Proj
   for (const po of pos) {
     for (const it of po.items) {
       if (it.productId) continue;
-      const unitCost = netUnitCost(Number(it.price || 0), po.ppnMode ?? po.request?.ppnMode);
+      const unitCost = netUnitCost(poItemNetUnit(it), po.ppnMode ?? po.request?.ppnMode);
       const total = round(it.qty * unitCost);
       if (total > 0) directPurchaseLines.push({ ref: po.number, name: it.customName || "Item non-stok", qty: it.qty, unitCost: round(unitCost), total });
     }

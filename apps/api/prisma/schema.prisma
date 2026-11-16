@@ -1547,6 +1547,8 @@ model SupplierPOItem {
   customUnit  String?
   qty         Int
   price       Decimal    @db.Decimal(18, 2)
+  diskon      Decimal    @default(0) @db.Decimal(18, 2)
+  diskonPct   Decimal?   @db.Decimal(5, 2)
   receivedQty Int        @default(0)
 
   @@index([poId])
