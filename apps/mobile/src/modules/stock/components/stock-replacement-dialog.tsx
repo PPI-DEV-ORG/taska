@@ -18,7 +18,7 @@ interface StockReplacementDialogProps {
   toast: (msg: string, type?: "success" | "danger" | "info" | "warning") => void;
 }
 
-export function StockReplacementDialog({
+function StockReplacementDialogContent({
   open,
   onOpenChange,
   serials,
@@ -29,12 +29,6 @@ export function StockReplacementDialog({
   const [oldSn, setOldSn] = React.useState(defaultOldSn);
   const [newSn, setNewSn] = React.useState("");
   const [replaceReason, setReplaceReason] = React.useState("");
-
-  React.useEffect(() => {
-    if (defaultOldSn) {
-      setOldSn(defaultOldSn);
-    }
-  }, [defaultOldSn]);
 
   async function handleReplacement() {
     if (!oldSn || !newSn || !replaceReason.trim()) {
@@ -63,59 +57,67 @@ export function StockReplacementDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Penggantian Unit Rusak / Retur (SN Lama → SN Baru)</DialogTitle>
-        </DialogHeader>
-        <View className="gap-4">
-          <Text className="text-text-secondary text-xs">
-            Pilih atau ketik SN unit lama yang rusak/diretur dan masukkan SN unit baru penggantinya. Stok tersedia di gudang akan otomatis disesuaikan (+1 unit baru siap pakai) dan riwayat kedua SN saling terhubung.
-          </Text>
-          <FormField label="Pilih / Ketik Serial Number Lama (Rusak / Retur)" required>
-            <View className="gap-1.5">
-              <SearchableSelect
-                value={oldSn}
-                onChange={(v) => {
-                  const clean = (v.split(" (")[0] ?? v).trim();
-                  setOldSn(clean);
-                }}
-                options={serials
-                  .filter((s) => s.rawStatus !== "DIGANTI" && s.status !== "Diganti")
-                  .map((s) => `${s.sn} (${s.produk} · ${s.status || "Di gudang"})`)}
-                placeholder="Pilih dari daftar SN terdaftar..."
-              />
-              <Input
-                value={oldSn}
-                onChangeText={setOldSn}
-                placeholder="Atau ketik / scan SN lama (contoh: 299292)"
-              />
-            </View>
-          </FormField>
-          <FormField label="Serial Number Baru (Unit Pengganti)" required>
+    <DialogContent className="sm:max-w-xl md:max-w-2xl">
+      <DialogHeader>
+        <DialogTitle>Penggantian Unit Rusak / Retur (SN Lama → SN Baru)</DialogTitle>
+      </DialogHeader>
+      <View className="gap-4">
+        <Text className="text-text-secondary text-xs">
+          Pilih atau ketik SN unit lama yang rusak/diretur dan masukkan SN unit baru penggantinya. Stok tersedia di gudang akan otomatis disesuaikan (+1 unit baru siap pakai) dan riwayat kedua SN saling terhubung.
+        </Text>
+        <FormField label="Pilih / Ketik Serial Number Lama (Rusak / Retur)" required>
+          <View className="gap-1.5">
+            <SearchableSelect
+              value={oldSn}
+              onChange={(v) => {
+                const clean = (v.split(" (")[0] ?? v).trim();
+                setOldSn(clean);
+              }}
+              options={serials
+                .filter((s) => s.rawStatus !== "DIGANTI" && s.status !== "Diganti")
+                .map((s) => `${s.sn} (${s.produk} · ${s.status || "Di gudang"})`)}
+              placeholder="Pilih dari daftar SN terdaftar..."
+            />
             <Input
-              value={newSn}
-              onChangeText={setNewSn}
-              placeholder="Ketik / scan SN baru pengganti (contoh: 94949)"
+              value={oldSn}
+              onChangeText={setOldSn}
+              placeholder="Atau ketik / scan SN lama (contoh: 299292)"
             />
-          </FormField>
-          <FormField label="Alasan Penggantian Unit" required>
-            <Textarea
-              value={replaceReason}
-              onChangeText={setReplaceReason}
-              placeholder="Contoh: Unit pengganti klaim retur / garansi untuk kamera rusak"
-            />
-          </FormField>
-        </View>
-        <DialogFooter>
-          <Button variant="outline" onPress={() => onOpenChange(false)}>
-            <Text>Batal</Text>
-          </Button>
-          <Button onPress={handleReplacement}>
-            <Text>Simpan Unit Pengganti</Text>
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+          </View>
+        </FormField>
+        <FormField label="Serial Number Baru (Unit Pengganti)" required>
+          <Input
+            value={newSn}
+            onChangeText={setNewSn}
+            placeholder="Ketik / scan SN baru pengganti (contoh: 94949)"
+          />
+        </FormField>
+        <FormField label="Alasan Penggantian Unit" required>
+          <Textarea
+            value={replaceReason}
+            onChangeText={setReplaceReason}
+            placeholder="Contoh: Unit pengganti klaim retur / garansi untuk kamera rusak"
+          />
+        </FormField>
+      </View>
+      <DialogFooter>
+        <Button variant="outline" onPress={() => onOpenChange(false)}>
+          <Text>Batal</Text>
+        </Button>
+        <Button onPress={handleReplacement}>
+          <Text>Simpan Unit Pengganti</Text>
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+export function StockReplacementDialog(props: StockReplacementDialogProps) {
+  const key = `${props.open ? "open" : "closed"}-${props.defaultOldSn ?? "none"}`;
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <StockReplacementDialogContent key={key} {...props} />
     </Dialog>
   );
 }

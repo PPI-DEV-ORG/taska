@@ -41,9 +41,9 @@ export function SupplierPaymentTermsDialog({
   React.useEffect(() => {
     if (!open) return;
     let isMounted = true;
-    setLoading(true);
     void (async () => {
       try {
+        if (isMounted) setLoading(true);
         const res = await api<any[]>("GET", "/settings");
         if (Array.isArray(res)) {
           const item = res.find((s) => s.key === "supplier.payment.terms");

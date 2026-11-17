@@ -587,11 +587,12 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
         </View>
       </Panel>
 
-      {/* ─── Galeri Dokumentasi Foto ─── */}
+      {/* ─── Galeri Dokumentasi Foto & Dokumen PDF ─── */}
       <DocumentationPhotosPanel
         kind="visit"
         entityId={Number(row.id)}
-        title="Dokumentasi Foto Kunjungan & Meeting"
+        title="Dokumentasi Foto & Bukti PDF Kunjungan"
+        subtitle="Upload multiple foto meeting / kunjungan lapangan dan dokumen PDF berita acara / surat tugas kunjungan"
       />
 
       {/* ─── MoM Edit Dialog ─── */}
