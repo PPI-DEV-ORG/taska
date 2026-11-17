@@ -802,12 +802,12 @@ export function MaintenanceExtras({ row, onRefresh }: { row: Row; onRefresh?: ()
         </View>
       </Panel>
 
-      {/* ─── Foto Dokumentasi Sebelum / Sesudah ─── */}
+      {/* ─── Foto Dokumentasi Sebelum / Sesudah & PDF BAST ─── */}
       <DocumentationPhotosPanel
         kind="maintenance"
         entityId={row.id}
-        title="Dokumentasi Foto & Berita Acara Servis"
-        subtitle="Upload foto kondisi fisik perangkat sebelum/sesudah servis, serta lampiran scan berita acara (BAST)"
+        title="Dokumentasi Foto & Bukti PDF Maintenance (BAST)"
+        subtitle="Upload multiple foto kondisi fisik perangkat sebelum/sesudah servis, serta lampiran scan dokumen PDF berita acara (BAST)"
       />
 
       {/* ─── Technical Findings Modal Dialog ─── */}

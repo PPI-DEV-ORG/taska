@@ -123,13 +123,20 @@ export class DocumentationService {
     };
   }
 
+  private isValidDocFile(file: { kind: string; mimeType: string; originalName?: string | null }) {
+    if (file.kind === "FOTO" || file.kind === "DOKUMEN") return true;
+    if (file.mimeType.startsWith("image/") || file.mimeType === "application/pdf") return true;
+    const ext = (file.originalName || "").split(".").pop()?.toLowerCase();
+    return ["png", "jpg", "jpeg", "webp", "gif", "heic", "heif", "pdf"].includes(ext || "");
+  }
+
   async attach(kind: DocKind, entityId: number, fileId: number, caption: string | undefined, user: RequestUser) {
     this.assertAttach(kind, user);
     await this.entityExists(kind, entityId);
     const file = await this.prisma.main.file.findUnique({ where: { id: fileId } });
     if (!file) throw new NotFoundException("File tidak ditemukan");
-    if (file.kind !== "FOTO") {
-      throw new BadRequestException("Hanya file ber-kind FOTO yang bisa dijadikan foto dokumentasi");
+    if (!this.isValidDocFile(file)) {
+      throw new BadRequestException("Hanya file gambar (PNG/JPG) atau dokumen PDF yang bisa dijadikan dokumentasi barang bukti");
     }
 
     const row = await this.prisma.main.documentationPhoto.upsert({
@@ -159,6 +166,60 @@ export class DocumentationService {
       size: row.file.size,
       createdAt: row.createdAt,
     };
+  }
+
+  async attachMany(
+    kind: DocKind,
+    entityId: number,
+    items: Array<{ fileId: number; caption?: string }>,
+    user: RequestUser,
+  ) {
+    this.assertAttach(kind, user);
+    await this.entityExists(kind, entityId);
+    if (!items || !items.length) {
+      throw new BadRequestException("Daftar file yang dilampirkan tidak boleh kosong");
+    }
+
+    const results = [];
+    for (const item of items) {
+      const file = await this.prisma.main.file.findUnique({ where: { id: item.fileId } });
+      if (!file) continue;
+      if (!this.isValidDocFile(file)) continue;
+
+      const row = await this.prisma.main.documentationPhoto.upsert({
+        where: {
+          entityType_entityId_fileId: { entityType: kind, entityId, fileId: item.fileId },
+        },
+        create: { entityType: kind, entityId, fileId: item.fileId, caption: item.caption ?? null },
+        update: { caption: item.caption ?? null },
+        include: { file: { select: { id: true, originalName: true, mimeType: true, size: true } } },
+      });
+
+      results.push({
+        id: row.id,
+        kind,
+        entityId,
+        fileId: row.fileId,
+        caption: row.caption,
+        url: `/api/files/${row.fileId}`,
+        originalName: row.file.originalName,
+        mimeType: row.file.mimeType,
+        size: row.file.size,
+        createdAt: row.createdAt,
+      });
+    }
+
+    if (results.length > 0) {
+      await this.audit.log({
+        actor: user,
+        action: "LAMPIRKAN_FOTO_DOKUMENTASI",
+        entityType: "documentationPhoto",
+        entityId: results[0].id,
+        detail: `${kind} #${entityId} — ${results.length} berkas bukti dilampirkan`,
+      });
+    }
+
+    return { total: results.length, items: results };
   }
 
   async remove(id: number, user: RequestUser) {
@@ -558,14 +619,14 @@ export class DocumentationService {
       );
     }
 
-    content.push({ text: `Foto (${photos.length})`, fontSize: 12, bold: true, margin: [0, 14, 0, 6] });
+    content.push({ text: `Dokumentasi & Barang Bukti (${photos.length} Berkas)`, fontSize: 12, bold: true, margin: [0, 14, 0, 6] });
     if (!photos.length) {
-      content.push({ text: "Belum ada foto terlampir.", fontSize: 9, color: "#666666" });
+      content.push({ text: "Belum ada foto atau dokumen bukti terlampir.", fontSize: 9, color: "#666666" });
     }
     let i = 0;
     for (const p of photos) {
       const key = `img${i++}`;
-      if (p.file.mimeType === "image/png" || p.file.mimeType === "image/jpeg") {
+      if (p.file.mimeType.startsWith("image/") || ["png", "jpg", "jpeg", "webp"].includes((p.file.originalName || "").split(".").pop()?.toLowerCase() || "")) {
         try {
           const { buffer } = await this.upload.read(p.fileId);
           images[key] = `data:${p.file.mimeType};base64,${buffer.toString("base64")}`;
@@ -574,6 +635,37 @@ export class DocumentationService {
         } catch {
           content.push({ text: `[Foto tidak dapat dimuat: ${p.file.originalName}]`, fontSize: 9, color: "#999999" });
         }
+      } else if (p.file.mimeType === "application/pdf" || (p.file.originalName || "").toLowerCase().endsWith(".pdf")) {
+        content.push({
+          table: {
+            widths: ["*"],
+            body: [
+              [
+                {
+                  stack: [
+                    {
+                      text: [
+                        { text: "📄 DOKUMEN PDF BUKTI: ", bold: true, color: "#dc2626", fontSize: 9.5 },
+                        { text: p.caption ? `${p.caption} ` : "", bold: true, fontSize: 9.5 },
+                        { text: `(${p.file.originalName} — ${(p.file.size / 1024).toFixed(1)} KB)`, fontSize: 8.5, color: "#475569" },
+                      ],
+                    },
+                    {
+                      text: "Dokumen PDF tersimpan sebagai barang bukti resmi. File asli dapat diunduh/dilihat melalui sistem ERP.",
+                      fontSize: 8,
+                      color: "#64748b",
+                      margin: [0, 2, 0, 0],
+                    },
+                  ],
+                  fillColor: "#f8fafc",
+                  borderColor: ["#cbd5e1", "#cbd5e1", "#cbd5e1", "#cbd5e1"],
+                  margin: [4, 4, 4, 4],
+                },
+              ],
+            ],
+          },
+          margin: [0, 4, 0, 6],
+        });
       } else {
         content.push({
           text: `[${p.file.originalName} — format ${p.file.mimeType} tidak mendukung embedding, lihat lampiran asli]`,
