@@ -18,6 +18,8 @@ import { MasterJenisKunjunganView } from "@/modules/master-data/components/maste
 import { MasterKategoriPengeluaranView } from "@/modules/master-data/components/master-kategori-pengeluaran-view";
 import { MasterCostCenterView } from "@/modules/master-data/components/master-cost-center-view";
 import { MasterPengaturanSistemView } from "@/modules/master-data/components/master-pengaturan-sistem-view";
+import { MasterKategoriAsetView } from "@/modules/master-data/components/master-kategori-aset-view";
+import { MasterLokasiAsetView } from "@/modules/master-data/components/master-lokasi-aset-view";
 
 export default function MasterDataScreen() {
   const { data, user, addRow, patchRow, deleteRow, toast, reload, refreshModule } = useApp();
@@ -217,6 +219,22 @@ export default function MasterDataScreen() {
           addRow={addRow}
           toast={toast}
           renderActions={deleteActions("costCenters", "cost center", canAddCostCenter)}
+        />
+      )}
+
+      {selectedCategory === "kategori-aset" && (
+        <MasterKategoriAsetView
+          user={user}
+          onBack={() => setSelectedCategory(null)}
+          toast={toast}
+        />
+      )}
+
+      {selectedCategory === "lokasi-aset" && (
+        <MasterLokasiAsetView
+          user={user}
+          onBack={() => setSelectedCategory(null)}
+          toast={toast}
         />
       )}
 

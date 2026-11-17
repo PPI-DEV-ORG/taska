@@ -80,6 +80,12 @@ const MODULE_GROUPS: { group: string; items: { key: string; label: string; desc:
     ],
   },
   {
+    group: "Aset & Fasilitas Internal",
+    items: [
+      { key: "fixed-assets", label: "Aset Tetap", desc: "Siklus hidup aset internal, mutasi, depresiasi & audit QR" },
+    ],
+  },
+  {
     group: "Keuangan",
     items: [
       { key: "invoices", label: "Invoice", desc: "Tagihan ke customer & pembayaran" },

@@ -429,6 +429,8 @@ model User {
   cashAdvancesApproved  CashAdvance[]       @relation("CashAdvanceApprover")
   cashAdvancesDisbursed CashAdvance[]       @relation("CashAdvanceDisburser")
   cashAdvancesSettled   CashAdvance[]       @relation("CashAdvanceSettler")
+  assignedAssets        FaAsset[]           @relation("FaAssetAssignedUser")
+  assetAssignments      FaAssetAssignment[] @relation("FaAssignmentUser")
 
   @@index([role, status])
   @@index([warehouseId])
@@ -2221,6 +2223,7 @@ model MaintenanceReport {
   actions         MaintenanceActionItem[]
   expenses        Expense[]
   followUps       FollowUp[]
+  fixedAssetRefs  FaAssetMaintenanceRef[]
 
   @@index([status])
   @@index([startDate])
@@ -2434,4 +2437,378 @@ model AccountMapping {
   accountCode String
   account     CoaAccount @relation(fields: [accountCode], references: [code])
   updatedAt   DateTime   @updatedAt
+}
+
+// ─────────────────────────────── Fixed Asset Management ───────────────────────────────
+
+model FaCategory {
+  id                      Int       @id @default(autoincrement())
+  code                    String    @unique
+  name                    String
+  type                    String    @default("TANGIBLE")
+  defaultUsefulLifeMonths Int       @default(48)
+  depreciationMethod      String    @default("STRAIGHT_LINE")
+  defaultResidualRate     Decimal   @default(0.00) @db.Decimal(5, 2)
+  assetAccountCode        String?
+  accumDepAccountCode     String?
+  depExpenseAccountCode   String?
+  capitalizationThreshold Decimal   @default(0.00) @db.Decimal(18, 2)
+  description             String?   @db.Text
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  assets                  FaAsset[]
+
+  @@map("fa_categories")
+}
+
+model FaLocation {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  name        String
+  building    String?
+  floor       String?
+  room        String?
+  description String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  assets      FaAsset[]
+
+  @@map("fa_locations")
+}
+
+model FaAsset {
+  id                      Int                      @id @default(autoincrement())
+  assetCode               String                   @unique
+  name                    String
+  categoryId              Int
+  category                FaCategory               @relation(fields: [categoryId], references: [id])
+  type                    String                   @default("TANGIBLE")
+  description             String?                  @db.Text
+  brand                   String?
+  model                   String?
+  serialNumber            String?
+  acquisitionDate         DateTime                 @db.Date
+  inServiceDate           DateTime                 @db.Date
+  acquisitionCost         Decimal                  @db.Decimal(18, 2)
+  residualValue           Decimal                  @default(0.00) @db.Decimal(18, 2)
+  usefulLifeMonths        Int                      @default(48)
+  depreciationMethod      String                   @default("STRAIGHT_LINE")
+  accumulatedDepreciation Decimal                  @default(0.00) @db.Decimal(18, 2)
+  bookValue               Decimal                  @db.Decimal(18, 2)
+  locationId              Int?
+  location                FaLocation?              @relation(fields: [locationId], references: [id])
+  department              String?
+  assignedUserId          Int?
+  assignedUser            User?                    @relation("FaAssetAssignedUser", fields: [assignedUserId], references: [id])
+  warrantyExpiry          DateTime?                @db.Date
+  condition               String                   @default("GOOD")
+  status                  String                   @default("REGISTERED")
+  photoUrl                String?                  @db.Text
+  documentUrl             String?                  @db.Text
+  qrCodeKey               String?                  @unique
+  acquisitionSource       String                   @default("DIRECT_PURCHASE")
+  receivingId             Int?
+  purchaseRequestId       Int?
+  customFields            String?                  @db.Text
+  createdById             Int?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  assignments             FaAssetAssignment[]
+  transfers               FaAssetTransfer[]
+  depreciationSchedules   FaDepreciationSchedule[]
+  amortizationSchedules   FaAmortizationSchedule[]
+  disposals               FaAssetDisposal[]
+  auditItems              FaAssetAuditItem[]
+  documents               FaAssetDocument[]
+  maintenanceRefs         FaAssetMaintenanceRef[]
+  ledgerEntries           FaAssetLedger[]
+
+  @@index([categoryId])
+  @@index([locationId])
+  @@index([assignedUserId])
+  @@index([status])
+  @@map("fa_assets")
+}
+
+model FaAcquisition {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  source        String
+  vendorName    String?
+  invoiceNumber String?
+  invoiceDate   DateTime? @db.Date
+  poNumber      String?
+  receivingId   Int?
+  totalCost     Decimal   @db.Decimal(18, 2)
+  notes         String?   @db.Text
+  status        String    @default("COMPLETED")
+  createdById   Int?
+  approvedById  Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("fa_acquisitions")
+}
+
+model FaAssetAssignment {
+  id                  Int       @id @default(autoincrement())
+  code                String    @unique
+  assetId             Int
+  asset               FaAsset   @relation(fields: [assetId], references: [id])
+  assignedToUserId    Int?
+  assignedToUser      User?     @relation("FaAssignmentUser", fields: [assignedToUserId], references: [id])
+  department          String?
+  locationId          Int?
+  assignmentDate      DateTime  @db.Date
+  conditionAtHandover String    @default("GOOD")
+  handoverDocumentUrl String?   @db.Text
+  notes               String?   @db.Text
+  signedAt            DateTime?
+  approvedById        Int?
+  createdById         Int?
+  status              String    @default("ACTIVE")
+  returnDate          DateTime? @db.Date
+  returnCondition     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([assetId])
+  @@index([assignedToUserId])
+  @@map("fa_asset_assignments")
+}
+
+model FaAssetTransfer {
+  id             Int       @id @default(autoincrement())
+  code           String    @unique
+  assetId        Int
+  asset          FaAsset   @relation(fields: [assetId], references: [id])
+  fromUserId     Int?
+  toUserId       Int?
+  fromLocationId Int?
+  toLocationId   Int?
+  fromDepartment String?
+  toDepartment   String?
+  transferDate   DateTime  @db.Date
+  status         String    @default("APPROVED")
+  reason         String?   @db.Text
+  condition      String    @default("GOOD")
+  approvedById   Int?
+  createdById    Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([assetId])
+  @@map("fa_asset_transfers")
+}
+
+model FaDepreciationBook {
+  id                      Int      @id @default(autoincrement())
+  assetId                 Int
+  bookType                String   @default("COMMERCIAL")
+  usefulLifeMonths        Int
+  depreciationMethod      String   @default("STRAIGHT_LINE")
+  salvageValue            Decimal  @default(0.00) @db.Decimal(18, 2)
+  accumulatedDepreciation Decimal  @default(0.00) @db.Decimal(18, 2)
+  currentBookValue        Decimal  @db.Decimal(18, 2)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([assetId, bookType])
+  @@map("fa_depreciation_books")
+}
+
+model FaDepreciationSchedule {
+  id                      Int       @id @default(autoincrement())
+  assetId                 Int
+  asset                   FaAsset   @relation(fields: [assetId], references: [id])
+  periodYear              Int
+  periodMonth             Int
+  monthIndex              Int
+  depreciationAmount      Decimal   @db.Decimal(18, 2)
+  accumulatedDepreciation Decimal   @db.Decimal(18, 2)
+  endingBookValue         Decimal   @db.Decimal(18, 2)
+  isPosted                Boolean   @default(false)
+  journalEntryId          Int?
+  postedAt                DateTime?
+  postedById              Int?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([assetId, periodYear, periodMonth], name: "fa_dep_sched_asset_period_key")
+  @@index([assetId])
+  @@index([periodYear, periodMonth])
+  @@map("fa_depreciation_schedules")
+}
+
+model FaAmortizationSchedule {
+  id                      Int       @id @default(autoincrement())
+  assetId                 Int
+  asset                   FaAsset   @relation(fields: [assetId], references: [id])
+  periodYear              Int
+  periodMonth             Int
+  monthIndex              Int
+  amortizationAmount      Decimal   @db.Decimal(18, 2)
+  accumulatedAmortization Decimal   @db.Decimal(18, 2)
+  endingBookValue         Decimal   @db.Decimal(18, 2)
+  isPosted                Boolean   @default(false)
+  journalEntryId          Int?
+  postedAt                DateTime?
+  postedById              Int?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([assetId, periodYear, periodMonth], name: "fa_amort_sched_asset_period_key")
+  @@index([assetId])
+  @@map("fa_amortization_schedules")
+}
+
+model FaAssetRevaluation {
+  id               Int      @id @default(autoincrement())
+  code             String   @unique
+  assetId          Int
+  revaluationDate  DateTime @db.Date
+  previousBookValue Decimal @db.Decimal(18, 2)
+  newBookValue     Decimal  @db.Decimal(18, 2)
+  differenceAmount Decimal  @db.Decimal(18, 2)
+  reason           String   @db.Text
+  approvedById     Int?
+  journalEntryId   Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([assetId])
+  @@map("fa_asset_revaluations")
+}
+
+model FaAssetDisposal {
+  id                  Int       @id @default(autoincrement())
+  code                String    @unique
+  assetId             Int
+  asset               FaAsset   @relation(fields: [assetId], references: [id])
+  disposalDate        DateTime  @db.Date
+  disposalType        String
+  disposalPrice       Decimal   @default(0.00) @db.Decimal(18, 2)
+  costAtDisposal      Decimal   @db.Decimal(18, 2)
+  accumDepAtDisposal  Decimal   @db.Decimal(18, 2)
+  bookValueAtDisposal Decimal   @db.Decimal(18, 2)
+  gainLossAmount      Decimal   @db.Decimal(18, 2)
+  buyerName           String?
+  reason              String    @db.Text
+  documentUrl         String?   @db.Text
+  journalEntryId      Int?
+  approvedById        Int?
+  createdById         Int?
+  status              String    @default("APPROVED")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([assetId])
+  @@map("fa_asset_disposals")
+}
+
+model FaAssetAudit {
+  id                Int                @id @default(autoincrement())
+  code              String             @unique
+  auditDate         DateTime           @db.Date
+  title             String
+  department        String?
+  locationId        Int?
+  status            String             @default("IN_PROGRESS")
+  totalAssets       Int                @default(0)
+  verifiedAssets    Int                @default(0)
+  discrepancyAssets Int                @default(0)
+  notes             String?            @db.Text
+  auditorId         Int?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  items             FaAssetAuditItem[]
+
+  @@map("fa_asset_audits")
+}
+
+model FaAssetAuditItem {
+  id                 Int          @id @default(autoincrement())
+  auditId            Int
+  audit              FaAssetAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  assetId            Int
+  asset              FaAsset      @relation(fields: [assetId], references: [id])
+  expectedLocationId Int?
+  actualLocationId   Int?
+  expectedUserId     Int?
+  actualUserId       Int?
+  expectedCondition  String?
+  actualCondition    String?
+  scanStatus         String       @default("PENDING")
+  scannedAt          DateTime?
+  scannedById        Int?
+  notes              String?      @db.Text
+  photoUrl           String?      @db.Text
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([auditId])
+  @@index([assetId])
+  @@map("fa_asset_audit_items")
+}
+
+model FaAssetDocument {
+  id           Int      @id @default(autoincrement())
+  assetId      Int
+  asset        FaAsset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  title        String
+  type         String   @default("DOCUMENT")
+  fileUrl      String   @db.Text
+  fileSize     Int?
+  mimeType     String?
+  uploadedById Int?
+  createdAt    DateTime @default(now())
+
+  @@index([assetId])
+  @@map("fa_asset_documents")
+}
+
+model FaAssetMaintenanceRef {
+  id                  Int                @id @default(autoincrement())
+  assetId             Int
+  asset               FaAsset            @relation(fields: [assetId], references: [id])
+  maintenanceReportId Int?
+  maintenanceReport   MaintenanceReport? @relation(fields: [maintenanceReportId], references: [id])
+  serviceDate         DateTime           @db.Date
+  description         String             @db.Text
+  cost                Decimal            @default(0.00) @db.Decimal(18, 2)
+  isCapitalized       Boolean            @default(false)
+  vendorName          String?
+  nextServiceDate     DateTime?          @db.Date
+  technicianName      String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([assetId])
+  @@index([maintenanceReportId])
+  @@map("fa_asset_maintenance_refs")
+}
+
+model FaAssetLedger {
+  id              Int      @id @default(autoincrement())
+  assetId         Int
+  asset           FaAsset  @relation(fields: [assetId], references: [id])
+  transactionDate DateTime @db.Date
+  transactionType String
+  referenceCode   String?
+  debit           Decimal  @default(0.00) @db.Decimal(18, 2)
+  credit          Decimal  @default(0.00) @db.Decimal(18, 2)
+  bookValueAfter  Decimal  @db.Decimal(18, 2)
+  accumDepAfter   Decimal  @db.Decimal(18, 2)
+  journalEntryId  Int?
+  description     String?  @db.Text
+  createdById     Int?
+  createdAt       DateTime @default(now())
+
+  @@index([assetId])
+  @@index([journalEntryId])
+  @@map("fa_asset_ledger")
 }

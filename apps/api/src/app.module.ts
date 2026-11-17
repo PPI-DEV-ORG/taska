@@ -26,6 +26,7 @@ import { DocumentationModule } from "./documentation/documentation.module.js";
 import { PocModule } from "./poc/poc.module.js";
 import { VisitsModule } from "./visits/visits.module.js";
 import { MaintenanceModule } from "./maintenance/maintenance.module.js";
+import { FixedAssetsModule } from "./fixed-assets/fixed-assets.module.js";
 import { CalendarModule } from "./calendar/calendar.module.js";
 import { WhatsappModule } from "./whatsapp/whatsapp.module.js";
 import { HrModule } from "./hr/hr.module.js";
@@ -62,6 +63,7 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
     PocModule,
     VisitsModule,
     MaintenanceModule,
+    FixedAssetsModule,
     CalendarModule,
     WhatsappModule,
     HrModule,

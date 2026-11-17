@@ -185,7 +185,7 @@ async function once<T>(
   return data as T;
 }
 
-export async function api<T = any>(
+async function apiFn<T = any>(
   method: string,
   path: string,
   body?: unknown,
@@ -208,6 +208,19 @@ export async function api<T = any>(
     throw e;
   }
 }
+
+apiFn.get = <T = any>(path: string, opts?: { auth?: boolean; retry?: boolean }) =>
+  apiFn<T>("GET", path, undefined, opts);
+apiFn.post = <T = any>(path: string, body?: unknown, opts?: { auth?: boolean; retry?: boolean; form?: FormData }) =>
+  apiFn<T>("POST", path, body, opts);
+apiFn.put = <T = any>(path: string, body?: unknown, opts?: { auth?: boolean; retry?: boolean; form?: FormData }) =>
+  apiFn<T>("PUT", path, body, opts);
+apiFn.patch = <T = any>(path: string, body?: unknown, opts?: { auth?: boolean; retry?: boolean; form?: FormData }) =>
+  apiFn<T>("PATCH", path, body, opts);
+apiFn.delete = <T = any>(path: string, opts?: { auth?: boolean; retry?: boolean }) =>
+  apiFn<T>("DELETE", path, undefined, opts);
+
+export const api = apiFn;
 
 export function queryString(params?: Record<string, unknown>): string {
   if (!params) return "";

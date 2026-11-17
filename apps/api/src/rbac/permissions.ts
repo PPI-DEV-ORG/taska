@@ -43,6 +43,7 @@ export type ModuleKey =
   | "pocReports"
   | "visitReports"
   | "maintenanceReports"
+  | "fixedAssets"
   | "masterData";
 
 const ALL: Record<ModuleKey, Action[]> = {
@@ -86,6 +87,7 @@ const ALL: Record<ModuleKey, Action[]> = {
   pocReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   visitReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   maintenanceReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  fixedAssets: ["M", "L", "C", "U", "A", "P", "V", "E"],
   masterData: ["M", "L", "C", "U", "A", "P", "V", "E"],
 };
 
@@ -503,6 +505,7 @@ const UI_TWIN: Record<string, string> = {
   pocReports: "poc-reports",
   visitReports: "visit-reports",
   maintenanceReports: "maintenance-reports",
+  fixedAssets: "fixed-assets",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

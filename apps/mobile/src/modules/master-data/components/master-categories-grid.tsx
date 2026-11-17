@@ -16,6 +16,8 @@ import {
   PieChart,
   Handshake,
   Briefcase,
+  FolderKanban,
+  MapPin,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -148,6 +150,26 @@ export function MasterCategoriesGrid({
       tag: "Dikelola Finance",
       roles: ["admin", "bos", "finance"],
       onPress: () => onSelectCategory("cost-center"),
+    },
+    {
+      id: "kategori-aset" as MasterKey,
+      title: "Kategori Aset Tetap",
+      desc: "Masa manfaat default, metode depresiasi & pemetaan akun COA aset tetap",
+      count: "Aset Tetap",
+      icon: FolderKanban,
+      tag: "Dikelola Finance",
+      roles: ["admin", "bos", "finance"],
+      onPress: () => onSelectCategory("kategori-aset"),
+    },
+    {
+      id: "lokasi-aset" as MasterKey,
+      title: "Lokasi Penempatan Aset",
+      desc: "Daftar gedung, lantai, dan ruangan penempatan inventaris aset tetap",
+      count: "Aset Tetap",
+      icon: MapPin,
+      tag: "Dikelola Operasional & GA",
+      roles: ["admin", "bos", "finance", "gudang", "procurement"],
+      onPress: () => onSelectCategory("lokasi-aset"),
     },
     {
       id: "pengaturan-sistem" as MasterKey,

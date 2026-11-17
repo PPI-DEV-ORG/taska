@@ -24,10 +24,10 @@
  * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
  */
 
-export const ROLE_MATRIX_VERSION = 6;
+export const ROLE_MATRIX_VERSION = 7;
 
 export const ROLE_MODULE_KEYS = [
-  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "customers", "po-client",
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "fixed-assets", "customers", "po-client",
   "projects", "tasks", "delivery-notes",
   "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports",
   "suppliers", "warehouses", "products",
@@ -43,6 +43,7 @@ const EMPLOYEE: Record<string, string> = {
   dashboard: "ML",
   calendar: "MLCUA",
   expenses: "MLCU",
+  "fixed-assets": "L",
   hr: "MLC",
   users: "L",
   products: "L",
@@ -108,6 +109,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "poc-reports": "MLCU",
       "visit-reports": "MLCU",
       "maintenance-reports": FULL,
+      "fixed-assets": "MLCU",
       "purchase-requests": "MLCU",
       "delivery-notes": "MLCU",
       "damage-reports": "MLC",
@@ -137,6 +139,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "poc-reports": "MLCU",
       "visit-reports": "MLCU",
       "maintenance-reports": FULL,
+      "fixed-assets": "ML",
       "purchase-requests": "MLC",
       "delivery-notes": "MLU",
       "damage-reports": "MLC",
@@ -153,6 +156,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "poc-reports": "MLCUAE",
       "visit-reports": "MLCUE",
       "maintenance-reports": "MLCUAE",
+      "fixed-assets": "ML",
       surveys: "MLCU",
       leads: "ML",
       quotations: "ML",
@@ -182,6 +186,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       warehouses: "MLCU",
       "delivery-notes": "ML",
       "maintenance-reports": "ML",
+      "fixed-assets": "MLCU",
       approvals: "MLV",
       "master-data": "ML",
       projects: "L",
@@ -197,6 +202,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
     permissions: {
       ...EMPLOYEE,
       invoices: FULL,
+      "fixed-assets": FULL,
       accounting: FULL,
       expenses: FULL,
       hr: FULL, // payroll & slip gaji
@@ -234,6 +240,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       receiving: "MLCU", // konfirmasi fisik barang; persetujuan oleh Procurement
       "delivery-notes": "MLCU",
       "damage-reports": "MLCU",
+      "fixed-assets": "MLCU",
       // Tanpa menu Pembelian. Lihat & ubah tetap perlu untuk cek stok & serah barang stok ke proyek
       // (tugas Gudang — tampil di dashboard Gudang), bukan untuk membuat permintaan pembelian.
       "purchase-requests": "LU",
@@ -258,6 +265,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       ...EMPLOYEE,
       hr: FULL,
       users: "MLCU",
+      "fixed-assets": "MLCU",
       "purchase-requests": "MLC",
       "maintenance-reports": "ML",
       projects: "L",

@@ -61,7 +61,7 @@ export type RoleDef = {
 export const ALL_ACTION_CODES: ActionCode[] = ["M", "L", "C", "U", "A", "P", "V", "E"];
 
 export const ALL_MODULE_KEYS = [
-  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "customers",
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "fixed-assets", "customers",
   "po-client", "projects", "tasks", "delivery-notes",
   "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports", "suppliers", "warehouses", "products",
   "invoices", "expenses", "accounting", "reports",
@@ -1045,6 +1045,50 @@ export const MODULES: Record<string, ModuleDef> = {
     createRoles: ["pm", "sales", "teknisi", "se", "super_admin", "admin", "bos"],
     emptyText: "Belum ada riwayat maintenance.",
   },
+  "fixed-assets": {
+    key: "fixed-assets", title: "Aset Tetap", singular: "Aset Tetap", icon: Boxes, idPrefix: "AST",
+    columns: [
+      { key: "assetCode", label: "Kode Aset", primary: true, flex: 1.5 },
+      { key: "name", label: "Nama Aset", flex: 2 },
+      { key: "categoryName", label: "Kategori", flex: 1.5 },
+      { key: "brand", label: "Merek / Model" },
+      { key: "locationName", label: "Lokasi" },
+      { key: "assignedUserName", label: "PIC / Pengguna" },
+      { key: "acquisitionCost", label: "Nilai Perolehan", fmt: "rupiah" },
+      { key: "bookValue", label: "Nilai Buku", fmt: "rupiah" },
+      { key: "condition", label: "Kondisi" },
+      { key: "status", label: "Status", fmt: "status", mobile: true },
+    ],
+    fields: [
+      { label: "Kode Aset", key: "assetCode" },
+      { label: "Nama Aset", key: "name" },
+      { label: "Kategori", key: "categoryName" },
+      { label: "Merek / Brand", key: "brand" },
+      { label: "Model", key: "model" },
+      { label: "Nomor Seri / SN", key: "serialNumber" },
+      { label: "Tanggal Perolehan", key: "acquisitionDate", fmt: "date" },
+      { label: "Tanggal Siap Pakai", key: "inServiceDate", fmt: "date" },
+      { label: "Harga Perolehan", key: "acquisitionCost", fmt: "rupiah" },
+      { label: "Nilai Residu", key: "residualValue", fmt: "rupiah" },
+      { label: "Akumulasi Penyusutan", key: "accumulatedDepreciation", fmt: "rupiah" },
+      { label: "Nilai Buku (NBV)", key: "bookValue", fmt: "rupiah" },
+      { label: "Masa Manfaat (Bulan)", key: "usefulLifeMonths" },
+      { label: "Metode Depresiasi", key: "depreciationMethod" },
+      { label: "Lokasi", key: "locationName" },
+      { label: "Departemen", key: "department" },
+      { label: "Penanggung Jawab (PIC)", key: "assignedUserName" },
+      { label: "Kondisi Fisik", key: "condition" },
+      { label: "Status Aset", key: "status" },
+    ],
+    statusKey: "status",
+    statuses: ["REGISTERED", "IN_SERVICE", "ASSIGNED", "UNDER_MAINTENANCE", "IDLE", "DAMAGED", "DISPOSED", "WRITTEN_OFF"],
+    titleOf: (r) => r.name || r.assetCode,
+    subtitleOf: (r) => `${r.assetCode} · ${r.categoryName || "-"}`,
+    search: ["assetCode", "name", "brand", "model", "serialNumber", "department", "assignedUserName"],
+    createLabel: "Tambah aset tetap",
+    createRoles: ["super_admin", "admin", "bos", "finance", "procurement", "gudang", "hr", "pm"],
+    emptyText: "Belum ada aset tetap terdaftar.",
+  },
 };
 
 export type NavItem = { key: string; label: string; short?: string; href: string; icon: LucideIcon };
@@ -1069,6 +1113,7 @@ const N = {
   shipments: { key: "shipments", label: "Pengiriman dari Pemasok", short: "Pengiriman", href: "/shipments", icon: Truck },
   receiving: { key: "receiving", label: "Penerimaan Barang", short: "Penerimaan", href: "/receiving", icon: PackageCheck },
   stock: { key: "stock", label: "Barang, Jasa & SN", short: "Stok", href: "/stock", icon: Boxes },
+  fixedAssets: { key: "fixed-assets", label: "Aset Tetap", short: "Aset", href: "/fixed-assets", icon: Boxes },
   stockView: { key: "stock", label: "Barang, Jasa & SN", short: "Stok", href: "/stock", icon: Boxes },
   invoices: { key: "invoices", label: "Faktur & Kwitansi", short: "Faktur", href: "/invoices", icon: Receipt },
   poClient: { key: "po-client", label: "Pesanan Penjualan (SO)", short: "SO", href: "/po-client", icon: FileCheck },
@@ -1090,19 +1135,19 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   super_admin: [
     N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
     N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-    N.stock, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+    N.stock, N.fixedAssets, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
-  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
-  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.damage, N.reports, N.archive, N.audit],
+  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.fixedAssets, N.damage, N.reports, N.archive, N.audit],
+  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.fixedAssets, N.damage, N.reports, N.archive, N.audit],
   sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers, N.expenses, N.cashAdvances, N.hr, N.master],
-  pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.opname, N.damage, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.hr, N.master],
-  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.poClient, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.invoices, N.quotations, N.delivery, N.accounting, N.hr, N.stock, N.expenses, N.cashAdvances, N.opname, N.reports],
-  gudang: [N.dashboard, N.calendar, N.stock, N.receiving, N.delivery, N.opname, N.damage, N.expenses, N.cashAdvances, N.hr, N.master],
-  se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  hr: [N.dashboard, N.calendar, N.hr, N.users, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.pocReports, N.requests],
+  pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.fixedAssets, N.opname, N.damage, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.hr, N.master],
+  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.poClient, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.invoices, N.quotations, N.delivery, N.accounting, N.hr, N.stock, N.fixedAssets, N.expenses, N.cashAdvances, N.opname, N.reports],
+  gudang: [N.dashboard, N.calendar, N.stock, N.fixedAssets, N.receiving, N.delivery, N.opname, N.damage, N.expenses, N.cashAdvances, N.hr, N.master],
+  se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  hr: [N.dashboard, N.calendar, N.hr, N.users, N.fixedAssets, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.pocReports, N.requests],
 };
 
 export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "procurement"];
@@ -1110,7 +1155,7 @@ export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "p
 const ALL_NAV_ORDERED: NavItem[] = [
   N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
   N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-  N.stock, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+  N.stock, N.fixedAssets, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
   N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
 ];
 
@@ -1154,6 +1199,7 @@ const CLIENT_MODULE_ALIASES: Record<string, string[]> = {
   "poc-reports": ["poc-reports", "poc_reports"],
   "visit-reports": ["visit-reports", "visit_reports"],
   "maintenance-reports": ["maintenance-reports", "maintenance_reports", "maintenanceReports", "maintenance"],
+  "fixed-assets": ["fixed-assets", "fixed_assets", "fixedAssets", "assets"],
   stock: ["stock", "products", "serials", "movements", "warehouses"],
   shipments: ["shipments", "supplier-pos", "supplier_pos"],
 };
@@ -1172,6 +1218,8 @@ export const PERMISSION_ALIAS_TO_UI_KEY: Record<string, string> = {
   visitReports: "visit-reports",
   maintenanceReports: "maintenance-reports",
   maintenance_reports: "maintenance-reports",
+  fixedAssets: "fixed-assets",
+  fixed_assets: "fixed-assets",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

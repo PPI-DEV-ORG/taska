@@ -251,5 +251,18 @@ export function resolveJournalRelatedDocument(
     return { label: "Buka Penggajian", href: "/hr" };
   }
 
+  if (
+    sourceType === "faasset" ||
+    source.includes("fixed_asset") ||
+    reference.startsWith("AST-") ||
+    fallbackReference.startsWith("AST-")
+  ) {
+    const assetId = reference.startsWith("AST-") ? reference : (sourceId || fallbackReference);
+    return {
+      label: "Buka Detail Aset Tetap",
+      href: `/fixed-assets/${assetId}`,
+    };
+  }
+
   return findByReference(fallbackReference, data);
 }

@@ -249,6 +249,12 @@ export default function AccountingScreen() {
             if (entryRef !== "-" && !entryRef.endsWith("/PAY")) {
               entryRef = `${entryRef}/PAY`;
             }
+          } else if (
+            (entry.source?.startsWith("FIXED_ASSET") || entry.sourceType?.startsWith("FaAsset")) &&
+            (!entryRef || entryRef === "-")
+          ) {
+            const m = entry.memo?.match(/AST-\d{4}-\d+/);
+            if (m) entryRef = m[0];
           }
 
           (entry.lines || []).forEach((line: any) => {
