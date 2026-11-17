@@ -509,6 +509,8 @@ async function main() {
     { code: "1108", name: "Piutang Karyawan (Pinjaman / Kasbon)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1100" },
     { code: "1200", name: "Persediaan barang dagang", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: null },
     { code: "1300", name: "Perlengkapan", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: false, parentCode: null },
+    { code: "1400", name: "Biaya Dibayar di Muka (Header)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: false, isCash: false, isSystem: true, parentCode: null },
+    { code: "1401", name: "Biaya Dibayar di Muka (Prepaid Expense)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1400" },
     { code: "1600", name: "Ppn masukan", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: null },
     { code: "2000", name: "Hutang (Header)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", isPostable: false, isCash: false, isSystem: true, parentCode: null },
     { code: "2100", name: "Ppn Keluaran", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", isPostable: true, isCash: false, isSystem: true, parentCode: "2000" },
@@ -541,6 +543,14 @@ async function main() {
     { code: "5106", name: "Selisih Harga Pembelian (PPV)", category: "Beban Pokok (HPP)", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "5000" },
     { code: "6000", name: "EXPENSE (Header)", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: false, isCash: false, isSystem: true, parentCode: null },
     { code: "6100", name: "Biaya pemasaran", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: false, parentCode: "6000" },
+    { code: "6120", name: "Beban Cloud Hosting & VPS", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+    { code: "6121", name: "Beban Domain & DNS", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+    { code: "6122", name: "Beban Lisensi & Software SaaS", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+    { code: "6123", name: "Beban Email & Kolaborasi Bisnis", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+    { code: "6124", name: "Beban Internet & Konektivitas", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+    { code: "6125", name: "Beban Sertifikat SSL & Keamanan", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+    { code: "6126", name: "Beban Cloud Storage & Backup", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+    { code: "6127", name: "Beban API & Platform Usage", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
     { code: "6200", name: "Biaya Umum & Administrasi", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: false, isCash: false, isSystem: true, parentCode: "6000" },
     { code: "6201", name: "Gaji & Tunjangan", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: false, isCash: false, isSystem: true, parentCode: "6200" },
     { code: "6201.01", name: "Biaya Gaji Karyawan", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6201" },
@@ -610,6 +620,8 @@ async function main() {
     CIT_EXPENSE: "7201",
     RETAINED_EARNINGS: "3102",
     ROUNDING: "7202",
+    SUB_PREPAID: "1401",
+    SUB_EXPENSE_DEFAULT: "6122",
   };
   for (const [key, accountCode] of Object.entries(defaultMappings)) {
     await (prisma as any).accountMapping.upsert({
@@ -619,6 +631,50 @@ async function main() {
     });
   }
   console.log(`Seed OK: ${Object.keys(defaultMappings).length} Account Mappings`);
+
+  // ─── Subscription Management: kategori & master provider awal ───
+  const defaultSubCategories = [
+    { code: "DOM", name: "Domain & DNS", subcategory: "Domain, DNS Hosting", defaultBillingCycle: "ANNUAL", expenseAccountCode: "6121" },
+    { code: "SEC", name: "Security", subcategory: "SSL, Security Service", defaultBillingCycle: "ANNUAL", expenseAccountCode: "6125" },
+    { code: "VPS", name: "Cloud Infrastructure", subcategory: "VPS, Cloud Server", defaultBillingCycle: "MONTHLY", expenseAccountCode: "6120" },
+    { code: "STO", name: "Cloud Storage", subcategory: "Object Storage, Backup", defaultBillingCycle: "MONTHLY", expenseAccountCode: "6126" },
+    { code: "EML", name: "Email & Collaboration", subcategory: "Email Hosting, Workspace", defaultBillingCycle: "MONTHLY", expenseAccountCode: "6123" },
+    { code: "SFT", name: "Software License", subcategory: "IDE, Design Software", defaultBillingCycle: "ANNUAL", expenseAccountCode: "6122" },
+    { code: "SAS", name: "SaaS", subcategory: "CRM, ERP, Productivity", defaultBillingCycle: "MONTHLY", expenseAccountCode: "6122" },
+    { code: "API", name: "API Services", subcategory: "Maps API, AI API", defaultBillingCycle: "MONTHLY", expenseAccountCode: "6127" },
+    { code: "NET", name: "Connectivity", subcategory: "Internet, VPN", defaultBillingCycle: "MONTHLY", expenseAccountCode: "6124" },
+    { code: "MON", name: "Monitoring", subcategory: "Uptime Monitoring, Log Monitoring", defaultBillingCycle: "MONTHLY", expenseAccountCode: "6120" },
+  ];
+  for (const cat of defaultSubCategories) {
+    await (prisma as any).subCategory.upsert({
+      where: { code: cat.code },
+      update: { subcategory: cat.subcategory, expenseAccountCode: cat.expenseAccountCode, prepaidAccountCode: "1401" },
+      create: { ...cat, prepaidAccountCode: "1401", isActive: true },
+    });
+  }
+
+  const defaultSubProviders = [
+    { code: "PRV-001", name: "Amazon Web Services (AWS)", website: "https://aws.amazon.com" },
+    { code: "PRV-002", name: "Google Cloud Platform", website: "https://cloud.google.com" },
+    { code: "PRV-003", name: "Microsoft Azure", website: "https://azure.microsoft.com" },
+    { code: "PRV-004", name: "Google Workspace", website: "https://workspace.google.com" },
+    { code: "PRV-005", name: "Niagahoster", website: "https://www.niagahoster.co.id" },
+    { code: "PRV-006", name: "DomaiNesia", website: "https://www.domainesia.com" },
+    { code: "PRV-007", name: "Midtrans", website: "https://midtrans.com" },
+    { code: "PRV-008", name: "Adobe Creative Cloud", website: "https://www.adobe.com" },
+    { code: "PRV-009", name: "JetBrains", website: "https://www.jetbrains.com" },
+    { code: "PRV-010", name: "Cloudflare", website: "https://www.cloudflare.com" },
+    { code: "PRV-011", name: "OpenAI / Anthropic API", website: "https://openai.com" },
+    { code: "PRV-012", name: "GitHub / GitLab", website: "https://github.com" },
+  ];
+  for (const prov of defaultSubProviders) {
+    await (prisma as any).subProvider.upsert({
+      where: { code: prov.code },
+      update: {},
+      create: { ...prov, isSeeded: true },
+    });
+  }
+  console.log(`Seed OK: ${defaultSubCategories.length} kategori & ${defaultSubProviders.length} provider subscription`);
 
   // ── Hak akses peran bawaan (matriks standar). Peran kustom yang sudah ada di DB dipertahankan. ──
   const rolesRow = await prisma.systemSetting.findUnique({ where: { key: "rbac.roles" } });

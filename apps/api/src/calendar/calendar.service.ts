@@ -9,6 +9,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { SubscriptionsService } from "../subscriptions/subscriptions.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { CalendarEventDto, CalendarQuery, CalendarStatusDto } from "./dto.js";
 
@@ -42,6 +43,7 @@ const GLOBAL_ROLES = ["SUPER_ADMIN", "BOS", "ADMIN"];
 const FINANCE_ROLES = ["FINANCE"];
 const PROCUREMENT_ROLES = ["FINANCE", "PROCUREMENT"];
 const SALES_ROLES = ["SALES", "PM"];
+const SUBSCRIPTION_ROLES = ["FINANCE", "PROCUREMENT", "PM", "SE", "TEKNISI"];
 
 function normStatus(raw: unknown): string {
   const s = String(raw ?? "").toLowerCase();
@@ -80,6 +82,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly subscriptions: SubscriptionsService,
   ) {}
 
   private get db(): any {
@@ -961,6 +964,39 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           status: normStatus(pr.status), priority: "MEDIUM",
           picId: pr.requester?.id ?? null, picName: pr.requester?.name ?? null, picRole: pr.requester?.role ?? null,
           routePath: `/purchase-requests/${pr.id}`, isOverdue: false,
+          editable: false,
+        });
+      }
+    }
+
+    // 10. Subscription: jadwal perpanjangan & reminder renewal
+    if (all || SUBSCRIPTION_ROLES.includes(role)) {
+      const renewals = await this.subscriptions.calendarRenewals(from, to);
+      for (const sub of renewals) {
+        const due = sub.nextRenewalDate as Date;
+        if (!due) continue;
+        const days = Math.round((new Date(due).getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
+        items.push({
+          key: `subscription-${sub.id}`,
+          eventNumber: sub.subscriptionCode,
+          sourceModule: "subscriptions",
+          sourceId: sub.id,
+          title: `${days < 0 ? "Lewat perpanjangan" : "Perpanjangan"} ${sub.serviceName}`,
+          subtitle: [sub.provider?.name ?? sub.providerName, sub.category?.name, sub.subscriptionCode]
+            .filter(Boolean)
+            .join(" · "),
+          category: "SUBSCRIPTION",
+          start: iso(due)!,
+          end: null,
+          occurrenceDate: wibDateKey(new Date(due)),
+          isAllDay: true,
+          status: sub.status === "CANCELLATION_PENDING" ? "PENDING" : days < 0 ? "PENDING" : "NOT_STARTED",
+          priority: days <= 3 ? "URGENT" : days <= 7 ? "HIGH" : days <= 14 ? "MEDIUM" : "LOW",
+          picId: sub.picUserId ?? null,
+          picName: sub.picName ?? null,
+          picRole: sub.picUserId ? "PIC" : null,
+          routePath: `/subscriptions/${sub.id}`,
+          isOverdue: days < 0 && !["CANCELLED", "EXPIRED"].includes(String(sub.status)),
           editable: false,
         });
       }

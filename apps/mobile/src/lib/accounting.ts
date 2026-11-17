@@ -45,7 +45,26 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
   // 1200 ASSET & PERSEDIAAN
   "1200": { code: "1200", name: "Persediaan barang dagang", category: "Aset Lancar", normalBalance: "DEBIT", type: "inventory" },
   "1300": { code: "1300", name: "Perlengkapan", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset" },
+  "1400": { code: "1400", name: "Biaya Dibayar di Muka (Header)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: false },
+  "1401": { code: "1401", name: "Biaya Dibayar di Muka (Prepaid Expense)", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset", parentCode: "1400" },
   "1600": { code: "1600", name: "Ppn masukan", category: "Aset Lancar", normalBalance: "DEBIT", type: "other current asset" },
+
+  // 1500 ASET TETAP
+  "1500": { code: "1500", name: "Aset Tetap (Header)", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: false },
+  "1501": { code: "1501", name: "Tanah", category: "Aset Tidak Lancar", normalBalance: "DEBIT", type: "fixed asset", parentCode: "1500" },
+  "1502": { code: "1502", name: "Bangunan & Gedung", category: "Aset Tidak Lancar", normalBalance: "DEBIT", type: "fixed asset", parentCode: "1500" },
+  "1503": { code: "1503", name: "Kendaraan Operasional", category: "Aset Tidak Lancar", normalBalance: "DEBIT", type: "fixed asset", parentCode: "1500" },
+  "1504": { code: "1504", name: "Peralatan Komputer & IT", category: "Aset Tidak Lancar", normalBalance: "DEBIT", type: "fixed asset", parentCode: "1500" },
+  "1505": { code: "1505", name: "Peralatan & Inventaris Kantor", category: "Aset Tidak Lancar", normalBalance: "DEBIT", type: "fixed asset", parentCode: "1500" },
+  "1506": { code: "1506", name: "Mesin & Peralatan Teknis", category: "Aset Tidak Lancar", normalBalance: "DEBIT", type: "fixed asset", parentCode: "1500" },
+  "1510": { code: "1510", name: "Aset Tidak Berwujud", category: "Aset Tidak Lancar", normalBalance: "DEBIT", type: "fixed asset", parentCode: "1500" },
+  "1590": { code: "1590", name: "Akumulasi Penyusutan (Header)", category: "Aset Tidak Lancar", normalBalance: "KREDIT", isPostable: false },
+  "1591": { code: "1591", name: "Akumulasi Penyusutan Kendaraan", category: "Aset Tidak Lancar", normalBalance: "KREDIT", type: "fixed asset", parentCode: "1590" },
+  "1592": { code: "1592", name: "Akumulasi Penyusutan Komputer & IT", category: "Aset Tidak Lancar", normalBalance: "KREDIT", type: "fixed asset", parentCode: "1590" },
+  "1593": { code: "1593", name: "Akumulasi Penyusutan Bangunan", category: "Aset Tidak Lancar", normalBalance: "KREDIT", type: "fixed asset", parentCode: "1590" },
+  "1594": { code: "1594", name: "Akumulasi Amortisasi Aset Tak Berwujud", category: "Aset Tidak Lancar", normalBalance: "KREDIT", type: "fixed asset", parentCode: "1590" },
+  "1595": { code: "1595", name: "Akumulasi Penyusutan Peralatan Kantor", category: "Aset Tidak Lancar", normalBalance: "KREDIT", type: "fixed asset", parentCode: "1590" },
+  "1596": { code: "1596", name: "Akumulasi Penyusutan Mesin & Teknis", category: "Aset Tidak Lancar", normalBalance: "KREDIT", type: "fixed asset", parentCode: "1590" },
 
   // 2000 HUTANG & KEWAJIBAN
   "2000": { code: "2000", name: "Hutang (Header)", category: "Kewajiban Jangka Pendek", normalBalance: "KREDIT", isPostable: false },
@@ -87,6 +106,14 @@ export const CHART_OF_ACCOUNTS: Record<string, CoaAccount> = {
   // 6000 BEBAN OPERASIONAL
   "6000": { code: "6000", name: "EXPENSE (Header)", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: false },
   "6100": { code: "6100", name: "Biaya pemasaran", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+  "6120": { code: "6120", name: "Beban Cloud Hosting & VPS", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+  "6121": { code: "6121", name: "Beban Domain & DNS", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+  "6122": { code: "6122", name: "Beban Lisensi & Software SaaS", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+  "6123": { code: "6123", name: "Beban Email & Kolaborasi Bisnis", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+  "6124": { code: "6124", name: "Beban Internet & Konektivitas", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+  "6125": { code: "6125", name: "Beban Sertifikat SSL & Keamanan", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+  "6126": { code: "6126", name: "Beban Cloud Storage & Backup", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
+  "6127": { code: "6127", name: "Beban API & Platform Usage", category: "Beban Operasional", normalBalance: "DEBIT", type: "expense", parentCode: "6000" },
   "6200": { code: "6200", name: "Biaya Umum & Administrasi", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6000", isPostable: false },
   "6201": { code: "6201", name: "Gaji & Tunjangan", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6200", isPostable: false },
   "6201.01": { code: "6201.01", name: "Biaya Gaji Karyawan", category: "Beban Operasional", normalBalance: "DEBIT", parentCode: "6201" },

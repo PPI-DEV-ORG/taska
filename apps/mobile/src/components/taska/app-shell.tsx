@@ -32,7 +32,7 @@ const NAV_GROUPS: { title: string; keys: string[] }[] = [
   { title: "Proyek", keys: ["surveys", "projects", "maintenance-reports", "tasks"] },
   { title: "Pembelian", keys: ["purchase-requests", "supplier-pos", "purchase-orders", "shipments"] },
   { title: "Gudang", keys: ["receiving", "stock", "delivery-notes", "opname", "damage-reports"] },
-  { title: "Keuangan", keys: ["invoices", "accounting"] },
+  { title: "Keuangan", keys: ["invoices", "accounting", "fixed-assets", "subscriptions"] },
   // Milik tiap karyawan: saldo petty cash, pengeluaran & absensi sendiri
   { title: "Pribadi", keys: ["cash-advances", "expenses", "hr"] },
   { title: "Pengaturan", keys: ["master-data", "users", "archive", "audit-log"] },

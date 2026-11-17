@@ -4,9 +4,10 @@ import { CalendarController } from "./calendar.controller.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 import { AuditModule } from "../audit/audit.module.js";
 import { NotificationsModule } from "../notifications/notifications.module.js";
+import { SubscriptionsModule } from "../subscriptions/subscriptions.module.js";
 
 @Module({
-  imports: [PrismaModule, AuditModule, NotificationsModule],
+  imports: [PrismaModule, AuditModule, NotificationsModule, SubscriptionsModule],
   controllers: [CalendarController],
   providers: [CalendarService],
 })

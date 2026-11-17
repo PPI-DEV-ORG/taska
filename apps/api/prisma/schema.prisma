@@ -373,64 +373,64 @@ model User {
   updatedAt    DateTime     @updatedAt
 
   refreshTokens         RefreshToken[]
-  files                 File[]              @relation("FileUploader")
+  files                 File[]                  @relation("FileUploader")
   notifications         Notification[]
-  ownedLeads            Lead[]              @relation("LeadOwner")
+  ownedLeads            Lead[]                  @relation("LeadOwner")
   followUps             FollowUp[]
-  surveysReq            Survey[]            @relation("SurveyRequester")
-  surveysApprove        Survey[]            @relation("SurveyApprover")
+  surveysReq            Survey[]                @relation("SurveyRequester")
+  surveysApprove        Survey[]                @relation("SurveyApprover")
   surveyMembers         SurveyMember[]
-  quotations            Quotation[]         @relation("QuotationOwner")
+  quotations            Quotation[]             @relation("QuotationOwner")
   quoteVersions         QuotationVersion[]
-  projects              Project[]           @relation("ProjectPic")
+  projects              Project[]               @relation("ProjectPic")
   projectMembers        ProjectMember[]
-  tasks                 Task[]              @relation("TaskAssignee")
-  expenses              Expense[]           @relation("ExpenseReporter")
-  pocReports            PocReport[]         @relation("PocOwner")
+  tasks                 Task[]                  @relation("TaskAssignee")
+  expenses              Expense[]               @relation("ExpenseReporter")
+  pocReports            PocReport[]             @relation("PocOwner")
   pocMembers            PocMember[]
-  visitReports          VisitReport[]       @relation("VisitOwner")
+  visitReports          VisitReport[]           @relation("VisitOwner")
   visitMembers          VisitMember[]
-  maintenanceReports    MaintenanceReport[] @relation("MaintenanceOwner")
-  maintenanceCreated    MaintenanceReport[] @relation("MaintenanceCreator")
+  maintenanceReports    MaintenanceReport[]     @relation("MaintenanceOwner")
+  maintenanceCreated    MaintenanceReport[]     @relation("MaintenanceCreator")
   maintenanceMembers    MaintenanceMember[]
   maintenanceActions    MaintenanceActionItem[] @relation("MaintenanceActionAssignee")
-  calendarCreated       CalendarEvent[]     @relation("CalendarCreator")
-  calendarAssigned      CalendarEvent[]     @relation("CalendarAssignee")
+  calendarCreated       CalendarEvent[]         @relation("CalendarCreator")
+  calendarAssigned      CalendarEvent[]         @relation("CalendarAssignee")
   calendarAttendees     CalendarAttendee[]
-  createdDN             DeliveryNote[]      @relation("DNCreator")
+  createdDN             DeliveryNote[]          @relation("DNCreator")
   movements             StockMovement[]
   serialHist            SerialUnitHistory[]
   opnames               StockOpname[]
   receivings            Receiving[]
-  purchases             PurchaseRequest[]   @relation("PRRequester")
-  supplierPOs           SupplierPO[]        @relation("POCreator")
-  approvalsReq          Approval[]          @relation("ApprovalRequester")
+  purchases             PurchaseRequest[]       @relation("PRRequester")
+  supplierPOs           SupplierPO[]            @relation("POCreator")
+  approvalsReq          Approval[]              @relation("ApprovalRequester")
   damageReports         DamageReport[]
   issueReports          IssueReport[]
-  auditAsActor          AuditLog[]          @relation("AuditActor")
+  auditAsActor          AuditLog[]              @relation("AuditActor")
   settings              SystemSetting[]
-  attendances           Attendance[]        @relation("AttendanceUser")
-  payrollSlips          PayrollSlip[]       @relation("PayrollSlipUser")
-  salaryConfig          SalaryConfig?       @relation("SalaryConfigUser")
-  employeeProfile       EmployeeProfile?    @relation("EmployeeProfileUser")
-  paymentsCreated       Payment[]           @relation("PaymentCreator")
-  approvalDecisions     ApprovalStep[]      @relation("ApprovalStepDecider")
-  expensesPaid          Expense[]           @relation("ExpensePayer")
-  deliveryNotesReceived DeliveryNote[]      @relation("DNReceiver")
-  deliveryNotesSent     DeliveryNote[]      @relation("DNSender")
-  deliveryNotesIssued   DeliveryNote[]      @relation("DNWarehouseStaff")
-  deliveryNotesToPm     DeliveryNote[]      @relation("DNRecipient")
-  pocCreated            PocReport[]         @relation("PocCreator")
-  visitsCreated         VisitReport[]       @relation("VisitCreator")
-  visitActions          VisitActionItem[]   @relation("VisitActionAssignee")
-  pocChecklists         PocChecklist[]      @relation("PocChecklistAssignee")
-  cashAdvancesHeld      CashAdvance[]       @relation("CashAdvanceEmployee")
-  cashAdvancesRequested CashAdvance[]       @relation("CashAdvanceRequester")
-  cashAdvancesApproved  CashAdvance[]       @relation("CashAdvanceApprover")
-  cashAdvancesDisbursed CashAdvance[]       @relation("CashAdvanceDisburser")
-  cashAdvancesSettled   CashAdvance[]       @relation("CashAdvanceSettler")
-  assignedAssets        FaAsset[]           @relation("FaAssetAssignedUser")
-  assetAssignments      FaAssetAssignment[] @relation("FaAssignmentUser")
+  attendances           Attendance[]            @relation("AttendanceUser")
+  payrollSlips          PayrollSlip[]           @relation("PayrollSlipUser")
+  salaryConfig          SalaryConfig?           @relation("SalaryConfigUser")
+  employeeProfile       EmployeeProfile?        @relation("EmployeeProfileUser")
+  paymentsCreated       Payment[]               @relation("PaymentCreator")
+  approvalDecisions     ApprovalStep[]          @relation("ApprovalStepDecider")
+  expensesPaid          Expense[]               @relation("ExpensePayer")
+  deliveryNotesReceived DeliveryNote[]          @relation("DNReceiver")
+  deliveryNotesSent     DeliveryNote[]          @relation("DNSender")
+  deliveryNotesIssued   DeliveryNote[]          @relation("DNWarehouseStaff")
+  deliveryNotesToPm     DeliveryNote[]          @relation("DNRecipient")
+  pocCreated            PocReport[]             @relation("PocCreator")
+  visitsCreated         VisitReport[]           @relation("VisitCreator")
+  visitActions          VisitActionItem[]       @relation("VisitActionAssignee")
+  pocChecklists         PocChecklist[]          @relation("PocChecklistAssignee")
+  cashAdvancesHeld      CashAdvance[]           @relation("CashAdvanceEmployee")
+  cashAdvancesRequested CashAdvance[]           @relation("CashAdvanceRequester")
+  cashAdvancesApproved  CashAdvance[]           @relation("CashAdvanceApprover")
+  cashAdvancesDisbursed CashAdvance[]           @relation("CashAdvanceDisburser")
+  cashAdvancesSettled   CashAdvance[]           @relation("CashAdvanceSettler")
+  assignedAssets        FaAsset[]               @relation("FaAssetAssignedUser")
+  assetAssignments      FaAssetAssignment[]     @relation("FaAssignmentUser")
 
   @@index([role, status])
   @@index([warehouseId])
@@ -625,15 +625,15 @@ model Customer {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  leads          Lead[]
-  projects       Project[]
-  quotations     Quotation[]
-  clientPOs      ClientPO[]
-  invoices       InvoiceOut[]
-  pocReports     PocReport[]
-  visitReports   VisitReport[]
+  leads              Lead[]
+  projects           Project[]
+  quotations         Quotation[]
+  clientPOs          ClientPO[]
+  invoices           InvoiceOut[]
+  pocReports         PocReport[]
+  visitReports       VisitReport[]
   maintenanceReports MaintenanceReport[]
-  calendarEvents CalendarEvent[] @relation("CalendarCustomer")
+  calendarEvents     CalendarEvent[]     @relation("CalendarCustomer")
 
   @@index([status])
 }
@@ -801,13 +801,13 @@ model Lead {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  followUps      FollowUp[]
-  surveys        Survey[]
-  quotations     Quotation[]
-  pocReports     PocReport[]
-  visitReports   VisitReport[]
+  followUps          FollowUp[]
+  surveys            Survey[]
+  quotations         Quotation[]
+  pocReports         PocReport[]
+  visitReports       VisitReport[]
   maintenanceReports MaintenanceReport[]
-  calendarEvents CalendarEvent[] @relation("CalendarLead")
+  calendarEvents     CalendarEvent[]     @relation("CalendarLead")
 
   @@index([stage])
   @@index([owner_id])
@@ -816,25 +816,25 @@ model Lead {
 }
 
 model FollowUp {
-  id            Int            @id @default(autoincrement())
-  leadId        Int?
-  lead          Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  quotationId   Int?
-  pocReportId   Int?
-  pocReport     PocReport?     @relation(fields: [pocReportId], references: [id], onDelete: Cascade)
+  id                  Int                @id @default(autoincrement())
+  leadId              Int?
+  lead                Lead?              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  quotationId         Int?
+  pocReportId         Int?
+  pocReport           PocReport?         @relation(fields: [pocReportId], references: [id], onDelete: Cascade)
   visitReportId       Int?
   visitReport         VisitReport?       @relation(fields: [visitReportId], references: [id], onDelete: Cascade)
   maintenanceReportId Int?
   maintenanceReport   MaintenanceReport? @relation(fields: [maintenanceReportId], references: [id], onDelete: Cascade)
-  date          DateTime       @db.Date
-  method        FollowUpMethod
-  notes         String
-  nextDate      DateTime?      @db.Date
-  status        FollowUpStatus @default(SELESAI)
-  createdById   Int?
-  creator       User?          @relation(fields: [createdById], references: [id])
-  createdAt     DateTime       @default(now())
-  quotation     Quotation?     @relation(fields: [quotationId], references: [id])
+  date                DateTime           @db.Date
+  method              FollowUpMethod
+  notes               String
+  nextDate            DateTime?          @db.Date
+  status              FollowUpStatus     @default(SELESAI)
+  createdById         Int?
+  creator             User?              @relation(fields: [createdById], references: [id])
+  createdAt           DateTime           @default(now())
+  quotation           Quotation?         @relation(fields: [quotationId], references: [id])
 
   @@index([leadId])
   @@index([quotationId])
@@ -1101,25 +1101,25 @@ model InvoiceOut {
 }
 
 model InvoiceIn {
-  id             Int             @id @default(autoincrement())
-  number         String?
-  supplierId     Int
-  supplier       Supplier        @relation(fields: [supplierId], references: [id])
-  supplierPoId   Int?
-  supplierPo     SupplierPO?     @relation(fields: [supplierPoId], references: [id])
-  amount         Decimal         @db.Decimal(18, 2)
-  ppn            Decimal         @default(0) @db.Decimal(18, 2)
-  total          Decimal         @db.Decimal(18, 2)
-  paidAmount     Decimal         @default(0) @db.Decimal(18, 2)
-  dueDate        DateTime        @db.Date
-  status         InvoiceInStatus @default(UNPAID)
-  fileId         Int?
-  file           File?           @relation("InvoiceIn_fileId", fields: [fileId], references: [id], onDelete: SetNull)
-  transferFileId Int?
-  transferFile   File?           @relation("InvoiceIn_transferFileId", fields: [transferFileId], references: [id], onDelete: SetNull)
+  id               Int             @id @default(autoincrement())
+  number           String?
+  supplierId       Int
+  supplier         Supplier        @relation(fields: [supplierId], references: [id])
+  supplierPoId     Int?
+  supplierPo       SupplierPO?     @relation(fields: [supplierPoId], references: [id])
+  amount           Decimal         @db.Decimal(18, 2)
+  ppn              Decimal         @default(0) @db.Decimal(18, 2)
+  total            Decimal         @db.Decimal(18, 2)
+  paidAmount       Decimal         @default(0) @db.Decimal(18, 2)
+  dueDate          DateTime        @db.Date
+  status           InvoiceInStatus @default(UNPAID)
+  fileId           Int?
+  file             File?           @relation("InvoiceIn_fileId", fields: [fileId], references: [id], onDelete: SetNull)
+  transferFileId   Int?
+  transferFile     File?           @relation("InvoiceIn_transferFileId", fields: [transferFileId], references: [id], onDelete: SetNull)
   /// Faktur pajak (e-Faktur) dari supplier — dasar mengkreditkan PPN Masukan
   taxInvoiceFileId Int?
-  taxInvoiceFile   File?         @relation("InvoiceIn_taxInvoiceFileId", fields: [taxInvoiceFileId], references: [id], onDelete: SetNull)
+  taxInvoiceFile   File?           @relation("InvoiceIn_taxInvoiceFileId", fields: [taxInvoiceFileId], references: [id], onDelete: SetNull)
   /// Nomor seri faktur pajak (NSFP)
   taxInvoiceNumber String?
 
@@ -1166,49 +1166,49 @@ model Payment {
 }
 
 model Expense {
-  id                  Int              @id @default(autoincrement())
-  date                DateTime         @db.Date
+  id                  Int                @id @default(autoincrement())
+  date                DateTime           @db.Date
   reporterId          Int
-  reporter            User             @relation("ExpenseReporter", fields: [reporterId], references: [id])
+  reporter            User               @relation("ExpenseReporter", fields: [reporterId], references: [id])
   categoryId          Int?
-  category            ExpenseCategory? @relation(fields: [categoryId], references: [id])
-  amount              Decimal          @db.Decimal(18, 2)
+  category            ExpenseCategory?   @relation(fields: [categoryId], references: [id])
+  amount              Decimal            @db.Decimal(18, 2)
   description         String
-  status              ExpenseStatus    @default(DILAPORKAN)
+  status              ExpenseStatus      @default(DILAPORKAN)
   projectId           Int?
-  project             Project?         @relation(fields: [projectId], references: [id])
+  project             Project?           @relation(fields: [projectId], references: [id])
   surveyId            Int?
-  survey              Survey?          @relation(fields: [surveyId], references: [id])
+  survey              Survey?            @relation(fields: [surveyId], references: [id])
   deliveryNoteId      Int?
-  deliveryNote        DeliveryNote?    @relation(fields: [deliveryNoteId], references: [id])
+  deliveryNote        DeliveryNote?      @relation(fields: [deliveryNoteId], references: [id])
   pocReportId         Int?
-  pocReport           PocReport?       @relation(fields: [pocReportId], references: [id])
+  pocReport           PocReport?         @relation(fields: [pocReportId], references: [id])
   visitReportId       Int?
-  visitReport         VisitReport?     @relation(fields: [visitReportId], references: [id])
+  visitReport         VisitReport?       @relation(fields: [visitReportId], references: [id])
   maintenanceReportId Int?
   maintenanceReport   MaintenanceReport? @relation(fields: [maintenanceReportId], references: [id])
   costCenterId        Int?
-  costCenter          CostCenter?      @relation(fields: [costCenterId], references: [id])
+  costCenter          CostCenter?        @relation(fields: [costCenterId], references: [id])
   receiptFileId       Int?
-  receiptFile         File?            @relation("Expense_receiptFileId", fields: [receiptFileId], references: [id], onDelete: SetNull)
-  receiptFileIds      String?          @db.Text
+  receiptFile         File?              @relation("Expense_receiptFileId", fields: [receiptFileId], references: [id], onDelete: SetNull)
+  receiptFileIds      String?            @db.Text
   paidFileId          Int?
-  paidFile            File?            @relation("Expense_paidFileId", fields: [paidFileId], references: [id], onDelete: SetNull)
+  paidFile            File?              @relation("Expense_paidFileId", fields: [paidFileId], references: [id], onDelete: SetNull)
   paidAt              DateTime?
   rejectReason        String?
-  fundingSource       String           @default("PERUSAHAAN")
+  fundingSource       String             @default("PERUSAHAAN")
   reimbursementStatus String?
   paymentMethod       String?
-  approvedAmount      Decimal?         @db.Decimal(18, 2)
-  paidAmount          Decimal?         @db.Decimal(18, 2)
+  approvedAmount      Decimal?           @db.Decimal(18, 2)
+  paidAmount          Decimal?           @db.Decimal(18, 2)
   paidAccountCode     String?
   paidById            Int?
-  paidBy              User?            @relation("ExpensePayer", fields: [paidById], references: [id], onDelete: SetNull)
+  paidBy              User?              @relation("ExpensePayer", fields: [paidById], references: [id], onDelete: SetNull)
   // Biaya yang dibayar dari uang jalan (jurnalnya mengurangi Uang Muka Karyawan, bukan hutang reimbursement)
   cashAdvanceId       Int?
-  cashAdvance         CashAdvance?     @relation(fields: [cashAdvanceId], references: [id], onDelete: SetNull)
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  cashAdvance         CashAdvance?       @relation(fields: [cashAdvanceId], references: [id], onDelete: SetNull)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   @@index([status])
   @@index([reporterId])
@@ -1334,25 +1334,25 @@ model Project {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  members          ProjectMember[]
-  tasks            Task[]
-  requirements     ProjectRequirement[]
-  reservations     StockReservation[]
-  movements        StockMovement[]
-  invoices         InvoiceOut[]
-  expenses         Expense[]
-  pocReports       PocReport[]
-  visitReports     VisitReport[]
+  members            ProjectMember[]
+  tasks              Task[]
+  requirements       ProjectRequirement[]
+  reservations       StockReservation[]
+  movements          StockMovement[]
+  invoices           InvoiceOut[]
+  expenses           Expense[]
+  pocReports         PocReport[]
+  visitReports       VisitReport[]
   maintenanceReports MaintenanceReport[]
-  dnLocations      DeliveryNoteLocation[]
-  purchaseRequests PurchaseRequest[]
-  serialUnits      SerialUnit[]
-  supplierPOs      SupplierPO[]
-  receivings       Receiving[]
-  serialHistory    SerialUnitHistory[]    @relation("SerialHistProject")
-  calendarEvents   CalendarEvent[]        @relation("CalendarProject")
-  clientPOs        ClientPO[]
-  cashAdvances     CashAdvance[]
+  dnLocations        DeliveryNoteLocation[]
+  purchaseRequests   PurchaseRequest[]
+  serialUnits        SerialUnit[]
+  supplierPOs        SupplierPO[]
+  receivings         Receiving[]
+  serialHistory      SerialUnitHistory[]    @relation("SerialHistProject")
+  calendarEvents     CalendarEvent[]        @relation("CalendarProject")
+  clientPOs          ClientPO[]
+  cashAdvances       CashAdvance[]
 
   @@index([status])
   @@index([picId])
@@ -1813,45 +1813,45 @@ model DamageReport {
 // ─────────────────────────────── Surat jalan ───────────────────────────────
 
 model DeliveryNote {
-  id           Int            @id @default(autoincrement())
-  number       String         @unique
-  creatorId    Int
-  creator      User           @relation("DNCreator", fields: [creatorId], references: [id])
-  withGoods    Boolean        @default(false)
-  date         DateTime       @db.Date
-  status       DeliveryStatus @default(PENDING)
+  id               Int            @id @default(autoincrement())
+  number           String         @unique
+  creatorId        Int
+  creator          User           @relation("DNCreator", fields: [creatorId], references: [id])
+  withGoods        Boolean        @default(false)
+  date             DateTime       @db.Date
+  status           DeliveryStatus @default(PENDING)
   // Dokumen penjualan yang dikirim (dulu tag "[so:id]" / "[inv:id]" di alasan surat jalan)
-  clientPoId   Int?
-  clientPo     ClientPO?      @relation(fields: [clientPoId], references: [id], onDelete: SetNull)
-  invoiceId    Int?
-  invoice      InvoiceOut?    @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  receiveById  Int?
-  receivedBy   User?          @relation("DNReceiver", fields: [receiveById], references: [id], onDelete: SetNull)
-  receivedAt   DateTime?
+  clientPoId       Int?
+  clientPo         ClientPO?      @relation(fields: [clientPoId], references: [id], onDelete: SetNull)
+  invoiceId        Int?
+  invoice          InvoiceOut?    @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  receiveById      Int?
+  receivedBy       User?          @relation("DNReceiver", fields: [receiveById], references: [id], onDelete: SetNull)
+  receivedAt       DateTime?
   /// Pengirim: karyawan (senderId) atau ekspedisi / kurir luar (senderName) + no. kendaraan
   senderId         Int?
-  sender           User?      @relation("DNSender", fields: [senderId], references: [id], onDelete: SetNull)
+  sender           User?          @relation("DNSender", fields: [senderId], references: [id], onDelete: SetNull)
   senderName       String?
   vehicleNo        String?
   /// Gudang asal & petugas gudang yang mengeluarkan barang (menandatangani surat jalan)
   warehouseId      Int?
-  warehouse        Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  warehouse        Warehouse?     @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   warehouseStaffId Int?
-  warehouseStaff   User?      @relation("DNWarehouseStaff", fields: [warehouseStaffId], references: [id], onDelete: SetNull)
+  warehouseStaff   User?          @relation("DNWarehouseStaff", fields: [warehouseStaffId], references: [id], onDelete: SetNull)
   /// Penerima di lokasi. Surat jalan project: PM project (recipientUserId).
   recipientUserId  Int?
-  recipientUser    User?      @relation("DNRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  recipientUser    User?          @relation("DNRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
   recipientName    String?
   recipientTitle   String?
   recipientPhone   String?
-  scanFileId   Int?
-  scanFile     File?          @relation("DeliveryNote_scanFileId", fields: [scanFileId], references: [id], onDelete: SetNull)
-  reportText   String?        @db.LongText
-  reportFileId Int?
-  reportFile   File?          @relation("DeliveryNote_reportFileId", fields: [reportFileId], references: [id], onDelete: SetNull)
-  reportAt     DateTime?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  scanFileId       Int?
+  scanFile         File?          @relation("DeliveryNote_scanFileId", fields: [scanFileId], references: [id], onDelete: SetNull)
+  reportText       String?        @db.LongText
+  reportFileId     Int?
+  reportFile       File?          @relation("DeliveryNote_reportFileId", fields: [reportFileId], references: [id], onDelete: SetNull)
+  reportAt         DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   locations    DeliveryNoteLocation[]
   items        DeliveryNoteItem[]
@@ -2199,31 +2199,31 @@ model MaintenanceReport {
   description     String?   @db.Text
 
   // Technical findings & actions
-  findings        String?   @db.Text
-  actionsTaken    String?   @db.Text
-  recommendations String?   @db.Text
-  conclusion      String?   @db.Text
+  findings        String? @db.Text
+  actionsTaken    String? @db.Text
+  recommendations String? @db.Text
+  conclusion      String? @db.Text
 
   // Custom PDF Header & Logo / Document
-  companyHeader   String?
-  logoFileId      Int?
-  logoFile        File?     @relation("MaintenanceReport_logoFileId", fields: [logoFileId], references: [id], onDelete: SetNull)
-  documentFileId  Int?
-  documentFile    File?     @relation("MaintenanceReport_documentFileId", fields: [documentFileId], references: [id], onDelete: SetNull)
+  companyHeader  String?
+  logoFileId     Int?
+  logoFile       File?   @relation("MaintenanceReport_logoFileId", fields: [logoFileId], references: [id], onDelete: SetNull)
+  documentFileId Int?
+  documentFile   File?   @relation("MaintenanceReport_documentFileId", fields: [documentFileId], references: [id], onDelete: SetNull)
 
   // PIC & Creator
-  ownerId         Int
-  owner           User      @relation("MaintenanceOwner", fields: [ownerId], references: [id])
-  createdById     Int
-  createdBy       User      @relation("MaintenanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  ownerId     Int
+  owner       User     @relation("MaintenanceOwner", fields: [ownerId], references: [id])
+  createdById Int
+  createdBy   User     @relation("MaintenanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  members         MaintenanceMember[]
-  actions         MaintenanceActionItem[]
-  expenses        Expense[]
-  followUps       FollowUp[]
-  fixedAssetRefs  FaAssetMaintenanceRef[]
+  members        MaintenanceMember[]
+  actions        MaintenanceActionItem[]
+  expenses       Expense[]
+  followUps      FollowUp[]
+  fixedAssetRefs FaAssetMaintenanceRef[]
 
   @@index([status])
   @@index([startDate])
@@ -2439,92 +2439,393 @@ model AccountMapping {
   updatedAt   DateTime   @updatedAt
 }
 
+// ─────────────────────────────── Subscription Management ───────────────────────────────
+
+model SubCategory {
+  id                  Int      @id @default(autoincrement())
+  code                String   @unique
+  name                String
+  subcategory         String?
+  defaultBillingCycle String   @default("ANNUAL")
+  expenseAccountCode  String   @default("6122")
+  prepaidAccountCode  String   @default("1401")
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  subscriptions SubSubscription[]
+
+  @@index([isActive])
+  @@map("sub_categories")
+}
+
+model SubProvider {
+  id                    Int      @id @default(autoincrement())
+  code                  String   @unique
+  name                  String
+  website               String?
+  supportEmail          String?
+  supportPhone          String?
+  loginPortalUrl        String?
+  accountRepresentative String?
+  isSeeded              Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  subscriptions SubSubscription[]
+
+  @@index([name])
+  @@map("sub_providers")
+}
+
+model SubSubscription {
+  id                 Int          @id @default(autoincrement())
+  subscriptionCode   String       @unique
+  serviceName        String
+  categoryId         Int
+  category           SubCategory  @relation(fields: [categoryId], references: [id])
+  providerId         Int?
+  provider           SubProvider? @relation(fields: [providerId], references: [id])
+  providerName       String?
+  accountIdentifier  String?
+  serviceUrl         String?
+  subscriptionPlan   String?
+  billingCycle       String       @default("ANNUAL")
+  startDate          DateTime     @db.Date
+  expirationDate     DateTime?    @db.Date
+  nextRenewalDate    DateTime?    @db.Date
+  autoRenewal        Boolean      @default(false)
+  currency           String       @default("IDR")
+  cost               Decimal      @db.Decimal(18, 2)
+  tax                Decimal      @default(0.00) @db.Decimal(18, 2)
+  originalCurrency   String?
+  originalAmount     Decimal?     @db.Decimal(18, 2)
+  exchangeRate       Decimal?     @db.Decimal(18, 4)
+  exchangeRateDate   DateTime?    @db.Date
+  idrEquivalent      Decimal?     @db.Decimal(18, 2)
+  mrc                Decimal      @db.Decimal(18, 2)
+  arc                Decimal      @db.Decimal(18, 2)
+  department         String
+  picUserId          Int?
+  businessPurpose    String       @db.Text
+  status             String       @default("ACTIVE")
+  paymentStatus      String       @default("UNPAID")
+  expenseAccountCode String?
+  prepaidAccountCode String?
+  notes              String?      @db.Text
+  createdById        Int?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  allocations          SubCostAllocation[]
+  renewalHistory       SubRenewalHistory[]
+  priceHistory         SubPriceHistory[]
+  usageRecords         SubUsageRecord[]
+  paymentRecords       SubPaymentRecord[]
+  prepaidSchedules     SubPrepaidSchedule[]
+  billingSchedules     SubBillingSchedule[]
+  cancellationRequests SubCancellationRequest[]
+  documents            SubDocument[]
+  reminderLogs         SubReminderLog[]
+
+  @@index([categoryId])
+  @@index([providerId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([nextRenewalDate])
+  @@index([department])
+  @@index([picUserId])
+  @@map("sub_subscriptions")
+}
+
+model SubCostAllocation {
+  id              Int             @id @default(autoincrement())
+  subscriptionId  Int
+  subscription    SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  department      String
+  projectId       Int?
+  percentage      Decimal         @db.Decimal(5, 2)
+  allocatedAmount Decimal         @db.Decimal(18, 2)
+  createdAt       DateTime        @default(now())
+
+  @@index([subscriptionId])
+  @@index([department])
+  @@index([projectId])
+  @@map("sub_cost_allocations")
+}
+
+model SubRenewalHistory {
+  id                  Int             @id @default(autoincrement())
+  renewalCode         String          @unique
+  subscriptionId      Int
+  subscription        SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  previousPeriodStart DateTime        @db.Date
+  previousPeriodEnd   DateTime        @db.Date
+  newPeriodStart      DateTime        @db.Date
+  newPeriodEnd        DateTime        @db.Date
+  previousCost        Decimal         @db.Decimal(18, 2)
+  renewalCost         Decimal         @db.Decimal(18, 2)
+  invoiceNumber       String?
+  approvalStatus      String          @default("APPROVED")
+  approvedByUserId    Int?
+  approvedAt          DateTime?
+  notes               String?         @db.Text
+  createdById         Int?
+  createdAt           DateTime        @default(now())
+
+  @@index([subscriptionId])
+  @@index([newPeriodStart])
+  @@map("sub_renewal_history")
+}
+
+model SubPriceHistory {
+  id               Int             @id @default(autoincrement())
+  subscriptionId   Int
+  subscription     SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  changeType       String
+  previousPlan     String?
+  newPlan          String
+  previousCost     Decimal         @db.Decimal(18, 2)
+  newCost          Decimal         @db.Decimal(18, 2)
+  effectiveDate    DateTime        @db.Date
+  changeReason     String          @db.Text
+  approvedByUserId Int?
+  createdById      Int?
+  createdAt        DateTime        @default(now())
+
+  @@index([subscriptionId])
+  @@index([changeType])
+  @@index([effectiveDate])
+  @@map("sub_price_history")
+}
+
+model SubUsageRecord {
+  id                Int             @id @default(autoincrement())
+  subscriptionId    Int
+  subscription      SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  usersCount        Int?
+  licensesCount     Int?
+  storageCapacity   String?
+  serverSpecs       String?
+  utilizationStatus String          @default("OPTIMAL")
+  evaluationNotes   String?         @db.Text
+  lastReviewedDate  DateTime?       @db.Date
+  reviewedByUserId  Int?
+  createdAt         DateTime        @default(now())
+
+  @@index([subscriptionId])
+  @@index([utilizationStatus])
+  @@map("sub_usage_records")
+}
+
+model SubPaymentRecord {
+  id               Int             @id @default(autoincrement())
+  subscriptionId   Int
+  subscription     SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoiceNumber    String?
+  invoiceDate      DateTime?       @db.Date
+  dueDate          DateTime?       @db.Date
+  paymentDate      DateTime?       @db.Date
+  billingPeriod    String?
+  amount           Decimal         @db.Decimal(18, 2)
+  tax              Decimal         @default(0.00) @db.Decimal(18, 2)
+  currency         String          @default("IDR")
+  paymentStatus    String          @default("PAID")
+  financeJournalId Int?
+  paymentProofUrl  String?         @db.Text
+  notes            String?         @db.Text
+  createdById      Int?
+  createdAt        DateTime        @default(now())
+
+  @@index([subscriptionId])
+  @@index([paymentDate])
+  @@index([paymentStatus])
+  @@map("sub_payment_records")
+}
+
+model SubPrepaidSchedule {
+  id             Int             @id @default(autoincrement())
+  subscriptionId Int
+  subscription   SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  periodYear     Int
+  periodMonth    Int
+  allocationDate DateTime        @db.Date
+  amount         Decimal         @db.Decimal(18, 2)
+  isPosted       Boolean         @default(false)
+  journalNumber  String?
+  journalEntryId Int?
+  postedAt       DateTime?
+  postedById     Int?
+  createdAt      DateTime        @default(now())
+
+  @@unique([subscriptionId, periodYear, periodMonth])
+  @@index([periodYear, periodMonth, isPosted])
+  @@map("sub_prepaid_schedules")
+}
+
+model SubBillingSchedule {
+  id             Int             @id @default(autoincrement())
+  subscriptionId Int
+  subscription   SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  dueDate        DateTime        @db.Date
+  periodLabel    String?
+  amount         Decimal         @db.Decimal(18, 2)
+  status         String          @default("DRAFT")
+  journalEntryId Int?
+  confirmedAt    DateTime?
+  confirmedById  Int?
+  createdAt      DateTime        @default(now())
+
+  @@unique([subscriptionId, dueDate])
+  @@index([subscriptionId, status])
+  @@map("sub_billing_schedules")
+}
+
+model SubCancellationRequest {
+  id                          Int             @id @default(autoincrement())
+  subscriptionId              Int
+  subscription                SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  cancellationCode            String          @unique
+  reason                      String          @db.Text
+  requestedByUserId           Int
+  effectiveCancellationDate   DateTime        @db.Date
+  finalBillingDate            DateTime?       @db.Date
+  isDataBackupConfirmed       Boolean         @default(false)
+  isServiceMigrationConfirmed Boolean         @default(false)
+  isDnsMigrationConfirmed     Boolean         @default(false)
+  isDependencyCheckConfirmed  Boolean         @default(false)
+  isHandoverConfirmed         Boolean         @default(false)
+  isTerminationConfirmed      Boolean         @default(false)
+  approvedByUserId            Int?
+  status                      String          @default("PENDING")
+  notes                       String?         @db.Text
+  approvedAt                  DateTime?
+  executedAt                  DateTime?
+  createdAt                   DateTime        @default(now())
+
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("sub_cancellation_requests")
+}
+
+model SubDocument {
+  id               Int             @id @default(autoincrement())
+  subscriptionId   Int
+  subscription     SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  title            String
+  documentType     String
+  fileUrl          String          @db.Text
+  fileSize         Int?
+  mimeType         String?
+  uploadedByUserId Int?
+  createdAt        DateTime        @default(now())
+
+  @@index([subscriptionId])
+  @@index([documentType])
+  @@map("sub_documents")
+}
+
+model SubReminderLog {
+  id              Int             @id @default(autoincrement())
+  subscriptionId  Int
+  subscription    SubSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  reminderType    String
+  recipientUserId Int?
+  message         String          @db.Text
+  channel         String          @default("SYSTEM")
+  sentAt          DateTime        @default(now())
+
+  @@index([subscriptionId, reminderType, sentAt])
+  @@index([sentAt])
+  @@map("sub_reminder_logs")
+}
+
 // ─────────────────────────────── Fixed Asset Management ───────────────────────────────
 
 model FaCategory {
-  id                      Int       @id @default(autoincrement())
-  code                    String    @unique
+  id                      Int      @id @default(autoincrement())
+  code                    String   @unique
   name                    String
-  type                    String    @default("TANGIBLE")
-  defaultUsefulLifeMonths Int       @default(48)
-  depreciationMethod      String    @default("STRAIGHT_LINE")
-  defaultResidualRate     Decimal   @default(0.00) @db.Decimal(5, 2)
+  type                    String   @default("TANGIBLE")
+  defaultUsefulLifeMonths Int      @default(48)
+  depreciationMethod      String   @default("STRAIGHT_LINE")
+  defaultResidualRate     Decimal  @default(0.00) @db.Decimal(5, 2)
   assetAccountCode        String?
   accumDepAccountCode     String?
   depExpenseAccountCode   String?
-  capitalizationThreshold Decimal   @default(0.00) @db.Decimal(18, 2)
-  description             String?   @db.Text
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  capitalizationThreshold Decimal  @default(0.00) @db.Decimal(18, 2)
+  description             String?  @db.Text
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
-  assets                  FaAsset[]
+  assets FaAsset[]
 
   @@map("fa_categories")
 }
 
 model FaLocation {
-  id          Int       @id @default(autoincrement())
-  code        String    @unique
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
   name        String
   building    String?
   floor       String?
   room        String?
-  description String?   @db.Text
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  assets      FaAsset[]
+  assets FaAsset[]
 
   @@map("fa_locations")
 }
 
 model FaAsset {
-  id                      Int                      @id @default(autoincrement())
-  assetCode               String                   @unique
+  id                      Int         @id @default(autoincrement())
+  assetCode               String      @unique
   name                    String
   categoryId              Int
-  category                FaCategory               @relation(fields: [categoryId], references: [id])
-  type                    String                   @default("TANGIBLE")
-  description             String?                  @db.Text
+  category                FaCategory  @relation(fields: [categoryId], references: [id])
+  type                    String      @default("TANGIBLE")
+  description             String?     @db.Text
   brand                   String?
   model                   String?
   serialNumber            String?
-  acquisitionDate         DateTime                 @db.Date
-  inServiceDate           DateTime                 @db.Date
-  acquisitionCost         Decimal                  @db.Decimal(18, 2)
-  residualValue           Decimal                  @default(0.00) @db.Decimal(18, 2)
-  usefulLifeMonths        Int                      @default(48)
-  depreciationMethod      String                   @default("STRAIGHT_LINE")
-  accumulatedDepreciation Decimal                  @default(0.00) @db.Decimal(18, 2)
-  bookValue               Decimal                  @db.Decimal(18, 2)
+  acquisitionDate         DateTime    @db.Date
+  inServiceDate           DateTime    @db.Date
+  acquisitionCost         Decimal     @db.Decimal(18, 2)
+  residualValue           Decimal     @default(0.00) @db.Decimal(18, 2)
+  usefulLifeMonths        Int         @default(48)
+  depreciationMethod      String      @default("STRAIGHT_LINE")
+  accumulatedDepreciation Decimal     @default(0.00) @db.Decimal(18, 2)
+  bookValue               Decimal     @db.Decimal(18, 2)
   locationId              Int?
-  location                FaLocation?              @relation(fields: [locationId], references: [id])
+  location                FaLocation? @relation(fields: [locationId], references: [id])
   department              String?
   assignedUserId          Int?
-  assignedUser            User?                    @relation("FaAssetAssignedUser", fields: [assignedUserId], references: [id])
-  warrantyExpiry          DateTime?                @db.Date
-  condition               String                   @default("GOOD")
-  status                  String                   @default("REGISTERED")
-  photoUrl                String?                  @db.Text
-  documentUrl             String?                  @db.Text
-  qrCodeKey               String?                  @unique
-  acquisitionSource       String                   @default("DIRECT_PURCHASE")
+  assignedUser            User?       @relation("FaAssetAssignedUser", fields: [assignedUserId], references: [id])
+  warrantyExpiry          DateTime?   @db.Date
+  condition               String      @default("GOOD")
+  status                  String      @default("REGISTERED")
+  photoUrl                String?     @db.Text
+  documentUrl             String?     @db.Text
+  qrCodeKey               String?     @unique
+  acquisitionSource       String      @default("DIRECT_PURCHASE")
   receivingId             Int?
   purchaseRequestId       Int?
-  customFields            String?                  @db.Text
+  customFields            String?     @db.Text
   createdById             Int?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
 
-  assignments             FaAssetAssignment[]
-  transfers               FaAssetTransfer[]
-  depreciationSchedules   FaDepreciationSchedule[]
-  amortizationSchedules   FaAmortizationSchedule[]
-  disposals               FaAssetDisposal[]
-  auditItems              FaAssetAuditItem[]
-  documents               FaAssetDocument[]
-  maintenanceRefs         FaAssetMaintenanceRef[]
-  ledgerEntries           FaAssetLedger[]
+  assignments           FaAssetAssignment[]
+  transfers             FaAssetTransfer[]
+  depreciationSchedules FaDepreciationSchedule[]
+  amortizationSchedules FaAmortizationSchedule[]
+  disposals             FaAssetDisposal[]
+  auditItems            FaAssetAuditItem[]
+  documents             FaAssetDocument[]
+  maintenanceRefs       FaAssetMaintenanceRef[]
+  ledgerEntries         FaAssetLedger[]
 
   @@index([categoryId])
   @@index([locationId])
@@ -2581,24 +2882,24 @@ model FaAssetAssignment {
 }
 
 model FaAssetTransfer {
-  id             Int       @id @default(autoincrement())
-  code           String    @unique
+  id             Int      @id @default(autoincrement())
+  code           String   @unique
   assetId        Int
-  asset          FaAsset   @relation(fields: [assetId], references: [id])
+  asset          FaAsset  @relation(fields: [assetId], references: [id])
   fromUserId     Int?
   toUserId       Int?
   fromLocationId Int?
   toLocationId   Int?
   fromDepartment String?
   toDepartment   String?
-  transferDate   DateTime  @db.Date
-  status         String    @default("APPROVED")
-  reason         String?   @db.Text
-  condition      String    @default("GOOD")
+  transferDate   DateTime @db.Date
+  status         String   @default("APPROVED")
+  reason         String?  @db.Text
+  condition      String   @default("GOOD")
   approvedById   Int?
   createdById    Int?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([assetId])
   @@map("fa_asset_transfers")
@@ -2666,66 +2967,66 @@ model FaAmortizationSchedule {
 }
 
 model FaAssetRevaluation {
-  id               Int      @id @default(autoincrement())
-  code             String   @unique
-  assetId          Int
-  revaluationDate  DateTime @db.Date
-  previousBookValue Decimal @db.Decimal(18, 2)
-  newBookValue     Decimal  @db.Decimal(18, 2)
-  differenceAmount Decimal  @db.Decimal(18, 2)
-  reason           String   @db.Text
-  approvedById     Int?
-  journalEntryId   Int?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  code              String   @unique
+  assetId           Int
+  revaluationDate   DateTime @db.Date
+  previousBookValue Decimal  @db.Decimal(18, 2)
+  newBookValue      Decimal  @db.Decimal(18, 2)
+  differenceAmount  Decimal  @db.Decimal(18, 2)
+  reason            String   @db.Text
+  approvedById      Int?
+  journalEntryId    Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([assetId])
   @@map("fa_asset_revaluations")
 }
 
 model FaAssetDisposal {
-  id                  Int       @id @default(autoincrement())
-  code                String    @unique
+  id                  Int      @id @default(autoincrement())
+  code                String   @unique
   assetId             Int
-  asset               FaAsset   @relation(fields: [assetId], references: [id])
-  disposalDate        DateTime  @db.Date
+  asset               FaAsset  @relation(fields: [assetId], references: [id])
+  disposalDate        DateTime @db.Date
   disposalType        String
-  disposalPrice       Decimal   @default(0.00) @db.Decimal(18, 2)
-  costAtDisposal      Decimal   @db.Decimal(18, 2)
-  accumDepAtDisposal  Decimal   @db.Decimal(18, 2)
-  bookValueAtDisposal Decimal   @db.Decimal(18, 2)
-  gainLossAmount      Decimal   @db.Decimal(18, 2)
+  disposalPrice       Decimal  @default(0.00) @db.Decimal(18, 2)
+  costAtDisposal      Decimal  @db.Decimal(18, 2)
+  accumDepAtDisposal  Decimal  @db.Decimal(18, 2)
+  bookValueAtDisposal Decimal  @db.Decimal(18, 2)
+  gainLossAmount      Decimal  @db.Decimal(18, 2)
   buyerName           String?
-  reason              String    @db.Text
-  documentUrl         String?   @db.Text
+  reason              String   @db.Text
+  documentUrl         String?  @db.Text
   journalEntryId      Int?
   approvedById        Int?
   createdById         Int?
-  status              String    @default("APPROVED")
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  status              String   @default("APPROVED")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([assetId])
   @@map("fa_asset_disposals")
 }
 
 model FaAssetAudit {
-  id                Int                @id @default(autoincrement())
-  code              String             @unique
-  auditDate         DateTime           @db.Date
+  id                Int      @id @default(autoincrement())
+  code              String   @unique
+  auditDate         DateTime @db.Date
   title             String
   department        String?
   locationId        Int?
-  status            String             @default("IN_PROGRESS")
-  totalAssets       Int                @default(0)
-  verifiedAssets    Int                @default(0)
-  discrepancyAssets Int                @default(0)
-  notes             String?            @db.Text
+  status            String   @default("IN_PROGRESS")
+  totalAssets       Int      @default(0)
+  verifiedAssets    Int      @default(0)
+  discrepancyAssets Int      @default(0)
+  notes             String?  @db.Text
   auditorId         Int?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  items             FaAssetAuditItem[]
+  items FaAssetAuditItem[]
 
   @@map("fa_asset_audits")
 }

@@ -32,6 +32,7 @@ import {
   CalendarDays,
   ShieldCheck,
   HandCoins,
+  RefreshCw,
 } from "lucide-react-native";
 
 export type Role =
@@ -61,7 +62,7 @@ export type RoleDef = {
 export const ALL_ACTION_CODES: ActionCode[] = ["M", "L", "C", "U", "A", "P", "V", "E"];
 
 export const ALL_MODULE_KEYS = [
-  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "fixed-assets", "customers",
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "fixed-assets", "subscriptions", "customers",
   "po-client", "projects", "tasks", "delivery-notes",
   "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports", "suppliers", "warehouses", "products",
   "invoices", "expenses", "accounting", "reports",
@@ -1045,6 +1046,48 @@ export const MODULES: Record<string, ModuleDef> = {
     createRoles: ["pm", "sales", "teknisi", "se", "super_admin", "admin", "bos"],
     emptyText: "Belum ada riwayat maintenance.",
   },
+  subscriptions: {
+    key: "subscriptions", title: "Manajemen Langganan", singular: "Langganan", icon: RefreshCw, idPrefix: "SUB",
+    columns: [
+      { key: "subscriptionCode", label: "Kode SUB", primary: true, flex: 1.2 },
+      { key: "serviceName", label: "Layanan", flex: 2 },
+      { key: "categoryName", label: "Kategori", flex: 1.2 },
+      { key: "providerName", label: "Provider", flex: 1.2 },
+      { key: "billingCycle", label: "Siklus" },
+      { key: "cost", label: "Biaya", fmt: "rupiah" },
+      { key: "mrc", label: "MRC", fmt: "rupiah" },
+      { key: "nextRenewalDate", label: "Renewal", fmt: "date" },
+      { key: "status", label: "Status", fmt: "status", mobile: true },
+    ],
+    fields: [
+      { label: "Kode SUB", key: "subscriptionCode" },
+      { label: "Nama Layanan", key: "serviceName" },
+      { label: "Kategori", key: "categoryName" },
+      { label: "Provider", key: "providerName" },
+      { label: "ID Akun", key: "accountIdentifier" },
+      { label: "Paket / Plan", key: "subscriptionPlan" },
+      { label: "Billing Cycle", key: "billingCycle" },
+      { label: "Tanggal Mulai", key: "startDate", fmt: "date" },
+      { label: "Berakhir", key: "expirationDate", fmt: "date" },
+      { label: "Next Renewal", key: "nextRenewalDate", fmt: "date" },
+      { label: "Biaya", key: "cost", fmt: "rupiah" },
+      { label: "Pajak", key: "tax", fmt: "rupiah" },
+      { label: "MRC", key: "mrc", fmt: "rupiah" },
+      { label: "ARC", key: "arc", fmt: "rupiah" },
+      { label: "Departemen", key: "department" },
+      { label: "PIC", key: "picName" },
+      { label: "Status", key: "status" },
+      { label: "Status Pembayaran", key: "paymentStatus" },
+    ],
+    statusKey: "status",
+    statuses: ["ACTIVE", "RENEWAL_DUE", "RENEWAL_PENDING", "PENDING_APPROVAL", "SUSPENDED", "EXPIRED", "CANCELLATION_PENDING", "CANCELLED", "DRAFT"],
+    titleOf: (r) => r.serviceName || r.subscriptionCode,
+    subtitleOf: (r) => `${r.subscriptionCode || "-"} · ${r.providerName || "-"}`,
+    search: ["subscriptionCode", "serviceName", "providerName", "categoryName", "accountIdentifier", "department"],
+    createLabel: "Daftarkan langganan",
+    createRoles: ["super_admin", "admin", "bos", "finance", "procurement", "pm", "se", "teknisi"],
+    emptyText: "Belum ada langganan terdaftar.",
+  },
   "fixed-assets": {
     key: "fixed-assets", title: "Aset Tetap", singular: "Aset Tetap", icon: Boxes, idPrefix: "AST",
     columns: [
@@ -1114,6 +1157,7 @@ const N = {
   receiving: { key: "receiving", label: "Penerimaan Barang", short: "Penerimaan", href: "/receiving", icon: PackageCheck },
   stock: { key: "stock", label: "Barang, Jasa & SN", short: "Stok", href: "/stock", icon: Boxes },
   fixedAssets: { key: "fixed-assets", label: "Aset Tetap", short: "Aset", href: "/fixed-assets", icon: Boxes },
+  subscriptions: { key: "subscriptions", label: "Manajemen Langganan", short: "Langganan", href: "/subscriptions", icon: RefreshCw },
   stockView: { key: "stock", label: "Barang, Jasa & SN", short: "Stok", href: "/stock", icon: Boxes },
   invoices: { key: "invoices", label: "Faktur & Kwitansi", short: "Faktur", href: "/invoices", icon: Receipt },
   poClient: { key: "po-client", label: "Pesanan Penjualan (SO)", short: "SO", href: "/po-client", icon: FileCheck },
@@ -1135,18 +1179,18 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   super_admin: [
     N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
     N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-    N.stock, N.fixedAssets, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+    N.stock, N.fixedAssets, N.subscriptions, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
-  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.fixedAssets, N.damage, N.reports, N.archive, N.audit],
-  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.fixedAssets, N.damage, N.reports, N.archive, N.audit],
+  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.fixedAssets, N.subscriptions, N.damage, N.reports, N.archive, N.audit],
+  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.fixedAssets, N.subscriptions, N.damage, N.reports, N.archive, N.audit],
   sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers, N.expenses, N.cashAdvances, N.hr, N.master],
-  pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.fixedAssets, N.opname, N.damage, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.hr, N.master],
-  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.poClient, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.invoices, N.quotations, N.delivery, N.accounting, N.hr, N.stock, N.fixedAssets, N.expenses, N.cashAdvances, N.opname, N.reports],
+  pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.subscriptions, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.subscriptions, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.fixedAssets, N.subscriptions, N.opname, N.damage, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.hr, N.master],
+  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.poClient, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.invoices, N.quotations, N.delivery, N.accounting, N.hr, N.stock, N.fixedAssets, N.subscriptions, N.expenses, N.cashAdvances, N.opname, N.reports],
   gudang: [N.dashboard, N.calendar, N.stock, N.fixedAssets, N.receiving, N.delivery, N.opname, N.damage, N.expenses, N.cashAdvances, N.hr, N.master],
-  se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.subscriptions, N.delivery, N.expenses, N.cashAdvances, N.hr],
   hr: [N.dashboard, N.calendar, N.hr, N.users, N.fixedAssets, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.pocReports, N.requests],
 };
 
@@ -1155,7 +1199,7 @@ export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "p
 const ALL_NAV_ORDERED: NavItem[] = [
   N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
   N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-  N.stock, N.fixedAssets, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+  N.stock, N.fixedAssets, N.subscriptions, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
   N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
 ];
 
@@ -1200,6 +1244,7 @@ const CLIENT_MODULE_ALIASES: Record<string, string[]> = {
   "visit-reports": ["visit-reports", "visit_reports"],
   "maintenance-reports": ["maintenance-reports", "maintenance_reports", "maintenanceReports", "maintenance"],
   "fixed-assets": ["fixed-assets", "fixed_assets", "fixedAssets", "assets"],
+  subscriptions: ["subscriptions", "subscription", "subs"],
   stock: ["stock", "products", "serials", "movements", "warehouses"],
   shipments: ["shipments", "supplier-pos", "supplier_pos"],
 };
@@ -1220,6 +1265,7 @@ export const PERMISSION_ALIAS_TO_UI_KEY: Record<string, string> = {
   maintenance_reports: "maintenance-reports",
   fixedAssets: "fixed-assets",
   fixed_assets: "fixed-assets",
+  subscriptions: "subscriptions",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

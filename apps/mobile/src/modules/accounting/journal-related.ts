@@ -252,6 +252,37 @@ export function resolveJournalRelatedDocument(
   }
 
   if (
+    sourceType === "subpaymentrecord" ||
+    sourceType === "subprepaidschedule" ||
+    sourceType === "subbillingschedule" ||
+    source.includes("subscription") ||
+    reference.startsWith("SUB-") ||
+    fallbackReference.startsWith("SUB-")
+  ) {
+    const code = reference.startsWith("SUB-")
+      ? reference
+      : fallbackReference.startsWith("SUB-")
+        ? fallbackReference
+        : reference;
+    const subscription = (data.subscriptions ?? []).find((row) => {
+      const candidates = [row.subscriptionCode, row.code, row.nomor].map((value) =>
+        String(value ?? "").trim(),
+      );
+      return candidates.some((value) => value && value === code);
+    });
+    if (subscription) {
+      return {
+        label: "Buka Langganan",
+        href: `/subscriptions/${rowId(subscription)}`,
+      };
+    }
+    return {
+      label: "Buka Manajemen Langganan",
+      href: code ? `/subscriptions?search=${encodeURIComponent(code)}` : "/subscriptions",
+    };
+  }
+
+  if (
     sourceType === "faasset" ||
     source.includes("fixed_asset") ||
     reference.startsWith("AST-") ||

@@ -24,10 +24,10 @@
  * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
  */
 
-export const ROLE_MATRIX_VERSION = 7;
+export const ROLE_MATRIX_VERSION = 8;
 
 export const ROLE_MODULE_KEYS = [
-  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "fixed-assets", "customers", "po-client",
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "fixed-assets", "subscriptions", "customers", "po-client",
   "projects", "tasks", "delivery-notes",
   "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports",
   "suppliers", "warehouses", "products",
@@ -110,6 +110,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "visit-reports": "MLCU",
       "maintenance-reports": FULL,
       "fixed-assets": "MLCU",
+      "subscriptions": "MLU",
       "purchase-requests": "MLCU",
       "delivery-notes": "MLCU",
       "damage-reports": "MLC",
@@ -140,6 +141,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "visit-reports": "MLCU",
       "maintenance-reports": FULL,
       "fixed-assets": "ML",
+      "subscriptions": "ML",
       "purchase-requests": "MLC",
       "delivery-notes": "MLU",
       "damage-reports": "MLC",
@@ -157,6 +159,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "visit-reports": "MLCUE",
       "maintenance-reports": "MLCUAE",
       "fixed-assets": "ML",
+      "subscriptions": "MLU",
       surveys: "MLCU",
       leads: "ML",
       quotations: "ML",
@@ -187,6 +190,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "delivery-notes": "ML",
       "maintenance-reports": "ML",
       "fixed-assets": "MLCU",
+      "subscriptions": "MLCUE",
       approvals: "MLV",
       "master-data": "ML",
       projects: "L",
@@ -203,6 +207,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       ...EMPLOYEE,
       invoices: FULL,
       "fixed-assets": FULL,
+      "subscriptions": FULL,
       accounting: FULL,
       expenses: FULL,
       hr: FULL, // payroll & slip gaji
