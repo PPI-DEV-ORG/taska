@@ -594,12 +594,12 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
         </View>
       </Panel>
 
-      {/* ── Dokumentasi Foto Lapangan (Phase 1) ── */}
+      {/* ── Dokumentasi & Barang Bukti POC / Demo ── */}
       <DocumentationPhotosPanel
         kind="poc"
         entityId={row.id}
-        title="Foto Dokumentasi Kegiatan POC / Expo"
-        subtitle="Lampirkan foto saat demo teknis, stand pameran, audiens, dan bukti perangkat uji"
+        title="Dokumentasi Foto & Bukti PDF Kegiatan POC / Demo"
+        subtitle="Upload multiple foto kegiatan (demo teknis, audiens, perangkat uji) dan dokumen PDF berita acara / lembar hasil uji"
       />
 
       {/* ── Dialog Tambah Checklist ── */}
