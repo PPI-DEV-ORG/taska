@@ -25,6 +25,26 @@ import {
 import crypto from "crypto";
 import QRCode from "qrcode";
 
+function dateOnly(value?: string | Date | null): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return new Date(`${y}-${m}-${d}T00:00:00.000Z`);
+  }
+  const str = String(value).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return new Date(`${str}T00:00:00.000Z`);
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dateStr = String(d.getDate()).padStart(2, "0");
+  return new Date(`${y}-${m}-${dateStr}T00:00:00.000Z`);
+}
+
 @Injectable()
 export class FixedAssetsService {
   constructor(
@@ -387,8 +407,8 @@ export class FixedAssetsService {
     const type = dto.type || category.type || "TANGIBLE";
     const bookValue = acquisitionCost;
 
-    const acquisitionDate = new Date(dto.acquisitionDate);
-    const inServiceDate = new Date(dto.inServiceDate);
+    const acquisitionDate = dateOnly(dto.acquisitionDate) ?? new Date();
+    const inServiceDate = dateOnly(dto.inServiceDate) ?? acquisitionDate;
 
     // 5. Simpan Data Aset
     const asset = await this.db().faAsset.create({
@@ -412,7 +432,7 @@ export class FixedAssetsService {
         locationId: dto.locationId,
         department: dto.department,
         assignedUserId: dto.assignedUserId,
-        warrantyExpiry: dto.warrantyExpiry ? new Date(dto.warrantyExpiry) : null,
+        warrantyExpiry: dateOnly(dto.warrantyExpiry),
         condition: dto.condition || "GOOD",
         status: dto.status || (dto.assignedUserId ? "ASSIGNED" : "REGISTERED"),
         photoUrl: dto.photoUrl,
@@ -552,7 +572,7 @@ export class FixedAssetsService {
         ...(dto.locationId !== undefined ? { locationId: dto.locationId } : {}),
         ...(dto.department !== undefined ? { department: dto.department } : {}),
         ...(dto.warrantyExpiry !== undefined
-          ? { warrantyExpiry: dto.warrantyExpiry ? new Date(dto.warrantyExpiry) : null }
+          ? { warrantyExpiry: dateOnly(dto.warrantyExpiry) }
           : {}),
         ...(dto.condition ? { condition: dto.condition } : {}),
         ...(dto.status ? { status: dto.status } : {}),
@@ -678,7 +698,7 @@ export class FixedAssetsService {
     }
 
     const code = await this.generateCode("ASN", "fa_asset_assignments", "code", 5);
-    const assignmentDate = new Date(dto.assignmentDate);
+    const assignmentDate = dateOnly(dto.assignmentDate) ?? new Date();
 
     // Tutup assignment aktif sebelumnya jika ada
     await this.db().faAssetAssignment.updateMany({
@@ -720,7 +740,7 @@ export class FixedAssetsService {
 
   async returnAsset(assetId: number, dto: ReturnAssetDto, user?: any) {
     const asset = await this.getAsset(assetId);
-    const returnDate = new Date(dto.returnDate);
+    const returnDate = dateOnly(dto.returnDate) ?? new Date();
 
     // Update assignment aktif menjadi RETURNED
     await this.db().faAssetAssignment.updateMany({
@@ -757,7 +777,7 @@ export class FixedAssetsService {
     }
 
     const code = await this.generateCode("TRF", "fa_asset_transfers", "code", 5);
-    const transferDate = new Date(dto.transferDate);
+    const transferDate = dateOnly(dto.transferDate) ?? new Date();
 
     const transfer = await this.db().faAssetTransfer.create({
       data: {
@@ -828,7 +848,7 @@ export class FixedAssetsService {
     }
 
     const code = await this.generateCode("DSP", "fa_asset_disposals", "code", 5);
-    const disposalDate = new Date(dto.disposalDate);
+    const disposalDate = dateOnly(dto.disposalDate) ?? new Date();
     const disposalPrice = Number(dto.disposalPrice || 0);
 
     const costAtDisposal = Number(asset.acquisitionCost);
@@ -1004,9 +1024,9 @@ export class FixedAssetsService {
       };
     }
 
-    // Buat tanggal akhir bulan periode
-    const lastDay = new Date(periodYear, periodMonth, 0).getDate();
-    const postingDate = new Date(periodYear, periodMonth - 1, lastDay);
+    // Buat tanggal akhir bulan periode (UTC midnight agar tidak bergeser hari)
+    const lastDay = new Date(Date.UTC(periodYear, periodMonth, 0)).getUTCDate();
+    const postingDate = new Date(`${periodYear}-${String(periodMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}T00:00:00.000Z`);
 
     let postedCount = 0;
     let totalAmount = 0;
@@ -1145,7 +1165,7 @@ export class FixedAssetsService {
 
   async createAudit(dto: CreateAuditDto, user?: any) {
     const code = await this.generateCode("AUD", "fa_asset_audits", "code", 5);
-    const auditDate = new Date(dto.auditDate);
+    const auditDate = dateOnly(dto.auditDate) ?? new Date();
 
     // Filter aset yang akan diaudit
     const assetWhere: any = {
