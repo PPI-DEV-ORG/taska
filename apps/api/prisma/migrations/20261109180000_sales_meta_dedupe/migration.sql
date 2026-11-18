@@ -4,7 +4,7 @@
 -- 1) Item invoice yang dulu disimpan di key terpisah "invoice.items.<id>" dipindah ke "invoice:meta:<id>".items
 UPDATE `SystemSetting` m
 JOIN `SystemSetting` i ON i.`key` = CONCAT('invoice.items.', SUBSTRING(m.`key`, 14))
-SET m.`value` = JSON_SET(m.`value`, '$.items', CAST(i.`value` AS JSON))
+SET m.`value` = JSON_SET(m.`value`, '$.items', JSON_EXTRACT(i.`value`, '$'))
 WHERE m.`key` LIKE 'invoice:meta:%'
   AND JSON_VALID(m.`value`)
   AND JSON_VALID(i.`value`)
@@ -12,7 +12,7 @@ WHERE m.`key` LIKE 'invoice:meta:%'
 
 -- 2) Invoice yang hanya punya "invoice.items.<id>" (tanpa metadata) dibuatkan metadata-nya
 INSERT INTO `SystemSetting` (`key`, `value`, `updatedAt`)
-SELECT CONCAT('invoice:meta:', SUBSTRING(i.`key`, 15)), JSON_OBJECT('items', CAST(i.`value` AS JSON)), NOW(3)
+SELECT CONCAT('invoice:meta:', SUBSTRING(i.`key`, 15)), JSON_OBJECT('items', JSON_EXTRACT(i.`value`, '$')), NOW(3)
 FROM `SystemSetting` i
 WHERE i.`key` LIKE 'invoice.items.%'
   AND JSON_VALID(i.`value`)
