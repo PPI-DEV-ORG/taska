@@ -1,23 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
-import { EmptyState } from "@/components/taska/basics";
-import { ModuleList } from "@/screens/module-list";
-import { IncomingShipments } from "@/modules/receiving/incoming-shipments";
-import { MODULES, hasUserPermission } from "@/constants/modules";
-import { useApp } from "@/store/app-store";
+import { ModuleIndexScreen } from "@/screens/module-index";
 
 export default function ModuleIndex() {
   const { module } = useLocalSearchParams<{ module: string }>();
-  const { user } = useApp();
-  const def = MODULES[module as string];
-  if (!def) return <EmptyState title="Halaman tidak ditemukan" text="Menu ini belum tersedia untuk akun kamu." />;
-
-  const isAllowed = hasUserPermission(user, def.key, "M");
-  if (!isAllowed) {
-    return <EmptyState title="Akses Ditolak" text="Akun kamu tidak memiliki akses untuk membuka halaman ini." />;
-  }
-
-  const title = def.key === "projects" && (user!.role === "teknisi" || user!.role === "se") ? "Proyek saya" : undefined;
-  // Penerimaan: barang yang sedang dikirim tampil di atas tabel
-  const headerExtra = def.key === "receiving" ? <IncomingShipments /> : undefined;
-  return <ModuleList def={def} title={title} headerExtra={headerExtra} />;
+  return <ModuleIndexScreen moduleKey={module} />;
 }
