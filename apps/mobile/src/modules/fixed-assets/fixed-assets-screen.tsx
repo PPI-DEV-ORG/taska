@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   TrendingDown,
   RefreshCw,
+  BarChart3,
 } from "lucide-react-native";
 import {
   FaAsset,
@@ -43,6 +44,7 @@ import { AssetDetailModal } from "./asset-detail-modal";
 import { CategoriesLocationsDialog } from "./categories-locations-dialog";
 import { AssetDepreciationPanel } from "./asset-depreciation-panel";
 import { AssetAuditPanel } from "./asset-audit-panel";
+import { FixedAssetReportsPanel } from "./asset-reports-panel";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
 
@@ -53,7 +55,7 @@ export function FixedAssetsScreen({
 } = {}) {
   const { user } = useApp();
 
-  const [activeTab, setActiveTab] = React.useState<"registry" | "depreciation" | "audit">(
+  const [activeTab, setActiveTab] = React.useState<"registry" | "depreciation" | "audit" | "reports">(
     "registry",
   );
 
@@ -389,6 +391,7 @@ export function FixedAssetsScreen({
               { id: "registry", label: "Semua Aset (Asset Registry)", icon: Boxes, count: assets.length },
               { id: "depreciation", label: "Depresiasi & Jurnal Bulanan", icon: Calculator, count: null },
               { id: "audit", label: "Audit Fisik & Opname (QR)", icon: ClipboardCheck, count: null },
+              { id: "reports", label: "12 Laporan Analitis", icon: BarChart3, count: null },
             ].map((t) => {
               const active = activeTab === t.id;
               const IconComp = t.icon;
@@ -783,6 +786,9 @@ export function FixedAssetsScreen({
 
       {/* TAB 3: AUDIT FISIK & OPNAME (QR) */}
       {activeTab === "audit" && <AssetAuditPanel locations={locations} />}
+
+      {/* TAB 4: 12 LAPORAN ANALITIS */}
+      {activeTab === "reports" && <FixedAssetReportsPanel categories={categories} />}
 
       {/* DIALOGS */}
       {showForm && (

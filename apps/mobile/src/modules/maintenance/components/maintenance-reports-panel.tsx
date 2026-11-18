@@ -13,13 +13,14 @@ import type { MaintLookups } from "../types";
 const REPORT_TYPE_OPTIONS = [
   "work_orders - 1. Laporan Work Order (Work Order Report)",
   "pm_schedule - 2. Laporan Jadwal Preventive (PM Schedule)",
-  "corrective - 3. Laporan Kerusakan Aset (Corrective)",
-  "cost_per_asset - 4. Laporan Biaya Per Aset",
-  "cost_per_department - 5. Laporan Biaya Per Departemen",
-  "spare_parts - 6. Laporan Pemakaian Spare Part",
-  "vendor_service - 7. Laporan Biaya Servis Vendor",
-  "asset_downtime - 8. Laporan Downtime Aset",
-  "overdue_maintenance - 9. Laporan Keterlambatan Servis",
+  "corrective - 3. Laporan Kerusakan Aset (Corrective Request)",
+  "maintenance_history - 4. Histori Servis Per Aset (History per Asset)",
+  "cost_per_asset - 5. Laporan Biaya Servis Per Aset",
+  "cost_per_department - 6. Laporan Biaya Servis Per Departemen",
+  "spare_parts - 7. Laporan Pemakaian Spare Part",
+  "vendor_service - 8. Laporan Biaya Servis Vendor Eksternal",
+  "asset_downtime - 9. Laporan Downtime & Keandalan Aset",
+  "overdue_maintenance - 10. Laporan Keterlambatan Servis (Overdue)",
 ];
 
 export function MaintenanceReportsPanel({ lookups }: { lookups: MaintLookups }) {

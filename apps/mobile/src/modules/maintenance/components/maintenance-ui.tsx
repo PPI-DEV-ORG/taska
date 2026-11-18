@@ -143,10 +143,8 @@ export function MaintenanceTabs({
             <Pressable
               key={tab.value}
               onPress={() => onChange(tab.value)}
-              className={cn(
-                "min-h-[34px] flex-row items-center gap-1.5 rounded-lg px-3",
-                active ? "bg-primary" : "bg-transparent",
-              )}
+              className="min-h-[34px] flex-row items-center gap-1.5 rounded-lg px-3"
+              style={{ backgroundColor: active ? colors.primary : "transparent" }}
             >
               {Icon && (
                 <Icon size={14} color={active ? "#ffffff" : colors.textMuted} />

@@ -498,3 +498,15 @@ export class AssetQueryDto extends PageQuery {
   @IsString()
   sortOrder?: "asc" | "desc";
 }
+
+export class AssetReportQueryDto extends AssetQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  year?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  month?: number;
+}

@@ -13,6 +13,7 @@ import {
 import { FixedAssetsService } from "./fixed-assets.service.js";
 import {
   AssetQueryDto,
+  AssetReportQueryDto,
   AssignAssetDto,
   AuditScanItemDto,
   CreateAssetDto,
@@ -163,7 +164,7 @@ export class FixedAssetsController {
   // ───────────────────────────────────────────────
   @Get("reports/register")
   @Require("fixedAssets", "E")
-  getRegisterReport(@Query() query: AssetQueryDto) {
+  getRegisterReport(@Query() query: AssetReportQueryDto) {
     return this.service.getRegisterReport(query);
   }
 
@@ -186,6 +187,15 @@ export class FixedAssetsController {
     @Query("month", ParseIntPipe) month?: number,
   ) {
     return this.service.getDepreciationReport(year, month);
+  }
+
+  @Get("reports/:type")
+  @Require("fixedAssets", "E")
+  getReport(
+    @Param("type") type: string,
+    @Query() query: AssetReportQueryDto,
+  ) {
+    return this.service.getReport(type, query);
   }
 
   // ───────────────────────────────────────────────

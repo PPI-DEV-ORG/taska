@@ -99,7 +99,7 @@ export class MaintenanceController {
   }
 
   @Delete("categories/:id")
-  @Require("maintenanceReports", "D")
+  @Require("maintenanceReports", "U")
   deleteCategory(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.deleteCategory(id, user);
   }
@@ -135,7 +135,7 @@ export class MaintenanceController {
   }
 
   @Delete("checklists/:id")
-  @Require("maintenanceReports", "D")
+  @Require("maintenanceReports", "U")
   deleteChecklist(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.deleteChecklist(id, user);
   }
@@ -165,7 +165,7 @@ export class MaintenanceController {
   }
 
   @Delete("vendors/:id")
-  @Require("maintenanceReports", "D")
+  @Require("maintenanceReports", "U")
   deleteVendor(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.deleteVendor(id, user);
   }
@@ -201,7 +201,7 @@ export class MaintenanceController {
   }
 
   @Delete("plans/:id")
-  @Require("maintenanceReports", "D")
+  @Require("maintenanceReports", "U")
   deletePlan(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.deletePlan(id, user);
   }
@@ -235,7 +235,7 @@ export class MaintenanceController {
   }
 
   @Delete("schedules/:id")
-  @Require("maintenanceReports", "D")
+  @Require("maintenanceReports", "U")
   deleteSchedule(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.deleteSchedule(id, user);
   }
@@ -271,7 +271,7 @@ export class MaintenanceController {
   }
 
   @Delete("requests/:id")
-  @Require("maintenanceReports", "D")
+  @Require("maintenanceReports", "U")
   deleteRequest(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.deleteRequest(id, user);
   }
@@ -326,7 +326,7 @@ export class MaintenanceController {
   }
 
   @Delete("work-orders/:id")
-  @Require("maintenanceReports", "D")
+  @Require("maintenanceReports", "U")
   deleteWorkOrder(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.deleteWorkOrder(id, user);
   }

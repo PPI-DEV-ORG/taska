@@ -1451,4 +1451,176 @@ export class FixedAssetsService {
       },
     });
   }
+
+  // ───────────────────────────────────────────────
+  // 12 Analytical Reports (PRD Section 10)
+  // ───────────────────────────────────────────────
+
+  async getAcquisitionReport(query: AssetQueryDto) {
+    const list = await this.listAssets({ ...query, limit: 1000 });
+    return list.data.map((a: any) => ({
+      assetCode: a.assetCode,
+      name: a.name,
+      category: a.category?.name,
+      brand: a.brand,
+      acquisitionDate: a.acquisitionDate,
+      acquisitionCost: Number(a.acquisitionCost),
+      poNumber: a.poNumber,
+      source: a.source,
+      supplier: a.supplier,
+      invoiceNumber: a.invoiceNumber,
+      department: a.department,
+      location: a.location?.name,
+    }));
+  }
+
+  async getAssignmentReport() {
+    return this.db().faAssetAssignment.findMany({
+      orderBy: { assignmentDate: "desc" },
+      include: {
+        asset: { select: { assetCode: true, name: true, brand: true } },
+        assignedToUser: { select: { name: true, email: true } },
+      },
+    });
+  }
+
+  async getAmortizationReport(periodYear?: number, periodMonth?: number) {
+    const where: any = {
+      isPosted: true,
+      asset: { category: { isIntangible: true } },
+    };
+    if (periodYear) where.periodYear = periodYear;
+    if (periodMonth) where.periodMonth = periodMonth;
+
+    return this.db().faDepreciationSchedule.findMany({
+      where,
+      orderBy: [{ periodYear: "desc" }, { periodMonth: "desc" }],
+      include: {
+        asset: { select: { assetCode: true, name: true, category: true } },
+      },
+    });
+  }
+
+  async getValuationReport(query: AssetQueryDto) {
+    const list = await this.listAssets({ ...query, limit: 1000 });
+    return list.data.map((a: any) => ({
+      assetCode: a.assetCode,
+      name: a.name,
+      category: a.category?.name,
+      acquisitionCost: Number(a.acquisitionCost),
+      accumulatedDepreciation: Number(a.accumulatedDepreciation),
+      netBookValue: Number(a.bookValue),
+      salvageValue: Number(a.salvageValue || 0),
+      condition: a.condition,
+      status: a.status,
+    }));
+  }
+
+  async getBookValueReport(query: AssetQueryDto) {
+    const list = await this.listAssets({ ...query, limit: 1000 });
+    return list.data.map((a: any) => ({
+      assetCode: a.assetCode,
+      name: a.name,
+      category: a.category?.name,
+      department: a.department,
+      acquisitionCost: Number(a.acquisitionCost),
+      accumulatedDepreciation: Number(a.accumulatedDepreciation),
+      netBookValue: Number(a.bookValue),
+      depreciationMethod: a.depreciationMethod,
+      usefulLifeMonths: a.usefulLifeMonths,
+    }));
+  }
+
+  async getMaintenanceCostReport(query: AssetQueryDto) {
+    const assets = await this.db().faAsset.findMany({
+      where: {
+        status: { not: "DISPOSED" },
+        ...(query.department ? { department: query.department } : {}),
+      },
+      include: {
+        category: { select: { name: true } },
+        maintenanceWorkOrders: {
+          where: { status: "CLOSED" },
+          select: { totalCost: true, totalSparePartCost: true, totalLaborCost: true },
+        },
+      },
+    });
+
+    return assets.map((a: any) => {
+      const totalCost = a.maintenanceWorkOrders.reduce(
+        (sum: number, w: any) => sum + (Number(w.totalCost) || 0),
+        0,
+      );
+      return {
+        assetCode: a.assetCode,
+        name: a.name,
+        category: a.category?.name,
+        department: a.department,
+        totalCost,
+        servicedCount: a.maintenanceWorkOrders.length,
+      };
+    });
+  }
+
+  async getPhysicalAuditReport() {
+    return this.db().faAssetAudit.findMany({
+      orderBy: { auditDate: "desc" },
+      include: {
+        items: {
+          include: {
+            asset: { select: { assetCode: true, name: true } },
+          },
+        },
+      },
+    });
+  }
+
+  async getTaxDepreciationReport(periodYear?: number, periodMonth?: number) {
+    const schedules = await this.getDepreciationReport(periodYear, periodMonth);
+    return schedules.map((s: any) => {
+      const commercialDep = Number(s.depreciationAmount || 0);
+      // Fiskal / Pajak estimasi berdasarkan PRD (garis lurus tarif pajak)
+      const fiscalDep = commercialDep;
+      return {
+        assetCode: s.asset?.assetCode,
+        assetName: s.asset?.name,
+        period: `${s.periodYear}-${String(s.periodMonth).padStart(2, "0")}`,
+        commercialDepreciation: commercialDep,
+        fiscalDepreciation: fiscalDep,
+        difference: commercialDep - fiscalDep,
+      };
+    });
+  }
+
+  async getReport(type: string, query: AssetQueryDto & { year?: number; month?: number }) {
+    const key = String(type || "register").toLowerCase();
+    switch (key) {
+      case "register":
+        return this.getRegisterReport(query);
+      case "acquisition":
+        return this.getAcquisitionReport(query);
+      case "movement":
+        return this.getMovementReport();
+      case "assignment":
+        return this.getAssignmentReport();
+      case "depreciation":
+        return this.getDepreciationReport(query.year, query.month);
+      case "amortization":
+        return this.getAmortizationReport(query.year, query.month);
+      case "valuation":
+        return this.getValuationReport(query);
+      case "book-value":
+        return this.getBookValueReport(query);
+      case "disposal":
+        return this.getDisposalReport();
+      case "maintenance-cost":
+        return this.getMaintenanceCostReport(query);
+      case "physical-audit":
+        return this.getPhysicalAuditReport();
+      case "tax-depreciation":
+        return this.getTaxDepreciationReport(query.year, query.month);
+      default:
+        return this.getRegisterReport(query);
+    }
+  }
 }

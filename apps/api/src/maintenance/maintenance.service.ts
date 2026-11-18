@@ -1664,6 +1664,29 @@ export class MaintenanceService {
       return { reportType, count: data.length, data };
     }
 
+    if (reportType === "maintenance_history" || reportType === "history") {
+      const data = await this.db.maintHistory.findMany({
+        where: {
+          ...(fromDate || toDate
+            ? {
+                performedDate: {
+                  ...(fromDate ? { gte: fromDate } : {}),
+                  ...(toDate ? { lte: toDate } : {}),
+                },
+              }
+            : {}),
+          ...(query.assetId ? { assetId: query.assetId } : {}),
+        },
+        include: {
+          asset: { select: { id: true, assetCode: true, name: true, department: true } },
+          workOrder: { select: { workOrderNumber: true, priority: true } },
+          performedByUser: { select: { name: true } },
+        },
+        orderBy: { performedDate: "desc" },
+      });
+      return { reportType: "maintenance_history", count: data.length, data };
+    }
+
     if (reportType === "cost_per_asset") {
       const assets = await this.db.faAsset.findMany({
         where: {
