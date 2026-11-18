@@ -299,6 +299,10 @@ export class CreateSubscriptionDto {
 
   @IsOptional()
   @IsString()
+  paymentInvoiceFileUrl?: string;
+
+  @IsOptional()
+  @IsString()
   paymentProofUrl?: string;
 
   @IsOptional()
@@ -337,6 +341,7 @@ export class UpdateSubscriptionDto {
   @IsOptional() @IsString() paymentInvoiceNumber?: string;
   @IsOptional() @IsDateString() paymentDate?: string;
   @IsOptional() @IsString() paymentAccountCode?: string;
+  @IsOptional() @IsString() paymentInvoiceFileUrl?: string;
   @IsOptional() @IsString() paymentProofUrl?: string;
   @IsOptional() @IsString() expenseAccountCode?: string;
   @IsOptional() @IsString() prepaidAccountCode?: string;
@@ -426,6 +431,7 @@ export class SubscriptionPaymentDto {
   @IsOptional() @IsString() currency?: string = "IDR";
   @IsOptional() @IsIn(PAYMENT_STATUSES) paymentStatus?: string = "PAID";
   @IsOptional() @Type(() => Number) @IsInt() financeJournalId?: number;
+  @IsOptional() @IsString() invoiceFileUrl?: string;
   @IsOptional() @IsString() paymentProofUrl?: string;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsBoolean() postJournal?: boolean = false;

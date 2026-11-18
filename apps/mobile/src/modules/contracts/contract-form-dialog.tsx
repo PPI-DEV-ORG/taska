@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ScrollView, TextInput, TouchableOpacity, View } from "react-native";
+import { Platform, ScrollView, TextInput, TouchableOpacity, View } from "react-native";
 import { Check, Plus, Settings2, Trash2 } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DatePicker, SearchableSelect, UserSelect } from "@/components/taska/dialogs";
+import {
+  CustomerSelect,
+  DatePicker,
+  MaintenanceSelect,
+  PoClientSelect,
+  ProjectSelect,
+  PurchaseRequestSelect,
+  QuickAddCustomerDialog,
+  QuickAddSupplierDialog,
+  QuotationSelect,
+  SearchableSelect,
+  SupplierPoSelect,
+  SupplierSelect,
+  UserSelect,
+} from "@/components/taska/dialogs";
+import { InvoiceSelect } from "@/components/taska/document-select";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { FormField } from "@/components/taska/basics";
+import { SubscriptionProviderSelect } from "@/modules/subscriptions/subscription-provider-select";
+import type { SubProvider } from "@/modules/subscriptions/types";
 import { colors } from "@/tokens";
 import { formatThousands } from "@/lib/format";
 import { api } from "@/services/api";
@@ -37,6 +54,7 @@ import {
   formatContractCurrency,
   todayWibIso,
 } from "./contract-utils";
+import { ContractTypeTableSelect } from "./contract-table-selects";
 
 type Props = {
   visible: boolean;
@@ -44,6 +62,7 @@ type Props = {
   contract?: CtrContract | null;
   lookups: ContractMasterLookups;
   onOpenTypeManager: () => void;
+  onRefreshLookups?: () => void;
   onSuccess: () => void;
 };
 
@@ -51,6 +70,16 @@ const TAX_PRESET_OPTIONS = [
   { label: "Tanpa Pajak (0%)", rate: 0 },
   { label: "PPN 11%", rate: 11 },
   { label: "PPN 12%", rate: 12 },
+];
+
+const ERP_LINK_MODULE_OPTIONS = [
+  { value: "", label: "Tidak Ada Tautan" },
+  { value: "PURCHASE_ORDER", label: "PO Supplier (Purchase Order)" },
+  { value: "SALES_ORDER", label: "Sales Order (SO Pelanggan)" },
+  { value: "PURCHASE_REQUEST", label: "Request Barang (PR)" },
+  { value: "QUOTATION", label: "Penawaran (Quotation)" },
+  { value: "INVOICE", label: "Invoice / Tagihan" },
+  { value: "WORK_ORDER", label: "Laporan Maintenance" },
 ];
 
 export function ContractFormDialog(props: Props) {
@@ -63,6 +92,7 @@ function FormContent({
   contract,
   lookups,
   onOpenTypeManager,
+  onRefreshLookups,
   onSuccess,
 }: Props) {
   const { toast, user } = useApp();
@@ -77,7 +107,7 @@ function FormContent({
     contract?.typeId ?? lookups.types[0]?.id ?? null,
   );
   const [department, setDepartment] = React.useState(
-    contract?.department ?? user?.department ?? "IT & Infrastructure",
+    contract?.department ?? (user as any)?.department ?? "IT & Infrastructure",
   );
   const [contractOwnerId, setContractOwnerId] = React.useState(
     contract?.contractOwnerId ? String(contract.contractOwnerId) : user?.id ? String(user.id) : "",
@@ -97,6 +127,9 @@ function FormContent({
   const [picName, setPicName] = React.useState(secondParty?.picName ?? "");
   const [picPhone, setPicPhone] = React.useState(secondParty?.picPhone ?? "");
   const [picEmail, setPicEmail] = React.useState(secondParty?.picEmail ?? "");
+
+  const [quickSupplierOpen, setQuickSupplierOpen] = React.useState(false);
+  const [quickCustomerOpen, setQuickCustomerOpen] = React.useState(false);
 
   // Dates & Status
   const [effectiveDate, setEffectiveDate] = React.useState(
@@ -148,11 +181,12 @@ function FormContent({
     contract?.financial?.penaltyTerms ?? "",
   );
   const [costCenter, setCostCenter] = React.useState(
-    contract?.financial?.costCenter ?? contract?.department ?? "",
+    contract?.financial?.costCenter ?? contract?.department ?? "IT & Infrastructure",
   );
   const [projectReference, setProjectReference] = React.useState(
     contract?.financial?.projectReference ?? "",
   );
+  const [projectId, setProjectId] = React.useState<number | null>(null);
 
   // Payment Schedules
   const [schedules, setSchedules] = React.useState<CtrPaymentSchedule[]>(
@@ -182,12 +216,14 @@ function FormContent({
   const [initialDocumentSignedBySecond, setInitialDocumentSignedBySecond] = React.useState("");
   const [initialDocumentUrl, setInitialDocumentUrl] = React.useState("");
 
-  // Linked ERP module (Optional quick link during creation)
+  // Linked ERP module using existing Taska selects
   const [linkedModule, setLinkedModule] = React.useState("");
   const [linkedEntityId, setLinkedEntityId] = React.useState<number | null>(null);
   const [linkedRefCode, setLinkedRefCode] = React.useState("");
 
   const [saving, setSaving] = React.useState(false);
+
+  const effectiveTypeId = typeId ?? lookups.types[0]?.id ?? null;
 
   const numericBase = Number(baseAmount.replace(/\D/g, "")) || 0;
   const numericTaxPct = Number(taxPercentage) || 0;
@@ -206,30 +242,6 @@ function FormContent({
   function handleExpirationChange(val: string) {
     setExpirationDate(val);
     setRenewalDate(addDaysIso(val, -30));
-  }
-
-  function selectVendor(label: string) {
-    const found = lookups.suppliers.find((s) => `${s.code} - ${s.name}` === label || s.name === label);
-    if (found) {
-      setCounterpartyId(found.id);
-      setCounterpartyName(found.name);
-      if (found.contactName) setPicName(found.contactName);
-      if (found.phone) setPicPhone(found.phone);
-      if (found.email) setPicEmail(found.email);
-    }
-  }
-
-  function selectCustomer(label: string) {
-    const found = lookups.customers.find(
-      (c) => `${c.code} - ${c.company || c.name}` === label || c.name === label,
-    );
-    if (found) {
-      setCounterpartyId(found.id);
-      setCounterpartyName(found.company || found.name);
-      if (found.contactName) setPicName(found.contactName);
-      if (found.phone) setPicPhone(found.phone);
-      if (found.email) setPicEmail(found.email);
-    }
   }
 
   function addServiceRow() {
@@ -313,7 +325,7 @@ function FormContent({
       toast("Judul kontrak (Contract Title) wajib diisi", "danger");
       return;
     }
-    if (!typeId) {
+    if (!effectiveTypeId) {
       toast("Pilih kategori kontrak terlebih dahulu", "danger");
       return;
     }
@@ -385,7 +397,12 @@ function FormContent({
                 : "OTHER",
           entityId: counterpartyId ?? undefined,
           name: counterpartyName.trim(),
-          role: counterpartyType === "CUSTOMER" ? "Pelanggan / Klien" : "Vendor / Penyedia Layanan",
+          role:
+            counterpartyType === "CUSTOMER"
+              ? "Pelanggan / Klien"
+              : counterpartyType === "INTERNAL"
+                ? "Karyawan / Internal"
+                : "Vendor / Penyedia Layanan",
           picName: picName.trim() || undefined,
           picPhone: picPhone.trim() || undefined,
           picEmail: picEmail.trim() || undefined,
@@ -407,7 +424,7 @@ function FormContent({
       const payload: Record<string, any> = {
         officialNumber: officialNumber.trim() || undefined,
         title: title.trim(),
-        typeId,
+        typeId: effectiveTypeId,
         counterpartyType,
         counterpartyId: counterpartyId ?? undefined,
         counterpartyName: counterpartyName.trim(),
@@ -472,12 +489,15 @@ function FormContent({
     }
   }
 
-  const selectedTypeObj = lookups.types.find((t) => t.id === typeId);
-
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[96vw] max-w-4xl max-h-[93vh] p-0">
-        <DialogHeader className="border-b border-border/70 px-5 py-4">
+      <DialogContent
+        className="w-[96vw] max-w-6xl max-h-[93vh] p-0"
+        style={Platform.select({
+          web: { width: "min(96vw, 1180px)", maxWidth: "1180px" } as any,
+        })}
+      >
+        <DialogHeader className="border-b border-border/70 px-6 py-4">
           <DialogTitle>
             {isEdit
               ? `Edit Kontrak · ${contract?.contractNumber}`
@@ -488,26 +508,26 @@ function FormContent({
           </Text>
         </DialogHeader>
 
-        <ScrollView className="max-h-[75vh] px-5 py-4">
+        <ScrollView className="max-h-[75vh] px-6 py-4">
           <View className="gap-4 pb-4">
             {/* 1. IDENTITAS & KATEGORI KONTRAK */}
-            <View className="gap-3 rounded-xl border border-border/80 bg-card p-3.5">
+            <View className="gap-3.5 rounded-xl border border-border/70 bg-muted/20 p-4">
               <View className="flex-row items-center justify-between">
                 <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   1. Identitas & Kategori Kontrak
                 </Text>
                 <TouchableOpacity
                   onPress={onOpenTypeManager}
-                  className="flex-row items-center gap-1 rounded-md border border-border px-2 py-1"
+                  className="flex-row items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1"
                 >
                   <Settings2 size={12} color={colors.primary} />
-                  <Text className="text-[11px] font-semibold text-primary">Kelola Kategori</Text>
+                  <Text className="text-[11px] font-semibold text-primary">Kelola Master Kategori</Text>
                 </TouchableOpacity>
               </View>
 
               <View className="flex-row flex-wrap gap-3">
-                <View className="min-w-[240px] flex-[1.5]">
-                  <FormField label="Judul / Nama Kontrak (Contract Title) *" required>
+                <View className="min-w-[280px] flex-[1.6]">
+                  <FormField label="Judul / Nama Kontrak (Contract Title)" required>
                     <TextInput
                       value={title}
                       onChangeText={setTitle}
@@ -516,24 +536,20 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[200px] flex-1">
-                  <FormField label="Kategori Kontrak (Contract Type) *" required>
-                    <SearchableSelect
-                      value={selectedTypeObj ? `${selectedTypeObj.code} - ${selectedTypeObj.name}` : ""}
-                      options={lookups.types.map((t) => `${t.code} - ${t.name}`)}
-                      onChange={(label) => {
-                        const found = lookups.types.find((t) => `${t.code} - ${t.name}` === label);
-                        if (found) setTypeId(found.id);
-                      }}
-                      placeholder="Pilih kategori kontrak"
-                      className="h-11 rounded-lg border-border/80 bg-card"
+                <View className="min-w-[260px] flex-1">
+                  <FormField label="Kategori Kontrak (Contract Type)" required>
+                    <ContractTypeTableSelect
+                      value={effectiveTypeId}
+                      types={lookups.types}
+                      onChange={(t) => setTypeId(t.id)}
+                      onRefresh={onRefreshLookups}
                     />
                   </FormField>
                 </View>
               </View>
 
               <View className="flex-row flex-wrap gap-3">
-                <View className="min-w-[180px] flex-1">
+                <View className="min-w-[220px] flex-1">
                   <FormField label="Nomor Dokumen Resmi (Contract Number)">
                     <TextInput
                       value={officialNumber}
@@ -543,8 +559,8 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[180px] flex-1">
-                  <FormField label="Departemen Terkait *" required>
+                <View className="min-w-[220px] flex-1">
+                  <FormField label="Departemen Terkait" required>
                     <SearchableSelect
                       value={department}
                       options={DEPARTMENT_OPTIONS}
@@ -557,11 +573,14 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[200px] flex-1">
+                <View className="min-w-[220px] flex-1">
                   <FormField label="Contract Owner (PIC Internal)">
                     <UserSelect
-                      value={contractOwnerId}
-                      onChange={setContractOwnerId}
+                      userId={contractOwnerId || null}
+                      value={contractOwnerId || ""}
+                      onChange={(selectedUser: any) =>
+                        setContractOwnerId(selectedUser?.id ? String(selectedUser.id) : "")
+                      }
                       placeholder="Pilih PIC internal"
                     />
                   </FormField>
@@ -569,15 +588,15 @@ function FormContent({
               </View>
             </View>
 
-            {/* 2. PIHAK TERKAIT (COUNTERPARTY) */}
-            <View className="gap-3 rounded-xl border border-border/80 bg-card p-3.5">
+            {/* 2. PIHAK TERKAIT (COUNTERPARTY — KOMPONEN SELECT BAWAAN TASKA) */}
+            <View className="gap-3.5 rounded-xl border border-border/70 bg-muted/20 p-4">
               <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 2. Pihak Terkait (Counterparty — Referensi Master Data ERP)
               </Text>
 
               <View className="flex-row flex-wrap gap-3">
-                <View className="min-w-[180px] flex-1">
-                  <FormField label="Jenis Pihak Terkait *" required>
+                <View className="min-w-[210px] flex-1">
+                  <FormField label="Jenis Pihak Terkait" required>
                     <SearchableSelect
                       value={
                         COUNTERPARTY_TYPE_OPTIONS.find((c) => c.value === counterpartyType)?.label ??
@@ -589,6 +608,7 @@ function FormContent({
                         if (found) {
                           setCounterpartyType(found.value);
                           setCounterpartyId(null);
+                          setCounterpartyName("");
                         }
                       }}
                       className="h-11 rounded-lg border-border/80 bg-card"
@@ -597,51 +617,105 @@ function FormContent({
                 </View>
 
                 {counterpartyType === "VENDOR" ? (
-                  <View className="min-w-[240px] flex-[1.5]">
-                    <FormField label="Pilih dari Master Vendor / Supplier ERP">
-                      <SearchableSelect
-                        value={
-                          counterpartyId
-                            ? lookups.suppliers.find((s) => s.id === counterpartyId)
-                              ? `${lookups.suppliers.find((s) => s.id === counterpartyId)!.code} - ${lookups.suppliers.find((s) => s.id === counterpartyId)!.name}`
-                              : counterpartyName
-                            : ""
-                        }
-                        options={lookups.suppliers.map((s) => `${s.code} - ${s.name}`)}
-                        onChange={selectVendor}
-                        placeholder="Cari & pilih supplier terdaftar..."
-                        clearable
-                        className="h-11 rounded-lg border-border/80 bg-card"
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Pemasok / Vendor (Master Supplier)">
+                      <SupplierSelect
+                        value={counterpartyName}
+                        supplierId={counterpartyId}
+                        onAddNew={() => setQuickSupplierOpen(true)}
+                        onChange={(selectedName, selectedSupplier) => {
+                          setCounterpartyName(selectedName);
+                          if (selectedSupplier) {
+                            setCounterpartyId(Number(selectedSupplier.id) || null);
+                            if (selectedSupplier.pic || selectedSupplier.kontak) {
+                              setPicName(String(selectedSupplier.pic || selectedSupplier.kontak));
+                            }
+                            if (selectedSupplier.phone || selectedSupplier.telepon) {
+                              setPicPhone(String(selectedSupplier.phone || selectedSupplier.telepon));
+                            }
+                            if (selectedSupplier.email) {
+                              setPicEmail(String(selectedSupplier.email));
+                            }
+                          }
+                        }}
                       />
                     </FormField>
                   </View>
                 ) : null}
 
                 {counterpartyType === "CUSTOMER" ? (
-                  <View className="min-w-[240px] flex-[1.5]">
-                    <FormField label="Pilih dari Master Pelanggan / Customer ERP">
-                      <SearchableSelect
-                        value={
-                          counterpartyId
-                            ? lookups.customers.find((c) => c.id === counterpartyId)
-                              ? `${lookups.customers.find((c) => c.id === counterpartyId)!.code} - ${lookups.customers.find((c) => c.id === counterpartyId)!.company || lookups.customers.find((c) => c.id === counterpartyId)!.name}`
-                              : counterpartyName
-                            : ""
-                        }
-                        options={lookups.customers.map(
-                          (c) => `${c.code} - ${c.company || c.name}`,
-                        )}
-                        onChange={selectCustomer}
-                        placeholder="Cari & pilih pelanggan terdaftar..."
-                        clearable
-                        className="h-11 rounded-lg border-border/80 bg-card"
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Customer / Pelanggan (Master Customer)">
+                      <CustomerSelect
+                        value={counterpartyName}
+                        customerId={counterpartyId}
+                        onAddNew={() => setQuickCustomerOpen(true)}
+                        onChange={(cust) => {
+                          if (!cust) {
+                            setCounterpartyId(null);
+                            setCounterpartyName("");
+                            return;
+                          }
+                          setCounterpartyId(Number(cust.id) || null);
+                          setCounterpartyName(String(cust.company || cust.nama || cust.name || ""));
+                          if (cust.pic || cust.kontak) setPicName(String(cust.pic || cust.kontak));
+                          if (cust.phone || cust.telepon) setPicPhone(String(cust.phone || cust.telepon));
+                          if (cust.email) setPicEmail(String(cust.email));
+                        }}
                       />
                     </FormField>
                   </View>
                 ) : null}
 
-                <View className="min-w-[220px] flex-[1.5]">
-                  <FormField label="Nama Resmi Pihak Terkait (Vendor / Klien / Mitra) *" required>
+                {counterpartyType === "INTERNAL" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Karyawan / Internal">
+                      <UserSelect
+                        value={counterpartyName}
+                        userId={counterpartyId}
+                        onChange={(emp) => {
+                          if (!emp) {
+                            setCounterpartyId(null);
+                            setCounterpartyName("");
+                            return;
+                          }
+                          setCounterpartyId(Number(emp.id) || null);
+                          setCounterpartyName(String(emp.nama || emp.name || ""));
+                          setPicName(String(emp.nama || emp.name || ""));
+                          if (emp.email) setPicEmail(String(emp.email));
+                          if (emp.telepon || emp.phone) setPicPhone(String(emp.telepon || emp.phone));
+                        }}
+                        placeholder="Pilih karyawan internal..."
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
+
+                {counterpartyType === "THIRD_PARTY" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Provider / Pihak Ketiga">
+                      <SubscriptionProviderSelect
+                        value={counterpartyId}
+                        providers={(lookups.providers ?? []) as unknown as SubProvider[]}
+                        onRefresh={onRefreshLookups}
+                        onChange={(prov) => {
+                          if (!prov) {
+                            setCounterpartyId(null);
+                            return;
+                          }
+                          setCounterpartyId(prov.id);
+                          setCounterpartyName(prov.name);
+                          if (prov.accountRepresentative) setPicName(prov.accountRepresentative);
+                          if (prov.supportPhone) setPicPhone(prov.supportPhone);
+                          if (prov.supportEmail) setPicEmail(prov.supportEmail);
+                        }}
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
+
+                <View className="min-w-[250px] flex-[1.3]">
+                  <FormField label="Nama Resmi Pihak Terkait" required>
                     <TextInput
                       value={counterpartyName}
                       onChangeText={setCounterpartyName}
@@ -653,34 +727,34 @@ function FormContent({
               </View>
 
               <View className="flex-row flex-wrap gap-3">
-                <View className="min-w-[180px] flex-1">
+                <View className="min-w-[220px] flex-1">
                   <FormField label="Nama PIC Eksternal">
                     <TextInput
                       value={picName}
                       onChangeText={setPicName}
                       placeholder="Nama perwakilan vendor/klien"
-                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                      className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[180px] flex-1">
-                  <FormField label="No. Telepon / WhatsApp Support">
+                <View className="min-w-[220px] flex-1">
+                  <FormField label="No. Telepon / WhatsApp">
                     <TextInput
                       value={picPhone}
                       onChangeText={setPicPhone}
                       placeholder="0812..."
-                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                      className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[180px] flex-1">
+                <View className="min-w-[220px] flex-1">
                   <FormField label="Email Kontak / Support">
                     <TextInput
                       value={picEmail}
                       onChangeText={setPicEmail}
                       placeholder="legal@vendor.com"
                       autoCapitalize="none"
-                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                      className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                     />
                   </FormField>
                 </View>
@@ -688,23 +762,23 @@ function FormContent({
             </View>
 
             {/* 3. MASA BERLAKU, REMINDER & STATUS */}
-            <View className="gap-3 rounded-xl border border-border/80 bg-card p-3.5">
+            <View className="gap-3.5 rounded-xl border border-border/70 bg-muted/20 p-4">
               <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 3. Masa Berlaku, Tanggal Evaluasi Renewal & Status
               </Text>
 
               <View className="flex-row flex-wrap gap-3">
-                <View className="min-w-[170px] flex-1">
-                  <FormField label="Effective Date (Mulai Berlaku) *" required>
+                <View className="min-w-[220px] flex-1">
+                  <FormField label="Effective Date (Mulai Berlaku)" required>
                     <DatePicker value={effectiveDate} onChange={handleEffectiveChange} />
                   </FormField>
                 </View>
-                <View className="min-w-[170px] flex-1">
-                  <FormField label="Expiration Date (Tanggal Berakhir) *" required>
+                <View className="min-w-[220px] flex-1">
+                  <FormField label="Expiration Date (Berakhir)" required>
                     <DatePicker value={expirationDate} onChange={handleExpirationChange} />
                   </FormField>
                 </View>
-                <View className="min-w-[170px] flex-1">
+                <View className="min-w-[220px] flex-1">
                   <FormField label="Renewal Date (Mulai Evaluasi)">
                     <DatePicker
                       value={renewalDate}
@@ -716,8 +790,8 @@ function FormContent({
                 </View>
               </View>
 
-              <View className="flex-row flex-wrap items-center gap-3">
-                <View className="min-w-[180px] flex-1">
+              <View className="flex-row flex-wrap items-end gap-3">
+                <View className="min-w-[220px] flex-1">
                   <FormField label="Status Kontrak">
                     <SearchableSelect
                       value={
@@ -734,7 +808,7 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[180px] flex-1">
+                <View className="min-w-[220px] flex-1">
                   <FormField label="Status Approval">
                     <SearchableSelect
                       value={
@@ -752,41 +826,40 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[220px] flex-1 pt-4">
-                  <TouchableOpacity
-                    onPress={() => setIsAutoRenewal(!isAutoRenewal)}
-                    className={`flex-row items-center gap-2 rounded-lg border px-3 py-2.5 ${
-                      isAutoRenewal
-                        ? "border-primary/50 bg-primary/10"
-                        : "border-border bg-background"
-                    }`}
-                  >
-                    <View
-                      className={`h-5 w-5 items-center justify-center rounded border ${
-                        isAutoRenewal ? "border-primary bg-primary" : "border-border bg-card"
+                <View className="min-w-[240px] flex-1">
+                  <FormField label="Klausul Auto-Renewal">
+                    <TouchableOpacity
+                      onPress={() => setIsAutoRenewal(!isAutoRenewal)}
+                      className={`h-11 flex-row items-center gap-2.5 rounded-lg border px-3 ${
+                        isAutoRenewal
+                          ? "border-primary/50 bg-primary/10"
+                          : "border-border bg-card"
                       }`}
                     >
-                      {isAutoRenewal ? <Check size={12} color="#fff" /> : null}
-                    </View>
-                    <View className="flex-1">
-                      <Text className="text-xs font-semibold">Memiliki Klausul Auto-Renewal</Text>
-                      <Text className="text-[10px] text-muted-foreground">
-                        Tetap memerlukan persetujuan internal sebelum perpanjangan
+                      <View
+                        className={`h-5 w-5 items-center justify-center rounded border ${
+                          isAutoRenewal ? "border-primary bg-primary" : "border-border bg-background"
+                        }`}
+                      >
+                        {isAutoRenewal ? <Check size={12} color="#fff" /> : null}
+                      </View>
+                      <Text className="flex-1 text-xs font-semibold" numberOfLines={1}>
+                        Klausul Auto-Renewal (Wajib Approval)
                       </Text>
-                    </View>
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                  </FormField>
                 </View>
               </View>
             </View>
 
             {/* 4. NILAI KONTRAK, PAJAK & KOMITMEN FINANSIAL */}
-            <View className="gap-3 rounded-xl border border-border/80 bg-card p-3.5">
+            <View className="gap-3.5 rounded-xl border border-border/70 bg-muted/20 p-4">
               <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 4. Nilai Kontrak, Perlakuan Pajak & Komitmen Finansial
               </Text>
 
               <View className="flex-row flex-wrap gap-3">
-                <View className="min-w-[180px] flex-1">
+                <View className="min-w-[210px] flex-1">
                   <FormField label="Jenis Nilai Kontrak">
                     <SearchableSelect
                       value={VALUE_TYPE_OPTIONS.find((v) => v.value === valueType)?.label ?? valueType}
@@ -799,7 +872,7 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[110px] w-[120px]">
+                <View className="w-[130px]">
                   <FormField label="Mata Uang">
                     <SearchableSelect
                       value={currency}
@@ -809,8 +882,8 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[180px] flex-1">
-                  <FormField label="Nilai Dasar / DPP *" required>
+                <View className="min-w-[210px] flex-1">
+                  <FormField label="Nilai Dasar / DPP" required>
                     <TextInput
                       value={formatThousands(baseAmount)}
                       onChangeText={(txt) => setBaseAmount(txt.replace(/\D/g, ""))}
@@ -820,7 +893,7 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[160px] flex-1">
+                <View className="min-w-[190px] flex-1">
                   <FormField label="Perlakuan Pajak (PPN)">
                     <SearchableSelect
                       value={
@@ -838,7 +911,7 @@ function FormContent({
                 </View>
               </View>
 
-              <View className="flex-row flex-wrap items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-2.5">
+              <View className="flex-row flex-wrap items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
                 <Text className="text-xs text-muted-foreground">
                   DPP: {formatContractCurrency(numericBase, currency)} + Pajak ({numericTaxPct}%):{" "}
                   {formatContractCurrency(computedTaxAmount, currency)}
@@ -849,7 +922,7 @@ function FormContent({
               </View>
 
               <View className="flex-row flex-wrap gap-3">
-                <View className="min-w-[170px] flex-1">
+                <View className="min-w-[200px] flex-1">
                   <FormField label="Frekuensi Pembayaran">
                     <SearchableSelect
                       value={
@@ -861,104 +934,218 @@ function FormContent({
                         const found = PAYMENT_FREQUENCY_OPTIONS.find((f) => f.label === label);
                         if (found) setPaymentFrequency(found.value);
                       }}
-                      className="h-10 rounded-lg border-border/80 bg-card"
+                      className="h-11 rounded-lg border-border/80 bg-card"
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[170px] flex-1">
-                  <FormField label="Ketentuan Pembayaran (Payment Terms)">
+                <View className="min-w-[200px] flex-1">
+                  <FormField label="Ketentuan Pembayaran">
                     <TextInput
                       value={paymentTerms}
                       onChangeText={setPaymentTerms}
                       placeholder="Mis. Net 30 Hari / Termin 50%-50%"
-                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                      className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[150px] flex-1">
+                <View className="min-w-[180px] flex-1">
                   <FormField label="Down Payment (Uang Muka)">
                     <TextInput
                       value={formatThousands(downPaymentAmount)}
                       onChangeText={(txt) => setDownPaymentAmount(txt.replace(/\D/g, ""))}
                       keyboardType="numeric"
                       placeholder="0"
-                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                      className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[150px] flex-1">
+                <View className="min-w-[180px] flex-1">
                   <FormField label="Retensi (Retention)">
                     <TextInput
                       value={formatThousands(retentionAmount)}
                       onChangeText={(txt) => setRetentionAmount(txt.replace(/\D/g, ""))}
                       keyboardType="numeric"
                       placeholder="0"
-                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                      className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                     />
                   </FormField>
                 </View>
               </View>
 
               <View className="flex-row flex-wrap gap-3">
-                <View className="min-w-[180px] flex-1">
+                <View className="min-w-[200px] flex-1">
                   <FormField label="Cost Center (Pusat Biaya)">
                     <TextInput
                       value={costCenter}
                       onChangeText={setCostCenter}
                       placeholder="Departemen / Cost Center"
-                      className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                      className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                     />
                   </FormField>
                 </View>
-                <View className="min-w-[200px] flex-1">
+                <View className="min-w-[250px] flex-[1.3]">
                   <FormField label="Referensi Proyek (Project Reference)">
-                    <SearchableSelect
+                    <ProjectSelect
                       value={projectReference}
-                      options={lookups.projects.map((p) => `${p.number} - ${p.name}`)}
-                      onChange={setProjectReference}
-                      placeholder="Pilih proyek terkait (opsional)"
-                      clearable
-                      className="h-10 rounded-lg border-border/80 bg-card"
-                    />
-                  </FormField>
-                </View>
-                <View className="min-w-[200px] flex-1">
-                  <FormField label="Tautkan Modul ERP Lain (Opsional)">
-                    <SearchableSelect
-                      value={linkedRefCode}
-                      options={[
-                        ...lookups.subscriptions.map(
-                          (s) => `SUBSCRIPTION:${s.id}:${s.subscriptionCode} - ${s.serviceName}`,
-                        ),
-                        ...lookups.supplierPos.map(
-                          (po) => `PURCHASE_ORDER:${po.id}:${po.number} (${po.supplier?.name ?? "PO"})`,
-                        ),
-                        ...lookups.assets.map(
-                          (a) => `FIXED_ASSET:${a.id}:${a.assetCode} - ${a.name}`,
-                        ),
-                      ]}
-                      onChange={(val) => {
-                        if (!val) {
-                          setLinkedModule("");
-                          setLinkedEntityId(null);
-                          setLinkedRefCode("");
+                      projectId={projectId}
+                      onChange={(proj) => {
+                        if (!proj) {
+                          setProjectId(null);
+                          setProjectReference("");
                           return;
                         }
-                        const [mod, idStr, ...rest] = val.split(":");
-                        setLinkedModule(mod ?? "");
-                        setLinkedEntityId(Number(idStr) || null);
-                        setLinkedRefCode(rest.join(":"));
+                        setProjectId(Number(proj.id) || null);
+                        setProjectReference(String(proj.nama || proj.name || `Proyek #${proj.id}`));
                       }}
-                      placeholder="Pilih Subscription / PO / Aset..."
-                      clearable
-                      className="h-10 rounded-lg border-border/80 bg-card"
                     />
                   </FormField>
                 </View>
               </View>
 
+              {/* Tautkan Modul ERP Lain dengan Komponen Select Bawaan */}
+              <View className="flex-row flex-wrap gap-3">
+                <View className="min-w-[220px] flex-1">
+                  <FormField label="Tautkan ke Modul ERP Lain (Opsional)">
+                    <SearchableSelect
+                      value={
+                        ERP_LINK_MODULE_OPTIONS.find((m) => m.value === linkedModule)?.label ??
+                        "Tidak Ada Tautan"
+                      }
+                      options={ERP_LINK_MODULE_OPTIONS.map((m) => m.label)}
+                      onChange={(label) => {
+                        const found = ERP_LINK_MODULE_OPTIONS.find((m) => m.label === label);
+                        setLinkedModule(found?.value ?? "");
+                        setLinkedEntityId(null);
+                        setLinkedRefCode("");
+                      }}
+                      className="h-11 rounded-lg border-border/80 bg-card"
+                    />
+                  </FormField>
+                </View>
+
+                {linkedModule === "PURCHASE_ORDER" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih PO Supplier">
+                      <SupplierPoSelect
+                        value={linkedRefCode}
+                        poId={linkedEntityId}
+                        onChange={(po) => {
+                          if (!po) {
+                            setLinkedEntityId(null);
+                            setLinkedRefCode("");
+                            return;
+                          }
+                          setLinkedEntityId(Number(po.id) || null);
+                          setLinkedRefCode(String(po.nomor || po.number || `PO #${po.id}`));
+                        }}
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
+
+                {linkedModule === "SALES_ORDER" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Sales Order (SO Pelanggan)">
+                      <PoClientSelect
+                        value={linkedRefCode}
+                        poId={linkedEntityId}
+                        onChange={(so) => {
+                          if (!so) {
+                            setLinkedEntityId(null);
+                            setLinkedRefCode("");
+                            return;
+                          }
+                          setLinkedEntityId(Number(so.id) || null);
+                          setLinkedRefCode(String(so.soNumber || so.poClientNumber || so.nomor || `SO #${so.id}`));
+                        }}
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
+
+                {linkedModule === "PURCHASE_REQUEST" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Request Barang (PR)">
+                      <PurchaseRequestSelect
+                        value={linkedRefCode}
+                        requestId={linkedEntityId}
+                        onChange={(pr) => {
+                          if (!pr) {
+                            setLinkedEntityId(null);
+                            setLinkedRefCode("");
+                            return;
+                          }
+                          setLinkedEntityId(Number(pr.id) || null);
+                          setLinkedRefCode(String(pr.nomor || pr.number || `PR #${pr.id}`));
+                        }}
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
+
+                {linkedModule === "QUOTATION" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Penawaran (Quotation)">
+                      <QuotationSelect
+                        value={linkedRefCode}
+                        quotationId={linkedEntityId}
+                        onChange={(q) => {
+                          if (!q) {
+                            setLinkedEntityId(null);
+                            setLinkedRefCode("");
+                            return;
+                          }
+                          setLinkedEntityId(Number(q.id) || null);
+                          setLinkedRefCode(String(q.nomor || q.number || `PNW #${q.id}`));
+                        }}
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
+
+                {linkedModule === "INVOICE" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Invoice">
+                      <InvoiceSelect
+                        value={linkedRefCode}
+                        invoiceId={linkedEntityId}
+                        onChange={(inv: any) => {
+                          if (!inv) {
+                            setLinkedEntityId(null);
+                            setLinkedRefCode("");
+                            return;
+                          }
+                          setLinkedEntityId(Number(inv.id) || null);
+                          setLinkedRefCode(String(inv.nomor || inv.number || `INV #${inv.id}`));
+                        }}
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
+
+                {linkedModule === "WORK_ORDER" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Laporan Maintenance">
+                      <MaintenanceSelect
+                        value={linkedRefCode}
+                        maintenanceId={linkedEntityId}
+                        onChange={(m) => {
+                          if (!m) {
+                            setLinkedEntityId(null);
+                            setLinkedRefCode("");
+                            return;
+                          }
+                          setLinkedEntityId(Number(m.id) || null);
+                          setLinkedRefCode(String(m.nomor || m.number || `MNT #${m.id}`));
+                        }}
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
+              </View>
+
               {/* Jadwal Pembayaran */}
-              <View className="mt-1 gap-2 border-t border-border/60 pt-3">
+              <View className="mt-1 gap-2.5 border-t border-border/60 pt-3">
                 <View className="flex-row items-center justify-between">
                   <Text className="text-xs font-semibold text-muted-foreground">
                     Jadwal Pembayaran / Milestone Komitmen ({schedules.length})
@@ -971,15 +1158,15 @@ function FormContent({
                 {schedules.map((row, idx) => (
                   <View
                     key={idx}
-                    className="flex-row flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/20 p-2"
+                    className="flex-row flex-wrap items-center gap-2.5 rounded-lg border border-border/70 bg-card p-2.5"
                   >
                     <TextInput
                       value={row.milestoneName}
                       onChangeText={(v) => updateScheduleRow(idx, { milestoneName: v })}
                       placeholder="Nama Termin / Milestone"
-                      className="min-w-[160px] flex-1 h-9 rounded border border-border bg-background px-2.5 text-xs text-foreground"
+                      className="min-w-[200px] flex-1 h-10 rounded-lg border border-border bg-background px-3 text-xs text-foreground"
                     />
-                    <View className="w-[150px]">
+                    <View className="w-[180px]">
                       <DatePicker
                         value={row.dueDate}
                         onChange={(v) => updateScheduleRow(idx, { dueDate: v })}
@@ -992,13 +1179,13 @@ function FormContent({
                       }
                       keyboardType="numeric"
                       placeholder="Nominal"
-                      className="w-[130px] h-9 rounded border border-border bg-background px-2.5 text-xs text-foreground"
+                      className="w-[160px] h-10 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-foreground"
                     />
                     <TouchableOpacity
                       onPress={() => removeScheduleRow(idx)}
-                      className="rounded border border-border p-2"
+                      className="h-10 w-10 items-center justify-center rounded-lg border border-border"
                     >
-                      <Trash2 size={13} color={colors.danger} />
+                      <Trash2 size={14} color={colors.danger} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -1006,7 +1193,7 @@ function FormContent({
             </View>
 
             {/* 5. LINGKUP LAYANAN & SLA (PRD 3.2) */}
-            <View className="gap-3 rounded-xl border border-border/80 bg-card p-3.5">
+            <View className="gap-3.5 rounded-xl border border-border/70 bg-muted/20 p-4">
               <View className="flex-row flex-wrap items-center justify-between gap-2">
                 <View>
                   <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -1031,39 +1218,39 @@ function FormContent({
               {services.map((svc, idx) => (
                 <View
                   key={idx}
-                  className="gap-2 rounded-lg border border-border/70 bg-muted/20 p-2.5"
+                  className="gap-2.5 rounded-lg border border-border/70 bg-card p-3"
                 >
-                  <View className="flex-row flex-wrap items-center gap-2">
+                  <View className="flex-row flex-wrap items-center gap-2.5">
                     <TextInput
                       value={svc.serviceName}
                       onChangeText={(v) => updateServiceRow(idx, { serviceName: v })}
                       placeholder="Nama Layanan (Mis: Preventive Maintenance CCTV)"
-                      className="min-w-[200px] flex-1 h-9 rounded border border-border bg-background px-2.5 text-xs font-semibold text-foreground"
+                      className="min-w-[220px] flex-1 h-10 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-foreground"
                     />
                     <TextInput
                       value={svc.serviceLocation ?? ""}
                       onChangeText={(v) => updateServiceRow(idx, { serviceLocation: v })}
                       placeholder="Lokasi Layanan"
-                      className="min-w-[140px] flex-1 h-9 rounded border border-border bg-background px-2.5 text-xs text-foreground"
+                      className="min-w-[160px] flex-1 h-10 rounded-lg border border-border bg-background px-3 text-xs text-foreground"
                     />
                     <TextInput
                       value={svc.supportContact ?? ""}
                       onChangeText={(v) => updateServiceRow(idx, { supportContact: v })}
                       placeholder="Kontak Support"
-                      className="min-w-[140px] flex-1 h-9 rounded border border-border bg-background px-2.5 text-xs text-foreground"
+                      className="min-w-[160px] flex-1 h-10 rounded-lg border border-border bg-background px-3 text-xs text-foreground"
                     />
                     <TouchableOpacity
                       onPress={() => removeServiceRow(idx)}
-                      className="rounded border border-border p-2"
+                      className="h-10 w-10 items-center justify-center rounded-lg border border-border"
                     >
-                      <Trash2 size={13} color={colors.danger} />
+                      <Trash2 size={14} color={colors.danger} />
                     </TouchableOpacity>
                   </View>
                   <TextInput
                     value={svc.serviceScope ?? ""}
                     onChangeText={(v) => updateServiceRow(idx, { serviceScope: v })}
                     placeholder="Lingkup pekerjaan, jadwal kunjungan, atau ketentuan garansi perangkat..."
-                    className="h-9 rounded border border-border bg-background px-2.5 text-xs text-foreground"
+                    className="h-10 rounded-lg border border-border bg-background px-3 text-xs text-foreground"
                   />
                 </View>
               ))}
@@ -1071,37 +1258,37 @@ function FormContent({
               {slas.map((sla, idx) => (
                 <View
                   key={idx}
-                  className="flex-row flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/20 p-2.5"
+                  className="flex-row flex-wrap items-center gap-2.5 rounded-lg border border-border/70 bg-card p-3"
                 >
                   <TextInput
                     value={sla.indicatorName}
                     onChangeText={(v) => updateSlaRow(idx, { indicatorName: v })}
                     placeholder="Indikator SLA (Mis: Response Time)"
-                    className="min-w-[170px] flex-1 h-9 rounded border border-border bg-background px-2.5 text-xs font-semibold text-foreground"
+                    className="min-w-[180px] flex-1 h-10 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-foreground"
                   />
                   <TextInput
                     value={sla.targetMetric}
                     onChangeText={(v) => updateSlaRow(idx, { targetMetric: v })}
                     placeholder="Target (Mis: < 2 Jam / 99.9%)"
-                    className="min-w-[130px] flex-1 h-9 rounded border border-border bg-background px-2.5 text-xs text-foreground"
+                    className="min-w-[140px] flex-1 h-10 rounded-lg border border-border bg-background px-3 text-xs text-foreground"
                   />
                   <TextInput
                     value={sla.operationalHours ?? ""}
                     onChangeText={(v) => updateSlaRow(idx, { operationalHours: v })}
-                    placeholder="Jam Layanan (24/7 atau 8x5)"
-                    className="w-[110px] h-9 rounded border border-border bg-background px-2.5 text-xs text-foreground"
+                    placeholder="Jam Layanan (24/7)"
+                    className="w-[130px] h-10 rounded-lg border border-border bg-background px-3 text-xs text-foreground"
                   />
                   <TextInput
                     value={sla.penaltyDetails ?? ""}
                     onChangeText={(v) => updateSlaRow(idx, { penaltyDetails: v })}
                     placeholder="Klausul Penalti jika SLA meleset"
-                    className="min-w-[160px] flex-1 h-9 rounded border border-border bg-background px-2.5 text-xs text-foreground"
+                    className="min-w-[180px] flex-1 h-10 rounded-lg border border-border bg-background px-3 text-xs text-foreground"
                   />
                   <TouchableOpacity
                     onPress={() => removeSlaRow(idx)}
-                    className="rounded border border-border p-2"
+                    className="h-10 w-10 items-center justify-center rounded-lg border border-border"
                   >
-                    <Trash2 size={13} color={colors.danger} />
+                    <Trash2 size={14} color={colors.danger} />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -1113,20 +1300,20 @@ function FormContent({
                   multiline
                   numberOfLines={3}
                   placeholder="Ringkasan lingkup perjanjian, hak & kewajiban utama, atau catatan klausul..."
-                  className="min-h-[72px] rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  className="min-h-[76px] rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground"
                 />
               </FormField>
             </View>
 
             {/* 6. UPLOAD DOKUMEN AWAL (SAAT PEMBUATAN KONTRAK BARU) */}
             {!isEdit ? (
-              <View className="gap-3 rounded-xl border border-border/80 bg-card p-3.5">
+              <View className="gap-3.5 rounded-xl border border-border/70 bg-muted/20 p-4">
                 <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   6. Dokumen Kontrak Utama (Versi 1)
                 </Text>
 
                 <View className="flex-row flex-wrap gap-3">
-                  <View className="min-w-[200px] flex-1">
+                  <View className="min-w-[220px] flex-1">
                     <FormField label="Kategori Dokumen">
                       <SearchableSelect
                         value={
@@ -1139,21 +1326,21 @@ function FormContent({
                           const found = DOCUMENT_CATEGORY_OPTIONS.find((d) => d.label === label);
                           if (found) setInitialDocumentCategory(found.value);
                         }}
-                        className="h-10 rounded-lg border-border/80 bg-card"
+                        className="h-11 rounded-lg border-border/80 bg-card"
                       />
                     </FormField>
                   </View>
-                  <View className="min-w-[220px] flex-[1.5]">
+                  <View className="min-w-[240px] flex-[1.4]">
                     <FormField label="Judul Dokumen (Opsional)">
                       <TextInput
                         value={initialDocumentTitle}
                         onChangeText={setInitialDocumentTitle}
                         placeholder="Otomatis mengikuti judul kontrak jika dikosongkan"
-                        className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                        className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                       />
                     </FormField>
                   </View>
-                  <View className="min-w-[160px] flex-1">
+                  <View className="min-w-[200px] flex-1">
                     <FormField label="Tanggal Penandatanganan">
                       <DatePicker
                         value={initialDocumentSignedDate}
@@ -1163,47 +1350,51 @@ function FormContent({
                   </View>
                 </View>
 
-                <View className="flex-row flex-wrap items-center gap-3">
-                  <View className="min-w-[180px] flex-1">
+                <View className="flex-row flex-wrap items-end gap-3">
+                  <View className="min-w-[220px] flex-1">
                     <FormField label="Penandatangan Pihak Pertama">
                       <TextInput
                         value={initialDocumentSignedByFirst}
                         onChangeText={setInitialDocumentSignedByFirst}
                         placeholder="Nama Direksi / Kuasa Perusahaan"
-                        className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                        className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                       />
                     </FormField>
                   </View>
-                  <View className="min-w-[180px] flex-1">
+                  <View className="min-w-[220px] flex-1">
                     <FormField label="Penandatangan Pihak Kedua">
                       <TextInput
                         value={initialDocumentSignedBySecond}
                         onChangeText={setInitialDocumentSignedBySecond}
                         placeholder="Nama Direksi / Perwakilan Vendor/Klien"
-                        className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                        className="h-11 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
                       />
                     </FormField>
                   </View>
-                  <View className="min-w-[200px] flex-1 pt-4">
-                    <TouchableOpacity
-                      onPress={() => setInitialDocumentConfidential(!initialDocumentConfidential)}
-                      className={`flex-row items-center gap-2 rounded-lg border px-3 py-2 ${
-                        initialDocumentConfidential
-                          ? "border-warning/50 bg-warning/10"
-                          : "border-border bg-background"
-                      }`}
-                    >
-                      <View
-                        className={`h-5 w-5 items-center justify-center rounded border ${
+                  <View className="min-w-[220px] flex-1">
+                    <FormField label="Kerahasiaan Dokumen">
+                      <TouchableOpacity
+                        onPress={() => setInitialDocumentConfidential(!initialDocumentConfidential)}
+                        className={`h-11 flex-row items-center gap-2.5 rounded-lg border px-3 ${
                           initialDocumentConfidential
-                            ? "border-warning bg-warning"
+                            ? "border-warning/50 bg-warning/10"
                             : "border-border bg-card"
                         }`}
                       >
-                        {initialDocumentConfidential ? <Check size={12} color="#fff" /> : null}
-                      </View>
-                      <Text className="text-xs font-semibold">Dokumen Bersifat Confidential</Text>
-                    </TouchableOpacity>
+                        <View
+                          className={`h-5 w-5 items-center justify-center rounded border ${
+                            initialDocumentConfidential
+                              ? "border-warning bg-warning"
+                              : "border-border bg-background"
+                          }`}
+                        >
+                          {initialDocumentConfidential ? <Check size={12} color="#fff" /> : null}
+                        </View>
+                        <Text className="flex-1 text-xs font-semibold" numberOfLines={1}>
+                          Dokumen Bersifat Confidential
+                        </Text>
+                      </TouchableOpacity>
+                    </FormField>
                   </View>
                 </View>
 
@@ -1226,7 +1417,7 @@ function FormContent({
           </View>
         </ScrollView>
 
-        <DialogFooter className="border-t border-border/70 px-5 py-3 flex-row justify-end gap-2">
+        <DialogFooter className="border-t border-border/70 px-6 py-3 flex-row justify-end gap-2">
           <Button variant="outline" onPress={onClose} disabled={saving}>
             <Text className="text-xs">Batal</Text>
           </Button>
@@ -1236,6 +1427,30 @@ function FormContent({
             </Text>
           </Button>
         </DialogFooter>
+
+        <QuickAddSupplierDialog
+          open={quickSupplierOpen}
+          onOpenChange={setQuickSupplierOpen}
+          onSuccess={(newSupp) => {
+            setCounterpartyName(String(newSupp.name || newSupp.nama || ""));
+            if (newSupp.id) setCounterpartyId(Number(newSupp.id));
+            if (newSupp.pic || newSupp.kontak) setPicName(String(newSupp.pic || newSupp.kontak));
+            if (newSupp.phone || newSupp.telepon) setPicPhone(String(newSupp.phone || newSupp.telepon));
+            if (newSupp.email) setPicEmail(String(newSupp.email));
+          }}
+        />
+
+        <QuickAddCustomerDialog
+          open={quickCustomerOpen}
+          onOpenChange={setQuickCustomerOpen}
+          onSuccess={(newCust) => {
+            setCounterpartyName(String(newCust.company || newCust.name || newCust.nama || ""));
+            if (newCust.id) setCounterpartyId(Number(newCust.id));
+            if (newCust.pic || newCust.kontak) setPicName(String(newCust.pic || newCust.kontak));
+            if (newCust.phone || newCust.telepon) setPicPhone(String(newCust.phone || newCust.telepon));
+            if (newCust.email) setPicEmail(String(newCust.email));
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

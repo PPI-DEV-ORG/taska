@@ -9,6 +9,7 @@ export interface CoaAccount {
   name: string;
   category:
     | "Aset Lancar"
+    | "Aset Tidak Lancar"
     | "Kewajiban Jangka Pendek"
     | "Ekuitas"
     | "Pendapatan"

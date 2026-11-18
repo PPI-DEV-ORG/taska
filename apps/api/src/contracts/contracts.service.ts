@@ -179,58 +179,151 @@ export class ContractsService implements OnModuleInit {
 
   async getMasterLookups() {
     await this.seedDefaults();
-    const [types, suppliers, customers, projects, subscriptions, assets, supplierPos, users, rules] =
-      await Promise.all([
-        this.db().ctrType.findMany({
-          where: { isActive: true },
-          orderBy: { id: "asc" },
-        }),
-        this.db().supplier.findMany({
-          select: { id: true, code: true, name: true, contactName: true, phone: true, email: true, address: true },
-          orderBy: { name: "asc" },
-          take: 250,
-        }),
-        this.db().customer.findMany({
-          select: { id: true, code: true, name: true, company: true, contactName: true, phone: true, email: true, address: true },
-          orderBy: { name: "asc" },
-          take: 250,
-        }),
-        this.db().project.findMany({
-          select: { id: true, number: true, name: true, status: true },
-          orderBy: { id: "desc" },
-          take: 150,
-        }),
-        this.db().subSubscription.findMany({
-          select: { id: true, subscriptionCode: true, serviceName: true, providerName: true, status: true },
-          orderBy: { id: "desc" },
-          take: 150,
-        }),
-        this.db().faAsset.findMany({
-          select: { id: true, assetCode: true, name: true, status: true },
-          orderBy: { id: "desc" },
-          take: 150,
-        }),
-        this.db().supplierPO.findMany({
-          select: { id: true, number: true, status: true, supplier: { select: { name: true } } },
-          orderBy: { id: "desc" },
-          take: 150,
-        }),
-        this.db().user.findMany({
-          where: { status: "AKTIF" },
-          select: { id: true, name: true, email: true, role: true, department: true, position: true },
-          orderBy: { name: "asc" },
-        }),
-        this.db().ctrExpirationRule.findMany({
-          where: { isActive: true },
-          orderBy: { daysOffset: "desc" },
-        }),
-      ]);
-
-    return {
+    const [
       types,
       suppliers,
       customers,
+      providers,
       projects,
+      subscriptions,
+      assets,
+      supplierPos,
+      users,
+      rules,
+    ] = await Promise.all([
+      this.db().ctrType.findMany({
+        where: { isActive: true },
+        include: { _count: { select: { contracts: true } } },
+        orderBy: { id: "asc" },
+      }),
+      this.db().supplier.findMany({
+        select: {
+          id: true,
+          name: true,
+          pic: true,
+          phone: true,
+          email: true,
+          city: true,
+          paymentTerms: true,
+          status: true,
+        },
+        orderBy: { name: "asc" },
+        take: 250,
+      }),
+      this.db().customer.findMany({
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          pic: true,
+          phone: true,
+          email: true,
+          address: true,
+          city: true,
+          status: true,
+        },
+        orderBy: { name: "asc" },
+        take: 250,
+      }),
+      this.db().subProvider.findMany({
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          website: true,
+          supportEmail: true,
+          supportPhone: true,
+          accountRepresentative: true,
+        },
+        orderBy: { name: "asc" },
+        take: 250,
+      }),
+      this.db().project.findMany({
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          status: true,
+          customer: { select: { name: true } },
+          pic: { select: { name: true } },
+        },
+        orderBy: { id: "desc" },
+        take: 150,
+      }),
+      this.db().subSubscription.findMany({
+        select: {
+          id: true,
+          subscriptionCode: true,
+          serviceName: true,
+          providerName: true,
+          status: true,
+          cost: true,
+        },
+        orderBy: { id: "desc" },
+        take: 150,
+      }),
+      this.db().faAsset.findMany({
+        select: {
+          id: true,
+          assetCode: true,
+          name: true,
+          brand: true,
+          status: true,
+          acquisitionCost: true,
+        },
+        orderBy: { id: "desc" },
+        take: 150,
+      }),
+      this.db().supplierPO.findMany({
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          total: true,
+          supplier: { select: { name: true } },
+        },
+        orderBy: { id: "desc" },
+        take: 150,
+      }),
+      this.db().user.findMany({
+        where: { status: "AKTIF" },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          department: true,
+          position: true,
+          phone: true,
+        },
+        orderBy: { name: "asc" },
+      }),
+      this.db().ctrExpirationRule.findMany({
+        where: { isActive: true },
+        orderBy: { daysOffset: "desc" },
+      }),
+    ]);
+
+    return {
+      types,
+      suppliers: suppliers.map((s: any) => ({
+        ...s,
+        code: `SUP-${String(s.id).padStart(3, "0")}`,
+        contactName: s.pic ?? "",
+        address: s.city ?? "",
+      })),
+      customers: customers.map((c: any) => ({
+        ...c,
+        code: `CUST-${String(c.id).padStart(3, "0")}`,
+        contactName: c.pic ?? "",
+      })),
+      providers,
+      projects: projects.map((p: any) => ({
+        ...p,
+        number: `PRJ-${String(p.id).padStart(4, "0")}`,
+        customerName: p.customer?.name ?? "-",
+        picName: p.pic?.name ?? "-",
+      })),
       subscriptions,
       assets,
       supplierPos,

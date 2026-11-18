@@ -3,6 +3,7 @@ import { View, TouchableOpacity, ScrollView, ActivityIndicator, Pressable } from
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/taska/basics";
 import { SearchableSelect } from "@/components/taska/dialogs";
 import { colors } from "@/tokens";
@@ -667,79 +668,97 @@ export function FixedAssetsScreen({
 
                       {/* Aksi Per Baris */}
                       <View className="w-44 flex-row items-center justify-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="p-1.5 h-8 w-8 rounded-lg"
-                          onPress={() => {
-                            setSelectedAssetId(asset.id);
-                            setShowDetail(true);
-                          }}
-                        >
-                          <Eye size={14} className="text-muted-foreground" />
-                        </Button>
+                        <Tooltip delayDuration={150}>
+                          <TooltipTrigger
+                            className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                            onPress={() => {
+                              setSelectedAssetId(asset.id);
+                              setShowDetail(true);
+                            }}
+                          >
+                            <Eye size={14} className="text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            <Text>Lihat Detail Aset</Text>
+                          </TooltipContent>
+                        </Tooltip>
 
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="p-1.5 h-8 w-8 rounded-lg"
-                          onPress={() => {
-                            setSelectedAssetForEdit(asset);
-                            setShowForm(true);
-                          }}
-                        >
-                          <Edit size={14} className="text-foreground" />
-                        </Button>
+                        <Tooltip delayDuration={150}>
+                          <TooltipTrigger
+                            className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                            onPress={() => {
+                              setSelectedAssetForEdit(asset);
+                              setShowForm(true);
+                            }}
+                          >
+                            <Edit size={14} className="text-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            <Text>Edit Data Aset</Text>
+                          </TooltipContent>
+                        </Tooltip>
 
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="p-1.5 h-8 w-8 rounded-lg"
-                          onPress={() => {
-                            setSelectedAssetForQr(asset);
-                            setShowQr(true);
-                          }}
-                        >
-                          <QrCode size={14} className="text-primary" />
-                        </Button>
+                        <Tooltip delayDuration={150}>
+                          <TooltipTrigger
+                            className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                            onPress={() => {
+                              setSelectedAssetForQr(asset);
+                              setShowQr(true);
+                            }}
+                          >
+                            <QrCode size={14} className="text-primary" />
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            <Text>Lihat & Cetak QR Code</Text>
+                          </TooltipContent>
+                        </Tooltip>
 
                         {asset.status !== "DISPOSED" && asset.status !== "WRITTEN_OFF" ? (
                           <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="p-1.5 h-8 w-8 rounded-lg"
-                              onPress={() => {
-                                setSelectedAssetForAssign(asset);
-                                setShowAssign(true);
-                              }}
-                            >
-                              <UserCheck size={14} className="text-foreground" />
-                            </Button>
+                            <Tooltip delayDuration={150}>
+                              <TooltipTrigger
+                                className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                                onPress={() => {
+                                  setSelectedAssetForAssign(asset);
+                                  setShowAssign(true);
+                                }}
+                              >
+                                <UserCheck size={14} className="text-foreground" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <Text>Serah Terima / Assign PIC</Text>
+                              </TooltipContent>
+                            </Tooltip>
 
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="p-1.5 h-8 w-8 rounded-lg"
-                              onPress={() => {
-                                setSelectedAssetForTransfer(asset);
-                                setShowTransfer(true);
-                              }}
-                            >
-                              <ArrowRightLeft size={14} className="text-foreground" />
-                            </Button>
+                            <Tooltip delayDuration={150}>
+                              <TooltipTrigger
+                                className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                                onPress={() => {
+                                  setSelectedAssetForTransfer(asset);
+                                  setShowTransfer(true);
+                                }}
+                              >
+                                <ArrowRightLeft size={14} className="text-foreground" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <Text>Mutasi / Pindah Lokasi Aset</Text>
+                              </TooltipContent>
+                            </Tooltip>
 
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="p-1.5 h-8 w-8 rounded-lg"
-                              onPress={() => {
-                                setSelectedAssetForDisposal(asset);
-                                setShowDisposal(true);
-                              }}
-                            >
-                              <Trash2 size={14} className="text-destructive" />
-                            </Button>
+                            <Tooltip delayDuration={150}>
+                              <TooltipTrigger
+                                className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                                onPress={() => {
+                                  setSelectedAssetForDisposal(asset);
+                                  setShowDisposal(true);
+                                }}
+                              >
+                                <Trash2 size={14} className="text-destructive" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <Text>Disposal / Hapus Buku Aset</Text>
+                              </TooltipContent>
+                            </Tooltip>
                           </>
                         ) : null}
                       </View>

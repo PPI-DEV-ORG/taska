@@ -121,11 +121,15 @@ export function DatePicker({
   const initial = parseIsoDate(value);
   const [viewYear, setViewYear] = React.useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = React.useState(initial.getMonth());
+  const [showJump, setShowJump] = React.useState(false);
+  const [yearBase, setYearBase] = React.useState(() => Math.floor(initial.getFullYear() / 12) * 12);
 
   function openPicker() {
     const cur = parseIsoDate(value);
     setViewYear(cur.getFullYear());
     setViewMonth(cur.getMonth());
+    setYearBase(Math.floor(cur.getFullYear() / 12) * 12);
+    setShowJump(false);
     setOpen(true);
   }
 
@@ -241,9 +245,18 @@ export function DatePicker({
               >
                 <ChevronLeft size={18} color={colors.text} />
               </Pressable>
-              <Text className="text-sm font-bold text-foreground">
-                {MONTHS_ID[viewMonth]} {viewYear}
-              </Text>
+              <Pressable
+                onPress={() => {
+                  setYearBase(Math.floor(viewYear / 12) * 12);
+                  setShowJump((v) => !v);
+                }}
+                className="flex-row items-center gap-1.5 rounded-lg border border-border/70 bg-card px-3 py-1.5 hover:border-primary/50"
+              >
+                <Text className="text-sm font-bold text-foreground">
+                  {MONTHS_ID[viewMonth]} {viewYear}
+                </Text>
+                <ChevronDown size={14} color={colors.primary} />
+              </Pressable>
               <Pressable
                 onPress={nextMonth}
                 hitSlop={8}
@@ -253,56 +266,147 @@ export function DatePicker({
               </Pressable>
             </View>
 
-            {/* Day Headers */}
-            <View className="flex-row">
-              {DAYS_ID.map((d) => (
-                <View key={d} className="flex-1 items-center py-1">
-                  <Text className="text-[11px] font-semibold text-muted-foreground">{d}</Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Calendar Grid */}
-            <View className="gap-1">
-              {Array.from({ length: cells.length / 7 }, (_, weekIdx) => (
-                <View key={weekIdx} className="flex-row">
-                  {cells.slice(weekIdx * 7, weekIdx * 7 + 7).map((dayNum, di) => {
-                    if (!dayNum) {
-                      return <View key={`empty-${di}`} className="flex-1 h-10" />;
-                    }
-                    const iso = toIsoDate(new Date(viewYear, viewMonth, dayNum));
-                    const isSelected = iso === selectedIso;
-                    const isToday = iso === todayIso;
-                    return (
+            {showJump ? (
+              <View className="gap-3 rounded-xl border border-border bg-panel/40 p-3">
+                {/* Pilih Tahun */}
+                <View className="gap-1.5">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Pilih Tahun ({yearBase} – {yearBase + 11})
+                    </Text>
+                    <View className="flex-row items-center gap-1">
                       <Pressable
-                        key={iso}
-                        onPress={() => {
-                          onChange(iso);
-                          setOpen(false);
-                        }}
-                        className={cn(
-                          "flex-1 h-10 items-center justify-center rounded-lg m-0.5",
-                          isSelected
-                            ? "bg-primary"
-                            : isToday
-                              ? "border border-primary/60 bg-primary/10"
-                              : "hover:bg-panel active:bg-panel"
-                        )}
+                        onPress={() => setYearBase((b) => b - 12)}
+                        className="rounded-md border border-border bg-card px-2 py-1"
                       >
-                        <Text
+                        <ChevronLeft size={14} color={colors.text} />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setYearBase((b) => b + 12)}
+                        className="rounded-md border border-border bg-card px-2 py-1"
+                      >
+                        <ChevronRight size={14} color={colors.text} />
+                      </Pressable>
+                    </View>
+                  </View>
+                  <View className="flex-row flex-wrap gap-1.5">
+                    {Array.from({ length: 12 }, (_, i) => yearBase + i).map((yr) => {
+                      const activeYr = yr === viewYear;
+                      return (
+                        <Pressable
+                          key={yr}
+                          onPress={() => setViewYear(yr)}
                           className={cn(
-                            "text-xs font-medium",
-                            isSelected ? "text-background font-bold" : isToday ? "text-primary font-bold" : "text-foreground"
+                            "w-[23%] items-center justify-center rounded-lg border py-2",
+                            activeYr
+                              ? "border-primary bg-primary"
+                              : "border-border bg-card hover:bg-panel",
                           )}
                         >
-                          {dayNum}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                          <Text
+                            className={cn(
+                              "text-xs font-semibold",
+                              activeYr ? "text-background font-bold" : "text-foreground",
+                            )}
+                          >
+                            {yr}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
-              ))}
-            </View>
+
+                {/* Pilih Bulan */}
+                <View className="gap-1.5">
+                  <Text className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Pilih Bulan
+                  </Text>
+                  <View className="flex-row flex-wrap gap-1.5">
+                    {MONTHS_ID.map((mName, mIdx) => {
+                      const activeMo = mIdx === viewMonth;
+                      return (
+                        <Pressable
+                          key={mName}
+                          onPress={() => {
+                            setViewMonth(mIdx);
+                            setShowJump(false);
+                          }}
+                          className={cn(
+                            "w-[31.5%] items-center justify-center rounded-lg border py-2",
+                            activeMo
+                              ? "border-primary bg-primary"
+                              : "border-border bg-card hover:bg-panel",
+                          )}
+                        >
+                          <Text
+                            className={cn(
+                              "text-xs font-semibold",
+                              activeMo ? "text-background font-bold" : "text-foreground",
+                            )}
+                          >
+                            {mName.slice(0, 3)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <>
+                {/* Day Headers */}
+                <View className="flex-row">
+                  {DAYS_ID.map((d) => (
+                    <View key={d} className="flex-1 items-center py-1">
+                      <Text className="text-[11px] font-semibold text-muted-foreground">{d}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Calendar Grid */}
+                <View className="gap-1">
+                  {Array.from({ length: cells.length / 7 }, (_, weekIdx) => (
+                    <View key={weekIdx} className="flex-row">
+                      {cells.slice(weekIdx * 7, weekIdx * 7 + 7).map((dayNum, di) => {
+                        if (!dayNum) {
+                          return <View key={`empty-${di}`} className="flex-1 h-10" />;
+                        }
+                        const iso = toIsoDate(new Date(viewYear, viewMonth, dayNum));
+                        const isSelected = iso === selectedIso;
+                        const isToday = iso === todayIso;
+                        return (
+                          <Pressable
+                            key={iso}
+                            onPress={() => {
+                              onChange(iso);
+                              setOpen(false);
+                            }}
+                            className={cn(
+                              "flex-1 h-10 items-center justify-center rounded-lg m-0.5",
+                              isSelected
+                                ? "bg-primary"
+                                : isToday
+                                  ? "border border-primary/60 bg-primary/10"
+                                  : "hover:bg-panel active:bg-panel"
+                            )}
+                          >
+                            <Text
+                              className={cn(
+                                "text-xs font-medium",
+                                isSelected ? "text-background font-bold" : isToday ? "text-primary font-bold" : "text-foreground"
+                              )}
+                            >
+                              {dayNum}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
 
           <DialogFooter>

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ScrollView, TextInput, TouchableOpacity, View } from "react-native";
+import { Platform, ScrollView, TextInput, TouchableOpacity, View } from "react-native";
 import { Pencil, Plus, Trash2 } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -83,7 +83,7 @@ export function ContractTypeDialog({ visible, onClose, types, onRefresh }: Props
     }
     setBusy(true);
     try {
-      await api.del(`/contracts/types/${item.id}`);
+      await api.delete(`/contracts/types/${item.id}`);
       toast("Kategori kontrak dihapus");
       onRefresh();
     } catch (e: any) {
@@ -95,7 +95,12 @@ export function ContractTypeDialog({ visible, onClose, types, onRefresh }: Props
 
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] w-[96vw] max-w-[780px] p-0">
+      <DialogContent
+        className="max-h-[90vh] w-[96vw] max-w-5xl p-0"
+        style={Platform.select({
+          web: { width: "min(96vw, 980px)", maxWidth: "980px" } as any,
+        })}
+      >
         <DialogHeader className="border-b border-border/70 px-5 py-4">
           <DialogTitle>Master Kategori Kontrak (Contract Types)</DialogTitle>
           <Text className="text-xs text-muted-foreground">

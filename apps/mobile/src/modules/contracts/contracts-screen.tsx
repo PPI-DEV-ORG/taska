@@ -22,6 +22,7 @@ import {
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader, Panel } from "@/components/taska/basics";
 import { SearchableSelect } from "@/components/taska/dialogs";
 import { colors } from "@/tokens";
@@ -675,53 +676,90 @@ export function ContractsScreen({
                             </View>
 
                             <View className="w-[185px] flex-row items-center justify-end gap-1">
-                              <TouchableOpacity
-                                onPress={() => {
-                                  setDetailId(ctr.id);
-                                  setShowDetail(true);
-                                }}
-                                className="rounded-md border border-border p-1.5"
-                              >
-                                <Eye size={13} color={colors.primary} />
-                              </TouchableOpacity>
+                              <Tooltip delayDuration={150}>
+                                <TooltipTrigger
+                                  onPress={(e) => {
+                                    e.stopPropagation?.();
+                                    setDetailId(ctr.id);
+                                    setShowDetail(true);
+                                  }}
+                                  className="rounded-md border border-border p-1.5 hover:bg-muted/60"
+                                >
+                                  <Eye size={13} color={colors.primary} />
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <Text>Lihat Detail Kontrak</Text>
+                                </TooltipContent>
+                              </Tooltip>
                               {canUpdate ? (
                                 <>
-                                  <TouchableOpacity
-                                    onPress={() => {
-                                      setEditing(ctr);
-                                      setShowForm(true);
-                                    }}
-                                    className="rounded-md border border-border p-1.5"
-                                  >
-                                    <Pencil size={13} color={colors.primary} />
-                                  </TouchableOpacity>
-                                  <TouchableOpacity
-                                    onPress={() => {
-                                      setSelected(ctr);
-                                      setShowApproval(true);
-                                    }}
-                                    className="rounded-md border border-border p-1.5"
-                                  >
-                                    <CheckCircle2 size={13} color={colors.success} />
-                                  </TouchableOpacity>
-                                  <TouchableOpacity
-                                    onPress={() => {
-                                      setSelected(ctr);
-                                      setShowRenewal(true);
-                                    }}
-                                    className="rounded-md border border-border p-1.5"
-                                  >
-                                    <RefreshCw size={13} color={colors.info} />
-                                  </TouchableOpacity>
+                                  <Tooltip delayDuration={150}>
+                                    <TooltipTrigger
+                                      onPress={(e) => {
+                                        e.stopPropagation?.();
+                                        setEditing(ctr);
+                                        setShowForm(true);
+                                      }}
+                                      className="rounded-md border border-border p-1.5 hover:bg-muted/60"
+                                    >
+                                      <Pencil size={13} color={colors.primary} />
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">
+                                      <Text>Edit Kontrak</Text>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip delayDuration={150}>
+                                    <TooltipTrigger
+                                      onPress={(e) => {
+                                        e.stopPropagation?.();
+                                        setSelected(ctr);
+                                        setShowApproval(true);
+                                      }}
+                                      className="rounded-md border border-border p-1.5 hover:bg-muted/60"
+                                    >
+                                      <CheckCircle2 size={13} color={colors.success} />
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">
+                                      <Text>Review & Approval Kontrak</Text>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip delayDuration={150}>
+                                    <TooltipTrigger
+                                      onPress={(e) => {
+                                        e.stopPropagation?.();
+                                        setSelected(ctr);
+                                        setShowRenewal(true);
+                                      }}
+                                      className="rounded-md border border-border p-1.5 hover:bg-muted/60"
+                                    >
+                                      <RefreshCw size={13} color={colors.info} />
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">
+                                      <Text>Perpanjang Kontrak (Renewal)</Text>
+                                    </TooltipContent>
+                                  </Tooltip>
                                 </>
                               ) : null}
                               {canDelete || canUpdate ? (
-                                <TouchableOpacity
-                                  onPress={() => handleDeleteOrTerminate(ctr)}
-                                  className="rounded-md border border-border p-1.5"
-                                >
-                                  <Trash2 size={13} color={colors.danger} />
-                                </TouchableOpacity>
+                                <Tooltip delayDuration={150}>
+                                  <TooltipTrigger
+                                    onPress={(e) => {
+                                      e.stopPropagation?.();
+                                      handleDeleteOrTerminate(ctr);
+                                    }}
+                                    className="rounded-md border border-border p-1.5 hover:bg-muted/60"
+                                  >
+                                    <Trash2 size={13} color={colors.danger} />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    <Text>
+                                      {ctr.approvalStatus === "DRAFT" ||
+                                      ctr.approvalStatus === "CANCELLED"
+                                        ? "Hapus Draft Kontrak"
+                                        : "Hentikan Kontrak (Terminasi)"}
+                                    </Text>
+                                  </TooltipContent>
+                                </Tooltip>
                               ) : null}
                             </View>
                           </Pressable>
@@ -753,6 +791,7 @@ export function ContractsScreen({
         contract={editing}
         lookups={lookups}
         onOpenTypeManager={() => setShowTypeDialog(true)}
+        onRefreshLookups={fetchLookupsAndDashboard}
         onSuccess={refreshAll}
       />
 

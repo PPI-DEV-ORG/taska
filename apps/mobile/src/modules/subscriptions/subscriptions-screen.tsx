@@ -19,6 +19,7 @@ import {
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader, Panel } from "@/components/taska/basics";
 import { SearchableSelect } from "@/components/taska/dialogs";
 import { colors } from "@/tokens";
@@ -692,53 +693,68 @@ export function SubscriptionsScreen({
                           </View>
 
                           <View className="w-40 px-2 flex-row items-center justify-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 rounded-lg p-1.5"
-                              onPress={() => openDetail(sub)}
-                            >
-                              <Eye size={14} className="text-muted-foreground" />
-                            </Button>
-                            {canUpdate ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 rounded-lg p-1.5"
-                                onPress={() => openEdit(sub)}
+                            <Tooltip delayDuration={150}>
+                              <TooltipTrigger
+                                className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                                onPress={() => openDetail(sub)}
                               >
-                                <Pencil size={14} className="text-foreground" />
-                              </Button>
+                                <Eye size={14} className="text-muted-foreground" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <Text>Lihat Detail Langganan</Text>
+                              </TooltipContent>
+                            </Tooltip>
+                            {canUpdate ? (
+                              <Tooltip delayDuration={150}>
+                                <TooltipTrigger
+                                  className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                                  onPress={() => openEdit(sub)}
+                                >
+                                  <Pencil size={14} className="text-foreground" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <Text>Edit Langganan</Text>
+                                </TooltipContent>
+                              </Tooltip>
                             ) : null}
                             {canUpdate ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 rounded-lg p-1.5"
-                                onPress={() => openRenewal(sub)}
-                              >
-                                <RefreshCw size={14} className="text-primary" />
-                              </Button>
+                              <Tooltip delayDuration={150}>
+                                <TooltipTrigger
+                                  className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                                  onPress={() => openRenewal(sub)}
+                                >
+                                  <RefreshCw size={14} className="text-primary" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <Text>Perpanjang Langganan (Renewal)</Text>
+                                </TooltipContent>
+                              </Tooltip>
                             ) : null}
                             {canCreate ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 rounded-lg p-1.5"
-                                onPress={() => openPayment(sub)}
-                              >
-                                <Wallet size={14} className="text-success" />
-                              </Button>
+                              <Tooltip delayDuration={150}>
+                                <TooltipTrigger
+                                  className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                                  onPress={() => openPayment(sub)}
+                                >
+                                  <Wallet size={14} className="text-success" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <Text>Catat Pembayaran</Text>
+                                </TooltipContent>
+                              </Tooltip>
                             ) : null}
                             {canDelete ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 rounded-lg p-1.5"
-                                onPress={() => deleteSubscription(sub)}
-                              >
-                                <Trash2 size={14} className="text-destructive" />
-                              </Button>
+                              <Tooltip delayDuration={150}>
+                                <TooltipTrigger
+                                  className="h-8 w-8 items-center justify-center rounded-lg p-1.5 hover:bg-accent"
+                                  onPress={() => deleteSubscription(sub)}
+                                >
+                                  <Trash2 size={14} className="text-destructive" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <Text>Ajukan Pembatalan Langganan</Text>
+                                </TooltipContent>
+                              </Tooltip>
                             ) : null}
                           </View>
                         </View>

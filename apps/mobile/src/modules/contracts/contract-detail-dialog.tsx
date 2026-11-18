@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Alert, Linking, ScrollView, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, Platform, ScrollView, TextInput, TouchableOpacity, View } from "react-native";
 import {
   Check,
   CheckCircle2,
@@ -23,7 +23,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import {
+  DatePicker,
+  MaintenanceSelect,
+  PoClientSelect,
+  ProjectSelect,
+  PurchaseRequestSelect,
+  QuotationSelect,
+  SearchableSelect,
+  SupplierPoSelect,
+} from "@/components/taska/dialogs";
+import { InvoiceSelect } from "@/components/taska/document-select";
 import { FileUploader } from "@/components/taska/file-uploader";
 import { colors } from "@/tokens";
 import { api, apiBase } from "@/services/api";
@@ -63,9 +73,10 @@ type Props = {
 
 function openFileUrl(rawUrl?: string | null) {
   if (!rawUrl) return;
+  const baseUrl = apiBase();
   const full = rawUrl.startsWith("http")
     ? rawUrl
-    : `${apiBase.replace(/\/api\/?$/, "")}${rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`}`;
+    : `${baseUrl.replace(/\/api\/?$/, "")}${rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`}`;
   void Linking.openURL(full);
 }
 
@@ -113,7 +124,9 @@ function DetailContent({
   const [savingSched, setSavingSched] = React.useState(false);
 
   // Tambah relasi ERP
-  const [relCombined, setRelCombined] = React.useState("");
+  const [relModule, setRelModule] = React.useState("PURCHASE_ORDER");
+  const [relEntityId, setRelEntityId] = React.useState<number | null>(null);
+  const [relRefCode, setRelRefCode] = React.useState("");
   const [savingRel, setSavingRel] = React.useState(false);
 
   const canUpdate = hasUserPermission(user, "contracts", "U");
@@ -132,7 +145,10 @@ function DetailContent({
   }, [contractId, toast]);
 
   React.useEffect(() => {
-    void load();
+    const timer = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [load]);
 
   async function addDocument() {
@@ -205,7 +221,7 @@ function DetailContent({
         style: "destructive",
         onPress: async () => {
           try {
-            await api.del(`/contracts/${ctr.id}/documents/${doc.id}`);
+            await api.delete(`/contracts/${ctr.id}/documents/${doc.id}`);
             toast("Dokumen berhasil dihapus");
             await load();
             onRefresh();
@@ -279,18 +295,17 @@ function DetailContent({
   }
 
   async function addErpRelation() {
-    if (!ctr || !relCombined) return;
-    const [mod, idStr, ...rest] = relCombined.split(":");
-    if (!mod || !idStr) return;
+    if (!ctr || !relModule || !relEntityId) return;
     setSavingRel(true);
     try {
       await api.post(`/contracts/${ctr.id}/relations`, {
-        relatedModule: mod,
-        relatedId: Number(idStr),
-        referenceCode: rest.join(":"),
+        relatedModule: relModule,
+        relatedId: Number(relEntityId),
+        referenceCode: relRefCode,
       });
       toast("Relasi modul ERP berhasil ditautkan");
-      setRelCombined("");
+      setRelEntityId(null);
+      setRelRefCode("");
       await load();
     } catch (e: any) {
       toast(e?.message ?? "Gagal menautkan modul ERP", "danger");
@@ -302,7 +317,7 @@ function DetailContent({
   async function removeErpRelation(relationId: number) {
     if (!ctr) return;
     try {
-      await api.del(`/contracts/${ctr.id}/relations/${relationId}`);
+      await api.delete(`/contracts/${ctr.id}/relations/${relationId}`);
       toast("Tautan modul dilepas");
       await load();
     } catch (e: any) {
@@ -312,7 +327,12 @@ function DetailContent({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[96vw] max-w-5xl max-h-[93vh] p-0">
+      <DialogContent
+        className="w-[96vw] max-w-6xl max-h-[93vh] p-0"
+        style={Platform.select({
+          web: { width: "min(96vw, 1180px)", maxWidth: "1180px" } as any,
+        })}
+      >
         <DialogHeader className="border-b border-border/70 px-5 py-4">
           <View className="flex-row flex-wrap items-center justify-between gap-2">
             <View className="flex-1 gap-1">
@@ -1045,7 +1065,7 @@ function DetailContent({
                                 {app.decisionTimestamp ? tanggalJam(app.decisionTimestamp) : "-"}
                               </Text>
                               {app.comments ? (
-                                <Text className="mt-1 text-xs italic">"{app.comments}"</Text>
+                                <Text className="mt-1 text-xs italic">&quot;{app.comments}&quot;</Text>
                               ) : null}
                             </View>
                           </View>
@@ -1152,34 +1172,99 @@ function DetailContent({
 
                     {canUpdate ? (
                       <View className="flex-row flex-wrap items-center gap-2">
-                        <View className="min-w-[260px] flex-1">
+                        <View className="w-[210px]">
                           <SearchableSelect
-                            value={relCombined}
+                            value={relModule}
                             options={[
-                              ...lookups.subscriptions.map(
-                                (s) => `SUBSCRIPTION:${s.id}:${s.subscriptionCode} - ${s.serviceName}`,
-                              ),
-                              ...lookups.supplierPos.map(
-                                (po) => `PURCHASE_ORDER:${po.id}:${po.number} (${po.supplier?.name ?? "PO"})`,
-                              ),
-                              ...lookups.assets.map(
-                                (a) => `FIXED_ASSET:${a.id}:${a.assetCode} - ${a.name}`,
-                              ),
-                              ...lookups.projects.map(
-                                (p) => `PROJECT:${p.id}:${p.number} - ${p.name}`,
-                              ),
+                              "PURCHASE_ORDER",
+                              "SALES_ORDER",
+                              "PURCHASE_REQUEST",
+                              "PROJECT",
+                              "QUOTATION",
+                              "INVOICE",
+                              "WORK_ORDER",
                             ]}
-                            onChange={setRelCombined}
-                            placeholder="Pilih Subscription / Purchase Order / Fixed Asset / Project..."
-                            clearable
-                            className="h-10 rounded-lg border-border/80 bg-card"
+                            onChange={(val) => {
+                              setRelModule(val);
+                              setRelEntityId(null);
+                              setRelRefCode("");
+                            }}
+                            className="h-11 rounded-lg border-border/80 bg-card"
                           />
+                        </View>
+                        <View className="min-w-[260px] flex-1">
+                          {relModule === "PURCHASE_ORDER" ? (
+                            <SupplierPoSelect
+                              value={relRefCode}
+                              poId={relEntityId}
+                              onChange={(po) => {
+                                setRelEntityId(po ? Number(po.id) : null);
+                                setRelRefCode(po ? String(po.nomor || po.number || `PO #${po.id}`) : "");
+                              }}
+                            />
+                          ) : relModule === "SALES_ORDER" ? (
+                            <PoClientSelect
+                              value={relRefCode}
+                              poId={relEntityId}
+                              onChange={(so) => {
+                                setRelEntityId(so ? Number(so.id) : null);
+                                setRelRefCode(
+                                  so ? String(so.soNumber || so.poClientNumber || so.nomor || `SO #${so.id}`) : "",
+                                );
+                              }}
+                            />
+                          ) : relModule === "PURCHASE_REQUEST" ? (
+                            <PurchaseRequestSelect
+                              value={relRefCode}
+                              requestId={relEntityId}
+                              onChange={(pr) => {
+                                setRelEntityId(pr ? Number(pr.id) : null);
+                                setRelRefCode(pr ? String(pr.nomor || pr.number || `PR #${pr.id}`) : "");
+                              }}
+                            />
+                          ) : relModule === "PROJECT" ? (
+                            <ProjectSelect
+                              value={relRefCode}
+                              projectId={relEntityId}
+                              onChange={(p) => {
+                                setRelEntityId(p ? Number(p.id) : null);
+                                setRelRefCode(p ? String(p.nama || p.name || `PRJ #${p.id}`) : "");
+                              }}
+                            />
+                          ) : relModule === "QUOTATION" ? (
+                            <QuotationSelect
+                              value={relRefCode}
+                              quotationId={relEntityId}
+                              onChange={(q) => {
+                                setRelEntityId(q ? Number(q.id) : null);
+                                setRelRefCode(q ? String(q.nomor || q.number || `PNW #${q.id}`) : "");
+                              }}
+                            />
+                          ) : relModule === "INVOICE" ? (
+                            <InvoiceSelect
+                              value={relRefCode}
+                              invoiceId={relEntityId}
+                              onChange={(inv: any) => {
+                                setRelEntityId(inv ? Number(inv.id) : null);
+                                setRelRefCode(inv ? String(inv.nomor || inv.number || `INV #${inv.id}`) : "");
+                              }}
+                            />
+                          ) : (
+                            <MaintenanceSelect
+                              value={relRefCode}
+                              maintenanceId={relEntityId}
+                              onChange={(m) => {
+                                setRelEntityId(m ? Number(m.id) : null);
+                                setRelRefCode(m ? String(m.nomor || m.number || `MNT #${m.id}`) : "");
+                              }}
+                            />
+                          )}
                         </View>
                         <Button
                           size="sm"
-                          className="h-10 gap-1"
+                          className="h-11 gap-1"
                           onPress={addErpRelation}
-                          disabled={savingRel || !relCombined}
+                          disabled={savingRel || !relEntityId}
                         >
                           <Plus size={13} color="#fff" />
                           <Text className="text-xs text-white">Tautkan Modul</Text>

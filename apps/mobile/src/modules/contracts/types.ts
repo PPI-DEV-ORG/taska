@@ -299,13 +299,79 @@ export type ContractDashboard = {
 
 export type ContractMasterLookups = {
   types: CtrType[];
-  suppliers: Array<{ id: number; code: string; name: string; contactName?: string; phone?: string; email?: string; address?: string }>;
-  customers: Array<{ id: number; code: string; name: string; company?: string; contactName?: string; phone?: string; email?: string; address?: string }>;
-  projects: Array<{ id: number; number: string; name: string; status: string }>;
-  subscriptions: Array<{ id: number; subscriptionCode: string; serviceName: string; providerName?: string; status: string }>;
-  assets: Array<{ id: number; assetCode: string; name: string; status: string }>;
-  supplierPos: Array<{ id: number; number: string; status: string; supplier?: { name: string } }>;
-  users: Array<{ id: number; name: string; email?: string; role: string; department?: string; position?: string }>;
+  suppliers: Array<{
+    id: number;
+    code: string;
+    name: string;
+    pic?: string;
+    contactName?: string;
+    phone?: string;
+    email?: string;
+    city?: string;
+    address?: string;
+    paymentTerms?: string;
+  }>;
+  customers: Array<{
+    id: number;
+    code: string;
+    name: string;
+    company?: string;
+    pic?: string;
+    contactName?: string;
+    phone?: string;
+    email?: string;
+    city?: string;
+    address?: string;
+  }>;
+  providers?: Array<{
+    id: number;
+    code: string;
+    name: string;
+    website?: string;
+    supportEmail?: string;
+    supportPhone?: string;
+    accountRepresentative?: string;
+  }>;
+  projects: Array<{
+    id: number;
+    number: string;
+    name: string;
+    status: string;
+    customerName?: string;
+    picName?: string;
+  }>;
+  subscriptions: Array<{
+    id: number;
+    subscriptionCode: string;
+    serviceName: string;
+    providerName?: string;
+    status: string;
+    cost?: number;
+  }>;
+  assets: Array<{
+    id: number;
+    assetCode: string;
+    name: string;
+    brand?: string;
+    status: string;
+    acquisitionCost?: number;
+  }>;
+  supplierPos: Array<{
+    id: number;
+    number: string;
+    status: string;
+    total?: number;
+    supplier?: { name: string };
+  }>;
+  users: Array<{
+    id: number;
+    name: string;
+    email?: string;
+    phone?: string;
+    role: string;
+    department?: string;
+    position?: string;
+  }>;
   expirationRules: Array<{ id: number; daysOffset: number; label: string; targetRole?: string }>;
 };
 

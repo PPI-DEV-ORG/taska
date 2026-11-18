@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable, ScrollView, TextInput } from "react-native";
+import { Platform, View, Pressable, ScrollView, TextInput } from "react-native";
 import { Search, ChevronDown, Check, CirclePlus, FolderKanban } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,7 +109,12 @@ export function SubscriptionCategorySelect({
       </Pressable>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-full max-w-3xl max-h-[85vh]">
+        <DialogContent
+          className="w-[96vw] max-w-5xl lg:max-w-6xl max-h-[88vh]"
+          style={Platform.select({
+            web: { width: "min(96vw, 1050px)", maxWidth: "1050px" } as any,
+          })}
+        >
           <DialogHeader>
             <DialogTitle>Pilih Kategori Langganan</DialogTitle>
           </DialogHeader>

@@ -86,6 +86,15 @@ function asNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function extractFileId(url?: string | null): number | null {
+  const s = optionalString(url);
+  if (!s) return null;
+  const m = s.match(/\/(?:api\/upload\/file|files)\/(\d+)/);
+  if (m && m[1]) return Number.parseInt(m[1], 10);
+  if (/^\d+$/.test(s)) return Number.parseInt(s, 10);
+  return null;
+}
+
 @Injectable()
 export class SubscriptionsService {
   constructor(
@@ -797,50 +806,36 @@ export class SubscriptionsService {
         },
       });
 
-      const total = round2(cost + tax);
-      const lines: Array<{ accountCode: string; debit: number; credit: number; memo: string }> = [
-        {
-          accountCode: debitAccount,
-          debit: cost,
-          credit: 0,
-          memo: `${isPrepaid ? "Biaya dibayar di muka" : "Beban"} ${created.serviceName}`,
-        },
-      ];
-      if (tax > 0) {
-        lines.push({
-          accountCode: VAT_IN_ACCOUNT,
-          debit: tax,
-          credit: 0,
-          memo: `PPN masukan ${created.subscriptionCode}`,
-        });
-      }
-      lines.push({
-        accountCode: fundingAccount,
-        debit: 0,
-        credit: total,
-        memo: `Pembayaran ${created.subscriptionCode} · ${created.serviceName}`,
-      });
-
       try {
-        const journal = await this.postingService.post({
-          date: paymentDate,
-          source: "SUBSCRIPTION",
-          sourceType: "SubPaymentRecord",
-          sourceId: payment.id,
-          event: "PAYMENT",
-          refNo: created.subscriptionCode,
-          memo: `Pembayaran langganan ${created.subscriptionCode} · ${created.serviceName} (${invoiceNumber})`,
-          createdById: user?.id ?? null,
-          lines,
+        const { journalId } = await this.createInvoiceInAndPostCoa({
+          subscriptionId: created.id,
+          subscriptionCode: created.subscriptionCode,
+          serviceName: created.serviceName,
+          providerName: provider?.name ?? providerName,
+          invoiceNumber,
+          invoiceDate: startDate,
+          dueDate: expirationDate,
+          paymentDate,
+          amount: cost,
+          tax,
+          debitAccount,
+          fundingAccount,
+          isPrepaid,
+          isPaid: fundingAccount !== DEFAULT_AP_ACCOUNT,
+          postJournal: true,
+          invoiceFileUrl: optionalString(dto.paymentInvoiceFileUrl),
+          paymentProofUrl: optionalString(dto.paymentProofUrl),
+          notes: `Pembayaran awal langganan ${created.subscriptionCode} · ${created.serviceName}`,
+          userId: user?.id ?? null,
         });
-        if (journal?.id) {
+        if (journalId) {
           await this.db().subPaymentRecord.update({
             where: { id: payment.id },
-            data: { financeJournalId: journal.id },
+            data: { financeJournalId: journalId },
           });
         }
       } catch (err) {
-        console.error("Gagal posting jurnal saat create subscription PAID:", err);
+        console.error("Gagal membuat InvoiceIn & jurnal saat create subscription PAID:", err);
       }
     }
 
@@ -1144,28 +1139,275 @@ export class SubscriptionsService {
     return this.get(id);
   }
 
-  // ───────────────────────────── Pembayaran & jurnal ─────────────────────────────
+  // ───────────────────────────── Pembayaran, Invoice Masuk & Jurnal COA ─────────────────────────────
+
+  private async createInvoiceInAndPostCoa(params: {
+    subscriptionId: number;
+    subscriptionCode: string;
+    serviceName: string;
+    providerName: string;
+    invoiceNumber: string;
+    invoiceDate: Date;
+    dueDate: Date;
+    paymentDate: Date;
+    amount: number;
+    tax: number;
+    debitAccount: string;
+    fundingAccount: string;
+    isPrepaid: boolean;
+    isPaid: boolean;
+    postJournal: boolean;
+    invoiceFileUrl?: string | null;
+    paymentProofUrl?: string | null;
+    notes?: string | null;
+    userId?: number | null;
+  }): Promise<{ invoiceInId: number; paymentId: number | null; journalId: number | null }> {
+    const providerClean = (params.providerName || "Vendor Langganan").trim();
+    let supplier = await this.db().supplier.findFirst({
+      where: { name: providerClean },
+    });
+    if (!supplier) {
+      supplier = await this.db().supplier.create({
+        data: {
+          name: providerClean,
+          status: "AKTIF",
+          notes: "Vendor penyedia layanan langganan (Subscription Management)",
+        },
+      });
+    }
+
+    let finalInvNo = params.invoiceNumber.trim();
+    const dupInv = await this.db().invoiceIn.findFirst({
+      where: { supplierId: supplier.id, number: finalInvNo },
+    });
+    if (dupInv) {
+      finalInvNo = `${finalInvNo}-${Date.now().toString().slice(-4)}`;
+    }
+
+    const invoiceFileId = extractFileId(params.invoiceFileUrl);
+    const payFileId = extractFileId(params.paymentProofUrl);
+    const total = round2(params.amount + params.tax);
+
+    // 1. Buat Invoice Masuk (InvoiceIn)
+    const invoiceIn = await this.db().invoiceIn.create({
+      data: {
+        number: finalInvNo,
+        supplierId: supplier.id,
+        amount: params.amount,
+        ppn: params.tax,
+        total,
+        paidAmount: params.isPaid ? total : 0,
+        dueDate: params.dueDate,
+        date: params.invoiceDate,
+        status: params.isPaid ? "PAID" : "UNPAID",
+        fileId: invoiceFileId ?? payFileId ?? null,
+        transferFileId: params.isPaid ? payFileId : null,
+        category: "Langganan / Subscription",
+        debitAccount: params.debitAccount,
+        coaAccount: params.fundingAccount,
+        notes:
+          params.notes ||
+          `Tagihan langganan ${params.subscriptionCode} · ${params.serviceName}`,
+        items: [
+          {
+            name: `${params.serviceName} (${params.subscriptionCode})`,
+            qty: 1,
+            price: params.amount,
+            total: params.amount,
+          },
+        ],
+      },
+    });
+
+    if (invoiceFileId) {
+      await this.db()
+        .file.update({
+          where: { id: invoiceFileId },
+          data: { refType: "invoiceIn", refId: String(invoiceIn.id) },
+        })
+        .catch(() => null);
+    }
+    if (payFileId) {
+      await this.db()
+        .file.update({
+          where: { id: payFileId },
+          data: { refType: "payment", refId: `in-${invoiceIn.id}` },
+        })
+        .catch(() => null);
+    }
+
+    // Simpan lampiran ke sub_documents agar tampil di tab Dokumen Langganan
+    if (params.invoiceFileUrl) {
+      await this.db()
+        .subDocument.create({
+          data: {
+            subscriptionId: params.subscriptionId,
+            title: `Invoice ${finalInvNo}`,
+            documentType: "INVOICE",
+            fileUrl: params.invoiceFileUrl,
+            uploadedByUserId: params.userId ?? null,
+          },
+        })
+        .catch(() => null);
+    }
+    if (params.paymentProofUrl) {
+      await this.db()
+        .subDocument.create({
+          data: {
+            subscriptionId: params.subscriptionId,
+            title: `Bukti Pembayaran ${finalInvNo}`,
+            documentType: "RECEIPT",
+            fileUrl: params.paymentProofUrl,
+            uploadedByUserId: params.userId ?? null,
+          },
+        })
+        .catch(() => null);
+    }
+
+    let journalId: number | null = null;
+    let paymentId: number | null = null;
+
+    // 2. Posting Jurnal COA dari InvoiceIn (tidak dobel dari SubPaymentRecord)
+    if (params.postJournal) {
+      const invLines: Array<{
+        accountCode: string;
+        debit: number;
+        credit: number;
+        memo: string;
+        partyType?: string;
+        partyId?: number;
+      }> = [
+        {
+          accountCode: params.debitAccount,
+          debit: params.amount,
+          credit: 0,
+          memo: `${params.isPrepaid ? "Biaya dibayar di muka" : "Beban langganan"} ${params.serviceName} (#${finalInvNo})`,
+          partyType: "SUPPLIER",
+          partyId: supplier.id,
+        },
+      ];
+      if (params.tax > 0) {
+        invLines.push({
+          accountCode: VAT_IN_ACCOUNT,
+          debit: params.tax,
+          credit: 0,
+          memo: `PPN Masukan Tagihan #${finalInvNo} (${params.subscriptionCode})`,
+          partyType: "SUPPLIER",
+          partyId: supplier.id,
+        });
+      }
+      invLines.push({
+        accountCode: DEFAULT_AP_ACCOUNT,
+        debit: 0,
+        credit: total,
+        memo: `Hutang Usaha Supplier #${finalInvNo} (${providerClean})`,
+        partyType: "SUPPLIER",
+        partyId: supplier.id,
+      });
+
+      const invJournal = await this.postingService.repost({
+        sourceType: "InvoiceIn",
+        sourceId: invoiceIn.id,
+        event: "issued",
+        source: "INVOICE_IN",
+        date: params.invoiceDate,
+        memo: `Tagihan Supplier #${finalInvNo} (${providerClean} · ${params.subscriptionCode})`,
+        refNo: finalInvNo,
+        createdById: params.userId ?? null,
+        lines: invLines as any,
+      });
+      journalId = invJournal?.id ?? null;
+    }
+
+    // 3. Jika dibayar lunas (Kas/Bank), catat Payment pada InvoiceIn & posting Jurnal Pelunasan InvoiceIn
+    if (params.isPaid) {
+      const payMethod =
+        params.fundingAccount === "1000.01" || params.fundingAccount === "1000.03"
+          ? "TUNAI"
+          : "TRANSFER";
+      const paymentRow = await this.db().payment.create({
+        data: {
+          invoiceInId: invoiceIn.id,
+          amount: total,
+          date: params.paymentDate,
+          method: payMethod,
+          reference: `[AKUN:${params.fundingAccount}] Pelunasan ${params.subscriptionCode} (${finalInvNo})`,
+          accountCode: params.fundingAccount,
+          fileId: payFileId ?? undefined,
+          createdById: params.userId ?? null,
+        },
+      });
+      paymentId = paymentRow.id;
+
+      if (params.postJournal) {
+        const payJournal = await this.postingService.post({
+          sourceType: "Payment",
+          sourceId: paymentRow.id,
+          event: "settled",
+          source: "INVOICE_IN_PAYMENT",
+          date: params.paymentDate,
+          memo: `Pembayaran Tagihan Supplier #${finalInvNo} (${params.subscriptionCode} · ${params.serviceName})`,
+          refNo: `${finalInvNo}/PAY`,
+          createdById: params.userId ?? null,
+          lines: [
+            {
+              accountCode: DEFAULT_AP_ACCOUNT,
+              debit: total,
+              credit: 0,
+              memo: `Pelunasan Hutang Usaha #${finalInvNo} (${params.subscriptionCode})`,
+              partyType: "SUPPLIER",
+              partyId: supplier.id,
+            },
+            {
+              accountCode: params.fundingAccount,
+              debit: 0,
+              credit: total,
+              memo: `Pengeluaran Kas/Bank Pelunasan #${finalInvNo} (${params.subscriptionCode})`,
+              partyType: "SUPPLIER",
+              partyId: supplier.id,
+            },
+          ] as any,
+        });
+        if (payJournal?.id) journalId = payJournal.id;
+      }
+    }
+
+    this.notifications.dataChange("invoiceIn", "create", invoiceIn.id);
+    return { invoiceInId: invoiceIn.id, paymentId, journalId };
+  }
 
   async recordPayment(id: number, dto: SubscriptionPaymentDto, user?: RequestUser) {
     const existing = await this.get(id);
     const amount = round2(asNumber(dto.amount));
     const tax = round2(asNumber(dto.tax));
     if (amount <= 0) throw new BadRequestException("Nominal pembayaran harus lebih dari 0.");
+
+    const isPaidNow = dto.fundingType !== "AP" && (dto.paymentStatus || "PAID") === "PAID";
+    if (isPaidNow && !optionalString(dto.paymentProofUrl)) {
+      throw new BadRequestException("Bukti pembayaran wajib diunggah untuk mencatat pelunasan.");
+    }
+
     const paymentDate = dateOnly(dto.paymentDate) ?? dateOnly(new Date())!;
+    const invoiceDate = dateOnly(dto.invoiceDate) ?? paymentDate;
+    const dueDate = dateOnly(dto.dueDate) ?? dateOnly(existing.expirationDate) ?? paymentDate;
     const isPrepaid =
       dto.prepaid ?? String(existing.billingCycle).toUpperCase() !== "MONTHLY";
+    const invoiceNumber =
+      optionalString(dto.invoiceNumber) ||
+      `INV/${existing.subscriptionCode}/${formatPeriodLabel(paymentDate)}`;
+
     const payment = await this.db().subPaymentRecord.create({
       data: {
         subscriptionId: id,
-        invoiceNumber: optionalString(dto.invoiceNumber),
-        invoiceDate: dateOnly(dto.invoiceDate),
-        dueDate: dateOnly(dto.dueDate) ?? existing.expirationDate,
+        invoiceNumber,
+        invoiceDate,
+        dueDate,
         paymentDate,
         billingPeriod: optionalString(dto.billingPeriod),
         amount,
         tax,
         currency: dto.currency || existing.currency || "IDR",
-        paymentStatus: dto.paymentStatus || "PAID",
+        paymentStatus: isPaidNow ? "PAID" : "UNPAID",
         financeJournalId: dto.financeJournalId ?? null,
         paymentProofUrl: optionalString(dto.paymentProofUrl),
         notes: optionalString(dto.notes),
@@ -1173,66 +1415,52 @@ export class SubscriptionsService {
       },
     });
 
-    let journal: any = null;
-    if (dto.postJournal) {
-      const expenseAccount =
-        existing.expenseAccountCode ||
-        existing.category?.expenseAccountCode ||
-        DEFAULT_EXPENSE_ACCOUNT;
-      const debitAccount = isPrepaid
-        ? existing.prepaidAccountCode ||
-          existing.category?.prepaidAccountCode ||
-          DEFAULT_PREPAID_ACCOUNT
-        : expenseAccount;
-      const fundingAccount =
-        dto.fundingType === "AP"
-          ? optionalString(dto.fundingAccountCode) || DEFAULT_AP_ACCOUNT
-          : optionalString(dto.fundingAccountCode) || DEFAULT_FUNDING_ACCOUNT;
-      const total = round2(amount + tax);
-      const lines: Array<{ accountCode: string; debit: number; credit: number; memo: string }> = [
-        {
-          accountCode: debitAccount,
-          debit: amount,
-          credit: 0,
-          memo: `${isPrepaid ? "Biaya dibayar di muka" : "Beban"} ${existing.serviceName}`,
-        },
-      ];
-      if (tax > 0) {
-        lines.push({
-          accountCode: VAT_IN_ACCOUNT,
-          debit: tax,
-          credit: 0,
-          memo: `PPN masukan ${existing.subscriptionCode}`,
-        });
-      }
-      lines.push({
-        accountCode: fundingAccount,
-        debit: 0,
-        credit: total,
-        memo: `Pembayaran ${existing.subscriptionCode} · ${existing.serviceName}`,
+    const expenseAccount =
+      existing.expenseAccountCode ||
+      existing.category?.expenseAccountCode ||
+      DEFAULT_EXPENSE_ACCOUNT;
+    const debitAccount = isPrepaid
+      ? existing.prepaidAccountCode ||
+        existing.category?.prepaidAccountCode ||
+        DEFAULT_PREPAID_ACCOUNT
+      : expenseAccount;
+    const fundingAccount =
+      dto.fundingType === "AP"
+        ? optionalString(dto.fundingAccountCode) || DEFAULT_AP_ACCOUNT
+        : optionalString(dto.fundingAccountCode) || DEFAULT_FUNDING_ACCOUNT;
+
+    try {
+      const { journalId } = await this.createInvoiceInAndPostCoa({
+        subscriptionId: id,
+        subscriptionCode: existing.subscriptionCode,
+        serviceName: existing.serviceName,
+        providerName: existing.provider?.name || existing.providerName || "Vendor Langganan",
+        invoiceNumber,
+        invoiceDate,
+        dueDate,
+        paymentDate,
+        amount,
+        tax,
+        debitAccount,
+        fundingAccount,
+        isPrepaid,
+        isPaid: isPaidNow,
+        postJournal: dto.postJournal !== false,
+        invoiceFileUrl: optionalString(dto.invoiceFileUrl),
+        paymentProofUrl: optionalString(dto.paymentProofUrl),
+        notes: optionalString(dto.notes),
+        userId: user?.id ?? null,
       });
-      try {
-        journal = await this.postingService.post({
-          date: paymentDate,
-          source: "SUBSCRIPTION",
-          sourceType: "SubPaymentRecord",
-          sourceId: payment.id,
-          event: "PAYMENT",
-          refNo: existing.subscriptionCode,
-          memo: `Pembayaran langganan ${existing.subscriptionCode} · ${existing.serviceName}`,
-          createdById: user?.id ?? null,
-          lines,
-        });
-      } catch (err) {
-        await this.db().subPaymentRecord.delete({ where: { id: payment.id } }).catch(() => null);
-        throw err;
-      }
-      if (journal?.id) {
+
+      if (journalId) {
         await this.db().subPaymentRecord.update({
           where: { id: payment.id },
-          data: { financeJournalId: journal.id },
+          data: { financeJournalId: journalId },
         });
       }
+    } catch (err) {
+      await this.db().subPaymentRecord.delete({ where: { id: payment.id } }).catch(() => null);
+      throw err;
     }
 
     if (isPrepaid) {
@@ -1283,7 +1511,7 @@ export class SubscriptionsService {
       action: "SUBSCRIPTION_PAYMENT",
       entityType: "subscriptions",
       entityId: id,
-      detail: `${existing.subscriptionCode} · Rp${(amount + tax).toLocaleString("id-ID")}${journal?.number ? ` · ${journal.number}` : ""}`,
+      detail: `${existing.subscriptionCode} · Rp${(amount + tax).toLocaleString("id-ID")} · ${invoiceNumber}`,
     });
     this.notifications.dataChange("subscriptions", "update", id);
     return this.get(id);

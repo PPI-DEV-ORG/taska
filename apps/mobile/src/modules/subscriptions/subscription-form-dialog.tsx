@@ -71,6 +71,7 @@ type FormState = {
   paymentInvoiceNumber: string;
   paymentDate: string;
   paymentAccountCode: string;
+  paymentInvoiceFileUrl: string;
   paymentProofUrl: string;
   expenseAccountCode: string;
   prepaidAccountCode: string;
@@ -115,6 +116,7 @@ function defaultForm(): FormState {
     paymentInvoiceNumber: "",
     paymentDate: start,
     paymentAccountCode: "1000.02",
+    paymentInvoiceFileUrl: "",
     paymentProofUrl: "",
     expenseAccountCode: "6122",
     prepaidAccountCode: "1401",
@@ -152,6 +154,7 @@ function formFromRow(row: SubSubscription): FormState {
     paymentInvoiceNumber: "",
     paymentDate: row.startDate ? String(row.startDate).slice(0, 10) : todayIso(),
     paymentAccountCode: "1000.02",
+    paymentInvoiceFileUrl: "",
     paymentProofUrl: "",
     expenseAccountCode: row.expenseAccountCode ?? row.category?.expenseAccountCode ?? "6122",
     prepaidAccountCode: row.prepaidAccountCode ?? row.category?.prepaidAccountCode ?? "1401",
@@ -349,6 +352,7 @@ function FormContent({
       paymentInvoiceNumber: subscription?.id ? undefined : (form.paymentInvoiceNumber.trim() || undefined),
       paymentDate: subscription?.id ? undefined : (form.paymentDate || undefined),
       paymentAccountCode: subscription?.id ? undefined : (form.paymentAccountCode || undefined),
+      paymentInvoiceFileUrl: subscription?.id ? undefined : (form.paymentInvoiceFileUrl || undefined),
       paymentProofUrl: subscription?.id ? undefined : (form.paymentProofUrl || undefined),
       expenseAccountCode: form.expenseAccountCode.trim() || undefined,
       prepaidAccountCode: form.prepaidAccountCode.trim() || undefined,
@@ -368,6 +372,10 @@ function FormContent({
     if (costNumber <= 0) nextErrors.cost = "Biaya harus lebih dari 0.";
     if (Math.abs(allocationSum - 100) > 0.01) {
       nextErrors.allocations = `Total alokasi harus 100%. Saat ini ${allocationSum.toFixed(2)}%.`;
+    }
+    if (!subscription?.id && form.paymentStatus === "PAID" && form.paymentAccountCode !== "210102" && !form.paymentProofUrl.trim()) {
+      toast("Bukti pembayaran wajib diunggah untuk status PAID (Lunas)", "danger");
+      return;
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -896,10 +904,25 @@ function FormContent({
                     </View>
                   </View>
 
-                  <View>
-                    <FormField label="Upload Bukti Pembayaran">
+                  <View className="gap-3">
+                    <FormField label="Upload File Invoice Supplier (Opsional)">
                       <FileUploader
-                        label="Pilih Foto / Dokumen Bukti Bayar"
+                        label="Pilih File PDF / Foto Invoice Tagihan (Opsional)"
+                        kind="semua"
+                        category="subscription"
+                        autoFlush
+                        onUploaded={(fileId) => set("paymentInvoiceFileUrl", `/api/upload/file/${fileId}`)}
+                      />
+                      {form.paymentInvoiceFileUrl ? (
+                        <Text className="mt-1.5 text-xs font-medium text-success">
+                          ✓ File invoice terlampir ({form.paymentInvoiceFileUrl})
+                        </Text>
+                      ) : null}
+                    </FormField>
+
+                    <FormField label="Upload Bukti Pembayaran *" required={form.paymentAccountCode !== "210102"}>
+                      <FileUploader
+                        label="Pilih Foto / Dokumen Bukti Bayar (Wajib)"
                         kind="semua"
                         category="subscription"
                         autoFlush

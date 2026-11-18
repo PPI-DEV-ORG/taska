@@ -71,6 +71,7 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [notes, setNotes] = React.useState("");
+  const [invoiceFileUrl, setInvoiceFileUrl] = React.useState("");
   const [proofUrl, setProofUrl] = React.useState("");
   const [postJournal, setPostJournal] = React.useState(true);
   const [fundingType, setFundingType] = React.useState("CASH");
@@ -87,6 +88,10 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
       toast("Nominal pembayaran harus lebih dari 0", "danger");
       return;
     }
+    if (fundingType !== "AP" && !proofUrl.trim()) {
+      toast("Bukti pembayaran wajib diunggah untuk mencatat pembayaran lunas", "danger");
+      return;
+    }
     setSaving(true);
     const effectiveInvoiceNumber =
       invoiceNumber.trim() ||
@@ -101,7 +106,8 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
         amount: amountNumber,
         tax: taxNumber,
         currency: subscription.currency || "IDR",
-        paymentStatus: "PAID",
+        paymentStatus: fundingType === "AP" ? "UNPAID" : "PAID",
+        invoiceFileUrl: invoiceFileUrl.trim() || undefined,
         paymentProofUrl: proofUrl.trim() || undefined,
         notes: notes.trim() || undefined,
         postJournal,
@@ -109,7 +115,7 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
         fundingAccountCode: fundingAccount.trim() || undefined,
         prepaid: isPrepaid,
       });
-      toast("Pembayaran berhasil dicatat & masuk jurnal COA");
+      toast("Invoice Masuk berhasil dibuat & pembayaran tercatat ke COA");
       onSuccess();
       onClose();
     } catch (e: any) {
@@ -244,19 +250,36 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
                 {postJournal ? <Text className="text-[11px] font-bold text-white">✓</Text> : null}
               </View>
               <View className="flex-1">
-                <Text className="text-xs font-semibold">Posting jurnal otomatis ke Accounting</Text>
+                <Text className="text-xs font-semibold">
+                  Buat Invoice Masuk (Invoice In) & Posting Jurnal COA dari Invoice
+                </Text>
                 <Text className="text-[11px] text-muted-foreground">
                   {isPrepaid
-                    ? `Dr Prepaid ${subscription.prepaidAccountCode || "1401"} · Dr PPN Masukan 1600 · Cr ${fundingAccount}`
-                    : `Dr Beban ${subscription.expenseAccountCode || "6122"} · Dr PPN Masukan 1600 · Cr ${fundingAccount}`}
+                    ? `Invoice Masuk: Dr Prepaid ${subscription.prepaidAccountCode || "1401"} · Dr PPN Masukan 1600 · Cr ${fundingAccount}`
+                    : `Invoice Masuk: Dr Beban ${subscription.expenseAccountCode || "6122"} · Dr PPN Masukan 1600 · Cr ${fundingAccount}`}
                 </Text>
               </View>
             </TouchableOpacity>
 
             <View className="gap-3">
-              <FormField label="Upload Bukti Pembayaran">
+              <FormField label="Upload File Invoice Supplier (Opsional)">
                 <FileUploader
-                  label="Pilih Foto / Dokumen Bukti Bayar"
+                  label="Pilih File PDF / Foto Invoice Tagihan (Opsional)"
+                  kind="semua"
+                  category="subscription"
+                  autoFlush
+                  onUploaded={(fileId) => setInvoiceFileUrl(`/api/upload/file/${fileId}`)}
+                />
+                {invoiceFileUrl ? (
+                  <Text className="mt-1.5 text-xs font-medium text-success">
+                    ✓ File invoice terlampir ({invoiceFileUrl})
+                  </Text>
+                ) : null}
+              </FormField>
+
+              <FormField label="Upload Bukti Pembayaran *" required={fundingType !== "AP"}>
+                <FileUploader
+                  label="Pilih Foto / Dokumen Bukti Bayar (Wajib)"
                   kind="semua"
                   category="subscription"
                   autoFlush
@@ -264,7 +287,7 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
                 />
                 {proofUrl ? (
                   <Text className="mt-1.5 text-xs font-medium text-success">
-                    ✓ Bukti terlampir ({proofUrl})
+                    ✓ Bukti pembayaran terlampir ({proofUrl})
                   </Text>
                 ) : null}
               </FormField>
