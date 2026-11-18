@@ -47,15 +47,17 @@ const CREATE: Record<string, Role[]> = {
   users: ["bos", "admin"],
   "poc-reports": ["pm", "sales", "teknisi", "se"],
   "visit-reports": ["pm", "sales", "teknisi", "se"],
+  "maintenance-reports": ["pm", "sales", "teknisi", "se", "admin", "bos", "super_admin"],
 };
 
 export function canCreate(def: ModuleDef, role: Role, user?: User | null) {
   const hasCreatorUi = !!(def.newHref || def.createFields);
   if (!hasCreatorUi) return false;
   if (role === "super_admin") return true;
-  if (user && findRoleDefForUser(user)) {
-    return hasUserPermission(user, def.key, "C");
+  if (user && hasUserPermission(user, def.key, "C")) {
+    return true;
   }
+  if (def.createRoles?.includes(role)) return true;
   // PRD Aturan: Bos / Admin hanya melihat dan menyetujui, tanpa tombol buat, ubah, atau hapus
   if ((role === "bos" || role === "admin") && def.key !== "users") return false;
   return (def.createRoles ?? CREATE[def.key] ?? []).includes(role);

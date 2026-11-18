@@ -11,6 +11,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { SubscriptionsService } from "../subscriptions/subscriptions.service.js";
 import { ContractsService } from "../contracts/contracts.service.js";
+import { MaintenanceService } from "../maintenance/maintenance.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { CalendarEventDto, CalendarQuery, CalendarStatusDto } from "./dto.js";
 
@@ -85,6 +86,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly subscriptions: SubscriptionsService,
     private readonly contracts: ContractsService,
+    private readonly maintenance: MaintenanceService,
   ) {}
 
   private get db(): any {
@@ -1033,6 +1035,32 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           editable: false,
         });
       }
+    }
+
+    // 12. Maintenance Management: Jadwal servis berkala aset (EAM)
+    const maintSchedules = await this.maintenance.calendarSchedules(from, to);
+    for (const sch of maintSchedules) {
+      items.push({
+        key: sch.id,
+        eventNumber: sch.id,
+        sourceModule: "maintenance-reports",
+        sourceId: sch.scheduleId,
+        title: sch.title,
+        subtitle: sch.assignedTo ? `Teknisi: ${sch.assignedTo}` : "Belum ditugaskan",
+        category: "MAINTENANCE",
+        start: sch.date,
+        end: sch.date,
+        occurrenceDate: sch.date,
+        isAllDay: true,
+        status: sch.status === "COMPLETED" ? "COMPLETED" : sch.status === "OVERDUE" ? "PENDING" : "IN_PROGRESS",
+        priority: sch.priority || "MEDIUM",
+        picId: null,
+        picName: sch.assignedTo,
+        picRole: "Teknisi",
+        routePath: `/maintenance-reports`,
+        isOverdue: sch.status === "OVERDUE",
+        editable: false,
+      });
     }
 
     // Deteksi bentrok jadwal (Schedule Conflict Detection — PRD 3.8 & Phase 3)

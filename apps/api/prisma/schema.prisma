@@ -431,6 +431,16 @@ model User {
   cashAdvancesSettled   CashAdvance[]           @relation("CashAdvanceSettler")
   assignedAssets        FaAsset[]               @relation("FaAssetAssignedUser")
   assetAssignments      FaAssetAssignment[]     @relation("FaAssignmentUser")
+  maintPlansPic          MaintPlan[]             @relation("MaintPlanPic")
+  maintSchedulesAssigned MaintSchedule[]         @relation("MaintScheduleAssigned")
+  maintRequestsReported  MaintRequest[]          @relation("MaintRequestReporter")
+  maintRequestsInspected MaintRequest[]          @relation("MaintRequestInspector")
+  maintWorkOrdersAssigned MaintWorkOrder[]        @relation("MaintWOAssigned")
+  maintWorkOrdersVerified MaintWorkOrder[]        @relation("MaintWOVerifier")
+  maintWorkOrdersClosed  MaintWorkOrder[]        @relation("MaintWOCloser")
+  maintLaborItems        MaintLabor[]            @relation("MaintLaborTechnician")
+  maintApprovals         MaintApproval[]         @relation("MaintApprovalUser")
+  maintNotifications     MaintNotification[]     @relation("MaintNotificationRecipient")
 
   @@index([role, status])
   @@index([warehouseId])
@@ -708,6 +718,7 @@ model Product {
   prItems           PurchaseRequestItem[]
   poItems           SupplierPOItem[]
   receivingItems    ReceivingItem[]
+  maintMaterials    MaintMaterial[]
   opnameDetails     StockOpnameDetail[]
   requirements      ProjectRequirement[]
   damageReports     DamageReport[]
@@ -2826,6 +2837,12 @@ model FaAsset {
   documents             FaAssetDocument[]
   maintenanceRefs       FaAssetMaintenanceRef[]
   ledgerEntries         FaAssetLedger[]
+  maintenancePlanAssets MaintPlanAsset[]
+  maintenanceSchedules  MaintSchedule[]
+  maintenanceRequests   MaintRequest[]
+  maintenanceWorkOrders MaintWorkOrder[]
+  maintenanceHistories  MaintHistory[]
+  maintenanceDowntimes  MaintDowntime[]
 
   @@index([categoryId])
   @@index([locationId])
@@ -3499,3 +3516,459 @@ model CtrAuditLog {
   @@map("contract_audit_logs")
 }
 
+
+
+// ─────────────────────────────── Maintenance Management (EAM / CMMS) ───────────────────────────────
+
+model MaintCategory {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  checklists MaintChecklist[]
+  plans      MaintPlan[]
+
+  @@index([isActive])
+  @@map("maintenance_categories")
+}
+
+model MaintChecklist {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  categoryId  Int
+  category    MaintCategory @relation(fields: [categoryId], references: [id])
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items MaintChecklistItem[]
+  plans MaintPlan[]
+
+  @@index([categoryId])
+  @@map("maintenance_checklists")
+}
+
+model MaintChecklistItem {
+  id                Int            @id @default(autoincrement())
+  checklistId       Int
+  checklist         MaintChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  itemText          String
+  standardCondition String?
+  sequence          Int            @default(1)
+  isRequired        Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  workOrderChecklists MaintWorkOrderChecklist[]
+
+  @@index([checklistId])
+  @@map("maintenance_checklist_items")
+}
+
+model MaintVendor {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique
+  name           String
+  contactPerson  String?
+  phone          String?
+  email          String?
+  address        String?  @db.Text
+  specialization String?
+  rating         Decimal? @default(5.0) @db.Decimal(3, 1)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  costs MaintCost[]
+
+  @@index([isActive])
+  @@map("maintenance_vendors")
+}
+
+model MaintPlan {
+  id                Int           @id @default(autoincrement())
+  planNumber        String        @unique
+  title             String
+  categoryId        Int
+  category          MaintCategory @relation(fields: [categoryId], references: [id])
+  method            String        @default("CALENDAR_BASED")
+  intervalValue     Int           @default(1)
+  intervalUnit      String        @default("MONTHS")
+  checklistId       Int?
+  checklist         MaintChecklist? @relation(fields: [checklistId], references: [id])
+  picUserId         Int?
+  picUser           User?         @relation("MaintPlanPic", fields: [picUserId], references: [id])
+  autoGenerate      Boolean       @default(true)
+  generationHorizon String        @default("NEXT_CYCLE")
+  reminderLeadDays  String        @default("7,3,1")
+  description       String?       @db.Text
+  isActive          Boolean       @default(true)
+  createdById       Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  assets    MaintPlanAsset[]
+  schedules MaintSchedule[]
+
+  @@index([categoryId])
+  @@index([checklistId])
+  @@index([picUserId])
+  @@index([isActive])
+  @@map("maintenance_plans")
+}
+
+model MaintPlanAsset {
+  id               Int       @id @default(autoincrement())
+  planId           Int
+  plan             MaintPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  assetId          Int
+  asset            FaAsset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  lastServiceDate  DateTime? @db.Date
+  lastMeterReading Decimal?  @db.Decimal(18, 2)
+  nextServiceDate  DateTime? @db.Date
+  nextMeterReading Decimal?  @db.Decimal(18, 2)
+  status           String    @default("ACTIVE")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([planId, assetId])
+  @@index([planId])
+  @@index([assetId])
+  @@map("maintenance_plan_assets")
+}
+
+model MaintSchedule {
+  id                  Int       @id @default(autoincrement())
+  scheduleNumber      String    @unique
+  planId              Int?
+  plan                MaintPlan? @relation(fields: [planId], references: [id])
+  assetId             Int
+  asset               FaAsset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  scheduledDate       DateTime  @db.Date
+  scheduledMeter      Decimal?  @db.Decimal(18, 2)
+  maintenanceType     String    @default("PREVENTIVE")
+  priority            String    @default("MEDIUM")
+  assignedUserId      Int?
+  assignedUser        User?     @relation("MaintScheduleAssigned", fields: [assignedUserId], references: [id])
+  status              String    @default("SCHEDULED")
+  rescheduleReason    String?   @db.Text
+  rescheduledFromDate DateTime? @db.Date
+  rescheduledByUserId Int?
+  notes               String?   @db.Text
+  createdById         Int?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  workOrders MaintWorkOrder[]
+
+  @@index([planId])
+  @@index([assetId])
+  @@index([scheduledDate])
+  @@index([status])
+  @@map("maintenance_schedules")
+}
+
+model MaintRequest {
+  id                     Int       @id @default(autoincrement())
+  requestNumber          String    @unique
+  assetId                Int
+  asset                  FaAsset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  reporterUserId         Int
+  reporterUser           User      @relation("MaintRequestReporter", fields: [reporterUserId], references: [id])
+  requestDate            DateTime  @db.Date
+  problemDescription     String    @db.Text
+  urgency                String    @default("MEDIUM")
+  initialInspectionNotes String?   @db.Text
+  inspectedByUserId      Int?
+  inspectedByUser        User?     @relation("MaintRequestInspector", fields: [inspectedByUserId], references: [id])
+  inspectedAt            DateTime?
+  status                 String    @default("DRAFT")
+  rejectionReason        String?   @db.Text
+  workOrderId            Int?
+  createdById            Int?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  workOrders  MaintWorkOrder[]
+  attachments MaintAttachment[]
+
+  @@index([assetId])
+  @@index([reporterUserId])
+  @@index([status])
+  @@index([workOrderId])
+  @@map("maintenance_requests")
+}
+
+model MaintWorkOrder {
+  id                       Int       @id @default(autoincrement())
+  workOrderNumber          String    @unique
+  assetId                  Int
+  asset                    FaAsset   @relation(fields: [assetId], references: [id])
+  maintenanceType          String    @default("PREVENTIVE")
+  priority                 String    @default("MEDIUM")
+  problemDescription       String    @db.Text
+  workInstruction          String?   @db.Text
+  assignedToUserId         Int?
+  assignedToUser           User?     @relation("MaintWOAssigned", fields: [assignedToUserId], references: [id])
+  plannedStartDate         DateTime? @db.Date
+  plannedFinishDate        DateTime? @db.Date
+  actualStartDate          DateTime?
+  actualFinishDate         DateTime?
+  totalSparePartCost       Decimal   @default(0.00) @db.Decimal(18, 2)
+  totalLaborCost           Decimal   @default(0.00) @db.Decimal(18, 2)
+  totalExternalServiceCost Decimal   @default(0.00) @db.Decimal(18, 2)
+  totalTransportationCost  Decimal   @default(0.00) @db.Decimal(18, 2)
+  totalOtherCost           Decimal   @default(0.00) @db.Decimal(18, 2)
+  totalCost                Decimal   @default(0.00) @db.Decimal(18, 2)
+  isCapitalized            Boolean   @default(false)
+  capitalizationStatus     String?   @default("NONE")
+  workResult               String?   @db.Text
+  rootCause                String?   @db.Text
+  correctiveAction         String?   @db.Text
+  verificationNotes        String?   @db.Text
+  verifiedByUserId         Int?
+  verifiedByUser           User?     @relation("MaintWOVerifier", fields: [verifiedByUserId], references: [id])
+  verifiedAt               DateTime?
+  closedByUserId           Int?
+  closedByUser             User?     @relation("MaintWOCloser", fields: [closedByUserId], references: [id])
+  closedAt                 DateTime?
+  status                   String    @default("DRAFT")
+  requestId                Int?
+  request                  MaintRequest?  @relation(fields: [requestId], references: [id])
+  scheduleId               Int?
+  schedule                 MaintSchedule? @relation(fields: [scheduleId], references: [id])
+  createdById              Int?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  tasks       MaintWorkOrderTask[]
+  checklists  MaintWorkOrderChecklist[]
+  materials   MaintMaterial[]
+  labor       MaintLabor[]
+  costs       MaintCost[]
+  histories   MaintHistory[]
+  downtimes   MaintDowntime[]
+  attachments MaintAttachment[]
+
+  @@index([assetId])
+  @@index([assignedToUserId])
+  @@index([status])
+  @@index([maintenanceType])
+  @@index([priority])
+  @@index([requestId])
+  @@index([scheduleId])
+  @@map("maintenance_work_orders")
+}
+
+model MaintWorkOrderTask {
+  id                Int            @id @default(autoincrement())
+  workOrderId       Int
+  workOrder         MaintWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  taskName          String
+  instruction       String?        @db.Text
+  sequence          Int            @default(1)
+  isCompleted       Boolean        @default(false)
+  completedAt       DateTime?
+  completedByUserId Int?
+  notes             String?        @db.Text
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([workOrderId])
+  @@map("maintenance_work_order_tasks")
+}
+
+model MaintWorkOrderChecklist {
+  id              Int                 @id @default(autoincrement())
+  workOrderId     Int
+  workOrder       MaintWorkOrder      @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  checklistItemId Int?
+  checklistItem   MaintChecklistItem? @relation(fields: [checklistItemId], references: [id])
+  itemText        String
+  conditionBefore String?
+  conditionAfter  String?
+  status          String              @default("PASS")
+  notes           String?             @db.Text
+  checkedByUserId Int?
+  checkedAt       DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([workOrderId])
+  @@index([checklistItemId])
+  @@map("maintenance_work_order_checklists")
+}
+
+model MaintMaterial {
+  id                Int            @id @default(autoincrement())
+  workOrderId       Int
+  workOrder         MaintWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  productId         Int?
+  product           Product?       @relation(fields: [productId], references: [id])
+  sparePartName     String
+  partNumber        String?
+  quantity          Decimal        @default(1.00) @db.Decimal(12, 2)
+  unit              String         @default("PCS")
+  unitCost          Decimal        @default(0.00) @db.Decimal(18, 2)
+  totalCost         Decimal        @default(0.00) @db.Decimal(18, 2)
+  source            String         @default("WAREHOUSE")
+  warehouseId       Int?
+  stockMovementId   Int?
+  purchaseRequestId Int?
+  status            String         @default("REQUESTED")
+  notes             String?        @db.Text
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([workOrderId])
+  @@index([productId])
+  @@map("maintenance_materials")
+}
+
+model MaintLabor {
+  id               Int            @id @default(autoincrement())
+  workOrderId      Int
+  workOrder        MaintWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  technicianUserId Int?
+  technicianUser   User?          @relation("MaintLaborTechnician", fields: [technicianUserId], references: [id])
+  technicianName   String
+  hoursSpent       Decimal        @default(0.00) @db.Decimal(8, 2)
+  hourlyRate       Decimal        @default(0.00) @db.Decimal(18, 2)
+  laborCost        Decimal        @default(0.00) @db.Decimal(18, 2)
+  workDescription  String?        @db.Text
+  loggedDate       DateTime?      @db.Date
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([workOrderId])
+  @@index([technicianUserId])
+  @@map("maintenance_labor")
+}
+
+model MaintCost {
+  id                    Int            @id @default(autoincrement())
+  workOrderId           Int
+  workOrder             MaintWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  costComponent         String
+  description           String
+  amount                Decimal        @default(0.00) @db.Decimal(18, 2)
+  sourceTransactionType String         @default("MANUAL")
+  sourceTransactionRef  String?
+  journalId             Int?
+  isCapitalized         Boolean        @default(false)
+  coaCode               String?
+  vendorId              Int?
+  vendor                MaintVendor?   @relation(fields: [vendorId], references: [id])
+  incurredDate          DateTime       @db.Date
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  @@index([workOrderId])
+  @@index([costComponent])
+  @@index([vendorId])
+  @@map("maintenance_costs")
+}
+
+model MaintHistory {
+  id                 Int            @id @default(autoincrement())
+  assetId            Int
+  asset              FaAsset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  workOrderId        Int?
+  workOrder          MaintWorkOrder? @relation(fields: [workOrderId], references: [id])
+  maintenanceDate    DateTime       @db.Date
+  maintenanceType    String         @default("PREVENTIVE")
+  problemDescription String         @db.Text
+  rootCause          String?        @db.Text
+  correctiveAction   String?        @db.Text
+  sparePartsSummary  String?        @db.Text
+  technicianOrVendor String?
+  totalCost          Decimal        @default(0.00) @db.Decimal(18, 2)
+  assetDowntimeHours Decimal        @default(0.00) @db.Decimal(8, 2)
+  photoBeforeUrl     String?        @db.Text
+  photoAfterUrl      String?        @db.Text
+  finalAssetStatus   String         @default("GOOD")
+  createdAt          DateTime       @default(now())
+
+  @@index([assetId])
+  @@index([workOrderId])
+  @@index([maintenanceDate])
+  @@map("maintenance_history")
+}
+
+model MaintDowntime {
+  id                Int            @id @default(autoincrement())
+  assetId           Int
+  asset             FaAsset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  workOrderId       Int?
+  workOrder         MaintWorkOrder? @relation(fields: [workOrderId], references: [id])
+  downtimeStart     DateTime
+  downtimeEnd       DateTime?
+  durationHours     Decimal        @default(0.00) @db.Decimal(8, 2)
+  cause             String         @db.Text
+  operationalImpact String?        @default("FULL_STOP")
+  status            String         @default("RECORDED")
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([assetId])
+  @@index([workOrderId])
+  @@map("maintenance_downtime")
+}
+
+model MaintAttachment {
+  id           Int            @id @default(autoincrement())
+  workOrderId  Int?
+  workOrder    MaintWorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  requestId    Int?
+  request      MaintRequest?   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fileId       Int?
+  fileUrl      String         @db.Text
+  documentType String         @default("REPORT")
+  title        String
+  notes        String?        @db.Text
+  uploadedById Int?
+  createdAt    DateTime       @default(now())
+
+  @@index([workOrderId])
+  @@index([requestId])
+  @@map("maintenance_attachments")
+}
+
+model MaintApproval {
+  id             Int       @id @default(autoincrement())
+  referenceType  String
+  referenceId    Int
+  approverUserId Int
+  approverUser   User      @relation("MaintApprovalUser", fields: [approverUserId], references: [id])
+  status         String    @default("PENDING")
+  notes          String?   @db.Text
+  actedAt        DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([referenceType, referenceId])
+  @@index([approverUserId])
+  @@map("maintenance_approvals")
+}
+
+model MaintNotification {
+  id              Int      @id @default(autoincrement())
+  recipientUserId Int
+  recipientUser   User     @relation("MaintNotificationRecipient", fields: [recipientUserId], references: [id])
+  notificationType String
+  title           String
+  message         String   @db.Text
+  referenceType   String?
+  referenceId     Int?
+  isRead          Boolean  @default(false)
+  sentAt          DateTime @default(now())
+
+  @@index([recipientUserId])
+  @@index([isRead])
+  @@map("maintenance_notifications")
+}

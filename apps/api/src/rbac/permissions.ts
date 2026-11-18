@@ -43,6 +43,7 @@ export type ModuleKey =
   | "pocReports"
   | "visitReports"
   | "maintenanceReports"
+  | "maintenance"
   | "fixedAssets"
   | "subscriptions"
   | "contracts"
@@ -89,6 +90,7 @@ const ALL: Record<ModuleKey, Action[]> = {
   pocReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   visitReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   maintenanceReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  maintenance: ["M", "L", "C", "U", "A", "P", "V", "E"],
   fixedAssets: ["M", "L", "C", "U", "A", "P", "V", "E"],
   subscriptions: ["M", "L", "C", "U", "A", "P", "V", "E"],
   contracts: ["M", "L", "C", "U", "A", "P", "V", "E"],
@@ -328,6 +330,12 @@ PERMISSIONS.PM!.subscriptions = "MLU";
 PERMISSIONS.SE!.subscriptions = "MLU";
 PERMISSIONS.TEKNISI!.subscriptions = "ML";
 PERMISSIONS.FINANCE!.contracts = "MLCUAPVE";
+PERMISSIONS.FINANCE!.maintenance = "MLCUAPVE";
+PERMISSIONS.PM!.maintenance = "MLCUE";
+PERMISSIONS.TEKNISI!.maintenance = "MLCU";
+PERMISSIONS.PROCUREMENT!.maintenance = "ML";
+PERMISSIONS.GUDANG!.maintenance = "MLCU";
+PERMISSIONS.SE!.maintenance = "ML";
 PERMISSIONS.HR!.attendance = "LCUAPVE";
 PERMISSIONS.HR!.payroll = "LCUAPVE";
 PERMISSIONS.PM!.projects = "LCUP";
@@ -365,6 +373,7 @@ const MODULE_ALIASES: Record<string, string[]> = {
   "visit-reports": ["visit-reports", "visitReports"],
   maintenanceReports: ["maintenanceReports", "maintenance-reports"],
   "maintenance-reports": ["maintenance-reports", "maintenanceReports"],
+  maintenance: ["maintenance", "eam", "work-orders"],
   damageReports: ["damageReports", "damage-reports", "stock"],
   "damage-reports": ["damage-reports", "damageReports", "stock"],
   audit: ["audit", "audit-log"],
@@ -515,6 +524,7 @@ const UI_TWIN: Record<string, string> = {
   pocReports: "poc-reports",
   visitReports: "visit-reports",
   maintenanceReports: "maintenance-reports",
+  maintenance: "maintenance",
   fixedAssets: "fixed-assets",
   subscriptions: "subscriptions",
   contracts: "contracts",

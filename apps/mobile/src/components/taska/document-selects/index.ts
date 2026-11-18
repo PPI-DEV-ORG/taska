@@ -14,3 +14,4 @@ export * from "./supplier-po-select";
 export * from "./purchase-request-select";
 export * from "./draft-receiving-select";
 export * from "./maintenance-select";
+export * from "./asset-select";

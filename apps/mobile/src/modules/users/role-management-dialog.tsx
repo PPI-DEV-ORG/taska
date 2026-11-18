@@ -80,11 +80,12 @@ const MODULE_GROUPS: { group: string; items: { key: string; label: string; desc:
     ],
   },
   {
-    group: "Aset & Fasilitas Internal",
+    group: "Manajemen",
     items: [
-      { key: "fixed-assets", label: "Aset Tetap", desc: "Siklus hidup aset internal, mutasi, depresiasi & audit QR" },
-      { key: "subscriptions", label: "Manajemen Langganan", desc: "Langganan domain, cloud, VPS, lisensi & alokasi biaya" },
       { key: "contracts", label: "Manajemen Kontrak", desc: "Kontrak vendor, pelanggan, SLA, versi dokumen & renewal" },
+      { key: "subscriptions", label: "Manajemen Langganan", desc: "Langganan domain, cloud, VPS, lisensi & alokasi biaya" },
+      { key: "fixed-assets", label: "Aset Tetap", desc: "Siklus hidup aset internal, mutasi, depresiasi & audit QR" },
+      { key: "maintenance", label: "Manajemen Maintenance", desc: "Pemeliharaan & servis aset internal, Work Order, jadwal preventive & laporan kerusakan" },
     ],
   },
   {
