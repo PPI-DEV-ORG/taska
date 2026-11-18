@@ -53,7 +53,7 @@ export function FixedAssetsScreen({
 }: {
   initialAssetId?: string | number;
 } = {}) {
-  const { user } = useApp();
+  const { user, toast } = useApp();
 
   const [activeTab, setActiveTab] = React.useState<"registry" | "depreciation" | "audit" | "reports">(
     "registry",
@@ -149,10 +149,10 @@ export function FixedAssetsScreen({
       if (dash.status === "fulfilled" && dash.value) {
         setDashboard(dash.value);
       }
-    } catch (err) {
-      console.error("Gagal mengambil data master:", err);
+    } catch (err: any) {
+      toast("Tidak dapat terhubung ke server (masalah jaringan)");
     }
-  }, []);
+  }, [toast]);
 
   // Fetch Asset List
   const fetchAssets = React.useCallback(async () => {
@@ -168,12 +168,12 @@ export function FixedAssetsScreen({
 
       const res: any = await api("GET", `/fixed-assets?${params.toString()}`);
       setAssets(res?.data || []);
-    } catch (err) {
-      console.error("Gagal mengambil daftar aset:", err);
+    } catch (err: any) {
+      toast("Tidak dapat terhubung ke server (masalah jaringan)");
     } finally {
       setLoading(false);
     }
-  }, [search, filterCategory, filterLocation, filterStatus, filterCondition]);
+  }, [search, filterCategory, filterLocation, filterStatus, filterCondition, toast]);
 
   React.useEffect(() => {
     let active = true;
@@ -190,13 +190,13 @@ export function FixedAssetsScreen({
         setUsers((usrs as any)?.data || usrs || []);
         setDashboard(dash || null);
       })
-      .catch((err) => {
-        console.error("Gagal mengambil data master:", err);
+      .catch(() => {
+        if (active) toast("Tidak dapat terhubung ke server (masalah jaringan)");
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [toast]);
 
   React.useEffect(() => {
     let active = true;
@@ -212,8 +212,8 @@ export function FixedAssetsScreen({
       .then((res) => {
         if (active) setAssets(res?.data || []);
       })
-      .catch((err) => {
-        console.error("Gagal mengambil daftar aset:", err);
+      .catch(() => {
+        if (active) toast("Tidak dapat terhubung ke server (masalah jaringan)");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -222,7 +222,7 @@ export function FixedAssetsScreen({
     return () => {
       active = false;
     };
-  }, [search, filterCategory, filterLocation, filterStatus, filterCondition]);
+  }, [search, filterCategory, filterLocation, filterStatus, filterCondition, toast]);
 
   const overview = dashboard?.overview || {
     totalAssets: assets.length,

@@ -60,8 +60,8 @@ function AssetDetailContent({
       .then((res) => {
         if (active) setAsset(res);
       })
-      .catch((err) => {
-        console.error("Gagal mengambil detail aset:", err);
+      .catch(() => {
+        // network / offline handled silently
       })
       .finally(() => {
         if (active) setLoading(false);

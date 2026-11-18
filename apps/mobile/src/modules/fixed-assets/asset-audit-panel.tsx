@@ -17,12 +17,14 @@ import {
 } from "lucide-react-native";
 import { FaAudit, FaAuditItem, FaLocation } from "./types";
 import { api } from "@/services/api";
+import { useApp } from "@/store/app-store";
 
 type Props = {
   locations: FaLocation[];
 };
 
 export function AssetAuditPanel({ locations }: Props) {
+  const { toast } = useApp();
   const [audits, setAudits] = React.useState<FaAudit[]>([]);
   const [selectedAuditId, setSelectedAuditId] = React.useState<number | null>(null);
   const [selectedAudit, setSelectedAudit] = React.useState<FaAudit | null>(null);
@@ -69,21 +71,21 @@ export function AssetAuditPanel({ locations }: Props) {
       if (!selectedAuditId && data && data.length > 0) {
         setSelectedAuditId(data[0]!.id);
       }
-    } catch (err) {
-      console.error("Gagal mengambil data audit:", err);
+    } catch (err: any) {
+      toast("Tidak dapat terhubung ke server (masalah jaringan)");
     } finally {
       setLoading(false);
     }
-  }, [selectedAuditId]);
+  }, [selectedAuditId, toast]);
 
   const fetchAuditDetail = React.useCallback(async (id: number) => {
     try {
       const detail = await api<FaAudit>("GET", `/fixed-assets/audits/${id}`);
       setSelectedAudit(detail);
-    } catch (err) {
-      console.error("Gagal mengambil detail audit:", err);
+    } catch (err: any) {
+      toast("Tidak dapat terhubung ke server (masalah jaringan)");
     }
-  }, []);
+  }, [toast]);
 
   React.useEffect(() => {
     let active = true;
@@ -96,8 +98,8 @@ export function AssetAuditPanel({ locations }: Props) {
           setSelectedAuditId(list[0]!.id);
         }
       })
-      .catch((err) => {
-        console.error("Gagal mengambil data audit:", err);
+      .catch(() => {
+        if (active) toast("Tidak dapat terhubung ke server (masalah jaringan)");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -105,7 +107,7 @@ export function AssetAuditPanel({ locations }: Props) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [toast]);
 
   React.useEffect(() => {
     if (!selectedAuditId) return;
@@ -114,13 +116,13 @@ export function AssetAuditPanel({ locations }: Props) {
       .then((detail) => {
         if (active) setSelectedAudit(detail);
       })
-      .catch((err) => {
-        console.error("Gagal mengambil detail audit:", err);
+      .catch(() => {
+        if (active) toast("Tidak dapat terhubung ke server (masalah jaringan)");
       });
     return () => {
       active = false;
     };
-  }, [selectedAuditId]);
+  }, [selectedAuditId, toast]);
 
   const handleCreateAudit = async () => {
     if (!auditTitle.trim()) return;

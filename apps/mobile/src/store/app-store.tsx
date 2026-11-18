@@ -535,7 +535,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       playNotificationSound();
       pushNotifPopup(notif, customTitle);
       void showSystemNotification({
-        title: customTitle || JENIS_LABEL[notif.jenis] || "Taska Mini ERP",
+        title: customTitle || JENIS_LABEL[notif.jenis] || "Akuntra Mini ERP",
         body: notif.teks,
         notif,
         onlyWhenBackground: true,

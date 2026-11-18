@@ -19,7 +19,7 @@ export function generatePdfTable(options: {
   columns: string[];
   rows: string[][];
 }): Uint8Array {
-  const { title, subtitle = "PT GHINA MULTI PRIMA / TASKA ERP", dateStr = new Date().toISOString().slice(0, 10), columns, rows } = options;
+  const { title, subtitle = "PT GHINA MULTI PRIMA / AKUNTRA ERP", dateStr = new Date().toISOString().slice(0, 10), columns, rows } = options;
 
   // A4 Landscape: width 842 pt, height 595 pt
   const pageWidth = 842;
@@ -118,7 +118,7 @@ export function generatePdfTable(options: {
   stream += "/F1 8 Tf\n";
   stream += `0.45 0.5 0.55 rg\n`;
   stream += `${margin} 25 Td\n`;
-  stream += `(Dokumen resmi Taska ERP - Dicetak secara otomatis) Tj\n`;
+  stream += `(Dokumen resmi Akuntra ERP - Dicetak secara otomatis) Tj\n`;
   stream += "ET\n";
 
   const streamBytes = new TextEncoder().encode(stream);

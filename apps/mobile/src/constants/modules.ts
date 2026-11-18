@@ -821,7 +821,7 @@ export const MODULES: Record<string, ModuleDef> = {
     createLabel: "Tambah pengguna",
     createFields: [
       { key: "name", label: "Nama lengkap", type: "text", required: true, placeholder: "Masukkan nama lengkap" },
-      { key: "email", label: "Email", type: "text", required: true, placeholder: "nama@taska.co.id" },
+      { key: "email", label: "Email", type: "text", required: true, placeholder: "nama@akuntra.co.id" },
       { key: "password", label: "Kata sandi", type: "password", required: true, placeholder: "Masukkan kata sandi akun" },
       { key: "roleLabel", label: "Role", type: "select", required: true, options: ["Super Admin", "Admin / Bos", "HR", "Sales", "Manajer Proyek", "Teknisi", "Procurement", "Finance", "Gudang", "Software Engineer"] },
       { key: "phone", label: "Nomor telepon", type: "text", placeholder: "0812-xxxx-xxxx" },

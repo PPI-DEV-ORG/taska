@@ -30,7 +30,7 @@ function NavigationShell() {
 
   React.useEffect(() => {
     if (Platform.OS === "web" && typeof document !== "undefined") {
-      document.title = "Taska - Mini ERP";
+      document.title = "Akuntra - Mini ERP";
       try {
         let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
         if (!link) {
@@ -39,7 +39,7 @@ function NavigationShell() {
           document.head.appendChild(link);
         }
         link.type = "image/png";
-        link.href = "/favicon.png";
+        link.href = "/favicon.png?v=2";
       } catch {}
     }
   }, []);

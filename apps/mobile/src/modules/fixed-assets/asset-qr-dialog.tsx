@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Download, QrCode } from "lucide-react-native";
 import { api } from "@/services/api";
+import { useApp } from "@/store/app-store";
 import { FaAsset } from "./types";
 
 type Props = {
@@ -14,6 +15,8 @@ type Props = {
 };
 
 export function AssetQrDialog({ visible, onClose, asset }: Props) {
+  const { companyProfile } = useApp();
+  const companyName = companyProfile?.name || "Akuntra";
   const [qrData, setQrData] = React.useState<{ assetId: FaAsset["id"]; dataUrl: string } | null>(null);
   const [isGenerating, setIsGenerating] = React.useState(false);
 
@@ -108,15 +111,15 @@ export function AssetQrDialog({ visible, onClose, asset }: Props) {
       const innerPadX = 26;
       let currY = 30;
 
-      // Header: TASKA ERP ASSET / PT Griya Mandiri Pratama
+      // Header: AKUNTRA ERP ASSET / Nama Perusahaan
       ctx.fillStyle = "#ea580c";
       ctx.font = "bold 13px system-ui, -apple-system, sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText("TASKA ERP ASSET", innerPadX, currY);
+      ctx.fillText("AKUNTRA ERP ASSET", innerPadX, currY);
 
       ctx.fillStyle = "#71717a";
       ctx.font = "10px system-ui, -apple-system, sans-serif";
-      ctx.fillText("PT Griya Mandiri Pratama", innerPadX, currY + 13);
+      ctx.fillText(companyName, innerPadX, currY + 13);
 
       // Badge: INVENTARIS
       const badgeW = 76;
@@ -285,9 +288,9 @@ export function AssetQrDialog({ visible, onClose, asset }: Props) {
             <View className="w-full border-b border-neutral-200 pb-2 mb-3 flex-row items-center justify-between">
               <View>
                 <Text className="text-xs font-bold tracking-widest text-orange-600">
-                  TASKA ERP ASSET
+                  AKUNTRA ERP ASSET
                 </Text>
-                <Text className="text-[10px] text-neutral-500">PT Griya Mandiri Pratama</Text>
+                <Text className="text-[10px] text-neutral-500">{companyName}</Text>
               </View>
               <View className="bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
                 <Text className="text-[10px] font-bold text-orange-700">INVENTARIS</Text>
