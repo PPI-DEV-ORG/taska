@@ -45,6 +45,7 @@ export type ModuleKey =
   | "maintenanceReports"
   | "fixedAssets"
   | "subscriptions"
+  | "contracts"
   | "masterData";
 
 const ALL: Record<ModuleKey, Action[]> = {
@@ -90,6 +91,7 @@ const ALL: Record<ModuleKey, Action[]> = {
   maintenanceReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   fixedAssets: ["M", "L", "C", "U", "A", "P", "V", "E"],
   subscriptions: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  contracts: ["M", "L", "C", "U", "A", "P", "V", "E"],
   masterData: ["M", "L", "C", "U", "A", "P", "V", "E"],
 };
 
@@ -325,6 +327,7 @@ PERMISSIONS.FINANCE!.subscriptions = "LCUAPVE";
 PERMISSIONS.PM!.subscriptions = "MLU";
 PERMISSIONS.SE!.subscriptions = "MLU";
 PERMISSIONS.TEKNISI!.subscriptions = "ML";
+PERMISSIONS.FINANCE!.contracts = "MLCUAPVE";
 PERMISSIONS.HR!.attendance = "LCUAPVE";
 PERMISSIONS.HR!.payroll = "LCUAPVE";
 PERMISSIONS.PM!.projects = "LCUP";
@@ -514,6 +517,7 @@ const UI_TWIN: Record<string, string> = {
   maintenanceReports: "maintenance-reports",
   fixedAssets: "fixed-assets",
   subscriptions: "subscriptions",
+  contracts: "contracts",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

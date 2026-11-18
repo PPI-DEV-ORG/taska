@@ -10,6 +10,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { SubscriptionsService } from "../subscriptions/subscriptions.service.js";
+import { ContractsService } from "../contracts/contracts.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { CalendarEventDto, CalendarQuery, CalendarStatusDto } from "./dto.js";
 
@@ -83,6 +84,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly subscriptions: SubscriptionsService,
+    private readonly contracts: ContractsService,
   ) {}
 
   private get db(): any {
@@ -997,6 +999,37 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           picRole: sub.picUserId ? "PIC" : null,
           routePath: `/subscriptions/${sub.id}`,
           isOverdue: days < 0 && !["CANCELLED", "EXPIRED"].includes(String(sub.status)),
+          editable: false,
+        });
+      }
+    }
+
+    // 11. Contract Management: jadwal berakhir kontrak & reminder perpanjangan
+    if (all || SUBSCRIPTION_ROLES.includes(role) || SALES_ROLES.includes(role) || role === "HR") {
+      const expContracts = await this.contracts.calendarExpirations(from, to);
+      for (const ctr of expContracts) {
+        const expDate = ctr.expirationDate as Date;
+        if (!expDate) continue;
+        const days = Math.round((new Date(expDate).getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
+        items.push({
+          key: `contract-exp-${ctr.id}`,
+          eventNumber: ctr.contractNumber,
+          sourceModule: "contracts",
+          sourceId: ctr.id,
+          title: `${days < 0 ? "Kontrak Expired" : "Jatuh Tempo Kontrak"}: ${ctr.title}`,
+          subtitle: [ctr.counterpartyName, ctr.type?.name, ctr.contractNumber].filter(Boolean).join(" · "),
+          category: "CONTRACT",
+          start: iso(expDate)!,
+          end: null,
+          occurrenceDate: wibDateKey(new Date(expDate)),
+          isAllDay: true,
+          status: ctr.status === "RENEWAL_PENDING" ? "PENDING" : days < 0 ? "PENDING" : "NOT_STARTED",
+          priority: days <= 7 ? "URGENT" : days <= 14 ? "HIGH" : days <= 30 ? "MEDIUM" : "LOW",
+          picId: ctr.contractOwnerId ?? null,
+          picName: ctr.ownerName ?? null,
+          picRole: ctr.contractOwnerId ? "PIC" : null,
+          routePath: `/contracts/${ctr.id}`,
+          isOverdue: days < 0 && !["TERMINATED", "RENEWED"].includes(String(ctr.status)),
           editable: false,
         });
       }

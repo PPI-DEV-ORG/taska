@@ -3113,3 +3113,389 @@ model FaAssetLedger {
   @@index([journalEntryId])
   @@map("fa_asset_ledger")
 }
+
+// ─────────────────────────────── Contract Management ───────────────────────────────
+
+model CtrType {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contracts       CtrContract[]
+  expirationRules CtrExpirationRule[]
+
+  @@index([isActive])
+  @@map("contract_types")
+}
+
+model CtrContract {
+  id               Int       @id @default(autoincrement())
+  contractNumber   String    @unique
+  officialNumber   String?
+  title            String
+  typeId           Int
+  type             CtrType   @relation(fields: [typeId], references: [id])
+  counterpartyType String    @default("VENDOR")
+  counterpartyId   Int?
+  counterpartyName String
+  effectiveDate    DateTime  @db.Date
+  expirationDate   DateTime  @db.Date
+  renewalDate      DateTime? @db.Date
+  isAutoRenewal    Boolean   @default(false)
+  currency         String    @default("IDR")
+  contractValue    Decimal   @default(0.00) @db.Decimal(18, 2)
+  contractOwnerId  Int?
+  department       String
+  paymentTerms     String?
+  paymentFrequency String    @default("ONE_TIME")
+  status           String    @default("ACTIVE")
+  approvalStatus   String    @default("DRAFT")
+  description      String?   @db.Text
+  createdById      Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  parties          CtrParty[]
+  documents        CtrDocument[]
+  services         CtrService[]
+  slas             CtrSla[]
+  terms            CtrTerm[]
+  financial        CtrFinancial?
+  paymentSchedules CtrPaymentSchedule[]
+  renewals         CtrRenewal[]
+  approvals        CtrApproval[]
+  notifications    CtrNotification[]
+  amendments       CtrAmendment[]
+  termination      CtrTermination?
+  relations        CtrRelation[]
+  auditLogs        CtrAuditLog[]
+
+  @@index([typeId])
+  @@index([counterpartyType, counterpartyId])
+  @@index([status])
+  @@index([approvalStatus])
+  @@index([expirationDate])
+  @@index([renewalDate])
+  @@index([department])
+  @@index([contractOwnerId])
+  @@map("contracts")
+}
+
+model CtrParty {
+  id         Int         @id @default(autoincrement())
+  contractId Int
+  contract   CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  partyType  String
+  entityType String      @default("OTHER")
+  entityId   Int?
+  name       String
+  role       String?
+  address    String?     @db.Text
+  picName    String?
+  picEmail   String?
+  picPhone   String?
+  createdAt  DateTime    @default(now())
+
+  @@index([contractId])
+  @@index([entityType, entityId])
+  @@map("contract_parties")
+}
+
+model CtrDocument {
+  id                   Int         @id @default(autoincrement())
+  contractId           Int
+  contract             CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  documentCategory     String
+  documentTitle        String
+  documentNumber       String?
+  isConfidential       Boolean     @default(false)
+  signedDate           DateTime?   @db.Date
+  signedByFirstParty   String?
+  signedBySecondParty  String?
+  currentVersionNumber Int         @default(1)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  versions CtrDocumentVersion[]
+
+  @@index([contractId])
+  @@index([documentCategory])
+  @@map("contract_documents")
+}
+
+model CtrDocumentVersion {
+  id                  Int         @id @default(autoincrement())
+  documentId          Int
+  document            CtrDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionNumber       Int         @default(1)
+  fileId              Int?
+  fileUrl             String      @db.VarChar(500)
+  fileName            String
+  fileSize            Int?
+  mimeType            String?
+  changeSummary       String?     @db.Text
+  isLockedForApproval Boolean     @default(false)
+  uploadedById        Int?
+  createdAt           DateTime    @default(now())
+
+  approvals CtrApproval[]
+
+  @@index([documentId, versionNumber])
+  @@map("contract_document_versions")
+}
+
+model CtrService {
+  id              Int         @id @default(autoincrement())
+  contractId      Int
+  contract        CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  serviceName     String
+  serviceScope    String?     @db.Text
+  servicePeriod   String?
+  serviceLocation String?
+  supportContact  String?
+  serviceFee      Decimal?    @db.Decimal(18, 2)
+  penaltyClause   String?     @db.Text
+  renewalTerms    String?     @db.Text
+  createdAt       DateTime    @default(now())
+
+  slas CtrSla[]
+
+  @@index([contractId])
+  @@map("contract_services")
+}
+
+model CtrSla {
+  id               Int         @id @default(autoincrement())
+  contractId       Int
+  contract         CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  serviceId        Int?
+  service          CtrService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  indicatorName    String
+  targetMetric     String
+  responseHours    Decimal?    @db.Decimal(6, 2)
+  resolutionHours  Decimal?    @db.Decimal(6, 2)
+  penaltyDetails   String?     @db.Text
+  operationalHours String?     @default("8x5")
+  createdAt        DateTime    @default(now())
+
+  @@index([contractId])
+  @@index([serviceId])
+  @@map("contract_sla")
+}
+
+model CtrTerm {
+  id           Int         @id @default(autoincrement())
+  contractId   Int
+  contract     CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  termType     String
+  clauseNumber String?     @db.VarChar(50)
+  title        String
+  content      String      @db.Text
+  createdAt    DateTime    @default(now())
+
+  @@index([contractId])
+  @@index([termType])
+  @@map("contract_terms")
+}
+
+model CtrFinancial {
+  id                  Int         @id @default(autoincrement())
+  contractId          Int         @unique
+  contract            CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  valueType           String      @default("FIXED")
+  currency            String      @default("IDR")
+  baseAmount          Decimal     @default(0.00) @db.Decimal(18, 2)
+  taxPercentage       Decimal     @default(0.00) @db.Decimal(5, 2)
+  taxAmount           Decimal     @default(0.00) @db.Decimal(18, 2)
+  totalAmount         Decimal     @default(0.00) @db.Decimal(18, 2)
+  downPaymentAmount   Decimal     @default(0.00) @db.Decimal(18, 2)
+  retentionAmount     Decimal     @default(0.00) @db.Decimal(18, 2)
+  retentionPeriodDays Int?
+  penaltyTerms        String?     @db.Text
+  costCenter          String?
+  projectReference    String?
+  notes               String?     @db.Text
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@map("contract_financials")
+}
+
+model CtrPaymentSchedule {
+  id               Int         @id @default(autoincrement())
+  contractId       Int
+  contract         CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  scheduleNumber   Int         @default(1)
+  milestoneName    String
+  dueDate          DateTime    @db.Date
+  amount           Decimal     @db.Decimal(18, 2)
+  taxAmount        Decimal     @default(0.00) @db.Decimal(18, 2)
+  totalAmount      Decimal     @db.Decimal(18, 2)
+  paymentStatus    String      @default("PLANNED")
+  invoiceReference String?
+  paidDate         DateTime?   @db.Date
+  notes            String?     @db.Text
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@index([contractId])
+  @@index([dueDate])
+  @@index([paymentStatus])
+  @@map("contract_payment_schedules")
+}
+
+model CtrRenewal {
+  id                     Int         @id @default(autoincrement())
+  contractId             Int
+  contract               CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  renewalNumber          Int         @default(1)
+  renewalCode            String      @unique
+  submissionDate         DateTime    @db.Date
+  proposedEffectiveDate  DateTime    @db.Date
+  proposedExpirationDate DateTime    @db.Date
+  previousValue          Decimal     @db.Decimal(18, 2)
+  proposedValue          Decimal     @db.Decimal(18, 2)
+  reason                 String      @db.Text
+  status                 String      @default("PENDING_REVIEW")
+  submittedById          Int?
+  reviewedById           Int?
+  reviewedAt             DateTime?
+  reviewComments         String?     @db.Text
+  draftAddendumDocId     Int?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+
+  @@index([contractId])
+  @@index([status])
+  @@map("contract_renewals")
+}
+
+model CtrApproval {
+  id                        Int                 @id @default(autoincrement())
+  contractId                Int
+  contract                  CtrContract         @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  stage                     String
+  sequence                  Int                 @default(1)
+  status                    String              @default("PENDING")
+  approverId                Int?
+  approverRole              String?
+  decisionTimestamp         DateTime?
+  comments                  String?             @db.Text
+  approvedDocumentVersionId Int?
+  approvedDocumentVersion   CtrDocumentVersion? @relation(fields: [approvedDocumentVersionId], references: [id], onDelete: SetNull)
+  createdAt                 DateTime            @default(now())
+
+  @@index([contractId])
+  @@index([status])
+  @@map("contract_approvals")
+}
+
+model CtrExpirationRule {
+  id          Int      @id @default(autoincrement())
+  typeId      Int?
+  type        CtrType? @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  daysOffset  Int
+  label       String
+  targetRole  String?
+  notifyOwner Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([typeId])
+  @@index([isActive])
+  @@map("contract_expiration_rules")
+}
+
+model CtrNotification {
+  id               Int         @id @default(autoincrement())
+  contractId       Int
+  contract         CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  notificationType String
+  triggerPeriod    String?
+  recipientUserId  Int?
+  channel          String      @default("IN_APP")
+  message          String      @db.Text
+  sentAt           DateTime    @default(now())
+  deliveryStatus   String      @default("DELIVERED")
+  calendarEventId  Int?
+
+  @@index([contractId, notificationType])
+  @@index([sentAt])
+  @@map("contract_notifications")
+}
+
+model CtrAmendment {
+  id                Int         @id @default(autoincrement())
+  contractId        Int
+  contract          CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  amendmentNumber   String
+  amendmentDate     DateTime    @db.Date
+  title             String
+  description       String      @db.Text
+  valueAdjustment   Decimal     @default(0.00) @db.Decimal(18, 2)
+  newEffectiveDate  DateTime?   @db.Date
+  newExpirationDate DateTime?   @db.Date
+  documentId        Int?
+  approvedById      Int?
+  createdAt         DateTime    @default(now())
+
+  @@index([contractId])
+  @@index([amendmentDate])
+  @@map("contract_amendments")
+}
+
+model CtrTermination {
+  id                   Int         @id @default(autoincrement())
+  contractId           Int         @unique
+  contract             CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  terminationDate      DateTime    @db.Date
+  reason               String      @db.Text
+  penaltyAmount        Decimal     @default(0.00) @db.Decimal(18, 2)
+  remainingObligations String?     @db.Text
+  checklistConfirmed   Boolean     @default(false)
+  beritaAcaraDocId     Int?
+  approvedById         Int?
+  status               String      @default("APPROVED")
+  createdAt            DateTime    @default(now())
+
+  @@map("contract_terminations")
+}
+
+model CtrRelation {
+  id            Int         @id @default(autoincrement())
+  contractId    Int
+  contract      CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  relatedModule String
+  relatedId     Int
+  referenceCode String?
+  notes         String?     @db.Text
+  createdAt     DateTime    @default(now())
+
+  @@index([contractId])
+  @@index([relatedModule, relatedId])
+  @@map("contract_relations")
+}
+
+model CtrAuditLog {
+  id           Int         @id @default(autoincrement())
+  contractId   Int
+  contract     CtrContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  action       String
+  userId       Int?
+  userName     String?
+  fieldChanged String?
+  oldValue     String?     @db.Text
+  newValue     String?     @db.Text
+  notes        String?     @db.Text
+  createdAt    DateTime    @default(now())
+
+  @@index([contractId])
+  @@index([createdAt])
+  @@map("contract_audit_logs")
+}
+

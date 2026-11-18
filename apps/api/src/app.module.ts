@@ -28,6 +28,7 @@ import { VisitsModule } from "./visits/visits.module.js";
 import { MaintenanceModule } from "./maintenance/maintenance.module.js";
 import { FixedAssetsModule } from "./fixed-assets/fixed-assets.module.js";
 import { SubscriptionsModule } from "./subscriptions/subscriptions.module.js";
+import { ContractsModule } from "./contracts/contracts.module.js";
 import { CalendarModule } from "./calendar/calendar.module.js";
 import { WhatsappModule } from "./whatsapp/whatsapp.module.js";
 import { HrModule } from "./hr/hr.module.js";
@@ -66,6 +67,7 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
     MaintenanceModule,
     FixedAssetsModule,
     SubscriptionsModule,
+    ContractsModule,
     CalendarModule,
     WhatsappModule,
     HrModule,

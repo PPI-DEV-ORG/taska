@@ -39,6 +39,7 @@ export const CATEGORY_META: Record<string, { label: string; color: string }> = {
   TASK: { label: "Tugas", color: colors.success },
   FINANCE: { label: "Keuangan", color: colors.danger },
   SUBSCRIPTION: { label: "Langganan", color: "#FB923C" },
+  CONTRACT: { label: "Kontrak", color: "#C084FC" },
   TAX: { label: "Pajak", color: "#F472B6" },
   PROCUREMENT: { label: "Procurement", color: "#60A5FA" },
   OPERATIONAL: { label: "Operasional", color: "#94A3B8" },

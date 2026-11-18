@@ -24,10 +24,10 @@
  * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
  */
 
-export const ROLE_MATRIX_VERSION = 8;
+export const ROLE_MATRIX_VERSION = 10;
 
 export const ROLE_MODULE_KEYS = [
-  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "fixed-assets", "subscriptions", "customers", "po-client",
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "fixed-assets", "subscriptions", "contracts", "customers", "po-client",
   "projects", "tasks", "delivery-notes",
   "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports",
   "suppliers", "warehouses", "products",
@@ -208,6 +208,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       invoices: FULL,
       "fixed-assets": FULL,
       "subscriptions": FULL,
+      "contracts": FULL,
       accounting: FULL,
       expenses: FULL,
       hr: FULL, // payroll & slip gaji
