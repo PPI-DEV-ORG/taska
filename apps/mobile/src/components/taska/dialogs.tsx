@@ -536,6 +536,8 @@ export function SearchableSelect({
   addNewLabel,
   dialogClassName,
   dialogStyle,
+  className,
+  clearable,
 }: {
   value?: string;
   onChange: (v: string) => void;
@@ -546,6 +548,8 @@ export function SearchableSelect({
   addNewLabel?: string;
   dialogClassName?: string;
   dialogStyle?: any;
+  className?: string;
+  clearable?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -556,10 +560,24 @@ export function SearchableSelect({
       <View className="flex-row items-center gap-1.5 w-full">
         <Pressable
           onPress={() => { setQ(""); setOpen(true); }}
-          className={cn("bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3 flex-1", error && "border-danger")}
+          className={cn("bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3 flex-1", error && "border-danger", className)}
         >
           <Text className={cn("text-base md:text-sm", !value && "text-muted-foreground")} numberOfLines={1}>{displayLabel || placeholder}</Text>
-          <ChevronDown size={16} color={colors.muted} />
+          <View className="flex-row items-center gap-1.5">
+            {clearable && value ? (
+              <Pressable
+                hitSlop={8}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  onChange("");
+                }}
+                className="p-1 hover:bg-muted/30 rounded-full"
+              >
+                <X size={14} color={colors.muted} />
+              </Pressable>
+            ) : null}
+            <ChevronDown size={16} color={colors.muted} />
+          </View>
         </Pressable>
         {onAddNew ? (
           <Button
@@ -574,7 +592,7 @@ export function SearchableSelect({
       </View>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
-          className={cn("sm:max-w-md", dialogClassName)}
+          className={cn("sm:max-w-md z-[60]", dialogClassName)}
           style={dialogStyle}
         >
           <DialogHeader><DialogTitle>{placeholder}</DialogTitle></DialogHeader>

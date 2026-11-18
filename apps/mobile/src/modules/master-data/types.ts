@@ -10,6 +10,8 @@ export type MasterKey =
   | "jenis-kunjungan"
   | "kategori-pengeluaran"
   | "cost-center"
+  | "kategori-aset"
+  | "lokasi-aset"
   | "pengaturan-sistem";
 
 export type DeleteTarget = {

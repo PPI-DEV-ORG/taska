@@ -43,6 +43,8 @@ export type ModuleKey =
   | "pocReports"
   | "visitReports"
   | "maintenanceReports"
+  | "fixedAssets"
+  | "subscriptions"
   | "masterData";
 
 const ALL: Record<ModuleKey, Action[]> = {
@@ -86,6 +88,8 @@ const ALL: Record<ModuleKey, Action[]> = {
   pocReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   visitReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
   maintenanceReports: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  fixedAssets: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  subscriptions: ["M", "L", "C", "U", "A", "P", "V", "E"],
   masterData: ["M", "L", "C", "U", "A", "P", "V", "E"],
 };
 
@@ -316,6 +320,11 @@ PERMISSIONS.FINANCE!.invoices = "LCUAPVE";
 PERMISSIONS.FINANCE!.poClient = "LCUAPVE";
 PERMISSIONS.FINANCE!.quotations = "LCUAPVE";
 PERMISSIONS.FINANCE!.projects = "LCUP";
+PERMISSIONS.PROCUREMENT!.subscriptions = "MLCUE";
+PERMISSIONS.FINANCE!.subscriptions = "LCUAPVE";
+PERMISSIONS.PM!.subscriptions = "MLU";
+PERMISSIONS.SE!.subscriptions = "MLU";
+PERMISSIONS.TEKNISI!.subscriptions = "ML";
 PERMISSIONS.HR!.attendance = "LCUAPVE";
 PERMISSIONS.HR!.payroll = "LCUAPVE";
 PERMISSIONS.PM!.projects = "LCUP";
@@ -503,6 +512,8 @@ const UI_TWIN: Record<string, string> = {
   pocReports: "poc-reports",
   visitReports: "visit-reports",
   maintenanceReports: "maintenance-reports",
+  fixedAssets: "fixed-assets",
+  subscriptions: "subscriptions",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

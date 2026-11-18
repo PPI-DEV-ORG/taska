@@ -249,6 +249,18 @@ export default function AccountingScreen() {
             if (entryRef !== "-" && !entryRef.endsWith("/PAY")) {
               entryRef = `${entryRef}/PAY`;
             }
+          } else if (
+            (entry.source?.startsWith("FIXED_ASSET") || entry.sourceType?.startsWith("FaAsset")) &&
+            (!entryRef || entryRef === "-")
+          ) {
+            const m = entry.memo?.match(/AST-\d{4}-\d+/);
+            if (m) entryRef = m[0];
+          } else if (
+            (entry.source?.startsWith("SUBSCRIPTION") || entry.sourceType?.startsWith("Sub")) &&
+            (!entryRef || entryRef === "-")
+          ) {
+            const m = entry.memo?.match(/SUB-\d{4}-\d+/);
+            if (m) entryRef = m[0];
           }
 
           (entry.lines || []).forEach((line: any) => {
@@ -297,11 +309,17 @@ export default function AccountingScreen() {
                   ? "Jurnal Manual"
                   : entry.source === "CASH_ADVANCE"
                   ? "Petty Cash"
+                  : entry.source === "SUBSCRIPTION"
+                  ? "Langganan (Subscription)"
+                  : entry.source === "SUBSCRIPTION_AMORTIZATION"
+                  ? "Amortisasi Langganan"
+                  : entry.source === "SUBSCRIPTION_BILLING"
+                  ? "Tagihan Langganan"
                   : (entry.source || "Jurnal"),
               keterangan: line.memo || entry.memo || "-",
               project: line.projectId ? `Project #${line.projectId}` : entry.projectId ? `Project #${entry.projectId}` : "-",
               kodeAkun: line.accountCode,
-              namaAkun: acc?.name || line.accountCode,
+              namaAkun: acc?.name || line.account?.name || line.accountCode,
               debit: Number(line.debit || 0),
               kredit: Number(line.credit || 0),
               manualJournalId: entry.source === "MANUAL" ? String(entry.id) : undefined,
