@@ -231,3 +231,51 @@ export function buildPettyCashSpendLines(
     },
   ];
 }
+
+/**
+ * Sisa petty cash (survey / pengiriman / proyek) yang masih boleh dipakai untuk rincian biaya baru.
+ * Biaya tidak boleh melebihi uang yang dicairkan: kelebihannya dicatat terpisah sebagai
+ * Pengeluaran "uang sendiri" (TALANGAN_PRIBADI / reimburse), bukan memotong petty cash.
+ */
+export function cashAdvanceRemaining(disbursedAmount: number | null | undefined, itemAmounts: number[]): number {
+  const spent = itemAmounts.reduce((s, a) => s + Number(a || 0), 0);
+  return Math.max(0, Math.round(Number(disbursedAmount || 0) - spent));
+}
+
+export type ItemReviewInput = { id: number; status?: "SAH" | "DITOLAK"; approvedAmount?: number | null; reason?: string | null };
+export type ItemReview = { id: number; amount: number; status: "SAH" | "DITOLAK"; approvedAmount: number; rejectReason: string | null };
+
+/**
+ * Keputusan Finance per nota saat verifikasi laporan petty cash.
+ * - Nota tanpa keputusan dianggap SAH penuh.
+ * - DITOLAK: nominal sah 0, alasan wajib.
+ * - SAH dengan nominal lebih kecil (disesuaikan): alasan wajib; tidak boleh melebihi nominal nota.
+ * Selisih (ditolak / disesuaikan) tetap dipegang karyawan sebagai sisa petty cash -> dikembalikan / dipotong saldo.
+ */
+export function reviewCashAdvanceItems(
+  items: { id: number; amount: number }[],
+  decisions: ItemReviewInput[] = [],
+): { reviews: ItemReview[]; approvedTotal: number; error?: string } {
+  const byId = new Map(decisions.map((d) => [Number(d.id), d]));
+  for (const d of decisions) {
+    if (!items.some((it) => it.id === Number(d.id))) return { reviews: [], approvedTotal: 0, error: `Rincian #${d.id} bukan bagian dari laporan ini` };
+  }
+  const reviews: ItemReview[] = [];
+  for (const it of items) {
+    const amount = Math.round(Number(it.amount || 0));
+    const d = byId.get(it.id);
+    const reason = d?.reason?.trim() || null;
+    if (d?.status === "DITOLAK") {
+      if (!reason) return { reviews: [], approvedTotal: 0, error: "Alasan wajib diisi untuk nota yang ditolak" };
+      reviews.push({ id: it.id, amount, status: "DITOLAK", approvedAmount: 0, rejectReason: reason });
+      continue;
+    }
+    const approved = d?.approvedAmount == null ? amount : Math.round(Number(d.approvedAmount));
+    if (approved <= 0 || approved > amount) {
+      return { reviews: [], approvedTotal: 0, error: `Nominal sah harus antara Rp1 dan Rp${amount.toLocaleString("id-ID")} (atau tolak notanya)` };
+    }
+    if (approved < amount && !reason) return { reviews: [], approvedTotal: 0, error: "Alasan wajib diisi bila nominal nota disesuaikan" };
+    reviews.push({ id: it.id, amount, status: "SAH", approvedAmount: approved, rejectReason: approved < amount ? reason : null });
+  }
+  return { reviews, approvedTotal: reviews.reduce((s, r) => s + r.approvedAmount, 0) };
+}

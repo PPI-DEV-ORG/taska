@@ -11,6 +11,8 @@ import {
   buildCashAdvanceDisburseLines,
   buildCashAdvanceReturnLines,
   buildCashAdvanceSettleLines,
+  cashAdvanceRemaining,
+  reviewCashAdvanceItems,
   pettyCashUsage,
   splitSettlement,
 } from "../accounting/cash-advance.rules.js";
@@ -98,7 +100,12 @@ export class CashAdvancesService {
       spentAmount: settled ? n(row.spentAmount) : spent,
       returnedAmount: n(row.returnedAmount),
       reimbursedAmount: n(row.reimbursedAmount),
-      items: row.items.map((it) => ({ ...it, amount: n(it.amount), receiptFileIds: Array.isArray(it.receiptFileIds) ? it.receiptFileIds : [] })),
+      items: row.items.map((it) => ({
+        ...it,
+        amount: n(it.amount),
+        approvedAmount: it.approvedAmount == null ? null : n(it.approvedAmount),
+        receiptFileIds: Array.isArray(it.receiptFileIds) ? it.receiptFileIds : [],
+      })),
       reportedTotal: spent,
       /** Sisa uang di tangan karyawan untuk dokumen ini (belum diselesaikan = dicairkan − biaya dilaporkan). */
       remaining: settled ? Math.max(0, disbursed - (n(row.spentAmount) - n(row.reimbursedAmount)) - n(row.returnedAmount)) : Math.max(0, disbursed - spent),
@@ -607,6 +614,15 @@ export class CashAdvancesService {
     const row = await this.load(id);
     this.assertHolder(row, user);
     if (!["DICAIRKAN", "DILAPORKAN"].includes(row.status)) throw new BadRequestException("Biaya hanya bisa dilaporkan setelah petty cash dicairkan dan sebelum diverifikasi");
+    // Petty cash yang sudah habis tidak bisa dipakai lagi; kelebihan biaya dicatat sebagai reimburse terpisah.
+    const remaining = cashAdvanceRemaining(row.disbursedAmount as any, row.items.map((it) => n(it.amount)));
+    if (n(dto.amount) > remaining) {
+      throw new BadRequestException(
+        remaining <= 0
+          ? `Petty cash ${row.number} sudah habis. Catat biaya ini sebagai "Uang sendiri" agar diganti Finance (reimburse).`
+          : `Sisa petty cash ${row.number} hanya Rp${remaining.toLocaleString("id-ID")}. Catat kelebihannya sebagai "Uang sendiri" (reimburse).`,
+      );
+    }
     const item = await this.prisma.main.cashAdvanceItem.create({
       data: {
         cashAdvanceId: id,
@@ -671,7 +687,14 @@ export class CashAdvancesService {
   async settle(id: number, dto: SettleCashAdvanceDto, user: RequestUser) {
     const row = await this.load(id);
     if (row.status !== "DILAPORKAN") throw new BadRequestException("Hanya laporan petty cash yang sudah dikirim karyawan yang bisa diverifikasi");
-    const spent = row.items.reduce((s, it) => s + n(it.amount), 0);
+    // Pemeriksaan per nota: hanya nominal yang disahkan yang menjadi biaya. Nota ditolak / selisih penyesuaian
+    // tetap dipegang karyawan sebagai sisa -> dikembalikan ke kas atau disimpan di saldo petty cash-nya.
+    const review = reviewCashAdvanceItems(row.items.map((it) => ({ id: it.id, amount: n(it.amount) })), dto.items);
+    if (review.error) throw new BadRequestException(review.error);
+    const reviewById = new Map(review.reviews.map((r) => [r.id, r]));
+    const reported = row.items.reduce((s, it) => s + n(it.amount), 0);
+    const spent = review.approvedTotal;
+    const rejectedTotal = reported - spent;
     const disbursed = n(row.disbursedAmount);
     const leftoverAction = dto.leftoverAction ?? "RETURN";
     const shortageFrom = dto.shortageFrom ?? "CASH";
@@ -681,7 +704,7 @@ export class CashAdvancesService {
     // dikurangi biaya lain yang sudah dicatat tapi belum diverifikasi (supaya uang yang sama tidak terpakai dua kali)
     const walletBefore = Math.max(
       0,
-      (wallet?.balance ?? 0) - disbursed - ((wallet?.pendingReport ?? 0) - spent) - (wallet?.pendingSpend ?? 0),
+      (wallet?.balance ?? 0) - disbursed - ((wallet?.pendingReport ?? 0) - reported) - (wallet?.pendingSpend ?? 0),
     );
     const split = splitSettlement({ spent, disbursed, leftoverAction, shortageFrom, walletBalanceBefore: walletBefore });
 
@@ -709,6 +732,13 @@ export class CashAdvancesService {
       });
       if (claimed.count === 0) throw new BadRequestException("Petty cash sudah diverifikasi");
 
+      for (const r of review.reviews) {
+        await tx.cashAdvanceItem.update({
+          where: { id: r.id },
+          data: { status: r.status, approvedAmount: r.approvedAmount, rejectReason: r.rejectReason },
+        });
+      }
+
       if (spent > 0) {
         await this.posting.post(
           {
@@ -728,12 +758,14 @@ export class CashAdvancesService {
                 employeeName: row.employee.name,
                 projectId: costProjectId,
                 usage: pettyCashUsage(row),
-                expenses: row.items.map((it) => ({
-                  accountCode: it.category?.coaAccount,
-                  amount: n(it.amount),
-                  description: it.description,
-                  projectId: costProjectId,
-                })),
+                expenses: row.items
+                  .filter((it) => (reviewById.get(it.id)?.approvedAmount ?? 0) > 0)
+                  .map((it) => ({
+                    accountCode: it.category?.coaAccount,
+                    amount: reviewById.get(it.id)!.approvedAmount,
+                    description: it.description,
+                    projectId: costProjectId,
+                  })),
                 coveredByAdvance: split.coveredByAdvance,
                 reimbursed: split.reimbursed,
                 reimburseAccountCode: dto.reimburseAccountCode,
@@ -768,13 +800,15 @@ export class CashAdvancesService {
       // Biaya juga dicatat sebagai Pengeluaran (status Dibayar, sumber Petty Cash) agar muncul di
       // biaya survey / surat jalan / project & laporan pengeluaran. Jurnalnya sudah dibuat di atas.
       for (const it of row.items) {
+        const approvedAmount = reviewById.get(it.id)?.approvedAmount ?? 0;
+        if (approvedAmount <= 0) continue; // nota ditolak bukan biaya perusahaan
         const files = Array.isArray(it.receiptFileIds) ? (it.receiptFileIds as number[]) : [];
         await tx.expense.create({
           data: {
             date: it.date,
             reporterId: row.employeeId,
             categoryId: it.categoryId,
-            amount: it.amount,
+            amount: approvedAmount,
             description: `${it.description} (petty cash ${row.number})`,
             status: "DIBAYAR",
             projectId: costProjectId,
@@ -785,8 +819,8 @@ export class CashAdvancesService {
             fundingSource: "UANG_JALAN",
             paidAt: settledAt,
             paidById: user.id,
-            paidAmount: it.amount,
-            approvedAmount: it.amount,
+            paidAmount: approvedAmount,
+            approvedAmount,
             cashAdvanceId: id,
           },
         });
@@ -801,14 +835,20 @@ export class CashAdvancesService {
       action: "SELESAI_UANG_JALAN",
       entityType: "cash-advance",
       entityId: id,
-      detail: `${row.number}: biaya Rp${spent}, kembali Rp${split.returned}, kekurangan dibayar Rp${split.reimbursed}${split.keptInWallet > 0 ? `, disimpan di saldo petty cash Rp${split.keptInWallet}` : ""}`,
+      detail: `${row.number}: biaya sah Rp${spent} dari Rp${reported}${rejectedTotal > 0 ? ` (ditolak/disesuaikan Rp${rejectedTotal})` : ""}, kembali Rp${split.returned}, kekurangan dibayar Rp${split.reimbursed}${split.keptInWallet > 0 ? `, disimpan di saldo petty cash Rp${split.keptInWallet}` : ""}`,
     });
+    const rejectedNotes = review.reviews.filter((r) => r.approvedAmount < r.amount);
     await this.notifications
       .notify({
         userIds: [row.employeeId],
         kind: "APPROVAL",
         title: "Laporan Petty Cash Diverifikasi",
-        text: `Laporan petty cash ${row.number} sudah diverifikasi Finance.${split.keptInWallet > 0 ? ` Sisa Rp${split.keptInWallet.toLocaleString("id-ID")} tetap di saldo petty cash Anda.` : ""}`,
+        text:
+          `Laporan petty cash ${row.number} sudah diverifikasi Finance.` +
+          (rejectedNotes.length
+            ? ` ${rejectedNotes.length} nota ditolak/disesuaikan (Rp${rejectedTotal.toLocaleString("id-ID")}) menjadi tanggungan Anda.`
+            : "") +
+          (split.keptInWallet > 0 ? ` Sisa Rp${split.keptInWallet.toLocaleString("id-ID")} tetap di saldo petty cash Anda.` : ""),
         href: `/cash-advances?id=${id}`,
       })
       .catch(() => {});

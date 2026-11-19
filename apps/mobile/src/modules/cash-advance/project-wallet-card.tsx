@@ -97,7 +97,7 @@ export function ProjectWalletCard({ projectId, projectName }: { projectId: numbe
         </View>
         <View className="flex-row flex-wrap gap-2">
           <Button
-            onPress={() => (myOpen.length ? setExpenseOpen(true) : toast(myWaiting.length ? "Kas proyek masih menunggu persetujuan / pencairan Finance" : "Ajukan kas proyek dulu", "info"))}
+            onPress={() => setExpenseOpen(true)}
             className="flex-row items-center gap-1.5"
           >
             <Plus size={15} color="#fff" />
@@ -189,35 +189,55 @@ export function ProjectWalletCard({ projectId, projectName }: { projectId: numbe
         defaults={{ purpose: "PROJECT", projectId, description: `Kas proyek ${projectName}`, title: held > 0 ? "Top-up Kas Proyek" : "Ajukan Kas Proyek" }}
         onCreated={reload}
       />
-      <QuickExpenseDialog open={expenseOpen} onOpenChange={setExpenseOpen} advances={myOpen} onSaved={reload} />
+      <QuickExpenseDialog open={expenseOpen} onOpenChange={setExpenseOpen} advances={myOpen} projectId={projectId} onSaved={reload} />
       <CashAdvanceDetailDialog id={detailId} onOpenChange={(v) => !v && setDetailId(null)} onChanged={reload} />
     </View>
   );
 }
 
-/** Catat satu pengeluaran (nota) langsung dari petty cash proyek. */
+const advanceLeft = (a: CashAdvance) => Math.max(0, (a.disbursedAmount ?? 0) - a.reportedTotal);
+
+/**
+ * Catat satu pengeluaran (nota) proyek. Sumbernya kas proyek yang masih bersisa, atau uang sendiri
+ * (dicatat sebagai Pengeluaran TALANGAN_PRIBADI → reimburse terpisah, tidak memotong petty cash).
+ * Kas proyek yang sudah habis tidak bisa dipilih.
+ */
 function QuickExpenseDialog({
   open,
   onOpenChange,
   advances,
+  projectId,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   advances: CashAdvance[];
+  projectId: number;
   onSaved: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {open ? <QuickExpenseInner advances={advances} onClose={() => onOpenChange(false)} onSaved={onSaved} /> : null}
+      {open ? <QuickExpenseInner advances={advances} projectId={projectId} onClose={() => onOpenChange(false)} onSaved={onSaved} /> : null}
     </Dialog>
   );
 }
 
-function QuickExpenseInner({ advances, onClose, onSaved }: { advances: CashAdvance[]; onClose: () => void; onSaved: () => void }) {
+function QuickExpenseInner({
+  advances,
+  projectId,
+  onClose,
+  onSaved,
+}: {
+  advances: CashAdvance[];
+  projectId: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const { toast, data } = useApp();
   const categories: any[] = (data as any).expenseCategories ?? [];
-  const [advanceId, setAdvanceId] = React.useState<number | null>(advances[0]?.id ?? null);
+  const usable = advances.filter((a) => advanceLeft(a) > 0);
+  const [source, setSource] = React.useState<"KAS" | "PERSONAL">(usable.length ? "KAS" : "PERSONAL");
+  const [advanceId, setAdvanceId] = React.useState<number | null>(usable[0]?.id ?? null);
   const [date, setDate] = React.useState(today());
   const [desc, setDesc] = React.useState("");
   const [amount, setAmount] = React.useState("");
@@ -225,25 +245,44 @@ function QuickExpenseInner({ advances, onClose, onSaved }: { advances: CashAdvan
   const [files, setFiles] = React.useState<number[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [addAnother, setAddAnother] = React.useState(0);
-  const adv = advances.find((a) => a.id === advanceId);
-  const label = (a: CashAdvance) => `${a.number} · sisa ${rupiah(Math.max(0, (a.disbursedAmount ?? 0) - a.reportedTotal))}`;
+  const adv = usable.find((a) => a.id === advanceId);
+  const label = (a: CashAdvance) => `${a.number} · sisa ${rupiah(advanceLeft(a))}`;
 
   async function save(keepOpen: boolean) {
     const amt = Number(String(amount).replace(/\D/g, "")) || 0;
-    if (!advanceId) return toast("Pilih kas proyek", "danger");
     if (!desc.trim() || amt <= 0) return toast("Isi keterangan dan nominal", "danger");
     if (files.length === 0) return toast("Foto nota / struk wajib dilampirkan", "danger");
+    if (source === "KAS") {
+      if (!adv) return toast("Pilih kas proyek", "danger");
+      if (amt > advanceLeft(adv)) {
+        return toast(`Sisa kas ${adv.number} hanya ${rupiah(advanceLeft(adv))}. Catat kelebihannya sebagai "Uang sendiri".`, "danger");
+      }
+    }
     setSaving(true);
     try {
       const cat = categories.find((c: any) => String(c.nama || c.name) === category);
-      await api("POST", `/cash-advances/${advanceId}/items`, {
-        date,
-        description: desc.trim(),
-        amount: amt,
-        categoryId: cat ? Number(cat.id) : undefined,
-        receiptFileIds: files,
-      });
-      toast(`Pengeluaran ${rupiah(amt)} dicatat dari kas proyek`);
+      if (source === "KAS" && adv) {
+        await api("POST", `/cash-advances/${adv.id}/items`, {
+          date,
+          description: desc.trim(),
+          amount: amt,
+          categoryId: cat ? Number(cat.id) : undefined,
+          receiptFileIds: files,
+        });
+        toast(`Pengeluaran ${rupiah(amt)} dicatat dari kas proyek`);
+      } else {
+        await api("POST", "/expenses", {
+          date,
+          description: desc.trim(),
+          amount: amt,
+          categoryId: cat ? Number(cat.id) : undefined,
+          projectId,
+          fundingSource: "TALANGAN_PRIBADI",
+          receiptFileId: files[0],
+          receiptFileIds: files.join(","),
+        });
+        toast(`Pengeluaran ${rupiah(amt)} dikirim ke Finance untuk diganti (reimburse)`);
+      }
       onSaved();
       if (keepOpen) {
         setDesc("");
@@ -258,24 +297,51 @@ function QuickExpenseInner({ advances, onClose, onSaved }: { advances: CashAdvan
     }
   }
 
+  const sources: { key: "KAS" | "PERSONAL"; title: string; desc: string; disabled: boolean }[] = [
+    {
+      key: "KAS",
+      title: "Kas proyek",
+      desc: usable.length ? `Sisa ${rupiah(usable.reduce((s, a) => s + advanceLeft(a), 0))}` : "Sudah habis — tidak bisa dipakai lagi",
+      disabled: usable.length === 0,
+    },
+    { key: "PERSONAL", title: "Uang sendiri (reimburse)", desc: "Tidak memotong kas proyek · diganti Finance terpisah", disabled: false },
+  ];
+
   return (
     <DialogContent className="w-[94vw] max-w-md">
       <DialogHeader>
         <DialogTitle>Catat Pengeluaran Proyek</DialogTitle>
       </DialogHeader>
       <View className="gap-3 py-1">
-        {advances.length > 1 ? (
+        <View className="gap-1.5">
+          {sources.map((o) => {
+            const active = source === o.key;
+            return (
+              <Pressable
+                key={o.key}
+                disabled={o.disabled}
+                onPress={() => setSource(o.key)}
+                className={`flex-row items-center gap-2.5 rounded-xl border px-3 py-2.5 ${active ? "border-primary bg-primary/5" : "border-border bg-card"} ${o.disabled ? "opacity-50" : ""}`}
+              >
+                <View className={`size-4 rounded-full border-2 items-center justify-center ${active ? "border-primary" : "border-border"}`}>
+                  {active ? <View className="size-2 rounded-full bg-primary" /> : null}
+                </View>
+                <View className="flex-1">
+                  <Text className="text-sm font-medium text-foreground">{o.title}</Text>
+                  <Text className="text-[11px] text-muted-foreground">{o.desc}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+        {source === "KAS" && usable.length > 1 ? (
           <FormField label="Dari kas">
             <SearchableSelect
               value={adv ? label(adv) : ""}
-              options={advances.map(label)}
-              onChange={(v) => setAdvanceId(advances.find((a) => label(a) === v)?.id ?? null)}
+              options={usable.map(label)}
+              onChange={(v) => setAdvanceId(usable.find((a) => label(a) === v)?.id ?? null)}
             />
           </FormField>
-        ) : adv ? (
-          <Text className="text-xs text-muted-foreground">
-            Dari kas {adv.number} · sisa <Text className="text-xs font-semibold text-foreground">{rupiah(Math.max(0, (adv.disbursedAmount ?? 0) - adv.reportedTotal))}</Text>
-          </Text>
         ) : null}
         <FormField label="Untuk apa?" required>
           <Input value={desc} onChangeText={setDesc} placeholder="Contoh: Beli kabel UTP 1 roll" />

@@ -6,6 +6,8 @@ import {
   buildPettyCashSpendLines,
   pettyCashUsage,
   splitSettlement,
+  cashAdvanceRemaining,
+  reviewCashAdvanceItems,
 } from "./cash-advance.rules.js";
 
 const map = { EMPLOYEE_ADVANCE: "1107", CASH_DEFAULT: "1000.02", EXPENSE_DEFAULT: "6202" };
@@ -110,5 +112,46 @@ describe("keperluan petty cash di keterangan jurnal", () => {
     const lines = buildCashAdvanceDisburseLines({ ...party, usage: "Survey PT ABC (Bandung)", amount: 100_000, cashAccountCode: "1000.02" }, map);
     expect(lines[0]!.memo).toContain("untuk Survey PT ABC (Bandung)");
     expect(lines.every((l) => String(l.memo).length <= 191)).toBe(true);
+  });
+});
+
+describe("sisa petty cash untuk biaya baru", () => {
+  it("sisa = dicairkan - total rincian, tidak pernah negatif", () => {
+    expect(cashAdvanceRemaining(500_000, [100_000, 150_000])).toBe(250_000);
+    expect(cashAdvanceRemaining(500_000, [300_000, 300_000])).toBe(0);
+    expect(cashAdvanceRemaining(null, [])).toBe(0);
+  });
+});
+
+describe("verifikasi petty cash per nota", () => {
+  const items = [
+    { id: 1, amount: 100_000 },
+    { id: 2, amount: 50_000 },
+    { id: 3, amount: 30_000 },
+  ];
+
+  it("tanpa keputusan: semua nota sah penuh", () => {
+    const r = reviewCashAdvanceItems(items);
+    expect(r.error).toBeUndefined();
+    expect(r.approvedTotal).toBe(180_000);
+    expect(r.reviews.every((x) => x.status === "SAH")).toBe(true);
+  });
+
+  it("ditolak & disesuaikan mengurangi total sah", () => {
+    const r = reviewCashAdvanceItems(items, [
+      { id: 2, status: "DITOLAK", reason: "Nota pribadi" },
+      { id: 1, approvedAmount: 80_000, reason: "Melebihi harga wajar" },
+    ]);
+    expect(r.error).toBeUndefined();
+    expect(r.approvedTotal).toBe(110_000);
+    expect(r.reviews.find((x) => x.id === 2)).toMatchObject({ status: "DITOLAK", approvedAmount: 0, rejectReason: "Nota pribadi" });
+    expect(r.reviews.find((x) => x.id === 1)).toMatchObject({ status: "SAH", approvedAmount: 80_000 });
+  });
+
+  it("menolak keputusan tidak valid", () => {
+    expect(reviewCashAdvanceItems(items, [{ id: 2, status: "DITOLAK" }]).error).toMatch(/Alasan/);
+    expect(reviewCashAdvanceItems(items, [{ id: 1, approvedAmount: 90_000 }]).error).toMatch(/Alasan/);
+    expect(reviewCashAdvanceItems(items, [{ id: 1, approvedAmount: 120_000, reason: "x" }]).error).toMatch(/Nominal sah/);
+    expect(reviewCashAdvanceItems(items, [{ id: 99, status: "DITOLAK", reason: "x" }]).error).toMatch(/bukan bagian/);
   });
 });

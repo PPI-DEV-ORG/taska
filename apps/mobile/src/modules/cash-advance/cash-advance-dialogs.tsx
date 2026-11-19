@@ -54,7 +54,18 @@ export type CashAdvance = {
   survey: { id: number; location: string; lead?: { name: string } | null } | null;
   deliveryNote: { id: number; number: string } | null;
   project: { id: number; name: string } | null;
-  items: { id: number; date: string; description: string; amount: number; category?: { name: string } | null; receiptFileIds: number[] }[];
+  items: {
+    id: number;
+    date: string;
+    description: string;
+    amount: number;
+    category?: { name: string } | null;
+    receiptFileIds: number[];
+    /** Hasil pemeriksaan Finance per nota (diisi saat verifikasi laporan). */
+    status?: "DIAJUKAN" | "SAH" | "DITOLAK";
+    approvedAmount?: number | null;
+    rejectReason?: string | null;
+  }[];
   createdAt: string;
 };
 
@@ -372,6 +383,10 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   const [retAccount, setRetAccount] = React.useState("");
   const [retFileId, setRetFileId] = React.useState<number | null>(null);
   const [reimAccount, setReimAccount] = React.useState("");
+  // Pemeriksaan per nota saat verifikasi: nota tanpa keputusan = sah penuh.
+  const [reviews, setReviews] = React.useState<Record<number, ItemReviewDraft>>({});
+  const setReview = (id: number, patch: Partial<ItemReviewDraft>) =>
+    setReviews((prev) => ({ ...prev, [id]: { mode: "SAH", amount: "", reason: "", ...prev[id], ...patch } }));
 
   if (!row) {
     return (
@@ -385,8 +400,18 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   const isRequester = Number(user?.id) === row.requestedById;
   const disbursed = row.disbursedAmount ?? 0;
   const categories: any[] = (data as any).expenseCategories ?? [];
-  const leftoverAmt = Math.max(0, disbursed - row.reportedTotal);
-  const shortageAmt = Math.max(0, row.reportedTotal - disbursed);
+  const reviewing = row.status === "DILAPORKAN" && isFinance && panel === "settle";
+  const approvedOf = (it: CashAdvance["items"][number]) => {
+    const r = reviews[it.id];
+    if (!r || r.mode === "SAH") return it.amount;
+    if (r.mode === "DITOLAK") return 0;
+    return Math.min(it.amount, parseRp(r.amount));
+  };
+  const approvedTotal = reviewing ? row.items.reduce((s, it) => s + approvedOf(it), 0) : row.reportedTotal;
+  const employeeBurden = row.reportedTotal - approvedTotal;
+  // Sisa / kekurangan dihitung dari biaya yang DISAHKAN: nota ditolak tetap dipegang karyawan sebagai sisa.
+  const leftoverAmt = Math.max(0, disbursed - approvedTotal);
+  const shortageAmt = Math.max(0, approvedTotal - disbursed);
 
   // Alur ringkas: Diajukan → Dicairkan (Finance setujui & cairkan sekaligus) → Dilaporkan → Selesai
   const FLOW: { key: string; label: string }[] = [
@@ -533,7 +558,8 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
               ) : (
                 <View className="border border-border rounded-lg overflow-hidden">
                   {row.items.map((it) => (
-                    <View key={it.id} className="px-3 py-2 border-b border-border/50 flex-row items-center gap-2">
+                    <View key={it.id} className="px-3 py-2 border-b border-border/50 gap-2">
+                    <View className="flex-row items-center gap-2">
                       <View className="flex-1">
                         <Text className="text-xs font-semibold text-foreground">{it.description}</Text>
                         <Text className="text-[10px] text-muted-foreground">
@@ -553,8 +579,20 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                           <Text className="text-[10px] text-warning">Tanpa nota</Text>
                         )}
                       </View>
-                      <Text className="text-xs font-semibold text-foreground">{rupiah(it.amount)}</Text>
-                      {isHolder && ["DICAIRKAN", "DILAPORKAN"].includes(row.status) ? (
+                      <View className="items-end">
+                        <Text
+                          className={`text-xs font-semibold ${
+                            it.status === "DITOLAK" || (it.approvedAmount != null && it.approvedAmount < it.amount) ? "text-muted-foreground line-through" : "text-foreground"
+                          }`}
+                        >
+                          {rupiah(it.amount)}
+                        </Text>
+                        {row.status === "SELESAI" && it.status === "SAH" && it.approvedAmount != null && it.approvedAmount < it.amount ? (
+                          <Text className="text-xs font-semibold text-warning">Sah {rupiah(it.approvedAmount)}</Text>
+                        ) : null}
+                        {row.status === "SELESAI" && it.status === "DITOLAK" ? <Text className="text-xs font-semibold text-danger">Ditolak</Text> : null}
+                      </View>
+                      {isHolder && !reviewing && ["DICAIRKAN", "DILAPORKAN"].includes(row.status) ? (
                         <Pressable
                           onPress={() => run(() => api<CashAdvance>("DELETE", `/cash-advances/${row.id}/items/${it.id}`), "Biaya dihapus")}
                           hitSlop={6}
@@ -563,6 +601,19 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                           <Trash2 size={14} color={colors.danger} />
                         </Pressable>
                       ) : null}
+                    </View>
+                    {/* Alasan dari Finance (setelah diverifikasi) */}
+                    {row.status === "SELESAI" && it.rejectReason ? (
+                      <Text className="text-xs text-muted-foreground">Catatan Finance: {it.rejectReason}</Text>
+                    ) : null}
+                    {/* Pemeriksaan per nota oleh Finance */}
+                    {reviewing ? (
+                      <ItemReviewControls
+                        amount={it.amount}
+                        draft={reviews[it.id]}
+                        onChange={(patch) => setReview(it.id, patch)}
+                      />
+                    ) : null}
                     </View>
                   ))}
                 </View>
@@ -745,6 +796,14 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
 
           {row.status === "DILAPORKAN" && isFinance && panel === "settle" ? (
             <View className="rounded-xl border border-border p-3 gap-2.5">
+              <View className="gap-0.5">
+                <Row2 label="Biaya disahkan" value={`${rupiah(approvedTotal)} dari ${rupiah(row.reportedTotal)}`} strong />
+                {employeeBurden > 0 ? (
+                  <Row2 label="Ditolak / disesuaikan (tanggungan karyawan)" value={rupiah(employeeBurden)} />
+                ) : (
+                  <Text className="text-xs text-muted-foreground">Periksa setiap nota di atas. Nota yang tidak diubah dianggap sah.</Text>
+                )}
+              </View>
               {leftoverAmt > 0 ? (
                 <>
                   <FormField label={`Sisa uang ${rupiah(leftoverAmt)}`}>
@@ -792,6 +851,21 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
               <Button
                 disabled={busy}
                 onPress={() => {
+                  const decisions: { id: number; status: "SAH" | "DITOLAK"; approvedAmount?: number; reason?: string }[] = [];
+                  for (const it of row.items) {
+                    const r = reviews[it.id];
+                    if (!r || r.mode === "SAH") continue;
+                    if (!r.reason.trim()) return toast(`Isi alasan untuk nota "${it.description}"`, "danger");
+                    if (r.mode === "DITOLAK") {
+                      decisions.push({ id: it.id, status: "DITOLAK", reason: r.reason.trim() });
+                      continue;
+                    }
+                    const amt = parseRp(r.amount);
+                    if (amt <= 0 || amt > it.amount) {
+                      return toast(`Nominal sah "${it.description}" harus antara Rp1 dan ${rupiah(it.amount)}`, "danger");
+                    }
+                    if (amt < it.amount) decisions.push({ id: it.id, status: "SAH", approvedAmount: amt, reason: r.reason.trim() });
+                  }
                   if (leftoverAmt > 0 && leftover === "RETURN" && !retAccount) return toast("Pilih akun tujuan pengembalian sisa", "danger");
                   if (shortageAmt > 0 && shortageFrom === "CASH" && !reimAccount) return toast("Pilih akun untuk membayar kekurangan", "danger");
                   void run(
@@ -802,6 +876,7 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                         returnFileId: retFileId ?? undefined,
                         shortageFrom,
                         reimburseAccountCode: reimAccount || undefined,
+                        items: decisions,
                       }),
                     "Laporan diverifikasi & dibukukan",
                   );
@@ -841,5 +916,60 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
         </Button>
       </DialogFooter>
     </DialogContent>
+  );
+}
+
+type ItemReviewDraft = { mode: "SAH" | "ADJUST" | "DITOLAK"; amount: string; reason: string };
+
+const REVIEW_MODES: { key: ItemReviewDraft["mode"]; label: string }[] = [
+  { key: "SAH", label: "Sah" },
+  { key: "ADJUST", label: "Sesuaikan" },
+  { key: "DITOLAK", label: "Tolak" },
+];
+
+/** Pilihan Finance untuk satu nota: sah penuh, disesuaikan (nominal lebih kecil), atau ditolak. */
+function ItemReviewControls({
+  amount,
+  draft,
+  onChange,
+}: {
+  amount: number;
+  draft?: ItemReviewDraft;
+  onChange: (patch: Partial<ItemReviewDraft>) => void;
+}) {
+  const mode = draft?.mode ?? "SAH";
+  return (
+    <View className="gap-1.5">
+      <View className="flex-row gap-1.5">
+        {REVIEW_MODES.map((m) => {
+          const active = mode === m.key;
+          const tone = m.key === "DITOLAK" ? "border-danger bg-danger/10" : m.key === "ADJUST" ? "border-warning bg-warning/10" : "border-emerald-600 bg-emerald-600/10";
+          return (
+            <Pressable
+              key={m.key}
+              onPress={() => onChange({ mode: m.key, ...(m.key === "ADJUST" && !draft?.amount ? { amount: formatThousands(String(amount)) } : {}) })}
+              className={`flex-1 items-center rounded-lg border py-1.5 ${active ? tone : "border-border bg-card"}`}
+            >
+              <Text className={`text-xs ${active ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{m.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {mode === "ADJUST" ? (
+        <Input
+          value={draft?.amount ?? ""}
+          onChangeText={(v) => onChange({ amount: formatThousands(v) })}
+          keyboardType="numeric"
+          placeholder={`Nominal sah (maks ${rupiah(amount)})`}
+        />
+      ) : null}
+      {mode !== "SAH" ? (
+        <Input
+          value={draft?.reason ?? ""}
+          onChangeText={(v) => onChange({ reason: v })}
+          placeholder={mode === "DITOLAK" ? "Alasan ditolak (wajib)" : "Alasan disesuaikan (wajib)"}
+        />
+      ) : null}
+    </View>
   );
 }

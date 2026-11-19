@@ -101,7 +101,9 @@ export function SurveyExtras({
   }, [row.id, reloadKey]);
   const myAdvance = advances.find((a) => a.status === "DICAIRKAN" && Number(a.employeeId) === Number(user?.id));
   const advanceLeft = myAdvance ? Math.max(0, (myAdvance.disbursedAmount ?? 0) - myAdvance.reportedTotal) : 0;
-  const defaultSource: PaySource = myAdvance ? "ADVANCE" : walletAvailable > 0 ? "WALLET" : "PERSONAL";
+  // Petty cash yang sudah habis tidak bisa dipilih; biaya berikutnya lewat "Uang sendiri" (reimburse terpisah).
+  const advanceUsable = !!myAdvance && advanceLeft > 0;
+  const defaultSource: PaySource = advanceUsable ? "ADVANCE" : walletAvailable > 0 ? "WALLET" : "PERSONAL";
   const source = paySource ?? defaultSource;
   // Rincian petty cash survey yang belum diverifikasi Finance (belum jadi Pengeluaran) — ikut tampil di daftar biaya
   const pendingAdvanceItems: Row[] = advances
@@ -168,7 +170,10 @@ export function SurveyExtras({
   async function handleAddExpense() {
     const nom = Number(expNominal.replace(/\D/g, "")) || 0;
     if (nom <= 0) return toast("Isi nominal biaya", "danger");
-    if (source === "WALLET" && nom > walletAvailable) return toast(`Saldo petty cash Anda hanya ${rupiah(walletAvailable)}`, "danger");
+    if (source === "WALLET" && nom > walletAvailable)
+      return toast(`Saldo petty cash Anda hanya ${rupiah(walletAvailable)}. Catat kelebihannya sebagai "Uang sendiri".`, "danger");
+    if (source === "ADVANCE" && nom > advanceLeft)
+      return toast(`Sisa petty cash survey hanya ${rupiah(advanceLeft)}. Catat kelebihannya sebagai "Uang sendiri".`, "danger");
     let uploadedId = expFileId;
     if (!uploadedId && fileUploaderRef.current?.hasStaged()) {
       try {
@@ -470,14 +475,18 @@ export function SurveyExtras({
                 {(
                   [
                     ...(myAdvance
-                      ? [{ key: "ADVANCE", title: `Petty cash survey ${myAdvance.number}`, desc: `Sisa ${rupiah(advanceLeft)} · dilaporkan ke Finance bersama nota lain` }]
+                      ? [{
+                          key: "ADVANCE",
+                          title: `Petty cash survey ${myAdvance.number}`,
+                          desc: advanceLeft > 0 ? `Sisa ${rupiah(advanceLeft)} · dilaporkan ke Finance bersama nota lain` : "Sudah habis — tidak bisa dipakai lagi",
+                        }]
                       : []),
-                    { key: "WALLET", title: "Saldo petty cash saya", desc: walletAvailable > 0 ? `Tersedia ${rupiah(walletAvailable)}` : "Saldo kosong — minta Finance isi saldo dulu" },
-                    { key: "PERSONAL", title: "Uang sendiri", desc: "Nanti diganti Finance (reimburse)" },
+                    { key: "WALLET", title: "Saldo petty cash saya", desc: walletAvailable > 0 ? `Tersedia ${rupiah(walletAvailable)}` : "Saldo habis — tidak bisa dipakai" },
+                    { key: "PERSONAL", title: "Uang sendiri (reimburse)", desc: "Tidak memotong petty cash · diganti Finance terpisah" },
                   ] as { key: PaySource; title: string; desc: string }[]
                 ).map((o) => {
                   const active = source === o.key;
-                  const disabled = o.key === "WALLET" && walletAvailable <= 0;
+                  const disabled = (o.key === "WALLET" && walletAvailable <= 0) || (o.key === "ADVANCE" && advanceLeft <= 0);
                   return (
                     <Pressable
                       key={o.key}

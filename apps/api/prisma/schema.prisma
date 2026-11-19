@@ -142,6 +142,13 @@ enum CashAdvanceStatus {
   DIBATALKAN
 }
 
+/// Hasil pemeriksaan Finance per nota petty cash saat verifikasi laporan.
+enum CashAdvanceItemStatus {
+  DIAJUKAN
+  SAH
+  DITOLAK
+}
+
 enum CashAdvancePurpose {
   SURVEY
   PENGIRIMAN
@@ -1335,6 +1342,11 @@ model CashAdvanceItem {
   categoryId     Int?
   category       ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   receiptFileIds Json?
+  /// Diisi Finance saat verifikasi: SAH (penuh / disesuaikan lewat approvedAmount) atau DITOLAK.
+  status         CashAdvanceItemStatus @default(DIAJUKAN)
+  /// Nominal yang disahkan (≤ amount). Selisihnya menjadi tanggungan karyawan.
+  approvedAmount Decimal?         @db.Decimal(18, 2)
+  rejectReason   String?          @db.Text
   createdAt      DateTime         @default(now())
 
   @@index([cashAdvanceId])

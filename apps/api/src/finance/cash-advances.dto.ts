@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
 
 export const CASH_ADVANCE_PURPOSES = ["SURVEY", "PENGIRIMAN", "PROJECT", "LAINNYA"] as const;
 export const CASH_ADVANCE_STATUSES = ["DIAJUKAN", "DISETUJUI", "DITOLAK", "DICAIRKAN", "DILAPORKAN", "SELESAI", "DIBATALKAN"] as const;
@@ -139,6 +139,25 @@ export class SettleCashAdvanceDto {
 
   @IsOptional() @IsString()
   reimburseAccountCode?: string;
+
+  /** Keputusan per nota. Nota yang tidak disebut dianggap sah penuh. */
+  @IsOptional() @IsArray() @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => SettleItemReviewDto)
+  items?: SettleItemReviewDto[];
+}
+
+export class SettleItemReviewDto {
+  @Type(() => Number) @IsInt()
+  id!: number;
+
+  @IsOptional() @IsIn(["SAH", "DITOLAK"])
+  status?: "SAH" | "DITOLAK";
+
+  /** Nominal yang disahkan bila lebih kecil dari nota (disesuaikan). */
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
+  approvedAmount?: number;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  reason?: string;
 }
 
 /** Finance mengisi saldo petty cash karyawan (langsung, tanpa pengajuan). */
