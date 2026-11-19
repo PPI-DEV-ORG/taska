@@ -18,8 +18,8 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "output": "static",
       "favicon": "./assets/AKUNTRA.png",
+      "output": "single",
       "bundler": "metro"
     },
     "plugins": [
