@@ -134,7 +134,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
   const showPrice = can("supplier-pos", "P");
   const canPay = can("supplier-pos", "V"); // uang keluar ke supplier: Finance
   const canEditPo = can("supplier-pos", "U");
-  const canRecordInvoice = can("supplier-pos", "C");
+  const canRecordInvoice = can("supplier-bills", "C");
   const canShip = can("supplier-pos", "U") || can("shipments", "U");
   const canReceive = can("receiving", "C") || can("receiving", "U");
   const canRetur = can("damage-reports", "C");

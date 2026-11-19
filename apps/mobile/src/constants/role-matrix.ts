@@ -22,17 +22,19 @@
  *
  *   - v12: modul "file-management" (File Management). M/L = jelajah file sesuai akses dokumen, C = upload, U = ubah/ganti/bagikan,
  *          A = hapus, E = unduh/ekspor, V = kelola provider storage & migrasi, P = lihat semua file termasuk file yatim.
+ *   - v13: modul "supplier-bills" (Tagihan Supplier / Invoice In) dipisah dari "supplier-pos". Pemisahan tugas:
+ *          membuat PO hanya Procurement (+ Admin/Bos); Finance tidak lagi bisa membuat PO, tapi tetap mencatat & membayar tagihan.
  *
  * Menaikkan versi ini membuat server menerapkan ulang matriks standar ke peran bawaan sekali saat start
  * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
  */
 
-export const ROLE_MATRIX_VERSION = 12;
+export const ROLE_MATRIX_VERSION = 13;
 
 export const ROLE_MODULE_KEYS = [
   "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "maintenance", "fixed-assets", "subscriptions", "contracts", "file-management", "customers", "po-client",
   "projects", "tasks", "delivery-notes",
-  "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports",
+  "purchase-requests", "supplier-pos", "supplier-bills", "shipments", "receiving", "stock", "opname", "damage-reports",
   "suppliers", "warehouses", "products",
   "invoices", "expenses", "accounting", "reports",
   "hr",
@@ -186,6 +188,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       ...EMPLOYEE,
       "purchase-requests": "MLCU",
       "supplier-pos": "MLCUAPE",
+      "supplier-bills": "LCUAPE", // catat tagihan supplier; pembayaran tetap Finance
       shipments: "MLCU",
       receiving: "MLCUV", // persetujuan penerimaan tahap 2
       stock: "MLCUP",
@@ -224,7 +227,8 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "po-client": "MLCUAPE",
       quotations: "MLPVE",
       "purchase-requests": "MLUV", // setujui & bayar request
-      "supplier-pos": "MLCUPVE", // setujui PO, bayar tagihan supplier
+      "supplier-pos": "MLUPVE", // setujui & lunasi PO — TANPA buat PO (pemisahan tugas, dibuat Procurement)
+      "supplier-bills": "LCUAPVE", // catat, ubah & bayar tagihan supplier
       "delivery-notes": "MLV",
       opname: "MLV",
       "damage-reports": "MLV",
@@ -261,6 +265,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       // (tugas Gudang — tampil di dashboard Gudang), bukan untuk membuat permintaan pembelian.
       "purchase-requests": "LU",
       "supplier-pos": "L", // data PO untuk penerimaan (tanpa menu PO Keluar)
+      "supplier-bills": "", // tanpa akses tagihan supplier
       shipments: "L", // barang yang dikirim tampil di Penerimaan Barang
       warehouses: "MLCU",
       products: "MLCU", // tanpa harga beli / laba

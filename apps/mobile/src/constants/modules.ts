@@ -1279,6 +1279,8 @@ const CLIENT_MODULE_ALIASES: Record<string, string[]> = {
   "po-client": ["po-client", "po_client", "sales-order"],
   "purchase-requests": ["purchase-requests", "requests"],
   "supplier-pos": ["supplier-pos", "supplier_pos", "shipments"],
+  // Sejak matriks v13; peran kustom lama tanpa entri ini memakai hak PO Supplier sebagai cadangan.
+  "supplier-bills": ["supplier-bills", "supplierBills", "supplier-pos", "supplier_pos"],
   "delivery-notes": ["delivery-notes", "delivery"],
   "damage-reports": ["damage-reports", "damage"],
   "master-data": [
@@ -1331,6 +1333,7 @@ export const PERMISSION_ALIAS_TO_UI_KEY: Record<string, string> = {
   financeOut: "invoices",
   requests: "purchase-requests",
   procurement: "supplier-pos",
+  supplierBills: "supplier-bills",
   delivery: "delivery-notes",
   damageReports: "damage-reports",
   pocReports: "poc-reports",

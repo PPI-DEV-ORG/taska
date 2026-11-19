@@ -27,6 +27,7 @@ export type ModuleKey =
   | "tasks"
   | "requests"
   | "procurement"
+  | "supplierBills"
   | "shipments"
   | "receiving"
   | "stock"
@@ -75,6 +76,7 @@ const ALL: Record<ModuleKey, Action[]> = {
   tasks: ["M", "L", "C", "U", "A", "P", "V", "E"],
   requests: ["M", "L", "C", "U", "A", "P", "V", "E"],
   procurement: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  supplierBills: ["M", "L", "C", "U", "A", "P", "V", "E"],
   shipments: ["M", "L", "C", "U", "A", "P", "V", "E"],
   receiving: ["M", "L", "C", "U", "A", "P", "V", "E"],
   stock: ["M", "L", "C", "U", "A", "P", "V", "E"],
@@ -365,6 +367,10 @@ const MODULE_ALIASES: Record<string, string[]> = {
   "po-client": ["po-client", "poClient", "financeOut"],
   procurement: ["procurement", "supplier-pos"],
   "supplier-pos": ["supplier-pos", "procurement"],
+  // Tagihan supplier (Invoice In) dipisah dari PO sejak matriks v13. Peran kustom lama yang belum
+  // punya entri "supplier-bills" tetap memakai hak PO Supplier sebagai cadangan.
+  supplierBills: ["supplierBills", "supplier-bills", "procurement", "supplier-pos"],
+  "supplier-bills": ["supplier-bills", "supplierBills", "procurement", "supplier-pos"],
   requests: ["requests", "purchase-requests"],
   "purchase-requests": ["purchase-requests", "requests"],
   delivery: ["delivery", "delivery-notes"],
@@ -522,6 +528,7 @@ const UI_TWIN: Record<string, string> = {
   invoices: "invoices",
   poClient: "po-client",
   procurement: "supplier-pos",
+  supplierBills: "supplier-bills",
   requests: "purchase-requests",
   delivery: "delivery-notes",
   damageReports: "damage-reports",

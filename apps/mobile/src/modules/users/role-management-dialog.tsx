@@ -68,7 +68,8 @@ const MODULE_GROUPS: { group: string; items: { key: string; label: string; desc:
     group: "Pembelian & Gudang",
     items: [
       { key: "purchase-requests", label: "Request Barang", desc: "Pengajuan pembelian / ambil stok" },
-      { key: "supplier-pos", label: "PO Supplier", desc: "PO ke vendor & tagihan supplier" },
+      { key: "supplier-pos", label: "PO Supplier", desc: "Buat PO ke vendor (Buat), setujui & lunasi PO" },
+      { key: "supplier-bills", label: "Tagihan Supplier", desc: "Catat & bayar tagihan / invoice dari supplier" },
       { key: "shipments", label: "Pengiriman PO", desc: "Lacak barang dari supplier" },
       { key: "receiving", label: "Penerimaan Barang", desc: "Cek barang masuk & input SN" },
       { key: "stock", label: "Stok & SN", desc: "Kartu stok & serial number" },

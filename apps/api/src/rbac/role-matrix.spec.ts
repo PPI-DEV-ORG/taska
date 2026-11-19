@@ -91,7 +91,31 @@ const EXPECT: Array<[string, string, string, boolean]> = [
   ["ADMIN", "payroll", "V", false], ["ADMIN", "users", "C", true], ["ADMIN", "procurement", "U", true],
   ["GUDANG", "products", "P", false], ["PROCUREMENT", "products", "P", true],
   ["PM", "leads", "C", false],
+
+  // v13: pemisahan tugas — PO dibuat Procurement, Finance hanya setujui/lunasi PO & catat/bayar tagihan supplier
+  ["FINANCE", "procurement", "C", false], ["FINANCE", "procurement", "V", true],
+  ["FINANCE", "supplierBills", "C", true], ["FINANCE", "supplierBills", "U", true], ["FINANCE", "supplierBills", "V", true],
+  ["PROCUREMENT", "supplierBills", "C", true], ["PROCUREMENT", "supplierBills", "V", false],
+  ["GUDANG", "supplierBills", "L", false], ["SALES", "supplierBills", "C", false],
+  ["ADMIN", "procurement", "C", true], ["ADMIN", "supplierBills", "C", true], ["BOS", "procurement", "C", true],
 ];
+
+describe("Tagihan supplier terpisah dari PO (v13)", () => {
+  it("peran kustom lama tanpa entri supplier-bills tetap memakai hak PO Supplier sebagai cadangan", async () => {
+    const { setDynamicRoles, getDynamicRoles } = await import("./permissions.js");
+    const before = getDynamicRoles();
+    try {
+      setDynamicRoles([
+        ...before,
+        { code: "PURCHASING_LAMA", name: "Purchasing Lama", description: "", isSystem: false, permissions: { "supplier-pos": "MLCU" } },
+      ]);
+      expect(can("PURCHASING_LAMA", "supplierBills", "C")).toBe(true);
+      expect(can("PURCHASING_LAMA", "supplierBills", "V")).toBe(false);
+    } finally {
+      setDynamicRoles(before);
+    }
+  });
+});
 
 describe("Menu per peran (v4)", () => {
   it("Gudang tidak punya menu PO Keluar / Pengiriman, tapi tetap bisa membaca data PO untuk penerimaan", () => {

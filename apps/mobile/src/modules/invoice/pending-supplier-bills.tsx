@@ -18,7 +18,7 @@ export function PendingSupplierBills() {
   const router = useRouter();
   const { data, can, refreshModule } = useApp();
   const [showAll, setShowAll] = React.useState(false);
-  const canRecord = can("supplier-pos", "C");
+  const canRecord = can("supplier-bills", "C");
 
   React.useEffect(() => {
     if (!data["supplier-pos"]) void refreshModule("supplier-pos").catch(() => {});

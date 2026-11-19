@@ -15,56 +15,56 @@ export class InvoiceInController {
   constructor(private readonly service: InvoiceInService) {}
 
   @Get()
-  @Require("procurement", "L")
+  @Require("supplierBills", "L")
   list(@Query() q: FinanceListQuery) {
     return this.service.list(q);
   }
 
   @Get("suggest-number")
-  @Require("procurement", "L")
+  @Require("supplierBills", "L")
   suggestNumber() {
     return this.service.suggestNumber();
   }
 
   @Get(":id")
-  @Require("procurement", "L")
+  @Require("supplierBills", "L")
   get(@Param("id", ParseIntPipe) id: number) {
     return this.service.get(id);
   }
 
   @Post()
-  @Require("procurement", "C")
+  @Require("supplierBills", "C")
   create(@Body() dto: InvoiceInDto, @CurrentUser() user: RequestUser) {
     return this.service.create(dto, user);
   }
 
   @Put(":id")
-  @Require("procurement", "U")
+  @Require("supplierBills", "U")
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: InvoiceInDto, @CurrentUser() user: RequestUser) {
     return this.service.update(id, dto, user);
   }
 
   @Patch(":id")
-  @Require("procurement", "U")
+  @Require("supplierBills", "U")
   patch(@Param("id", ParseIntPipe) id: number, @Body() dto: InvoiceInDto, @CurrentUser() user: RequestUser) {
     return this.service.update(id, dto, user);
   }
 
   @Post(":id/status")
-  @Require("procurement", "U")
+  @Require("supplierBills", "U")
   setStatus(@Param("id", ParseIntPipe) id: number, @Body() dto: StatusOnlyDto, @CurrentUser() user: RequestUser) {
     return this.service.setStatus(id, dto.status, user);
   }
 
   @Post(":id/payments")
-  @Require("procurement", "U")
+  @Require("supplierBills", "U")
   pay(@Param("id", ParseIntPipe) id: number, @Body() dto: PaymentDto, @CurrentUser() user: RequestUser) {
     return this.service.addPayment(id, dto, user);
   }
 
   /** Void pembayaran yang salah / dobel: jurnal dibalik, sisa hutang kembali. */
   @Delete(":id/payments/:paymentId")
-  @Require("procurement", "U")
+  @Require("supplierBills", "U")
   voidPayment(
     @Param("id", ParseIntPipe) id: number,
     @Param("paymentId", ParseIntPipe) paymentId: number,
@@ -75,7 +75,7 @@ export class InvoiceInController {
   }
 
   @Delete(":id")
-  @Require("procurement", "U")
+  @Require("supplierBills", "U")
   remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.service.remove(id, user);
   }
