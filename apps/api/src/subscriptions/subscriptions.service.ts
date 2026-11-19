@@ -3,6 +3,8 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { PostingService } from "../accounting/posting.service.js";
@@ -16,6 +18,7 @@ import {
   CreateSubscriptionDto,
   PostPrepaidDto,
   PrepaidGenerateDto,
+  RejectRenewalDto,
   RenewSubscriptionDto,
   RunRemindersDto,
   SubscriptionCategoryDto,
@@ -96,13 +99,180 @@ function extractFileId(url?: string | null): number | null {
 }
 
 @Injectable()
-export class SubscriptionsService {
+export class SubscriptionsService implements OnModuleInit, OnModuleDestroy {
+  private timer?: ReturnType<typeof setInterval>;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly postingService: PostingService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
   ) {}
+
+  onModuleInit() {
+    // Pastikan akun-akun COA default langganan tersedia
+    void this.ensureRequiredCoaAccounts().catch(() => undefined);
+
+    // Jalankan scheduler maintenance setelah booting aman (10s)
+    setTimeout(() => {
+      void this.runDailyMaintenance().catch(() => undefined);
+    }, 10_000);
+
+    // Jalankan pengecekan setiap 1 jam
+    this.timer = setInterval(() => {
+      void this.runDailyMaintenance().catch(() => undefined);
+    }, 60 * 60 * 1000);
+  }
+
+  onModuleDestroy() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+  }
+
+  async ensureRequiredCoaAccounts() {
+    const requiredCoa = [
+      { code: "1400", name: "Biaya Dibayar di Muka (Header)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: false, isCash: false, isSystem: true, parentCode: null },
+      { code: "1401", name: "Biaya Dibayar di Muka (Prepaid Expense)", category: "Aset Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1400" },
+      { code: "6000", name: "EXPENSE (Header)", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: false, isCash: false, isSystem: true, parentCode: null },
+      { code: "6120", name: "Beban Cloud Hosting & VPS", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+      { code: "6121", name: "Beban Domain & DNS", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+      { code: "6122", name: "Beban Lisensi & Software SaaS", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+      { code: "6123", name: "Beban Email & Kolaborasi Bisnis", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+      { code: "6124", name: "Beban Internet & Konektivitas", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+      { code: "6125", name: "Beban Sertifikat SSL & Keamanan", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+      { code: "6126", name: "Beban Cloud Storage & Backup", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+      { code: "6127", name: "Beban API & Platform Usage", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+    ];
+
+    for (const acc of requiredCoa) {
+      try {
+        const found = await this.db().coaAccount.findUnique({
+          where: { code: acc.code },
+          select: { id: true },
+        });
+        if (!found) {
+          if (acc.parentCode) {
+            const parentFound = await this.db().coaAccount.findUnique({
+              where: { code: acc.parentCode },
+              select: { id: true },
+            });
+            if (!parentFound) {
+              const p = requiredCoa.find((r) => r.code === acc.parentCode);
+              if (p) await this.db().coaAccount.create({ data: p }).catch(() => null);
+            }
+          }
+          await this.db().coaAccount.create({ data: acc }).catch(() => null);
+        }
+      } catch {
+        // ignore duplicate / concurrent errors
+      }
+    }
+  }
+
+  async runDailyMaintenance() {
+    try {
+      await this.runReminders({ asOfDate: new Date().toISOString() });
+      await this.processAutoRenewals();
+      await this.updateRenewalDueStatuses();
+    } catch {
+      // safe no-op on background tick
+    }
+  }
+
+  async processAutoRenewals() {
+    const today = startOfDay(new Date());
+    const candidates = await this.db().subSubscription.findMany({
+      where: {
+        autoRenewal: true,
+        status: { in: ["ACTIVE", "RENEWAL_DUE"] },
+        nextRenewalDate: { lte: today },
+      },
+      include: { renewalHistory: true },
+    });
+
+    for (const sub of candidates) {
+      if (!sub.nextRenewalDate) continue;
+      // Jangan duplikasi jika sudah ada pending renewal atau renewal untuk siklus tersebut
+      const hasPendingOrFuture = (sub.renewalHistory || []).some(
+        (r: any) =>
+          r.approvalStatus === "PENDING" ||
+          (r.newPeriodStart && startOfDay(r.newPeriodStart) >= startOfDay(sub.nextRenewalDate!)),
+      );
+      if (hasPendingOrFuture) continue;
+
+      const newStart = startOfDay(sub.nextRenewalDate);
+      const newEnd = addCycle(newStart, sub.billingCycle, sub.expirationDate);
+      const renewalCode = await this.generateCode("REN");
+
+      await this.db().$transaction(async (tx: any) => {
+        await tx.subRenewalHistory.create({
+          data: {
+            renewalCode,
+            subscriptionId: sub.id,
+            previousPeriodStart: sub.startDate,
+            previousPeriodEnd: sub.expirationDate ?? sub.startDate,
+            newPeriodStart: newStart,
+            newPeriodEnd: newEnd,
+            previousCost: asNumber(sub.cost),
+            renewalCost: asNumber(sub.cost),
+            approvalStatus: "PENDING",
+            notes: "Auto-renewal otomatis dibuat sistem (Menunggu Persetujuan)",
+            createdById: null,
+          },
+        });
+        await tx.subSubscription.update({
+          where: { id: sub.id },
+          data: {
+            status: "RENEWAL_PENDING",
+          },
+        });
+      });
+
+      await this.notifications
+        .notify({
+          userIds: sub.picUserId ? [sub.picUserId] : undefined,
+          roles: sub.picUserId ? undefined : (["FINANCE"] as any),
+          kind: "LAINNYA" as any,
+          title: "Renewal Langganan Menunggu Persetujuan",
+          text: `Langganan ${sub.subscriptionCode} (${sub.serviceName}) mencapai tanggal perpanjangan. Draf renewal otomatis telah dibuat dan menunggu persetujuan.`,
+          href: `/subscriptions/${sub.id}`,
+        })
+        .catch(() => null);
+
+      await this.audit.log({
+        action: "SUBSCRIPTION_AUTO_RENEWAL_PENDING",
+        entityType: "subscriptions",
+        entityId: sub.id,
+        detail: `${renewalCode} · Draf renewal otomatis dibuat untuk periode ${formatPeriodLabel(newStart)} s/d ${formatPeriodLabel(newEnd)}`,
+      });
+    }
+  }
+
+  async updateRenewalDueStatuses() {
+    const today = startOfDay(new Date());
+    const in7Days = addDays(today, 7);
+
+    // Tandai RENEWAL_DUE jika H-7 dan status ACTIVE
+    await this.db().subSubscription.updateMany({
+      where: {
+        status: "ACTIVE",
+        nextRenewalDate: { lte: in7Days, gte: today },
+      },
+      data: { status: "RENEWAL_DUE" },
+    });
+
+    // Tandai OVERDUE jika expirationDate sudah lewat dan paymentStatus UNPAID
+    await this.db().subSubscription.updateMany({
+      where: {
+        paymentStatus: "UNPAID",
+        expirationDate: { lt: today },
+        status: { notIn: ["CANCELLED", "DRAFT"] },
+      },
+      data: { paymentStatus: "OVERDUE" },
+    });
+  }
 
   private db(): any {
     return this.prisma.main as any;
@@ -1022,25 +1192,53 @@ export class SubscriptionsService {
     const approvalStatus = dto.approvalStatus || "APPROVED";
     const statusAfter = approvalStatus === "PENDING" ? "RENEWAL_PENDING" : "ACTIVE";
 
+    let finalRenewalCode = renewalCode;
+
     await this.db().$transaction(async (tx: any) => {
-      await tx.subRenewalHistory.create({
-        data: {
-          renewalCode,
-          subscriptionId: id,
-          previousPeriodStart,
-          previousPeriodEnd,
-          newPeriodStart: newStart,
-          newPeriodEnd: newEnd,
-          previousCost: asNumber(existing.cost),
-          renewalCost,
-          invoiceNumber: optionalString(dto.invoiceNumber),
-          approvalStatus,
-          approvedByUserId: approvalStatus === "APPROVED" ? user?.id ?? null : null,
-          approvedAt: approvalStatus === "APPROVED" ? new Date() : null,
-          notes: optionalString(dto.notes),
-          createdById: user?.id ?? null,
-        },
+      const pendingRenewal = await tx.subRenewalHistory.findFirst({
+        where: { subscriptionId: id, approvalStatus: "PENDING" },
+        orderBy: { id: "desc" },
       });
+
+      if (pendingRenewal) {
+        finalRenewalCode = pendingRenewal.renewalCode;
+        await tx.subRenewalHistory.update({
+          where: { id: pendingRenewal.id },
+          data: {
+            previousPeriodStart,
+            previousPeriodEnd,
+            newPeriodStart: newStart,
+            newPeriodEnd: newEnd,
+            previousCost: asNumber(existing.cost),
+            renewalCost,
+            invoiceNumber: optionalString(dto.invoiceNumber),
+            approvalStatus,
+            approvedByUserId: approvalStatus === "APPROVED" ? user?.id ?? null : null,
+            approvedAt: approvalStatus === "APPROVED" ? new Date() : null,
+            notes: optionalString(dto.notes),
+          },
+        });
+      } else {
+        await tx.subRenewalHistory.create({
+          data: {
+            renewalCode: finalRenewalCode,
+            subscriptionId: id,
+            previousPeriodStart,
+            previousPeriodEnd,
+            newPeriodStart: newStart,
+            newPeriodEnd: newEnd,
+            previousCost: asNumber(existing.cost),
+            renewalCost,
+            invoiceNumber: optionalString(dto.invoiceNumber),
+            approvalStatus,
+            approvedByUserId: approvalStatus === "APPROVED" ? user?.id ?? null : null,
+            approvedAt: approvalStatus === "APPROVED" ? new Date() : null,
+            notes: optionalString(dto.notes),
+            createdById: user?.id ?? null,
+          },
+        });
+      }
+
       await tx.subSubscription.update({
         where: { id },
         data: {
@@ -1066,12 +1264,93 @@ export class SubscriptionsService {
       });
     });
 
+    // Jika disetujui & user memilih bayar sekarang (Lunas) atau catat hutang (AP)
+    if (
+      approvalStatus === "APPROVED" &&
+      (dto.paymentOption === "PAID_NOW" || dto.paymentOption === "RECORD_AP")
+    ) {
+      const isPaidNow = dto.paymentOption === "PAID_NOW";
+      const startStr = newStart.toISOString().slice(0, 10);
+      const endStr = newEnd.toISOString().slice(0, 10);
+      await this.recordPayment(
+        id,
+        {
+          amount: renewalCost,
+          tax: renewalTax,
+          paymentDate: dto.paymentDate ?? startStr,
+          invoiceDate: dto.paymentDate ?? startStr,
+          dueDate: dto.paymentDueDate ?? endStr,
+          invoiceNumber: dto.invoiceNumber,
+          billingPeriod: formatPeriodLabel(newStart),
+          fundingType: isPaidNow ? (dto.fundingType || "CASH") : "AP",
+          fundingAccountCode: dto.fundingAccountCode,
+          paymentProofUrl: dto.paymentProofUrl,
+          invoiceFileUrl: dto.invoiceFileUrl,
+          postJournal: dto.postJournal !== false,
+          notes: dto.notes
+            ? `[Renewal ${finalRenewalCode}] ${dto.notes}`
+            : `Renewal ${finalRenewalCode}`,
+          currency: existing.currency || "IDR",
+          prepaid: String(existing.billingCycle).toUpperCase() !== "MONTHLY",
+        },
+        user,
+      );
+    }
+
     await this.audit.log({
       actor: user,
       action: "SUBSCRIPTION_RENEW",
       entityType: "subscriptions",
       entityId: id,
-      detail: `${renewalCode} · ${formatPeriodLabel(newStart)} s/d ${formatPeriodLabel(newEnd)}`,
+      detail: `${finalRenewalCode} · ${formatPeriodLabel(newStart)} s/d ${formatPeriodLabel(newEnd)}${
+        dto.paymentOption === "PAID_NOW"
+          ? " (Lunas)"
+          : dto.paymentOption === "RECORD_AP"
+            ? " (Hutang AP)"
+            : ""
+      }`,
+    });
+    this.notifications.dataChange("subscriptions", "update", id);
+    return this.get(id);
+  }
+
+  async rejectRenewal(id: number, dto: RejectRenewalDto, user?: RequestUser) {
+    const existing = await this.get(id);
+    const pending = await this.db().subRenewalHistory.findFirst({
+      where: { subscriptionId: id, approvalStatus: "PENDING" },
+      orderBy: { id: "desc" },
+    });
+    if (!pending) {
+      throw new NotFoundException("Tidak ada perpanjangan yang menunggu persetujuan.");
+    }
+    await this.db().$transaction(async (tx: any) => {
+      await tx.subRenewalHistory.update({
+        where: { id: pending.id },
+        data: {
+          approvalStatus: "REJECTED",
+          notes: dto.reason
+            ? `${pending.notes ?? ""}\n[Ditolak]: ${dto.reason}`.trim()
+            : pending.notes,
+        },
+      });
+      const isExpired =
+        existing.expirationDate &&
+        startOfDay(existing.expirationDate) < startOfDay(new Date());
+      await tx.subSubscription.update({
+        where: { id },
+        data: {
+          status: isExpired ? "EXPIRED" : "ACTIVE",
+        },
+      });
+    });
+    await this.audit.log({
+      actor: user,
+      action: "SUBSCRIPTION_RENEWAL_REJECTED",
+      entityType: "subscriptions",
+      entityId: id,
+      detail: `${pending.renewalCode} · Perpanjangan ditolak${
+        dto.reason ? `: ${dto.reason}` : ""
+      }`,
     });
     this.notifications.dataChange("subscriptions", "update", id);
     return this.get(id);
@@ -1269,6 +1548,20 @@ export class SubscriptionsService {
 
     // 2. Posting Jurnal COA dari InvoiceIn (tidak dobel dari SubPaymentRecord)
     if (params.postJournal) {
+      await this.ensureRequiredCoaAccounts();
+      let effectiveDebit = params.debitAccount;
+      const debitExists = await this.db().coaAccount.findUnique({
+        where: { code: effectiveDebit },
+        select: { code: true, isPostable: true, status: true },
+      });
+      if (!debitExists || !debitExists.isPostable || debitExists.status !== "AKTIF") {
+        const fallback = await this.db().coaAccount.findFirst({
+          where: { category: "Beban Operasional", isPostable: true, status: "AKTIF" },
+          orderBy: { code: "asc" },
+        });
+        if (fallback) effectiveDebit = fallback.code;
+      }
+
       const invLines: Array<{
         accountCode: string;
         debit: number;
@@ -1278,7 +1571,7 @@ export class SubscriptionsService {
         partyId?: number;
       }> = [
         {
-          accountCode: params.debitAccount,
+          accountCode: effectiveDebit,
           debit: params.amount,
           credit: 0,
           memo: `${params.isPrepaid ? "Biaya dibayar di muka" : "Beban langganan"} ${params.serviceName} (#${finalInvNo})`,
@@ -1416,11 +1709,13 @@ export class SubscriptionsService {
     });
 
     const expenseAccount =
+      optionalString(dto.expenseAccountCode) ||
       existing.expenseAccountCode ||
       existing.category?.expenseAccountCode ||
       DEFAULT_EXPENSE_ACCOUNT;
     const debitAccount = isPrepaid
-      ? existing.prepaidAccountCode ||
+      ? optionalString(dto.prepaidAccountCode) ||
+        existing.prepaidAccountCode ||
         existing.category?.prepaidAccountCode ||
         DEFAULT_PREPAID_ACCOUNT
       : expenseAccount;

@@ -49,7 +49,7 @@ const CONDITION_COLORS: Record<string, { label: string; bg: string; text: string
 
 function ConditionBadge({ condition }: { condition?: string | null }) {
   const c = (condition || "GOOD").toUpperCase();
-  const cfg = CONDITION_COLORS[c] || CONDITION_COLORS.GOOD;
+  const cfg = CONDITION_COLORS[c] ?? CONDITION_COLORS.GOOD!;
   return (
     <View
       className="self-start rounded-full border px-2 py-0.5"
@@ -80,7 +80,9 @@ export function AssetSelect({
   React.useEffect(() => {
     let active = true;
     if (!assets || assets.length === 0) {
-      setLoading(true);
+      Promise.resolve().then(() => {
+        if (active) setLoading(true);
+      });
       api<any>("GET", "/fixed-assets/assets")
         .then((res) => {
           if (!active) return;

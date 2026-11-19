@@ -16,6 +16,7 @@ import { useApp } from "@/store/app-store";
 import type { SubCategory, SubProvider } from "./types";
 import { BILLING_CYCLE_OPTIONS, CYCLE_LABEL } from "./subscription-utils";
 import { SubscriptionTabs } from "./subscription-ui";
+import { useSubscriptionAccounts } from "./use-subscription-accounts";
 
 type Props = {
   visible: boolean;
@@ -35,6 +36,7 @@ export function SubscriptionMasterDialog(props: Props) {
 
 function MasterContent({ onClose, categories, providers, onChanged, canCreate, canUpdate, canDelete }: Props) {
   const { toast } = useApp();
+  const { expenseAccounts, prepaidAccounts } = useSubscriptionAccounts();
   const [tab, setTab] = React.useState("categories");
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [showForm, setShowForm] = React.useState(false);
@@ -208,20 +210,28 @@ function MasterContent({ onClose, categories, providers, onChanged, canCreate, c
                       className="h-10 rounded-lg border-border/80 bg-card"
                     />
                   </View>
-                  <View className="w-32 gap-1">
-                    <Text className="text-xs font-semibold">Akun Beban</Text>
-                    <TextInput
-                      value={expenseAccount}
-                      onChangeText={setExpenseAccount}
-                      className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  <View className="min-w-[180px] flex-1 gap-1">
+                    <Text className="text-xs font-semibold">Akun Beban Operasional</Text>
+                    <SearchableSelect
+                      value={expenseAccounts.find((a) => a.code === expenseAccount)?.label ?? expenseAccount}
+                      options={expenseAccounts.map((a) => a.label)}
+                      onChange={(label) => {
+                        const found = expenseAccounts.find((a) => a.label === label);
+                        if (found) setExpenseAccount(found.code);
+                      }}
+                      className="h-10 rounded-lg border-border/80 bg-card"
                     />
                   </View>
-                  <View className="w-32 gap-1">
+                  <View className="min-w-[180px] flex-1 gap-1">
                     <Text className="text-xs font-semibold">Akun Prepaid</Text>
-                    <TextInput
-                      value={prepaidAccount}
-                      onChangeText={setPrepaidAccount}
-                      className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    <SearchableSelect
+                      value={prepaidAccounts.find((a) => a.code === prepaidAccount)?.label ?? prepaidAccount}
+                      options={prepaidAccounts.map((a) => a.label)}
+                      onChange={(label) => {
+                        const found = prepaidAccounts.find((a) => a.label === label);
+                        if (found) setPrepaidAccount(found.code);
+                      }}
+                      className="h-10 rounded-lg border-border/80 bg-card"
                     />
                   </View>
                 </>

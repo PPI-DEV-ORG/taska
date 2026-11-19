@@ -19,6 +19,7 @@ import {
   CreateSubscriptionDto,
   PostPrepaidDto,
   PrepaidGenerateDto,
+  RejectRenewalDto,
   RenewSubscriptionDto,
   RunRemindersDto,
   SubscriptionCategoryDto,
@@ -212,6 +213,16 @@ export class SubscriptionsController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.renew(id, dto, user);
+  }
+
+  @Post(":id/reject-renewal")
+  @Require("subscriptions", "U")
+  rejectRenewal(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: RejectRenewalDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.rejectRenewal(id, dto, user);
   }
 
   @Post(":id/change-plan")

@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Plus, Trash2, Edit, FolderKanban, MapPin } from "lucide-react-native";
 import { FaCategory, FaLocation } from "./types";
 import { api } from "@/services/api";
+import { useFaAccounts } from "./use-fa-accounts";
 
 type Props = {
   visible: boolean;
@@ -40,6 +41,20 @@ export function CategoriesLocationsDialog({
   const [locBuilding, setLocBuilding] = React.useState("");
   const [locFloor, setLocFloor] = React.useState("");
   const [locRoom, setLocRoom] = React.useState("");
+
+  const { assetAccounts, accumDepAccounts, depExpenseAccounts } = useFaAccounts();
+
+  const assetAccountOptions = React.useMemo(() => {
+    return assetAccounts.map((a) => ({ value: a.code, label: a.label }));
+  }, [assetAccounts]);
+
+  const accumAccountOptions = React.useMemo(() => {
+    return accumDepAccounts.map((a) => ({ value: a.code, label: a.label }));
+  }, [accumDepAccounts]);
+
+  const expenseAccountOptions = React.useMemo(() => {
+    return depExpenseAccounts.map((a) => ({ value: a.code, label: a.label }));
+  }, [depExpenseAccounts]);
 
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -355,33 +370,45 @@ export function CategoriesLocationsDialog({
                         <Text className="text-xs font-semibold text-foreground mb-1">
                           Akun Aset (COA)
                         </Text>
-                        <TextInput
-                          value={catAssetAcc}
-                          onChangeText={setCatAssetAcc}
-                          placeholder="1504"
-                          className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono"
+                        <SearchableSelect
+                          value={assetAccountOptions.find((a) => a.value === catAssetAcc)?.label || catAssetAcc}
+                          options={assetAccountOptions.map((a) => a.label)}
+                          onChange={(val) => {
+                            const found = assetAccountOptions.find((a) => a.label === val);
+                            if (found) setCatAssetAcc(found.value);
+                          }}
+                          placeholder="Pilih Akun Aset"
+                          className="h-10 rounded-lg bg-card border-border/80"
                         />
                       </View>
                       <View className="flex-1">
                         <Text className="text-xs font-semibold text-foreground mb-1">
                           Akun Akumulasi Susut
                         </Text>
-                        <TextInput
-                          value={catAccumAcc}
-                          onChangeText={setCatAccumAcc}
-                          placeholder="1592"
-                          className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono"
+                        <SearchableSelect
+                          value={accumAccountOptions.find((a) => a.value === catAccumAcc)?.label || catAccumAcc}
+                          options={accumAccountOptions.map((a) => a.label)}
+                          onChange={(val) => {
+                            const found = accumAccountOptions.find((a) => a.label === val);
+                            if (found) setCatAccumAcc(found.value);
+                          }}
+                          placeholder="Pilih Akun Akumulasi"
+                          className="h-10 rounded-lg bg-card border-border/80"
                         />
                       </View>
                       <View className="flex-1">
                         <Text className="text-xs font-semibold text-foreground mb-1">
                           Akun Beban Susut
                         </Text>
-                        <TextInput
-                          value={catExpenseAcc}
-                          onChangeText={setCatExpenseAcc}
-                          placeholder="6101"
-                          className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono"
+                        <SearchableSelect
+                          value={expenseAccountOptions.find((a) => a.value === catExpenseAcc)?.label || catExpenseAcc}
+                          options={expenseAccountOptions.map((a) => a.label)}
+                          onChange={(val) => {
+                            const found = expenseAccountOptions.find((a) => a.label === val);
+                            if (found) setCatExpenseAcc(found.value);
+                          }}
+                          placeholder="Pilih Beban Susut"
+                          className="h-10 rounded-lg bg-card border-border/80"
                         />
                       </View>
                     </View>

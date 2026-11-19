@@ -18,6 +18,8 @@ import { useApp } from "@/store/app-store";
 import type { SubSubscription } from "./types";
 import { todayIso } from "./subscription-utils";
 
+import { useSubscriptionAccounts } from "./use-subscription-accounts";
+
 type Props = {
   visible: boolean;
   subscription: SubSubscription | null;
@@ -30,15 +32,16 @@ export function SubscriptionPaymentDialog(props: Props) {
   return <PaymentContent key={props.subscription.id} {...props} subscription={props.subscription} />;
 }
 
-const PAYMENT_ACCOUNT_OPTIONS = [
-  { code: "1000.02", label: "1000.02 - Bank Mandiri PT GMP", type: "CASH" },
-  { code: "1000.01", label: "1000.01 - Kas Operasional", type: "CASH" },
-  { code: "1000.03", label: "1000.03 - Kas Kecil (Petty Cash)", type: "CASH" },
-  { code: "210102", label: "210102 - Account Payable (Hutang Usaha)", type: "AP" },
-];
-
 function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscription: SubSubscription }) {
   const { toast } = useApp();
+  const { cashAccounts, expenseAccounts, prepaidAccounts } = useSubscriptionAccounts();
+
+  const paymentOptions = React.useMemo(() => {
+    return [
+      ...cashAccounts.map((c) => ({ code: c.code, label: c.label, type: "CASH" })),
+      { code: "210102", label: "210102 - Account Payable (Hutang Usaha)", type: "AP" },
+    ];
+  }, [cashAccounts]);
   const periodStart = subscription.startDate
     ? String(subscription.startDate).slice(0, 10)
     : null;
@@ -76,6 +79,12 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
   const [postJournal, setPostJournal] = React.useState(true);
   const [fundingType, setFundingType] = React.useState("CASH");
   const [fundingAccount, setFundingAccount] = React.useState("1000.02");
+  const [expenseAccount, setExpenseAccount] = React.useState(
+    subscription.expenseAccountCode || "6122",
+  );
+  const [prepaidAccount, setPrepaidAccount] = React.useState(
+    subscription.prepaidAccountCode || "1401",
+  );
   const [saving, setSaving] = React.useState(false);
 
   const amountNumber = Number(amount.replace(/\D/g, "")) || 0;
@@ -114,6 +123,8 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
         fundingType,
         fundingAccountCode: fundingAccount.trim() || undefined,
         prepaid: isPrepaid,
+        expenseAccountCode: expenseAccount.trim() || undefined,
+        prepaidAccountCode: prepaidAccount.trim() || undefined,
       });
       toast("Invoice Masuk berhasil dibuat & pembayaran tercatat ke COA");
       onSuccess();
@@ -221,15 +232,43 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
                 <FormField label="Akun Kas / Bank / Hutang">
                   <SearchableSelect
                     value={
-                      PAYMENT_ACCOUNT_OPTIONS.find((a) => a.code === fundingAccount)?.label ??
+                      paymentOptions.find((a) => a.code === fundingAccount)?.label ??
                       fundingAccount
                     }
-                    options={PAYMENT_ACCOUNT_OPTIONS.map((a) => a.label)}
+                    options={paymentOptions.map((a) => a.label)}
                     onChange={(label) => {
-                      const found = PAYMENT_ACCOUNT_OPTIONS.find((a) => a.label === label);
+                      const found = paymentOptions.find((a) => a.label === label);
                       if (found) {
                         setFundingAccount(found.code);
                         setFundingType(found.type);
+                      }
+                    }}
+                    className="h-11 rounded-lg border-border/80 bg-card"
+                  />
+                </FormField>
+              </View>
+            </View>
+
+            <View className="flex-row flex-wrap gap-3">
+              <View className="min-w-[240px] flex-1">
+                <FormField label={isPrepaid ? "Akun Prepaid (Debit)" : "Akun Beban Operasional (Debit)"}>
+                  <SearchableSelect
+                    value={
+                      isPrepaid
+                        ? prepaidAccounts.find((a) => a.code === prepaidAccount)?.label ?? prepaidAccount
+                        : expenseAccounts.find((a) => a.code === expenseAccount)?.label ?? expenseAccount
+                    }
+                    options={
+                      isPrepaid
+                        ? prepaidAccounts.map((a) => a.label)
+                        : expenseAccounts.map((a) => a.label)
+                    }
+                    onChange={(label) => {
+                      const list = isPrepaid ? prepaidAccounts : expenseAccounts;
+                      const found = list.find((a) => a.label === label);
+                      if (found) {
+                        if (isPrepaid) setPrepaidAccount(found.code);
+                        else setExpenseAccount(found.code);
                       }
                     }}
                     className="h-11 rounded-lg border-border/80 bg-card"
@@ -255,8 +294,8 @@ function PaymentContent({ subscription, onClose, onSuccess }: Props & { subscrip
                 </Text>
                 <Text className="text-[11px] text-muted-foreground">
                   {isPrepaid
-                    ? `Invoice Masuk: Dr Prepaid ${subscription.prepaidAccountCode || "1401"} · Dr PPN Masukan 1600 · Cr ${fundingAccount}`
-                    : `Invoice Masuk: Dr Beban ${subscription.expenseAccountCode || "6122"} · Dr PPN Masukan 1600 · Cr ${fundingAccount}`}
+                    ? `Invoice Masuk: Dr Prepaid ${prepaidAccount} · Dr PPN Masukan 1600 · Cr ${fundingAccount}`
+                    : `Invoice Masuk: Dr Beban ${expenseAccount} · Dr PPN Masukan 1600 · Cr ${fundingAccount}`}
                 </Text>
               </View>
             </TouchableOpacity>

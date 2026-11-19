@@ -392,6 +392,44 @@ export class RenewSubscriptionDto {
   @IsOptional()
   @IsIn(["PENDING", "APPROVED"])
   approvalStatus?: string = "APPROVED";
+
+  @IsOptional()
+  @IsIn(["PAID_NOW", "RECORD_AP", "PAY_LATER"])
+  paymentOption?: "PAID_NOW" | "RECORD_AP" | "PAY_LATER" = "PAY_LATER";
+
+  @IsOptional()
+  @IsDateString()
+  paymentDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  paymentDueDate?: string;
+
+  @IsOptional()
+  @IsString()
+  fundingType?: string; // "CASH" | "AP"
+
+  @IsOptional()
+  @IsString()
+  fundingAccountCode?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentProofUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  invoiceFileUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  postJournal?: boolean;
+}
+
+export class RejectRenewalDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 export class ChangeSubscriptionPlanDto {
@@ -438,6 +476,8 @@ export class SubscriptionPaymentDto {
   @IsOptional() @IsString() fundingAccountCode?: string = "1000.02";
   @IsOptional() @IsIn(["CASH", "AP"]) fundingType?: string = "CASH";
   @IsOptional() @IsBoolean() prepaid?: boolean;
+  @IsOptional() @IsString() expenseAccountCode?: string;
+  @IsOptional() @IsString() prepaidAccountCode?: string;
 }
 
 export class PrepaidGenerateDto {

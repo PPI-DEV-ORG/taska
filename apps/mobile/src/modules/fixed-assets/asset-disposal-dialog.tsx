@@ -9,6 +9,7 @@ import { Trash2, AlertTriangle, Calculator } from "lucide-react-native";
 import { formatThousands } from "@/lib/format";
 import { FaAsset } from "./types";
 import { api } from "@/services/api";
+import { useFaAccounts } from "./use-fa-accounts";
 
 type Props = {
   visible: boolean;
@@ -46,10 +47,13 @@ function AssetDisposalContent({ visible, onClose, asset, onSuccess }: Props & { 
     { value: "WRITTEN_OFF", label: "Dihapusbukukan (Written Off)" },
   ];
 
-  const CASH_ACCOUNT_OPTIONS = [
-    { value: "1000.02", label: "Bank Mandiri PT GMP [1000.02]" },
-    { value: "1000.01", label: "Kas Kecil [1000.01]" },
-  ];
+  const { cashAccounts } = useFaAccounts();
+  const cashAccountOptions = React.useMemo(() => {
+    return cashAccounts.map((a) => ({
+      value: a.code,
+      label: a.label,
+    }));
+  }, [cashAccounts]);
 
   const handleSubmit = async () => {
     if (!reason.trim()) {
@@ -186,10 +190,10 @@ function AssetDisposalContent({ visible, onClose, asset, onSuccess }: Props & { 
                     Akun Kas/Bank Penerima Hasil Jual
                   </Text>
                   <SearchableSelect
-                    value={CASH_ACCOUNT_OPTIONS.find((a) => a.value === cashAccountCode)?.label || ""}
-                    options={CASH_ACCOUNT_OPTIONS.map((a) => a.label)}
+                    value={cashAccountOptions.find((a) => a.value === cashAccountCode)?.label || cashAccountCode}
+                    options={cashAccountOptions.map((a) => a.label)}
                     onChange={(val) => {
-                      const match = CASH_ACCOUNT_OPTIONS.find((a) => a.label === val);
+                      const match = cashAccountOptions.find((a) => a.label === val);
                       if (match) setCashAccountCode(match.value);
                     }}
                     placeholder="Pilih Akun Kas/Bank"

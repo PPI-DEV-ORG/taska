@@ -11,6 +11,7 @@ import { FaLocationSelect } from "./fa-location-select";
 import { FaCategorySelect } from "./fa-category-select";
 import { formatThousands } from "@/lib/format";
 import { api } from "@/services/api";
+import { useFaAccounts } from "./use-fa-accounts";
 
 type Props = {
   visible: boolean;
@@ -93,12 +94,13 @@ function AssetFormContent({
   const [description, setDescription] = React.useState(asset?.description || "");
   const [creditAccountCode, setCreditAccountCode] = React.useState("1000.02");
 
-  const FUNDING_ACCOUNT_OPTIONS = [
-    { value: "1000.02", label: "Bank Mandiri PT GMP [1000.02]" },
-    { value: "1000.01", label: "Kas Kecil [1000.01]" },
-    { value: "310001", label: "Saldo Awal Ekuitas [310001]" },
-    { value: "210102", label: "Hutang Usaha (Account Payable) [210102]" },
-  ];
+  const { fundingOptions: dynamicFundingOptions } = useFaAccounts();
+  const fundingAccountOptions = React.useMemo(() => {
+    return dynamicFundingOptions.map((a) => ({
+      value: a.code,
+      label: a.label,
+    }));
+  }, [dynamicFundingOptions]);
 
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -440,11 +442,11 @@ function AssetFormContent({
                     </Text>
                     <SearchableSelect
                       value={
-                        FUNDING_ACCOUNT_OPTIONS.find((a) => a.value === creditAccountCode)?.label || ""
+                        fundingAccountOptions.find((a) => a.value === creditAccountCode)?.label || creditAccountCode
                       }
-                      options={FUNDING_ACCOUNT_OPTIONS.map((a) => a.label)}
+                      options={fundingAccountOptions.map((a) => a.label)}
                       onChange={(val) => {
-                        const found = FUNDING_ACCOUNT_OPTIONS.find((a) => a.label === val);
+                        const found = fundingAccountOptions.find((a) => a.label === val);
                         if (found) setCreditAccountCode(found.value);
                       }}
                       placeholder="Pilih Akun Sumber Dana"
