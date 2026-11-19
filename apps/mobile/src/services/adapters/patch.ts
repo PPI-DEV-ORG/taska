@@ -759,8 +759,18 @@ export function buildPatchBody(
       out.requestId = patch.requestId ? Number(patch.requestId) : null;
     if (patch.supplierPoId !== undefined)
       out.supplierPoId = patch.supplierPoId ? Number(patch.supplierPoId) : null;
+    // Form edit memilih PO / gudang berdasarkan nama/nomor (field "po" & "warehouse"),
+    // sedangkan API hanya menerima ID. Dulu nilainya terbuang sehingga pilihan tidak tersimpan.
+    else if (patch.po !== undefined) {
+      const poId = findId(db?.["supplier-pos"], patch.po);
+      if (poId) out.supplierPoId = poId;
+    }
     if (patch.warehouseId !== undefined)
       out.warehouseId = patch.warehouseId ? Number(patch.warehouseId) : null;
+    else if (patch.warehouse !== undefined || patch.gudang !== undefined) {
+      const whId = findId(db?.warehouses, patch.warehouse ?? patch.gudang);
+      if (whId) out.warehouseId = whId;
+    }
     if (patch.items !== undefined && Array.isArray(patch.items)) {
       out.items = patch.items.map((i: any) => ({
         productId: Number(i.productId),

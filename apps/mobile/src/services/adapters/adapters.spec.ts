@@ -204,3 +204,18 @@ describe("approval, notifikasi, dan status body", () => {
     expect(statusEnumFor("expenses", "Ditolak")).toBe("DITOLAK");
   });
 });
+
+describe("patch penerimaan barang dari form edit", () => {
+  it("memetakan nama gudang & nomor PO yang dipilih ke ID", () => {
+    expect(buildPatchBody("receiving", { warehouse: "Gudang Utama", po: "POD/001" }, db)).toMatchObject({
+      warehouseId: 5,
+      supplierPoId: 21,
+    });
+  });
+
+  it("warehouseId / supplierPoId eksplisit tetap diutamakan", () => {
+    expect(
+      buildPatchBody("receiving", { warehouse: "Gudang Utama", warehouseId: 9, po: "POD/001", supplierPoId: 8 }, db),
+    ).toMatchObject({ warehouseId: 9, supplierPoId: 8 });
+  });
+});
