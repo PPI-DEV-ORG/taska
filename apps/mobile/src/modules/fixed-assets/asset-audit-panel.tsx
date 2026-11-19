@@ -3,7 +3,7 @@ import { View, TouchableOpacity, ScrollView, ActivityIndicator } from "react-nat
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
 import {
   ClipboardCheck,
   Plus,

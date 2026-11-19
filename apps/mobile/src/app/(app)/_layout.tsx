@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Redirect, Slot, usePathname } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
-import { AppShell } from "@/components/taska/app-shell";
+import { AppShell } from "@/components/akuntra/app-shell";
 import { useApp } from "@/store/app-store";
 import { getAccess } from "@/services/api";
 
@@ -16,8 +16,8 @@ export default function AppLayout() {
 
   if (!hydrated) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#191817" }}>
-        <ActivityIndicator color="#fff" />
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#181716" }}>
+        <ActivityIndicator color="#00c094" />
       </View>
     );
   }

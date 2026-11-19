@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from "expo-router";
 import { ContractsScreen } from "@/modules/contracts/contracts-screen";
-import { EmptyState } from "@/components/taska/basics";
+import { EmptyState } from "@/components/akuntra/basics";
 import { hasUserPermission } from "@/constants/modules";
 import { useApp } from "@/store/app-store";
 

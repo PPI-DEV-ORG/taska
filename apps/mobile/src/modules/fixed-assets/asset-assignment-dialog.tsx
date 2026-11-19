@@ -3,7 +3,7 @@ import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput } from
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect, UserSelect, DatePicker } from "@/components/taska/dialogs";
+import { SearchableSelect, UserSelect, DatePicker } from "@/components/akuntra/dialogs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { UserCheck, Calendar } from "lucide-react-native";
 import { FaAsset, FaLocation } from "./types";

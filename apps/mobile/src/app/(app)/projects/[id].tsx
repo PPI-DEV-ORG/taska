@@ -26,10 +26,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Panel, Chip, EmptyState, Timeline } from "@/components/taska/basics";
-import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
-import { StatusBadge } from "@/components/taska/status-badge";
-import { DocumentViewerList } from "@/components/taska/document-viewer";
+import { PageHeader, Panel, Chip, EmptyState, Timeline } from "@/components/akuntra/basics";
+import { ConfirmDialog, FormDialog } from "@/components/akuntra/dialogs";
+import { StatusBadge } from "@/components/akuntra/status-badge";
+import { DocumentViewerList } from "@/components/akuntra/document-viewer";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { adaptRow, toLabel } from "@/services/adapters";

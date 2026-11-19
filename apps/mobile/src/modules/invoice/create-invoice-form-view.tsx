@@ -10,8 +10,8 @@ import {
 import {
   QuickAddCustomerDialog,
   QuickAddSupplierDialog,
-} from "@/components/taska/dialogs";
-import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
+} from "@/components/akuntra/dialogs";
+import { SerialItemPickerModal } from "@/components/akuntra/serial-item-picker";
 import { rupiah } from "@/lib/format";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { StepTitle } from "./invoice-step-title";

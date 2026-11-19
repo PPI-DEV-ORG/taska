@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
-import { FormField } from "@/components/taska/basics";
+import { FormField } from "@/components/akuntra/basics";
 import {
   SearchableSelect,
   DatePicker,
@@ -14,9 +14,9 @@ import {
   SupplierSelect,
   ProductSelect,
   ProjectSelect,
-} from "@/components/taska/dialogs";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
-import { StatusBadge } from "@/components/taska/status-badge";
+} from "@/components/akuntra/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { SupplierPaymentTermsDialog } from "@/modules/supplier-po/supplier-payment-terms-dialog";
 import { PPH_MODE_OPTIONS, itemNet, pphRateFor, pphModeToTipe, type PphMode } from "@/modules/quotation/lib";
 import { api } from "@/services/api";

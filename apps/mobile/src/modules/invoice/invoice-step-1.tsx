@@ -3,7 +3,7 @@ import { FileDown, Check } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
-import { FormField } from "@/components/taska/basics";
+import { FormField } from "@/components/akuntra/basics";
 import {
   CustomerSelect,
   SearchableSelect,
@@ -12,8 +12,8 @@ import {
   QuotationSelect,
   LeadSelect,
   ContinuableInvoiceSelect,
-} from "@/components/taska/dialogs";
-import { StatusBadge } from "@/components/taska/status-badge";
+} from "@/components/akuntra/dialogs";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";
 import { type Row } from "@/constants/modules";

@@ -5,9 +5,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
-import { FormField } from "@/components/taska/basics";
-import { DatePicker, formatThousands } from "@/components/taska/dialogs";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { FormField } from "@/components/akuntra/basics";
+import { DatePicker, formatThousands } from "@/components/akuntra/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";

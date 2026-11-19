@@ -10,8 +10,8 @@ import {
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { PageHeader } from "@/components/taska/basics";
-import { ConfirmDialog } from "@/components/taska/dialogs";
+import { PageHeader } from "@/components/akuntra/basics";
+import { ConfirmDialog } from "@/components/akuntra/dialogs";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";

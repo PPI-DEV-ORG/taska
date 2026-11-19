@@ -3,7 +3,7 @@ import { View, ScrollView, TextInput, Pressable, ActivityIndicator } from "react
 import { Text } from "@/components/ui/text";
 import { Search, X, RefreshCw } from "lucide-react-native";
 import { colors } from "@/tokens";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
+import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
 import { Button } from "@/components/ui/button";
 
 interface TeamAttendanceTabProps {

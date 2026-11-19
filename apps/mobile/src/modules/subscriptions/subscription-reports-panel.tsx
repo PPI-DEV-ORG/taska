@@ -4,8 +4,8 @@ import { BellRing, Download, FileSpreadsheet, RefreshCw } from "lucide-react-nat
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
-import { Panel } from "@/components/taska/basics";
+import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
+import { Panel } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";

@@ -9,23 +9,23 @@ export function getThemePalette(): "dark" | "light" {
 }
 
 const DARK_SURFACE = {
-  background: "#191817",
-  card: "#232220",
-  panel: "#2D2B28",
-  border: "#3A3834",
-  text: "#F2EFE8",
-  textSecondary: "#B5AFA3",
-  muted: "#948F84",
+  background: "#181716",
+  card: "#202222",
+  panel: "#262A2D",
+  border: "#2F353A",
+  text: "#FFFFFF",
+  textSecondary: "#A9B4BC",
+  muted: "#7E8B95",
 } as const;
 
 const LIGHT_SURFACE = {
-  background: "#F8F7F4",
+  background: "#F4F7F9",
   card: "#FFFFFF",
-  panel: "#F0EEE9",
-  border: "#DEDAD2",
-  text: "#1C1A17",
-  textSecondary: "#5C5852",
-  muted: "#7A756D",
+  panel: "#EBF0F4",
+  border: "#D3DCE3",
+  text: "#00254D",
+  textSecondary: "#3B5266",
+  muted: "#647A8C",
 } as const;
 
 export const colors = {
@@ -60,11 +60,18 @@ export const colors = {
     return currentMode === "light" ? LIGHT_SURFACE.textSecondary : DARK_SURFACE.textSecondary;
   },
   get accent() {
-    return "#EB5E28";
+    return currentMode === "light" ? "#01A481" : "#00C094";
   },
-  primary: "#EB5E28",
-  primaryHover: "#FF7A45",
-  primaryPressed: "#D14E1C",
+  get primary() {
+    return currentMode === "light" ? "#01A481" : "#00C094";
+  },
+  get primaryForeground() {
+    return currentMode === "light" ? "#FFFFFF" : "#071A16";
+  },
+  primaryHover: "#1AD4A8",
+  primaryPressed: "#01A481",
+  navy: "#023768",
+  prussian: "#00254D",
   success: "#4CC38A",
   warning: "#F2B63C",
   danger: "#EF5350",
@@ -72,12 +79,12 @@ export const colors = {
 };
 
 export const chartSeries = [
-  "#EB5E28",
+  "#00C094",
+  "#023768",
+  "#01A481",
   "#4DA3FF",
-  "#4CC38A",
-  "#F2B63C",
   "#A78BFA",
-  "#2DD4BF",
+  "#F2B63C",
   "#F472B6",
   "#94A3B8",
 ];

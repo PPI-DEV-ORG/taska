@@ -2,7 +2,7 @@ import * as React from "react";
 import { View, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
 import { Calculator, Play, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react-native";
 import { api } from "@/services/api";
 

@@ -32,9 +32,9 @@ import {
   QuotationSelect,
   SearchableSelect,
   SupplierPoSelect,
-} from "@/components/taska/dialogs";
-import { InvoiceSelect } from "@/components/taska/document-select";
-import { FileUploader } from "@/components/taska/file-uploader";
+} from "@/components/akuntra/dialogs";
+import { InvoiceSelect } from "@/components/akuntra/document-select";
+import { FileUploader } from "@/components/akuntra/file-uploader";
 import { colors } from "@/tokens";
 import { api, apiBase } from "@/services/api";
 import { hasUserPermission } from "@/constants/modules";

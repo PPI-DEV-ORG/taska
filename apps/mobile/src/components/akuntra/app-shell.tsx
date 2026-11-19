@@ -9,11 +9,11 @@ import {
   Search, MessageSquare,
 } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { WhatsappDialog } from "@/components/taska/whatsapp-dialog";
+import { WhatsappDialog } from "@/components/akuntra/whatsapp-dialog";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/taska/basics";
+import { FormField } from "@/components/akuntra/basics";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, uploadFile } from "@/services/api";
 import { subscribeNotificationTap } from "@/services/notify";
@@ -61,10 +61,10 @@ function useNav() {
   return { items, active, pathname };
 }
 
-let taskaLogoSource: any;
+let akuntraLogoSource: any;
 try {
   const rawLogo = require("../../../assets/AKUNTRA.png");
-  taskaLogoSource =
+  akuntraLogoSource =
     typeof rawLogo === "string"
       ? { uri: rawLogo }
       : rawLogo?.default
@@ -73,7 +73,7 @@ try {
         : rawLogo.default
       : rawLogo;
 } catch {
-  taskaLogoSource = null;
+  akuntraLogoSource = null;
 }
 
 function Brand({ compact }: { compact?: boolean }) {
@@ -81,9 +81,9 @@ function Brand({ compact }: { compact?: boolean }) {
 
   return (
     <View className="flex-row items-center gap-3">
-      {taskaLogoSource && !loadError ? (
+      {akuntraLogoSource && !loadError ? (
         <Image
-          source={taskaLogoSource}
+          source={akuntraLogoSource}
           style={{ width: 36, height: 36, resizeMode: "contain" }}
           resizeMode="contain"
           onError={() => setLoadError(true)}

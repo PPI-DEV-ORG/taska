@@ -4,8 +4,8 @@ import { usePathname, useRouter } from "expo-router";
 import { ArrowLeft, Inbox, RefreshCw, MessageSquare, Mail, ChevronDown, ChevronUp, type LucideIcon } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { StatusBadge } from "@/components/taska/status-badge";
-import { ChartCard } from "@/components/taska/charts";
+import { StatusBadge } from "@/components/akuntra/status-badge";
+import { ChartCard } from "@/components/akuntra/charts";
 
 export { StatusBadge, ChartCard };
 import { useApp } from "@/store/app-store";

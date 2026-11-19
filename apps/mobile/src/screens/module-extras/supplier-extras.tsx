@@ -4,8 +4,8 @@ import { Plus, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { Panel, FormField } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { Panel, FormField } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import {
   Dialog,
   DialogContent,

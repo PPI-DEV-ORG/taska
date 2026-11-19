@@ -47,7 +47,7 @@ async function checkBackgroundNotifications() {
       const href = item.href || "/";
       await self.registration.showNotification(title, {
         body,
-        tag: `taska-notif-${idStr}`,
+        tag: `akuntra-notif-${idStr}`,
         renotify: true,
         data: { href, id: item.id },
       });
@@ -85,7 +85,7 @@ self.addEventListener("message", (event) => {
     event.waitUntil(
       self.registration.showNotification(title || "Akuntra Mini ERP", {
         body: body || "",
-        tag: tag || `taska-${Date.now()}`,
+        tag: tag || `akuntra-${Date.now()}`,
         renotify: true,
         data: { href: href || "/" },
       })

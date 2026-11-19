@@ -1,5 +1,5 @@
 import * as React from "react";
-import { DataTable } from "@/components/taska/data-table";
+import { DataTable } from "@/components/akuntra/data-table";
 import type { DetailTarget } from "../types";
 
 interface StockMovementTabProps {

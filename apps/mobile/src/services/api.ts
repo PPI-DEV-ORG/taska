@@ -23,9 +23,13 @@ export function apiOrigin(): string {
   return b.endsWith("/api") ? b.slice(0, -4) : b;
 }
 
-const KEY_ACCESS = "taska_access";
-const KEY_REFRESH = "taska_refresh";
-const LEGACY_ROLE = "taska_role";
+const KEY_ACCESS = "akuntra_access";
+const KEY_REFRESH = "akuntra_refresh";
+const LEGACY_ROLE = "akuntra_role";
+
+const OLD_KEY_ACCESS = "taska_access";
+const OLD_KEY_REFRESH = "taska_refresh";
+const OLD_LEGACY_ROLE = "taska_role";
 
 // ─── token storage ───
 // native: expo-secure-store (persisten, aman). web: localStorage.
@@ -43,15 +47,39 @@ export function hydrateTokens(): Promise<void> {
   if (hydrated) return Promise.resolve();
   if (!hydratePromise) {
     hydratePromise = (async () => {
+      const keyPairs: [string, string][] = [
+        [KEY_ACCESS, OLD_KEY_ACCESS],
+        [KEY_REFRESH, OLD_KEY_REFRESH],
+      ];
       if (isWeb()) {
-        for (const k of [KEY_ACCESS, KEY_REFRESH]) {
-          const v = window.localStorage.getItem(k);
-          if (v != null) memory.set(k, v);
+        for (const [newK, oldK] of keyPairs) {
+          let v = window.localStorage.getItem(newK);
+          if (v == null) {
+            v = window.localStorage.getItem(oldK);
+            if (v != null) {
+              window.localStorage.setItem(newK, v);
+              window.localStorage.removeItem(oldK);
+            }
+          }
+          if (v != null) memory.set(newK, v);
+        }
+        // Migrasi legacy role jika ada
+        const oldRole = window.localStorage.getItem(OLD_LEGACY_ROLE);
+        if (oldRole != null) {
+          window.localStorage.setItem(LEGACY_ROLE, oldRole);
+          window.localStorage.removeItem(OLD_LEGACY_ROLE);
         }
       } else {
-        for (const k of [KEY_ACCESS, KEY_REFRESH]) {
-          const v = await SecureStore.getItemAsync(k);
-          if (v != null) memory.set(k, v);
+        for (const [newK, oldK] of keyPairs) {
+          let v = await SecureStore.getItemAsync(newK);
+          if (v == null) {
+            v = await SecureStore.getItemAsync(oldK);
+            if (v != null) {
+              await SecureStore.setItemAsync(newK, v);
+              await SecureStore.deleteItemAsync(oldK).catch(() => {});
+            }
+          }
+          if (v != null) memory.set(newK, v);
         }
       }
       hydrated = true;

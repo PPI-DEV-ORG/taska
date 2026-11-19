@@ -4,7 +4,7 @@ import { ArrowLeft, Building2, FileText, Shield } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Panel } from "@/components/taska/basics";
+import { PageHeader, Panel } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { api } from "@/services/api";

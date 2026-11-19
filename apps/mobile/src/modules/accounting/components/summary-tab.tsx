@@ -2,7 +2,7 @@ import * as React from "react";
 import { View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/taska/basics";
+import { Panel } from "@/components/akuntra/basics";
 import { ArrowRight } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";

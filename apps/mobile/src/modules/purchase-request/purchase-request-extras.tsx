@@ -28,15 +28,15 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Panel, FormField } from "@/components/taska/basics";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { Panel, FormField } from "@/components/akuntra/basics";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import {
   SearchableSelect,
   DatePicker,
   QuickAddSupplierDialog,
   SupplierSelect,
-} from "@/components/taska/dialogs";
-import { StatusBadge } from "@/components/taska/status-badge";
+} from "@/components/akuntra/dialogs";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";

@@ -4,8 +4,8 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { PageHeader } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { PageHeader } from "@/components/akuntra/basics";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
 import { colors } from "@/tokens";
 import {
   Boxes,

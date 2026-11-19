@@ -120,9 +120,29 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
+  private async canReach(db: PrismaClient, label: string): Promise<boolean> {
+    try {
+      await Promise.race([
+        db.$queryRawUnsafe("SELECT 1"),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3_000)),
+      ]);
+      return true;
+    } catch (e) {
+      console.warn(`[PrismaService] Database '${label}' tidak dapat diakses (${(e as Error).message}); skip schema patch.`);
+      return false;
+    }
+  }
+
   async onModuleInit() {
-    await Promise.all([this.main.$connect(), this.archive.$connect()]);
-    await Promise.allSettled([this.ensureRoleEnums(this.main), this.ensureRoleEnums(this.archive)]);
+    await Promise.allSettled([this.main.$connect(), this.archive.$connect()]);
+    const [mainOk, archiveOk] = await Promise.all([
+      this.canReach(this.main, "main"),
+      this.canReach(this.archive, "archive"),
+    ]);
+    await Promise.allSettled([
+      mainOk ? this.ensureRoleEnums(this.main) : Promise.resolve(),
+      archiveOk ? this.ensureRoleEnums(this.archive) : Promise.resolve(),
+    ]);
     try {
       const existing = await this.main.user.findUnique({ where: { email: "superadmin@taska.co.id" } });
       if (!existing) {

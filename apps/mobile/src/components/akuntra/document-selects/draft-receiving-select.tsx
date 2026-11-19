@@ -1,6 +1,13 @@
 import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
-import { Search, ChevronDown, Check, UserCog } from "lucide-react-native";
+import {
+  Search,
+  ChevronDown,
+  Check,
+  Calendar,
+  Clock,
+  X,
+} from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -10,137 +17,88 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
-import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import type { Row } from "@/constants/modules";
+import { formatDate } from "./format-date";
 
-export interface UserSelectProps {
+export interface DraftReceivingSelectProps {
   value?: string;
-  userId?: string | number | null;
-  onChange: (user: Row | null) => void;
+  receivingId?: string | number | null;
+  receivings?: Row[];
+  onChange: (receiving: Row | null) => void;
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
-  title?: string;
-  triggerClassName?: string;
 }
 
-export function UserSelect({
+export function DraftReceivingSelect({
   value,
-  userId,
+  receivingId,
+  receivings,
   onChange,
-  placeholder = "Cari & pilih penanggung jawab...",
+  placeholder = "Pilih data penerimaan yang sedang menunggu...",
   error,
   allowClear = true,
-  title,
-  triggerClassName,
-}: UserSelectProps) {
+}: DraftReceivingSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
-  const [fetchedUsers, setFetchedUsers] = React.useState<Row[]>([]);
 
-  React.useEffect(() => {
-    let active = true;
-    const needsFetch =
-      !data.users ||
-      data.users.length === 0 ||
-      data.users.every((u: any) => !u.email);
-    if (needsFetch) {
-      api<any>("GET", "/users/options")
-        .then((res) => {
-          if (!active) return;
-          const items = Array.isArray(res) ? res : (res?.items ?? []);
-          setFetchedUsers(
-            items.map((u: any) => ({
-              id: String(u.id),
-              name: u.name,
-              nama: u.name,
-              email: u.email ?? "",
-              roleLabel: u.position || u.roleLabel || u.role || "Staf",
-              gudang: u.warehouseName ?? u.gudang ?? "-",
-              status: u.status ?? "Aktif",
-            })),
-          );
-        })
-        .catch(() => {});
-    }
-    return () => {
-      active = false;
-    };
-  }, [data.users]);
+  const recList: Row[] = React.useMemo(() => {
+    return receivings ?? (data.receiving as Row[]) ?? [];
+  }, [receivings, data.receiving]);
 
-  const userList: Row[] = React.useMemo(() => {
-    if (
-      data.users &&
-      data.users.length > 0 &&
-      !data.users.every((u: any) => !u.email)
-    )
-      return data.users;
-    return fetchedUsers;
-  }, [data.users, fetchedUsers]);
-
-  const selectedUser = React.useMemo(() => {
-    if (userId) {
-      const match = userList.find((u) => String(u.id) === String(userId));
+  const selectedRec = React.useMemo(() => {
+    if (receivingId) {
+      const match = recList.find((r) => String(r.id) === String(receivingId));
       if (match) return match;
     }
-    if (value && value !== "-") {
-      const qVal = value.trim().toLowerCase();
-      const parts = value.split(" - ");
-      const idPart = parts.length > 1 ? (parts[0]?.trim() ?? null) : null;
-      const afterId = parts.length > 1 ? parts.slice(1).join(" - ") : value;
-      const cleanName = (afterId.split("(")[0] ?? "").trim().toLowerCase();
-
+    if (value) {
+      const sel = value.trim().toLowerCase();
       return (
-        userList.find((u) => {
-          if (idPart && String(u.id) === idPart) return true;
-          const name = String(u.name || u.nama || "").toLowerCase();
-          return (
-            name === qVal ||
-            name === cleanName ||
-            String(u.id) === qVal ||
-            String(u.email || "").toLowerCase() === qVal
-          );
+        recList.find((r) => {
+          const no = String(r.nomor || r.number || `#${r.id}`).toLowerCase();
+          const supp = String(r.supplier || r.supplierName || "").toLowerCase();
+          return no === sel || `${no} — ${supp}`.toLowerCase().includes(sel);
         }) || null
       );
     }
     return null;
-  }, [userList, userId, value]);
+  }, [recList, receivingId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedUser) {
-      const roleStr =
-        selectedUser.roleLabel || selectedUser.role
-          ? ` (${selectedUser.roleLabel || selectedUser.role})`
-          : "";
-      return `${selectedUser.name || selectedUser.nama}${roleStr}`;
+    if (selectedRec) {
+      const no =
+        selectedRec.nomor || selectedRec.number || `#${selectedRec.id}`;
+      return `${no} — ${selectedRec.supplier || selectedRec.supplierName || "Supplier"}`;
     }
-    return value && value !== "-" ? value : "";
-  }, [selectedUser, value]);
+    return value || "";
+  }, [selectedRec, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return userList;
+    if (!q.trim()) return recList;
     const term = q.trim().toLowerCase();
-    return userList.filter((u) => {
-      const name = String(u.name || u.nama || "").toLowerCase();
-      const email = String(u.email || "").toLowerCase();
-      const role = String(u.roleLabel || u.role || "").toLowerCase();
-      const gudang = String(u.gudang || "").toLowerCase();
+    return recList.filter((r) => {
+      const no = String(r.nomor || r.number || `#${r.id}`).toLowerCase();
+      const supp = String(r.supplier || r.supplierName || "").toLowerCase();
+      const refReq = String(r.requestNumber || r.requestId || "").toLowerCase();
+      const refPo = String(r.po || r.supplierPoId || "").toLowerCase();
+      const it = String(r.item || "").toLowerCase();
       return (
-        name.includes(term) ||
-        email.includes(term) ||
-        role.includes(term) ||
-        gudang.includes(term)
+        no.includes(term) ||
+        supp.includes(term) ||
+        refReq.includes(term) ||
+        refPo.includes(term) ||
+        it.includes(term)
       );
     });
-  }, [userList, q]);
+  }, [recList, q]);
 
-  function handleSelect(item: Row | null) {
-    onChange(item);
+  function handleSelect(r: Row | null) {
+    onChange(r);
     setOpen(false);
   }
 
@@ -154,11 +112,10 @@ export function UserSelect({
         className={cn(
           "bg-input border-border h-11 flex-row items-center justify-between rounded-lg border px-3 w-full",
           error && "border-danger",
-          triggerClassName,
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <UserCog
+          <Clock
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -179,15 +136,15 @@ export function UserSelect({
         <DialogContent
           className="w-[96vw] max-w-5xl lg:max-w-6xl max-h-[90vh] p-4 sm:p-6"
           style={Platform.select({
-            web: { width: "min(96vw, 1050px)", maxWidth: "1050px" } as any,
+            web: { width: "min(96vw, 1150px)", maxWidth: "1150px" } as any,
           })}
         >
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <UserCog size={20} color={colors.primary} />
+                <Clock size={20} color={colors.primary} />
                 <DialogTitle>
-                  {title || "Pilih Penanggung Jawab / User"}
+                  Pilih Data Penerimaan yang Sedang Menunggu
                 </DialogTitle>
               </View>
             </View>
@@ -199,10 +156,15 @@ export function UserSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nama pengguna, email, role, atau gudang..."
+              placeholder="Cari nomor penerimaan, supplier, ref request/PO, atau barang..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
+            {q ? (
+              <Pressable onPress={() => setQ("")} className="p-1">
+                <X size={16} color={colors.muted} />
+              </Pressable>
+            ) : null}
           </View>
 
           {/* Table */}
@@ -212,19 +174,19 @@ export function UserSelect({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ minWidth: "100%" }}
             >
-              <View className="flex-1 min-w-[650px]">
+              <View className="flex-1 min-w-[760px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[200px]">
-                    Nama & Email
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
+                    Nomor Penerimaan & Tanggal
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[150px] px-2">
-                    Peran / Role
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
+                    Supplier & Ref Dokumen
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">
-                    Gudang / Cabang
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[200px] px-2">
+                    Ringkasan Barang
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[100px] px-2 text-center">
+                  <Text className="text-[11px] font-bold text-muted-foreground w-28 px-2 text-center">
                     Status
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
@@ -243,61 +205,94 @@ export function UserSelect({
                       className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
                     >
                       <Text className="text-xs font-medium text-muted-foreground">
-                        - Tanpa Penanggung Jawab -
+                        - Kosongkan Pilihan Draft -
                       </Text>
-                      {!userId && !value && (
+                      {!receivingId && !value && (
                         <Check size={16} color={colors.primary} />
                       )}
                     </Pressable>
                   )}
 
-                  {filteredList.map((u) => {
-                    const isSelected = selectedUser?.id === u.id;
-                    const name = u.name || u.nama || `User #${u.id}`;
-                    const email = u.email || "-";
-                    const role = u.roleLabel || u.role || "Staf";
-                    const gudang = u.gudang || "-";
-                    const status = u.status || "Aktif";
+                  {filteredList.map((rec) => {
+                    const isSelected =
+                      (selectedRec &&
+                        String(selectedRec.id) === String(rec.id)) ||
+                      (value &&
+                        String(rec.nomor || "").toLowerCase() ===
+                          value.toLowerCase());
+                    const no = rec.nomor || rec.number || `#${rec.id}`;
+                    const supp = rec.supplier || rec.supplierName || "-";
+                    const refDoc =
+                      [
+                        rec.requestNumber ? `PR: ${rec.requestNumber}` : null,
+                        rec.po ? `PO: ${rec.po}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "-";
+                    const tgl = rec.tanggal || rec.date;
+                    const st = rec.status || "Menunggu";
 
                     return (
                       <Pressable
-                        key={u.id}
-                        onPress={() => handleSelect(u)}
+                        key={rec.id}
+                        onPress={() => handleSelect(rec)}
                         className={cn(
                           "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        <View className="w-1/3 min-w-[200px]">
+                        {/* Kolom 1: Nomor & Tanggal */}
+                        <View className="w-1/4 min-w-[180px]">
                           <Text
                             className={cn(
-                              "text-xs font-bold text-foreground",
+                              "text-xs font-bold font-mono text-foreground",
                               isSelected && "text-primary",
                             )}
                           >
-                            {name}
+                            {no}
                           </Text>
-                          <Text className="text-[11px] text-muted-foreground">
-                            {email}
+                          {tgl ? (
+                            <View className="flex-row items-center gap-1 mt-0.5">
+                              <Calendar size={10} color={colors.muted} />
+                              <Text className="text-[11px] text-muted-foreground">
+                                {formatDate(tgl)}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        {/* Kolom 2: Supplier & Ref */}
+                        <View className="w-1/4 min-w-[180px] px-2">
+                          <Text
+                            className="text-xs font-semibold text-foreground"
+                            numberOfLines={1}
+                          >
+                            {supp}
+                          </Text>
+                          <Text
+                            className="text-[11px] text-muted-foreground mt-0.5"
+                            numberOfLines={1}
+                          >
+                            {refDoc}
                           </Text>
                         </View>
 
-                        <View className="w-1/4 min-w-[150px] px-2">
-                          <Text className="text-xs font-semibold text-foreground">
-                            {role}
+                        {/* Kolom 3: Barang */}
+                        <View className="flex-1 min-w-[200px] px-2">
+                          <Text
+                            className="text-xs text-foreground"
+                            numberOfLines={2}
+                          >
+                            {rec.item || "-"}
                           </Text>
                         </View>
 
-                        <View className="w-36 px-2">
-                          <Text className="text-xs text-foreground">
-                            {gudang}
-                          </Text>
+                        {/* Kolom 4: Status */}
+                        <View className="w-28 px-2 items-center">
+                          <StatusBadge status={st} />
                         </View>
 
-                        <View className="flex-1 min-w-[100px] items-center px-2">
-                          <StatusBadge status={status} />
-                        </View>
-
+                        {/* Kolom 5: Aksi */}
                         <View className="w-20 items-center justify-center">
                           {isSelected ? (
                             <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
@@ -322,7 +317,7 @@ export function UserSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data pengguna yang cocok dengan &quot;{q}
+                        Tidak ada data penerimaan yang cocok dengan &quot;{q}
                         &quot;
                       </Text>
                     </View>
@@ -338,5 +333,5 @@ export function UserSelect({
 }
 
 // ==========================================
-// 11. USER MULTI SELECT (ANGGOTA TIM / PESERTA)
+// 10. MAINTENANCE SELECT
 // ==========================================

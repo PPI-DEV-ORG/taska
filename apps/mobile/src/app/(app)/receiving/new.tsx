@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { PageHeader, Panel, FormField } from "@/components/taska/basics";
+import { PageHeader, Panel, FormField } from "@/components/akuntra/basics";
 import {
   DatePicker,
   SearchableSelect,
@@ -16,9 +16,9 @@ import {
   DraftReceivingSelect,
   SupplierSelect,
   ProductSelect,
-} from "@/components/taska/dialogs";
+} from "@/components/akuntra/dialogs";
 import { cn } from "@/lib/utils";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import type { Row } from "@/constants/modules";

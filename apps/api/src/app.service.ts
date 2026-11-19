@@ -4,7 +4,7 @@ import { Injectable } from "@nestjs/common";
 export class AppService {
   health() {
     return {
-      name: "Taska Mini ERP API",
+      name: "Akuntra Mini ERP API",
       status: "ok",
       version: "0.1.0",
       time: new Date().toISOString(),

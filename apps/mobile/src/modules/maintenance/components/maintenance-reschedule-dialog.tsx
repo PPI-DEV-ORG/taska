@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DatePicker } from "@/components/taska/dialogs";
+import { DatePicker } from "@/components/akuntra/dialogs";
 import { colors } from "@/tokens";
 import { formatDate } from "../maintenance-utils";
 import type { MaintSchedule } from "../types";

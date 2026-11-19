@@ -3,8 +3,8 @@ import { View, Pressable } from "react-native";
 import { HandCoins } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { Panel } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { Panel } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { api } from "@/services/api";
 import { rupiah } from "@/lib/format";
 import {

@@ -15,7 +15,7 @@ export class WhatsappReportService {
       });
       if (s?.value?.trim()) return s.value.trim();
     } catch {}
-    return "TASKA MINI ERP — LAPORAN OPERASIONAL LAPANGAN";
+    return "AKUNTRA MINI ERP — LAPORAN OPERASIONAL LAPANGAN";
   }
 
   async generatePdfReport(params: {
@@ -287,7 +287,7 @@ export class WhatsappReportService {
       .replace(/_+/g, "_")
       .replace(/^_|_$/g, "")
       .slice(0, 36);
-    const fileName = `Laporan-${params.entity.type}-${safeEntity || "Taska"}-${Date.now()}.pdf`;
+    const fileName = `Laporan-${params.entity.type}-${safeEntity || "Akuntra"}-${Date.now()}.pdf`;
 
     return { buffer, fileName };
   }

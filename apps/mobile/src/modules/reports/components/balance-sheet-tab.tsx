@@ -2,7 +2,7 @@ import * as React from "react";
 import { View } from "react-native";
 import { CheckCircle2, AlertTriangle } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
-import { Panel } from "@/components/taska/basics";
+import { Panel } from "@/components/akuntra/basics";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 import { ExportBar } from "./report-ui-helpers";

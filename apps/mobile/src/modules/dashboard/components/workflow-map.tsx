@@ -426,11 +426,20 @@ const DEFAULT_FLOW: Record<string, string> = {
   hr: "sdm",
 };
 
-const STORAGE_KEY = "taska.workflowMap.v1";
+const STORAGE_KEY = "akuntra.workflowMap.v1";
+const OLD_STORAGE_KEY = "taska.workflowMap.v1";
 function readPref(): { flow?: string; collapsed?: boolean } {
   try {
     if (typeof window !== "undefined" && window.localStorage) {
-      return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}");
+      let raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        raw = window.localStorage.getItem(OLD_STORAGE_KEY);
+        if (raw) {
+          window.localStorage.setItem(STORAGE_KEY, raw);
+          window.localStorage.removeItem(OLD_STORAGE_KEY);
+        }
+      }
+      return JSON.parse(raw || "{}");
     }
   } catch {}
   return {};

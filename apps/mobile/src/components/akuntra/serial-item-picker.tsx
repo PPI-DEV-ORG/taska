@@ -25,9 +25,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { FormField } from "@/components/taska/basics";
-import { SearchableSelect, ProductSelect } from "@/components/taska/dialogs";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { FormField } from "@/components/akuntra/basics";
+import { SearchableSelect, ProductSelect } from "@/components/akuntra/dialogs";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";

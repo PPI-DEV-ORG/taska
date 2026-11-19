@@ -6,8 +6,8 @@ export default function Index() {
   const { user, hydrated } = useApp();
   if (!hydrated) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#191817" }}>
-        <ActivityIndicator color="#fff" />
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#181716" }}>
+        <ActivityIndicator color="#00c094" />
       </View>
     );
   }

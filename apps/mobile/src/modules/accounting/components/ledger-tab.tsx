@@ -1,8 +1,8 @@
 import * as React from "react";
 import { View, ScrollView } from "react-native";
 import { Text } from "@/components/ui/text";
-import { Panel } from "@/components/taska/basics";
-import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
+import { Panel } from "@/components/akuntra/basics";
+import { SearchableSelect, DatePicker } from "@/components/akuntra/dialogs";
 import { rupiah } from "@/lib/format";
 
 interface LedgerTabProps {

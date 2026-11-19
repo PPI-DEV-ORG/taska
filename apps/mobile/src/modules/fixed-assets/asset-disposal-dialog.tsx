@@ -3,7 +3,7 @@ import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput } from
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
+import { SearchableSelect, DatePicker } from "@/components/akuntra/dialogs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Trash2, AlertTriangle, Calculator } from "lucide-react-native";
 import { formatThousands } from "@/lib/format";

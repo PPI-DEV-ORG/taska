@@ -12,9 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
-import { AssetSelect } from "@/components/taska/document-selects/asset-select";
-import { UserSelect } from "@/components/taska/document-selects/user-select";
+import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
+import { AssetSelect } from "@/components/akuntra/document-selects/asset-select";
+import { UserSelect } from "@/components/akuntra/document-selects/user-select";
 import { colors } from "@/tokens";
 import type { MaintWorkOrder, MaintLookups } from "../types";
 

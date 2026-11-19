@@ -12,8 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
-import { AssetSelect } from "@/components/taska/document-selects/asset-select";
+import { SearchableSelect, DatePicker } from "@/components/akuntra/dialogs";
+import { AssetSelect } from "@/components/akuntra/document-selects/asset-select";
 import { colors } from "@/tokens";
 import type { MaintRequest, MaintLookups } from "../types";
 

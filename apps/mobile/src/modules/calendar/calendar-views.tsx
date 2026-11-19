@@ -2,7 +2,7 @@ import * as React from "react";
 import { Pressable, View } from "react-native";
 import { AlertTriangle } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";

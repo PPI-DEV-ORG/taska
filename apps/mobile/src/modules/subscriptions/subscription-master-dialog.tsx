@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
 import { colors } from "@/tokens";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";

@@ -12,8 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SearchableSelect } from "@/components/taska/dialogs";
-import { UserSelect } from "@/components/taska/document-selects/user-select";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
+import { UserSelect } from "@/components/akuntra/document-selects/user-select";
 import { colors } from "@/tokens";
 import type { MaintPlan, MaintLookups } from "../types";
 
