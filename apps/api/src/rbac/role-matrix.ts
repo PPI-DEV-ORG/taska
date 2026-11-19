@@ -24,6 +24,7 @@
  *          A = hapus, E = unduh/ekspor, V = kelola provider storage & migrasi, P = lihat semua file termasuk file yatim.
  *   - v13: modul "supplier-bills" (Tagihan Supplier / Invoice In) dipisah dari "supplier-pos". Pemisahan tugas:
  *          membuat PO hanya Procurement (+ Admin/Bos); Finance tidak lagi bisa membuat PO, tapi tetap mencatat & membayar tagihan.
+ *          Sales & Teknisi diberi approvals: "" eksplisit agar "V" Laporan Maintenance tidak bocor jadi hak Persetujuan.
  *
  * Menaikkan versi ini membuat server menerapkan ulang matriks standar ke peran bawaan sekali saat start
  * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
@@ -101,6 +102,9 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       suppliers: "L",
       reports: "ML",
       "master-data": "ML", // sumber lead, alasan kalah
+      // Eksplisit kosong: tanpa entri ini, "V" dari maintenance-reports (FULL) membuat Sales
+      // ikut bisa menyetujui seluruh antrean Persetujuan (fallback di permissions.can).
+      approvals: "",
     },
   },
 
@@ -155,6 +159,7 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "damage-reports": "MLC",
       stock: "L",
       warehouses: "L",
+      approvals: "", // eksplisit kosong — lihat catatan di SALES
     },
   },
 
