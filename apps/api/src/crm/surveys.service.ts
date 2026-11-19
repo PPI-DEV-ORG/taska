@@ -42,13 +42,18 @@ export class SurveysService {
         ? {}
         : ["TEKNISI", "SE"].includes(role)
           ? { members: { some: { userId: user.id } } }
-          : { requestedById: user.id };
+          : // Sales: survey yang ia minta sendiri ATAU survey untuk lead yang ia pegang (PIC),
+            // mis. survey yang diminta Bos/Admin untuk lead miliknya.
+            { OR: [{ requestedById: user.id }, { lead: { owner_id: user.id } }] };
 
+    // Scope & pencarian sama-sama memakai OR -> digabung dengan AND agar pencarian tidak menimpa batas akses.
     const where = {
-      ...scope,
+      AND: [
+        scope,
+        ...(q.q ? [{ OR: [{ location: { contains: q.q } }, { need: { contains: q.q } }, { lead: { name: { contains: q.q } } }] }] : []),
+      ],
       ...(q.status ? { status: q.status as never } : {}),
       ...(q.leadId ? { leadId: q.leadId } : {}),
-      ...(q.q ? { OR: [{ location: { contains: q.q } }, { need: { contains: q.q } }, { lead: { name: { contains: q.q } } }] } : {}),
     };
 
     const [items, total] = await Promise.all([
