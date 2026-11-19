@@ -4,9 +4,9 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { CircleCheck } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { EmptyState, PageHeader } from "@/components/taska/basics";
+import { EmptyState, PageHeader } from "@/components/akuntra/basics";
 import { useApp } from "@/store/app-store";
-import { DataTable, FilterBar } from "@/components/taska/data-table";
+import { DataTable, FilterBar } from "@/components/akuntra/data-table";
 import { CAN_APPROVE, Row, type Col } from "@/constants/modules";
 import { rupiah, compareDesc } from "@/lib/format";
 

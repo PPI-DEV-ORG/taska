@@ -1,6 +1,6 @@
-# TASKA — Enterprise ERP & CRM System
+# AKUNTRA — Enterprise ERP & CRM System
 
-TASKA adalah sistem terpadu **Enterprise Resource Planning (ERP)** dan **Customer Relationship Management (CRM)** yang dirancang untuk industri integrasi sistem IT, kontraktor jaringan/CCTV, infrastruktur teknologi, dan pengadaan perangkat keras.
+AKUNTRA adalah sistem terpadu **Enterprise Resource Planning (ERP)** dan **Customer Relationship Management (CRM)** yang dirancang untuk industri integrasi sistem IT, kontraktor jaringan/CCTV, infrastruktur teknologi, dan pengadaan perangkat keras.
 
 Sistem ini menghubungkan seluruh rantai operasional perusahaan: mulai dari penangkapan prospek (Leads), survey lokasi, pembuatan penawaran resmi (Quotation), Purchase Order (PO Client & Supplier), eksekusi proyek 7-tahap, manajemen stok fisik ber-Serial Number (SN), pengiriman Surat Jalan (DO), penagihan Invoice, hingga pencatatan Akuntansi & COA otomatis.
 

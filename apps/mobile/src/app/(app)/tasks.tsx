@@ -4,12 +4,12 @@ import { useRouter } from "expo-router";
 import { Check, CheckSquare, Clock, ListChecks } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Panel, Chip } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { PageHeader, Panel, Chip } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { tanggal, compareDesc } from "@/lib/format";
 
-import { FilterBar } from "@/components/taska/data-table";
+import { FilterBar } from "@/components/akuntra/data-table";
 import { TaskDetailDialog } from "@/modules/task/task-detail-dialog";
 import { CompleteTaskDialog } from "@/modules/task/complete-task-dialog";
 import { type Row } from "@/constants/modules";

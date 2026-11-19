@@ -10,9 +10,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Text } from "@/components/ui/text";
-import { Chip, EmptyState, PageHeader } from "@/components/taska/basics";
-import { FilterBar } from "@/components/taska/data-table";
-import { ConfirmDialog, FormDialog } from "@/components/taska/dialogs";
+import { Chip, EmptyState, PageHeader } from "@/components/akuntra/basics";
+import { FilterBar } from "@/components/akuntra/data-table";
+import { ConfirmDialog, FormDialog } from "@/components/akuntra/dialogs";
 import { ModuleList } from "@/screens/module-list";
 import { useApp } from "@/store/app-store";
 import { MODULES, hasUserPermission, type Row } from "@/constants/modules";

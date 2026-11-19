@@ -20,10 +20,10 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { FormField } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, formatThousands, SearchableSelect, SupplierSelect } from "@/components/taska/dialogs";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { FormField } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
+import { DatePicker, formatThousands, SearchableSelect, SupplierSelect } from "@/components/akuntra/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase } from "@/services/api";
 import { adaptRow } from "@/services/adapters";

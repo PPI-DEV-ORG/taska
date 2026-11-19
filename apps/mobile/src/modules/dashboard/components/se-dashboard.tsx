@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel, KpiCard, KpiRow } from "@/components/taska/basics";
+import { Panel, KpiCard, KpiRow } from "@/components/akuntra/basics";
 import { FolderKanban, CheckCircle2, AlertTriangle, FileText } from "lucide-react-native";
 import { tanggal } from "@/lib/format";
 import { ROLE_LABEL, type Role } from "@/constants/modules";

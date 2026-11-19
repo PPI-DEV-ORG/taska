@@ -940,12 +940,12 @@ export class DeliveryService implements OnModuleInit {
     try {
       const profile: any = await this.settings.getCompanyProfile();
       return {
-        name: profile?.name || (await this.settings.getValue("nama.perusahaan").catch(() => "")) || "Taska",
+        name: profile?.name || (await this.settings.getValue("nama.perusahaan").catch(() => "")) || "Akuntra",
         address: profile?.address || "",
         phone: profile?.phone || "",
       };
     } catch {
-      return { name: "Taska", address: "", phone: "" };
+      return { name: "Akuntra", address: "", phone: "" };
     }
   };
 

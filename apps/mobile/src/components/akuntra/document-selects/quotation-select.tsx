@@ -2,10 +2,11 @@ import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
 import {
   Search,
+  FileSpreadsheet,
   ChevronDown,
   Check,
-  Wrench,
-  MapPin,
+  Calendar,
+  Tag,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,88 +17,87 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
+import { rupiah } from "@/lib/format";
 import type { Row } from "@/constants/modules";
 import { formatDate } from "./format-date";
 
-export interface MaintenanceSelectProps {
+export interface QuotationSelectProps {
   value?: string;
-  maintenanceId?: string | number | null;
-  onChange: (maintenance: Row | null) => void;
+  quotationId?: string | number | null;
+  onChange: (quotation: Row | null) => void;
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
+  /** Batasi penawaran yang bisa dipilih (mis. hanya yang masih berlaku). */
+  filter?: (quotation: Row) => boolean;
 }
 
-export function MaintenanceSelect({
+export function QuotationSelect({
   value,
-  maintenanceId,
+  quotationId,
   onChange,
-  placeholder = "Pilih laporan maintenance...",
+  placeholder = "Cari & pilih dokumen penawaran...",
   error,
-  allowClear = true,
-}: MaintenanceSelectProps) {
+  allowClear = false,
+  filter,
+}: QuotationSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
-  const maintenanceList: Row[] = React.useMemo(
-    () => (data as any)["maintenance-reports"] ?? [],
-    [data],
+  const allQuotations: Row[] = React.useMemo(
+    () => data.quotations ?? [],
+    [data.quotations],
+  );
+  const quotations: Row[] = React.useMemo(
+    () => (filter ? allQuotations.filter(filter) : allQuotations),
+    [allQuotations, filter],
   );
 
-  const selectedMaintenance = React.useMemo(() => {
-    if (maintenanceId) {
-      const match = maintenanceList.find(
-        (m) => String(m.id) === String(maintenanceId),
+  const selectedQuotation = React.useMemo(() => {
+    if (quotationId) {
+      const match = quotations.find(
+        (it) => String(it.id) === String(quotationId),
       );
       if (match) return match;
     }
     if (value && value !== "-") {
-      const qVal = value.trim().toLowerCase();
+      const selNo = value.split(" - ")[0]?.trim().toLowerCase();
       return (
-        maintenanceList.find((m) => {
-          const opt =
-            `MTN ${m.nomor || m.number || m.id} - ${m.judul || m.title || "Maintenance"}`.toLowerCase();
-          const no = String(m.nomor || m.number || "").toLowerCase();
+        quotations.find((it) => {
+          const no = String(it.nomor || "").toLowerCase();
           return (
-            opt === qVal ||
-            no === qVal ||
-            String(m.id) === qVal ||
-            opt.includes(qVal)
+            no === selNo ||
+            `${no} - ${it.customer || "-"} - ${it.lead || "-"}`.toLowerCase() ===
+              value.toLowerCase()
           );
         }) || null
       );
     }
     return null;
-  }, [maintenanceList, maintenanceId, value]);
+  }, [quotations, quotationId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedMaintenance) {
-      return `MTN ${selectedMaintenance.nomor || selectedMaintenance.number || selectedMaintenance.id} - ${selectedMaintenance.judul || selectedMaintenance.title || "Maintenance"}`;
+    if (selectedQuotation) {
+      return `${selectedQuotation.nomor} - ${selectedQuotation.customer || "-"} - ${selectedQuotation.lead || "-"}`;
     }
     return value && value !== "-" ? value : "";
-  }, [selectedMaintenance, value]);
+  }, [selectedQuotation, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return maintenanceList;
+    if (!q.trim()) return quotations;
     const term = q.trim().toLowerCase();
-    return maintenanceList.filter((m) => {
-      const no = String(m.nomor || m.number || "").toLowerCase();
-      const judul = String(m.judul || m.title || "").toLowerCase();
-      const klien = String(m.klien || m.customer || "").toLowerCase();
-      const tipe = String(m.tipe || m.maintenanceType || "").toLowerCase();
-      return (
-        no.includes(term) ||
-        judul.includes(term) ||
-        klien.includes(term) ||
-        tipe.includes(term)
-      );
+    return quotations.filter((item) => {
+      const no = String(item.nomor || "").toLowerCase();
+      const cust = String(item.customer || "").toLowerCase();
+      const lead = String(item.lead || "").toLowerCase();
+      return no.includes(term) || cust.includes(term) || lead.includes(term);
     });
-  }, [maintenanceList, q]);
+  }, [quotations, q]);
 
   function handleSelect(item: Row | null) {
     onChange(item);
@@ -117,7 +117,7 @@ export function MaintenanceSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <Wrench
+          <FileSpreadsheet
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -144,8 +144,8 @@ export function MaintenanceSelect({
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <Wrench size={20} color={colors.primary} />
-                <DialogTitle>Pilih Laporan Maintenance</DialogTitle>
+                <FileSpreadsheet size={20} color={colors.primary} />
+                <DialogTitle>Pilih Dokumen Penawaran (Quotation)</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -156,7 +156,7 @@ export function MaintenanceSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari nomor maintenance, judul, klien, atau jenis..."
+              placeholder="Cari berdasarkan nomor penawaran, nama pelanggan, atau prospek..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -172,14 +172,14 @@ export function MaintenanceSelect({
               <View className="flex-1 min-w-[760px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
-                    Nomor & Judul Maintenance
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
+                    Nomor Penawaran & Versi
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
-                    Klien / Lokasi
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">
+                    Pelanggan & Prospek
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">
-                    Jenis & Tanggal
+                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">
+                    Total Nilai Penawaran
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[120px] px-2 text-center">
                     Status
@@ -200,86 +200,114 @@ export function MaintenanceSelect({
                       className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
                     >
                       <Text className="text-xs font-medium text-muted-foreground">
-                        - Tanpa Maintenance (Kosongkan) -
+                        - Tanpa Penawaran (Buat Manual / Kosongkan) -
                       </Text>
-                      {!maintenanceId && !value && (
+                      {!quotationId && !value && (
                         <Check size={16} color={colors.primary} />
                       )}
                     </Pressable>
                   )}
-
-                  {filteredList.map((m) => {
-                    const isSelected = selectedMaintenance?.id === m.id;
-                    const no = m.nomor || m.number || `MTN #${m.id}`;
-                    const judul = m.judul || m.title || "Laporan Maintenance";
-                    const klien = m.klien || m.customer || "-";
-                    const tgl = m.tanggal || m.startDate || m.createdAt || "";
+                  {filteredList.map((item) => {
+                    const isSelected = selectedQuotation?.id === item.id;
+                    const no = item.nomor || `Quotation #${item.id}`;
+                    const versi = item.versi ? `v${item.versi}` : "v1";
+                    const tgl = item.tanggal || item.createdAt || "";
+                    const totalVal = Number(
+                      item.totalAfterDisc || item.total || item.nilai || 0,
+                    );
+                    const itemCount = Array.isArray(item.items)
+                      ? item.items.length
+                      : 0;
 
                     return (
                       <Pressable
-                        key={m.id}
-                        onPress={() => handleSelect(m)}
+                        key={item.id}
+                        onPress={() => handleSelect(item)}
                         className={cn(
                           "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        <View className="w-1/3 min-w-[220px]">
-                          <Text
-                            className={cn(
-                              "text-xs font-bold font-mono text-foreground",
-                              isSelected && "text-primary",
-                            )}
-                          >
-                            {no}
-                          </Text>
-                          <Text
-                            className="text-[11px] text-muted-foreground mt-0.5"
-                            numberOfLines={2}
-                          >
-                            {judul}
-                          </Text>
+                        {/* Kolom 1: Nomor & Versi */}
+                        <View className="w-1/4 min-w-[180px]">
+                          <View className="flex-row items-center gap-1.5 flex-wrap">
+                            <Text
+                              className={cn(
+                                "text-xs font-bold font-mono text-foreground",
+                                isSelected && "text-primary",
+                              )}
+                            >
+                              {no}
+                            </Text>
+                            <View className="px-1.5 py-0.2 rounded bg-muted border border-border/80">
+                              <Text className="text-[10px] font-semibold text-muted-foreground">
+                                {versi}
+                              </Text>
+                            </View>
+                          </View>
+                          {tgl ? (
+                            <View className="flex-row items-center gap-1 mt-0.5">
+                              <Calendar size={10} color={colors.muted} />
+                              <Text className="text-[11px] text-muted-foreground">
+                                {formatDate(tgl)}
+                              </Text>
+                            </View>
+                          ) : null}
+                          {itemCount > 0 ? (
+                            <Text className="text-[10px] text-muted-foreground mt-0.5">
+                              {itemCount} item barang/jasa
+                            </Text>
+                          ) : null}
                         </View>
 
-                        <View className="w-1/4 min-w-[180px] px-2">
+                        {/* Kolom 2: Customer & Lead */}
+                        <View className="w-1/3 min-w-[220px] px-2">
                           <Text
                             className="text-xs font-semibold text-foreground"
                             numberOfLines={1}
                           >
-                            {klien}
+                            {item.customer || "-"}
                           </Text>
-                          {m.lokasi ? (
+                          {item.lead ? (
                             <View className="flex-row items-center gap-1 mt-0.5">
-                              <MapPin size={10} color={colors.muted} />
+                              <Tag size={10} color={colors.muted} />
                               <Text
                                 className="text-[11px] text-muted-foreground"
                                 numberOfLines={1}
                               >
-                                {m.lokasi}
+                                Prospek: {item.lead}
                               </Text>
                             </View>
                           ) : null}
                         </View>
 
-                        <View className="w-36 px-2">
-                          <Text className="text-xs text-foreground font-medium">
-                            {m.tipe || m.maintenanceType || "Preventive"}
+                        {/* Kolom 3: Total Nilai Penawaran */}
+                        <View className="w-36 items-end px-2">
+                          <Text className="text-xs font-bold text-foreground">
+                            {rupiah(totalVal)}
                           </Text>
-                          {tgl ? (
-                            <Text className="text-[11px] text-muted-foreground mt-0.5">
-                              {formatDate(tgl)}
+                          {item.ppnMode && item.ppnMode !== "none" ? (
+                            <Text className="text-[10px] text-primary">
+                              {item.ppnMode === "include"
+                                ? "Inc. PPN"
+                                : "+ PPN 11%"}
                             </Text>
                           ) : null}
                         </View>
 
+                        {/* Kolom 4: Status */}
                         <View className="flex-1 min-w-[120px] px-2 items-center">
-                          <StatusBadge status={m.status || "Scheduled"} />
+                          <StatusBadge status={item.status || "Aktif"} />
                         </View>
 
-                        <View className="w-20 items-center justify-center">
+                        {/* Kolom 5: Aksi */}
+                        <View className="w-20 items-center">
                           {isSelected ? (
-                            <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
-                              <Check size={14} color={colors.primary} />
+                            <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
+                              <Check size={12} color={colors.primary} />
+                              <Text className="text-[11px] font-bold text-primary">
+                                Dipilih
+                              </Text>
                             </View>
                           ) : (
                             <Button
@@ -300,8 +328,7 @@ export function MaintenanceSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data maintenance yang cocok dengan &quot;{q}
-                        &quot;
+                        Tidak ada penawaran yang cocok dengan &quot;{q}&quot;
                       </Text>
                     </View>
                   )}
@@ -314,3 +341,7 @@ export function MaintenanceSelect({
     </>
   );
 }
+
+// ==========================================
+// 3. LEAD (PROSPEK) SELECT
+// ==========================================

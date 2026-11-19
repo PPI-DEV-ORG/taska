@@ -1,18 +1,18 @@
 {
   "expo": {
     "name": "Akuntra - Mini ERP",
-    "slug": "taska",
+    "slug": "akuntra",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/AKUNTRA.png",
-    "scheme": "taska",
+    "scheme": "akuntra",
     "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/AKUNTRA.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0c0f14",
+        "backgroundColor": "#181716",
         "foregroundImage": "./assets/AKUNTRA.png"
       },
       "predictiveBackGestureEnabled": false
@@ -27,7 +27,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0c0f14",
+          "backgroundColor": "#181716",
           "image": "./assets/AKUNTRA.png",
           "imageWidth": 120
         }
@@ -36,7 +36,7 @@
         "expo-notifications",
         {
           "color": "#ffffff",
-          "defaultChannel": "taska-realtime"
+          "defaultChannel": "akuntra-realtime"
         }
       ],
       "expo-secure-store"

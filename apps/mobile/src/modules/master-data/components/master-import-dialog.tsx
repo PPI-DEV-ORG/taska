@@ -4,9 +4,9 @@ import { FileSpreadsheet, CheckCircle2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { FormField } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FormField } from "@/components/akuntra/basics";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
+import { FileUploader } from "@/components/akuntra/file-uploader";
 import { apiBase, getAccess, uploadMasterImport, type MasterImportType } from "@/services/api";
 import { colors } from "@/tokens";
 

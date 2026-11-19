@@ -3,7 +3,7 @@ import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel, KpiCard, KpiRow } from "@/components/taska/basics";
+import { Panel, KpiCard, KpiRow } from "@/components/akuntra/basics";
 import { PackageCheck, AlertTriangle, Truck, Boxes, ChevronRight } from "lucide-react-native";
 import { ROLE_LABEL, type Role } from "@/constants/modules";
 import { useApp } from "@/store/app-store";

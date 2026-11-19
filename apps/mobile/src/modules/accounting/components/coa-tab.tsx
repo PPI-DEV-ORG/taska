@@ -3,7 +3,7 @@ import { View, ScrollView, Pressable } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/taska/basics";
+import { Panel } from "@/components/akuntra/basics";
 import { Plus, Search, ChevronLeft, ChevronRight, ArrowRight, Trash2, RefreshCw } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";

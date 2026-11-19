@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { Panel, QuickActionButton } from "@/components/taska/basics";
+import { Panel, QuickActionButton } from "@/components/akuntra/basics";
 import {
   Command,
   Plus,

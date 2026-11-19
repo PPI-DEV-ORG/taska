@@ -2,11 +2,11 @@ import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
 import {
   Search,
+  FileText,
   ChevronDown,
   Check,
   Calendar,
-  PackageCheck,
-  X,
+  Briefcase,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -25,33 +25,41 @@ import { rupiah } from "@/lib/format";
 import type { Row } from "@/constants/modules";
 import { formatDate } from "./format-date";
 
-export interface SupplierPoSelectProps {
+export interface PoClientSelectProps {
   value?: string;
   poId?: string | number | null;
-  pos?: Row[];
   onChange: (po: Row | null) => void;
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
+  excludeIds?: Iterable<string | number>;
 }
 
-export function SupplierPoSelect({
+export function PoClientSelect({
   value,
   poId,
-  pos,
   onChange,
-  placeholder = "Pilih PO supplier...",
+  placeholder = "Cari & pilih PO pelanggan (Pesanan Penjualan)...",
   error,
   allowClear = true,
-}: SupplierPoSelectProps) {
+  excludeIds,
+}: PoClientSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
-  const supplierPosData = data["supplier-pos"];
-  const poList: Row[] = React.useMemo(() => {
-    return pos ?? (supplierPosData as Row[]) ?? [];
-  }, [pos, supplierPosData]);
+  const excludedSet = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const id of excludeIds ?? []) set.add(String(id));
+    return set;
+  }, [excludeIds]);
+
+  const poClientData = data["po-client"];
+  const poList: Row[] = React.useMemo(
+    () =>
+      (poClientData ?? []).filter((p: Row) => !excludedSet.has(String(p.id))),
+    [poClientData, excludedSet],
+  );
 
   const selectedPo = React.useMemo(() => {
     if (poId) {
@@ -59,13 +67,15 @@ export function SupplierPoSelect({
       if (match) return match;
     }
     if (value) {
-      const sel = value.trim().toLowerCase();
+      const selNo = value.split(" - ")[0]?.trim().toLowerCase();
       return (
         poList.find((p) => {
-          const no = String(p.nomor || p.number || p.code || "").toLowerCase();
+          const no = String(
+            p.nomorSo || p.nomor || p.number || "",
+          ).toLowerCase();
           return (
-            no === sel ||
-            `${no} - ${p.supplier || ""}`.toLowerCase().includes(sel)
+            no === selNo ||
+            `${no} - ${p.customer || "-"}`.toLowerCase() === value.toLowerCase()
           );
         }) || null
       );
@@ -75,8 +85,12 @@ export function SupplierPoSelect({
 
   const displayLabel = React.useMemo(() => {
     if (selectedPo) {
-      const no = selectedPo.nomor || selectedPo.number || `#${selectedPo.id}`;
-      return `${no} — ${selectedPo.supplier || "Supplier"}`;
+      const no =
+        selectedPo.nomorSo ||
+        selectedPo.nomor ||
+        selectedPo.number ||
+        `PO #${selectedPo.id}`;
+      return `${no} - ${selectedPo.customer || "-"}`;
     }
     return value || "";
   }, [selectedPo, value]);
@@ -85,15 +99,15 @@ export function SupplierPoSelect({
     if (!q.trim()) return poList;
     const term = q.trim().toLowerCase();
     return poList.filter((p) => {
-      const no = String(p.nomor || p.number || p.code || "").toLowerCase();
-      const supp = String(p.supplier || "").toLowerCase();
-      const req = String(p.request || p.requestId || "").toLowerCase();
-      const it = String(p.item || "").toLowerCase();
+      const no = String(p.nomorSo || p.nomor || p.number || "").toLowerCase();
+      const cust = String(p.customer || "").toLowerCase();
+      const proj = String(p.project || p.proyek || "").toLowerCase();
+      const note = String(p.catatan || "").toLowerCase();
       return (
         no.includes(term) ||
-        supp.includes(term) ||
-        req.includes(term) ||
-        it.includes(term)
+        cust.includes(term) ||
+        proj.includes(term) ||
+        note.includes(term)
       );
     });
   }, [poList, q]);
@@ -116,7 +130,7 @@ export function SupplierPoSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <PackageCheck
+          <FileText
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -143,8 +157,10 @@ export function SupplierPoSelect({
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <PackageCheck size={20} color={colors.primary} />
-                <DialogTitle>Pilih PO Supplier</DialogTitle>
+                <FileText size={20} color={colors.primary} />
+                <DialogTitle>
+                  Pilih PO Pelanggan (Pesanan Penjualan)
+                </DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -155,15 +171,10 @@ export function SupplierPoSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari nomor PO, nama supplier, ref request, atau barang..."
+              placeholder="Cari berdasarkan nomor PO/SO, nama pelanggan, proyek, atau catatan..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
-            {q ? (
-              <Pressable onPress={() => setQ("")} className="p-1">
-                <X size={16} color={colors.muted} />
-              </Pressable>
-            ) : null}
           </View>
 
           {/* Table */}
@@ -173,22 +184,22 @@ export function SupplierPoSelect({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ minWidth: "100%" }}
             >
-              <View className="flex-1 min-w-[760px]">
+              <View className="flex-1 min-w-[880px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
-                    Nomor PO & Tanggal
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px]">
+                    Nomor SO & Tanggal
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
-                    Supplier & Barang
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px] px-2">
+                    Pelanggan & Proyek
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-32 text-right px-2">
+                  <Text className="text-[11px] font-bold text-muted-foreground w-36 shrink-0 text-right pr-3">
                     Total Nilai
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[120px] px-2 text-center">
-                    Status / Pengiriman
+                  <Text className="text-[11px] font-bold text-muted-foreground w-48 shrink-0 pl-4 pr-2">
+                    Status & Tagihan
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
+                  <Text className="text-[11px] font-bold text-muted-foreground w-20 shrink-0 text-center">
                     Aksi
                   </Text>
                 </View>
@@ -204,7 +215,7 @@ export function SupplierPoSelect({
                       className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
                     >
                       <Text className="text-xs font-medium text-muted-foreground">
-                        - Kosongkan Pilihan PO -
+                        - Tanpa Sales Order (SO) -
                       </Text>
                       {!poId && !value && (
                         <Check size={16} color={colors.primary} />
@@ -212,36 +223,35 @@ export function SupplierPoSelect({
                     </Pressable>
                   )}
 
-                  {filteredList.map((po) => {
-                    const isSelected =
-                      (selectedPo && String(selectedPo.id) === String(po.id)) ||
-                      (value &&
-                        String(po.nomor || "").toLowerCase() ===
-                          value.toLowerCase());
-                    const no = po.nomor || po.number || `#${po.id}`;
-                    const supp = po.supplier || "Supplier";
-                    const tgl = po.date || po.tanggal;
-                    const tot = Number(
-                      po.total || po.grandTotal || po.nominal || 0,
-                    );
-                    const st = po.status || po.pengiriman || "Draft";
+                  {filteredList.map((p) => {
+                    const isSelected = selectedPo?.id === p.id;
+                    const no =
+                      p.nomorSo || p.nomor || p.number || `SO #${p.id}`;
+                    const tgl = p.tanggal || p.createdAt || "";
+                    const totalVal = Number(p.total || p.nilai || 0);
+                    const totalInv = Number(p.totalInvoice || 0);
+                    const sisa = Math.max(0, totalVal - totalInv);
+                    const itemCount = Array.isArray(p.items)
+                      ? p.items.length
+                      : 0;
 
                     return (
                       <Pressable
-                        key={po.id}
-                        onPress={() => handleSelect(po)}
+                        key={p.id}
+                        onPress={() => handleSelect(p)}
                         className={cn(
-                          "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
+                          "px-4 py-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        {/* Kolom 1: Nomor PO & Tanggal */}
-                        <View className="w-1/4 min-w-[180px]">
+                        {/* Kolom 1: Nomor SO & Tanggal */}
+                        <View className="flex-1 min-w-[180px]">
                           <Text
                             className={cn(
                               "text-xs font-bold font-mono text-foreground",
                               isSelected && "text-primary",
                             )}
+                            numberOfLines={1}
                           >
                             {no}
                           </Text>
@@ -253,48 +263,78 @@ export function SupplierPoSelect({
                               </Text>
                             </View>
                           ) : null}
-                          {po.request ? (
+                          {itemCount > 0 ? (
                             <Text className="text-[10px] text-muted-foreground mt-0.5">
-                              Ref: {po.request}
+                              {itemCount} item barang/jasa
                             </Text>
                           ) : null}
                         </View>
 
-                        {/* Kolom 2: Supplier & Barang */}
-                        <View className="w-1/4 min-w-[180px] px-2">
+                        {/* Kolom 2: Customer & Proyek */}
+                        <View className="flex-1 min-w-[180px] px-2">
                           <Text
                             className="text-xs font-semibold text-foreground"
                             numberOfLines={1}
                           >
-                            {supp}
+                            {p.customer || "-"}
                           </Text>
-                          {po.item ? (
+                          {p.project || p.proyek ? (
+                            <View className="flex-row items-center gap-1 mt-0.5">
+                              <Briefcase size={10} color={colors.muted} />
+                              <Text
+                                className="text-[11px] text-muted-foreground"
+                                numberOfLines={1}
+                              >
+                                {p.project || p.proyek}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        {/* Kolom 3: Total Nilai Pesanan */}
+                        <View className="w-36 shrink-0 items-end pr-3">
+                          <Text
+                            className="w-full text-right text-xs font-bold text-foreground"
+                            numberOfLines={1}
+                          >
+                            {rupiah(totalVal)}
+                          </Text>
+                          {p.ppnMode && p.ppnMode !== "none" ? (
                             <Text
-                              className="text-[11px] text-muted-foreground mt-0.5"
+                              className="w-full text-right text-[10px] text-primary"
                               numberOfLines={1}
                             >
-                              {po.item}
+                              {p.ppnMode === "include"
+                                ? "Inc. PPN"
+                                : "+ PPN 11%"}
                             </Text>
                           ) : null}
                         </View>
 
-                        {/* Kolom 3: Total Nilai */}
-                        <View className="w-32 px-2 items-end">
-                          <Text className="text-xs font-semibold text-foreground">
-                            {tot > 0 ? rupiah(tot) : "-"}
-                          </Text>
-                        </View>
-
-                        {/* Kolom 4: Status */}
-                        <View className="flex-1 min-w-[120px] px-2 items-center">
-                          <StatusBadge status={st} />
+                        {/* Kolom 4: Status & Tagihan */}
+                        <View className="w-48 shrink-0 pl-4 pr-2 items-start justify-center">
+                          <StatusBadge
+                            status={p.paymentStatus || p.status || "Aktif"}
+                          />
+                          {totalInv > 0 ? (
+                            <Text
+                              className="w-full text-[10px] text-muted-foreground mt-0.5"
+                              numberOfLines={2}
+                            >
+                              Terbit: {rupiah(totalInv)}
+                              {sisa > 0 ? `\nSisa: ${rupiah(sisa)}` : ""}
+                            </Text>
+                          ) : null}
                         </View>
 
                         {/* Kolom 5: Aksi */}
-                        <View className="w-20 items-center justify-center">
+                        <View className="w-20 shrink-0 items-center">
                           {isSelected ? (
-                            <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
-                              <Check size={14} color={colors.primary} />
+                            <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
+                              <Check size={12} color={colors.primary} />
+                              <Text className="text-[11px] font-bold text-primary">
+                                Dipilih
+                              </Text>
                             </View>
                           ) : (
                             <Button
@@ -315,8 +355,9 @@ export function SupplierPoSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data PO Supplier yang cocok dengan &quot;{q}
-                        &quot;
+                        {q.trim()
+                          ? `Tidak ada data PO Client yang cocok dengan "${q}"`
+                          : "Tidak ada SO yang tersedia atau semua sudah memiliki Surat Jalan."}
                       </Text>
                     </View>
                   )}
@@ -331,5 +372,5 @@ export function SupplierPoSelect({
 }
 
 // ==========================================
-// 14. PURCHASE REQUEST SELECT
+// 2. QUOTATION (PENAWARAN) SELECT
 // ==========================================

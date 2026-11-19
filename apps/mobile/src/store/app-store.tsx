@@ -21,7 +21,7 @@ import {
   type RoleDef,
   type CompanyProfile,
 } from "@/constants/modules";
-import { NotifPopupHost, ToastHost, type NotifPopupItem, type ToastItem } from "@/components/taska/toast";
+import { NotifPopupHost, ToastHost, type NotifPopupItem, type ToastItem } from "@/components/akuntra/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens, isNetworkError } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
 import {
@@ -125,14 +125,25 @@ export type OfflineQueueItem = {
   createdAt: string;
 };
 
-const STORAGE_QUEUE_KEY = "taska.offline.queue.v1";
-const STORAGE_CACHE_DB_KEY = "taska.offline.db.v1";
-const STORAGE_CACHE_USER_KEY = "taska.offline.user.v1";
-const STORAGE_CACHE_HIST_KEY = "taska.offline.hist.v1";
-const STORAGE_CACHE_APPROVALS_KEY = "taska.offline.approvals.v1";
-const STORAGE_CACHE_COMPANY_KEY = "taska.offline.company.v1";
-const STORAGE_CACHE_DOC_FORMATS_KEY = "taska.offline.docFormats.v1";
-const STORAGE_CACHE_ROLES_KEY = "taska.offline.roles.v1";
+const STORAGE_QUEUE_KEY = "akuntra.offline.queue.v1";
+const STORAGE_CACHE_DB_KEY = "akuntra.offline.db.v1";
+const STORAGE_CACHE_USER_KEY = "akuntra.offline.user.v1";
+const STORAGE_CACHE_HIST_KEY = "akuntra.offline.hist.v1";
+const STORAGE_CACHE_APPROVALS_KEY = "akuntra.offline.approvals.v1";
+const STORAGE_CACHE_COMPANY_KEY = "akuntra.offline.company.v1";
+const STORAGE_CACHE_DOC_FORMATS_KEY = "akuntra.offline.docFormats.v1";
+const STORAGE_CACHE_ROLES_KEY = "akuntra.offline.roles.v1";
+
+const STORAGE_KEY_MAP: Record<string, string> = {
+  [STORAGE_QUEUE_KEY]: "taska.offline.queue.v1",
+  [STORAGE_CACHE_DB_KEY]: "taska.offline.db.v1",
+  [STORAGE_CACHE_USER_KEY]: "taska.offline.user.v1",
+  [STORAGE_CACHE_HIST_KEY]: "taska.offline.hist.v1",
+  [STORAGE_CACHE_APPROVALS_KEY]: "taska.offline.approvals.v1",
+  [STORAGE_CACHE_COMPANY_KEY]: "taska.offline.company.v1",
+  [STORAGE_CACHE_DOC_FORMATS_KEY]: "taska.offline.docFormats.v1",
+  [STORAGE_CACHE_ROLES_KEY]: "taska.offline.roles.v1",
+};
 
 const FIELD_LABELS: Record<string, string> = {
   nama: "Nama",
@@ -198,7 +209,15 @@ function formatFieldVal(val: any): string {
 function readStorageJson<T>(key: string, fallback: T): T {
   if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
     try {
-      const raw = window.localStorage.getItem(key);
+      let raw = window.localStorage.getItem(key);
+      if (!raw && STORAGE_KEY_MAP[key]) {
+        const oldKey = STORAGE_KEY_MAP[key]!;
+        raw = window.localStorage.getItem(oldKey);
+        if (raw) {
+          window.localStorage.setItem(key, raw);
+          window.localStorage.removeItem(oldKey);
+        }
+      }
       if (raw) return JSON.parse(raw) as T;
     } catch {}
   }
@@ -385,7 +404,14 @@ async function fetchTasks(projects: Row[]): Promise<Row[]> {
 function readInitialTheme(): "dark" | "light" {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     try {
-      const saved = window.localStorage.getItem("taska.theme");
+      let saved = window.localStorage.getItem("akuntra.theme");
+      if (!saved) {
+        saved = window.localStorage.getItem("taska.theme");
+        if (saved) {
+          window.localStorage.setItem("akuntra.theme", saved);
+          window.localStorage.removeItem("taska.theme");
+        }
+      }
       if (saved === "light" || saved === "dark") return saved;
     } catch {}
   }
@@ -403,7 +429,7 @@ function applyDomTheme(mode: "dark" | "light") {
     document.documentElement.classList.toggle("dark", mode === "dark");
     document.documentElement.classList.toggle("light", mode === "light");
     try {
-      window.localStorage.setItem("taska.theme", mode);
+      window.localStorage.setItem("akuntra.theme", mode);
     } catch {}
   }
 }

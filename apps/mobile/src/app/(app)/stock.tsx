@@ -9,11 +9,11 @@ import {
   X,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
-import { BatchSerialRegisterModal } from "@/components/taska/serial-item-picker";
+import { BatchSerialRegisterModal } from "@/components/akuntra/serial-item-picker";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Chip, EmptyState } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { PageHeader, Chip, EmptyState } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { compareDesc } from "@/lib/format";
 import { hasUserPermission, type Role, type Row } from "@/constants/modules";

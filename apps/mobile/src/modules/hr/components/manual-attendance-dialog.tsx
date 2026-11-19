@@ -1,8 +1,8 @@
 import React from "react";
 import { View } from "react-native";
 import { Text } from "@/components/ui/text";
-import { FormField } from "@/components/taska/basics";
-import { SearchableSelect, DatePicker, UserSelect } from "@/components/taska/dialogs";
+import { FormField } from "@/components/akuntra/basics";
+import { SearchableSelect, DatePicker, UserSelect } from "@/components/akuntra/dialogs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {

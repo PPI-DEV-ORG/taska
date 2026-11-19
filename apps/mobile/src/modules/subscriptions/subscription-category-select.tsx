@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";

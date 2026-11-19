@@ -13,7 +13,7 @@ import {
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
-import { PageHeader } from "@/components/taska/basics";
+import { PageHeader } from "@/components/akuntra/basics";
 import { Button } from "@/components/ui/button";
 
 import { TabType } from "@/modules/hr/types";
@@ -474,7 +474,7 @@ export default function HrScreen() {
   return (
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16, paddingBottom: 64 }}>
       <View className="gap-5 w-full">
-        {/* Header Selaras PageHeader TASKA */}
+        {/* Header Selaras PageHeader AKUNTRA */}
         <PageHeader
           title="HR: Absensi & Payroll"
           subtitle="Presensi Kehadiran Harian, Rekap Tim, Payroll Gaji, PPh 21 TER, dan BPJS Karyawan"

@@ -2,12 +2,10 @@ import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
 import {
   Search,
-  Receipt,
   ChevronDown,
   Check,
-  Calendar,
-  Tag,
-  Layers,
+  Handshake,
+  MapPin,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,86 +16,89 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
+import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
-import { rupiah } from "@/lib/format";
 import type { Row } from "@/constants/modules";
 import { formatDate } from "./format-date";
 
-export interface ContinuableInvoiceOptionItem {
-  id: string;
-  label: string;
-  nomor: string;
-  customer: string;
-  raw: Row;
-  chain: any;
-}
-
-export interface ContinuableInvoiceSelectProps {
+export interface VisitSelectProps {
   value?: string;
-  invoiceId?: string | number | null;
-  options: ContinuableInvoiceOptionItem[];
-  onChange: (selectedId: string, invoice: Row) => void;
+  visitId?: string | number | null;
+  onChange: (visit: Row | null) => void;
   placeholder?: string;
   error?: boolean;
+  allowClear?: boolean;
 }
 
-export function ContinuableInvoiceSelect({
+export function VisitSelect({
   value,
-  invoiceId,
-  options,
+  visitId,
   onChange,
-  placeholder = "Ketik atau pilih faktur DP / termin acuan...",
+  placeholder = "Pilih kunjungan / meeting...",
   error,
-}: ContinuableInvoiceSelectProps) {
+  allowClear = true,
+}: VisitSelectProps) {
+  const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
-  const selectedOption = React.useMemo(() => {
-    if (invoiceId) {
-      const match = options.find((o) => String(o.id) === String(invoiceId));
+  const visitList: Row[] = React.useMemo(
+    () => (data as any)["visit-reports"] ?? [],
+    [data],
+  );
+
+  const selectedVisit = React.useMemo(() => {
+    if (visitId) {
+      const match = visitList.find((v) => String(v.id) === String(visitId));
       if (match) return match;
     }
-    if (value) {
+    if (value && value !== "-") {
+      const qVal = value.trim().toLowerCase();
       return (
-        options.find(
-          (o) =>
-            o.label === value || o.nomor === value || String(o.id) === value,
-        ) || null
+        visitList.find((v) => {
+          const opt =
+            `VISIT ${v.nomor || v.number || v.id} - ${v.judul || v.title || "Meeting"}`.toLowerCase();
+          const no = String(v.nomor || v.number || "").toLowerCase();
+          return (
+            opt === qVal ||
+            no === qVal ||
+            String(v.id) === qVal ||
+            opt.includes(qVal)
+          );
+        }) || null
       );
     }
     return null;
-  }, [options, invoiceId, value]);
+  }, [visitList, visitId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedOption) {
-      return selectedOption.label;
+    if (selectedVisit) {
+      return `VISIT ${selectedVisit.nomor || selectedVisit.number || selectedVisit.id} - ${selectedVisit.judul || selectedVisit.title || "Meeting"}`;
     }
-    return value || "";
-  }, [selectedOption, value]);
+    return value && value !== "-" ? value : "";
+  }, [selectedVisit, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return options;
+    if (!q.trim()) return visitList;
     const term = q.trim().toLowerCase();
-    return options.filter((o) => {
-      const no = String(o.nomor || "").toLowerCase();
-      const cust = String(o.customer || "").toLowerCase();
-      const po = String(o.raw.po || o.raw.nomorSo || "").toLowerCase();
-      const quo = String(o.raw.quotation || "").toLowerCase();
-      const label = String(o.label || "").toLowerCase();
+    return visitList.filter((v) => {
+      const no = String(v.nomor || v.number || "").toLowerCase();
+      const judul = String(v.judul || v.title || "").toLowerCase();
+      const klien = String(v.klien || v.customer || "").toLowerCase();
+      const tipe = String(v.tipe || "").toLowerCase();
       return (
         no.includes(term) ||
-        cust.includes(term) ||
-        po.includes(term) ||
-        quo.includes(term) ||
-        label.includes(term)
+        judul.includes(term) ||
+        klien.includes(term) ||
+        tipe.includes(term)
       );
     });
-  }, [options, q]);
+  }, [visitList, q]);
 
-  function handleSelect(opt: ContinuableInvoiceOptionItem) {
-    onChange(opt.id, opt.raw);
+  function handleSelect(item: Row | null) {
+    onChange(item);
     setOpen(false);
   }
 
@@ -114,7 +115,7 @@ export function ContinuableInvoiceSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <Receipt
+          <Handshake
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -141,8 +142,8 @@ export function ContinuableInvoiceSelect({
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <Layers size={20} color={colors.primary} />
-                <DialogTitle>Pilih Faktur DP / Termin Acuan</DialogTitle>
+                <Handshake size={20} color={colors.primary} />
+                <DialogTitle>Pilih Kunjungan / Meeting</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -153,7 +154,7 @@ export function ContinuableInvoiceSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nomor faktur, pelanggan, PO/SO, atau penawaran..."
+              placeholder="Cari berdasarkan nomor visit, judul, klien, atau tipe..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -169,17 +170,17 @@ export function ContinuableInvoiceSelect({
               <View className="flex-1 min-w-[760px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
-                    Nomor Faktur & Tanggal
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
+                    Nomor & Aktivitas Visit
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
-                    Pelanggan & Dokumen Asal
+                    Klien / Instansi
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">
-                    Total Nilai Tagihan
+                  <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">
+                    Jenis & Tanggal
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[160px] px-2 text-center">
-                    Status & Sisa Kontrak
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[120px] px-2 text-center">
+                    Status
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
                     Aksi
@@ -191,109 +192,90 @@ export function ContinuableInvoiceSelect({
                   className="max-h-[50vh]"
                   contentContainerClassName="divide-y divide-border/40"
                 >
-                  {filteredList.map((opt) => {
-                    const isSelected = selectedOption?.id === opt.id;
-                    const inv = opt.raw;
-                    const tgl = inv.tanggal || inv.createdAt || "";
-                    const totalVal = Number(inv.total || inv.nilai || 0);
-                    const paid = Number(inv.paidAmount || inv.totalBayar || 0);
-                    const outstanding = Math.max(0, totalVal - paid);
-                    const remContract = Number(opt.chain?.remainingToBill || 0);
+                  {allowClear && (
+                    <Pressable
+                      onPress={() => handleSelect(null)}
+                      className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
+                    >
+                      <Text className="text-xs font-medium text-muted-foreground">
+                        - Tanpa Kunjungan (Kosongkan) -
+                      </Text>
+                      {!visitId && !value && (
+                        <Check size={16} color={colors.primary} />
+                      )}
+                    </Pressable>
+                  )}
+
+                  {filteredList.map((v) => {
+                    const isSelected = selectedVisit?.id === v.id;
+                    const no = v.nomor || v.number || `VISIT #${v.id}`;
+                    const judul = v.judul || v.title || "Aktivitas Kunjungan";
+                    const klien = v.klien || v.customer || "-";
+                    const tgl = v.tanggal || v.createdAt || "";
 
                     return (
                       <Pressable
-                        key={opt.id}
-                        onPress={() => handleSelect(opt)}
+                        key={v.id}
+                        onPress={() => handleSelect(v)}
                         className={cn(
                           "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        {/* Kolom 1: Nomor Invoice & Tanggal */}
-                        <View className="w-1/4 min-w-[180px]">
+                        {/* Kolom 1: Nomor & Aktivitas */}
+                        <View className="w-1/3 min-w-[220px]">
                           <Text
                             className={cn(
                               "text-xs font-bold font-mono text-foreground",
                               isSelected && "text-primary",
                             )}
                           >
-                            {opt.nomor}
+                            {no}
                           </Text>
-                          {tgl ? (
-                            <View className="flex-row items-center gap-1 mt-0.5">
-                              <Calendar size={10} color={colors.muted} />
-                              <Text className="text-[11px] text-muted-foreground">
-                                {formatDate(tgl)}
-                              </Text>
-                            </View>
-                          ) : null}
-                          <View className="flex-row items-center gap-1 mt-0.5">
-                            <Tag size={10} color={colors.primary} />
-                            <Text className="text-[10px] font-semibold text-primary">
-                              {inv.jenis ||
-                                (String(inv.type || "").toUpperCase() === "DP"
-                                  ? "DP"
-                                  : "Termin")}
-                            </Text>
-                          </View>
+                          <Text
+                            className="text-[11px] text-muted-foreground mt-0.5"
+                            numberOfLines={2}
+                          >
+                            {judul}
+                          </Text>
                         </View>
 
-                        {/* Kolom 2: Customer & Dokumen Asal */}
+                        {/* Kolom 2: Klien / Instansi */}
                         <View className="w-1/4 min-w-[180px] px-2">
                           <Text
                             className="text-xs font-semibold text-foreground"
                             numberOfLines={1}
                           >
-                            {opt.customer || "-"}
+                            {klien}
                           </Text>
-                          {inv.po ? (
-                            <Text
-                              className="text-[10px] text-muted-foreground mt-0.5 font-mono"
-                              numberOfLines={1}
-                            >
-                              SO: {inv.po}
-                            </Text>
-                          ) : null}
-                          {inv.quotation ? (
-                            <Text
-                              className="text-[10px] text-muted-foreground font-mono"
-                              numberOfLines={1}
-                            >
-                              Quo: {inv.quotation}
-                            </Text>
-                          ) : null}
-                        </View>
-
-                        {/* Kolom 3: Total Nilai Tagihan */}
-                        <View className="w-36 items-end px-2">
-                          <Text className="text-xs font-bold text-foreground">
-                            {rupiah(totalVal)}
-                          </Text>
-                          {outstanding > 0 ? (
-                            <Text className="text-[10px] text-danger font-medium">
-                              Sisa tagihan: {rupiah(outstanding)}
-                            </Text>
-                          ) : (
-                            <Text className="text-[10px] text-success font-medium">
-                              Lunas
-                            </Text>
-                          )}
-                        </View>
-
-                        {/* Kolom 4: Status & Sisa Kontrak */}
-                        <View className="flex-1 min-w-[160px] px-2 items-center">
-                          <StatusBadge status={inv.status || "Aktif"} />
-                          {remContract > 0 ? (
-                            <View className="mt-1 px-2 py-0.5 rounded bg-warning/15 border border-warning/30">
-                              <Text className="text-[10px] font-semibold text-warning">
-                                Sisa Kontrak: {rupiah(remContract)}
+                          {v.lokasi ? (
+                            <View className="flex-row items-center gap-1 mt-0.5">
+                              <MapPin size={10} color={colors.muted} />
+                              <Text
+                                className="text-[11px] text-muted-foreground"
+                                numberOfLines={1}
+                              >
+                                {v.lokasi}
                               </Text>
                             </View>
-                          ) : (
-                            <Text className="text-[10px] text-muted-foreground mt-0.5">
-                              Kontrak habis
+                          ) : null}
+                        </View>
+
+                        {/* Kolom 3: Jenis & Tanggal */}
+                        <View className="w-36 px-2">
+                          <Text className="text-xs text-foreground font-medium">
+                            {v.tipe || "Meeting"}
+                          </Text>
+                          {tgl ? (
+                            <Text className="text-[11px] text-muted-foreground mt-0.5">
+                              {formatDate(tgl)}
                             </Text>
-                          )}
+                          ) : null}
+                        </View>
+
+                        {/* Kolom 4: Status */}
+                        <View className="flex-1 min-w-[120px] px-2 items-center">
+                          <StatusBadge status={v.status || "Planned"} />
                         </View>
 
                         {/* Kolom 5: Aksi */}
@@ -324,7 +306,7 @@ export function ContinuableInvoiceSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada invoice acuan yang cocok dengan &quot;{q}
+                        Tidak ada data kunjungan yang cocok dengan &quot;{q}
                         &quot;
                       </Text>
                     </View>
@@ -340,5 +322,5 @@ export function ContinuableInvoiceSelect({
 }
 
 // ==========================================
-// 4b. INVOICE (FAKTUR PENJUALAN) SELECT
+// 10. USER SELECT (PENANGGUNG JAWAB)
 // ==========================================

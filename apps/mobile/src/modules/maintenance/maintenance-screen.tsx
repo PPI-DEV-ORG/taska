@@ -23,7 +23,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react-native";
-import { PageHeader, Panel } from "@/components/taska/basics";
+import { PageHeader, Panel } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";

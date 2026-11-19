@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Panel, FormField } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { Panel, FormField } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
+import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, uploadFile } from "@/services/api";
 import { colors } from "@/tokens";
@@ -17,8 +17,8 @@ import { rupiah, formatThousands } from "@/lib/format";
 import { buildEfakturCsv } from "@/lib/efaktur";
 import { type Row, hasUserPermission } from "@/constants/modules";
 import { Line } from "@/modules/shared/line";
-import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/taska/serial-item-picker";
-import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
+import { ConflictAndSwapBanner, SerialItemPickerModal } from "@/components/akuntra/serial-item-picker";
+import { ItemEditorDialog } from "@/components/akuntra/item-editor-dialog";
 import { type QuotationItem } from "@/modules/quotation/types";
 import {
   calcQuotationFinancials,

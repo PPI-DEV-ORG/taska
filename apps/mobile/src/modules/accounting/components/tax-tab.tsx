@@ -2,7 +2,7 @@ import * as React from "react";
 import { View, ScrollView, Pressable, TextInput } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel, KpiCard } from "@/components/taska/basics";
+import { Panel, KpiCard } from "@/components/akuntra/basics";
 import { rupiah } from "@/lib/format";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";

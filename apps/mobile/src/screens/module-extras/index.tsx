@@ -2,7 +2,7 @@ import * as React from "react";
 import { View } from "react-native";
 import { AlertTriangle } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
-import { Panel, Cell } from "@/components/taska/basics";
+import { Panel, Cell } from "@/components/akuntra/basics";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { tanggal } from "@/lib/format";

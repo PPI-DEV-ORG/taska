@@ -2,11 +2,11 @@ import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
 import {
   Search,
-  FileText,
   ChevronDown,
   Check,
   Calendar,
-  Briefcase,
+  ClipboardList,
+  MapPin,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,103 +17,86 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
-import { rupiah } from "@/lib/format";
 import type { Row } from "@/constants/modules";
 import { formatDate } from "./format-date";
 
-export interface PoClientSelectProps {
+export interface SurveySelectProps {
   value?: string;
-  poId?: string | number | null;
-  onChange: (po: Row | null) => void;
+  surveyId?: string | number | null;
+  onChange: (survey: Row | null) => void;
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
-  excludeIds?: Iterable<string | number>;
 }
 
-export function PoClientSelect({
+export function SurveySelect({
   value,
-  poId,
+  surveyId,
   onChange,
-  placeholder = "Cari & pilih PO pelanggan (Pesanan Penjualan)...",
+  placeholder = "Pilih survey jika ada...",
   error,
   allowClear = true,
-  excludeIds,
-}: PoClientSelectProps) {
+}: SurveySelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
-  const excludedSet = React.useMemo(() => {
-    const set = new Set<string>();
-    for (const id of excludeIds ?? []) set.add(String(id));
-    return set;
-  }, [excludeIds]);
-
-  const poClientData = data["po-client"];
-  const poList: Row[] = React.useMemo(
-    () =>
-      (poClientData ?? []).filter((p: Row) => !excludedSet.has(String(p.id))),
-    [poClientData, excludedSet],
+  const surveys: Row[] = React.useMemo(
+    () => data.surveys ?? [],
+    [data.surveys],
   );
 
-  const selectedPo = React.useMemo(() => {
-    if (poId) {
-      const match = poList.find((p) => String(p.id) === String(poId));
+  const selectedSurvey = React.useMemo(() => {
+    if (surveyId) {
+      const match = surveys.find((s) => String(s.id) === String(surveyId));
       if (match) return match;
     }
-    if (value) {
-      const selNo = value.split(" - ")[0]?.trim().toLowerCase();
+    if (value && value !== "-") {
+      const qVal = value.trim().toLowerCase();
       return (
-        poList.find((p) => {
-          const no = String(
-            p.nomorSo || p.nomor || p.number || "",
-          ).toLowerCase();
-          return (
-            no === selNo ||
-            `${no} - ${p.customer || "-"}`.toLowerCase() === value.toLowerCase()
-          );
+        surveys.find((s) => {
+          const opt =
+            `Survey #${s.id} - ${s.lead || s.customer || s.lokasi || "Survey"}`.toLowerCase();
+          const idStr = String(s.id);
+          return opt === qVal || idStr === qVal || opt.includes(qVal);
         }) || null
       );
     }
     return null;
-  }, [poList, poId, value]);
+  }, [surveys, surveyId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedPo) {
-      const no =
-        selectedPo.nomorSo ||
-        selectedPo.nomor ||
-        selectedPo.number ||
-        `PO #${selectedPo.id}`;
-      return `${no} - ${selectedPo.customer || "-"}`;
+    if (selectedSurvey) {
+      return `Survey #${selectedSurvey.id} - ${selectedSurvey.lead || selectedSurvey.customer || selectedSurvey.lokasi || "Survey"}`;
     }
-    return value || "";
-  }, [selectedPo, value]);
+    return value && value !== "-" ? value : "";
+  }, [selectedSurvey, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return poList;
+    if (!q.trim()) return surveys;
     const term = q.trim().toLowerCase();
-    return poList.filter((p) => {
-      const no = String(p.nomorSo || p.nomor || p.number || "").toLowerCase();
-      const cust = String(p.customer || "").toLowerCase();
-      const proj = String(p.project || p.proyek || "").toLowerCase();
-      const note = String(p.catatan || "").toLowerCase();
+    return surveys.filter((s) => {
+      const idStr = String(s.id).toLowerCase();
+      const lead = String(s.lead || "").toLowerCase();
+      const cust = String(s.customer || "").toLowerCase();
+      const lok = String(s.lokasi || "").toLowerCase();
+      const tim = String(s.tim || "").toLowerCase();
       return (
-        no.includes(term) ||
+        idStr.includes(term) ||
+        lead.includes(term) ||
         cust.includes(term) ||
-        proj.includes(term) ||
-        note.includes(term)
+        lok.includes(term) ||
+        tim.includes(term)
       );
     });
-  }, [poList, q]);
+  }, [surveys, q]);
 
-  function handleSelect(p: Row | null) {
-    onChange(p);
+  function handleSelect(item: Row | null) {
+    onChange(item);
     setOpen(false);
   }
 
@@ -130,7 +113,7 @@ export function PoClientSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <FileText
+          <ClipboardList
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -157,10 +140,8 @@ export function PoClientSelect({
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <FileText size={20} color={colors.primary} />
-                <DialogTitle>
-                  Pilih PO Pelanggan (Pesanan Penjualan)
-                </DialogTitle>
+                <ClipboardList size={20} color={colors.primary} />
+                <DialogTitle>Pilih Survey Terkait</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -171,7 +152,7 @@ export function PoClientSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nomor PO/SO, nama pelanggan, proyek, atau catatan..."
+              placeholder="Cari berdasarkan nomor survey, kebutuhan, pelanggan, atau lokasi..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -184,22 +165,22 @@ export function PoClientSelect({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ minWidth: "100%" }}
             >
-              <View className="flex-1 min-w-[880px]">
+              <View className="flex-1 min-w-[760px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px]">
-                    Nomor SO & Tanggal
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
+                    ID & Kebutuhan Survey
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px] px-2">
-                    Pelanggan & Proyek
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
+                    Pelanggan & Lokasi
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 shrink-0 text-right pr-3">
-                    Total Nilai
+                  <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">
+                    Jadwal & Tim
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-48 shrink-0 pl-4 pr-2">
-                    Status & Tagihan
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[120px] px-2 text-center">
+                    Status
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-20 shrink-0 text-center">
+                  <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
                     Aksi
                   </Text>
                 </View>
@@ -215,120 +196,98 @@ export function PoClientSelect({
                       className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
                     >
                       <Text className="text-xs font-medium text-muted-foreground">
-                        - Tanpa Sales Order (SO) -
+                        - Tanpa Survey (Kosongkan) -
                       </Text>
-                      {!poId && !value && (
+                      {!surveyId && !value && (
                         <Check size={16} color={colors.primary} />
                       )}
                     </Pressable>
                   )}
 
-                  {filteredList.map((p) => {
-                    const isSelected = selectedPo?.id === p.id;
-                    const no =
-                      p.nomorSo || p.nomor || p.number || `SO #${p.id}`;
-                    const tgl = p.tanggal || p.createdAt || "";
-                    const totalVal = Number(p.total || p.nilai || 0);
-                    const totalInv = Number(p.totalInvoice || 0);
-                    const sisa = Math.max(0, totalVal - totalInv);
-                    const itemCount = Array.isArray(p.items)
-                      ? p.items.length
-                      : 0;
+                  {filteredList.map((s) => {
+                    const isSelected = selectedSurvey?.id === s.id;
+                    const title = s.lead || s.kebutuhan || "Survey Lokasi";
+                    const cust = s.customer || "-";
+                    const lok = s.lokasi || "-";
+                    const tgl = s.jadwal || s.createdAt || "";
 
                     return (
                       <Pressable
-                        key={p.id}
-                        onPress={() => handleSelect(p)}
+                        key={s.id}
+                        onPress={() => handleSelect(s)}
                         className={cn(
-                          "px-4 py-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center",
+                          "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        {/* Kolom 1: Nomor SO & Tanggal */}
-                        <View className="flex-1 min-w-[180px]">
+                        {/* Kolom 1: ID & Kebutuhan */}
+                        <View className="w-1/3 min-w-[220px]">
+                          <View className="flex-row items-center gap-1.5 flex-wrap">
+                            <Text
+                              className={cn(
+                                "text-xs font-bold font-mono text-foreground",
+                                isSelected && "text-primary",
+                              )}
+                            >
+                              Survey #{s.id}
+                            </Text>
+                          </View>
                           <Text
-                            className={cn(
-                              "text-xs font-bold font-mono text-foreground",
-                              isSelected && "text-primary",
-                            )}
+                            className="text-[11px] text-muted-foreground mt-0.5"
+                            numberOfLines={2}
+                          >
+                            {title}
+                          </Text>
+                        </View>
+
+                        {/* Kolom 2: Customer & Lokasi */}
+                        <View className="w-1/4 min-w-[180px] px-2">
+                          <Text
+                            className="text-xs font-semibold text-foreground"
                             numberOfLines={1}
                           >
-                            {no}
+                            {cust}
                           </Text>
-                          {tgl ? (
+                          {lok !== "-" ? (
                             <View className="flex-row items-center gap-1 mt-0.5">
+                              <MapPin size={10} color={colors.muted} />
+                              <Text
+                                className="text-[11px] text-muted-foreground"
+                                numberOfLines={1}
+                              >
+                                {lok}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        {/* Kolom 3: Jadwal & Tim */}
+                        <View className="w-36 px-2">
+                          {tgl ? (
+                            <View className="flex-row items-center gap-1">
                               <Calendar size={10} color={colors.muted} />
                               <Text className="text-[11px] text-muted-foreground">
                                 {formatDate(tgl)}
                               </Text>
                             </View>
                           ) : null}
-                          {itemCount > 0 ? (
-                            <Text className="text-[10px] text-muted-foreground mt-0.5">
-                              {itemCount} item barang/jasa
-                            </Text>
-                          ) : null}
-                        </View>
-
-                        {/* Kolom 2: Customer & Proyek */}
-                        <View className="flex-1 min-w-[180px] px-2">
-                          <Text
-                            className="text-xs font-semibold text-foreground"
-                            numberOfLines={1}
-                          >
-                            {p.customer || "-"}
-                          </Text>
-                          {p.project || p.proyek ? (
-                            <View className="flex-row items-center gap-1 mt-0.5">
-                              <Briefcase size={10} color={colors.muted} />
-                              <Text
-                                className="text-[11px] text-muted-foreground"
-                                numberOfLines={1}
-                              >
-                                {p.project || p.proyek}
-                              </Text>
-                            </View>
-                          ) : null}
-                        </View>
-
-                        {/* Kolom 3: Total Nilai Pesanan */}
-                        <View className="w-36 shrink-0 items-end pr-3">
-                          <Text
-                            className="w-full text-right text-xs font-bold text-foreground"
-                            numberOfLines={1}
-                          >
-                            {rupiah(totalVal)}
-                          </Text>
-                          {p.ppnMode && p.ppnMode !== "none" ? (
+                          {s.tim ? (
                             <Text
-                              className="w-full text-right text-[10px] text-primary"
+                              className="text-[10px] text-muted-foreground mt-0.5"
                               numberOfLines={1}
                             >
-                              {p.ppnMode === "include"
-                                ? "Inc. PPN"
-                                : "+ PPN 11%"}
+                              Tim: {s.tim}
                             </Text>
                           ) : null}
                         </View>
 
-                        {/* Kolom 4: Status & Tagihan */}
-                        <View className="w-48 shrink-0 pl-4 pr-2 items-start justify-center">
-                          <StatusBadge
-                            status={p.paymentStatus || p.status || "Aktif"}
-                          />
-                          {totalInv > 0 ? (
-                            <Text
-                              className="w-full text-[10px] text-muted-foreground mt-0.5"
-                              numberOfLines={2}
-                            >
-                              Terbit: {rupiah(totalInv)}
-                              {sisa > 0 ? `\nSisa: ${rupiah(sisa)}` : ""}
-                            </Text>
-                          ) : null}
+                        {/* Kolom 4: Status */}
+                        <View className="flex-1 min-w-[120px] px-2 items-center">
+                          <StatusBadge status={s.status || "Diminta"} />
                         </View>
 
                         {/* Kolom 5: Aksi */}
-                        <View className="w-20 shrink-0 items-center">
+                        <View className="w-20 items-center">
                           {isSelected ? (
                             <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
                               <Check size={12} color={colors.primary} />
@@ -355,9 +314,7 @@ export function PoClientSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        {q.trim()
-                          ? `Tidak ada data PO Client yang cocok dengan "${q}"`
-                          : "Tidak ada SO yang tersedia atau semua sudah memiliki Surat Jalan."}
+                        Tidak ada data survey yang cocok dengan &quot;{q}&quot;
                       </Text>
                     </View>
                   )}
@@ -372,5 +329,5 @@ export function PoClientSelect({
 }
 
 // ==========================================
-// 2. QUOTATION (PENAWARAN) SELECT
+// 7. POC SELECT
 // ==========================================

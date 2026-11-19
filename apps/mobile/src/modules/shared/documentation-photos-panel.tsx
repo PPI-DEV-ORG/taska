@@ -18,7 +18,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
-import { Panel } from "@/components/taska/basics";
+import { Panel } from "@/components/akuntra/basics";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, uploadFile, downloadDocumentationPdf } from "@/services/api";

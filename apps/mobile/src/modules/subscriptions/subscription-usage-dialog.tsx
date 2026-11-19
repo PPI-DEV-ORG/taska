@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
-import { FormField } from "@/components/taska/basics";
+import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
+import { FormField } from "@/components/akuntra/basics";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import type { SubSubscription } from "./types";

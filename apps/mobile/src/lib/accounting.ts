@@ -183,14 +183,31 @@ export interface ManualJournal {
   lines: ManualJournalLine[];
 }
 
-export const STORAGE_MANUAL_JOURNALS_KEY = "taska.accounting.manual_journals";
-export const STORAGE_CUSTOM_COA_KEY = "taska.accounting.custom_coa";
-export const STORAGE_DELETED_COA_KEY = "taska.accounting.deleted_coa_codes";
+export const STORAGE_MANUAL_JOURNALS_KEY = "akuntra.accounting.manual_journals";
+export const STORAGE_CUSTOM_COA_KEY = "akuntra.accounting.custom_coa";
+export const STORAGE_DELETED_COA_KEY = "akuntra.accounting.deleted_coa_codes";
+
+const OLD_STORAGE_MANUAL_JOURNALS_KEY = "taska.accounting.manual_journals";
+const OLD_STORAGE_CUSTOM_COA_KEY = "taska.accounting.custom_coa";
+const OLD_STORAGE_DELETED_COA_KEY = "taska.accounting.deleted_coa_codes";
+
+function getLocalStorageWithMigration(newKey: string, oldKey: string): string | null {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  let raw = window.localStorage.getItem(newKey);
+  if (!raw) {
+    raw = window.localStorage.getItem(oldKey);
+    if (raw) {
+      window.localStorage.setItem(newKey, raw);
+      window.localStorage.removeItem(oldKey);
+    }
+  }
+  return raw;
+}
 
 export function loadManualJournals(): ManualJournal[] {
   if (typeof window === "undefined" || !window.localStorage) return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_MANUAL_JOURNALS_KEY);
+    const raw = getLocalStorageWithMigration(STORAGE_MANUAL_JOURNALS_KEY, OLD_STORAGE_MANUAL_JOURNALS_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -206,7 +223,7 @@ export function saveManualJournals(journals: ManualJournal[]) {
 export function loadCustomCoa(): CoaAccount[] {
   if (typeof window === "undefined" || !window.localStorage) return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_CUSTOM_COA_KEY);
+    const raw = getLocalStorageWithMigration(STORAGE_CUSTOM_COA_KEY, OLD_STORAGE_CUSTOM_COA_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -222,7 +239,7 @@ export function saveCustomCoa(accounts: CoaAccount[]) {
 export function loadDeletedCoaCodes(): string[] {
   if (typeof window === "undefined" || !window.localStorage) return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_DELETED_COA_KEY);
+    const raw = getLocalStorageWithMigration(STORAGE_DELETED_COA_KEY, OLD_STORAGE_DELETED_COA_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];

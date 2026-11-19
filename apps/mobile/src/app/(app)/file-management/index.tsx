@@ -1,8 +1,8 @@
 import * as React from "react";
 import { FileManagementScreen } from "@/modules/file-management/file-management-screen";
-import { EmptyState } from "@/components/taska/basics";
 import { hasUserPermission } from "@/constants/modules";
 import { useApp } from "@/store/app-store";
+import { EmptyState } from "@/components/akuntra/basics";
 
 export default function FileManagementRoute() {
   const { user } = useApp();

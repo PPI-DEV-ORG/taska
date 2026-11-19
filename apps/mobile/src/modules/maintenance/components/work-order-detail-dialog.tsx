@@ -31,9 +31,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SearchableSelect, DatePicker } from "@/components/taska/dialogs";
-import { UserSelect } from "@/components/taska/document-selects/user-select";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { SearchableSelect, DatePicker } from "@/components/akuntra/dialogs";
+import { UserSelect } from "@/components/akuntra/document-selects/user-select";
+import { FileUploader } from "@/components/akuntra/file-uploader";
 import { colors } from "@/tokens";
 import {
   WorkOrderStatusBadge,

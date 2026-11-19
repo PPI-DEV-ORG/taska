@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View, ScrollView } from "react-native";
 import { Text } from "@/components/ui/text";
-import { Panel, KpiCard } from "@/components/taska/basics";
+import { Panel, KpiCard } from "@/components/akuntra/basics";
 import { rupiah } from "@/lib/format";
 import { Pill, ExportBar } from "./report-ui-helpers";
 import type { DownloadFormat } from "../types";

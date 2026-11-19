@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { PageHeader, FormField } from "@/components/taska/basics";
-import { DataTable } from "@/components/taska/data-table";
+import { PageHeader, FormField } from "@/components/akuntra/basics";
+import { DataTable } from "@/components/akuntra/data-table";
 import { colors } from "@/tokens";
 
 interface MasterAlasanLostViewProps {

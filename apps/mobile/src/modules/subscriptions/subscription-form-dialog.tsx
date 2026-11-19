@@ -10,9 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DatePicker, SearchableSelect, UserSelect } from "@/components/taska/dialogs";
-import { FileUploader } from "@/components/taska/file-uploader";
-import { FormField } from "@/components/taska/basics";
+import { DatePicker, SearchableSelect, UserSelect } from "@/components/akuntra/dialogs";
+import { FileUploader } from "@/components/akuntra/file-uploader";
+import { FormField } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
 import { formatThousands } from "@/lib/format";
 import { api } from "@/services/api";

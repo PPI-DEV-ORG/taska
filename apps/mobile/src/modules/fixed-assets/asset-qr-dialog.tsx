@@ -112,7 +112,7 @@ export function AssetQrDialog({ visible, onClose, asset }: Props) {
       let currY = 30;
 
       // Header: AKUNTRA ERP ASSET / Nama Perusahaan
-      ctx.fillStyle = "#ea580c";
+      ctx.fillStyle = "#01a481";
       ctx.font = "bold 13px system-ui, -apple-system, sans-serif";
       ctx.textAlign = "left";
       ctx.fillText("AKUNTRA ERP ASSET", innerPadX, currY);
@@ -126,13 +126,13 @@ export function AssetQrDialog({ visible, onClose, asset }: Props) {
       const badgeH = 20;
       const badgeX = width - innerPadX - badgeW;
       const badgeY = currY - 11;
-      ctx.fillStyle = "#fff7ed";
+      ctx.fillStyle = "#ecfdf5";
       ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
-      ctx.strokeStyle = "#fed7aa";
+      ctx.strokeStyle = "#a7f3d0";
       ctx.lineWidth = 1;
       ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
 
-      ctx.fillStyle = "#c2410c";
+      ctx.fillStyle = "#023768";
       ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("INVENTARIS", badgeX + badgeW / 2, badgeY + 14);
@@ -287,13 +287,13 @@ export function AssetQrDialog({ visible, onClose, asset }: Props) {
             {/* Header Label Perusahaan */}
             <View className="w-full border-b border-neutral-200 pb-2 mb-3 flex-row items-center justify-between">
               <View>
-                <Text className="text-xs font-bold tracking-widest text-orange-600">
+                <Text className="text-xs font-bold tracking-widest text-[#01a481]">
                   AKUNTRA ERP ASSET
                 </Text>
                 <Text className="text-[10px] text-neutral-500">{companyName}</Text>
               </View>
-              <View className="bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
-                <Text className="text-[10px] font-bold text-orange-700">INVENTARIS</Text>
+              <View className="bg-[#ecfdf5] px-2 py-0.5 rounded border border-[#a7f3d0]">
+                <Text className="text-[10px] font-bold text-[#023768]">INVENTARIS</Text>
               </View>
             </View>
 
@@ -369,7 +369,7 @@ export function AssetQrDialog({ visible, onClose, asset }: Props) {
               disabled={isGenerating}
               className="gap-2 bg-primary"
             >
-              <Download size={16} color="#fff" />
+              <Download size={16} className="text-primary-foreground" />
               <Text>{isGenerating ? "Menyiapkan PNG..." : "Cetak / Unduh Label PNG"}</Text>
             </Button>
           )}

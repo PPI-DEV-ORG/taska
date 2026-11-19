@@ -8,8 +8,8 @@ import {
   FolderKanban,
 } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
-import { PageHeader } from "@/components/taska/basics";
-import { DatePicker } from "@/components/taska/dialogs";
+import { PageHeader } from "@/components/akuntra/basics";
+import { DatePicker } from "@/components/akuntra/dialogs";
 import { useApp } from "@/store/app-store";
 import { rupiah, tanggal } from "@/lib/format";
 import { colors } from "@/tokens";

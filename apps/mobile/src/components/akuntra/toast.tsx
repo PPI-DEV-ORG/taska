@@ -87,7 +87,7 @@ export function ToastHost({ items }: { items: ToastItem[] }) {
       })}
     </View>
   );
-  return renderTopLayer("taska-toast-host", content);
+  return renderTopLayer("akuntra-toast-host", content);
 }
 
 export function NotifPopupHost({
@@ -158,5 +158,5 @@ export function NotifPopupHost({
       })}
     </View>
   );
-  return renderTopLayer("taska-notif-popup-host", content);
+  return renderTopLayer("akuntra-notif-popup-host", content);
 }

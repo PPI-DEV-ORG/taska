@@ -2,11 +2,11 @@ import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
 import {
   Search,
+  FileText,
   ChevronDown,
   Check,
-  Building2,
-  Tag,
-  Briefcase,
+  Calendar,
+  X,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,90 +17,89 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
-import { rupiah } from "@/lib/format";
 import type { Row } from "@/constants/modules";
+import { formatDate } from "./format-date";
 
-export interface ProjectSelectProps {
+export interface PurchaseRequestSelectProps {
   value?: string;
-  projectId?: string | number | null;
-  onChange: (project: Row | null) => void;
+  requestId?: string | number | null;
+  requests?: Row[];
+  onChange: (request: Row | null) => void;
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
 }
 
-export function ProjectSelect({
+export function PurchaseRequestSelect({
   value,
-  projectId,
+  requestId,
+  requests,
   onChange,
-  placeholder = "Pilih alokasi proyek jika ada...",
+  placeholder = "Pilih purchase request...",
   error,
   allowClear = true,
-}: ProjectSelectProps) {
+}: PurchaseRequestSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
-  const projects: Row[] = React.useMemo(
-    () => data.projects ?? [],
-    [data.projects],
-  );
+  const purchaseRequestsData = data["purchase-requests"];
+  const reqList: Row[] = React.useMemo(() => {
+    return requests ?? (purchaseRequestsData as Row[]) ?? [];
+  }, [requests, purchaseRequestsData]);
 
-  const selectedProject = React.useMemo(() => {
-    if (projectId) {
-      const match = projects.find((p) => String(p.id) === String(projectId));
+  const selectedReq = React.useMemo(() => {
+    if (requestId) {
+      const match = reqList.find((r) => String(r.id) === String(requestId));
       if (match) return match;
     }
-    if (value && value !== "-") {
-      const qVal = value.trim().toLowerCase();
+    if (value) {
+      const sel = value.trim().toLowerCase();
       return (
-        projects.find((p) => {
-          const name = String(p.nama || p.name || "").toLowerCase();
-          const cust = String(p.customer || "").toLowerCase();
-          return (
-            name === qVal ||
-            `${name} (${cust})`.toLowerCase() === qVal ||
-            String(p.id) === qVal
-          );
+        reqList.find((r) => {
+          const no = String(r.nomor || r.number || `#${r.id}`).toLowerCase();
+          const purp = String(r.purpose || r.tujuan || "").toLowerCase();
+          return no === sel || `${no} — ${purp}`.toLowerCase().includes(sel);
         }) || null
       );
     }
     return null;
-  }, [projects, projectId, value]);
+  }, [reqList, requestId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedProject) {
-      const cust = selectedProject.customer
-        ? ` (${selectedProject.customer})`
-        : "";
-      return `${selectedProject.nama || selectedProject.name || `Proyek #${selectedProject.id}`}${cust}`;
+    if (selectedReq) {
+      const no =
+        selectedReq.nomor || selectedReq.number || `#${selectedReq.id}`;
+      return `${no} — ${selectedReq.purpose || selectedReq.tujuan || selectedReq.supplier || "Request"}`;
     }
-    return value && value !== "-" ? value : "";
-  }, [selectedProject, value]);
+    return value || "";
+  }, [selectedReq, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return projects;
+    if (!q.trim()) return reqList;
     const term = q.trim().toLowerCase();
-    return projects.filter((p) => {
-      const name = String(p.nama || p.name || "").toLowerCase();
-      const cust = String(p.customer || "").toLowerCase();
-      const jenis = String(p.jenis || "").toLowerCase();
-      const status = String(p.status || "").toLowerCase();
+    return reqList.filter((r) => {
+      const no = String(r.nomor || r.number || `#${r.id}`).toLowerCase();
+      const purp = String(r.purpose || r.tujuan || "").toLowerCase();
+      const supp = String(r.supplier || "").toLowerCase();
+      const proj = String(r.project || "").toLowerCase();
+      const it = String(r.item || "").toLowerCase();
       return (
-        name.includes(term) ||
-        cust.includes(term) ||
-        jenis.includes(term) ||
-        status.includes(term)
+        no.includes(term) ||
+        purp.includes(term) ||
+        supp.includes(term) ||
+        proj.includes(term) ||
+        it.includes(term)
       );
     });
-  }, [projects, q]);
+  }, [reqList, q]);
 
-  function handleSelect(item: Row | null) {
-    onChange(item);
+  function handleSelect(r: Row | null) {
+    onChange(r);
     setOpen(false);
   }
 
@@ -117,7 +116,7 @@ export function ProjectSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <Briefcase
+          <FileText
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -144,8 +143,8 @@ export function ProjectSelect({
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <Briefcase size={20} color={colors.primary} />
-                <DialogTitle>Pilih Alokasi Proyek</DialogTitle>
+                <FileText size={20} color={colors.primary} />
+                <DialogTitle>Pilih Purchase Request (PR)</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -156,10 +155,15 @@ export function ProjectSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nama proyek, pelanggan, atau jenis proyek..."
+              placeholder="Cari nomor PR, keperluan, supplier, atau project..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
+            {q ? (
+              <Pressable onPress={() => setQ("")} className="p-1">
+                <X size={16} color={colors.muted} />
+              </Pressable>
+            ) : null}
           </View>
 
           {/* Table */}
@@ -172,17 +176,17 @@ export function ProjectSelect({
               <View className="flex-1 min-w-[760px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
-                    Nama Proyek & Jenis
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
+                    Nomor PR & Tanggal
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
-                    Pelanggan
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">
+                    Keperluan & Barang
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">
-                    Nilai Kontrak
+                  <Text className="text-[11px] font-bold text-muted-foreground w-40 px-2">
+                    Supplier / Proyek
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2 text-center">
-                    Progres & Status
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[110px] px-2 text-center">
+                    Status
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
                     Aksi
@@ -200,87 +204,94 @@ export function ProjectSelect({
                       className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
                     >
                       <Text className="text-xs font-medium text-muted-foreground">
-                        - Tanpa Alokasi Proyek (Non-Proyek / Umum) -
+                        - Kosongkan Pilihan PR -
                       </Text>
-                      {!projectId && !value && (
+                      {!requestId && !value && (
                         <Check size={16} color={colors.primary} />
                       )}
                     </Pressable>
                   )}
 
-                  {filteredList.map((p) => {
-                    const isSelected = selectedProject?.id === p.id;
-                    const name = p.nama || p.name || `Proyek #${p.id}`;
-                    const jenis = p.jenis || "Proyek";
-                    const cust = p.customer || p.klien || "-";
-                    const totalVal = Number(
-                      p.nilai || p.total || p.budget || 0,
-                    );
-                    const progres = p.progres != null ? `${p.progres}%` : "-";
+                  {filteredList.map((req) => {
+                    const isSelected =
+                      (selectedReq &&
+                        String(selectedReq.id) === String(req.id)) ||
+                      (value &&
+                        String(req.nomor || "").toLowerCase() ===
+                          value.toLowerCase());
+                    const no = req.nomor || req.number || `#${req.id}`;
+                    const purp = req.purpose || req.tujuan || "-";
+                    const suppProj = req.supplier || req.project || "-";
+                    const tgl = req.date || req.tanggal || req.createdAt;
+                    const st = req.status || "Draft";
 
                     return (
                       <Pressable
-                        key={p.id}
-                        onPress={() => handleSelect(p)}
+                        key={req.id}
+                        onPress={() => handleSelect(req)}
                         className={cn(
                           "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        {/* Kolom 1: Nama Proyek & Jenis */}
-                        <View className="w-1/3 min-w-[220px]">
+                        {/* Kolom 1: Nomor PR & Tanggal */}
+                        <View className="w-1/4 min-w-[180px]">
                           <Text
                             className={cn(
-                              "text-xs font-bold text-foreground",
+                              "text-xs font-bold font-mono text-foreground",
                               isSelected && "text-primary",
                             )}
                           >
-                            {name}
+                            {no}
                           </Text>
-                          <View className="flex-row items-center gap-1 mt-0.5">
-                            <Tag size={10} color={colors.muted} />
-                            <Text className="text-[11px] text-muted-foreground">
-                              {jenis}
-                            </Text>
-                          </View>
+                          {tgl ? (
+                            <View className="flex-row items-center gap-1 mt-0.5">
+                              <Calendar size={10} color={colors.muted} />
+                              <Text className="text-[11px] text-muted-foreground">
+                                {formatDate(tgl)}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
 
-                        {/* Kolom 2: Customer / Klien */}
-                        <View className="w-1/4 min-w-[180px] px-2">
-                          <View className="flex-row items-center gap-1.5">
-                            <Building2 size={12} color={colors.muted} />
+                        {/* Kolom 2: Keperluan & Barang */}
+                        <View className="w-1/3 min-w-[220px] px-2">
+                          <Text
+                            className="text-xs font-semibold text-foreground"
+                            numberOfLines={1}
+                          >
+                            {purp}
+                          </Text>
+                          {req.item ? (
                             <Text
-                              className="text-xs font-semibold text-foreground"
+                              className="text-[11px] text-muted-foreground mt-0.5"
                               numberOfLines={1}
                             >
-                              {cust}
+                              {req.item}
                             </Text>
-                          </View>
+                          ) : null}
                         </View>
 
-                        {/* Kolom 3: Nilai Kontrak */}
-                        <View className="w-36 items-end px-2">
-                          <Text className="text-xs font-bold text-foreground">
-                            {totalVal > 0 ? rupiah(totalVal) : "-"}
+                        {/* Kolom 3: Supplier / Proyek */}
+                        <View className="w-40 px-2">
+                          <Text
+                            className="text-xs text-foreground"
+                            numberOfLines={1}
+                          >
+                            {suppProj}
                           </Text>
                         </View>
 
-                        {/* Kolom 4: Progres & Status */}
-                        <View className="flex-1 min-w-[140px] px-2 items-center">
-                          <StatusBadge status={p.status || "Berjalan"} />
-                          <Text className="text-[10px] text-muted-foreground mt-0.5">
-                            Progres: {progres}
-                          </Text>
+                        {/* Kolom 4: Status */}
+                        <View className="flex-1 min-w-[110px] px-2 items-center">
+                          <StatusBadge status={st} />
                         </View>
 
                         {/* Kolom 5: Aksi */}
-                        <View className="w-20 items-center">
+                        <View className="w-20 items-center justify-center">
                           {isSelected ? (
-                            <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
-                              <Check size={12} color={colors.primary} />
-                              <Text className="text-[11px] font-bold text-primary">
-                                Dipilih
-                              </Text>
+                            <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
+                              <Check size={14} color={colors.primary} />
                             </View>
                           ) : (
                             <Button
@@ -301,7 +312,8 @@ export function ProjectSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada proyek yang cocok dengan &quot;{q}&quot;
+                        Tidak ada data Purchase Request yang cocok dengan &quot;
+                        {q}&quot;
                       </Text>
                     </View>
                   )}
@@ -316,5 +328,5 @@ export function ProjectSelect({
 }
 
 // ==========================================
-// 6. SURVEY SELECT
+// 15. DRAFT RECEIVING (PENERIMAAN MENUNGGU) SELECT
 // ==========================================

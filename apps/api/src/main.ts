@@ -52,7 +52,7 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, "0.0.0.0");
-  httpLogger.log(`Taska API berjalan di http://localhost:${port}/api`);
+  httpLogger.log(`Akuntra API berjalan di http://localhost:${port}/api`);
 }
 
 await bootstrap();
