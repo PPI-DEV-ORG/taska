@@ -147,12 +147,12 @@ export function MaintenanceTabs({
               style={{ backgroundColor: active ? colors.primary : "transparent" }}
             >
               {Icon && (
-                <Icon size={14} color={active ? "#ffffff" : colors.textMuted} />
+                <Icon size={14} color={active ? colors.primaryForeground : colors.textMuted} />
               )}
               <Text
                 className={cn(
                   "text-xs font-semibold",
-                  active ? "text-white" : "text-muted-foreground",
+                  active ? "text-primary-foreground" : "text-muted-foreground",
                 )}
               >
                 {tab.label}
@@ -161,13 +161,13 @@ export function MaintenanceTabs({
                 <View
                   className={cn(
                     "rounded-full px-1.5 py-0.5",
-                    active ? "bg-white/20" : "bg-muted/40",
+                    active ? "bg-black/15" : "bg-muted/40",
                   )}
                 >
                   <Text
                     className={cn(
                       "text-[10px] font-bold",
-                      active ? "text-white" : "text-muted-foreground",
+                      active ? "text-primary-foreground" : "text-muted-foreground",
                     )}
                   >
                     {tab.count}

@@ -1,6 +1,12 @@
 import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
-import { Search, ChevronDown, Check, Building2 } from "lucide-react-native";
+import {
+  Search,
+  ChevronDown,
+  Check,
+  Wrench,
+  MapPin,
+} from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -10,138 +16,91 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
-import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import type { Row } from "@/constants/modules";
+import { formatDate } from "./format-date";
 
-export interface CustomerSelectProps {
+export interface MaintenanceSelectProps {
   value?: string;
-  customerId?: string | number | null;
-  onChange: (customer: Row | null) => void;
+  maintenanceId?: string | number | null;
+  onChange: (maintenance: Row | null) => void;
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
-  onAddNew?: () => void;
-  addNewLabel?: string;
 }
 
-export function CustomerSelect({
+export function MaintenanceSelect({
   value,
-  customerId,
+  maintenanceId,
   onChange,
-  placeholder = "Cari & pilih customer / pelanggan...",
+  placeholder = "Pilih laporan maintenance...",
   error,
   allowClear = true,
-  onAddNew,
-  addNewLabel = "+ Tambah Customer Baru",
-}: CustomerSelectProps) {
+}: MaintenanceSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
-  const [fetchedCustomers, setFetchedCustomers] = React.useState<Row[]>([]);
 
-  React.useEffect(() => {
-    let active = true;
-    if (!data.customers || data.customers.length === 0) {
-      api<any>("GET", "/customers")
-        .then((res) => {
-          if (!active) return;
-          const items = Array.isArray(res) ? res : (res?.items ?? []);
-          setFetchedCustomers(
-            items.map((c: any) => ({
-              id: String(c.id),
-              name: c.name ?? "",
-              nama: c.name ?? c.nama ?? c.company ?? "",
-              company: c.company ?? c.name ?? "",
-              kontak: c.pic ?? c.kontak ?? "-",
-              pic: c.pic ?? c.kontak ?? "-",
-              email: c.email ?? "",
-              telepon: c.phone ?? c.telepon ?? "",
-              phone: c.phone ?? c.telepon ?? "",
-              kota: c.city ?? c.kota ?? "-",
-              city: c.city ?? c.kota ?? "-",
-              status:
-                c.status === "AKTIF" || c.status === "Aktif"
-                  ? "Aktif"
-                  : c.status || "Aktif",
-            })),
-          );
-        })
-        .catch(() => {});
-    }
-    return () => {
-      active = false;
-    };
-  }, [data.customers]);
+  const maintenanceList: Row[] = React.useMemo(
+    () => (data as any)["maintenance-reports"] ?? [],
+    [data],
+  );
 
-  const customerList: Row[] = React.useMemo(() => {
-    if (data.customers && data.customers.length > 0) return data.customers;
-    return fetchedCustomers;
-  }, [data.customers, fetchedCustomers]);
-
-  const selectedCustomer = React.useMemo(() => {
-    if (customerId) {
-      const match = customerList.find(
-        (c) => String(c.id) === String(customerId),
+  const selectedMaintenance = React.useMemo(() => {
+    if (maintenanceId) {
+      const match = maintenanceList.find(
+        (m) => String(m.id) === String(maintenanceId),
       );
       if (match) return match;
     }
     if (value && value !== "-") {
       const qVal = value.trim().toLowerCase();
       return (
-        customerList.find((c) => {
-          const comp = String(c.company || "").toLowerCase();
-          const nm = String(c.nama || c.name || "").toLowerCase();
+        maintenanceList.find((m) => {
+          const opt =
+            `MTN ${m.nomor || m.number || m.id} - ${m.judul || m.title || "Maintenance"}`.toLowerCase();
+          const no = String(m.nomor || m.number || "").toLowerCase();
           return (
-            comp === qVal ||
-            nm === qVal ||
-            `${nm} (${comp})`.toLowerCase() === qVal ||
-            String(c.id) === qVal
+            opt === qVal ||
+            no === qVal ||
+            String(m.id) === qVal ||
+            opt.includes(qVal)
           );
         }) || null
       );
     }
     return null;
-  }, [customerList, customerId, value]);
+  }, [maintenanceList, maintenanceId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedCustomer) {
-      const name =
-        selectedCustomer.company ||
-        selectedCustomer.nama ||
-        selectedCustomer.name;
-      const pic = selectedCustomer.kontak || selectedCustomer.pic;
-      return pic && pic !== "-" ? `${name} (${pic})` : name;
+    if (selectedMaintenance) {
+      return `MTN ${selectedMaintenance.nomor || selectedMaintenance.number || selectedMaintenance.id} - ${selectedMaintenance.judul || selectedMaintenance.title || "Maintenance"}`;
     }
     return value && value !== "-" ? value : "";
-  }, [selectedCustomer, value]);
+  }, [selectedMaintenance, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return customerList;
+    if (!q.trim()) return maintenanceList;
     const term = q.trim().toLowerCase();
-    return customerList.filter((c) => {
-      const comp = String(c.company || "").toLowerCase();
-      const nm = String(c.nama || c.name || "").toLowerCase();
-      const pic = String(c.kontak || c.pic || "").toLowerCase();
-      const kota = String(c.kota || c.city || "").toLowerCase();
-      const telp = String(c.telepon || c.phone || "").toLowerCase();
-      const email = String(c.email || "").toLowerCase();
+    return maintenanceList.filter((m) => {
+      const no = String(m.nomor || m.number || "").toLowerCase();
+      const judul = String(m.judul || m.title || "").toLowerCase();
+      const klien = String(m.klien || m.customer || "").toLowerCase();
+      const tipe = String(m.tipe || m.maintenanceType || "").toLowerCase();
       return (
-        comp.includes(term) ||
-        nm.includes(term) ||
-        pic.includes(term) ||
-        kota.includes(term) ||
-        telp.includes(term) ||
-        email.includes(term)
+        no.includes(term) ||
+        judul.includes(term) ||
+        klien.includes(term) ||
+        tipe.includes(term)
       );
     });
-  }, [customerList, q]);
+  }, [maintenanceList, q]);
 
-  function handleSelect(customer: Row | null) {
-    onChange(customer);
+  function handleSelect(item: Row | null) {
+    onChange(item);
     setOpen(false);
   }
 
@@ -158,7 +117,7 @@ export function CustomerSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <Building2
+          <Wrench
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -179,30 +138,15 @@ export function CustomerSelect({
         <DialogContent
           className="w-[96vw] max-w-5xl lg:max-w-6xl max-h-[90vh] p-4 sm:p-6"
           style={Platform.select({
-            web: { width: "min(96vw, 1100px)", maxWidth: "1100px" } as any,
+            web: { width: "min(96vw, 1150px)", maxWidth: "1150px" } as any,
           })}
         >
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <Building2 size={20} color={colors.primary} />
-                <DialogTitle>Pilih Customer / Pelanggan</DialogTitle>
+                <Wrench size={20} color={colors.primary} />
+                <DialogTitle>Pilih Laporan Maintenance</DialogTitle>
               </View>
-              {onAddNew ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onPress={() => {
-                    setOpen(false);
-                    onAddNew();
-                  }}
-                  className="flex-row items-center gap-1.5"
-                >
-                  <Text className="text-xs font-semibold text-primary">
-                    {addNewLabel}
-                  </Text>
-                </Button>
-              ) : null}
             </View>
           </DialogHeader>
 
@@ -212,7 +156,7 @@ export function CustomerSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nama customer, PIC/kontak, kota, email, telepon..."
+              placeholder="Cari nomor maintenance, judul, klien, atau jenis..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -225,19 +169,19 @@ export function CustomerSelect({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ minWidth: "100%" }}
             >
-              <View className="flex-1 min-w-[700px]">
+              <View className="flex-1 min-w-[760px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
-                    Nama Pelanggan / Perusahaan
+                    Nomor & Judul Maintenance
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[150px] px-2">
-                    Kontak / PIC
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
+                    Klien / Lokasi
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">
-                    Kota / Wilayah
+                    Jenis & Tanggal
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[100px] px-2 text-center">
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[120px] px-2 text-center">
                     Status
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
@@ -256,28 +200,25 @@ export function CustomerSelect({
                       className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
                     >
                       <Text className="text-xs font-medium text-muted-foreground">
-                        - Tanpa Customer / Kosongkan -
+                        - Tanpa Maintenance (Kosongkan) -
                       </Text>
-                      {!customerId && !value && (
+                      {!maintenanceId && !value && (
                         <Check size={16} color={colors.primary} />
                       )}
                     </Pressable>
                   )}
 
-                  {filteredList.map((c) => {
-                    const isSelected = selectedCustomer?.id === c.id;
-                    const name =
-                      c.company || c.nama || c.name || `Customer #${c.id}`;
-                    const pic = c.kontak || c.pic || "-";
-                    const kota = c.kota || c.city || "-";
-                    const telp = c.telepon || c.phone || "";
-                    const email = c.email || "";
-                    const status = c.status || "Aktif";
+                  {filteredList.map((m) => {
+                    const isSelected = selectedMaintenance?.id === m.id;
+                    const no = m.nomor || m.number || `MTN #${m.id}`;
+                    const judul = m.judul || m.title || "Laporan Maintenance";
+                    const klien = m.klien || m.customer || "-";
+                    const tgl = m.tanggal || m.startDate || m.createdAt || "";
 
                     return (
                       <Pressable
-                        key={c.id}
-                        onPress={() => handleSelect(c)}
+                        key={m.id}
+                        onPress={() => handleSelect(m)}
                         className={cn(
                           "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
@@ -286,33 +227,53 @@ export function CustomerSelect({
                         <View className="w-1/3 min-w-[220px]">
                           <Text
                             className={cn(
-                              "text-xs font-bold text-foreground",
+                              "text-xs font-bold font-mono text-foreground",
                               isSelected && "text-primary",
                             )}
                           >
-                            {name}
+                            {no}
                           </Text>
-                          {telp || email ? (
+                          <Text
+                            className="text-[11px] text-muted-foreground mt-0.5"
+                            numberOfLines={2}
+                          >
+                            {judul}
+                          </Text>
+                        </View>
+
+                        <View className="w-1/4 min-w-[180px] px-2">
+                          <Text
+                            className="text-xs font-semibold text-foreground"
+                            numberOfLines={1}
+                          >
+                            {klien}
+                          </Text>
+                          {m.lokasi ? (
+                            <View className="flex-row items-center gap-1 mt-0.5">
+                              <MapPin size={10} color={colors.muted} />
+                              <Text
+                                className="text-[11px] text-muted-foreground"
+                                numberOfLines={1}
+                              >
+                                {m.lokasi}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        <View className="w-36 px-2">
+                          <Text className="text-xs text-foreground font-medium">
+                            {m.tipe || m.maintenanceType || "Preventive"}
+                          </Text>
+                          {tgl ? (
                             <Text className="text-[11px] text-muted-foreground mt-0.5">
-                              {[telp, email].filter(Boolean).join(" · ")}
+                              {formatDate(tgl)}
                             </Text>
                           ) : null}
                         </View>
 
-                        <View className="w-1/4 min-w-[150px] px-2">
-                          <Text className="text-xs font-semibold text-foreground">
-                            {pic}
-                          </Text>
-                        </View>
-
-                        <View className="w-36 px-2">
-                          <Text className="text-xs text-foreground">
-                            {kota}
-                          </Text>
-                        </View>
-
-                        <View className="flex-1 min-w-[100px] items-center px-2">
-                          <StatusBadge status={status} />
+                        <View className="flex-1 min-w-[120px] px-2 items-center">
+                          <StatusBadge status={m.status || "Scheduled"} />
                         </View>
 
                         <View className="w-20 items-center justify-center">
@@ -339,7 +300,7 @@ export function CustomerSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data customer yang cocok dengan &quot;{q}
+                        Tidak ada data maintenance yang cocok dengan &quot;{q}
                         &quot;
                       </Text>
                     </View>
@@ -353,7 +314,3 @@ export function CustomerSelect({
     </>
   );
 }
-
-// ==========================================
-// 13. SUPPLIER PO (PURCHASE ORDER) SELECT
-// ==========================================

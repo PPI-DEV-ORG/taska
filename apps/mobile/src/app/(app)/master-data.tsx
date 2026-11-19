@@ -2,7 +2,7 @@ import * as React from "react";
 import { View } from "react-native";
 import { Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/taska/dialogs";
+import { ConfirmDialog } from "@/components/akuntra/dialogs";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import type { MasterKey, DeleteTarget } from "@/modules/master-data/types";

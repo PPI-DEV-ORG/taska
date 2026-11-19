@@ -22,9 +22,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Panel, FormField } from "@/components/taska/basics";
-import { Stepper } from "@/components/taska/stepper";
-import { FlowTracker } from "@/components/taska/flow-tracker";
+import { PageHeader, Panel, FormField } from "@/components/akuntra/basics";
+import { Stepper } from "@/components/akuntra/stepper";
+import { FlowTracker } from "@/components/akuntra/flow-tracker";
 import { evaluatePurchase, purchaseKind } from "@/lib/purchase-flow";
 import {
   SearchableSelect,
@@ -37,8 +37,8 @@ import {
   cleanSupplierName,
   ProjectSelect,
   ProductSelect,
-} from "@/components/taska/dialogs";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+} from "@/components/akuntra/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
 import type { Row } from "@/constants/modules";
 import { rupiah } from "@/lib/format";

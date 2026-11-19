@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useLocalSearchParams } from "expo-router";
 import { FixedAssetsScreen } from "@/modules/fixed-assets/fixed-assets-screen";
-import { EmptyState } from "@/components/taska/basics";
+import { EmptyState } from "@/components/akuntra/basics";
 import { hasUserPermission } from "@/constants/modules";
 import { useApp } from "@/store/app-store";
 

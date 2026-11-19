@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { Check, CheckCircle2, Clock, FileText, Package, Truck, Receipt } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/taska/basics";
+import { Panel } from "@/components/akuntra/basics";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import type { Row } from "@/constants/modules";

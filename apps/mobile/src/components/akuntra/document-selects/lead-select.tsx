@@ -2,11 +2,10 @@ import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
 import {
   Search,
+  Users,
   ChevronDown,
   Check,
-  Calendar,
-  Clock,
-  X,
+  Building2,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,88 +16,84 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import type { Row } from "@/constants/modules";
-import { formatDate } from "./format-date";
 
-export interface DraftReceivingSelectProps {
+export interface LeadSelectProps {
   value?: string;
-  receivingId?: string | number | null;
-  receivings?: Row[];
-  onChange: (receiving: Row | null) => void;
+  leadId?: string | number | null;
+  onChange: (lead: Row | null) => void;
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
 }
 
-export function DraftReceivingSelect({
+export function LeadSelect({
   value,
-  receivingId,
-  receivings,
+  leadId,
   onChange,
-  placeholder = "Pilih data penerimaan yang sedang menunggu...",
+  placeholder = "Cari & pilih prospek...",
   error,
-  allowClear = true,
-}: DraftReceivingSelectProps) {
+  allowClear = false,
+}: LeadSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
-  const recList: Row[] = React.useMemo(() => {
-    return receivings ?? (data.receiving as Row[]) ?? [];
-  }, [receivings, data.receiving]);
+  const leads: Row[] = React.useMemo(() => data.leads ?? [], [data.leads]);
 
-  const selectedRec = React.useMemo(() => {
-    if (receivingId) {
-      const match = recList.find((r) => String(r.id) === String(receivingId));
+  const selectedLead = React.useMemo(() => {
+    if (leadId) {
+      const match = leads.find((l) => String(l.id) === String(leadId));
       if (match) return match;
     }
-    if (value) {
-      const sel = value.trim().toLowerCase();
+    if (value && value !== "-") {
+      const selName = (value.split(" · ")[0] ?? value.split(" - ")[0] ?? value)
+        .trim()
+        .toLowerCase();
       return (
-        recList.find((r) => {
-          const no = String(r.nomor || r.number || `#${r.id}`).toLowerCase();
-          const supp = String(r.supplier || r.supplierName || "").toLowerCase();
-          return no === sel || `${no} — ${supp}`.toLowerCase().includes(sel);
+        leads.find((l) => {
+          const nama = String(l.nama || "").toLowerCase();
+          return (
+            nama === selName ||
+            `${nama} - ${l.perusahaan || l.customer || "-"}`.toLowerCase() ===
+              value.toLowerCase()
+          );
         }) || null
       );
     }
     return null;
-  }, [recList, receivingId, value]);
+  }, [leads, leadId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedRec) {
-      const no =
-        selectedRec.nomor || selectedRec.number || `#${selectedRec.id}`;
-      return `${no} — ${selectedRec.supplier || selectedRec.supplierName || "Supplier"}`;
+    if (selectedLead) {
+      return `${selectedLead.nama} - ${selectedLead.perusahaan || selectedLead.customer || "-"}`;
     }
-    return value || "";
-  }, [selectedRec, value]);
+    return value && value !== "-" ? value : "";
+  }, [selectedLead, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return recList;
+    if (!q.trim()) return leads;
     const term = q.trim().toLowerCase();
-    return recList.filter((r) => {
-      const no = String(r.nomor || r.number || `#${r.id}`).toLowerCase();
-      const supp = String(r.supplier || r.supplierName || "").toLowerCase();
-      const refReq = String(r.requestNumber || r.requestId || "").toLowerCase();
-      const refPo = String(r.po || r.supplierPoId || "").toLowerCase();
-      const it = String(r.item || "").toLowerCase();
+    return leads.filter((l) => {
+      const nama = String(l.nama || "").toLowerCase();
+      const pers = String(l.perusahaan || l.customer || "").toLowerCase();
+      const need = String(l.kebutuhan || l.need || "").toLowerCase();
+      const telp = String(l.telepon || l.phone || "").toLowerCase();
       return (
-        no.includes(term) ||
-        supp.includes(term) ||
-        refReq.includes(term) ||
-        refPo.includes(term) ||
-        it.includes(term)
+        nama.includes(term) ||
+        pers.includes(term) ||
+        need.includes(term) ||
+        telp.includes(term)
       );
     });
-  }, [recList, q]);
+  }, [leads, q]);
 
-  function handleSelect(r: Row | null) {
-    onChange(r);
+  function handleSelect(lead: Row | null) {
+    onChange(lead);
     setOpen(false);
   }
 
@@ -115,7 +110,7 @@ export function DraftReceivingSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <Clock
+          <Users
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -142,10 +137,8 @@ export function DraftReceivingSelect({
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <Clock size={20} color={colors.primary} />
-                <DialogTitle>
-                  Pilih Data Penerimaan yang Sedang Menunggu
-                </DialogTitle>
+                <Users size={20} color={colors.primary} />
+                <DialogTitle>Pilih Prospek</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -156,15 +149,10 @@ export function DraftReceivingSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari nomor penerimaan, supplier, ref request/PO, atau barang..."
+              placeholder="Cari berdasarkan nama prospek, perusahaan, telepon, atau kebutuhan..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
-            {q ? (
-              <Pressable onPress={() => setQ("")} className="p-1">
-                <X size={16} color={colors.muted} />
-              </Pressable>
-            ) : null}
           </View>
 
           {/* Table */}
@@ -178,16 +166,16 @@ export function DraftReceivingSelect({
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
-                    Nomor Penerimaan & Tanggal
+                    Nama Prospek & Kontak
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
-                    Supplier & Ref Dokumen
+                    Perusahaan / Pelanggan
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[200px] px-2">
-                    Ringkasan Barang
+                    Kebutuhan / Prospek
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-28 px-2 text-center">
-                    Status
+                    Tahapan / Status
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
                     Aksi
@@ -205,98 +193,97 @@ export function DraftReceivingSelect({
                       className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
                     >
                       <Text className="text-xs font-medium text-muted-foreground">
-                        - Kosongkan Pilihan Draft -
+                        - Tanpa Lead / Kosongkan -
                       </Text>
-                      {!receivingId && !value && (
+                      {!leadId && !value && (
                         <Check size={16} color={colors.primary} />
                       )}
                     </Pressable>
                   )}
-
-                  {filteredList.map((rec) => {
-                    const isSelected =
-                      (selectedRec &&
-                        String(selectedRec.id) === String(rec.id)) ||
-                      (value &&
-                        String(rec.nomor || "").toLowerCase() ===
-                          value.toLowerCase());
-                    const no = rec.nomor || rec.number || `#${rec.id}`;
-                    const supp = rec.supplier || rec.supplierName || "-";
-                    const refDoc =
-                      [
-                        rec.requestNumber ? `PR: ${rec.requestNumber}` : null,
-                        rec.po ? `PO: ${rec.po}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "-";
-                    const tgl = rec.tanggal || rec.date;
-                    const st = rec.status || "Menunggu";
+                  {filteredList.map((lead) => {
+                    const isSelected = selectedLead?.id === lead.id;
+                    const telp = lead.telepon || lead.phone || "";
+                    const email = lead.email || "";
+                    const pers = lead.perusahaan || lead.customer || "-";
+                    const need = lead.kebutuhan || lead.need || "-";
 
                     return (
                       <Pressable
-                        key={rec.id}
-                        onPress={() => handleSelect(rec)}
+                        key={lead.id}
+                        onPress={() => handleSelect(lead)}
                         className={cn(
                           "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        {/* Kolom 1: Nomor & Tanggal */}
+                        {/* Kolom 1: Nama Lead & Kontak */}
                         <View className="w-1/4 min-w-[180px]">
                           <Text
                             className={cn(
-                              "text-xs font-bold font-mono text-foreground",
+                              "text-xs font-bold text-foreground",
                               isSelected && "text-primary",
                             )}
                           >
-                            {no}
+                            {lead.nama || `Lead #${lead.id}`}
                           </Text>
-                          {tgl ? (
-                            <View className="flex-row items-center gap-1 mt-0.5">
-                              <Calendar size={10} color={colors.muted} />
-                              <Text className="text-[11px] text-muted-foreground">
-                                {formatDate(tgl)}
-                              </Text>
-                            </View>
+                          {telp ? (
+                            <Text className="text-[11px] text-muted-foreground mt-0.5">
+                              {telp}
+                            </Text>
+                          ) : null}
+                          {email ? (
+                            <Text
+                              className="text-[10px] text-muted-foreground"
+                              numberOfLines={1}
+                            >
+                              {email}
+                            </Text>
                           ) : null}
                         </View>
 
-                        {/* Kolom 2: Supplier & Ref */}
+                        {/* Kolom 2: Perusahaan / Customer */}
                         <View className="w-1/4 min-w-[180px] px-2">
-                          <Text
-                            className="text-xs font-semibold text-foreground"
-                            numberOfLines={1}
-                          >
-                            {supp}
-                          </Text>
-                          <Text
-                            className="text-[11px] text-muted-foreground mt-0.5"
-                            numberOfLines={1}
-                          >
-                            {refDoc}
-                          </Text>
+                          <View className="flex-row items-center gap-1.5">
+                            <Building2 size={12} color={colors.muted} />
+                            <Text
+                              className="text-xs font-semibold text-foreground"
+                              numberOfLines={1}
+                            >
+                              {pers}
+                            </Text>
+                          </View>
+                          {lead.kota ? (
+                            <Text className="text-[11px] text-muted-foreground mt-0.5">
+                              {lead.kota}
+                            </Text>
+                          ) : null}
                         </View>
 
-                        {/* Kolom 3: Barang */}
+                        {/* Kolom 3: Kebutuhan / Prospek */}
                         <View className="flex-1 min-w-[200px] px-2">
                           <Text
                             className="text-xs text-foreground"
                             numberOfLines={2}
                           >
-                            {rec.item || "-"}
+                            {need}
                           </Text>
                         </View>
 
-                        {/* Kolom 4: Status */}
+                        {/* Kolom 4: Tahapan / Status */}
                         <View className="w-28 px-2 items-center">
-                          <StatusBadge status={st} />
+                          <StatusBadge
+                            status={lead.status || lead.stage || "Baru"}
+                          />
                         </View>
 
                         {/* Kolom 5: Aksi */}
-                        <View className="w-20 items-center justify-center">
+                        <View className="w-20 items-center">
                           {isSelected ? (
-                            <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
-                              <Check size={14} color={colors.primary} />
+                            <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
+                              <Check size={12} color={colors.primary} />
+                              <Text className="text-[11px] font-bold text-primary">
+                                Dipilih
+                              </Text>
                             </View>
                           ) : (
                             <Button
@@ -317,7 +304,7 @@ export function DraftReceivingSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data penerimaan yang cocok dengan &quot;{q}
+                        Tidak ada lead / prospek yang cocok dengan &quot;{q}
                         &quot;
                       </Text>
                     </View>
@@ -333,5 +320,5 @@ export function DraftReceivingSelect({
 }
 
 // ==========================================
-// 10. MAINTENANCE SELECT
+// 4. CONTINUABLE INVOICE (LANJUTKAN TERMIN / DP) SELECT
 // ==========================================

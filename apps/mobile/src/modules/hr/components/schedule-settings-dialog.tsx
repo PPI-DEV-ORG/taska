@@ -1,7 +1,7 @@
 import React from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
-import { FormField } from "@/components/taska/basics";
+import { FormField } from "@/components/akuntra/basics";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {

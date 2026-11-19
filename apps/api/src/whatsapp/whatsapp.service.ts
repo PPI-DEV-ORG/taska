@@ -38,8 +38,9 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     this.authDir = path.resolve(process.cwd(), "storage", "wa-auth");
   }
 
-  async onModuleInit() {
-    await this.initSocket();
+  onModuleInit() {
+    // Jangan blokir bootstrap HTTP server (app.listen) saat inisialisasi socket WhatsApp
+    void this.initSocket();
   }
 
   async onModuleDestroy() {
@@ -66,9 +67,11 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     try {
       await fs.mkdir(this.authDir, { recursive: true });
       const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
-      const { version } = await fetchLatestBaileysVersion().catch(() => ({
-        version: [2, 3000, 1015901307] as [number, number, number],
-      }));
+      const fallbackVersion = { version: [2, 3000, 1015901307] as [number, number, number] };
+      const { version } = await Promise.race([
+        fetchLatestBaileysVersion().catch(() => fallbackVersion),
+        new Promise<typeof fallbackVersion>((resolve) => setTimeout(() => resolve(fallbackVersion), 5_000)),
+      ]);
 
       this.status = "CONNECTING";
       this.logger.log(`Memulai WhatsApp Baileys socket (versi: ${version.join(".")})...`);

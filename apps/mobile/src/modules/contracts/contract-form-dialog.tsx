@@ -24,10 +24,10 @@ import {
   SupplierPoSelect,
   SupplierSelect,
   UserSelect,
-} from "@/components/taska/dialogs";
-import { InvoiceSelect } from "@/components/taska/document-select";
-import { FileUploader } from "@/components/taska/file-uploader";
-import { FormField } from "@/components/taska/basics";
+} from "@/components/akuntra/dialogs";
+import { InvoiceSelect } from "@/components/akuntra/document-select";
+import { FileUploader } from "@/components/akuntra/file-uploader";
+import { FormField } from "@/components/akuntra/basics";
 import { SubscriptionProviderSelect } from "@/modules/subscriptions/subscription-provider-select";
 import type { SubProvider } from "@/modules/subscriptions/types";
 import { colors } from "@/tokens";
@@ -216,7 +216,7 @@ function FormContent({
   const [initialDocumentSignedBySecond, setInitialDocumentSignedBySecond] = React.useState("");
   const [initialDocumentUrl, setInitialDocumentUrl] = React.useState("");
 
-  // Linked ERP module using existing Taska selects
+  // Linked ERP module using existing Akuntra selects
   const [linkedModule, setLinkedModule] = React.useState("");
   const [linkedEntityId, setLinkedEntityId] = React.useState<number | null>(null);
   const [linkedRefCode, setLinkedRefCode] = React.useState("");
@@ -588,7 +588,7 @@ function FormContent({
               </View>
             </View>
 
-            {/* 2. PIHAK TERKAIT (COUNTERPARTY — KOMPONEN SELECT BAWAAN TASKA) */}
+            {/* 2. PIHAK TERKAIT (COUNTERPARTY — KOMPONEN SELECT BAWAAN AKUNTRA) */}
             <View className="gap-3.5 rounded-xl border border-border/70 bg-muted/20 p-4">
               <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 2. Pihak Terkait (Counterparty — Referensi Master Data ERP)

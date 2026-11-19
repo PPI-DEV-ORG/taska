@@ -4,8 +4,8 @@ import { CheckCircle2, Search, ChevronLeft, ChevronRight } from "lucide-react-na
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/taska/basics";
-import { DatePicker } from "@/components/taska/dialogs";
+import { Panel } from "@/components/akuntra/basics";
+import { DatePicker } from "@/components/akuntra/dialogs";
 import { rupiah } from "@/lib/format";
 import { colors } from "@/tokens";
 import { Pill, ExportBar } from "./report-ui-helpers";

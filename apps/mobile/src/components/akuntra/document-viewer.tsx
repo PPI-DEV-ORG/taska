@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { apiBase } from "@/services/api";
 import { colors } from "@/tokens";
 import type { Row } from "@/constants/modules";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { FileUploader } from "@/components/akuntra/file-uploader";
 
 function formatBytes(bytes?: number | null) {
   if (!bytes || bytes <= 0) return "";

@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FormField } from "@/components/taska/basics";
+import { FormField } from "@/components/akuntra/basics";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { AccountSelect, useCashAccounts } from "@/modules/cash-advance/cash-advance-dialogs";

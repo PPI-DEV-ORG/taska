@@ -26,8 +26,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SearchableSelect } from "@/components/taska/dialogs";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { colors } from "@/tokens";
 import { api, apiBase } from "@/services/api";
 import { hasUserPermission } from "@/constants/modules";

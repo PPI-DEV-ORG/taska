@@ -5,8 +5,8 @@ import { Check, ChevronDown, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } from "@/components/taska/basics";
-import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands, QuickAddCustomerDialog, QuickAddSupplierDialog, QuickAddDealTypeDialog } from "@/components/taska/dialogs";
+import { EmptyState, FormField, InfoGrid, PageHeader, Panel, Timeline, Cell } from "@/components/akuntra/basics";
+import { ApprovalBar, ConfirmDialog, DatePicker, SearchableSelect, MultiSelect, getDynamicOptions, formatThousands, QuickAddCustomerDialog, QuickAddSupplierDialog, QuickAddDealTypeDialog } from "@/components/akuntra/dialogs";
 import {
   CustomerSelect,
   LeadSelect,
@@ -17,10 +17,10 @@ import {
   PocSelect,
   VisitSelect,
   MaintenanceSelect,
-} from "@/components/taska/document-select";
-import { SupplierSelect } from "@/components/taska/supplier-select";
-import { DocumentViewerList } from "@/components/taska/document-viewer";
-import { StatusBadge } from "@/components/taska/status-badge";
+} from "@/components/akuntra/document-select";
+import { SupplierSelect } from "@/components/akuntra/supplier-select";
+import { DocumentViewerList } from "@/components/akuntra/document-viewer";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { ModuleExtras } from "@/screens/module-extras";
 import { getKasBankAccounts } from "@/lib/accounting";
 import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
@@ -43,7 +43,7 @@ import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { PATHS, adaptRow, toEnum } from "@/services/adapters";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { rupiah } from "@/lib/format";

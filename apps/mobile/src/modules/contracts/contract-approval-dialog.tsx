@@ -10,8 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SearchableSelect } from "@/components/taska/dialogs";
-import { FormField } from "@/components/taska/basics";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
+import { FormField } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";

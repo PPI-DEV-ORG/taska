@@ -4,9 +4,9 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus } from "lucid
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
-import { Chip, PageHeader, Panel } from "@/components/taska/basics";
-import { FilterBar } from "@/components/taska/data-table";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { Chip, PageHeader, Panel } from "@/components/akuntra/basics";
+import { FilterBar } from "@/components/akuntra/data-table";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
 import { useApp } from "@/store/app-store";
 import { api, queryString } from "@/services/api";
 import { colors } from "@/tokens";

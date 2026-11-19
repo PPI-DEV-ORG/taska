@@ -22,7 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
-import { FormField } from "@/components/taska/basics";
+import { FormField } from "@/components/akuntra/basics";
 import {
   CustomerSelect,
   SearchableSelect,
@@ -32,8 +32,8 @@ import {
   ProductSelect,
   QuotationSelect,
   ProjectSelect,
-} from "@/components/taska/dialogs";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+} from "@/components/akuntra/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";

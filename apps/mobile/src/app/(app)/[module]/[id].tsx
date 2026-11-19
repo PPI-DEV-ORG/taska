@@ -2,7 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import { ModuleDetail } from "@/screens/module-detail";
 import { MODULES, hasUserPermission } from "@/constants/modules";
 import { useApp } from "@/store/app-store";
-import { EmptyState } from "@/components/taska/basics";
+import { EmptyState } from "@/components/akuntra/basics";
 
 export default function ModuleDetailRoute() {
   const { module, id } = useLocalSearchParams<{ module: string; id: string }>();

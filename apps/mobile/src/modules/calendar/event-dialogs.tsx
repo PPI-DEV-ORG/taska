@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FormField, Panel, Timeline } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
-import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog, SupplierSelect, TimePicker } from "@/components/taska/dialogs";
+import { FormField, Panel, Timeline } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
+import { ConfirmDialog, DatePicker, MultiSelect, SearchableSelect, QuickAddCustomerDialog, QuickAddSupplierDialog, SupplierSelect, TimePicker } from "@/components/akuntra/dialogs";
 import {
   CustomerSelect,
   LeadSelect,
@@ -17,7 +17,7 @@ import {
   InvoiceSelect,
   UserSelect,
   UserMultiSelect,
-} from "@/components/taska/document-select";
+} from "@/components/akuntra/document-select";
 import { hasUserPermission } from "@/constants/modules";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";

@@ -16,8 +16,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { FormField } from "@/components/taska/basics";
-import { SearchableSelect, ProductSelect } from "@/components/taska/dialogs";
+import { FormField } from "@/components/akuntra/basics";
+import { SearchableSelect, ProductSelect } from "@/components/akuntra/dialogs";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";

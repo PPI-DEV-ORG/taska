@@ -2,11 +2,12 @@ import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
 import {
   Search,
-  FileText,
+  Receipt,
   ChevronDown,
   Check,
   Calendar,
-  X,
+  Tag,
+  Layers,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,89 +18,86 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
-import { useApp } from "@/store/app-store";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
+import { rupiah } from "@/lib/format";
 import type { Row } from "@/constants/modules";
 import { formatDate } from "./format-date";
 
-export interface PurchaseRequestSelectProps {
-  value?: string;
-  requestId?: string | number | null;
-  requests?: Row[];
-  onChange: (request: Row | null) => void;
-  placeholder?: string;
-  error?: boolean;
-  allowClear?: boolean;
+export interface ContinuableInvoiceOptionItem {
+  id: string;
+  label: string;
+  nomor: string;
+  customer: string;
+  raw: Row;
+  chain: any;
 }
 
-export function PurchaseRequestSelect({
+export interface ContinuableInvoiceSelectProps {
+  value?: string;
+  invoiceId?: string | number | null;
+  options: ContinuableInvoiceOptionItem[];
+  onChange: (selectedId: string, invoice: Row) => void;
+  placeholder?: string;
+  error?: boolean;
+}
+
+export function ContinuableInvoiceSelect({
   value,
-  requestId,
-  requests,
+  invoiceId,
+  options,
   onChange,
-  placeholder = "Pilih purchase request...",
+  placeholder = "Ketik atau pilih faktur DP / termin acuan...",
   error,
-  allowClear = true,
-}: PurchaseRequestSelectProps) {
-  const { data } = useApp();
+}: ContinuableInvoiceSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
-  const purchaseRequestsData = data["purchase-requests"];
-  const reqList: Row[] = React.useMemo(() => {
-    return requests ?? (purchaseRequestsData as Row[]) ?? [];
-  }, [requests, purchaseRequestsData]);
-
-  const selectedReq = React.useMemo(() => {
-    if (requestId) {
-      const match = reqList.find((r) => String(r.id) === String(requestId));
+  const selectedOption = React.useMemo(() => {
+    if (invoiceId) {
+      const match = options.find((o) => String(o.id) === String(invoiceId));
       if (match) return match;
     }
     if (value) {
-      const sel = value.trim().toLowerCase();
       return (
-        reqList.find((r) => {
-          const no = String(r.nomor || r.number || `#${r.id}`).toLowerCase();
-          const purp = String(r.purpose || r.tujuan || "").toLowerCase();
-          return no === sel || `${no} — ${purp}`.toLowerCase().includes(sel);
-        }) || null
+        options.find(
+          (o) =>
+            o.label === value || o.nomor === value || String(o.id) === value,
+        ) || null
       );
     }
     return null;
-  }, [reqList, requestId, value]);
+  }, [options, invoiceId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedReq) {
-      const no =
-        selectedReq.nomor || selectedReq.number || `#${selectedReq.id}`;
-      return `${no} — ${selectedReq.purpose || selectedReq.tujuan || selectedReq.supplier || "Request"}`;
+    if (selectedOption) {
+      return selectedOption.label;
     }
     return value || "";
-  }, [selectedReq, value]);
+  }, [selectedOption, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return reqList;
+    if (!q.trim()) return options;
     const term = q.trim().toLowerCase();
-    return reqList.filter((r) => {
-      const no = String(r.nomor || r.number || `#${r.id}`).toLowerCase();
-      const purp = String(r.purpose || r.tujuan || "").toLowerCase();
-      const supp = String(r.supplier || "").toLowerCase();
-      const proj = String(r.project || "").toLowerCase();
-      const it = String(r.item || "").toLowerCase();
+    return options.filter((o) => {
+      const no = String(o.nomor || "").toLowerCase();
+      const cust = String(o.customer || "").toLowerCase();
+      const po = String(o.raw.po || o.raw.nomorSo || "").toLowerCase();
+      const quo = String(o.raw.quotation || "").toLowerCase();
+      const label = String(o.label || "").toLowerCase();
       return (
         no.includes(term) ||
-        purp.includes(term) ||
-        supp.includes(term) ||
-        proj.includes(term) ||
-        it.includes(term)
+        cust.includes(term) ||
+        po.includes(term) ||
+        quo.includes(term) ||
+        label.includes(term)
       );
     });
-  }, [reqList, q]);
+  }, [options, q]);
 
-  function handleSelect(r: Row | null) {
-    onChange(r);
+  function handleSelect(opt: ContinuableInvoiceOptionItem) {
+    onChange(opt.id, opt.raw);
     setOpen(false);
   }
 
@@ -116,7 +114,7 @@ export function PurchaseRequestSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <FileText
+          <Receipt
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -143,8 +141,8 @@ export function PurchaseRequestSelect({
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <FileText size={20} color={colors.primary} />
-                <DialogTitle>Pilih Purchase Request (PR)</DialogTitle>
+                <Layers size={20} color={colors.primary} />
+                <DialogTitle>Pilih Faktur DP / Termin Acuan</DialogTitle>
               </View>
             </View>
           </DialogHeader>
@@ -155,15 +153,10 @@ export function PurchaseRequestSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari nomor PR, keperluan, supplier, atau project..."
+              placeholder="Cari berdasarkan nomor faktur, pelanggan, PO/SO, atau penawaran..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
-            {q ? (
-              <Pressable onPress={() => setQ("")} className="p-1">
-                <X size={16} color={colors.muted} />
-              </Pressable>
-            ) : null}
           </View>
 
           {/* Table */}
@@ -177,16 +170,16 @@ export function PurchaseRequestSelect({
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
-                    Nomor PR & Tanggal
+                    Nomor Faktur & Tanggal
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">
-                    Keperluan & Barang
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
+                    Pelanggan & Dokumen Asal
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-40 px-2">
-                    Supplier / Proyek
+                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">
+                    Total Nilai Tagihan
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[110px] px-2 text-center">
-                    Status
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[160px] px-2 text-center">
+                    Status & Sisa Kontrak
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
                     Aksi
@@ -198,43 +191,25 @@ export function PurchaseRequestSelect({
                   className="max-h-[50vh]"
                   contentContainerClassName="divide-y divide-border/40"
                 >
-                  {allowClear && (
-                    <Pressable
-                      onPress={() => handleSelect(null)}
-                      className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
-                    >
-                      <Text className="text-xs font-medium text-muted-foreground">
-                        - Kosongkan Pilihan PR -
-                      </Text>
-                      {!requestId && !value && (
-                        <Check size={16} color={colors.primary} />
-                      )}
-                    </Pressable>
-                  )}
-
-                  {filteredList.map((req) => {
-                    const isSelected =
-                      (selectedReq &&
-                        String(selectedReq.id) === String(req.id)) ||
-                      (value &&
-                        String(req.nomor || "").toLowerCase() ===
-                          value.toLowerCase());
-                    const no = req.nomor || req.number || `#${req.id}`;
-                    const purp = req.purpose || req.tujuan || "-";
-                    const suppProj = req.supplier || req.project || "-";
-                    const tgl = req.date || req.tanggal || req.createdAt;
-                    const st = req.status || "Draft";
+                  {filteredList.map((opt) => {
+                    const isSelected = selectedOption?.id === opt.id;
+                    const inv = opt.raw;
+                    const tgl = inv.tanggal || inv.createdAt || "";
+                    const totalVal = Number(inv.total || inv.nilai || 0);
+                    const paid = Number(inv.paidAmount || inv.totalBayar || 0);
+                    const outstanding = Math.max(0, totalVal - paid);
+                    const remContract = Number(opt.chain?.remainingToBill || 0);
 
                     return (
                       <Pressable
-                        key={req.id}
-                        onPress={() => handleSelect(req)}
+                        key={opt.id}
+                        onPress={() => handleSelect(opt)}
                         className={cn(
                           "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        {/* Kolom 1: Nomor PR & Tanggal */}
+                        {/* Kolom 1: Nomor Invoice & Tanggal */}
                         <View className="w-1/4 min-w-[180px]">
                           <Text
                             className={cn(
@@ -242,7 +217,7 @@ export function PurchaseRequestSelect({
                               isSelected && "text-primary",
                             )}
                           >
-                            {no}
+                            {opt.nomor}
                           </Text>
                           {tgl ? (
                             <View className="flex-row items-center gap-1 mt-0.5">
@@ -252,46 +227,83 @@ export function PurchaseRequestSelect({
                               </Text>
                             </View>
                           ) : null}
+                          <View className="flex-row items-center gap-1 mt-0.5">
+                            <Tag size={10} color={colors.primary} />
+                            <Text className="text-[10px] font-semibold text-primary">
+                              {inv.jenis ||
+                                (String(inv.type || "").toUpperCase() === "DP"
+                                  ? "DP"
+                                  : "Termin")}
+                            </Text>
+                          </View>
                         </View>
 
-                        {/* Kolom 2: Keperluan & Barang */}
-                        <View className="w-1/3 min-w-[220px] px-2">
+                        {/* Kolom 2: Customer & Dokumen Asal */}
+                        <View className="w-1/4 min-w-[180px] px-2">
                           <Text
                             className="text-xs font-semibold text-foreground"
                             numberOfLines={1}
                           >
-                            {purp}
+                            {opt.customer || "-"}
                           </Text>
-                          {req.item ? (
+                          {inv.po ? (
                             <Text
-                              className="text-[11px] text-muted-foreground mt-0.5"
+                              className="text-[10px] text-muted-foreground mt-0.5 font-mono"
                               numberOfLines={1}
                             >
-                              {req.item}
+                              SO: {inv.po}
+                            </Text>
+                          ) : null}
+                          {inv.quotation ? (
+                            <Text
+                              className="text-[10px] text-muted-foreground font-mono"
+                              numberOfLines={1}
+                            >
+                              Quo: {inv.quotation}
                             </Text>
                           ) : null}
                         </View>
 
-                        {/* Kolom 3: Supplier / Proyek */}
-                        <View className="w-40 px-2">
-                          <Text
-                            className="text-xs text-foreground"
-                            numberOfLines={1}
-                          >
-                            {suppProj}
+                        {/* Kolom 3: Total Nilai Tagihan */}
+                        <View className="w-36 items-end px-2">
+                          <Text className="text-xs font-bold text-foreground">
+                            {rupiah(totalVal)}
                           </Text>
+                          {outstanding > 0 ? (
+                            <Text className="text-[10px] text-danger font-medium">
+                              Sisa tagihan: {rupiah(outstanding)}
+                            </Text>
+                          ) : (
+                            <Text className="text-[10px] text-success font-medium">
+                              Lunas
+                            </Text>
+                          )}
                         </View>
 
-                        {/* Kolom 4: Status */}
-                        <View className="flex-1 min-w-[110px] px-2 items-center">
-                          <StatusBadge status={st} />
+                        {/* Kolom 4: Status & Sisa Kontrak */}
+                        <View className="flex-1 min-w-[160px] px-2 items-center">
+                          <StatusBadge status={inv.status || "Aktif"} />
+                          {remContract > 0 ? (
+                            <View className="mt-1 px-2 py-0.5 rounded bg-warning/15 border border-warning/30">
+                              <Text className="text-[10px] font-semibold text-warning">
+                                Sisa Kontrak: {rupiah(remContract)}
+                              </Text>
+                            </View>
+                          ) : (
+                            <Text className="text-[10px] text-muted-foreground mt-0.5">
+                              Kontrak habis
+                            </Text>
+                          )}
                         </View>
 
                         {/* Kolom 5: Aksi */}
-                        <View className="w-20 items-center justify-center">
+                        <View className="w-20 items-center">
                           {isSelected ? (
-                            <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
-                              <Check size={14} color={colors.primary} />
+                            <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
+                              <Check size={12} color={colors.primary} />
+                              <Text className="text-[11px] font-bold text-primary">
+                                Dipilih
+                              </Text>
                             </View>
                           ) : (
                             <Button
@@ -312,8 +324,8 @@ export function PurchaseRequestSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data Purchase Request yang cocok dengan &quot;
-                        {q}&quot;
+                        Tidak ada invoice acuan yang cocok dengan &quot;{q}
+                        &quot;
                       </Text>
                     </View>
                   )}
@@ -328,5 +340,5 @@ export function PurchaseRequestSelect({
 }
 
 // ==========================================
-// 15. DRAFT RECEIVING (PENERIMAAN MENUNGGU) SELECT
+// 4b. INVOICE (FAKTUR PENJUALAN) SELECT
 // ==========================================

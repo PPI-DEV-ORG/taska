@@ -2,7 +2,7 @@ import React from "react";
 import { View, ScrollView, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { RefreshCw, DollarSign } from "lucide-react-native";
-import { DatePicker } from "@/components/taska/dialogs";
+import { DatePicker } from "@/components/akuntra/dialogs";
 import { Button } from "@/components/ui/button";
 import { formatRupiah } from "../types";
 

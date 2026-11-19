@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { Calendar as CalendarIcon, CheckCircle2, ChevronRight, Plus } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { Panel } from "@/components/taska/basics";
+import { Panel } from "@/components/akuntra/basics";
 import { useApp } from "@/store/app-store";
 import { api, queryString } from "@/services/api";
 import { colors } from "@/tokens";

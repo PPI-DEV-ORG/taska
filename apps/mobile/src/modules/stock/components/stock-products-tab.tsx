@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View } from "react-native";
-import { Chip } from "@/components/taska/basics";
-import { DataTable } from "@/components/taska/data-table";
+import { Chip } from "@/components/akuntra/basics";
+import { DataTable } from "@/components/akuntra/data-table";
 import { rupiah } from "@/lib/format";
 import type { DetailTarget } from "../types";
 

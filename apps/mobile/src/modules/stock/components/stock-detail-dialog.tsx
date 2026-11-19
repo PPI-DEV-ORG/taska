@@ -5,7 +5,7 @@ import { Plus, RefreshCw, ChevronDown, ChevronUp } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { adaptRows } from "@/services/adapters";

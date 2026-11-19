@@ -19,13 +19,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { Panel, Cell, FormField } from "@/components/taska/basics";
-import { DatePicker, SearchableSelect } from "@/components/taska/dialogs";
-import { StatusBadge } from "@/components/taska/status-badge";
-import { FileUploader } from "@/components/taska/file-uploader";
+import { Panel, Cell, FormField } from "@/components/akuntra/basics";
+import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
+import { StatusBadge } from "@/components/akuntra/status-badge";
+import { FileUploader } from "@/components/akuntra/file-uploader";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
-import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
-import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
+import { SerialItemPickerModal } from "@/components/akuntra/serial-item-picker";
+import { ItemEditorDialog } from "@/components/akuntra/item-editor-dialog";
 import {
   Dialog,
   DialogContent,

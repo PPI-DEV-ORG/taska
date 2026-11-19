@@ -3,7 +3,7 @@ import type { Notif } from "@/constants/modules";
 import { normalizeNotifHref } from "@/services/adapters";
 import { apiOrigin, getAccess } from "@/services/api";
 
-const CHANNEL_ID = "taska-realtime";
+const CHANNEL_ID = "akuntra-realtime";
 const TITLE = "Akuntra Mini ERP";
 
 let permission: NotificationPermission | null = null;
@@ -318,7 +318,7 @@ export async function showSystemNotification(opts: {
   const title = opts.title ?? (opts.notif ? JENIS_LABEL[opts.notif.jenis] : TITLE);
   const body = opts.body ?? opts.notif?.teks ?? "";
   const href = normalizeNotifHref(opts.href ?? opts.notif?.href ?? "");
-  const tag = opts.tag ?? (opts.notif?.id ? `taska-notif-${opts.notif.id}` : `taska-${Date.now()}`);
+  const tag = opts.tag ?? (opts.notif?.id ? `akuntra-notif-${opts.notif.id}` : `akuntra-${Date.now()}`);
 
   if (Platform.OS === "web") {
     if (opts.notif?.id) markServiceWorkerSeen(opts.notif.id);

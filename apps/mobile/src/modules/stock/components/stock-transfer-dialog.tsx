@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { FormField } from "@/components/taska/basics";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { FormField } from "@/components/akuntra/basics";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
 import { api } from "@/services/api";
 
 interface StockTransferDialogProps {

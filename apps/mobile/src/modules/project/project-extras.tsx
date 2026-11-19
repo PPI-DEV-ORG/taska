@@ -6,21 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Panel, Cell } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { Panel, Cell } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { SupplierInvoiceDetailDialog } from "@/modules/supplier-po/supplier-invoice-dialogs";
 import { RecordClientPoDialog } from "@/modules/project/record-client-po-dialog";
-import { SerialItemPickerModal } from "@/components/taska/serial-item-picker";
+import { SerialItemPickerModal } from "@/components/akuntra/serial-item-picker";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, downloadDocumentationPdf } from "@/services/api";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands, tanggal } from "@/lib/format";
 import { hasUserPermission, type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { Line } from "@/modules/shared/line";
-import { DocumentViewerItem, resolveModuleDocs } from "@/components/taska/document-viewer";
+import { DocumentViewerItem, resolveModuleDocs } from "@/components/akuntra/document-viewer";
 import { adaptRows } from "@/services/adapters";
 
 /**

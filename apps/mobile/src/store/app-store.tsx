@@ -21,7 +21,7 @@ import {
   type RoleDef,
   type CompanyProfile,
 } from "@/constants/modules";
-import { NotifPopupHost, ToastHost, type NotifPopupItem, type ToastItem } from "@/components/taska/toast";
+import { NotifPopupHost, ToastHost, type NotifPopupItem, type ToastItem } from "@/components/akuntra/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens, isNetworkError } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
 import {

@@ -1,12 +1,6 @@
 import * as React from "react";
 import { View, Pressable, ScrollView, Platform } from "react-native";
-import {
-  Search,
-  ChevronDown,
-  Check,
-  Presentation,
-  MapPin,
-} from "lucide-react-native";
+import { Search, ChevronDown, Check, Building2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -16,89 +10,138 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
+import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import type { Row } from "@/constants/modules";
-import { formatDate } from "./format-date";
 
-export interface PocSelectProps {
+export interface CustomerSelectProps {
   value?: string;
-  pocId?: string | number | null;
-  onChange: (poc: Row | null) => void;
+  customerId?: string | number | null;
+  onChange: (customer: Row | null) => void;
   placeholder?: string;
   error?: boolean;
   allowClear?: boolean;
+  onAddNew?: () => void;
+  addNewLabel?: string;
 }
 
-export function PocSelect({
+export function CustomerSelect({
   value,
-  pocId,
+  customerId,
   onChange,
-  placeholder = "Pilih kegiatan POC / Demo...",
+  placeholder = "Cari & pilih customer / pelanggan...",
   error,
   allowClear = true,
-}: PocSelectProps) {
+  onAddNew,
+  addNewLabel = "+ Tambah Customer Baru",
+}: CustomerSelectProps) {
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
+  const [fetchedCustomers, setFetchedCustomers] = React.useState<Row[]>([]);
 
-  const pocList: Row[] = React.useMemo(
-    () => (data as any)["poc-reports"] ?? [],
-    [data],
-  );
+  React.useEffect(() => {
+    let active = true;
+    if (!data.customers || data.customers.length === 0) {
+      api<any>("GET", "/customers")
+        .then((res) => {
+          if (!active) return;
+          const items = Array.isArray(res) ? res : (res?.items ?? []);
+          setFetchedCustomers(
+            items.map((c: any) => ({
+              id: String(c.id),
+              name: c.name ?? "",
+              nama: c.name ?? c.nama ?? c.company ?? "",
+              company: c.company ?? c.name ?? "",
+              kontak: c.pic ?? c.kontak ?? "-",
+              pic: c.pic ?? c.kontak ?? "-",
+              email: c.email ?? "",
+              telepon: c.phone ?? c.telepon ?? "",
+              phone: c.phone ?? c.telepon ?? "",
+              kota: c.city ?? c.kota ?? "-",
+              city: c.city ?? c.kota ?? "-",
+              status:
+                c.status === "AKTIF" || c.status === "Aktif"
+                  ? "Aktif"
+                  : c.status || "Aktif",
+            })),
+          );
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [data.customers]);
 
-  const selectedPoc = React.useMemo(() => {
-    if (pocId) {
-      const match = pocList.find((p) => String(p.id) === String(pocId));
+  const customerList: Row[] = React.useMemo(() => {
+    if (data.customers && data.customers.length > 0) return data.customers;
+    return fetchedCustomers;
+  }, [data.customers, fetchedCustomers]);
+
+  const selectedCustomer = React.useMemo(() => {
+    if (customerId) {
+      const match = customerList.find(
+        (c) => String(c.id) === String(customerId),
+      );
       if (match) return match;
     }
     if (value && value !== "-") {
       const qVal = value.trim().toLowerCase();
       return (
-        pocList.find((p) => {
-          const opt =
-            `POC ${p.nomor || p.number || p.id} - ${p.judul || p.title || "POC"}`.toLowerCase();
-          const no = String(p.nomor || p.number || "").toLowerCase();
+        customerList.find((c) => {
+          const comp = String(c.company || "").toLowerCase();
+          const nm = String(c.nama || c.name || "").toLowerCase();
           return (
-            opt === qVal ||
-            no === qVal ||
-            String(p.id) === qVal ||
-            opt.includes(qVal)
+            comp === qVal ||
+            nm === qVal ||
+            `${nm} (${comp})`.toLowerCase() === qVal ||
+            String(c.id) === qVal
           );
         }) || null
       );
     }
     return null;
-  }, [pocList, pocId, value]);
+  }, [customerList, customerId, value]);
 
   const displayLabel = React.useMemo(() => {
-    if (selectedPoc) {
-      return `POC ${selectedPoc.nomor || selectedPoc.number || selectedPoc.id} - ${selectedPoc.judul || selectedPoc.title || "POC"}`;
+    if (selectedCustomer) {
+      const name =
+        selectedCustomer.company ||
+        selectedCustomer.nama ||
+        selectedCustomer.name;
+      const pic = selectedCustomer.kontak || selectedCustomer.pic;
+      return pic && pic !== "-" ? `${name} (${pic})` : name;
     }
     return value && value !== "-" ? value : "";
-  }, [selectedPoc, value]);
+  }, [selectedCustomer, value]);
 
   const filteredList = React.useMemo(() => {
-    if (!q.trim()) return pocList;
+    if (!q.trim()) return customerList;
     const term = q.trim().toLowerCase();
-    return pocList.filter((p) => {
-      const no = String(p.nomor || p.number || "").toLowerCase();
-      const judul = String(p.judul || p.title || "").toLowerCase();
-      const klien = String(p.klien || p.customer || "").toLowerCase();
-      const tipe = String(p.tipe || "").toLowerCase();
+    return customerList.filter((c) => {
+      const comp = String(c.company || "").toLowerCase();
+      const nm = String(c.nama || c.name || "").toLowerCase();
+      const pic = String(c.kontak || c.pic || "").toLowerCase();
+      const kota = String(c.kota || c.city || "").toLowerCase();
+      const telp = String(c.telepon || c.phone || "").toLowerCase();
+      const email = String(c.email || "").toLowerCase();
       return (
-        no.includes(term) ||
-        judul.includes(term) ||
-        klien.includes(term) ||
-        tipe.includes(term)
+        comp.includes(term) ||
+        nm.includes(term) ||
+        pic.includes(term) ||
+        kota.includes(term) ||
+        telp.includes(term) ||
+        email.includes(term)
       );
     });
-  }, [pocList, q]);
+  }, [customerList, q]);
 
-  function handleSelect(item: Row | null) {
-    onChange(item);
+  function handleSelect(customer: Row | null) {
+    onChange(customer);
     setOpen(false);
   }
 
@@ -115,7 +158,7 @@ export function PocSelect({
         )}
       >
         <View className="flex-1 mr-2 flex-row items-center gap-2">
-          <Presentation
+          <Building2
             size={16}
             color={displayLabel ? colors.primary : colors.muted}
           />
@@ -136,15 +179,30 @@ export function PocSelect({
         <DialogContent
           className="w-[96vw] max-w-5xl lg:max-w-6xl max-h-[90vh] p-4 sm:p-6"
           style={Platform.select({
-            web: { width: "min(96vw, 1150px)", maxWidth: "1150px" } as any,
+            web: { width: "min(96vw, 1100px)", maxWidth: "1100px" } as any,
           })}
         >
           <DialogHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
-                <Presentation size={20} color={colors.primary} />
-                <DialogTitle>Pilih Kegiatan POC / Demo</DialogTitle>
+                <Building2 size={20} color={colors.primary} />
+                <DialogTitle>Pilih Customer / Pelanggan</DialogTitle>
               </View>
+              {onAddNew ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onPress={() => {
+                    setOpen(false);
+                    onAddNew();
+                  }}
+                  className="flex-row items-center gap-1.5"
+                >
+                  <Text className="text-xs font-semibold text-primary">
+                    {addNewLabel}
+                  </Text>
+                </Button>
+              ) : null}
             </View>
           </DialogHeader>
 
@@ -154,7 +212,7 @@ export function PocSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nomor POC, judul, klien, atau tipe..."
+              placeholder="Cari berdasarkan nama customer, PIC/kontak, kota, email, telepon..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
@@ -167,19 +225,19 @@ export function PocSelect({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ minWidth: "100%" }}
             >
-              <View className="flex-1 min-w-[760px]">
+              <View className="flex-1 min-w-[700px]">
                 {/* Header */}
                 <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
-                    Nomor & Judul POC
+                    Nama Pelanggan / Perusahaan
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
-                    Klien / Acara
+                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[150px] px-2">
+                    Kontak / PIC
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">
-                    Tipe & Tanggal
+                    Kota / Wilayah
                   </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[120px] px-2 text-center">
+                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[100px] px-2 text-center">
                     Status
                   </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
@@ -198,94 +256,69 @@ export function PocSelect({
                       className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
                     >
                       <Text className="text-xs font-medium text-muted-foreground">
-                        - Tanpa POC (Kosongkan) -
+                        - Tanpa Customer / Kosongkan -
                       </Text>
-                      {!pocId && !value && (
+                      {!customerId && !value && (
                         <Check size={16} color={colors.primary} />
                       )}
                     </Pressable>
                   )}
 
-                  {filteredList.map((p) => {
-                    const isSelected = selectedPoc?.id === p.id;
-                    const no = p.nomor || p.number || `POC #${p.id}`;
-                    const judul = p.judul || p.title || "Kegiatan POC";
-                    const klien = p.klien || p.customer || "-";
-                    const tgl = p.tanggal || p.createdAt || "";
+                  {filteredList.map((c) => {
+                    const isSelected = selectedCustomer?.id === c.id;
+                    const name =
+                      c.company || c.nama || c.name || `Customer #${c.id}`;
+                    const pic = c.kontak || c.pic || "-";
+                    const kota = c.kota || c.city || "-";
+                    const telp = c.telepon || c.phone || "";
+                    const email = c.email || "";
+                    const status = c.status || "Aktif";
 
                     return (
                       <Pressable
-                        key={p.id}
-                        onPress={() => handleSelect(p)}
+                        key={c.id}
+                        onPress={() => handleSelect(c)}
                         className={cn(
                           "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
                           isSelected && "bg-primary/10",
                         )}
                       >
-                        {/* Kolom 1: Nomor & Judul */}
                         <View className="w-1/3 min-w-[220px]">
                           <Text
                             className={cn(
-                              "text-xs font-bold font-mono text-foreground",
+                              "text-xs font-bold text-foreground",
                               isSelected && "text-primary",
                             )}
                           >
-                            {no}
+                            {name}
                           </Text>
-                          <Text
-                            className="text-[11px] text-muted-foreground mt-0.5"
-                            numberOfLines={2}
-                          >
-                            {judul}
-                          </Text>
-                        </View>
-
-                        {/* Kolom 2: Klien / Acara */}
-                        <View className="w-1/4 min-w-[180px] px-2">
-                          <Text
-                            className="text-xs font-semibold text-foreground"
-                            numberOfLines={1}
-                          >
-                            {klien}
-                          </Text>
-                          {p.lokasi ? (
-                            <View className="flex-row items-center gap-1 mt-0.5">
-                              <MapPin size={10} color={colors.muted} />
-                              <Text
-                                className="text-[11px] text-muted-foreground"
-                                numberOfLines={1}
-                              >
-                                {p.lokasi}
-                              </Text>
-                            </View>
-                          ) : null}
-                        </View>
-
-                        {/* Kolom 3: Tipe & Tanggal */}
-                        <View className="w-36 px-2">
-                          <Text className="text-xs text-foreground font-medium">
-                            {p.tipe || "Demo"}
-                          </Text>
-                          {tgl ? (
+                          {telp || email ? (
                             <Text className="text-[11px] text-muted-foreground mt-0.5">
-                              {formatDate(tgl)}
+                              {[telp, email].filter(Boolean).join(" · ")}
                             </Text>
                           ) : null}
                         </View>
 
-                        {/* Kolom 4: Status */}
-                        <View className="flex-1 min-w-[120px] px-2 items-center">
-                          <StatusBadge status={p.status || "Planned"} />
+                        <View className="w-1/4 min-w-[150px] px-2">
+                          <Text className="text-xs font-semibold text-foreground">
+                            {pic}
+                          </Text>
                         </View>
 
-                        {/* Kolom 5: Aksi */}
-                        <View className="w-20 items-center">
+                        <View className="w-36 px-2">
+                          <Text className="text-xs text-foreground">
+                            {kota}
+                          </Text>
+                        </View>
+
+                        <View className="flex-1 min-w-[100px] items-center px-2">
+                          <StatusBadge status={status} />
+                        </View>
+
+                        <View className="w-20 items-center justify-center">
                           {isSelected ? (
-                            <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
-                              <Check size={12} color={colors.primary} />
-                              <Text className="text-[11px] font-bold text-primary">
-                                Dipilih
-                              </Text>
+                            <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
+                              <Check size={14} color={colors.primary} />
                             </View>
                           ) : (
                             <Button
@@ -306,7 +339,8 @@ export function PocSelect({
                   {filteredList.length === 0 && (
                     <View className="p-8 items-center justify-center gap-2">
                       <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data POC yang cocok dengan &quot;{q}&quot;
+                        Tidak ada data customer yang cocok dengan &quot;{q}
+                        &quot;
                       </Text>
                     </View>
                   )}
@@ -321,5 +355,5 @@ export function PocSelect({
 }
 
 // ==========================================
-// 8. VISIT SELECT
+// 13. SUPPLIER PO (PURCHASE ORDER) SELECT
 // ==========================================

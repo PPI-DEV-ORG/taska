@@ -21,7 +21,7 @@ import {
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { PageHeader } from "@/components/taska/basics";
+import { PageHeader } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
 import type { MasterKey } from "../types";
 

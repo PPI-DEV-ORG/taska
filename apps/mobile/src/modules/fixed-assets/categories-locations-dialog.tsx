@@ -2,7 +2,7 @@ import * as React from "react";
 import { View, TouchableOpacity, ScrollView, TextInput, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { SearchableSelect } from "@/components/taska/dialogs";
+import { SearchableSelect } from "@/components/akuntra/dialogs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Trash2, Edit, FolderKanban, MapPin } from "lucide-react-native";
 import { FaCategory, FaLocation } from "./types";

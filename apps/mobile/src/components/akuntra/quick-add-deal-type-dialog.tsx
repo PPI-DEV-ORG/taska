@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { FormField } from "@/components/taska/basics";
+import { FormField } from "@/components/akuntra/basics";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { type Row } from "@/constants/modules";

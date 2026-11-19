@@ -3,7 +3,7 @@ import { View, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Clock, CheckCircle2 } from "lucide-react-native";
 import { colors } from "@/tokens";
-import { Panel, FormField } from "@/components/taska/basics";
+import { Panel, FormField } from "@/components/akuntra/basics";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 

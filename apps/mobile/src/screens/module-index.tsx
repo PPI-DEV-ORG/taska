@@ -1,4 +1,4 @@
-import { EmptyState } from "@/components/taska/basics";
+import { EmptyState } from "@/components/akuntra/basics";
 import { ModuleList } from "@/screens/module-list";
 import { IncomingShipments } from "@/modules/receiving/incoming-shipments";
 import { MODULES, hasUserPermission } from "@/constants/modules";

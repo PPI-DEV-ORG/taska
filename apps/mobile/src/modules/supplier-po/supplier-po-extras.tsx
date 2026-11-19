@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Panel, FormField } from "@/components/taska/basics";
-import { StatusBadge } from "@/components/taska/status-badge";
+import { Panel, FormField } from "@/components/akuntra/basics";
+import { StatusBadge } from "@/components/akuntra/status-badge";
 import { statusText } from "@/lib/labels";
-import { DatePicker, SearchableSelect, formatThousands } from "@/components/taska/dialogs";
-import { FileUploader, FileUploaderHandle } from "@/components/taska/file-uploader";
+import { DatePicker, SearchableSelect, formatThousands } from "@/components/akuntra/dialogs";
+import { FileUploader, FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
 import { api, apiBase } from "@/services/api";
 import { colors } from "@/tokens";
@@ -20,7 +20,7 @@ import { PPH_MODE_OPTIONS, itemNet, pphRateFor, pphModeToTipe, type PphMode } fr
 import { Line } from "@/modules/shared/line";
 import { printOrderDocument } from "@/lib/order-print";
 import { useKasBankAccounts } from "@/lib/use-kas-bank";
-import { ItemEditorDialog } from "@/components/taska/item-editor-dialog";
+import { ItemEditorDialog } from "@/components/akuntra/item-editor-dialog";
 
 import {
   SupplierInvoiceDetailDialog,

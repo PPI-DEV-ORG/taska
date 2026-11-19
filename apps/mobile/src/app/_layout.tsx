@@ -50,7 +50,7 @@ function NavigationShell() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: theme === "light" ? "#F8F7F4" : "#191817" },
+          contentStyle: { backgroundColor: theme === "light" ? "#F4F7F9" : "#181716" },
         }}
       />
       <PortalHost />

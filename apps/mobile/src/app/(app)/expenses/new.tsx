@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Text } from "@/components/ui/text";
-import { PageHeader, Panel, FormField } from "@/components/taska/basics";
+import { PageHeader, Panel, FormField } from "@/components/akuntra/basics";
 import {
   DatePicker,
   SearchableSelect,
@@ -15,8 +15,8 @@ import {
   PocSelect,
   VisitSelect,
   MaintenanceSelect,
-} from "@/components/taska/dialogs";
-import { FileUploader, type FileUploaderHandle } from "@/components/taska/file-uploader";
+} from "@/components/akuntra/dialogs";
+import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
 import { BOS_THRESHOLD, colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
