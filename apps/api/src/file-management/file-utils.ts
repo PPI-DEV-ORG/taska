@@ -16,8 +16,6 @@ export function getUploadRoots(): string[] {
   roots.push(resolve(process.cwd(), "uploads"));
   roots.push(resolve(process.cwd(), "../uploads"));
   roots.push(resolve(process.cwd(), "../../uploads"));
-  roots.push("/home/samtek/taska/apps/api/uploads");
-  roots.push("/home/samtek/taska/uploads");
   cachedUploadRoots = Array.from(new Set(roots)).filter((r) => existsSync(r));
   lastRootsCheck = now;
   return cachedUploadRoots;

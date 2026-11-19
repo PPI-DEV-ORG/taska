@@ -3,7 +3,7 @@ import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-n
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/taska/basics";
+import { PageHeader } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
 import { api, apiBase } from "@/services/api";
 import { useApp } from "@/store/app-store";
