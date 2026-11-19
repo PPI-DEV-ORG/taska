@@ -29,6 +29,8 @@ export type ResolvedDocItem = {
   category?: string;
   accept?: string;
   allowedExtensions?: string[];
+  /** Slot hanya untuk dilihat; file diisi lewat alur lain (mis. dialog Bayar oleh Finance). */
+  readOnly?: boolean;
 };
 
 export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row): ResolvedDocItem {
@@ -75,6 +77,8 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
 
       const fileId = (row as any).paymentProofFileId ?? (row as any).paymentProofFile?.id ?? invProofFileId ?? null;
       const fileMeta = (row as any).paymentProofFile;
+      // Bukti bayar hanya diunggah Finance lewat tombol "Bayar" setelah request disetujui
+      // (divalidasi backend di /status). Slot dokumen ini hanya untuk melihat.
       return {
         label: docLabel,
         fieldKey: "paymentProofFileId",
@@ -84,7 +88,8 @@ export function resolveModuleDocs(moduleKey: string, docLabel: string, row: Row)
         mimeType: fileMeta?.mimeType,
         fileSize: fileMeta?.size,
         isImage: fileMeta?.mimeType?.startsWith("image/"),
-        emptyHint: "Belum ada bukti pembayaran / transfer yang dilampirkan",
+        readOnly: true,
+        emptyHint: "Belum dibayar. Bukti bayar diunggah Finance saat pembayaran, setelah request disetujui.",
       };
     }
     if (/do|delivery|surat jalan/i.test(labelLower)) {
@@ -467,6 +472,7 @@ export function DocumentViewerItem({
   onUploadFile?: (fieldKey: string, fileId: number, item: ResolvedDocItem) => Promise<void> | void;
   canUpload?: boolean;
 }) {
+  canUpload = canUpload && !item.readOnly;
   const [uploaderOpen, setUploaderOpen] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [previewOpen, setPreviewOpen] = React.useState(false);
