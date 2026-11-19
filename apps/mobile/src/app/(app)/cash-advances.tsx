@@ -1,7 +1,7 @@
 import * as React from "react";
 import { View, Pressable, ScrollView } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { Plus, Receipt, Wallet } from "lucide-react-native";
+import { ChevronRight, ClipboardCheck, Plus, Receipt, Wallet } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { EmptyState, PageHeader, Panel } from "@/components/akuntra/basics";
@@ -97,6 +97,8 @@ export default function CashAdvancesScreen() {
 
   const w = mine.wallet;
   const pending = (w?.pendingSpend ?? 0) + (w?.pendingReport ?? 0);
+  // Antrean Finance: laporan karyawan yang menunggu verifikasi (survey / pengiriman / proyek / lainnya)
+  const toVerify = isFinance ? rows.filter((r) => r.status === "DILAPORKAN") : [];
 
   return (
     <View className="flex-1">
@@ -114,6 +116,36 @@ export default function CashAdvancesScreen() {
         }
       />
       <ScrollView contentContainerClassName="p-4 gap-4" showsVerticalScrollIndicator={false}>
+        {/* ── Antrean verifikasi (Finance): satu ketukan langsung ke mode pemeriksaan ── */}
+        {toVerify.length > 0 ? (
+          <View className="rounded-2xl border border-warning/50 bg-warning/5 p-4 gap-2">
+            <View className="flex-row items-center gap-2">
+              <ClipboardCheck size={16} color={colors.warning} />
+              <Text className="text-sm font-semibold text-foreground">Laporan menunggu verifikasi ({toVerify.length})</Text>
+            </View>
+            {toVerify.map((r) => (
+              <Pressable
+                key={r.id}
+                onPress={() => setDetailId(r.id)}
+                className="flex-row items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 active:opacity-75"
+              >
+                <View className="flex-1 min-w-0">
+                  <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                    {r.employee.name} · {PURPOSE_LABEL[r.purpose]}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                    {r.number} · {r.items.length} nota · {rupiah(r.reportedTotal)} dari {rupiah(r.disbursedAmount ?? 0)}
+                  </Text>
+                </View>
+                <View className="flex-row items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5">
+                  <Text className="text-xs font-semibold text-white">Periksa</Text>
+                  <ChevronRight size={14} color="#fff" />
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         {/* ── Saldo saya ── */}
         <View className="rounded-2xl border border-primary/30 bg-primary/5 p-4 gap-3">
           <View className="gap-0.5">

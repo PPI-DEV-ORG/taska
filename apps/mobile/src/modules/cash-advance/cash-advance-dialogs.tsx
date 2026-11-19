@@ -1,6 +1,6 @@
 import * as React from "react";
 import { View, Pressable, ScrollView, Linking } from "react-native";
-import { Check, Plus, Trash2, Wallet, Paperclip } from "lucide-react-native";
+import { Check, Pencil, Plus, Trash2, Wallet, Paperclip } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ export type CashAdvance = {
   neededDate: string | null;
   rejectReason: string | null;
   reportNote: string | null;
+  reportedAt?: string | null;
   spentAmount: number;
   returnedAmount: number;
   reimbursedAmount: number;
@@ -62,7 +63,7 @@ export type CashAdvance = {
     category?: { name: string } | null;
     receiptFileIds: number[];
     /** Hasil pemeriksaan Finance per nota (diisi saat verifikasi laporan). */
-    status?: "DIAJUKAN" | "SAH" | "DITOLAK";
+    status?: "DIAJUKAN" | "SAH" | "DITOLAK" | "REVISI";
     approvedAmount?: number | null;
     rejectReason?: string | null;
   }[];
@@ -334,26 +335,31 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   const accounts = useCashAccounts();
   const [row, setRow] = React.useState<CashAdvance | null>(null);
   const [busy, setBusy] = React.useState(false);
-  const [panel, setPanel] = React.useState<null | "reject" | "disburse" | "item" | "settle">(null);
+  const [panel, setPanel] = React.useState<null | "reject" | "disburse" | "item" | "settle" | "unsettle">(null);
   const [disMore, setDisMore] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
     api<CashAdvance>("GET", `/cash-advances/${id}`)
       .then((res) => {
-        if (alive) setRow(res);
+        if (!alive) return;
+        setRow(res);
+        // Finance membuka laporan yang menunggu verifikasi -> langsung ke mode pemeriksaan (tanpa klik tambahan)
+        if (res.status === "DILAPORKAN" && isFinance) setPanel("settle");
       })
       .catch((e: any) => toast(e?.message ?? "Gagal memuat petty cash", "danger"));
     return () => {
       alive = false;
     };
-  }, [id, toast]);
+  }, [id, toast, isFinance]);
 
   async function run(fn: () => Promise<CashAdvance>, ok: string) {
     setBusy(true);
     try {
       setRow(await fn());
       setPanel(null);
+      setConfirmSettle(false);
+      setEditingItemId(null);
       toast(ok);
       onChanged?.();
     } catch (e: any) {
@@ -385,8 +391,15 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   const [reimAccount, setReimAccount] = React.useState("");
   // Pemeriksaan per nota saat verifikasi: nota tanpa keputusan = sah penuh.
   const [reviews, setReviews] = React.useState<Record<number, ItemReviewDraft>>({});
-  const setReview = (id: number, patch: Partial<ItemReviewDraft>) =>
-    setReviews((prev) => ({ ...prev, [id]: { mode: "SAH", amount: "", reason: "", ...prev[id], ...patch } }));
+  const setReview = (id: number, patch: Partial<ItemReviewDraft>) => {
+    setConfirmSettle(false);
+    setReviews((prev) => ({ ...prev, [id]: { mode: "SAH", reason: "", ...prev[id], ...patch } }));
+  };
+  // Langkah konfirmasi sebelum membukukan (Finance harus membaca ringkasan dulu)
+  const [confirmSettle, setConfirmSettle] = React.useState(false);
+  // Karyawan memperbaiki nota yang diminta revisi
+  const [editingItemId, setEditingItemId] = React.useState<number | null>(null);
+  const [unsettleReason, setUnsettleReason] = React.useState("");
 
   if (!row) {
     return (
@@ -401,14 +414,13 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   const disbursed = row.disbursedAmount ?? 0;
   const categories: any[] = (data as any).expenseCategories ?? [];
   const reviewing = row.status === "DILAPORKAN" && isFinance && panel === "settle";
-  const approvedOf = (it: CashAdvance["items"][number]) => {
-    const r = reviews[it.id];
-    if (!r || r.mode === "SAH") return it.amount;
-    if (r.mode === "DITOLAK") return 0;
-    return Math.min(it.amount, parseRp(r.amount));
-  };
+  const approvedOf = (it: CashAdvance["items"][number]) => (reviews[it.id]?.mode === "DITOLAK" ? 0 : it.amount);
+  const revisionItems = reviewing ? row.items.filter((it) => reviews[it.id]?.mode === "REVISI") : [];
+  const rejectedCount = reviewing ? row.items.filter((it) => reviews[it.id]?.mode === "DITOLAK").length : 0;
   const approvedTotal = reviewing ? row.items.reduce((s, it) => s + approvedOf(it), 0) : row.reportedTotal;
   const employeeBurden = row.reportedTotal - approvedTotal;
+  // Nota yang diminta revisi Finance & belum diperbaiki karyawan
+  const pendingRevision = row.items.filter((it) => it.status === "REVISI");
   // Sisa / kekurangan dihitung dari biaya yang DISAHKAN: nota ditolak tetap dipegang karyawan sebagai sisa.
   const leftoverAmt = Math.max(0, disbursed - approvedTotal);
   const shortageAmt = Math.max(0, approvedTotal - disbursed);
@@ -430,13 +442,17 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
     ? isFinance
       ? "Periksa nominal, pilih akun kas, lalu Setujui & Cairkan."
       : "Menunggu Finance menyetujui & mencairkan uang."
+    : row.status === "DICAIRKAN" && pendingRevision.length > 0
+    ? Number(user?.id) === row.employeeId
+      ? `Finance meminta revisi ${pendingRevision.length} nota. Ketuk "Perbaiki" pada nota bertanda Revisi, lalu kirim ulang laporan.`
+      : `Menunggu ${row.employee.name} memperbaiki ${pendingRevision.length} nota.`
     : row.status === "DICAIRKAN"
     ? Number(user?.id) === row.employeeId
       ? "Catat setiap biaya + foto nota, lalu kirim laporan ke Finance."
       : `Menunggu ${row.employee.name} melaporkan biaya.`
     : row.status === "DILAPORKAN"
     ? isFinance
-      ? "Cek nota, lalu verifikasi. Sisa uang otomatis tetap di saldo petty cash karyawan."
+      ? "Periksa setiap nota: Sah, Revisi (dikembalikan ke karyawan), atau Tolak. Lalu periksa ringkasan sebelum membukukan."
       : "Menunggu Finance memverifikasi laporan."
     : "Selesai — biaya sudah dibukukan.";
   const canDisburse = isFinance && (row.status === "DIAJUKAN" || row.status === "DISETUJUI");
@@ -547,7 +563,15 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
               <View className="flex-row items-center justify-between">
                 <Text className="text-xs font-bold text-foreground">Laporan biaya ({row.items.length})</Text>
                 {isHolder && ["DICAIRKAN", "DILAPORKAN"].includes(row.status) ? (
-                  <Button size="sm" variant="outline" onPress={() => setPanel(panel === "item" ? null : "item")} className="flex-row items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => {
+                      setEditingItemId(null);
+                      setPanel(panel === "item" && !editingItemId ? null : "item");
+                    }}
+                    className="flex-row items-center gap-1"
+                  >
                     <Plus size={13} color={colors.text} />
                     <Text className="text-xs">Tambah biaya</Text>
                   </Button>
@@ -591,7 +615,28 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                           <Text className="text-xs font-semibold text-warning">Sah {rupiah(it.approvedAmount)}</Text>
                         ) : null}
                         {row.status === "SELESAI" && it.status === "DITOLAK" ? <Text className="text-xs font-semibold text-danger">Ditolak</Text> : null}
+                        {it.status === "REVISI" ? <Text className="text-xs font-semibold text-warning">Revisi</Text> : null}
                       </View>
+                      {isHolder && !reviewing && ["DICAIRKAN", "DILAPORKAN"].includes(row.status) ? (
+                        <Pressable
+                          onPress={() => {
+                            setEditingItemId(it.id);
+                            setItDate(String(it.date).slice(0, 10));
+                            setItDesc(it.description);
+                            setItAmount(formatThousands(String(it.amount)));
+                            setItCategory(it.category?.name ?? "");
+                            setItFiles(it.receiptFileIds);
+                            setItKey((k) => k + 1);
+                            setPanel("item");
+                          }}
+                          hitSlop={6}
+                          accessibilityLabel="Perbaiki biaya"
+                          className={`flex-row items-center gap-1 rounded-md px-1.5 py-1 ${it.status === "REVISI" ? "bg-warning/15" : ""}`}
+                        >
+                          <Pencil size={13} color={it.status === "REVISI" ? colors.warning : colors.textSecondary} />
+                          {it.status === "REVISI" ? <Text className="text-xs font-semibold text-warning">Perbaiki</Text> : null}
+                        </Pressable>
+                      ) : null}
                       {isHolder && !reviewing && ["DICAIRKAN", "DILAPORKAN"].includes(row.status) ? (
                         <Pressable
                           onPress={() => run(() => api<CashAdvance>("DELETE", `/cash-advances/${row.id}/items/${it.id}`), "Biaya dihapus")}
@@ -602,14 +647,18 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                         </Pressable>
                       ) : null}
                     </View>
-                    {/* Alasan dari Finance (setelah diverifikasi) */}
-                    {row.status === "SELESAI" && it.rejectReason ? (
-                      <Text className="text-xs text-muted-foreground">Catatan Finance: {it.rejectReason}</Text>
+                    {/* Catatan dari Finance: alasan ditolak (setelah diverifikasi) atau apa yang harus direvisi */}
+                    {it.rejectReason && (row.status === "SELESAI" || it.status === "REVISI") ? (
+                      <View className={`rounded-md px-2 py-1.5 ${it.status === "REVISI" ? "bg-warning/10" : "bg-muted/30"}`}>
+                        <Text className={`text-xs ${it.status === "REVISI" ? "text-warning" : "text-muted-foreground"}`}>
+                          {it.status === "REVISI" ? "Perlu diperbaiki: " : "Catatan Finance: "}
+                          {it.rejectReason}
+                        </Text>
+                      </View>
                     ) : null}
                     {/* Pemeriksaan per nota oleh Finance */}
                     {reviewing ? (
                       <ItemReviewControls
-                        amount={it.amount}
                         draft={reviews[it.id]}
                         onChange={(patch) => setReview(it.id, patch)}
                       />
@@ -666,16 +715,19 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                   const amt = parseRp(itAmount);
                   if (!itDesc.trim() || amt <= 0) return toast("Isi keterangan dan nominal biaya", "danger");
                   const cat = categories.find((c: any) => String(c.nama || c.name) === itCategory);
+                  const body = {
+                    date: itDate,
+                    description: itDesc.trim(),
+                    amount: amt,
+                    categoryId: cat ? Number(cat.id) : undefined,
+                    receiptFileIds: itFiles,
+                  };
                   void run(
                     () =>
-                      api<CashAdvance>("POST", `/cash-advances/${row.id}/items`, {
-                        date: itDate,
-                        description: itDesc.trim(),
-                        amount: amt,
-                        categoryId: cat ? Number(cat.id) : undefined,
-                        receiptFileIds: itFiles,
-                      }),
-                    "Biaya ditambahkan",
+                      editingItemId
+                        ? api<CashAdvance>("PATCH", `/cash-advances/${row.id}/items/${editingItemId}`, body)
+                        : api<CashAdvance>("POST", `/cash-advances/${row.id}/items`, body),
+                    editingItemId ? "Nota diperbaiki" : "Biaya ditambahkan",
                   ).then(() => {
                     setItDesc("");
                     setItAmount("");
@@ -684,8 +736,23 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
                   });
                 }}
               >
-                <Text className="text-white font-semibold">Simpan biaya</Text>
+                <Text className="text-white font-semibold">{editingItemId ? "Simpan perbaikan" : "Simpan biaya"}</Text>
               </Button>
+              {editingItemId ? (
+                <Button
+                  variant="ghost"
+                  onPress={() => {
+                    setEditingItemId(null);
+                    setItDesc("");
+                    setItAmount("");
+                    setItFiles([]);
+                    setItKey((k) => k + 1);
+                    setPanel(null);
+                  }}
+                >
+                  <Text className="text-muted-foreground">Batal ubah</Text>
+                </Button>
+              ) : null}
             </View>
           ) : null}
 
@@ -785,105 +852,191 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
               <FormField label="Catatan laporan (opsional)">
                 <Input value={reportNote} onChangeText={setReportNote} placeholder="Contoh: survey selesai, sisa uang Rp 50.000" />
               </FormField>
+              {pendingRevision.length > 0 ? (
+                <Text className="text-xs text-warning">Perbaiki {pendingRevision.length} nota bertanda Revisi dulu sebelum mengirim ulang.</Text>
+              ) : null}
               <Button
-                disabled={busy}
+                disabled={busy || pendingRevision.length > 0}
                 onPress={() => run(() => api<CashAdvance>("POST", `/cash-advances/${row.id}/report`, { note: reportNote.trim() || undefined }), "Laporan dikirim ke Finance")}
               >
-                <Text className="text-white font-semibold">Kirim laporan biaya ke Finance</Text>
+                <Text className="text-white font-semibold">{row.reportedAt ? "Kirim ulang laporan ke Finance" : "Kirim laporan biaya ke Finance"}</Text>
               </Button>
             </View>
           ) : null}
 
           {row.status === "DILAPORKAN" && isFinance && panel === "settle" ? (
-            <View className="rounded-xl border border-border p-3 gap-2.5">
-              <View className="gap-0.5">
-                <Row2 label="Biaya disahkan" value={`${rupiah(approvedTotal)} dari ${rupiah(row.reportedTotal)}`} strong />
-                {employeeBurden > 0 ? (
-                  <Row2 label="Ditolak / disesuaikan (tanggungan karyawan)" value={rupiah(employeeBurden)} />
+            revisionItems.length > 0 ? (
+              /* Ada nota yang diminta revisi -> laporan dikembalikan ke karyawan, belum ada yang dibukukan */
+              <View className="rounded-xl border border-warning/50 bg-warning/5 p-3 gap-2.5">
+                <Text className="text-sm font-semibold text-foreground">Kembalikan ke {row.employee.name} untuk revisi</Text>
+                <Text className="text-xs text-muted-foreground">
+                  {revisionItems.length} nota ditandai Revisi. Laporan dikembalikan ke karyawan untuk diperbaiki & dikirim ulang. Belum ada jurnal yang dibuat.
+                </Text>
+                <Button
+                  disabled={busy}
+                  className="bg-warning"
+                  onPress={() => {
+                    const items = revisionItems.map((it) => ({ id: it.id, note: (reviews[it.id]?.reason ?? "").trim() }));
+                    const missing = revisionItems.find((it) => !(reviews[it.id]?.reason ?? "").trim());
+                    if (missing) return toast(`Tulis apa yang harus diperbaiki untuk nota "${missing.description}"`, "danger");
+                    void run(
+                      () => api<CashAdvance>("POST", `/cash-advances/${row.id}/return-for-revision`, { items }),
+                      `Laporan dikembalikan ke ${row.employee.name} untuk revisi`,
+                    );
+                  }}
+                >
+                  <Text className="text-white font-semibold">Kembalikan untuk revisi ({revisionItems.length} nota)</Text>
+                </Button>
+              </View>
+            ) : (
+              <View className="rounded-xl border border-border p-3 gap-2.5">
+                <View className="gap-0.5">
+                  <Row2 label="Biaya disahkan" value={`${rupiah(approvedTotal)} dari ${rupiah(row.reportedTotal)}`} strong />
+                  {employeeBurden > 0 ? (
+                    <Row2 label={`Ditolak ${rejectedCount} nota (tanggungan karyawan)`} value={rupiah(employeeBurden)} />
+                  ) : (
+                    <Text className="text-xs text-muted-foreground">Nota yang tidak diubah dianggap sah.</Text>
+                  )}
+                </View>
+                {leftoverAmt > 0 ? (
+                  <>
+                    <FormField label={`Sisa uang ${rupiah(leftoverAmt)}`}>
+                      <ChoiceRow
+                        value={leftover}
+                        onChange={(v) => {
+                          setLeftover(v);
+                          setConfirmSettle(false);
+                        }}
+                        options={[
+                          { key: "KEEP", title: "Tetap di saldo petty cash", desc: "Dipakai untuk tugas berikutnya (disarankan)" },
+                          { key: "RETURN", title: "Dikembalikan ke kas", desc: "Karyawan menyetor sisa uang" },
+                        ]}
+                      />
+                    </FormField>
+                    {leftover === "RETURN" ? (
+                      <>
+                        <FormField label="Dikembalikan ke akun" required>
+                          <AccountSelect value={retAccount} onChange={setRetAccount} accounts={accounts} />
+                        </FormField>
+                        <FormField label="Bukti pengembalian (opsional)">
+                          <FileUploader label="Pilih foto / PDF" kind="semua" category="uang-jalan" autoFlush onUploaded={(fid) => setRetFileId(fid)} />
+                        </FormField>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+                {shortageAmt > 0 ? (
+                  <>
+                    <FormField label={`Biaya lebih besar ${rupiah(shortageAmt)} dari petty cash`}>
+                      <ChoiceRow
+                        value={shortageFrom}
+                        onChange={(v) => {
+                          setShortageFrom(v);
+                          setConfirmSettle(false);
+                        }}
+                        options={[
+                          { key: "CASH", title: "Dibayar dari kas", desc: "Finance mengganti kekurangan" },
+                          { key: "WALLET", title: "Potong saldo petty cash", desc: "Pakai sisa petty cash sebelumnya" },
+                        ]}
+                      />
+                    </FormField>
+                    {shortageFrom === "CASH" ? (
+                      <FormField label="Dibayar dari akun" required>
+                        <AccountSelect value={reimAccount} onChange={setReimAccount} accounts={accounts} />
+                      </FormField>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {!confirmSettle ? (
+                  <Button
+                    disabled={busy}
+                    onPress={() => {
+                      const missing = row.items.find((it) => reviews[it.id]?.mode === "DITOLAK" && !(reviews[it.id]?.reason ?? "").trim());
+                      if (missing) return toast(`Isi alasan penolakan untuk nota "${missing.description}"`, "danger");
+                      if (leftoverAmt > 0 && leftover === "RETURN" && !retAccount) return toast("Pilih akun tujuan pengembalian sisa", "danger");
+                      if (shortageAmt > 0 && shortageFrom === "CASH" && !reimAccount) return toast("Pilih akun untuk membayar kekurangan", "danger");
+                      setConfirmSettle(true);
+                    }}
+                  >
+                    <Text className="text-white font-semibold">Lanjut: periksa ringkasan</Text>
+                  </Button>
                 ) : (
-                  <Text className="text-xs text-muted-foreground">Periksa setiap nota di atas. Nota yang tidak diubah dianggap sah.</Text>
+                  /* Langkah konfirmasi: Finance membaca ringkasan sebelum jurnal dibuat */
+                  <View className="rounded-lg border border-primary/50 bg-primary/5 p-3 gap-1.5">
+                    <Text className="text-sm font-semibold text-foreground">Yakin bukukan laporan ini?</Text>
+                    <Row2 label="Pemegang uang" value={row.employee.name} />
+                    <Row2 label="Nota sah" value={`${row.items.length - rejectedCount} nota · ${rupiah(approvedTotal)}`} />
+                    {rejectedCount > 0 ? <Row2 label="Nota ditolak" value={`${rejectedCount} nota · ${rupiah(employeeBurden)}`} /> : null}
+                    {leftoverAmt > 0 ? (
+                      <Row2 label="Sisa uang" value={`${rupiah(leftoverAmt)} · ${leftover === "RETURN" ? `kembali ke ${retAccount}` : "tetap di saldo petty cash"}`} />
+                    ) : null}
+                    {shortageAmt > 0 ? (
+                      <Row2 label="Kekurangan" value={`${rupiah(shortageAmt)} · ${shortageFrom === "CASH" ? `dibayar dari ${reimAccount}` : "potong saldo petty cash"}`} />
+                    ) : null}
+                    <Text className="text-xs text-muted-foreground">Jurnal & pengeluaran akan dibuat. Bila keliru, bisa dibatalkan lewat &quot;Batalkan verifikasi&quot;.</Text>
+                    <View className="flex-row gap-2 pt-1">
+                      <Button variant="outline" className="flex-1" disabled={busy} onPress={() => setConfirmSettle(false)}>
+                        <Text>Kembali</Text>
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        disabled={busy}
+                        onPress={() => {
+                          const decisions = row.items
+                            .filter((it) => reviews[it.id]?.mode === "DITOLAK")
+                            .map((it) => ({ id: it.id, status: "DITOLAK" as const, reason: (reviews[it.id]?.reason ?? "").trim() }));
+                          void run(
+                            () =>
+                              api<CashAdvance>("POST", `/cash-advances/${row.id}/settle`, {
+                                leftoverAction: leftover,
+                                returnAccountCode: retAccount || undefined,
+                                returnFileId: retFileId ?? undefined,
+                                shortageFrom,
+                                reimburseAccountCode: reimAccount || undefined,
+                                items: decisions,
+                              }),
+                            "Laporan diverifikasi & dibukukan",
+                          );
+                        }}
+                      >
+                        <Text className="text-white font-semibold">{busy ? "Membukukan..." : "Ya, bukukan"}</Text>
+                      </Button>
+                    </View>
+                  </View>
                 )}
               </View>
-              {leftoverAmt > 0 ? (
-                <>
-                  <FormField label={`Sisa uang ${rupiah(leftoverAmt)}`}>
-                    <ChoiceRow
-                      value={leftover}
-                      onChange={setLeftover}
-                      options={[
-                        { key: "KEEP", title: "Tetap di saldo petty cash", desc: "Dipakai untuk tugas berikutnya (disarankan)" },
-                        { key: "RETURN", title: "Dikembalikan ke kas", desc: "Karyawan menyetor sisa uang" },
-                      ]}
-                    />
-                  </FormField>
-                  {leftover === "RETURN" ? (
-                    <>
-                      <FormField label="Dikembalikan ke akun" required>
-                        <AccountSelect value={retAccount} onChange={setRetAccount} accounts={accounts} />
-                      </FormField>
-                      <FormField label="Bukti pengembalian (opsional)">
-                        <FileUploader label="Pilih foto / PDF" kind="semua" category="uang-jalan" autoFlush onUploaded={(fid) => setRetFileId(fid)} />
-                      </FormField>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
-              {shortageAmt > 0 ? (
-                <>
-                  <FormField label={`Biaya lebih besar ${rupiah(shortageAmt)} dari petty cash`}>
-                    <ChoiceRow
-                      value={shortageFrom}
-                      onChange={setShortageFrom}
-                      options={[
-                        { key: "CASH", title: "Dibayar dari kas", desc: "Finance mengganti kekurangan" },
-                        { key: "WALLET", title: "Potong saldo petty cash", desc: "Pakai sisa petty cash sebelumnya" },
-                      ]}
-                    />
-                  </FormField>
-                  {shortageFrom === "CASH" ? (
-                    <FormField label="Dibayar dari akun" required>
-                      <AccountSelect value={reimAccount} onChange={setReimAccount} accounts={accounts} />
-                    </FormField>
-                  ) : null}
-                </>
-              ) : null}
-              {leftoverAmt === 0 && shortageAmt === 0 ? <Text className="text-xs text-muted-foreground">Biaya sama persis dengan petty cash. Tidak ada sisa / kekurangan.</Text> : null}
-              <Button
-                disabled={busy}
-                onPress={() => {
-                  const decisions: { id: number; status: "SAH" | "DITOLAK"; approvedAmount?: number; reason?: string }[] = [];
-                  for (const it of row.items) {
-                    const r = reviews[it.id];
-                    if (!r || r.mode === "SAH") continue;
-                    if (!r.reason.trim()) return toast(`Isi alasan untuk nota "${it.description}"`, "danger");
-                    if (r.mode === "DITOLAK") {
-                      decisions.push({ id: it.id, status: "DITOLAK", reason: r.reason.trim() });
-                      continue;
-                    }
-                    const amt = parseRp(r.amount);
-                    if (amt <= 0 || amt > it.amount) {
-                      return toast(`Nominal sah "${it.description}" harus antara Rp1 dan ${rupiah(it.amount)}`, "danger");
-                    }
-                    if (amt < it.amount) decisions.push({ id: it.id, status: "SAH", approvedAmount: amt, reason: r.reason.trim() });
+            )
+          ) : null}
+
+          {/* Undo: batalkan verifikasi yang keliru */}
+          {row.status === "SELESAI" && isFinance && panel === "unsettle" ? (
+            <View className="rounded-xl border border-danger/50 bg-danger/5 p-3 gap-2.5">
+              <Text className="text-sm font-semibold text-foreground">Batalkan verifikasi?</Text>
+              <Text className="text-xs text-muted-foreground">
+                Jurnal pertanggungjawaban & pengembalian sisa akan dibalik, pengeluaran hasil verifikasi dihapus, dan laporan kembali &quot;Menunggu verifikasi&quot; untuk diperiksa ulang. Jurnal pencairan tidak berubah.
+              </Text>
+              <FormField label="Alasan pembatalan" required>
+                <Input value={unsettleReason} onChangeText={setUnsettleReason} placeholder="Contoh: salah pilih akun pengembalian" />
+              </FormField>
+              <View className="flex-row gap-2">
+                <Button variant="outline" className="flex-1" disabled={busy} onPress={() => setPanel(null)}>
+                  <Text>Jangan</Text>
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={busy || !unsettleReason.trim()}
+                  onPress={() =>
+                    run(
+                      () => api<CashAdvance>("POST", `/cash-advances/${row.id}/unsettle`, { reason: unsettleReason.trim() }),
+                      "Verifikasi dibatalkan, laporan kembali menunggu verifikasi",
+                    ).then(() => setUnsettleReason(""))
                   }
-                  if (leftoverAmt > 0 && leftover === "RETURN" && !retAccount) return toast("Pilih akun tujuan pengembalian sisa", "danger");
-                  if (shortageAmt > 0 && shortageFrom === "CASH" && !reimAccount) return toast("Pilih akun untuk membayar kekurangan", "danger");
-                  void run(
-                    () =>
-                      api<CashAdvance>("POST", `/cash-advances/${row.id}/settle`, {
-                        leftoverAction: leftover,
-                        returnAccountCode: retAccount || undefined,
-                        returnFileId: retFileId ?? undefined,
-                        shortageFrom,
-                        reimburseAccountCode: reimAccount || undefined,
-                        items: decisions,
-                      }),
-                    "Laporan diverifikasi & dibukukan",
-                  );
-                }}
-              >
-                <Text className="text-white font-semibold">Verifikasi & selesaikan</Text>
-              </Button>
+                >
+                  <Text className="text-white font-semibold">Ya, batalkan verifikasi</Text>
+                </Button>
+              </View>
             </View>
           ) : null}
         </View>
@@ -906,6 +1059,11 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
             <Text className="text-white font-semibold">Verifikasi laporan</Text>
           </Button>
         ) : null}
+        {row.status === "SELESAI" && isFinance && panel !== "unsettle" ? (
+          <Button variant="outline" onPress={() => setPanel("unsettle")} disabled={busy}>
+            <Text className="text-danger">Batalkan verifikasi</Text>
+          </Button>
+        ) : null}
         {["DIAJUKAN", "DISETUJUI"].includes(row.status) && (isRequester || isFinance) ? (
           <Button variant="ghost" onPress={() => run(() => api<CashAdvance>("POST", `/cash-advances/${row.id}/cancel`, {}), "Pengajuan dibatalkan")} disabled={busy}>
             <Text className="text-muted-foreground">Batalkan pengajuan</Text>
@@ -919,55 +1077,45 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
   );
 }
 
-type ItemReviewDraft = { mode: "SAH" | "ADJUST" | "DITOLAK"; amount: string; reason: string };
+type ItemReviewDraft = { mode: "SAH" | "REVISI" | "DITOLAK"; reason: string };
 
-const REVIEW_MODES: { key: ItemReviewDraft["mode"]; label: string }[] = [
-  { key: "SAH", label: "Sah" },
-  { key: "ADJUST", label: "Sesuaikan" },
-  { key: "DITOLAK", label: "Tolak" },
+const REVIEW_MODES: { key: ItemReviewDraft["mode"]; label: string; tone: string }[] = [
+  { key: "SAH", label: "Sah", tone: "border-emerald-600 bg-emerald-600/10" },
+  { key: "REVISI", label: "Revisi", tone: "border-warning bg-warning/10" },
+  { key: "DITOLAK", label: "Tolak", tone: "border-danger bg-danger/10" },
 ];
 
-/** Pilihan Finance untuk satu nota: sah penuh, disesuaikan (nominal lebih kecil), atau ditolak. */
-function ItemReviewControls({
-  amount,
-  draft,
-  onChange,
-}: {
-  amount: number;
-  draft?: ItemReviewDraft;
-  onChange: (patch: Partial<ItemReviewDraft>) => void;
-}) {
+/**
+ * Pilihan Finance untuk satu nota:
+ * - Sah: dibukukan penuh.
+ * - Revisi: dikembalikan ke karyawan untuk diperbaiki (nominal / keterangan / nota), lalu dilaporkan ulang.
+ * - Tolak: bukan biaya perusahaan; nominalnya jadi tanggungan karyawan.
+ */
+function ItemReviewControls({ draft, onChange }: { draft?: ItemReviewDraft; onChange: (patch: Partial<ItemReviewDraft>) => void }) {
   const mode = draft?.mode ?? "SAH";
   return (
     <View className="gap-1.5">
       <View className="flex-row gap-1.5">
         {REVIEW_MODES.map((m) => {
           const active = mode === m.key;
-          const tone = m.key === "DITOLAK" ? "border-danger bg-danger/10" : m.key === "ADJUST" ? "border-warning bg-warning/10" : "border-emerald-600 bg-emerald-600/10";
           return (
             <Pressable
               key={m.key}
-              onPress={() => onChange({ mode: m.key, ...(m.key === "ADJUST" && !draft?.amount ? { amount: formatThousands(String(amount)) } : {}) })}
-              className={`flex-1 items-center rounded-lg border py-1.5 ${active ? tone : "border-border bg-card"}`}
+              onPress={() => onChange({ mode: m.key })}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: active }}
+              className={`flex-1 items-center rounded-lg border py-1.5 ${active ? m.tone : "border-border bg-card"}`}
             >
               <Text className={`text-xs ${active ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{m.label}</Text>
             </Pressable>
           );
         })}
       </View>
-      {mode === "ADJUST" ? (
-        <Input
-          value={draft?.amount ?? ""}
-          onChangeText={(v) => onChange({ amount: formatThousands(v) })}
-          keyboardType="numeric"
-          placeholder={`Nominal sah (maks ${rupiah(amount)})`}
-        />
-      ) : null}
       {mode !== "SAH" ? (
         <Input
           value={draft?.reason ?? ""}
           onChangeText={(v) => onChange({ reason: v })}
-          placeholder={mode === "DITOLAK" ? "Alasan ditolak (wajib)" : "Alasan disesuaikan (wajib)"}
+          placeholder={mode === "REVISI" ? "Apa yang harus diperbaiki karyawan? (wajib)" : "Alasan ditolak (wajib)"}
         />
       ) : null}
     </View>

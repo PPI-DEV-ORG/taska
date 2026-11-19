@@ -5,7 +5,8 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Panel, KpiCard, KpiRow } from "@/components/akuntra/basics";
 import { ChartCard , HBarChart } from "@/components/akuntra/charts";
-import { ClipboardCheck, AlertTriangle, Wallet, TrendingUp } from "lucide-react-native";
+import { ClipboardCheck, AlertTriangle, Wallet, TrendingUp, Receipt } from "lucide-react-native";
+import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, rupiahShort } from "@/lib/format";
 import { ROLE_LABEL, type Role } from "@/constants/modules";
@@ -22,6 +23,19 @@ interface FinanceDashboardProps {
 
 export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDashboardProps) {
   const router = useRouter();
+  // Laporan petty cash karyawan yang menunggu verifikasi Finance (survey / pengiriman / proyek / lainnya)
+  const [pettyToVerify, setPettyToVerify] = React.useState(0);
+  React.useEffect(() => {
+    let alive = true;
+    api<{ items: unknown[]; total?: number }>("GET", "/cash-advances?status=DILAPORKAN")
+      .then((res) => {
+        if (alive) setPettyToVerify(res?.total ?? res?.items?.length ?? 0);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const role = user.role;
 
   const pendingApprovals = approvals.filter((a: any) => a.status === "Menunggu");
@@ -145,6 +159,14 @@ export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDas
           hint="Piutang aktif berjalan"
           icon={Wallet}
           onPress={() => router.push("/invoices")}
+        />
+        <KpiCard
+          label="Laporan Petty Cash"
+          value={String(pettyToVerify)}
+          hint="Menunggu verifikasi"
+          tone={pettyToVerify > 0 ? "warning" : undefined}
+          icon={Receipt}
+          onPress={() => router.push("/cash-advances" as any)}
         />
         <KpiCard
           label="Ready Reimbursement"

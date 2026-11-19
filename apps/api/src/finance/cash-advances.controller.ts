@@ -9,9 +9,11 @@ import {
   CreateCashAdvanceDto,
   DisburseCashAdvanceDto,
   RejectCashAdvanceDto,
+  ReturnForRevisionDto,
   SettleCashAdvanceDto,
   SubmitReportDto,
   TopUpPettyCashDto,
+  UnsettleCashAdvanceDto,
   UpdateCashAdvanceDto,
   WithdrawPettyCashDto,
 } from "./cash-advances.dto.js";
@@ -104,6 +106,17 @@ export class CashAdvancesController {
     return this.service.addItem(id, dto, user);
   }
 
+  @Patch(":id/items/:itemId")
+  @Require("expenses", "C")
+  updateItem(
+    @Param("id", ParseIntPipe) id: number,
+    @Param("itemId", ParseIntPipe) itemId: number,
+    @Body() dto: CashAdvanceItemDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.updateItem(id, itemId, dto, user);
+  }
+
   @Delete(":id/items/:itemId")
   @Require("expenses", "C")
   removeItem(
@@ -124,5 +137,17 @@ export class CashAdvancesController {
   @Require("expenses", "P")
   settle(@Param("id", ParseIntPipe) id: number, @Body() dto: SettleCashAdvanceDto, @CurrentUser() user: RequestUser) {
     return this.service.settle(id, dto, user);
+  }
+
+  @Post(":id/return-for-revision")
+  @Require("expenses", "P")
+  returnForRevision(@Param("id", ParseIntPipe) id: number, @Body() dto: ReturnForRevisionDto, @CurrentUser() user: RequestUser) {
+    return this.service.returnForRevision(id, dto, user);
+  }
+
+  @Post(":id/unsettle")
+  @Require("expenses", "P")
+  unsettle(@Param("id", ParseIntPipe) id: number, @Body() dto: UnsettleCashAdvanceDto, @CurrentUser() user: RequestUser) {
+    return this.service.unsettle(id, dto, user);
   }
 }

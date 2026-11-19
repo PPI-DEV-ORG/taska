@@ -122,6 +122,27 @@ export class SubmitReportDto {
   note?: string;
 }
 
+export class RevisionItemDto {
+  @Type(() => Number) @IsInt()
+  id!: number;
+
+  /** Apa yang harus diperbaiki karyawan (wajib). */
+  @IsString() @MaxLength(500)
+  note!: string;
+}
+
+/** Finance mengembalikan laporan ke karyawan: nota tertentu harus direvisi lalu dilaporkan ulang. */
+export class ReturnForRevisionDto {
+  @IsArray() @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => RevisionItemDto)
+  items!: RevisionItemDto[];
+}
+
+/** Batalkan verifikasi yang keliru: jurnal dibalik, laporan kembali menunggu verifikasi. */
+export class UnsettleCashAdvanceDto {
+  @IsString() @MaxLength(500)
+  reason!: string;
+}
+
 export class SettleCashAdvanceDto {
   /** Sisa uang: dikembalikan ke kas (RETURN) atau tetap di saldo petty cash karyawan untuk tugas berikutnya (KEEP). */
   @IsOptional() @IsIn(["RETURN", "KEEP"])

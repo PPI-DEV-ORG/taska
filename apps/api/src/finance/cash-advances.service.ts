@@ -25,9 +25,11 @@ import {
   CreateCashAdvanceDto,
   DisburseCashAdvanceDto,
   RejectCashAdvanceDto,
+  ReturnForRevisionDto,
   SettleCashAdvanceDto,
   SubmitReportDto,
   TopUpPettyCashDto,
+  UnsettleCashAdvanceDto,
   UpdateCashAdvanceDto,
   WithdrawPettyCashDto,
 } from "./cash-advances.dto.js";
@@ -643,6 +645,41 @@ export class CashAdvancesService {
     return this.get(id, user);
   }
 
+  /** Karyawan memperbaiki nota (mis. setelah Finance meminta revisi). Nota REVISI kembali menunggu pemeriksaan. */
+  async updateItem(id: number, itemId: number, dto: CashAdvanceItemDto, user: RequestUser) {
+    const row = await this.load(id);
+    this.assertHolder(row, user);
+    if (!["DICAIRKAN", "DILAPORKAN"].includes(row.status)) throw new BadRequestException("Laporan yang sudah diverifikasi tidak bisa diubah");
+    const item = row.items.find((it) => it.id === itemId);
+    if (!item) throw new NotFoundException("Rincian biaya tidak ditemukan");
+    const remaining = cashAdvanceRemaining(row.disbursedAmount as any, row.items.filter((it) => it.id !== itemId).map((it) => n(it.amount)));
+    if (n(dto.amount) > remaining) {
+      throw new BadRequestException(
+        `Sisa petty cash ${row.number} untuk nota ini hanya Rp${remaining.toLocaleString("id-ID")}. Catat kelebihannya sebagai "Uang sendiri" (reimburse).`,
+      );
+    }
+    await this.prisma.main.cashAdvanceItem.update({
+      where: { id: itemId },
+      data: {
+        date: dto.date ? dateOnly(dto.date) : undefined,
+        description: dto.description.trim(),
+        amount: dto.amount,
+        categoryId: dto.categoryId ?? null,
+        receiptFileIds: dto.receiptFileIds?.length ? dto.receiptFileIds : undefined,
+        // Sudah diperbaiki -> menunggu diperiksa lagi saat laporan dikirim ulang
+        ...(item.status === "REVISI" ? { status: "DIAJUKAN" as const, rejectReason: null } : {}),
+      },
+    });
+    if (dto.receiptFileIds?.length) {
+      await this.prisma.main.file
+        .updateMany({ where: { id: { in: dto.receiptFileIds } }, data: { refType: "cash-advance-item", refId: String(itemId) } })
+        .catch(() => {});
+    }
+    this.notifications.dataChange("cash-advances", "update", id);
+    await this.syncSurvey(id);
+    return this.get(id, user);
+  }
+
   async removeItem(id: number, itemId: number, user: RequestUser) {
     const row = await this.load(id);
     this.assertHolder(row, user);
@@ -661,6 +698,12 @@ export class CashAdvancesService {
     const missingReceipt = row.items.filter((it) => !Array.isArray(it.receiptFileIds) || it.receiptFileIds.length === 0);
     if (row.items.length > 0 && missingReceipt.length === row.items.length) {
       throw new BadRequestException("Lampirkan minimal satu foto nota / bukti biaya");
+    }
+    const pendingRevision = row.items.filter((it) => it.status === "REVISI");
+    if (pendingRevision.length) {
+      throw new BadRequestException(
+        `Masih ada ${pendingRevision.length} nota yang diminta direvisi Finance. Perbaiki (ubah) atau hapus nota tersebut sebelum mengirim ulang laporan.`,
+      );
     }
     await this.prisma.main.cashAdvance.update({
       where: { id },
@@ -687,6 +730,9 @@ export class CashAdvancesService {
   async settle(id: number, dto: SettleCashAdvanceDto, user: RequestUser) {
     const row = await this.load(id);
     if (row.status !== "DILAPORKAN") throw new BadRequestException("Hanya laporan petty cash yang sudah dikirim karyawan yang bisa diverifikasi");
+    if (row.items.some((it) => it.status === "REVISI")) {
+      throw new BadRequestException("Masih ada nota yang menunggu revisi karyawan");
+    }
     // Pemeriksaan per nota: hanya nominal yang disahkan yang menjadi biaya. Nota ditolak / selisih penyesuaian
     // tetap dipegang karyawan sebagai sisa -> dikembalikan ke kas atau disimpan di saldo petty cash-nya.
     const review = reviewCashAdvanceItems(row.items.map((it) => ({ id: it.id, amount: n(it.amount) })), dto.items);
@@ -855,6 +901,104 @@ export class CashAdvancesService {
     this.notifications.dataChange("cash-advances", "status", id);
     await this.syncSurvey(id);
     this.notifications.dataChange("expenses", "create");
+    return this.get(id, user);
+  }
+
+  /**
+   * Finance mengembalikan laporan ke karyawan: nota yang disebut ditandai REVISI beserta catatannya,
+   * laporan kembali ke status Dicairkan. Karyawan memperbaiki nota lalu mengirim laporan ulang.
+   * Tidak ada jurnal yang dibuat / diubah.
+   */
+  async returnForRevision(id: number, dto: ReturnForRevisionDto, user: RequestUser) {
+    if (!this.isFinance(user)) throw new ForbiddenException("Hanya Finance yang boleh meminta revisi laporan");
+    const row = await this.load(id);
+    if (row.status !== "DILAPORKAN") throw new BadRequestException("Hanya laporan yang menunggu verifikasi yang bisa dikembalikan untuk revisi");
+    const notes = (dto.items ?? []).map((d) => ({ id: Number(d.id), note: String(d.note ?? "").trim() }));
+    if (!notes.length) throw new BadRequestException("Pilih minimal satu nota yang harus direvisi");
+    for (const d of notes) {
+      if (!row.items.some((it) => it.id === d.id)) throw new BadRequestException(`Rincian #${d.id} bukan bagian dari laporan ini`);
+      if (!d.note) throw new BadRequestException("Tulis apa yang harus diperbaiki untuk setiap nota revisi");
+    }
+    await this.prisma.main.$transaction(async (tx) => {
+      const claimed = await tx.cashAdvance.updateMany({ where: { id, status: "DILAPORKAN" }, data: { status: "DICAIRKAN" } });
+      if (claimed.count === 0) throw new BadRequestException("Laporan sudah diproses");
+      for (const d of notes) {
+        await tx.cashAdvanceItem.update({ where: { id: d.id }, data: { status: "REVISI", rejectReason: d.note, approvedAmount: null } });
+      }
+    });
+    await this.audit.log({
+      actor: user,
+      action: "REVISI_UANG_JALAN",
+      entityType: "cash-advance",
+      entityId: id,
+      detail: `${row.number}: ${notes.length} nota diminta revisi`,
+    });
+    await this.notifications
+      .notify({
+        userIds: [row.employeeId],
+        kind: "APPROVAL",
+        title: "Laporan Petty Cash Perlu Revisi",
+        text: `Finance meminta revisi ${notes.length} nota di laporan petty cash ${row.number}. Perbaiki lalu kirim ulang laporannya.`,
+        href: `/cash-advances?id=${id}`,
+      })
+      .catch(() => {});
+    this.notifications.dataChange("cash-advances", "status", id);
+    return this.get(id, user);
+  }
+
+  /**
+   * Batalkan verifikasi yang keliru (undo): jurnal pertanggungjawaban & pengembalian dibalik,
+   * pengeluaran hasil verifikasi dihapus, keputusan per nota direset, laporan kembali Menunggu verifikasi.
+   * Jurnal pencairan tidak disentuh. Ditolak bila periode pembukuan jurnalnya sudah ditutup.
+   */
+  async unsettle(id: number, dto: UnsettleCashAdvanceDto, user: RequestUser) {
+    if (!this.isFinance(user)) throw new ForbiddenException("Hanya Finance yang boleh membatalkan verifikasi");
+    const reason = String(dto.reason ?? "").trim();
+    if (!reason) throw new BadRequestException("Alasan pembatalan verifikasi wajib diisi");
+    const row = await this.load(id);
+    if (row.status !== "SELESAI") throw new BadRequestException("Hanya laporan yang sudah diverifikasi yang bisa dibatalkan");
+
+    await this.prisma.main.$transaction(async (tx) => {
+      const claimed = await tx.cashAdvance.updateMany({
+        where: { id, status: "SELESAI" },
+        data: {
+          status: "DILAPORKAN",
+          settledAt: null,
+          settledById: null,
+          spentAmount: null,
+          returnedAmount: null,
+          returnAccountCode: null,
+          returnFileId: null,
+          reimbursedAmount: null,
+        },
+      });
+      if (claimed.count === 0) throw new BadRequestException("Verifikasi sudah dibatalkan");
+      const memo = `Batal verifikasi petty cash ${row.number}: ${reason}`;
+      await this.posting.reverse(SOURCE, id, "settled", memo, user.id, tx);
+      await this.posting.reverse(SOURCE, id, "returned", memo, user.id, tx);
+      await tx.expense.deleteMany({ where: { cashAdvanceId: id, fundingSource: "UANG_JALAN" } });
+      await tx.cashAdvanceItem.updateMany({ where: { cashAdvanceId: id }, data: { status: "DIAJUKAN", approvedAmount: null, rejectReason: null } });
+    });
+
+    await this.audit.log({
+      actor: user,
+      action: "BATAL_VERIFIKASI_UANG_JALAN",
+      entityType: "cash-advance",
+      entityId: id,
+      detail: `${row.number}: ${reason}`,
+    });
+    await this.notifications
+      .notify({
+        userIds: [row.employeeId],
+        kind: "APPROVAL",
+        title: "Verifikasi Petty Cash Dibatalkan",
+        text: `Verifikasi laporan petty cash ${row.number} dibatalkan Finance (${reason}). Laporan akan diperiksa ulang.`,
+        href: `/cash-advances?id=${id}`,
+      })
+      .catch(() => {});
+    this.notifications.dataChange("cash-advances", "status", id);
+    this.notifications.dataChange("expenses", "delete");
+    await this.syncSurvey(id);
     return this.get(id, user);
   }
 }
