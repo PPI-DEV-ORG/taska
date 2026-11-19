@@ -164,7 +164,11 @@ function DetailContent({
   }, [subscriptionId, toast]);
 
   React.useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   async function runAction(key: string, fn: () => Promise<any>, successMessage: string) {
@@ -457,6 +461,23 @@ function DetailContent({
           </View>
         </View>
 
+        {sub.status === "RENEWAL_PENDING" || (sub.renewalHistory ?? []).some((r) => r.approvalStatus === "PENDING") ? (
+          <View className="mb-2 flex-row items-center justify-between rounded-xl border border-warning/50 bg-warning/10 p-3">
+            <View className="flex-1 pr-2">
+              <Text className="text-xs font-bold text-warning-foreground">
+                ⚡ Perpanjangan Menunggu Persetujuan
+              </Text>
+              <Text className="text-[11px] text-muted-foreground">
+                Langganan ini memiliki perpanjangan yang menunggu ditinjau dan disetujui untuk siklus berikutnya.
+              </Text>
+            </View>
+            <Button size="sm" onPress={() => onRenew(sub)} className="gap-1.5">
+              <CalendarClock size={13} color="#FFFFFF" />
+              <Text className="text-xs font-semibold text-white">Tinjau & Setujui</Text>
+            </Button>
+          </View>
+        ) : null}
+
         <SubscriptionTabs tabs={tabs} value={tab} onChange={setTab} />
 
         <ScrollView className="max-h-[62vh]" contentContainerStyle={{ paddingBottom: 10 }}>
@@ -555,7 +576,13 @@ function DetailContent({
                     rupiah(row.previousCost),
                     rupiah(row.renewalCost),
                     row.invoiceNumber ?? "-",
-                    row.approvalStatus,
+                    row.approvalStatus === "PENDING"
+                      ? "Menunggu Persetujuan"
+                      : row.approvalStatus === "APPROVED"
+                        ? "Disetujui"
+                        : row.approvalStatus === "REJECTED"
+                          ? "Ditolak"
+                          : row.approvalStatus,
                   ])}
                   empty="Belum ada riwayat renewal. Data periode sebelumnya tidak akan ditimpa."
                 />
@@ -776,6 +803,7 @@ function DetailContent({
                   widths={["flex-1", "w-28", "w-20", "w-28", "w-28", "w-24"]}
                   rows={(sub.documents ?? []).map((row) => [
                     <TouchableOpacity
+                      key={`${row.id}-title`}
                       onPress={() => {
                         const url = row.fileUrl.startsWith("http") ? row.fileUrl : `${apiBase()}${row.fileUrl}`;
                         Linking.openURL(url).catch(() => null);
@@ -789,7 +817,7 @@ function DetailContent({
                     formatFileSize(row.fileSize),
                     row.uploadedByUser?.name ?? "-",
                     tanggal(row.createdAt),
-                    <View className="flex-row items-center gap-1">
+                    <View key={`${row.id}-actions`} className="flex-row items-center gap-1">
                       <TouchableOpacity
                         onPress={() => {
                           const url = row.fileUrl.startsWith("http") ? row.fileUrl : `${apiBase()}${row.fileUrl}`;

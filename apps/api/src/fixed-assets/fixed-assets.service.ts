@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { PostingService } from "../accounting/posting.service.js";
@@ -46,14 +47,65 @@ function dateOnly(value?: string | Date | null): Date | null {
 }
 
 @Injectable()
-export class FixedAssetsService {
+export class FixedAssetsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly postingService: PostingService,
   ) {}
 
+  async onModuleInit() {
+    void this.ensureRequiredCoaAccounts().catch(() => undefined);
+  }
+
   private db(): any {
     return (this.prisma.main as any);
+  }
+
+  async ensureRequiredCoaAccounts() {
+    const requiredCoa = [
+      { code: "1500", name: "ASET TETAP (Header)", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: false, isCash: false, isSystem: true, parentCode: null },
+      { code: "1501", name: "Tanah", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1500" },
+      { code: "1502", name: "Bangunan & Gedung", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1500" },
+      { code: "1503", name: "Kendaraan Operasional", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1500" },
+      { code: "1504", name: "Peralatan Kantor & Elektronik", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1500" },
+      { code: "1505", name: "Mesin & Peralatan Proyek", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1500" },
+      { code: "1506", name: "Perangkat IT & Komputer", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1500" },
+      { code: "1507", name: "Furniture & Fixture", category: "Aset Tidak Lancar", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1500" },
+      { code: "1590", name: "AKUMULASI PENYUSUTAN (Header)", category: "Aset Tidak Lancar", normalBalance: "KREDIT", isPostable: false, isCash: false, isSystem: true, parentCode: null },
+      { code: "1591", name: "Akum. Penyusutan Gedung", category: "Aset Tidak Lancar", normalBalance: "KREDIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1590" },
+      { code: "1592", name: "Akum. Penyusutan Kendaraan", category: "Aset Tidak Lancar", normalBalance: "KREDIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1590" },
+      { code: "1593", name: "Akum. Penyusutan Peralatan Kantor", category: "Aset Tidak Lancar", normalBalance: "KREDIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1590" },
+      { code: "1594", name: "Akum. Penyusutan Mesin & Alat", category: "Aset Tidak Lancar", normalBalance: "KREDIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1590" },
+      { code: "1595", name: "Akum. Penyusutan Perangkat IT", category: "Aset Tidak Lancar", normalBalance: "KREDIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1590" },
+      { code: "1596", name: "Akum. Penyusutan Furniture", category: "Aset Tidak Lancar", normalBalance: "KREDIT", isPostable: true, isCash: false, isSystem: true, parentCode: "1590" },
+      { code: "6101", name: "Beban Penyusutan Aset Tetap", category: "Beban Operasional", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: "6000" },
+      { code: "6103", name: "Kerugian Pelepasan Aset Tetap", category: "Beban Diluar Usaha", normalBalance: "DEBIT", isPostable: true, isCash: false, isSystem: true, parentCode: null },
+      { code: "7102", name: "Keuntungan Pelepasan Aset Tetap", category: "Pendapatan Diluar Usaha", normalBalance: "KREDIT", isPostable: true, isCash: false, isSystem: true, parentCode: null },
+    ];
+
+    for (const acc of requiredCoa) {
+      try {
+        const found = await this.db().coaAccount.findUnique({
+          where: { code: acc.code },
+          select: { id: true },
+        });
+        if (!found) {
+          if (acc.parentCode) {
+            const parentFound = await this.db().coaAccount.findUnique({
+              where: { code: acc.parentCode },
+              select: { id: true },
+            });
+            if (!parentFound) {
+              const p = requiredCoa.find((r) => r.code === acc.parentCode);
+              if (p) await this.db().coaAccount.create({ data: p }).catch(() => null);
+            }
+          }
+          await this.db().coaAccount.create({ data: acc }).catch(() => null);
+        }
+      } catch {
+        // ignore duplicate / concurrent errors
+      }
+    }
   }
 
   // ───────────────────────────────────────────────
@@ -525,6 +577,7 @@ export class FixedAssetsService {
       const creditAccountCode = dto.creditAccountCode || "1000.02";
 
       try {
+        await this.ensureRequiredCoaAccounts();
         await this.postingService.post({
           date: acquisitionDate,
           source: "FIXED_ASSET_ACQUISITION",
@@ -935,6 +988,7 @@ export class FixedAssetsService {
       }
 
       if (lines.length >= 2) {
+        await this.ensureRequiredCoaAccounts();
         const postedJournal = await this.postingService.post({
           date: disposalDate,
           source: "FIXED_ASSET_DISPOSAL",
@@ -1030,6 +1084,10 @@ export class FixedAssetsService {
 
     let postedCount = 0;
     let totalAmount = 0;
+
+    if (schedules.length > 0) {
+      await this.ensureRequiredCoaAccounts();
+    }
 
     for (const schedule of schedules) {
       const depAmount = Number(schedule.depreciationAmount);

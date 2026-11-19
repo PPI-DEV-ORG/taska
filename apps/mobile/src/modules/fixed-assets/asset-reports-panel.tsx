@@ -35,6 +35,7 @@ export function FixedAssetReportsPanel({ categories }: { categories: FaCategory[
   const [reportData, setReportData] = React.useState<any[]>([]);
 
   const fetchReport = React.useCallback(async () => {
+    await Promise.resolve();
     try {
       setLoading(true);
       const qs = queryString({
@@ -53,7 +54,10 @@ export function FixedAssetReportsPanel({ categories }: { categories: FaCategory[
   }, [reportType, department, categoryId, year, month]);
 
   React.useEffect(() => {
-    fetchReport();
+    const timer = setTimeout(() => {
+      void fetchReport();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchReport]);
 
   const handleExportCsv = () => {
@@ -114,7 +118,7 @@ export function FixedAssetReportsPanel({ categories }: { categories: FaCategory[
               value={selectedReportStr}
               options={REPORT_OPTIONS.map((o) => `${o.value} - ${o.label}`)}
               onChange={(val) => {
-                const valKey = val.split(" - ")[0];
+                const valKey = val.split(" - ")[0] || "register";
                 setReportType(valKey);
               }}
             />
@@ -126,7 +130,7 @@ export function FixedAssetReportsPanel({ categories }: { categories: FaCategory[
               options={categoryOptions}
               onChange={(val) => {
                 if (val.startsWith("--")) setCategoryId("");
-                else setCategoryId(val.split(" - ")[0]);
+                else setCategoryId(val.split(" - ")[0] || "");
               }}
             />
           </View>

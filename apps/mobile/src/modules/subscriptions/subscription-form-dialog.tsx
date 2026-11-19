@@ -33,6 +33,8 @@ import {
   todayIso,
 } from "./subscription-utils";
 
+import { useSubscriptionAccounts } from "./use-subscription-accounts";
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -78,13 +80,6 @@ type FormState = {
   notes: string;
   allocations: CostAllocation[];
 };
-
-const PAYMENT_ACCOUNT_OPTIONS = [
-  { code: "1000.02", label: "1000.02 - Bank Mandiri PT GMP" },
-  { code: "1000.01", label: "1000.01 - Kas Operasional" },
-  { code: "1000.03", label: "1000.03 - Kas Kecil (Petty Cash)" },
-  { code: "210102", label: "210102 - Account Payable (Hutang Usaha)" },
-];
 
 function defaultForm(): FormState {
   const start = todayIso();
@@ -185,6 +180,14 @@ function FormContent({
   onSuccess,
 }: Props) {
   const { toast, user } = useApp();
+  const { cashAccounts, expenseAccounts, prepaidAccounts } = useSubscriptionAccounts();
+
+  const paymentOptions = React.useMemo(() => {
+    return [
+      ...cashAccounts.map((c) => ({ code: c.code, label: c.label })),
+      { code: "210102", label: "210102 - Account Payable (Hutang Usaha)" },
+    ];
+  }, [cashAccounts]);
   const canCreate = hasUserPermission(user, "subscriptions", "C");
   const [form, setForm] = React.useState<FormState>(() =>
     subscription ? formFromRow(subscription) : defaultForm(),
@@ -831,23 +834,35 @@ function FormContent({
                     />
                   </FormField>
                 </View>
-                <View className="w-32">
-                  <FormField label="Akun Beban">
-                    <TextInput
-                      value={form.expenseAccountCode}
-                      onChangeText={(value) => set("expenseAccountCode", value)}
-                      placeholder="6122"
-                      className="rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground"
+                <View className="min-w-[180px] flex-1">
+                  <FormField label="Akun Beban Operasional">
+                    <SearchableSelect
+                      value={
+                        expenseAccounts.find((a) => a.code === form.expenseAccountCode)?.label ??
+                        form.expenseAccountCode
+                      }
+                      options={expenseAccounts.map((a) => a.label)}
+                      onChange={(label) => {
+                        const found = expenseAccounts.find((a) => a.label === label);
+                        if (found) set("expenseAccountCode", found.code);
+                      }}
+                      className="h-11 rounded-lg border-border/80 bg-card"
                     />
                   </FormField>
                 </View>
-                <View className="w-32">
+                <View className="min-w-[180px] flex-1">
                   <FormField label="Akun Prepaid">
-                    <TextInput
-                      value={form.prepaidAccountCode}
-                      onChangeText={(value) => set("prepaidAccountCode", value)}
-                      placeholder="1401"
-                      className="rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground"
+                    <SearchableSelect
+                      value={
+                        prepaidAccounts.find((a) => a.code === form.prepaidAccountCode)?.label ??
+                        form.prepaidAccountCode
+                      }
+                      options={prepaidAccounts.map((a) => a.label)}
+                      onChange={(label) => {
+                        const found = prepaidAccounts.find((a) => a.label === label);
+                        if (found) set("prepaidAccountCode", found.code);
+                      }}
+                      className="h-11 rounded-lg border-border/80 bg-card"
                     />
                   </FormField>
                 </View>
@@ -890,12 +905,12 @@ function FormContent({
                       <FormField label="Akun Kas / Bank (Kredit)">
                         <SearchableSelect
                           value={
-                            PAYMENT_ACCOUNT_OPTIONS.find((a) => a.code === form.paymentAccountCode)?.label ??
+                            paymentOptions.find((a) => a.code === form.paymentAccountCode)?.label ??
                             form.paymentAccountCode
                           }
-                          options={PAYMENT_ACCOUNT_OPTIONS.map((a) => a.label)}
+                          options={paymentOptions.map((a) => a.label)}
                           onChange={(label) => {
-                            const found = PAYMENT_ACCOUNT_OPTIONS.find((a) => a.label === label);
+                            const found = paymentOptions.find((a) => a.label === label);
                             if (found) set("paymentAccountCode", found.code);
                           }}
                           className="h-11 rounded-lg border-border/80 bg-card"
