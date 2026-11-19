@@ -128,7 +128,7 @@ export class WhatsappConversationService {
     const user = await this.findOrResolveUser(cleanPhone, params.senderName);
     if (!user) {
       await params.reply(
-        `Halo ${params.senderName}! Belum ada akun aktif pada sistem Taska ERP. Silakan hubungi Admin.`,
+        `Halo ${params.senderName}! Belum ada akun aktif pada sistem Akuntra ERP. Silakan hubungi Admin.`,
       );
       return;
     }
@@ -308,7 +308,7 @@ export class WhatsappConversationService {
     // ─── Perintah Bantuan / Status ───
     if (["bantuan", "help", "status", "menu", "/help", "halo", "hi", "ping"].includes(trimmed.toLowerCase()) && session.photos.length === 0) {
       await session.replyFn?.(
-        `🤖 *Bot WhatsApp Taska ERP*\n\n` +
+        `🤖 *Bot WhatsApp Akuntra ERP*\n\n` +
           `Anda dapat mengirim laporan *Survey*, *Instalasi Project*, atau *Surat Jalan* langsung lewat chat ini:\n\n` +
           `1️⃣ Kirim 1 atau beberapa foto dokumentasi lapangan\n` +
           `2️⃣ Sertakan caption atau balas dengan pesan seperti:\n` +
@@ -960,7 +960,7 @@ export class WhatsappConversationService {
           `• *Foto Terlampir:* ${currentPhotos.length} foto\n` +
           `• *Petugas:* ${session.user.name}\n` +
           `• *Hasil:* ${resultNotes}\n\n` +
-          `File PDF & foto dokumentasi telah otomatis tersimpan dan terlampir pada data *${this.kindLabel(enrichedEntity.type)}* di aplikasi Taska ERP.`,
+          `File PDF & foto dokumentasi telah otomatis tersimpan dan terlampir pada data *${this.kindLabel(enrichedEntity.type)}* di aplikasi Akuntra ERP.`,
       );
 
       // Bersihkan sesi agar pengiriman berikutnya tidak mencampur foto lama

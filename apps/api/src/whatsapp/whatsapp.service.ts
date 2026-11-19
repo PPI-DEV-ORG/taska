@@ -125,7 +125,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
           const userJid = sock.user?.id || "";
           const phone = userJid.split(":")[0]?.replace("@s.whatsapp.net", "") || "";
           this.connectedPhone = phone ? `+${phone}` : null;
-          this.connectedName = sock.user?.name || "Bot WhatsApp Taska";
+          this.connectedName = sock.user?.name || "Bot WhatsApp Akuntra";
           this.logger.log(`WhatsApp terhubung sebagai ${this.connectedName} (${this.connectedPhone})`);
         }
       });

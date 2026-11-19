@@ -1,5 +1,5 @@
 {
-  "name": "taska",
+  "name": "akuntra",
   "private": true,
   "scripts": {
     "build": "turbo run build",

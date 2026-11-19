@@ -14,7 +14,14 @@ export function escapeHtml(str: unknown): string {
 function readCachedCompanyProfile(): CompanyProfile {
   if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
     try {
-      const raw = window.localStorage.getItem("taska.offline.company.v1");
+      let raw = window.localStorage.getItem("akuntra.offline.company.v1");
+      if (!raw) {
+        raw = window.localStorage.getItem("taska.offline.company.v1");
+        if (raw) {
+          window.localStorage.setItem("akuntra.offline.company.v1", raw);
+          window.localStorage.removeItem("taska.offline.company.v1");
+        }
+      }
       if (raw) {
         const parsed = JSON.parse(raw);
         return { ...DEFAULT_COMPANY_PROFILE, ...parsed };

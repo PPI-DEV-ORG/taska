@@ -19,7 +19,7 @@ const KIND_TITLE: Record<string, string> = {
   LEAD: "Prospek & Penawaran",
   TUGAS: "Tugas & Project",
   SURAT: "Surat Jalan & Dokumen",
-  LAINNYA: "Notifikasi Taska ERP",
+  LAINNYA: "Notifikasi Akuntra ERP",
 };
 
 @Injectable()
@@ -50,7 +50,7 @@ export class NotificationsService {
     if (!users.size) return 0;
 
     const kind = input.kind ?? ("LAINNYA" as NotifKind);
-    const title = input.title ?? KIND_TITLE[kind] ?? "Notifikasi Taska ERP";
+    const title = input.title ?? KIND_TITLE[kind] ?? "Notifikasi Akuntra ERP";
     const createdAt = new Date().toISOString();
 
     const rows = await this.prisma.main.$transaction(
