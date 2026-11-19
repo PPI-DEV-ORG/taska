@@ -12,7 +12,7 @@ export const FINANCIAL_TYPES = new Set([
 ]);
 
 export function generateCsvByType(type: string, title: string, fin: any, data: any, approvals: any[]): string {
-  const headerPrefix = `LAPORAN RESMI PT GHINA MULTI PRIMA (TASKA ERP) - ${title.toUpperCase()}\nTanggal Ekspor: ${new Date().toISOString().slice(0, 10)}\n\n`;
+  const headerPrefix = `LAPORAN RESMI PT GHINA MULTI PRIMA (AKUNTRA ERP) - ${title.toUpperCase()}\nTanggal Ekspor: ${new Date().toISOString().slice(0, 10)}\n\n`;
 
   if (type === "income-statement" || title.includes("Laba Rugi Standar")) {
     const inc = fin.incomeStatement;
@@ -348,7 +348,7 @@ export async function downloadReport({
       </style>
       </head>
       <body>
-        <h2>PT GHINA MULTI PRIMA / TASKA ERP</h2>
+        <h2>PT GHINA MULTI PRIMA / AKUNTRA ERP</h2>
         <h3>${title}</h3>
         <p class="meta">Tanggal Ekspor: ${new Date().toISOString().slice(0, 10)}</p>
         <table>${tableRows}</table>

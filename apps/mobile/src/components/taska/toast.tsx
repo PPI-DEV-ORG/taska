@@ -29,7 +29,13 @@ export type NotifPopupItem = {
   href?: string;
 };
 
-const ICON = { success: CircleCheck, danger: CircleAlert, warning: TriangleAlert, info: Info };
+const ICON: Record<string, any> = {
+  success: CircleCheck,
+  danger: CircleAlert,
+  error: CircleAlert,
+  warning: TriangleAlert,
+  info: Info,
+};
 
 const NOTIF_ICON: Record<Notif["jenis"], any> = {
   approval: ClipboardCheck,
@@ -66,8 +72,9 @@ export function ToastHost({ items }: { items: ToastItem[] }) {
       }}
     >
       {items.map((t) => {
-        const Icon = ICON[t.tone];
-        const color = toneColor[t.tone];
+        const toneKey = t.tone === ("error" as any) ? "danger" : t.tone || "info";
+        const Icon = ICON[toneKey] || CircleAlert;
+        const color = (toneColor as any)[toneKey] || toneColor.info;
         return (
           <View
             key={t.id}

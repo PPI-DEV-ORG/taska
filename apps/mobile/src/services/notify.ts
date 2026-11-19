@@ -4,7 +4,7 @@ import { normalizeNotifHref } from "@/services/adapters";
 import { apiOrigin, getAccess } from "@/services/api";
 
 const CHANNEL_ID = "taska-realtime";
-const TITLE = "Taska Mini ERP";
+const TITLE = "Akuntra Mini ERP";
 
 let permission: NotificationPermission | null = null;
 let nativeReady = false;
@@ -265,7 +265,7 @@ export async function ensureNotifPermission(): Promise<boolean> {
   try {
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-        name: "Notifikasi Taska",
+        name: "Notifikasi Akuntra",
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#FF231F7C",

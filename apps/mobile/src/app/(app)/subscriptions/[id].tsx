@@ -1,0 +1,24 @@
+import { useLocalSearchParams } from "expo-router";
+import { SubscriptionsScreen } from "@/modules/subscriptions/subscriptions-screen";
+import { EmptyState } from "@/components/taska/basics";
+import { hasUserPermission } from "@/constants/modules";
+import { useApp } from "@/store/app-store";
+
+export default function SubscriptionDetailRoute() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useApp();
+  const isAllowed =
+    hasUserPermission(user, "subscriptions", "M") ||
+    hasUserPermission(user, "subscriptions", "L");
+
+  if (!isAllowed) {
+    return (
+      <EmptyState
+        title="Akses Ditolak"
+        text="Akun kamu tidak memiliki akses untuk membuka detail Manajemen Langganan."
+      />
+    );
+  }
+
+  return <SubscriptionsScreen initialSubscriptionId={id} />;
+}

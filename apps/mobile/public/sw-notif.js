@@ -10,7 +10,7 @@ const KIND_TITLE = {
   LEAD: "Prospek & Penawaran",
   TUGAS: "Tugas & Project",
   SURAT: "Surat Jalan & Dokumen",
-  LAINNYA: "Notifikasi Taska ERP",
+  LAINNYA: "Notifikasi Akuntra ERP",
 };
 
 self.addEventListener("install", () => {
@@ -42,7 +42,7 @@ async function checkBackgroundNotifications() {
       const idStr = String(item.id);
       if (swSeenIds.has(idStr)) continue;
       swSeenIds.add(idStr);
-      const title = KIND_TITLE[item.kind] || "Taska Mini ERP";
+      const title = KIND_TITLE[item.kind] || "Akuntra Mini ERP";
       const body = item.text || "Ada notifikasi baru untuk Anda";
       const href = item.href || "/";
       await self.registration.showNotification(title, {
@@ -83,7 +83,7 @@ self.addEventListener("message", (event) => {
     const { title, body, tag, href } = msg;
     if (msg.id != null) swSeenIds.add(String(msg.id));
     event.waitUntil(
-      self.registration.showNotification(title || "Taska Mini ERP", {
+      self.registration.showNotification(title || "Akuntra Mini ERP", {
         body: body || "",
         tag: tag || `taska-${Date.now()}`,
         renotify: true,

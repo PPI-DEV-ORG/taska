@@ -80,7 +80,7 @@ export function printOrderDocument(opts: {
           .join("")
       : "";
   const compName = escapeHtml(opts.companyName || profile.name || "PT Samtek");
-  const compTagline = escapeHtml(opts.companyTagline || profile.tagline || "TASKA ERP System");
+  const compTagline = escapeHtml(opts.companyTagline || profile.tagline || "Akuntra ERP System");
   const compAddress = escapeHtml(opts.companyAddress ?? profile.address ?? "");
   const compPhone = escapeHtml(opts.companyPhone ?? profile.phone ?? "");
   const compSignatory = escapeHtml(opts.senderName || profile.signatoryName || profile.name || "PT Samtek");

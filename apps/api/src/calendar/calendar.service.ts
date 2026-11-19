@@ -9,6 +9,9 @@ import {
 import { PrismaService } from "../prisma/prisma.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { SubscriptionsService } from "../subscriptions/subscriptions.service.js";
+import { ContractsService } from "../contracts/contracts.service.js";
+import { MaintenanceService } from "../maintenance/maintenance.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { CalendarEventDto, CalendarQuery, CalendarStatusDto } from "./dto.js";
 
@@ -42,6 +45,7 @@ const GLOBAL_ROLES = ["SUPER_ADMIN", "BOS", "ADMIN"];
 const FINANCE_ROLES = ["FINANCE"];
 const PROCUREMENT_ROLES = ["FINANCE", "PROCUREMENT"];
 const SALES_ROLES = ["SALES", "PM"];
+const SUBSCRIPTION_ROLES = ["FINANCE", "PROCUREMENT", "PM", "SE", "TEKNISI"];
 
 function normStatus(raw: unknown): string {
   const s = String(raw ?? "").toLowerCase();
@@ -80,6 +84,9 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly subscriptions: SubscriptionsService,
+    private readonly contracts: ContractsService,
+    private readonly maintenance: MaintenanceService,
   ) {}
 
   private get db(): any {
@@ -964,6 +971,96 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
           editable: false,
         });
       }
+    }
+
+    // 10. Subscription: jadwal perpanjangan & reminder renewal
+    if (all || SUBSCRIPTION_ROLES.includes(role)) {
+      const renewals = await this.subscriptions.calendarRenewals(from, to);
+      for (const sub of renewals) {
+        const due = sub.nextRenewalDate as Date;
+        if (!due) continue;
+        const days = Math.round((new Date(due).getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
+        items.push({
+          key: `subscription-${sub.id}`,
+          eventNumber: sub.subscriptionCode,
+          sourceModule: "subscriptions",
+          sourceId: sub.id,
+          title: `${days < 0 ? "Lewat perpanjangan" : "Perpanjangan"} ${sub.serviceName}`,
+          subtitle: [sub.provider?.name ?? sub.providerName, sub.category?.name, sub.subscriptionCode]
+            .filter(Boolean)
+            .join(" · "),
+          category: "SUBSCRIPTION",
+          start: iso(due)!,
+          end: null,
+          occurrenceDate: wibDateKey(new Date(due)),
+          isAllDay: true,
+          status: sub.status === "CANCELLATION_PENDING" ? "PENDING" : days < 0 ? "PENDING" : "NOT_STARTED",
+          priority: days <= 3 ? "URGENT" : days <= 7 ? "HIGH" : days <= 14 ? "MEDIUM" : "LOW",
+          picId: sub.picUserId ?? null,
+          picName: sub.picName ?? null,
+          picRole: sub.picUserId ? "PIC" : null,
+          routePath: `/subscriptions/${sub.id}`,
+          isOverdue: days < 0 && !["CANCELLED", "EXPIRED"].includes(String(sub.status)),
+          editable: false,
+        });
+      }
+    }
+
+    // 11. Contract Management: jadwal berakhir kontrak & reminder perpanjangan
+    if (all || SUBSCRIPTION_ROLES.includes(role) || SALES_ROLES.includes(role) || role === "HR") {
+      const expContracts = await this.contracts.calendarExpirations(from, to);
+      for (const ctr of expContracts) {
+        const expDate = ctr.expirationDate as Date;
+        if (!expDate) continue;
+        const days = Math.round((new Date(expDate).getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
+        items.push({
+          key: `contract-exp-${ctr.id}`,
+          eventNumber: ctr.contractNumber,
+          sourceModule: "contracts",
+          sourceId: ctr.id,
+          title: `${days < 0 ? "Kontrak Expired" : "Jatuh Tempo Kontrak"}: ${ctr.title}`,
+          subtitle: [ctr.counterpartyName, ctr.type?.name, ctr.contractNumber].filter(Boolean).join(" · "),
+          category: "CONTRACT",
+          start: iso(expDate)!,
+          end: null,
+          occurrenceDate: wibDateKey(new Date(expDate)),
+          isAllDay: true,
+          status: ctr.status === "RENEWAL_PENDING" ? "PENDING" : days < 0 ? "PENDING" : "NOT_STARTED",
+          priority: days <= 7 ? "URGENT" : days <= 14 ? "HIGH" : days <= 30 ? "MEDIUM" : "LOW",
+          picId: ctr.contractOwnerId ?? null,
+          picName: ctr.ownerName ?? null,
+          picRole: ctr.contractOwnerId ? "PIC" : null,
+          routePath: `/contracts/${ctr.id}`,
+          isOverdue: days < 0 && !["TERMINATED", "RENEWED"].includes(String(ctr.status)),
+          editable: false,
+        });
+      }
+    }
+
+    // 12. Maintenance Management: Jadwal servis berkala aset (EAM)
+    const maintSchedules = await this.maintenance.calendarSchedules(from, to);
+    for (const sch of maintSchedules) {
+      items.push({
+        key: sch.id,
+        eventNumber: sch.id,
+        sourceModule: "maintenance-reports",
+        sourceId: sch.scheduleId,
+        title: sch.title,
+        subtitle: sch.assignedTo ? `Teknisi: ${sch.assignedTo}` : "Belum ditugaskan",
+        category: "MAINTENANCE",
+        start: sch.date,
+        end: sch.date,
+        occurrenceDate: sch.date,
+        isAllDay: true,
+        status: sch.status === "COMPLETED" ? "COMPLETED" : sch.status === "OVERDUE" ? "PENDING" : "IN_PROGRESS",
+        priority: sch.priority || "MEDIUM",
+        picId: null,
+        picName: sch.assignedTo,
+        picRole: "Teknisi",
+        routePath: `/maintenance-reports`,
+        isOverdue: sch.status === "OVERDUE",
+        editable: false,
+      });
     }
 
     // Deteksi bentrok jadwal (Schedule Conflict Detection — PRD 3.8 & Phase 3)

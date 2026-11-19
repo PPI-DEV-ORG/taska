@@ -1,25 +1,25 @@
 {
   "expo": {
-    "name": "Taska - Mini ERP",
+    "name": "Akuntra - Mini ERP",
     "slug": "taska",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/taska-logo.png",
+    "icon": "./assets/AKUNTRA.png",
     "scheme": "taska",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/taska-logo.png"
+      "icon": "./assets/AKUNTRA.png"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0c0f14",
-        "foregroundImage": "./assets/taska-logo.png"
+        "foregroundImage": "./assets/AKUNTRA.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "output": "static",
-      "favicon": "./assets/taska-logo.png",
+      "favicon": "./assets/AKUNTRA.png",
+      "output": "single",
       "bundler": "metro"
     },
     "plugins": [
@@ -28,7 +28,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#0c0f14",
-          "image": "./assets/taska-logo.png",
+          "image": "./assets/AKUNTRA.png",
           "imageWidth": 120
         }
       ],

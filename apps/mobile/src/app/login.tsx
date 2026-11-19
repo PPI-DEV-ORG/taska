@@ -12,7 +12,7 @@ import { colors } from "@/tokens";
 
 let loginLogoSource: any;
 try {
-  const rawLogo = require("../../assets/taska-logo.png");
+  const rawLogo = require("../../assets/AKUNTRA.png");
   loginLogoSource =
     typeof rawLogo === "string"
       ? { uri: rawLogo }
@@ -68,16 +68,16 @@ export default function LoginScreen() {
             {loginLogoSource ? (
               <Image
                 source={loginLogoSource}
-                style={{ width: 64, height: 64, resizeMode: "contain" }}
+                style={{ width: 220, height: 80, resizeMode: "contain" }}
                 resizeMode="contain"
               />
             ) : (
               <View className="bg-panel border-border/80 size-16 items-center justify-center rounded-2xl border shadow-sm">
-                <Text className="text-primary text-3xl font-black">T</Text>
+                <Text className="text-primary text-3xl font-black">A</Text>
               </View>
             )}
-            <Text className="text-3xl font-semibold tracking-tight">Taska</Text>
-            <Text className="text-text-secondary text-center text-sm">Satu tempat untuk prospek, proyek, barang, dan pengeluaran kantor.</Text>
+            <Text className="text-3xl font-semibold tracking-tight">AKUNTRA</Text>
+            <Text className="text-text-secondary text-center text-xl font-bold">Pencatatan Akurat, Bisnis Melaju Cepat</Text>
           </View>
 
           <View className="bg-card border-border gap-4 rounded-xl border p-5">
@@ -85,7 +85,7 @@ export default function LoginScreen() {
               <Input
                 value={email}
                 onChangeText={setEmail}
-                placeholder="nama@taska.co.id"
+                placeholder="nama@akuntra.co.id"
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"

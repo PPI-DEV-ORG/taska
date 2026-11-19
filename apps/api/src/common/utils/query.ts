@@ -22,5 +22,7 @@ export function orderBy(sort: string | undefined, dir: "asc" | "desc", allowed: 
 }
 
 export function pageSkip(q: PageQuery) {
-  return { skip: (q.page - 1) * q.limit, take: q.limit };
+  const limit = (q as any)?.pageSize || q?.limit || 20;
+  const page = q?.page || 1;
+  return { skip: (page - 1) * limit, take: limit };
 }

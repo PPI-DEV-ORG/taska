@@ -32,6 +32,7 @@ const NAV_GROUPS: { title: string; keys: string[] }[] = [
   { title: "Proyek", keys: ["surveys", "projects", "maintenance-reports", "tasks"] },
   { title: "Pembelian", keys: ["purchase-requests", "supplier-pos", "purchase-orders", "shipments"] },
   { title: "Gudang", keys: ["receiving", "stock", "delivery-notes", "opname", "damage-reports"] },
+  { title: "Manajemen", keys: ["contracts", "subscriptions", "fixed-assets", "maintenance"] },
   { title: "Keuangan", keys: ["invoices", "accounting"] },
   // Milik tiap karyawan: saldo petty cash, pengeluaran & absensi sendiri
   { title: "Pribadi", keys: ["cash-advances", "expenses", "hr"] },
@@ -62,7 +63,7 @@ function useNav() {
 
 let taskaLogoSource: any;
 try {
-  const rawLogo = require("../../../assets/taska-logo.png");
+  const rawLogo = require("../../../assets/AKUNTRA.png");
   taskaLogoSource =
     typeof rawLogo === "string"
       ? { uri: rawLogo }
@@ -89,13 +90,15 @@ function Brand({ compact }: { compact?: boolean }) {
         />
       ) : (
         <View className="bg-panel border-border/80 size-9 items-center justify-center rounded-xl border shadow-sm">
-          <Text className="text-primary text-base font-black">T</Text>
+          <Text className="text-primary text-base font-black">A</Text>
         </View>
       )}
       {compact ? null : (
         <View className="flex-1">
-          <Text className="text-base font-bold tracking-tight text-foreground">Taska</Text>
-          <Text className="text-muted-foreground text-[11px] leading-tight">IT Solution & Integrator</Text>
+          <Text className="text-base font-bold tracking-tight text-foreground">Akuntra</Text>
+          <Text className="text-muted-foreground text-[11px] leading-tight" numberOfLines={1}>
+           Integrated ERP
+          </Text>
         </View>
       )}
     </View>
@@ -714,7 +717,7 @@ function Topbar({
   const { isMobile } = useBreakpoint();
   const { items, active } = useNav();
   const { unread, user, theme, toggleTheme } = useApp();
-  const current = items.find(active)?.label ?? "Taska";
+  const current = items.find(active)?.label ?? "Akuntra";
   const canManageWa = ["super_admin", "bos"].includes(user?.role || "");
 
   return (
