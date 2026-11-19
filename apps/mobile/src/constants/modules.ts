@@ -33,6 +33,7 @@ import {
   ShieldCheck,
   HandCoins,
   RefreshCw,
+  HardDrive,
 } from "lucide-react-native";
 
 export type Role =
@@ -1227,6 +1228,7 @@ const N = {
   maintenance: { key: "maintenance", label: "Manajemen Maintenance", short: "Maintenance", href: "/maintenance", icon: Wrench },
   subscriptions: { key: "subscriptions", label: "Manajemen Langganan", short: "Langganan", href: "/subscriptions", icon: RefreshCw },
   contracts: { key: "contracts", label: "Manajemen Kontrak", short: "Kontrak", href: "/contracts", icon: FileSignature },
+  fileManagement: { key: "file-management", label: "Manajemen File", short: "File", href: "/file-management", icon: HardDrive },
   stockView: { key: "stock", label: "Barang, Jasa & SN", short: "Stok", href: "/stock", icon: Boxes },
   invoices: { key: "invoices", label: "Faktur & Kwitansi", short: "Faktur", href: "/invoices", icon: Receipt },
   poClient: { key: "po-client", label: "Pesanan Penjualan (SO)", short: "SO", href: "/po-client", icon: FileCheck },
@@ -1248,11 +1250,11 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   super_admin: [
     N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
     N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-    N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+    N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
-  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.damage, N.reports, N.archive, N.audit],
-  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.damage, N.reports, N.archive, N.audit],
+  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.damage, N.reports, N.archive, N.audit],
+  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.damage, N.reports, N.archive, N.audit],
   sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers, N.expenses, N.cashAdvances, N.hr, N.master],
   pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
   teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
@@ -1268,7 +1270,7 @@ export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "p
 const ALL_NAV_ORDERED: NavItem[] = [
   N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
   N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-  N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+  N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
   N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
 ];
 
@@ -1316,6 +1318,7 @@ const CLIENT_MODULE_ALIASES: Record<string, string[]> = {
   maintenance: ["maintenance", "eam", "work-orders"],
   subscriptions: ["subscriptions", "subscription", "subs"],
   contracts: ["contracts", "contract", "ctr"],
+  "file-management": ["file-management", "fileManagement", "files", "storage"],
   stock: ["stock", "products", "serials", "movements", "warehouses"],
   shipments: ["shipments", "supplier-pos", "supplier_pos"],
 };
@@ -1339,6 +1342,8 @@ export const PERMISSION_ALIAS_TO_UI_KEY: Record<string, string> = {
   fixed_assets: "fixed-assets",
   subscription: "subscriptions",
   contract: "contracts",
+  fileManagement: "file-management",
+  "file-management": "file-management",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

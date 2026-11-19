@@ -1,12 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, normalize, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { SettingsService } from "../settings/settings.service.js";
 import { validateUpload } from "../common/utils/upload.js";
+import { FileProviderService } from "../file-management/provider.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 
 export type UploadKind = "foto" | "dokumen" | "video";
@@ -78,6 +79,7 @@ export class UploadService {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
     config: ConfigService,
+    @Optional() private readonly providerService?: FileProviderService,
   ) {
     const raw = config.get<string>("UPLOAD_DIR") ?? "./uploads";
     if (raw.startsWith("/app") && !existsSync("/app")) {
@@ -123,20 +125,92 @@ export class UploadService {
       abs = join(localRoot, rel);
       await mkdir(dirname(abs), { recursive: true });
     }
-    await writeFile(abs, buffer);
+    const checksum = createHash("sha256").update(buffer).digest("hex");
+    const mime = CONTENT_TYPE[ext] ?? "application/octet-stream";
+    const fileKind = ["png", "jpg", "webp"].includes(ext) ? "FOTO" : kind === "video" ? "VIDEO" : "DOKUMEN";
 
+    // 1. Dapatkan provider default jika providerService aktif
+    let defProvider: { id: number; adapter: any } | null = null;
+    if (this.providerService) {
+      try {
+        defProvider = await this.providerService.getDefaultProvider();
+      } catch {}
+    }
+
+    // 2. Simpan binary: jika provider eksternal, upload ke adapter; jika lokal atau tanpa provider, simpan ke disk
+    let storageKey = rel;
+    let externalFileId: string | null = null;
+
+    if (defProvider && defProvider.adapter?.code !== "local") {
+      storageKey = rel;
+      try {
+        const upRes = await defProvider.adapter.upload(storageKey, buffer, { mimeType: mime });
+        externalFileId = upRes.externalFileId ?? null;
+      } catch (err) {
+        // Fallback simpan lokal jika upload eksternal gagal
+        storageKey = rel;
+        await writeFile(abs, buffer);
+      }
+    } else {
+      await writeFile(abs, buffer);
+    }
+
+    const fileCode = `FILE-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+
+    // 3. Simpan entitas File
     const row = await this.prisma.main.file.create({
       data: {
-        path: rel,
+        path: storageKey,
         originalName: safeName,
-        mimeType: CONTENT_TYPE[ext] ?? "application/octet-stream",
+        displayName: safeName,
+        mimeType: mime,
         size: buffer.length,
-        kind: ["png", "jpg", "webp"].includes(ext) ? "FOTO" : kind === "video" ? "VIDEO" : "DOKUMEN",
+        kind: fileKind,
         refType: refType ?? null,
         refId: refId ?? null,
         uploadedById: user.id,
+        extension: ext,
+        checksumSha256: checksum,
+        fileCode,
+        status: "AVAILABLE",
       },
     });
+
+    // 4. Buat FileVersion dan FileStorageLocation
+    try {
+      const v = await this.prisma.main.fileVersion.create({
+        data: {
+          fileId: row.id,
+          versionNumber: 1,
+          fileName: safeName,
+          fileSize: buffer.length,
+          mimeType: mime,
+          checksumSha256: checksum,
+          createdById: user.id,
+          status: "CURRENT",
+        },
+      });
+
+      if (defProvider) {
+        await this.prisma.main.fileStorageLocation.create({
+          data: {
+            fileId: row.id,
+            versionId: v.id,
+            providerId: defProvider.id,
+            storageKey,
+            externalFileId,
+            isPrimary: true,
+            replicaStatus: "PRIMARY",
+            verificationStatus: "VERIFIED",
+          },
+        });
+      }
+
+      await this.prisma.main.file.update({
+        where: { id: row.id },
+        data: { currentVersionId: v.id },
+      });
+    } catch {}
 
     return {
       id: row.id,
@@ -209,14 +283,41 @@ export class UploadService {
   }
 
   async read(id: number) {
-    const row = await this.prisma.main.file.findUnique({ where: { id } });
+    const row = await this.prisma.main.file.findUnique({
+      where: { id },
+      include: {
+        locations: { include: { provider: true } },
+      },
+    });
     if (!row) throw new NotFoundException("File tidak ditemukan");
 
-    let abs = normalize(join(this.root, row.path));
+    // 1. Coba baca dari provider lokasi primer jika provider eksternal
+    const primaryLoc = row.locations.find((l) => l.isPrimary) ?? row.locations[0];
+    if (primaryLoc && this.providerService && primaryLoc.provider?.type !== "LOCAL") {
+      try {
+        const adapter = await this.providerService.getAdapter(primaryLoc.providerId);
+        const buf = await adapter.download(primaryLoc.storageKey);
+        return {
+          buffer: buf,
+          contentType: row.mimeType,
+          name: row.originalName,
+          size: buf.length,
+        };
+      } catch (adapterErr) {
+        // Fallback otomatis baca salinan lokal jika NAS offline/gagal
+      }
+    }
+
+    // 2. Baca dari penyimpanan lokal (fallback aman pasca-migrasi atau default lokal)
+    const localLoc = row.locations.find(
+      (l) => l.provider?.type === "LOCAL" || l.replicaStatus === "PENDING_CLEANUP",
+    );
+    const filePath = localLoc?.storageKey || row.path;
+    let abs = normalize(join(this.root, filePath));
     try {
       await stat(abs);
     } catch {
-      const alt = resolve(process.cwd().includes("apps/api") ? "./uploads" : "./apps/api/uploads", row.path);
+      const alt = resolve(process.cwd().includes("apps/api") ? "./uploads" : "./apps/api/uploads", filePath);
       if (existsSync(alt)) {
         abs = alt;
       } else {

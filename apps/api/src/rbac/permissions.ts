@@ -47,6 +47,7 @@ export type ModuleKey =
   | "fixedAssets"
   | "subscriptions"
   | "contracts"
+  | "fileManagement"
   | "masterData";
 
 const ALL: Record<ModuleKey, Action[]> = {
@@ -94,6 +95,7 @@ const ALL: Record<ModuleKey, Action[]> = {
   fixedAssets: ["M", "L", "C", "U", "A", "P", "V", "E"],
   subscriptions: ["M", "L", "C", "U", "A", "P", "V", "E"],
   contracts: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  fileManagement: ["M", "L", "C", "U", "A", "P", "V", "E"],
   masterData: ["M", "L", "C", "U", "A", "P", "V", "E"],
 };
 
@@ -374,6 +376,8 @@ const MODULE_ALIASES: Record<string, string[]> = {
   maintenanceReports: ["maintenanceReports", "maintenance-reports"],
   "maintenance-reports": ["maintenance-reports", "maintenanceReports"],
   maintenance: ["maintenance", "eam", "work-orders"],
+  fileManagement: ["fileManagement", "file-management"],
+  "file-management": ["file-management", "fileManagement"],
   damageReports: ["damageReports", "damage-reports", "stock"],
   "damage-reports": ["damage-reports", "damageReports", "stock"],
   audit: ["audit", "audit-log"],
@@ -528,6 +532,7 @@ const UI_TWIN: Record<string, string> = {
   fixedAssets: "fixed-assets",
   subscriptions: "subscriptions",
   contracts: "contracts",
+  fileManagement: "file-management",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

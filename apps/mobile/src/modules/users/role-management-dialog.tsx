@@ -86,6 +86,7 @@ const MODULE_GROUPS: { group: string; items: { key: string; label: string; desc:
       { key: "subscriptions", label: "Manajemen Langganan", desc: "Langganan domain, cloud, VPS, lisensi & alokasi biaya" },
       { key: "fixed-assets", label: "Aset Tetap", desc: "Siklus hidup aset internal, mutasi, depresiasi & audit QR" },
       { key: "maintenance", label: "Manajemen Maintenance", desc: "Pemeliharaan & servis aset internal, Work Order, jadwal preventive & laporan kerusakan" },
+      { key: "file-management", label: "Manajemen File", desc: "Penyimpanan dokumen terpusat, storage provider (S3/NAS), & migrasi berkas" },
     ],
   },
   {
