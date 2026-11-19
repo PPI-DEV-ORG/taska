@@ -20,14 +20,17 @@
  *   - v4: Gudang tidak memegang menu PO Keluar / Pengiriman Pemasok — barang yang dikirim muncul di Penerimaan Barang.
  *   - v5: Gudang tanpa Persetujuan, Pembelian, Keuangan & Proyek. Tetap: pengeluaran & petty cash miliknya sendiri.
  *
+ *   - v12: modul "file-management" (File Management). M/L = jelajah file sesuai akses dokumen, C = upload, U = ubah/ganti/bagikan,
+ *          A = hapus, E = unduh/ekspor, V = kelola provider storage & migrasi, P = lihat semua file termasuk file yatim.
+ *
  * Menaikkan versi ini membuat server menerapkan ulang matriks standar ke peran bawaan sekali saat start
  * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
  */
 
-export const ROLE_MATRIX_VERSION = 11;
+export const ROLE_MATRIX_VERSION = 12;
 
 export const ROLE_MODULE_KEYS = [
-  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "maintenance", "fixed-assets", "subscriptions", "contracts", "customers", "po-client",
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "maintenance", "fixed-assets", "subscriptions", "contracts", "file-management", "customers", "po-client",
   "projects", "tasks", "delivery-notes",
   "purchase-requests", "supplier-pos", "shipments", "receiving", "stock", "opname", "damage-reports",
   "suppliers", "warehouses", "products",

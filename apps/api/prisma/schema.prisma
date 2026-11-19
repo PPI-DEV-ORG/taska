@@ -473,6 +473,29 @@ model File {
   uploader     User?    @relation("FileUploader", fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())
 
+  // ── File Management (PRD) ──
+  fileCode         String?   @unique @db.VarChar(40)
+  displayName      String?   @db.VarChar(255)
+  extension        String?   @db.VarChar(20)
+  checksumSha256   String?   @db.VarChar(64)
+  status           String    @default("AVAILABLE") @db.VarChar(24)
+  visibility       String    @default("COMPANY") @db.VarChar(24)
+  categoryId       Int?
+  category         FileCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  description      String?   @db.Text
+  currentVersionId Int?
+  idempotencyKey   String?   @db.VarChar(100)
+  deletedAt        DateTime?
+  updatedAt        DateTime  @default(now()) @updatedAt
+
+  versions     FileVersion[]
+  locations    FileStorageLocation[]
+  relations    FileRelation[]
+  folderLinks  FileFolderRelation[]
+  tagLinks     FileTagRelation[]
+  permissions  FilePermission[]
+  shares       FileShare[]
+
   docPhotos                        DocumentationPhoto[]
   purchaseRequest_evidenceFile     PurchaseRequest[]    @relation("PurchaseRequest_evidenceFileId")
   purchaseRequest_doFile           PurchaseRequest[]    @relation("PurchaseRequest_doFileId")
@@ -518,6 +541,10 @@ model File {
   cashAdvance_returnFile           CashAdvance[]        @relation("CashAdvance_returnFileId")
 
   @@index([refType, refId])
+  @@index([status])
+  @@index([categoryId])
+  @@index([createdAt])
+  @@unique([uploadedById, idempotencyKey])
 }
 
 /// Foto dokumentasi berfoto (survey, instalasi/project, surat jalan) + caption.
@@ -3971,4 +3998,283 @@ model MaintNotification {
   @@index([recipientUserId])
   @@index([isRead])
   @@map("maintenance_notifications")
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// FILE MANAGEMENT (PRD: Core Document & Storage Service)
+// ════════════════════════════════════════════════════════════════════
+
+model FileCategory {
+  id                Int      @id @default(autoincrement())
+  code              String   @unique @db.VarChar(60)
+  name              String   @db.VarChar(120)
+  allowedExtensions Json?
+  maxFileSize       Int?
+  isConfidential    Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  files File[]
+
+  @@map("file_categories")
+}
+
+model FileVersion {
+  id              Int      @id @default(autoincrement())
+  fileId          Int
+  file            File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  versionNumber   Int
+  fileName        String   @db.VarChar(255)
+  fileSize        Int
+  mimeType        String   @db.VarChar(120)
+  checksumSha256  String?  @db.VarChar(64)
+  createdById     Int?
+  createdAt       DateTime @default(now())
+  changeNotes     String?  @db.Text
+  status          String   @default("CURRENT") @db.VarChar(24)
+
+  locations FileStorageLocation[]
+
+  @@unique([fileId, versionNumber])
+  @@index([fileId])
+  @@map("file_versions")
+}
+
+model FileStorageProvider {
+  id           Int       @id @default(autoincrement())
+  name         String    @unique @db.VarChar(120)
+  type         String    @db.VarChar(24)
+  adapterCode  String    @db.VarChar(40)
+  config       Json
+  secretEnc    String?   @db.Text
+  source       String    @default("DB") @db.VarChar(8)
+  status       String    @default("ACTIVE") @db.VarChar(16)
+  isDefault    Boolean   @default(false)
+  needsReauth  Boolean   @default(false)
+  lastOkAt     DateTime?
+  lastError    String?   @db.Text
+  uploadOk     Int       @default(0)
+  uploadFail   Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  locations FileStorageLocation[]
+
+  @@map("file_storage_providers")
+}
+
+model FileStorageLocation {
+  id                 Int       @id @default(autoincrement())
+  fileId             Int
+  file               File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  versionId          Int
+  version            FileVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  providerId         Int
+  provider           FileStorageProvider @relation(fields: [providerId], references: [id])
+  storageKey         String    @db.VarChar(700)
+  externalFileId     String?   @db.VarChar(255)
+  isPrimary          Boolean   @default(false)
+  replicaStatus      String    @default("PRIMARY") @db.VarChar(20)
+  verificationStatus String    @default("VERIFIED") @db.VarChar(20)
+  lastVerifiedAt     DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([fileId])
+  @@index([versionId])
+  @@index([providerId, replicaStatus])
+  @@map("file_storage_locations")
+}
+
+model FileRelation {
+  id           Int      @id @default(autoincrement())
+  fileId       Int
+  file         File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  moduleCode   String   @db.VarChar(40)
+  entityType   String   @db.VarChar(60)
+  entityId     String   @db.VarChar(100)
+  relationType String   @default("ATTACHMENT") @db.VarChar(40)
+  createdById  Int?
+  createdAt    DateTime @default(now())
+
+  @@unique([fileId, moduleCode, entityType, entityId, relationType])
+  @@index([moduleCode, entityType, entityId])
+  @@map("file_relations")
+}
+
+model FileFolder {
+  id        Int      @id @default(autoincrement())
+  parentId  Int?
+  parent    FileFolder? @relation("FileFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  FileFolder[] @relation("FileFolderTree")
+  name      String   @db.VarChar(160)
+  ownerId   Int?
+  createdAt DateTime @default(now())
+
+  files FileFolderRelation[]
+
+  @@index([parentId])
+  @@map("file_folders")
+}
+
+model FileFolderRelation {
+  id        Int      @id @default(autoincrement())
+  folderId  Int
+  folder    FileFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  fileId    Int
+  file      File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([fileId])
+  @@index([folderId])
+  @@map("file_folder_relations")
+}
+
+model FileTag {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(80)
+  createdAt DateTime @default(now())
+
+  files FileTagRelation[]
+
+  @@map("file_tags")
+}
+
+model FileTagRelation {
+  id     Int     @id @default(autoincrement())
+  fileId Int
+  file   File    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  tagId  Int
+  tag    FileTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, tagId])
+  @@index([tagId])
+  @@map("file_tag_relations")
+}
+
+model FilePermission {
+  id            Int      @id @default(autoincrement())
+  fileId        Int
+  file          File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  principalType String   @db.VarChar(16)
+  principalId   String   @db.VarChar(64)
+  permission    String   @db.VarChar(16)
+  grantedById   Int?
+  createdAt     DateTime @default(now())
+
+  @@unique([fileId, principalType, principalId, permission])
+  @@index([principalType, principalId])
+  @@map("file_permissions")
+}
+
+model FileShare {
+  id           Int       @id @default(autoincrement())
+  fileId       Int
+  file         File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique @db.VarChar(64)
+  permission   String    @default("VIEW") @db.VarChar(16)
+  expiresAt    DateTime
+  passwordHash String?   @db.VarChar(100)
+  oneTime      Boolean   @default(false)
+  usedAt       DateTime?
+  revokedAt    DateTime?
+  createdById  Int?
+  createdAt    DateTime  @default(now())
+
+  logs FileShareAccessLog[]
+
+  @@index([fileId])
+  @@map("file_shares")
+}
+
+model FileShareAccessLog {
+  id        Int      @id @default(autoincrement())
+  shareId   Int
+  share     FileShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  ip        String?  @db.VarChar(64)
+  userAgent String?  @db.Text
+  success   Boolean
+  reason    String?  @db.VarChar(120)
+  createdAt DateTime @default(now())
+
+  @@index([shareId])
+  @@map("file_share_access_logs")
+}
+
+model FileAuditLog {
+  id        Int      @id @default(autoincrement())
+  fileId    Int?
+  versionId Int?
+  userId    Int?
+  action    String   @db.VarChar(40)
+  ip        String?  @db.VarChar(64)
+  userAgent String?  @db.Text
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([fileId])
+  @@index([action, createdAt])
+  @@index([createdAt])
+  @@map("file_audit_logs")
+}
+
+model FileMigrationJob {
+  id               Int       @id @default(autoincrement())
+  sourceProviderId Int
+  targetProviderId Int
+  mode             String    @default("MANUAL") @db.VarChar(12)
+  scheduleId       Int?
+  olderThanDays    Int?
+  status           String    @default("PENDING") @db.VarChar(24)
+  totalFiles       Int       @default(0)
+  processedFiles   Int       @default(0)
+  failedFiles      Int       @default(0)
+  cleanedFiles     Int       @default(0)
+  error            String?   @db.Text
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdById      Int?
+  createdAt        DateTime  @default(now())
+
+  items FileMigrationItem[]
+
+  @@index([status])
+  @@map("file_migration_jobs")
+}
+
+model FileMigrationItem {
+  id               Int      @id @default(autoincrement())
+  jobId            Int
+  job              FileMigrationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fileId           Int
+  versionId        Int
+  status           String   @default("PENDING") @db.VarChar(16)
+  attempts         Int      @default(0)
+  error            String?  @db.Text
+  checksum         String?  @db.VarChar(64)
+  sourceLocationId Int?
+  targetLocationId Int?
+  updatedAt        DateTime @default(now()) @updatedAt
+
+  @@unique([jobId, fileId, versionId])
+  @@index([jobId, status])
+  @@map("file_migration_items")
+}
+
+model FileMigrationSchedule {
+  id               Int       @id @default(autoincrement())
+  name             String?   @db.VarChar(120)
+  sourceProviderId Int
+  targetProviderId Int
+  everyDays        Int
+  runAtTime        String    @default("02:00") @db.VarChar(5)
+  olderThanDays    Int?
+  enabled          Boolean   @default(true)
+  lastRunAt        DateTime?
+  nextRunAt        DateTime?
+  createdById      Int?
+  createdAt        DateTime  @default(now())
+
+  @@index([enabled, nextRunAt])
+  @@map("file_migration_schedules")
 }
