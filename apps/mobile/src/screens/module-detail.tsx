@@ -385,10 +385,14 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     ? isFinanceOrBos || ["procurement", "gudang"].includes(user?.role ?? "")
     : moduleKey === "receiving"
     ? isFinanceOrBos || ["gudang", "procurement"].includes(user?.role ?? "")
+    : moduleKey === "leads"
+    ? serverCan("leads", "U")
     : true;
   const canDelete =
     serverCan(moduleKey, "U") === false
       ? false
+      : moduleKey === "leads"
+      ? serverCan("leads", "A")
       : user?.role === "super_admin"
       ? true
       : moduleKey === "expenses"
@@ -608,13 +612,16 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
 
   async function run(a: ModuleAction) {
     if (a.label === "Minta survey") {
-      addRow("surveys", {
+      // Status awal ditentukan server (Sales -> Diminta). Server menolak bila lead masih punya survey aktif.
+      const created = await addRow("surveys", {
         lead: row.nama,
+        leadId: row.id,
         lokasi: row.perusahaan || "Lokasi Klien",
         jadwal: getTodayIso(),
-        se: data.users?.find((u: any) => u.role === "se")?.nama || "Andi Pratama",
-        status: "Terjadwal",
+        se: data.users?.find((u: any) => u.role === "se")?.nama || undefined,
       });
+      if (created) toast(a.toast || "Permintaan survey dikirim");
+      return;
     } else if (a.label === "Jadikan proyek") {
       const custName = row.perusahaan || row.customer || "Klien";
       const projName = row.nama
@@ -811,12 +818,16 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
     if (a.to && row) router.push(a.to(row) as any);
   }
 
-  const canOfferLead = ["Qualification", "Proposal", "Negotiation"].includes(String(row.status));
   const filteredActions = (def.actions ?? []).filter((a) => {
     if (isLead) {
-      if (a.label === "Download template penawaran" && !canOfferLead) return false;
-      if (a.label === "Jadikan proyek" && row.status === "Lost") return false;
-      if (a.label === "Buat Pesanan Penjualan (SO)" && row.status === "Lost") return false;
+      // Template penawaran, Jadikan proyek & Buat SO ada di panel masing-masing (LeadExtras) sesuai status & hak akses.
+      // Di header hanya tersisa "Minta survey" untuk prospek yang masih berjalan.
+      // Survey ulang baru boleh diminta setelah survey sebelumnya Selesai / Dibatalkan.
+      const isOpenLead = row.status !== "Won" && row.status !== "Lost";
+      const hasActiveSurvey = (data.surveys ?? []).some(
+        (s: Row) => String(s.leadId) === String(row.id) && !["Selesai", "Dibatalkan"].includes(String(s.status)),
+      );
+      return a.label === "Minta survey" && isOpenLead && !hasActiveSurvey && serverCan("surveys", "C");
     }
     if (moduleKey === "invoices") {
       const rawStatusUpper = String(row.rawStatus || "").toUpperCase();
@@ -986,7 +997,7 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
                 <Text className="text-danger">Hapus</Text>
               </Button>
             ) : null}
-            {def.statuses.length > 1 && !(isLead && (user?.role === "bos" || user?.role === "admin")) ? (
+            {def.statuses.length > 1 && !(isLead && !serverCan("leads", "U")) ? (
               <Button variant="outline" onPress={() => setMenu(true)}>
                 <Text>Ubah status</Text>
                 <ChevronDown size={16} color={colors.text} />

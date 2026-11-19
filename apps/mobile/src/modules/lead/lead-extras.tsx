@@ -3,12 +3,8 @@ import { View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import {
   AlertTriangle,
-  CheckCircle2,
-  FileCheck,
-  FileText,
-  FileSignature,
-  ArrowRight,
-  Plus,
+  ChevronRight,
+  Download,
   Edit3,
   Phone,
   MessageSquare,
@@ -16,8 +12,7 @@ import {
   Calendar,
   UserCheck,
   Check,
-  Receipt,
-  Truck,
+  Plus,
 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -27,110 +22,129 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Panel } from "@/components/akuntra/basics";
 import { StatusBadge } from "@/components/akuntra/status-badge";
 import { DatePicker } from "@/components/akuntra/dialogs";
-import { CreateInvoiceDialog } from "@/modules/invoice/create-invoice-dialog";
 import { CreateQuotationDialog } from "@/modules/quotation/create-quotation-dialog";
+import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
 import { useApp } from "@/store/app-store";
-import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
-import { Line } from "@/modules/shared/line";
 import {
   calcQuotationFinancials,
   getInitialPphMode,
   getInitialPpnMode,
-  getItemAvailableStock,
   pphModeToTipe,
   ppnModeToTipe,
 } from "@/modules/quotation/lib";
 
+type FuMethod = "Telepon" | "WhatsApp" | "Meeting" | "Email" | "Survey";
+type FuStatus = "SELESAI" | "TERJADWAL";
+
+const str = (v: any): string =>
+  typeof v === "string" ? v : v && typeof v === "object" ? String(v.name ?? v.nama ?? v.label ?? "") : v != null ? String(v) : "";
+
+/** Satu baris dokumen terkait (penawaran / SO / proyek / faktur) yang bisa diketuk untuk membuka detailnya. */
+function DocRow({ title, meta, status, onPress }: { title: string; meta?: string; status?: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-row items-center gap-3 rounded-lg border border-border/80 bg-panel px-3 py-2.5 active:opacity-75"
+    >
+      <View className="flex-1 min-w-0">
+        <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>{title}</Text>
+        {meta ? <Text className="text-xs text-muted-foreground mt-0.5" numberOfLines={1}>{meta}</Text> : null}
+      </View>
+      {status ? <StatusBadge status={status} /> : null}
+      <ChevronRight size={16} color={colors.textSecondary} />
+    </Pressable>
+  );
+}
+
+function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Button size="sm" onPress={onPress} className="flex-row items-center gap-1">
+      <Plus size={14} color={colors.background} />
+      <Text className="text-xs">{label}</Text>
+    </Button>
+  );
+}
+
+const METHOD_ICON: Record<string, typeof Phone> = { Telepon: Phone, WhatsApp: MessageSquare, Email: Mail };
+
 export function LeadExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { toast, data, addRow, patchRow, setStatus, pushHistory, user, reload, refreshModule } = useApp();
-  // Penawaran dibuat lewat form lengkap (item, diskon, PPN) — bukan penawaran kosong
-  const [quoteOpen, setQuoteOpen] = React.useState(false);
-  
+  const { toast, data, addRow, patchRow, pushHistory, reload, refreshModule, can } = useApp();
+
+  // ---- Status & hak akses ----
+  const isWon = row.status === "Won";
+  const isLost = row.status === "Lost";
+  const isOpen = !isWon && !isLost;
+  const isPenjualanBarang = /barang|retail|perangkat/i.test(String(row.jenisTransaksi || ""));
+
+  const canEditLead = can("leads", "U");
+  const canSeeQuotes = can("quotations", "L");
+  const canCreateQuote = can("quotations", "C");
+  const canSeeSo = can("po-client", "L");
+  const canCreateSo = can("po-client", "C");
+  const canSeeProjects = can("projects", "L");
+  const canCreateProject = can("projects", "C");
+  const canSeeInvoices = can("invoices", "L");
+  const canSeeSurveys = can("surveys", "L") || can("surveys", "C");
+
+  // Data survey dibutuhkan untuk menentukan apakah "Minta survey" boleh tampil (satu survey aktif per lead).
+  React.useEffect(() => {
+    if (canSeeSurveys && !data.surveys) void refreshModule("surveys").catch(() => {});
+  }, [canSeeSurveys, data.surveys, refreshModule]);
+
+  const leadSurveys = React.useMemo(
+    () => (data.surveys ?? []).filter((s: Row) => String(s.leadId) === String(row.id)),
+    [data.surveys, row.id],
+  );
+  const activeSurvey = leadSurveys.find((s: Row) => !["Selesai", "Dibatalkan"].includes(String(s.status)));
+
+  // ---- Dokumen terkait ----
   const leadQuotations = React.useMemo(
-    () =>
-      (data.quotations ?? []).filter(
-        (q: Row) => q.leadId && String(q.leadId) === String(row.id),
-      ),
+    () => (data.quotations ?? []).filter((q: Row) => q.leadId && String(q.leadId) === String(row.id)),
     [data.quotations, row.id],
   );
-
-  const quotation =
-    leadQuotations[0] ||
-    (data.quotations ?? []).find(
-      (q) => q.leadId && String(q.leadId) === String(row.id)
-    );
-
-  const relProjects = React.useMemo(() => {
-    const qIds = new Set(leadQuotations.map((q) => String(q.id)));
-    return (data.projects ?? []).filter(
-      (p: Row) =>
-        (p.leadId && String(p.leadId) === String(row.id)) ||
-        (p.quotationId && qIds.has(String(p.quotationId)))
-    );
-  }, [data.projects, row.id, leadQuotations]);
-
-  const leadInvoices = React.useMemo(() => {
-    const qIds = new Set(leadQuotations.map((q) => String(q.id)));
-    const qNums = new Set(
-      leadQuotations.map((q) => String(q.nomor || "").trim().toLowerCase()).filter(Boolean)
-    );
-    const pIds = new Set(relProjects.map((p) => String(p.id)));
-
-    return (data.invoices ?? []).filter((inv: Row) => {
-      if (inv.leadId && String(inv.leadId) === String(row.id)) return true;
-      if (inv.quotationId && qIds.has(String(inv.quotationId))) return true;
-      if (inv.quotation && qNums.has(String(inv.quotation).trim().toLowerCase())) return true;
-      if (inv.projectId && pIds.has(String(inv.projectId))) return true;
-      if (String(inv.catatan || inv.description || "").includes(`[lead:${row.id}]`)) return true;
-      return false;
-    });
-  }, [data.invoices, leadQuotations, relProjects, row.id]);
-
-  const isPenjualanBarang =
-    row.jenisTransaksi === "Penjualan Barang" ||
-    /barang|retail|perangkat/i.test(String(row.jenisTransaksi || ""));
-
-  const leadSos = React.useMemo(() => {
-    const qIds = new Set(leadQuotations.map((q) => String(q.id)));
-    const qNums = new Set(
-      leadQuotations
-        .map((q) => String(q.nomor || "").trim().toLowerCase())
-        .filter(Boolean)
-    );
-
-    return (data["po-client"] ?? []).filter((so: Row) => {
-      if (so.leadId && String(so.leadId) === String(row.id)) return true;
-      if (so.quotationId && qIds.has(String(so.quotationId))) return true;
-      const quoPrefix = (String(so.penawaran || "").split(" - ")[0] || "").trim().toLowerCase();
-      if (quoPrefix && qNums.has(quoPrefix)) return true;
-      const cat = String(so.catatan || "").toLowerCase();
-      if (cat.includes(`[lead:${row.id}]`)) return true;
-      return false;
-    });
-  }, [data, leadQuotations, row.id]);
-
-  const isFinanceOrAdmin = ["finance", "admin", "super_admin", "bos"].includes(
-    (user?.role || "").toLowerCase()
+  const quoteIds = React.useMemo(() => new Set(leadQuotations.map((q) => String(q.id))), [leadQuotations]);
+  const quoteNums = React.useMemo(
+    () => new Set(leadQuotations.map((q) => String(q.nomor || "").trim().toLowerCase()).filter(Boolean)),
+    [leadQuotations],
   );
 
-  const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
-  const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
+  const relProjects = React.useMemo(
+    () =>
+      (data.projects ?? []).filter(
+        (p: Row) =>
+          (p.leadId && String(p.leadId) === String(row.id)) || (p.quotationId && quoteIds.has(String(p.quotationId))),
+      ),
+    [data.projects, row.id, quoteIds],
+  );
 
-  // Follow-up state
-  const [fuOpen, setFuOpen] = React.useState(false);
-  const [fuMethod, setFuMethod] = React.useState<"Telepon" | "WhatsApp" | "Meeting" | "Email" | "Survey">("Telepon");
-  const [fuDate, setFuDate] = React.useState(new Date().toISOString().slice(0, 10));
-  const [fuNote, setFuNote] = React.useState("");
-  const [fuNextAction, setFuNextAction] = React.useState("");
-  const [fuStatus, setFuStatus] = React.useState<"SELESAI" | "TERJADWAL">("SELESAI");
-  const [selectedFu, setSelectedFu] = React.useState<any>(null);
-  const [editFuStatus, setEditFuStatus] = React.useState<"SELESAI" | "TERJADWAL">("SELESAI");
+  const leadSos = React.useMemo(
+    () =>
+      (data["po-client"] ?? []).filter((so: Row) => {
+        if (so.leadId && String(so.leadId) === String(row.id)) return true;
+        if (so.quotationId && quoteIds.has(String(so.quotationId))) return true;
+        const quoPrefix = (String(so.penawaran || "").split(" - ")[0] || "").trim().toLowerCase();
+        if (quoPrefix && quoteNums.has(quoPrefix)) return true;
+        return String(so.catatan || "").toLowerCase().includes(`[lead:${row.id}]`);
+      }),
+    [data, row.id, quoteIds, quoteNums],
+  );
 
-  const apiFollowups = React.useMemo(() => {
+  const leadInvoices = React.useMemo(() => {
+    const pIds = new Set(relProjects.map((p) => String(p.id)));
+    return (data.invoices ?? []).filter((inv: Row) => {
+      if (inv.leadId && String(inv.leadId) === String(row.id)) return true;
+      if (inv.quotationId && quoteIds.has(String(inv.quotationId))) return true;
+      if (inv.quotation && quoteNums.has(String(inv.quotation).trim().toLowerCase())) return true;
+      if (inv.projectId && pIds.has(String(inv.projectId))) return true;
+      return String(inv.catatan || inv.description || "").includes(`[lead:${row.id}]`);
+    });
+  }, [data.invoices, quoteIds, quoteNums, relProjects, row.id]);
+
+  const followups = React.useMemo(() => {
     const fromStore = (data.followups ?? [])
       .filter((f: Row) => String(f.leadId) === String(row.id))
       .map((f: Row) => ({
@@ -142,60 +156,75 @@ export function LeadExtras({ row }: { row: Row }) {
         status: String(f.status || "SELESAI"),
       }));
     if (fromStore.length > 0) return fromStore;
-    if (Array.isArray(row._followUps) && row._followUps.length > 0) {
-      return row._followUps.map((f: any) => ({
-        id: String(f.id),
-        method: String(f.method || "Telepon"),
-        note: String(f.notes || "-"),
-        date: String(f.date || ""),
-        next: f.nextAction ? String(f.nextAction) : undefined,
-        status: String(f.status || "SELESAI"),
-      }));
-    }
-    return [];
+    return (Array.isArray(row._followUps) ? row._followUps : []).map((f: any) => ({
+      id: String(f.id),
+      method: String(f.method || "Telepon"),
+      note: String(f.notes || "-"),
+      date: String(f.date || ""),
+      next: f.nextAction ? String(f.nextAction) : undefined,
+      status: String(f.status || "SELESAI"),
+    }));
   }, [data.followups, row.id, row._followUps]);
 
-  // Reassign Sales state
+  // Lanjutan setelah Won: penjualan barang -> SO, proyek -> Project
+  const showSo = canSeeSo && (leadSos.length > 0 || (isWon && isPenjualanBarang));
+  const showProjects = canSeeProjects && (relProjects.length > 0 || (isWon && !isPenjualanBarang));
+
+  // ---- Dialog state ----
+  const [quoteOpen, setQuoteOpen] = React.useState(false);
+  const [fuOpen, setFuOpen] = React.useState(false);
+  const [fuMethod, setFuMethod] = React.useState<FuMethod>("Telepon");
+  const [fuDate, setFuDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [fuNote, setFuNote] = React.useState("");
+  const [fuNext, setFuNext] = React.useState("");
+  const [selectedFu, setSelectedFu] = React.useState<(typeof followups)[number] | null>(null);
+  const [editFuStatus, setEditFuStatus] = React.useState<FuStatus>("SELESAI");
   const [reassignOpen, setReassignOpen] = React.useState(false);
   const [newOwner, setNewOwner] = React.useState(row.pemilik || "");
   const [reassignReason, setReassignReason] = React.useState("");
-
-  // Edit Lost Reason state
+  const lostReasons: string[] = (data.lostReasons ?? []).map((r: Row) => String(r.nama)).filter(Boolean);
   const [lostReasonOpen, setLostReasonOpen] = React.useState(false);
   const [selectedLostReason, setSelectedLostReason] = React.useState(row.alasanLost || lostReasons[0]);
+  const [busy, setBusy] = React.useState(false);
 
   const salesUsers: Row[] = (data.users ?? []).filter((u: Row) =>
     ["super_admin", "sales", "pm", "bos", "admin"].includes(String(u.role)),
   );
 
+  // ---- Aksi ----
   async function handleAddFollowup() {
-    if (!fuNote.trim()) {
-      toast("Catatan follow-up tidak boleh kosong", "danger");
-      return;
-    }
-    const targetDate = fuStatus === "TERJADWAL" && fuNextAction ? fuNextAction : (fuDate || new Date().toISOString().slice(0, 10));
+    if (!fuNote.trim()) return toast("Catatan follow-up wajib diisi", "danger");
     const created = await addRow("followups", {
       leadId: row.id,
-      date: targetDate,
+      date: fuNext || fuDate,
       method: fuMethod,
       notes: fuNote.trim(),
-      nextDate: fuNextAction || undefined,
-      status: fuStatus,
+      nextDate: fuNext || undefined,
+      status: fuNext ? "TERJADWAL" : "SELESAI",
     });
-    if (created) {
-      patchRow("leads", row.id, { sepi: 0 });
-      pushHistory("leads", row.id, `Follow-up (${fuMethod}): ${fuNote.trim()}${fuNextAction ? ` | Next: ${fuNextAction}` : ""}`);
-      setFuNote("");
-      setFuNextAction("");
-      setFuOpen(false);
+    if (!created) return;
+    patchRow("leads", row.id, { sepi: 0 });
+    pushHistory("leads", row.id, `Follow-up (${fuMethod}): ${fuNote.trim()}${fuNext ? ` | Berikutnya: ${fuNext}` : ""}`);
+    setFuNote("");
+    setFuNext("");
+    setFuOpen(false);
+  }
+
+  async function handleSaveFuStatus() {
+    if (!selectedFu) return;
+    const ok = await patchRow("followups", selectedFu.id, { status: editFuStatus });
+    if (ok) {
+      pushHistory("leads", row.id, `Status follow-up (${selectedFu.method}) diubah menjadi ${editFuStatus}`);
+      toast("Status follow-up diperbarui");
     }
+    setSelectedFu(null);
   }
 
   function handleReassign() {
     if (!newOwner) return;
     patchRow("leads", row.id, { pemilik: newOwner });
-    pushHistory("leads", row.id, `Kepemilikan dialihkan ke ${newOwner}${reassignReason ? ` (${reassignReason})` : ""}`);
-    toast(`Lead berhasil dialihkan kepada ${newOwner}`);
+    pushHistory("leads", row.id, `PIC dialihkan ke ${newOwner}${reassignReason ? ` (${reassignReason})` : ""}`);
+    toast(`Lead dialihkan ke ${newOwner}`);
     setReassignOpen(false);
     setReassignReason("");
   }
@@ -208,19 +237,15 @@ export function LeadExtras({ row }: { row: Row }) {
   }
 
   async function handleCreateProject() {
+    setBusy(true);
     try {
-      const custName = (typeof row.perusahaan === "string" ? row.perusahaan : row.perusahaan?.name) ||
-        (typeof row.customer === "string" ? row.customer : row.customer?.name) ||
-        "Klien";
-      const leadName = typeof row.nama === "string" ? row.nama : (typeof row.name === "string" ? row.name : "");
+      const custName = str(row.perusahaan) || str(row.customer) || "Klien";
+      const leadName = str(row.nama);
       const projName = leadName
-        ? leadName.toLowerCase().startsWith("project")
-          ? leadName
-          : `Project ${leadName}`
+        ? leadName.toLowerCase().startsWith("project") ? leadName : `Project ${leadName}`
         : `Project ${custName}`;
-      const pmUser = data.users?.find((u: any) => u.role === "pm" || u.roleLabel === "PM");
-      const pmName = pmUser?.nama || pmUser?.name || "Dimas Prasetyo";
-
+      const quotation = leadQuotations[0];
+      const pmUser = data.users?.find((u: any) => u.role === "pm");
       const created = await addRow("projects", {
         nama: projName,
         customer: custName,
@@ -231,56 +256,52 @@ export function LeadExtras({ row }: { row: Row }) {
         lead: leadName,
         leadId: row.id ? Number(row.id) : undefined,
         jenis: "Customer",
-        pm: pmName,
+        pm: pmUser?.nama || pmUser?.name || undefined,
         mulai: new Date().toISOString().slice(0, 10),
         selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
         status: "Berjalan",
       });
-      if (!created || !created.id) {
-        return;
-      }
+      if (!created?.id) return;
       await reload();
-      toast("Proyek baru berhasil dibuat");
+      toast("Proyek berhasil dibuat");
       router.push(`/projects/${created.id}` as any);
     } catch (err: any) {
       toast(err?.message || "Gagal membuat proyek", "danger");
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function handleCreateClientPo() {
+  async function handleCreateSo() {
+    setBusy(true);
     try {
-      const matchedQuo = leadQuotations.find((q: any) => q.status === "Disetujui" || q.status === "Won") || leadQuotations[0];
-      const quoItems = Array.isArray(matchedQuo?.items) ? matchedQuo.items : [];
-      const qPpnMode = matchedQuo ? getInitialPpnMode(matchedQuo) : "none";
-      const qPphMode = matchedQuo ? getInitialPphMode(matchedQuo) : "none";
-      const qFin = matchedQuo
-        ? calcQuotationFinancials(
-            matchedQuo.nilai ?? matchedQuo.total ?? 0,
-            matchedQuo.disc ?? matchedQuo.discount ?? 0,
-            qPpnMode,
-            qPphMode,
-            quoItems,
-          )
+      const quo = leadQuotations.find((q: any) => q.status === "Disetujui" || q.status === "Won") || leadQuotations[0];
+      const quoItems = Array.isArray(quo?.items) ? quo.items : [];
+      const ppnMode = quo ? getInitialPpnMode(quo) : "none";
+      const pphMode = quo ? getInitialPphMode(quo) : "none";
+      const fin = quo
+        ? calcQuotationFinancials(quo.nilai ?? quo.total ?? 0, quo.disc ?? quo.discount ?? 0, ppnMode, pphMode, quoItems)
         : null;
-      const dppVal = qFin ? qFin.dpp : Number(row.nilai || 0);
+      const dpp = fin ? fin.dpp : Number(row.nilai || 0);
+      const custName = row.perusahaan || quo?.customer || "-";
 
-      const createdSo = await addRow("po-client", {
-        customer: row.perusahaan || matchedQuo?.customer || "-",
-        customerId: row.customerId ? Number(row.customerId) : matchedQuo?.customerId ? Number(matchedQuo.customerId) : undefined,
-        penawaran: matchedQuo?.nomor ? `${matchedQuo.nomor} - ${row.perusahaan || matchedQuo?.customer || ""}` : "-",
-        quotationId: matchedQuo?.id ? Number(matchedQuo.id) : undefined,
-        nilai: dppVal,
-        amount: dppVal,
-        ...(qFin
+      const created = await addRow("po-client", {
+        customer: custName,
+        customerId: row.customerId ? Number(row.customerId) : quo?.customerId ? Number(quo.customerId) : undefined,
+        penawaran: quo?.nomor ? `${quo.nomor} - ${custName}` : "-",
+        quotationId: quo?.id ? Number(quo.id) : undefined,
+        nilai: dpp,
+        amount: dpp,
+        ...(fin
           ? {
-              discount: qFin.discNum,
-              ppn: qFin.ppn,
-              ppnMode: qPpnMode,
-              tipePpn: ppnModeToTipe(qPpnMode),
-              pph: qFin.pph,
-              pphMode: qPphMode,
-              tipePph: matchedQuo?.tipePph || pphModeToTipe(qPphMode),
-              total: qFin.totalAfterDisc,
+              discount: fin.discNum,
+              ppn: fin.ppn,
+              ppnMode,
+              tipePpn: ppnModeToTipe(ppnMode),
+              pph: fin.pph,
+              pphMode,
+              tipePph: quo?.tipePph || pphModeToTipe(pphMode),
+              total: fin.totalAfterDisc,
             }
           : {}),
         tanggal: new Date().toISOString().slice(0, 10),
@@ -288,173 +309,52 @@ export function LeadExtras({ row }: { row: Row }) {
         items: quoItems,
         docMode: "SO",
       });
-
-      if (createdSo?.id) {
-        await reload();
-        toast("Pesanan Penjualan (SO) berhasil dibuat!");
-        router.push(`/po-client/${createdSo.id}` as any);
-      }
+      if (!created?.id) return;
+      await reload();
+      toast("Sales Order berhasil dibuat");
+      router.push(`/po-client/${created.id}` as any);
     } catch (err: any) {
-      toast(err?.message || "Gagal membuat Pesanan Penjualan", "danger");
+      toast(err?.message || "Gagal membuat Sales Order", "danger");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <>
-      {/* Panel Sales Order (SO) Terkait - Khusus jika Penjualan Barang atau sudah ada SO */}
-      {row.status === "Won" || leadSos.length > 0 || isPenjualanBarang ? (
-        <Panel
-          title={`Sales Order (SO) & Pesanan Barang (${leadSos.length})`}
-          subtitle="Peluang penjualan barang yang berhasil (Won) dapat langsung dilanjutkan ke penerbitan Pesanan Penjualan (SO) untuk pelanggan."
-          right={
-            <Button
-              size="sm"
-              onPress={handleCreateClientPo}
-              className="bg-emerald-600 hover:bg-emerald-700 flex-row items-center gap-1.5"
-            >
-              <FileCheck size={14} color="#fff" />
-              <Text className="text-xs text-white font-semibold">Buat Pesanan Penjualan (SO)</Text>
-            </Button>
-          }
-        >
-          {leadSos.length === 0 ? (
-            <View className="py-2 gap-1.5">
-              <Text className="text-xs text-muted-foreground">
-                Belum ada Sales Order (SO) untuk lead ini. Klik tombol &quot;Buat Sales Order (SO)&quot; untuk membuat pesanan ke customer. Data customer dan barang dari penawaran otomatis disalin.
-              </Text>
-            </View>
-          ) : (
-            <View className="gap-2">
-              {leadSos.map((so: Row) => (
-                <View
-                  key={so.id}
-                  className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80"
-                >
-                  <View className="flex-1 mr-2">
-                    <View className="flex-row items-center gap-2">
-                      <Text className="text-xs font-bold text-foreground">
-                        {so.nomorSo && so.nomorSo !== "-" ? so.nomorSo : so.nomor || `SO #${so.id}`}
-                      </Text>
-                      {so.nomorPoClient && so.nomorPoClient !== "-" ? (
-                        <Text className="text-[11px] text-muted-foreground">
-                          (PO: {so.nomorPoClient})
-                        </Text>
-                      ) : null}
-                    </View>
-                    <Text className="text-[11px] text-muted-foreground mt-0.5">
-                      Nilai: <Text className="font-semibold text-foreground">{rupiah(so.nilai || 0)}</Text> · Tanggal: {so.tanggal || "-"}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-2">
-                    <StatusBadge status={so.status || "Diterima"} />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2.5"
-                      onPress={() => router.push(`/po-client/${so.id}` as any)}
-                    >
-                      <Text className="text-xs">Buka SO</Text>
-                    </Button>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </Panel>
+      {/* Peringatan lead dingin */}
+      {isOpen && row.sepi > 7 ? (
+        <View className="bg-warning/15 border-warning/40 flex-row items-center gap-2 rounded-xl border p-3">
+          <AlertTriangle size={16} color={colors.warning} />
+          <Text className="text-warning flex-1 text-sm">
+            {row.sepi} hari tanpa follow-up. Segera hubungi customer.
+          </Text>
+        </View>
       ) : null}
 
-      {/* Panel Project Terkait - Untuk Proyek atau bila ada project terhubung */}
-      {(!isPenjualanBarang && (row.status === "Won" || relProjects.length > 0)) || relProjects.length > 0 ? (
-        <Panel
-          title={`Project Terkait (${relProjects.length})`}
-          subtitle="Prospek yang berhasil (Menang) dapat langsung dilanjutkan ke pengerjaan Proyek."
-          right={
-            <Button size="sm" onPress={handleCreateProject} className="flex-row items-center gap-1">
-              <Plus size={14} color={colors.background} />
-              <Text className="text-xs">Jadikan Proyek</Text>
-            </Button>
-          }
-        >
-          {(() => {
-            if (relProjects.length === 0) {
-              return (
-                <Text className="py-2 text-xs text-muted-foreground">
-                  Lead ini berstatus Won. Klik tombol &quot;Jadikan Project&quot; untuk membuat project baru.
-                </Text>
-              );
-            }
-            return (
-              <View className="gap-2">
-                {relProjects.map((proj: Row, idx: number) => {
-                  if (!proj) return null;
-                  const rawProjId = typeof proj.id === "object" && proj.id !== null ? (proj.id as any).id : proj.id;
-                  const projId = rawProjId != null ? String(rawProjId) : `proj-${idx}`;
-                  const rawProjName = proj.nama || proj.name;
-                  const projName = typeof rawProjName === "string"
-                    ? rawProjName
-                    : (typeof rawProjName === "object" && (rawProjName?.name || rawProjName?.nama)
-                      ? String(rawProjName.name || rawProjName.nama)
-                      : `Project #${projId}`);
-                  const pmText = typeof proj.pm === "string"
-                    ? proj.pm
-                    : (typeof proj.pm === "object" && (proj.pm?.name || proj.pm?.nama) ? String(proj.pm.name || proj.pm.nama) : "-");
-                  const statusText = typeof proj.status === "string"
-                    ? proj.status
-                    : (typeof proj.status === "object" && (proj.status?.name || proj.status?.nama || proj.status?.label)
-                      ? String(proj.status.name || proj.status.nama || proj.status.label)
-                      : "Berjalan");
-                  return (
-                    <View key={`lead-rel-proj-${projId}-${idx}`} className="flex-row items-center justify-between p-2.5 rounded-lg bg-panel border border-border/80">
-                      <View className="flex-1 mr-2">
-                        <Text className="text-xs font-bold text-foreground">{String(projName)}</Text>
-                        <Text className="text-[11px] text-muted-foreground">
-                          PM: {String(pmText)} · Status: {String(statusText)}
-                        </Text>
-                      </View>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2.5"
-                        onPress={() => router.push(`/projects/${projId}` as any)}
-                      >
-                        <Text className="text-xs">Buka Proyek</Text>
-                      </Button>
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })()}
-        </Panel>
+      {/* PIC Sales — hanya tampil bila user boleh mengalihkan (nama PIC sudah ada di Informasi) */}
+      {canEditLead && !isLost ? (
+        <View className="flex-row items-center justify-between gap-3 rounded-xl border border-border/80 bg-card px-4 py-3">
+          <View className="flex-1 min-w-0">
+            <Text className="text-xs text-muted-foreground">PIC Sales</Text>
+            <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>{row.pemilik || "-"}</Text>
+          </View>
+          <Button size="sm" variant="outline" onPress={() => setReassignOpen(true)}>
+            <UserCheck size={14} color={colors.text} />
+            <Text className="text-xs">Alihkan</Text>
+          </Button>
+        </View>
       ) : null}
 
-      <Panel
-        title="PIC & Kepemilikan Prospek"
-        subtitle="Setiap prospek memiliki PIC Sales yang bertanggung jawab mengawal pipeline."
-        right={
-          (user?.role === "super_admin" || user?.role === "bos" || user?.role === "admin" || user?.role === "sales") ? (
-            <Button size="sm" variant="outline" onPress={() => setReassignOpen(true)}>
-              <UserCheck size={14} color={colors.text} />
-              <Text className="text-xs">Alihkan PIC</Text>
-            </Button>
-          ) : undefined
-        }
-      >
-        <Line left="Sales Penanggung Jawab" right={<Text className="font-semibold text-primary">{row.pemilik || "-"}</Text>} />
-        <Line left="Jenis Transaksi / Peluang" right={<Text className="font-semibold text-foreground">{row.jenisTransaksi || "Proyek (Instalasi & Jasa)"}</Text>} />
-        <Line left="Tipe Pelanggan" right={<Text className="font-medium">{row.tipe || "End user"}</Text>} />
-        <Line left="Kontak Person Klien" right={<Text className="text-muted-foreground">{row.kontak || "-"}</Text>} />
-      </Panel>
-
-      {row.status === "Lost" ? (
+      {/* Alasan Lost */}
+      {isLost ? (
         <Panel
           title="Alasan Lost"
-          subtitle="Analisis penyebab kegagalan peluang untuk evaluasi sales."
           right={
-            !["bos", "admin"].includes(user?.role || "") ? (
+            canEditLead && lostReasons.length > 0 ? (
               <Button size="sm" variant="outline" onPress={() => setLostReasonOpen(true)}>
                 <Edit3 size={13} color={colors.text} />
-                <Text className="text-xs">Ubah Alasan</Text>
+                <Text className="text-xs">Ubah</Text>
               </Button>
             ) : undefined
           }
@@ -463,500 +363,273 @@ export function LeadExtras({ row }: { row: Row }) {
         </Panel>
       ) : null}
 
-      {row.sepi > 7 && row.status !== "Won" && row.status !== "Lost" ? (
-        <View className="bg-warning/15 border-warning/40 flex-row items-center gap-2 rounded-xl border p-3">
-          <AlertTriangle size={16} color={colors.warning} />
-          <Text className="text-warning flex-1 text-sm">
-            Belum ada tindak lanjut selama {row.sepi} hari. Segera hubungi customer untuk mencegah lead dingin!
-          </Text>
-        </View>
+      {/* Lanjutan setelah Won */}
+      {showSo ? (
+        <Panel
+          title={`Sales Order (${leadSos.length})`}
+          right={isWon && canCreateSo && leadSos.length === 0 ? <AddButton label="Buat SO" onPress={() => !busy && handleCreateSo()} /> : undefined}
+        >
+          {leadSos.length === 0 ? (
+            <Text className="text-xs text-muted-foreground">
+              Belum ada SO. Data customer & barang dari penawaran akan disalin otomatis.
+            </Text>
+          ) : (
+            <View className="gap-2">
+              {leadSos.map((so: Row) => (
+                <DocRow
+                  key={so.id}
+                  title={so.nomorSo && so.nomorSo !== "-" ? so.nomorSo : so.nomor || `SO #${so.id}`}
+                  meta={`${rupiah(so.nilai || 0)} · ${so.tanggal || "-"}`}
+                  status={so.status || "Diterima"}
+                  onPress={() => router.push(`/po-client/${so.id}` as any)}
+                />
+              ))}
+            </View>
+          )}
+        </Panel>
       ) : null}
 
-      <Panel
-        title="Riwayat Tindak Lanjut (Follow-up)"
-        subtitle="Aktivitas komunikasi sales dengan calon pelanggan. Otomatis me-reset masa sepi."
-        right={
-          <Button size="sm" onPress={() => setFuOpen(true)} className="flex-row items-center gap-1">
-            <Plus size={14} color={colors.background} />
-            <Text className="text-xs">Catat Follow-up</Text>
-          </Button>
-        }
-      >
-        <View className="gap-2">
-          {apiFollowups.length === 0 ? (
-            <Text className="text-muted-foreground text-xs py-2">Belum ada riwayat follow-up tercatat.</Text>
+      {showProjects ? (
+        <Panel
+          title={`Proyek (${relProjects.length})`}
+          right={isWon && canCreateProject && relProjects.length === 0 ? <AddButton label="Jadikan Proyek" onPress={() => !busy && handleCreateProject()} /> : undefined}
+        >
+          {relProjects.length === 0 ? (
+            <Text className="text-xs text-muted-foreground">Lead sudah Won. Buat proyek untuk mulai pengerjaan.</Text>
           ) : (
-            apiFollowups.map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={() => {
-                  setSelectedFu(item);
-                  setEditFuStatus(item.status === "TERJADWAL" ? "TERJADWAL" : "SELESAI");
-                }}
-                className="border-border border-b py-2.5 last:border-b-0 hover:bg-muted/30 active:opacity-75 transition-colors cursor-pointer"
-              >
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-2">
-                    <View className="bg-primary/10 rounded-md p-1">
-                      {item.method === "Telepon" ? <Phone size={13} color={colors.primary} /> : null}
-                      {item.method === "WhatsApp" ? <MessageSquare size={13} color={colors.primary} /> : null}
-                      {item.method === "Email" ? <Mail size={13} color={colors.primary} /> : null}
-                      {!["Telepon", "WhatsApp", "Email"].includes(item.method) ? <Calendar size={13} color={colors.primary} /> : null}
-                    </View>
-                    <Text className="text-xs font-semibold text-foreground">{item.method}</Text>
-                    <StatusBadge status={item.status} />
-                  </View>
-                  <View className="flex-row items-center gap-1.5">
-                    <Text className="text-[11px] text-muted-foreground">{item.date}</Text>
-                    <ArrowRight size={12} color={colors.textSecondary} />
-                  </View>
-                </View>
-                <Text className="text-xs text-foreground mt-1 leading-relaxed" numberOfLines={2}>{item.note}</Text>
-                {item.next ? (
-                  <View className="bg-panel/60 border-border/60 mt-1.5 flex-row items-center gap-1.5 rounded p-1.5 border">
-                    <Calendar size={12} color={colors.info} />
-                    <Text className="text-[11px] text-info">Jadwal follow-up berikutnya: {item.next}</Text>
-                  </View>
-                ) : null}
-                <Text className="text-[10px] text-primary/70 mt-1 font-medium">Klik untuk lihat isi pembahasan & ubah status</Text>
-              </Pressable>
-            ))
+            <View className="gap-2">
+              {relProjects.map((p: Row, idx: number) => {
+                const pid = String(typeof p.id === "object" && p.id ? (p.id as any).id : p.id ?? idx);
+                return (
+                  <DocRow
+                    key={`proj-${pid}`}
+                    title={str(p.nama) || str(p.name) || `Project #${pid}`}
+                    meta={`PM: ${str(p.pm) || "-"}`}
+                    status={str(p.status) || "Berjalan"}
+                    onPress={() => router.push(`/projects/${pid}` as any)}
+                  />
+                );
+              })}
+            </View>
           )}
-        </View>
-      </Panel>
+        </Panel>
+      ) : null}
 
-      {/* Panel Penawaran Terkait */}
-      <Panel
-        title="Penawaran Terkait"
-        subtitle="Daftar penawaran harga yang terhubung dengan prospek ini."
-        right={
-          <Button
-            size="sm"
-            onPress={() => setQuoteOpen(true)}
-            className="flex-row items-center gap-1"
-          >
-            <Plus size={14} color={colors.background} />
-            <Text className="text-xs">Buat Penawaran</Text>
-          </Button>
-        }
-      >
-        {leadQuotations.length > 0 ? (
-          <View className="gap-2.5">
-            {leadQuotations.map((q: Row) => (
-              <View key={q.id} className="bg-card border border-border/80 rounded-xl p-3 gap-2">
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-2">
-                    <FileText size={16} color={colors.primary} />
-                    <Text className="text-sm font-bold text-foreground">{q.nomor || `Q-${q.id}`}</Text>
-                  </View>
-                  <StatusBadge status={q.status || "Draf"} />
-                </View>
-
-                <View className="flex-row items-center justify-between pt-1">
-                  <View>
-                    <Text className="text-[11px] text-muted-foreground">Total Penawaran</Text>
-                    <Text className="text-xs font-semibold text-foreground">
-                      {rupiah(q.totalAfterDisc || q.total || q.nilai || 0)}
-                    </Text>
-                  </View>
-                  <View>
-                    <Text className="text-[11px] text-muted-foreground">Tanggal</Text>
-                    <Text className="text-xs font-semibold text-foreground">
-                      {q.tanggal || "-"}
-                    </Text>
-                  </View>
-                </View>
-
-                <View className="flex-row items-center justify-end gap-2 pt-1 border-t border-border/40 mt-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 px-2.5"
-                    onPress={() => router.push(`/quotations/${q.id}` as any)}
-                  >
-                    <FileText size={13} color={colors.text} />
-                    <Text className="text-xs ml-1">Buka Penawaran</Text>
-                    <ArrowRight size={13} color={colors.text} className="ml-1" />
-                  </Button>
-                </View>
-              </View>
+      {/* Survey — permintaan baru lewat tombol "Minta survey" di header, hanya bila tidak ada survey aktif */}
+      {canSeeSurveys && leadSurveys.length > 0 ? (
+        <Panel title={`Survey (${leadSurveys.length})`}>
+          {activeSurvey && isOpen ? (
+            <Text className="text-xs text-muted-foreground mb-2">
+              Survey ulang bisa diminta setelah survey yang berjalan selesai atau dibatalkan.
+            </Text>
+          ) : null}
+          <View className="gap-2">
+            {leadSurveys.map((s: Row) => (
+              <DocRow
+                key={s.id}
+                title={`Survey #${s.id}`}
+                meta={[s.jadwal || "Belum dijadwalkan", s.tim].filter(Boolean).join(" · ")}
+                status={s.status}
+                onPress={() => router.push(`/surveys/${s.id}` as any)}
+              />
             ))}
           </View>
-        ) : (
-          <View className="gap-2.5 py-1">
-            <Text className="text-xs text-muted-foreground leading-relaxed">
-              Belum ada penawaran untuk prospek ini. Buat penawaran untuk mengisi rincian produk, harga, dan mengelola dokumen penawaran.
-            </Text>
-            <Button
-              size="sm"
-              onPress={() => setQuoteOpen(true)}
-              className="self-start flex-row items-center gap-1.5"
-            >
-              <Plus size={14} color={colors.background} />
-              <Text className="text-xs font-semibold">Buat Penawaran</Text>
-            </Button>
+        </Panel>
+      ) : null}
+
+      {/* Penawaran */}
+      {canSeeQuotes ? (
+        <Panel
+          title={`Penawaran (${leadQuotations.length})`}
+          right={
+            canCreateQuote && !isLost ? (
+              <View className="flex-row items-center gap-2">
+                {isOpen ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onPress={() => {
+                      downloadQuotationTemplate({ leadId: row.id, customer: row.perusahaan, lead: row.nama, signer: row.pemilik });
+                      toast("Template penawaran (.xlsx) diunduh");
+                    }}
+                  >
+                    <Download size={14} color={colors.text} />
+                    <Text className="text-xs">Template</Text>
+                  </Button>
+                ) : null}
+                <AddButton label="Buat Penawaran" onPress={() => setQuoteOpen(true)} />
+              </View>
+            ) : undefined
+          }
+        >
+          {leadQuotations.length === 0 ? (
+            <Text className="text-xs text-muted-foreground">Belum ada penawaran untuk prospek ini.</Text>
+          ) : (
+            <View className="gap-2">
+              {leadQuotations.map((q: Row) => (
+                <DocRow
+                  key={q.id}
+                  title={q.nomor || `Q-${q.id}`}
+                  meta={`${rupiah(q.totalAfterDisc || q.total || q.nilai || 0)} · ${q.tanggal || "-"}`}
+                  status={q.status || "Draf"}
+                  onPress={() => router.push(`/quotations/${q.id}` as any)}
+                />
+              ))}
+            </View>
+          )}
+        </Panel>
+      ) : null}
+
+      {/* Faktur — hanya daftar; pembuatan & pelunasan dilakukan di menu Faktur */}
+      {canSeeInvoices && leadInvoices.length > 0 ? (
+        <Panel title={`Faktur (${leadInvoices.length})`}>
+          <View className="gap-2">
+            {leadInvoices.map((inv: Row) => (
+              <DocRow
+                key={inv.id}
+                title={inv.nomor || `INV #${inv.id}`}
+                meta={`${rupiah(inv.total || inv.nilai || 0)} · terbayar ${rupiah(inv.terbayar || 0)}`}
+                status={inv.status || "Belum dikirim"}
+                onPress={() => router.push(`/invoices/${inv.id}` as any)}
+              />
+            ))}
           </View>
-        )}
-      </Panel>
+        </Panel>
+      ) : null}
 
-      {/* Panel Invoice Terkait */}
-      {user?.role !== "sales" ? (
+      {/* Follow-up */}
       <Panel
-        title="Faktur Terkait"
-        subtitle="Kelola tagihan pembayaran untuk prospek atau penawaran ini."
-        right={
-          isFinanceOrAdmin ? (
-            <Button
-              size="sm"
-              onPress={() => setInvoiceModalOpen(true)}
-              className="flex-row items-center gap-1"
-            >
-              <Plus size={14} color={colors.background} />
-              <Text className="text-xs">Buat Faktur</Text>
-            </Button>
-          ) : undefined
-        }
+        title={`Follow-up (${followups.length})`}
+        right={canEditLead && isOpen ? <AddButton label="Catat" onPress={() => setFuOpen(true)} /> : undefined}
       >
-        {leadInvoices.length > 0 ? (
-          <View className="gap-2.5">
-            {leadInvoices.map((inv: Row) => {
-              const isPaid = inv.status === "Lunas";
+        {followups.length === 0 ? (
+          <Text className="text-xs text-muted-foreground">Belum ada follow-up.</Text>
+        ) : (
+          <View>
+            {followups.map((item) => {
+              const Icon = METHOD_ICON[item.method] ?? Calendar;
               return (
-                <View
-                  key={inv.id}
-                  className="bg-card border border-border/80 rounded-xl p-3 gap-2"
+                <Pressable
+                  key={item.id}
+                  onPress={() => {
+                    setSelectedFu(item);
+                    setEditFuStatus(item.status === "TERJADWAL" ? "TERJADWAL" : "SELESAI");
+                  }}
+                  className="border-border border-b py-2.5 last:border-b-0 active:opacity-75"
                 >
-                  <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center justify-between gap-2">
                     <View className="flex-row items-center gap-2">
-                      <Receipt size={16} color={colors.primary} />
-                      <Text className="text-sm font-bold text-foreground">{inv.nomor}</Text>
+                      <Icon size={14} color={colors.primary} />
+                      <Text className="text-xs font-semibold text-foreground">{item.method}</Text>
+                      <StatusBadge status={item.status} />
                     </View>
-                    <StatusBadge status={inv.status || "Belum dikirim"} />
+                    <Text className="text-xs text-muted-foreground">{item.date}</Text>
                   </View>
-
-                  <View className="flex-row items-center justify-between pt-1">
-                    <View>
-                      <Text className="text-[11px] text-muted-foreground">Total Tagihan</Text>
-                      <Text className="text-xs font-semibold text-foreground">{rupiah(inv.total || inv.nilai || 0)}</Text>
-                    </View>
-                    <View>
-                      <Text className="text-[11px] text-muted-foreground">Terbayar</Text>
-                      <Text className={`text-xs font-semibold ${isPaid ? "text-success" : "text-foreground"}`}>
-                        {rupiah(inv.terbayar || 0)}
-                      </Text>
-                    </View>
-                    <View>
-                      <Text className="text-[11px] text-muted-foreground">Jatuh Tempo</Text>
-                      <Text className="text-xs font-semibold text-foreground">{inv.jatuhTempo || "-"}</Text>
-                    </View>
-                  </View>
-
-                  <View className="flex-row items-center justify-end gap-2 pt-1 border-t border-border/40 mt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 px-2.5"
-                      onPress={() => router.push(`/invoices/${inv.id}` as any)}
-                    >
-                      <Text className="text-xs">Buka Detail</Text>
-                    </Button>
-                    {isPaid ? (
-                      (data["delivery-notes"] ?? []).some(
-                        (note: Row) => String(note.invoiceId) === String(inv.id),
-                      ) ? (
-                        <View className="flex-row items-center gap-1 px-2 py-1 bg-success/15 rounded-md">
-                          <Truck size={13} color={colors.success} />
-                          <Text className="text-xs text-success font-semibold">Surat Jalan Telah Dibuat</Text>
-                        </View>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 px-2.5 border-primary/60 flex-row items-center gap-1"
-                          onPress={() => router.push(`/delivery-notes/new?invoiceId=${inv.id}` as any)}
-                        >
-                          <Truck size={13} color={colors.primary} />
-                          <Text className="text-xs text-primary font-semibold">Buat Surat Jalan</Text>
-                        </Button>
-                      )
-                    ) : null}
-                    {!isPaid ? (
-                      <Button
-                        size="sm"
-                        className="h-8 px-2.5 bg-success"
-                        onPress={async () => {
-                          const invItems = Array.isArray(inv.items) ? inv.items : [];
-                          const outOfStockItems = invItems
-                            .map((it: any) => ({
-                              it,
-                              stock: getItemAvailableStock(it, data.products, data.serials, data.stockSummary),
-                            }))
-                            .filter((res: any) => res.stock.isOutOfStock);
-
-                          if (outOfStockItems.length > 0) {
-                            const names = outOfStockItems.map((o: any) => o.it.item).join(", ");
-                            const confirmProceed = typeof window !== "undefined"
-                              ? window.confirm(`Peringatan: Stok barang di gudang kosong / tidak mencukupi untuk item berikut:\n- ${names}\n\nApakah Anda tetap ingin menandai invoice ini sebagai Lunas?`)
-                              : true;
-                            if (!confirmProceed) return;
-                          }
-
-                          try {
-                            await setStatus("invoices", String(inv.id), "Lunas");
-                            toast(`Invoice ${inv.nomor} berhasil dilunasi!`);
-                          } catch {
-                            toast("Gagal mengubah status faktur", "danger");
-                          }
-                        }}
-                      >
-                        <Check size={13} color="#ffffff" />
-                        <Text className="text-xs text-white font-medium ml-1">Jadikan Lunas</Text>
-                      </Button>
-                    ) : (
-                      <View className="flex-row items-center gap-1 px-2 py-1 bg-success/15 rounded-md">
-                        <CheckCircle2 size={13} color={colors.success} />
-                        <Text className="text-xs text-success font-semibold">Lunas</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
+                  <Text className="text-xs text-foreground mt-1" numberOfLines={2}>{item.note}</Text>
+                  {item.next ? <Text className="text-xs text-info mt-1">Berikutnya: {item.next}</Text> : null}
+                </Pressable>
               );
             })}
           </View>
-        ) : (
-          <View className="gap-2.5 py-1">
-            <Text className="text-xs text-muted-foreground leading-relaxed">
-              Belum ada invoice yang dibuat untuk lead ini.
-            </Text>
-            {isFinanceOrAdmin ? (
-              <Button
-                size="sm"
-                onPress={() => setInvoiceModalOpen(true)}
-                className="self-start flex-row items-center gap-1.5"
-              >
-                <Plus size={14} color={colors.background} />
-                <Text className="text-xs font-semibold">Buat Faktur</Text>
-              </Button>
-            ) : null}
-          </View>
         )}
       </Panel>
-      ) : null}
 
-      {/* Modal Catat Follow-up */}
+      {/* Dialog: catat follow-up */}
       <Dialog open={fuOpen} onOpenChange={setFuOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Catat Tindak Lanjut (Follow-up)</DialogTitle>
+            <DialogTitle>Catat Follow-up</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
-            <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Tanggal Komunikasi</Text>
-              <DatePicker value={fuDate} onChange={setFuDate} placeholder="Pilih tanggal follow-up" />
+            <View className="flex-row flex-wrap gap-1.5">
+              {(["Telepon", "WhatsApp", "Meeting", "Email", "Survey"] as const).map((m) => (
+                <Button key={m} size="sm" variant={fuMethod === m ? "default" : "outline"} onPress={() => setFuMethod(m)} className="h-8 px-2.5">
+                  <Text className="text-xs">{m}</Text>
+                </Button>
+              ))}
             </View>
-
             <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Metode Komunikasi</Text>
-              <View className="flex-row flex-wrap gap-1.5">
-                {(["Telepon", "WhatsApp", "Meeting", "Email", "Survey"] as const).map((m) => (
-                  <Button
-                    key={m}
-                    size="sm"
-                    variant={fuMethod === m ? "default" : "outline"}
-                    onPress={() => setFuMethod(m)}
-                    className="h-8 px-2.5"
-                  >
-                    <Text className="text-xs">{m}</Text>
-                  </Button>
-                ))}
-              </View>
+              <Text className="text-xs text-muted-foreground font-medium">Tanggal</Text>
+              <DatePicker value={fuDate} onChange={setFuDate} placeholder="Pilih tanggal" />
             </View>
-
             <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Catatan / Ringkasan Pembicaraan</Text>
-              <Textarea
-                value={fuNote}
-                onChangeText={setFuNote}
-                placeholder="Contoh: Diskusi kebutuhan 16 titik kamera di gudang utama, pelanggan meminta estimasi diskon 5%..."
-                numberOfLines={3}
-              />
+              <Text className="text-xs text-muted-foreground font-medium">Catatan</Text>
+              <Textarea value={fuNote} onChangeText={setFuNote} placeholder="Ringkasan pembicaraan dengan customer" numberOfLines={3} />
             </View>
-
             <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">
-                Tanggal Follow-up Berikutnya / Event Mendatang (Muncul di Kalender)
-              </Text>
-              <DatePicker
-                value={fuNextAction}
-                onChange={(v) => {
-                  setFuNextAction(v);
-                  if (v) setFuStatus("TERJADWAL");
-                }}
-                placeholder="Pilih tanggal jadwal berikutnya"
-              />
-            </View>
-
-            <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Status Follow-up</Text>
-              <View className="flex-row gap-2">
-                {(["SELESAI", "TERJADWAL"] as const).map((st) => (
-                  <Button
-                    key={st}
-                    size="sm"
-                    variant={fuStatus === st ? "default" : "outline"}
-                    onPress={() => setFuStatus(st)}
-                    className="h-8 px-3"
-                  >
-                    <Text className="text-xs">{st === "SELESAI" ? "Selesai Dilakukan" : "Terjadwal"}</Text>
-                  </Button>
-                ))}
-              </View>
+              <Text className="text-xs text-muted-foreground font-medium">Jadwal berikutnya (opsional, masuk kalender)</Text>
+              <DatePicker value={fuNext} onChange={setFuNext} placeholder="Pilih tanggal" />
             </View>
           </View>
           <DialogFooter>
-            <Button variant="outline" onPress={() => setFuOpen(false)}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleAddFollowup}>
-              <Text>Simpan Follow-up</Text>
-            </Button>
+            <Button variant="outline" onPress={() => setFuOpen(false)}><Text>Batal</Text></Button>
+            <Button onPress={handleAddFollowup}><Text>Simpan</Text></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Detail & Ubah Status Follow-up */}
+      {/* Dialog: detail follow-up */}
       <Dialog open={!!selectedFu} onOpenChange={(open) => { if (!open) setSelectedFu(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Detail Tindak Lanjut (Follow-up)</DialogTitle>
+            <DialogTitle>{selectedFu ? `${selectedFu.method} · ${selectedFu.date}` : "Follow-up"}</DialogTitle>
           </DialogHeader>
           {selectedFu ? (
             <View className="gap-3 py-2">
-              <View className="flex-row items-center justify-between border-border border-b pb-2">
-                <View className="flex-row items-center gap-2">
-                  <Text className="text-xs font-semibold text-muted-foreground">Metode:</Text>
-                  <Text className="text-xs font-bold text-foreground">{selectedFu.method}</Text>
-                </View>
-                <View className="flex-row items-center gap-1.5">
-                  <Text className="text-xs font-semibold text-muted-foreground">Tanggal:</Text>
-                  <Text className="text-xs font-bold text-foreground">{selectedFu.date}</Text>
-                </View>
+              <View className="bg-panel border-border/70 rounded-lg border p-3">
+                <Text className="text-sm text-foreground leading-relaxed">{selectedFu.note || "-"}</Text>
               </View>
-
-              <View className="gap-1.5">
-                <Text className="text-xs font-semibold text-muted-foreground">Isi Pembahasan Terakhir</Text>
-                <View className="bg-panel border-border/70 rounded-lg border p-3">
-                  <Text className="text-xs text-foreground leading-relaxed">
-                    {selectedFu.note || "-"}
-                  </Text>
-                </View>
-              </View>
-
-              {selectedFu.next ? (
-                <View className="bg-panel/60 border-border/60 flex-row items-center gap-2 rounded-lg p-2.5 border">
-                  <Calendar size={14} color={colors.info} />
-                  <View>
-                    <Text className="text-[10px] text-muted-foreground uppercase font-semibold">Jadwal Tindak Lanjut Berikutnya</Text>
-                    <Text className="text-xs font-medium text-info">{selectedFu.next}</Text>
-                  </View>
-                </View>
-              ) : null}
-
-              <View className="gap-1.5 pt-1">
-                <Text className="text-xs font-semibold text-muted-foreground">Status Follow-up</Text>
+              {selectedFu.next ? <Text className="text-xs text-info">Jadwal berikutnya: {selectedFu.next}</Text> : null}
+              {canEditLead ? (
                 <View className="flex-row gap-2">
                   {(["SELESAI", "TERJADWAL"] as const).map((st) => (
-                    <Button
-                      key={st}
-                      size="sm"
-                      variant={editFuStatus === st ? "default" : "outline"}
-                      onPress={() => setEditFuStatus(st)}
-                      className="flex-1 h-9"
-                    >
-                      <Text className="text-xs font-medium">{st === "SELESAI" ? "Selesai (Done)" : "Terjadwal"}</Text>
+                    <Button key={st} size="sm" variant={editFuStatus === st ? "default" : "outline"} onPress={() => setEditFuStatus(st)} className="flex-1 h-9">
+                      <Text className="text-xs">{st === "SELESAI" ? "Selesai" : "Terjadwal"}</Text>
                     </Button>
                   ))}
                 </View>
-              </View>
+              ) : null}
             </View>
           ) : null}
           <DialogFooter>
-            <Button variant="outline" onPress={() => setSelectedFu(null)}>
-              <Text>Tutup</Text>
-            </Button>
-            <Button
-              onPress={async () => {
-                if (!selectedFu) return;
-                try {
-                  await patchRow("followups", String(selectedFu.id), { status: editFuStatus });
-                  await api("PATCH", `/follow-ups/${selectedFu.id}`, { status: editFuStatus }).catch(() => {});
-                  pushHistory("leads", row.id, `Status follow-up (${selectedFu.method}) diubah menjadi ${editFuStatus}`);
-                  toast("Status follow-up berhasil diperbarui");
-                } catch {
-                  toast("Gagal memperbarui status follow-up", "danger");
-                } finally {
-                  setSelectedFu(null);
-                }
-              }}
-            >
-              <Text>Simpan Status</Text>
-            </Button>
+            <Button variant="outline" onPress={() => setSelectedFu(null)}><Text>Tutup</Text></Button>
+            {canEditLead ? <Button onPress={handleSaveFuStatus}><Text>Simpan</Text></Button> : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Reassign Kepemilikan Sales */}
+      {/* Dialog: alihkan PIC */}
       <Dialog open={reassignOpen} onOpenChange={setReassignOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Alihkan PIC Sales</DialogTitle>
           </DialogHeader>
           <View className="gap-3 py-2">
-            <Text className="text-xs text-muted-foreground">
-              Pindahkan tanggung jawab lead ini ke sales lain. Semua riwayat follow-up dan penawaran akan tetap utuh.
-            </Text>
-            <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Pilih Sales Baru</Text>
-              <View className="gap-1">
-                {salesUsers.map((u) => (
-                  <Pressable
-                    key={u.id}
-                    onPress={() => setNewOwner(u.name)}
-                    className={`border rounded-lg p-2.5 flex-row items-center justify-between ${
-                      newOwner === u.name ? "bg-primary/10 border-primary" : "border-border"
-                    }`}
-                  >
-                    <View>
-                      <Text className="text-xs font-semibold">{u.name}</Text>
-                      <Text className="text-[11px] text-muted-foreground">{u.role.toUpperCase()} · {u.email}</Text>
-                    </View>
-                    {newOwner === u.name ? <Check size={16} color={colors.primary} /> : null}
-                  </Pressable>
-                ))}
-              </View>
+            <View className="gap-1">
+              {salesUsers.map((u) => (
+                <Pressable
+                  key={u.id}
+                  onPress={() => setNewOwner(u.name)}
+                  className={`border rounded-lg p-2.5 flex-row items-center justify-between ${newOwner === u.name ? "bg-primary/10 border-primary" : "border-border"}`}
+                >
+                  <View>
+                    <Text className="text-xs font-semibold">{u.name}</Text>
+                    <Text className="text-xs text-muted-foreground">{String(u.role).toUpperCase()}</Text>
+                  </View>
+                  {newOwner === u.name ? <Check size={16} color={colors.primary} /> : null}
+                </Pressable>
+              ))}
             </View>
-
-            <View className="gap-1.5">
-              <Text className="text-xs text-muted-foreground font-medium">Alasan Pengalihan (Opsional)</Text>
-              <Input
-                value={reassignReason}
-                onChangeText={setReassignReason}
-                placeholder="Contoh: Cuti tahunan / pembagian wilayah"
-              />
-            </View>
+            <Input value={reassignReason} onChangeText={setReassignReason} placeholder="Alasan (opsional)" />
           </View>
           <DialogFooter>
-            <Button variant="outline" onPress={() => setReassignOpen(false)}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleReassign}>
-              <Text>Simpan Perubahan</Text>
-            </Button>
+            <Button variant="outline" onPress={() => setReassignOpen(false)}><Text>Batal</Text></Button>
+            <Button onPress={handleReassign}><Text>Simpan</Text></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Ubah Alasan Lost */}
+      {/* Dialog: ubah alasan Lost */}
       <Dialog open={lostReasonOpen} onOpenChange={setLostReasonOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -967,9 +640,7 @@ export function LeadExtras({ row }: { row: Row }) {
               <Pressable
                 key={r}
                 onPress={() => setSelectedLostReason(r)}
-                className={`border rounded-lg p-2.5 flex-row items-center justify-between ${
-                  selectedLostReason === r ? "bg-danger/10 border-danger" : "border-border"
-                }`}
+                className={`border rounded-lg p-2.5 flex-row items-center justify-between ${selectedLostReason === r ? "bg-danger/10 border-danger" : "border-border"}`}
               >
                 <Text className="text-xs flex-1 pr-2">{r}</Text>
                 {selectedLostReason === r ? <Check size={16} color={colors.danger} /> : null}
@@ -977,28 +648,13 @@ export function LeadExtras({ row }: { row: Row }) {
             ))}
           </View>
           <DialogFooter>
-            <Button variant="outline" onPress={() => setLostReasonOpen(false)}>
-              <Text>Batal</Text>
-            </Button>
-            <Button onPress={handleSaveLostReason}>
-              <Text>Simpan</Text>
-            </Button>
+            <Button variant="outline" onPress={() => setLostReasonOpen(false)}><Text>Batal</Text></Button>
+            <Button onPress={handleSaveLostReason}><Text>Simpan</Text></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Buat Invoice dari Lead */}
-      <CreateInvoiceDialog
-        open={invoiceModalOpen}
-        onOpenChange={setInvoiceModalOpen}
-        initialQuotation={quotation}
-        initialLead={row}
-        onSuccess={async () => {
-          await refreshModule("invoices");
-        }}
-      />
-
-      <CreateQuotationDialog open={quoteOpen} onOpenChange={setQuoteOpen} defaultLead={row} />
+      {canCreateQuote ? <CreateQuotationDialog open={quoteOpen} onOpenChange={setQuoteOpen} defaultLead={row} /> : null}
     </>
   );
 }

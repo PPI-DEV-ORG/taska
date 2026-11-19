@@ -131,6 +131,17 @@ export class SurveysService {
     }
     const lead = await this.assertLeadExists(dto.leadId);
 
+    // Satu lead hanya boleh punya satu survey aktif; survey ulang diminta setelah yang lama selesai / dibatalkan.
+    const active = await this.prisma.main.survey.findFirst({
+      where: { leadId: lead.id, status: { in: ["DIMINTA", "DIJADWALKAN", "BERJALAN"] } },
+      select: { id: true, status: true },
+    });
+    if (active) {
+      throw new BadRequestException(
+        `Lead ini masih punya survey aktif (#${active.id}, status ${active.status}). Tunggu sampai selesai atau dibatalkan sebelum meminta survey ulang.`,
+      );
+    }
+
     const isSales = user.role === "SALES";
     const location = dto.location || "-";
 
