@@ -21,16 +21,18 @@
  *   - v5: Gudang tanpa Persetujuan, Pembelian, Keuangan & Proyek. Tetap: pengeluaran & petty cash miliknya sendiri.
  *
  *   - v12: modul "file-management" (File Management). M/L = jelajah file sesuai akses dokumen, C = upload, U = ubah/ganti/bagikan,
- *          A = hapus, E = unduh/ekspor, V = kelola provider storage & migrasi, P = lihat semua file termasuk file yatim.
+ *          A = hapus, E = unduh/ekspor, V = kelola provider storage & migrasi, P = lihat semua file termasuk file lepas (standalone).
  *   - v13: modul "supplier-bills" (Tagihan Supplier / Invoice In) dipisah dari "supplier-pos". Pemisahan tugas:
  *          membuat PO hanya Procurement (+ Admin/Bos); Finance tidak lagi bisa membuat PO, tapi tetap mencatat & membayar tagihan.
  *          Sales & Teknisi diberi approvals: "" eksplisit agar "V" Laporan Maintenance tidak bocor jadi hak Persetujuan.
+ *   - v14: penambahan peran standar "AUDITOR" (pemeriksa independen, seluruh modul read-only, ekspor & audit log)
+ *          dan "LEGAL" (kepatuhan hukum, draf & review kontrak, perizinan, dokumen legalitas).
  *
  * Menaikkan versi ini membuat server menerapkan ulang matriks standar ke peran bawaan sekali saat start
  * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
  */
 
-export const ROLE_MATRIX_VERSION = 13;
+export const ROLE_MATRIX_VERSION = 14;
 
 export const ROLE_MODULE_KEYS = [
   "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "maintenance", "fixed-assets", "subscriptions", "contracts", "file-management", "customers", "po-client",
@@ -295,6 +297,80 @@ export const STANDARD_ROLES: Record<string, { name: string; description: string;
       "purchase-requests": "MLC",
       "maintenance-reports": "ML",
       projects: "L",
+    },
+  },
+
+  AUDITOR: {
+    name: "Auditor",
+    description: "Pemeriksa independen: akses baca (read-only), laporan finansial & operasional, histori audit, dan ekspor data tanpa hak transaksi",
+    permissions: {
+      ...EMPLOYEE,
+      dashboard: "ML",
+      calendar: "ML",
+      expenses: "MLPE",
+      leads: "MLE",
+      quotations: "MLPE",
+      surveys: "MLE",
+      "poc-reports": "MLE",
+      "visit-reports": "MLE",
+      "maintenance-reports": "MLE",
+      maintenance: "MLE",
+      "fixed-assets": "MLPE",
+      subscriptions: "MLPE",
+      contracts: "MLPE",
+      "file-management": "MLPE",
+      customers: "MLE",
+      "po-client": "MLPE",
+      projects: "MLPE",
+      tasks: "MLE",
+      "delivery-notes": "MLE",
+      "purchase-requests": "MLPE",
+      "supplier-pos": "MLPE",
+      "supplier-bills": "MLPE",
+      shipments: "MLE",
+      receiving: "MLE",
+      stock: "MLPE",
+      opname: "MLE",
+      "damage-reports": "MLE",
+      suppliers: "MLE",
+      warehouses: "MLE",
+      products: "MLPE",
+      invoices: "MLPE",
+      accounting: "MLPE",
+      reports: "MLPE",
+      hr: "MLE",
+      approvals: "ML",
+      "master-data": "ML",
+      users: "MLE",
+      archive: "MLE",
+      "audit-log": "MLE",
+    },
+  },
+
+  LEGAL: {
+    name: "Legal",
+    description: "Kepatuhan hukum & perjanjian: draf & review kontrak, SLA, addendum, verifikasi dokumen legalitas, dan arsip hukum",
+    permissions: {
+      ...EMPLOYEE,
+      contracts: "MLCUE",
+      "file-management": "MLCUE",
+      customers: "ML",
+      suppliers: "ML",
+      projects: "ML",
+      "po-client": "ML",
+      quotations: "ML",
+      leads: "L",
+      subscriptions: "ML",
+      "fixed-assets": "ML",
+      maintenance: "ML",
+      "maintenance-reports": "ML",
+      "damage-reports": "ML",
+      invoices: "L",
+      reports: "ML",
+      archive: "ML",
+      approvals: "ML",
+      "master-data": "ML",
+      accounting: "",
     },
   },
 };

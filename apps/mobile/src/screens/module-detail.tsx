@@ -992,21 +992,27 @@ export function ModuleDetail({ moduleKey, id }: { moduleKey: string; id: string 
         action={
           <>
             {canDelete ? (
-              <Button variant="outline" onPress={() => setDeleteOpen(true)}>
-                <Trash2 size={15} color={colors.danger} />
-                <Text className="text-danger">Hapus</Text>
+              <Button size="sm" variant="outline" onPress={() => setDeleteOpen(true)} className="h-9 gap-1.5">
+                <Trash2 size={14} color={colors.danger} />
+                <Text className="text-xs text-danger font-medium">Hapus</Text>
               </Button>
             ) : null}
             {def.statuses.length > 1 && !(isLead && !serverCan("leads", "U")) ? (
-              <Button variant="outline" onPress={() => setMenu(true)}>
-                <Text>Ubah status</Text>
-                <ChevronDown size={16} color={colors.text} />
+              <Button size="sm" variant="outline" onPress={() => setMenu(true)} className="h-9 gap-1.5">
+                <Text className="text-xs font-medium">Ubah status</Text>
+                <ChevronDown size={14} color={colors.text} />
               </Button>
             ) : null}
             {secondary.map((a) => (
-              <Button key={a.label} variant="outline" onPress={() => handlePrimaryAction(a)}><Text>{a.label}</Text></Button>
+              <Button key={a.label} size="sm" variant="outline" onPress={() => handlePrimaryAction(a)} className="h-9">
+                <Text className="text-xs font-medium">{a.label}</Text>
+              </Button>
             ))}
-            {primary ? <Button onPress={() => handlePrimaryAction(primary)}><Text>{primary.label}</Text></Button> : null}
+            {primary ? (
+              <Button size="sm" onPress={() => handlePrimaryAction(primary)} className="h-9">
+                <Text className="text-xs font-semibold text-white">{primary.label}</Text>
+              </Button>
+            ) : null}
           </>
         }
       />

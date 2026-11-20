@@ -59,8 +59,8 @@ export function ScheduleSettingsDialog({
 }: ScheduleSettingsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[96vw] max-w-xl md:max-w-2xl max-h-[90vh] p-4 sm:p-6 overflow-y-auto">
+        <DialogHeader className="pr-8">
           <DialogTitle>Atur Jam Kerja & Aturan Lembur</DialogTitle>
         </DialogHeader>
 

@@ -48,6 +48,8 @@ export type Role =
   | "gudang"
   | "se"
   | "hr"
+  | "auditor"
+  | "legal"
   | (string & {});
 
 export type ActionCode = "M" | "L" | "C" | "U" | "A" | "P" | "V" | "E";
@@ -142,6 +144,8 @@ export const ROLE_LABEL: Record<string, string> = {
   gudang: "Gudang",
   se: "Software Engineer",
   hr: "HR",
+  auditor: "Auditor",
+  legal: "Legal",
 };
 
 export type Row = Record<string, any> & { id: string };
@@ -1263,6 +1267,15 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   gudang: [N.dashboard, N.calendar, N.stock, N.fixedAssets, N.maintenance, N.receiving, N.delivery, N.opname, N.damage, N.expenses, N.cashAdvances, N.hr, N.master],
   se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.delivery, N.expenses, N.cashAdvances, N.hr],
   hr: [N.dashboard, N.calendar, N.hr, N.users, N.fixedAssets, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.pocReports, N.requests],
+  auditor: [
+    N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
+    N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
+    N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+    N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
+  ],
+  legal: [
+    N.dashboard, N.calendar, N.approvals, N.contracts, N.fileManagement, N.subscriptions, N.fixedAssets, N.maintenance, N.customers, N.projects, N.quotations, N.poClient, N.expenses, N.cashAdvances, N.hr, N.reports, N.archive,
+  ],
 };
 
 export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "procurement"];

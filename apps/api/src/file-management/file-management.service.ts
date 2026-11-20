@@ -38,7 +38,7 @@ export type ListFilesQuery = {
 };
 
 export type CreateShareDto = {
-  expiresAt: string; // ISO date string
+  expiresAt?: string; // ISO date string atau 'forever' untuk berlaku selamanya
   permission?: "VIEW" | "DOWNLOAD";
   password?: string;
   oneTime?: boolean;
@@ -46,6 +46,8 @@ export type CreateShareDto = {
 
 @Injectable()
 export class FileManagementService {
+  private serverStorageCache: { data: any; expiresAt: number } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerService: FileProviderService,
@@ -203,6 +205,9 @@ export class FileManagementService {
    * Informasi kapasitas penyimpanan server fisik tempat Akuntra berjalan
    */
   async getServerStorage() {
+    if (this.serverStorageCache && Date.now() < this.serverStorageCache.expiresAt) {
+      return this.serverStorageCache.data;
+    }
     try {
       const cwd = process.cwd();
       const sfs = await statfs(cwd);
@@ -231,7 +236,7 @@ export class FileManagementService {
         uploadFolderBytes = await scanDir(uploadDir);
       } catch {}
 
-      return {
+      const result = {
         diskTotal: total,
         diskUsed: used,
         diskFree: free,
@@ -239,6 +244,8 @@ export class FileManagementService {
         uploadsSizeBytes: uploadFolderBytes,
         serverPath: cwd,
       };
+      this.serverStorageCache = { data: result, expiresAt: Date.now() + 60_000 };
+      return result;
     } catch (e) {
       return {
         diskTotal: 0,
@@ -727,13 +734,13 @@ export class FileManagementService {
   }
 
   /**
-   * Hapus permanen file yatim secara massal
+   * Hapus permanen file lepas (standalone) secara massal
    */
   async bulkDeleteOrphans(fileIds: number[], user: RequestUser) {
     const isSuperAdmin = (user.role || "").toUpperCase() === "SUPER_ADMIN";
     const hasPerm = isSuperAdmin || can(user.role, "fileManagement", "P");
     if (!hasPerm) {
-      throw new ForbiddenException("Hanya Super Admin atau pengelola file berwenang yang dapat menghapus file yatim.");
+      throw new ForbiddenException("Hanya Super Admin atau pengelola file berwenang yang dapat menghapus file lepas.");
     }
 
     let deletedCount = 0;
@@ -756,7 +763,7 @@ export class FileManagementService {
       ok: true,
       deletedCount,
       errors: errors.length > 0 ? errors : undefined,
-      message: `Berhasil menghapus ${deletedCount} file yatim.`,
+      message: `Berhasil menghapus ${deletedCount} file lepas.`,
     };
   }
 
@@ -774,9 +781,16 @@ export class FileManagementService {
     const rawToken = randomBytes(24).toString("hex");
     const tokenHash = createHash("sha256").update(rawToken).digest("hex");
 
-    const expiresAt = new Date(dto.expiresAt);
-    if (isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
-      throw new BadRequestException("Tanggal kedaluwarsa tautan wajib diisi di masa depan.");
+    let expiresAt: Date;
+    const isForever = !dto.expiresAt || dto.expiresAt === "forever" || dto.expiresAt === "never";
+    if (isForever) {
+      // Berlaku selamanya / tanpa batas (diisi 100 tahun ke depan)
+      expiresAt = new Date(Date.now() + 100 * 365.25 * 86400 * 1000);
+    } else {
+      expiresAt = new Date(dto.expiresAt!);
+      if (isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+        throw new BadRequestException("Tanggal kedaluwarsa tautan wajib diisi di masa depan.");
+      }
     }
 
     let passwordHash: string | null = null;
@@ -801,6 +815,7 @@ export class FileManagementService {
       shareToken: rawToken, // Dikembalikan sekali kepada pembuat
       shareUrl: `/api/share/${rawToken}`,
       expiresAt: share.expiresAt,
+      isForever: isForever || share.expiresAt.getFullYear() >= 2099,
       permission: share.permission,
       oneTime: share.oneTime,
       hasPassword: Boolean(passwordHash),

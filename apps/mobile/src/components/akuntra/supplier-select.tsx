@@ -20,6 +20,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,7 @@ export function SupplierSelect({
   addNewLabel = "+ Tambah Pemasok Baru",
   allowClear = true,
 }: SupplierSelectProps) {
+  const { isMobile } = useBreakpoint();
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -279,32 +281,137 @@ export function SupplierSelect({
           </View>
 
           {/* Supplier Table / List View */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: "100%" }}>
-              <View className="flex-1 min-w-[760px]">
-                {/* Table Header */}
-                <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nama Pemasok & Kota</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">Tags / Kategori Barang</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-32 text-center">Status Pajak</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2">Syarat Pembayaran</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
-                </View>
+          {isMobile ? (
+            /* Mobile Card View */
+            <ScrollView className="max-h-[58vh] mt-3" contentContainerClassName="gap-2 pb-2">
+              {allowClear && (
+                <Pressable
+                  onPress={() => handleSelect(null)}
+                  className={cn(
+                    "p-3 rounded-xl border border-dashed border-border/80 flex-row items-center justify-between",
+                    !value || value === "-" ? "bg-primary/10 border-primary" : "bg-card hover:bg-muted/30"
+                  )}
+                >
+                  <Text className="text-xs font-semibold text-muted-foreground">
+                    - Tanpa Supplier / Beli Ritel Langsung -
+                  </Text>
+                  {(!value || value === "-") && <Check size={16} color={colors.primary} />}
+                </Pressable>
+              )}
 
-                <ScrollView className="max-h-[50vh]" contentContainerClassName="divide-y divide-border/40">
-                  {allowClear && (
-                    <Pressable
-                      onPress={() => handleSelect(null)}
-                      className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
-                    >
-                      <View className="flex-row items-center gap-2">
-                        <Text className="text-xs font-medium text-muted-foreground">
-                          - Tanpa Supplier / Beli Ritel Langsung -
+              {filteredList.map((s) => {
+                const isSelected = selectedSupplier?.id === s.id;
+                const isPkp = s.taxStatus === "PKP" || s.jenisUsaha === "PKP";
+                const tagsText = getSupplierTagsText(s);
+                const paymentTerm = s.payment || s.paymentTerms || s.syaratPembayaran || "Tempo (Net 30)";
+                const city = s.kota || s.city || "";
+                const pic = s.kontak || s.pic || "";
+
+                return (
+                  <Pressable
+                    key={s.id}
+                    onPress={() => handleSelect(s)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card active:bg-panel transition-colors gap-2 shadow-xs",
+                      isSelected ? "border-primary bg-primary/5" : ""
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1">
+                        <Text className={cn("text-sm font-bold", isSelected ? "text-primary" : "text-foreground")}>
+                          {s.nama || s.name || `Supplier #${s.id}`}
+                        </Text>
+                        <View className="flex-row items-center gap-2 mt-0.5">
+                          {city ? (
+                            <View className="flex-row items-center gap-1">
+                              <MapPin size={10} color={colors.muted} />
+                              <Text className="text-[11px] text-muted-foreground">{city}</Text>
+                            </View>
+                          ) : null}
+                          {pic ? (
+                            <Text className="text-[11px] text-muted-foreground">• PIC: {pic}</Text>
+                          ) : null}
+                        </View>
+                      </View>
+                      <View
+                        className={cn(
+                          "px-2 py-0.5 rounded-full border shrink-0",
+                          isPkp
+                            ? "bg-primary/10 border-primary/30"
+                            : "bg-muted/60 border-border"
+                        )}
+                      >
+                        <Text className={cn("text-[10px] font-bold", isPkp ? "text-primary" : "text-muted-foreground")}>
+                          {isPkp ? "PKP (PPN)" : "Non-PKP"}
                         </Text>
                       </View>
-                      {(!value || value === "-") && <Check size={16} color={colors.primary} />}
-                    </Pressable>
-                  )}
+                    </View>
+
+                    {tagsText ? (
+                      <View className="flex-row items-center gap-1 flex-wrap pt-0.5">
+                        <Tag size={10} color={colors.primary} />
+                        <Text className="text-[11px] text-muted-foreground font-medium" numberOfLines={1}>
+                          {tagsText}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View className="flex-row items-center gap-1 flex-1 mr-2">
+                        <CreditCard size={11} color={colors.muted} />
+                        <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                          {paymentTerm}
+                        </Text>
+                      </View>
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    Tidak ada supplier yang cocok dengan &quot;{q}&quot;
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: "100%" }}>
+                <View className="flex-1 min-w-[760px]">
+                  {/* Table Header */}
+                  <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
+                    <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">Nama Pemasok & Kota</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">Tags / Kategori Barang</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-32 text-center">Status Pajak</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[140px] px-2">Syarat Pembayaran</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
+                  </View>
+
+                  <ScrollView className="max-h-[50vh]" contentContainerClassName="divide-y divide-border/40">
+                    {allowClear && (
+                      <Pressable
+                        onPress={() => handleSelect(null)}
+                        className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
+                      >
+                        <View className="flex-row items-center gap-2">
+                          <Text className="text-xs font-medium text-muted-foreground">
+                            - Tanpa Supplier / Beli Ritel Langsung -
+                          </Text>
+                        </View>
+                        {(!value || value === "-") && <Check size={16} color={colors.primary} />}
+                      </Pressable>
+                    )}
 
                   {filteredList.map((s) => {
                     const isSelected = selectedSupplier?.id === s.id;
@@ -430,6 +537,7 @@ export function SupplierSelect({
               </View>
             </ScrollView>
           </View>
+        )}
 
           <DialogFooter className="mt-3 flex-row items-center justify-between">
             <Text className="text-xs text-muted-foreground">

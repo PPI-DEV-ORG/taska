@@ -19,8 +19,8 @@ export class FileAccessService {
   /**
    * Cek apakah user memiliki hak akses terhadap file ini (PRD §7.1 - §7.3 + ACL).
    * 1. Super Admin: selalu boleh.
-   * 2. Pengguna dengan hak 'P' pada modul fileManagement: boleh melihat semua (termasuk yatim).
-   * 3. Jika file yatim: HANYA Super Admin dan pemegang hak 'P' yang boleh akses.
+   * 2. Pengguna dengan hak 'P' pada modul fileManagement: boleh melihat semua (termasuk file lepas).
+   * 3. Jika file lepas (standalone): HANYA Super Admin dan pemegang hak 'P' yang boleh akses.
    * 4. Jika ada ACL eksplisit di tabel FilePermission: periksa kecocokan user ID atau role.
    * 5. Jika file terhubung ke dokumen: periksa RBAC user pada modul dokumen sumber (minimal 1 dokumen cocok).
    */
@@ -64,7 +64,7 @@ export class FileAccessService {
     const connected = await this.resolveConnectedDocuments(fileId);
     const isOrphan = connected.length === 0;
 
-    // File Yatim: Hanya Super Admin dan pemegang 'P' (Lihat Yatim)
+    // File Lepas (Standalone): Hanya Super Admin dan pemegang 'P' (Lihat File Lepas)
     if (isOrphan) {
       return hasFullFm;
     }

@@ -94,9 +94,35 @@ export function FileDetailModal({
     return () => clearTimeout(timer);
   }, [visible, fileId, loadDetail]);
 
-  const copyChecksum = () => {
-    if (file?.checksumSha256 && typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(file.checksumSha256);
+  const copyChecksum = async () => {
+    if (!file?.checksumSha256) return;
+    let copied = false;
+    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(file.checksumSha256);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+    if (!copied && typeof document !== "undefined") {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = file.checksumSha256;
+        textArea.style.position = "fixed";
+        textArea.style.top = "-9999px";
+        textArea.style.left = "-9999px";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(textArea);
+      } catch {
+        copied = false;
+      }
+    }
+    if (copied) {
       toast("Checksum SHA-256 disalin ke clipboard", "success");
     }
   };
@@ -165,23 +191,25 @@ export function FileDetailModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-4">
-        <View className="max-h-[90vh] w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-2xl">
+      <View className="flex-1 items-center justify-center bg-black/60 p-2 sm:p-4">
+        <View className="max-h-[92vh] w-[96vw] max-w-2xl rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
           {/* Header */}
-          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3">
-            <View className="flex-row items-center gap-2.5">
-              <View className="rounded-xl p-2" style={{ backgroundColor: `${colors.primary}1A` }}>
+          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-1">
+            <View className="flex-1 min-w-0 mr-3 flex-row items-center gap-2.5">
+              <View className="rounded-xl p-2 shrink-0" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <FileText size={20} color={colors.primary} />
               </View>
-              <View>
-                <Text className="text-base font-bold text-foreground">
+              <View className="flex-1 min-w-0">
+                <Text className="text-base font-bold text-foreground" numberOfLines={1} ellipsizeMode="middle">
                   {file?.displayName || "Detail Berkas"}
                 </Text>
-                <Text className="text-xs font-mono text-muted-foreground">{file?.fileCode}</Text>
+                <Text className="text-xs font-mono text-muted-foreground" numberOfLines={1}>
+                  {file?.fileCode}
+                </Text>
               </View>
             </View>
-            <Pressable onPress={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted">
-              <X size={18} />
+            <Pressable onPress={onClose} hitSlop={12} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted shrink-0">
+              <X size={20} />
             </Pressable>
           </View>
 
@@ -298,13 +326,13 @@ export function FileDetailModal({
                 }
 
                 return (
-                  <View className="rounded-2xl border border-border p-3.5 bg-muted/20 flex-row items-center justify-between">
-                    <View className="flex-row items-center gap-2.5 flex-1 pr-2">
-                      <View className="rounded-xl p-2 bg-primary/10">
+                  <View className="rounded-2xl border border-border p-3.5 bg-muted/20 flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <View className="flex-row items-center gap-2.5 flex-1 min-w-0 pr-2">
+                      <View className="rounded-xl p-2 bg-primary/10 shrink-0">
                         <FileText size={22} color={colors.primary} />
                       </View>
-                      <View className="flex-1">
-                        <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
+                      <View className="flex-1 min-w-0">
+                        <Text className="text-xs font-bold text-foreground" numberOfLines={1} ellipsizeMode="middle">
                           {file.displayName}
                         </Text>
                         <Text className="text-[11px] text-muted-foreground">
@@ -312,7 +340,7 @@ export function FileDetailModal({
                         </Text>
                       </View>
                     </View>
-                    <Button size="sm" variant="outline" onPress={handleOpenPreview} className="gap-1.5">
+                    <Button size="sm" variant="outline" onPress={handleOpenPreview} className="gap-1.5 self-start sm:self-auto">
                       <ExternalLink size={13} color={colors.primary} />
                       <Text className="text-xs font-semibold">Buka / Pratinjau</Text>
                     </Button>
@@ -343,9 +371,9 @@ export function FileDetailModal({
                   <View className="flex-row items-center gap-2 rounded-lg bg-amber-500/10 p-2.5 border border-amber-500/20">
                     <AlertTriangle size={16} color="#D97706" />
                     <View className="flex-1">
-                      <Text className="text-xs font-bold text-amber-800">Berkas Yatim (Orphan File)</Text>
+                      <Text className="text-xs font-bold text-amber-800">Berkas Lepas (Standalone File)</Text>
                       <Text className="text-[11px] text-amber-700">
-                        Berkas ini tidak terhubung ke transaksi manapun. Sesuai PRD, berkas yatim aman untuk dibersihkan atau ditautkan kembali.
+                        Berkas ini tidak terhubung ke transaksi manapun (mandiri). Berkas lepas aman untuk dibersihkan atau ditautkan kembali.
                       </Text>
                     </View>
                   </View>
@@ -356,7 +384,7 @@ export function FileDetailModal({
               <View className="gap-2 rounded-xl border border-border p-3.5">
                 <Text className="text-xs font-bold text-foreground">Lokasi Fisik Berkas</Text>
                 <View className="gap-1.5 text-xs text-muted-foreground">
-                  <View className="flex-row justify-between">
+                  <View className="flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                     <Text className="text-xs text-muted-foreground">Penyimpanan Primer:</Text>
                     <View className="flex-row items-center gap-1.5">
                       <Text className="text-xs font-bold text-foreground">
@@ -367,20 +395,20 @@ export function FileDetailModal({
                       </View>
                     </View>
                   </View>
-                  <View className="flex-row justify-between">
+                  <View className="flex-col sm:flex-row sm:justify-between gap-1">
                     <Text className="text-xs text-muted-foreground">Object Key / Path:</Text>
-                    <Text className="text-xs font-mono text-foreground flex-shrink text-right max-w-[300px]">
+                    <Text className="text-xs font-mono text-foreground break-all" numberOfLines={2} ellipsizeMode="middle">
                       {file.primaryLocation?.storageKey || file.path}
                     </Text>
                   </View>
-                  <View className="flex-row justify-between">
+                  <View className="flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                     <Text className="text-xs text-muted-foreground">Integritas Checksum:</Text>
-                    <View className="flex-row items-center gap-1">
-                      <Text className="text-[11px] font-mono text-foreground max-w-[200px]" numberOfLines={1}>
+                    <View className="flex-row items-center gap-1 min-w-0">
+                      <Text className="text-[11px] font-mono text-foreground flex-1 sm:flex-initial sm:max-w-[200px]" numberOfLines={1} ellipsizeMode="middle">
                         {file.checksumSha256 || "Belum di-hash"}
                       </Text>
                       {file.checksumSha256 ? (
-                        <Pressable onPress={copyChecksum} className="p-0.5">
+                        <Pressable onPress={copyChecksum} className="p-0.5 shrink-0">
                           <Copy size={12} color={colors.primary} />
                         </Pressable>
                       ) : null}
@@ -467,50 +495,50 @@ export function FileDetailModal({
               size="sm"
               onPress={handleDelete}
               disabled={deleting}
-              className="gap-1.5"
+              className="gap-1.5 h-9"
             >
               <Trash2 size={14} />
-              <Text className="text-xs text-white">Hapus</Text>
+              <Text className="text-xs text-white font-medium">Hapus</Text>
             </Button>
 
-            <View className="flex-row gap-2">
+            <View className="flex-row flex-wrap items-center gap-1.5">
               <Button
                 variant="outline"
                 size="sm"
                 onPress={() => setShareOpen(true)}
-                className="gap-1.5"
+                className="gap-1.5 h-9 px-2.5"
               >
-                <Share2 size={14} />
-                <Text className="text-xs">Bagikan</Text>
+                <Share2 size={13} />
+                <Text className="text-xs font-medium">Bagikan</Text>
               </Button>
 
               <Button
                 variant="outline"
                 size="sm"
                 onPress={() => setReplaceOpen(true)}
-                className="gap-1.5"
+                className="gap-1.5 h-9 px-2.5"
               >
-                <UploadCloud size={14} />
-                <Text className="text-xs">Ganti Berkas</Text>
+                <UploadCloud size={13} />
+                <Text className="text-xs font-medium">Ganti</Text>
               </Button>
 
               <Button
                 size="sm"
                 onPress={handleOpenPreview}
-                className="gap-1.5"
+                className="gap-1.5 h-9 px-2.5"
                 style={{ backgroundColor: colors.primary }}
               >
-                <Eye size={14} color="#FFF" />
-                <Text className="text-xs text-white font-semibold">Lihat Berkas</Text>
+                <Eye size={13} color="#FFF" />
+                <Text className="text-xs text-white font-semibold">Lihat</Text>
               </Button>
 
               <Button
                 size="sm"
                 variant="outline"
                 onPress={handleDownload}
-                className="gap-1.5"
+                className="gap-1.5 h-9 px-2.5"
               >
-                <Download size={14} color={colors.primary} />
+                <Download size={13} color={colors.primary} />
                 <Text className="text-xs font-semibold">Unduh</Text>
               </Button>
             </View>

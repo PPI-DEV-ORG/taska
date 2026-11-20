@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,8 +76,10 @@ export function FileManagementScreen() {
   const [limit] = React.useState(25);
   const [totalFiles, setTotalFiles] = React.useState(0);
 
-  // Loading states
+  // Loading & refresh states
   const [loading, setLoading] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
   // Dialogs
   const [providerFormOpen, setProviderFormOpen] = React.useState(false);
@@ -97,27 +99,49 @@ export function FileManagementScreen() {
   const [selectedOrphanIds, setSelectedOrphanIds] = React.useState<number[]>([]);
   const [deletingOrphans, setDeletingOrphans] = React.useState(false);
 
-  const loadData = React.useCallback(async () => {
-    setLoading(true);
-    try {
-      const [ov, srv, provs, scheds, jobs] = await Promise.all([
-        api.get<FileOverview>("/file-management/overview"),
-        api.get<ServerStorage>("/file-management/server-storage"),
-        api.get<StorageProviderItem[]>("/file-management/providers"),
-        api.get<MigrationSchedule[]>("/file-management/schedules"),
-        api.get<MigrationJob[]>("/file-management/migrations?limit=15"),
-      ]);
-      setOverview(ov);
-      setServerStorage(srv);
-      setProviders(Array.isArray(provs) ? provs : []);
-      setSchedules(Array.isArray(scheds) ? scheds : []);
-      setMigrationJobs(Array.isArray(jobs) ? jobs : []);
-    } catch (e) {
-      toast((e as Error).message, "danger");
-    } finally {
-      setLoading(false);
-    }
-  }, [toast]);
+  const loadData = React.useCallback(
+    async (isRefresh = false) => {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setLoadError(null);
+      try {
+        const results = await Promise.allSettled([
+          api.get<FileOverview>("/file-management/overview"),
+          api.get<ServerStorage>("/file-management/server-storage"),
+          api.get<StorageProviderItem[]>("/file-management/providers"),
+          api.get<MigrationSchedule[]>("/file-management/schedules"),
+          api.get<MigrationJob[]>("/file-management/migrations?limit=15"),
+        ]);
+
+        const [ovRes, srvRes, provsRes, schedsRes, jobsRes] = results;
+
+        if (ovRes.status === "fulfilled") setOverview(ovRes.value);
+        if (srvRes.status === "fulfilled") setServerStorage(srvRes.value);
+        if (provsRes.status === "fulfilled") setProviders(Array.isArray(provsRes.value) ? provsRes.value : []);
+        if (schedsRes.status === "fulfilled") setSchedules(Array.isArray(schedsRes.value) ? schedsRes.value : []);
+        if (jobsRes.status === "fulfilled") setMigrationJobs(Array.isArray(jobsRes.value) ? jobsRes.value : []);
+
+        const allFailed = results.every((r) => r.status === "rejected");
+        if (allFailed) {
+          const firstErr = (results[0] as PromiseRejectedResult).reason;
+          const msg = (firstErr as Error)?.message || "Gagal memuat data file manajemen. Periksa koneksi internet.";
+          setLoadError(msg);
+          toast(msg, "danger");
+        }
+      } catch (e) {
+        const msg = (e as Error).message || "Gagal memuat data.";
+        setLoadError(msg);
+        toast(msg, "danger");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [toast],
+  );
 
   const loadFiles = React.useCallback(
     async (folderTarget: string | null = currentFolder, isOrphanOnly: boolean = activeTab === "orphans") => {
@@ -145,6 +169,20 @@ export function FileManagementScreen() {
     },
     [currentFolder, activeTab, search, selectedProviderId, selectedCategoryId, page, limit, toast],
   );
+
+  const handleFullRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.allSettled([
+        loadData(true),
+        activeTab === "files" || activeTab === "orphans"
+          ? loadFiles(currentFolder, activeTab === "orphans")
+          : Promise.resolve(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadData, loadFiles, currentFolder, activeTab]);
 
   const handleOpenFolder = (folderKey: string) => {
     setCurrentFolder(folderKey);
@@ -192,12 +230,12 @@ export function FileManagementScreen() {
 
   const handleBulkDeleteOrphans = async () => {
     if (selectedOrphanIds.length === 0) return;
-    if (!confirm(`Hapus ${selectedOrphanIds.length} berkas yatim terpilih secara permanen?`)) return;
+    if (!confirm(`Hapus ${selectedOrphanIds.length} berkas lepas terpilih secara permanen?`)) return;
 
     setDeletingOrphans(true);
     try {
       await api.post("/file-management/files/bulk-delete-orphans", { fileIds: selectedOrphanIds });
-      toast(`Berhasil menghapus ${selectedOrphanIds.length} berkas yatim.`, "success");
+      toast(`Berhasil menghapus ${selectedOrphanIds.length} berkas lepas.`, "success");
       setSelectedOrphanIds([]);
       loadFiles(currentFolder, true);
       loadData();
@@ -266,13 +304,24 @@ export function FileManagementScreen() {
   const TABS = [
     { value: "overview", label: "Ringkasan" },
     { value: "files", label: "Semua Berkas", count: overview?.totalFiles },
-    { value: "orphans", label: "Berkas Yatim", count: overview?.orphanFiles },
+    { value: "orphans", label: "Berkas Lepas", count: overview?.orphanFiles },
     { value: "providers", label: "Penyimpanan Eksternal", count: providers.length },
     { value: "migration", label: "Migrasi & Jadwal", count: migrationJobs.length },
   ];
 
   return (
-    <ScrollView className="flex-1 bg-background" showsVerticalScrollIndicator={false}>
+    <ScrollView
+      className="flex-1 bg-background"
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => void handleFullRefresh()}
+          colors={[colors.primary]}
+          tintColor={colors.primary}
+        />
+      }
+    >
       <View className="mx-auto w-full max-w-7xl p-4 md:p-6 space-y-6">
         {/* Header Modul */}
         <PageHeader
@@ -280,6 +329,22 @@ export function FileManagementScreen() {
           subtitle="Pusat pengelolaan dokumen ERP, storage provider (S3 / NAS), dan migrasi berkas aman"
           action={
             <View className="flex-row items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || refreshing}
+                onPress={() => void handleFullRefresh()}
+                className="gap-1.5"
+              >
+                <RefreshCw
+                  size={14}
+                  color={colors.primary}
+                  className={loading || refreshing ? "animate-spin" : undefined}
+                />
+                <Text className="text-xs font-semibold">
+                  {loading || refreshing ? "Menyegarkan..." : "Segarkan"}
+                </Text>
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -314,8 +379,39 @@ export function FileManagementScreen() {
           }}
         />
 
+        {/* State Loading Awal saat membuka halaman */}
+        {loading && !overview ? (
+          <View className="items-center justify-center py-20 bg-card rounded-2xl border border-border space-y-2">
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text className="mt-2 text-sm font-semibold text-foreground">
+              Menghubungkan ke Server Storage...
+            </Text>
+            <Text className="text-xs text-muted-foreground text-center max-w-xs">
+              Memuat ringkasan berkas, kapasitas penyimpanan, dan status provider
+            </Text>
+          </View>
+        ) : loadError && !overview ? (
+          <View className="items-center justify-center py-16 px-4 bg-destructive/5 rounded-2xl border border-destructive/20 text-center space-y-3">
+            <AlertTriangle size={32} color="#EF4444" />
+            <Text className="text-base font-bold text-foreground">
+              Koneksi Lambat / Gagal Memuat Data
+            </Text>
+            <Text className="text-xs text-muted-foreground max-w-md text-center">
+              {loadError}. Server mungkin sedang sibuk atau koneksi internet tidak stabil.
+            </Text>
+            <Button
+              onPress={() => void handleFullRefresh()}
+              className="gap-2 mt-2"
+              style={{ backgroundColor: colors.primary }}
+            >
+              <RefreshCw size={14} color="#FFF" />
+              <Text className="text-xs font-semibold text-white">Coba Muat Ulang</Text>
+            </Button>
+          </View>
+        ) : null}
+
         {/* TAB 1: OVERVIEW */}
-        {activeTab === "overview" ? (
+        {activeTab === "overview" && (overview || !loading) ? (
           <View className="space-y-6">
             {/* KPI Cards */}
             <View className="flex-row flex-wrap gap-3">
@@ -334,9 +430,9 @@ export function FileManagementScreen() {
                 icon={Cloud}
               />
               <MetricCard
-                label="Berkas Yatim"
+                label="Berkas Lepas"
                 value={overview?.orphanFiles ?? 0}
-                hint={`${formatBytes(overview?.orphanBytes)} tidak terhubung data`}
+                hint={`${formatBytes(overview?.orphanBytes)} mandiri / tanpa relasi data`}
                 color="#F59E0B"
                 icon={AlertTriangle}
               />
@@ -396,8 +492,8 @@ export function FileManagementScreen() {
             {/* Distribusi Berkas Berdasarkan Sub-Folder Modul */}
             {overview?.subfolders && overview.subfolders.length > 0 ? (
               <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-                <View className="flex-row items-center justify-between">
-                  <View>
+                <View className="flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <View className="flex-1 min-w-0">
                     <Text className="text-sm font-bold text-foreground">
                       Distribusi Berkas per Modul (Sub-Folder Server)
                     </Text>
@@ -413,6 +509,7 @@ export function FileManagementScreen() {
                       setFlatListView(true);
                       setActiveTab("files");
                     }}
+                    className="self-start sm:self-auto"
                   >
                     <Text className="text-xs font-semibold text-primary">Lihat Semua</Text>
                   </Button>
@@ -464,10 +561,10 @@ export function FileManagementScreen() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onPress={loadData}
+                  onPress={() => void handleFullRefresh()}
                   className="gap-1"
                 >
-                  <RefreshCw size={12} />
+                  <RefreshCw size={12} className={refreshing ? "animate-spin" : undefined} />
                   <Text className="text-xs">Segarkan</Text>
                 </Button>
               </View>
@@ -534,15 +631,15 @@ export function FileManagementScreen() {
           </View>
         ) : null}
 
-        {/* TAB 2: SEMUA BERKAS & TAB 3: BERKAS YATIM */}
+        {/* TAB 2: SEMUA BERKAS & TAB 3: BERKAS LEPAS */}
         {activeTab === "files" || activeTab === "orphans" ? (
           <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5">
             {/* Tampilan 1: GRID FOLDER (Default ketika tidak sedang membuka isi folder) */}
             {!currentFolder && !flatListView && !search.trim() ? (
               <View className="space-y-4">
                 {/* Search Bar & Aksi Global */}
-                <View className="flex-row flex-wrap items-center justify-between gap-3">
-                  <View className="flex-1 min-w-[260px] flex-row items-center rounded-xl border border-border bg-background px-3 py-1.5">
+                <View className="flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <View className="flex-1 min-w-0 flex-row items-center rounded-xl border border-border bg-background px-3 py-1.5">
                     <Search size={16} className="text-muted-foreground" />
                     <Input
                       placeholder="Cari berkas secara global (nama, kode, deskripsi)..."
@@ -552,14 +649,14 @@ export function FileManagementScreen() {
                     />
                   </View>
 
-                  <View className="flex-row items-center gap-2">
+                  <View className="flex-row flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onPress={loadData}
+                      onPress={() => void handleFullRefresh()}
                       className="gap-1"
                     >
-                      <RefreshCw size={12} />
+                      <RefreshCw size={12} className={refreshing ? "animate-spin" : undefined} />
                       <Text className="text-xs">Segarkan</Text>
                     </Button>
 
@@ -593,24 +690,24 @@ export function FileManagementScreen() {
                   </View>
                 </View>
 
-                {/* Banner Khusus Tab Berkas Yatim */}
+                {/* Banner Khusus Tab Berkas Lepas */}
                 {activeTab === "orphans" ? (
                   <View className="flex-row items-center gap-2.5 rounded-xl bg-amber-500/10 p-3.5 border border-amber-500/20">
                     <AlertTriangle size={18} color="#D97706" />
                     <View className="flex-1">
-                      <Text className="text-xs font-bold text-amber-800">Daftar Berkas Yatim (Orphan Files)</Text>
+                      <Text className="text-xs font-bold text-amber-800">Daftar Berkas Lepas (Standalone Files)</Text>
                       <Text className="text-[11px] text-amber-700">
-                        Pilih folder modul di bawah untuk memeriksa berkas yang tidak lagi terhubung ke data transaksi ERP.
+                        Pilih folder modul di bawah untuk memeriksa berkas mandiri yang tidak terhubung ke data transaksi ERP.
                       </Text>
                     </View>
                   </View>
                 ) : null}
 
                 {/* Header Bagian Folder Grid */}
-                <View className="flex-row items-center justify-between pt-1">
-                  <View>
+                <View className="flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                  <View className="flex-1 min-w-0">
                     <Text className="text-sm font-bold text-foreground">
-                      {activeTab === "orphans" ? "Direktori Berkas Yatim per Modul" : "Direktori Berkas per Modul ERP"}
+                      {activeTab === "orphans" ? "Direktori Berkas Lepas per Modul" : "Direktori Berkas per Modul ERP"}
                     </Text>
                     <Text className="text-xs text-muted-foreground">
                       Klik salah satu folder di bawah untuk membuka dan mengelola berkas di dalamnya
@@ -731,10 +828,10 @@ export function FileManagementScreen() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onPress={() => loadFiles(currentFolder, activeTab === "orphans")}
+                      onPress={() => void handleFullRefresh()}
                       className="gap-1"
                     >
-                      <RefreshCw size={12} />
+                      <RefreshCw size={12} className={refreshing ? "animate-spin" : undefined} />
                       <Text className="text-xs">Segarkan</Text>
                     </Button>
 
@@ -782,7 +879,7 @@ export function FileManagementScreen() {
                     <Text className="text-sm font-semibold text-foreground">Tidak Ada Berkas Ditemukan</Text>
                     <Text className="text-xs text-muted-foreground mt-1">
                       {activeTab === "orphans"
-                        ? "Bagus! Tidak ada berkas yatim di dalam folder ini."
+                        ? "Bagus! Tidak ada berkas lepas di dalam folder ini."
                         : "Belum ada berkas yang cocok dengan filter atau kata kunci pencarian."}
                     </Text>
                   </View>
@@ -820,7 +917,7 @@ export function FileManagementScreen() {
                             </Pressable>
                           ) : null}
 
-                          <View className="flex-1 space-y-1">
+                          <View className="flex-1 min-w-0 space-y-1">
                             <View className="flex-row flex-wrap items-center gap-2">
                               <FileKindBadge kind={item.kind} extension={item.extension} />
                               <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
@@ -861,7 +958,7 @@ export function FileManagementScreen() {
                               ) : (
                                 <View className="rounded bg-amber-500/10 px-1.5 py-0.5 border border-amber-500/20">
                                   <Text className="text-[10px] text-amber-700 font-semibold">
-                                    Yatim (Tanpa Dokumen)
+                                    Berkas Lepas (Tanpa Dokumen)
                                   </Text>
                                 </View>
                               )}
@@ -939,8 +1036,8 @@ export function FileManagementScreen() {
         {/* TAB 4: PENYIMPANAN EKSTERNAL */}
         {activeTab === "providers" ? (
           <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-            <View className="flex-row items-center justify-between">
-              <View>
+            <View className="flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <View className="flex-1 min-w-0">
                 <Text className="text-sm font-bold text-foreground">Daftar Penyimpanan Terdaftar</Text>
                 <Text className="text-xs text-muted-foreground">
                   Kelola koneksi MinIO, S3, NAS Mount, dan WebDAV kantor Anda
@@ -952,7 +1049,7 @@ export function FileManagementScreen() {
                   setProviderToEdit(null);
                   setProviderFormOpen(true);
                 }}
-                className="gap-1.5"
+                className="gap-1.5 self-start sm:self-auto"
                 style={{ backgroundColor: colors.primary }}
               >
                 <Plus size={14} color="#FFF" />
@@ -963,27 +1060,33 @@ export function FileManagementScreen() {
             <View className="divide-y divide-border/60">
               {providers.map((item) => (
                 <View key={item.id} className="py-4 space-y-3">
-                  <View className="flex-row items-start justify-between">
-                    <View className="gap-1">
-                      <View className="flex-row items-center gap-2">
+                  <View className="flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <View className="flex-1 min-w-0 gap-1">
+                      <View className="flex-row flex-wrap items-center gap-2">
                         <Text className="text-sm font-bold text-foreground">{item.name}</Text>
                         <ProviderTypeBadge type={item.type} isDefault={item.isDefault} />
                       </View>
-                      <Text className="text-xs font-mono text-muted-foreground">
-                        {item.type === "S3"
-                          ? `Bucket: ${item.config?.bucket || "-"} • Endpoint: ${item.config?.endpoint || "AWS S3"}`
-                          : item.type === "NAS_MOUNT"
-                          ? `Mount: ${item.config?.mountPath || "-"}`
-                          : item.type === "WEBDAV"
-                          ? `URL: ${item.config?.url || "-"}`
-                          : "Filesystem Lokal Server"}
-                      </Text>
+                      <View className="w-full min-w-0 overflow-hidden">
+                        <Text
+                          className="text-xs font-mono text-muted-foreground break-all"
+                          numberOfLines={2}
+                          ellipsizeMode="middle"
+                        >
+                          {item.type === "S3"
+                            ? `Bucket: ${item.config?.bucket || "-"} • Endpoint: ${item.config?.endpoint || "AWS S3"}`
+                            : item.type === "NAS_MOUNT"
+                            ? `Mount: ${item.config?.mountPath || "-"}`
+                            : item.type === "WEBDAV"
+                            ? `URL: ${item.config?.url || "-"}`
+                            : "Filesystem Lokal Server"}
+                        </Text>
+                      </View>
                     </View>
 
                     {/* Status Health */}
                     {item.health ? (
                       <View
-                        className="flex-row items-center gap-1.5 rounded-full px-2.5 py-1 border"
+                        className="self-start sm:self-auto flex-row items-center gap-1.5 rounded-full px-2.5 py-1 border shrink-0"
                         style={{
                           backgroundColor: item.health.ok ? "#10B98114" : "#EF444414",
                           borderColor: item.health.ok ? "#10B98133" : "#EF444433",
@@ -1004,12 +1107,12 @@ export function FileManagementScreen() {
                   </View>
 
                   {/* Actions Bar */}
-                  <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/40">
+                  <View className="flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-border/40">
                     <Text className="text-xs text-muted-foreground">
                       Menyimpan: <Text className="font-semibold text-foreground">{item.fileCount || 0}</Text> berkas
                     </Text>
 
-                    <View className="flex-row items-center gap-2">
+                    <View className="flex-row flex-wrap items-center gap-2">
                       <Button
                         variant="outline"
                         size="sm"
@@ -1068,8 +1171,8 @@ export function FileManagementScreen() {
           <View className="space-y-6">
             {/* Header Migrasi */}
             <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-              <View className="flex-row items-center justify-between">
-                <View>
+              <View className="flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <View className="flex-1 min-w-0">
                   <Text className="text-sm font-bold text-foreground">Jadwal Migrasi Otomatis</Text>
                   <Text className="text-xs text-muted-foreground">
                     Aturan periodik untuk memindahkan berkas secara rutin (misal setiap 3 hari atau 1 minggu)
@@ -1081,7 +1184,7 @@ export function FileManagementScreen() {
                     setScheduleToEdit(null);
                     setScheduleOpen(true);
                   }}
-                  className="gap-1.5"
+                  className="gap-1.5 self-start sm:self-auto"
                   style={{ backgroundColor: colors.primary }}
                 >
                   <Plus size={14} color="#FFF" />
@@ -1157,8 +1260,8 @@ export function FileManagementScreen() {
             <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
               <View className="flex-row items-center justify-between">
                 <Text className="text-sm font-bold text-foreground">Riwayat Aktivitas Migrasi</Text>
-                <Button variant="ghost" size="sm" onPress={loadData} className="gap-1">
-                  <RefreshCw size={12} />
+                <Button variant="ghost" size="sm" onPress={() => void handleFullRefresh()} className="gap-1">
+                  <RefreshCw size={12} className={refreshing ? "animate-spin" : undefined} />
                   <Text className="text-xs">Segarkan</Text>
                 </Button>
               </View>
@@ -1176,8 +1279,8 @@ export function FileManagementScreen() {
 
                     return (
                       <View key={job.id} className="py-3.5 space-y-2">
-                        <View className="flex-row items-start justify-between">
-                          <View className="gap-0.5">
+                        <View className="flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                          <View className="flex-1 min-w-0 gap-0.5">
                             <View className="flex-row items-center gap-2">
                               <Text className="text-xs font-bold text-foreground">
                                 Migrasi #{job.id} ({job.mode})
@@ -1208,7 +1311,7 @@ export function FileManagementScreen() {
                           </View>
 
                           {/* Action Pembersihan & Rollback */}
-                          <View className="flex-row items-center gap-1.5">
+                          <View className="flex-row flex-wrap items-center gap-1.5 pt-1 sm:pt-0">
                             {hasPendingClean ? (
                               <>
                                 <Button
@@ -1257,7 +1360,7 @@ export function FileManagementScreen() {
         visible={providerFormOpen}
         onClose={() => setProviderFormOpen(false)}
         providerToEdit={providerToEdit}
-        onSuccess={loadData}
+        onSuccess={() => void handleFullRefresh()}
       />
 
       <ProviderBrowseDialog
@@ -1270,7 +1373,7 @@ export function FileManagementScreen() {
         visible={migrationOpen}
         onClose={() => setMigrationOpen(false)}
         providers={providers}
-        onSuccess={loadData}
+        onSuccess={() => void handleFullRefresh()}
       />
 
       <ScheduleDialog
@@ -1278,7 +1381,7 @@ export function FileManagementScreen() {
         onClose={() => setScheduleOpen(false)}
         providers={providers}
         scheduleToEdit={scheduleToEdit}
-        onSuccess={loadData}
+        onSuccess={() => void handleFullRefresh()}
       />
 
       <FileDetailModal
@@ -1286,8 +1389,7 @@ export function FileManagementScreen() {
         fileId={selectedFileId}
         onClose={() => setDetailModalOpen(false)}
         onFileUpdated={() => {
-          loadFiles(currentFolder, activeTab === "orphans");
-          loadData();
+          void handleFullRefresh();
         }}
       />
     </ScrollView>

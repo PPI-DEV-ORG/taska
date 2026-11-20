@@ -142,9 +142,9 @@ export function StockAddItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh]">
-        <DialogHeader>
-          <DialogTitle>Tambah Barang (SN / Non-SN) atau Jasa</DialogTitle>
+      <DialogContent className="w-[96vw] max-w-lg max-h-[90vh] p-4 sm:p-6">
+        <DialogHeader className="pr-8">
+          <DialogTitle>Tambah Barang / Jasa</DialogTitle>
         </DialogHeader>
         <ScrollView
           className="max-h-[62vh] pr-1"

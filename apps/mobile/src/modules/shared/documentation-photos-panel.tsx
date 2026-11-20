@@ -642,13 +642,13 @@ export function DocumentationPhotosPanel({
         ) : null}
 
         {/* ── Upload Area (Multiple Images & PDF) ── */}
-        <View className="bg-panel/70 border-border/70 rounded-xl border p-4 gap-3">
-          <View className="flex-row items-center justify-between flex-wrap gap-2">
-            <View className="gap-0.5">
+        <View className="bg-panel/70 border-border/70 rounded-xl border p-4 gap-3 overflow-hidden">
+          <View className="flex-col gap-2.5 w-full">
+            <View className="w-full gap-0.5">
               <Text className="text-xs font-bold text-foreground">
                 Tambah Barang Bukti (Foto & Dokumen PDF)
               </Text>
-              <Text className="text-[11px] text-muted-foreground">
+              <Text className="text-[11px] text-muted-foreground leading-relaxed">
                 Pilih beberapa foto sekaligus atau upload scan dokumen PDF (BAST / berita acara).
               </Text>
             </View>
@@ -684,7 +684,7 @@ export function DocumentationPhotosPanel({
             ) : null}
 
             {/* Quick Picker Buttons */}
-            <View className="flex-row items-center gap-2">
+            <View className="flex-row flex-wrap items-center gap-2 w-full">
               {web ? (
                 <>
                   <Button

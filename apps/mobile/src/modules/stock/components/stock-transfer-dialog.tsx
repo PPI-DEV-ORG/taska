@@ -59,8 +59,8 @@ export function StockTransferDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="w-[96vw] max-w-xl md:max-w-2xl max-h-[90vh] p-4 sm:p-6">
+        <DialogHeader className="pr-8">
           <DialogTitle>Transfer Antar Gudang</DialogTitle>
         </DialogHeader>
         <View className="gap-4">

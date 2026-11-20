@@ -143,7 +143,7 @@ export function MigrationDialog({
         targetProviderId: targetId,
         folder: selectedFolder !== "all" ? selectedFolder : undefined,
         olderThanDays: olderThanDays ? Number(olderThanDays) : undefined,
-        includeOrphans: false, // Berkas yatim tidak ikut dimigrasikan
+        includeOrphans: false, // Berkas lepas tidak ikut dimigrasikan
       });
       toast("Job migrasi telah dimulai di latar belakang!", "success");
       onSuccess();
@@ -157,8 +157,8 @@ export function MigrationDialog({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-4">
-        <View className="max-h-[92vh] w-full max-w-xl rounded-3xl border border-border bg-card p-6 shadow-2xl">
+      <View className="flex-1 items-center justify-center bg-black/60 p-2 sm:p-4">
+        <View className="max-h-[92vh] w-[96vw] max-w-xl rounded-3xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
           {/* Header - Tombol X diberikan ruang cukup agar tidak terpotong */}
           <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3">
             <View className="flex-row items-center gap-2.5 flex-1 pr-3">
@@ -236,7 +236,7 @@ export function MigrationDialog({
               </View>
             </View>
 
-            {/* 3. Filter Folder (PILIHAN CHIPS - TIDAK PERLU DIKETIK) */}
+            {/* 3. Filter Folder (PILIHAN CHIPS - WRAPPING RAPI TIDAK TERPOTONG) */}
             <View className="gap-1.5">
               <View className="flex-row items-center justify-between">
                 <Text className="text-xs font-semibold text-foreground">Pilih Folder Target Migrasi</Text>
@@ -244,32 +244,30 @@ export function MigrationDialog({
                   {SUBFOLDER_OPTIONS.find((s) => s.key === selectedFolder)?.label}
                 </Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
-                <View className="flex-row flex-wrap gap-1.5 py-1">
-                  {SUBFOLDER_OPTIONS.map((sf) => {
-                    const isSelected = selectedFolder === sf.key;
-                    return (
-                      <Pressable
-                        key={sf.key}
-                        onPress={() => setSelectedFolder(sf.key)}
-                        className="rounded-full px-3 py-1.5 border flex-row items-center gap-1.5"
-                        style={{
-                          backgroundColor: isSelected ? colors.primary : "transparent",
-                          borderColor: isSelected ? colors.primary : "#E2E8F0",
-                        }}
+              <View className="flex-row flex-wrap gap-1.5 py-1">
+                {SUBFOLDER_OPTIONS.map((sf) => {
+                  const isSelected = selectedFolder === sf.key;
+                  return (
+                    <Pressable
+                      key={sf.key}
+                      onPress={() => setSelectedFolder(sf.key)}
+                      className="rounded-full px-3 py-1.5 border flex-row items-center gap-1.5"
+                      style={{
+                        backgroundColor: isSelected ? colors.primary : "transparent",
+                        borderColor: isSelected ? colors.primary : "#E2E8F0",
+                      }}
+                    >
+                      <Folder size={12} color={isSelected ? "#FFF" : colors.primary} />
+                      <Text
+                        className="text-xs font-semibold"
+                        style={{ color: isSelected ? "#FFF" : "#475569" }}
                       >
-                        <Folder size={12} color={isSelected ? "#FFF" : colors.primary} />
-                        <Text
-                          className="text-xs font-semibold"
-                          style={{ color: isSelected ? "#FFF" : "#475569" }}
-                        >
-                          {sf.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </ScrollView>
+                        {sf.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
             {/* 4. Filter Umur Berkas (PRESET CLICKS - TIDAK HARUS DIKETIK) */}
@@ -308,17 +306,17 @@ export function MigrationDialog({
 
             {/* 5. PREVIEW LIVE FILTER YANG AKAN DIKIRIM */}
             <View className="rounded-2xl border border-primary/30 bg-primary/5 p-4 space-y-2.5">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-1.5">
+              <View className="flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                <View className="flex-row items-center gap-1.5 flex-1 min-w-0">
                   <CheckCircle2 size={16} color={colors.primary} />
-                  <Text className="text-xs font-bold text-foreground">
+                  <Text className="text-xs font-bold text-foreground flex-1" numberOfLines={1}>
                     Ringkasan Berkas yang Akan Dipindahkan
                   </Text>
                 </View>
                 {loadingPreview ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
-                  <Pressable onPress={fetchPreview}>
+                  <Pressable onPress={fetchPreview} className="self-end sm:self-auto py-0.5">
                     <Text className="text-[10px] text-primary font-bold">Refresh Preview</Text>
                   </Pressable>
                 )}
@@ -359,7 +357,7 @@ export function MigrationDialog({
 
                 {preview && preview.excludedOrphansCount > 0 ? (
                   <Text className="text-[11px] text-amber-700">
-                    • {preview.excludedOrphansCount} berkas yatim dikecualikan (tetap di server lokal agar aman).
+                    • {preview.excludedOrphansCount} berkas lepas (standalone) dikecualikan (tetap di server lokal agar aman).
                   </Text>
                 ) : null}
 
@@ -368,8 +366,8 @@ export function MigrationDialog({
                     <Text className="text-[10px] text-muted-foreground mb-1">Contoh berkas yang masuk filter:</Text>
                     <View className="flex-row flex-wrap gap-1">
                       {preview.sampleFiles.map((sf: any) => (
-                        <View key={sf.id} className="rounded bg-background px-2 py-0.5 border border-border">
-                          <Text className="text-[10px] text-foreground font-mono" numberOfLines={1}>
+                        <View key={sf.id} className="max-w-full rounded bg-background px-2 py-0.5 border border-border">
+                          <Text className="text-[10px] text-foreground font-mono" numberOfLines={1} ellipsizeMode="middle">
                             {sf.name} ({formatBytes(sf.size)})
                           </Text>
                         </View>
@@ -394,7 +392,7 @@ export function MigrationDialog({
                   • Berkas sumber <Text className="font-bold text-foreground">tidak langsung dihapus</Text> dan dipertahankan sampai Anda menjalankan &apos;Bersihkan Berkas Lokal&apos; atau melakukan Rollback.
                 </Text>
                 <Text className="text-[11px] text-muted-foreground">
-                  • Berkas yatim tidak ikut dipindahkan dan tetap di server lokal agar mudah diaudit.
+                  • Berkas lepas (standalone) tidak ikut dipindahkan dan tetap di server lokal agar mudah diaudit.
                 </Text>
               </View>
             </View>

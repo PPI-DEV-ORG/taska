@@ -95,10 +95,16 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
       if (current >= ROLE_MATRIX_VERSION) return;
       const rolesRow = await this.prisma.main.systemSetting.findUnique({ where: { key: "rbac.roles" } });
       if (rolesRow?.value) {
+        const existingCodes = new Set(getDynamicRoles().map((r) => r.code));
         const next = getDynamicRoles().map((r) => {
           const std = STANDARD_ROLES[r.code];
           return std ? { ...r, name: std.name, description: std.description, isSystem: true, permissions: { ...std.permissions } } : r;
         });
+        for (const [code, std] of Object.entries(STANDARD_ROLES)) {
+          if (!existingCodes.has(code)) {
+            next.push({ code, name: std.name, description: std.description, isSystem: true, permissions: { ...std.permissions } });
+          }
+        }
         setDynamicRoles(next);
         await this.prisma.main.systemSetting.update({
           where: { key: "rbac.roles" },
@@ -368,11 +374,17 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
     const wanted = codes?.length
       ? new Set(codes.map((c) => String(c).toUpperCase().trim().replace(/[\s\-]+/g, "_")))
       : null;
+    const existingCodes = new Set(getDynamicRoles().map((r) => r.code));
     const next = getDynamicRoles().map((r) => {
       const std = STANDARD_ROLES[r.code];
       if (!std || (wanted && !wanted.has(r.code))) return r;
       return { ...r, name: std.name, description: std.description, isSystem: true, permissions: { ...std.permissions } };
     });
+    for (const [code, std] of Object.entries(STANDARD_ROLES)) {
+      if ((!wanted || wanted.has(code)) && !existingCodes.has(code)) {
+        next.push({ code, name: std.name, description: std.description, isSystem: true, permissions: { ...std.permissions } });
+      }
+    }
     setDynamicRoles(next);
     const nextRoles = getDynamicRoles();
     await this.set("rbac.roles", JSON.stringify(nextRoles), user, `Matriks Peran & Hak Akses (RBAC) — standar v${ROLE_MATRIX_VERSION}`);

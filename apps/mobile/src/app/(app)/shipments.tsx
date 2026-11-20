@@ -43,14 +43,14 @@ export default function ShipmentsScreen() {
                 <StatusBadge status={p.pengiriman} />
               </View>
 
-              <View className="border-border border-t pt-3 flex-row items-center justify-between">
-                <View className="flex-row items-center gap-4">
+              <View className="border-border border-t pt-3 flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <View className="flex-row flex-wrap items-center gap-3 sm:gap-4">
                   {steps.map((s, i) => (
                     <View key={s} className="flex-row items-center gap-1.5">
                       {i <= cur ? (
-                        <CheckCircle2 size={16} color={colors.success} />
+                        <CheckCircle2 size={15} color={colors.success} />
                       ) : (
-                        <Circle size={16} color={colors.border} />
+                        <Circle size={15} color={colors.border} />
                       )}
                       <Text className={i <= cur ? "text-xs font-semibold text-text" : "text-xs text-muted-foreground"}>
                         {statusText(s)}

@@ -21,6 +21,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
@@ -55,6 +56,7 @@ export function ProductSelect({
   selectedNames,
   onToggleMultiple,
 }: ProductSelectProps) {
+  const { isMobile } = useBreakpoint();
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -260,133 +262,233 @@ export function ProductSelect({
             )}
           </View>
 
-          {/* Product Master Table */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-2 bg-card flex-1">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: "100%" }}>
-              <View className="flex-1 min-w-[760px]">
-                {/* Table Header */}
-                <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[220px]">Nama Produk & SKU</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-40 px-2">Kategori / Tipe</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-28 text-center px-1">Stok Gudang</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Harga Jual (Rp)</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Harga Beli / HPP</Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
-                </View>
+          {/* Product Master Table / List */}
+          {isMobile ? (
+            /* Mobile Card View */
+            <ScrollView className="max-h-[58vh] mt-2" contentContainerClassName="gap-2 pb-2">
+              {filteredProducts.map((p) => {
+                const isSelected = multiple
+                  ? (selectedNames ?? []).includes(String(p.nama || p.name))
+                  : selectedProduct?.id === p.id;
+                const stock = getProductAvailableStock(p);
+                const unit = p.satuan || p.unit || "unit";
+                const isHasSerial = Boolean(p.berSN ?? (p as any).hasSerial);
+                const sellPrice = Number(p.price ?? p.hargaJual ?? p.harga ?? 0);
+                const buyPrice = Number(p.hargaBeli ?? p.purchasePrice ?? 0);
+                const cat = p.kategori || p.category || (p as any).categoryName || "-";
 
-                <ScrollView className="max-h-[52vh]" contentContainerClassName="divide-y divide-border/40">
-                  {filteredProducts.map((p) => {
-                    const isSelected = multiple
-                      ? (selectedNames ?? []).includes(String(p.nama || p.name))
-                      : selectedProduct?.id === p.id;
-                    const stock = getProductAvailableStock(p);
-                    const unit = p.satuan || p.unit || "unit";
-                    const isHasSerial = Boolean(p.berSN ?? (p as any).hasSerial);
-                    const sellPrice = Number(p.price ?? p.hargaJual ?? p.harga ?? 0);
-                    const buyPrice = Number(p.hargaBeli ?? p.purchasePrice ?? 0);
-                    const cat = p.kategori || p.category || (p as any).categoryName || "-";
+                return (
+                  <Pressable
+                    key={p.id}
+                    onPress={() => handleSelect(p)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card active:bg-panel transition-colors gap-2 shadow-xs",
+                      isSelected ? "border-primary bg-primary/5" : ""
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1">
+                        <Text className={cn("text-sm font-bold", isSelected ? "text-primary" : "text-foreground")}>
+                          {p.nama || p.name}
+                        </Text>
+                        <View className="flex-row items-center gap-1.5 mt-0.5">
+                          <Text className="text-[11px] font-mono text-muted-foreground">
+                            {p.sku || "-"}
+                          </Text>
+                          {isHasSerial ? (
+                            <View className="px-1.5 py-0.2 rounded bg-primary/10 border border-primary/30">
+                              <Text className="text-[9px] font-semibold text-primary">Ber-SN</Text>
+                            </View>
+                          ) : null}
+                          {cat && cat !== "-" ? (
+                            <Text className="text-[11px] text-muted-foreground">• {cat}</Text>
+                          ) : null}
+                        </View>
+                      </View>
 
-                    return (
-                      <Pressable
-                        key={p.id}
-                        onPress={() => handleSelect(p)}
+                      {/* Stok Gudang Badge */}
+                      <View
                         className={cn(
-                          "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between",
-                          isSelected && "bg-primary/10"
+                          "px-2 py-0.5 rounded-full border flex-row items-center gap-1 shrink-0",
+                          stock > 0
+                            ? "bg-emerald-500/10 border-emerald-500/30"
+                            : "bg-danger/10 border-danger/30"
                         )}
                       >
-                        {/* Kolom 1: Nama Produk & SKU */}
-                        <View className="flex-1 min-w-[220px] pr-2">
-                          <Text className={cn("text-xs font-bold text-foreground", isSelected && "text-primary")}>
-                            {p.nama || p.name}
+                        <Warehouse size={10} color={stock > 0 ? colors.success : colors.danger} />
+                        <Text
+                          className={cn(
+                            "text-[10px] font-bold",
+                            stock > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-danger"
+                          )}
+                        >
+                          {stock} {unit}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View>
+                        <Text className="text-xs font-bold text-primary">
+                          {rupiah(sellPrice)} <Text className="text-[10px] text-muted-foreground font-normal">/ {unit}</Text>
+                        </Text>
+                        {buyPrice > 0 ? (
+                          <Text className="text-[10px] text-muted-foreground">
+                            HPP: {rupiah(buyPrice)}
                           </Text>
-                          <View className="flex-row items-center gap-1.5 mt-0.5">
-                            <Text className="text-[11px] font-mono text-muted-foreground">
-                              {p.sku || "-"}
-                            </Text>
-                            {isHasSerial ? (
-                              <View className="px-1.5 py-0.2 rounded bg-primary/10 border border-primary/30">
-                                <Text className="text-[9px] font-semibold text-primary">Ber-SN</Text>
-                              </View>
-                            ) : null}
-                          </View>
-                        </View>
+                        ) : null}
+                      </View>
 
-                        {/* Kolom 2: Kategori */}
-                        <View className="w-40 px-2">
-                          <View className="flex-row items-center gap-1">
-                            <Tag size={10} color={colors.muted} />
-                            <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
-                              {cat}
-                            </Text>
-                          </View>
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
                         </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
 
-                        {/* Kolom 3: Stok Gudang */}
-                        <View className="w-28 items-center px-1">
-                          <View
-                            className={cn(
-                              "px-2.5 py-0.5 rounded-full border flex-row items-center gap-1",
-                              stock > 0
-                                ? "bg-emerald-500/10 border-emerald-500/30"
-                                : "bg-danger/10 border-danger/30"
-                            )}
-                          >
-                            <Warehouse size={10} color={stock > 0 ? colors.success : colors.danger} />
-                            <Text
+              {filteredProducts.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    Tidak ada produk yang cocok dengan &quot;{q}&quot;
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-2 bg-card flex-1">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: "100%" }}>
+                <View className="flex-1 min-w-[760px]">
+                  {/* Table Header */}
+                  <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
+                    <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[220px]">Nama Produk & SKU</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-40 px-2">Kategori / Tipe</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-28 text-center px-1">Stok Gudang</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Harga Jual (Rp)</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-36 text-right px-2">Harga Beli / HPP</Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">Aksi</Text>
+                  </View>
+
+                  <ScrollView className="max-h-[52vh]" contentContainerClassName="divide-y divide-border/40">
+                    {filteredProducts.map((p) => {
+                      const isSelected = multiple
+                        ? (selectedNames ?? []).includes(String(p.nama || p.name))
+                        : selectedProduct?.id === p.id;
+                      const stock = getProductAvailableStock(p);
+                      const unit = p.satuan || p.unit || "unit";
+                      const isHasSerial = Boolean(p.berSN ?? (p as any).hasSerial);
+                      const sellPrice = Number(p.price ?? p.hargaJual ?? p.harga ?? 0);
+                      const buyPrice = Number(p.hargaBeli ?? p.purchasePrice ?? 0);
+                      const cat = p.kategori || p.category || (p as any).categoryName || "-";
+
+                      return (
+                        <Pressable
+                          key={p.id}
+                          onPress={() => handleSelect(p)}
+                          className={cn(
+                            "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between",
+                            isSelected && "bg-primary/10"
+                          )}
+                        >
+                          {/* Kolom 1: Nama Produk & SKU */}
+                          <View className="flex-1 min-w-[220px] pr-2">
+                            <Text className={cn("text-xs font-bold text-foreground", isSelected && "text-primary")}>
+                              {p.nama || p.name}
+                            </Text>
+                            <View className="flex-row items-center gap-1.5 mt-0.5">
+                              <Text className="text-[11px] font-mono text-muted-foreground">
+                                {p.sku || "-"}
+                              </Text>
+                              {isHasSerial ? (
+                                <View className="px-1.5 py-0.2 rounded bg-primary/10 border border-primary/30">
+                                  <Text className="text-[9px] font-semibold text-primary">Ber-SN</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                          </View>
+
+                          {/* Kolom 2: Kategori */}
+                          <View className="w-40 px-2">
+                            <View className="flex-row items-center gap-1">
+                              <Tag size={10} color={colors.muted} />
+                              <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                                {cat}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Kolom 3: Stok Gudang */}
+                          <View className="w-28 items-center px-1">
+                            <View
                               className={cn(
-                                "text-[10px] font-bold",
-                                stock > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-danger"
+                                "px-2.5 py-0.5 rounded-full border flex-row items-center gap-1",
+                                stock > 0
+                                  ? "bg-emerald-500/10 border-emerald-500/30"
+                                  : "bg-danger/10 border-danger/30"
                               )}
                             >
-                              {stock} {unit}
+                              <Warehouse size={10} color={stock > 0 ? colors.success : colors.danger} />
+                              <Text
+                                className={cn(
+                                  "text-[10px] font-bold",
+                                  stock > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-danger"
+                                )}
+                              >
+                                {stock} {unit}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Kolom 4: Harga Jual */}
+                          <View className="w-36 text-right px-2 items-end">
+                            <Text className="text-xs font-semibold text-foreground">
+                              {rupiah(sellPrice)}
+                            </Text>
+                            <Text className="text-[10px] text-muted-foreground">/ {unit}</Text>
+                          </View>
+
+                          {/* Kolom 5: Harga Beli / HPP */}
+                          <View className="w-36 text-right px-2 items-end">
+                            <Text className="text-xs font-medium text-muted-foreground">
+                              {buyPrice > 0 ? rupiah(buyPrice) : "-"}
                             </Text>
                           </View>
-                        </View>
 
-                        {/* Kolom 4: Harga Jual */}
-                        <View className="w-36 text-right px-2 items-end">
-                          <Text className="text-xs font-semibold text-foreground">
-                            {rupiah(sellPrice)}
-                          </Text>
-                          <Text className="text-[10px] text-muted-foreground">/ {unit}</Text>
-                        </View>
+                          {/* Kolom 6: Aksi */}
+                          <View className="w-20 items-center">
+                            {isSelected ? (
+                              <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
+                                <Check size={12} color={colors.primary} />
+                                <Text className="text-[11px] font-bold text-primary">Dipilih</Text>
+                              </View>
+                            ) : (
+                              <Button size="sm" variant="ghost" className="h-7 px-2.5">
+                                <Text className="text-[11px] font-semibold text-muted-foreground">Pilih</Text>
+                              </Button>
+                            )}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
 
-                        {/* Kolom 5: Harga Beli / HPP */}
-                        <View className="w-36 text-right px-2 items-end">
-                          <Text className="text-xs font-medium text-muted-foreground">
-                            {buyPrice > 0 ? rupiah(buyPrice) : "-"}
-                          </Text>
-                        </View>
-
-                        {/* Kolom 6: Aksi */}
-                        <View className="w-20 items-center">
-                          {isSelected ? (
-                            <View className="flex-row items-center gap-1 px-2 py-1 bg-primary/15 rounded-md">
-                              <Check size={12} color={colors.primary} />
-                              <Text className="text-[11px] font-bold text-primary">Dipilih</Text>
-                            </View>
-                          ) : (
-                            <Button size="sm" variant="ghost" className="h-7 px-2.5">
-                              <Text className="text-[11px] font-semibold text-muted-foreground">Pilih</Text>
-                            </Button>
-                          )}
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-
-                  {filteredProducts.length === 0 && (
-                    <View className="p-8 items-center justify-center gap-2">
-                      <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada produk yang cocok dengan &quot;{q}&quot;
-                      </Text>
-                    </View>
-                  )}
-                </ScrollView>
-              </View>
-            </ScrollView>
-          </View>
+                    {filteredProducts.length === 0 && (
+                      <View className="p-8 items-center justify-center gap-2">
+                        <Text className="text-sm font-semibold text-muted-foreground">
+                          Tidak ada produk yang cocok dengan &quot;{q}&quot;
+                        </Text>
+                      </View>
+                    )}
+                  </ScrollView>
+                </View>
+              </ScrollView>
+            </View>
+          )}
 
           <DialogFooter className="mt-3 flex-row items-center justify-between">
             <Text className="text-xs text-muted-foreground">

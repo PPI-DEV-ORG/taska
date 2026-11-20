@@ -237,25 +237,25 @@ export function ProviderFormDialog({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-4">
-        <View className="max-h-[90vh] w-full max-w-xl rounded-2xl border border-border bg-card p-6 shadow-2xl">
+      <View className="flex-1 items-center justify-center bg-black/60 p-2 sm:p-4">
+        <View className="max-h-[90vh] w-[96vw] max-w-xl rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
           {/* Header */}
-          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3">
-            <View className="flex-row items-center gap-2.5">
-              <View className="rounded-xl p-2" style={{ backgroundColor: `${colors.primary}1A` }}>
+          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-1">
+            <View className="flex-1 min-w-0 mr-3 flex-row items-center gap-2.5">
+              <View className="rounded-xl p-2 shrink-0" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <HardDrive size={20} color={colors.primary} />
               </View>
-              <View>
-                <Text className="text-base font-bold text-foreground">
-                  {providerToEdit ? "Edit Penyimpanan" : "Sambungkan Penyimpanan Eksternal"}
+              <View className="flex-1 min-w-0">
+                <Text className="text-base font-bold text-foreground" numberOfLines={1}>
+                  {providerToEdit ? "Edit Penyimpanan" : "Sambungkan Penyimpanan"}
                 </Text>
-                <Text className="text-xs text-muted-foreground">
-                  Hubungkan S3, MinIO, Cloudflare R2, atau NAS kantor Anda
+                <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                  Hubungkan S3, MinIO, Cloudflare R2, atau NAS kantor
                 </Text>
               </View>
             </View>
-            <Pressable onPress={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted">
-              <X size={18} />
+            <Pressable onPress={onClose} hitSlop={12} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted shrink-0">
+              <X size={20} />
             </Pressable>
           </View>
 
@@ -501,17 +501,18 @@ export function ProviderFormDialog({
           </ScrollView>
 
           {/* Footer Buttons */}
-          <View className="mt-4 flex-row items-center justify-between border-t border-border pt-3">
+          <View className="mt-4 flex-col-reverse sm:flex-row sm:items-center justify-between gap-2.5 border-t border-border pt-3">
             <Button
               variant="outline"
               size="sm"
               onPress={handleTestConnection}
               disabled={testing || saving}
+              className="w-full sm:w-auto"
             >
               {testing ? <ActivityIndicator size="small" /> : <Text>Uji Koneksi</Text>}
             </Button>
 
-            <View className="flex-row gap-2">
+            <View className="flex-row items-center justify-end gap-2">
               <Button variant="ghost" size="sm" onPress={onClose} disabled={saving}>
                 <Text>Batal</Text>
               </Button>

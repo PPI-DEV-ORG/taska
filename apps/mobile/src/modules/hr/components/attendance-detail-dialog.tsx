@@ -32,8 +32,8 @@ export function AttendanceDetailDialog({
 }: AttendanceDetailDialogProps) {
   return (
     <Dialog open={!!selectedAttendance} onOpenChange={(open) => { if (!open) setSelectedAttendance(null); }}>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[96vw] max-w-xl md:max-w-2xl max-h-[90vh] p-4 sm:p-6 overflow-y-auto">
+        <DialogHeader className="pr-8">
           <DialogTitle>Detail Presensi Karyawan</DialogTitle>
         </DialogHeader>
 
