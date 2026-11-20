@@ -727,13 +727,13 @@ export class FileManagementService {
   }
 
   /**
-   * Hapus permanen file yatim secara massal
+   * Hapus permanen file lepas (standalone) secara massal
    */
   async bulkDeleteOrphans(fileIds: number[], user: RequestUser) {
     const isSuperAdmin = (user.role || "").toUpperCase() === "SUPER_ADMIN";
     const hasPerm = isSuperAdmin || can(user.role, "fileManagement", "P");
     if (!hasPerm) {
-      throw new ForbiddenException("Hanya Super Admin atau pengelola file berwenang yang dapat menghapus file yatim.");
+      throw new ForbiddenException("Hanya Super Admin atau pengelola file berwenang yang dapat menghapus file lepas.");
     }
 
     let deletedCount = 0;
@@ -756,7 +756,7 @@ export class FileManagementService {
       ok: true,
       deletedCount,
       errors: errors.length > 0 ? errors : undefined,
-      message: `Berhasil menghapus ${deletedCount} file yatim.`,
+      message: `Berhasil menghapus ${deletedCount} file lepas.`,
     };
   }
 

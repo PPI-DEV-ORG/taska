@@ -192,12 +192,12 @@ export function FileManagementScreen() {
 
   const handleBulkDeleteOrphans = async () => {
     if (selectedOrphanIds.length === 0) return;
-    if (!confirm(`Hapus ${selectedOrphanIds.length} berkas yatim terpilih secara permanen?`)) return;
+    if (!confirm(`Hapus ${selectedOrphanIds.length} berkas lepas terpilih secara permanen?`)) return;
 
     setDeletingOrphans(true);
     try {
       await api.post("/file-management/files/bulk-delete-orphans", { fileIds: selectedOrphanIds });
-      toast(`Berhasil menghapus ${selectedOrphanIds.length} berkas yatim.`, "success");
+      toast(`Berhasil menghapus ${selectedOrphanIds.length} berkas lepas.`, "success");
       setSelectedOrphanIds([]);
       loadFiles(currentFolder, true);
       loadData();
@@ -266,7 +266,7 @@ export function FileManagementScreen() {
   const TABS = [
     { value: "overview", label: "Ringkasan" },
     { value: "files", label: "Semua Berkas", count: overview?.totalFiles },
-    { value: "orphans", label: "Berkas Yatim", count: overview?.orphanFiles },
+    { value: "orphans", label: "Berkas Lepas", count: overview?.orphanFiles },
     { value: "providers", label: "Penyimpanan Eksternal", count: providers.length },
     { value: "migration", label: "Migrasi & Jadwal", count: migrationJobs.length },
   ];
@@ -334,9 +334,9 @@ export function FileManagementScreen() {
                 icon={Cloud}
               />
               <MetricCard
-                label="Berkas Yatim"
+                label="Berkas Lepas"
                 value={overview?.orphanFiles ?? 0}
-                hint={`${formatBytes(overview?.orphanBytes)} tidak terhubung data`}
+                hint={`${formatBytes(overview?.orphanBytes)} mandiri / tanpa relasi data`}
                 color="#F59E0B"
                 icon={AlertTriangle}
               />
@@ -534,7 +534,7 @@ export function FileManagementScreen() {
           </View>
         ) : null}
 
-        {/* TAB 2: SEMUA BERKAS & TAB 3: BERKAS YATIM */}
+        {/* TAB 2: SEMUA BERKAS & TAB 3: BERKAS LEPAS */}
         {activeTab === "files" || activeTab === "orphans" ? (
           <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5">
             {/* Tampilan 1: GRID FOLDER (Default ketika tidak sedang membuka isi folder) */}
@@ -593,14 +593,14 @@ export function FileManagementScreen() {
                   </View>
                 </View>
 
-                {/* Banner Khusus Tab Berkas Yatim */}
+                {/* Banner Khusus Tab Berkas Lepas */}
                 {activeTab === "orphans" ? (
                   <View className="flex-row items-center gap-2.5 rounded-xl bg-amber-500/10 p-3.5 border border-amber-500/20">
                     <AlertTriangle size={18} color="#D97706" />
                     <View className="flex-1">
-                      <Text className="text-xs font-bold text-amber-800">Daftar Berkas Yatim (Orphan Files)</Text>
+                      <Text className="text-xs font-bold text-amber-800">Daftar Berkas Lepas (Standalone Files)</Text>
                       <Text className="text-[11px] text-amber-700">
-                        Pilih folder modul di bawah untuk memeriksa berkas yang tidak lagi terhubung ke data transaksi ERP.
+                        Pilih folder modul di bawah untuk memeriksa berkas mandiri yang tidak terhubung ke data transaksi ERP.
                       </Text>
                     </View>
                   </View>
@@ -610,7 +610,7 @@ export function FileManagementScreen() {
                 <View className="flex-row items-center justify-between pt-1">
                   <View>
                     <Text className="text-sm font-bold text-foreground">
-                      {activeTab === "orphans" ? "Direktori Berkas Yatim per Modul" : "Direktori Berkas per Modul ERP"}
+                      {activeTab === "orphans" ? "Direktori Berkas Lepas per Modul" : "Direktori Berkas per Modul ERP"}
                     </Text>
                     <Text className="text-xs text-muted-foreground">
                       Klik salah satu folder di bawah untuk membuka dan mengelola berkas di dalamnya
@@ -782,7 +782,7 @@ export function FileManagementScreen() {
                     <Text className="text-sm font-semibold text-foreground">Tidak Ada Berkas Ditemukan</Text>
                     <Text className="text-xs text-muted-foreground mt-1">
                       {activeTab === "orphans"
-                        ? "Bagus! Tidak ada berkas yatim di dalam folder ini."
+                        ? "Bagus! Tidak ada berkas lepas di dalam folder ini."
                         : "Belum ada berkas yang cocok dengan filter atau kata kunci pencarian."}
                     </Text>
                   </View>
@@ -861,7 +861,7 @@ export function FileManagementScreen() {
                               ) : (
                                 <View className="rounded bg-amber-500/10 px-1.5 py-0.5 border border-amber-500/20">
                                   <Text className="text-[10px] text-amber-700 font-semibold">
-                                    Yatim (Tanpa Dokumen)
+                                    Berkas Lepas (Tanpa Dokumen)
                                   </Text>
                                 </View>
                               )}

@@ -343,9 +343,9 @@ export function FileDetailModal({
                   <View className="flex-row items-center gap-2 rounded-lg bg-amber-500/10 p-2.5 border border-amber-500/20">
                     <AlertTriangle size={16} color="#D97706" />
                     <View className="flex-1">
-                      <Text className="text-xs font-bold text-amber-800">Berkas Yatim (Orphan File)</Text>
+                      <Text className="text-xs font-bold text-amber-800">Berkas Lepas (Standalone File)</Text>
                       <Text className="text-[11px] text-amber-700">
-                        Berkas ini tidak terhubung ke transaksi manapun. Sesuai PRD, berkas yatim aman untuk dibersihkan atau ditautkan kembali.
+                        Berkas ini tidak terhubung ke transaksi manapun (mandiri). Berkas lepas aman untuk dibersihkan atau ditautkan kembali.
                       </Text>
                     </View>
                   </View>

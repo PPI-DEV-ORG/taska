@@ -20,7 +20,7 @@ export type StartMigrationDto = {
   targetProviderId: number;
   folder?: string; // subfolder target (misal: "penawaran", "invoice", atau undefined / "all" = semua)
   olderThanDays?: number;
-  includeOrphans?: boolean; // Default false (sesuai arahan user, file yatim tidak ikut)
+  includeOrphans?: boolean; // Default false (sesuai arahan user, file lepas tidak ikut)
 };
 
 @Injectable()
@@ -35,7 +35,7 @@ export class FileMigrationService {
   ) {}
 
   /**
-   * Preview filter migrasi sebelum dieksekusi: hitung berkas valid, berkas yatim & estimasi byte
+   * Preview filter migrasi sebelum dieksekusi: hitung berkas valid, berkas lepas & estimasi byte
    */
   async previewMigration(params: {
     sourceProviderId: number;
@@ -282,7 +282,7 @@ export class FileMigrationService {
       throw new BadRequestException("Tidak ada file yang memenuhi syarat untuk dimigrasikan");
     }
 
-    // Filter file yatim jika includeOrphans !== true secara cepat (batch)
+    // Filter file lepas jika includeOrphans !== true secara cepat (batch)
     const connectedSet = await this.accessService.getConnectedFileIdSet();
     const eligibleLocations: typeof candidateLocations = [];
 
@@ -299,7 +299,7 @@ export class FileMigrationService {
 
     if (eligibleLocations.length === 0) {
       throw new BadRequestException(
-        "Semua file yang ditemukan adalah file yatim. Sesuai kebijakan, file yatim tidak diikutsertakan dalam migrasi.",
+        "Semua file yang ditemukan adalah file lepas (standalone). Sesuai kebijakan, file lepas tidak diikutsertakan dalam migrasi.",
       );
     }
 

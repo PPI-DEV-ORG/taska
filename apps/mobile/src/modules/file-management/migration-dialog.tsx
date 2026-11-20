@@ -143,7 +143,7 @@ export function MigrationDialog({
         targetProviderId: targetId,
         folder: selectedFolder !== "all" ? selectedFolder : undefined,
         olderThanDays: olderThanDays ? Number(olderThanDays) : undefined,
-        includeOrphans: false, // Berkas yatim tidak ikut dimigrasikan
+        includeOrphans: false, // Berkas lepas tidak ikut dimigrasikan
       });
       toast("Job migrasi telah dimulai di latar belakang!", "success");
       onSuccess();
@@ -359,7 +359,7 @@ export function MigrationDialog({
 
                 {preview && preview.excludedOrphansCount > 0 ? (
                   <Text className="text-[11px] text-amber-700">
-                    • {preview.excludedOrphansCount} berkas yatim dikecualikan (tetap di server lokal agar aman).
+                    • {preview.excludedOrphansCount} berkas lepas (standalone) dikecualikan (tetap di server lokal agar aman).
                   </Text>
                 ) : null}
 
@@ -394,7 +394,7 @@ export function MigrationDialog({
                   • Berkas sumber <Text className="font-bold text-foreground">tidak langsung dihapus</Text> dan dipertahankan sampai Anda menjalankan &apos;Bersihkan Berkas Lokal&apos; atau melakukan Rollback.
                 </Text>
                 <Text className="text-[11px] text-muted-foreground">
-                  • Berkas yatim tidak ikut dipindahkan dan tetap di server lokal agar mudah diaudit.
+                  • Berkas lepas (standalone) tidak ikut dipindahkan dan tetap di server lokal agar mudah diaudit.
                 </Text>
               </View>
             </View>

@@ -114,7 +114,7 @@ export class FileManagementController {
   @Require("fileManagement", "A")
   bulkDeleteOrphans(@Body("fileIds") fileIds: number[], @CurrentUser() user: RequestUser) {
     if (!Array.isArray(fileIds) || fileIds.length === 0) {
-      throw new BadRequestException("Daftar ID file yatim wajib disertakan");
+      throw new BadRequestException("Daftar ID file lepas (standalone) wajib disertakan");
     }
     return this.service.bulkDeleteOrphans(fileIds, user);
   }
