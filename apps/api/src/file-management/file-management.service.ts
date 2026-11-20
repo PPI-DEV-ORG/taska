@@ -46,6 +46,8 @@ export type CreateShareDto = {
 
 @Injectable()
 export class FileManagementService {
+  private serverStorageCache: { data: any; expiresAt: number } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerService: FileProviderService,
@@ -203,6 +205,9 @@ export class FileManagementService {
    * Informasi kapasitas penyimpanan server fisik tempat Akuntra berjalan
    */
   async getServerStorage() {
+    if (this.serverStorageCache && Date.now() < this.serverStorageCache.expiresAt) {
+      return this.serverStorageCache.data;
+    }
     try {
       const cwd = process.cwd();
       const sfs = await statfs(cwd);
@@ -231,7 +236,7 @@ export class FileManagementService {
         uploadFolderBytes = await scanDir(uploadDir);
       } catch {}
 
-      return {
+      const result = {
         diskTotal: total,
         diskUsed: used,
         diskFree: free,
@@ -239,6 +244,8 @@ export class FileManagementService {
         uploadsSizeBytes: uploadFolderBytes,
         serverPath: cwd,
       };
+      this.serverStorageCache = { data: result, expiresAt: Date.now() + 60_000 };
+      return result;
     } catch (e) {
       return {
         diskTotal: 0,
