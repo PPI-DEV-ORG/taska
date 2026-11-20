@@ -118,25 +118,25 @@ function ScheduleDialogForm({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-4">
-        <View className="max-h-[90vh] w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl">
+      <View className="flex-1 items-center justify-center bg-black/60 p-2 sm:p-4">
+        <View className="max-h-[90vh] w-[96vw] max-w-lg rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
           {/* Header */}
-          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3">
-            <View className="flex-row items-center gap-2.5">
-              <View className="rounded-xl p-2" style={{ backgroundColor: `${colors.primary}1A` }}>
+          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-1">
+            <View className="flex-1 min-w-0 mr-3 flex-row items-center gap-2.5">
+              <View className="rounded-xl p-2 shrink-0" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <CalendarClock size={20} color={colors.primary} />
               </View>
-              <View>
-                <Text className="text-base font-bold text-foreground">
+              <View className="flex-1 min-w-0">
+                <Text className="text-base font-bold text-foreground" numberOfLines={1}>
                   {scheduleToEdit ? "Edit Jadwal Migrasi" : "Jadwal Migrasi Otomatis"}
                 </Text>
-                <Text className="text-xs text-muted-foreground">
-                  Pindahkan berkas secara periodik sesuai interval waktu yang Anda tentukan
+                <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                  Pindahkan berkas secara periodik sesuai interval
                 </Text>
               </View>
             </View>
-            <Pressable onPress={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted">
-              <X size={18} />
+            <Pressable onPress={onClose} hitSlop={12} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted shrink-0">
+              <X size={20} />
             </Pressable>
           </View>
 

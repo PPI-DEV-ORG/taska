@@ -20,6 +20,8 @@ const ROLE_UI: Record<string, Role> = {
   GUDANG: "gudang",
   SE: "se",
   HR: "hr",
+  AUDITOR: "auditor",
+  LEGAL: "legal",
 };
 const ROLE_FROM_UI: Record<string, string> = {};
 for (const [k, v] of Object.entries(ROLE_UI)) ROLE_FROM_UI[v] = k;
@@ -40,6 +42,8 @@ const ROLE_FROM_LABEL: Record<string, string> = {
   Finance: "FINANCE",
   Gudang: "GUDANG",
   "Software Engineer": "SE",
+  Auditor: "AUDITOR",
+  Legal: "LEGAL",
 };
 
 export function roleFromUi(role: string): string {

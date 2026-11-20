@@ -20,6 +20,7 @@ import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import type { Row } from "@/constants/modules";
 
 export interface LeadSelectProps {
@@ -40,6 +41,7 @@ export function LeadSelect({
   allowClear = false,
 }: LeadSelectProps) {
   const { data } = useApp();
+  const { isMobile } = useBreakpoint();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
@@ -134,7 +136,7 @@ export function LeadSelect({
             web: { width: "min(96vw, 1150px)", maxWidth: "1150px" } as any,
           })}
         >
-          <DialogHeader>
+          <DialogHeader className="pr-8">
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Users size={20} color={colors.primary} />
@@ -155,9 +157,111 @@ export function LeadSelect({
             />
           </View>
 
-          {/* Table */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+          {/* Cards for Mobile vs Table for Desktop */}
+          {isMobile ? (
             <ScrollView
+              className="max-h-[60vh] mt-3"
+              contentContainerClassName="gap-2.5 pb-2"
+              showsVerticalScrollIndicator={false}
+            >
+              {allowClear && (
+                <Pressable
+                  onPress={() => handleSelect(null)}
+                  className="p-3 rounded-xl border border-dashed border-border bg-card/50 flex-row items-center justify-between"
+                >
+                  <Text className="text-xs font-medium text-muted-foreground">
+                    - Tanpa Lead / Kosongkan -
+                  </Text>
+                  {!leadId && !value && (
+                    <Check size={16} color={colors.primary} />
+                  )}
+                </Pressable>
+              )}
+
+              {filteredList.map((lead) => {
+                const isSelected = selectedLead?.id === lead.id;
+                const telp = lead.telepon || lead.phone || "";
+                const email = lead.email || "";
+                const pers = lead.perusahaan || lead.customer || "-";
+                const need = lead.kebutuhan || lead.need || "-";
+
+                return (
+                  <Pressable
+                    key={lead.id}
+                    onPress={() => handleSelect(lead)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card gap-2 active:scale-[0.99] transition-transform",
+                      isSelected && "border-primary/60 bg-primary/[0.04]",
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1 min-w-0">
+                        <Text
+                          className={cn(
+                            "text-sm font-bold text-foreground",
+                            isSelected && "text-primary",
+                          )}
+                          numberOfLines={1}
+                        >
+                          {lead.nama || `Lead #${lead.id}`}
+                        </Text>
+                        {pers !== "-" && (
+                          <View className="flex-row items-center gap-1 mt-0.5">
+                            <Building2 size={11} color={colors.muted} />
+                            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                              {pers}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <StatusBadge status={lead.tahapan || lead.status || "Baru"} />
+                    </View>
+
+                    {need !== "-" && (
+                      <Text className="text-xs text-foreground/80 bg-muted/40 p-2 rounded-lg" numberOfLines={2}>
+                        {need}
+                      </Text>
+                    )}
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View className="flex-1 mr-2 min-w-0">
+                        {telp ? (
+                          <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                            {telp}
+                          </Text>
+                        ) : null}
+                        {email ? (
+                          <Text className="text-[10px] text-muted-foreground" numberOfLines={1}>
+                            {email}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    Tidak ada lead / prospek yang cocok dengan &quot;{q}&quot;
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+              <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ minWidth: "100%" }}
@@ -313,6 +417,7 @@ export function LeadSelect({
               </View>
             </ScrollView>
           </View>
+        )}
         </DialogContent>
       </Dialog>
     </>

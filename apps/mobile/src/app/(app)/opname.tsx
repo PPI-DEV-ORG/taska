@@ -189,7 +189,7 @@ export default function StockOpnameScreen() {
         title="Stok Opname"
         subtitle="Perhitungan fisik stok gudang, laporan barang rusak, pergantian unit SN, dan pengajuan penyesuaian selisih"
         action={
-          <View className="flex-row flex-wrap items-center gap-2">
+          <View className="w-full min-w-0 flex-row flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" onPress={() => setReportDamageOpen(true)}>
               <Plus size={14} color={colors.text} />
               <Text className="text-xs">Lapor Barang Rusak / Retur</Text>
@@ -311,7 +311,7 @@ export default function StockOpnameScreen() {
                 return (
                   <View
                     key={pid}
-                    className="border-border/60 flex-row items-center justify-between border-b py-3 last:border-b-0 hover:bg-panel/40 px-2 rounded-lg transition-colors gap-3"
+                    className="border-border/60 flex-col sm:flex-row sm:items-center sm:justify-between border-b py-3 last:border-b-0 hover:bg-panel/40 px-2 rounded-lg transition-colors gap-2"
                   >
                     <View className="flex-1 min-w-0">
                       <View className="flex-row items-center gap-2">
@@ -329,16 +329,19 @@ export default function StockOpnameScreen() {
                       </Text>
                     </View>
 
-                    <View className="flex-row items-center gap-3 shrink-0">
-                      <View className="w-24">
-                        <Input
-                          value={physQtyStr}
-                          onChangeText={(v) => handleCountChange(pid, v.replace(/\D/g, ""))}
-                          keyboardType="numeric"
-                          className="h-10 text-center font-bold"
-                        />
+                    <View className="flex-row items-center justify-between sm:justify-end gap-3 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/30">
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-xs text-muted-foreground sm:hidden">Fisik:</Text>
+                        <View className="w-24">
+                          <Input
+                            value={physQtyStr}
+                            onChangeText={(v) => handleCountChange(pid, v.replace(/\D/g, ""))}
+                            keyboardType="numeric"
+                            className="h-9 sm:h-10 text-center font-bold"
+                          />
+                        </View>
                       </View>
-                      <View className="w-24 items-end">
+                      <View className="min-w-[80px] sm:w-24 items-end">
                         {diff === 0 ? (
                           <Text className="text-success text-xs sm:text-sm font-semibold">Cocok (0)</Text>
                         ) : diff < 0 ? (

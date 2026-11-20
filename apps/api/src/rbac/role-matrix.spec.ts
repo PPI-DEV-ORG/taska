@@ -98,6 +98,18 @@ const EXPECT: Array<[string, string, string, boolean]> = [
   ["PROCUREMENT", "supplierBills", "C", true], ["PROCUREMENT", "supplierBills", "V", false],
   ["GUDANG", "supplierBills", "L", false], ["SALES", "supplierBills", "C", false],
   ["ADMIN", "procurement", "C", true], ["ADMIN", "supplierBills", "C", true], ["BOS", "procurement", "C", true],
+
+  // v14: Auditor (read-only & ekspor seluruh modul, tanpa hak transaksi)
+  ["AUDITOR", "accounting", "L", true], ["AUDITOR", "accounting", "P", true], ["AUDITOR", "accounting", "C", false],
+  ["AUDITOR", "accounting", "V", false], ["AUDITOR", "contracts", "L", true], ["AUDITOR", "contracts", "C", false],
+  ["AUDITOR", "audit", "L", true], ["AUDITOR", "fileManagement", "L", true], ["AUDITOR", "fileManagement", "C", false],
+  ["AUDITOR", "financeOut", "C", false], ["AUDITOR", "procurement", "C", false], ["AUDITOR", "approvals", "V", false],
+
+  // v14: Legal (draf & review kontrak serta dokumen legalitas, tanpa eksekusi akuntansi)
+  ["LEGAL", "contracts", "C", true], ["LEGAL", "contracts", "U", true], ["LEGAL", "contracts", "V", false],
+  ["LEGAL", "fileManagement", "C", true], ["LEGAL", "fileManagement", "U", true],
+  ["LEGAL", "customers", "L", true], ["LEGAL", "suppliers", "L", true],
+  ["LEGAL", "accounting", "L", false], ["LEGAL", "financeOut", "C", false], ["LEGAL", "procurement", "C", false],
 ];
 
 describe("Tagihan supplier terpisah dari PO (v13)", () => {

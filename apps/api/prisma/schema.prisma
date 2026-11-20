@@ -24,6 +24,8 @@ enum Role {
   GUDANG
   SE
   HR
+  AUDITOR
+  LEGAL
 }
 
 enum ActiveStatus {

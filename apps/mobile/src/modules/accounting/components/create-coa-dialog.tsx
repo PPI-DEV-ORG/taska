@@ -79,8 +79,8 @@ export function CreateCoaDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="w-[96vw] max-w-md max-h-[90vh] p-4 sm:p-6">
+        <DialogHeader className="pr-8">
           <DialogTitle>Tambah Akun Baru ke COA</DialogTitle>
         </DialogHeader>
 

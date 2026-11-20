@@ -1,12 +1,14 @@
 import * as React from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus } from "lucide-react-native";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Chip, PageHeader, Panel } from "@/components/akuntra/basics";
 import { FilterBar } from "@/components/akuntra/data-table";
 import { SearchableSelect } from "@/components/akuntra/dialogs";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { api, queryString } from "@/services/api";
 import { colors } from "@/tokens";
@@ -56,6 +58,7 @@ function titleOf(view: CalendarView, cursor: Date): string {
 
 export default function CalendarScreen() {
   const { user, data, toast } = useApp();
+  const { isMobile } = useBreakpoint();
   const role = (user?.role || "").toLowerCase();
   const canViewAll = role === "super_admin" || role === "bos" || role === "admin";
 
@@ -169,6 +172,35 @@ export default function CalendarScreen() {
   const overdueCount = items.filter((i) => i.isOverdue).length;
   const selectedList = React.useMemo(() => groupByDay(items)[selected] ?? [], [items, selected]);
 
+  const scopeOptions = React.useMemo(() => {
+    const opts = [
+      { key: "me", label: "Agenda saya" },
+      { key: "team", label: "Tim & Proyek saya" },
+    ];
+    if (canViewAll) {
+      opts.push({ key: "all", label: "Semua perusahaan" });
+    }
+    return opts;
+  }, [canViewAll]);
+
+  const statusOptions = React.useMemo(() => [
+    "Semua Status",
+    ...Object.values(STATUS_LABEL),
+  ], []);
+
+  const categoryOptions = React.useMemo(() => [
+    "Semua Kategori",
+    ...CATEGORY_KEYS.map((k) => CATEGORY_META[k]!.label),
+    `Overdue${overdueCount ? ` (${overdueCount})` : ""}`,
+  ], [overdueCount]);
+
+  const activeCategoryLabel = React.useMemo(() => {
+    if (onlyOverdue) return `Overdue${overdueCount ? ` (${overdueCount})` : ""}`;
+    if (cats.length === 0) return "Semua Kategori";
+    if (cats.length === 1) return CATEGORY_META[cats[0] as any]?.label || "Kategori";
+    return `${cats.length} Kategori Dipilih`;
+  }, [onlyOverdue, overdueCount, cats]);
+
   return (
     <View className="gap-5">
       <PageHeader
@@ -188,85 +220,262 @@ export default function CalendarScreen() {
         }
       />
 
-      <FilterBar
-        search={q}
-        onSearch={setQ}
-        placeholder="Cari agenda, klien, atau PIC..."
-        right={
-          <View className="flex-row flex-wrap gap-2">
-            <Chip label="Agenda saya" active={scope === "me"} onPress={() => setScope("me")} />
-            <Chip label="Tim & Proyek saya" active={scope === "team"} onPress={() => setScope("team")} />
-            {canViewAll ? (
-              <Chip label="Semua perusahaan" active={scope === "all"} onPress={() => setScope("all")} />
+      {isMobile ? (
+        <View className="gap-2.5">
+          {/* Search bar */}
+          <View className="bg-card border-border/80 h-10 flex-row items-center gap-2 rounded-xl border px-3 shadow-sm">
+            <Search size={15} color={colors.muted} />
+            <Input
+              value={q}
+              onChangeText={setQ}
+              placeholder="Cari agenda, klien, atau PIC..."
+              className="h-8 flex-1 border-0 bg-transparent px-0 text-xs shadow-none outline-none"
+            />
+            {q ? (
+              <Pressable onPress={() => setQ("")} hitSlop={8}>
+                <X size={14} color={colors.muted} />
+              </Pressable>
             ) : null}
           </View>
-        }
-        statuses={Object.values(STATUS_LABEL)}
-        status={status}
-        onStatus={setStatus}
-      />
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="grow-0" contentContainerClassName="gap-2 py-0.5">
-        <Chip label="Semua kategori" active={cats.length === 0} onPress={() => setCats([])} />
-        {CATEGORY_KEYS.map((k) => (
-          <Chip
-            key={k}
-            label={CATEGORY_META[k]!.label}
-            active={cats.includes(k)}
-            onPress={() => setCats((c) => (c.includes(k) ? c.filter((x) => x !== k) : [...c, k]))}
-          />
-        ))}
-        <Chip label={`Overdue${overdueCount ? ` (${overdueCount})` : ""}`} active={onlyOverdue} onPress={() => setOnlyOverdue((v) => !v)} />
-      </ScrollView>
+          {/* Dropdown Filters Grid */}
+          <View className="gap-2">
+            <View className="flex-row gap-2">
+              <View className="flex-1">
+                <SearchableSelect
+                  value={scopeOptions.find((s) => s.key === scope)?.label || "Scope"}
+                  onChange={(val) => {
+                    const match = scopeOptions.find((s) => s.label === val);
+                    if (match) setScope(match.key as any);
+                  }}
+                  options={scopeOptions.map((s) => s.label)}
+                  placeholder="Pilih Scope"
+                  className="h-10 text-xs"
+                />
+              </View>
+              <View className="flex-1">
+                <SearchableSelect
+                  value={status ? STATUS_LABEL[status as keyof typeof STATUS_LABEL] || status : "Semua Status"}
+                  onChange={(val) => {
+                    if (val === "Semua Status") {
+                      setStatus("");
+                    } else {
+                      const matchKey = Object.entries(STATUS_LABEL).find(([, l]) => l === val)?.[0] || val;
+                      setStatus(matchKey);
+                    }
+                  }}
+                  options={statusOptions}
+                  placeholder="Semua Status"
+                  className="h-10 text-xs"
+                />
+              </View>
+            </View>
 
-      {(scope === "team" || (canViewAll && scope === "all")) ? (
-        <View className="flex-row flex-wrap gap-3">
-          <View className="w-64">
-            <SearchableSelect value={pic} onChange={(v) => setPic(v === pic ? "" : v)} options={userNames} placeholder="Filter penanggung jawab (PIC)" />
-          </View>
-          <View className="w-64">
-            <SearchableSelect
-              value={team}
-              onChange={(v) => setTeam(v === team ? "" : v)}
-              options={TEAM_FILTER_OPTIONS.filter((t) => t.code !== "").map((t) => t.label)}
-              placeholder="Filter tim / divisi"
-            />
+            <View className="w-full">
+              <SearchableSelect
+                value={activeCategoryLabel}
+                onChange={(val) => {
+                  if (val.startsWith("Overdue")) {
+                    setOnlyOverdue(true);
+                    setCats([]);
+                  } else if (val === "Semua Kategori") {
+                    setCats([]);
+                    setOnlyOverdue(false);
+                  } else {
+                    const foundKey = CATEGORY_KEYS.find((k) => CATEGORY_META[k]?.label === val);
+                    if (foundKey) {
+                      setCats([foundKey]);
+                      setOnlyOverdue(false);
+                    }
+                  }
+                }}
+                options={categoryOptions}
+                placeholder="Pilih Kategori"
+                className="h-10 text-xs"
+              />
+            </View>
+
+            {(scope === "team" || (canViewAll && scope === "all")) ? (
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <SearchableSelect
+                    value={pic}
+                    onChange={(v) => setPic(v === pic ? "" : v)}
+                    options={userNames}
+                    placeholder="Filter PIC"
+                    className="h-10 text-xs"
+                    clearable
+                  />
+                </View>
+                <View className="flex-1">
+                  <SearchableSelect
+                    value={team}
+                    onChange={(v) => setTeam(v === team ? "" : v)}
+                    options={TEAM_FILTER_OPTIONS.filter((t) => t.code !== "").map((t) => t.label)}
+                    placeholder="Filter Tim"
+                    className="h-10 text-xs"
+                    clearable
+                  />
+                </View>
+              </View>
+            ) : null}
           </View>
         </View>
-      ) : null}
+      ) : (
+        <>
+          <FilterBar
+            search={q}
+            onSearch={setQ}
+            placeholder="Cari agenda, klien, atau PIC..."
+            right={
+              <View className="flex-row flex-wrap gap-2">
+                <Chip label="Agenda saya" active={scope === "me"} onPress={() => setScope("me")} />
+                <Chip label="Tim & Proyek saya" active={scope === "team"} onPress={() => setScope("team")} />
+                {canViewAll ? (
+                  <Chip label="Semua perusahaan" active={scope === "all"} onPress={() => setScope("all")} />
+                ) : null}
+              </View>
+            }
+            statuses={Object.values(STATUS_LABEL)}
+            status={status}
+            onStatus={setStatus}
+          />
+
+          <View className="w-full min-w-0 flex-row flex-wrap gap-2 py-0.5">
+            <Chip label="Semua kategori" active={cats.length === 0} onPress={() => setCats([])} />
+            {CATEGORY_KEYS.map((k) => (
+              <Chip
+                key={k}
+                label={CATEGORY_META[k]!.label}
+                active={cats.includes(k)}
+                onPress={() => setCats((c) => (c.includes(k) ? c.filter((x) => x !== k) : [...c, k]))}
+              />
+            ))}
+            <Chip label={`Overdue${overdueCount ? ` (${overdueCount})` : ""}`} active={onlyOverdue} onPress={() => setOnlyOverdue((v) => !v)} />
+          </View>
+
+          {(scope === "team" || (canViewAll && scope === "all")) ? (
+            <View className="flex-row flex-wrap gap-3">
+              <View className="w-64">
+                <SearchableSelect value={pic} onChange={(v) => setPic(v === pic ? "" : v)} options={userNames} placeholder="Filter penanggung jawab (PIC)" />
+              </View>
+              <View className="w-64">
+                <SearchableSelect
+                  value={team}
+                  onChange={(v) => setTeam(v === team ? "" : v)}
+                  options={TEAM_FILTER_OPTIONS.filter((t) => t.code !== "").map((t) => t.label)}
+                  placeholder="Filter tim / divisi"
+                />
+              </View>
+            </View>
+          ) : null}
+        </>
+      )}
 
       <Panel
         title={titleOf(view, cursor)}
         subtitle={loading ? "Memuat..." : `${items.length} aktivitas · Zona waktu WIB (UTC+7)`}
         right={
-          <>
-            <View className="flex-row items-center rounded-lg border border-border/60 bg-muted/60 p-0.5">
-              {VIEWS.map((v) => (
+          isMobile ? (
+            <View className="w-full gap-2.5 mt-2">
+              {/* Row 1: View mode tabs - Full width segmented control */}
+              <View className="flex-row items-center rounded-xl border border-border/80 bg-muted/60 p-1 w-full">
+                {VIEWS.map((v) => {
+                  const isActive = view === v.key;
+                  return (
+                    <Pressable
+                      key={v.key}
+                      onPress={() => setView(v.key)}
+                      className={cn(
+                        "flex-1 h-8 items-center justify-center rounded-lg transition-colors",
+                        isActive ? "bg-primary shadow-xs" : "hover:bg-muted/40 active:bg-muted/60"
+                      )}
+                    >
+                      <Text
+                        className={cn(
+                          "text-xs font-medium text-center",
+                          isActive ? "text-primary-foreground font-bold" : "text-muted-foreground"
+                        )}
+                      >
+                        {v.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Row 2: Navigasi Prev/Next Proporsional */}
+              <View className="flex-row items-center justify-between gap-1.5 w-full">
                 <Button
-                  key={v.key}
                   size="sm"
-                  variant={view === v.key ? "default" : "ghost"}
-                  className="h-7 px-2.5"
-                  onPress={() => setView(v.key)}
+                  variant="outline"
+                  className="h-9 px-3 rounded-xl border-border/80 shrink-0"
+                  onPress={() => shift(-1)}
                 >
-                  <Text className="text-xs">{v.label}</Text>
+                  <ChevronLeft size={16} color={colors.text} />
                 </Button>
-              ))}
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 flex-1 rounded-xl border-border/80 px-2"
+                  onPress={goToday}
+                >
+                  <Text className="text-xs font-semibold">Hari ini</Text>
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 flex-1 gap-1.5 px-2.5 rounded-xl border-border/80"
+                  onPress={openJump}
+                >
+                  <CalendarIcon size={14} color={colors.text} />
+                  <Text className="text-xs font-semibold" numberOfLines={1}>
+                    Pilih tanggal
+                  </Text>
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 px-3 rounded-xl border-border/80 shrink-0"
+                  onPress={() => shift(1)}
+                >
+                  <ChevronRight size={16} color={colors.text} />
+                </Button>
+              </View>
             </View>
-            <Button size="sm" variant="outline" className="h-8 px-2" onPress={() => shift(-1)}>
-              <ChevronLeft size={16} color={colors.text} />
-            </Button>
-            <Button size="sm" variant="outline" className="h-8" onPress={goToday}>
-              <Text className="text-xs">Hari ini</Text>
-            </Button>
-            <Button size="sm" variant="outline" className="h-8 gap-1.5 px-2.5" onPress={openJump}>
-              <CalendarIcon size={14} color={colors.text} />
-              <Text className="text-xs">Pilih bulan / tanggal</Text>
-            </Button>
-            <Button size="sm" variant="outline" className="h-8 px-2" onPress={() => shift(1)}>
-              <ChevronRight size={16} color={colors.text} />
-            </Button>
-          </>
+          ) : (
+            <>
+              <View className="flex-row items-center rounded-lg border border-border/60 bg-muted/60 p-0.5">
+                {VIEWS.map((v) => (
+                  <Button
+                    key={v.key}
+                    size="sm"
+                    variant={view === v.key ? "default" : "ghost"}
+                    className="h-7 px-2.5"
+                    onPress={() => setView(v.key)}
+                  >
+                    <Text className="text-xs">{v.label}</Text>
+                  </Button>
+                ))}
+              </View>
+              <Button size="sm" variant="outline" className="h-8 px-2" onPress={() => shift(-1)}>
+                <ChevronLeft size={16} color={colors.text} />
+              </Button>
+              <Button size="sm" variant="outline" className="h-8" onPress={goToday}>
+                <Text className="text-xs">Hari ini</Text>
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5 px-2.5" onPress={openJump}>
+                <CalendarIcon size={14} color={colors.text} />
+                <Text className="text-xs">Pilih bulan / tanggal</Text>
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 px-2" onPress={() => shift(1)}>
+                <ChevronRight size={16} color={colors.text} />
+              </Button>
+            </>
+          )
         }
         pad={view === "day" || view === "agenda"}
       >

@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { rupiah } from "@/lib/format";
 import type { Row } from "@/constants/modules";
 import { formatDate } from "./format-date";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 
 export interface InvoiceSelectProps {
   value?: string;
@@ -44,6 +45,7 @@ export function InvoiceSelect({
   excludeIds,
 }: InvoiceSelectProps) {
   const { data } = useApp();
+  const { isMobile } = useBreakpoint();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
@@ -158,7 +160,7 @@ export function InvoiceSelect({
             web: { width: "min(96vw, 1150px)", maxWidth: "1150px" } as any,
           })}
         >
-          <DialogHeader>
+          <DialogHeader className="pr-8">
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Receipt size={20} color={colors.primary} />
@@ -179,9 +181,107 @@ export function InvoiceSelect({
             />
           </View>
 
-          {/* Table */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+          {/* Cards for Mobile vs Table for Desktop */}
+          {isMobile ? (
             <ScrollView
+              className="max-h-[60vh] mt-3"
+              contentContainerClassName="gap-2.5 pb-2"
+              showsVerticalScrollIndicator={false}
+            >
+              {allowClear && (
+                <Pressable
+                  onPress={() => handleSelect(null)}
+                  className="p-3 rounded-xl border border-dashed border-border bg-card/50 flex-row items-center justify-between"
+                >
+                  <Text className="text-xs font-medium text-muted-foreground">
+                    - Tanpa Invoice Penjualan (Opsional) -
+                  </Text>
+                  {!invoiceId && !value && (
+                    <Check size={16} color={colors.primary} />
+                  )}
+                </Pressable>
+              )}
+
+              {filteredList.map((inv) => {
+                const isSelected = selectedInvoice?.id === inv.id;
+                const no = inv.nomor || `INV #${inv.id}`;
+                const tgl = inv.tanggal || inv.date || inv.createdAt || "";
+                const totalVal = Number(inv.total || inv.nilai || 0);
+                const terbayar = Number(inv.terbayar || 0);
+                const sisa = Math.max(0, totalVal - terbayar);
+
+                return (
+                  <Pressable
+                    key={inv.id}
+                    onPress={() => handleSelect(inv)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card gap-2 active:scale-[0.99] transition-transform",
+                      isSelected && "border-primary/60 bg-primary/[0.04]",
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1 min-w-0">
+                        <Text
+                          className={cn(
+                            "text-sm font-bold font-mono text-foreground",
+                            isSelected && "text-primary",
+                          )}
+                          numberOfLines={1}
+                        >
+                          {no}
+                        </Text>
+                        {tgl ? (
+                          <View className="flex-row items-center gap-1 mt-0.5">
+                            <Calendar size={10} color={colors.muted} />
+                            <Text className="text-[11px] text-muted-foreground">{formatDate(tgl)}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <StatusBadge status={inv.status || "Draf"} />
+                    </View>
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View className="flex-1 mr-2 min-w-0">
+                        <Text className="text-xs font-medium text-foreground" numberOfLines={1}>
+                          {inv.customer || "-"}
+                        </Text>
+                        <Text className="text-[11px] font-bold text-primary mt-0.5">
+                          {rupiah(totalVal)}
+                        </Text>
+                        {sisa > 0 && terbayar > 0 ? (
+                          <Text className="text-[10px] text-warning" numberOfLines={1}>
+                            Sisa: {rupiah(sisa)}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center">
+                  <Text className="text-xs text-muted-foreground text-center">
+                    {q.trim()
+                      ? "Tidak ada invoice yang sesuai pencarian."
+                      : "Tidak ada invoice yang tersedia atau semua sudah memiliki Surat Jalan."}
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+              <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ minWidth: "100%" }}
@@ -350,6 +450,7 @@ export function InvoiceSelect({
               </View>
             </ScrollView>
           </View>
+        )}
         </DialogContent>
       </Dialog>
     </>

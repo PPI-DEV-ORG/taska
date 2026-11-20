@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/akuntra/status-badge";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,7 @@ export function PoClientSelect({
   allowClear = true,
   excludeIds,
 }: PoClientSelectProps) {
+  const { isMobile } = useBreakpoint();
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -178,18 +180,114 @@ export function PoClientSelect({
           </View>
 
           {/* Table */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ minWidth: "100%" }}
-            >
-              <View className="flex-1 min-w-[880px]">
-                {/* Header */}
-                <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px]">
-                    Nomor SO & Tanggal
+          {isMobile ? (
+            /* Mobile Card View */
+            <ScrollView className="max-h-[58vh] mt-3" contentContainerClassName="gap-2 pb-2">
+              {allowClear && (
+                <Pressable
+                  onPress={() => handleSelect(null)}
+                  className={cn(
+                    "p-3 rounded-xl border border-dashed border-border/80 flex-row items-center justify-between",
+                    !poId && !value ? "bg-primary/10 border-primary" : "bg-card hover:bg-muted/30"
+                  )}
+                >
+                  <Text className="text-xs font-semibold text-muted-foreground">
+                    - Tanpa Sales Order (SO) -
                   </Text>
+                  {!poId && !value && <Check size={16} color={colors.primary} />}
+                </Pressable>
+              )}
+
+              {filteredList.map((po) => {
+                const isSelected = selectedPo?.id === po.id;
+                const poNomor = po.nomor || `PO #${po.id}`;
+                const poRef = po.poNumber && po.poNumber !== "-" ? `PO Ref: ${po.poNumber}` : null;
+                const tgl = po.tanggal || po.createdAt || "";
+                const cust = po.customer || "-";
+                const proj = po.project || po.proyek || "";
+                const totalVal = Number(po.totalAfterDisc || po.total || po.nilai || 0);
+
+                return (
+                  <Pressable
+                    key={po.id}
+                    onPress={() => handleSelect(po)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card active:bg-panel transition-colors gap-2 shadow-xs",
+                      isSelected ? "border-primary bg-primary/5" : ""
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1">
+                        <Text className={cn("text-sm font-bold font-mono", isSelected ? "text-primary" : "text-foreground")}>
+                          {poNomor}
+                        </Text>
+                        {poRef ? (
+                          <Text className="text-[11px] text-muted-foreground font-mono mt-0.5">{poRef}</Text>
+                        ) : null}
+                        {tgl ? (
+                          <View className="flex-row items-center gap-1 mt-0.5">
+                            <Calendar size={10} color={colors.muted} />
+                            <Text className="text-[11px] text-muted-foreground">{formatDate(tgl)}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <StatusBadge status={po.status || "Aktif"} />
+                    </View>
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View className="flex-1 mr-2">
+                        <Text className="text-xs font-medium text-foreground" numberOfLines={1}>
+                          Klien: <Text className="font-semibold">{cust}</Text>
+                        </Text>
+                        {proj ? (
+                          <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                            Proyek: {proj}
+                          </Text>
+                        ) : null}
+                        {totalVal > 0 ? (
+                          <Text className="text-[11px] font-semibold text-primary mt-0.5">
+                            {rupiah(totalVal)}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    {q.trim()
+                      ? `Tidak ada data PO Client yang cocok dengan "${q}"`
+                      : "Tidak ada SO yang tersedia atau semua sudah memiliki Surat Jalan."}
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ minWidth: "100%" }}
+              >
+                <View className="flex-1 min-w-[880px]">
+                  {/* Header */}
+                  <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
+                    <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px]">
+                      Nomor SO & Tanggal
+                    </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[180px] px-2">
                     Pelanggan & Proyek
                   </Text>
@@ -365,6 +463,7 @@ export function PoClientSelect({
               </View>
             </ScrollView>
           </View>
+        )}
         </DialogContent>
       </Dialog>
     </>

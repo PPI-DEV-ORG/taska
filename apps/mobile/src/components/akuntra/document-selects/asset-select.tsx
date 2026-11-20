@@ -13,6 +13,7 @@ import {
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 
 export interface AssetRow {
   id: string | number;
@@ -72,6 +73,7 @@ export function AssetSelect({
   allowClear = true,
   triggerClassName,
 }: AssetSelectProps) {
+  const { isMobile } = useBreakpoint();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
   const [fetchedAssets, setFetchedAssets] = React.useState<AssetRow[]>([]);
@@ -198,22 +200,22 @@ export function AssetSelect({
             web: { width: "min(96vw, 900px)", maxWidth: "900px" } as any,
           })}
         >
-          <DialogHeader className="border-b border-border/70 px-6 py-4">
+          <DialogHeader className="border-b border-border/70 px-4 sm:px-6 py-4 pr-10">
             <View className="flex-row items-center gap-3">
               <View className="rounded-lg p-2" style={{ backgroundColor: `${colors.primary}18` }}>
                 <Package size={18} color={colors.primary} />
               </View>
-              <View>
+              <View className="flex-1 min-w-0">
                 <DialogTitle>Pilih Aset (Fixed Assets)</DialogTitle>
-                <Text className="text-xs text-muted-foreground">
-                  Cari aset operasional berdasarkan kode, nama, merk, lokasi, atau departemen
+                <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                  Cari aset operasional berdasarkan kode, nama, atau lokasi
                 </Text>
               </View>
             </View>
           </DialogHeader>
 
           {/* Search Bar */}
-          <View className="p-4 border-b border-border/70 bg-muted/20">
+          <View className="p-3 sm:p-4 border-b border-border/70 bg-muted/20">
             <View className="flex-row items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5">
               <Search size={16} color={colors.muted} />
               <Input
@@ -226,10 +228,98 @@ export function AssetSelect({
             </View>
           </View>
 
-          {/* Table */}
-          <View className="flex-1 overflow-hidden p-4">
-            <View className="border border-border/80 rounded-xl overflow-hidden bg-card flex-1">
-              <ScrollView
+          {/* Cards for Mobile vs Table for Desktop */}
+          {isMobile ? (
+            <ScrollView
+              className="max-h-[60vh] p-3"
+              contentContainerClassName="gap-2.5 pb-2"
+              showsVerticalScrollIndicator={false}
+            >
+              {allowClear && (
+                <Pressable
+                  onPress={() => handleSelect(null)}
+                  className="p-3 rounded-xl border border-dashed border-border bg-card/50 flex-row items-center justify-between"
+                >
+                  <Text className="text-xs font-medium text-muted-foreground">
+                    - Tanpa Aset Terpilih -
+                  </Text>
+                  {!assetId && !value && (
+                    <Check size={16} color={colors.primary} />
+                  )}
+                </Pressable>
+              )}
+
+              {filteredList.map((a) => {
+                const isSelected = String(selectedAsset?.id) === String(a.id);
+                const locName = a.location?.name || a.locationName || "-";
+                const spec = [a.brand, a.model].filter(Boolean).join(" · ") || a.serialNumber || "-";
+
+                return (
+                  <Pressable
+                    key={a.id}
+                    onPress={() => handleSelect(a)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card gap-2 active:scale-[0.99] transition-transform",
+                      isSelected && "border-primary/60 bg-primary/[0.04]",
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1 min-w-0">
+                        <Text
+                          className={cn(
+                            "text-sm font-bold text-foreground",
+                            isSelected && "text-primary",
+                          )}
+                          numberOfLines={1}
+                        >
+                          {a.name}
+                        </Text>
+                        <Text className="font-mono text-xs font-bold text-primary mt-0.5">
+                          {a.assetCode}
+                        </Text>
+                      </View>
+                      <ConditionBadge condition={a.condition} />
+                    </View>
+
+                    {spec !== "-" && (
+                      <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                        {spec}
+                      </Text>
+                    )}
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View className="flex-1 mr-2 min-w-0">
+                        <Text className="text-xs font-medium text-foreground" numberOfLines={1}>
+                          {locName} {a.department ? `· ${a.department}` : ""}
+                        </Text>
+                      </View>
+
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    {loading ? "Memuat daftar aset..." : `Tidak ada aset yang cocok dengan "${q}"`}
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="flex-1 overflow-hidden p-4">
+              <View className="border border-border/80 rounded-xl overflow-hidden bg-card flex-1">
+                <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ minWidth: "100%" }}
@@ -358,6 +448,7 @@ export function AssetSelect({
               </ScrollView>
             </View>
           </View>
+        )}
         </DialogContent>
       </Dialog>
     </>

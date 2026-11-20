@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/akuntra/status-badge";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ export function ProjectSelect({
   error,
   allowClear = true,
 }: ProjectSelectProps) {
+  const { isMobile } = useBreakpoint();
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -163,18 +165,106 @@ export function ProjectSelect({
           </View>
 
           {/* Table */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ minWidth: "100%" }}
-            >
-              <View className="flex-1 min-w-[760px]">
-                {/* Header */}
-                <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
-                    Nama Proyek & Jenis
+          {isMobile ? (
+            /* Mobile Card View */
+            <ScrollView className="max-h-[58vh] mt-3" contentContainerClassName="gap-2 pb-2">
+              {allowClear && (
+                <Pressable
+                  onPress={() => handleSelect(null)}
+                  className={cn(
+                    "p-3 rounded-xl border border-dashed border-border/80 flex-row items-center justify-between",
+                    !projectId && !value ? "bg-primary/10 border-primary" : "bg-card hover:bg-muted/30"
+                  )}
+                >
+                  <Text className="text-xs font-semibold text-muted-foreground">
+                    - Tanpa Alokasi Proyek (Non-Proyek / Umum) -
                   </Text>
+                  {!projectId && !value && <Check size={16} color={colors.primary} />}
+                </Pressable>
+              )}
+
+              {filteredList.map((p) => {
+                const isSelected = selectedProject?.id === p.id;
+                const name = p.nama || p.name || `Proyek #${p.id}`;
+                const jenis = p.jenis || "Proyek";
+                const cust = p.customer || p.klien || "-";
+                const totalVal = Number(p.nilai || p.total || p.budget || 0);
+                const progres = p.progres != null ? `${p.progres}%` : "-";
+
+                return (
+                  <Pressable
+                    key={p.id}
+                    onPress={() => handleSelect(p)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card active:bg-panel transition-colors gap-2 shadow-xs",
+                      isSelected ? "border-primary bg-primary/5" : ""
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1">
+                        <Text className={cn("text-sm font-bold", isSelected ? "text-primary" : "text-foreground")}>
+                          {name}
+                        </Text>
+                        <View className="flex-row items-center gap-1.5 mt-0.5">
+                          <Tag size={10} color={colors.muted} />
+                          <Text className="text-[11px] text-muted-foreground">{jenis}</Text>
+                        </View>
+                      </View>
+                      <StatusBadge status={p.status || "Berjalan"} />
+                    </View>
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View className="flex-1 mr-2">
+                        <Text className="text-xs font-medium text-foreground" numberOfLines={1}>
+                          Klien: <Text className="font-semibold">{cust}</Text>
+                        </Text>
+                        <View className="flex-row items-center gap-2 mt-0.5">
+                          {totalVal > 0 ? (
+                            <Text className="text-[11px] font-semibold text-primary">
+                              {rupiah(totalVal)}
+                            </Text>
+                          ) : null}
+                          <Text className="text-[10px] text-muted-foreground">
+                            Progres: {progres}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    Tidak ada proyek yang cocok dengan &quot;{q}&quot;
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ minWidth: "100%" }}
+              >
+                <View className="flex-1 min-w-[760px]">
+                  {/* Header */}
+                  <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
+                    <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
+                      Nama Proyek & Jenis
+                    </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px] px-2">
                     Pelanggan
                   </Text>
@@ -309,6 +399,7 @@ export function ProjectSelect({
               </View>
             </ScrollView>
           </View>
+        )}
         </DialogContent>
       </Dialog>
     </>

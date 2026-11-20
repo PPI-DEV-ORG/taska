@@ -18,6 +18,7 @@ import { useApp } from "@/store/app-store";
 import { compareDesc } from "@/lib/format";
 import { hasUserPermission, type Role, type Row } from "@/constants/modules";
 import { colors } from "@/tokens";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 
 import { STOCK_TABS, type StockTab, type DetailTarget } from "@/modules/stock/types";
 import { StockProductsTab } from "@/modules/stock/components/stock-products-tab";
@@ -33,6 +34,7 @@ import { StockAddItemDialog } from "@/modules/stock/components/stock-add-item-di
 export default function StockScreen() {
   const router = useRouter();
   const { user, data, toast, reload, refreshModule, addRow } = useApp();
+  const { isMobile } = useBreakpoint();
 
   const isAllowed = hasUserPermission(user, "stock", "M");
 
@@ -181,15 +183,16 @@ export default function StockScreen() {
         title="Persediaan Gudang — List Barang, Jasa & SN"
         subtitle="Manajemen daftar barang (Ber-SN & Non-SN), katalog jasa, stok multi-gudang, dan stok opname"
         action={
-          <View className="flex-row flex-wrap gap-2">
+          <View className="flex-row flex-wrap items-center gap-1.5 sm:gap-2">
             {canManageCatalog ? (
               <Button
                 variant="outline"
                 size="sm"
+                className="h-8 px-2.5 sm:h-9 sm:px-3"
                 onPress={() => setAddItemOpen(true)}
               >
-                <Plus size={16} color={colors.text} />
-                <Text>Tambah Barang / Jasa</Text>
+                <Plus size={14} color={colors.text} />
+                <Text className="text-xs">{isMobile ? "Barang / Jasa" : "Tambah Barang / Jasa"}</Text>
               </Button>
             ) : null}
             {canManageStock ? (
@@ -197,27 +200,42 @@ export default function StockScreen() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-8 px-2.5 sm:h-9 sm:px-3"
                   onPress={() => {
                     setBatchSnDefaultProductId("");
                     setBatchSnOpen(true);
                   }}
                 >
-                  <Plus size={16} color={colors.text} />
-                  <Text>Tambah Barang per SN</Text>
+                  <Plus size={14} color={colors.text} />
+                  <Text className="text-xs">{isMobile ? "Tambah SN" : "Tambah Barang per SN"}</Text>
                 </Button>
-                <Button variant="outline" size="sm" onPress={() => setTransferOpen(true)}>
-                  <ArrowLeftRight size={16} color={colors.text} />
-                  <Text>Transfer Gudang</Text>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2.5 sm:h-9 sm:px-3"
+                  onPress={() => setTransferOpen(true)}
+                >
+                  <ArrowLeftRight size={14} color={colors.text} />
+                  <Text className="text-xs">{isMobile ? "Transfer" : "Transfer Gudang"}</Text>
                 </Button>
-                <Button variant="outline" size="sm" onPress={() => {
-                  setReplacementDefaultSn("");
-                  setReplacementOpen(true);
-                }}>
-                  <RefreshCw size={16} color={colors.text} />
-                  <Text>Unit Pengganti</Text>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2.5 sm:h-9 sm:px-3"
+                  onPress={() => {
+                    setReplacementDefaultSn("");
+                    setReplacementOpen(true);
+                  }}
+                >
+                  <RefreshCw size={14} color={colors.text} />
+                  <Text className="text-xs">{isMobile ? "Pengganti" : "Unit Pengganti"}</Text>
                 </Button>
-                <Button size="sm" onPress={() => router.push("/opname")}>
-                  <Text>Stok Opname</Text>
+                <Button
+                  size="sm"
+                  className="h-8 px-2.5 sm:h-9 sm:px-3"
+                  onPress={() => router.push("/opname")}
+                >
+                  <Text className="text-xs">{isMobile ? "Opname" : "Stok Opname"}</Text>
                 </Button>
               </>
             ) : null}
