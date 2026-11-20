@@ -193,7 +193,7 @@ export function MetricCard({
   icon: React.ComponentType<{ size?: number; color?: string }>;
 }) {
   return (
-    <View className="min-w-[210px] flex-1 rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
+    <View className="w-full sm:w-auto min-w-[140px] sm:min-w-[210px] flex-1 rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
       <View className="flex-row items-start justify-between gap-2">
         <Text className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {label}

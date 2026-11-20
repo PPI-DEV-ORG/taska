@@ -15,6 +15,7 @@ import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { PageHeader } from "@/components/akuntra/basics";
 import { Button } from "@/components/ui/button";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 
 import { TabType } from "@/modules/hr/types";
 import { MyAttendanceTab } from "@/modules/hr/components/my-attendance-tab";
@@ -30,6 +31,7 @@ import { ScheduleSettingsDialog } from "@/modules/hr/components/schedule-setting
 
 export default function HrScreen() {
   const { user, toast } = useApp();
+  const { isMobile } = useBreakpoint();
   const roleLower = (user?.role || "").toLowerCase();
   const isFinanceOrAdmin = ["super_admin", "admin", "bos", "finance", "hr"].includes(roleLower);
   const isSuperAdminOrBos = ["super_admin", "bos", "admin", "hr"].includes(roleLower);
@@ -481,7 +483,7 @@ export default function HrScreen() {
           showRefresh={false}
           action={
             activeTab === "team-attendance" ? (
-              <View className="flex-row items-center gap-2">
+              <View className="flex-row flex-wrap items-center gap-1.5 sm:gap-2">
                 {isSuperAdminOrBos && (
                   <Button
                     size="sm"
@@ -490,14 +492,20 @@ export default function HrScreen() {
                       fetchScheduleSettings();
                       setScheduleModalOpen(true);
                     }}
-                    className="gap-1.5 h-9 px-3"
+                    className="gap-1.5 h-8 px-2.5 sm:h-9 sm:px-3"
                   >
                     <Settings size={14} color={colors.text} />
-                    <Text className="text-xs font-semibold text-foreground">Atur Jam Kerja & Lembur</Text>
+                    <Text className="text-xs font-semibold text-foreground">
+                      {isMobile ? "Atur Jam Kerja" : "Atur Jam Kerja & Lembur"}
+                    </Text>
                   </Button>
                 )}
                 {isFinanceOrAdmin && (
-                  <Button size="sm" onPress={() => setManualModalOpen(true)} className="gap-1.5 h-9 px-3">
+                  <Button
+                    size="sm"
+                    onPress={() => setManualModalOpen(true)}
+                    className="gap-1.5 h-8 px-2.5 sm:h-9 sm:px-3"
+                  >
                     <Plus size={14} color="#FFFFFF" />
                     <Text className="text-xs font-semibold text-white" style={{ color: "#FFFFFF" }}>
                       Catat Presensi

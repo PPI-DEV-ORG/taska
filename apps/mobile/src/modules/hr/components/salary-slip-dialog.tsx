@@ -106,8 +106,8 @@ export function SalarySlipDialog({ selectedSlip, setSelectedSlip, isFinanceOrAdm
 
   return (
     <Dialog open={!!s} onOpenChange={(open) => !open && setSelectedSlip(null)}>
-      <DialogContent className="w-[94vw] sm:max-w-lg max-h-[92vh]">
-        <DialogHeader>
+      <DialogContent className="w-[96vw] max-w-lg max-h-[92vh] p-4 sm:p-6">
+        <DialogHeader className="pr-8">
           <DialogTitle>Slip Gaji</DialogTitle>
         </DialogHeader>
 
@@ -170,7 +170,7 @@ export function SalarySlipDialog({ selectedSlip, setSelectedSlip, isFinanceOrAdm
             {draft && isFinanceOrAdmin ? (
               <View className="rounded-xl border border-primary/40 p-3 gap-2">
                 <Text className="text-xs font-bold text-foreground">Tambahan bulan ini</Text>
-                <View className="flex-row gap-2">
+                <View className="flex-col sm:flex-row gap-2">
                   <View className="flex-1 gap-1">
                     <Text className="text-[11px] text-muted-foreground">Bonus / insentif / THR</Text>
                     <Input value={bonus} onChangeText={(v) => setBonus(formatThousands(v))} keyboardType="numeric" placeholder="0" />

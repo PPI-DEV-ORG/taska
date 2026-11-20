@@ -56,8 +56,8 @@ export function StockDetailDialog({
 
   return (
     <Dialog open={!!selectedDetail} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[96vw] max-w-xl md:max-w-2xl max-h-[85vh] p-4 sm:p-6 overflow-y-auto">
+        <DialogHeader className="pr-8">
           <DialogTitle>
             {selectedDetail?.type === "product" && "Detail Barang & Stok"}
             {selectedDetail?.type === "warehouse_product" && "Detail Stok Gudang"}

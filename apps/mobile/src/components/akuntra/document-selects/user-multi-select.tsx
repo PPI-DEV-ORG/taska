@@ -15,6 +15,7 @@ import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import type { Row } from "@/constants/modules";
 
 export interface UserMultiSelectProps {
@@ -35,6 +36,7 @@ export function UserMultiSelect({
   triggerClassName,
 }: UserMultiSelectProps) {
   const { data } = useApp();
+  const { isMobile } = useBreakpoint();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
   const [fetchedUsers, setFetchedUsers] = React.useState<Row[]>([]);
@@ -199,7 +201,7 @@ export function UserMultiSelect({
             web: { width: "min(96vw, 1050px)", maxWidth: "1050px" } as any,
           })}
         >
-          <DialogHeader>
+          <DialogHeader className="pr-8">
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Users size={20} color={colors.primary} />
@@ -227,7 +229,7 @@ export function UserMultiSelect({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-10 px-3"
+                className="h-9 px-2.5 sm:h-10 sm:px-3"
                 onPress={() => {
                   const allNames = filteredList.map(
                     (u) => u.name || u.nama || `User #${u.id}`,
@@ -238,14 +240,14 @@ export function UserMultiSelect({
                 }}
               >
                 <Text className="text-xs font-semibold">
-                  Pilih Semua ({filteredList.length})
+                  Semua ({filteredList.length})
                 </Text>
               </Button>
               {selectedNames.length > 0 && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-10 px-3"
+                  className="h-9 px-2.5 sm:h-10 sm:px-3"
                   onPress={() => setSelectedNames([])}
                 >
                   <Text className="text-xs text-muted-foreground font-semibold">
@@ -256,9 +258,72 @@ export function UserMultiSelect({
             </View>
           </View>
 
-          {/* Table */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+          {/* Cards for Mobile vs Table for Desktop */}
+          {isMobile ? (
             <ScrollView
+              className="max-h-[55vh] mt-3"
+              contentContainerClassName="gap-2 pb-2"
+              showsVerticalScrollIndicator={false}
+            >
+              {filteredList.map((u) => {
+                const name = u.name || u.nama || `User #${u.id}`;
+                const isSelected = isUserSelected(name);
+                const email = u.email || "-";
+                const role = u.roleLabel || u.role || "Staf";
+                const gudang = u.gudang || "-";
+                const status = u.status || "Aktif";
+
+                return (
+                  <Pressable
+                    key={u.id}
+                    onPress={() => toggleUser(name)}
+                    className={cn(
+                      "p-3 rounded-xl border border-border/80 bg-card gap-1.5 flex-row items-center justify-between active:scale-[0.99] transition-transform",
+                      isSelected && "border-primary/60 bg-primary/[0.04]",
+                    )}
+                  >
+                    <View className="flex-row items-center gap-2.5 flex-1 min-w-0">
+                      <View
+                        className={cn(
+                          "size-5 rounded border items-center justify-center shrink-0",
+                          isSelected
+                            ? "bg-primary border-primary"
+                            : "border-border/80 bg-card",
+                        )}
+                      >
+                        {isSelected && <Check size={12} color="#ffffff" />}
+                      </View>
+                      <View className="flex-1 min-w-0">
+                        <Text
+                          className={cn(
+                            "text-xs font-bold text-foreground",
+                            isSelected && "text-primary",
+                          )}
+                          numberOfLines={1}
+                        >
+                          {name}
+                        </Text>
+                        <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
+                          {role} {gudang && gudang !== "-" ? `· ${gudang}` : ""}
+                        </Text>
+                      </View>
+                    </View>
+                    <StatusBadge status={status} />
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    Tidak ada data pengguna yang cocok dengan &quot;{q}&quot;
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+              <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ minWidth: "100%" }}
@@ -356,6 +421,7 @@ export function UserMultiSelect({
               </View>
             </ScrollView>
           </View>
+        )}
 
           <View className="flex-row items-center justify-between mt-3 pt-2 border-t border-border/70">
             <Text className="text-xs text-muted-foreground">

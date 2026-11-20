@@ -106,6 +106,7 @@ export function DataTable({
   bulkActions?: (selectedIds: string[], clearSelection: () => void) => React.ReactNode;
 }) {
   const { isMobile } = useBreakpoint();
+  const [mobileViewMode, setMobileViewMode] = React.useState<"cards" | "table">("cards");
   const effectiveActionsWidth = actionsWidth ?? (renderActions ? 136 : 64);
   const [currentPage, setCurrentPage] = React.useState(1);
   const [limit, setLimit] = React.useState<number>(() => (pageSize === 8 ? 10 : pageSize));
@@ -224,131 +225,289 @@ export function DataTable({
           </View>
         </View>
       ) : null}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={isMobile}
-        contentContainerStyle={{ minWidth: "100%", width: isMobile ? "auto" : "100%" }}
-      >
-        <View className="w-full flex-1" style={{ minWidth: isMobile ? 760 : undefined }}>
-          {/* Header Row */}
-          <View className="border-border/70 bg-card/60 flex-row items-center border-b px-4 py-3.5 w-full">
-            {selectable && (
-              <View className="w-9 items-center justify-center pr-2">
+      {isMobile ? (
+        <View className="flex-row items-center justify-between px-3.5 py-2.5 border-b border-border/60 bg-muted/30">
+          <Text className="text-[11px] font-semibold text-muted-foreground">
+            {sortedRows.length} data ditemukan
+          </Text>
+          <View className="flex-row items-center rounded-lg border border-border/70 bg-card p-0.5">
+            <Pressable
+              onPress={() => setMobileViewMode("cards")}
+              className={cn(
+                "px-2.5 py-1 rounded-md",
+                mobileViewMode === "cards" ? "bg-primary" : "hover:bg-muted/30"
+              )}
+            >
+              <Text className={cn("text-[10px] font-bold", mobileViewMode === "cards" ? "text-primary-foreground" : "text-muted-foreground")}>
+                Kartu
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setMobileViewMode("table")}
+              className={cn(
+                "px-2.5 py-1 rounded-md",
+                mobileViewMode === "table" ? "bg-primary" : "hover:bg-muted/30"
+              )}
+            >
+              <Text className={cn("text-[10px] font-bold", mobileViewMode === "table" ? "text-primary-foreground" : "text-muted-foreground")}>
+                Tabel
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      {isMobile && mobileViewMode === "cards" ? (
+        <View className="p-3 gap-2.5">
+          {selectable && (
+            <View className="flex-row items-center justify-between px-1 py-1">
+              <Pressable
+                onPress={handleSelectAll}
+                className="flex-row items-center gap-2"
+              >
                 <Checkbox
                   checked={allSelected}
                   onCheckedChange={handleSelectAll}
                 />
-              </View>
-            )}
-
-            {columns.map((c) => {
-              const colStyle = isMobile
-                ? { width: (c.width ? c.width : Math.max(140, (c.flex ?? 1) * 140)) as any }
-                : { flex: c.flex ?? 1, minWidth: (c.width ? c.width : 100) as any };
-              return (
-                <Pressable
-                  key={c.key}
-                  onPress={() => handleSort(c.key)}
-                  style={colStyle}
-                  className="flex-row items-center gap-1.5 pr-4"
-                >
-                  <Text className="text-muted-foreground text-xs font-semibold tracking-wider" numberOfLines={1}>
-                    {c.label}
-                  </Text>
-                  {sortKey === c.key ? (
-                    sortOrder === "asc" ? (
-                      <ArrowUp size={12} color={colors.primary} />
-                    ) : (
-                      <ArrowDown size={12} color={colors.primary} />
-                    )
-                  ) : (
-                    <ArrowUpDown size={11} color={colors.muted} />
-                  )}
-                </Pressable>
-              );
-            })}
-
-            <View style={{ width: effectiveActionsWidth }} className="items-center justify-center pr-2">
-              <Text className="text-muted-foreground text-xs font-semibold">Aksi</Text>
+                <Text className="text-xs font-semibold text-muted-foreground">
+                  Pilih Semua di Halaman Ini
+                </Text>
+              </Pressable>
             </View>
-          </View>
+          )}
 
-          {/* Table Rows */}
           {currentRows.map((r, rowIdx) => {
             if (!r) return null;
             const rowKey = r.id != null ? `${r.id}-${r.direction ?? ""}-${rowIdx}` : `row-${rowIdx}`;
             const isRowSelected = (selectedIds && selectedIds.includes(String(r.id))) || selectedId === String(r.id);
+
+            const primaryCol = columns.find((c) => c.primary) || columns[0];
+            const statusCol = columns.find((c) => c.fmt === "status" || c.key === "status");
+            const otherCols = columns.filter((c) => c.key !== primaryCol?.key && c.key !== statusCol?.key);
+
+            const primaryValue = primaryCol ? String(r[primaryCol.key] ?? "-") : `Item #${r.id}`;
+            const statusValue = statusCol ? r[statusCol.key] : r.status;
+
             return (
               <Pressable
                 key={rowKey}
                 onPress={() => onRowPress?.(r)}
                 className={cn(
-                  "border-border/40 hover:bg-panel/40 active:bg-panel/60 flex-row items-center border-b px-4 py-3.5 transition-colors w-full",
-                  isRowSelected ? "bg-primary/5" : "bg-card"
+                  "p-3.5 rounded-xl border border-border/80 bg-card active:bg-panel transition-colors gap-2.5 shadow-xs",
+                  isRowSelected ? "bg-primary/5 border-primary" : ""
                 )}
               >
-                {selectable && (
-                  <View
-                    className="w-9 items-center justify-center pr-2"
-                    onStartShouldSetResponder={() => true}
-                    onTouchEnd={(e) => {
-                      e.stopPropagation();
-                      handleToggleRow(r.id);
-                    }}
-                  >
-                    <Checkbox
-                      checked={selectedIds.includes(String(r.id))}
-                      onCheckedChange={() => handleToggleRow(r.id)}
-                    />
+                {/* Header Card: Seleksi + Kolom Utama + Status */}
+                <View className="flex-row items-start justify-between gap-2">
+                  <View className="flex-1 flex-row items-start gap-2.5">
+                    {selectable && (
+                      <View
+                        className="pt-0.5"
+                        onStartShouldSetResponder={() => true}
+                        onTouchEnd={(e) => {
+                          e.stopPropagation();
+                          handleToggleRow(r.id);
+                        }}
+                      >
+                        <Checkbox
+                          checked={selectedIds.includes(String(r.id))}
+                          onCheckedChange={() => handleToggleRow(r.id)}
+                        />
+                      </View>
+                    )}
+                    <View className="flex-1">
+                      <Text className={cn("text-sm font-bold", isRowSelected ? "text-primary" : "text-foreground")}>
+                        {primaryValue}
+                      </Text>
+                      {primaryCol && primaryCol.label && (
+                        <Text className="text-[10px] text-muted-foreground">
+                          {primaryCol.label}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {statusValue != null && statusValue !== "" ? (
+                    <StatusBadge status={String(statusValue)} />
+                  ) : null}
+                </View>
+
+                {/* Body Card: Kolom-kolom pendukung */}
+                {otherCols.length > 0 && (
+                  <View className="border-t border-border/40 pt-2 gap-1.5">
+                    {otherCols.map((c) => {
+                      const val = r[c.key];
+                      if (val === undefined || val === null || val === "") return null;
+                      return (
+                        <View key={c.key} className="flex-row items-center justify-between gap-2">
+                          <Text className="text-[11px] text-muted-foreground w-1/3" numberOfLines={1}>
+                            {c.label}
+                          </Text>
+                          <View className="flex-1 items-end">
+                            <Cell fmt={c.fmt} value={val} />
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 )}
 
-                {columns.map((c) => {
-                  const cellStyle = isMobile
-                    ? { width: (c.width ? c.width : Math.max(140, (c.flex ?? 1) * 140)) as any }
-                    : { flex: c.flex ?? 1, minWidth: (c.width ? c.width : 100) as any };
-                  return (
-                    <View
-                      key={c.key}
-                      style={cellStyle}
-                      className="pr-4 justify-center"
-                    >
-                      {c.primary ? (
-                        <Text className="text-sm font-semibold text-foreground" numberOfLines={1} ellipsizeMode="tail">
-                          {String(r[c.key] ?? "-")}
-                        </Text>
-                      ) : (
-                        <Cell fmt={c.fmt} value={r[c.key]} />
-                      )}
-                    </View>
-                  );
-                })}
-
-                {/* Actions column */}
-                <View
-                  style={{ width: effectiveActionsWidth }}
-                  className="flex-row items-center justify-center gap-1.5 pr-2"
-                  onStartShouldSetResponder={() => true}
-                  onTouchEnd={(e) => e.stopPropagation()}
-                >
+                {/* Footer Card: Aksi */}
+                <View className="flex-row items-center justify-end border-t border-border/30 pt-2 mt-0.5">
                   {renderActions ? (
-                    renderActions(r)
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 rounded-lg hover:bg-panel"
-                      onPress={() => onRowPress?.(r)}
+                    <View
+                      className="flex-row items-center gap-1.5"
+                      onStartShouldSetResponder={() => true}
+                      onTouchEnd={(e) => e.stopPropagation()}
                     >
-                      <ChevronRight size={16} color={colors.muted} />
-                    </Button>
+                      {renderActions(r)}
+                    </View>
+                  ) : (
+                    <View className="flex-row items-center gap-1">
+                      <Text className="text-[11px] font-semibold text-primary">Lihat Detail</Text>
+                      <ChevronRight size={14} color={colors.primary} />
+                    </View>
                   )}
                 </View>
               </Pressable>
             );
           })}
+
+          {currentRows.length === 0 && (
+            <View className="p-8 items-center justify-center">
+              <Text className="text-sm font-semibold text-muted-foreground">
+                Tidak ada data
+              </Text>
+            </View>
+          )}
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={isMobile}
+          contentContainerStyle={{ minWidth: "100%", width: isMobile ? "auto" : "100%" }}
+        >
+          <View className="w-full flex-1" style={{ minWidth: isMobile ? 760 : undefined }}>
+            {/* Header Row */}
+            <View className="border-border/70 bg-card/60 flex-row items-center border-b px-4 py-3.5 w-full">
+              {selectable && (
+                <View className="w-9 items-center justify-center pr-2">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={handleSelectAll}
+                  />
+                </View>
+              )}
+
+              {columns.map((c) => {
+                const colStyle = isMobile
+                  ? { width: (c.width ? c.width : Math.max(140, (c.flex ?? 1) * 140)) as any }
+                  : { flex: c.flex ?? 1, minWidth: (c.width ? c.width : 100) as any };
+                return (
+                  <Pressable
+                    key={c.key}
+                    onPress={() => handleSort(c.key)}
+                    style={colStyle}
+                    className="flex-row items-center gap-1.5 pr-4"
+                  >
+                    <Text className="text-muted-foreground text-xs font-semibold tracking-wider" numberOfLines={1}>
+                      {c.label}
+                    </Text>
+                    {sortKey === c.key ? (
+                      sortOrder === "asc" ? (
+                        <ArrowUp size={12} color={colors.primary} />
+                      ) : (
+                        <ArrowDown size={12} color={colors.primary} />
+                      )
+                    ) : (
+                      <ArrowUpDown size={11} color={colors.muted} />
+                    )}
+                  </Pressable>
+                );
+              })}
+
+              <View style={{ width: effectiveActionsWidth }} className="items-center justify-center pr-2">
+                <Text className="text-muted-foreground text-xs font-semibold">Aksi</Text>
+              </View>
+            </View>
+
+            {/* Table Rows */}
+            {currentRows.map((r, rowIdx) => {
+              if (!r) return null;
+              const rowKey = r.id != null ? `${r.id}-${r.direction ?? ""}-${rowIdx}` : `row-${rowIdx}`;
+              const isRowSelected = (selectedIds && selectedIds.includes(String(r.id))) || selectedId === String(r.id);
+              return (
+                <Pressable
+                  key={rowKey}
+                  onPress={() => onRowPress?.(r)}
+                  className={cn(
+                    "border-border/40 hover:bg-panel/40 active:bg-panel/60 flex-row items-center border-b px-4 py-3.5 transition-colors w-full",
+                    isRowSelected ? "bg-primary/5" : "bg-card"
+                  )}
+                >
+                  {selectable && (
+                    <View
+                      className="w-9 items-center justify-center pr-2"
+                      onStartShouldSetResponder={() => true}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        handleToggleRow(r.id);
+                      }}
+                    >
+                      <Checkbox
+                        checked={selectedIds.includes(String(r.id))}
+                        onCheckedChange={() => handleToggleRow(r.id)}
+                      />
+                    </View>
+                  )}
+
+                  {columns.map((c) => {
+                    const cellStyle = isMobile
+                      ? { width: (c.width ? c.width : Math.max(140, (c.flex ?? 1) * 140)) as any }
+                      : { flex: c.flex ?? 1, minWidth: (c.width ? c.width : 100) as any };
+                    return (
+                      <View
+                        key={c.key}
+                        style={cellStyle}
+                        className="pr-4 justify-center"
+                      >
+                        {c.primary ? (
+                          <Text className="text-sm font-semibold text-foreground" numberOfLines={1} ellipsizeMode="tail">
+                            {String(r[c.key] ?? "-")}
+                          </Text>
+                        ) : (
+                          <Cell fmt={c.fmt} value={r[c.key]} />
+                        )}
+                      </View>
+                    );
+                  })}
+
+                  {/* Actions column */}
+                  <View
+                    style={{ width: effectiveActionsWidth }}
+                    className="flex-row items-center justify-center gap-1.5 pr-2"
+                    onStartShouldSetResponder={() => true}
+                    onTouchEnd={(e) => e.stopPropagation()}
+                  >
+                    {renderActions ? (
+                      renderActions(r)
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 rounded-lg hover:bg-panel"
+                        onPress={() => onRowPress?.(r)}
+                      >
+                        <ChevronRight size={16} color={colors.muted} />
+                      </Button>
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
 
       {/* Pagination Footer */}
       <View className="border-border/60 bg-card/60 flex-row flex-wrap items-center justify-between border-t px-4 py-3 gap-3">

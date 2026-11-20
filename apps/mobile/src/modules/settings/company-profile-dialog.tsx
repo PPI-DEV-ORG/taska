@@ -167,24 +167,24 @@ export function CompanyProfileDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-4xl max-h-[92vh] p-4 sm:p-6">
         <DialogHeader>
-          <View className="flex-row flex-wrap items-center justify-between gap-2 pr-6">
-            <View className="flex-row items-center gap-2.5">
-              <View className="size-9 rounded-xl bg-primary/15 items-center justify-center">
+          <View className="flex-row items-center justify-between gap-2 pr-8">
+            <View className="flex-1 min-w-0 flex-row items-center gap-2.5">
+              <View className="size-9 rounded-xl bg-primary/15 items-center justify-center shrink-0">
                 <Building2 size={18} color={colors.primary} />
               </View>
-              <View>
-                <DialogTitle className="text-base sm:text-lg font-bold">
-                  Profil Perusahaan, Template Dokumen & Format Nomor
+              <View className="flex-1 min-w-0">
+                <DialogTitle className="text-base sm:text-lg font-bold" numberOfLines={1}>
+                  Profil Perusahaan & Format Dokumen
                 </DialogTitle>
-                <Text className="text-xs text-muted-foreground">
-                  Pusat pengaturan identitas perusahaan (White-Label) untuk seluruh cetakan dokumen & penomoran otomatis
+                <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                  Pengaturan identitas perusahaan & format penomoran otomatis
                 </Text>
               </View>
             </View>
           </View>
 
           {/* Tab Switcher */}
-          <View className="flex-row items-center gap-2 pt-3">
+          <View className="flex-row flex-wrap items-center gap-2 pt-3">
             <Pressable
               onPress={() => setTab("company")}
               className={cn(

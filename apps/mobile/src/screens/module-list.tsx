@@ -7,6 +7,7 @@ import { Text } from "@/components/ui/text";
 import { EmptyState, PageHeader, Chip } from "@/components/akuntra/basics";
 import { DataTable, FilterBar } from "@/components/akuntra/data-table";
 import { ConfirmDialog, FormDialog } from "@/components/akuntra/dialogs";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { hasUserPermission, findRoleDefForUser, type ModuleDef, type Role, type Row, type User } from "@/constants/modules";
 import { RoleManagementDialog } from "@/modules/users/role-management-dialog";
@@ -131,6 +132,7 @@ export function scopeRows(def: ModuleDef, rows: Row[], u: User): Row[] {
 
 export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?: string; headerExtra?: React.ReactNode }) {
   const router = useRouter();
+  const { isMobile } = useBreakpoint();
   const { user, data, deleteRow, refreshModule, can } = useApp();
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState("");
@@ -397,29 +399,56 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
 
   const action =
     allowed || canManagePaymentTerms || canManageRolesAndCompany ? (
-      <View className="flex-row flex-wrap items-center gap-2">
+      <View className="flex-row flex-wrap items-center gap-2 w-full sm:w-auto">
         {canManageRolesAndCompany ? (
           <>
-            <Button variant="outline" onPress={() => setCompanyDialogOpen(true)} className="gap-1.5 h-10 px-3">
-              <Building2 size={15} color={colors.primary} />
-              <Text className="text-xs font-semibold">Profil Perusahaan & Format Dokumen</Text>
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => setCompanyDialogOpen(true)}
+              className="gap-1.5 h-9 px-2.5"
+            >
+              <Building2 size={14} color={colors.primary} />
+              <Text className="text-xs font-semibold">
+                {isMobile ? "Profil Perusahaan" : "Profil Perusahaan & Format Dokumen"}
+              </Text>
             </Button>
-            <Button variant="outline" onPress={() => setRoleDialogOpen(true)} className="gap-1.5 h-10 px-3">
-              <Shield size={15} color={colors.primary} />
-              <Text className="text-xs font-semibold">Kelola Role & Hak Akses</Text>
+            <Button
+              size="sm"
+              variant="outline"
+              onPress={() => setRoleDialogOpen(true)}
+              className="gap-1.5 h-9 px-2.5"
+            >
+              <Shield size={14} color={colors.primary} />
+              <Text className="text-xs font-semibold">
+                {isMobile ? "Role & Akses" : "Kelola Role & Hak Akses"}
+              </Text>
             </Button>
           </>
         ) : null}
         {canManagePaymentTerms ? (
-          <Button variant="outline" onPress={() => setPaymentTermsOpen(true)} className="gap-1.5 h-10 px-3">
-            <CreditCard size={15} color={colors.primary} />
-            <Text className="text-xs font-semibold">Atur Syarat Pembayaran</Text>
+          <Button
+            size="sm"
+            variant="outline"
+            onPress={() => setPaymentTermsOpen(true)}
+            className="gap-1.5 h-9 px-2.5"
+          >
+            <CreditCard size={14} color={colors.primary} />
+            <Text className="text-xs font-semibold">
+              {isMobile ? "Syarat Bayar" : "Atur Syarat Pembayaran"}
+            </Text>
           </Button>
         ) : null}
         {allowed ? (
-          <Button onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}>
-            <Plus size={16} color={colors.background} />
-            <Text>{def.createLabel ?? `Tambah ${def.singular}`}</Text>
+          <Button
+            size="sm"
+            onPress={() => (def.newHref ? router.push(def.newHref as any) : setOpen(true))}
+            className="gap-1.5 h-9 px-3"
+          >
+            <Plus size={15} color={colors.background} />
+            <Text className="text-xs font-semibold text-white">
+              {def.createLabel ?? `Tambah ${def.singular}`}
+            </Text>
           </Button>
         ) : null}
       </View>

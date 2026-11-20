@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/akuntra/status-badge";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
@@ -38,6 +39,7 @@ export function CustomerSelect({
   onAddNew,
   addNewLabel = "+ Tambah Customer Baru",
 }: CustomerSelectProps) {
+  const { isMobile } = useBreakpoint();
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -183,10 +185,10 @@ export function CustomerSelect({
           })}
         >
           <DialogHeader>
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2">
+            <View className="flex-row items-center justify-between pr-8">
+              <View className="flex-row items-center gap-2 flex-1 mr-2">
                 <Building2 size={20} color={colors.primary} />
-                <DialogTitle>Pilih Customer / Pelanggan</DialogTitle>
+                <DialogTitle numberOfLines={1}>Pilih Customer / Pelanggan</DialogTitle>
               </View>
               {onAddNew ? (
                 <Button
@@ -196,7 +198,7 @@ export function CustomerSelect({
                     setOpen(false);
                     onAddNew();
                   }}
-                  className="flex-row items-center gap-1.5"
+                  className="flex-row items-center gap-1.5 shrink-0"
                 >
                   <Text className="text-xs font-semibold text-primary">
                     {addNewLabel}
@@ -212,142 +214,227 @@ export function CustomerSelect({
             <Input
               value={q}
               onChangeText={setQ}
-              placeholder="Cari berdasarkan nama customer, PIC/kontak, kota, email, telepon..."
+              placeholder="Cari berdasarkan nama customer, PIC, kota..."
               autoFocus
               className="h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:border-transparent outline-none ring-0 web:focus-visible:ring-0 web:focus-visible:outline-none"
             />
           </View>
 
-          {/* Table */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ minWidth: "100%" }}
-            >
-              <View className="flex-1 min-w-[700px]">
-                {/* Header */}
-                <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
-                    Nama Pelanggan / Perusahaan
-                  </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[150px] px-2">
-                    Kontak / PIC
-                  </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">
-                    Kota / Wilayah
-                  </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[100px] px-2 text-center">
-                    Status
-                  </Text>
-                  <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
-                    Aksi
-                  </Text>
-                </View>
-
-                {/* Rows */}
-                <ScrollView
-                  className="max-h-[50vh]"
-                  contentContainerClassName="divide-y divide-border/40"
-                >
-                  {allowClear && (
-                    <Pressable
-                      onPress={() => handleSelect(null)}
-                      className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
-                    >
-                      <Text className="text-xs font-medium text-muted-foreground">
-                        - Tanpa Customer / Kosongkan -
-                      </Text>
-                      {!customerId && !value && (
-                        <Check size={16} color={colors.primary} />
-                      )}
-                    </Pressable>
+          {isMobile ? (
+            /* Mobile Card View: Tidak terpotong, touch-friendly, tanpa scroll horizontal */
+            <ScrollView className="max-h-[58vh] mt-3" contentContainerClassName="gap-2 pb-2">
+              {allowClear && (
+                <Pressable
+                  onPress={() => handleSelect(null)}
+                  className={cn(
+                    "p-3 rounded-xl border border-dashed border-border/80 flex-row items-center justify-between",
+                    !customerId && !value ? "bg-primary/10 border-primary" : "bg-card hover:bg-muted/30"
                   )}
+                >
+                  <Text className="text-xs font-semibold text-muted-foreground">
+                    - Tanpa Customer / Kosongkan -
+                  </Text>
+                  {!customerId && !value && <Check size={16} color={colors.primary} />}
+                </Pressable>
+              )}
 
-                  {filteredList.map((c) => {
-                    const isSelected = selectedCustomer?.id === c.id;
-                    const name =
-                      c.company || c.nama || c.name || `Customer #${c.id}`;
-                    const pic = c.kontak || c.pic || "-";
-                    const kota = c.kota || c.city || "-";
-                    const telp = c.telepon || c.phone || "";
-                    const email = c.email || "";
-                    const status = c.status || "Aktif";
+              {filteredList.map((c) => {
+                const isSelected = selectedCustomer?.id === c.id;
+                const name = c.company || c.nama || c.name || `Customer #${c.id}`;
+                const pic = c.kontak || c.pic || "-";
+                const kota = c.kota || c.city || "-";
+                const telp = c.telepon || c.phone || "";
+                const email = c.email || "";
+                const status = c.status || "Aktif";
 
-                    return (
-                      <Pressable
-                        key={c.id}
-                        onPress={() => handleSelect(c)}
-                        className={cn(
-                          "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
-                          isSelected && "bg-primary/10",
-                        )}
-                      >
-                        <View className="w-1/3 min-w-[220px]">
-                          <Text
-                            className={cn(
-                              "text-xs font-bold text-foreground",
-                              isSelected && "text-primary",
-                            )}
-                          >
-                            {name}
-                          </Text>
-                          {telp || email ? (
-                            <Text className="text-[11px] text-muted-foreground mt-0.5">
-                              {[telp, email].filter(Boolean).join(" · ")}
-                            </Text>
-                          ) : null}
-                        </View>
-
-                        <View className="w-1/4 min-w-[150px] px-2">
-                          <Text className="text-xs font-semibold text-foreground">
-                            {pic}
-                          </Text>
-                        </View>
-
-                        <View className="w-36 px-2">
-                          <Text className="text-xs text-foreground">
+                return (
+                  <Pressable
+                    key={c.id}
+                    onPress={() => handleSelect(c)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card active:bg-panel transition-colors gap-2 shadow-xs",
+                      isSelected ? "border-primary bg-primary/5" : ""
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1">
+                        <Text className={cn("text-sm font-bold", isSelected ? "text-primary" : "text-foreground")}>
+                          {name}
+                        </Text>
+                        {kota && kota !== "-" ? (
+                          <Text className="text-[11px] text-muted-foreground mt-0.5">
                             {kota}
                           </Text>
-                        </View>
-
-                        <View className="flex-1 min-w-[100px] items-center px-2">
-                          <StatusBadge status={status} />
-                        </View>
-
-                        <View className="w-20 items-center justify-center">
-                          {isSelected ? (
-                            <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
-                              <Check size={14} color={colors.primary} />
-                            </View>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2.5"
-                            >
-                              <Text className="text-[11px] font-semibold text-muted-foreground">
-                                Pilih
-                              </Text>
-                            </Button>
-                          )}
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-
-                  {filteredList.length === 0 && (
-                    <View className="p-8 items-center justify-center gap-2">
-                      <Text className="text-sm font-semibold text-muted-foreground">
-                        Tidak ada data customer yang cocok dengan &quot;{q}
-                        &quot;
-                      </Text>
+                        ) : null}
+                      </View>
+                      <StatusBadge status={status} />
                     </View>
-                  )}
-                </ScrollView>
-              </View>
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View className="flex-1 mr-2">
+                        <Text className="text-xs font-medium text-foreground">
+                          PIC: <Text className="font-semibold text-foreground">{pic}</Text>
+                        </Text>
+                        {telp || email ? (
+                          <Text className="text-[11px] text-muted-foreground mt-0.5" numberOfLines={1}>
+                            {[telp, email].filter(Boolean).join(" · ")}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    Tidak ada customer yang cocok dengan &quot;{q}&quot;
+                  </Text>
+                </View>
+              )}
             </ScrollView>
-          </View>
+          ) : (
+            /* Desktop Table View */
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ minWidth: "100%" }}
+              >
+                <View className="flex-1 min-w-[700px]">
+                  {/* Header */}
+                  <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
+                    <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px]">
+                      Nama Pelanggan / Perusahaan
+                    </Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[150px] px-2">
+                      Kontak / PIC
+                    </Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-36 px-2">
+                      Kota / Wilayah
+                    </Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground flex-1 min-w-[100px] px-2 text-center">
+                      Status
+                    </Text>
+                    <Text className="text-[11px] font-bold text-muted-foreground w-20 text-center">
+                      Aksi
+                    </Text>
+                  </View>
+
+                  {/* Rows */}
+                  <ScrollView
+                    className="max-h-[50vh]"
+                    contentContainerClassName="divide-y divide-border/40"
+                  >
+                    {allowClear && (
+                      <Pressable
+                        onPress={() => handleSelect(null)}
+                        className="p-3.5 hover:bg-muted/30 active:bg-muted/50 flex-row items-center justify-between"
+                      >
+                        <Text className="text-xs font-medium text-muted-foreground">
+                          - Tanpa Customer / Kosongkan -
+                        </Text>
+                        {!customerId && !value && (
+                          <Check size={16} color={colors.primary} />
+                        )}
+                      </Pressable>
+                    )}
+
+                    {filteredList.map((c) => {
+                      const isSelected = selectedCustomer?.id === c.id;
+                      const name =
+                        c.company || c.nama || c.name || `Customer #${c.id}`;
+                      const pic = c.kontak || c.pic || "-";
+                      const kota = c.kota || c.city || "-";
+                      const telp = c.telepon || c.phone || "";
+                      const email = c.email || "";
+                      const status = c.status || "Aktif";
+
+                      return (
+                        <Pressable
+                          key={c.id}
+                          onPress={() => handleSelect(c)}
+                          className={cn(
+                            "p-3.5 hover:bg-primary/5 active:bg-primary/10 transition-colors flex-row items-center justify-between gap-2",
+                            isSelected && "bg-primary/10",
+                          )}
+                        >
+                          <View className="w-1/3 min-w-[220px]">
+                            <Text
+                              className={cn(
+                                "text-xs font-bold text-foreground",
+                                isSelected && "text-primary",
+                              )}
+                            >
+                              {name}
+                            </Text>
+                            {telp || email ? (
+                              <Text className="text-[11px] text-muted-foreground mt-0.5">
+                                {[telp, email].filter(Boolean).join(" · ")}
+                              </Text>
+                            ) : null}
+                          </View>
+
+                          <View className="w-1/4 min-w-[150px] px-2">
+                            <Text className="text-xs font-semibold text-foreground">
+                              {pic}
+                            </Text>
+                          </View>
+
+                          <View className="w-36 px-2">
+                            <Text className="text-xs text-foreground">
+                              {kota}
+                            </Text>
+                          </View>
+
+                          <View className="flex-1 min-w-[100px] items-center px-2">
+                            <StatusBadge status={status} />
+                          </View>
+
+                          <View className="w-20 items-center justify-center">
+                            {isSelected ? (
+                              <View className="size-7 rounded-full bg-primary/20 items-center justify-center">
+                                <Check size={14} color={colors.primary} />
+                              </View>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2.5"
+                              >
+                                <Text className="text-[11px] font-semibold text-muted-foreground">
+                                  Pilih
+                                </Text>
+                              </Button>
+                            )}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+
+                    {filteredList.length === 0 && (
+                      <View className="p-8 items-center justify-center gap-2">
+                        <Text className="text-sm font-semibold text-muted-foreground">
+                          Tidak ada data customer yang cocok dengan &quot;{q}
+                          &quot;
+                        </Text>
+                      </View>
+                    )}
+                  </ScrollView>
+                </View>
+              </ScrollView>
+            </View>
+          )}
         </DialogContent>
       </Dialog>
     </>

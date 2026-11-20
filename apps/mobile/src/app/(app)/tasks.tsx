@@ -71,8 +71,8 @@ export default function TasksScreen() {
                 t.parent ? "ml-6 pl-3 border-l-2 border-primary/40" : ""
               }`}
             >
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1 pr-3">
+              <View className="flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <View className="flex-1 pr-0 sm:pr-3 min-w-0">
                   <Text className="text-sm font-semibold">{t.nama}</Text>
                   {t.deskripsi ? (
                     <Text className="text-muted-foreground text-xs mt-0.5" numberOfLines={2}>
@@ -83,18 +83,21 @@ export default function TasksScreen() {
                     Project: {t.project} · PIC: {t.pic} · Tenggat: {tanggal(t.tenggat)}
                   </Text>
                 </View>
-                <View className="flex-row items-center gap-2">
+                <View className="flex-row flex-wrap items-center gap-2 justify-between sm:justify-end pt-1 sm:pt-0 border-t sm:border-t-0 border-border/40">
                   <StatusBadge status={t.status} />
-                  <Button variant="outline" size="sm" onPress={() => setDetailTask(t)}>
-                    <Text className="text-xs">Detail / Edit</Text>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={() => toggleTask(t)}
-                  >
-                    <Text className="text-xs">{t.status === "DONE" ? "Buka lagi" : "Tandai selesai"}</Text>
-                  </Button>
+                  <View className="flex-row items-center gap-1.5">
+                    <Button variant="outline" size="sm" className="h-8 px-2.5" onPress={() => setDetailTask(t)}>
+                      <Text className="text-xs">Detail</Text>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2.5"
+                      onPress={() => toggleTask(t)}
+                    >
+                      <Text className="text-xs">{t.status === "DONE" ? "Buka lagi" : "Selesai"}</Text>
+                    </Button>
+                  </View>
                 </View>
               </View>
             </View>

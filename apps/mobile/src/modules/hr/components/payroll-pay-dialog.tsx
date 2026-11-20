@@ -52,7 +52,7 @@ function PayInner({ target, onClose, onPaid }: { target: PayTarget; onClose: () 
 
   return (
     <DialogContent className="w-[94vw] max-w-md">
-      <DialogHeader>
+      <DialogHeader className="pr-8">
         <DialogTitle>{target.mode === "one" ? `Bayar gaji ${target.name}` : `Bayar semua gaji ${formatPeriodLabel(target.period)}`}</DialogTitle>
       </DialogHeader>
       <View className="gap-3 py-1">

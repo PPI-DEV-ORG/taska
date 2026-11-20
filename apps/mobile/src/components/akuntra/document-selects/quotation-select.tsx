@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/akuntra/status-badge";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ export function QuotationSelect({
   allowClear = false,
   filter,
 }: QuotationSelectProps) {
+  const { isMobile } = useBreakpoint();
   const { data } = useApp();
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -163,18 +165,107 @@ export function QuotationSelect({
           </View>
 
           {/* Table */}
-          <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ minWidth: "100%" }}
-            >
-              <View className="flex-1 min-w-[760px]">
-                {/* Header */}
-                <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
-                  <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
-                    Nomor Penawaran & Versi
+          {isMobile ? (
+            /* Mobile Card View */
+            <ScrollView className="max-h-[58vh] mt-3" contentContainerClassName="gap-2 pb-2">
+              {allowClear && (
+                <Pressable
+                  onPress={() => handleSelect(null)}
+                  className={cn(
+                    "p-3 rounded-xl border border-dashed border-border/80 flex-row items-center justify-between",
+                    !quotationId && !value ? "bg-primary/10 border-primary" : "bg-card hover:bg-muted/30"
+                  )}
+                >
+                  <Text className="text-xs font-semibold text-muted-foreground">
+                    - Tanpa Penawaran (Buat Manual / Kosongkan) -
                   </Text>
+                  {!quotationId && !value && <Check size={16} color={colors.primary} />}
+                </Pressable>
+              )}
+
+              {filteredList.map((item) => {
+                const isSelected = selectedQuotation?.id === item.id;
+                const no = item.nomor || `Quotation #${item.id}`;
+                const versi = item.versi ? `v${item.versi}` : "v1";
+                const tgl = item.tanggal || item.createdAt || "";
+                const totalVal = Number(item.totalAfterDisc || item.total || item.nilai || 0);
+
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => handleSelect(item)}
+                    className={cn(
+                      "p-3.5 rounded-xl border border-border/80 bg-card active:bg-panel transition-colors gap-2 shadow-xs",
+                      isSelected ? "border-primary bg-primary/5" : ""
+                    )}
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1">
+                        <View className="flex-row items-center gap-1.5 flex-wrap">
+                          <Text className={cn("text-sm font-bold font-mono", isSelected ? "text-primary" : "text-foreground")}>
+                            {no}
+                          </Text>
+                          <View className="px-1.5 py-0.5 rounded bg-muted border border-border/80">
+                            <Text className="text-[10px] font-semibold text-muted-foreground">{versi}</Text>
+                          </View>
+                        </View>
+                        {tgl ? (
+                          <View className="flex-row items-center gap-1 mt-0.5">
+                            <Calendar size={10} color={colors.muted} />
+                            <Text className="text-[11px] text-muted-foreground">{formatDate(tgl)}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <StatusBadge status={item.status || "Aktif"} />
+                    </View>
+
+                    <View className="flex-row items-center justify-between border-t border-border/40 pt-2 mt-0.5">
+                      <View className="flex-1 mr-2">
+                        <Text className="text-xs font-medium text-foreground" numberOfLines={1}>
+                          Klien: <Text className="font-semibold">{item.customer || "-"}</Text>
+                        </Text>
+                        {totalVal > 0 ? (
+                          <Text className="text-[11px] font-semibold text-primary mt-0.5">
+                            {rupiah(totalVal)}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      {isSelected ? (
+                        <View className="size-7 rounded-full bg-primary/20 items-center justify-center shrink-0">
+                          <Check size={14} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <View className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                          <Text className="text-[11px] font-semibold text-primary">Pilih</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <View className="p-8 items-center justify-center gap-2">
+                  <Text className="text-sm font-semibold text-muted-foreground text-center">
+                    Tidak ada penawaran yang cocok dengan &quot;{q}&quot;
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View className="border border-border/80 rounded-xl overflow-hidden mt-3 bg-card flex-1">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ minWidth: "100%" }}
+              >
+                <View className="flex-1 min-w-[760px]">
+                  {/* Header */}
+                  <View className="flex-row items-center bg-muted/60 px-4 py-2.5 border-b border-border/70 text-xs font-bold text-muted-foreground">
+                    <Text className="text-[11px] font-bold text-muted-foreground w-1/4 min-w-[180px]">
+                      Nomor Penawaran & Versi
+                    </Text>
                   <Text className="text-[11px] font-bold text-muted-foreground w-1/3 min-w-[220px] px-2">
                     Pelanggan & Prospek
                   </Text>
@@ -336,6 +427,7 @@ export function QuotationSelect({
               </View>
             </ScrollView>
           </View>
+        )}
         </DialogContent>
       </Dialog>
     </>

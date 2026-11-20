@@ -57,20 +57,20 @@ export function ManualJournalDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh]">
-        <DialogHeader>
-          <DialogTitle>Input Ayat Jurnal Manual (Manual Journal Entry)</DialogTitle>
+      <DialogContent className="w-[96vw] max-w-xl max-h-[90vh] p-4 sm:p-6">
+        <DialogHeader className="pr-8">
+          <DialogTitle>Input Ayat Jurnal Manual</DialogTitle>
         </DialogHeader>
 
         <ScrollView className="max-h-[60vh] gap-3 p-1">
-          <View className="flex-row gap-2">
+          <View className="flex-col sm:flex-row gap-2.5">
             <View className="flex-1">
               <FormField label="Tanggal Jurnal" required>
                 <DatePicker value={mjDate} onChange={setMjDate} />
               </FormField>
             </View>
             <View className="flex-1">
-              <FormField label="Nomor Referensi Dokumen (Opsional)">
+              <FormField label="Nomor Referensi (Opsional)">
                 <Input value={mjRef} onChangeText={setMjRef} placeholder="Contoh: BKK-01/X/2026 atau BM-08" />
               </FormField>
             </View>

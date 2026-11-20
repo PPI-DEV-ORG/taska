@@ -396,8 +396,8 @@ export function FileManagementScreen() {
             {/* Distribusi Berkas Berdasarkan Sub-Folder Modul */}
             {overview?.subfolders && overview.subfolders.length > 0 ? (
               <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-                <View className="flex-row items-center justify-between">
-                  <View>
+                <View className="flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <View className="flex-1 min-w-0">
                     <Text className="text-sm font-bold text-foreground">
                       Distribusi Berkas per Modul (Sub-Folder Server)
                     </Text>
@@ -413,6 +413,7 @@ export function FileManagementScreen() {
                       setFlatListView(true);
                       setActiveTab("files");
                     }}
+                    className="self-start sm:self-auto"
                   >
                     <Text className="text-xs font-semibold text-primary">Lihat Semua</Text>
                   </Button>
@@ -541,8 +542,8 @@ export function FileManagementScreen() {
             {!currentFolder && !flatListView && !search.trim() ? (
               <View className="space-y-4">
                 {/* Search Bar & Aksi Global */}
-                <View className="flex-row flex-wrap items-center justify-between gap-3">
-                  <View className="flex-1 min-w-[260px] flex-row items-center rounded-xl border border-border bg-background px-3 py-1.5">
+                <View className="flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <View className="flex-1 min-w-0 flex-row items-center rounded-xl border border-border bg-background px-3 py-1.5">
                     <Search size={16} className="text-muted-foreground" />
                     <Input
                       placeholder="Cari berkas secara global (nama, kode, deskripsi)..."
@@ -552,7 +553,7 @@ export function FileManagementScreen() {
                     />
                   </View>
 
-                  <View className="flex-row items-center gap-2">
+                  <View className="flex-row flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -607,8 +608,8 @@ export function FileManagementScreen() {
                 ) : null}
 
                 {/* Header Bagian Folder Grid */}
-                <View className="flex-row items-center justify-between pt-1">
-                  <View>
+                <View className="flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                  <View className="flex-1 min-w-0">
                     <Text className="text-sm font-bold text-foreground">
                       {activeTab === "orphans" ? "Direktori Berkas Lepas per Modul" : "Direktori Berkas per Modul ERP"}
                     </Text>
@@ -820,7 +821,7 @@ export function FileManagementScreen() {
                             </Pressable>
                           ) : null}
 
-                          <View className="flex-1 space-y-1">
+                          <View className="flex-1 min-w-0 space-y-1">
                             <View className="flex-row flex-wrap items-center gap-2">
                               <FileKindBadge kind={item.kind} extension={item.extension} />
                               <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
@@ -939,8 +940,8 @@ export function FileManagementScreen() {
         {/* TAB 4: PENYIMPANAN EKSTERNAL */}
         {activeTab === "providers" ? (
           <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-            <View className="flex-row items-center justify-between">
-              <View>
+            <View className="flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <View className="flex-1 min-w-0">
                 <Text className="text-sm font-bold text-foreground">Daftar Penyimpanan Terdaftar</Text>
                 <Text className="text-xs text-muted-foreground">
                   Kelola koneksi MinIO, S3, NAS Mount, dan WebDAV kantor Anda
@@ -952,7 +953,7 @@ export function FileManagementScreen() {
                   setProviderToEdit(null);
                   setProviderFormOpen(true);
                 }}
-                className="gap-1.5"
+                className="gap-1.5 self-start sm:self-auto"
                 style={{ backgroundColor: colors.primary }}
               >
                 <Plus size={14} color="#FFF" />
@@ -963,27 +964,33 @@ export function FileManagementScreen() {
             <View className="divide-y divide-border/60">
               {providers.map((item) => (
                 <View key={item.id} className="py-4 space-y-3">
-                  <View className="flex-row items-start justify-between">
-                    <View className="gap-1">
-                      <View className="flex-row items-center gap-2">
+                  <View className="flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <View className="flex-1 min-w-0 gap-1">
+                      <View className="flex-row flex-wrap items-center gap-2">
                         <Text className="text-sm font-bold text-foreground">{item.name}</Text>
                         <ProviderTypeBadge type={item.type} isDefault={item.isDefault} />
                       </View>
-                      <Text className="text-xs font-mono text-muted-foreground">
-                        {item.type === "S3"
-                          ? `Bucket: ${item.config?.bucket || "-"} • Endpoint: ${item.config?.endpoint || "AWS S3"}`
-                          : item.type === "NAS_MOUNT"
-                          ? `Mount: ${item.config?.mountPath || "-"}`
-                          : item.type === "WEBDAV"
-                          ? `URL: ${item.config?.url || "-"}`
-                          : "Filesystem Lokal Server"}
-                      </Text>
+                      <View className="w-full min-w-0 overflow-hidden">
+                        <Text
+                          className="text-xs font-mono text-muted-foreground break-all"
+                          numberOfLines={2}
+                          ellipsizeMode="middle"
+                        >
+                          {item.type === "S3"
+                            ? `Bucket: ${item.config?.bucket || "-"} • Endpoint: ${item.config?.endpoint || "AWS S3"}`
+                            : item.type === "NAS_MOUNT"
+                            ? `Mount: ${item.config?.mountPath || "-"}`
+                            : item.type === "WEBDAV"
+                            ? `URL: ${item.config?.url || "-"}`
+                            : "Filesystem Lokal Server"}
+                        </Text>
+                      </View>
                     </View>
 
                     {/* Status Health */}
                     {item.health ? (
                       <View
-                        className="flex-row items-center gap-1.5 rounded-full px-2.5 py-1 border"
+                        className="self-start sm:self-auto flex-row items-center gap-1.5 rounded-full px-2.5 py-1 border shrink-0"
                         style={{
                           backgroundColor: item.health.ok ? "#10B98114" : "#EF444414",
                           borderColor: item.health.ok ? "#10B98133" : "#EF444433",
@@ -1004,12 +1011,12 @@ export function FileManagementScreen() {
                   </View>
 
                   {/* Actions Bar */}
-                  <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/40">
+                  <View className="flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-border/40">
                     <Text className="text-xs text-muted-foreground">
                       Menyimpan: <Text className="font-semibold text-foreground">{item.fileCount || 0}</Text> berkas
                     </Text>
 
-                    <View className="flex-row items-center gap-2">
+                    <View className="flex-row flex-wrap items-center gap-2">
                       <Button
                         variant="outline"
                         size="sm"
@@ -1068,8 +1075,8 @@ export function FileManagementScreen() {
           <View className="space-y-6">
             {/* Header Migrasi */}
             <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-              <View className="flex-row items-center justify-between">
-                <View>
+              <View className="flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <View className="flex-1 min-w-0">
                   <Text className="text-sm font-bold text-foreground">Jadwal Migrasi Otomatis</Text>
                   <Text className="text-xs text-muted-foreground">
                     Aturan periodik untuk memindahkan berkas secara rutin (misal setiap 3 hari atau 1 minggu)
@@ -1081,7 +1088,7 @@ export function FileManagementScreen() {
                     setScheduleToEdit(null);
                     setScheduleOpen(true);
                   }}
-                  className="gap-1.5"
+                  className="gap-1.5 self-start sm:self-auto"
                   style={{ backgroundColor: colors.primary }}
                 >
                   <Plus size={14} color="#FFF" />
@@ -1176,8 +1183,8 @@ export function FileManagementScreen() {
 
                     return (
                       <View key={job.id} className="py-3.5 space-y-2">
-                        <View className="flex-row items-start justify-between">
-                          <View className="gap-0.5">
+                        <View className="flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                          <View className="flex-1 min-w-0 gap-0.5">
                             <View className="flex-row items-center gap-2">
                               <Text className="text-xs font-bold text-foreground">
                                 Migrasi #{job.id} ({job.mode})
@@ -1208,7 +1215,7 @@ export function FileManagementScreen() {
                           </View>
 
                           {/* Action Pembersihan & Rollback */}
-                          <View className="flex-row items-center gap-1.5">
+                          <View className="flex-row flex-wrap items-center gap-1.5 pt-1 sm:pt-0">
                             {hasPendingClean ? (
                               <>
                                 <Button

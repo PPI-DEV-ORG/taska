@@ -57,9 +57,9 @@ function StockReplacementDialogContent({
   }
 
   return (
-    <DialogContent className="sm:max-w-xl md:max-w-2xl">
-      <DialogHeader>
-        <DialogTitle>Penggantian Unit Rusak / Retur (SN Lama → SN Baru)</DialogTitle>
+    <DialogContent className="w-[96vw] max-w-xl md:max-w-2xl max-h-[90vh] p-4 sm:p-6">
+      <DialogHeader className="pr-8">
+        <DialogTitle numberOfLines={2}>Penggantian Unit Rusak / Retur (SN Baru)</DialogTitle>
       </DialogHeader>
       <View className="gap-4">
         <Text className="text-text-secondary text-xs">

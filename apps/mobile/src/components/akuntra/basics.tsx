@@ -117,24 +117,26 @@ export function PageHeader({
   }
 
   return (
-    <View className="mb-6 gap-2">
+    <View className="mb-6 gap-2 w-full">
       {back ? (
         <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace("/dashboard"))} className="min-h-[44px] flex-row items-center gap-2 self-start">
           <ArrowLeft size={18} color={colors.textSecondary} />
           <Text className="text-text-secondary text-sm">Kembali</Text>
         </Pressable>
       ) : null}
-      <View className="flex-row flex-wrap items-center justify-between gap-3">
-        <View className="min-w-[200px] flex-1 gap-1">
-          <Text className="text-2xl lg:text-3xl font-bold tracking-tight text-foreground">{title}</Text>
-          {subtitle ? <Text className="text-text-secondary text-sm">{subtitle}</Text> : null}
-          {status ? <View className="mt-1"><StatusBadge status={status} /></View> : null}
+      <View className="flex-col sm:flex-row sm:items-center sm:justify-between gap-3 w-full">
+        <View className="w-full sm:flex-1 min-w-0 gap-1">
+          <Text className="text-2xl lg:text-3xl font-bold tracking-tight text-foreground" numberOfLines={2}>
+            {title}
+          </Text>
+          {subtitle ? <Text className="text-text-secondary text-sm" numberOfLines={2}>{subtitle}</Text> : null}
+          {status ? <View className="mt-1 self-start"><StatusBadge status={status} /></View> : null}
         </View>
-        <View className="flex-row flex-wrap items-center gap-2">
+        <View className="w-full sm:w-auto flex-row flex-wrap items-center gap-2">
           {showRefresh ? (
-            <Button variant="outline" size="sm" disabled={refreshing} onPress={handleRefresh}>
-              <RefreshCw size={15} color={colors.text} />
-              <Text>{refreshing ? "Memuat..." : "Refresh"}</Text>
+            <Button variant="outline" size="sm" disabled={refreshing} onPress={handleRefresh} className="h-9">
+              <RefreshCw size={14} color={colors.text} />
+              <Text className="text-xs">{refreshing ? "Memuat..." : "Refresh"}</Text>
             </Button>
           ) : null}
           {action}
