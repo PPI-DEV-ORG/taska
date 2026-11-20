@@ -94,9 +94,35 @@ export function FileDetailModal({
     return () => clearTimeout(timer);
   }, [visible, fileId, loadDetail]);
 
-  const copyChecksum = () => {
-    if (file?.checksumSha256 && typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(file.checksumSha256);
+  const copyChecksum = async () => {
+    if (!file?.checksumSha256) return;
+    let copied = false;
+    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(file.checksumSha256);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+    if (!copied && typeof document !== "undefined") {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = file.checksumSha256;
+        textArea.style.position = "fixed";
+        textArea.style.top = "-9999px";
+        textArea.style.left = "-9999px";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(textArea);
+      } catch {
+        copied = false;
+      }
+    }
+    if (copied) {
       toast("Checksum SHA-256 disalin ke clipboard", "success");
     }
   };
@@ -343,9 +369,9 @@ export function FileDetailModal({
                   <View className="flex-row items-center gap-2 rounded-lg bg-amber-500/10 p-2.5 border border-amber-500/20">
                     <AlertTriangle size={16} color="#D97706" />
                     <View className="flex-1">
-                      <Text className="text-xs font-bold text-amber-800">Berkas Yatim (Orphan File)</Text>
+                      <Text className="text-xs font-bold text-amber-800">Berkas Lepas (Standalone File)</Text>
                       <Text className="text-[11px] text-amber-700">
-                        Berkas ini tidak terhubung ke transaksi manapun. Sesuai PRD, berkas yatim aman untuk dibersihkan atau ditautkan kembali.
+                        Berkas ini tidak terhubung ke transaksi manapun (mandiri). Berkas lepas aman untuk dibersihkan atau ditautkan kembali.
                       </Text>
                     </View>
                   </View>

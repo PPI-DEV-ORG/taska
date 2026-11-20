@@ -38,7 +38,7 @@ export type ListFilesQuery = {
 };
 
 export type CreateShareDto = {
-  expiresAt: string; // ISO date string
+  expiresAt?: string; // ISO date string atau 'forever' untuk berlaku selamanya
   permission?: "VIEW" | "DOWNLOAD";
   password?: string;
   oneTime?: boolean;
@@ -727,13 +727,13 @@ export class FileManagementService {
   }
 
   /**
-   * Hapus permanen file yatim secara massal
+   * Hapus permanen file lepas (standalone) secara massal
    */
   async bulkDeleteOrphans(fileIds: number[], user: RequestUser) {
     const isSuperAdmin = (user.role || "").toUpperCase() === "SUPER_ADMIN";
     const hasPerm = isSuperAdmin || can(user.role, "fileManagement", "P");
     if (!hasPerm) {
-      throw new ForbiddenException("Hanya Super Admin atau pengelola file berwenang yang dapat menghapus file yatim.");
+      throw new ForbiddenException("Hanya Super Admin atau pengelola file berwenang yang dapat menghapus file lepas.");
     }
 
     let deletedCount = 0;
@@ -756,7 +756,7 @@ export class FileManagementService {
       ok: true,
       deletedCount,
       errors: errors.length > 0 ? errors : undefined,
-      message: `Berhasil menghapus ${deletedCount} file yatim.`,
+      message: `Berhasil menghapus ${deletedCount} file lepas.`,
     };
   }
 
@@ -774,9 +774,16 @@ export class FileManagementService {
     const rawToken = randomBytes(24).toString("hex");
     const tokenHash = createHash("sha256").update(rawToken).digest("hex");
 
-    const expiresAt = new Date(dto.expiresAt);
-    if (isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
-      throw new BadRequestException("Tanggal kedaluwarsa tautan wajib diisi di masa depan.");
+    let expiresAt: Date;
+    const isForever = !dto.expiresAt || dto.expiresAt === "forever" || dto.expiresAt === "never";
+    if (isForever) {
+      // Berlaku selamanya / tanpa batas (diisi 100 tahun ke depan)
+      expiresAt = new Date(Date.now() + 100 * 365.25 * 86400 * 1000);
+    } else {
+      expiresAt = new Date(dto.expiresAt!);
+      if (isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+        throw new BadRequestException("Tanggal kedaluwarsa tautan wajib diisi di masa depan.");
+      }
     }
 
     let passwordHash: string | null = null;
@@ -801,6 +808,7 @@ export class FileManagementService {
       shareToken: rawToken, // Dikembalikan sekali kepada pembuat
       shareUrl: `/api/share/${rawToken}`,
       expiresAt: share.expiresAt,
+      isForever: isForever || share.expiresAt.getFullYear() >= 2099,
       permission: share.permission,
       oneTime: share.oneTime,
       hasPassword: Boolean(passwordHash),

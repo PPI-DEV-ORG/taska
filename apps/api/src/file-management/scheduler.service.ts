@@ -180,7 +180,7 @@ export class FileSchedulerService implements OnModuleInit, OnModuleDestroy {
               sourceProviderId: schedule.sourceProviderId,
               targetProviderId: schedule.targetProviderId,
               olderThanDays: schedule.olderThanDays ?? undefined,
-              includeOrphans: false, // File yatim tidak dimigrasikan
+              includeOrphans: false, // File lepas tidak dimigrasikan
             },
             undefined,
             "SCHEDULED",

@@ -21,7 +21,7 @@
  *   - v5: Gudang tanpa Persetujuan, Pembelian, Keuangan & Proyek. Tetap: pengeluaran & petty cash miliknya sendiri.
  *
  *   - v12: modul "file-management" (File Management). M/L = jelajah file sesuai akses dokumen, C = upload, U = ubah/ganti/bagikan,
- *          A = hapus, E = unduh/ekspor, V = kelola provider storage & migrasi, P = lihat semua file termasuk file yatim.
+ *          A = hapus, E = unduh/ekspor, V = kelola provider storage & migrasi, P = lihat semua file termasuk file lepas (standalone).
  *   - v13: modul "supplier-bills" (Tagihan Supplier / Invoice In) dipisah dari "supplier-pos". Pemisahan tugas:
  *          membuat PO hanya Procurement (+ Admin/Bos); Finance tidak lagi bisa membuat PO, tapi tetap mencatat & membayar tagihan.
  *          Sales & Teknisi diberi approvals: "" eksplisit agar "V" Laporan Maintenance tidak bocor jadi hak Persetujuan.
