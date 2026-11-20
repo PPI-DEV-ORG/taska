@@ -258,13 +258,23 @@ export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDas
           <HBarChart data={agingData} format={(n) => `${n} jt`} />
         </ChartCard>
         <ChartCard title="Komposisi Pengeluaran per Kategori" subtitle="Distribusi pengeluaran bulan ini">
-          <PieChart
-            data={expPieSlices}
-            donut={true}
-            centerValue={rupiahShort(totalExp || 0)}
-            centerLabel="Pengeluaran"
-            format={(n) => rupiahShort(n)}
-          />
+          {totalExp > 0 ? (
+            <PieChart
+              data={expPieSlices}
+              donut={true}
+              centerValue={rupiahShort(totalExp)}
+              centerLabel="Pengeluaran"
+              format={(n) => rupiahShort(n)}
+            />
+          ) : (
+            <View className="py-10 items-center justify-center text-center">
+              <Wallet size={32} className="text-muted-foreground/40 mb-2" />
+              <Text className="text-xs font-semibold text-foreground">Belum Ada Pengeluaran</Text>
+              <Text className="text-[11px] text-muted-foreground mt-0.5">
+                Total biaya operasional di database bulan ini Rp 0.
+              </Text>
+            </View>
+          )}
         </ChartCard>
       </View>
     </View>
