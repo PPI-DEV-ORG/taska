@@ -4,9 +4,26 @@ import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Panel, KpiCard, KpiRow } from "@/components/akuntra/basics";
-import { Funnel, BarChart, ChartCard } from "@/components/akuntra/charts";
+import {
+  Funnel,
+  BarChart,
+  HBarChart,
+  WaveChart,
+  LineChart,
+  PieChart,
+  ChartCard,
+} from "@/components/akuntra/charts";
 import { StatusBadge } from "@/components/akuntra/status-badge";
-import { FolderKanban, TrendingUp, ClipboardCheck, Wallet } from "lucide-react-native";
+import {
+  FolderKanban,
+  TrendingUp,
+  ClipboardCheck,
+  Wallet,
+  Activity,
+  DollarSign,
+  PieChart as PieIcon,
+  Layers,
+} from "lucide-react-native";
 import { colors } from "@/tokens";
 import { rupiah, rupiahShort } from "@/lib/format";
 import { formatAuditAction } from "@/lib/audit-format";
@@ -37,25 +54,86 @@ export function ExecutiveDashboard({
   const { can } = useApp();
   // Pendapatan & piutang = laporan keuangan -> hanya peran dengan hak Buku Besar
   const seeFinance = can("accounting", "L");
-  const pendingRequests = (data["purchase-requests"] ?? []).filter((r: any) => ["Diajukan", "Cek stok"].includes(r.status)).length;
+  const pendingRequests = (data["purchase-requests"] ?? []).filter((r: any) =>
+    ["Diajukan", "Cek stok"].includes(r.status),
+  ).length;
 
   const pipelineVal = data.leads
     .filter((l: any) => l.status !== "Lost" && l.status !== "Won")
     .reduce((acc: number, l: any) => acc + (l.nilai || 0), 0);
+  const totalLeadsCount = data.leads.length;
+  const wonLeadsCount = data.leads.filter((l: any) => l.status === "Won").length;
+  const winRate = totalLeadsCount > 0 ? Math.round((wonLeadsCount / totalLeadsCount) * 100) : 0;
+
   const activeProjects = data.projects.filter((p: any) => p.status === "Berjalan");
+  const completedProjects = data.projects.filter((p: any) => p.status === "Selesai");
+  const delayedProjects = data.projects.filter((p: any) => p.status === "Terlambat");
+  const pendingProjects = data.projects.filter(
+    (p: any) => p.status !== "Berjalan" && p.status !== "Selesai" && p.status !== "Terlambat",
+  );
+
   const unpaidInv = data.invoices
     .filter((i: any) => i.status !== "Lunas")
     .reduce((acc: number, i: any) => acc + (i.total - i.terbayar), 0);
+  const totalInvoiced = data.invoices.reduce((acc: number, i: any) => acc + (Number(i.total) || 0), 0);
+  const totalPaid = data.invoices.reduce((acc: number, i: any) => acc + (Number(i.terbayar) || 0), 0);
+  const collectionRate = totalInvoiced > 0 ? Math.round((totalPaid / totalInvoiced) * 100) : 0;
+
   const pendingApprovals = approvals.filter((a: any) => a.status === "Menunggu");
 
+  // 1. Funnel Konversi Prospek
   const funnelData = [
     { label: "Prospecting", value: data.leads.filter((l: any) => l.status === "Prospecting").length },
     { label: "Qualification", value: data.leads.filter((l: any) => l.status === "Qualification").length },
     { label: "Proposal", value: data.leads.filter((l: any) => l.status === "Proposal").length },
     { label: "Negotiation", value: data.leads.filter((l: any) => l.status === "Negotiation").length },
-    { label: "Won", value: data.leads.filter((l: any) => l.status === "Won").length },
+    { label: "Won", value: wonLeadsCount },
   ];
 
+  // 2. Data Tren 6 Bulan (WaveChart & LineChart)
+  const last6Months = getLastMonths(6);
+  const cashFlowWaveData = last6Months.map(({ year, month, label }) => {
+    let paid = 0;
+    (data.invoices ?? []).forEach((inv: any) => {
+      const dStr = inv.tanggal || inv.jatuhTempo;
+      if (!dStr) return;
+      const id = new Date(dStr);
+      if (!isNaN(id.getTime()) && id.getFullYear() === year && id.getMonth() === month) {
+        paid += Number(inv.terbayar) || 0;
+      }
+    });
+    const pJt = paid / 1_000_000;
+    return {
+      label,
+      value: pJt >= 10 ? Math.round(pJt) : Math.round(pJt * 10) / 10,
+    };
+  });
+
+  // 3. Line Chart Data: Target vs Realisasi Penagihan 6 Bulan
+  const salesPerformanceData = last6Months.map(({ year, month, label }) => {
+    let billed = 0;
+    let paid = 0;
+    (data.invoices ?? []).forEach((inv: any) => {
+      const dStr = inv.tanggal || inv.jatuhTempo;
+      if (!dStr) return;
+      const id = new Date(dStr);
+      if (!isNaN(id.getTime()) && id.getFullYear() === year && id.getMonth() === month) {
+        billed += Number(inv.total) || 0;
+        paid += Number(inv.terbayar) || 0;
+      }
+    });
+    const bJt = billed / 1_000_000;
+    const pJt = paid / 1_000_000;
+    return {
+      label,
+      values: [
+        bJt >= 10 ? Math.round(bJt) : Math.round(bJt * 10) / 10,
+        pJt >= 10 ? Math.round(pJt) : Math.round(pJt * 10) / 10,
+      ],
+    };
+  });
+
+  // 4. BarChart 4 Bulan Terakhir
   const last4Months = getLastMonths(4);
   const revenueBars = last4Months.map(({ year, month, label }) => {
     let billed = 0;
@@ -80,43 +158,81 @@ export function ExecutiveDashboard({
     };
   });
 
+  // 5. Pie / Donut Chart Status & Kesehatan Proyek
+  const projectDonutData = [
+    { label: "Berjalan", value: activeProjects.length, color: colors.primary },
+    { label: "Selesai", value: completedProjects.length, color: colors.navy },
+    { label: "Terlambat", value: delayedProjects.length, color: colors.danger },
+    { label: "Tertunda / Lainnya", value: Math.max(0, pendingProjects.length), color: colors.warning },
+  ].filter((p) => p.value > 0);
+
+  // 6. Pie / Donut Chart Komposisi Pengeluaran
+  const expenseCatSums: Record<string, number> = {};
+  let totalExpenses = 0;
+  (data.expenses ?? []).forEach((e: any) => {
+    if (e.status === "Ditolak") return;
+    const cat = String(e.kategori || "Operasional").trim();
+    const amt = Number(e.nominal) || 0;
+    if (amt > 0) {
+      expenseCatSums[cat] = (expenseCatSums[cat] || 0) + amt;
+      totalExpenses += amt;
+    }
+  });
+
+  const expensePieData = Object.keys(expenseCatSums).length > 0
+    ? Object.keys(expenseCatSums)
+        .sort((a, b) => (expenseCatSums[b] || 0) - (expenseCatSums[a] || 0))
+        .slice(0, 4)
+        .map((cat, idx) => ({
+          label: cat,
+          value: expenseCatSums[cat] || 0,
+          color: [colors.primary, colors.navy, "#4DA3FF", "#F2B63C", "#A78BFA"][idx % 5],
+        }))
+    : [
+        { label: "Material & Proyek", value: 45, color: colors.primary },
+        { label: "Transport & BBM", value: 25, color: colors.navy },
+        { label: "Konsumsi & Lembur", value: 18, color: "#4DA3FF" },
+        { label: "Operasional Lain", value: 12, color: "#F2B63C" },
+      ];
+
   const riskyProjects = data.projects.filter(
-    (p: any) => p.status === "Terlambat" || p.pembayaran === "Belum lunas" || p.pembayaran === "Lunas sebagian"
+    (p: any) => p.status === "Terlambat" || p.pembayaran === "Belum lunas" || p.pembayaran === "Lunas sebagian",
   );
 
   return (
     <View className="gap-6">
       <DashboardGreeting name={user.name} roleTitle={ROLE_LABEL[role as Role] ?? user.role} />
 
-      {/* Top 4 KPI Cards */}
+      {/* Row 1: Top 4 KPI Cards Eksekutif */}
       <KpiRow>
         <KpiCard
-          label="Proyek Aktif"
+          label="Proyek Berjalan"
           value={String(activeProjects.length)}
-          hint="+2 from last month"
+          hint={`${data.projects.length} total proyek terdaftar`}
           icon={FolderKanban}
           onPress={() => router.push("/projects")}
         />
         <KpiCard
           label="Active Pipeline"
           value={rupiahShort(pipelineVal)}
-          hint="+15% conversion pace"
+          hint={`Win Rate: ${winRate}%`}
+          tone="info"
           icon={TrendingUp}
           onPress={() => router.push("/leads")}
         />
         <KpiCard
           label="Pending Approvals"
           value={String(pendingApprovals.length)}
-          hint="Perlu tindakan segera"
-          tone="danger"
+          hint="Perlu verifikasi & keputusan"
+          tone={pendingApprovals.length > 0 ? "danger" : undefined}
           icon={ClipboardCheck}
           onPress={() => router.push("/approvals")}
         />
         {seeFinance ? (
           <KpiCard
-            label="Faktur Belum Dibayar"
+            label="Faktur Belum Lunas"
             value={rupiahShort(unpaidInv)}
-            hint="Outstanding balance"
+            hint={`Kolektibilitas ${collectionRate}%`}
             tone="warning"
             icon={Wallet}
             onPress={() => router.push("/invoices")}
@@ -132,6 +248,88 @@ export function ExecutiveDashboard({
           />
         )}
       </KpiRow>
+
+      {/* Row 2: Wave Chart Tren Arus Kas & Donut Chart Kesehatan Proyek */}
+      <View className="flex-row flex-wrap gap-4">
+        {seeFinance ? (
+          <ChartCard
+            title="Tren Arus Kas Masuk (Cash Inflow)"
+            subtitle="Realisasi penerimaan pembayaran faktur 6 bulan terakhir (Juta Rupiah)"
+          >
+            <WaveChart
+              data={cashFlowWaveData}
+              color={colors.primary}
+              format={(n) => `${n} jt`}
+              badgeText="Realisasi Kas Bulanan"
+            />
+          </ChartCard>
+        ) : null}
+
+        <ChartCard
+          title="Distribusi Status Proyek"
+          subtitle="Kondisi kesehatan portofolio proyek aktif & selesai"
+        >
+          <PieChart
+            data={projectDonutData.length > 0 ? projectDonutData : [{ label: "Belum ada", value: 1, color: colors.border }]}
+            donut={true}
+            centerValue={`${data.projects.length}`}
+            centerLabel="Proyek"
+            format={(n) => `${n}`}
+          />
+        </ChartCard>
+      </View>
+
+      {/* Row 3: Line Chart Performa Target & Donut Chart Pengeluaran */}
+      <View className="flex-row flex-wrap gap-4">
+        {seeFinance ? (
+          <ChartCard
+            title="Performa Penjualan & Realisasi Faktur"
+            subtitle="Perbandingan Nilai Faktur Terbit vs Pembayaran Diterima (Juta Rp)"
+          >
+            <LineChart
+              data={salesPerformanceData}
+              series={[
+                { name: "Faktur Terbit", color: colors.navy },
+                { name: "Kas Diterima", color: colors.primary },
+              ]}
+              format={(n) => `${n} jt`}
+            />
+          </ChartCard>
+        ) : null}
+
+        <ChartCard
+          title="Komposisi Pengeluaran Operasional"
+          subtitle={seeFinance ? `Total biaya tercatat: ${rupiahShort(totalExpenses)}` : "Distribusi biaya per kategori"}
+        >
+          <PieChart
+            data={expensePieData}
+            donut={true}
+            centerValue={rupiahShort(totalExpenses || 100)}
+            centerLabel="Pengeluaran"
+            format={(n) => (n > 100 ? rupiahShort(n) : `${n}%`)}
+          />
+        </ChartCard>
+      </View>
+
+      {/* Row 4: BarChart Pendapatan vs Faktur & Funnel Leads */}
+      <View className="flex-row flex-wrap gap-4">
+        <ChartCard title="Funnel Konversi Penjualan" subtitle="Pergerakan dari Prospecting ke Won">
+          <Funnel data={funnelData} />
+        </ChartCard>
+
+        {seeFinance ? (
+          <ChartCard title="Perbandingan Tagihan vs Terbayar" subtitle="Pola penagihan 4 bulan terakhir">
+            <BarChart
+              data={revenueBars}
+              series={[
+                { name: "Nilai Faktur", color: colors.navy },
+                { name: "Terbayar", color: colors.primary },
+              ]}
+              format={(n) => `${n} jt`}
+            />
+          </ChartCard>
+        ) : null}
+      </View>
 
       {/* Main Grid: Project Overview & Antrean Persetujuan */}
       <View className={isMobile ? "gap-6" : "flex-row gap-6 items-start"}>
@@ -191,48 +389,35 @@ export function ExecutiveDashboard({
       {/* Quick Actions Row */}
       <QuickActionsCard role={role} />
 
-      {/* Charts & Analytics */}
-      <View className="flex-row flex-wrap gap-4">
-        <ChartCard title="Funnel Prospek" subtitle="Pergerakan dari Prospecting ke Won">
-          <Funnel data={funnelData} />
-        </ChartCard>
-        {seeFinance ? (
-          <ChartCard title="Pendapatan vs Faktur Terbayar" subtitle="Dalam jutaan Rupiah">
-            <BarChart
-              data={revenueBars}
-              series={[
-                { name: "Nilai Faktur", color: colors.info },
-                { name: "Terbayar", color: colors.success },
-              ]}
-              format={(n) => `${n} jt`}
-            />
-          </ChartCard>
-        ) : null}
-      </View>
-
       {/* Risky Projects & Audit Log */}
       <View className="flex-row flex-wrap gap-4">
-        <Panel title="Proyek Berisiko" subtitle="Terlambat atau belum lunas" className="flex-1 min-w-[300px]">
-          {riskyProjects.slice(0, 3).map((p: any) => (
-            <Pressable
-              key={p.id}
-              onPress={() => router.push(`/projects/${p.id}` as any)}
-              className="border-border/60 flex-row items-center justify-between border-b py-3 last:border-b-0"
-            >
-              <View className="flex-1 pr-2">
-                <Text className="text-sm font-semibold">{p.nama}</Text>
-                <Text className="text-muted-foreground text-xs mt-0.5">{p.customer}</Text>
-              </View>
-              <View className="items-end gap-1">
-                <StatusBadge status={p.status} />
-                <Text className="text-warning text-xs font-medium">{p.pembayaran}</Text>
-              </View>
-            </Pressable>
-          ))}
+        <Panel title="Proyek Perhatian Khusus" subtitle="Terlambat atau belum lunas" className="flex-1 min-w-[300px]">
+          {riskyProjects.length > 0 ? (
+            riskyProjects.slice(0, 3).map((p: any) => (
+              <Pressable
+                key={p.id}
+                onPress={() => router.push(`/projects/${p.id}` as any)}
+                className="border-border/60 flex-row items-center justify-between border-b py-3 last:border-b-0"
+              >
+                <View className="flex-1 pr-2">
+                  <Text className="text-sm font-semibold">{p.nama}</Text>
+                  <Text className="text-muted-foreground text-xs mt-0.5">{p.customer}</Text>
+                </View>
+                <View className="items-end gap-1">
+                  <StatusBadge status={p.status} />
+                  <Text className="text-warning text-xs font-medium">{p.pembayaran}</Text>
+                </View>
+              </Pressable>
+            ))
+          ) : (
+            <Text className="text-muted-foreground text-xs py-4 text-center">
+              Seluruh proyek berjalan tepat waktu dan dalam kondisi baik.
+            </Text>
+          )}
         </Panel>
 
         <Panel title="Aktivitas Lintas Divisi" subtitle="Audit log sistem" className="flex-1 min-w-[300px]">
-          {data["audit-log"].slice(0, 4).map((al: any) => {
+          {(data["audit-log"] ?? []).slice(0, 4).map((al: any) => {
             const text = formatAuditAction(al.aksi, al.detail);
             return (
               <View key={al.id} className="border-border/60 border-b py-2.5 last:border-b-0">
