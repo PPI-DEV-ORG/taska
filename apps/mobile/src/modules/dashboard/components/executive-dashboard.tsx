@@ -166,7 +166,7 @@ export function ExecutiveDashboard({
     { label: "Tertunda / Lainnya", value: Math.max(0, pendingProjects.length), color: colors.warning },
   ].filter((p) => p.value > 0);
 
-  // 6. Pie / Donut Chart Komposisi Pengeluaran
+  // 6. Pie / Donut Chart Komposisi Pengeluaran Riil
   const expenseCatSums: Record<string, number> = {};
   let totalExpenses = 0;
   (data.expenses ?? []).forEach((e: any) => {
@@ -182,18 +182,13 @@ export function ExecutiveDashboard({
   const expensePieData = Object.keys(expenseCatSums).length > 0
     ? Object.keys(expenseCatSums)
         .sort((a, b) => (expenseCatSums[b] || 0) - (expenseCatSums[a] || 0))
-        .slice(0, 4)
+        .slice(0, 5)
         .map((cat, idx) => ({
           label: cat,
           value: expenseCatSums[cat] || 0,
           color: [colors.primary, colors.navy, "#4DA3FF", "#F2B63C", "#A78BFA"][idx % 5],
         }))
-    : [
-        { label: "Material & Proyek", value: 45, color: colors.primary },
-        { label: "Transport & BBM", value: 25, color: colors.navy },
-        { label: "Konsumsi & Lembur", value: 18, color: "#4DA3FF" },
-        { label: "Operasional Lain", value: 12, color: "#F2B63C" },
-      ];
+    : [];
 
   const riskyProjects = data.projects.filter(
     (p: any) => p.status === "Terlambat" || p.pembayaran === "Belum lunas" || p.pembayaran === "Lunas sebagian",
@@ -269,13 +264,23 @@ export function ExecutiveDashboard({
           title="Distribusi Status Proyek"
           subtitle="Kondisi kesehatan portofolio proyek aktif & selesai"
         >
-          <PieChart
-            data={projectDonutData.length > 0 ? projectDonutData : [{ label: "Belum ada", value: 1, color: colors.border }]}
-            donut={true}
-            centerValue={`${data.projects.length}`}
-            centerLabel="Proyek"
-            format={(n) => `${n}`}
-          />
+          {data.projects.length > 0 && projectDonutData.length > 0 ? (
+            <PieChart
+              data={projectDonutData}
+              donut={true}
+              centerValue={`${data.projects.length}`}
+              centerLabel="Proyek"
+              format={(n) => `${n}`}
+            />
+          ) : (
+            <View className="py-10 items-center justify-center text-center">
+              <FolderKanban size={32} className="text-muted-foreground/40 mb-2" />
+              <Text className="text-xs font-semibold text-foreground">Belum Ada Proyek Terdaftar</Text>
+              <Text className="text-[11px] text-muted-foreground mt-0.5">
+                Total 0 proyek di database sistem.
+              </Text>
+            </View>
+          )}
         </ChartCard>
       </View>
 
@@ -301,13 +306,23 @@ export function ExecutiveDashboard({
           title="Komposisi Pengeluaran Operasional"
           subtitle={seeFinance ? `Total biaya tercatat: ${rupiahShort(totalExpenses)}` : "Distribusi biaya per kategori"}
         >
-          <PieChart
-            data={expensePieData}
-            donut={true}
-            centerValue={rupiahShort(totalExpenses || 100)}
-            centerLabel="Pengeluaran"
-            format={(n) => (n > 100 ? rupiahShort(n) : `${n}%`)}
-          />
+          {totalExpenses > 0 && expensePieData.length > 0 ? (
+            <PieChart
+              data={expensePieData}
+              donut={true}
+              centerValue={rupiahShort(totalExpenses)}
+              centerLabel="Pengeluaran"
+              format={(n) => rupiahShort(n)}
+            />
+          ) : (
+            <View className="py-10 items-center justify-center text-center">
+              <Wallet size={32} className="text-muted-foreground/40 mb-2" />
+              <Text className="text-xs font-semibold text-foreground">Belum Ada Catatan Biaya</Text>
+              <Text className="text-[11px] text-muted-foreground mt-0.5">
+                Total pengeluaran operasional di database saat ini Rp 0.
+              </Text>
+            </View>
+          )}
         </ChartCard>
       </View>
 
