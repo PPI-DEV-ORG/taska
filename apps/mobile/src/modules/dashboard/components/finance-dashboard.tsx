@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Panel, KpiCard, KpiRow } from "@/components/akuntra/basics";
-import { ChartCard , HBarChart } from "@/components/akuntra/charts";
+import { ChartCard, HBarChart, WaveChart, PieChart } from "@/components/akuntra/charts";
 import { ClipboardCheck, AlertTriangle, Wallet, TrendingUp, Receipt } from "lucide-react-native";
 import { api } from "@/services/api";
 import { colors } from "@/tokens";
@@ -13,6 +13,7 @@ import { ROLE_LABEL, type Role } from "@/constants/modules";
 import { DashboardGreeting } from "./dashboard-greeting";
 import { ProjectOverviewCard } from "./project-overview-card";
 import { QuickActionsCard } from "./quick-actions-card";
+import { getLastMonths } from "../types";
 
 interface FinanceDashboardProps {
   user: any;
@@ -132,6 +133,30 @@ export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDas
         text: "Rp 0 (0%)",
       }));
 
+  const last6Months = getLastMonths(6);
+  const cashFlowWave = last6Months.map(({ year, month, label }) => {
+    let paid = 0;
+    (data.invoices ?? []).forEach((inv: any) => {
+      const dStr = inv.tanggal || inv.jatuhTempo;
+      if (!dStr) return;
+      const id = new Date(dStr);
+      if (!isNaN(id.getTime()) && id.getFullYear() === year && id.getMonth() === month) {
+        paid += Number(inv.terbayar) || 0;
+      }
+    });
+    const pJt = paid / 1_000_000;
+    return {
+      label,
+      value: pJt >= 10 ? Math.round(pJt) : Math.round(pJt * 10) / 10,
+    };
+  });
+
+  const expPieSlices = expCategories.map((c, i) => ({
+    label: c.label,
+    value: c.amount || c.value,
+    color: [colors.primary, colors.navy, "#4DA3FF", "#F2B63C", "#A78BFA"][i % 5],
+  }));
+
   return (
     <View className="gap-6">
       <DashboardGreeting name={user.name} roleTitle={ROLE_LABEL[role as Role] ?? user.role} />
@@ -215,11 +240,31 @@ export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDas
       <QuickActionsCard role={role} />
 
       <View className="flex-row flex-wrap gap-4">
+        <ChartCard
+          title="Tren Arus Kas Masuk (Cash Flow)"
+          subtitle="Realisasi penerimaan pembayaran faktur 6 bulan terakhir (Juta Rp)"
+        >
+          <WaveChart
+            data={cashFlowWave}
+            color={colors.primary}
+            format={(n) => `${n} jt`}
+            badgeText="Kas Masuk Bulanan"
+          />
+        </ChartCard>
+      </View>
+
+      <View className="flex-row flex-wrap gap-4">
         <ChartCard title="Umur Piutang (Aging)" subtitle="Berdasarkan hari jatuh tempo (juta Rp)">
           <HBarChart data={agingData} format={(n) => `${n} jt`} />
         </ChartCard>
-        <ChartCard title="Pengeluaran per Kategori" subtitle="Nominal & persentase biaya bulan ini">
-          <HBarChart data={expCategories} format={(n, d) => d?.text ?? `${n}%`} />
+        <ChartCard title="Komposisi Pengeluaran per Kategori" subtitle="Distribusi pengeluaran bulan ini">
+          <PieChart
+            data={expPieSlices}
+            donut={true}
+            centerValue={rupiahShort(totalExp || 0)}
+            centerLabel="Pengeluaran"
+            format={(n) => rupiahShort(n)}
+          />
         </ChartCard>
       </View>
     </View>

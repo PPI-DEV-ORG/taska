@@ -74,6 +74,7 @@ const TAX_PRESET_OPTIONS = [
 
 const ERP_LINK_MODULE_OPTIONS = [
   { value: "", label: "Tidak Ada Tautan" },
+  { value: "PROJECT", label: "Proyek (Project)" },
   { value: "PURCHASE_ORDER", label: "PO Supplier (Purchase Order)" },
   { value: "SALES_ORDER", label: "Sales Order (SO Pelanggan)" },
   { value: "PURCHASE_REQUEST", label: "Request Barang (PR)" },
@@ -1022,6 +1023,26 @@ function FormContent({
                     />
                   </FormField>
                 </View>
+
+                {linkedModule === "PROJECT" ? (
+                  <View className="min-w-[280px] flex-[1.5]">
+                    <FormField label="Pilih Proyek Terkait">
+                      <ProjectSelect
+                        value={linkedRefCode}
+                        projectId={linkedEntityId}
+                        onChange={(proj) => {
+                          if (!proj) {
+                            setLinkedEntityId(null);
+                            setLinkedRefCode("");
+                            return;
+                          }
+                          setLinkedEntityId(Number(proj.id) || null);
+                          setLinkedRefCode(String(proj.nama || proj.name || `Proyek #${proj.id}`));
+                        }}
+                      />
+                    </FormField>
+                  </View>
+                ) : null}
 
                 {linkedModule === "PURCHASE_ORDER" ? (
                   <View className="min-w-[280px] flex-[1.5]">
