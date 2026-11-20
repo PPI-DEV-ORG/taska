@@ -236,7 +236,7 @@ export function MigrationDialog({
               </View>
             </View>
 
-            {/* 3. Filter Folder (PILIHAN CHIPS - TIDAK PERLU DIKETIK) */}
+            {/* 3. Filter Folder (PILIHAN CHIPS - WRAPPING RAPI TIDAK TERPOTONG) */}
             <View className="gap-1.5">
               <View className="flex-row items-center justify-between">
                 <Text className="text-xs font-semibold text-foreground">Pilih Folder Target Migrasi</Text>
@@ -244,32 +244,30 @@ export function MigrationDialog({
                   {SUBFOLDER_OPTIONS.find((s) => s.key === selectedFolder)?.label}
                 </Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
-                <View className="flex-row flex-wrap gap-1.5 py-1">
-                  {SUBFOLDER_OPTIONS.map((sf) => {
-                    const isSelected = selectedFolder === sf.key;
-                    return (
-                      <Pressable
-                        key={sf.key}
-                        onPress={() => setSelectedFolder(sf.key)}
-                        className="rounded-full px-3 py-1.5 border flex-row items-center gap-1.5"
-                        style={{
-                          backgroundColor: isSelected ? colors.primary : "transparent",
-                          borderColor: isSelected ? colors.primary : "#E2E8F0",
-                        }}
+              <View className="flex-row flex-wrap gap-1.5 py-1">
+                {SUBFOLDER_OPTIONS.map((sf) => {
+                  const isSelected = selectedFolder === sf.key;
+                  return (
+                    <Pressable
+                      key={sf.key}
+                      onPress={() => setSelectedFolder(sf.key)}
+                      className="rounded-full px-3 py-1.5 border flex-row items-center gap-1.5"
+                      style={{
+                        backgroundColor: isSelected ? colors.primary : "transparent",
+                        borderColor: isSelected ? colors.primary : "#E2E8F0",
+                      }}
+                    >
+                      <Folder size={12} color={isSelected ? "#FFF" : colors.primary} />
+                      <Text
+                        className="text-xs font-semibold"
+                        style={{ color: isSelected ? "#FFF" : "#475569" }}
                       >
-                        <Folder size={12} color={isSelected ? "#FFF" : colors.primary} />
-                        <Text
-                          className="text-xs font-semibold"
-                          style={{ color: isSelected ? "#FFF" : "#475569" }}
-                        >
-                          {sf.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </ScrollView>
+                        {sf.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
             {/* 4. Filter Umur Berkas (PRESET CLICKS - TIDAK HARUS DIKETIK) */}

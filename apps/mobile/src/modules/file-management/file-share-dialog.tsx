@@ -4,7 +4,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { colors } from "@/tokens";
-import { api } from "@/services/api";
+import { api, apiOrigin } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import {
   Share2,
@@ -14,8 +14,17 @@ import {
   Lock,
   Clock,
   ExternalLink,
+  Infinity as InfinityIcon,
 } from "lucide-react-native";
 import type { FileItem } from "./types";
+
+const DURATION_OPTIONS = [
+  { value: 1, label: "1 Hari" },
+  { value: 3, label: "3 Hari" },
+  { value: 7, label: "7 Hari" },
+  { value: 30, label: "30 Hari" },
+  { value: 0, label: "Selamanya" },
+];
 
 export function FileShareDialog({
   visible,
@@ -38,11 +47,11 @@ export function FileShareDialog({
 
   if (visible && !wasVisible) {
     setWasVisible(true);
-      setDays(3);
-      setPermission("VIEW");
-      setPassword("");
-      setOneTime(false);
-      setCreatedShare(null);
+    setDays(3);
+    setPermission("VIEW");
+    setPassword("");
+    setOneTime(false);
+    setCreatedShare(null);
   } else if (!visible && wasVisible) {
     setWasVisible(false);
   }
@@ -52,7 +61,12 @@ export function FileShareDialog({
 
     setSubmitting(true);
     try {
-      const expires = new Date(Date.now() + days * 86400 * 1000).toISOString();
+      // Jika days === 0, kirim "forever" agar berlaku permanen / selamanya
+      const expires =
+        days === 0
+          ? "forever"
+          : new Date(Date.now() + days * 86400 * 1000).toISOString();
+
       const res = await api.post<any>(`/file-management/files/${file.id}/shares`, {
         expiresAt: expires,
         permission,
@@ -68,15 +82,57 @@ export function FileShareDialog({
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      const fullUrl = `${window.location.origin}${text}`;
-      navigator.clipboard.writeText(fullUrl);
+  const copyToClipboard = async (text: string) => {
+    if (!text) return;
+    let copied = false;
+
+    // 1. Coba Modern Clipboard API (HTTPS / Localhost)
+    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+
+    // 2. Fallback untuk HTTP IP LAN / Insecure Context / WebView
+    if (!copied && typeof document !== "undefined") {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.top = "-9999px";
+        textArea.style.left = "-9999px";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(textArea);
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
       toast("Tautan berhasil disalin ke clipboard!", "success");
+    } else {
+      toast("Silakan salin tautan langsung dari kolom teks.", "info");
+    }
+  };
+
+  const handleOpenLink = (url: string) => {
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank");
     }
   };
 
   if (!file) return null;
+
+  const fullShareUrl = createdShare
+    ? `${apiOrigin()}${createdShare.shareUrl}`
+    : "";
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -88,9 +144,9 @@ export function FileShareDialog({
               <View className="rounded-xl p-2" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <Share2 size={20} color={colors.primary} />
               </View>
-              <View>
+              <View className="flex-1 pr-2">
                 <Text className="text-base font-bold text-foreground">Bagikan Berkas</Text>
-                <Text className="text-xs text-muted-foreground">{file.displayName}</Text>
+                <Text className="text-xs text-muted-foreground" numberOfLines={1}>{file.displayName}</Text>
               </View>
             </View>
             <Pressable onPress={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted">
@@ -105,23 +161,73 @@ export function FileShareDialog({
                 <CheckCircle2 size={32} color="#10B981" />
                 <Text className="mt-2 text-sm font-bold text-emerald-800">Tautan Berbagi Siap</Text>
                 <Text className="text-[11px] text-emerald-700 text-center mt-1">
-                  Kirimkan tautan acak terenkripsi ini kepada pihak yang berkepentingan.
+                  Kirimkan tautan lengkap ini kepada pihak yang berkepentingan.
                 </Text>
               </View>
 
-              <View className="gap-1.5 rounded-xl border border-border bg-muted/20 p-3">
-                <Text className="text-[10px] font-semibold uppercase text-muted-foreground">URL Berbagi</Text>
-                <View className="flex-row items-center justify-between rounded-lg bg-background p-2 border border-border">
-                  <Text className="text-xs font-mono flex-1 text-foreground" numberOfLines={1}>
-                    {createdShare.shareUrl}
-                  </Text>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onPress={() => copyToClipboard(createdShare.shareUrl)}
+              <View className="gap-2 rounded-xl border border-border bg-muted/20 p-3">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-[10px] font-semibold uppercase text-muted-foreground">URL Lengkap Berbagi</Text>
+                  <View className="flex-row items-center gap-1">
+                    <Clock size={11} className="text-muted-foreground" />
+                    <Text className="text-[10px] font-medium text-muted-foreground">
+                      {createdShare.isForever || days === 0
+                        ? "Berlaku Selamanya"
+                        : `Berlaku ${days} hari`}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Box URL Lengkap */}
+                <View className="flex-row items-center justify-between rounded-lg bg-background p-2 border border-border gap-2">
+                  <Text
+                    className="text-xs font-mono flex-1 text-foreground select-all break-all"
+                    numberOfLines={2}
+                    selectable
                   >
-                    <Copy size={14} />
-                  </Button>
+                    {fullShareUrl}
+                  </Text>
+
+                  <View className="flex-row items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onPress={() => copyToClipboard(fullShareUrl)}
+                      className="h-8 px-2.5 gap-1"
+                    >
+                      <Copy size={13} color={colors.primary} />
+                      <Text className="text-xs font-semibold" style={{ color: colors.primary }}>Salin</Text>
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onPress={() => handleOpenLink(fullShareUrl)}
+                      className="h-8 px-2"
+                    >
+                      <ExternalLink size={14} className="text-muted-foreground" />
+                    </Button>
+                  </View>
+                </View>
+
+                {/* Info Tambahan Proteksi */}
+                <View className="flex-row flex-wrap gap-1.5 pt-1">
+                  {createdShare.hasPassword ? (
+                    <View className="flex-row items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 border border-amber-500/20">
+                      <Lock size={10} color="#D97706" />
+                      <Text className="text-[10px] text-amber-800 font-semibold">Dilindungi Kata Sandi</Text>
+                    </View>
+                  ) : null}
+                  {createdShare.oneTime ? (
+                    <View className="rounded bg-sky-500/10 px-2 py-0.5 border border-sky-500/20">
+                      <Text className="text-[10px] text-sky-800 font-semibold">Sekali Pakai (Auto Hangus)</Text>
+                    </View>
+                  ) : null}
+                  <View className="rounded bg-muted px-2 py-0.5">
+                    <Text className="text-[10px] text-muted-foreground">
+                      {createdShare.permission === "DOWNLOAD" ? "Izin Unduh" : "Hanya Pratinjau"}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -137,22 +243,22 @@ export function FileShareDialog({
               {/* Durasi */}
               <View className="gap-1.5">
                 <Text className="text-xs font-semibold text-foreground">Masa Berlaku Tautan</Text>
-                <View className="flex-row gap-1.5">
-                  {[1, 3, 7, 30].map((d) => (
+                <View className="flex-row gap-1.5 flex-wrap">
+                  {DURATION_OPTIONS.map((opt) => (
                     <Pressable
-                      key={d}
-                      onPress={() => setDays(d)}
-                      className="flex-1 items-center rounded-lg border py-2"
+                      key={opt.value}
+                      onPress={() => setDays(opt.value)}
+                      className="flex-1 min-w-[64px] items-center rounded-lg border py-2 px-1"
                       style={{
-                        borderColor: days === d ? colors.primary : "transparent",
-                        backgroundColor: days === d ? `${colors.primary}14` : "rgba(0,0,0,0.04)",
+                        borderColor: days === opt.value ? colors.primary : "transparent",
+                        backgroundColor: days === opt.value ? `${colors.primary}14` : "rgba(0,0,0,0.04)",
                       }}
                     >
                       <Text
                         className="text-xs font-semibold"
-                        style={{ color: days === d ? colors.primary : undefined }}
+                        style={{ color: days === opt.value ? colors.primary : undefined }}
                       >
-                        {d} Hari
+                        {opt.label}
                       </Text>
                     </Pressable>
                   ))}

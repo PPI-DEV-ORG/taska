@@ -94,9 +94,35 @@ export function FileDetailModal({
     return () => clearTimeout(timer);
   }, [visible, fileId, loadDetail]);
 
-  const copyChecksum = () => {
-    if (file?.checksumSha256 && typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(file.checksumSha256);
+  const copyChecksum = async () => {
+    if (!file?.checksumSha256) return;
+    let copied = false;
+    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(file.checksumSha256);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+    if (!copied && typeof document !== "undefined") {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = file.checksumSha256;
+        textArea.style.position = "fixed";
+        textArea.style.top = "-9999px";
+        textArea.style.left = "-9999px";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(textArea);
+      } catch {
+        copied = false;
+      }
+    }
+    if (copied) {
       toast("Checksum SHA-256 disalin ke clipboard", "success");
     }
   };
