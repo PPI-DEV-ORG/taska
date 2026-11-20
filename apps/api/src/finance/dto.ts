@@ -73,6 +73,10 @@ export class ClientPoDto {
   @IsOptional() @IsInt()
   quotationId?: number;
 
+  /** Prospek asal SO. Kosong = diambil dari penawaran (bila ada). */
+  @IsOptional() @IsInt()
+  leadId?: number;
+
   @IsOptional() @IsNumber() @Min(0)
   amount?: number;
 

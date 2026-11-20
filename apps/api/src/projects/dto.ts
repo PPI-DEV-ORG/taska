@@ -362,3 +362,10 @@ export class GenerateBastDto {
   @IsOptional() @IsString()
   notes?: string;
 }
+
+/** Jadikan proyek dari prospek Won (POST /projects/from-lead/:leadId). */
+export class CreateProjectFromLeadDto {
+  /** PIC proyek (PM). Kosong = PM aktif pertama. */
+  @IsOptional() @Type(() => Number) @IsInt()
+  picId?: number;
+}

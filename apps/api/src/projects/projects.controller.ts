@@ -11,7 +11,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { ProjectsService } from "./projects.service.js";
-import { AssignDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
+import { AssignDto, CreateProjectFromLeadDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
@@ -42,6 +42,17 @@ export class ProjectsController {
   @Require("projects", "C")
   create(@Body() dto: ProjectDto, @CurrentUser() user: RequestUser) {
     return this.service.create(dto, user);
+  }
+
+  /** Jadikan proyek dari prospek Won: PIC prospek (Sales) boleh walau tanpa hak Buat Proyek; dicek di service. */
+  @Post("from-lead/:leadId")
+  @Require("leads", "U")
+  createFromLead(
+    @Param("leadId", ParseIntPipe) leadId: number,
+    @Body() dto: CreateProjectFromLeadDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.service.createFromLead(leadId, dto, user);
   }
 
   @Put(":id")

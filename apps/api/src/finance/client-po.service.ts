@@ -412,10 +412,17 @@ export class ClientPoService {
             pphMode: true,
             tipePph: true,
             items: true,
+            leadId: true,
           },
         })
       : null;
     if (dto.quotationId && !quote) throw new NotFoundException("Penawaran tidak ditemukan");
+    // Prospek asal SO: dari input, atau dari penawaran
+    const leadId = dto.leadId ?? quote?.leadId ?? null;
+    if (dto.leadId) {
+      const lead = await this.prisma.main.lead.findUnique({ where: { id: dto.leadId }, select: { id: true } });
+      if (!lead) throw new NotFoundException("Prospek tidak ditemukan");
+    }
     if (quote && (quote.status === "REJECTED" || quote.status === "EXPIRED")) {
       throw new BadRequestException(
         `Penawaran ${quote.number} sudah ${quote.status === "REJECTED" ? "ditolak" : "kedaluwarsa"}, tidak bisa dibuatkan SO`,
@@ -425,8 +432,13 @@ export class ClientPoService {
     const customer = customerIdEff
       ? await this.prisma.main.customer.findUnique({ where: { id: customerIdEff } })
       : null;
-    if (dto.projectId === undefined && quote) {
-      const proj = await this.prisma.main.project.findFirst({ where: { quotationId: quote.id }, select: { id: true } });
+    // Prospek / penawaran ini sudah punya proyek -> SO otomatis terikat ke proyek tersebut
+    if (dto.projectId === undefined && (quote || leadId)) {
+      const proj = await this.prisma.main.project.findFirst({
+        where: { OR: [...(quote ? [{ quotationId: quote.id }] : []), ...(leadId ? [{ leadId }] : [])] },
+        orderBy: { id: "asc" },
+        select: { id: true },
+      });
       if (proj) dto = { ...dto, projectId: proj.id };
     }
     const supplier = dto.supplierId
@@ -482,6 +494,7 @@ export class ClientPoService {
         customerId: customer?.id ?? null,
         supplierId: supplier?.id ?? null,
         quotationId: dto.quotationId ?? null,
+        leadId,
         amount,
         date,
         fileId: dto.fileId,
@@ -572,6 +585,7 @@ export class ClientPoService {
         customerId: dto.customerId !== undefined ? (dto.customerId ? dto.customerId : null) : undefined,
         supplierId: dto.supplierId !== undefined ? (dto.supplierId ? dto.supplierId : null) : undefined,
         quotationId: dto.quotationId !== undefined ? (dto.quotationId ? dto.quotationId : null) : undefined,
+        leadId: dto.leadId !== undefined ? (dto.leadId ? dto.leadId : null) : undefined,
         amount: dto.amount ?? row.amount,
         date: dto.date ? new Date(dto.date) : row.date,
         fileId: dto.fileId !== undefined ? dto.fileId : row.fileId,

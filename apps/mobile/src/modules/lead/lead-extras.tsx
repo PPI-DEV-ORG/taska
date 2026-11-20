@@ -25,6 +25,7 @@ import { DatePicker } from "@/components/akuntra/dialogs";
 import { CreateQuotationDialog } from "@/modules/quotation/create-quotation-dialog";
 import { downloadQuotationTemplate } from "@/modules/quotation/quotation-files";
 import { useApp } from "@/store/app-store";
+import { api } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -72,7 +73,7 @@ const METHOD_ICON: Record<string, typeof Phone> = { Telepon: Phone, WhatsApp: Me
 
 export function LeadExtras({ row }: { row: Row }) {
   const router = useRouter();
-  const { toast, data, addRow, patchRow, pushHistory, reload, refreshModule, can } = useApp();
+  const { toast, data, addRow, patchRow, pushHistory, reload, refreshModule, can, user } = useApp();
 
   // ---- Status & hak akses ----
   const isWon = row.status === "Won";
@@ -86,7 +87,9 @@ export function LeadExtras({ row }: { row: Row }) {
   const canSeeSo = can("po-client", "L");
   const canCreateSo = can("po-client", "C");
   const canSeeProjects = can("projects", "L");
-  const canCreateProject = can("projects", "C");
+  // Jadikan proyek: yang punya hak Buat Proyek, atau PIC prospek ini sendiri (Sales)
+  const isLeadOwner = !!user?.id && String(row.ownerId ?? "") === String(user.id);
+  const canCreateProject = can("projects", "C") || (isLeadOwner && can("leads", "U"));
   const canSeeInvoices = can("invoices", "L");
   const canSeeSurveys = can("surveys", "L") || can("surveys", "C");
 
@@ -239,31 +242,12 @@ export function LeadExtras({ row }: { row: Row }) {
   async function handleCreateProject() {
     setBusy(true);
     try {
-      const custName = str(row.perusahaan) || str(row.customer) || "Klien";
-      const leadName = str(row.nama);
-      const projName = leadName
-        ? leadName.toLowerCase().startsWith("project") ? leadName : `Project ${leadName}`
-        : `Project ${custName}`;
-      const quotation = leadQuotations[0];
-      const pmUser = data.users?.find((u: any) => u.role === "pm");
-      const created = await addRow("projects", {
-        nama: projName,
-        customer: custName,
-        perusahaan: custName,
-        customerId: row.customerId ? Number(row.customerId) : undefined,
-        quotationId: quotation?.id ? Number(quotation.id) : undefined,
-        penawaran: quotation?.nomor,
-        lead: leadName,
-        leadId: row.id ? Number(row.id) : undefined,
-        jenis: "Customer",
-        pm: pmUser?.nama || pmUser?.name || undefined,
-        mulai: new Date().toISOString().slice(0, 10),
-        selesai: row.targetSelesai || row.closing || new Date().toISOString().slice(0, 10),
-        status: "Berjalan",
-      });
+      // Endpoint khusus prospek Won: PIC prospek (Sales) boleh walau tanpa hak Buat Proyek.
+      // Server memakai penawaran terbaru prospek ini & menunjuk PM sebagai PIC proyek (PM mendapat notifikasi).
+      const created = await api<{ id: number }>("POST", `/projects/from-lead/${row.id}`, {});
       if (!created?.id) return;
       await reload();
-      toast("Proyek berhasil dibuat");
+      toast("Proyek berhasil dibuat. PM sudah diberi tahu.");
       router.push(`/projects/${created.id}` as any);
     } catch (err: any) {
       toast(err?.message || "Gagal membuat proyek", "danger");
@@ -305,6 +289,7 @@ export function LeadExtras({ row }: { row: Row }) {
             }
           : {}),
         tanggal: new Date().toISOString().slice(0, 10),
+        leadId: Number(row.id),
         catatan: `[lead:${row.id}] Dibuat dari Lead: ${row.nama}${row.need ? ` — ${row.need}` : ""}`,
         items: quoItems,
         docMode: "SO",

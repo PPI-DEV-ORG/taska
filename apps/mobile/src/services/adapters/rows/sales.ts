@@ -131,7 +131,7 @@ export function mapPoClient(raw: any, base: Row): Row {
     items: Array.isArray(raw.items) ? raw.items : [],
     catatan: raw.notes ?? raw.catatan ?? "",
     lead: raw.quotation?.lead?.name ?? raw.lead?.name ?? "-",
-    leadId: raw.quotation?.leadId ?? idOf(raw.lead) ?? null,
+    leadId: raw.leadId ?? raw.quotation?.leadId ?? idOf(raw.lead) ?? null,
     project: nameOf(raw.project) || raw.projectName || "-",
     projectId: raw.projectId ?? idOf(raw.project) ?? null,
     projectName: raw.projectName ?? null,

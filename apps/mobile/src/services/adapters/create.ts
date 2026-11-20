@@ -361,6 +361,7 @@ export function buildCreateBody(
         items: Array.isArray(row.items) ? row.items : undefined,
         notes: row.catatan || row.notes || undefined,
         projectId: row.projectId ? Number(row.projectId) : undefined,
+        leadId: row.leadId ? Number(row.leadId) : undefined,
         projectName: row.projectName || undefined,
       };
     }

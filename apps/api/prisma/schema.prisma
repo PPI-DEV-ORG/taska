@@ -851,6 +851,8 @@ model Lead {
   followUps          FollowUp[]
   surveys            Survey[]
   quotations         Quotation[]
+  projects           Project[]
+  clientPOs          ClientPO[]
   pocReports         PocReport[]
   visitReports       VisitReport[]
   maintenanceReports MaintenanceReport[]
@@ -1019,6 +1021,9 @@ model ClientPO {
   supplier    Supplier?  @relation(fields: [supplierId], references: [id])
   quotationId Int?
   quotation   Quotation? @relation(fields: [quotationId], references: [id])
+  /// Prospek asal SO (juga bila prospek belum punya penawaran).
+  leadId      Int?
+  lead        Lead?      @relation(fields: [leadId], references: [id], onDelete: SetNull)
   amount      Decimal    @db.Decimal(18, 2)
   date        DateTime   @db.Date
   fileId      Int?
@@ -1059,6 +1064,7 @@ model ClientPO {
   @@index([supplierId])
   @@index([date])
   @@index([projectId])
+  @@index([leadId])
 }
 
 model InvoiceOut {
@@ -1366,6 +1372,9 @@ model Project {
   pic           User          @relation("ProjectPic", fields: [picId], references: [id])
   quotationId   Int?
   quotation     Quotation?    @relation(fields: [quotationId], references: [id])
+  /// Prospek asal proyek (juga bila prospek belum punya penawaran). Satu prospek = satu proyek.
+  leadId        Int?
+  lead          Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
   startDate     DateTime      @db.Date
   endDate       DateTime?     @db.Date
   status        ProjectStatus @default(BERJALAN)
@@ -1409,6 +1418,7 @@ model Project {
   @@index([status])
   @@index([picId])
   @@index([customerId])
+  @@index([leadId])
 }
 
 model ProjectMember {

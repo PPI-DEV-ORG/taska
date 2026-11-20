@@ -12,7 +12,7 @@ import { ProjectCostService } from "./project-cost.js";
 /** Harga jual, nilai kontrak, faktur & laba-rugi project: Finance / pimpinan (hak P di Proyek), bukan PM / tim lapangan. */
 const canSeeProjectMoney = (user: RequestUser) => can(user.role, "projects", "P");
 import type { Project } from "../generated/prisma/client.js";
-import { AssignDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
+import { AssignDto, CreateProjectFromLeadDto, GenerateBastDto, MemberDto, ProjectDto, ProjectListQuery, ProjectStatusDto, RequirementDto, ReturnMaterialsDto } from "./dto.js";
 import { StockService } from "../stock/stock.service.js";
 import { UploadService } from "../upload/upload.service.js";
 import { renderPdf } from "../common/pdf.js";
@@ -95,7 +95,26 @@ export class ProjectsService {
       }
     }
 
+    // SO milik prospek / penawaran proyek ini yang belum punya proyek -> otomatis terikat ke proyek ini
+    const soScope = [
+      ...(project.leadId ? [{ leadId: project.leadId }] : []),
+      ...(quotation ? [{ quotationId: quotation.id }] : []),
+    ];
+    let projectSoIds: number[] = [];
+    if (soScope.length) {
+      await this.prisma.main.clientPO
+        .updateMany({ where: { projectId: null, OR: soScope }, data: { projectId } })
+        .catch(() => {});
+      projectSoIds = (await this.prisma.main.clientPO.findMany({ where: { projectId }, select: { id: true } })).map((s) => s.id);
+    }
+
     const orConditions: any[] = [];
+    if (projectSoIds.length) {
+      orConditions.push({ clientPoId: { in: projectSoIds } });
+    }
+    if (project.leadId) {
+      orConditions.push({ description: { contains: `[lead:${project.leadId}]` } });
+    }
     if (quotation) {
       if (quotation.clientPOs?.length) {
         orConditions.push({ clientPoId: { in: quotation.clientPOs.map((p) => p.id) } });
@@ -352,6 +371,7 @@ export class ProjectsService {
         customerId,
         picId,
         quotationId: quotationId ?? undefined,
+        leadId: dto.leadId ?? undefined,
         startDate: dto.startDate ? new Date(dto.startDate) : new Date(),
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
         status: dto.status ?? "BERJALAN",
@@ -395,6 +415,46 @@ export class ProjectsService {
       await this.projectCost.reclassProject(project.id, user.id).catch((err) => console.warn("Reklasifikasi biaya survey gagal:", err?.message));
     }
     return project;
+  }
+
+  /**
+   * "Jadikan proyek" dari prospek Won. Boleh dilakukan PIC (Sales) prospek itu sendiri walau tidak punya
+   * hak Buat di modul Proyek, atau siapa pun yang punya hak Buat Proyek. Satu prospek = satu proyek.
+   * PIC proyek default = PM aktif pertama (mendapat notifikasi), bukan Sales.
+   */
+  async createFromLead(leadId: number, dto: CreateProjectFromLeadDto, user: RequestUser) {
+    const lead = await this.prisma.main.lead.findUnique({
+      where: { id: leadId },
+      select: { id: true, name: true, stage: true, owner_id: true, customerId: true, targetClosing: true },
+    });
+    if (!lead) throw new NotFoundException("Prospek tidak ditemukan");
+    if (lead.stage !== "WON") throw new BadRequestException("Proyek hanya bisa dibuat dari prospek berstatus Won");
+    if (lead.owner_id !== user.id && !can(user.role, "projects", "C")) {
+      throw new ForbiddenException("Hanya PIC prospek ini (atau yang punya hak buat proyek) yang boleh menjadikannya proyek");
+    }
+    const existing = await this.prisma.main.project.findFirst({
+      where: { OR: [{ leadId: lead.id }, { quotation: { leadId: lead.id } }] },
+      select: { id: true, name: true },
+    });
+    if (existing) throw new BadRequestException(`Prospek ini sudah punya proyek "${existing.name}"`);
+
+    const pm = dto.picId
+      ? null
+      : await this.prisma.main.user.findFirst({ where: { role: "PM", status: "AKTIF" }, orderBy: { id: "asc" }, select: { id: true } });
+    const name = /^project/i.test(lead.name) ? lead.name : `Project ${lead.name}`;
+    const today = new Date().toISOString().slice(0, 10);
+    return this.create(
+      {
+        name,
+        type: "CUSTOMER",
+        customerId: lead.customerId ?? undefined,
+        leadId: lead.id,
+        picId: dto.picId ?? pm?.id ?? user.id,
+        startDate: today,
+        endDate: lead.targetClosing ? lead.targetClosing.toISOString().slice(0, 10) : undefined,
+      } as ProjectDto,
+      user,
+    );
   }
 
   /** PRD: project dari lead Won hanya setelah pembayaran pertama diterima. */
