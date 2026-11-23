@@ -30,7 +30,7 @@ export function ScanInput({
   const { data } = useApp();
   const [value, setValue] = React.useState("");
   const [scans, setScans] = React.useState<Scan[]>([]);
-  const ref = React.useRef<TextInput>(null);
+  const ref = React.useRef<React.ComponentRef<typeof TextInput>>(null);
 
   function submit(raw?: string) {
     const sn = (raw ?? value).trim().toUpperCase();

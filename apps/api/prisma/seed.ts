@@ -104,13 +104,13 @@ async function main() {
     await prisma.$executeRawUnsafe(sql).catch(() => {});
   }
 
-  const passwordHash = await bcrypt.hash("taska123", 10);
+  const passwordHash = await bcrypt.hash("akuntra123", 10);
 
   const bos = await prisma.user.upsert({
-    where: { email: "hendra@taska.co.id" },
+    where: { email: "hendra@akuntra.co.id" },
     update: { passwordHash },
     create: {
-      email: "hendra@taska.co.id",
+      email: "hendra@akuntra.co.id",
       passwordHash,
       name: "Hendra",
       position: "Owner",
@@ -120,10 +120,10 @@ async function main() {
   });
 
   const admin = await prisma.user.upsert({
-    where: { email: "admin@taska.co.id" },
+    where: { email: "admin@akuntra.co.id" },
     update: { passwordHash },
     create: {
-      email: "admin@taska.co.id",
+      email: "admin@akuntra.co.id",
       passwordHash,
       name: "Admin",
       position: "Administrator",
@@ -133,10 +133,10 @@ async function main() {
   });
 
   const superAdmin = await prisma.user.upsert({
-    where: { email: "superadmin@taska.co.id" },
+    where: { email: "superadmin@akuntra.co.id" },
     update: { passwordHash },
     create: {
-      email: "superadmin@taska.co.id",
+      email: "superadmin@akuntra.co.id",
       passwordHash,
       name: "Super Admin",
       position: "Super Administrator",

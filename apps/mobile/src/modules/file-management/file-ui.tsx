@@ -133,7 +133,12 @@ export function FileTabs({
   onChange: (value: string) => void;
 }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      className="w-full"
+      contentContainerStyle={{ paddingRight: 8 }}
+    >
       <View className="flex-row gap-1 rounded-xl border border-border/70 bg-card p-1">
         {tabs.map((tab) => {
           const active = tab.value === value;
@@ -193,12 +198,12 @@ export function MetricCard({
   icon: React.ComponentType<{ size?: number; color?: string }>;
 }) {
   return (
-    <View className="w-full sm:w-auto min-w-[140px] sm:min-w-[210px] flex-1 rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
+    <View className="min-w-[140px] sm:min-w-[210px] flex-1 overflow-hidden rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
       <View className="flex-row items-start justify-between gap-2">
-        <Text className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <Text className="flex-1 min-w-0 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </Text>
-        <View className="rounded-lg p-1.5" style={{ backgroundColor: `${color}18` }}>
+        <View className="shrink-0 rounded-lg p-1.5" style={{ backgroundColor: `${color}18` }}>
           <Icon size={14} color={color} />
         </View>
       </View>

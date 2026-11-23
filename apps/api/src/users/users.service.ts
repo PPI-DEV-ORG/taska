@@ -85,7 +85,7 @@ export class UsersService {
       data: {
         ...data,
         role: role ?? "SALES",
-        passwordHash: await bcrypt.hash(password || "taska123", 10),
+        passwordHash: await bcrypt.hash(password || "akuntra123", 10),
       },
       select: SELECT,
     });

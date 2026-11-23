@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# TASKA ERP - Skrip Restore Data (Database MySQL & Dokumen Upload)
+# AKUNTRA ERP - Skrip Restore Data (Database MySQL & Dokumen Upload)
 # ==============================================================================
 set -euo pipefail
 
@@ -39,7 +39,7 @@ DB_USER="${DB_USER:-${PARSED_USER:-root}}"
 DB_PASSWORD="${DB_PASSWORD:-${PARSED_PASS:-}}"
 DB_HOST="${DB_HOST:-${PARSED_HOST:-127.0.0.1}}"
 DB_PORT="${DB_PORT:-${PARSED_PORT:-3306}}"
-DB_NAME="${DB_NAME:-${PARSED_DB:-taska}}"
+DB_NAME="${DB_NAME:-${PARSED_DB:-akuntra}}"
 
 if [[ -n "${UPLOAD_DIR:-}" ]]; then
   TARGET_UPLOAD_DIR="${UPLOAD_DIR}"

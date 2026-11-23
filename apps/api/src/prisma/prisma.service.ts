@@ -144,12 +144,12 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
       archiveOk ? this.ensureRoleEnums(this.archive) : Promise.resolve(),
     ]);
     try {
-      const existing = await this.main.user.findUnique({ where: { email: "superadmin@taska.co.id" } });
+      const existing = await this.main.user.findUnique({ where: { email: "superadmin@akuntra.co.id" } });
       if (!existing) {
-        const passwordHash = await bcrypt.hash("taska123", 10);
+        const passwordHash = await bcrypt.hash("akuntra123", 10);
         await this.main.user.create({
           data: {
-            email: "superadmin@taska.co.id",
+            email: "superadmin@akuntra.co.id",
             name: "Super Admin",
             role: "SUPER_ADMIN",
             position: "Super Administrator",

@@ -69,14 +69,14 @@ export function InvoiceStep3({ form }: { form: InvoiceFormScope }) {
               : "Status Pembayaran Saat Terbit"
           }
         >
-          <View className="flex-row gap-2">
+          <View className="flex-col sm:flex-row gap-2">
             <Button
               variant={paymentStatus === "UNPAID" ? "default" : "outline"}
               size="sm"
               onPress={() => setPaymentStatus("UNPAID")}
-              className="flex-1 h-8"
+              className="w-full sm:flex-1 h-auto min-h-[38px] py-2 px-3"
             >
-              <Text className="text-xs">
+              <Text className="text-xs text-center">
                 {mode === "masuk"
                   ? "Belum Dibayar (Hutang / Tempo)"
                   : "Belum Bayar (Tagihan / Tempo)"}
@@ -86,9 +86,9 @@ export function InvoiceStep3({ form }: { form: InvoiceFormScope }) {
               variant={paymentStatus === "PAID" ? "default" : "outline"}
               size="sm"
               onPress={() => setPaymentStatus("PAID")}
-              className="flex-1 h-8"
+              className="w-full sm:flex-1 h-auto min-h-[38px] py-2 px-3"
             >
-              <Text className="text-xs">
+              <Text className="text-xs text-center">
                 {mode === "masuk"
                   ? "Langsung Dibayar / Lunas (Kas / Bank)"
                   : "Langsung Lunas (Kas / Bank)"}
@@ -157,15 +157,15 @@ export function InvoiceStep3({ form }: { form: InvoiceFormScope }) {
           onPress={() => setShowMoreOptions((v) => !v)}
           accessibilityRole="button"
           accessibilityState={{ expanded: showMoreOptions }}
-          className="flex-row items-center justify-between px-3 py-2.5"
+          className="flex-row items-center justify-between gap-2 px-3 py-2.5"
         >
-          <Text className="text-xs font-semibold text-foreground">
+          <Text className="flex-1 min-w-0 text-xs font-semibold text-foreground">
             Opsi lainnya{" "}
             <Text className="text-[11px] font-normal text-muted-foreground">
               (nomor manual, lampiran, catatan)
             </Text>
           </Text>
-          <Text className="text-xs text-primary">
+          <Text className="shrink-0 text-xs text-primary">
             {showMoreOptions ? "Tutup" : "Buka"}
           </Text>
         </Pressable>

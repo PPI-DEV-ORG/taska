@@ -174,7 +174,7 @@ function Sidebar({ compact, onToggle }: { compact: boolean; onToggle?: () => voi
                           key={i.label}
                           onPress={() => router.push(i.href as any)}
                           className={cn(
-                            "min-h-[40px] flex-row items-center gap-3 rounded-xl px-3 transition-colors",
+                            "min-h-[40px] flex-row items-center gap-3 rounded-xl px-3 web:transition-colors",
                             on ? "bg-primary/15 text-primary font-semibold shadow-sm" : "hover:bg-panel/70 active:bg-panel",
                             compact && "justify-center px-0 min-h-[44px]"
                           )}
@@ -723,62 +723,68 @@ function Topbar({
   return (
     <View className="bg-card/40 border-border/70 border-b" style={{ zIndex: 20 }}>
       <SafeAreaView edges={isMobile ? ["top"] : []}>
-        <View className="h-16 flex-row items-center gap-3 px-4 md:px-6">
-          {onMenu ? (
-            <Pressable onPress={onMenu} hitSlop={10} className="p-2 rounded-lg hover:bg-panel">
-              <Menu size={20} color={colors.textSecondary} />
-            </Pressable>
-          ) : null}
-          {isMobile ? <Brand compact /> : null}
-
-          <Text className="text-base font-bold text-foreground" numberOfLines={1}>
-            {current}
-          </Text>
-
-          <View className="flex-1" />
-
-          {/* WA Bot Connection Icon for Super Admin & Bos */}
-          {canManageWa && onWhatsapp ? (
-            <Pressable
-              onPress={onWhatsapp}
-              accessibilityLabel="Koneksi WhatsApp Bot"
-              className="size-10 items-center justify-center rounded-xl hover:bg-panel"
-            >
-              <MessageSquare size={18} color="#22c55e" />
-            </Pressable>
-          ) : null}
-
-          <Pressable
-            onPress={toggleTheme}
-            accessibilityLabel={theme === "dark" ? "Ganti ke Light Mode" : "Ganti ke Dark Mode"}
-            className="size-10 items-center justify-center rounded-xl hover:bg-panel"
-          >
-            {theme === "dark" ? (
-              <Sun size={18} color={colors.textSecondary} />
-            ) : (
-              <Moon size={18} color={colors.textSecondary} />
-            )}
-          </Pressable>
-
-          <Pressable onPress={onNotif} className="size-10 items-center justify-center rounded-xl hover:bg-panel relative">
-            <Bell size={18} color={colors.textSecondary} />
-            {unread > 0 ? (
-              <View className="bg-primary absolute right-1.5 top-1.5 min-w-[16px] h-4 items-center justify-center rounded-full px-1">
-                <Text className="text-primary-foreground text-[10px] font-bold">{unread}</Text>
+        <View className="h-14 sm:h-16 flex-row items-center justify-between gap-2 px-3 sm:px-4 md:px-6">
+          <View className="flex-1 min-w-0 flex-row items-center gap-2 sm:gap-3">
+            {onMenu ? (
+              <Pressable onPress={onMenu} hitSlop={10} className="shrink-0 p-2 rounded-lg hover:bg-panel">
+                <Menu size={20} color={colors.textSecondary} />
+              </Pressable>
+            ) : null}
+            {isMobile ? (
+              <View className="shrink-0">
+                <Brand compact />
               </View>
             ) : null}
-          </Pressable>
 
-          <Pressable
-            onPress={onAccount}
-            className="bg-panel border border-border/80 size-9 items-center justify-center rounded-xl shadow-sm hover:border-primary/50 overflow-hidden"
-          >
-            {user!.avatarUrl ? (
-              <Image source={{ uri: user!.avatarUrl }} style={{ width: 36, height: 36 }} resizeMode="cover" />
-            ) : (
-              <Text className="text-sm font-bold text-foreground">{user!.name[0]}</Text>
-            )}
-          </Pressable>
+            <Text className="flex-1 min-w-0 text-sm sm:text-base font-bold text-foreground" numberOfLines={1}>
+              {current}
+            </Text>
+          </View>
+
+          <View className="shrink-0 flex-row items-center gap-1 sm:gap-2">
+            {/* WA Bot Connection Icon for Super Admin & Bos */}
+            {canManageWa && onWhatsapp ? (
+              <Pressable
+                onPress={onWhatsapp}
+                accessibilityLabel="Koneksi WhatsApp Bot"
+                className="size-9 sm:size-10 items-center justify-center rounded-xl hover:bg-panel"
+              >
+                <MessageSquare size={18} color="#22c55e" />
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              onPress={toggleTheme}
+              accessibilityLabel={theme === "dark" ? "Ganti ke Light Mode" : "Ganti ke Dark Mode"}
+              className="size-9 sm:size-10 items-center justify-center rounded-xl hover:bg-panel"
+            >
+              {theme === "dark" ? (
+                <Sun size={18} color={colors.textSecondary} />
+              ) : (
+                <Moon size={18} color={colors.textSecondary} />
+              )}
+            </Pressable>
+
+            <Pressable onPress={onNotif} className="size-9 sm:size-10 items-center justify-center rounded-xl hover:bg-panel relative">
+              <Bell size={18} color={colors.textSecondary} />
+              {unread > 0 ? (
+                <View className="bg-primary absolute right-1 top-1 min-w-[16px] h-4 items-center justify-center rounded-full px-1">
+                  <Text className="text-primary-foreground text-[10px] font-bold">{unread}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+
+            <Pressable
+              onPress={onAccount}
+              className="bg-panel border border-border/80 size-9 shrink-0 items-center justify-center rounded-xl shadow-sm hover:border-primary/50 overflow-hidden"
+            >
+              {user!.avatarUrl ? (
+                <Image source={{ uri: user!.avatarUrl }} style={{ width: 36, height: 36 }} resizeMode="cover" />
+              ) : (
+                <Text className="text-sm font-bold text-foreground">{user!.name[0]}</Text>
+              )}
+            </Pressable>
+          </View>
         </View>
       </SafeAreaView>
     </View>

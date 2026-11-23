@@ -1,4 +1,4 @@
-// Taska — Mini ERP Operasional · Skema fase 1 (PRD)
+// Akuntra — Mini ERP Operasional · Skema fase 1 (PRD)
 // Dokumen: apps/api/prisma/schema.prisma
 
 generator client {

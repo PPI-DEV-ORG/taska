@@ -1,5 +1,6 @@
 import * as React from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,6 @@ import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import {
   ArrowRightLeft,
-  X,
   ShieldCheck,
   CheckCircle2,
   Folder,
@@ -156,12 +156,11 @@ export function MigrationDialog({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-2 sm:p-4">
-        <View className="max-h-[92vh] w-[96vw] max-w-xl rounded-3xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
-          {/* Header - Tombol X diberikan ruang cukup agar tidak terpotong */}
-          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3">
-            <View className="flex-row items-center gap-2.5 flex-1 pr-3">
+    <Dialog open={visible} onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <DialogContent className="sm:max-w-xl bg-card p-4 sm:p-6 gap-0">
+          {/* Header */}
+          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-8">
+            <View className="flex-row items-center gap-2.5 flex-1">
               <View className="rounded-xl p-2 shrink-0" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <ArrowRightLeft size={20} color={colors.primary} />
               </View>
@@ -174,16 +173,9 @@ export function MigrationDialog({
                 </Text>
               </View>
             </View>
-            <Pressable
-              onPress={handleClose}
-              className="rounded-full p-2 text-muted-foreground hover:bg-muted shrink-0 ml-1 border border-border/40"
-              accessibilityLabel="Tutup"
-            >
-              <X size={18} />
-            </Pressable>
           </View>
 
-          <ScrollView className="space-y-4" showsVerticalScrollIndicator={false}>
+          <ScrollView className="flex-1 space-y-4" showsVerticalScrollIndicator={false}>
             {/* 1. Sumber */}
             <View className="gap-1.5">
               <Text className="text-xs font-semibold text-foreground">Penyimpanan Sumber</Text>
@@ -416,8 +408,7 @@ export function MigrationDialog({
               )}
             </Button>
           </View>
-        </View>
-      </View>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }

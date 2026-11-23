@@ -401,7 +401,7 @@ export default function NewDeliveryNoteScreen() {
     type: "success" | "warning" | "error";
     message: string;
   } | null>(null);
-  const scanInputRef = React.useRef<TextInput>(null);
+  const scanInputRef = React.useRef<React.ComponentRef<typeof TextInput>>(null);
 
   const activeProject = React.useMemo(() => {
     if (!selectedProject || selectedProject === "-") return null;

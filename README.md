@@ -25,8 +25,8 @@ Pastikan lingkungan pengembangan Anda telah terpasang:
 
 ### 1.2. Kloning & Pemasangan Dependensi
 ```bash
-git clone <repository-url> taska
-cd taska
+git clone <repository-url> akuntra
+cd akuntra
 
 # Install seluruh dependensi monorepo
 pnpm install
@@ -38,10 +38,10 @@ pnpm install
 Salin file konfigurasi contoh atau buat file `apps/api/.env`:
 ```env
 # Koneksi Database Utama
-DATABASE_URL="mysql://root:password@127.0.0.1:3306/taska?connection_limit=20"
+DATABASE_URL="mysql://root:password@127.0.0.1:3306/akuntra?connection_limit=20"
 
 # Koneksi Database Arsip (Penyimpanan transaksi > 2 tahun)
-ARCHIVE_DATABASE_URL="mysql://root:password@127.0.0.1:3306/taska_archive?connection_limit=5"
+ARCHIVE_DATABASE_URL="mysql://root:password@127.0.0.1:3306/akuntra_archive?connection_limit=5"
 
 # Konfigurasi Keamanan JWT
 JWT_SECRET="ganti-dengan-kunci-rahasia-minimal-64-karakter-hex"
@@ -57,8 +57,8 @@ UPLOAD_DIR="./uploads"
 
 > **Catatan Database:** Pastikan Anda telah membuat database di MySQL sebelum menjalankan migrasi:
 > ```sql
-> CREATE DATABASE taska CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-> CREATE DATABASE taska_archive CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+> CREATE DATABASE akuntra CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+> CREATE DATABASE akuntra_archive CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 > ```
 
 #### Frontend Mobile & Web (`apps/mobile/.env`)
@@ -108,9 +108,9 @@ Perintah ini akan menjalankan:
 
 ### 1.6. Akun Login Bawaan (Seed Default)
 Gunakan kredensial berikut untuk login pertama kali:
-- **Super Admin**: `superadmin@taska.co.id` | Password: `taska123`
-- **Admin**: `admin@taska.co.id` | Password: `taska123`
-- **Direksi / BOS**: `hendra@taska.co.id` | Password: `taska123`
+- **Super Admin**: `superadmin@akuntra.co.id` | Password: `akuntra123`
+- **Admin**: `admin@akuntra.co.id` | Password: `akuntra123`
+- **Direksi / BOS**: `hendra@akuntra.co.id` | Password: `akuntra123`
 
 ---
 
@@ -251,7 +251,7 @@ Buka menu **Projects**, pilih proyek untuk masuk ke ruang kerja terpadu:
 ## 4. STRUKTUR FOLDER & TEKNOLOGI
 
 ```
-taska/
+akuntra/
 ├── apps/
 │   ├── api/                    # Backend NestJS (REST API, Prisma ORM, Websockets)
 │   │   ├── prisma/             # Schema database Prisma & script seeding

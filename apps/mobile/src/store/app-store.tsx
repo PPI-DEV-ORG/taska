@@ -340,7 +340,10 @@ const ROUTE_MODULES_BY_SEGMENT: Record<string, readonly string[]> = {
 };
 
 function getModulesForPath(pathname?: string): readonly string[] | undefined {
-  const raw = pathname || (typeof window !== "undefined" ? window.location.pathname : "") || "";
+  const raw =
+    pathname ||
+    (Platform.OS === "web" && typeof window !== "undefined" ? window.location?.pathname : "") ||
+    "";
   const seg = raw.split("/").filter(Boolean)[0] || "";
   if (!seg || seg === "login") return undefined;
   return ROUTE_MODULES_BY_SEGMENT[seg];
@@ -826,7 +829,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Browser online/offline event listener + auto-ping API ketika offline atau ada antrean
   React.useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (Platform.OS !== "web" || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
     const onBrowserOffline = () => setOffline(true);
     const onBrowserOnline = () => {
       void (async () => {

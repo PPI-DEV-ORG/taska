@@ -57,8 +57,8 @@ export function CreateInvoiceFormView({ form }: { form: InvoiceFormScope }) {
       })}
     >
       <DialogHeader>
-        <DialogTitle className="flex-row items-center gap-2">
-          <Text className="text-base font-bold">
+        <View className="flex-row flex-wrap items-center gap-2 pr-6">
+          <DialogTitle className="text-base font-bold leading-snug">
             {mode === "masuk"
               ? "Buat Faktur Masuk (Tagihan / Pembelian)"
               : sourceType === "direct_sale"
@@ -66,38 +66,50 @@ export function CreateInvoiceFormView({ form }: { form: InvoiceFormScope }) {
                 : isProforma
                   ? "Buat Proforma Invoice"
                   : "Buat Faktur Penagihan (Faktur Keluar)"}
-          </Text>
+          </DialogTitle>
           {mode === "masuk" ? (
-            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-warning/15 text-warning">
-              Invoice Masuk
-            </Text>
+            <View className="rounded bg-warning/15 px-2 py-0.5">
+              <Text className="text-xs font-semibold text-warning">
+                Invoice Masuk
+              </Text>
+            </View>
           ) : sourceType === "direct_sale" ? (
-            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-success/15 text-success">
-              Penjualan Langsung
-            </Text>
+            <View className="rounded bg-success/15 px-2 py-0.5">
+              <Text className="text-xs font-semibold text-success">
+                Penjualan Langsung
+              </Text>
+            </View>
           ) : mode === "lanjut" && selectedParentInvoice ? (
-            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
-              Acuan:{" "}
-              {selectedParentInvoice.nomor || selectedParentInvoice.number}
-            </Text>
+            <View className="rounded bg-primary/10 px-2 py-0.5">
+              <Text className="text-xs font-semibold text-primary">
+                Acuan:{" "}
+                {selectedParentInvoice.nomor || selectedParentInvoice.number}
+              </Text>
+            </View>
           ) : activePo ? (
-            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
-              SO: {activePo.nomorSo || activePo.nomor}
-            </Text>
+            <View className="rounded bg-primary/10 px-2 py-0.5">
+              <Text className="text-xs font-semibold text-primary">
+                SO: {activePo.nomorSo || activePo.nomor}
+              </Text>
+            </View>
           ) : activeQuotation ? (
-            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
-              {activeQuotation.nomor}
-            </Text>
+            <View className="rounded bg-primary/10 px-2 py-0.5">
+              <Text className="text-xs font-semibold text-primary">
+                {activeQuotation.nomor}
+              </Text>
+            </View>
           ) : activeLead ? (
-            <Text className="text-xs font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">
-              Lead: {activeLead.nama}
-            </Text>
+            <View className="rounded bg-primary/10 px-2 py-0.5">
+              <Text className="text-xs font-semibold text-primary">
+                Lead: {activeLead.nama}
+              </Text>
+            </View>
           ) : null}
-        </DialogTitle>
+        </View>
       </DialogHeader>
 
       <ScrollView
-        className="max-h-[80vh] px-1"
+        className="flex-1 px-1"
         showsVerticalScrollIndicator={false}
       >
         <InvoiceStep1 form={form} />

@@ -1,9 +1,9 @@
 /**
  * Backup database ke satu file .sql (struktur + isi), tanpa perlu mysqldump.
  *
- *   pnpm --filter api db:backup                  -> backups/taska-YYYYMMDD-HHMMSS.sql
+ *   pnpm --filter api db:backup                  -> backups/akuntra-YYYYMMDD-HHMMSS.sql
  *
- * Pulihkan dengan klien MySQL apa pun:  mysql -u <user> -p <db> < backups/taska-....sql
+ * Pulihkan dengan klien MySQL apa pun:  mysql -u <user> -p <db> < backups/akuntra-....sql
  * (file ini men-DROP lalu membuat ulang setiap tabel).
  */
 import dotenv from "dotenv";

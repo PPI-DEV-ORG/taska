@@ -105,7 +105,7 @@ export function ReturnTab({ onRefreshParent, activeType, onChangeType }: ReturnT
       <View className="bg-panel border border-border/80 rounded-2xl p-1.5 flex-row items-center gap-2 max-w-md">
         <Pressable
           onPress={() => setReturnType("SALES")}
-          className={`flex-1 flex-row items-center justify-center gap-2 py-2 rounded-xl transition-all ${
+          className={`flex-1 flex-row items-center justify-center gap-2 py-2 rounded-xl web:transition-all ${
             returnType === "SALES" ? "bg-primary shadow-sm" : "hover:bg-card/50"
           }`}
         >
@@ -117,7 +117,7 @@ export function ReturnTab({ onRefreshParent, activeType, onChangeType }: ReturnT
 
         <Pressable
           onPress={() => setReturnType("PURCHASE")}
-          className={`flex-1 flex-row items-center justify-center gap-2 py-2 rounded-xl transition-all ${
+          className={`flex-1 flex-row items-center justify-center gap-2 py-2 rounded-xl web:transition-all ${
             returnType === "PURCHASE" ? "bg-primary shadow-sm" : "hover:bg-card/50"
           }`}
         >
