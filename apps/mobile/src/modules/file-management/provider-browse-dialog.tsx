@@ -1,5 +1,6 @@
 import * as React from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { colors } from "@/tokens";
@@ -9,7 +10,6 @@ import {
   FileText,
   ChevronRight,
   FolderOpen,
-  X,
   HardDrive,
   RefreshCw,
 } from "lucide-react-native";
@@ -71,11 +71,10 @@ export function ProviderBrowseDialog({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-2 sm:p-4">
-        <View className="max-h-[85vh] w-[96vw] max-w-2xl rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
+    <Dialog open={visible} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-2xl bg-card p-4 sm:p-6 gap-0">
           {/* Header */}
-          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-1">
+          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-8">
             <View className="flex-1 min-w-0 mr-3 flex-row items-center gap-2.5">
               <View className="rounded-xl p-2 shrink-0" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <FolderOpen size={20} color={colors.primary} />
@@ -96,11 +95,8 @@ export function ProviderBrowseDialog({
                 onPress={() => loadEntries(currentPath)}
                 disabled={loading}
               >
-                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                <RefreshCw size={14} className={loading ? "web:animate-spin" : ""} />
               </Button>
-              <Pressable onPress={onClose} hitSlop={12} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted shrink-0">
-                <X size={20} />
-              </Pressable>
             </View>
           </View>
 
@@ -210,8 +206,7 @@ export function ProviderBrowseDialog({
               <Text>Tutup</Text>
             </Button>
           </View>
-        </View>
-      </View>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }

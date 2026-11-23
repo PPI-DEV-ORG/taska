@@ -1,5 +1,6 @@
 import * as React from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,6 @@ import { api } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import {
   CalendarClock,
-  X,
   CheckCircle2,
 } from "lucide-react-native";
 import type { MigrationSchedule, StorageProviderItem } from "./types";
@@ -117,12 +117,11 @@ function ScheduleDialogForm({
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-2 sm:p-4">
-        <View className="max-h-[90vh] w-[96vw] max-w-lg rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
+    <Dialog open={visible} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-lg bg-card p-4 sm:p-6 gap-0">
           {/* Header */}
-          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-1">
-            <View className="flex-1 min-w-0 mr-3 flex-row items-center gap-2.5">
+          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-8">
+            <View className="flex-1 min-w-0 flex-row items-center gap-2.5">
               <View className="rounded-xl p-2 shrink-0" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <CalendarClock size={20} color={colors.primary} />
               </View>
@@ -135,12 +134,9 @@ function ScheduleDialogForm({
                 </Text>
               </View>
             </View>
-            <Pressable onPress={onClose} hitSlop={12} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted shrink-0">
-              <X size={20} />
-            </Pressable>
           </View>
 
-          <ScrollView className="space-y-4" showsVerticalScrollIndicator={false}>
+          <ScrollView className="flex-1 space-y-4" showsVerticalScrollIndicator={false}>
             {/* Nama Jadwal */}
             <View className="gap-1">
               <Text className="text-xs font-semibold text-foreground">Nama / Label Jadwal</Text>
@@ -284,8 +280,7 @@ function ScheduleDialogForm({
               )}
             </Button>
           </View>
-        </View>
-      </View>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }

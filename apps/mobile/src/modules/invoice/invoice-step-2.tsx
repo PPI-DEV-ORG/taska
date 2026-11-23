@@ -91,9 +91,11 @@ export function InvoiceStep2({ form }: { form: InvoiceFormScope }) {
       {mode === "lanjut" ||
       (mode === "masuk" && relatedExistingInvoices.length > 0) ? (
         <View className="p-4 rounded-xl border border-primary/20 bg-primary/5 gap-2.5">
-          <View className="flex-row items-center gap-2">
-            <Package size={16} color={colors.primary} />
-            <Text className="text-xs font-bold text-primary">
+          <View className="flex-row items-start gap-2">
+            <View className="shrink-0 pt-0.5">
+              <Package size={16} color={colors.primary} />
+            </View>
+            <Text className="flex-1 min-w-0 text-xs font-bold text-primary">
               {mode === "masuk"
                 ? "Rincian Tagihan Kelanjutan PO / Pembelian"
                 : "Barang & Unit SN Tidak Perlu Dipilih Ulang"}
@@ -151,8 +153,8 @@ export function InvoiceStep2({ form }: { form: InvoiceFormScope }) {
       ) : mode === "masuk" ? (
         items.length > 0 ? (
           <View className="gap-2 p-3 rounded-xl border border-border bg-card">
-            <View className="flex-row justify-between items-center">
-              <Text className="text-xs font-bold text-foreground">
+            <View className="flex-row flex-wrap justify-between items-center gap-2">
+              <Text className="flex-1 min-w-0 text-xs font-bold text-foreground">
                 Rincian Item dari PO Supplier ({items.length} Item)
               </Text>
               <Button

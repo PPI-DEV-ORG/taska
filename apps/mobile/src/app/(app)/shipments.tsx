@@ -33,14 +33,16 @@ export default function ShipmentsScreen() {
             <Pressable
               key={p.id}
               onPress={() => router.push(`/supplier-pos/${p.id}` as any)}
-              className="bg-card border-border rounded-xl border p-5 gap-3"
+              className="bg-card border-border overflow-hidden rounded-xl border p-4 sm:p-5 gap-3"
             >
-              <View className="flex-row items-center justify-between">
-                <View>
-                  <Text className="text-base font-semibold">{p.nomor} · {p.supplier}</Text>
+              <View className="flex-row items-start justify-between gap-2.5">
+                <View className="flex-1 min-w-0 gap-0.5">
+                  <Text className="text-sm sm:text-base font-semibold">{p.nomor} · {p.supplier}</Text>
                   <Text className="text-text-secondary text-xs">{p.item}</Text>
                 </View>
-                <StatusBadge status={p.pengiriman} />
+                <View className="shrink-0">
+                  <StatusBadge status={p.pengiriman} />
+                </View>
               </View>
 
               <View className="border-border border-t pt-3 flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">

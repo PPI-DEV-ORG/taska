@@ -90,13 +90,15 @@ export function MetricCard({
   icon: React.ComponentType<{ size?: number; color?: string }>;
   onPress?: () => void;
 }) {
-  const Content = (
-    <View className="min-w-[215px] flex-1 rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
+  const cardClass =
+    "min-w-[145px] sm:min-w-[210px] flex-1 overflow-hidden rounded-2xl border border-border/80 bg-card p-4 shadow-sm";
+  const inner = (
+    <>
       <View className="flex-row items-start justify-between gap-2">
-        <Text className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <Text className="flex-1 min-w-0 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </Text>
-        <View className="rounded-lg p-1.5" style={{ backgroundColor: `${color}18` }}>
+        <View className="shrink-0 rounded-lg p-1.5" style={{ backgroundColor: `${color}18` }}>
           <Icon size={14} color={color} />
         </View>
       </View>
@@ -104,17 +106,17 @@ export function MetricCard({
         {value}
       </Text>
       <Text className="mt-1 text-xs text-muted-foreground">{hint}</Text>
-    </View>
+    </>
   );
 
   if (onPress) {
     return (
-      <Pressable onPress={onPress} className="flex-1 min-w-[215px]">
-        {Content}
+      <Pressable onPress={onPress} className={cardClass}>
+        {inner}
       </Pressable>
     );
   }
-  return Content;
+  return <View className={cardClass}>{inner}</View>;
 }
 
 export type MaintenanceTabItem = {

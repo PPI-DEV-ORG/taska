@@ -195,13 +195,15 @@ export function InvoiceStep1({ form }: { form: InvoiceFormScope }) {
 
       {/* Source Link Section or Continuation Invoice Selector or Invoice Masuk Section */}
       {mode === "masuk" ? (
-        <View className="mb-4 gap-2.5 p-3.5 rounded-xl border border-warning/40 bg-warning/5">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-xs font-bold text-foreground">
+        <View className="mb-4 gap-2.5 p-3.5 overflow-hidden rounded-xl border border-warning/40 bg-warning/5">
+          <View className="flex-row items-start justify-between gap-2">
+            <Text className="flex-1 min-w-0 text-xs font-bold text-foreground">
               Detail Tagihan / Invoice Masuk (Listrik, Internet, Operasional,
               atau Supplier)
             </Text>
-            <StatusBadge status="Faktur Masuk" />
+            <View className="shrink-0">
+              <StatusBadge status="Faktur Masuk" />
+            </View>
           </View>
 
           <FormField

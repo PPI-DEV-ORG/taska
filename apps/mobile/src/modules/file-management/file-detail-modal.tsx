@@ -1,5 +1,6 @@
 import * as React from "react";
-import { ActivityIndicator, Image, Linking, Modal, Platform, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Image, Linking, Platform, Pressable, ScrollView, View } from "react-native";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { colors } from "@/tokens";
@@ -7,7 +8,6 @@ import { api, apiBase } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import {
   FileText,
-  X,
   Download,
   Share2,
   Trash2,
@@ -190,12 +190,12 @@ export function FileDetailModal({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-2 sm:p-4">
-        <View className="max-h-[92vh] w-[96vw] max-w-2xl rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
+    <>
+      <Dialog open={visible} onOpenChange={(open) => { if (!open) onClose(); }}>
+        <DialogContent className="sm:max-w-2xl bg-card p-4 sm:p-6 gap-0">
           {/* Header */}
-          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-1">
-            <View className="flex-1 min-w-0 mr-3 flex-row items-center gap-2.5">
+          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-8">
+            <View className="flex-1 min-w-0 flex-row items-center gap-2.5">
               <View className="rounded-xl p-2 shrink-0" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <FileText size={20} color={colors.primary} />
               </View>
@@ -208,9 +208,6 @@ export function FileDetailModal({
                 </Text>
               </View>
             </View>
-            <Pressable onPress={onClose} hitSlop={12} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted shrink-0">
-              <X size={20} />
-            </Pressable>
           </View>
 
           {loading || !file ? (
@@ -219,7 +216,7 @@ export function FileDetailModal({
               <Text className="mt-2 text-xs text-muted-foreground">Memuat informasi berkas...</Text>
             </View>
           ) : (
-            <ScrollView className="space-y-4" showsVerticalScrollIndicator={false}>
+            <ScrollView className="flex-1 space-y-4" showsVerticalScrollIndicator={false}>
               {/* Ringkasan Status & Penyimpanan */}
               <View className="flex-row flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/20 p-3 border border-border/70">
                 <View className="flex-row items-center gap-2">
@@ -543,8 +540,8 @@ export function FileDetailModal({
               </Button>
             </View>
           </View>
-        </View>
-      </View>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Ganti Berkas */}
       <FileReplaceDialog
@@ -563,6 +560,6 @@ export function FileDetailModal({
         onClose={() => setShareOpen(false)}
         file={file}
       />
-    </Modal>
+    </>
   );
 }

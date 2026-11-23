@@ -322,29 +322,14 @@ export function FileManagementScreen() {
         />
       }
     >
-      <View className="mx-auto w-full max-w-7xl p-4 md:p-6 space-y-6">
+      <View className="mx-auto w-full max-w-7xl p-4 md:p-6 gap-5">
         {/* Header Modul */}
         <PageHeader
           title="Manajemen File (Core Storage)"
           subtitle="Pusat pengelolaan dokumen ERP, storage provider (S3 / NAS), dan migrasi berkas aman"
+          onRefresh={handleFullRefresh}
           action={
-            <View className="flex-row items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={loading || refreshing}
-                onPress={() => void handleFullRefresh()}
-                className="gap-1.5"
-              >
-                <RefreshCw
-                  size={14}
-                  color={colors.primary}
-                  className={loading || refreshing ? "animate-spin" : undefined}
-                />
-                <Text className="text-xs font-semibold">
-                  {loading || refreshing ? "Menyegarkan..." : "Segarkan"}
-                </Text>
-              </Button>
+            <>
               <Button
                 variant="outline"
                 size="sm"
@@ -352,7 +337,7 @@ export function FileManagementScreen() {
                   setProviderToEdit(null);
                   setProviderFormOpen(true);
                 }}
-                className="gap-1.5"
+                className="h-9 gap-1.5"
               >
                 <Plus size={14} color={colors.primary} />
                 <Text className="text-xs font-semibold">Sambungkan Storage</Text>
@@ -360,13 +345,13 @@ export function FileManagementScreen() {
               <Button
                 size="sm"
                 onPress={() => setMigrationOpen(true)}
-                className="gap-1.5"
+                className="h-9 gap-1.5"
                 style={{ backgroundColor: colors.primary }}
               >
                 <ArrowRightLeft size={14} color="#FFF" />
                 <Text className="text-xs font-semibold text-white">Migrasi Berkas</Text>
               </Button>
-            </View>
+            </>
           }
         />
 
@@ -412,7 +397,7 @@ export function FileManagementScreen() {
 
         {/* TAB 1: OVERVIEW */}
         {activeTab === "overview" && (overview || !loading) ? (
-          <View className="space-y-6">
+          <View className="gap-5">
             {/* KPI Cards */}
             <View className="flex-row flex-wrap gap-3">
               <MetricCard
@@ -447,15 +432,15 @@ export function FileManagementScreen() {
 
             {/* Widget Kapasitas Server / Komputer Host */}
             {serverStorage ? (
-              <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-3">
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-2">
+              <View className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-sm gap-3">
+                <View className="flex-row items-center justify-between gap-2">
+                  <View className="flex-1 min-w-0 flex-row items-center gap-2">
                     <Server size={18} color={colors.primary} />
-                    <Text className="text-sm font-bold text-foreground">
+                    <Text className="flex-1 text-sm font-bold text-foreground" numberOfLines={1}>
                       Kapasitas Server Akuntra
                     </Text>
                   </View>
-                  <Text className="text-xs font-mono text-muted-foreground">
+                  <Text className="shrink-0 text-xs font-mono text-muted-foreground">
                     {serverStorage.diskUsedPercent}% Digunakan
                   </Text>
                 </View>
@@ -472,7 +457,7 @@ export function FileManagementScreen() {
                   />
                 </View>
 
-                <View className="flex-row flex-wrap justify-between text-xs text-muted-foreground pt-1">
+                <View className="flex-row flex-wrap justify-between gap-x-4 gap-y-1.5 pt-1">
                   <Text className="text-xs text-muted-foreground">
                     Terpakai: <Text className="font-semibold text-foreground">{formatBytes(serverStorage.diskUsed)}</Text>
                   </Text>
@@ -491,7 +476,7 @@ export function FileManagementScreen() {
 
             {/* Distribusi Berkas Berdasarkan Sub-Folder Modul */}
             {overview?.subfolders && overview.subfolders.length > 0 ? (
-              <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
+              <View className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-sm gap-4">
                 <View className="flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <View className="flex-1 min-w-0">
                     <Text className="text-sm font-bold text-foreground">
@@ -515,7 +500,7 @@ export function FileManagementScreen() {
                   </Button>
                 </View>
 
-                <View className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                <View className="flex-row flex-wrap gap-3">
                   {overview.subfolders.map((sf) => (
                     <Pressable
                       key={sf.folder}
@@ -523,19 +508,19 @@ export function FileManagementScreen() {
                         handleOpenFolder(sf.folder);
                         setActiveTab("files");
                       }}
-                      className="rounded-xl border border-border/80 bg-muted/10 p-3.5 space-y-1.5 hover:border-primary/50"
+                      className="min-w-[140px] flex-1 overflow-hidden rounded-xl border border-border/80 bg-muted/10 p-3.5 gap-1.5 hover:border-primary/50"
                     >
-                      <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-1.5">
+                      <View className="flex-row items-center justify-between gap-1.5">
+                        <View className="flex-1 min-w-0 flex-row items-center gap-1.5">
                           <View
-                            className="h-2.5 w-2.5 rounded-full"
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
                             style={{ backgroundColor: sf.color || "#64748B" }}
                           />
-                          <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
+                          <Text className="flex-1 text-xs font-bold text-foreground" numberOfLines={1}>
                             {sf.label}
                           </Text>
                         </View>
-                        <ChevronRight size={12} className="text-muted-foreground" />
+                        <ChevronRight size={12} color={colors.muted} />
                       </View>
                       <View className="flex-row items-baseline justify-between pt-1">
                         <Text className="text-base font-black text-foreground">
@@ -555,21 +540,12 @@ export function FileManagementScreen() {
             ) : null}
 
             {/* Daftar Provider & Status */}
-            <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
+            <View className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-sm gap-4">
               <View className="flex-row items-center justify-between">
                 <Text className="text-sm font-bold text-foreground">Kondisi Penyimpanan (Storage Providers)</Text>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => void handleFullRefresh()}
-                  className="gap-1"
-                >
-                  <RefreshCw size={12} className={refreshing ? "animate-spin" : undefined} />
-                  <Text className="text-xs">Segarkan</Text>
-                </Button>
               </View>
 
-              <View className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <View className="gap-3 md:grid md:grid-cols-2">
                 {providers.map((p) => (
                   <View
                     key={p.id}
@@ -633,19 +609,19 @@ export function FileManagementScreen() {
 
         {/* TAB 2: SEMUA BERKAS & TAB 3: BERKAS LEPAS */}
         {activeTab === "files" || activeTab === "orphans" ? (
-          <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-5">
+          <View className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-sm gap-4">
             {/* Tampilan 1: GRID FOLDER (Default ketika tidak sedang membuka isi folder) */}
             {!currentFolder && !flatListView && !search.trim() ? (
-              <View className="space-y-4">
+              <View className="gap-4">
                 {/* Search Bar & Aksi Global */}
                 <View className="flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                  <View className="flex-1 min-w-0 flex-row items-center rounded-xl border border-border bg-background px-3 py-1.5">
-                    <Search size={16} className="text-muted-foreground" />
+                  <View className="w-full sm:flex-1 min-w-0 h-11 flex-row items-center gap-2 rounded-xl border border-border bg-background px-3">
+                    <Search size={16} color={colors.muted} />
                     <Input
                       placeholder="Cari berkas secara global (nama, kode, deskripsi)..."
                       value={search}
                       onChangeText={setSearch}
-                      className="flex-1 border-0 bg-transparent text-xs"
+                      className="h-9 flex-1 border-0 bg-transparent px-0 text-xs shadow-none"
                     />
                   </View>
 
@@ -653,21 +629,11 @@ export function FileManagementScreen() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onPress={() => void handleFullRefresh()}
-                      className="gap-1"
-                    >
-                      <RefreshCw size={12} className={refreshing ? "animate-spin" : undefined} />
-                      <Text className="text-xs">Segarkan</Text>
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
                       onPress={() => {
                         setFlatListView(true);
                         setPage(1);
                       }}
-                      className="gap-1.5"
+                      className="h-9 gap-1.5"
                     >
                       <Layers size={13} color={colors.primary} />
                       <Text className="text-xs font-semibold">Tampilkan Semua (List)</Text>
@@ -679,7 +645,7 @@ export function FileManagementScreen() {
                         size="sm"
                         onPress={handleBulkDeleteOrphans}
                         disabled={deletingOrphans}
-                        className="gap-1"
+                        className="h-9 gap-1"
                       >
                         <Trash2 size={12} />
                         <Text className="text-xs font-semibold text-white">
@@ -692,9 +658,9 @@ export function FileManagementScreen() {
 
                 {/* Banner Khusus Tab Berkas Lepas */}
                 {activeTab === "orphans" ? (
-                  <View className="flex-row items-center gap-2.5 rounded-xl bg-amber-500/10 p-3.5 border border-amber-500/20">
+                  <View className="flex-row items-start gap-2.5 rounded-xl bg-amber-500/10 p-3.5 border border-amber-500/20">
                     <AlertTriangle size={18} color="#D97706" />
-                    <View className="flex-1">
+                    <View className="flex-1 min-w-0 gap-0.5">
                       <Text className="text-xs font-bold text-amber-800">Daftar Berkas Lepas (Standalone Files)</Text>
                       <Text className="text-[11px] text-amber-700">
                         Pilih folder modul di bawah untuk memeriksa berkas mandiri yang tidak terhubung ke data transaksi ERP.
@@ -704,7 +670,7 @@ export function FileManagementScreen() {
                 ) : null}
 
                 {/* Header Bagian Folder Grid */}
-                <View className="flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                <View className="flex-col sm:flex-row sm:items-center justify-between gap-1 pt-1">
                   <View className="flex-1 min-w-0">
                     <Text className="text-sm font-bold text-foreground">
                       {activeTab === "orphans" ? "Direktori Berkas Lepas per Modul" : "Direktori Berkas per Modul ERP"}
@@ -722,12 +688,12 @@ export function FileManagementScreen() {
                     <Text className="mt-2 text-xs text-muted-foreground">Memuat folder modul...</Text>
                   </View>
                 ) : overview?.subfolders && overview.subfolders.length > 0 ? (
-                  <View className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <View className="gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 sm:gap-4">
                     {overview.subfolders.map((sf) => (
                       <Pressable
                         key={sf.folder}
                         onPress={() => handleOpenFolder(sf.folder)}
-                        className="rounded-2xl border border-border/80 bg-background/60 p-4 space-y-3 hover:border-primary hover:shadow-md transition-all cursor-pointer"
+                        className="rounded-2xl border border-border/80 bg-background/60 p-4 gap-3 web:hover:border-primary web:hover:shadow-md web:transition-all web:cursor-pointer"
                       >
                         <View className="flex-row items-start justify-between">
                           <View
@@ -790,10 +756,10 @@ export function FileManagementScreen() {
               </View>
             ) : (
               /* Tampilan 2: DAFTAR BERKAS DI DALAM FOLDER / HASIL CARI */
-              <View className="space-y-4">
+              <View className="gap-4">
                 {/* Header Breadcrumb Navigasi */}
                 <View className="flex-row flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
-                  <View className="flex-row items-center gap-2">
+                  <View className="flex-row flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -824,18 +790,8 @@ export function FileManagementScreen() {
                     </View>
                   </View>
 
-                  <View className="flex-row items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onPress={() => void handleFullRefresh()}
-                      className="gap-1"
-                    >
-                      <RefreshCw size={12} className={refreshing ? "animate-spin" : undefined} />
-                      <Text className="text-xs">Segarkan</Text>
-                    </Button>
-
-                    {activeTab === "orphans" && selectedOrphanIds.length > 0 ? (
+                  {activeTab === "orphans" && selectedOrphanIds.length > 0 ? (
+                    <View className="flex-row items-center gap-2">
                       <Button
                         variant="destructive"
                         size="sm"
@@ -848,13 +804,13 @@ export function FileManagementScreen() {
                           Hapus {selectedOrphanIds.length} Berkas
                         </Text>
                       </Button>
-                    ) : null}
-                  </View>
+                    </View>
+                  ) : null}
                 </View>
 
                 {/* Search Bar di Dalam Folder */}
-                <View className="flex-row items-center rounded-xl border border-border bg-background px-3 py-1.5">
-                  <Search size={16} className="text-muted-foreground" />
+                <View className="h-11 flex-row items-center gap-2 rounded-xl border border-border bg-background px-3">
+                  <Search size={16} color={colors.muted} />
                   <Input
                     placeholder={
                       currentFolder
@@ -863,7 +819,7 @@ export function FileManagementScreen() {
                     }
                     value={search}
                     onChangeText={setSearch}
-                    className="flex-1 border-0 bg-transparent text-xs"
+                    className="h-9 flex-1 border-0 bg-transparent px-0 text-xs shadow-none"
                   />
                 </View>
 
@@ -1203,9 +1159,9 @@ export function FileManagementScreen() {
               ) : (
                 <View className="divide-y divide-border/60">
                   {schedules.map((sc) => (
-                    <View key={sc.id} className="flex-row items-center justify-between py-3">
-                      <View className="gap-0.5">
-                        <View className="flex-row items-center gap-2">
+                    <View key={sc.id} className="flex-col sm:flex-row sm:items-center justify-between gap-2 py-3">
+                      <View className="flex-1 min-w-0 gap-0.5">
+                        <View className="flex-row flex-wrap items-center gap-2">
                           <Text className="text-xs font-bold text-foreground">{sc.name}</Text>
                           <View
                             className="rounded-full px-2 py-0.5"
@@ -1257,13 +1213,9 @@ export function FileManagementScreen() {
             </View>
 
             {/* Riwayat Pekerjaan Migrasi (Job History) */}
-            <View className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
+            <View className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-sm gap-4">
               <View className="flex-row items-center justify-between">
                 <Text className="text-sm font-bold text-foreground">Riwayat Aktivitas Migrasi</Text>
-                <Button variant="ghost" size="sm" onPress={() => void handleFullRefresh()} className="gap-1">
-                  <RefreshCw size={12} className={refreshing ? "animate-spin" : undefined} />
-                  <Text className="text-xs">Segarkan</Text>
-                </Button>
               </View>
 
               {migrationJobs.length === 0 ? (

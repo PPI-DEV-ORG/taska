@@ -136,7 +136,7 @@ export function SerialItemPickerModal({
   } | null>(null);
   const [multiScanModalOpen, setMultiScanModalOpen] = React.useState(false);
   const [multiScanText, setMultiScanText] = React.useState("");
-  const scanInputRef = React.useRef<TextInput>(null);
+  const scanInputRef = React.useRef<React.ComponentRef<typeof TextInput>>(null);
 
   const handleClose = () => {
     setGoodsPphMode("none");

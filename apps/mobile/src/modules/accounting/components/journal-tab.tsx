@@ -63,10 +63,12 @@ export function JournalTab({
 
   return (
     <View className="gap-4 w-full">
-      <View className="bg-primary/10 border-primary/30 rounded-xl border p-4 flex-row flex-wrap items-center justify-between gap-3">
-        <View className="flex-row items-center gap-3">
-          <CheckCircle2 size={20} color={colors.primary} />
-          <View>
+      <View className="bg-primary/10 border-primary/30 overflow-hidden rounded-xl border p-4 flex-row flex-wrap items-center justify-between gap-3">
+        <View className="flex-1 min-w-[220px] flex-row items-start gap-3">
+          <View className="shrink-0 pt-0.5">
+            <CheckCircle2 size={20} color={colors.primary} />
+          </View>
+          <View className="flex-1 min-w-0 gap-0.5">
             <Text className="text-sm font-bold text-foreground">
               Buku Jurnal Umum Berpasangan (Double-Entry General Journal)
             </Text>
@@ -75,7 +77,7 @@ export function JournalTab({
             </Text>
           </View>
         </View>
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row flex-wrap items-center gap-2">
           {onRefresh && (
             <Button size="sm" variant="outline" onPress={onRefresh} className="gap-1.5 h-8">
               <RefreshCw size={13} color={colors.text} />

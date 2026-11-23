@@ -1,5 +1,6 @@
 import * as React from "react";
-import { ActivityIndicator, Modal, Pressable, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,6 @@ import { api, apiOrigin } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import {
   Share2,
-  X,
   Copy,
   CheckCircle2,
   Lock,
@@ -135,12 +135,11 @@ export function FileShareDialog({
     : "";
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/60 p-3 sm:p-4">
-        <View className="w-[94vw] max-w-md rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl">
+    <Dialog open={visible} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md bg-card p-4 sm:p-6 gap-0">
           {/* Header */}
-          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-1">
-            <View className="flex-1 min-w-0 mr-3 flex-row items-center gap-2.5">
+          <View className="mb-4 flex-row items-center justify-between border-b border-border pb-3 pr-8">
+            <View className="flex-1 min-w-0 flex-row items-center gap-2.5">
               <View className="rounded-xl p-2 shrink-0" style={{ backgroundColor: `${colors.primary}1A` }}>
                 <Share2 size={20} color={colors.primary} />
               </View>
@@ -149,9 +148,6 @@ export function FileShareDialog({
                 <Text className="text-xs text-muted-foreground" numberOfLines={1} ellipsizeMode="middle">{file.displayName}</Text>
               </View>
             </View>
-            <Pressable onPress={onClose} hitSlop={12} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted shrink-0">
-              <X size={20} />
-            </Pressable>
           </View>
 
           {createdShare ? (
@@ -355,8 +351,7 @@ export function FileShareDialog({
               </View>
             </View>
           )}
-        </View>
-      </View>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }

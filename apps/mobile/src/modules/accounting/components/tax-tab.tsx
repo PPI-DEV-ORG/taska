@@ -139,7 +139,7 @@ export function TaxTab({ onRefreshParent }: TaxTabProps) {
                 <Pressable
                   key={mVal}
                   onPress={() => setMonth(mVal)}
-                  className={`px-2.5 py-1 rounded-lg border transition-all ${
+                  className={`px-2.5 py-1 rounded-lg border web:transition-all ${
                     isSelected
                       ? "bg-primary border-primary"
                       : "bg-panel/80 border-border/60 hover:bg-card"
