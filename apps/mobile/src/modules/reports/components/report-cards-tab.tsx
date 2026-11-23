@@ -25,12 +25,16 @@ export function ReportCardsTab({
       {cards.map((rc) => (
         <View
           key={rc.title}
-          className="bg-card border-border rounded-xl border p-5 justify-between gap-4 w-full"
+          className="bg-card border-border rounded-xl border p-5 justify-between gap-4 w-full overflow-hidden"
         >
           <View className="gap-1.5">
-            <View className="flex-row items-center justify-between gap-2">
-              <Text className="text-base font-semibold flex-1">{rc.title}</Text>
-              {rc.badge ? <Pill label={rc.badge} tone="primary" /> : null}
+            <View className="flex-row items-start justify-between gap-2">
+              <Text className="text-base font-semibold flex-1 min-w-0">{rc.title}</Text>
+              {rc.badge ? (
+                <View className="shrink-0">
+                  <Pill label={rc.badge} tone="primary" />
+                </View>
+              ) : null}
             </View>
             <Text className="text-text-secondary text-sm">{rc.desc}</Text>
             <View className="bg-panel/40 border-border mt-2 rounded-lg border p-2.5">

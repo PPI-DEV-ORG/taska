@@ -97,10 +97,12 @@ export function JournalTab({ fin, onDownload }: JournalTabProps) {
 
   return (
     <View className="gap-5 w-full">
-      <View className="bg-primary/10 border-primary/40 rounded-xl border p-4 flex-row flex-wrap items-center justify-between gap-3">
-        <View className="flex-row items-center gap-3">
-          <CheckCircle2 size={20} color={colors.primary} />
-          <View>
+      <View className="bg-primary/10 border-primary/40 rounded-xl border p-4 flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-3 overflow-hidden">
+        <View className="flex-row items-start sm:items-center gap-3 flex-1 min-w-0">
+          <View className="shrink-0 mt-0.5 sm:mt-0">
+            <CheckCircle2 size={20} color={colors.primary} />
+          </View>
+          <View className="flex-1 min-w-0 gap-0.5">
             <Text className="text-sm font-bold">
               Verifikasi Jurnal Double-Entry: TOTAL DEBIT ({rupiah(fin.totalDebit)}) = TOTAL KREDIT ({rupiah(fin.totalKredit)})
             </Text>

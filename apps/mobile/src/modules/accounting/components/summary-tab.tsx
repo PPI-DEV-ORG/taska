@@ -33,25 +33,25 @@ export function SummaryTab({ fin, onNavigateToReports }: SummaryTabProps) {
           }
         >
           <View className="gap-2">
-            <View className="flex-row justify-between py-1 border-b border-border/40">
-              <Text className="text-xs text-muted-foreground">Pendapatan Proyek (DPP Bersih):</Text>
-              <Text className="text-xs font-bold text-foreground">{rupiah(fin.incomeStatement.revenueDpp)}</Text>
+            <View className="flex-row justify-between items-center gap-3 py-1 border-b border-border/40">
+              <Text className="flex-1 min-w-0 text-xs text-muted-foreground">Pendapatan Proyek (DPP Bersih):</Text>
+              <Text className="shrink-0 text-right text-xs font-bold text-foreground">{rupiah(fin.incomeStatement.revenueDpp)}</Text>
             </View>
-            <View className="flex-row justify-between py-1 border-b border-border/40">
-              <Text className="text-xs text-muted-foreground">Beban Pokok Pengadaan (HPP):</Text>
-              <Text className="text-xs font-semibold text-danger">- {rupiah(fin.incomeStatement.cogsTotal)}</Text>
+            <View className="flex-row justify-between items-center gap-3 py-1 border-b border-border/40">
+              <Text className="flex-1 min-w-0 text-xs text-muted-foreground">Beban Pokok Pengadaan (HPP):</Text>
+              <Text className="shrink-0 text-right text-xs font-semibold text-danger">- {rupiah(fin.incomeStatement.cogsTotal)}</Text>
             </View>
-            <View className="flex-row justify-between py-1 border-b border-border/40">
-              <Text className="text-xs font-bold text-foreground">Laba Kotor (Gross Profit):</Text>
-              <Text className="text-xs font-bold text-success">{rupiah(fin.incomeStatement.grossProfit)} ({fin.incomeStatement.grossMarginPct}%)</Text>
+            <View className="flex-row justify-between items-center gap-3 py-1 border-b border-border/40">
+              <Text className="flex-1 min-w-0 text-xs font-bold text-foreground">Laba Kotor (Gross Profit):</Text>
+              <Text className="shrink-0 text-right text-xs font-bold text-success">{rupiah(fin.incomeStatement.grossProfit)} ({fin.incomeStatement.grossMarginPct}%)</Text>
             </View>
-            <View className="flex-row justify-between py-1 border-b border-border/40">
-              <Text className="text-xs text-muted-foreground">Beban Operasional & Lapangan (OPEX):</Text>
-              <Text className="text-xs font-semibold text-danger">- {rupiah(fin.incomeStatement.opexTotal)}</Text>
+            <View className="flex-row justify-between items-center gap-3 py-1 border-b border-border/40">
+              <Text className="flex-1 min-w-0 text-xs text-muted-foreground">Beban Operasional & Lapangan (OPEX):</Text>
+              <Text className="shrink-0 text-right text-xs font-semibold text-danger">- {rupiah(fin.incomeStatement.opexTotal)}</Text>
             </View>
-            <View className="flex-row justify-between pt-2 border-t border-border">
-              <Text className="text-sm font-extrabold text-foreground">Laba Bersih Operasional (Net Profit):</Text>
-              <Text className="text-sm font-extrabold text-primary">{rupiah(fin.incomeStatement.netProfit)} ({fin.incomeStatement.netMarginPct}%)</Text>
+            <View className="flex-row justify-between items-center gap-3 pt-2 border-t border-border">
+              <Text className="flex-1 min-w-0 text-sm font-extrabold text-foreground">Laba Bersih Operasional (Net Profit):</Text>
+              <Text className="shrink-0 text-right text-sm font-extrabold text-primary">{rupiah(fin.incomeStatement.netProfit)} ({fin.incomeStatement.netMarginPct}%)</Text>
             </View>
           </View>
         </Panel>
@@ -73,21 +73,21 @@ export function SummaryTab({ fin, onNavigateToReports }: SummaryTabProps) {
           }
         >
           <View className="gap-2">
-            <View className="flex-row justify-between py-1 border-b border-border/40">
-              <Text className="text-xs text-muted-foreground">Total Aset Lancar (Kas, Piutang, Stok, PPh):</Text>
-              <Text className="text-xs font-bold text-foreground">{rupiah(fin.balanceSheet.assets.totalAsetLancar)}</Text>
+            <View className="flex-row justify-between items-center gap-3 py-1 border-b border-border/40">
+              <Text className="flex-1 min-w-0 text-xs text-muted-foreground">Total Aset Lancar (Kas, Piutang, Stok, PPh):</Text>
+              <Text className="shrink-0 text-right text-xs font-bold text-foreground">{rupiah(fin.balanceSheet.assets.totalAsetLancar)}</Text>
             </View>
-            <View className="flex-row justify-between py-1 border-b border-border/40">
-              <Text className="text-xs text-muted-foreground">Total Kewajiban (Hutang Pemasok & PPN):</Text>
-              <Text className="text-xs font-bold text-warning">{rupiah(fin.balanceSheet.liabilities.totalKewajiban)}</Text>
+            <View className="flex-row justify-between items-center gap-3 py-1 border-b border-border/40">
+              <Text className="flex-1 min-w-0 text-xs text-muted-foreground">Total Kewajiban (Hutang Pemasok & PPN):</Text>
+              <Text className="shrink-0 text-right text-xs font-bold text-warning">{rupiah(fin.balanceSheet.liabilities.totalKewajiban)}</Text>
             </View>
-            <View className="flex-row justify-between py-1 border-b border-border/40">
-              <Text className="text-xs text-muted-foreground">Total Ekuitas (Modal Awal + Laba):</Text>
-              <Text className="text-xs font-bold text-success">{rupiah(fin.balanceSheet.equity.totalEkuitas)}</Text>
+            <View className="flex-row justify-between items-center gap-3 py-1 border-b border-border/40">
+              <Text className="flex-1 min-w-0 text-xs text-muted-foreground">Total Ekuitas (Modal Awal + Laba):</Text>
+              <Text className="shrink-0 text-right text-xs font-bold text-success">{rupiah(fin.balanceSheet.equity.totalEkuitas)}</Text>
             </View>
-            <View className="flex-row justify-between pt-2 border-t border-border">
-              <Text className="text-sm font-extrabold text-foreground">Total Pasiva (Kewajiban + Ekuitas):</Text>
-              <Text className="text-sm font-extrabold text-primary">{rupiah(fin.balanceSheet.totalPasiva)}</Text>
+            <View className="flex-row justify-between items-center gap-3 pt-2 border-t border-border">
+              <Text className="flex-1 min-w-0 text-sm font-extrabold text-foreground">Total Pasiva (Kewajiban + Ekuitas):</Text>
+              <Text className="shrink-0 text-right text-sm font-extrabold text-primary">{rupiah(fin.balanceSheet.totalPasiva)}</Text>
             </View>
           </View>
         </Panel>
