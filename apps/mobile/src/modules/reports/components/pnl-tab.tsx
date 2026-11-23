@@ -47,130 +47,130 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
       >
         <View className="gap-2">
           {/* Section: Pendapatan */}
-          <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2">
+          <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2 overflow-hidden">
             <Text className="text-xs font-bold uppercase tracking-wider text-primary">
               I. PENDAPATAN USAHA (REVENUE)
             </Text>
-            <View className="flex-row justify-between items-center py-1">
-              <Text className="text-sm text-text-secondary">
+            <View className="flex-row justify-between items-center gap-3 py-1">
+              <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                 Nilai Tagihan Kotor Invoice Pelanggan (Termasuk PPN)
               </Text>
-              <Text className="text-sm font-mono">{rupiah(fin.incomeStatement.revenueGross)}</Text>
+              <Text className="shrink-0 text-right text-sm font-mono">{rupiah(fin.incomeStatement.revenueGross)}</Text>
             </View>
-            <View className="flex-row justify-between items-center py-1">
-              <Text className="text-sm text-text-secondary">
+            <View className="flex-row justify-between items-center gap-3 py-1">
+              <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                 [2100] Dikurangi: PPN Keluaran 11% (Kewajiban Pajak DJP)
               </Text>
-              <Text className="text-sm font-mono text-warning">
+              <Text className="shrink-0 text-right text-sm font-mono text-warning">
                 ({rupiah(fin.incomeStatement.ppnKeluaran)})
               </Text>
             </View>
             {Array.isArray(fin.incomeStatement.revenueAccounts) &&
             fin.incomeStatement.revenueAccounts.length > 0
               ? fin.incomeStatement.revenueAccounts.map((acc: any) => (
-                  <View key={acc.code} className="flex-row justify-between items-center py-1">
-                    <Text className="text-sm text-text-secondary">
+                  <View key={acc.code} className="flex-row justify-between items-center gap-3 py-1">
+                    <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                       [{acc.code}] {acc.name}
                     </Text>
-                    <Text className="text-sm font-mono">
+                    <Text className="shrink-0 text-right text-sm font-mono">
                       {acc.amount >= 0 ? rupiah(acc.amount) : `(${rupiah(Math.abs(acc.amount))})`}
                     </Text>
                   </View>
                 ))
               : null}
-            <View className="border-border border-t pt-2 flex-row justify-between items-center">
-              <Text className="text-sm font-semibold">
+            <View className="border-border border-t pt-2 flex-row justify-between items-center gap-3">
+              <Text className="flex-1 min-w-0 text-sm font-semibold">
                 Total Pendapatan Bersih Operasional (DPP)
               </Text>
-              <Text className="text-sm font-bold font-mono text-primary">
+              <Text className="shrink-0 text-right text-sm font-bold font-mono text-primary">
                 {rupiah(fin.incomeStatement.revenueDpp)}
               </Text>
             </View>
           </View>
 
           {/* Section: HPP */}
-          <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2">
+          <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2 overflow-hidden">
             <Text className="text-xs font-bold uppercase tracking-wider text-info">
               II. HARGA POKOK PENJUALAN & PENGADAAN (HPP / COGS)
             </Text>
             {Array.isArray(fin.incomeStatement.cogsAccounts) &&
             fin.incomeStatement.cogsAccounts.length > 0 ? (
               fin.incomeStatement.cogsAccounts.map((acc: any) => (
-                <View key={acc.code} className="flex-row justify-between items-center py-1">
-                  <Text className="text-sm text-text-secondary">
+                <View key={acc.code} className="flex-row justify-between items-center gap-3 py-1">
+                  <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                     [{acc.code}] {acc.name}
                   </Text>
-                  <Text className="text-sm font-mono text-danger">
+                  <Text className="shrink-0 text-right text-sm font-mono text-danger">
                     ({rupiah(acc.amount)})
                   </Text>
                 </View>
               ))
             ) : (
               <>
-                <View className="flex-row justify-between items-center py-1">
-                  <Text className="text-sm text-text-secondary">
+                <View className="flex-row justify-between items-center gap-3 py-1">
+                  <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                     [5101] HPP Project (Pengadaan Barang & Material Proyek)
                   </Text>
-                  <Text className="text-sm font-mono text-danger">
+                  <Text className="shrink-0 text-right text-sm font-mono text-danger">
                     ({rupiah(fin.incomeStatement.cogsProject ?? 0)})
                   </Text>
                 </View>
-                <View className="flex-row justify-between items-center py-1">
-                  <Text className="text-sm text-text-secondary">
+                <View className="flex-row justify-between items-center gap-3 py-1">
+                  <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                     [5102] HPP Retail (Harga Pokok Penjualan Barang Stok)
                   </Text>
-                  <Text className="text-sm font-mono text-danger">
+                  <Text className="shrink-0 text-right text-sm font-mono text-danger">
                     ({rupiah(fin.incomeStatement.cogsRetail ?? 0)})
                   </Text>
                 </View>
                 {(fin.incomeStatement.cogsDirect || 0) > 0 ? (
-                  <View className="flex-row justify-between items-center py-1">
-                    <Text className="text-sm text-text-secondary">
+                  <View className="flex-row justify-between items-center gap-3 py-1">
+                    <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                       [5103] HPP Biaya Langsung Project
                     </Text>
-                    <Text className="text-sm font-mono text-danger">
+                    <Text className="shrink-0 text-right text-sm font-mono text-danger">
                       ({rupiah(fin.incomeStatement.cogsDirect)})
                     </Text>
                   </View>
                 ) : null}
               </>
             )}
-            <View className="border-border/60 border-t pt-1.5 flex-row justify-between items-center">
-              <Text className="text-xs font-semibold text-muted-foreground">
+            <View className="border-border/60 border-t pt-1.5 flex-row justify-between items-center gap-3">
+              <Text className="flex-1 min-w-0 text-xs font-semibold text-muted-foreground">
                 [5000] Total Beban Pokok Penjualan (HPP)
               </Text>
-              <Text className="text-xs font-bold font-mono text-danger">
+              <Text className="shrink-0 text-right text-xs font-bold font-mono text-danger">
                 ({rupiah(fin.incomeStatement.cogsTotal)})
               </Text>
             </View>
-            <View className="border-border border-t pt-2 flex-row justify-between items-center">
-              <Text className="text-sm font-semibold">
+            <View className="border-border border-t pt-2 flex-row justify-between items-center gap-3">
+              <Text className="flex-1 min-w-0 text-sm font-semibold">
                 LABA KOTOR (GROSS PROFIT) — Margin {fin.incomeStatement.grossMarginPct}%
               </Text>
-              <Text className="text-sm font-bold font-mono text-info">
+              <Text className="shrink-0 text-right text-sm font-bold font-mono text-info">
                 {rupiah(fin.incomeStatement.grossProfit)}
               </Text>
             </View>
           </View>
 
           {/* Section: OPEX */}
-          <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2">
+          <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2 overflow-hidden">
             <Text className="text-xs font-bold uppercase tracking-wider text-warning">
               III. BEBAN OPERASIONAL & LAPANGAN (OPEX)
             </Text>
             {(fin.incomeStatement.opexByCategory || []).map((cat: any) => (
-              <View key={`${cat.code || "6101"}-${cat.kategori}`} className="flex-row justify-between items-center py-1">
-                <Text className="text-sm text-text-secondary">
+              <View key={`${cat.code || "6101"}-${cat.kategori}`} className="flex-row justify-between items-center gap-3 py-1">
+                <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                   [{cat.code || "6101"}] Beban {cat.kategori}
                 </Text>
-                <Text className="text-sm font-mono text-text-secondary">
+                <Text className="shrink-0 text-right text-sm font-mono text-text-secondary">
                   ({rupiah(cat.nominal)})
                 </Text>
               </View>
             ))}
-            <View className="border-border border-t pt-2 flex-row justify-between items-center">
-              <Text className="text-sm font-semibold">Total Beban Operasional (OPEX)</Text>
-              <Text className="text-sm font-bold font-mono text-warning">
+            <View className="border-border border-t pt-2 flex-row justify-between items-center gap-3">
+              <Text className="flex-1 min-w-0 text-sm font-semibold">Total Beban Operasional (OPEX)</Text>
+              <Text className="shrink-0 text-right text-sm font-bold font-mono text-warning">
                 ({rupiah(fin.incomeStatement.opexTotal)})
               </Text>
             </View>
@@ -178,26 +178,26 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
 
           {((fin.incomeStatement.otherRevenueAccounts || []).length > 0 ||
             (fin.incomeStatement.otherExpenseAccounts || []).length > 0) && (
-            <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2">
+            <View className="bg-panel/60 border-border rounded-lg border p-3 gap-2 overflow-hidden">
               <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 IV. PENDAPATAN & BEBAN DILUAR USAHA
               </Text>
               {(fin.incomeStatement.otherRevenueAccounts || []).map((acc: any) => (
-                <View key={acc.code} className="flex-row justify-between items-center py-1">
-                  <Text className="text-sm text-text-secondary">
+                <View key={acc.code} className="flex-row justify-between items-center gap-3 py-1">
+                  <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                     [{acc.code}] {acc.name}
                   </Text>
-                  <Text className="text-sm font-mono text-success">
+                  <Text className="shrink-0 text-right text-sm font-mono text-success">
                     {rupiah(acc.amount)}
                   </Text>
                 </View>
               ))}
               {(fin.incomeStatement.otherExpenseAccounts || []).map((acc: any) => (
-                <View key={acc.code} className="flex-row justify-between items-center py-1">
-                  <Text className="text-sm text-text-secondary">
+                <View key={acc.code} className="flex-row justify-between items-center gap-3 py-1">
+                  <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                     [{acc.code}] {acc.name}
                   </Text>
-                  <Text className="text-sm font-mono text-danger">
+                  <Text className="shrink-0 text-right text-sm font-mono text-danger">
                     ({rupiah(acc.amount)})
                   </Text>
                 </View>
@@ -206,8 +206,8 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
           )}
 
           {/* Section: Net Profit */}
-          <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-row justify-between items-center">
-            <View className="gap-0.5">
+          <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-col sm:flex-row sm:justify-between sm:items-center gap-3 overflow-hidden">
+            <View className="flex-1 min-w-0 gap-0.5">
               <Text className="text-xs font-bold uppercase tracking-wider text-primary">
                 LABA BERSIH OPERASIONAL (NET PROFIT)
               </Text>
@@ -215,7 +215,7 @@ export function PnlTab({ fin, onDownload }: PnlTabProps) {
                 Pendapatan DPP dikurangi HPP Pengadaan dan Biaya Operasional
               </Text>
             </View>
-            <View className="items-end gap-0.5">
+            <View className="items-start sm:items-end shrink-0 gap-0.5">
               <Text
                 className={`text-xl font-bold font-mono ${
                   fin.incomeStatement.netProfit >= 0 ? "text-success" : "text-danger"

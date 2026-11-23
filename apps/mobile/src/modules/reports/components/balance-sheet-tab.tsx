@@ -21,15 +21,17 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
           fin.balanceSheet.isBalanced
             ? "bg-success/10 border-success/40"
             : "bg-warning/10 border-warning/40"
-        } rounded-xl border p-4 flex-row flex-wrap items-center justify-between gap-3`}
+        } rounded-xl border p-4 flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-3 overflow-hidden`}
       >
-        <View className="flex-row items-center gap-3">
-          {fin.balanceSheet.isBalanced ? (
-            <CheckCircle2 size={22} color={colors.success} />
-          ) : (
-            <AlertTriangle size={22} color={colors.warning} />
-          )}
-          <View>
+        <View className="flex-row items-start sm:items-center gap-3 flex-1 min-w-0">
+          <View className="shrink-0 mt-0.5 sm:mt-0">
+            {fin.balanceSheet.isBalanced ? (
+              <CheckCircle2 size={22} color={colors.success} />
+            ) : (
+              <AlertTriangle size={22} color={colors.warning} />
+            )}
+          </View>
+          <View className="flex-1 min-w-0 gap-0.5">
             <Text className="text-sm font-bold">
               Status Keseimbangan Neraca:{" "}
               {fin.balanceSheet.isBalanced
@@ -52,7 +54,7 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
           subtitle="Sumber daya ekonomi yang dikuasai perusahaan (Kas, Piutang, Persediaan)"
         >
           <View className="gap-3">
-            <View className="bg-panel/50 border-border rounded-lg border p-3.5 gap-2.5">
+            <View className="bg-panel/50 border-border rounded-lg border p-3.5 gap-2.5 overflow-hidden">
               <Text className="text-xs font-bold uppercase tracking-wider text-primary">
                 Aset Lancar (Current Assets)
               </Text>
@@ -63,33 +65,33 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
                   .map((it: any, idx: number) => (
                     <View
                       key={it.code}
-                      className={`${idx > 0 ? "border-border/50 border-t pt-2" : ""} flex-row justify-between items-center py-1`}
+                      className={`${idx > 0 ? "border-border/50 border-t pt-2" : ""} flex-row justify-between items-center gap-3 py-1`}
                     >
-                      <View className="gap-0.5">
+                      <View className="flex-1 min-w-0 gap-0.5">
                         <Text className="text-sm font-medium">[{it.code}] {it.name}</Text>
                         <Text className="text-xs text-text-secondary">{it.category}</Text>
                       </View>
-                      <Text className="text-sm font-bold font-mono">
+                      <Text className="shrink-0 text-right text-sm font-bold font-mono">
                         {rupiah(it.amount)}
                       </Text>
                     </View>
                   ))
               ) : (
                 <>
-                  <View className="flex-row justify-between items-center py-1">
-                    <View className="gap-0.5">
+                  <View className="flex-row justify-between items-center gap-3 py-1">
+                    <View className="flex-1 min-w-0 gap-0.5">
                       <Text className="text-sm font-medium">[1000] Kas & Bank Operasional</Text>
                       <Text className="text-xs text-text-secondary">
                         Saldo kas dan rekening bank operasional terbayar
                       </Text>
                     </View>
-                    <Text className="text-sm font-bold font-mono">
+                    <Text className="shrink-0 text-right text-sm font-bold font-mono">
                       {rupiah(fin.balanceSheet.assets.kasDanBank)}
                     </Text>
                   </View>
 
-                  <View className="border-border/50 border-t pt-2 flex-row justify-between items-center py-1">
-                    <View className="gap-0.5">
+                  <View className="border-border/50 border-t pt-2 flex-row justify-between items-center gap-3 py-1">
+                    <View className="flex-1 min-w-0 gap-0.5">
                       <Text className="text-sm font-medium">
                         [1100] Piutang Usaha (Accounts Receivable)
                       </Text>
@@ -97,13 +99,13 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
                         Tagihan invoice pelanggan yang belum dilunasi
                       </Text>
                     </View>
-                    <Text className="text-sm font-bold font-mono text-info">
+                    <Text className="shrink-0 text-right text-sm font-bold font-mono text-info">
                       {rupiah(fin.balanceSheet.assets.piutangUsaha)}
                     </Text>
                   </View>
 
-                  <View className="border-border/50 border-t pt-2 flex-row justify-between items-center py-1">
-                    <View className="gap-0.5">
+                  <View className="border-border/50 border-t pt-2 flex-row justify-between items-center gap-3 py-1">
+                    <View className="flex-1 min-w-0 gap-0.5">
                       <Text className="text-sm font-medium">
                         [1200] Persediaan Barang Gudang (Inventory)
                       </Text>
@@ -111,14 +113,14 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
                         Valuasi stok perangkat di gudang berdasarkan harga beli
                       </Text>
                     </View>
-                    <Text className="text-sm font-bold font-mono">
+                    <Text className="shrink-0 text-right text-sm font-bold font-mono">
                       {rupiah(fin.balanceSheet.assets.persediaanBarang)}
                     </Text>
                   </View>
 
                   {(fin.balanceSheet.assets.uangMukaPph || 0) > 0 ? (
-                    <View className="border-border/50 border-t pt-2 flex-row justify-between items-center py-1">
-                      <View className="gap-0.5">
+                    <View className="border-border/50 border-t pt-2 flex-row justify-between items-center gap-3 py-1">
+                      <View className="flex-1 min-w-0 gap-0.5">
                         <Text className="text-sm font-medium">
                           [1105] Uang Muka PPh (Pajak Dibayar Dimuka)
                         </Text>
@@ -126,15 +128,15 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
                           Kredit pajak PPh dipotong oleh pelanggan
                         </Text>
                       </View>
-                      <Text className="text-sm font-bold font-mono text-warning">
+                      <Text className="shrink-0 text-right text-sm font-bold font-mono text-warning">
                         {rupiah(fin.balanceSheet.assets.uangMukaPph)}
                       </Text>
                     </View>
                   ) : null}
 
                   {(fin.balanceSheet.assets.ppnMasukan || 0) > 0 ? (
-                    <View className="border-border/50 border-t pt-2 flex-row justify-between items-center py-1">
-                      <View className="gap-0.5">
+                    <View className="border-border/50 border-t pt-2 flex-row justify-between items-center gap-3 py-1">
+                      <View className="flex-1 min-w-0 gap-0.5">
                         <Text className="text-sm font-medium">
                           [1600] PPN Masukan (Kredit Pajak Masukan)
                         </Text>
@@ -142,7 +144,7 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
                           Kredit pajak PPN 11% atas pembelian PO supplier & pengadaan
                         </Text>
                       </View>
-                      <Text className="text-sm font-bold font-mono text-primary">
+                      <Text className="shrink-0 text-right text-sm font-bold font-mono text-primary">
                         {rupiah(fin.balanceSheet.assets.ppnMasukan)}
                       </Text>
                     </View>
@@ -151,9 +153,9 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
               )}
             </View>
 
-            <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-row justify-between items-center">
-              <Text className="text-sm font-bold">TOTAL AKTIVA (ASET LANCAR)</Text>
-              <Text className="text-base font-bold font-mono text-primary">
+            <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-row justify-between items-center gap-3 overflow-hidden">
+              <Text className="flex-1 min-w-0 text-sm font-bold">TOTAL AKTIVA (ASET LANCAR)</Text>
+              <Text className="shrink-0 text-right text-base font-bold font-mono text-primary">
                 {rupiah(fin.balanceSheet.assets.totalAsetLancar)}
               </Text>
             </View>
@@ -166,7 +168,7 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
           subtitle="Kewajiban pihak ketiga, kewajiban pajak DJP, dan modal/laba ditahan"
         >
           <View className="gap-3">
-            <View className="bg-panel/50 border-border rounded-lg border p-3.5 gap-2">
+            <View className="bg-panel/50 border-border rounded-lg border p-3.5 gap-2 overflow-hidden">
               <Text className="text-xs font-bold uppercase tracking-wider text-warning">
                 Kewajiban Jangka Pendek (Liabilities)
               </Text>
@@ -177,53 +179,53 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
                   .map((it: any, idx: number) => (
                     <View
                       key={it.code}
-                      className={`${idx > 0 ? "border-border/50 border-t pt-2" : ""} flex-row justify-between items-center py-1`}
+                      className={`${idx > 0 ? "border-border/50 border-t pt-2" : ""} flex-row justify-between items-center gap-3 py-1`}
                     >
-                      <View className="gap-0.5">
+                      <View className="flex-1 min-w-0 gap-0.5">
                         <Text className="text-sm text-text-secondary">[{it.code}] {it.name}</Text>
                       </View>
-                      <Text className="text-sm font-mono">
+                      <Text className="shrink-0 text-right text-sm font-mono">
                         {rupiah(it.amount)}
                       </Text>
                     </View>
                   ))
               ) : (
                 <>
-                  <View className="flex-row justify-between items-center py-1">
-                    <Text className="text-sm text-text-secondary">
+                  <View className="flex-row justify-between items-center gap-3 py-1">
+                    <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                       [2101] Hutang Usaha PO Supplier (Accounts Payable)
                     </Text>
-                    <Text className="text-sm font-mono">
+                    <Text className="shrink-0 text-right text-sm font-mono">
                       {rupiah(fin.balanceSheet.liabilities.hutangSupplier)}
                     </Text>
                   </View>
-                  <View className="flex-row justify-between items-center py-1">
-                    <Text className="text-sm text-text-secondary">
+                  <View className="flex-row justify-between items-center gap-3 py-1">
+                    <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                       [2100] Hutang Pajak PPN Keluaran (11%)
                     </Text>
-                    <Text className="text-sm font-mono">
+                    <Text className="shrink-0 text-right text-sm font-mono">
                       {rupiah(fin.balanceSheet.liabilities.hutangPpnKeluaran)}
                     </Text>
                   </View>
-                  <View className="flex-row justify-between items-center py-1">
-                    <Text className="text-sm text-text-secondary">
+                  <View className="flex-row justify-between items-center gap-3 py-1">
+                    <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                       [2103] Hutang Reimbursement Operasional Staf
                     </Text>
-                    <Text className="text-sm font-mono">
+                    <Text className="shrink-0 text-right text-sm font-mono">
                       {rupiah(fin.balanceSheet.liabilities.hutangReimbursement)}
                     </Text>
                   </View>
                 </>
               )}
-              <View className="border-border border-t pt-2 flex-row justify-between items-center">
-                <Text className="text-xs font-bold">Subtotal Kewajiban</Text>
-                <Text className="text-sm font-bold font-mono text-warning">
+              <View className="border-border border-t pt-2 flex-row justify-between items-center gap-3">
+                <Text className="flex-1 min-w-0 text-xs font-bold">Subtotal Kewajiban</Text>
+                <Text className="shrink-0 text-right text-sm font-bold font-mono text-warning">
                   {rupiah(fin.balanceSheet.liabilities.totalKewajiban)}
                 </Text>
               </View>
             </View>
 
-            <View className="bg-panel/50 border-border rounded-lg border p-3.5 gap-2">
+            <View className="bg-panel/50 border-border rounded-lg border p-3.5 gap-2 overflow-hidden">
               <Text className="text-xs font-bold uppercase tracking-wider text-success">
                 Ekuitas (Modal & Laba Ditahan)
               </Text>
@@ -234,47 +236,47 @@ export function BalanceSheetTab({ fin, onDownload }: BalanceSheetTabProps) {
                   .map((it: any, idx: number) => (
                     <View
                       key={it.code}
-                      className={`${idx > 0 ? "border-border/50 border-t pt-2" : ""} flex-row justify-between items-center py-1`}
+                      className={`${idx > 0 ? "border-border/50 border-t pt-2" : ""} flex-row justify-between items-center gap-3 py-1`}
                     >
-                      <View className="gap-0.5">
+                      <View className="flex-1 min-w-0 gap-0.5">
                         <Text className="text-sm text-text-secondary">[{it.code}] {it.name}</Text>
                       </View>
-                      <Text className="text-sm font-mono text-success">
+                      <Text className="shrink-0 text-right text-sm font-mono text-success">
                         {rupiah(it.amount)}
                       </Text>
                     </View>
                   ))
               ) : (
                 <>
-                  <View className="flex-row justify-between items-center py-1">
-                    <Text className="text-sm text-text-secondary">
+                  <View className="flex-row justify-between items-center gap-3 py-1">
+                    <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                       [3101] Modal Disetor / Modal Kerja
                     </Text>
-                    <Text className="text-sm font-mono">
+                    <Text className="shrink-0 text-right text-sm font-mono">
                       {rupiah(fin.balanceSheet.equity.modalKerjaAwal)}
                     </Text>
                   </View>
-                  <View className="flex-row justify-between items-center py-1">
-                    <Text className="text-sm text-text-secondary">
+                  <View className="flex-row justify-between items-center gap-3 py-1">
+                    <Text className="flex-1 min-w-0 text-sm text-text-secondary">
                       [3102] Laba Bersih Tahun Berjalan (Current Period Earnings)
                     </Text>
-                    <Text className="text-sm font-mono text-success">
+                    <Text className="shrink-0 text-right text-sm font-mono text-success">
                       {rupiah(fin.balanceSheet.equity.labaBerjalan)}
                     </Text>
                   </View>
                 </>
               )}
-              <View className="border-border border-t pt-2 flex-row justify-between items-center">
-                <Text className="text-xs font-bold">Subtotal Ekuitas</Text>
-                <Text className="text-sm font-bold font-mono text-success">
+              <View className="border-border border-t pt-2 flex-row justify-between items-center gap-3">
+                <Text className="flex-1 min-w-0 text-xs font-bold">Subtotal Ekuitas</Text>
+                <Text className="shrink-0 text-right text-sm font-bold font-mono text-success">
                   {rupiah(fin.balanceSheet.equity.totalEkuitas)}
                 </Text>
               </View>
             </View>
 
-            <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-row justify-between items-center">
-              <Text className="text-sm font-bold">TOTAL PASIVA (KEWAJIBAN + EKUITAS)</Text>
-              <Text className="text-base font-bold font-mono text-primary">
+            <View className="bg-primary/10 border-primary/40 rounded-lg border p-4 flex-row justify-between items-center gap-3 overflow-hidden">
+              <Text className="flex-1 min-w-0 text-sm font-bold">TOTAL PASIVA (KEWAJIBAN + EKUITAS)</Text>
+              <Text className="shrink-0 text-right text-base font-bold font-mono text-primary">
                 {rupiah(fin.balanceSheet.totalPasiva)}
               </Text>
             </View>
