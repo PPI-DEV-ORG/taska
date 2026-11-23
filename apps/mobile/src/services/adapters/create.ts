@@ -151,7 +151,7 @@ export function buildCreateBody(
       return {
         name: row.name ?? row.nama,
         email: row.email,
-        password: row.password || "taska123",
+        password: row.password || "akuntra123",
         role: roleFromUi(row.role ?? row.roleLabel),
         phone: row.phone || row.telepon || undefined,
         position: row.position || row.jabatan || undefined,

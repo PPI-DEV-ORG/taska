@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# TASKA ERP - Skrip Backup Otomatis (Database MySQL & Dokumen Upload)
+# AKUNTRA ERP - Skrip Backup Otomatis (Database MySQL & Dokumen Upload)
 # ==============================================================================
 set -euo pipefail
 
@@ -17,7 +17,7 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }
 
-log "=== MEMULAI PROSES BACKUP TASKA ERP ==="
+log "=== MEMULAI PROSES BACKUP AKUNTRA ERP ==="
 
 # 1. Baca konfigurasi dari .env jika ada
 if [[ -f "${ENV_FILE}" ]]; then
@@ -48,7 +48,7 @@ DB_USER="${DB_USER:-${PARSED_USER:-root}}"
 DB_PASSWORD="${DB_PASSWORD:-${PARSED_PASS:-}}"
 DB_HOST="${DB_HOST:-${PARSED_HOST:-127.0.0.1}}"
 DB_PORT="${DB_PORT:-${PARSED_PORT:-3306}}"
-DB_NAME="${DB_NAME:-${PARSED_DB:-taska}}"
+DB_NAME="${DB_NAME:-${PARSED_DB:-akuntra}}"
 
 # Resolusi path direktori upload
 if [[ -n "${UPLOAD_DIR:-}" ]]; then
@@ -120,4 +120,4 @@ done < <(find "${BACKUP_DIR}" -type f \( -name "db_*.sql.gz" -o -name "uploads_*
 
 log "Pembersihan selesai (${DELETED_COUNT} file dihapus)."
 
-log "=== BACKUP TASKA ERP SELESAI DENGAN SUKSES ==="
+log "=== BACKUP AKUNTRA ERP SELESAI DENGAN SUKSES ==="

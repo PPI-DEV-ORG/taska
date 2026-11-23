@@ -854,7 +854,7 @@ export class WhatsappConversationService {
             .catch(() => {});
         }
 
-        // 2. Tautkan File PDF Laporan ke entitas terkait agar muncul di halaman Detail aplikasi Taska
+        // 2. Tautkan File PDF Laporan ke entitas terkait agar muncul di halaman Detail aplikasi Akuntra
         if (enrichedEntity.type === "survey") {
           await this.prisma.main.file
             .update({

@@ -22,7 +22,7 @@ setup("authenticate as superadmin", async ({ page }) => {
 
   await page.goto("/login");
   // Wait for React Native Web application to mount and hydrate
-  const emailInput = page.getByPlaceholder("nama@taska.co.id");
+  const emailInput = page.getByPlaceholder("nama@akuntra.co.id");
   const passInput = page.getByPlaceholder("Masukkan kata sandi");
   await emailInput.waitFor({ state: "visible" });
   await page.waitForTimeout(1000);

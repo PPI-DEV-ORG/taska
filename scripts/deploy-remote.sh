@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# TASKA ERP - Bagian deploy yang berjalan DI SERVER (dipanggil oleh scripts/deploy.sh)
+# AKUNTRA ERP - Bagian deploy yang berjalan DI SERVER (dipanggil oleh scripts/deploy.sh)
 #
 #   deploy-remote.sh setup                      siapkan folder & cek Node/pnpm/PM2
 #   deploy-remote.sh release <tarball> <mode>   pasang rilis baru (mode: all | api | web)
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 DEPLOY_PATH="${DEPLOY_PATH:?DEPLOY_PATH wajib diisi}"
-PM2_NAME="${PM2_NAME:-taska-api}"
+PM2_NAME="${PM2_NAME:-akuntra-api}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
 SKIP_BACKUP="${SKIP_BACKUP:-0}"
 HEALTH_URL="${HEALTH_URL:-}"
@@ -108,8 +108,8 @@ cmd_setup() {
   if [[ ! -f "${SHARED}/api.env" ]]; then
     cat > "${SHARED}/api.env" <<EOF
 # .env API produksi — WAJIB diisi sebelum deploy pertama
-DATABASE_URL="mysql://USER:PASSWORD@127.0.0.1:3306/taska?connection_limit=20"
-ARCHIVE_DATABASE_URL="mysql://USER:PASSWORD@127.0.0.1:3306/taska_archive?connection_limit=5"
+DATABASE_URL="mysql://USER:PASSWORD@127.0.0.1:3306/akuntra?connection_limit=20"
+ARCHIVE_DATABASE_URL="mysql://USER:PASSWORD@127.0.0.1:3306/akuntra_archive?connection_limit=5"
 JWT_SECRET="GANTI-dengan-string-acak-minimal-64-karakter"
 JWT_ACCESS_TTL="12h"
 JWT_REFRESH_TTL="7d"
