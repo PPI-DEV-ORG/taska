@@ -20,8 +20,8 @@ export async function hydrateAppStorage(): Promise<void> {
     try {
       const keys = await AsyncStorage.getAllKeys();
       if (keys.length > 0) {
-        const entries = await AsyncStorage.getMany(keys);
-        for (const [k, v] of Object.entries(entries)) {
+        const pairs = await AsyncStorage.multiGet(keys);
+        for (const [k, v] of pairs) {
           if (v !== null && !memCache.has(k)) {
             memCache.set(k, v);
           }
