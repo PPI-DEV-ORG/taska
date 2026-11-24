@@ -422,14 +422,14 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
       (ev.companyName || "").trim() ||
       ev.customer?.company ||
       ev.customer?.name ||
-      ev.lead?.company ||
+      ev.lead?.name ||
       ev.supplier?.name ||
       null;
 
     const contactPerson =
       (ev.contactPerson || "").trim() ||
       ev.customer?.pic ||
-      ev.lead?.pic ||
+      ev.lead?.contactName ||
       null;
 
     const location = (ev.location || "").trim() || ev.customer?.address || null;
@@ -469,7 +469,7 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
           assignee: { select: { name: true, role: true } },
           attendees: { include: { user: { select: { name: true, role: true } } } },
           customer: { select: { name: true, company: true, pic: true, address: true } },
-          lead: { select: { company: true, pic: true } },
+          lead: { select: { name: true, contactName: true } },
           supplier: { select: { name: true } },
         },
         orderBy: { startDate: "asc" },
@@ -484,7 +484,7 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
               owner: { select: { name: true, role: true } },
               members: { include: { user: { select: { name: true, role: true } } } },
               customer: { select: { name: true, company: true, pic: true, address: true } },
-              lead: { select: { company: true, pic: true } },
+              lead: { select: { name: true, contactName: true } },
             },
             orderBy: { date: "asc" },
           })
@@ -499,7 +499,7 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
               owner: { select: { name: true, role: true } },
               members: { include: { user: { select: { name: true, role: true } } } },
               customer: { select: { name: true, company: true, pic: true, address: true } },
-              lead: { select: { company: true, pic: true } },
+              lead: { select: { name: true, contactName: true } },
             },
             orderBy: { startDate: "asc" },
           })
@@ -514,7 +514,7 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
               owner: { select: { name: true, role: true } },
               members: { include: { user: { select: { name: true, role: true } } } },
               customer: { select: { name: true, company: true, pic: true, address: true } },
-              lead: { select: { company: true, pic: true } },
+              lead: { select: { name: true, contactName: true } },
             },
             orderBy: { date: "asc" },
           })
@@ -523,12 +523,12 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
         ? this.db.survey.findMany({
             where: {
               scheduleAt: { gte: fromUtc, lte: toUtc },
-              status: { notIn: ["DITOLAK", "SELESAI"] },
+              status: { notIn: ["BATAL", "SELESAI"] },
             },
             include: {
               requester: { select: { name: true, role: true } },
               members: { include: { user: { select: { name: true, role: true } } } },
-              lead: { select: { company: true, pic: true } },
+              lead: { select: { name: true, contactName: true } },
             },
             orderBy: { scheduleAt: "asc" },
           })
@@ -557,8 +557,8 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
         endDate: v.endDate ? new Date(v.endDate) : null,
         isAllDay: true,
         pics,
-        companyName: v.clientName || v.customer?.company || v.customer?.name || v.lead?.company || null,
-        contactPerson: v.clientContact || v.customer?.pic || v.lead?.pic || null,
+        companyName: v.clientName || v.customer?.company || v.customer?.name || v.lead?.name || null,
+        contactPerson: v.clientContact || v.customer?.pic || v.lead?.contactName || null,
         location: v.location || v.customer?.address || null,
         notes: v.purpose || v.description || null,
       });
@@ -581,8 +581,8 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
         endDate: m.endDate ? new Date(m.endDate) : null,
         isAllDay: true,
         pics,
-        companyName: m.clientName || m.customer?.company || m.customer?.name || m.lead?.company || null,
-        contactPerson: m.clientContact || m.customer?.pic || m.lead?.pic || null,
+        companyName: m.clientName || m.customer?.company || m.customer?.name || m.lead?.name || null,
+        contactPerson: m.clientContact || m.customer?.pic || m.lead?.contactName || null,
         location: m.location || m.customer?.address || null,
         notes: m.purpose || m.description || null,
       });
@@ -605,8 +605,8 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
         endDate: p.endDate ? new Date(p.endDate) : null,
         isAllDay: true,
         pics,
-        companyName: p.clientName || p.customer?.company || p.customer?.name || p.lead?.company || null,
-        contactPerson: p.customer?.pic || p.lead?.pic || null,
+        companyName: p.clientName || p.customer?.company || p.customer?.name || p.lead?.name || null,
+        contactPerson: p.customer?.pic || p.lead?.contactName || null,
         location: p.location || p.customer?.address || null,
         notes: p.description || null,
       });
@@ -632,8 +632,8 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
         endDate: null,
         isAllDay: false,
         pics,
-        companyName: s.lead?.company || null,
-        contactPerson: s.lead?.pic || null,
+        companyName: s.lead?.name || null,
+        contactPerson: s.lead?.contactName || null,
         location: s.location || null,
         notes: s.notes || null,
       });
@@ -650,7 +650,7 @@ export class WhatsappScheduleService implements OnModuleInit, OnModuleDestroy {
         assignee: { select: { name: true, role: true, phone: true } },
         attendees: { include: { user: { select: { name: true, role: true, phone: true } } } },
         customer: { select: { name: true, company: true, pic: true, address: true } },
-        lead: { select: { company: true, pic: true } },
+        lead: { select: { name: true, contactName: true } },
         supplier: { select: { name: true } },
       },
     });
