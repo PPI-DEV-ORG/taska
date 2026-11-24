@@ -294,7 +294,7 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
 
       {/* ── Action & Status Banner ── */}
       <Panel>
-        <View className="flex-row flex-wrap items-center justify-between gap-3">
+        <View className="flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 w-full">
           <View className="flex-row items-center gap-2 flex-wrap">
             <Text className="text-sm font-semibold">Status Alur:</Text>
             <StatusBadge status={row.status || "Draft"} />
@@ -302,7 +302,7 @@ export function PocExtras({ row, onRefresh }: { row: Row; onRefresh?: () => void
             <StatusBadge status={row.hasilStatus || row.resultStatus || "Pending Evaluation"} />
           </View>
 
-          <View className="flex-row items-center gap-2">
+          <View className="flex-row flex-wrap items-center gap-2 w-full sm:w-auto max-w-full">
             <Button
               variant="outline"
               size="sm"

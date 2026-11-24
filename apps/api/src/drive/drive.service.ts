@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
@@ -55,6 +56,8 @@ export type UploadedDriveFile = {
 
 @Injectable()
 export class DriveService {
+  private readonly logger = new Logger(DriveService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerService: FileProviderService,
@@ -594,26 +597,41 @@ export class DriveService {
     let queue: number[] = [id];
     while (queue.length > 0) {
       const children = await this.prisma.main.driveFolder.findMany({
-        where: { parentId: { in: queue }, deletedAt: null },
+        where: { parentId: { in: queue } },
         select: { id: true },
       });
       queue = children.map((c) => c.id).filter((cid) => !folderIds.includes(cid));
       folderIds.push(...queue);
     }
 
-    const now = new Date();
+    const filesToDelete = await this.prisma.main.driveFile.findMany({
+      where: { folderId: { in: folderIds } },
+      select: { id: true, providerId: true, storageKey: true },
+    });
+
+    // Hapus file dan folder permanen dari DB (child folder & permission ikut terhapus lewat cascade)
     await this.prisma.main.$transaction([
-      this.prisma.main.driveFile.updateMany({
-        where: { folderId: { in: folderIds }, deletedAt: null },
-        data: { deletedAt: now },
+      this.prisma.main.driveFile.deleteMany({
+        where: { folderId: { in: folderIds } },
       }),
-      this.prisma.main.driveFolder.updateMany({
-        where: { id: { in: folderIds }, deletedAt: null },
-        data: { deletedAt: now },
+      this.prisma.main.driveFolder.delete({
+        where: { id },
       }),
     ]);
 
-    return { ok: true, deletedFolders: folderIds.length };
+    let deletedPhysicalFiles = 0;
+    for (const file of filesToDelete) {
+      if (await this.deletePhysicalFile(file)) {
+        deletedPhysicalFiles++;
+      }
+    }
+
+    return {
+      ok: true,
+      deletedFolders: folderIds.length,
+      deletedFiles: filesToDelete.length,
+      deletedPhysicalFiles,
+    };
   }
 
   /**
@@ -775,12 +793,44 @@ export class DriveService {
       throw new ForbiddenException("Kamu tidak memiliki izin untuk menghapus berkas ini.");
     }
 
-    await this.prisma.main.driveFile.update({
+    await this.prisma.main.driveFile.delete({
       where: { id },
-      data: { deletedAt: new Date() },
     });
 
-    return { ok: true };
+    const physicalDeleted = await this.deletePhysicalFile(file);
+
+    return { ok: true, physicalDeleted };
+  }
+
+  private async deletePhysicalFile(file: {
+    id: number;
+    providerId: number | null;
+    storageKey: string;
+  }): Promise<boolean> {
+    if (!file.storageKey) return false;
+
+    if (file.providerId) {
+      try {
+        const adapter = await this.providerService.getAdapter(file.providerId);
+        await adapter.delete(file.storageKey);
+        return true;
+      } catch (err) {
+        this.logger.warn(
+          `Gagal menghapus berkas fisik driveFile#${file.id} pada provider#${file.providerId}, mencoba provider default: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    try {
+      const def = await this.providerService.getDefaultProvider();
+      await def.adapter.delete(file.storageKey);
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        `Gagal menghapus berkas fisik driveFile#${file.id} (${file.storageKey}): ${(err as Error).message}`,
+      );
+      return false;
+    }
   }
 
   private async readFileBuffer(file: { providerId: number | null; storageKey: string }): Promise<Buffer> {
