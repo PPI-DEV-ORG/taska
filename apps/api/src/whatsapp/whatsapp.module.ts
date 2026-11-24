@@ -3,6 +3,7 @@ import { WhatsappService } from "./whatsapp.service.js";
 import { WhatsappController } from "./whatsapp.controller.js";
 import { WhatsappConversationService } from "./whatsapp-conversation.service.js";
 import { WhatsappReportService } from "./whatsapp-report.service.js";
+import { WhatsappScheduleService } from "./whatsapp-schedule.service.js";
 import { DocumentationModule } from "../documentation/documentation.module.js";
 import { UploadModule } from "../upload/upload.module.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
@@ -14,8 +15,8 @@ import { PrismaModule } from "../prisma/prisma.module.js";
     WhatsappService,
     WhatsappConversationService,
     WhatsappReportService,
+    WhatsappScheduleService,
   ],
-  exports: [WhatsappService],
+  exports: [WhatsappService, WhatsappScheduleService],
 })
 export class WhatsappModule {}
-

@@ -12,6 +12,7 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { SubscriptionsService } from "../subscriptions/subscriptions.service.js";
 import { ContractsService } from "../contracts/contracts.service.js";
 import { MaintenanceService } from "../maintenance/maintenance.service.js";
+import { WhatsappScheduleService } from "../whatsapp/whatsapp-schedule.service.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { CalendarEventDto, CalendarQuery, CalendarStatusDto } from "./dto.js";
 
@@ -38,6 +39,13 @@ export type CalendarItem = {
   recurrence?: string;
   hasConflict?: boolean;
   conflictWith?: string | null;
+  location?: string | null;
+  companyName?: string | null;
+  contactPerson?: string | null;
+  notifyWhatsapp?: boolean;
+  whatsappTargetType?: string | null;
+  whatsappGroupJid?: string | null;
+  whatsappPhone?: string | null;
 };
 
 const pad = (n: number, w: number) => String(n).padStart(w, "0");
@@ -87,6 +95,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     private readonly subscriptions: SubscriptionsService,
     private readonly contracts: ContractsService,
     private readonly maintenance: MaintenanceService,
+    private readonly waSchedule: WhatsappScheduleService,
   ) {}
 
   private get db(): any {
@@ -545,6 +554,13 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         routePath: this.resolveManualRoute(e),
         editable: canEdit,
         recurrence: e.recurrence,
+        location: e.location ?? null,
+        companyName: e.companyName ?? null,
+        contactPerson: e.contactPerson ?? null,
+        notifyWhatsapp: !!e.notifyWhatsapp,
+        whatsappTargetType: e.whatsappTargetType ?? "GROUP",
+        whatsappGroupJid: e.whatsappGroupJid ?? null,
+        whatsappPhone: e.whatsappPhone ?? null,
       };
       const push = (s: Date) => {
         const occKey = wibDateKey(s);
@@ -1176,6 +1192,16 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         text: `Agenda "${e.title}" dijadwalkan pada ${new Date(targetStart.getTime() + 7 * 3600_000).toISOString().slice(0, 16).replace("T", " ")} WIB`,
         href: "/calendar",
       });
+      if (e.notifyWhatsapp) {
+        void this.waSchedule.sendEventReminder(e.id, targetStart).then((sent) => {
+          if (sent) {
+            return this.db.calendarEvent
+              .update({ where: { id: e.id }, data: { waRemindedAt: targetStart } })
+              .catch(() => undefined);
+          }
+          return undefined;
+        });
+      }
     }
 
     // 2. Peringatan aktivitas Overdue (PRD 3.7)
@@ -1323,9 +1349,12 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     const ev = await this.db.calendarEvent.findUnique({
       where: { id },
       include: {
-        creator: { select: { id: true, name: true } },
-        assignee: { select: { id: true, name: true } },
+        creator: { select: { id: true, name: true, role: true } },
+        assignee: { select: { id: true, name: true, role: true } },
         attendees: { include: { user: { select: { id: true, name: true, role: true } } } },
+        customer: { select: { id: true, name: true, company: true, pic: true, address: true } },
+        lead: { select: { id: true, company: true, pic: true } },
+        supplier: { select: { id: true, name: true } },
       },
     });
     if (!ev) throw new NotFoundException("Agenda tidak ditemukan");
@@ -1405,6 +1434,13 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         leadId: dto.leadId ?? null,
         invoiceId: dto.invoiceId ?? null,
         supplierId: dto.supplierId ?? null,
+        location: dto.location?.trim() || null,
+        companyName: dto.companyName?.trim() || null,
+        contactPerson: dto.contactPerson?.trim() || null,
+        notifyWhatsapp: !!dto.notifyWhatsapp,
+        whatsappTargetType: dto.whatsappTargetType ?? "GROUP",
+        whatsappGroupJid: dto.whatsappGroupJid?.trim() || null,
+        whatsappPhone: dto.whatsappPhone?.trim() || null,
         attendees: dto.attendeeIds?.length
           ? { create: [...new Set(dto.attendeeIds)].map((userId) => ({ userId })) }
           : undefined,
@@ -1429,6 +1465,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         text: `${user.name} menjadwalkan agenda "${ev.title}" (${ev.number})`, href: "/calendar",
       }).catch(() => undefined);
     }
+    void this.waSchedule.notifyCalendarEventChange("CREATED", ev.id, user.name);
     return this.get(ev.id, user);
   }
 
@@ -1483,13 +1520,18 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       "title", "description", "category", "status", "priority", "isAllDay",
       "recurrence", "reminderMinutes", "assigneeId", "completionNote",
       "customerId", "projectId", "leadId", "invoiceId", "supplierId",
+      "location", "companyName", "contactPerson", "notifyWhatsapp",
+      "whatsappTargetType", "whatsappGroupJid", "whatsappPhone",
     ] as const) {
       if ((dto as any)[k] !== undefined) data[k] = (dto as any)[k];
     }
     if (dto.startDate) data.startDate = new Date(dto.startDate);
     if (dto.endDate !== undefined) data.endDate = dto.endDate ? new Date(dto.endDate) : null;
     if (dto.recurrenceUntil !== undefined) data.recurrenceUntil = dto.recurrenceUntil ? new Date(dto.recurrenceUntil) : null;
-    if (data.startDate || data.reminderMinutes !== undefined) data.lastRemindedAt = null;
+    if (data.startDate || data.reminderMinutes !== undefined) {
+      data.lastRemindedAt = null;
+      data.waRemindedAt = null;
+    }
     const s = data.startDate ?? ev.startDate;
     const e = data.endDate === undefined ? ev.endDate : data.endDate;
     if (e && e < s) throw new BadRequestException("Tanggal selesai tidak boleh sebelum tanggal mulai");
@@ -1503,6 +1545,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       actor: user, action: "UPDATE_AGENDA", entityType: "calendarEvent", entityId: id,
       detail: `Memperbarui agenda ${ev.number}`,
     });
+    void this.waSchedule.notifyCalendarEventChange("UPDATED", id, user.name);
     return this.get(id, user);
   }
 
@@ -1556,6 +1599,9 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       actor: user, action: "UPDATE_STATUS_AGENDA", entityType: "calendarEvent", entityId: id,
       detail: `Mengubah status agenda ${ev.number} menjadi ${dto.status}${note ? ` (${note})` : ""}`,
     });
+    if (dto.status === "CANCELLED") {
+      void this.waSchedule.notifyCalendarEventChange("CANCELLED", id, user.name);
+    }
     return this.get(id, user);
   }
 
@@ -1568,6 +1614,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         actor: user, action: "HAPUS_KEJADIAN_BERULANG", entityType: "calendarEvent", entityId: id,
         detail: `Membatalkan/menghapus kejadian tanggal ${occurrenceDate} dari seri ${ev.number}`,
       });
+      void this.waSchedule.notifyCalendarEventChange("CANCELLED", id, user.name, ev);
       return { ok: true, excludedDate: occurrenceDate };
     }
     await this.db.calendarEvent.delete({ where: { id } });
@@ -1575,6 +1622,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       actor: user, action: "HAPUS_AGENDA", entityType: "calendarEvent", entityId: id,
       detail: `Menghapus agenda ${ev.number}: ${ev.title}`,
     });
+    void this.waSchedule.notifyCalendarEventChange("CANCELLED", id, user.name, ev);
     return { ok: true };
   }
 }

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ExternalLink, Pencil, Trash2 } from "lucide-react-native";
+import { ExternalLink, MessageSquare, Pencil, Send, Trash2 } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -103,6 +103,15 @@ export function EventFormDialog({
   const [remindOnCreate, setRemindOnCreate] = React.useState(true);
   const [description, setDescription] = React.useState("");
   const [completionNote, setCompletionNote] = React.useState("");
+  const [location, setLocation] = React.useState("");
+  const [companyName, setCompanyName] = React.useState("");
+  const [contactPerson, setContactPerson] = React.useState("");
+  const [notifyWhatsapp, setNotifyWhatsapp] = React.useState(false);
+  const [whatsappTargetType, setWhatsappTargetType] = React.useState<"GROUP" | "PERSONAL" | "BOTH">("GROUP");
+  const [whatsappGroupJid, setWhatsappGroupJid] = React.useState("");
+  const [whatsappPhone, setWhatsappPhone] = React.useState("");
+  const [waGroups, setWaGroups] = React.useState<{ id: string; subject: string }[]>([]);
+  const [waDefaultGroupCount, setWaDefaultGroupCount] = React.useState(0);
   const [occurrenceMode, setOccurrenceMode] = React.useState<"single" | "series">("series");
   const [customerLabel, setCustomerLabel] = React.useState("");
   const [customerId, setCustomerId] = React.useState<number | null>(null);
@@ -177,6 +186,13 @@ export function EventFormDialog({
         setRemindOnCreate(true);
         setDescription("");
         setCompletionNote("");
+        setLocation("");
+        setCompanyName("");
+        setContactPerson("");
+        setNotifyWhatsapp(false);
+        setWhatsappTargetType("GROUP");
+        setWhatsappGroupJid("");
+        setWhatsappPhone((user as any)?.phone ?? "");
         setOccurrenceMode("series");
         setCustomerLabel("");
         setCustomerId(null);
@@ -217,6 +233,15 @@ export function EventFormDialog({
         }
         setDescription(e.description ?? "");
         setCompletionNote(e.completionNote ?? "");
+        setLocation(e.location ?? "");
+        setCompanyName(e.companyName ?? "");
+        setContactPerson(e.contactPerson ?? "");
+        setNotifyWhatsapp(!!e.notifyWhatsapp);
+        setWhatsappTargetType(
+          e.whatsappTargetType === "PERSONAL" || e.whatsappTargetType === "BOTH" ? e.whatsappTargetType : "GROUP",
+        );
+        setWhatsappGroupJid(e.whatsappGroupJid ?? "");
+        setWhatsappPhone(e.whatsappPhone ?? "");
         setCustomerLabel(customerMap.find((x) => x.id === e.customerId)?.label ?? (e.customer?.company || e.customer?.nama || e.customer?.name || ""));
         setCustomerId(e.customerId ? Number(e.customerId) : null);
         setProjectLabel(projectMap.find((x) => x.id === e.projectId)?.label ?? (e.project?.name ? `${e.project.code || ""} - ${e.project.name}` : ""));
@@ -239,6 +264,22 @@ export function EventFormDialog({
     };
   }, [open, eventId, occurrenceDate, customerMap, projectMap, leadMap, invoiceMap, supplierMap, toast]);
 
+  React.useEffect(() => {
+    if (!open) return;
+    let active = true;
+    api<{ connected: boolean; groups: { id: string; subject: string }[] }>("GET", "/whatsapp/groups")
+      .then((res) => {
+        if (active) setWaGroups(res.groups ?? []);
+      })
+      .catch(() => {});
+    api<{ groupJids?: string[] }>("GET", "/whatsapp/schedule-notification/settings")
+      .then((res) => {
+        if (active) setWaDefaultGroupCount(Array.isArray(res?.groupJids) ? res.groupJids.length : 0);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [open]);
+
   async function save() {
     if (title.trim().length < 2) return toast("Judul agenda wajib diisi", "danger");
     if (!startDate) return toast("Tanggal mulai wajib diisi", "danger");
@@ -249,6 +290,19 @@ export function EventFormDialog({
       title: title.trim(),
       description: description.trim() || undefined,
       completionNote: completionNote.trim() || undefined,
+      location: location.trim() || null,
+      companyName: companyName.trim() || null,
+      contactPerson: contactPerson.trim() || null,
+      notifyWhatsapp,
+      whatsappTargetType: notifyWhatsapp ? whatsappTargetType : "GROUP",
+      whatsappGroupJid:
+        notifyWhatsapp && (whatsappTargetType === "GROUP" || whatsappTargetType === "BOTH") && whatsappGroupJid.trim()
+          ? whatsappGroupJid.trim()
+          : null,
+      whatsappPhone:
+        notifyWhatsapp && (whatsappTargetType === "PERSONAL" || whatsappTargetType === "BOTH") && whatsappPhone.trim()
+          ? whatsappPhone.trim()
+          : null,
       category, priority, recurrence,
       isAllDay: allDay,
       startDate: toIsoWib(startDate, allDay ? "00:00" : startTime),
@@ -427,6 +481,139 @@ export function EventFormDialog({
                 </Text>
               </Pressable>
             ) : null}
+
+            {/* Informasi Klien & Lokasi (untuk Rekap & Kunjungan Offline) */}
+            <View className="border-t border-border/60 pt-2 gap-3">
+              <Text className="text-xs font-semibold text-muted-foreground">Informasi Klien & Lokasi (Opsional)</Text>
+              <View className="flex-col gap-3 md:flex-row">
+                <View className="flex-1">
+                  <FormField label="Perusahaan / Klien">
+                    <Input
+                      value={companyName}
+                      onChangeText={setCompanyName}
+                      placeholder="Contoh: PT ABC (otomatis terisi jika pilih Customer/Lead)"
+                    />
+                  </FormField>
+                </View>
+                <View className="flex-1">
+                  <FormField label="Contact Person">
+                    <Input
+                      value={contactPerson}
+                      onChangeText={setContactPerson}
+                      placeholder="Contoh: Bapak Budi / Ibu Sari"
+                    />
+                  </FormField>
+                </View>
+              </View>
+              <FormField label="Lokasi / Alamat Kunjungan">
+                <Input
+                  value={location}
+                  onChangeText={setLocation}
+                  placeholder="Contoh: Kantor, Bekasi, atau alamat kunjungan offline"
+                />
+              </FormField>
+            </View>
+
+            {/* Pengingat & Notifikasi WhatsApp Grup */}
+            <View className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 gap-2">
+              <View className="flex-row items-center justify-between gap-2">
+                <View className="flex-row items-center gap-1.5 flex-1">
+                  <MessageSquare size={15} color="#10b981" />
+                  <Text className="text-xs font-semibold text-foreground">Pengingat & Notifikasi WhatsApp</Text>
+                </View>
+                <Pressable
+                  onPress={() => setNotifyWhatsapp((v) => !v)}
+                  className={cn(
+                    "min-h-[30px] justify-center rounded-full border px-3",
+                    notifyWhatsapp ? "border-emerald-500 bg-emerald-500/15" : "border-border bg-card",
+                  )}
+                >
+                  <Text className={cn("text-xs font-medium", notifyWhatsapp ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground")}>
+                    {notifyWhatsapp ? "Aktif" : "Nonaktif"}
+                  </Text>
+                </Pressable>
+              </View>
+              <Text className="text-[11px] text-muted-foreground">
+                {notifyWhatsapp
+                  ? "Agenda ini akan dikirim ke WhatsApp saat disimpan, dan otomatis diingatkan kembali sesuai waktu 'Pengingat sebelum jadwal'."
+                  : "Aktifkan untuk membuat pengingat & notifikasi ke Grup WA atau chat WA Pribadi."}
+              </Text>
+              {notifyWhatsapp ? (
+                <View className="gap-2.5 pt-1">
+                  <View className="gap-1">
+                    <Text className="text-[11px] font-medium text-foreground">Tujuan Pengingat WhatsApp</Text>
+                    <View className="flex-row flex-wrap gap-1.5">
+                      {[
+                        { key: "GROUP" as const, label: "Grup WA" },
+                        { key: "PERSONAL" as const, label: "WA Pribadi" },
+                        { key: "BOTH" as const, label: "Grup & Pribadi" },
+                      ].map((opt) => (
+                        <Pressable
+                          key={opt.key}
+                          onPress={() => setWhatsappTargetType(opt.key)}
+                          className={cn(
+                            "min-h-[30px] justify-center rounded-full border px-3",
+                            whatsappTargetType === opt.key
+                              ? "border-emerald-500 bg-emerald-500/15"
+                              : "border-border bg-card",
+                          )}
+                        >
+                          <Text
+                            className={cn(
+                              "text-xs",
+                              whatsappTargetType === opt.key
+                                ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {opt.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+
+                  {(whatsappTargetType === "GROUP" || whatsappTargetType === "BOTH") ? (
+                    <FormField label="Grup WhatsApp Tujuan">
+                      <SearchableSelect
+                        value={
+                          whatsappGroupJid
+                            ? (waGroups.find((g) => g.id === whatsappGroupJid)?.subject ?? whatsappGroupJid)
+                            : `Grup Default Pengaturan WA (${waDefaultGroupCount} grup)`
+                        }
+                        onChange={(label) => {
+                          if (label.startsWith("Grup Default")) {
+                            setWhatsappGroupJid("");
+                          } else {
+                            const found = waGroups.find((g) => g.subject === label);
+                            setWhatsappGroupJid(found?.id ?? "");
+                          }
+                        }}
+                        options={[
+                          `Grup Default Pengaturan WA (${waDefaultGroupCount} grup)`,
+                          ...waGroups.map((g) => g.subject),
+                        ]}
+                        placeholder="Pilih grup WA"
+                      />
+                    </FormField>
+                  ) : null}
+
+                  {(whatsappTargetType === "PERSONAL" || whatsappTargetType === "BOTH") ? (
+                    <FormField label="Nomor WhatsApp Pribadi (Opsional)">
+                      <Input
+                        value={whatsappPhone}
+                        onChangeText={setWhatsappPhone}
+                        placeholder="Contoh: 081234567890 (pisahkan koma jika lebih dari 1)"
+                        keyboardType="phone-pad"
+                      />
+                      <Text className="text-[10px] text-muted-foreground mt-1">
+                        Kosongkan untuk otomatis mengirim ke nomor WA Penanggung Jawab, Pembuat, & Peserta yang terdaftar di profil user.
+                      </Text>
+                    </FormField>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
             <View className="flex-row gap-3">
               <View className="flex-1">
                 <FormField label="Pengulangan">
@@ -683,6 +870,7 @@ export function EventDetailDialog({
   const [occurrenceMode, setOccurrenceMode] = React.useState<"single" | "series">("single");
   const [noteInput, setNoteInput] = React.useState("");
   const [showCompleteInput, setShowCompleteInput] = React.useState(false);
+  const [sendingWa, setSendingWa] = React.useState(false);
   const isManual = item?.sourceModule === "calendar";
   const isRecurring = !!(item?.recurrence && item.recurrence !== "NONE");
 
@@ -756,6 +944,23 @@ export function EventDetailDialog({
     }
   }
 
+  async function sendToWaGroup() {
+    if (!item || !isManual) return;
+    setSendingWa(true);
+    try {
+      const res = await api<{ sent: number }>("POST", `/whatsapp/schedule-notification/event/${item.sourceId}`);
+      if (res.sent > 0) {
+        toast(`Agenda terkirim ke ${res.sent} grup WhatsApp`);
+      } else {
+        toast("Gagal mengirim agenda ke grup WhatsApp", "danger");
+      }
+    } catch (e: any) {
+      toast(e?.message ?? "Gagal mengirim ke grup WhatsApp", "danger");
+    } finally {
+      setSendingWa(false);
+    }
+  }
+
   const when = item.isAllDay
     ? `${tanggal(item.start)}${item.end && wibKey(item.end) !== wibKey(item.start) ? ` - ${tanggal(item.end)}` : ""} (Sepanjang hari)`
     : `${tanggal(item.start)}, ${wibTime(item.start)}${item.end ? ` - ${wibTime(item.end)}` : ""} WIB`;
@@ -790,6 +995,36 @@ export function EventDetailDialog({
             {isRecurring ? <Row label="Pengulangan">{RECURRENCE_LABEL[item.recurrence!] ?? item.recurrence}</Row> : null}
             {isManual && detail?.attendees?.length ? (
               <Row label="Peserta">{detail.attendees.map((a: any) => a.user?.name).filter(Boolean).join(", ")}</Row>
+            ) : null}
+            {(item.companyName || detail?.companyName || detail?.customer?.company || detail?.customer?.name || detail?.lead?.company) ? (
+              <Row label="Perusahaan">
+                {item.companyName || detail?.companyName || detail?.customer?.company || detail?.customer?.name || detail?.lead?.company}
+              </Row>
+            ) : null}
+            {(item.contactPerson || detail?.contactPerson || detail?.customer?.pic || detail?.lead?.pic) ? (
+              <Row label="Contact Person">
+                {item.contactPerson || detail?.contactPerson || detail?.customer?.pic || detail?.lead?.pic}
+              </Row>
+            ) : null}
+            {(item.location || detail?.location) ? (
+              <Row label="Lokasi">{item.location || detail?.location}</Row>
+            ) : null}
+            {isManual && (item.notifyWhatsapp || detail?.notifyWhatsapp) ? (
+              <Row label="Pengingat WA">
+                <View className="self-start rounded-full bg-emerald-500/15 px-2.5 py-0.5">
+                  <Text className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                    {(() => {
+                      const t = String(detail?.whatsappTargetType || item.whatsappTargetType || "GROUP").toUpperCase();
+                      if (t === "PERSONAL") {
+                        const phone = detail?.whatsappPhone || item.whatsappPhone;
+                        return phone ? `Aktif (WA Pribadi: ${phone})` : "Aktif (WA Pribadi PIC/Peserta)";
+                      }
+                      if (t === "BOTH") return "Aktif (Grup WA & Pribadi)";
+                      return "Aktif (Grup WA)";
+                    })()}
+                  </Text>
+                </View>
+              </Row>
             ) : null}
             {item.subtitle ? <Row label="Keterangan">{item.subtitle}</Row> : null}
             {(item.completionNote || detail?.completionNote) ? (
@@ -865,6 +1100,10 @@ export function EventDetailDialog({
                 ) : null}
                 <Button size="sm" variant="outline" onPress={() => { onClose(); onEdit(item.sourceId, occDate); }}>
                   <Pencil size={13} color={colors.text} /><Text className="text-xs">Edit</Text>
+                </Button>
+                <Button size="sm" variant="outline" disabled={sendingWa} onPress={sendToWaGroup}>
+                  <Send size={13} color="#10b981" />
+                  <Text className="text-xs text-emerald-600">{sendingWa ? "Mengirim..." : "Kirim ke WA"}</Text>
                 </Button>
                 <Button size="sm" variant="outline" onPress={() => setConfirmDelete(true)}>
                   <Trash2 size={13} color={colors.danger} /><Text className="text-xs text-danger">Hapus</Text>

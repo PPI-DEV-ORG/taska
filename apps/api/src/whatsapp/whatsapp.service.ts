@@ -59,6 +59,30 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  isConnected(): boolean {
+    return !!this.sock && this.status === "CONNECTED";
+  }
+
+  async listGroups(): Promise<{ id: string; subject: string; participantCount: number }[]> {
+    if (!this.sock || this.status !== "CONNECTED") {
+      return [];
+    }
+    try {
+      const groupsMap = await this.sock.groupFetchAllParticipating();
+      return Object.values(groupsMap ?? {})
+        .map((g: any) => ({
+          id: String(g?.id || ""),
+          subject: String(g?.subject || "Grup Tanpa Nama"),
+          participantCount: Array.isArray(g?.participants) ? g.participants.length : 0,
+        }))
+        .filter((g) => g.id.endsWith("@g.us"))
+        .sort((a, b) => a.subject.localeCompare(b.subject, "id"));
+    } catch (err: any) {
+      this.logger.warn(`Gagal mengambil daftar grup WhatsApp: ${err?.message}`);
+      return [];
+    }
+  }
+
   async getQrDataUrl(): Promise<string | null> {
     return this.qrCodeDataUrl;
   }
