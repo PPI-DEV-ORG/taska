@@ -557,7 +557,7 @@ export function WhatsappDialog({
                       Belum ada grup terdeteksi. Pastikan nomor bot sudah dimasukkan ke grup WhatsApp lalu klik Muat Grup.
                     </Text>
                   ) : (
-                    <View className="gap-1.5 max-h-36">
+                    <ScrollView className="max-h-48" contentContainerClassName="gap-1.5" nestedScrollEnabled>
                       {groups.map((g) => {
                         const selected = settings.groupJids.includes(g.id);
                         return (
@@ -577,7 +577,7 @@ export function WhatsappDialog({
                           </Pressable>
                         );
                       })}
-                    </View>
+                    </ScrollView>
                   )}
 
                   {/* Manual JID fallback */}
@@ -835,7 +835,7 @@ export function WhatsappDialog({
                       Belum ada grup terdeteksi. Pastikan bot sudah masuk ke grup WA lalu klik Muat Grup.
                     </Text>
                   ) : (
-                    <View className="gap-1.5 max-h-36">
+                    <ScrollView className="max-h-48" contentContainerClassName="gap-1.5" nestedScrollEnabled>
                       {groups.map((g) => {
                         const selected = attSettings.groupJids.includes(g.id);
                         return (
@@ -855,7 +855,7 @@ export function WhatsappDialog({
                           </Pressable>
                         );
                       })}
-                    </View>
+                    </ScrollView>
                   )}
 
                   <View className="flex-row items-center gap-2 pt-1">
