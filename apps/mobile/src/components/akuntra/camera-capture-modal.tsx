@@ -16,10 +16,11 @@ export type CapturedPhoto = {
 };
 
 /**
- * Helper native (iOS/Android) untuk mengambil foto langsung dari kamera perangkat.
+ * Helper native (iOS/Android) untuk mengambil foto langsung dari kamera perangkat (bukan galeri).
  */
 export async function captureNativePhoto(
   toast: (msg: string, tone?: any) => void,
+  options?: { cameraType?: "front" | "back"; quality?: number },
 ): Promise<CapturedPhoto | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) {
@@ -28,7 +29,11 @@ export async function captureNativePhoto(
   }
   const result = await ImagePicker.launchCameraAsync({
     mediaTypes: ["images"],
-    quality: 0.85,
+    quality: options?.quality ?? 0.85,
+    cameraType:
+      options?.cameraType === "front"
+        ? ImagePicker.CameraType.front
+        : ImagePicker.CameraType.back,
   });
   if (result.canceled || !result.assets?.[0]) return null;
   const asset = result.assets[0];
@@ -45,18 +50,26 @@ export async function captureNativePhoto(
  * - Live viewfinder (getUserMedia)
  * - Ganti kamera Depan / Belakang
  * - Pratinjau foto hasil jepretan + tombol Ulangi / Gunakan Foto
- * - Fallback otomatis ke <input type="file" accept="image/*" capture="environment"> bila kamera browser diblokir
+ * - Fallback otomatis ke <input type="file" accept="image/*" capture="..."> bila kamera browser diblokir
  */
 export function WebCameraModal({
   visible,
   onClose,
   onCapture,
+  defaultFacing = "environment",
+  liveOnly = false,
+  title,
+  subtitle,
 }: {
   visible: boolean;
   onClose: () => void;
   onCapture: (photo: CapturedPhoto) => void;
+  defaultFacing?: "environment" | "user";
+  liveOnly?: boolean;
+  title?: string;
+  subtitle?: string;
 }) {
-  const [facing, setFacing] = React.useState<"environment" | "user">("environment");
+  const [facing, setFacing] = React.useState<"environment" | "user">(defaultFacing);
   const [starting, setStarting] = React.useState(false);
   const [cameraError, setCameraError] = React.useState<string | null>(null);
   const [capturedUrl, setCapturedUrl] = React.useState<string | null>(null);
@@ -210,23 +223,23 @@ export function WebCameraModal({
             </View>
             <View>
               <Text className="text-base font-bold text-foreground">
-                {capturedUrl ? "Pratinjau Hasil Foto" : "Ambil Foto Langsung"}
+                {capturedUrl ? "Pratinjau Hasil Foto" : (title || "Ambil Foto Langsung")}
               </Text>
               <Text className="text-xs text-muted-foreground">
                 {capturedUrl
                   ? "Periksa hasil foto sebelum dilampirkan"
-                  : "Arahkan kamera ke struk, dokumen, atau objek"}
+                  : (subtitle || "Arahkan kamera ke struk, dokumen, atau objek")}
               </Text>
             </View>
           </View>
         </View>
 
-        {/* Hidden OS Camera Fallback Input */}
+        {/* Hidden OS Camera Fallback Input (hanya dipakai jika tidak liveOnly, atau saat kamera live gagal di mobile) */}
         <input
           ref={fallbackInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
+          capture={facing === "user" ? "user" : "environment"}
           onChange={handleFallbackFile}
           style={{ display: "none" }}
         />
@@ -314,15 +327,17 @@ export function WebCameraModal({
                 <Text className="text-xs font-semibold">Batal</Text>
               </Button>
               <View className="flex-row items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onPress={() => fallbackInputRef.current?.click()}
-                  className="gap-1"
-                >
-                  <Upload size={13} color={colors.text} />
-                  <Text className="text-xs font-medium">Kamera OS</Text>
-                </Button>
+                {!liveOnly && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => fallbackInputRef.current?.click()}
+                    className="gap-1"
+                  >
+                    <Upload size={13} color={colors.text} />
+                    <Text className="text-xs font-medium">Kamera OS</Text>
+                  </Button>
+                )}
                 {!cameraError && (
                   <Button
                     size="sm"

@@ -1,10 +1,35 @@
-import { IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateIf, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Max, Min, ValidateIf, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 export class CheckInDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsNumber()
+  photoFileId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  accuracy?: number;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
 }
 
 export class CheckOutDto {
@@ -16,6 +41,31 @@ export class CheckOutDto {
   @IsNumber()
   @Min(0)
   overtimeHours?: number;
+
+  @IsOptional()
+  @IsNumber()
+  photoFileId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  accuracy?: number;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
 }
 
 export class RecordAttendanceDto {
@@ -186,6 +236,42 @@ export class WorkScheduleSettingsDto {
   @IsNumber()
   @Min(0)
   overtimeRatePerHour?: number; // 25000
+
+  @IsOptional()
+  @IsString()
+  officeName?: string;
+
+  @IsOptional()
+  @ValidateIf((_, val) => val !== null && val !== undefined)
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  officeLatitude?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, val) => val !== null && val !== undefined)
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  officeLongitude?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(10)
+  officeRadiusMeters?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  requirePhotoOnAttendance?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requireGpsOnAttendance?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  fieldRoles?: string[];
 }
 
 export class UpdateAttendanceDto {
@@ -201,6 +287,10 @@ export class UpdateAttendanceDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  verificationStatus?: "TERVERIFIKASI" | "PERLU_VERIFIKASI" | "DITOLAK";
 }
 
 

@@ -185,14 +185,16 @@ export class PayrollService {
     return { start: new Date(Date.UTC(year, month - 1, 1)), end: new Date(Date.UTC(year, month, 1)) };
   }
 
-  /** Rekap absensi satu karyawan dalam periode. */
+  /** Rekap absensi satu karyawan dalam periode (mengabaikan absensi berstatus DITOLAK). */
   private summarizeAttendance(rows: any[]) {
+    const validRows = rows.filter((a) => String(a.verificationStatus || "").toUpperCase() !== "DITOLAK");
     const up = (a: any) => String(a.status || "").toUpperCase();
     return {
-      presentDays: rows.filter((a) => up(a) === "HADIR").length,
-      absentDays: rows.filter((a) => up(a) === "ALPHA").length,
-      overtimeHours: rows.reduce((s, a) => s + n(a.overtimeHours), 0),
-      lateCount: rows.filter((a) => {
+      presentDays: validRows.filter((a) => up(a) === "HADIR").length,
+      absentDays: validRows.filter((a) => up(a) === "ALPHA").length,
+      overtimeHours: validRows.reduce((s, a) => s + n(a.overtimeHours), 0),
+      lateCount: validRows.filter((a) => {
+        if (typeof a.lateMinutes === "number" && a.lateMinutes > 0) return true;
         if (!a.checkIn) return false;
         const d = new Date(a.checkIn);
         return d.getHours() > 8 || (d.getHours() === 8 && d.getMinutes() > 30);

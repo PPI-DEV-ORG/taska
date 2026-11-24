@@ -11,14 +11,14 @@ import {
   Plus,
 } from "lucide-react-native";
 import { useApp } from "@/store/app-store";
-import { api } from "@/services/api";
+import { api, uploadFile } from "@/services/api";
 import { colors } from "@/tokens";
 import { PageHeader } from "@/components/akuntra/basics";
 import { Button } from "@/components/ui/button";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 
 import { TabType } from "@/modules/hr/types";
-import { MyAttendanceTab } from "@/modules/hr/components/my-attendance-tab";
+import { MyAttendanceTab, type AttendanceSubmitPayload } from "@/modules/hr/components/my-attendance-tab";
 import { TeamAttendanceTab } from "@/modules/hr/components/team-attendance-tab";
 import { PayrollTab } from "@/modules/hr/components/payroll-tab";
 import { PayrollHistoryTab } from "@/modules/hr/components/payroll-history-tab";
@@ -86,6 +86,16 @@ export default function HrScreen() {
   const [otThresholdHours, setOtThresholdHours] = React.useState("8");
   const [otMinMinutes, setOtMinMinutes] = React.useState("30");
   const [otRatePerHour, setOtRatePerHour] = React.useState("0");
+  const [officeName, setOfficeName] = React.useState("Kantor Pusat");
+  const [officeLatitude, setOfficeLatitude] = React.useState("");
+  const [officeLongitude, setOfficeLongitude] = React.useState("");
+  const [officeRadiusMeters, setOfficeRadiusMeters] = React.useState("150");
+  const [requirePhotoOnAttendance, setRequirePhotoOnAttendance] = React.useState(true);
+  const [requireGpsOnAttendance, setRequireGpsOnAttendance] = React.useState(true);
+  const [fieldRolesText, setFieldRolesText] = React.useState(
+    "teknisi, sales, driver, lapangan, super_admin, bos",
+  );
+  const [attSettings, setAttSettings] = React.useState<any>(null);
   const [savingSchedule, setSavingSchedule] = React.useState(false);
 
   // ── State: Payroll & Gaji ──
@@ -171,29 +181,51 @@ export default function HrScreen() {
   }, []);
 
 
+  const applyScheduleSettings = React.useCallback((res: any) => {
+    if (!res) return;
+    setAttSettings(res);
+    if (res.workStartTime) setWorkStartTime(res.workStartTime);
+    if (res.workEndTime) setWorkEndTime(res.workEndTime);
+    if (res.lateToleranceMinutes !== undefined) setLateTolerance(String(res.lateToleranceMinutes));
+    if (res.breakStartTime) setBreakStartTime(res.breakStartTime);
+    if (res.breakEndTime) setBreakEndTime(res.breakEndTime);
+    if (res.overtimeCalculationMode) setOtCalculationMode(res.overtimeCalculationMode);
+    if (res.overtimeThresholdHours !== undefined) setOtThresholdHours(String(res.overtimeThresholdHours));
+    if (res.overtimeMinMinutes !== undefined) setOtMinMinutes(String(res.overtimeMinMinutes));
+    if (res.overtimeRatePerHour !== undefined) setOtRatePerHour(String(res.overtimeRatePerHour));
+    if (res.officeName !== undefined) setOfficeName(String(res.officeName || "Kantor Pusat"));
+    setOfficeLatitude(res.officeLatitude != null ? String(res.officeLatitude) : "");
+    setOfficeLongitude(res.officeLongitude != null ? String(res.officeLongitude) : "");
+    if (res.officeRadiusMeters !== undefined) setOfficeRadiusMeters(String(res.officeRadiusMeters));
+    if (res.requirePhotoOnAttendance !== undefined) setRequirePhotoOnAttendance(Boolean(res.requirePhotoOnAttendance));
+    if (res.requireGpsOnAttendance !== undefined) setRequireGpsOnAttendance(Boolean(res.requireGpsOnAttendance));
+    if (Array.isArray(res.fieldRoles)) setFieldRolesText(res.fieldRoles.join(", "));
+  }, []);
+
   const fetchScheduleSettings = React.useCallback(async () => {
     try {
       const res = await api<any>("GET", "/hr/attendance/settings");
-      if (res) {
-        if (res.workStartTime) setWorkStartTime(res.workStartTime);
-        if (res.workEndTime) setWorkEndTime(res.workEndTime);
-        if (res.lateToleranceMinutes !== undefined) setLateTolerance(String(res.lateToleranceMinutes));
-        if (res.breakStartTime) setBreakStartTime(res.breakStartTime);
-        if (res.breakEndTime) setBreakEndTime(res.breakEndTime);
-        if (res.overtimeCalculationMode) setOtCalculationMode(res.overtimeCalculationMode);
-        if (res.overtimeThresholdHours !== undefined) setOtThresholdHours(String(res.overtimeThresholdHours));
-        if (res.overtimeMinMinutes !== undefined) setOtMinMinutes(String(res.overtimeMinMinutes));
-        if (res.overtimeRatePerHour !== undefined) setOtRatePerHour(String(res.overtimeRatePerHour));
-      }
+      applyScheduleSettings(res);
     } catch (e: any) {
       console.warn("Error fetching schedule settings:", e?.message);
     }
-  }, []);
+  }, [applyScheduleSettings]);
 
   const handleSaveSchedule = async () => {
     try {
       setSavingSchedule(true);
-      await api("POST", "/hr/attendance/settings", {
+      const parsedLat = officeLatitude.trim() !== "" ? Number(officeLatitude.trim()) : null;
+      const parsedLng = officeLongitude.trim() !== "" ? Number(officeLongitude.trim()) : null;
+      if ((parsedLat !== null && !Number.isFinite(parsedLat)) || (parsedLng !== null && !Number.isFinite(parsedLng))) {
+        toast("Koordinat Latitude / Longitude tidak valid", "danger");
+        return;
+      }
+      const fieldRoles = fieldRolesText
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
+      const saved = await api<any>("POST", "/hr/attendance/settings", {
         workStartTime,
         workEndTime,
         lateToleranceMinutes: Number(lateTolerance) || 0,
@@ -203,8 +235,16 @@ export default function HrScreen() {
         overtimeThresholdHours: Number(otThresholdHours) || 8,
         overtimeMinMinutes: Number(otMinMinutes) || 30,
         overtimeRatePerHour: Number(otRatePerHour) || 0,
+        officeName: officeName.trim() || "Kantor Pusat",
+        officeLatitude: parsedLat,
+        officeLongitude: parsedLng,
+        officeRadiusMeters: Number(officeRadiusMeters) || 150,
+        requirePhotoOnAttendance,
+        requireGpsOnAttendance,
+        fieldRoles,
       });
-      toast("Pengaturan jam kerja & aturan lembur berhasil disimpan");
+      applyScheduleSettings(saved);
+      toast("Pengaturan jam kerja, lokasi kantor & lembur berhasil disimpan");
       setScheduleModalOpen(false);
     } catch (e: any) {
       toast(e?.message || "Gagal menyimpan pengaturan", "danger");
@@ -230,18 +270,47 @@ export default function HrScreen() {
     }
   };
 
+  const handleVerifyAttendance = async (
+    verificationStatus: "TERVERIFIKASI" | "PERLU_VERIFIKASI" | "DITOLAK",
+  ) => {
+    if (!selectedAttendance) return;
+    try {
+      setSavingAttDetail(true);
+      const updated = await api<any>("PATCH", `/hr/attendance/${selectedAttendance.id}`, {
+        verificationStatus,
+      });
+      setSelectedAttendance((prev: any) => (prev ? { ...prev, ...updated } : null));
+      toast(
+        verificationStatus === "TERVERIFIKASI"
+          ? "Presensi berhasil diverifikasi valid"
+          : verificationStatus === "DITOLAK"
+          ? "Presensi ditandai Ditolak"
+          : "Presensi ditandai Perlu Verifikasi",
+        "success",
+      );
+      fetchAttendanceList();
+    } catch (e: any) {
+      toast(e?.message || "Gagal memperbarui status verifikasi", "danger");
+    } finally {
+      setSavingAttDetail(false);
+    }
+  };
+
   // ── Effects ──
   React.useEffect(() => {
     let active = true;
-    api<any>("GET", "/hr/attendance/today")
-      .then((res) => {
-        if (active) setTodayAtt(res || null);
-      })
-      .catch((e: any) => console.warn(e?.message));
+    Promise.all([
+      api<any>("GET", "/hr/attendance/today").catch(() => null),
+      api<any>("GET", "/hr/attendance/settings").catch(() => null),
+    ]).then(([todayRes, schedRes]) => {
+      if (!active) return;
+      setTodayAtt(todayRes || null);
+      if (schedRes) applyScheduleSettings(schedRes);
+    });
     return () => {
       active = false;
     };
-  }, []);
+  }, [applyScheduleSettings]);
 
   React.useEffect(() => {
     let active = true;
@@ -303,29 +372,58 @@ export default function HrScreen() {
   }, [activeTab, selectedMonth, filterDate, selectedUserFilter, payrollPeriod]);
 
   // ── Actions ──
-  const handleCheckIn = async () => {
+  const uploadAttendancePhoto = async (photo: AttendanceSubmitPayload["photo"]): Promise<number | undefined> => {
+    if (!photo) return undefined;
+    const payload = photo.blob
+      ? photo.blob
+      : { uri: photo.uri, name: photo.name, type: photo.mimeType || "image/jpeg", size: photo.size };
+    const fileId = await uploadFile(payload, "foto", "absensi", { refType: "attendance" });
+    return fileId ?? undefined;
+  };
+
+  const handleCheckIn = async (payload: AttendanceSubmitPayload): Promise<boolean> => {
     try {
       setSubmittingAtt(true);
-      await api("POST", "/hr/attendance/check-in", { notes: checkInNote });
-      toast("Berhasil melakukan check-in hari ini!", "success");
+      const photoFileId = await uploadAttendancePhoto(payload.photo);
+      await api("POST", "/hr/attendance/check-in", {
+        notes: payload.notes,
+        address: payload.address || undefined,
+        photoFileId,
+        latitude: payload.gps?.latitude,
+        longitude: payload.gps?.longitude,
+        accuracy: payload.gps?.accuracy ?? undefined,
+      });
+      toast("Berhasil melakukan check-in dengan foto & GPS!", "success");
       setCheckInNote("");
       fetchToday();
+      return true;
     } catch (e: any) {
       toast(e?.message || "Gagal check-in", "danger");
+      return false;
     } finally {
       setSubmittingAtt(false);
     }
   };
 
-  const handleCheckOut = async () => {
+  const handleCheckOut = async (payload: AttendanceSubmitPayload): Promise<boolean> => {
     try {
       setSubmittingAtt(true);
-      await api("POST", "/hr/attendance/check-out", { notes: checkOutNote });
-      toast("Berhasil melakukan check-out. Sampai jumpa besok!", "success");
+      const photoFileId = await uploadAttendancePhoto(payload.photo);
+      await api("POST", "/hr/attendance/check-out", {
+        notes: payload.notes,
+        address: payload.address || undefined,
+        photoFileId,
+        latitude: payload.gps?.latitude,
+        longitude: payload.gps?.longitude,
+        accuracy: payload.gps?.accuracy ?? undefined,
+      });
+      toast("Berhasil melakukan check-out dengan foto & GPS. Sampai jumpa besok!", "success");
       setCheckOutNote("");
       fetchToday();
+      return true;
     } catch (e: any) {
       toast(e?.message || "Gagal check-out", "danger");
+      return false;
     } finally {
       setSubmittingAtt(false);
     }
@@ -385,7 +483,11 @@ export default function HrScreen() {
   // ── Computations ──
   const filteredAttendance = React.useMemo(() => {
     return attendanceList.filter((row) => {
-      if (statusFilter !== "Semua" && row.status !== statusFilter) {
+      if (statusFilter === "PERLU_VERIFIKASI") {
+        if (row.verificationStatus !== "PERLU_VERIFIKASI") return false;
+      } else if (statusFilter === "BELUM_PULANG") {
+        if (!(row.status === "HADIR" && row.checkIn && !row.checkOut)) return false;
+      } else if (statusFilter !== "Semua" && row.status !== statusFilter) {
         return false;
       }
       if (searchAttQuery.trim()) {
@@ -595,6 +697,7 @@ export default function HrScreen() {
         {activeTab === "my-attendance" && (
           <MyAttendanceTab
             todayAtt={todayAtt}
+            attSettings={attSettings}
             loadingToday={loadingToday}
             submittingAtt={submittingAtt}
             checkInNote={checkInNote}
@@ -720,6 +823,7 @@ export default function HrScreen() {
         editAttOtHours={editAttOtHours}
         setEditAttOtHours={setEditAttOtHours}
         handleUpdateAttendanceRecord={handleUpdateAttendanceRecord}
+        handleVerifyAttendance={handleVerifyAttendance}
         savingAttDetail={savingAttDetail}
       />
 
@@ -742,6 +846,20 @@ export default function HrScreen() {
         setOtThresholdHours={setOtThresholdHours}
         otMinMinutes={otMinMinutes}
         setOtMinMinutes={setOtMinMinutes}
+        officeName={officeName}
+        setOfficeName={setOfficeName}
+        officeLatitude={officeLatitude}
+        setOfficeLatitude={setOfficeLatitude}
+        officeLongitude={officeLongitude}
+        setOfficeLongitude={setOfficeLongitude}
+        officeRadiusMeters={officeRadiusMeters}
+        setOfficeRadiusMeters={setOfficeRadiusMeters}
+        requirePhotoOnAttendance={requirePhotoOnAttendance}
+        setRequirePhotoOnAttendance={setRequirePhotoOnAttendance}
+        requireGpsOnAttendance={requireGpsOnAttendance}
+        setRequireGpsOnAttendance={setRequireGpsOnAttendance}
+        fieldRolesText={fieldRolesText}
+        setFieldRolesText={setFieldRolesText}
         savingSchedule={savingSchedule}
         onSave={handleSaveSchedule}
       />
