@@ -1,4 +1,5 @@
 import * as React from "react";
+import { emitDataChange, useDataChange } from "@/lib/data-events";
 import { View, ScrollView, Pressable, Linking, Image } from "react-native";
 import { Printer, Plus, Pencil, Camera, Check, MapPin, CalendarDays, Users, Building2, ClipboardList, User, Wallet } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
@@ -99,6 +100,11 @@ export function SurveyExtras({
       alive = false;
     };
   }, [row.id, reloadKey]);
+  // Biaya dicatat dari panel / dialog petty cash (atau user lain) -> daftar biaya di sini langsung ikut berubah
+  useDataChange(["cash-advances", "expenses"], () => {
+    setReloadKey((k) => k + 1);
+    void refreshModule("expenses").catch(() => {});
+  });
   const myAdvance = advances.find((a) => a.status === "DICAIRKAN" && Number(a.employeeId) === Number(user?.id));
   const advanceLeft = myAdvance ? Math.max(0, (myAdvance.disbursedAmount ?? 0) - myAdvance.reportedTotal) : 0;
   // Petty cash yang sudah habis tidak bisa dipilih; biaya berikutnya lewat "Uang sendiri" (reimburse terpisah).
@@ -216,6 +222,8 @@ export function SurveyExtras({
           toast(`Biaya ${rupiah(nom)} dibayar dari saldo petty cash. Menunggu verifikasi Finance.`);
         }
         setReloadKey((k) => k + 1);
+        emitDataChange("cash-advances");
+        emitDataChange("expenses");
         resetExpenseForm();
       } catch (e: any) {
         toast(e?.message ?? "Gagal mencatat biaya", "danger");

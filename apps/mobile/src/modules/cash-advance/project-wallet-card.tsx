@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDataChange } from "@/lib/data-events";
 import { View, Pressable } from "react-native";
 import { HandCoins, Plus, Send, Wallet } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export function ProjectWalletCard({ projectId, projectName }: { projectId: numbe
   const [rows, setRows] = React.useState<CashAdvance[]>([]);
   const [version, setVersion] = React.useState(0);
   const reload = React.useCallback(() => setVersion((v) => v + 1), []);
+  useDataChange(["cash-advances"], reload);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [expenseOpen, setExpenseOpen] = React.useState(false);
   const [detailId, setDetailId] = React.useState<number | null>(null);

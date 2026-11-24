@@ -24,6 +24,7 @@ import {
 import { NotifPopupHost, ToastHost, type NotifPopupItem, type ToastItem } from "@/components/akuntra/toast";
 import { api, getAccess, setTokens, clearTokens, hydrateTokens, isNetworkError } from "@/services/api";
 import { connectSocket, type WsDataChange, type WsNotification } from "@/services/socket";
+import { emitDataChange } from "@/lib/data-events";
 import {
   JENIS_LABEL,
   ensureNotifPermission,
@@ -894,6 +895,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const handleDataChange = async (c: WsDataChange) => {
       if (!c?.module) return;
+      // Komponen yang memuat datanya sendiri (mis. panel petty cash) ikut memuat ulang
+      emitDataChange(c.module);
       const eager = (EAGER_MODULES as readonly string[]).includes(c.module);
       if (eager) {
         await refreshModuleRef.current?.(c.module);

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDataChange } from "@/lib/data-events";
 import { View, Pressable } from "react-native";
 import { HandCoins } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,8 @@ export function CashAdvancePanel({
 
   const [version, setVersion] = React.useState(0);
   const load = React.useCallback(() => setVersion((v) => v + 1), []);
+  // Sinkron dengan perubahan dari panel / dialog lain atau user lain (realtime)
+  useDataChange(["cash-advances"], load);
 
   React.useEffect(() => {
     const qs = surveyId

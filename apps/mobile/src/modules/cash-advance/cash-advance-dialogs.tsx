@@ -12,6 +12,7 @@ import { UserSelect } from "@/components/akuntra/document-select";
 import { FileUploader } from "@/components/akuntra/file-uploader";
 import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
+import { emitDataChange } from "@/lib/data-events";
 import { api, apiBase } from "@/services/api";
 import { colors } from "@/tokens";
 import { formatThousands, rupiah, tanggal } from "@/lib/format";
@@ -362,6 +363,9 @@ function DetailInner({ id, onChanged, onClose }: { id: number; onChanged?: () =>
       setEditingItemId(null);
       toast(ok);
       onChanged?.();
+      // Panel lain yang menampilkan petty cash / biaya yang sama (mis. detail survey) langsung memuat ulang
+      emitDataChange("cash-advances");
+      emitDataChange("expenses");
     } catch (e: any) {
       toast(e?.message ?? "Gagal memproses", "danger");
     } finally {
