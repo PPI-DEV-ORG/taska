@@ -259,13 +259,13 @@ export function VisitExtras({ row, onRefresh }: { row: Row; onRefresh?: () => vo
         title="Alur & Status Aktivitas Kunjungan"
         subtitle={`Nomor: ${row.nomor} · PIC: ${row.pemilik || user?.name}`}
       >
-        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <View className="flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 w-full">
+          <View className="flex-row items-center gap-2.5">
             <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Status Saat Ini:</Text>
             <StatusBadge status={row.status || "Planned"} />
           </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <View className="flex-row flex-wrap items-center gap-2 w-full sm:w-auto max-w-full">
             {row.status !== "Completed" && (
               <Button
                 variant="outline"
