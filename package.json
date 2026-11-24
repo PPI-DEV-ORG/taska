@@ -4,6 +4,7 @@
   "scripts": {
     "build": "turbo run build",
     "build:app": "pnpm --filter mobile run build:app",
+    "build:app:staging": "pnpm --filter mobile run build:app:staging",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",

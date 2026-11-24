@@ -1,4 +1,5 @@
 import { rupiah, tanggal } from "@/lib/format";
+import { getStorageItemWithMigration } from "@/lib/storage";
 import { DEFAULT_COMPANY_PROFILE, type CompanyProfile } from "@/constants/modules";
 import { apiBase } from "@/services/api";
 
@@ -12,22 +13,13 @@ export function escapeHtml(str: unknown): string {
 }
 
 function readCachedCompanyProfile(): CompanyProfile {
-  if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
-    try {
-      let raw = window.localStorage.getItem("akuntra.offline.company.v1");
-      if (!raw) {
-        raw = window.localStorage.getItem("taska.offline.company.v1");
-        if (raw) {
-          window.localStorage.setItem("akuntra.offline.company.v1", raw);
-          window.localStorage.removeItem("taska.offline.company.v1");
-        }
-      }
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        return { ...DEFAULT_COMPANY_PROFILE, ...parsed };
-      }
-    } catch {}
-  }
+  try {
+    const raw = getStorageItemWithMigration("akuntra.offline.company.v1", "taska.offline.company.v1");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_COMPANY_PROFILE, ...parsed };
+    }
+  } catch {}
   return DEFAULT_COMPANY_PROFILE;
 }
 

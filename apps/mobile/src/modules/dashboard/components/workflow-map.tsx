@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
+import { getStorageItemWithMigration, setStorageItem } from "@/lib/storage";
 import {
   ArrowDown,
   BookOpen,
@@ -430,23 +431,14 @@ const STORAGE_KEY = "akuntra.workflowMap.v1";
 const OLD_STORAGE_KEY = "taska.workflowMap.v1";
 function readPref(): { flow?: string; collapsed?: boolean } {
   try {
-    if (typeof window !== "undefined" && window.localStorage) {
-      let raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        raw = window.localStorage.getItem(OLD_STORAGE_KEY);
-        if (raw) {
-          window.localStorage.setItem(STORAGE_KEY, raw);
-          window.localStorage.removeItem(OLD_STORAGE_KEY);
-        }
-      }
-      return JSON.parse(raw || "{}");
-    }
+    const raw = getStorageItemWithMigration(STORAGE_KEY, OLD_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
   } catch {}
   return {};
 }
 function writePref(p: { flow?: string; collapsed?: boolean }) {
   try {
-    if (typeof window !== "undefined" && window.localStorage) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+    setStorageItem(STORAGE_KEY, JSON.stringify(p));
   } catch {}
 }
 
