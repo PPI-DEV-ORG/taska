@@ -1,7 +1,8 @@
 import * as React from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, Switch, View } from "react-native";
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Switch, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { WebCameraModal, captureNativePhoto } from "@/components/akuntra/camera-capture-modal";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ import {
   Share2,
   Copy,
   Link2,
+  Camera,
 } from "lucide-react-native";
 import type {
   DriveAccessEntry,
@@ -501,6 +503,7 @@ type QueuedFile = {
   mimeType: string;
   webFile?: File;
   nativeUri?: string;
+  previewUri?: string;
 };
 
 export function MultiUploadDialog({
@@ -521,7 +524,20 @@ export function MultiUploadDialog({
   const [description, setDescription] = React.useState("");
   const [uploading, setUploading] = React.useState(false);
   const [dragOver, setDragOver] = React.useState(false);
+  const [cameraOpen, setCameraOpen] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      queue.forEach((q) => {
+        if (q.previewUri?.startsWith("blob:")) {
+          try {
+            URL.revokeObjectURL(q.previewUri);
+          } catch {}
+        }
+      });
+    };
+  }, [queue]);
 
   React.useEffect(() => {
     if (!visible) return;
@@ -535,14 +551,42 @@ export function MultiUploadDialog({
 
   const addWebFiles = (list: FileList | File[]) => {
     const arr = Array.from(list);
-    const next: QueuedFile[] = arr.map((f, idx) => ({
-      id: `${Date.now()}-${idx}-${f.name}`,
-      name: f.name,
-      size: f.size,
-      mimeType: f.type || "application/octet-stream",
-      webFile: f,
-    }));
+    const next: QueuedFile[] = arr.map((f, idx) => {
+      const isImg = f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(f.name);
+      let previewUri: string | undefined;
+      if (isImg && typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+        try {
+          previewUri = URL.createObjectURL(f);
+        } catch {}
+      }
+      return {
+        id: `${Date.now()}-${idx}-${f.name}`,
+        name: f.name,
+        size: f.size,
+        mimeType: f.type || "application/octet-stream",
+        webFile: f,
+        previewUri,
+      };
+    });
     setQueue((prev) => [...prev, ...next].slice(0, 20));
+  };
+
+  const handleCaptureNative = async () => {
+    const photo = await captureNativePhoto(toast);
+    if (!photo) return;
+    setQueue((prev) =>
+      [
+        ...prev,
+        {
+          id: `${Date.now()}-${photo.name}`,
+          name: photo.name,
+          size: photo.size,
+          mimeType: photo.mimeType,
+          nativeUri: photo.uri,
+          previewUri: photo.uri,
+        },
+      ].slice(0, 20),
+    );
   };
 
   const handlePickNative = async () => {
@@ -639,54 +683,72 @@ export function MultiUploadDialog({
 
         {/* Dropzone / Picker */}
         {Platform.OS === "web" ? (
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              if (e.dataTransfer?.files?.length) {
-                addWebFiles(e.dataTransfer.files);
-              }
-            }}
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              border: `2px dashed ${dragOver ? colors.primary : "#CBD5E1"}`,
-              backgroundColor: dragOver ? `${colors.primary}12` : "transparent",
-              borderRadius: 16,
-              padding: "24px 16px",
-              textAlign: "center",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              style={{ display: "none" }}
-              onChange={(e) => {
-                if (e.target.files?.length) addWebFiles(e.target.files);
-                e.target.value = "";
+          <View className="gap-2">
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
               }}
-            />
-            <View className="items-center gap-2">
-              <UploadCloud size={28} color={colors.primary} />
-              <Text className="text-sm font-semibold text-foreground">
-                Seret & lepas berkas di sini, atau klik untuk memilih
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                Mendukung PDF, Excel, Word, Gambar, Video, Teks, ZIP, dll
-              </Text>
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                if (e.dataTransfer?.files?.length) {
+                  addWebFiles(e.dataTransfer.files);
+                }
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                border: `2px dashed ${dragOver ? colors.primary : "#CBD5E1"}`,
+                backgroundColor: dragOver ? `${colors.primary}12` : "transparent",
+                borderRadius: 16,
+                padding: "20px 16px",
+                textAlign: "center",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  if (e.target.files?.length) addWebFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <View className="items-center gap-2">
+                <UploadCloud size={28} color={colors.primary} />
+                <Text className="text-sm font-semibold text-foreground">
+                  Seret & lepas berkas di sini, atau klik untuk memilih
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Mendukung PDF, Excel, Word, Gambar, Video, Teks, ZIP, dll
+                </Text>
+              </View>
+            </div>
+            <View className="flex-row flex-wrap gap-2">
+              <Button variant="outline" size="sm" onPress={() => setCameraOpen(true)} className="gap-1.5">
+                <Camera size={14} color={colors.primary} />
+                <Text className="text-xs font-semibold">Ambil Foto (Kamera)</Text>
+              </Button>
+              <Button variant="outline" size="sm" onPress={() => fileInputRef.current?.click()} className="gap-1.5">
+                <UploadCloud size={14} color={colors.text} />
+                <Text className="text-xs font-medium">Pilih dari Galeri / Perangkat</Text>
+              </Button>
             </View>
-          </div>
+          </View>
         ) : (
-          <Button variant="outline" onPress={() => void handlePickNative()} className="gap-2 py-3">
-            <UploadCloud size={16} color={colors.primary} />
-            <Text className="text-xs font-semibold">Pilih Foto / Video dari Perangkat</Text>
-          </Button>
+          <View className="flex-row flex-wrap gap-2">
+            <Button variant="outline" size="sm" onPress={() => void handleCaptureNative()} className="flex-1 gap-1.5">
+              <Camera size={15} color={colors.primary} />
+              <Text className="text-xs font-semibold">Ambil Foto (Kamera)</Text>
+            </Button>
+            <Button variant="outline" size="sm" onPress={() => void handlePickNative()} className="flex-1 gap-1.5">
+              <UploadCloud size={15} color={colors.text} />
+              <Text className="text-xs font-semibold">Pilih dari Galeri</Text>
+            </Button>
+          </View>
         )}
 
         {/* Queue list */}
@@ -708,7 +770,15 @@ export function MultiUploadDialog({
                     className="flex-row items-center justify-between gap-2 rounded-lg bg-card border border-border/60 px-2.5 py-2"
                   >
                     <View className="flex-1 min-w-0 flex-row items-center gap-2">
-                      <FileText size={14} color={colors.primary} />
+                      {item.previewUri ? (
+                        <Image
+                          source={{ uri: item.previewUri }}
+                          style={{ width: 32, height: 32, borderRadius: 6 }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <FileText size={14} color={colors.primary} />
+                      )}
                       <View className="flex-1 min-w-0">
                         <Text className="text-xs font-medium text-foreground" numberOfLines={1}>
                           {item.name}
@@ -756,6 +826,13 @@ export function MultiUploadDialog({
           </Button>
         </View>
       </DialogContent>
+      <WebCameraModal
+        visible={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(photo) => {
+          if (photo.blob) addWebFiles([photo.blob]);
+        }}
+      />
     </Dialog>
   );
 }
