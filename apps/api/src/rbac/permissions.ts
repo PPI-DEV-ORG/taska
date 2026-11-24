@@ -49,6 +49,7 @@ export type ModuleKey =
   | "subscriptions"
   | "contracts"
   | "fileManagement"
+  | "generalFiles"
   | "masterData";
 
 const ALL: Record<ModuleKey, Action[]> = {
@@ -98,6 +99,7 @@ const ALL: Record<ModuleKey, Action[]> = {
   subscriptions: ["M", "L", "C", "U", "A", "P", "V", "E"],
   contracts: ["M", "L", "C", "U", "A", "P", "V", "E"],
   fileManagement: ["M", "L", "C", "U", "A", "P", "V", "E"],
+  generalFiles: ["M", "L", "C", "U", "A", "P", "V", "E"],
   masterData: ["M", "L", "C", "U", "A", "P", "V", "E"],
 };
 
@@ -320,6 +322,7 @@ for (const table of Object.values(PERMISSIONS)) {
   if (!table.attendance) table.attendance = "LC";
   if (!table.payroll) table.payroll = "L";
   if (!table.calendar) table.calendar = "LCU";
+  if (!table.generalFiles) table.generalFiles = "MLCUAE";
 }
 PERMISSIONS.FINANCE!.attendance = "LCU";
 PERMISSIONS.FINANCE!.payroll = "LCUAPVE";
@@ -384,6 +387,8 @@ const MODULE_ALIASES: Record<string, string[]> = {
   maintenance: ["maintenance", "eam", "work-orders"],
   fileManagement: ["fileManagement", "file-management"],
   "file-management": ["file-management", "fileManagement"],
+  generalFiles: ["generalFiles", "general-files", "drive"],
+  "general-files": ["general-files", "generalFiles", "drive"],
   damageReports: ["damageReports", "damage-reports", "stock"],
   "damage-reports": ["damage-reports", "damageReports", "stock"],
   audit: ["audit", "audit-log"],
@@ -540,6 +545,7 @@ const UI_TWIN: Record<string, string> = {
   subscriptions: "subscriptions",
   contracts: "contracts",
   fileManagement: "file-management",
+  generalFiles: "general-files",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

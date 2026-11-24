@@ -88,6 +88,7 @@ const MODULE_GROUPS: { group: string; items: { key: string; label: string; desc:
       { key: "fixed-assets", label: "Aset Tetap", desc: "Siklus hidup aset internal, mutasi, depresiasi & audit QR" },
       { key: "maintenance", label: "Manajemen Maintenance", desc: "Pemeliharaan & servis aset internal, Work Order, jadwal preventive & laporan kerusakan" },
       { key: "file-management", label: "Manajemen File", desc: "Penyimpanan dokumen terpusat, storage provider (S3/NAS), & migrasi berkas" },
+      { key: "general-files", label: "Dokumen Umum", desc: "Company Shared Drive: folder bertingkat, upload & preview dokumen umum perusahaan" },
     ],
   },
   {
