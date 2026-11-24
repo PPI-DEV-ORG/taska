@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
@@ -46,6 +47,7 @@ export type CreateShareDto = {
 
 @Injectable()
 export class FileManagementService {
+  private readonly logger = new Logger(FileManagementService.name);
   private serverStorageCache: { data: any; expiresAt: number } | null = null;
 
   constructor(
@@ -684,14 +686,82 @@ export class FileManagementService {
   }
 
   /**
-   * Hapus file (Soft delete).
+   * Hapus file fisik dari seluruh lokasi penyimpanan (provider lokal maupun eksternal S3/NAS/WebDAV)
+   * termasuk fallback path lama di folder uploads lokal.
+   */
+  private async deletePhysicalFileFromStorages(file: {
+    id: number;
+    path: string;
+    locations?: Array<{
+      id: number;
+      providerId: number;
+      storageKey: string;
+      replicaStatus?: string;
+      provider?: { type: string } | null;
+    }>;
+  }): Promise<boolean> {
+    let deletedAny = false;
+    const triedLocalKeys = new Set<string>();
+
+    for (const loc of file.locations ?? []) {
+      if (loc.replicaStatus === "CLEANED") continue;
+      if (loc.provider?.type === "LOCAL") {
+        triedLocalKeys.add(normalizeRelativeUploadPath(loc.storageKey));
+      }
+      try {
+        const adapter = await this.providerService.getAdapter(loc.providerId);
+        await adapter.delete(loc.storageKey);
+        deletedAny = true;
+      } catch (err) {
+        this.logger.warn(
+          `Gagal menghapus fisik file#${file.id} pada provider#${loc.providerId} (${loc.storageKey}): ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // Pastikan salinan lokal di folder uploads juga bersih (termasuk berkas lama tanpa FileStorageLocation)
+    if (file.path) {
+      triedLocalKeys.add(normalizeRelativeUploadPath(file.path));
+    }
+    const roots = getUploadRoots();
+    for (const relKey of triedLocalKeys) {
+      if (!relKey) continue;
+      for (const root of roots) {
+        const fullPath = resolve(root, relKey);
+        if (existsSync(fullPath)) {
+          try {
+            await unlink(fullPath);
+            deletedAny = true;
+          } catch (err) {
+            this.logger.warn(
+              `Gagal menghapus file lokal ${fullPath}: ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+    }
+
+    return deletedAny;
+  }
+
+  /**
+   * Hapus file permanen (termasuk file fisik di folder uploads / storage eksternal).
    * File yang masih digunakan dokumen TIDAK BISA DIHAPUS kecuali Super Admin dengan force=true.
    */
   async deleteFile(id: number, user: RequestUser, force: boolean = false) {
-    const file = await this.prisma.main.file.findUnique({ where: { id } });
+    const file = await this.prisma.main.file.findUnique({
+      where: { id },
+      include: {
+        locations: {
+          include: { provider: { select: { type: true } } },
+        },
+      },
+    });
     if (!file) throw new NotFoundException("File tidak ditemukan");
 
-    const isSuperAdmin = (user.role || "").toUpperCase() === "SUPER_ADMIN" || (user.role || "").toUpperCase() === "SUPERADMIN";
+    const isSuperAdmin =
+      (user.role || "").toUpperCase() === "SUPER_ADMIN" ||
+      (user.role || "").toUpperCase() === "SUPERADMIN";
 
     const allowed = isSuperAdmin || (await this.accessService.canAccessFile(user, id, "DELETE"));
     if (!allowed) throw new ForbiddenException("Kamu tidak memiliki hak akses untuk menghapus file ini.");
@@ -712,58 +782,124 @@ export class FileManagementService {
       }
     }
 
-    // Soft delete
-    await this.prisma.main.file.update({
-      where: { id },
-      data: {
-        deletedAt: new Date(),
-        status: "PENDING_DELETION",
-      },
-    });
+    // Hapus file fisik dari folder uploads dan semua storage provider
+    const physicalDeleted = await this.deletePhysicalFileFromStorages(file);
+
+    // Hapus record DB permanen untuk file lepas; jika masih dirujuk dokumen (force delete),
+    // tandai DELETED agar tidak melanggar foreign key dokumen transaksi
+    let hardDeleted = false;
+    if (!inUse) {
+      try {
+        await this.prisma.main.file.delete({ where: { id } });
+        hardDeleted = true;
+      } catch {
+        // Fallback jika masih ada relasi DB lain yang belum tercakup resolveConnectedDocuments
+      }
+    }
+
+    if (!hardDeleted) {
+      await this.prisma.main.file.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+          status: "DELETED",
+        },
+      });
+    }
+
+    this.serverStorageCache = null;
 
     await this.prisma.main.fileAuditLog.create({
       data: {
         fileId: id,
         userId: user.id,
-        action: force ? "FORCE_DELETE" : "SOFT_DELETE",
-        metadata: { inUse, connectedCount: usedBy.length },
+        action: force ? "FORCE_DELETE" : "PERMANENT_DELETE",
+        metadata: {
+          inUse,
+          connectedCount: usedBy.length,
+          physicalDeleted,
+          hardDeleted,
+          path: file.path,
+        },
       },
     });
 
-    return { ok: true, message: "File berhasil dipindahkan ke tempat sampah (soft delete)." };
+    return {
+      ok: true,
+      physicalDeleted,
+      message: "File dan berkas fisiknya berhasil dihapus permanen.",
+    };
   }
 
   /**
-   * Hapus permanen file lepas (standalone) secara massal
+   * Hapus permanen file lepas (standalone) secara massal beserta file fisiknya di storage
    */
   async bulkDeleteOrphans(fileIds: number[], user: RequestUser) {
-    const isSuperAdmin = (user.role || "").toUpperCase() === "SUPER_ADMIN";
+    const roleUpper = (user.role || "").toUpperCase();
+    const isSuperAdmin = roleUpper === "SUPER_ADMIN" || roleUpper === "SUPERADMIN";
     const hasPerm = isSuperAdmin || can(user.role, "fileManagement", "P");
     if (!hasPerm) {
       throw new ForbiddenException("Hanya Super Admin atau pengelola file berwenang yang dapat menghapus file lepas.");
     }
 
     let deletedCount = 0;
+    let deletedPhysicalCount = 0;
     const errors: string[] = [];
 
     for (const id of fileIds) {
+      const file = await this.prisma.main.file.findUnique({
+        where: { id },
+        include: {
+          locations: {
+            include: { provider: { select: { type: true } } },
+          },
+        },
+      });
+      if (!file) {
+        errors.push(`File #${id} tidak ditemukan`);
+        continue;
+      }
+
       const usedBy = await this.accessService.resolveConnectedDocuments(id);
       if (usedBy.length > 0) {
         errors.push(`File #${id} tidak dihapus karena ternyata terhubung ke dokumen`);
         continue;
       }
-      await this.prisma.main.file.update({
-        where: { id },
-        data: { deletedAt: new Date(), status: "DELETED" },
+
+      const physicalDeleted = await this.deletePhysicalFileFromStorages(file);
+      if (physicalDeleted) deletedPhysicalCount++;
+
+      try {
+        await this.prisma.main.file.delete({ where: { id } });
+      } catch {
+        await this.prisma.main.file.update({
+          where: { id },
+          data: { deletedAt: new Date(), status: "DELETED" },
+        });
+      }
+
+      await this.prisma.main.fileAuditLog.create({
+        data: {
+          fileId: id,
+          userId: user.id,
+          action: "PERMANENT_DELETE",
+          metadata: { bulkOrphan: true, physicalDeleted, path: file.path },
+        },
       });
+
       deletedCount++;
+    }
+
+    if (deletedCount > 0) {
+      this.serverStorageCache = null;
     }
 
     return {
       ok: true,
       deletedCount,
+      deletedPhysicalCount,
       errors: errors.length > 0 ? errors : undefined,
-      message: `Berhasil menghapus ${deletedCount} file lepas.`,
+      message: `Berhasil menghapus permanen ${deletedCount} file lepas beserta berkas fisiknya.`,
     };
   }
 
