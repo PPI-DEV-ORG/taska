@@ -4,6 +4,7 @@
 - API: NestJS + Prisma + MySQL (DB utama + DB arsip) di `apps/api`
 - Klien: Expo React Native (web dan mobile satu kode) + NativeWind + komponen bergaya shadcn di `apps/mobile`
 - RBAC dengan banyak role.
+- Peta struktur kode, daftar modul, pola komponen, dan catatan build lengkap ada di `CODEBASE.md` — baca dulu sebelum mencari file atau menambah modul baru.
 
 ## Cara berkomunikasi
 - Balas dalam bahasa Indonesia, singkat, langsung ke inti. Tanpa basa-basi, tanpa mengulang pertanyaan, tanpa merangkum langkah yang sudah terlihat.

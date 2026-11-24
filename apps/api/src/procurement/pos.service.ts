@@ -367,15 +367,15 @@ export class PosService {
           prodId = existing.id;
         } else {
           const newSku = (i as any).sku || `SKU-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          const categoryId = (i as any).categoryId ? Number((i as any).categoryId) : null;
           const createdProd = await this.prisma.main.product.create({
             data: {
               name: prodName,
               sku: newSku,
               unit: i.customUnit || (i as any).unit || "unit",
               hasSerial: Boolean((i as any).hasSerial ?? (i as any).berSN),
-              categoryId: (i as any).categoryId ? Number((i as any).categoryId) : null,
+              ...(categoryId ? { category: { connect: { id: categoryId } } } : {}),
               purchasePrice: Number(i.price) || 0,
-              price: Number((i as any).sellPrice || i.price) || 0,
               minStock: 0,
             },
           });
