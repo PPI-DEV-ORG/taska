@@ -64,19 +64,15 @@ export class ProjectsService {
     if (!project) return;
 
     let quotation = project.quotation;
-    if (!quotation && project.customerId) {
-      const cleanName = project.name.replace(/^Project\s+/i, "").trim();
-      const quoteFilters: any[] = [{ customerId: project.customerId }];
-
-      if (cleanName) {
-        quoteFilters.push(
-          { lead: { name: { contains: cleanName } } },
-          { number: { contains: cleanName } },
-        );
-      }
-
+    const cleanName = project.name.replace(/^Project\s+/i, "").trim();
+    // Tebak penawaran dari nama HANYA untuk proyek lama tanpa prospek asal, dan wajib customer yang sama.
+    // (Dulu customerId ikut di dalam OR -> proyek baru menyambar penawaran terbaru customer itu, milik prospek lain.)
+    if (!quotation && !project.leadId && project.customerId && cleanName) {
       const q = await this.prisma.main.quotation.findFirst({
-        where: { OR: quoteFilters },
+        where: {
+          customerId: project.customerId,
+          OR: [{ lead: { name: { contains: cleanName } } }, { number: { contains: cleanName } }],
+        },
         include: {
           clientPOs: { select: { id: true } },
           lead: { select: { id: true, name: true } },
@@ -127,14 +123,12 @@ export class ProjectsService {
       }
     }
 
-    const cleanProjName = project.name.replace(/^Project\s+/i, "").trim();
-    if (cleanProjName) {
-      orConditions.push({ description: { contains: cleanProjName } });
-    }
-    if (project.customerId && cleanProjName) {
+    // Pencocokan faktur dari nama proyek hanya untuk proyek lama tanpa prospek & penawaran, dan wajib customer yang sama
+    // (dulu tanpa batas customer -> faktur proyek lain yang namanya mirip ikut tersambung).
+    if (!project.leadId && !quotation && project.customerId && cleanName) {
       orConditions.push({
         customerId: project.customerId,
-        description: { contains: cleanProjName },
+        description: { contains: cleanName },
       });
     }
 
@@ -349,9 +343,10 @@ export class ProjectsService {
       });
       if (q) quotationId = q.id;
     }
-    if (!quotationId && customerId) {
+    // Tebak penawaran dari nama hanya bila proyek TIDAK berasal dari prospek (prospek tanpa penawaran = memang belum ada)
+    if (!quotationId && !dto.leadId && customerId) {
       const cleanName = (dto.name || "").replace(/^Project\s+/i, "").trim();
-      const q = await this.prisma.main.quotation.findFirst({
+      const q = !cleanName ? null : await this.prisma.main.quotation.findFirst({
         where: {
           customerId,
           OR: [
