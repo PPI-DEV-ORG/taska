@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post } from "@nestjs/common";
 import { WhatsappService } from "./whatsapp.service.js";
 import { WhatsappScheduleService, type WaScheduleNotificationSettings } from "./whatsapp-schedule.service.js";
+import { WhatsappAttendanceService, type WaAttendanceNotificationSettings } from "./whatsapp-attendance.service.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 
 @Controller("whatsapp")
@@ -8,6 +9,7 @@ export class WhatsappController {
   constructor(
     private readonly service: WhatsappService,
     private readonly scheduleService: WhatsappScheduleService,
+    private readonly attendanceService: WhatsappAttendanceService,
   ) {}
 
   @Get("status")
@@ -74,5 +76,28 @@ export class WhatsappController {
     @Body() body?: { groupJid?: string },
   ) {
     return this.scheduleService.sendSingleEventNow(id, body?.groupJid);
+  }
+
+  /** Pengaturan notifikasi rekap & reminder absensi ke grup WA. */
+  @Get("attendance-notification/settings")
+  @Require("settings", "L")
+  getAttendanceSettings() {
+    return this.attendanceService.getSettings();
+  }
+
+  @Patch("attendance-notification/settings")
+  @Require("settings", "U")
+  saveAttendanceSettings(@Body() body: Partial<WaAttendanceNotificationSettings>) {
+    return this.attendanceService.saveSettings(body);
+  }
+
+  @Post("attendance-notification/send-now")
+  @Require("settings", "U")
+  sendAttendanceNow(
+    @Body() body: { type?: "RECAP" | "CHECKOUT_REMINDER" | "TEST"; groupJid?: string },
+  ) {
+    const type =
+      body?.type === "RECAP" || body?.type === "CHECKOUT_REMINDER" ? body.type : "TEST";
+    return this.attendanceService.sendManual(type, body?.groupJid);
   }
 }

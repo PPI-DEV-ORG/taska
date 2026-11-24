@@ -105,7 +105,7 @@ export function MyAttendanceTab({
   handleCheckIn,
   handleCheckOut,
 }: MyAttendanceTabProps) {
-  const { toast } = useApp();
+  const { toast, user } = useApp();
   const [gps, setGps] = React.useState<GpsSnapshot | null>(null);
   const [gpsLoading, setGpsLoading] = React.useState(false);
   const [gpsError, setGpsError] = React.useState<string | null>(null);
@@ -222,6 +222,14 @@ export function MyAttendanceTab({
       ? officeDistanceMeters <= (Number(attSettings?.officeRadiusMeters) || 150)
       : null;
 
+  const userRoleUpper = String(user?.role || "").toUpperCase();
+  const fieldRoles: string[] = Array.isArray(attSettings?.fieldRoles)
+    ? attSettings.fieldRoles.map((r: unknown) => String(r).toUpperCase())
+    : ["SALES", "SE", "TEKNISI"];
+  const isFieldRole = fieldRoles.includes(userRoleUpper);
+  const isOutsideOffice = withinOfficeRadius === false && !isFieldRole;
+  const requiresCheckInNote = isFieldRole || isOutsideOffice;
+
   const submitAction = async (mode: "in" | "out") => {
     let activeGps = gps;
     if (!activeGps) {
@@ -237,6 +245,15 @@ export function MyAttendanceTab({
     if (requirePhoto && !capturedPhoto) {
       toast(
         `Ambil foto langsung dari kamera terlebih dahulu sebelum ${mode === "in" ? "Check-In" : "Check-Out"}.`,
+        "danger",
+      );
+      return;
+    }
+    if (mode === "in" && requiresCheckInNote && checkInNote.trim().length < 5) {
+      toast(
+        isFieldRole
+          ? "Role lapangan (Sales/Presales/Teknisi) wajib mengisi keterangan aktivitas & klien/PIC yang ditemui (min. 5 karakter)."
+          : "Anda berada di luar radius kantor. Wajib mengisi alasan Remote Working / penugasan luar kantor (min. 5 karakter).",
         "danger",
       );
       return;
@@ -563,13 +580,32 @@ export function MyAttendanceTab({
                 {!todayAtt?.checkIn ? (
                   <>
                     <FormField
-                      label="Catatan Check-In (Opsional)"
-                      hint="Lokasi kerja, dinas, atau informasi penting lainnya"
+                      label={
+                        isFieldRole
+                          ? "Keterangan Aktivitas & Klien / PIC yang Ditemui (Wajib - KPI)"
+                          : isOutsideOffice
+                            ? "Alasan Remote Working / Luar Kantor (Wajib)"
+                            : "Catatan Check-In (Opsional)"
+                      }
+                      required={requiresCheckInNote}
+                      hint={
+                        isFieldRole
+                          ? "Role lapangan bebas lokasi, namun wajib mencatat klien/perusahaan/PIC yang ditemui atau lokasi pekerjaan."
+                          : isOutsideOffice
+                            ? "Lokasi Anda di luar radius kantor. Tulis alasan jelas (mis. Remote Working, WFH, atau penugasan khusus)."
+                            : "Lokasi kerja, dinas, atau informasi penting lainnya"
+                      }
                     >
                       <Input
                         value={checkInNote}
                         onChangeText={setCheckInNote}
-                        placeholder="Contoh: Kantor pusat, site proyek..."
+                        placeholder={
+                          isFieldRole
+                            ? "Contoh: Kunjungan PT ABC bertemu Bpk. Budi (Presentasi produk / Survey CCTV)"
+                            : isOutsideOffice
+                              ? "Contoh: Remote Working / WFH — mengerjakan laporan bulanan"
+                              : "Contoh: Kantor pusat, site proyek..."
+                        }
                       />
                     </FormField>
                     <Button

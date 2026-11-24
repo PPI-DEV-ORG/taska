@@ -5,6 +5,7 @@ import {
   Bell,
   Check,
   CheckCircle2,
+  ClipboardCheck,
   MessageSquare,
   Power,
   RefreshCw,
@@ -44,6 +45,30 @@ type WaScheduleSettings = {
   updateCooldownMinutes: number;
   includedCategories: string[];
   skipEmptyRecap: boolean;
+};
+
+type WaAttendanceSettings = {
+  enabled: boolean;
+  groupJids: string[];
+  groupNames: Record<string, string>;
+  recapEnabled: boolean;
+  recapTime: string;
+  checkoutReminderEnabled: boolean;
+  checkoutReminderTime: string;
+  workingDays: number[];
+  excludedRoles: string[];
+};
+
+const DEFAULT_ATTENDANCE_SETTINGS: WaAttendanceSettings = {
+  enabled: false,
+  groupJids: [],
+  groupNames: {},
+  recapEnabled: true,
+  recapTime: "09:15",
+  checkoutReminderEnabled: true,
+  checkoutReminderTime: "17:15",
+  workingDays: [1, 2, 3, 4, 5],
+  excludedRoles: [],
 };
 
 const DEFAULT_SETTINGS: WaScheduleSettings = {
@@ -110,10 +135,10 @@ export function WhatsappDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  initialTab?: "connection" | "schedule";
+  initialTab?: "connection" | "schedule" | "attendance";
 }) {
   const { toast } = useApp();
-  const [tab, setTab] = React.useState<"connection" | "schedule">(initialTab);
+  const [tab, setTab] = React.useState<"connection" | "schedule" | "attendance">(initialTab);
   const [loading, setLoading] = React.useState(false);
   const [status, setStatus] = React.useState<"DISCONNECTED" | "CONNECTING" | "SCAN_QR" | "CONNECTED">("DISCONNECTED");
   const [qr, setQr] = React.useState<string | null>(null);
@@ -128,6 +153,12 @@ export function WhatsappDialog({
   const [groups, setGroups] = React.useState<WaGroupOption[]>([]);
   const [loadingGroups, setLoadingGroups] = React.useState(false);
   const [manualGroupJid, setManualGroupJid] = React.useState("");
+
+  // Attendance notification state
+  const [attSettings, setAttSettings] = React.useState<WaAttendanceSettings>(DEFAULT_ATTENDANCE_SETTINGS);
+  const [savingAttSettings, setSavingAttSettings] = React.useState(false);
+  const [sendingAttType, setSendingAttType] = React.useState<"TEST" | "RECAP" | "CHECKOUT_REMINDER" | null>(null);
+  const [manualAttGroupJid, setManualAttGroupJid] = React.useState("");
 
   const [prevOpen, setPrevOpen] = React.useState(false);
   if (open !== prevOpen) {
@@ -167,10 +198,12 @@ export function WhatsappDialog({
   const fetchSettings = React.useCallback(async () => {
     setLoadingSettings(true);
     try {
-      const res = await api<WaScheduleSettings>("GET", "/whatsapp/schedule-notification/settings");
-      setSettings({ ...DEFAULT_SETTINGS, ...res });
-    } catch {
-      // ignore
+      const [schedRes, attRes] = await Promise.all([
+        api<WaScheduleSettings>("GET", "/whatsapp/schedule-notification/settings").catch(() => null),
+        api<WaAttendanceSettings>("GET", "/whatsapp/attendance-notification/settings").catch(() => null),
+      ]);
+      if (schedRes) setSettings({ ...DEFAULT_SETTINGS, ...schedRes });
+      if (attRes) setAttSettings({ ...DEFAULT_ATTENDANCE_SETTINGS, ...attRes });
     } finally {
       setLoadingSettings(false);
     }
@@ -290,6 +323,87 @@ export function WhatsappDialog({
     }
   }
 
+  function toggleAttGroup(g: WaGroupOption) {
+    setAttSettings((prev) => {
+      const exists = prev.groupJids.includes(g.id);
+      const groupJids = exists
+        ? prev.groupJids.filter((x) => x !== g.id)
+        : [...prev.groupJids, g.id];
+      const groupNames = { ...prev.groupNames, [g.id]: g.subject };
+      return { ...prev, groupJids, groupNames };
+    });
+  }
+
+  function addManualAttGroup() {
+    const raw = manualAttGroupJid.trim();
+    if (!raw) return;
+    const jid = raw.endsWith("@g.us") ? raw : `${raw}@g.us`;
+    setAttSettings((prev) => ({
+      ...prev,
+      groupJids: prev.groupJids.includes(jid) ? prev.groupJids : [...prev.groupJids, jid],
+    }));
+    setManualAttGroupJid("");
+  }
+
+  function toggleAttWorkingDay(dayVal: number) {
+    setAttSettings((prev) => {
+      const has = prev.workingDays.includes(dayVal);
+      const workingDays = has
+        ? prev.workingDays.filter((d) => d !== dayVal)
+        : [...prev.workingDays, dayVal].sort();
+      return { ...prev, workingDays };
+    });
+  }
+
+  async function handleSaveAttSettings() {
+    setSavingAttSettings(true);
+    try {
+      const saved = await api<WaAttendanceSettings>(
+        "PATCH",
+        "/whatsapp/attendance-notification/settings",
+        attSettings,
+      );
+      setAttSettings({ ...DEFAULT_ATTENDANCE_SETTINGS, ...saved });
+      toast("Pengaturan notifikasi absensi WA berhasil disimpan");
+    } catch (err: any) {
+      toast(err?.message || "Gagal menyimpan pengaturan absensi WA", "danger");
+    } finally {
+      setSavingAttSettings(false);
+    }
+  }
+
+  async function handleSendAttNow(type: "TEST" | "RECAP" | "CHECKOUT_REMINDER") {
+    if (attSettings.groupJids.length === 0) {
+      toast("Pilih minimal 1 grup WhatsApp tujuan absensi terlebih dahulu", "warning");
+      return;
+    }
+    setSendingAttType(type);
+    try {
+      await api("PATCH", "/whatsapp/attendance-notification/settings", attSettings);
+      const res = await api<{
+        sent: number;
+        presentCount?: number;
+        absentCount?: number;
+        pendingCount?: number;
+      }>("POST", "/whatsapp/attendance-notification/send-now", { type });
+      if (res.sent > 0) {
+        const label =
+          type === "TEST"
+            ? "Pesan tes absensi"
+            : type === "RECAP"
+              ? `Rekap absensi (Hadir: ${res.presentCount ?? 0}, Belum: ${res.absentCount ?? 0})`
+              : `Reminder Check-Out (${res.pendingCount ?? 0} belum pulang)`;
+        toast(`${label} terkirim ke ${res.sent} grup WhatsApp`);
+      } else {
+        toast("Gagal mengirim pesan ke grup WhatsApp", "danger");
+      }
+    } catch (err: any) {
+      toast(err?.message || "Gagal mengirim notifikasi absensi WA", "danger");
+    } finally {
+      setSendingAttType(null);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col">
@@ -323,7 +437,19 @@ export function WhatsappDialog({
           >
             <Bell size={14} color={tab === "schedule" ? colors.primary : colors.muted} />
             <Text className={cn("text-xs font-semibold", tab === "schedule" ? "text-primary" : "text-muted-foreground")}>
-              Notifikasi Grup Jadwal
+              Jadwal Kegiatan
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setTab("attendance")}
+            className={cn(
+              "flex-1 flex-row items-center justify-center gap-1.5 rounded-lg border py-2",
+              tab === "attendance" ? "border-primary bg-primary/10" : "border-border bg-card",
+            )}
+          >
+            <ClipboardCheck size={14} color={tab === "attendance" ? colors.primary : colors.muted} />
+            <Text className={cn("text-xs font-semibold", tab === "attendance" ? "text-primary" : "text-muted-foreground")}>
+              Absensi
             </Text>
           </Pressable>
         </View>
@@ -386,7 +512,7 @@ export function WhatsappDialog({
               </View>
             )}
           </View>
-        ) : (
+        ) : tab === "schedule" ? (
           <ScrollView className="max-h-[60vh] -mx-1 px-1" contentContainerClassName="gap-3 py-2">
             {loadingSettings ? (
               <View className="items-center py-6">
@@ -649,6 +775,198 @@ export function WhatsappDialog({
               </>
             )}
           </ScrollView>
+        ) : (
+          <ScrollView className="max-h-[60vh] -mx-1 px-1" contentContainerClassName="gap-3 py-2">
+            {loadingSettings ? (
+              <View className="items-center py-6">
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+              <>
+                <View className="flex-row items-center justify-between rounded-lg border border-border bg-card p-3">
+                  <View className="flex-1 pr-2">
+                    <Text className="text-xs font-semibold text-foreground">Aktifkan Notifikasi Absensi ke Grup WA</Text>
+                    <Text className="text-[11px] text-muted-foreground">
+                      Kirim otomatis daftar tim yang sudah hadir (beserta jam masuk), belum hadir, dan reminder tutup absen (Check-Out).
+                    </Text>
+                  </View>
+                  <TogglePill
+                    label={attSettings.enabled ? "Aktif" : "Nonaktif"}
+                    active={attSettings.enabled}
+                    onPress={() => setAttSettings((p) => ({ ...p, enabled: !p.enabled }))}
+                  />
+                </View>
+
+                <View className="rounded-lg border border-border bg-card p-3 gap-2">
+                  <View className="flex-row items-center justify-between flex-wrap gap-1.5">
+                    <View className="flex-row items-center gap-1.5">
+                      <Users size={14} color={colors.primary} />
+                      <Text className="text-xs font-semibold text-foreground">Grup WA Tujuan Absensi ({attSettings.groupJids.length})</Text>
+                    </View>
+                    <View className="flex-row gap-1.5">
+                      {settings.groupJids.length > 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onPress={() =>
+                            setAttSettings((p) => ({
+                              ...p,
+                              groupJids: [...settings.groupJids],
+                              groupNames: { ...settings.groupNames },
+                            }))
+                          }
+                        >
+                          <Text className="text-[11px]">Samakan Grup Jadwal</Text>
+                        </Button>
+                      ) : null}
+                      <Button variant="outline" size="sm" onPress={fetchGroups} disabled={loadingGroups}>
+                        <RefreshCw size={12} color={colors.foreground} />
+                        <Text className="text-[11px]">{loadingGroups ? "Memuat..." : "Muat Grup"}</Text>
+                      </Button>
+                    </View>
+                  </View>
+
+                  {status !== "CONNECTED" ? (
+                    <Text className="text-[11px] text-amber-600">
+                      Bot WhatsApp belum terhubung. Hubungkan bot di tab Koneksi Bot untuk mengambil daftar grup otomatis.
+                    </Text>
+                  ) : groups.length === 0 ? (
+                    <Text className="text-[11px] text-muted-foreground">
+                      Belum ada grup terdeteksi. Pastikan bot sudah masuk ke grup WA lalu klik Muat Grup.
+                    </Text>
+                  ) : (
+                    <View className="gap-1.5 max-h-36">
+                      {groups.map((g) => {
+                        const selected = attSettings.groupJids.includes(g.id);
+                        return (
+                          <Pressable
+                            key={g.id}
+                            onPress={() => toggleAttGroup(g)}
+                            className={cn(
+                              "flex-row items-center justify-between rounded-md border px-2.5 py-2",
+                              selected ? "border-emerald-500/60 bg-emerald-500/10" : "border-border bg-background",
+                            )}
+                          >
+                            <View className="flex-1 pr-2">
+                              <Text className="text-xs font-medium text-foreground" numberOfLines={1}>{g.subject}</Text>
+                              <Text className="text-[10px] text-muted-foreground">{g.participantCount} anggota · {g.id}</Text>
+                            </View>
+                            {selected ? <CheckCircle2 size={16} color="#10b981" /> : null}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  <View className="flex-row items-center gap-2 pt-1">
+                    <Input
+                      value={manualAttGroupJid}
+                      onChangeText={setManualAttGroupJid}
+                      placeholder="Atau masukkan Group ID (contoh: 120363xxxx@g.us)"
+                      className="h-8 flex-1 text-xs"
+                    />
+                    <Button size="sm" variant="outline" onPress={addManualAttGroup}>
+                      <Text className="text-xs">Tambah</Text>
+                    </Button>
+                  </View>
+                </View>
+
+                <View className="rounded-lg border border-border bg-card p-3 gap-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-xs font-semibold text-foreground">1. Rekap Kehadiran Harian (Hadir & Belum Hadir)</Text>
+                    <TogglePill
+                      label={attSettings.recapEnabled ? "Aktif" : "Nonaktif"}
+                      active={attSettings.recapEnabled}
+                      onPress={() => setAttSettings((p) => ({ ...p, recapEnabled: !p.recapEnabled }))}
+                    />
+                  </View>
+                  {attSettings.recapEnabled ? (
+                    <View className="w-32">
+                      <Text className="text-[11px] text-muted-foreground mb-1">Jam Kirim (WIB)</Text>
+                      <Input
+                        value={attSettings.recapTime}
+                        onChangeText={(v) => setAttSettings((p) => ({ ...p, recapTime: v }))}
+                        placeholder="09:15"
+                        className="h-8 text-xs"
+                      />
+                    </View>
+                  ) : null}
+                </View>
+
+                <View className="rounded-lg border border-border bg-card p-3 gap-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-xs font-semibold text-foreground">2. Reminder Tutup Absen (Check-Out)</Text>
+                    <TogglePill
+                      label={attSettings.checkoutReminderEnabled ? "Aktif" : "Nonaktif"}
+                      active={attSettings.checkoutReminderEnabled}
+                      onPress={() => setAttSettings((p) => ({ ...p, checkoutReminderEnabled: !p.checkoutReminderEnabled }))}
+                    />
+                  </View>
+                  {attSettings.checkoutReminderEnabled ? (
+                    <View className="w-32">
+                      <Text className="text-[11px] text-muted-foreground mb-1">Jam Kirim (WIB)</Text>
+                      <Input
+                        value={attSettings.checkoutReminderTime}
+                        onChangeText={(v) => setAttSettings((p) => ({ ...p, checkoutReminderTime: v }))}
+                        placeholder="17:15"
+                        className="h-8 text-xs"
+                      />
+                    </View>
+                  ) : null}
+                </View>
+
+                <View className="rounded-lg border border-border bg-card p-3 gap-2">
+                  <Text className="text-xs font-semibold text-foreground">Hari Kerja Aktif</Text>
+                  <View className="flex-row flex-wrap gap-1.5">
+                    {DAYS_OF_WEEK.map((d) => (
+                      <TogglePill
+                        key={d.value}
+                        label={d.label}
+                        active={attSettings.workingDays.includes(d.value)}
+                        onPress={() => toggleAttWorkingDay(d.value)}
+                      />
+                    ))}
+                  </View>
+                </View>
+
+                <View className="rounded-lg border border-border bg-panel/50 p-3 gap-2">
+                  <Text className="text-xs font-semibold text-foreground">Kirim Manual / Tes Absensi</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={sendingAttType !== null || status !== "CONNECTED"}
+                      onPress={() => handleSendAttNow("TEST")}
+                      className="gap-1.5"
+                    >
+                      <Send size={12} color={colors.foreground} />
+                      <Text className="text-xs">{sendingAttType === "TEST" ? "Mengirim..." : "Kirim Tes"}</Text>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={sendingAttType !== null || status !== "CONNECTED"}
+                      onPress={() => handleSendAttNow("RECAP")}
+                      className="gap-1.5"
+                    >
+                      <Send size={12} color={colors.foreground} />
+                      <Text className="text-xs">{sendingAttType === "RECAP" ? "Mengirim..." : "Kirim Rekap Hadir"}</Text>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={sendingAttType !== null || status !== "CONNECTED"}
+                      onPress={() => handleSendAttNow("CHECKOUT_REMINDER")}
+                      className="gap-1.5"
+                    >
+                      <Send size={12} color={colors.foreground} />
+                      <Text className="text-xs">{sendingAttType === "CHECKOUT_REMINDER" ? "Mengirim..." : "Reminder Check-Out"}</Text>
+                    </Button>
+                  </View>
+                </View>
+              </>
+            )}
+          </ScrollView>
         )}
 
         <DialogFooter className="flex-row items-center justify-between gap-2 pt-2">
@@ -664,9 +982,13 @@ export function WhatsappDialog({
                 <Text>Muat Ulang QR</Text>
               </Button>
             )
-          ) : (
+          ) : tab === "schedule" ? (
             <Button size="sm" disabled={savingSettings} onPress={handleSaveSettings}>
               <Text>{savingSettings ? "Menyimpan..." : "Simpan Pengaturan"}</Text>
+            </Button>
+          ) : (
+            <Button size="sm" disabled={savingAttSettings} onPress={handleSaveAttSettings}>
+              <Text>{savingAttSettings ? "Menyimpan..." : "Simpan Pengaturan"}</Text>
             </Button>
           )}
 

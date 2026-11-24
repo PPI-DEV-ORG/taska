@@ -167,9 +167,9 @@ export class AttendanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   private getTodayDate(): Date {
-    const now = new Date();
-    // Gunakan tanggal lokal YYYY-MM-DD
-    const dateStr = now.toISOString().slice(0, 10);
+    const nowWib = new Date(Date.now() + 7 * 3600_000);
+    // Gunakan tanggal lokal WIB (YYYY-MM-DD)
+    const dateStr = nowWib.toISOString().slice(0, 10);
     return new Date(`${dateStr}T00:00:00.000Z`);
   }
 
@@ -222,6 +222,25 @@ export class AttendanceService {
       userRole,
       settings,
     });
+
+    const normalizedRole = (userRole || "").toUpperCase();
+    const fieldRoles = (settings.fieldRoles ?? ["SALES", "SE", "TEKNISI"]).map((r) =>
+      r.toUpperCase(),
+    );
+    const isFieldRole = fieldRoles.includes(normalizedRole);
+    const trimmedNotes = (dto.notes || "").trim();
+
+    if (isFieldRole && trimmedNotes.length < 5) {
+      throw new BadRequestException(
+        "Role lapangan (Sales, Presales, Teknisi) wajib mengisi keterangan aktivitas / pihak klien yang ditemui sebagai bagian dari catatan KPI.",
+      );
+    }
+
+    if (!isFieldRole && locEval.locationStatus === "DI_LUAR_RADIUS" && trimmedNotes.length < 5) {
+      throw new BadRequestException(
+        "Anda berada di luar radius kantor. Wajib mengisi alasan & keterangan yang jelas (misal: Remote Working, WFH, atau penugasan luar kantor).",
+      );
+    }
 
     const now = new Date();
     const lateMinutes = computeLateMinutes(
