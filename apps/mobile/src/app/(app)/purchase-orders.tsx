@@ -121,7 +121,7 @@ export default function PurchaseOrdersScreen() {
         title="PO Masuk & Keluar"
         subtitle="PO Masuk dari pelanggan dan PO Keluar ke pemasok dalam satu daftar"
         action={
-          <View className="flex-row gap-2">
+          <>
             <Button size="sm" variant="outline" onPress={() => router.push("/po-client" as any)}>
               <Plus size={14} />
               <Text className="text-xs">Catat PO Masuk</Text>
@@ -130,7 +130,7 @@ export default function PurchaseOrdersScreen() {
               <Plus size={14} color="#fff" />
               <Text className="text-xs font-semibold text-white">Buat PO Keluar</Text>
             </Button>
-          </View>
+          </>
         }
       />
 

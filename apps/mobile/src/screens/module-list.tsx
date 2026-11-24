@@ -399,7 +399,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
 
   const action =
     allowed || canManagePaymentTerms || canManageRolesAndCompany ? (
-      <View className="flex-row flex-wrap items-center gap-2 w-full sm:w-auto">
+      <>
         {canManageRolesAndCompany ? (
           <>
             <Button
@@ -451,7 +451,7 @@ export function ModuleList({ def, title, headerExtra }: { def: ModuleDef; title?
             </Text>
           </Button>
         ) : null}
-      </View>
+      </>
     ) : undefined;
 
   const isMasterOrSub = ["customers", "suppliers", "users"].includes(def.key);

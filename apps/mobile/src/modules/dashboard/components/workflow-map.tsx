@@ -542,7 +542,7 @@ export function WorkflowMap() {
         <View className="p-4 sm:p-5 gap-4">
           {/* Pilihan alur */}
           {flows.length > 1 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
+            <View className="flex-row flex-wrap gap-2 w-full">
               {flows.map((f) => {
                 const active = f.key === flow.key;
                 return (
@@ -555,7 +555,7 @@ export function WorkflowMap() {
                   </Pressable>
                 );
               })}
-            </ScrollView>
+            </View>
           ) : null}
 
           <Text className="text-xs text-muted-foreground">{flow.summary}</Text>

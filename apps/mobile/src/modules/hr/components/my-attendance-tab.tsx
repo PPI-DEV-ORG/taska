@@ -369,13 +369,13 @@ export function MyAttendanceTab({
                 }`}
               >
                 {/* 1. Kartu GPS Otomatis */}
-                <View className="rounded-xl border border-border/80 bg-card p-3.5 gap-2.5">
-                  <View className="flex-row items-center justify-between gap-2 flex-wrap">
-                    <View className="flex-row items-center gap-2">
-                      <View className="rounded-lg p-1.5 bg-primary/10">
+                <View className="rounded-xl border border-border/80 bg-card p-3.5 gap-2.5 overflow-hidden">
+                  <View className="flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 w-full">
+                    <View className="flex-row items-center gap-2 flex-1 min-w-0">
+                      <View className="rounded-lg p-1.5 bg-primary/10 shrink-0">
                         <MapPin size={16} color={colors.primary} />
                       </View>
-                      <View>
+                      <View className="flex-1 min-w-0">
                         <Text className="text-xs font-bold text-foreground">
                           Lokasi GPS Otomatis {requireGps ? "(Wajib)" : "(Opsional)"}
                         </Text>
@@ -389,7 +389,7 @@ export function MyAttendanceTab({
                       variant="outline"
                       onPress={() => void fetchGps()}
                       disabled={gpsLoading}
-                      className="h-8 px-2.5 gap-1.5"
+                      className="h-8 px-2.5 gap-1.5 self-start sm:self-auto shrink-0"
                     >
                       {gpsLoading ? (
                         <ActivityIndicator size="small" color={colors.primary} />
@@ -498,13 +498,13 @@ export function MyAttendanceTab({
                 </View>
 
                 {/* 2. Kartu Foto Langsung (Kamera Only — Tanpa Galeri) */}
-                <View className="rounded-xl border border-border/80 bg-card p-3.5 gap-3">
-                  <View className="flex-row items-center justify-between gap-2 flex-wrap">
-                    <View className="flex-row items-center gap-2">
-                      <View className="rounded-lg p-1.5 bg-primary/10">
+                <View className="rounded-xl border border-border/80 bg-card p-3.5 gap-3 overflow-hidden">
+                  <View className="flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 w-full">
+                    <View className="flex-row items-center gap-2 flex-1 min-w-0">
+                      <View className="rounded-lg p-1.5 bg-primary/10 shrink-0">
                         <Camera size={16} color={colors.primary} />
                       </View>
-                      <View>
+                      <View className="flex-1 min-w-0">
                         <Text className="text-xs font-bold text-foreground">
                           Foto Bukti Langsung {requirePhoto ? "(Wajib)" : "(Opsional)"}
                         </Text>
@@ -517,7 +517,7 @@ export function MyAttendanceTab({
                       size="sm"
                       variant={capturedPhoto ? "outline" : "default"}
                       onPress={() => void handleOpenCamera()}
-                      className="h-8 px-3 gap-1.5"
+                      className="h-8 px-3 gap-1.5 self-start sm:self-auto shrink-0"
                     >
                       {capturedPhoto ? (
                         <RotateCcw size={13} color={colors.text} />

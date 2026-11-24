@@ -42,8 +42,8 @@ export function FilterBar({
 }) {
   return (
     <View className="mb-4 gap-3">
-      <View className="flex-row flex-wrap items-center gap-2.5">
-        <View className="bg-card border-border/80 h-10 max-w-md flex-1 min-w-[200px] flex-row items-center gap-2.5 rounded-xl border px-3 shadow-sm">
+      <View className="flex-row flex-wrap items-center gap-2.5 w-full">
+        <View className="bg-card border-border/80 h-10 w-full sm:w-auto sm:max-w-md sm:flex-1 sm:min-w-[200px] flex-row items-center gap-2.5 rounded-xl border px-3 shadow-sm">
           <Search size={15} color={colors.muted} />
           <Input
             value={search}
@@ -59,7 +59,7 @@ export function FilterBar({
               onChange={onDate}
               placeholder={datePlaceholder}
               clearable
-              className="h-10 min-w-[170px] max-w-[240px] rounded-xl bg-card border-border/80 shadow-sm px-3"
+              className="h-10 w-full sm:w-auto sm:min-w-[170px] sm:max-w-[240px] rounded-xl bg-card border-border/80 shadow-sm px-3"
             />
           </View>
         ) : null}
@@ -67,12 +67,12 @@ export function FilterBar({
         {right}
       </View>
       {statuses && statuses.length > 1 && onStatus ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
+        <View className="flex-row flex-wrap items-center gap-2 w-full">
           <Chip label="Semua" active={!status} onPress={() => onStatus("")} />
           {statuses.map((s) => (
             <Chip key={s} label={statusText(s)} active={status === s} onPress={() => onStatus(s === status ? "" : s)} />
           ))}
-        </ScrollView>
+        </View>
       ) : null}
     </View>
   );
@@ -547,16 +547,16 @@ export function DataTable({
           </Text>
         </View>
 
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             disabled={validPage <= 1}
             onPress={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            className={cn("h-9 rounded-xl px-3 border-border/80 flex-row items-center gap-1.5", validPage <= 1 && "opacity-40")}
+            className={cn("h-9 rounded-xl px-2.5 sm:px-3 border-border/80 flex-row items-center gap-1", validPage <= 1 && "opacity-40")}
           >
             <ChevronLeft size={15} color={colors.text} />
-            <Text className="text-xs font-semibold">Previous</Text>
+            <Text className="text-xs font-semibold">Prev</Text>
           </Button>
 
           {/* Page numbers indicator */}

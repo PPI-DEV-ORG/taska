@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView, Pressable, TextInput } from "react-native";
+import { View, Pressable, TextInput } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Panel, KpiCard } from "@/components/akuntra/basics";
@@ -129,9 +129,9 @@ export function TaxTab({ onRefreshParent }: TaxTabProps) {
           </Text>
         </View>
 
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row flex-wrap items-center gap-2 w-full">
           {/* Quick Month Select */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="gap-1.5 max-w-xl">
+          <View className="flex-row flex-wrap items-center gap-1.5">
             {monthsList.map((mName, idx) => {
               const mVal = idx + 1;
               const isSelected = month === mVal;
@@ -151,10 +151,10 @@ export function TaxTab({ onRefreshParent }: TaxTabProps) {
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
 
           {/* Year Buttons */}
-          <View className="flex-row items-center gap-1 border-l border-border/60 pl-2">
+          <View className="flex-row items-center gap-1 sm:border-l sm:border-border/60 sm:pl-2">
             {[2025, 2026, 2027].map((y) => (
               <Pressable
                 key={y}

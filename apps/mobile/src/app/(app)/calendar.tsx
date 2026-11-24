@@ -217,7 +217,7 @@ export default function CalendarScreen() {
               : "Agenda pribadi, tugas, dan kegiatan yang melibatkan saya"
         }
         action={
-          <View className="flex-row items-center gap-2">
+          <>
             {canConfigWa ? (
               <Button size="sm" variant="outline" onPress={() => setWaOpen(true)}>
                 <MessageSquare size={14} color="#22c55e" />
@@ -228,7 +228,7 @@ export default function CalendarScreen() {
               <Plus size={15} color="#fff" />
               <Text className="text-xs">Buat agenda</Text>
             </Button>
-          </View>
+          </>
         }
       />
 

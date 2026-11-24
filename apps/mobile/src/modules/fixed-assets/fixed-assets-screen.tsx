@@ -286,7 +286,7 @@ export function FixedAssetsScreen({
           showRefresh={true}
           onRefresh={fetchLookups}
           action={
-            <View className="flex-row items-center gap-2">
+            <>
               <Button
                 variant="outline"
                 size="sm"
@@ -308,7 +308,7 @@ export function FixedAssetsScreen({
                 <Plus size={14} color="#FFFFFF" />
                 <Text className="text-xs font-semibold text-white">Daftarkan Aset Baru</Text>
               </Button>
-            </View>
+            </>
           }
         />
 
@@ -385,8 +385,7 @@ export function FixedAssetsScreen({
         </View>
 
         {/* Main Screen Navigation Tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="w-full">
-          <View className="bg-panel border-border/80 flex-row items-center rounded-2xl border p-1.5 gap-1.5">
+        <View className="bg-panel border-border/80 flex-row flex-wrap items-center rounded-2xl border p-1.5 gap-1.5 w-full">
             {[
               { id: "registry", label: "Semua Aset (Asset Registry)", icon: Boxes, count: assets.length },
               { id: "depreciation", label: "Depresiasi & Jurnal Bulanan", icon: Calculator, count: null },
@@ -399,7 +398,7 @@ export function FixedAssetsScreen({
                 <Pressable
                   key={t.id}
                   onPress={() => setActiveTab(t.id as any)}
-                  className={`flex-row items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+                  className={`flex-row items-center gap-1.5 px-3 py-2 sm:px-4 rounded-xl transition-all ${
                     active ? "bg-primary shadow-sm" : "hover:bg-card/60"
                   }`}
                 >
@@ -429,8 +428,7 @@ export function FixedAssetsScreen({
                 </Pressable>
               );
             })}
-          </View>
-        </ScrollView>
+        </View>
 
         {/* TAB 1: ASSET REGISTRY (MAIN TABLE & FILTERS) */}
         {activeTab === "registry" && (

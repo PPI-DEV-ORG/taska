@@ -353,7 +353,7 @@ export function FileUploader({
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleWebDrop}
             onClick={() => webInputRef.current?.click()}
-            className="border-border bg-panel/40 items-center gap-2 rounded-xl border border-dashed px-4 py-5 cursor-pointer"
+            className="border-border bg-panel/40 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-5 cursor-pointer"
           >
             <Upload size={20} color={colors.muted} />
             <Text className="text-text-secondary text-center text-sm">Tarik file ke sini atau klik untuk memilih dari galeri/perangkat</Text>

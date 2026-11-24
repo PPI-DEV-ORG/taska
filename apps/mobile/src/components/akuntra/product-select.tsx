@@ -224,7 +224,7 @@ export function ProductSelect({
             </View>
 
             {categories.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-1.5 py-0.5">
+              <View className="flex-row flex-wrap gap-1.5 py-0.5 w-full">
                 <Pressable
                   onPress={() => setSelectedCat("ALL")}
                   className={cn(
@@ -258,7 +258,7 @@ export function ProductSelect({
                     </Pressable>
                   );
                 })}
-              </ScrollView>
+              </View>
             )}
           </View>
 

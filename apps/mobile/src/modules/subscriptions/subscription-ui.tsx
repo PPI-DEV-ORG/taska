@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -96,49 +96,47 @@ export function SubscriptionTabs({
   onChange: (value: string) => void;
 }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View className="flex-row gap-1 rounded-xl border border-border/70 bg-card p-1">
-        {tabs.map((tab) => {
-          const active = tab.value === value;
-          return (
-            <Pressable
-              key={tab.value}
-              onPress={() => onChange(tab.value)}
+    <View className="flex-row flex-wrap gap-1 rounded-xl border border-border/70 bg-card p-1 w-full">
+      {tabs.map((tab) => {
+        const active = tab.value === value;
+        return (
+          <Pressable
+            key={tab.value}
+            onPress={() => onChange(tab.value)}
+            className={cn(
+              "min-h-[34px] flex-row items-center gap-1.5 rounded-lg px-2.5 sm:px-3",
+              active ? "bg-primary" : "bg-transparent",
+            )}
+          >
+            <Text
               className={cn(
-                "min-h-[34px] flex-row items-center gap-1.5 rounded-lg px-3",
-                active ? "bg-primary" : "bg-transparent",
+                "text-xs font-semibold",
+                active ? "text-white" : "text-muted-foreground",
               )}
             >
-              <Text
+              {tab.label}
+            </Text>
+            {tab.count != null ? (
+              <View
                 className={cn(
-                  "text-xs font-semibold",
-                  active ? "text-white" : "text-muted-foreground",
+                  "rounded-full px-1.5 py-0.5",
+                  active ? "bg-white/20" : "bg-muted/40",
                 )}
               >
-                {tab.label}
-              </Text>
-              {tab.count != null ? (
-                <View
+                <Text
                   className={cn(
-                    "rounded-full px-1.5 py-0.5",
-                    active ? "bg-white/20" : "bg-muted/40",
+                    "text-[10px] font-bold",
+                    active ? "text-white" : "text-muted-foreground",
                   )}
                 >
-                  <Text
-                    className={cn(
-                      "text-[10px] font-bold",
-                      active ? "text-white" : "text-muted-foreground",
-                    )}
-                  >
-                    {tab.count}
-                  </Text>
-                </View>
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </View>
-    </ScrollView>
+                  {tab.count}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 

@@ -588,7 +588,7 @@ export default function HrScreen() {
           showRefresh={false}
           action={
             activeTab === "team-attendance" ? (
-              <View className="flex-row flex-wrap items-center gap-1.5 sm:gap-2">
+              <>
                 {isSuperAdminOrBos && (
                   <Button
                     size="sm"
@@ -628,14 +628,13 @@ export default function HrScreen() {
                     </Text>
                   </Button>
                 )}
-              </View>
+              </>
             ) : null
           }
         />
 
         {/* Tab Switcher - Identik dengan Buku Besar & COA */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="w-full">
-          <View className="bg-panel border-border/80 flex-row items-center rounded-2xl border p-1.5 gap-1.5">
+        <View className="bg-panel border-border/80 flex-row flex-wrap items-center rounded-2xl border p-1.5 gap-1.5 w-full">
             {[
               { id: "my-attendance", label: "Absensi Saya", icon: UserCheck, count: null },
               {
@@ -674,7 +673,7 @@ export default function HrScreen() {
                   <Pressable
                     key={t.id}
                     onPress={() => setActiveTab(t.id as TabType)}
-                    className={`flex-row items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+                    className={`flex-row items-center gap-1.5 px-3 py-2 sm:px-4 rounded-xl transition-all ${
                       active ? "bg-primary shadow-sm" : "hover:bg-card/60"
                     }`}
                   >
@@ -704,8 +703,7 @@ export default function HrScreen() {
                   </Pressable>
                 );
               })}
-          </View>
-        </ScrollView>
+        </View>
 
         {/* ──────────────── TAB 1: ABSENSI SAYA ──────────────── */}
         {activeTab === "my-attendance" && (

@@ -3,7 +3,6 @@ import { ScrollView, TextInput, View } from "react-native";
 import { BellRing, Download, FileSpreadsheet, RefreshCw } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
 import { Panel } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
@@ -129,7 +128,7 @@ export function SubscriptionReportsPanel({ categories, providers, onRefresh }: P
         subtitle="12 laporan recurring cost, renewal, pembayaran, prepaid, pembatalan, dan utilisasi"
         icon={FileSpreadsheet}
         right={
-          <View className="flex-row flex-wrap items-center gap-1.5">
+          <>
             <Button
               variant="outline"
               size="sm"
@@ -146,23 +145,27 @@ export function SubscriptionReportsPanel({ categories, providers, onRefresh }: P
             </Button>
             <Button size="sm" className="gap-1.5" onPress={exportReport} disabled={!report || !report.rows.length}>
               <Download size={13} color="#fff" />
-              <Text className="text-[11px]">Export CSV</Text>
+              <Text className="text-[11px] text-white">Export CSV</Text>
             </Button>
-          </View>
+          </>
         }
       >
         <View className="gap-3">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <Tabs value={type} onValueChange={setType}>
-              <TabsList className="flex-row flex-wrap">
-                {REPORT_OPTIONS.map((option) => (
-                  <TabsTrigger key={option.value} value={option.value}>
-                    <Text className="text-[11px]">{option.label}</Text>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          </ScrollView>
+          <View className="w-full sm:max-w-md">
+            <Text className="mb-1 text-[11px] font-semibold text-muted-foreground">
+              Pilih Jenis Laporan Subscription
+            </Text>
+            <SearchableSelect
+              value={REPORT_OPTIONS.find((o) => o.value === type)?.label ?? ""}
+              options={REPORT_OPTIONS.map((o) => o.label)}
+              onChange={(label) => {
+                const matched = REPORT_OPTIONS.find((o) => o.label === label);
+                if (matched) setType(matched.value);
+              }}
+              placeholder="Pilih jenis laporan..."
+              className="h-10 rounded-lg border-border/80 bg-card"
+            />
+          </View>
 
           <View className="flex-row flex-wrap gap-2">
             <View className="min-w-[150px] flex-1">

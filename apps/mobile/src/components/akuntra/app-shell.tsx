@@ -666,13 +666,13 @@ function MoreDialog({ open, onOpenChange, onNotif }: { open: boolean; onOpenChan
   const router = useRouter();
   const { items, active } = useNav();
   const { theme, toggleTheme } = useApp();
-  const restGroups = groupNav(items.slice(4));
+  const allGroups = groupNav(items);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Menu lainnya</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Semua Menu</DialogTitle></DialogHeader>
         <ScrollView style={{ maxHeight: 460 }}>
-          {restGroups.map((g) => (
+          {allGroups.map((g) => (
             <View key={g.title || "utama"} className="mb-2">
               {g.title ? (
                 <Text className="text-[11px] font-bold tracking-wider uppercase text-muted-foreground px-2 pt-2 pb-1">{g.title}</Text>

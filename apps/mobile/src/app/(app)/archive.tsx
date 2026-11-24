@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView } from "react-native";
+import { View } from "react-native";
 import { Search } from "lucide-react-native";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -89,15 +89,15 @@ export default function ArchiveScreen() {
 
       <View className="gap-3">
         {/* Kategori Filter */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
+        <View className="flex-row flex-wrap items-center gap-2 w-full">
           <Chip label="Semua Kategori" active={activeCat === "Semua"} onPress={() => setActiveCat("Semua")} />
           {ARCHIVE_CATEGORIES.map((c) => (
             <Chip key={c} label={c} active={activeCat === c} onPress={() => setActiveCat(c)} />
           ))}
-        </ScrollView>
+        </View>
 
         {/* Tahun Filter */}
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row flex-wrap items-center gap-2 w-full">
           <Text className="text-muted-foreground text-xs">Filter Tahun:</Text>
           {["Semua", "2024", "2023", "2022"].map((y) => (
             <Chip key={y} label={y} active={selectedYear === y} onPress={() => setSelectedYear(y)} />

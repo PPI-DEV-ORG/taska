@@ -773,21 +773,21 @@ export function FileManagementScreen() {
               /* Tampilan 2: DAFTAR BERKAS DI DALAM FOLDER / HASIL CARI */
               <View className="gap-4">
                 {/* Header Breadcrumb Navigasi */}
-                <View className="flex-row flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
-                  <View className="flex-row flex-wrap items-center gap-2">
+                <View className="flex-row flex-wrap items-center justify-between gap-2.5 pb-3 border-b border-border/60 w-full">
+                  <View className="flex-row flex-wrap items-center gap-2 w-full sm:w-auto sm:flex-1 min-w-0">
                     <Button
                       variant="outline"
                       size="sm"
                       onPress={handleBackToFolders}
-                      className="gap-1.5"
+                      className="gap-1.5 shrink-0"
                     >
                       <ArrowLeft size={14} color={colors.primary} />
                       <Text className="text-xs font-semibold">Semua Folder</Text>
                     </Button>
                     <Text className="text-muted-foreground font-semibold">/</Text>
-                    <View className="flex-row items-center gap-1.5">
+                    <View className="flex-row flex-wrap items-center gap-1.5 min-w-0 flex-1">
                       <FolderOpen size={16} color={colors.primary} />
-                      <Text className="text-sm font-bold text-foreground">
+                      <Text className="text-sm font-bold text-foreground shrink" numberOfLines={2}>
                         {currentFolder
                           ? overview?.subfolders?.find((s) => s.folder === currentFolder)?.label || currentFolder
                           : flatListView
@@ -795,7 +795,7 @@ export function FileManagementScreen() {
                           : `Pencarian: "${search}"`}
                       </Text>
                       <View
-                        className="rounded-full px-2 py-0.5 border"
+                        className="rounded-full px-2 py-0.5 border shrink-0"
                         style={{ backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}33` }}
                       >
                         <Text className="text-xs font-bold" style={{ color: colors.primary }}>

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable, ScrollView } from "react-native";
+import { View, Pressable } from "react-native";
 import {
   Scale,
   TrendingUp,
@@ -787,48 +787,46 @@ export default function ReportsScreen() {
             onChange={setReportDate}
             placeholder="Filter tanggal laporan..."
             clearable
-            className="h-10 min-w-[170px] max-w-[240px] rounded-xl bg-card border-border/80 shadow-sm px-3"
+            className="h-10 w-full sm:w-auto sm:min-w-[170px] sm:max-w-[240px] rounded-xl bg-card border-border/80 shadow-sm px-3"
           />
         }
       />
 
       {canAccessFinancials && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="w-full">
-          <View className="flex-row items-center gap-2 pb-1">
-            {[
-              { id: "pnl" as const, label: "Laba Rugi & P&L", icon: TrendingUp },
-              { id: "balance-sheet" as const, label: "Neraca (Balance Sheet)", icon: Scale },
-              { id: "cash-flow" as const, label: "Arus Kas (Cash Flow)", icon: Wallet },
-              { id: "journal" as const, label: "Jurnal Umum & COA", icon: BookOpen },
-              { id: "cards" as const, label: "Semua Unduhan Laporan", icon: FolderKanban },
-            ].map((t) => {
-              const Icon = t.icon;
-              const active = activeTab === t.id;
-              return (
-                <Pressable
-                  key={t.id}
-                  onPress={() => setActiveTab(t.id)}
+        <View className="flex-row flex-wrap items-center gap-2 w-full">
+          {[
+            { id: "pnl" as const, label: "Laba Rugi & P&L", icon: TrendingUp },
+            { id: "balance-sheet" as const, label: "Neraca (Balance Sheet)", icon: Scale },
+            { id: "cash-flow" as const, label: "Arus Kas (Cash Flow)", icon: Wallet },
+            { id: "journal" as const, label: "Jurnal Umum & COA", icon: BookOpen },
+            { id: "cards" as const, label: "Semua Unduhan Laporan", icon: FolderKanban },
+          ].map((t) => {
+            const Icon = t.icon;
+            const active = activeTab === t.id;
+            return (
+              <Pressable
+                key={t.id}
+                onPress={() => setActiveTab(t.id)}
+                className={
+                  active
+                    ? "bg-primary border-primary flex-row items-center gap-1.5 rounded-lg border px-3 py-2 sm:px-4 sm:py-2.5"
+                    : "bg-card border-border flex-row items-center gap-1.5 rounded-lg border px-3 py-2 sm:px-4 sm:py-2.5"
+                }
+              >
+                <Icon size={15} color={active ? colors.background : colors.textSecondary} />
+                <Text
                   className={
                     active
-                      ? "bg-primary border-primary flex-row items-center gap-2 rounded-lg border px-4 py-2.5"
-                      : "bg-card border-border flex-row items-center gap-2 rounded-lg border px-4 py-2.5"
+                      ? "text-background text-xs font-semibold"
+                      : "text-text-secondary text-xs font-medium"
                   }
                 >
-                  <Icon size={15} color={active ? colors.background : colors.textSecondary} />
-                  <Text
-                    className={
-                      active
-                        ? "text-background text-xs font-semibold"
-                        : "text-text-secondary text-xs font-medium"
-                    }
-                  >
-                    {t.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
+                  {t.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       )}
 
       {canAccessFinancials && activeTab === "pnl" && (
