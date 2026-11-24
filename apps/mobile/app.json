@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Akuntra - Mini ERP",
+    "name": "Akuntra - ERP",
     "slug": "akuntra",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,6 +11,7 @@
       "icon": "./assets/AKUNTRA.png"
     },
     "android": {
+      "package": "id.co.ghinamultiprima.akuntra",
       "adaptiveIcon": {
         "backgroundColor": "#181716",
         "foregroundImage": "./assets/AKUNTRA.png"
