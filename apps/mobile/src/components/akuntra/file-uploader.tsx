@@ -102,6 +102,9 @@ export function FileUploader({
   const [previewItem, setPreviewItem] = React.useState<StagedFile | null>(null);
   const web = Platform.OS === "web";
   const prevLenRef = React.useRef(0);
+  // Cegah upload ganda saat autoFlush sudah mengunggah atau sedang mengunggah lalu parent memanggil flush()
+  const uploadedIdsRef = React.useRef<Map<number, number>>(new Map());
+  const uploadPromisesRef = React.useRef<Map<number, Promise<number | null>>>(new Map());
 
   const target = toUploadKind(kind);
 
@@ -128,15 +131,32 @@ export function FileUploader({
     };
   }, [staged]);
 
-  async function flushOne(f: StagedFile): Promise<number | null> {
-    try {
-      const payload = f.blob ?? (f.uri ? { uri: f.uri, name: f.name, type: "application/octet-stream" } : null);
-      return await uploadFile(payload, f.kind, category);
-    } catch (e: any) {
-      toast(e?.message || "Gagal mengunggah file", "danger");
-      throw e;
-    }
-  }
+  const flushOne = React.useCallback(async (f: StagedFile): Promise<number | null> => {
+    const cachedId = uploadedIdsRef.current.get(f.id);
+    if (cachedId != null) return cachedId;
+
+    const inflight = uploadPromisesRef.current.get(f.id);
+    if (inflight) return inflight;
+
+    const task = (async (): Promise<number | null> => {
+      try {
+        const payload = f.blob ?? (f.uri ? { uri: f.uri, name: f.name, type: "application/octet-stream" } : null);
+        const fileId = await uploadFile(payload, f.kind, category);
+        if (fileId != null) {
+          uploadedIdsRef.current.set(f.id, fileId);
+        }
+        return fileId;
+      } catch (e: any) {
+        toast(e?.message || "Gagal mengunggah file", "danger");
+        throw e;
+      } finally {
+        uploadPromisesRef.current.delete(f.id);
+      }
+    })();
+
+    uploadPromisesRef.current.set(f.id, task);
+    return task;
+  }, [category, toast]);
 
   // notify parent of staged count after commit (never during render — parent setState
   // would fire while this child is rendering and React throws).
@@ -194,13 +214,27 @@ export function FileUploader({
       kind: detectedKind,
     };
     setStaged((prev) => {
+      if (!multiple) {
+        prev.forEach((it) => {
+          uploadedIdsRef.current.delete(it.id);
+          uploadPromisesRef.current.delete(it.id);
+          if (it.previewUri?.startsWith("blob:")) {
+            try {
+              URL.revokeObjectURL(it.previewUri);
+            } catch {}
+          }
+        });
+        prevLenRef.current = 1;
+        return [entry];
+      }
       prevLenRef.current = prev.length + 1;
       return [...prev, entry];
     });
     if (onFilePicked) {
       void onFilePicked({ name: entry.name, blob: entry.blob, uri: entry.uri });
     }
-    if (autoFlush) {
+    const shouldAutoFlush = autoFlush && (Boolean(onUploaded) || !onFilePicked);
+    if (shouldAutoFlush) {
       setBusy(true);
       void flushOne(entry)
         .then((fileId) => {
@@ -214,6 +248,8 @@ export function FileUploader({
   }
 
   function remove(id: number) {
+    uploadedIdsRef.current.delete(id);
+    uploadPromisesRef.current.delete(id);
     setStaged((prev) => {
       const targetItem = prev.find((f) => f.id === id);
       if (targetItem?.previewUri?.startsWith("blob:")) {
@@ -239,7 +275,7 @@ export function FileUploader({
     } finally {
       setBusy(false);
     }
-  }, [staged]);
+  }, [staged, flushOne]);
 
   React.useEffect(() => {
     if (!handleRef) return;
@@ -280,7 +316,7 @@ export function FileUploader({
           anyStaged = true;
         }
       }
-      if (anyStaged && !autoFlush) {
+      if (anyStaged && !autoFlush && !onFilePicked) {
         toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
       }
     } finally {
@@ -294,7 +330,7 @@ export function FileUploader({
       const photo = await captureNativePhoto(toast);
       if (!photo) return;
       const ok = stage({ uri: photo.uri, name: photo.name, size: photo.size });
-      if (ok && !autoFlush) {
+      if (ok && !autoFlush && !onFilePicked) {
         toast(offline ? "Foto disimpan di perangkat, dikirim saat tersambung" : "Foto kamera siap, akan diunggah saat disimpan");
       }
     } finally {
@@ -336,7 +372,7 @@ export function FileUploader({
         anyStaged = true;
       }
     }
-    if (anyStaged && !autoFlush) {
+    if (anyStaged && !autoFlush && !onFilePicked) {
       toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
     }
   }

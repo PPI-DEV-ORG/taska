@@ -1344,7 +1344,6 @@ export function InvoiceExtras({
           label={row.fileId ? "Ganti File Faktur Manual (PDF / Excel)" : "Pilih atau Tarik File Faktur Manual (PDF / Excel)"}
           kind="dokumen"
           category="invoice"
-          autoFlush
           onFilePicked={async (file) => {
             try {
               const uploadedId = await uploadFile(file, "dokumen", "invoice", { refType: "invoice", refId: row.id });
@@ -1492,7 +1491,6 @@ export function InvoiceExtras({
             }
             kind="foto"
             category="foto-struk"
-            autoFlush
             onFilePicked={async (file) => {
               try {
                 const oldFileId = row.paidFileId || (row as any).paymentFileId;

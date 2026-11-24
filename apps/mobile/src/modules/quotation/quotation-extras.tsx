@@ -899,7 +899,6 @@ export function QuotationExtras({
               label={activeManualFileId ? "Ganti / Unggah File Revisi Baru (PDF / Excel)" : "Pilih atau Tarik File Dokumen Penawaran Manual (PDF / Excel)"}
               kind="dokumen"
               category="penawaran"
-              autoFlush
               onFilePicked={async (file) => {
                 try {
                   const uploadedId = await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
@@ -1088,7 +1087,6 @@ export function QuotationExtras({
             accept="application/pdf,.pdf"
             hint="Hanya file PDF (.pdf) untuk client, maksimal 15 MB"
             allowedExtensions={[".pdf"]}
-            autoFlush
             onFilePicked={async (file) => {
               try {
                 const uploadedId = await uploadFile(file, "dokumen", "penawaran", { refType: "quotation", refId: row.id });
