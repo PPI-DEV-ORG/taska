@@ -23,6 +23,16 @@ export type StartMigrationDto = {
   includeOrphans?: boolean; // Default false (sesuai arahan user, file lepas tidak ikut)
 };
 
+export type StartDriveMigrationDto = {
+  sourceProviderId: number;
+  targetProviderId: number;
+  /** "all" (default) | "root" (hanya file di root tanpa folder) | numeric folderId */
+  folderId?: string | number | null;
+  includeSubfolders?: boolean;
+  olderThanDays?: number;
+  deleteSourceAfterVerify?: boolean;
+};
+
 @Injectable()
 export class FileMigrationService {
   private readonly logger = new Logger(FileMigrationService.name);
@@ -688,5 +698,334 @@ export class FileMigrationService {
     });
     if (!job) throw new NotFoundException("Job tidak ditemukan");
     return job;
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // Migrasi Khusus Dokumen Umum (Company Shared Drive / DriveFile)
+  // ───────────────────────────────────────────────────────────────
+
+  private async resolveDriveMigrationCandidates(params: {
+    sourceProviderId: number;
+    folderId?: string | number | null;
+    includeSubfolders?: boolean;
+    olderThanDays?: number;
+  }) {
+    const sourceId = Number(params.sourceProviderId);
+    const src = await this.prisma.main.fileStorageProvider.findUnique({
+      where: { id: sourceId },
+    });
+    if (!src) {
+      return {
+        src: null,
+        files: [] as Array<{
+          id: number;
+          name: string;
+          originalName: string;
+          mimeType: string;
+          size: number;
+          storageKey: string;
+          providerId: number | null;
+          folderId: number | null;
+          createdAt: Date;
+        }>,
+        folders: [] as Array<{
+          id: number;
+          name: string;
+          parentId: number | null;
+          pathLabel: string;
+          fileCount: number;
+        }>,
+        rootFileCount: 0,
+        folderPathMap: new Map<number, string>(),
+      };
+    }
+
+    const cutoffDate =
+      params.olderThanDays && Number(params.olderThanDays) > 0
+        ? new Date(Date.now() - Number(params.olderThanDays) * 86400 * 1000)
+        : undefined;
+
+    const allFolders = await this.prisma.main.driveFolder.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, parentId: true },
+      orderBy: { name: "asc" },
+    });
+
+    const folderById = new Map(allFolders.map((f) => [f.id, f]));
+    const childrenByParent = new Map<number, number[]>();
+    for (const f of allFolders) {
+      if (f.parentId != null) {
+        const list = childrenByParent.get(f.parentId) ?? [];
+        list.push(f.id);
+        childrenByParent.set(f.parentId, list);
+      }
+    }
+
+    const buildPathLabel = (id: number): string => {
+      const parts: string[] = [];
+      const seen = new Set<number>();
+      let curr: number | null = id;
+      while (curr != null && !seen.has(curr)) {
+        seen.add(curr);
+        const node = folderById.get(curr);
+        if (!node) break;
+        parts.unshift(node.name);
+        curr = node.parentId;
+      }
+      return parts.join(" / ");
+    };
+
+    const folderPathMap = new Map<number, string>();
+    for (const f of allFolders) {
+      folderPathMap.set(f.id, buildPathLabel(f.id));
+    }
+
+    const collectSubtreeIds = (rootId: number): number[] => {
+      const out: number[] = [];
+      const stack = [rootId];
+      const seen = new Set<number>();
+      while (stack.length > 0) {
+        const curr = stack.pop()!;
+        if (seen.has(curr)) continue;
+        seen.add(curr);
+        out.push(curr);
+        for (const childId of childrenByParent.get(curr) ?? []) {
+          stack.push(childId);
+        }
+      }
+      return out;
+    };
+
+    // Semua berkas Drive di source provider (untuk LOCAL, ikutkan juga providerId null)
+    const providerWhere =
+      src.type === "LOCAL"
+        ? { OR: [{ providerId: sourceId }, { providerId: null }] }
+        : { providerId: sourceId };
+
+    const allSourceFiles = await this.prisma.main.driveFile.findMany({
+      where: {
+        deletedAt: null,
+        ...providerWhere,
+        ...(cutoffDate ? { createdAt: { lte: cutoffDate } } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        originalName: true,
+        mimeType: true,
+        size: true,
+        storageKey: true,
+        providerId: true,
+        folderId: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 3000,
+    });
+
+    // Hitung jumlah file langsung per folder (dan total termasuk subfolder)
+    const directCountByFolder = new Map<number, number>();
+    let rootFileCount = 0;
+    for (const f of allSourceFiles) {
+      if (f.folderId == null) {
+        rootFileCount++;
+      } else {
+        directCountByFolder.set(f.folderId, (directCountByFolder.get(f.folderId) ?? 0) + 1);
+      }
+    }
+
+    const includeSub = params.includeSubfolders !== false;
+    const folders = allFolders
+      .map((f) => {
+        const ids = includeSub ? collectSubtreeIds(f.id) : [f.id];
+        const fileCount = ids.reduce((acc, id) => acc + (directCountByFolder.get(id) ?? 0), 0);
+        return {
+          id: f.id,
+          name: f.name,
+          parentId: f.parentId,
+          pathLabel: folderPathMap.get(f.id) || f.name,
+          fileCount,
+        };
+      })
+      .sort((a, b) => a.pathLabel.localeCompare(b.pathLabel));
+
+    // Filter sesuai target folderId
+    let files = allSourceFiles;
+    const rawFolder =
+      params.folderId === undefined || params.folderId === null
+        ? "all"
+        : String(params.folderId).trim().toLowerCase();
+
+    if (rawFolder === "root") {
+      files = allSourceFiles.filter((f) => f.folderId === null);
+    } else if (rawFolder !== "all" && rawFolder !== "") {
+      const targetFolderId = Number(rawFolder);
+      if (!isNaN(targetFolderId) && targetFolderId > 0) {
+        const allowedSet = new Set(
+          includeSub ? collectSubtreeIds(targetFolderId) : [targetFolderId],
+        );
+        files = allSourceFiles.filter((f) => f.folderId !== null && allowedSet.has(f.folderId));
+      }
+    }
+
+    return { src, files, folders, rootFileCount, folderPathMap };
+  }
+
+  async previewDriveMigration(params: {
+    sourceProviderId: number;
+    targetProviderId?: number;
+    folderId?: string;
+    includeSubfolders?: boolean;
+    olderThanDays?: number;
+  }) {
+    const sourceId = Number(params.sourceProviderId);
+    if (!sourceId || isNaN(sourceId)) {
+      return {
+        sourceProvider: null,
+        targetProvider: null,
+        eligibleFilesCount: 0,
+        eligibleTotalBytes: 0,
+        rootFileCount: 0,
+        folders: [],
+        sampleFiles: [],
+      };
+    }
+
+    const targetId =
+      params.targetProviderId && !isNaN(Number(params.targetProviderId))
+        ? Number(params.targetProviderId)
+        : undefined;
+
+    const [resolved, tgt] = await Promise.all([
+      this.resolveDriveMigrationCandidates({
+        sourceProviderId: sourceId,
+        folderId: params.folderId,
+        includeSubfolders: params.includeSubfolders,
+        olderThanDays: params.olderThanDays,
+      }),
+      targetId
+        ? this.prisma.main.fileStorageProvider.findUnique({ where: { id: targetId } })
+        : null,
+    ]);
+
+    const totalBytes = resolved.files.reduce((sum, f) => sum + (f.size || 0), 0);
+
+    return {
+      sourceProvider: resolved.src
+        ? { id: resolved.src.id, name: resolved.src.name, type: resolved.src.type }
+        : null,
+      targetProvider: tgt ? { id: tgt.id, name: tgt.name, type: tgt.type } : null,
+      eligibleFilesCount: resolved.files.length,
+      eligibleTotalBytes: totalBytes,
+      rootFileCount: resolved.rootFileCount,
+      folders: resolved.folders,
+      sampleFiles: resolved.files.slice(0, 6).map((f) => ({
+        id: f.id,
+        name: f.name || f.originalName,
+        size: f.size,
+        folderPath: f.folderId ? resolved.folderPathMap.get(f.folderId) || "" : "Root",
+      })),
+    };
+  }
+
+  async migrateDriveFiles(dto: StartDriveMigrationDto, _user?: RequestUser) {
+    if (dto.sourceProviderId === dto.targetProviderId) {
+      throw new BadRequestException("Provider sumber dan provider tujuan tidak boleh sama");
+    }
+
+    const [src, tgt] = await Promise.all([
+      this.prisma.main.fileStorageProvider.findUnique({ where: { id: dto.sourceProviderId } }),
+      this.prisma.main.fileStorageProvider.findUnique({ where: { id: dto.targetProviderId } }),
+    ]);
+
+    if (!src) throw new NotFoundException("Provider sumber tidak ditemukan");
+    if (!tgt) throw new NotFoundException("Provider tujuan tidak ditemukan");
+    if (tgt.status === "READ_ONLY") {
+      throw new BadRequestException(
+        "Provider tujuan dalam status READ_ONLY dan tidak menerima file baru",
+      );
+    }
+
+    const resolved = await this.resolveDriveMigrationCandidates({
+      sourceProviderId: dto.sourceProviderId,
+      folderId: dto.folderId,
+      includeSubfolders: dto.includeSubfolders,
+      olderThanDays: dto.olderThanDays,
+    });
+
+    if (resolved.files.length === 0) {
+      throw new BadRequestException(
+        "Tidak ada berkas Dokumen Umum yang memenuhi filter untuk dimigrasikan",
+      );
+    }
+
+    const srcAdapter = await this.providerService.getAdapter(src.id);
+    const tgtAdapter = await this.providerService.getAdapter(tgt.id);
+
+    let migratedFiles = 0;
+    let failedFiles = 0;
+    let deletedSourceCount = 0;
+    let totalBytes = 0;
+    const errors: Array<{ fileId: number; name: string; error: string }> = [];
+
+    for (const f of resolved.files) {
+      try {
+        const buffer = await srcAdapter.download(f.storageKey);
+        const checksum = createHash("sha256").update(buffer).digest("hex");
+
+        await tgtAdapter.upload(f.storageKey, buffer, {
+          mimeType: f.mimeType || "application/octet-stream",
+        });
+
+        const meta = await tgtAdapter.getMetadata(f.storageKey);
+        if (!meta) {
+          throw new Error("Berkas tidak terdeteksi di penyimpanan tujuan setelah diunggah");
+        }
+        if (meta.size !== buffer.length) {
+          throw new Error(
+            `Ukuran berkas tidak cocok (sumber: ${buffer.length} B, tujuan: ${meta.size} B)`,
+          );
+        }
+
+        await this.prisma.main.driveFile.update({
+          where: { id: f.id },
+          data: {
+            providerId: tgt.id,
+            checksumSha256: checksum,
+          },
+        });
+
+        if (dto.deleteSourceAfterVerify) {
+          try {
+            await srcAdapter.delete(f.storageKey);
+            deletedSourceCount++;
+          } catch (delErr) {
+            this.logger.warn(
+              `Berkas Drive #${f.id} berhasil dipindah, tetapi gagal hapus salinan sumber: ${(delErr as Error).message}`,
+            );
+          }
+        }
+
+        migratedFiles++;
+        totalBytes += buffer.length;
+      } catch (err) {
+        failedFiles++;
+        errors.push({
+          fileId: f.id,
+          name: f.name || f.originalName,
+          error: (err as Error).message || "Gagal memigrasikan berkas",
+        });
+      }
+    }
+
+    return {
+      ok: failedFiles === 0,
+      totalFiles: resolved.files.length,
+      migratedFiles,
+      failedFiles,
+      totalBytes,
+      deletedSourceCount,
+      errors: errors.slice(0, 20),
+    };
   }
 }
