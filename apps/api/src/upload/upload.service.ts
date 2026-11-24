@@ -40,6 +40,7 @@ export function resolveUploadFolder(
   const name = (originalName || "").toLowerCase().trim();
 
   // 1. Kategori eksplisit & refType
+  if (c === "absensi" || c.includes("absen") || c.includes("attendance")) return "absensi";
   if (c === "foto-profil" || c.includes("profil") || c.includes("avatar") || c.includes("profile")) return "foto-profil";
   if (c === "foto-struk" || c.includes("struk") || c.includes("expense") || c.includes("reimburse") || c.includes("nota") || c.includes("biaya")) return "foto-struk";
   if (c === "penawaran" || c.includes("penawaran") || c.includes("quotation")) return "penawaran";
@@ -452,6 +453,11 @@ export class UploadService {
           value: { contains: idStr },
         },
         select: { key: true },
+      }),
+      // 17. Foto Absensi (Attendance)
+      (this.prisma.main as any).attendance.findFirst({
+        where: { OR: [{ checkInPhotoFileId: id }, { checkOutPhotoFileId: id }] },
+        select: { id: true },
       }),
     ]);
 

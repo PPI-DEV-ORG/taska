@@ -35,7 +35,7 @@ export class AttendanceController {
     if (!["super_admin", "bos", "admin", "hr"].includes(role)) {
       throw new BadRequestException("Hanya Super Admin, Bos, Admin, dan HR yang dapat mengubah data presensi");
     }
-    return this.attendance.updateAttendance(parseInt(idStr, 10), dto);
+    return this.attendance.updateAttendance(parseInt(idStr, 10), dto, user.id);
   }
 
   @Get("today")
@@ -47,13 +47,13 @@ export class AttendanceController {
   @Post("check-in")
   @Require("attendance", "C")
   checkIn(@CurrentUser() user: RequestUser, @Body() dto: CheckInDto) {
-    return this.attendance.checkIn(user.id, dto);
+    return this.attendance.checkIn(user.id, dto, user.role);
   }
 
   @Post("check-out")
   @Require("attendance", "C")
   checkOut(@CurrentUser() user: RequestUser, @Body() dto: CheckOutDto) {
-    return this.attendance.checkOut(user.id, dto);
+    return this.attendance.checkOut(user.id, dto, user.role);
   }
 
   @Post("manual")

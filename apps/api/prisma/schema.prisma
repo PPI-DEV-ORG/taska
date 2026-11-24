@@ -1964,20 +1964,39 @@ model DeliveryNoteItem {
 // ─────────────────────────────── HR: Absensi & Payroll ───────────────────────────────
 
 model Attendance {
-  id            Int       @id @default(autoincrement())
-  userId        Int
-  user          User      @relation("AttendanceUser", fields: [userId], references: [id], onDelete: Restrict)
-  date          DateTime  @db.Date
-  checkIn       DateTime?
-  checkOut      DateTime?
-  status        String    @default("HADIR")
-  overtimeHours Decimal   @default(0) @db.Decimal(6, 2)
-  notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                     Int       @id @default(autoincrement())
+  userId                 Int
+  user                   User      @relation("AttendanceUser", fields: [userId], references: [id], onDelete: Restrict)
+  date                   DateTime  @db.Date
+  checkIn                DateTime?
+  checkOut               DateTime?
+  status                 String    @default("HADIR")
+  overtimeHours          Decimal   @default(0) @db.Decimal(6, 2)
+  notes                  String?
+  checkInPhotoFileId     Int?
+  checkInLatitude        Float?
+  checkInLongitude       Float?
+  checkInAccuracy        Float?
+  checkInDistanceMeters  Float?
+  checkInLocationStatus  String?
+  checkInAddress         String?
+  checkOutPhotoFileId    Int?
+  checkOutLatitude       Float?
+  checkOutLongitude      Float?
+  checkOutAccuracy       Float?
+  checkOutDistanceMeters Float?
+  checkOutLocationStatus String?
+  checkOutAddress        String?
+  lateMinutes            Int       @default(0)
+  verificationStatus     String    @default("TERVERIFIKASI")
+  verifiedById           Int?
+  verifiedAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   @@unique([userId, date])
   @@index([date])
+  @@index([verificationStatus])
 }
 
 /// Data kepegawaian karyawan (master data karyawan). Akun login & jabatan ada di User.

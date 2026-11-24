@@ -16,6 +16,11 @@
         "backgroundColor": "#181716",
         "foregroundImage": "./assets/AKUNTRA.png"
       },
+      "permissions": [
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -38,6 +43,12 @@
         {
           "color": "#ffffff",
           "defaultChannel": "akuntra-realtime"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Akuntra memerlukan akses lokasi GPS untuk mencatat koordinat presensi kehadiran Anda."
         }
       ],
       "expo-secure-store",

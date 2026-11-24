@@ -1,10 +1,11 @@
 import React from "react";
 import { View, ScrollView, TextInput, Pressable, ActivityIndicator } from "react-native";
 import { Text } from "@/components/ui/text";
-import { Search, X, RefreshCw } from "lucide-react-native";
+import { Search, X, RefreshCw, Camera, MapPin, AlertTriangle } from "lucide-react-native";
 import { colors } from "@/tokens";
 import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
 import { Button } from "@/components/ui/button";
+import { formatLocationStatusLabel } from "@/utils/gps-location";
 
 interface TeamAttendanceTabProps {
   attSummary: any;
@@ -155,27 +156,35 @@ export function TeamAttendanceTab({
 
           {/* Status Pills */}
           <View className="flex-row items-center flex-wrap gap-1.5">
-            {["Semua", "HADIR", "IZIN", "SAKIT", "CUTI", "ALPHA"].map((st) => (
-              <Pressable
-                key={st}
-                onPress={() => setStatusFilter(st)}
-                className={
-                  statusFilter === st
-                    ? "bg-primary/20 border-primary rounded-md border px-2.5 py-1"
-                    : "bg-panel border-border rounded-md border px-2.5 py-1"
-                }
-              >
-                <Text
+            {["Semua", "HADIR", "IZIN", "SAKIT", "CUTI", "ALPHA", "PERLU_VERIFIKASI", "BELUM_PULANG"].map((st) => {
+              const label =
+                st === "PERLU_VERIFIKASI"
+                  ? `Perlu Verifikasi${attSummary?.needsVerification ? ` (${attSummary.needsVerification})` : ""}`
+                  : st === "BELUM_PULANG"
+                  ? `Belum Pulang${attSummary?.incompleteCheckout ? ` (${attSummary.incompleteCheckout})` : ""}`
+                  : st;
+              return (
+                <Pressable
+                  key={st}
+                  onPress={() => setStatusFilter(st)}
                   className={
                     statusFilter === st
-                      ? "text-primary text-xs font-semibold"
-                      : "text-muted-foreground text-xs"
+                      ? "bg-primary/20 border-primary rounded-md border px-2.5 py-1"
+                      : "bg-panel border-border rounded-md border px-2.5 py-1"
                   }
                 >
-                  {st}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text
+                    className={
+                      statusFilter === st
+                        ? "text-primary text-xs font-semibold"
+                        : "text-muted-foreground text-xs"
+                    }
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
       </View>
@@ -196,7 +205,8 @@ export function TeamAttendanceTab({
               <Text style={{ flex: 0.9, minWidth: 85 }} className="text-muted-foreground text-xs font-semibold tracking-wider">Jam Masuk</Text>
               <Text style={{ flex: 0.9, minWidth: 85 }} className="text-muted-foreground text-xs font-semibold tracking-wider">Jam Pulang</Text>
               <Text style={{ flex: 0.9, minWidth: 85 }} className="text-muted-foreground text-xs font-semibold tracking-wider">Jam Lembur</Text>
-              <Text style={{ flex: 2, minWidth: 160 }} className="text-muted-foreground text-xs font-semibold tracking-wider">Catatan / Keterangan</Text>
+              <Text style={{ flex: 1.4, minWidth: 135 }} className="text-muted-foreground text-xs font-semibold tracking-wider">Bukti & Lokasi</Text>
+              <Text style={{ flex: 1.6, minWidth: 140 }} className="text-muted-foreground text-xs font-semibold tracking-wider">Catatan / Keterangan</Text>
               <Text style={{ width: 80 }} className="text-muted-foreground text-xs font-semibold tracking-wider text-right">Aksi</Text>
             </View>
 
@@ -271,7 +281,48 @@ export function TeamAttendanceTab({
                   <Text style={{ flex: 0.9, minWidth: 85 }} className="text-xs text-foreground">
                     {Number(row.overtimeHours) > 0 ? `${row.overtimeHours} Jam` : "-"}
                   </Text>
-                  <Text style={{ flex: 2, minWidth: 160 }} className="text-xs text-muted-foreground pr-2" numberOfLines={1}>
+                  <View style={{ flex: 1.4, minWidth: 135 }} className="pr-2 gap-1">
+                    {(() => {
+                      const loc = formatLocationStatusLabel(row.checkInLocationStatus);
+                      const hasPhoto = Boolean(row.checkInPhotoFileId || row.checkOutPhotoFileId);
+                      const hasGps = row.checkInLatitude != null || row.checkOutLatitude != null;
+                      return (
+                        <>
+                          <View className="flex-row items-center gap-1.5 flex-wrap">
+                            {hasPhoto && (
+                              <View className="flex-row items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5">
+                                <Camera size={10} color={colors.primary} />
+                                <Text className="text-[10px] font-semibold text-primary">Foto</Text>
+                              </View>
+                            )}
+                            {hasGps && (
+                              <View className="flex-row items-center gap-0.5 rounded bg-blue-500/10 px-1.5 py-0.5">
+                                <MapPin size={10} color="#3B82F6" />
+                                <Text className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                                  {loc.label}
+                                </Text>
+                              </View>
+                            )}
+                            {!hasPhoto && !hasGps && (
+                              <Text className="text-[11px] text-muted-foreground">-</Text>
+                            )}
+                          </View>
+                          {row.verificationStatus === "PERLU_VERIFIKASI" && (
+                            <View className="flex-row items-center gap-1">
+                              <AlertTriangle size={10} color="#D97706" />
+                              <Text className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                Perlu Verifikasi
+                              </Text>
+                            </View>
+                          )}
+                          {row.verificationStatus === "DITOLAK" && (
+                            <Text className="text-[10px] font-semibold text-red-500">Ditolak</Text>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </View>
+                  <Text style={{ flex: 1.6, minWidth: 140 }} className="text-xs text-muted-foreground pr-2" numberOfLines={1}>
                     {row.notes || "-"}
                   </Text>
                   <View style={{ width: 80 }} className="items-end">
