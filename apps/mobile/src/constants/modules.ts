@@ -34,6 +34,7 @@ import {
   HandCoins,
   RefreshCw,
   HardDrive,
+  FolderOpen,
 } from "lucide-react-native";
 
 export type Role =
@@ -1233,6 +1234,7 @@ const N = {
   subscriptions: { key: "subscriptions", label: "Manajemen Langganan", short: "Langganan", href: "/subscriptions", icon: RefreshCw },
   contracts: { key: "contracts", label: "Manajemen Kontrak", short: "Kontrak", href: "/contracts", icon: FileSignature },
   fileManagement: { key: "file-management", label: "Manajemen File", short: "File", href: "/file-management", icon: HardDrive },
+  generalFiles: { key: "general-files", label: "Dokumen Umum", short: "Dokumen", href: "/general-files", icon: FolderOpen },
   stockView: { key: "stock", label: "Barang, Jasa & SN", short: "Stok", href: "/stock", icon: Boxes },
   invoices: { key: "invoices", label: "Faktur & Kwitansi", short: "Faktur", href: "/invoices", icon: Receipt },
   poClient: { key: "po-client", label: "Pesanan Penjualan (SO)", short: "SO", href: "/po-client", icon: FileCheck },
@@ -1254,27 +1256,27 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   super_admin: [
     N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
     N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-    N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+    N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.generalFiles, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
-  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.damage, N.reports, N.archive, N.audit],
-  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.damage, N.reports, N.archive, N.audit],
-  sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers, N.expenses, N.cashAdvances, N.hr, N.master],
-  pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.fixedAssets, N.maintenance, N.subscriptions, N.opname, N.damage, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.hr, N.master],
-  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.poClient, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.invoices, N.quotations, N.delivery, N.accounting, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.expenses, N.cashAdvances, N.opname, N.reports],
-  gudang: [N.dashboard, N.calendar, N.stock, N.fixedAssets, N.maintenance, N.receiving, N.delivery, N.opname, N.damage, N.expenses, N.cashAdvances, N.hr, N.master],
-  se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.delivery, N.expenses, N.cashAdvances, N.hr],
-  hr: [N.dashboard, N.calendar, N.hr, N.users, N.fixedAssets, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.pocReports, N.requests],
+  admin: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.generalFiles, N.damage, N.reports, N.archive, N.audit],
+  bos: [N.dashboard, N.calendar, N.approvals, N.users, N.master, N.leads, N.quotations, N.delivery, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.projects, N.requests, N.supplierPos, N.poClient, N.invoices, N.cashAdvances, N.accounting, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.generalFiles, N.damage, N.reports, N.archive, N.audit],
+  sales: [N.dashboard, N.calendar, N.leads, N.quotations, N.poClient, N.delivery, N.invoices, N.damage, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers, N.generalFiles, N.expenses, N.cashAdvances, N.hr, N.master],
+  pm: [N.dashboard, N.calendar, N.projects, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.generalFiles, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  teknisi: [N.dashboard, N.calendar, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.generalFiles, N.myProjects, N.tasks, N.requests, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  procurement: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.shipments, N.receiving, N.delivery, N.stockView, N.fixedAssets, N.maintenance, N.subscriptions, N.generalFiles, N.opname, N.damage, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.hr, N.master],
+  finance: [N.dashboard, N.calendar, N.approvals, N.requests, N.supplierPos, N.poClient, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.invoices, N.quotations, N.delivery, N.accounting, N.hr, N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.generalFiles, N.expenses, N.cashAdvances, N.opname, N.reports],
+  gudang: [N.dashboard, N.calendar, N.stock, N.fixedAssets, N.maintenance, N.generalFiles, N.receiving, N.delivery, N.opname, N.damage, N.expenses, N.cashAdvances, N.hr, N.master],
+  se: [N.dashboard, N.calendar, N.myProjects, N.tasks, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.fixedAssets, N.maintenance, N.subscriptions, N.generalFiles, N.delivery, N.expenses, N.cashAdvances, N.hr],
+  hr: [N.dashboard, N.calendar, N.hr, N.users, N.fixedAssets, N.generalFiles, N.expenses, N.cashAdvances, N.visitReports, N.maintenanceReports, N.pocReports, N.requests],
   auditor: [
     N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
     N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-    N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+    N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.generalFiles, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
     N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
   ],
   legal: [
-    N.dashboard, N.calendar, N.approvals, N.contracts, N.fileManagement, N.subscriptions, N.fixedAssets, N.maintenance, N.customers, N.projects, N.quotations, N.poClient, N.expenses, N.cashAdvances, N.hr, N.reports, N.archive,
+    N.dashboard, N.calendar, N.approvals, N.contracts, N.fileManagement, N.generalFiles, N.subscriptions, N.fixedAssets, N.maintenance, N.customers, N.projects, N.quotations, N.poClient, N.expenses, N.cashAdvances, N.hr, N.reports, N.archive,
   ],
 };
 
@@ -1283,7 +1285,7 @@ export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "p
 const ALL_NAV_ORDERED: NavItem[] = [
   N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
   N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
-  N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
+  N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.generalFiles, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
   N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
 ];
 
@@ -1334,6 +1336,7 @@ const CLIENT_MODULE_ALIASES: Record<string, string[]> = {
   subscriptions: ["subscriptions", "subscription", "subs"],
   contracts: ["contracts", "contract", "ctr"],
   "file-management": ["file-management", "fileManagement", "files", "storage"],
+  "general-files": ["general-files", "generalFiles", "drive"],
   stock: ["stock", "products", "serials", "movements", "warehouses"],
   shipments: ["shipments", "supplier-pos", "supplier_pos"],
 };
@@ -1360,6 +1363,8 @@ export const PERMISSION_ALIAS_TO_UI_KEY: Record<string, string> = {
   contract: "contracts",
   fileManagement: "file-management",
   "file-management": "file-management",
+  generalFiles: "general-files",
+  "general-files": "general-files",
   audit: "audit-log",
   attendance: "hr",
   payroll: "hr",

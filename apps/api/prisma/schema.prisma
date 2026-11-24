@@ -385,6 +385,8 @@ model User {
 
   refreshTokens         RefreshToken[]
   files                 File[]                  @relation("FileUploader")
+  driveFoldersCreated   DriveFolder[]           @relation("DriveFolderCreator")
+  driveFilesUploaded    DriveFile[]             @relation("DriveFileUploader")
   notifications         Notification[]
   ownedLeads            Lead[]                  @relation("LeadOwner")
   followUps             FollowUp[]
@@ -4085,7 +4087,8 @@ model FileStorageProvider {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @default(now()) @updatedAt
 
-  locations FileStorageLocation[]
+  locations  FileStorageLocation[]
+  driveFiles DriveFile[]
 
   @@map("file_storage_providers")
 }
@@ -4303,4 +4306,82 @@ model FileMigrationSchedule {
 
   @@index([enabled, nextRunAt])
   @@map("file_migration_schedules")
+}
+
+// ============================================================================
+// GENERAL FILE MANAGEMENT / COMPANY SHARED DRIVE (Terpisah dari Dokumen ERP)
+// ============================================================================
+
+model DriveFolder {
+  id           Int       @id @default(autoincrement())
+  parentId     Int?
+  parent       DriveFolder?  @relation("DriveFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     DriveFolder[] @relation("DriveFolderTree")
+  name         String    @db.VarChar(180)
+  description  String?   @db.Text
+  color        String?   @db.VarChar(20)
+  isRestricted Boolean   @default(false)
+  createdById  Int?
+  createdBy    User?     @relation("DriveFolderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  files       DriveFile[]
+  permissions DrivePermission[]
+
+  @@index([parentId, deletedAt])
+  @@index([name])
+  @@map("drive_folders")
+}
+
+model DriveFile {
+  id             Int       @id @default(autoincrement())
+  folderId       Int?
+  folder         DriveFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  name           String    @db.VarChar(255)
+  originalName   String    @db.VarChar(255)
+  extension      String?   @db.VarChar(32)
+  mimeType       String    @db.VarChar(160)
+  size           Int
+  storageKey     String    @db.VarChar(700)
+  providerId     Int?
+  provider       FileStorageProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  checksumSha256 String?   @db.VarChar(64)
+  description    String?   @db.Text
+  uploadedById   Int?
+  uploader       User?     @relation("DriveFileUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  permissions DrivePermission[]
+
+  @@index([folderId, deletedAt])
+  @@index([name])
+  @@index([extension])
+  @@index([providerId])
+  @@map("drive_files")
+}
+
+model DrivePermission {
+  id            Int       @id @default(autoincrement())
+  folderId      Int?
+  folder        DriveFolder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  fileId        Int?
+  file          DriveFile?   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  principalType String    @db.VarChar(16) // USER | ROLE
+  principalId   String    @db.VarChar(64)
+  canView       Boolean   @default(true)
+  canUpload     Boolean   @default(false)
+  canDownload   Boolean   @default(true)
+  canEdit       Boolean   @default(false)
+  canDelete     Boolean   @default(false)
+  grantedById   Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+
+  @@index([folderId, principalType, principalId])
+  @@index([fileId, principalType, principalId])
+  @@map("drive_permissions")
 }

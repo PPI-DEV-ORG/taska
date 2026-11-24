@@ -42,6 +42,7 @@ import { ProviderBrowseDialog } from "./provider-browse-dialog";
 import { MigrationDialog } from "./migration-dialog";
 import { ScheduleDialog } from "./schedule-dialog";
 import { FileDetailModal } from "./file-detail-modal";
+import { DriveExplorer } from "@/modules/drive/drive-explorer";
 import type {
   FileItem,
   FileOverview,
@@ -55,7 +56,7 @@ export function FileManagementScreen() {
   const { toast, user } = useApp();
 
   const [activeTab, setActiveTab] = React.useState<
-    "overview" | "files" | "orphans" | "providers" | "migration"
+    "overview" | "drive" | "files" | "orphans" | "providers" | "migration"
   >("overview");
 
   // State data
@@ -207,7 +208,7 @@ export function FileManagementScreen() {
     }
   };
 
-  const handleTabChange = (tab: "overview" | "files" | "orphans" | "providers" | "migration") => {
+  const handleTabChange = (tab: "overview" | "drive" | "files" | "orphans" | "providers" | "migration") => {
     setActiveTab(tab);
     setCurrentFolder(null);
     setFlatListView(false);
@@ -303,7 +304,8 @@ export function FileManagementScreen() {
 
   const TABS = [
     { value: "overview", label: "Ringkasan" },
-    { value: "files", label: "Semua Berkas", count: overview?.totalFiles },
+    { value: "drive", label: "Dokumen Umum" },
+    { value: "files", label: "Berkas ERP", count: overview?.totalFiles },
     { value: "orphans", label: "Berkas Lepas", count: overview?.orphanFiles },
     { value: "providers", label: "Penyimpanan Eksternal", count: providers.length },
     { value: "migration", label: "Migrasi & Jadwal", count: migrationJobs.length },
@@ -392,6 +394,19 @@ export function FileManagementScreen() {
               <RefreshCw size={14} color="#FFF" />
               <Text className="text-xs font-semibold text-white">Coba Muat Ulang</Text>
             </Button>
+          </View>
+        ) : null}
+
+        {/* TAB 0: DOKUMEN UMUM (Company Shared Drive - Manager Mode) */}
+        {activeTab === "drive" ? (
+          <View className="gap-3">
+            <View className="rounded-xl border border-primary/25 bg-primary/5 px-3.5 py-2.5 flex-row items-center gap-2">
+              <ShieldCheck size={16} color={colors.primary} />
+              <Text className="text-xs text-foreground flex-1">
+                Ruang penyimpanan <Text className="font-bold">Dokumen Umum (Company Shared Drive)</Text> terpisah sepenuhnya dari berkas transaksi modul ERP (Invoice, PO, SO, DO, dll).
+              </Text>
+            </View>
+            <DriveExplorer mode="manager" />
           </View>
         ) : null}
 

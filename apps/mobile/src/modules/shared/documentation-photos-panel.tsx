@@ -20,6 +20,7 @@ import { Text } from "@/components/ui/text";
 import { Input } from "@/components/ui/input";
 import { Panel } from "@/components/akuntra/basics";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { WebCameraModal } from "@/components/akuntra/camera-capture-modal";
 import { useApp } from "@/store/app-store";
 import { api, apiBase, uploadFile, downloadDocumentationPdf } from "@/services/api";
 import { colors } from "@/tokens";
@@ -83,6 +84,7 @@ export function DocumentationPhotosPanel({
 
   // Preview dialog for images
   const [previewPhoto, setPreviewPhoto] = React.useState<DocPhotoItem | null>(null);
+  const [webCameraOpen, setWebCameraOpen] = React.useState(false);
 
   const web = Platform.OS === "web";
   const fileInputImagesRef = React.useRef<HTMLInputElement | null>(null);
@@ -690,11 +692,21 @@ export function DocumentationPhotosPanel({
                   <Button
                     size="sm"
                     variant="outline"
-                    onPress={() => fileInputImagesRef.current?.click()}
+                    onPress={() => setWebCameraOpen(true)}
                     className="flex-row items-center gap-1.5 border-primary/40 bg-primary/5 hover:bg-primary/10"
                   >
-                    <ImageIcon size={14} color={colors.primary} />
-                    <Text className="text-xs font-semibold text-primary">Pilih Multiple Foto</Text>
+                    <Camera size={14} color={colors.primary} />
+                    <Text className="text-xs font-semibold text-primary">Ambil Foto (Kamera)</Text>
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onPress={() => fileInputImagesRef.current?.click()}
+                    className="flex-row items-center gap-1.5"
+                  >
+                    <ImageIcon size={14} color={colors.text} />
+                    <Text className="text-xs font-semibold">Pilih dari Galeri</Text>
                   </Button>
 
                   <Button
@@ -760,6 +772,15 @@ export function DocumentationPhotosPanel({
           ) : null}
         </View>
       </View>
+
+      {/* ── Modal Kamera Langsung (Web) ── */}
+      <WebCameraModal
+        visible={webCameraOpen}
+        onClose={() => setWebCameraOpen(false)}
+        onCapture={(photo) => {
+          if (photo.blob) addWebFiles([photo.blob]);
+        }}
+      />
 
       {/* ── Dialog Preview Foto Penuh ── */}
       <Dialog open={!!previewPhoto} onOpenChange={(op) => { if (!op) setPreviewPhoto(null); }}>

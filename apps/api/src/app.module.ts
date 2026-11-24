@@ -30,6 +30,7 @@ import { FixedAssetsModule } from "./fixed-assets/fixed-assets.module.js";
 import { SubscriptionsModule } from "./subscriptions/subscriptions.module.js";
 import { ContractsModule } from "./contracts/contracts.module.js";
 import { FileManagementModule } from "./file-management/file-management.module.js";
+import { DriveModule } from "./drive/drive.module.js";
 import { CalendarModule } from "./calendar/calendar.module.js";
 import { WhatsappModule } from "./whatsapp/whatsapp.module.js";
 import { HrModule } from "./hr/hr.module.js";
@@ -70,6 +71,7 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
     SubscriptionsModule,
     ContractsModule,
     FileManagementModule,
+    DriveModule,
     CalendarModule,
     WhatsappModule,
     HrModule,

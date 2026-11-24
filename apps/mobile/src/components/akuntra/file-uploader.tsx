@@ -1,12 +1,14 @@
 import * as React from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Image, Platform, Pressable, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, FileText, Paperclip, Trash2, Upload } from "lucide-react-native";
+import { Camera, Eye, FileText, Image as ImageIcon, Paperclip, Trash2, Upload } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { uploadFile } from "@/services/api";
+import { WebCameraModal, captureNativePhoto } from "./camera-capture-modal";
 
 export type UploadKind = "foto" | "dokumen" | "video" | "semua";
 
@@ -37,6 +39,7 @@ export type StagedFile = {
   size: string;
   uri?: string;
   blob?: Blob;
+  previewUri?: string;
   kind: "foto" | "dokumen" | "video";
 };
 
@@ -95,20 +98,65 @@ export function FileUploader({
   const { toast, offline } = useApp();
   const [staged, setStaged] = React.useState<StagedFile[]>([]);
   const [busy, setBusy] = React.useState(false);
+  const [cameraOpen, setCameraOpen] = React.useState(false);
+  const [previewItem, setPreviewItem] = React.useState<StagedFile | null>(null);
   const web = Platform.OS === "web";
   const prevLenRef = React.useRef(0);
+  // Cegah upload ganda saat autoFlush sudah mengunggah atau sedang mengunggah lalu parent memanggil flush()
+  const uploadedIdsRef = React.useRef<Map<number, number>>(new Map());
+  const uploadPromisesRef = React.useRef<Map<number, Promise<number | null>>>(new Map());
 
   const target = toUploadKind(kind);
 
-  async function flushOne(f: StagedFile): Promise<number | null> {
-    try {
-      const payload = f.blob ?? (f.uri ? { uri: f.uri, name: f.name, type: "application/octet-stream" } : null);
-      return await uploadFile(payload, f.kind, category);
-    } catch (e: any) {
-      toast(e?.message || "Gagal mengunggah file", "danger");
-      throw e;
+  // Apakah uploader ini mengizinkan gambar (sehingga tombol Kamera Langsung relevan)
+  const allowsPhoto = React.useMemo(() => {
+    if (kind === "video") return false;
+    if (allowedExtensions && allowedExtensions.length > 0) {
+      const exts = allowedExtensions.map((e) => e.replace(/^\./, "").toLowerCase());
+      return exts.some((e) => ["jpg", "jpeg", "png", "webp", "heic", "heif"].includes(e));
     }
-  }
+    return true;
+  }, [kind, allowedExtensions]);
+
+  // Bersihkan blob preview URL saat unmount
+  React.useEffect(() => {
+    return () => {
+      staged.forEach((it) => {
+        if (it.previewUri?.startsWith("blob:")) {
+          try {
+            URL.revokeObjectURL(it.previewUri);
+          } catch {}
+        }
+      });
+    };
+  }, [staged]);
+
+  const flushOne = React.useCallback(async (f: StagedFile): Promise<number | null> => {
+    const cachedId = uploadedIdsRef.current.get(f.id);
+    if (cachedId != null) return cachedId;
+
+    const inflight = uploadPromisesRef.current.get(f.id);
+    if (inflight) return inflight;
+
+    const task = (async (): Promise<number | null> => {
+      try {
+        const payload = f.blob ?? (f.uri ? { uri: f.uri, name: f.name, type: "application/octet-stream" } : null);
+        const fileId = await uploadFile(payload, f.kind, category);
+        if (fileId != null) {
+          uploadedIdsRef.current.set(f.id, fileId);
+        }
+        return fileId;
+      } catch (e: any) {
+        toast(e?.message || "Gagal mengunggah file", "danger");
+        throw e;
+      } finally {
+        uploadPromisesRef.current.delete(f.id);
+      }
+    })();
+
+    uploadPromisesRef.current.set(f.id, task);
+    return task;
+  }, [category, toast]);
 
   // notify parent of staged count after commit (never during render — parent setState
   // would fire while this child is rendering and React throws).
@@ -145,22 +193,48 @@ export function FileUploader({
       return false;
     }
 
+    let previewUri: string | undefined;
+    if (isImg) {
+      if (f.blob && typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+        try {
+          previewUri = URL.createObjectURL(f.blob);
+        } catch {}
+      } else if (f.uri) {
+        previewUri = f.uri;
+      }
+    }
+
     const entry: StagedFile = {
       id: Date.now() + prevLenRef.current,
       name: fileName,
       size: byteSize ? fmtSize(byteSize) : "",
       uri: f.uri,
       blob: f.blob,
+      previewUri,
       kind: detectedKind,
     };
     setStaged((prev) => {
+      if (!multiple) {
+        prev.forEach((it) => {
+          uploadedIdsRef.current.delete(it.id);
+          uploadPromisesRef.current.delete(it.id);
+          if (it.previewUri?.startsWith("blob:")) {
+            try {
+              URL.revokeObjectURL(it.previewUri);
+            } catch {}
+          }
+        });
+        prevLenRef.current = 1;
+        return [entry];
+      }
       prevLenRef.current = prev.length + 1;
       return [...prev, entry];
     });
     if (onFilePicked) {
       void onFilePicked({ name: entry.name, blob: entry.blob, uri: entry.uri });
     }
-    if (autoFlush) {
+    const shouldAutoFlush = autoFlush && (Boolean(onUploaded) || !onFilePicked);
+    if (shouldAutoFlush) {
       setBusy(true);
       void flushOne(entry)
         .then((fileId) => {
@@ -174,7 +248,17 @@ export function FileUploader({
   }
 
   function remove(id: number) {
-    setStaged((prev) => prev.filter((f) => f.id !== id));
+    uploadedIdsRef.current.delete(id);
+    uploadPromisesRef.current.delete(id);
+    setStaged((prev) => {
+      const targetItem = prev.find((f) => f.id === id);
+      if (targetItem?.previewUri?.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(targetItem.previewUri);
+        } catch {}
+      }
+      return prev.filter((f) => f.id !== id);
+    });
   }
 
   /** Unggah file staged ke server. Kembalikan fileId terakhir yang diunggah. */
@@ -191,7 +275,7 @@ export function FileUploader({
     } finally {
       setBusy(false);
     }
-  }, [staged]);
+  }, [staged, flushOne]);
 
   React.useEffect(() => {
     if (!handleRef) return;
@@ -232,8 +316,22 @@ export function FileUploader({
           anyStaged = true;
         }
       }
-      if (anyStaged && !autoFlush) {
+      if (anyStaged && !autoFlush && !onFilePicked) {
         toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function takePhotoNative() {
+    setBusy(true);
+    try {
+      const photo = await captureNativePhoto(toast);
+      if (!photo) return;
+      const ok = stage({ uri: photo.uri, name: photo.name, size: photo.size });
+      if (ok && !autoFlush && !onFilePicked) {
+        toast(offline ? "Foto disimpan di perangkat, dikirim saat tersambung" : "Foto kamera siap, akan diunggah saat disimpan");
       }
     } finally {
       setBusy(false);
@@ -242,6 +340,14 @@ export function FileUploader({
 
   function add() {
     void pickAndStage();
+  }
+
+  function openCamera() {
+    if (web) {
+      setCameraOpen(true);
+    } else {
+      void takePhotoNative();
+    }
   }
 
   const webInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -266,7 +372,7 @@ export function FileUploader({
         anyStaged = true;
       }
     }
-    if (anyStaged && !autoFlush) {
+    if (anyStaged && !autoFlush && !onFilePicked) {
       toast(offline ? "File disimpan di perangkat, dikirim saat tersambung" : "File siap, akan diunggah saat disimpan");
     }
   }
@@ -278,53 +384,114 @@ export function FileUploader({
         {required ? <Text className="text-danger text-sm"> *</Text> : null}
       </Text>
       {web ? (
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleWebDrop}
-          onClick={() => webInputRef.current?.click()}
-          className="border-border bg-panel/40 items-center gap-2 rounded-xl border border-dashed px-4 py-5 cursor-pointer"
-        >
-          <Upload size={20} color={colors.muted} />
-          <Text className="text-text-secondary text-center text-sm">Tarik file ke sini atau klik untuk memilih</Text>
-          <input
-            ref={(el) => { webInputRef.current = el; }}
-            type="file"
-            multiple={multiple}
-            accept={acceptProp ?? (kind === "semua" ? undefined : ACCEPT[toUploadKind(kind)])}
-            onChange={handleWebInput}
-            className="hidden"
-          />
-          <Text className="text-muted-foreground text-center text-[13px]">{hintProp ?? LIMIT[kind]}</Text>
-        </div>
+        <View className="gap-2">
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleWebDrop}
+            onClick={() => webInputRef.current?.click()}
+            className="border-border bg-panel/40 items-center gap-2 rounded-xl border border-dashed px-4 py-5 cursor-pointer"
+          >
+            <Upload size={20} color={colors.muted} />
+            <Text className="text-text-secondary text-center text-sm">Tarik file ke sini atau klik untuk memilih dari galeri/perangkat</Text>
+            <input
+              ref={(el) => { webInputRef.current = el; }}
+              type="file"
+              multiple={multiple}
+              accept={acceptProp ?? (kind === "semua" ? undefined : ACCEPT[toUploadKind(kind)])}
+              onChange={handleWebInput}
+              className="hidden"
+            />
+            <Text className="text-muted-foreground text-center text-[13px]">{hintProp ?? LIMIT[kind]}</Text>
+          </div>
+          {allowsPhoto ? (
+            <View className="flex-row flex-wrap gap-2">
+              <Button variant="outline" size="sm" onPress={openCamera} disabled={busy} className="gap-1.5">
+                <Camera size={15} color={colors.primary} />
+                <Text className="text-xs font-semibold">Ambil Foto (Kamera)</Text>
+              </Button>
+              <Button variant="outline" size="sm" onPress={() => webInputRef.current?.click()} disabled={busy} className="gap-1.5">
+                <ImageIcon size={15} color={colors.text} />
+                <Text className="text-xs font-medium">Pilih dari Galeri / File</Text>
+              </Button>
+            </View>
+          ) : null}
+        </View>
       ) : (
-        <Pressable
-          onPress={add}
-          className="border-border bg-panel/40 items-center gap-2 rounded-xl border border-dashed px-4 py-5"
-        >
+        <View className="border-border bg-panel/40 items-center gap-2 rounded-xl border border-dashed px-4 py-5">
           <Upload size={20} color={colors.muted} />
           <View className="flex-row flex-wrap justify-center gap-2">
-            <Button variant="outline" onPress={add} disabled={busy}>
-              <Camera size={16} color={colors.text} />
-              <Text>{busy ? "Memproses..." : "Ambil foto / pilih file"}</Text>
-            </Button>
-            <Button variant="outline" onPress={add} disabled={busy}>
-              <Paperclip size={16} color={colors.text} />
-              <Text>Pilih file</Text>
+            {allowsPhoto ? (
+              <Button variant="outline" size="sm" onPress={openCamera} disabled={busy} className="gap-1.5">
+                <Camera size={15} color={colors.primary} />
+                <Text className="text-xs font-semibold">{busy ? "Memproses..." : "Ambil Foto (Kamera)"}</Text>
+              </Button>
+            ) : null}
+            <Button variant="outline" size="sm" onPress={add} disabled={busy} className="gap-1.5">
+              <Paperclip size={15} color={colors.text} />
+              <Text className="text-xs font-medium">Pilih dari Galeri</Text>
             </Button>
           </View>
-          <Text className="text-muted-foreground text-center text-[13px]">{LIMIT[kind]}</Text>
-        </Pressable>
+          <Text className="text-muted-foreground text-center text-[13px]">{hintProp ?? LIMIT[kind]}</Text>
+        </View>
       )}
       {staged.map((f) => (
-        <View key={f.id} className="bg-card border-border flex-row items-center gap-3 rounded-lg border p-3">
-          <View className="bg-panel size-10 items-center justify-center rounded-md"><FileText size={18} color={colors.textSecondary} /></View>
-          <View className="flex-1">
+        <View key={f.id} className="bg-card border-border flex-row items-center gap-3 rounded-lg border p-2.5">
+          {f.previewUri ? (
+            <Pressable
+              onPress={() => setPreviewItem(f)}
+              className="size-12 rounded-md overflow-hidden border border-border bg-panel shrink-0 relative"
+            >
+              <Image source={{ uri: f.previewUri }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+            </Pressable>
+          ) : (
+            <View className="bg-panel size-10 items-center justify-center rounded-md shrink-0">
+              <FileText size={18} color={colors.textSecondary} />
+            </View>
+          )}
+          <View className="flex-1 min-w-0">
             <Text className="text-sm font-medium" numberOfLines={1}>{f.name}</Text>
-            <Text className="text-muted-foreground text-[13px]">{f.size || "siap dikirim"}</Text>
+            <Text className="text-muted-foreground text-[12px]">{f.size || "siap dikirim"}</Text>
           </View>
-          <Pressable onPress={() => remove(f.id)} hitSlop={10} className="size-10 items-center justify-center"><Trash2 size={16} color={colors.muted} /></Pressable>
+          {f.previewUri ? (
+            <Pressable onPress={() => setPreviewItem(f)} hitSlop={8} className="size-9 items-center justify-center rounded-lg bg-primary/10">
+              <Eye size={15} color={colors.primary} />
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => remove(f.id)} hitSlop={10} className="size-9 items-center justify-center">
+            <Trash2 size={16} color={colors.muted} />
+          </Pressable>
         </View>
       ))}
+
+      {/* Modal Kamera Langsung (Web) */}
+      <WebCameraModal
+        visible={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(photo) => {
+          const ok = stage({ name: photo.name, blob: photo.blob, size: photo.size });
+          if (ok && !autoFlush) {
+            toast(offline ? "Foto disimpan di perangkat, dikirim saat tersambung" : "Foto kamera siap, akan diunggah saat disimpan");
+          }
+        }}
+      />
+
+      {/* Modal Pratinjau Gambar Sebelum Upload */}
+      <Dialog open={Boolean(previewItem)} onOpenChange={(open) => { if (!open) setPreviewItem(null); }}>
+        <DialogContent className="sm:max-w-lg bg-card p-4 gap-3">
+          <DialogHeader>
+            <DialogTitle>{previewItem?.name || "Pratinjau Gambar"}</DialogTitle>
+          </DialogHeader>
+          {previewItem?.previewUri ? (
+            <View className="w-full h-80 bg-black/5 rounded-xl overflow-hidden border border-border items-center justify-center">
+              <Image
+                source={{ uri: previewItem.previewUri }}
+                style={{ width: "100%", height: "100%" }}
+                resizeMode="contain"
+              />
+            </View>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </View>
   );
 }

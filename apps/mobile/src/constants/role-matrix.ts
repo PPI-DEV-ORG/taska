@@ -32,10 +32,10 @@
  * (peran kustom tidak disentuh) — lihat SettingsService.upgradeRoleMatrix.
  */
 
-export const ROLE_MATRIX_VERSION = 14;
+export const ROLE_MATRIX_VERSION = 16;
 
 export const ROLE_MODULE_KEYS = [
-  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "maintenance", "fixed-assets", "subscriptions", "contracts", "file-management", "customers", "po-client",
+  "leads", "quotations", "surveys", "poc-reports", "visit-reports", "maintenance-reports", "maintenance", "fixed-assets", "subscriptions", "contracts", "file-management", "general-files", "customers", "po-client",
   "projects", "tasks", "delivery-notes",
   "purchase-requests", "supplier-pos", "supplier-bills", "shipments", "receiving", "stock", "opname", "damage-reports",
   "suppliers", "warehouses", "products",
@@ -57,6 +57,7 @@ const EMPLOYEE: Record<string, string> = {
   users: "L",
   products: "L",
   customers: "L",
+  "general-files": "MLCUAE",
 };
 
 const all = (actions: string) => Object.fromEntries(ROLE_MODULE_KEYS.map((k) => [k, actions]));

@@ -19,7 +19,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { FileManagementService, type CreateShareDto, type ListFilesQuery } from "./file-management.service.js";
 import { FileProviderService, type CreateProviderDto, type UpdateProviderDto } from "./provider.service.js";
-import { FileMigrationService, type StartMigrationDto } from "./migration.service.js";
+import { FileMigrationService, type StartDriveMigrationDto, type StartMigrationDto } from "./migration.service.js";
 import { FileSchedulerService, type CreateScheduleDto } from "./scheduler.service.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
@@ -207,6 +207,30 @@ export class FileManagementController {
       folder,
       olderThanDays: olderThanDays ? Number(olderThanDays) : undefined,
     });
+  }
+
+  @Get("migrations/drive/preview")
+  @Require("fileManagement", "L")
+  previewDriveMigration(
+    @Query("sourceProviderId", ParseIntPipe) sourceProviderId: number,
+    @Query("targetProviderId") targetProviderId?: string,
+    @Query("folderId") folderId?: string,
+    @Query("includeSubfolders") includeSubfolders?: string,
+    @Query("olderThanDays") olderThanDays?: string,
+  ) {
+    return this.migrationService.previewDriveMigration({
+      sourceProviderId,
+      targetProviderId: targetProviderId ? Number(targetProviderId) : undefined,
+      folderId,
+      includeSubfolders: includeSubfolders !== "false",
+      olderThanDays: olderThanDays ? Number(olderThanDays) : undefined,
+    });
+  }
+
+  @Post("migrations/drive")
+  @Require("fileManagement", "V")
+  migrateDriveFiles(@Body() dto: StartDriveMigrationDto, @CurrentUser() user: RequestUser) {
+    return this.migrationService.migrateDriveFiles(dto, user);
   }
 
   @Get("migrations")
