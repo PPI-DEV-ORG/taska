@@ -7,6 +7,7 @@ export const FINANCIAL_TYPES = new Set([
   "profit-loss",
   "income-statement",
   "balance-sheet",
+  "ppn-masukan",
   "cash-flow",
   "general-journal",
 ]);
@@ -254,27 +255,44 @@ export async function downloadReport({
     const token = getAccess();
     const params = new URLSearchParams({ format });
     if (reportDate) {
+      // Periode export = periode yang tampil di layar laporan
       const d = reportDate.slice(0, 10);
-      params.set("from", `${d}T00:00:00.000Z`);
-      params.set("to", `${d}T23:59:59.999Z`);
+      if (type === "balance-sheet") {
+        // Neraca: posisi per tanggal (saldo kumulatif sampai tanggal itu)
+        params.set("to", `${d}T23:59:59.999Z`);
+      } else if (type === "cash-flow") {
+        // Arus kas: awal bulan s/d tanggal laporan (sama dengan tab Arus Kas)
+        params.set("from", `${d.slice(0, 7)}-01T00:00:00.000Z`);
+        params.set("to", `${d}T23:59:59.999Z`);
+      } else {
+        params.set("from", `${d}T00:00:00.000Z`);
+        params.set("to", `${d}T23:59:59.999Z`);
+      }
     }
     const res = await fetch(`${apiBase()}/reports/${type}/export?${params.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${safeName}-${new Date().toISOString().slice(0, 10)}.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      toast(`Laporan ${title} berhasil diunduh (.${format})`);
+    if (!res.ok) {
+      // Server menjawab tapi gagal: tampilkan alasannya, jangan diam-diam membuat file cadangan yang berbeda isinya
+      const body = await res.json().catch(() => null);
+      toast(`Gagal mengunduh ${title}: ${body?.message ?? `HTTP ${res.status}`}`, "danger");
       return;
     }
-  } catch {}
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${safeName}-${new Date().toISOString().slice(0, 10)}.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast(`Laporan ${title} berhasil diunduh (.${format})`);
+    return;
+  } catch {
+    // Tidak bisa menghubungi server (offline): pakai cadangan dari data di layar
+    toast(`Server tidak terjangkau — ${title} dibuat dari data di layar`, "warning");
+  }
 
   const csvData = generateCsvByType(type, title, fin, data, approvals);
 

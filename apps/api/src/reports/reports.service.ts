@@ -3,7 +3,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { ApprovalsService } from "../approvals/approvals.service.js";
 import { MovementsService } from "../stock/movements.service.js";
 import { AccountingReportService } from "../accounting/accounting-report.service.js";
-import type { ReportData } from "./exporters.js";
+import { totalRow, type ReportData } from "./exporters.js";
 
 export type ReportQuery = {
   page?: string;
@@ -27,6 +27,7 @@ export const REPORT_TYPES = [
   "balance-sheet",
   "cash-flow",
   "general-journal",
+  "ppn-masukan",
   "delivery-notes",
   "stock",
   "expenses",
@@ -63,6 +64,8 @@ export class ReportsService {
         return this.balanceSheet(q);
       case "cash-flow":
         return this.cashFlow(q);
+      case "ppn-masukan":
+        return this.ppnMasukan(q);
       case "general-journal":
         return this.generalJournal(q);
       case "delivery-notes":
@@ -355,7 +358,7 @@ export class ReportsService {
               : `(Rp ${Math.abs(Number(a.amount)).toLocaleString("id-ID")})`,
           ])
         : [["4000", "Pendapatan Operasional (DPP Bersih)", "I. Pendapatan Usaha (DPP)", `Rp ${revDpp.toLocaleString("id-ID")}`]]),
-      ["=", "TOTAL PENDAPATAN BERSIH OPERASIONAL (DPP)", "Subtotal Pendapatan", `Rp ${revDpp.toLocaleString("id-ID")}`],
+      totalRow("", "TOTAL PENDAPATAN BERSIH OPERASIONAL (DPP)", "Subtotal Pendapatan", `Rp ${revDpp.toLocaleString("id-ID")}`),
       ...(cogsAccounts.length > 0
         ? cogsAccounts.map((a: any) => [
             a.code,
@@ -367,15 +370,15 @@ export class ReportsService {
             ["5101", "HPP Project (Pengadaan Barang & Material Proyek)", "II. Beban Pokok Penjualan (HPP)", "Rp 0"],
             ["5102", "HPP Retail (Harga Pokok Penjualan Barang Stok)", "II. Beban Pokok Penjualan (HPP)", "Rp 0"],
           ]),
-      ["=", "TOTAL BEBAN POKOK PENJUALAN (HPP)", "Subtotal HPP", `(Rp ${cogsTotal.toLocaleString("id-ID")})`],
-      ["=", `LABA KOTOR (GROSS PROFIT) — Margin ${grossMargin}`, "Subtotal Laba Kotor", `Rp ${grossProfit.toLocaleString("id-ID")}`],
+      totalRow("", "TOTAL BEBAN POKOK PENJUALAN (HPP)", "Subtotal HPP", `(Rp ${cogsTotal.toLocaleString("id-ID")})`),
+      totalRow("", `LABA KOTOR (GROSS PROFIT) — Margin ${grossMargin}`, "Subtotal Laba Kotor", `Rp ${grossProfit.toLocaleString("id-ID")}`),
       ...opexAccounts.map((a: any) => [
         a.code,
         a.name,
         "III. Beban Operasional (OPEX)",
         `(Rp ${Number(a.amount).toLocaleString("id-ID")})`,
       ]),
-      ["=", "TOTAL BEBAN OPERASIONAL (OPEX)", "Subtotal OPEX", `(Rp ${opexTotal.toLocaleString("id-ID")})`],
+      totalRow("", "TOTAL BEBAN OPERASIONAL (OPEX)", "Subtotal OPEX", `(Rp ${opexTotal.toLocaleString("id-ID")})`),
       ...otherRevAccounts.map((a: any) => [
         a.code,
         a.name,
@@ -388,7 +391,7 @@ export class ReportsService {
         "IV. Beban Diluar Usaha",
         `(Rp ${Number(a.amount).toLocaleString("id-ID")})`,
       ]),
-      ["=", `LABA BERSIH OPERASIONAL (NET PROFIT) — Margin ${netMargin}`, "Total Akhir", `Rp ${netProfit.toLocaleString("id-ID")}`],
+      totalRow("", `LABA BERSIH OPERASIONAL (NET PROFIT) — Margin ${netMargin}`, "Total Akhir", `Rp ${netProfit.toLocaleString("id-ID")}`),
     ];
 
     return {
@@ -399,6 +402,20 @@ export class ReportsService {
     };
   }
 
+  /** Label periode untuk catatan laporan. */
+  private periodLabel(q: ReportQuery, asOf = false): string {
+    // Batas periode dikirim frontend sebagai tanggal kalender dalam UTC (YYYY-MM-DDT00:00Z / T23:59Z).
+    // Format juga dalam UTC; dulu zona WIB (+7) membuat "s/d 24 Nov 23:59Z" tercetak "25 Nov".
+    const fmt = (v?: string) =>
+      v ? new Date(v).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }) : "";
+    if (asOf) return q.to || q.from ? `Per ${fmt(q.to || q.from)}` : `Per ${fmt(new Date().toISOString())}`;
+    if (q.from && q.to) return `Periode ${fmt(q.from)} s/d ${fmt(q.to)}`;
+    if (q.from) return `Sejak ${fmt(q.from)}`;
+    if (q.to) return `Sampai ${fmt(q.to)}`;
+    return "Semua periode";
+  }
+
+  // Nominal dikirim sebagai number: exporter memformatnya (Excel tetap angka & bisa dijumlah).
   private async balanceSheet(q: ReportQuery): Promise<ReportData> {
     const bs = await this.accountingReport.getBalanceSheet({ asOfDate: q.to || q.from });
     const assetsItems = bs.assets?.items || [];
@@ -420,28 +437,18 @@ export class ReportsService {
     const selisihPpn = ppnKeluaran - ppnMasukan;
 
     const rows: ReportData["rows"] = [
-      ...assetsItems.map((it: any) => [
-        it.code,
-        it.name,
-        `AKTIVA — ${(it.category || "ASET LANCAR").toUpperCase()}`,
-        `Rp ${Number(it.amount || 0).toLocaleString("id-ID")}`,
-      ]),
-      ["=", "TOTAL AKTIVA (ASET PERUSAHAAN)", "TOTAL AKTIVA", `Rp ${totalAset.toLocaleString("id-ID")}`],
+      ...assetsItems.map((it: any) => [it.code, it.name, `AKTIVA — ${(it.category || "ASET LANCAR").toUpperCase()}`, Number(it.amount || 0)]),
+      totalRow("", "TOTAL AKTIVA (ASET PERUSAHAAN)", "TOTAL AKTIVA", totalAset),
       ...liabItems.map((it: any) => [
         it.code,
         it.name,
         `PASIVA — ${(it.category || "KEWAJIBAN JANGKA PENDEK").toUpperCase()}`,
-        `Rp ${Number(it.amount || 0).toLocaleString("id-ID")}`,
+        Number(it.amount || 0),
       ]),
-      ["=", "SUBTOTAL KEWAJIBAN (LIABILITIES)", "SUBTOTAL KEWAJIBAN", `Rp ${totalKewajiban.toLocaleString("id-ID")}`],
-      ...eqItems.map((it: any) => [
-        it.code,
-        it.name,
-        "PASIVA — EKUITAS (MODAL & LABA DITAHAN)",
-        `Rp ${Number(it.amount || 0).toLocaleString("id-ID")}`,
-      ]),
-      ["=", "SUBTOTAL EKUITAS (MODAL)", "SUBTOTAL EKUITAS", `Rp ${totalEkuitas.toLocaleString("id-ID")}`],
-      ["=", "TOTAL PASIVA (KEWAJIBAN + EKUITAS)", "TOTAL PASIVA", `Rp ${totalPasiva.toLocaleString("id-ID")}`],
+      totalRow("", "SUBTOTAL KEWAJIBAN (LIABILITIES)", "SUBTOTAL KEWAJIBAN", totalKewajiban),
+      ...eqItems.map((it: any) => [it.code, it.name, "PASIVA — EKUITAS (MODAL & LABA DITAHAN)", Number(it.amount || 0)]),
+      totalRow("", "SUBTOTAL EKUITAS (MODAL)", "SUBTOTAL EKUITAS", totalEkuitas),
+      totalRow("", "TOTAL PASIVA (KEWAJIBAN + EKUITAS)", "TOTAL PASIVA", totalPasiva),
       [
         "PAJAK",
         selisihPpn > 0
@@ -450,15 +457,16 @@ export class ReportsService {
           ? "Posisi PPN DJP: PPN Lebih Bayar (Kompensasi)"
           : "Posisi PPN DJP: PPN Nihil",
         `PPN Keluaran Rp ${ppnKeluaran.toLocaleString("id-ID")} vs PPN Masukan Rp ${ppnMasukan.toLocaleString("id-ID")}`,
-        `Rp ${Math.abs(selisihPpn).toLocaleString("id-ID")}`,
+        Math.abs(selisihPpn),
       ],
     ];
 
     return {
-      title: "Laporan Posisi Keuangan / Neraca (Balance Sheet)",
+      title: "Laporan Posisi Keuangan - Neraca (Balance Sheet)",
       columns: ["Kode Akun", "Nama Akun Neraca", "Kelompok Pos", "Saldo (Rp)"],
-      note: `Total Aktiva: Rp ${totalAset.toLocaleString("id-ID")} | Total Pasiva: Rp ${totalPasiva.toLocaleString("id-ID")} | Status: ${isBalanced ? "SEIMBANG (BALANCED)" : `SELISIH Rp ${Math.abs(totalAset - totalPasiva).toLocaleString("id-ID")}`}`,
+      note: `${this.periodLabel(q, true)} | Total Aktiva: Rp ${totalAset.toLocaleString("id-ID")} | Total Pasiva: Rp ${totalPasiva.toLocaleString("id-ID")} | Status: ${isBalanced ? "SEIMBANG (BALANCED)" : `SELISIH Rp ${Math.abs(totalAset - totalPasiva).toLocaleString("id-ID")}`}`,
       rows,
+      wrapCols: [1],
     };
   }
 
@@ -480,35 +488,18 @@ export class ReportsService {
         item.pihak,
         item.project || "-",
         item.keterangan,
-        item.masuk > 0 ? `Rp ${Number(item.masuk).toLocaleString("id-ID")}` : "Rp 0",
-        item.keluar > 0 ? `Rp ${Number(item.keluar).toLocaleString("id-ID")}` : "Rp 0",
+        Number(item.masuk || 0),
+        Number(item.keluar || 0),
       ]),
-      [
-        "TOTAL",
-        "REKAP",
-        "RINGKASAN ARUS KAS",
-        "-",
-        "-",
-        `Arus Kas Bersih (Net Cash Flow): Rp ${netCash.toLocaleString("id-ID")}`,
-        `Rp ${totalIn.toLocaleString("id-ID")}`,
-        `Rp ${totalOut.toLocaleString("id-ID")}`,
-      ],
+      ["TOTAL", "", "TOTAL ARUS KAS", "", "", `Arus kas bersih (net): Rp ${netCash.toLocaleString("id-ID")}`, totalIn, totalOut],
     ];
 
     return {
-      title: "Laporan Arus Kas / Cash Flow Statement (Metode Langsung)",
-      columns: [
-        "Tanggal",
-        "No. Referensi",
-        "Kategori Arus Kas",
-        "Pihak Terkait",
-        "Project",
-        "Keterangan",
-        "Kas Masuk (Inflow)",
-        "Kas Keluar (Outflow)",
-      ],
-      note: `Total Kas Masuk: Rp ${totalIn.toLocaleString("id-ID")} | Total Kas Keluar: Rp ${totalOut.toLocaleString("id-ID")} | Arus Kas Bersih (Net Cash Flow): Rp ${netCash.toLocaleString("id-ID")}`,
+      title: "Laporan Arus Kas - Cash Flow (Metode Langsung)",
+      columns: ["Tanggal", "No. Referensi", "Kategori Arus Kas", "Pihak Terkait", "Project", "Keterangan", "Kas Masuk (Rp)", "Kas Keluar (Rp)"],
+      note: `${this.periodLabel(q)} | Total Kas Masuk: Rp ${totalIn.toLocaleString("id-ID")} | Total Kas Keluar: Rp ${totalOut.toLocaleString("id-ID")} | Arus Kas Bersih: Rp ${netCash.toLocaleString("id-ID")}`,
       rows,
+      wrapCols: [5],
     };
   }
 
@@ -535,38 +526,96 @@ export class ReportsService {
         l.accountCode,
         l.accountName || "-",
         l.memo || "-",
-        `Rp ${d.toLocaleString("id-ID")}`,
-        `Rp ${c.toLocaleString("id-ID")}`,
+        d,
+        c,
       ]);
     }
 
-    rows.push([
-      "TOTAL",
-      "-",
-      "-",
-      "-",
-      "-",
-      "TOTAL DEBIT & KREDIT",
-      totalDebit === totalKredit ? "SEIMBANG (BALANCED)" : "SELISIH",
-      `Rp ${totalDebit.toLocaleString("id-ID")}`,
-      `Rp ${totalKredit.toLocaleString("id-ID")}`,
-    ]);
+    const balanced = Math.abs(totalDebit - totalKredit) < 0.5;
+    rows.push(["TOTAL", "", "", "", "", "", balanced ? "SEIMBANG (BALANCED)" : "SELISIH", totalDebit, totalKredit]);
 
     return {
-      title: "Laporan Jurnal Umum (General Journal - Double Entry DB)",
-      columns: [
-        "No. Jurnal",
-        "Tanggal",
-        "No. Referensi",
-        "Project",
-        "Kode Akun",
-        "Nama Akun",
-        "Uraian / Keterangan",
-        "Debit (Rp)",
-        "Kredit (Rp)",
-      ],
-      note: `Total Debit: Rp ${totalDebit.toLocaleString("id-ID")} | Total Kredit: Rp ${totalKredit.toLocaleString("id-ID")} | Status: ${totalDebit === totalKredit ? "SEIMBANG (BALANCED)" : "SELISIH"}`,
+      title: "Laporan Jurnal Umum (General Journal)",
+      columns: ["No. Jurnal", "Tanggal", "No. Referensi", "Project", "Kode Akun", "Nama Akun", "Uraian / Keterangan", "Debit (Rp)", "Kredit (Rp)"],
+      note: `${this.periodLabel(q)} | Total Debit: Rp ${totalDebit.toLocaleString("id-ID")} | Total Kredit: Rp ${totalKredit.toLocaleString("id-ID")} | Status: ${balanced ? "SEIMBANG (BALANCED)" : "SELISIH"}`,
       rows,
+      wrapCols: [6],
+    };
+  }
+  /**
+   * Rekap PPN Masukan dari tagihan supplier (Invoice In) ber-PPN, untuk dicocokkan dengan daftar faktur masukan
+   * yang otomatis muncul di Coretax (faktur masukan tidak lagi diimpor pembeli). Kolom "Perlu dicek" menandai data
+   * yang belum lengkap: nomor faktur pajak kosong, NPWP supplier belum tercatat, supplier Non-PKP tapi ber-PPN.
+   */
+  private async ppnMasukan(q: ReportQuery): Promise<ReportData> {
+    const range = this.dateRange(q, "date");
+    const createdRange = this.dateRange(q, "createdAt");
+    const bills = await this.prisma.main.invoiceIn.findMany({
+      where: {
+        status: { not: "BATAL" },
+        ppn: { gt: 0 },
+        ...(q.from || q.to ? { OR: [range, { date: null, ...createdRange }] } : {}),
+      },
+      include: {
+        supplier: { select: { name: true, taxStatus: true, notes: true } },
+        supplierPo: { select: { number: true } },
+      },
+      orderBy: [{ date: "asc" }, { id: "asc" }],
+      take: MAX_ROWS,
+    });
+
+    const STATUS: Record<string, string> = { UNPAID: "Belum dibayar", PARTIAL: "Dibayar sebagian", PAID: "Lunas", OVERDUE: "Jatuh tempo" };
+    const npwpOf = (notes?: string | null) => {
+      const m = String(notes ?? "").match(/npwp\s*[:=]?\s*([0-9.\-]{15,22})/i);
+      const digits = m?.[1]?.replace(/\D/g, "") ?? "";
+      return digits.length >= 15 ? digits : "";
+    };
+
+    let totalDpp = 0;
+    let totalPpn = 0;
+    let needCheck = 0;
+    const rows: ReportData["rows"] = bills.map((b) => {
+      const ppn = Number(b.ppn || 0);
+      const total = Number(b.total || 0);
+      const dpp = Number(b.amount || 0) || Math.max(0, total - ppn);
+      totalDpp += dpp;
+      totalPpn += ppn;
+      const npwp = npwpOf(b.supplier?.notes);
+      const issues = [
+        !b.taxInvoiceNumber ? "No. faktur pajak kosong" : "",
+        !npwp ? "NPWP supplier belum tercatat" : "",
+        String(b.supplier?.taxStatus ?? "NON_PKP").toUpperCase() !== "PKP" ? "Supplier tercatat Non-PKP" : "",
+      ].filter(Boolean);
+      if (issues.length) needCheck++;
+      const d = b.date ?? b.createdAt;
+      return [
+        d ? new Date(d).toLocaleDateString("id-ID") : "-",
+        b.number || `#${b.id}`,
+        b.supplierPo?.number || "-",
+        b.supplier?.name || "-",
+        npwp || "-",
+        b.taxInvoiceNumber || "-",
+        dpp,
+        ppn,
+        STATUS[b.status] ?? b.status,
+        issues.length ? issues.join("; ") : "OK",
+      ];
+    });
+    rows.push(totalRow("TOTAL", "", "", `${bills.length} tagihan`, "", "", totalDpp, totalPpn, "", needCheck ? `${needCheck} perlu dicek` : "Semua OK"));
+
+    return {
+      title: "Rekap PPN Masukan (Pencocokan Coretax)",
+      columns: ["Tanggal", "No. Tagihan", "No. PO", "Supplier", "NPWP Supplier", "No. Faktur Pajak", "DPP (Rp)", "PPN (Rp)", "Status Bayar", "Perlu Dicek"],
+      note: [
+        this.periodLabel(q),
+        `${bills.length} tagihan ber-PPN`,
+        `Total DPP: Rp ${totalDpp.toLocaleString("id-ID")}`,
+        `Total PPN Masukan: Rp ${totalPpn.toLocaleString("id-ID")}`,
+        needCheck ? `${needCheck} tagihan perlu dilengkapi sebelum dicocokkan dengan Coretax` : "Semua tagihan lengkap",
+        "Cocokkan dengan menu Faktur Masukan di Coretax; faktur masukan dibuat oleh supplier, tidak diimpor",
+      ].join(" | "),
+      rows,
+      wrapCols: [9],
     };
   }
 

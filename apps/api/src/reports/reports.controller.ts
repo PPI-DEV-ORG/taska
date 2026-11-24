@@ -1,6 +1,7 @@
 import { Controller, ForbiddenException, Get, Param, Query, StreamableFile } from "@nestjs/common";
 import { ReportsService, REPORT_TYPES } from "./reports.service.js";
-import { exportMeta, toDocx, toPdf, toXlsx } from "./exporters.js";
+import { exportMeta, toDocx, toPdf, toXlsx, type ReportCompany } from "./exporters.js";
+import { SettingsService } from "../settings/settings.service.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { can, hasMenu, type Action } from "../rbac/permissions.js";
@@ -53,6 +54,7 @@ const REPORT_PERMISSION: Record<string, [string, Action]> = {
   "balance-sheet": ["accounting", "L"],
   "cash-flow": ["accounting", "L"],
   "general-journal": ["accounting", "L"],
+  "ppn-masukan": ["accounting", "L"], // rekap faktur pajak masukan untuk dicocokkan dengan Coretax
 };
 
 function canAccessReport(type: string, user?: RequestUser): boolean {
@@ -81,7 +83,10 @@ function assertReport(type: string, user?: RequestUser) {
 
 @Controller("reports")
 export class ReportsController {
-  constructor(private readonly service: ReportsService) {}
+  constructor(
+    private readonly service: ReportsService,
+    private readonly settings: SettingsService,
+  ) {}
 
   @Get()
   @Require("reports", "L")
@@ -106,8 +111,11 @@ export class ReportsController {
     const data = redactReport(type, await this.service.build(type, q), user);
     const format = q.format ?? "xlsx";
     const meta = exportMeta(format, data.title);
+    // Kop laporan dari profil perusahaan (Pengaturan); laporan tetap bisa diunduh walau profil gagal dimuat
+    const profile = await this.settings.getCompanyProfile().catch(() => null);
+    const company: ReportCompany | undefined = profile ? { name: profile.name, address: profile.address, npwp: profile.npwp } : undefined;
     const buffer =
-      format === "xlsx" ? await toXlsx(data) : format === "pdf" ? await toPdf(data) : await toDocx(data);
+      format === "xlsx" ? await toXlsx(data, company) : format === "pdf" ? await toPdf(data, company) : await toDocx(data, company);
     return new StreamableFile(buffer, {
       type: meta.mime,
       disposition: `attachment; filename="${meta.filename}"`,

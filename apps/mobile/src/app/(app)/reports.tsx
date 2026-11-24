@@ -666,13 +666,12 @@ export default function ReportsScreen() {
           efakturType: "keluaran",
         },
         {
-          type: "efaktur-masukan",
-          title: "Export CSV E-Faktur DJP (Pajak Masukan)",
-          desc: "Ekspor data faktur pajak masukan dari PO pemasok & pengadaan barang untuk kredit pajak SPT Masa aplikasi e-Faktur DJP.",
+          // Coretax: faktur masukan dibuat supplier & otomatis muncul di Coretax -> yang dibutuhkan rekap untuk dicocokkan
+          type: "ppn-masukan",
+          title: "Rekap PPN Masukan (Pencocokan Coretax)",
+          desc: "Rekap tagihan supplier ber-PPN: no. faktur pajak, NPWP, DPP & PPN, plus tanda data yang perlu dilengkapi. Cocokkan dengan menu Faktur Masukan di Coretax DJP.",
           stat: `PPN Masukan: ${rupiah(fin.balanceSheet.assets.ppnMasukan || 0)} · Kredit Pajak Pembelian`,
           badge: "Pajak DJP",
-          isEfaktur: true,
-          efakturType: "masukan",
         },
       );
     }
