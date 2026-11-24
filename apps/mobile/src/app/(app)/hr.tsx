@@ -9,6 +9,7 @@ import {
   Users,
   Settings,
   Plus,
+  MessageSquare,
 } from "lucide-react-native";
 import { useApp } from "@/store/app-store";
 import { api, uploadFile } from "@/services/api";
@@ -28,6 +29,7 @@ import { SalarySlipDialog } from "@/modules/hr/components/salary-slip-dialog";
 import { ManualAttendanceDialog } from "@/modules/hr/components/manual-attendance-dialog";
 import { AttendanceDetailDialog } from "@/modules/hr/components/attendance-detail-dialog";
 import { ScheduleSettingsDialog } from "@/modules/hr/components/schedule-settings-dialog";
+import { WhatsappDialog } from "@/components/akuntra/whatsapp-dialog";
 
 export default function HrScreen() {
   const { user, toast } = useApp();
@@ -77,6 +79,7 @@ export default function HrScreen() {
 
   // Settings Modal (Work Schedule & Overtime)
   const [scheduleModalOpen, setScheduleModalOpen] = React.useState(false);
+  const [waModalOpen, setWaModalOpen] = React.useState(false);
   const [workStartTime, setWorkStartTime] = React.useState("08:00");
   const [workEndTime, setWorkEndTime] = React.useState("17:00");
   const [lateTolerance, setLateTolerance] = React.useState("15");
@@ -585,7 +588,7 @@ export default function HrScreen() {
           showRefresh={false}
           action={
             activeTab === "team-attendance" ? (
-              <View className="flex-row flex-wrap items-center gap-1.5 sm:gap-2">
+              <>
                 {isSuperAdminOrBos && (
                   <Button
                     size="sm"
@@ -605,6 +608,17 @@ export default function HrScreen() {
                 {isFinanceOrAdmin && (
                   <Button
                     size="sm"
+                    variant="outline"
+                    onPress={() => setWaModalOpen(true)}
+                    className="gap-1.5 h-8 px-2.5 sm:h-9 sm:px-3"
+                  >
+                    <MessageSquare size={14} color="#22c55e" />
+                    <Text className="text-xs font-semibold text-foreground">Notifikasi WA</Text>
+                  </Button>
+                )}
+                {isFinanceOrAdmin && (
+                  <Button
+                    size="sm"
                     onPress={() => setManualModalOpen(true)}
                     className="gap-1.5 h-8 px-2.5 sm:h-9 sm:px-3"
                   >
@@ -614,14 +628,13 @@ export default function HrScreen() {
                     </Text>
                   </Button>
                 )}
-              </View>
+              </>
             ) : null
           }
         />
 
         {/* Tab Switcher - Identik dengan Buku Besar & COA */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="w-full">
-          <View className="bg-panel border-border/80 flex-row items-center rounded-2xl border p-1.5 gap-1.5">
+        <View className="bg-panel border-border/80 flex-row flex-wrap items-center rounded-2xl border p-1.5 gap-1.5 w-full">
             {[
               { id: "my-attendance", label: "Absensi Saya", icon: UserCheck, count: null },
               {
@@ -660,7 +673,7 @@ export default function HrScreen() {
                   <Pressable
                     key={t.id}
                     onPress={() => setActiveTab(t.id as TabType)}
-                    className={`flex-row items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+                    className={`flex-row items-center gap-1.5 px-3 py-2 sm:px-4 rounded-xl transition-all ${
                       active ? "bg-primary shadow-sm" : "hover:bg-card/60"
                     }`}
                   >
@@ -690,8 +703,7 @@ export default function HrScreen() {
                   </Pressable>
                 );
               })}
-          </View>
-        </ScrollView>
+        </View>
 
         {/* ──────────────── TAB 1: ABSENSI SAYA ──────────────── */}
         {activeTab === "my-attendance" && (
@@ -863,6 +875,9 @@ export default function HrScreen() {
         savingSchedule={savingSchedule}
         onSave={handleSaveSchedule}
       />
+      {isFinanceOrAdmin ? (
+        <WhatsappDialog open={waModalOpen} onOpenChange={setWaModalOpen} initialTab="attendance" />
+      ) : null}
     </ScrollView>
   );
 }

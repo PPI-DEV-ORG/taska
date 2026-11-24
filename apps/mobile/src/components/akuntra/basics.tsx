@@ -35,7 +35,7 @@ export function Panel({
               {subtitle ? <Text className="text-muted-foreground text-xs mt-0.5">{subtitle}</Text> : null}
             </View>
           </View>
-          {right ? <View className="self-start sm:self-auto shrink-0 flex-row flex-wrap items-center gap-1.5">{right}</View> : null}
+          {right ? <View className="w-full sm:w-auto max-w-full flex-row flex-wrap items-center gap-1.5">{right}</View> : null}
         </View>
       ) : null}
       <View className={pad ? "p-4 sm:p-5" : ""}>{children}</View>
@@ -132,7 +132,7 @@ export function PageHeader({
           {subtitle ? <Text className="text-text-secondary text-sm" numberOfLines={2}>{subtitle}</Text> : null}
           {status ? <View className="mt-1 self-start"><StatusBadge status={status} /></View> : null}
         </View>
-        <View className="w-full sm:w-auto flex-row flex-wrap items-center gap-2">
+        <View className="w-full sm:w-auto max-w-full flex-row flex-wrap items-center gap-2">
           {showRefresh ? (
             <Button variant="outline" size="sm" disabled={refreshing} onPress={handleRefresh} className="h-9">
               <RefreshCw size={14} color={colors.text} />

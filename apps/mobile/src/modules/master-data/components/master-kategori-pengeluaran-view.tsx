@@ -50,7 +50,7 @@ export function MasterKategoriPengeluaranView({
         title="Master Kategori Pengeluaran & Biaya"
         subtitle={`${data.expenseCategories?.length || 0} pos biaya operasional (Dikelola Finance)`}
         action={
-          <View className="flex-row gap-2">
+          <View className="flex-row flex-wrap items-center gap-2 max-w-full">
             <Button variant="outline" size="sm" onPress={onBack}>
               <ArrowLeft size={15} color={colors.text} />
               <Text className="text-xs">Kembali</Text>

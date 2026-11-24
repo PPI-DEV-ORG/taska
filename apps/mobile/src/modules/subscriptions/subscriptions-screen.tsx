@@ -384,7 +384,7 @@ export function SubscriptionsScreen({
           showRefresh
           onRefresh={refreshAll}
           action={
-            <View className="flex-row flex-wrap items-center gap-2">
+            <>
               <Button
                 variant="outline"
                 size="sm"
@@ -404,7 +404,7 @@ export function SubscriptionsScreen({
                   <Text className="text-xs font-semibold text-white">Daftarkan Langganan</Text>
                 </Button>
               ) : null}
-            </View>
+            </>
           }
         />
 

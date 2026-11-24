@@ -755,7 +755,7 @@ export function DocumentationPhotosPanel({
                 if (list?.length) addWebFiles(Array.from(list));
               }}
               onClick={() => fileInputImagesRef.current?.click()}
-              className="border-border/80 bg-background/50 hover:bg-background/80 items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 cursor-pointer transition-colors"
+              className="border-border/80 bg-background/50 hover:bg-background/80 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 cursor-pointer transition-colors"
             >
               <View className="size-10 rounded-full bg-primary/10 items-center justify-center">
                 <Upload size={20} color={colors.primary} />

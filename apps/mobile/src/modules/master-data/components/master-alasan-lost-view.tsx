@@ -50,7 +50,7 @@ export function MasterAlasanLostView({
         title="Master Alasan Lost (Gagal Deal)"
         subtitle={`${data.lostReasons?.length || 0} alasan rujukan saat lead gagal (Dikelola Sales)`}
         action={
-          <View className="flex-row gap-2">
+          <View className="flex-row flex-wrap items-center gap-2 max-w-full">
             <Button variant="outline" size="sm" onPress={onBack}>
               <ArrowLeft size={15} color={colors.text} />
               <Text className="text-xs">Kembali</Text>

@@ -68,7 +68,7 @@ export function MasterJenisTransaksiView({
         title="Jenis Transaksi / Peluang Lead"
         subtitle={`${items.length || 0} kategori kesepakatan bisnis (Dikelola Sales)`}
         action={
-          <View className="flex-row gap-2">
+          <View className="flex-row flex-wrap items-center gap-2 max-w-full">
             <Button variant="outline" size="sm" onPress={onBack}>
               <ArrowLeft size={15} color={colors.text} />
               <Text className="text-xs">Kembali</Text>

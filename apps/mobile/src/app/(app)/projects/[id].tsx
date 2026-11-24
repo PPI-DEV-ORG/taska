@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable, ScrollView } from "react-native";
+import { View, Pressable } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Check,
@@ -361,7 +361,7 @@ export default function ProjectDetailScreen() {
         status={project.status}
         onRefresh={loadRequirements}
         action={
-          <View className="flex-row flex-wrap items-center gap-2">
+          <>
             <Button size="sm" variant="outline" onPress={() => setEditProjectOpen(true)}>
               <Pencil size={14} color={colors.text} />
               <Text>Ubah</Text>
@@ -374,12 +374,12 @@ export default function ProjectDetailScreen() {
                 <Text>Selesaikan Proyek</Text>
               </Button>
             ) : null}
-          </View>
+          </>
         }
       />
 
       {/* Tabs Menu */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
+      <View className="flex-row flex-wrap items-center gap-2 w-full">
         {TABS.map((tab) => (
           <Chip
             key={tab}
@@ -388,7 +388,7 @@ export default function ProjectDetailScreen() {
             onPress={() => setActiveTab(tab)}
           />
         ))}
-      </ScrollView>
+      </View>
 
       {/* Tab 1: Ringkasan */}
       {activeTab === "Ringkasan" && (

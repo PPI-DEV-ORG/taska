@@ -105,7 +105,7 @@ export function MyAttendanceTab({
   handleCheckIn,
   handleCheckOut,
 }: MyAttendanceTabProps) {
-  const { toast } = useApp();
+  const { toast, user } = useApp();
   const [gps, setGps] = React.useState<GpsSnapshot | null>(null);
   const [gpsLoading, setGpsLoading] = React.useState(false);
   const [gpsError, setGpsError] = React.useState<string | null>(null);
@@ -222,6 +222,14 @@ export function MyAttendanceTab({
       ? officeDistanceMeters <= (Number(attSettings?.officeRadiusMeters) || 150)
       : null;
 
+  const userRoleUpper = String(user?.role || "").toUpperCase();
+  const fieldRoles: string[] = Array.isArray(attSettings?.fieldRoles)
+    ? attSettings.fieldRoles.map((r: unknown) => String(r).toUpperCase())
+    : ["SALES", "SE", "TEKNISI"];
+  const isFieldRole = fieldRoles.includes(userRoleUpper);
+  const isOutsideOffice = withinOfficeRadius === false && !isFieldRole;
+  const requiresCheckInNote = isFieldRole || isOutsideOffice;
+
   const submitAction = async (mode: "in" | "out") => {
     let activeGps = gps;
     if (!activeGps) {
@@ -237,6 +245,15 @@ export function MyAttendanceTab({
     if (requirePhoto && !capturedPhoto) {
       toast(
         `Ambil foto langsung dari kamera terlebih dahulu sebelum ${mode === "in" ? "Check-In" : "Check-Out"}.`,
+        "danger",
+      );
+      return;
+    }
+    if (mode === "in" && requiresCheckInNote && checkInNote.trim().length < 5) {
+      toast(
+        isFieldRole
+          ? "Role lapangan (Sales/Presales/Teknisi) wajib mengisi keterangan aktivitas & klien/PIC yang ditemui (min. 5 karakter)."
+          : "Anda berada di luar radius kantor. Wajib mengisi alasan Remote Working / penugasan luar kantor (min. 5 karakter).",
         "danger",
       );
       return;
@@ -352,13 +369,13 @@ export function MyAttendanceTab({
                 }`}
               >
                 {/* 1. Kartu GPS Otomatis */}
-                <View className="rounded-xl border border-border/80 bg-card p-3.5 gap-2.5">
-                  <View className="flex-row items-center justify-between gap-2 flex-wrap">
-                    <View className="flex-row items-center gap-2">
-                      <View className="rounded-lg p-1.5 bg-primary/10">
+                <View className="rounded-xl border border-border/80 bg-card p-3.5 gap-2.5 overflow-hidden">
+                  <View className="flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 w-full">
+                    <View className="flex-row items-center gap-2 flex-1 min-w-0">
+                      <View className="rounded-lg p-1.5 bg-primary/10 shrink-0">
                         <MapPin size={16} color={colors.primary} />
                       </View>
-                      <View>
+                      <View className="flex-1 min-w-0">
                         <Text className="text-xs font-bold text-foreground">
                           Lokasi GPS Otomatis {requireGps ? "(Wajib)" : "(Opsional)"}
                         </Text>
@@ -372,7 +389,7 @@ export function MyAttendanceTab({
                       variant="outline"
                       onPress={() => void fetchGps()}
                       disabled={gpsLoading}
-                      className="h-8 px-2.5 gap-1.5"
+                      className="h-8 px-2.5 gap-1.5 self-start sm:self-auto shrink-0"
                     >
                       {gpsLoading ? (
                         <ActivityIndicator size="small" color={colors.primary} />
@@ -481,13 +498,13 @@ export function MyAttendanceTab({
                 </View>
 
                 {/* 2. Kartu Foto Langsung (Kamera Only — Tanpa Galeri) */}
-                <View className="rounded-xl border border-border/80 bg-card p-3.5 gap-3">
-                  <View className="flex-row items-center justify-between gap-2 flex-wrap">
-                    <View className="flex-row items-center gap-2">
-                      <View className="rounded-lg p-1.5 bg-primary/10">
+                <View className="rounded-xl border border-border/80 bg-card p-3.5 gap-3 overflow-hidden">
+                  <View className="flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 w-full">
+                    <View className="flex-row items-center gap-2 flex-1 min-w-0">
+                      <View className="rounded-lg p-1.5 bg-primary/10 shrink-0">
                         <Camera size={16} color={colors.primary} />
                       </View>
-                      <View>
+                      <View className="flex-1 min-w-0">
                         <Text className="text-xs font-bold text-foreground">
                           Foto Bukti Langsung {requirePhoto ? "(Wajib)" : "(Opsional)"}
                         </Text>
@@ -500,7 +517,7 @@ export function MyAttendanceTab({
                       size="sm"
                       variant={capturedPhoto ? "outline" : "default"}
                       onPress={() => void handleOpenCamera()}
-                      className="h-8 px-3 gap-1.5"
+                      className="h-8 px-3 gap-1.5 self-start sm:self-auto shrink-0"
                     >
                       {capturedPhoto ? (
                         <RotateCcw size={13} color={colors.text} />
@@ -563,13 +580,32 @@ export function MyAttendanceTab({
                 {!todayAtt?.checkIn ? (
                   <>
                     <FormField
-                      label="Catatan Check-In (Opsional)"
-                      hint="Lokasi kerja, dinas, atau informasi penting lainnya"
+                      label={
+                        isFieldRole
+                          ? "Keterangan Aktivitas & Klien / PIC yang Ditemui (Wajib - KPI)"
+                          : isOutsideOffice
+                            ? "Alasan Remote Working / Luar Kantor (Wajib)"
+                            : "Catatan Check-In (Opsional)"
+                      }
+                      required={requiresCheckInNote}
+                      hint={
+                        isFieldRole
+                          ? "Role lapangan bebas lokasi, namun wajib mencatat klien/perusahaan/PIC yang ditemui atau lokasi pekerjaan."
+                          : isOutsideOffice
+                            ? "Lokasi Anda di luar radius kantor. Tulis alasan jelas (mis. Remote Working, WFH, atau penugasan khusus)."
+                            : "Lokasi kerja, dinas, atau informasi penting lainnya"
+                      }
                     >
                       <Input
                         value={checkInNote}
                         onChangeText={setCheckInNote}
-                        placeholder="Contoh: Kantor pusat, site proyek..."
+                        placeholder={
+                          isFieldRole
+                            ? "Contoh: Kunjungan PT ABC bertemu Bpk. Budi (Presentasi produk / Survey CCTV)"
+                            : isOutsideOffice
+                              ? "Contoh: Remote Working / WFH — mengerjakan laporan bulanan"
+                              : "Contoh: Kantor pusat, site proyek..."
+                        }
                       />
                     </FormField>
                     <Button

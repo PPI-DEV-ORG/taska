@@ -84,7 +84,7 @@ export function TodayAgendaCard({ refreshKey }: { refreshKey?: number }) {
         title="Agenda & Jadwal Hari Ini"
         subtitle={dateStr}
         right={
-          <View className="flex-row flex-wrap items-center gap-2">
+          <>
             {canViewAll ? (
               <View className="flex-row items-center bg-muted/50 rounded-lg p-0.5 border border-border/40">
                 <Pressable
@@ -154,7 +154,7 @@ export function TodayAgendaCard({ refreshKey }: { refreshKey?: number }) {
               <Plus size={14} color="#fff" />
               <Text className="text-xs">Buat Agenda</Text>
             </Button>
-          </View>
+          </>
         }
       >
         {todayItems.length === 0 ? (

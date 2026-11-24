@@ -468,7 +468,7 @@ export function MaintenanceScreen() {
           subtitle="Manajemen pemeliharaan, servis berkala, perbaikan aset operasional & Work Order"
           onRefresh={loadData}
           action={
-            <View className="flex-row flex-wrap items-center gap-2">
+            <>
               <Button
                 variant="outline"
                 size="sm"
@@ -488,7 +488,7 @@ export function MaintenanceScreen() {
                 }}
               >
                 <CalendarDays size={14} color={colors.primary} />
-                <Text className="text-xs">+ Rencana Servis</Text>
+                <Text className="text-xs">Rencana Servis</Text>
               </Button>
               <Button
                 variant="outline"
@@ -497,7 +497,7 @@ export function MaintenanceScreen() {
                 onPress={() => setShowRequestDialog(true)}
               >
                 <AlertTriangle size={14} color={colors.warning} />
-                <Text className="text-xs">+ Lapor Kerusakan</Text>
+                <Text className="text-xs">Lapor Kerusakan</Text>
               </Button>
               <Button
                 size="sm"
@@ -508,9 +508,9 @@ export function MaintenanceScreen() {
                 }}
               >
                 <Plus size={14} color="#fff" />
-                <Text className="text-xs text-white">+ Buat Work Order</Text>
+                <Text className="text-xs text-white">Buat Work Order</Text>
               </Button>
-            </View>
+            </>
           }
         />
 
@@ -603,40 +603,38 @@ export function MaintenanceScreen() {
                   </View>
                 </View>
 
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View className="flex-row gap-1">
-                    {[
-                      { value: "ALL", label: "Semua Status" },
-                      { value: "DRAFT", label: "Draft" },
-                      { value: "PENDING_APPROVAL", label: "Menunggu Approval" },
-                      { value: "APPROVED", label: "Disetujui" },
-                      { value: "ASSIGNED", label: "Ditugaskan" },
-                      { value: "IN_PROGRESS", label: "Dikerjakan" },
-                      { value: "COMPLETED", label: "Selesai" },
-                      { value: "VERIFIED", label: "Terverifikasi" },
-                      { value: "CLOSED", label: "Ditutup" },
-                    ].map((st) => {
-                      const active = statusFilter === st.value;
-                      return (
-                        <Pressable
-                          key={st.value}
-                          onPress={() => setStatusFilter(st.value)}
-                          className={`rounded-lg px-2.5 py-1.5 ${
-                            active ? "bg-primary" : "bg-muted/40 hover:bg-muted"
+                <View className="flex-row flex-wrap gap-1.5 w-full">
+                  {[
+                    { value: "ALL", label: "Semua Status" },
+                    { value: "DRAFT", label: "Draft" },
+                    { value: "PENDING_APPROVAL", label: "Menunggu Approval" },
+                    { value: "APPROVED", label: "Disetujui" },
+                    { value: "ASSIGNED", label: "Ditugaskan" },
+                    { value: "IN_PROGRESS", label: "Dikerjakan" },
+                    { value: "COMPLETED", label: "Selesai" },
+                    { value: "VERIFIED", label: "Terverifikasi" },
+                    { value: "CLOSED", label: "Ditutup" },
+                  ].map((st) => {
+                    const active = statusFilter === st.value;
+                    return (
+                      <Pressable
+                        key={st.value}
+                        onPress={() => setStatusFilter(st.value)}
+                        className={`rounded-lg px-2.5 py-1.5 ${
+                          active ? "bg-primary" : "bg-muted/40 hover:bg-muted"
+                        }`}
+                      >
+                        <Text
+                          className={`text-xs font-semibold ${
+                            active ? "text-white" : "text-muted-foreground"
                           }`}
                         >
-                          <Text
-                            className={`text-xs font-semibold ${
-                              active ? "text-white" : "text-muted-foreground"
-                            }`}
-                          >
-                            {st.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
+                          {st.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
 
               {/* Work Orders Table */}

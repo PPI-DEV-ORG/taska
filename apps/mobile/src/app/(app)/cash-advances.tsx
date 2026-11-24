@@ -232,7 +232,7 @@ export default function CashAdvancesScreen() {
         {/* ── Pengajuan untuk tugas (survey / kirim barang / proyek) ── */}
         {rows.length > 0 || isFinance ? (
           <Panel title="Pengajuan petty cash untuk tugas" subtitle="Survey, kirim / ambil barang, dan kas proyek">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1.5 pb-3">
+            <View className="flex-row flex-wrap items-center gap-1.5 pb-3 w-full">
               {FILTERS.filter((f) => !f.financeOnly || isFinance).map((f) => {
                 const active = filter === f.key;
                 const c = countFor(f.key);
@@ -261,7 +261,7 @@ export default function CashAdvancesScreen() {
                   <Text className={`text-xs ${mineOnly ? "text-background font-semibold" : "text-foreground"}`}>Milik saya saja</Text>
                 </Pressable>
               ) : null}
-            </ScrollView>
+            </View>
 
             {visible.length === 0 ? (
               <EmptyState title={loading ? "Memuat..." : "Tidak ada pengajuan"} text={loading ? "" : "Pengajuan petty cash untuk tugas akan tampil di sini."} />

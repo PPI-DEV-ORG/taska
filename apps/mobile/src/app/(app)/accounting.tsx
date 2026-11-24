@@ -945,8 +945,7 @@ export default function AccountingScreen() {
         />
 
         {/* Tab Switcher */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="w-full">
-          <View className="bg-panel border-border/80 flex-row items-center rounded-2xl border p-1.5 gap-1.5">
+        <View className="bg-panel border-border/80 flex-row flex-wrap items-center rounded-2xl border p-1.5 gap-1.5 w-full">
             {[
               { id: "journal", label: "Jurnal Umum", icon: BookOpen, count: effectiveJournalLines.length },
               { id: "coa", label: "Bagan Akun (COA)", icon: Scale, count: effectiveCoaBalances.length },
@@ -961,7 +960,7 @@ export default function AccountingScreen() {
                 <Pressable
                   key={t.id}
                   onPress={() => setActiveTab(t.id as AccountingTab)}
-                  className={`flex-row items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+                  className={`flex-row items-center gap-1.5 px-3 py-2 sm:px-4 rounded-xl transition-all ${
                     active ? "bg-primary shadow-sm" : "hover:bg-card/60"
                   }`}
                 >
@@ -991,8 +990,7 @@ export default function AccountingScreen() {
                 </Pressable>
               );
             })}
-          </View>
-        </ScrollView>
+        </View>
 
         {/* TAB 1: JURNAL UMUM */}
         {activeTab === "journal" && (

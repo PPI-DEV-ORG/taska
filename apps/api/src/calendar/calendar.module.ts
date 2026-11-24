@@ -7,6 +7,7 @@ import { NotificationsModule } from "../notifications/notifications.module.js";
 import { SubscriptionsModule } from "../subscriptions/subscriptions.module.js";
 import { ContractsModule } from "../contracts/contracts.module.js";
 import { MaintenanceModule } from "../maintenance/maintenance.module.js";
+import { WhatsappModule } from "../whatsapp/whatsapp.module.js";
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { MaintenanceModule } from "../maintenance/maintenance.module.js";
     SubscriptionsModule,
     ContractsModule,
     MaintenanceModule,
+    WhatsappModule,
   ],
   controllers: [CalendarController],
   providers: [CalendarService],

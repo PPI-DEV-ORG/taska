@@ -315,30 +315,28 @@ export function DriveExplorer({
         </View>
 
         {/* File Type Filter Chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View className="flex-row items-center gap-1.5">
-            {FILE_TYPE_FILTERS.map((f) => {
-              const active = fileType === f.key;
-              return (
-                <Pressable
-                  key={f.key}
-                  onPress={() => setFileType(f.key)}
-                  className={`rounded-full px-3 py-1 border ${
-                    active ? "bg-primary border-primary" : "bg-muted/20 border-border"
+        <View className="flex-row flex-wrap items-center gap-1.5 w-full">
+          {FILE_TYPE_FILTERS.map((f) => {
+            const active = fileType === f.key;
+            return (
+              <Pressable
+                key={f.key}
+                onPress={() => setFileType(f.key)}
+                className={`rounded-full px-3 py-1 border ${
+                  active ? "bg-primary border-primary" : "bg-muted/20 border-border"
+                }`}
+              >
+                <Text
+                  className={`text-xs font-semibold ${
+                    active ? "text-white" : "text-muted-foreground"
                   }`}
                 >
-                  <Text
-                    className={`text-xs font-semibold ${
-                      active ? "text-white" : "text-muted-foreground"
-                    }`}
-                  >
-                    {f.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
+                  {f.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       {/* Content Area */}

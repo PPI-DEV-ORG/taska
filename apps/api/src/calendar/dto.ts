@@ -67,6 +67,27 @@ export class CalendarEventDto {
   @IsOptional() @IsString()
   completionNote?: string;
 
+  @IsOptional() @IsString()
+  location?: string | null;
+
+  @IsOptional() @IsString()
+  companyName?: string | null;
+
+  @IsOptional() @IsString()
+  contactPerson?: string | null;
+
+  @IsOptional() @IsBoolean()
+  notifyWhatsapp?: boolean;
+
+  @IsOptional() @Transform(upper) @IsIn(["GROUP", "PERSONAL", "BOTH"])
+  whatsappTargetType?: "GROUP" | "PERSONAL" | "BOTH";
+
+  @IsOptional() @IsString()
+  whatsappGroupJid?: string | null;
+
+  @IsOptional() @IsString()
+  whatsappPhone?: string | null;
+
   @IsOptional() @Type(() => Number) @IsInt()
   customerId?: number | null;
 

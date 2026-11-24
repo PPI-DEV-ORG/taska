@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react-native";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, MessageSquare, Plus, Search, X } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { Text } from "@/components/ui/text";
 import { Chip, PageHeader, Panel } from "@/components/akuntra/basics";
 import { FilterBar } from "@/components/akuntra/data-table";
 import { SearchableSelect } from "@/components/akuntra/dialogs";
+import { WhatsappDialog } from "@/components/akuntra/whatsapp-dialog";
+import { hasUserPermission } from "@/constants/modules";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { useApp } from "@/store/app-store";
 import { api, queryString } from "@/services/api";
@@ -81,7 +83,9 @@ export default function CalendarScreen() {
   const [editId, setEditId] = React.useState<number | null>(null);
   const [editOccDate, setEditOccDate] = React.useState<string | undefined>(undefined);
   const [jumpOpen, setJumpOpen] = React.useState(false);
+  const [waOpen, setWaOpen] = React.useState(false);
   const [jumpYear, setJumpYear] = React.useState(() => new Date().getFullYear());
+  const canConfigWa = canViewAll || hasUserPermission(user, "settings", "L");
   const [jumpMonth, setJumpMonth] = React.useState(() => new Date().getMonth());
 
   function openJump() {
@@ -213,10 +217,18 @@ export default function CalendarScreen() {
               : "Agenda pribadi, tugas, dan kegiatan yang melibatkan saya"
         }
         action={
-          <Button size="sm" onPress={() => { setEditId(null); setEditOccDate(undefined); setFormOpen(true); }}>
-            <Plus size={15} color="#fff" />
-            <Text className="text-xs">Buat agenda</Text>
-          </Button>
+          <>
+            {canConfigWa ? (
+              <Button size="sm" variant="outline" onPress={() => setWaOpen(true)}>
+                <MessageSquare size={14} color="#22c55e" />
+                <Text className="text-xs">Notifikasi WA</Text>
+              </Button>
+            ) : null}
+            <Button size="sm" onPress={() => { setEditId(null); setEditOccDate(undefined); setFormOpen(true); }}>
+              <Plus size={15} color="#fff" />
+              <Text className="text-xs">Buat agenda</Text>
+            </Button>
+          </>
         }
       />
 
@@ -652,6 +664,10 @@ export default function CalendarScreen() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {canConfigWa ? (
+        <WhatsappDialog open={waOpen} onOpenChange={setWaOpen} initialTab="schedule" />
+      ) : null}
     </View>
   );
 }

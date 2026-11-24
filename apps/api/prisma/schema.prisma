@@ -2380,6 +2380,14 @@ model CalendarEvent {
   supplier          Supplier?   @relation("CalendarSupplier", fields: [supplierId], references: [id], onDelete: SetNull)
   excludedDates     String?     @db.Text
   overdueNotifiedAt DateTime?
+  location          String?     @db.Text
+  companyName       String?
+  contactPerson     String?
+  notifyWhatsapp     Boolean     @default(false)
+  whatsappTargetType String      @default("GROUP")
+  whatsappGroupJid   String?
+  whatsappPhone      String?
+  waRemindedAt       DateTime?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 

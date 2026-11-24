@@ -26,6 +26,13 @@ export type CalItem = {
   completionNote?: string | null;
   hasConflict?: boolean;
   conflictWith?: string | null;
+  location?: string | null;
+  companyName?: string | null;
+  contactPerson?: string | null;
+  notifyWhatsapp?: boolean;
+  whatsappTargetType?: "GROUP" | "PERSONAL" | "BOTH" | string | null;
+  whatsappGroupJid?: string | null;
+  whatsappPhone?: string | null;
 };
 
 export const CATEGORY_META: Record<string, { label: string; color: string }> = {

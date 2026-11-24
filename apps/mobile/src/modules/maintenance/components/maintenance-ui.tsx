@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable, ScrollView } from "react-native";
+import { View, Pressable } from "react-native";
 import { Text } from "@/components/ui/text";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
@@ -136,51 +136,49 @@ export function MaintenanceTabs({
   onChange: (value: string) => void;
 }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View className="flex-row gap-1 rounded-xl border border-border/70 bg-card p-1">
-        {tabs.map((tab) => {
-          const active = tab.value === value;
-          const Icon = tab.icon;
-          return (
-            <Pressable
-              key={tab.value}
-              onPress={() => onChange(tab.value)}
-              className="min-h-[34px] flex-row items-center gap-1.5 rounded-lg px-3"
-              style={{ backgroundColor: active ? colors.primary : "transparent" }}
-            >
-              {Icon && (
-                <Icon size={14} color={active ? colors.primaryForeground : colors.textMuted} />
+    <View className="flex-row flex-wrap gap-1 rounded-xl border border-border/70 bg-card p-1 w-full">
+      {tabs.map((tab) => {
+        const active = tab.value === value;
+        const Icon = tab.icon;
+        return (
+          <Pressable
+            key={tab.value}
+            onPress={() => onChange(tab.value)}
+            className="min-h-[34px] flex-row items-center gap-1.5 rounded-lg px-2.5 sm:px-3"
+            style={{ backgroundColor: active ? colors.primary : "transparent" }}
+          >
+            {Icon && (
+              <Icon size={14} color={active ? colors.primaryForeground : colors.textMuted} />
+            )}
+            <Text
+              className={cn(
+                "text-xs font-semibold",
+                active ? "text-primary-foreground" : "text-muted-foreground",
               )}
-              <Text
+            >
+              {tab.label}
+            </Text>
+            {tab.count != null ? (
+              <View
                 className={cn(
-                  "text-xs font-semibold",
-                  active ? "text-primary-foreground" : "text-muted-foreground",
+                  "rounded-full px-1.5 py-0.5",
+                  active ? "bg-black/15" : "bg-muted/40",
                 )}
               >
-                {tab.label}
-              </Text>
-              {tab.count != null ? (
-                <View
+                <Text
                   className={cn(
-                    "rounded-full px-1.5 py-0.5",
-                    active ? "bg-black/15" : "bg-muted/40",
+                    "text-[10px] font-bold",
+                    active ? "text-primary-foreground" : "text-muted-foreground",
                   )}
                 >
-                  <Text
-                    className={cn(
-                      "text-[10px] font-bold",
-                      active ? "text-primary-foreground" : "text-muted-foreground",
-                    )}
-                  >
-                    {tab.count}
-                  </Text>
-                </View>
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </View>
-    </ScrollView>
+                  {tab.count}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 

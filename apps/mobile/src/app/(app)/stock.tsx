@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, ScrollView, Pressable } from "react-native";
+import { View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import {
   ArrowLeftRight,
@@ -183,7 +183,7 @@ export default function StockScreen() {
         title="Persediaan Gudang — List Barang, Jasa & SN"
         subtitle="Manajemen daftar barang (Ber-SN & Non-SN), katalog jasa, stok multi-gudang, dan stok opname"
         action={
-          <View className="flex-row flex-wrap items-center gap-1.5 sm:gap-2">
+          <>
             {canManageCatalog ? (
               <Button
                 variant="outline"
@@ -239,7 +239,7 @@ export default function StockScreen() {
                 </Button>
               </>
             ) : null}
-          </View>
+          </>
         }
       />
 
@@ -282,11 +282,11 @@ export default function StockScreen() {
         </Pressable>
       )}
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
+      <View className="flex-row flex-wrap items-center gap-2 w-full">
         {STOCK_TABS.map((t) => (
           <Chip key={t} label={t} active={activeTab === t} onPress={() => setActiveTab(t)} />
         ))}
-      </ScrollView>
+      </View>
 
       {activeTab === "List Barang & Jasa" && (
         <StockProductsTab

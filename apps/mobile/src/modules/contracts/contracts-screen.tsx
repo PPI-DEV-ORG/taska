@@ -260,7 +260,7 @@ export function ContractsScreen({
           subtitle="Pusat penyimpanan kontrak vendor, pelanggan, Service Agreement (SLA), versi dokumen, approval & masa berlaku"
           onRefresh={refreshAll}
           action={
-            <View className="flex-row flex-wrap items-center gap-2">
+            <>
               <Button
                 variant="outline"
                 size="sm"
@@ -292,10 +292,10 @@ export function ContractsScreen({
                   }}
                 >
                   <Plus size={14} color="#fff" />
-                  <Text className="text-xs text-white">+ Kontrak Baru</Text>
+                  <Text className="text-xs text-white">Kontrak Baru</Text>
                 </Button>
               ) : null}
-            </View>
+            </>
           }
         />
 
