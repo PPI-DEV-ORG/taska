@@ -45,7 +45,8 @@ export interface LlmProviderStatus {
 }
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
-const DEFAULT_MODEL = "gemini-3.8-flash";
+const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+const DEFAULT_FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.6-flash"];
 const DEFAULT_TIMEOUT_MS = 45000;
 const RETRY_DELAY_MS = 1200;
 
@@ -65,15 +66,16 @@ export class LlmProviderService {
         baseUrl: eff.baseUrl,
         apiKey: eff.apiKey,
         model: eff.model,
-        fallbackModel: eff.fallbackModels[0] ?? null,
+        fallbackModels: eff.fallbackModels,
         timeoutMs: eff.timeoutMs,
       };
     }
+    const envFallback = this.getFallbackModel();
     return {
       baseUrl: this.getBaseUrl(),
       apiKey: this.getApiKey(),
       model: this.getModel(),
-      fallbackModel: this.getFallbackModel(),
+      fallbackModels: envFallback ? [envFallback] : DEFAULT_FALLBACK_MODELS,
       timeoutMs: this.getTimeoutMs(),
     };
   }
@@ -184,8 +186,11 @@ export class LlmProviderService {
 
     const rt = await this.resolveRuntimeConfig();
     const primaryModel = rt.model;
-    const fallbackModel = rt.fallbackModel;
-    const attempts = [primaryModel, fallbackModel ?? primaryModel];
+    const attempts = [
+      primaryModel,
+      ...rt.fallbackModels.filter((m) => m && m !== primaryModel),
+    ];
+    if (attempts.length === 1) attempts.push(primaryModel);
 
     let lastError: ServiceUnavailableException | null = null;
 

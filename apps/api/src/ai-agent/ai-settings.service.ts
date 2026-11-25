@@ -7,9 +7,9 @@ import type { RequestUser } from "../common/decorators/current-user.decorator.js
 
 const SETTING_KEY = "ai:llm_config";
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
-const DEFAULT_MODEL = "gemini-2.5-flash";
-const DEFAULT_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.0-flash"];
-const DEFAULT_TIMEOUT_MS = 30000;
+const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+const DEFAULT_FALLBACKS = ["gemini-3.5-flash", "gemini-3.6-flash"];
+const DEFAULT_TIMEOUT_MS = 45000;
 
 interface StoredLlmConfig {
   baseUrl?: string;

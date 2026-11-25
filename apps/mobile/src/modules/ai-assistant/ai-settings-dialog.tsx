@@ -71,9 +71,9 @@ export function AiSettingsDialog({
   const applyPreset = (preset: "gemini" | "ollama") => {
     if (preset === "gemini") {
       setBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai");
-      setModel("gemini-2.5-flash");
-      setFallbacks("gemini-2.5-flash-lite, gemini-2.0-flash");
-      setTimeoutMs("30000");
+      setModel("gemini-3.5-flash-lite");
+      setFallbacks("gemini-3.5-flash, gemini-3.6-flash");
+      setTimeoutMs("45000");
     } else {
       setBaseUrl("http://127.0.0.1:11434/v1");
       setModel("qwen2.5:7b");
@@ -175,7 +175,7 @@ export function AiSettingsDialog({
               <Input
                 value={model}
                 onChangeText={setModel}
-                placeholder="gemini-2.5-flash atau qwen2.5:7b"
+                placeholder="gemini-3.5-flash-lite atau qwen2.5:7b"
                 autoCapitalize="none"
               />
             </FormField>
@@ -184,7 +184,7 @@ export function AiSettingsDialog({
               <Input
                 value={fallbacks}
                 onChangeText={setFallbacks}
-                placeholder="gemini-2.5-flash-lite, gemini-2.0-flash"
+                placeholder="gemini-3.5-flash, gemini-3.6-flash"
                 autoCapitalize="none"
               />
             </FormField>
