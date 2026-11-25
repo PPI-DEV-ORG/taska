@@ -24,7 +24,7 @@ export function Panel({
     <View className={cn("bg-card border-border/80 rounded-2xl border shadow-sm overflow-hidden", className)}>
       {title ? (
         <View className="border-border/60 flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b px-4 sm:px-5 py-3 sm:py-4">
-          <View className="flex-1 flex-row items-center gap-2.5 sm:gap-3 min-w-0">
+          <View className="w-full sm:w-auto sm:flex-1 flex-row items-center gap-2.5 sm:gap-3 min-w-0">
             {Icon ? (
               <View className="size-8 shrink-0 rounded-lg bg-primary/10 items-center justify-center">
                 <Icon size={18} color={colors.primary} />
@@ -35,7 +35,7 @@ export function Panel({
               {subtitle ? <Text className="text-muted-foreground text-xs mt-0.5">{subtitle}</Text> : null}
             </View>
           </View>
-          {right ? <View className="w-full sm:w-auto max-w-full flex-row flex-wrap items-center gap-1.5">{right}</View> : null}
+          {right ? <View className="flex-row flex-wrap items-center gap-1.5 self-start sm:self-auto">{right}</View> : null}
         </View>
       ) : null}
       <View className={pad ? "p-4 sm:p-5" : ""}>{children}</View>
