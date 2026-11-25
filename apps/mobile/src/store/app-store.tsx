@@ -33,6 +33,12 @@ import {
   syncServiceWorkerAuth,
 } from "@/services/notify";
 import { setThemePalette } from "@/tokens";
+import {
+  getStorageItemWithMigration,
+  hydrateAppStorage,
+  removeStorageItem,
+  setStorageItem,
+} from "@/lib/storage";
 import { formatAuditAction, isHttpAuditAction } from "@/lib/audit-format";
 import {
   PATHS, adaptRows, adaptApprovalList, adaptNotifList, adaptRow, normalizeNotifHref,
@@ -207,30 +213,18 @@ function formatFieldVal(val: any): string {
 }
 
 function readStorageJson<T>(key: string, fallback: T): T {
-  if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
-    try {
-      let raw = window.localStorage.getItem(key);
-      if (!raw && STORAGE_KEY_MAP[key]) {
-        const oldKey = STORAGE_KEY_MAP[key]!;
-        raw = window.localStorage.getItem(oldKey);
-        if (raw) {
-          window.localStorage.setItem(key, raw);
-          window.localStorage.removeItem(oldKey);
-        }
-      }
-      if (raw) return JSON.parse(raw) as T;
-    } catch {}
-  }
+  try {
+    const raw = getStorageItemWithMigration(key, STORAGE_KEY_MAP[key]);
+    if (raw) return JSON.parse(raw) as T;
+  } catch {}
   return fallback;
 }
 
 function writeStorageJson(key: string, val: unknown) {
-  if (typeof window !== "undefined" && typeof window.localStorage !== "undefined") {
-    try {
-      if (val === null || val === undefined) window.localStorage.removeItem(key);
-      else window.localStorage.setItem(key, JSON.stringify(val));
-    } catch {}
-  }
+  try {
+    if (val === null || val === undefined) removeStorageItem(key);
+    else setStorageItem(key, JSON.stringify(val));
+  } catch {}
 }
 
 type Ctx = {
@@ -405,23 +399,14 @@ async function fetchTasks(projects: Row[]): Promise<Row[]> {
 }
 
 function readInitialTheme(): "dark" | "light" {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    try {
-      let saved = window.localStorage.getItem("akuntra.theme");
-      if (!saved) {
-        saved = window.localStorage.getItem("taska.theme");
-        if (saved) {
-          window.localStorage.setItem("akuntra.theme", saved);
-          window.localStorage.removeItem("taska.theme");
-        }
-      }
-      if (saved === "light" || saved === "dark") return saved;
-    } catch {}
-  }
+  try {
+    const saved = getStorageItemWithMigration("akuntra.theme", "taska.theme");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {}
   return "dark";
 }
 
-function applyDomTheme(mode: "dark" | "light") {
+function applyDomTheme(mode: "dark" | "light", persist = false) {
   setThemePalette(mode);
   if (Platform.OS !== "web" || typeof window !== "undefined") {
     try {
@@ -431,9 +416,9 @@ function applyDomTheme(mode: "dark" | "light") {
   if (Platform.OS === "web" && typeof document !== "undefined") {
     document.documentElement.classList.toggle("dark", mode === "dark");
     document.documentElement.classList.toggle("light", mode === "light");
-    try {
-      window.localStorage.setItem("akuntra.theme", mode);
-    } catch {}
+  }
+  if (persist) {
+    setStorageItem("akuntra.theme", mode);
   }
 }
 
@@ -532,7 +517,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toggleTheme = React.useCallback(() => {
     setThemeState((prev) => {
       const next = prev === "dark" ? "light" : "dark";
-      applyDomTheme(next);
+      applyDomTheme(next, true);
       return next;
     });
   }, []);
@@ -788,7 +773,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let alive = true;
     (async () => {
-      await hydrateTokens();
+      await Promise.all([hydrateTokens(), hydrateAppStorage()]);
+      if (!alive) return;
+      if (Platform.OS !== "web") {
+        const savedTheme = readInitialTheme();
+        setThemeState(savedTheme);
+        applyDomTheme(savedTheme);
+        const cachedQueue = readStorageJson<OfflineQueueItem[]>(STORAGE_QUEUE_KEY, []);
+        if (cachedQueue.length > 0) {
+          offlineQueueRef.current = cachedQueue;
+          setPendingQueue(cachedQueue);
+        }
+        const cachedDb = readStorageJson<DB | null>(STORAGE_CACHE_DB_KEY, null);
+        if (cachedDb || cachedQueue.length > 0) {
+          setData(overlayPendingAdds(cachedDb ?? emptyDB(), cachedQueue));
+        }
+        const cachedHist = readStorageJson<Record<string, HistoryItem[]>>(STORAGE_CACHE_HIST_KEY, {});
+        if (Object.keys(cachedHist).length > 0) setHist(cachedHist);
+        const cachedApprovals = readStorageJson<ApprovalRow[]>(STORAGE_CACHE_APPROVALS_KEY, []);
+        if (cachedApprovals.length > 0) setApprovals(cachedApprovals);
+        const cachedCompany = readStorageJson<CompanyProfile | null>(STORAGE_CACHE_COMPANY_KEY, null);
+        if (cachedCompany) setCompanyProfile({ ...DEFAULT_COMPANY_PROFILE, ...cachedCompany });
+        const cachedDocFormats = readStorageJson<Record<string, string>>(STORAGE_CACHE_DOC_FORMATS_KEY, {});
+        if (Object.keys(cachedDocFormats).length > 0) setDocFormats(cachedDocFormats);
+        const cachedRoles = readStorageJson<RoleDef[]>(STORAGE_CACHE_ROLES_KEY, []);
+        if (Array.isArray(cachedRoles) && cachedRoles.length > 0) {
+          setClientDynamicRoles(cachedRoles);
+          setRoles(getClientDynamicRoles());
+        }
+      }
       if (!getAccess()) {
         if (alive) {
           // Sesi sudah habis: jangan pakai user cache, paksa kembali ke login saat refresh.

@@ -1,3 +1,5 @@
+import { getStorageItemWithMigration, setStorageItem } from "@/lib/storage";
+
 /**
  * Accounting Core Types & Client Master Data
  * (Sesuai Standar Akuntansi Keuangan SAK / PSAK Double-Entry)
@@ -191,23 +193,9 @@ const OLD_STORAGE_MANUAL_JOURNALS_KEY = "taska.accounting.manual_journals";
 const OLD_STORAGE_CUSTOM_COA_KEY = "taska.accounting.custom_coa";
 const OLD_STORAGE_DELETED_COA_KEY = "taska.accounting.deleted_coa_codes";
 
-function getLocalStorageWithMigration(newKey: string, oldKey: string): string | null {
-  if (typeof window === "undefined" || !window.localStorage) return null;
-  let raw = window.localStorage.getItem(newKey);
-  if (!raw) {
-    raw = window.localStorage.getItem(oldKey);
-    if (raw) {
-      window.localStorage.setItem(newKey, raw);
-      window.localStorage.removeItem(oldKey);
-    }
-  }
-  return raw;
-}
-
 export function loadManualJournals(): ManualJournal[] {
-  if (typeof window === "undefined" || !window.localStorage) return [];
   try {
-    const raw = getLocalStorageWithMigration(STORAGE_MANUAL_JOURNALS_KEY, OLD_STORAGE_MANUAL_JOURNALS_KEY);
+    const raw = getStorageItemWithMigration(STORAGE_MANUAL_JOURNALS_KEY, OLD_STORAGE_MANUAL_JOURNALS_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -215,15 +203,12 @@ export function loadManualJournals(): ManualJournal[] {
 }
 
 export function saveManualJournals(journals: ManualJournal[]) {
-  if (typeof window !== "undefined" && window.localStorage) {
-    window.localStorage.setItem(STORAGE_MANUAL_JOURNALS_KEY, JSON.stringify(journals));
-  }
+  setStorageItem(STORAGE_MANUAL_JOURNALS_KEY, JSON.stringify(journals));
 }
 
 export function loadCustomCoa(): CoaAccount[] {
-  if (typeof window === "undefined" || !window.localStorage) return [];
   try {
-    const raw = getLocalStorageWithMigration(STORAGE_CUSTOM_COA_KEY, OLD_STORAGE_CUSTOM_COA_KEY);
+    const raw = getStorageItemWithMigration(STORAGE_CUSTOM_COA_KEY, OLD_STORAGE_CUSTOM_COA_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -231,15 +216,12 @@ export function loadCustomCoa(): CoaAccount[] {
 }
 
 export function saveCustomCoa(accounts: CoaAccount[]) {
-  if (typeof window !== "undefined" && window.localStorage) {
-    window.localStorage.setItem(STORAGE_CUSTOM_COA_KEY, JSON.stringify(accounts));
-  }
+  setStorageItem(STORAGE_CUSTOM_COA_KEY, JSON.stringify(accounts));
 }
 
 export function loadDeletedCoaCodes(): string[] {
-  if (typeof window === "undefined" || !window.localStorage) return [];
   try {
-    const raw = getLocalStorageWithMigration(STORAGE_DELETED_COA_KEY, OLD_STORAGE_DELETED_COA_KEY);
+    const raw = getStorageItemWithMigration(STORAGE_DELETED_COA_KEY, OLD_STORAGE_DELETED_COA_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -247,9 +229,7 @@ export function loadDeletedCoaCodes(): string[] {
 }
 
 export function saveDeletedCoaCodes(codes: string[]) {
-  if (typeof window !== "undefined" && window.localStorage) {
-    window.localStorage.setItem(STORAGE_DELETED_COA_KEY, JSON.stringify(codes));
-  }
+  setStorageItem(STORAGE_DELETED_COA_KEY, JSON.stringify(codes));
 }
 
 export function getKasBankAccounts(): { code: string; name: string; rawName: string }[] {

@@ -2,6 +2,7 @@ import * as React from "react";
 import { Platform, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Panel } from "@/components/akuntra/basics";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { chartSeries, colors } from "@/tokens";
 
 export type Series = { name: string; color: string };
@@ -17,8 +18,14 @@ export function ChartCard({
   right?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const { isMobile } = useBreakpoint();
   return (
-    <Panel title={title} subtitle={subtitle} right={right} className="min-w-[280px] flex-1">
+    <Panel
+      title={title}
+      subtitle={subtitle}
+      right={right}
+      className={isMobile ? "w-full" : "min-w-[280px] flex-1"}
+    >
       {children}
     </Panel>
   );
@@ -210,7 +217,7 @@ export function WaveChart({
   format?: (n: number) => string;
   badgeText?: string;
 }) {
-  const gradId = React.useId ? React.useId().replace(/:/g, "") : `wave_${Math.random().toString(36).substring(2, 7)}`;
+  const gradId = React.useId().replace(/:/g, "");
   const values = data.map((d) => d.value);
   const max = Math.max(1, ...values);
   const min = Math.min(0, ...values);
@@ -505,30 +512,33 @@ export function PieChart({
   centerValue?: string;
   format?: (n: number) => string;
 }) {
+  const { isMobile } = useBreakpoint();
   const total = data.reduce((acc, d) => acc + (d.value || 0), 0);
   const safeTotal = Math.max(1, total);
 
   // Perhitungan SVG Donut
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  let accumulatedOffset = 0;
 
-  const slices = data.map((d, i) => {
+  const slices = data.reduce<
+    { label: string; value: number; color: string; pct: number; strokeDash: number; offset: number }[]
+  >((acc, d, i) => {
     const pct = total > 0 ? (d.value / safeTotal) * 100 : 0;
     const strokeDash = (pct / 100) * circumference;
-    const offset = accumulatedOffset;
-    accumulatedOffset += strokeDash;
-    return {
+    const prev = acc[acc.length - 1];
+    const offset = prev ? prev.offset + prev.strokeDash : 0;
+    acc.push({
       ...d,
       pct: Math.round(pct),
       strokeDash,
       offset,
-      color: d.color ?? chartSeries[i % chartSeries.length],
-    };
-  });
+      color: d.color ?? chartSeries[i % chartSeries.length] ?? colors.primary,
+    });
+    return acc;
+  }, []);
 
   return (
-    <View className="flex-row flex-wrap items-center justify-around gap-4 py-1">
+    <View className={isMobile ? "items-center gap-4 py-1" : "flex-row flex-wrap items-center justify-around gap-4 py-1"}>
       {/* Visual Lingkaran */}
       <View style={{ width: size, height: size }} className="relative items-center justify-center">
         {Platform.OS === "web" ? (
@@ -583,7 +593,7 @@ export function PieChart({
       </View>
 
       {/* Legenda Kategori & Persentase */}
-      <View className="flex-1 min-w-[150px] gap-2">
+      <View className={isMobile ? "w-full gap-2" : "flex-1 min-w-[150px] gap-2"}>
         {slices.map((sl, idx) => (
           <View key={idx} className="flex-row items-center justify-between gap-2 border-b border-border/40 pb-1.5 last:border-b-0">
             <View className="flex-row items-center gap-2 flex-1 pr-1">

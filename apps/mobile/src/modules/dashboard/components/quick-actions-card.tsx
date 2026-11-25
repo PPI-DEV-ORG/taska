@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { useApp } from "@/store/app-store";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import type { ActionCode } from "@/constants/modules";
 
 type Can = (module: string, action?: ActionCode) => boolean;
@@ -54,6 +55,7 @@ const ACTIONS: QuickAction[] = [
 export function QuickActionsCard(_props: { role?: string }) {
   const router = useRouter();
   const { can } = useApp();
+  const { isMobile } = useBreakpoint();
   const shown = ACTIONS.filter((a) => a.show(can))
     // satu tujuan cukup sekali (mis. Stok Gudang & Scan SN)
     .filter((a, i, list) => list.findIndex((x) => x.href === a.href) === i)
@@ -62,13 +64,13 @@ export function QuickActionsCard(_props: { role?: string }) {
 
   return (
     <Panel title="Aksi Cepat" subtitle="Pekerjaan yang paling sering Anda lakukan" icon={Command}>
-      <View className="flex-row flex-wrap gap-3 py-1 w-full">
+      <View className={isMobile ? "gap-2.5 py-1 w-full" : "flex-row flex-wrap gap-3 py-1 w-full"}>
         {shown.map((a) => (
           <QuickActionButton
             key={a.label}
             label={a.label}
             icon={a.icon}
-            className="flex-1 min-w-[170px]"
+            className={isMobile ? "w-full" : "flex-1 min-w-[170px]"}
             onPress={() => router.push(a.href as any)}
           />
         ))}

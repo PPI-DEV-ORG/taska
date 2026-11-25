@@ -9,6 +9,7 @@
       "distribution": "internal"
     },
     "preview": {
+      "channel": "preview",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
@@ -17,7 +18,18 @@
         "EXPO_PUBLIC_API_URL": "https://akuntra-api.ghinamultiprima.co.id/api"
       }
     },
+    "staging": {
+      "channel": "staging",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://erp-demo-api.ghinamultiprima.co.id/api"
+      }
+    },
     "production": {
+      "channel": "production",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
