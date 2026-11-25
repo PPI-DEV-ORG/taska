@@ -339,6 +339,7 @@ export function AiAssistantScreen({
         role: "user",
         content: text,
         toolsUsed: [],
+        ...(currentAttachments.length > 0 ? { attachments: currentAttachments } : {}),
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, optimisticUser]);
@@ -676,6 +677,25 @@ export function AiAssistantScreen({
                   ) : null}
 
                   <View className={cn("max-w-[85%]", isUser && "items-end")}>
+                    {isUser && m.attachments && m.attachments.length > 0 ? (
+                      <View className="flex-row flex-wrap justify-end gap-1.5 mb-1.5">
+                        {m.attachments.map((att) => (
+                          <View
+                            key={`${m.id}-att-${att.fileId}`}
+                            className="bg-card border-border/80 flex-row items-center gap-1.5 rounded-xl border px-2.5 py-1.5"
+                          >
+                            <Paperclip size={12} color={colors.primary} />
+                            <Text
+                              className="text-foreground text-xs font-medium max-w-[200px]"
+                              numberOfLines={1}
+                            >
+                              {att.name}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+
                     <View
                       className={cn(
                         "rounded-2xl px-3.5 py-2.5",

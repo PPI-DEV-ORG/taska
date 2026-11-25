@@ -618,6 +618,7 @@ export type AiChatMessageItem = {
   role: "user" | "assistant";
   content: string;
   toolsUsed: string[];
+  attachments?: AiChatAttachment[];
   createdAt: string;
 };
 

@@ -22,11 +22,18 @@ const HISTORY_WINDOW = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQ = 15;
 
+export interface AiChatAttachmentView {
+  fileId: number;
+  name: string;
+  mimeType?: string;
+}
+
 export interface AiChatMessageView {
   id: number;
   role: "user" | "assistant";
   content: string;
   toolsUsed: string[];
+  attachments?: AiChatAttachmentView[];
   createdAt: string;
 }
 
@@ -289,6 +296,10 @@ export class AiAgentService {
         sessionId: session.id,
         role: "user",
         content: promptText,
+        toolsUsedJson:
+          dto.attachments && dto.attachments.length > 0
+            ? JSON.stringify(dto.attachments)
+            : null,
       },
     });
 
@@ -406,6 +417,10 @@ export class AiAgentService {
         sessionId: session.id,
         role: "user",
         content: promptText,
+        toolsUsedJson:
+          dto.attachments && dto.attachments.length > 0
+            ? JSON.stringify(dto.attachments)
+            : null,
       },
     });
 
@@ -594,12 +609,23 @@ export class AiAgentService {
     toolsUsedJson: string | null;
     createdAt: Date;
   }): AiChatMessageView {
+    const isAssistant = m.role === "assistant";
     let toolsUsed: string[] = [];
+    let attachments: AiChatAttachmentView[] | undefined;
+
     if (m.toolsUsedJson) {
       try {
         const parsed = JSON.parse(m.toolsUsedJson);
         if (Array.isArray(parsed)) {
-          toolsUsed = parsed.filter((x): x is string => typeof x === "string");
+          if (isAssistant) {
+            toolsUsed = parsed.filter((x): x is string => typeof x === "string");
+          } else {
+            const valid = parsed.filter(
+              (x): x is AiChatAttachmentView =>
+                Boolean(x && typeof x === "object" && typeof x.fileId === "number" && typeof x.name === "string"),
+            );
+            if (valid.length > 0) attachments = valid;
+          }
         }
       } catch {
         toolsUsed = [];
@@ -607,9 +633,10 @@ export class AiAgentService {
     }
     return {
       id: m.id,
-      role: m.role === "assistant" ? "assistant" : "user",
+      role: isAssistant ? "assistant" : "user",
       content: m.content,
       toolsUsed,
+      ...(attachments ? { attachments } : {}),
       createdAt: m.createdAt.toISOString(),
     };
   }
