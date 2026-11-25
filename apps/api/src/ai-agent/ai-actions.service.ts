@@ -71,6 +71,64 @@ function asNum(v: unknown): number | undefined {
   return undefined;
 }
 
+function normalizeFundingSource(
+  raw: unknown,
+  fallbackText?: string,
+): "PERUSAHAAN" | "TALANGAN_PRIBADI" | "PETTY_CASH" {
+  const combined = `${typeof raw === "string" ? raw : ""} ${fallbackText ?? ""}`.toLowerCase();
+  if (
+    combined.includes("talangan") ||
+    combined.includes("pribadi") ||
+    combined.includes("reimburse") ||
+    combined.includes("personal")
+  ) {
+    return "TALANGAN_PRIBADI";
+  }
+  if (combined.includes("petty") || combined.includes("kasbon")) {
+    return "PETTY_CASH";
+  }
+  return "PERUSAHAAN";
+}
+
+function fundingSourceLabel(code: "PERUSAHAAN" | "TALANGAN_PRIBADI" | "PETTY_CASH"): string {
+  if (code === "TALANGAN_PRIBADI") return "Dana Pribadi (Reimburse)";
+  if (code === "PETTY_CASH") return "Petty Cash";
+  return "Dana Perusahaan";
+}
+
+function normalizeTaskPriority(raw: unknown): "RENDAH" | "SEDANG" | "TINGGI" | "URGENT" | undefined {
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  const v = raw.toUpperCase().trim();
+  if (v === "LOW" || v === "RENDAH") return "RENDAH";
+  if (v === "MEDIUM" || v === "MED" || v === "SEDANG") return "SEDANG";
+  if (v === "HIGH" || v === "TINGGI") return "TINGGI";
+  if (v === "URGENT" || v === "MENDESAK") return "URGENT";
+  return undefined;
+}
+
+function normalizeInvoiceType(raw: unknown, fallbackText?: string): "DP" | "TERMIN" | "PELUNASAN" {
+  const s = `${typeof raw === "string" ? raw : ""} ${fallbackText ?? ""}`.toLowerCase();
+  if (s.includes("pelunasan") || s.includes("lunas")) return "PELUNASAN";
+  if (s.includes("dp") || s.includes("down payment") || s.includes("uang muka")) return "DP";
+  return "TERMIN";
+}
+
+function normalizeClientType(raw: unknown): "PARTNER" | "END_USER" | "SI" | undefined {
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  const v = raw.toUpperCase().trim().replace(/[\s-]+/g, "_");
+  if (v === "ENDUSER" || v === "END_USER") return "END_USER";
+  if (v === "PARTNER") return "PARTNER";
+  if (v === "SI") return "SI";
+  return undefined;
+}
+
+function normalizePaymentType(raw: unknown, fallbackText?: string): "KAS" | "UTANG" | undefined {
+  const s = `${typeof raw === "string" ? raw : ""} ${fallbackText ?? ""}`.toLowerCase();
+  if (s.includes("kas") || s.includes("tunai") || s.includes("cash")) return "KAS";
+  if (s.includes("utang") || s.includes("tempo") || s.includes("kredit")) return "UTANG";
+  return undefined;
+}
+
 function parseReminderMinutes(v: unknown): number | undefined {
   const num = asNum(v);
   if (num != null && num >= 0) return Math.round(num);
@@ -277,9 +335,15 @@ export class AiActionsService {
           data.customerId = cust.id;
           summary["Pelanggan Terkait"] = `${cust.name} (#${cust.id})`;
         }
+        const clientType = normalizeClientType(data.clientType);
+        if (clientType) {
+          data.clientType = clientType;
+          summary["Tipe Klien"] = clientType;
+        }
         if (asStr(data.contactName)) summary["Kontak / PIC"] = asStr(data.contactName)!;
         if (asStr(data.need)) summary["Kebutuhan"] = asStr(data.need)!;
         if (asNum(data.estimatedValue)) summary["Nilai Estimasi"] = fmtRp(asNum(data.estimatedValue)!);
+        if (asNum(data.probability) != null) summary["Probabilitas"] = `${asNum(data.probability)}%`;
         if (asStr(data.stage)) summary["Stage"] = asStr(data.stage)!;
         if (asStr(data.targetClosing)) summary["Target Closing"] = asStr(data.targetClosing)!;
         break;
@@ -314,12 +378,24 @@ export class AiActionsService {
           summary["Pelanggan"] = `${cust.name} (#${cust.id})`;
         }
         if (asNum(data.total)) summary["Subtotal / DPP"] = fmtRp(asNum(data.total)!);
+        if (asNum(data.discount)) summary["Diskon"] = fmtRp(asNum(data.discount)!);
+        if (asNum(data.ppn) != null) summary["PPN"] = fmtRp(asNum(data.ppn)!);
         if (asNum(data.grandTotal)) summary["Grand Total"] = fmtRp(asNum(data.grandTotal)!);
-        if (asStr(data.note)) summary["Catatan"] = asStr(data.note)!;
+        if (asStr(data.validUntil)) summary["Berlaku Hingga"] = asStr(data.validUntil)!;
+        if (asStr(data.notes) ?? asStr(data.note)) {
+          summary["Catatan"] = (asStr(data.notes) ?? asStr(data.note))!;
+        }
         break;
       }
       case "invoice": {
-        title = "Buat Faktur Keluar (Invoice)";
+        const isProforma =
+          data.isProforma === true ||
+          String(data.description ?? data.note ?? "").toLowerCase().includes("proforma");
+        data.isProforma = isProforma;
+        const invType = normalizeInvoiceType(data.type, asStr(data.description) ?? asStr(data.note));
+        data.type = invType;
+        title = isProforma ? "Buat Proforma Invoice" : `Buat Faktur Keluar (${invType})`;
+        summary["Jenis Faktur"] = isProforma ? `Proforma (${invType})` : invType;
         const cust = await this.resolveCustomer(data);
         if (cust) {
           data.customerId = cust.id;
@@ -333,6 +409,8 @@ export class AiActionsService {
         if (asNum(data.total) ?? asNum(data.amount)) {
           summary["Nilai Tagihan"] = fmtRp((asNum(data.total) ?? asNum(data.amount))!);
         }
+        if (asNum(data.discount)) summary["Diskon"] = fmtRp(asNum(data.discount)!);
+        if (asNum(data.ppn) != null) summary["PPN"] = fmtRp(asNum(data.ppn)!);
         if (asStr(data.date)) summary["Tanggal Faktur"] = asStr(data.date)!;
         if (asStr(data.dueDate)) summary["Jatuh Tempo"] = asStr(data.dueDate)!;
         if (asStr(data.description) ?? asStr(data.note)) {
@@ -428,6 +506,11 @@ export class AiActionsService {
           data.projectId = proj.id;
           summary["Proyek"] = `${proj.name} (#${proj.id})`;
         }
+        const prio = normalizeTaskPriority(data.priority);
+        if (prio) {
+          data.priority = prio;
+          summary["Prioritas"] = prio;
+        }
         if (asStr(data.dueDate)) summary["Batas Waktu"] = asStr(data.dueDate)!;
         if (asStr(data.description)) summary["Deskripsi"] = asStr(data.description)!;
         const assigneeName = asStr(data.assigneeName);
@@ -444,10 +527,15 @@ export class AiActionsService {
         const cName = asStr(data.name) ?? "Pelanggan Baru";
         title = `Tambah Pelanggan: ${cName}`;
         summary["Nama Perusahaan/Pelanggan"] = cName;
+        if (asStr(data.company)) summary["Perusahaan"] = asStr(data.company)!;
         if (asStr(data.pic)) summary["PIC"] = asStr(data.pic)!;
         if (asStr(data.phone)) summary["Telepon"] = asStr(data.phone)!;
         if (asStr(data.email)) summary["Email"] = asStr(data.email)!;
+        if (asStr(data.city)) summary["Kota"] = asStr(data.city)!;
         if (asStr(data.address)) summary["Alamat"] = asStr(data.address)!;
+        if (asStr(data.notes) ?? asStr(data.note)) {
+          summary["Catatan"] = (asStr(data.notes) ?? asStr(data.note))!;
+        }
         break;
       }
       case "expense": {
@@ -455,6 +543,9 @@ export class AiActionsService {
         title = `Catat Pengeluaran: ${desc.slice(0, 50)}`;
         summary["Deskripsi"] = desc;
         if (asNum(data.amount)) summary["Nominal"] = fmtRp(asNum(data.amount)!);
+        const funding = normalizeFundingSource(data.fundingSource, desc);
+        data.fundingSource = funding;
+        summary["Sumber Pendanaan"] = fundingSourceLabel(funding);
         if (asStr(data.date)) summary["Tanggal"] = asStr(data.date)!;
         const [proj, cat] = await Promise.all([
           this.resolveProject(data),
@@ -472,8 +563,18 @@ export class AiActionsService {
       }
       case "purchase_request": {
         title = "Buat Permintaan Barang (PR)";
-        summary["Tipe Biaya"] = asStr(data.costType) ?? "STOK";
-        summary["Sumber Pengadaan"] = asStr(data.procurementSource) ?? "SUPPLIER";
+        const rawCost = (asStr(data.costType) ?? "STOK").toUpperCase();
+        const costType = rawCost === "PROYEK" ? "PROJECT" : rawCost === "STOCK" ? "STOK" : rawCost;
+        data.costType = costType;
+        const rawSrc = (asStr(data.procurementSource) ?? "SUPPLIER").toUpperCase();
+        data.procurementSource = rawSrc === "RITEL" ? "RETAIL" : rawSrc;
+        summary["Tipe Biaya"] = costType;
+        summary["Sumber Pengadaan"] = String(data.procurementSource);
+        const payType = normalizePaymentType(data.paymentType, asStr(data.note));
+        if (payType) {
+          data.paymentType = payType;
+          summary["Pembayaran"] = payType;
+        }
         const proj = await this.resolveProject(data);
         if (proj) {
           data.projectId = proj.id;
@@ -598,8 +699,10 @@ export class AiActionsService {
           {
             name: asStr(data.name) ?? asStr(data.company) ?? "Lead Baru",
             contactName: asStr(data.contactName),
+            clientType: normalizeClientType(data.clientType),
             need: asStr(data.need),
             estimatedValue: asNum(data.estimatedValue),
+            probability: asNum(data.probability),
             targetClosing: asStr(data.targetClosing),
             stage: normalizedStage as never,
             customerId: asNum(data.customerId),
@@ -640,8 +743,11 @@ export class AiActionsService {
         const res = await this.quotations.createForLead(leadId ?? null, user, {
           customerId: asNum(data.customerId),
           total: asNum(data.total),
+          discount: asNum(data.discount),
+          ppn: asNum(data.ppn),
           grandTotal: asNum(data.grandTotal),
-          note: asStr(data.note),
+          validUntil: asStr(data.validUntil),
+          notes: asStr(data.notes) ?? asStr(data.note),
           fileId: asNum(data.fileId),
           items: Array.isArray(data.items) ? (data.items as never) : undefined,
         } as never);
@@ -656,9 +762,14 @@ export class AiActionsService {
           {
             customerId: asNum(data.customerId),
             projectId: asNum(data.projectId),
+            quotationId: asNum(data.quotationId),
+            type: normalizeInvoiceType(data.type, asStr(data.description) ?? asStr(data.note)),
+            isProforma: data.isProforma === true,
             date: asStr(data.date) ?? new Date().toISOString().slice(0, 10),
             dueDate: asStr(data.dueDate),
             amount: amt,
+            discount: asNum(data.discount),
+            ppn: asNum(data.ppn),
             total: tot,
             description: asStr(data.description) ?? asStr(data.note),
             fileId: asNum(data.fileId),
@@ -710,6 +821,7 @@ export class AiActionsService {
           {
             name: asStr(data.name) ?? asStr(data.title) ?? "Tugas Baru",
             description: asStr(data.description),
+            priority: normalizeTaskPriority(data.priority) ?? "SEDANG",
             dueDate: asStr(data.dueDate),
             assigneeId: asNum(data.assigneeId),
           } as never,
@@ -721,20 +833,27 @@ export class AiActionsService {
       case "customer": {
         const res = await this.customers.create({
           name: asStr(data.name) ?? "",
+          company: asStr(data.company),
           pic: asStr(data.pic) ?? "-",
           phone: asStr(data.phone),
           email: asStr(data.email),
+          city: asStr(data.city),
           address: asStr(data.address),
+          notes: asStr(data.notes) ?? asStr(data.note),
         } as never);
         return { id: res.id, href: `/customers/${res.id}` };
       }
 
       case "expense": {
+        const desc = asStr(data.description) ?? "Pengeluaran operasional";
+        const funding = normalizeFundingSource(data.fundingSource, desc);
         const res = await this.expenses.create(
           {
-            description: asStr(data.description) ?? "Pengeluaran operasional",
+            description: desc,
             amount: asNum(data.amount) ?? 0,
             date: asStr(data.date) ?? new Date().toISOString().slice(0, 10),
+            fundingSource: funding,
+            paymentMethod: asStr(data.paymentMethod),
             projectId: asNum(data.projectId),
             categoryId: asNum(data.categoryId),
             receiptFileId: asNum(data.receiptFileId),
@@ -748,8 +867,10 @@ export class AiActionsService {
       case "purchase_request": {
         const res = await this.requests.create(
           {
+            date: asStr(data.date),
             costType: asStr(data.costType) ?? "STOK",
             procurementSource: asStr(data.procurementSource) ?? "SUPPLIER",
+            paymentType: normalizePaymentType(data.paymentType, asStr(data.note)),
             projectId: asNum(data.projectId),
             note: asStr(data.note),
             items: Array.isArray(data.items) ? (data.items as never) : [],
