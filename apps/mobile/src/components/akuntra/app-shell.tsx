@@ -27,7 +27,7 @@ const NOTIF_ICON = { approval: CheckSquare, stok: Boxes, pengiriman: Truck, lead
 
 /** Menu dikelompokkan sesuai alur kerja, supaya tidak berupa daftar panjang. */
 const NAV_GROUPS: { title: string; keys: string[] }[] = [
-  { title: "", keys: ["dashboard", "calendar", "approvals", "reports"] },
+  { title: "", keys: ["dashboard", "ai-assistant", "calendar", "approvals", "reports"] },
   { title: "Penjualan", keys: ["leads", "customers", "quotations", "poc-reports", "visit-reports", "po-client"] },
   { title: "Proyek", keys: ["surveys", "projects", "maintenance-reports", "tasks"] },
   { title: "Pembelian", keys: ["purchase-requests", "supplier-pos", "purchase-orders", "shipments"] },

@@ -547,5 +547,71 @@ export async function reopenFiscalYear(year: number, reopenReason: string) {
   return api<any>("POST", `/accounting/fiscal-years/${year}/reopen`, { reopenReason });
 }
 
+// ─── AI Assistant (LLM Agent) ───
+
+export type AiCapabilities = {
+  configured: boolean;
+  model: string;
+  providerLabel: string;
+  mode: "READ_ONLY";
+  allowedToolNames: string[];
+  suggestedPrompts: string[];
+};
+
+export type AiChatSessionSummary = {
+  id: number;
+  title: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AiChatMessageItem = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  toolsUsed: string[];
+  createdAt: string;
+};
+
+export type AiChatSessionDetail = {
+  id: number;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: AiChatMessageItem[];
+};
+
+export type AiChatReply = {
+  sessionId: number;
+  sessionTitle: string;
+  userMessage: AiChatMessageItem;
+  assistantMessage: AiChatMessageItem;
+  toolsUsed: string[];
+};
+
+export async function fetchAiCapabilities() {
+  return api<AiCapabilities>("GET", "/ai-agent/capabilities");
+}
+
+export async function fetchAiSessions() {
+  return api<AiChatSessionSummary[]>("GET", "/ai-agent/sessions");
+}
+
+export async function fetchAiSession(id: number) {
+  return api<AiChatSessionDetail>("GET", `/ai-agent/sessions/${id}`);
+}
+
+export async function deleteAiSession(id: number) {
+  return api<{ deleted: boolean; id: number }>("DELETE", `/ai-agent/sessions/${id}`);
+}
+
+export async function sendAiChat(message: string, sessionId?: number) {
+  return api<AiChatReply>("POST", "/ai-agent/chat", {
+    message,
+    ...(sessionId ? { sessionId } : {}),
+  });
+}
+
 
 
