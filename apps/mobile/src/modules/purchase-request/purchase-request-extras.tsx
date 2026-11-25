@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import {
   CheckCircle2,
@@ -760,7 +760,11 @@ export function PurchaseRequestExtras({
       <Panel title="Status">
         <View className="gap-4">
           {/* Tahapan */}
-          <View className="flex-row items-start">
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ flexGrow: 1, flexDirection: "row", alignItems: "flex-start" }}
+          >
             {steps.map((st, idx) => {
               const isLast = idx === steps.length - 1;
               const dotClass = isDitolak
@@ -772,7 +776,7 @@ export function PurchaseRequestExtras({
                 : "bg-card border-border";
               return (
                 <React.Fragment key={st.label}>
-                  <View className="items-center" style={{ width: 64 }}>
+                  <View className="items-center shrink-0" style={{ width: 64 }}>
                     <View className={`h-6 w-6 rounded-full items-center justify-center border ${dotClass}`}>
                       {isDitolak ? (
                         <XCircle size={12} color={colors.danger} />
@@ -792,12 +796,12 @@ export function PurchaseRequestExtras({
                     </Text>
                   </View>
                   {!isLast ? (
-                    <View className={`h-[2px] flex-1 mt-3 ${st.done && steps[idx + 1]?.done ? "bg-emerald-600" : "bg-border"}`} />
+                    <View className={`h-[2px] flex-1 min-w-[16px] mt-3 ${st.done && steps[idx + 1]?.done ? "bg-emerald-600" : "bg-border"}`} />
                   ) : null}
                 </React.Fragment>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* Keadaan saat ini */}
           <View className={`flex-row items-start gap-3 rounded-xl border p-3 ${toneBox[statusInfo.tone]}`}>
