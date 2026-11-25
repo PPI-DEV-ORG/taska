@@ -286,12 +286,69 @@ export class AiActionsService {
     if (id) {
       return this.prisma.main.expenseCategory.findUnique({ where: { id }, select: { id: true, name: true } });
     }
-    const q = asStr(data.categoryName) ?? asStr(data.category);
-    if (!q) return null;
-    return this.prisma.main.expenseCategory.findFirst({
-      where: { name: { contains: q } },
+    const rawCat = asStr(data.categoryName) ?? asStr(data.category) ?? "";
+    const desc = asStr(data.description) ?? "";
+    const searchText = `${rawCat} ${desc}`.toLowerCase().trim();
+    if (!searchText) return null;
+
+    const allCats = await this.prisma.main.expenseCategory.findMany({
       select: { id: true, name: true },
     });
+    if (allCats.length === 0) return null;
+
+    // 1. Cocok langsung berdasarkan categoryName atau kata di deskripsi
+    if (rawCat) {
+      const catLower = rawCat.toLowerCase();
+      const exact = allCats.find(
+        (c) => c.name.toLowerCase().includes(catLower) || catLower.includes(c.name.toLowerCase()),
+      );
+      if (exact) return exact;
+    }
+    const byDesc = allCats.find((c) => {
+      const tokens = c.name.toLowerCase().split(/[\s/&,-]+/).filter((t) => t.length >= 3);
+      return tokens.some((t) => searchText.includes(t));
+    });
+    if (byDesc) return byDesc;
+
+    // 2. Pencocokan sinonim umum Bahasa Indonesia (makan -> konsumsi, bensin/tol -> transport, dll.)
+    const synonymGroups: Array<{ triggers: string[]; catHints: string[] }> = [
+      {
+        triggers: ["makan", "minum", "konsumsi", "snack", "kopi", "sarapan", "siang", "malam", "jamuan", "catering"],
+        catHints: ["konsumsi", "makan", "meal", "food", "entertain"],
+      },
+      {
+        triggers: ["transport", "bensin", "bbm", "parkir", "tol", "grab", "gojek", "ojek", "taksi", "tiket", "kereta", "pesawat", "dinas"],
+        catHints: ["transport", "perjalanan", "travel", "bbm", "kendaraan", "dinas"],
+      },
+      {
+        triggers: ["hotel", "penginapan", "akomodasi", "inap"],
+        catHints: ["akomodasi", "hotel", "penginapan", "perjalanan"],
+      },
+      {
+        triggers: ["atk", "kertas", "pulpen", "tinta", "printer", "fotokopi", "materai"],
+        catHints: ["atk", "kantor", "office", "perlengkapan"],
+      },
+      {
+        triggers: ["listrik", "air", "internet", "wifi", "pulsa", "kuota", "telepon"],
+        catHints: ["utilitas", "komunikasi", "listrik", "internet", "telekomunikasi"],
+      },
+      {
+        triggers: ["material", "kabel", "alat", "peralatan", "sparepart", "proyek"],
+        catHints: ["material", "proyek", "project", "operasional"],
+      },
+    ];
+
+    for (const grp of synonymGroups) {
+      if (grp.triggers.some((t) => searchText.includes(t))) {
+        const hit = allCats.find((c) => {
+          const n = c.name.toLowerCase();
+          return grp.catHints.some((h) => n.includes(h));
+        });
+        if (hit) return hit;
+      }
+    }
+
+    return null;
   }
 
   async proposeCreate(
