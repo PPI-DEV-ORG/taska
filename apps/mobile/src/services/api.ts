@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
 const FALLBACK_BASE = "http://localhost:3030/api";
@@ -162,6 +163,40 @@ async function tryRefresh(): Promise<boolean> {
   }
 }
 
+/**
+ * Kirim FormData di Native (Android/iOS) lewat XMLHttpRequest karena expo/fetch di Expo 58
+ * menolak objek { uri, name, type } dengan error "Unsupported FormDataPart implementation".
+ */
+function sendNativeFormData(
+  method: string,
+  url: string,
+  headers: Record<string, string>,
+  form: FormData,
+): Promise<{ status: number; ok: boolean; text: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() === "content-type") continue;
+      xhr.setRequestHeader(k, v);
+    }
+    xhr.onload = () => {
+      resolve({
+        status: xhr.status,
+        ok: xhr.status >= 200 && xhr.status < 300,
+        text: typeof xhr.responseText === "string" ? xhr.responseText : "",
+      });
+    };
+    xhr.onerror = () => {
+      reject(new Error("Tidak dapat terhubung ke server (API Offline)"));
+    };
+    xhr.ontimeout = () => {
+      reject(new Error("Koneksi upload ke server timeout"));
+    };
+    xhr.send(form as any);
+  });
+}
+
 async function once<T>(
   method: string,
   path: string,
@@ -175,23 +210,44 @@ async function once<T>(
     const a = getAccess();
     if (a) headers.Authorization = `Bearer ${a}`;
   }
-  let payload: BodyInit | undefined;
-  if (form) {
-    payload = form;
-  } else if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-    payload = JSON.stringify(body);
+
+  let status = 0;
+  let ok = false;
+  let text = "";
+
+  if (form && Platform.OS !== "web") {
+    try {
+      const xhrRes = await sendNativeFormData(method, `${apiBase()}${path}`, headers, form);
+      status = xhrRes.status;
+      ok = xhrRes.ok;
+      text = xhrRes.text;
+    } catch (e: any) {
+      const netErr: ApiError = new Error(e?.message || "Tidak dapat terhubung ke server (API Offline)");
+      netErr.isNetworkError = true;
+      throw netErr;
+    }
+  } else {
+    let payload: BodyInit | undefined;
+    if (form) {
+      payload = form;
+    } else if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      payload = JSON.stringify(body);
+    }
+    let res: Response;
+    try {
+      res = await fetch(`${apiBase()}${path}`, { method, headers, body: payload });
+    } catch (e: any) {
+      const netErr: ApiError = new Error(e?.message || "Tidak dapat terhubung ke server (API Offline)");
+      netErr.isNetworkError = true;
+      throw netErr;
+    }
+    status = res.status;
+    ok = res.ok;
+    text = status === 204 ? "" : await res.text();
   }
-  let res: Response;
-  try {
-    res = await fetch(`${apiBase()}${path}`, { method, headers, body: payload });
-  } catch (e: any) {
-    const netErr: ApiError = new Error(e?.message || "Tidak dapat terhubung ke server (API Offline)");
-    netErr.isNetworkError = true;
-    throw netErr;
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
+
+  if (status === 204) return undefined as T;
   let data: any = undefined;
   if (text) {
     try {
@@ -200,13 +256,13 @@ async function once<T>(
       data = text;
     }
   }
-  if (!res.ok) {
+  if (!ok) {
     const message =
       (typeof data === "object" && data && (data.message || data.error)) ||
       (Array.isArray(data?.message) ? data.message.join(", ") : null) ||
-      `HTTP ${res.status}`;
+      `HTTP ${status}`;
     const err: ApiError = new Error(typeof message === "string" ? message : JSON.stringify(message));
-    err.status = res.status;
+    err.status = status;
     err.body = data;
     throw err;
   }
