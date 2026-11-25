@@ -1,12 +1,14 @@
 import * as React from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, Share, View } from "react-native";
 import {
   AlertTriangle,
   Bot,
+  Copy,
   Database,
   History,
   MessageSquarePlus,
   Send,
+  Share2,
   Sparkles,
   Trash2,
   User as UserIcon,
@@ -28,6 +30,7 @@ import {
   fetchAiSession,
   fetchAiSessions,
   sendAiChat,
+  streamAiChat,
   type AiCapabilities,
   type AiChatMessageItem,
   type AiChatSessionSummary,
@@ -50,6 +53,8 @@ export function AiAssistantScreen() {
   const [loadingInit, setLoadingInit] = React.useState(true);
   const [loadingSession, setLoadingSession] = React.useState(false);
   const [sending, setSending] = React.useState(false);
+  const [streamStatus, setStreamStatus] = React.useState<string | null>(null);
+  const [streamingReply, setStreamingReply] = React.useState("");
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [showMobileHistory, setShowMobileHistory] = React.useState(false);
 
@@ -163,6 +168,8 @@ export function AiAssistantScreen() {
       }
 
       setSending(true);
+      setStreamStatus("Menganalisis pertanyaan...");
+      setStreamingReply("");
       setErrorMsg(null);
       if (!overrideText) setInput("");
 
@@ -178,7 +185,17 @@ export function AiAssistantScreen() {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
 
       try {
-        const reply = await sendAiChat(text, activeSessionId ?? undefined);
+        const reply =
+          Platform.OS === "web"
+            ? await streamAiChat(text, activeSessionId ?? undefined, {
+                onStatus: (s) => setStreamStatus(s),
+                onDelta: (chunk) => {
+                  setStreamStatus(null);
+                  setStreamingReply((prev) => prev + chunk);
+                  scrollRef.current?.scrollToEnd({ animated: false });
+                },
+              })
+            : await sendAiChat(text, activeSessionId ?? undefined);
         setActiveSessionId(reply.sessionId);
         setStorageItem(storageKey, String(reply.sessionId));
         setMessages((prev) => [
@@ -205,9 +222,27 @@ export function AiAssistantScreen() {
         setErrorMsg((err as Error)?.message || "Gagal mendapatkan jawaban dari Asisten AI.");
       } finally {
         setSending(false);
+        setStreamStatus(null);
+        setStreamingReply("");
       }
     },
     [activeSessionId, capabilities, input, sending, storageKey],
+  );
+
+  const handleCopyOrShare = React.useCallback(
+    async (text: string) => {
+      try {
+        if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(text);
+          toast("Jawaban disalin ke clipboard");
+          return;
+        }
+        await Share.share({ message: text });
+      } catch {
+        toast("Gagal menyalin jawaban");
+      }
+    },
+    [toast],
   );
 
   const renderSessionList = () => (
@@ -435,19 +470,39 @@ export function AiAssistantScreen() {
                             <MarkdownText content={m.content} />
                           )}
 
-                          {!isUser && m.toolsUsed.length > 0 ? (
-                            <View className="flex-row flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-border/50">
-                              <Database size={11} color={colors.muted} />
-                              {m.toolsUsed.map((label) => (
-                                <View
-                                  key={label}
-                                  className="bg-card border-border/70 rounded-md border px-1.5 py-0.5"
-                                >
-                                  <Text className="text-muted-foreground text-[10px] font-medium">
-                                    {label}
-                                  </Text>
-                                </View>
-                              ))}
+                          {!isUser ? (
+                            <View className="flex-row flex-wrap items-center justify-between gap-2 mt-2 pt-2 border-t border-border/50">
+                              <View className="flex-row flex-wrap items-center gap-1.5 flex-1 min-w-0">
+                                {m.toolsUsed.length > 0 ? (
+                                  <>
+                                    <Database size={11} color={colors.muted} />
+                                    {m.toolsUsed.map((label) => (
+                                      <View
+                                        key={label}
+                                        className="bg-card border-border/70 rounded-md border px-1.5 py-0.5"
+                                      >
+                                        <Text className="text-muted-foreground text-[10px] font-medium">
+                                          {label}
+                                        </Text>
+                                      </View>
+                                    ))}
+                                  </>
+                                ) : null}
+                              </View>
+                              <Pressable
+                                onPress={() => void handleCopyOrShare(m.content)}
+                                hitSlop={8}
+                                className="flex-row items-center gap-1 rounded-md px-2 py-1 hover:bg-card active:opacity-70"
+                              >
+                                {Platform.OS === "web" ? (
+                                  <Copy size={12} color={colors.muted} />
+                                ) : (
+                                  <Share2 size={12} color={colors.muted} />
+                                )}
+                                <Text className="text-muted-foreground text-[10px] font-medium">
+                                  {Platform.OS === "web" ? "Salin" : "Bagikan"}
+                                </Text>
+                              </Pressable>
                             </View>
                           ) : null}
                         </View>
@@ -462,15 +517,20 @@ export function AiAssistantScreen() {
                   })}
 
                   {sending ? (
-                    <View className="flex-row items-center gap-2.5">
-                      <View className="bg-primary/15 size-8 shrink-0 rounded-xl items-center justify-center">
+                    <View className="flex-row items-start gap-2.5">
+                      <View className="bg-primary/15 size-8 shrink-0 rounded-xl items-center justify-center mt-0.5">
                         <Bot size={16} color={colors.primary} />
                       </View>
-                      <View className="bg-panel/80 border-border/70 flex-row items-center gap-2 rounded-2xl border px-3.5 py-2.5">
-                        <ActivityIndicator size="small" color={colors.primary} />
-                        <Text className="text-muted-foreground text-xs">
-                          Membaca data ERP & menyusun jawaban...
-                        </Text>
+                      <View className="bg-panel/80 border-border/70 rounded-2xl border px-3.5 py-2.5 max-w-[85%] gap-1.5">
+                        {streamingReply ? (
+                          <MarkdownText content={streamingReply} />
+                        ) : null}
+                        <View className="flex-row items-center gap-2">
+                          <ActivityIndicator size="small" color={colors.primary} />
+                          <Text className="text-muted-foreground text-xs">
+                            {streamStatus || "Membaca data ERP & menyusun jawaban..."}
+                          </Text>
+                        </View>
                       </View>
                     </View>
                   ) : null}

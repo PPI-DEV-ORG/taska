@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Res } from "@nestjs/common";
+import type { Response } from "express";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { AiAgentService } from "./ai-agent.service.js";
 import { SendAiChatDto } from "./dto.js";
@@ -30,5 +31,36 @@ export class AiAgentController {
   @Post("chat")
   chat(@CurrentUser() user: RequestUser, @Body() dto: SendAiChatDto) {
     return this.service.chat(user, dto);
+  }
+
+  @Post("chat/stream")
+  async chatStream(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: SendAiChatDto,
+    @Res() res: Response,
+  ) {
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+
+    const writeEvent = (ev: unknown) => {
+      if (res.writableEnded) return;
+      res.write(`data: ${JSON.stringify(ev)}\n\n`);
+    };
+
+    try {
+      await this.service.chatStream(user, dto, writeEvent);
+    } catch (err) {
+      writeEvent({
+        type: "error",
+        message: (err as Error)?.message || "Gagal memproses permintaan Asisten AI.",
+      });
+    } finally {
+      if (!res.writableEnded) {
+        res.end();
+      }
+    }
   }
 }

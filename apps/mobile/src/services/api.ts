@@ -613,5 +613,86 @@ export async function sendAiChat(message: string, sessionId?: number) {
   });
 }
 
+export async function streamAiChat(
+  message: string,
+  sessionId: number | undefined,
+  handlers: {
+    onStatus?: (text: string) => void;
+    onDelta?: (chunk: string) => void;
+  },
+): Promise<AiChatReply> {
+  // Di native (Android/iOS), ReadableStream pada fetch tidak selalu stabil tanpa polyfill — gunakan endpoint standar.
+  if (typeof window === "undefined" || typeof ReadableStream === "undefined") {
+    return sendAiChat(message, sessionId);
+  }
+
+  await hydrateTokens();
+  const token = getAccess();
+  const res = await fetch(`${apiBase()}/ai-agent/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      message,
+      ...(sessionId ? { sessionId } : {}),
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const errJson = (await res.json()) as { message?: string | string[] };
+      if (Array.isArray(errJson.message)) msg = errJson.message.join(", ");
+      else if (errJson.message) msg = errJson.message;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let donePayload: AiChatReply | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let nlIdx = buffer.indexOf("\n");
+    while (nlIdx >= 0) {
+      const rawLine = buffer.slice(0, nlIdx).trim();
+      buffer = buffer.slice(nlIdx + 1);
+      nlIdx = buffer.indexOf("\n");
+
+      if (!rawLine.startsWith("data:")) continue;
+      const dataStr = rawLine.slice(5).trim();
+      if (!dataStr) continue;
+
+      const ev = JSON.parse(dataStr) as
+        | { type: "status"; text: string }
+        | { type: "delta"; text: string }
+        | { type: "done"; payload: AiChatReply }
+        | { type: "error"; message: string };
+
+      if (ev.type === "status") {
+        handlers.onStatus?.(ev.text);
+      } else if (ev.type === "delta") {
+        handlers.onDelta?.(ev.text);
+      } else if (ev.type === "done") {
+        donePayload = ev.payload;
+      } else if (ev.type === "error") {
+        throw new Error(ev.message);
+      }
+    }
+  }
+
+  if (!donePayload) {
+    throw new Error("Streaming selesai tanpa payload jawaban akhir.");
+  }
+  return donePayload;
+}
+
 
 

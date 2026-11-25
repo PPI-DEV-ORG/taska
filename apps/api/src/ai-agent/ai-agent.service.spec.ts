@@ -69,6 +69,59 @@ describe("LlmProviderService", () => {
       providerLabel: "Local LLM (On-Premise)",
     });
   });
+
+  it("mempertahankan extra_content.google.thought_signature dan tool call paralel saat completeStream", async () => {
+    const sseBody = [
+      `data: ${JSON.stringify({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_pl",
+                  type: "function",
+                  function: { name: "get_financial_report", arguments: '{"reportType":"income-statement"}' },
+                  extra_content: { google: { thought_signature: "sig-pl-123" } },
+                },
+                {
+                  index: 0,
+                  id: "call_bs",
+                  type: "function",
+                  function: { name: "get_financial_report", arguments: '{"reportType":"balance-sheet"}' },
+                  extra_content: { google: { thought_signature: "sig-bs-456" } },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      })}`,
+      "data: [DONE]",
+      "",
+    ].join("\n");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(sseBody, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
+
+    try {
+      const provider = new LlmProviderService(
+        makeConfig({ LLM_API_KEY: "test-key", LLM_MODEL: "gemini-3.5-flash-lite" }),
+      );
+      const res = await provider.completeStream([{ role: "user", content: "cek keuangan" }], [], () => {});
+      expect(res.toolCalls).toHaveLength(2);
+      expect(res.toolCalls[0]?.id).toBe("call_pl");
+      expect(res.toolCalls[0]?.extra_content).toEqual({ google: { thought_signature: "sig-pl-123" } });
+      expect(res.toolCalls[1]?.id).toBe("call_bs");
+      expect(res.toolCalls[1]?.extra_content).toEqual({ google: { thought_signature: "sig-bs-456" } });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
 
 describe("AgentToolsService RBAC & Redaction", () => {
@@ -81,6 +134,10 @@ describe("AgentToolsService RBAC & Redaction", () => {
   const prismaMock = {
     main: {
       ctrContract: { findMany: vi.fn() },
+      attendance: { findMany: vi.fn() },
+      supplierPO: { findMany: vi.fn() },
+      subSubscription: { findMany: vi.fn() },
+      faAsset: { findMany: vi.fn() },
     },
   };
 
@@ -180,6 +237,78 @@ describe("AgentToolsService RBAC & Redaction", () => {
     expect(res.allowed).toBe(true);
     expect(res.label).toBe("Laporan Laba Rugi (Akuntansi)");
     expect(reportsMock.build).toHaveBeenCalledWith("income-statement", expect.any(Object));
+  });
+
+  it("mendukung perbandingan periode keuangan (compareWithPrevious=true)", async () => {
+    const svc = createService();
+    reportsMock.build
+      .mockResolvedValueOnce({
+        title: "Laba Rugi",
+        columns: ["Komponen", "Nominal"],
+        note: "Laba Bersih: Rp 20.000.000",
+        rows: [["Laba Bersih", "Rp 20.000.000"]],
+      })
+      .mockResolvedValueOnce({
+        title: "Laba Rugi",
+        columns: ["Komponen", "Nominal"],
+        note: "Laba Bersih: Rp 15.000.000",
+        rows: [["Laba Bersih", "Rp 15.000.000"]],
+      });
+
+    const res = await svc.executeTool(
+      "get_financial_report",
+      { reportType: "income-statement", period: "this_month", compareWithPrevious: true },
+      superAdminUser,
+    );
+    expect(res.allowed).toBe(true);
+    expect(reportsMock.build).toHaveBeenCalledTimes(2);
+    const data = res.data as { currentPeriod: unknown; previousPeriod: { label: string } };
+    expect(data.previousPeriod.label).toBe("Bulan Lalu");
+  });
+
+  it("membatasi absensi ke pribadi untuk non-HR dan meredaksi harga aset tetap untuk role tanpa hak P", async () => {
+    const svc = createService();
+    prismaMock.main.attendance.findMany.mockResolvedValue([
+      {
+        user: { name: "Budi Sales", role: "SALES" },
+        date: new Date("2026-11-25T00:00:00Z"),
+        status: "HADIR",
+        checkIn: new Date("2026-11-25T01:00:00Z"),
+        checkOut: null,
+        overtimeHours: 0,
+        notes: null,
+      },
+    ]);
+
+    const att = await svc.executeTool("get_attendance_summary", { period: "today" }, salesUser);
+    expect(att.allowed).toBe(true);
+    expect((att.data as { scope: string }).scope).toBe("PRIBADI");
+    expect(prismaMock.main.attendance.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: salesUser.id }),
+      }),
+    );
+
+    prismaMock.main.faAsset.findMany.mockResolvedValue([
+      {
+        assetCode: "FA-01",
+        name: "Laptop Teknisi",
+        brand: "Lenovo",
+        model: "ThinkPad",
+        department: "Ops",
+        condition: "GOOD",
+        status: "ASSIGNED",
+        acquisitionDate: new Date("2026-01-01"),
+        category: { name: "IT" },
+        assignedUser: { name: "Rina PM" },
+      },
+    ]);
+
+    const assetRes = await svc.executeTool("get_fixed_assets_overview", {}, pmUser);
+    expect(assetRes.allowed).toBe(true);
+    const assetData = assetRes.data as { totalNilaiBuku?: number; items: Record<string, unknown>[] };
+    expect(assetData.totalNilaiBuku).toBeUndefined();
+    expect(assetData.items[0]).not.toHaveProperty("nilaiPerolehan");
   });
 });
 

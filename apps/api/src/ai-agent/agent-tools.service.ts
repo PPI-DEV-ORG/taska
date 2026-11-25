@@ -70,6 +70,76 @@ function resolvePeriodDates(period?: string): { from?: string; to?: string } {
   }
 }
 
+function resolvePreviousPeriodDates(
+  period?: string,
+  from?: string,
+  to?: string,
+): { from?: string; to?: string; label: string } {
+  const wib = getWibNow();
+  const y = wib.getUTCFullYear();
+  const m = wib.getUTCMonth();
+  const d = wib.getUTCDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const fmt = (year: number, monthIdx: number, day: number) =>
+    `${year}-${pad(monthIdx + 1)}-${pad(day)}`;
+
+  if (period === "this_month" || (!period && !from && !to)) {
+    const start = new Date(Date.UTC(y, m - 1, 1));
+    const end = new Date(Date.UTC(y, m, 0));
+    return {
+      from: fmt(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+      to: fmt(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
+      label: "Bulan Lalu",
+    };
+  }
+  if (period === "last_month") {
+    const start = new Date(Date.UTC(y, m - 2, 1));
+    const end = new Date(Date.UTC(y, m - 1, 0));
+    return {
+      from: fmt(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+      to: fmt(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
+      label: "2 Bulan Lalu",
+    };
+  }
+  if (period === "this_week") {
+    const dow = wib.getUTCDay();
+    const diffToMonday = dow === 0 ? 6 : dow - 1;
+    const prevMon = new Date(Date.UTC(y, m, d - diffToMonday - 7));
+    const prevSun = new Date(Date.UTC(y, m, d - diffToMonday - 1));
+    return {
+      from: fmt(prevMon.getUTCFullYear(), prevMon.getUTCMonth(), prevMon.getUTCDate()),
+      to: fmt(prevSun.getUTCFullYear(), prevSun.getUTCMonth(), prevSun.getUTCDate()),
+      label: "Minggu Lalu",
+    };
+  }
+  if (period === "this_year") {
+    return {
+      from: fmt(y - 1, 0, 1),
+      to: fmt(y - 1, 11, 31),
+      label: `Tahun ${y - 1}`,
+    };
+  }
+  if (from && to) {
+    const s = new Date(`${from}T00:00:00Z`);
+    const e = new Date(`${to}T00:00:00Z`);
+    const spanMs = Math.max(86400000, e.getTime() - s.getTime() + 86400000);
+    const prevEnd = new Date(s.getTime() - 86400000);
+    const prevStart = new Date(s.getTime() - spanMs);
+    return {
+      from: prevStart.toISOString().slice(0, 10),
+      to: prevEnd.toISOString().slice(0, 10),
+      label: "Periode Sebelumnya",
+    };
+  }
+  const start = new Date(Date.UTC(y, m - 1, 1));
+  const end = new Date(Date.UTC(y, m, 0));
+  return {
+    from: fmt(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+    to: fmt(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
+    label: "Bulan Lalu",
+  };
+}
+
 const LEAD_STAGE_MAP: Record<string, string> = {
   PROSPECTING: "PROSPECTING",
   QUALIFICATION: "QUALIFICATION",
@@ -164,12 +234,26 @@ function formatTableForLlm(
     });
     return obj;
   });
+
+  // Pre-agregasi jumlah per Status / Stage agar LLM tidak perlu menghitung manual
+  const statusColIdx = report.columns.findIndex((c) =>
+    ["status", "stage", "status kesehatan"].includes(c.toLowerCase()),
+  );
+  const countByStatus: Record<string, number> = {};
+  if (statusColIdx >= 0) {
+    for (const r of report.rows) {
+      const k = String(r[statusColIdx] ?? "").trim();
+      if (k) countByStatus[k] = (countByStatus[k] ?? 0) + 1;
+    }
+  }
+
   return {
     title: report.title,
     note: report.note ?? null,
     totalRows,
     shownRows: sliced.length,
     truncated: totalRows > limit,
+    ...(Object.keys(countByStatus).length > 0 ? { countByStatus } : {}),
     items: sliced,
   };
 }
@@ -192,7 +276,7 @@ export class AgentToolsService {
         name: "get_dashboard_summary",
         description:
           "Mengambil ringkasan KPI dashboard sesuai peran pengguna saat ini (prospek, proyek, persetujuan, stok, atau tugas aktif).",
-        parameters: { type: "object", properties: {}, additionalProperties: false },
+        parameters: { type: "object", properties: {} },
       },
     });
 
@@ -222,7 +306,6 @@ export class AgentToolsService {
                 from: { type: "string", description: "Tanggal awal YYYY-MM-DD (opsional)" },
                 to: { type: "string", description: "Tanggal akhir YYYY-MM-DD (opsional)" },
               },
-              additionalProperties: false,
             },
           },
         },
@@ -242,7 +325,6 @@ export class AgentToolsService {
                 },
                 q: { type: "string", description: "Kata kunci pencarian (opsional)" },
               },
-              additionalProperties: false,
             },
           },
         },
@@ -287,9 +369,13 @@ export class AgentToolsService {
               from: { type: "string", description: "Tanggal awal YYYY-MM-DD (opsional)" },
               to: { type: "string", description: "Tanggal akhir YYYY-MM-DD (opsional)" },
               status: { type: "string", description: "Filter status opsional" },
+              compareWithPrevious: {
+                type: "boolean",
+                description:
+                  "Set true jika pengguna meminta perbandingan dengan periode sebelumnya (mis. bulan ini vs bulan lalu).",
+              },
             },
             required: ["reportType"],
-            additionalProperties: false,
           },
         },
       });
@@ -315,7 +401,6 @@ export class AgentToolsService {
                 enum: ["today", "this_week", "this_month", "last_month", "this_year"],
               },
             },
-            additionalProperties: false,
           },
         },
       });
@@ -337,7 +422,6 @@ export class AgentToolsService {
                 description: "Jika true, hanya tampilkan barang yang stoknya <= stok minimum",
               },
             },
-            additionalProperties: false,
           },
         },
       });
@@ -358,7 +442,6 @@ export class AgentToolsService {
                 description: "Filter status persetujuan (default: MENUNGGU)",
               },
             },
-            additionalProperties: false,
           },
         },
       });
@@ -379,7 +462,6 @@ export class AgentToolsService {
                 enum: ["today", "this_week", "this_month", "last_month", "this_year"],
               },
             },
-            additionalProperties: false,
           },
         },
       });
@@ -401,7 +483,88 @@ export class AgentToolsService {
               },
               q: { type: "string", description: "Kata kunci judul/nomor kontrak (opsional)" },
             },
-            additionalProperties: false,
+          },
+        },
+      });
+    }
+
+    tools.push({
+      type: "function",
+      function: {
+        name: "get_attendance_summary",
+        description:
+          "Membaca rekap absensi/kehadiran hari ini atau periode tertentu (rekap seluruh tim bagi HR/pimpinan, atau absensi pribadi bagi karyawan).",
+        parameters: {
+          type: "object",
+          properties: {
+            period: {
+              type: "string",
+              enum: ["today", "this_week", "this_month"],
+              description: "Periode absensi WIB (default: today)",
+            },
+          },
+        },
+      },
+    });
+
+    if (hasMenu(role, "supplier-pos")) {
+      tools.push({
+        type: "function",
+        function: {
+          name: "get_procurement_overview",
+          description:
+            "Membaca daftar PO Supplier (pembelian barang ke pemasok), status persetujuan, dan status pengirimannya.",
+          parameters: {
+            type: "object",
+            properties: {
+              q: { type: "string", description: "Kata kunci nomor PO atau nama pemasok (opsional)" },
+              period: {
+                type: "string",
+                enum: ["today", "this_week", "this_month", "last_month", "this_year"],
+              },
+            },
+          },
+        },
+      });
+    }
+
+    if (hasMenu(role, "subscriptions")) {
+      tools.push({
+        type: "function",
+        function: {
+          name: "get_subscriptions_overview",
+          description:
+            "Membaca daftar langganan/layanan berkala perusahaan, status pembayaran, dan yang akan segera habis (expiringSoon=true).",
+          parameters: {
+            type: "object",
+            properties: {
+              expiringSoon: {
+                type: "boolean",
+                description: "Jika true, tampilkan langganan yang jatuh tempo/berakhir dalam 60 hari",
+              },
+              q: { type: "string", description: "Kata kunci nama layanan/provider (opsional)" },
+            },
+          },
+        },
+      });
+    }
+
+    if (hasMenu(role, "fixed-assets")) {
+      tools.push({
+        type: "function",
+        function: {
+          name: "get_fixed_assets_overview",
+          description:
+            "Membaca daftar aset tetap perusahaan, kondisi, status penugasan, dan departemennya.",
+          parameters: {
+            type: "object",
+            properties: {
+              q: { type: "string", description: "Kata kunci nama/kode aset (opsional)" },
+              condition: {
+                type: "string",
+                description: "Filter kondisi aset opsional (mis. GOOD, DAMAGED)",
+              },
+            },
           },
         },
       });
@@ -544,10 +707,53 @@ export class AgentToolsService {
         };
         const isFullStatement = targetType === "income-statement" || targetType === "balance-sheet";
         const isCashFlow = targetType === "cash-flow";
+        const formattedCurrent = formatTableForLlm(
+          report,
+          isFullStatement ? 250 : MAX_TOOL_ROWS,
+          isCashFlow,
+        );
+
+        if (bool("compareWithPrevious")) {
+          const prevRange = resolvePreviousPeriodDates(str("period"), baseQuery.from, baseQuery.to);
+          const prevReport = await this.reports.build(targetType, {
+            ...baseQuery,
+            from: prevRange.from,
+            to: prevRange.to,
+            status:
+              targetType === "expenses"
+                ? normalizeEnum(baseQuery.status, EXPENSE_STATUS_MAP)
+                : undefined,
+          });
+          return {
+            label: `${labelMap[targetType] ?? "Laporan Keuangan"} (Perbandingan)`,
+            allowed: true,
+            data: {
+              currentPeriod: {
+                from: baseQuery.from ?? null,
+                to: baseQuery.to ?? null,
+                ...formattedCurrent,
+              },
+              previousPeriod: {
+                label: prevRange.label,
+                from: prevRange.from ?? null,
+                to: prevRange.to ?? null,
+                ...formatTableForLlm(
+                  prevReport,
+                  isFullStatement ? 250 : MAX_TOOL_ROWS,
+                  isCashFlow,
+                ),
+              },
+            },
+          };
+        }
+
         return {
           label: labelMap[targetType] ?? "Laporan Keuangan",
           allowed: true,
-          data: formatTableForLlm(report, isFullStatement ? 250 : MAX_TOOL_ROWS, isCashFlow),
+          data: {
+            period: { from: baseQuery.from ?? null, to: baseQuery.to ?? null },
+            ...formattedCurrent,
+          },
         };
       }
 
@@ -689,6 +895,291 @@ export class AgentToolsService {
               berakhir: r.expirationDate ? getWibDateString(new Date(r.expirationDate)) : null,
               ...("contractValue" in r && r.contractValue != null
                 ? { nilai: Number(r.contractValue) }
+                : {}),
+            })),
+          },
+        };
+      }
+
+      case "get_attendance_summary": {
+        const periodKey = str("period") ?? "today";
+        const range = resolvePeriodDates(periodKey);
+        const canViewAll = can(role, "attendance", "V");
+        const fromDate = range.from ? new Date(`${range.from}T00:00:00.000Z`) : undefined;
+        const toDate = range.to ? new Date(`${range.to}T23:59:59.999Z`) : undefined;
+
+        const rows = await this.prisma.main.attendance.findMany({
+          where: {
+            ...(canViewAll ? {} : { userId: user.id }),
+            ...(fromDate || toDate
+              ? {
+                  date: {
+                    ...(fromDate ? { gte: fromDate } : {}),
+                    ...(toDate ? { lte: toDate } : {}),
+                  },
+                }
+              : {}),
+          },
+          include: { user: { select: { name: true, role: true } } },
+          orderBy: [{ date: "desc" }, { checkIn: "asc" }],
+          take: MAX_TOOL_ROWS,
+        });
+
+        const countByStatus: Record<string, number> = {};
+        for (const r of rows) {
+          countByStatus[r.status] = (countByStatus[r.status] ?? 0) + 1;
+        }
+
+        return {
+          label: canViewAll ? "Rekap Absensi Tim" : "Absensi Pribadi",
+          allowed: true,
+          data: {
+            scope: canViewAll ? "SEMUA_KARYAWAN" : "PRIBADI",
+            period: range,
+            totalRows: rows.length,
+            countByStatus,
+            items: rows.map((r) => ({
+              nama: r.user.name,
+              role: r.user.role,
+              tanggal: getWibDateString(new Date(r.date)),
+              status: r.status,
+              jamMasuk: r.checkIn ? new Date(r.checkIn).toISOString() : null,
+              jamPulang: r.checkOut ? new Date(r.checkOut).toISOString() : null,
+              lemburJam: Number(r.overtimeHours || 0),
+              catatan: r.notes ?? null,
+            })),
+          },
+        };
+      }
+
+      case "get_procurement_overview": {
+        if (!hasMenu(role, "supplier-pos")) {
+          return {
+            label: "PO Supplier",
+            allowed: false,
+            data: { error: "Akses ditolak: peran Anda tidak memiliki akses ke PO Supplier." },
+          };
+        }
+        const qText = str("q");
+        const canSeePrice = can(role, "supplier-pos", "P");
+        const fromDate = baseQuery.from ? new Date(`${baseQuery.from}T00:00:00.000Z`) : undefined;
+        const toDate = baseQuery.to ? new Date(`${baseQuery.to}T23:59:59.999Z`) : undefined;
+
+        const rows = await this.prisma.main.supplierPO.findMany({
+          where: {
+            ...(fromDate || toDate
+              ? {
+                  date: {
+                    ...(fromDate ? { gte: fromDate } : {}),
+                    ...(toDate ? { lte: toDate } : {}),
+                  },
+                }
+              : {}),
+            ...(qText
+              ? {
+                  OR: [
+                    { number: { contains: qText } },
+                    { supplier: { name: { contains: qText } } },
+                  ],
+                }
+              : {}),
+          },
+          select: {
+            id: true,
+            number: true,
+            date: true,
+            eta: true,
+            status: true,
+            shipmentStatus: true,
+            supplier: { select: { name: true } },
+            project: { select: { name: true } },
+            ...(canSeePrice ? { total: true } : {}),
+          },
+          orderBy: { date: "desc" },
+          take: MAX_TOOL_ROWS,
+        });
+
+        const countByStatus: Record<string, number> = {};
+        let totalValue = 0;
+        for (const r of rows) {
+          countByStatus[r.status] = (countByStatus[r.status] ?? 0) + 1;
+          if ("total" in r && r.total != null) totalValue += Number(r.total);
+        }
+
+        return {
+          label: "PO Supplier (Pengadaan)",
+          allowed: true,
+          data: {
+            totalRows: rows.length,
+            countByStatus,
+            ...(canSeePrice ? { totalNilai: totalValue } : {}),
+            items: rows.map((r) => ({
+              nomor: r.number,
+              pemasok: r.supplier.name,
+              proyek: r.project?.name ?? "-",
+              tanggal: getWibDateString(new Date(r.date)),
+              eta: r.eta ? getWibDateString(new Date(r.eta)) : null,
+              status: r.status,
+              pengiriman: r.shipmentStatus,
+              ...("total" in r && r.total != null ? { total: Number(r.total) } : {}),
+            })),
+          },
+        };
+      }
+
+      case "get_subscriptions_overview": {
+        if (!hasMenu(role, "subscriptions")) {
+          return {
+            label: "Manajemen Langganan",
+            allowed: false,
+            data: { error: "Akses ditolak: peran Anda tidak memiliki akses ke Manajemen Langganan." },
+          };
+        }
+        const now = new Date();
+        const in60Days = new Date(now.getTime() + 60 * 86400000);
+        const expiringSoon = bool("expiringSoon");
+        const qText = str("q");
+        const canSeePrice = can(role, "subscriptions", "P");
+
+        const rows = await this.prisma.main.subSubscription.findMany({
+          where: {
+            ...(expiringSoon
+              ? {
+                  OR: [
+                    { expirationDate: { gte: now, lte: in60Days } },
+                    { nextRenewalDate: { gte: now, lte: in60Days } },
+                  ],
+                }
+              : {}),
+            ...(qText
+              ? {
+                  OR: [
+                    { serviceName: { contains: qText } },
+                    { providerName: { contains: qText } },
+                    { subscriptionCode: { contains: qText } },
+                  ],
+                }
+              : {}),
+          },
+          select: {
+            subscriptionCode: true,
+            serviceName: true,
+            providerName: true,
+            billingCycle: true,
+            expirationDate: true,
+            nextRenewalDate: true,
+            status: true,
+            paymentStatus: true,
+            department: true,
+            ...(canSeePrice ? { cost: true, mrc: true } : {}),
+          },
+          orderBy: { nextRenewalDate: "asc" },
+          take: MAX_TOOL_ROWS,
+        });
+
+        const countByStatus: Record<string, number> = {};
+        let totalMrc = 0;
+        for (const r of rows) {
+          countByStatus[r.status] = (countByStatus[r.status] ?? 0) + 1;
+          if ("mrc" in r && r.mrc != null) totalMrc += Number(r.mrc);
+        }
+
+        return {
+          label: "Manajemen Langganan",
+          allowed: true,
+          data: {
+            totalRows: rows.length,
+            countByStatus,
+            ...(canSeePrice ? { totalBiayaBulananMrc: totalMrc } : {}),
+            items: rows.map((r) => ({
+              kode: r.subscriptionCode,
+              layanan: r.serviceName,
+              provider: r.providerName ?? "-",
+              siklus: r.billingCycle,
+              departemen: r.department,
+              status: r.status,
+              pembayaran: r.paymentStatus,
+              berakhir: r.expirationDate ? getWibDateString(new Date(r.expirationDate)) : null,
+              perpanjanganBerikutnya: r.nextRenewalDate
+                ? getWibDateString(new Date(r.nextRenewalDate))
+                : null,
+              ...("cost" in r && r.cost != null ? { biaya: Number(r.cost) } : {}),
+              ...("mrc" in r && r.mrc != null ? { biayaBulanan: Number(r.mrc) } : {}),
+            })),
+          },
+        };
+      }
+
+      case "get_fixed_assets_overview": {
+        if (!hasMenu(role, "fixed-assets")) {
+          return {
+            label: "Aset Tetap",
+            allowed: false,
+            data: { error: "Akses ditolak: peran Anda tidak memiliki akses ke Aset Tetap." },
+          };
+        }
+        const qText = str("q");
+        const cond = str("condition");
+        const canSeePrice = can(role, "fixed-assets", "P");
+
+        const rows = await this.prisma.main.faAsset.findMany({
+          where: {
+            ...(cond ? { condition: cond.toUpperCase() } : {}),
+            ...(qText
+              ? {
+                  OR: [
+                    { name: { contains: qText } },
+                    { assetCode: { contains: qText } },
+                    { brand: { contains: qText } },
+                  ],
+                }
+              : {}),
+          },
+          select: {
+            assetCode: true,
+            name: true,
+            brand: true,
+            model: true,
+            department: true,
+            condition: true,
+            status: true,
+            acquisitionDate: true,
+            category: { select: { name: true } },
+            assignedUser: { select: { name: true } },
+            ...(canSeePrice ? { acquisitionCost: true, bookValue: true } : {}),
+          },
+          orderBy: { acquisitionDate: "desc" },
+          take: MAX_TOOL_ROWS,
+        });
+
+        const countByCondition: Record<string, number> = {};
+        let totalBookValue = 0;
+        for (const r of rows) {
+          countByCondition[r.condition] = (countByCondition[r.condition] ?? 0) + 1;
+          if ("bookValue" in r && r.bookValue != null) totalBookValue += Number(r.bookValue);
+        }
+
+        return {
+          label: "Aset Tetap",
+          allowed: true,
+          data: {
+            totalRows: rows.length,
+            countByCondition,
+            ...(canSeePrice ? { totalNilaiBuku: totalBookValue } : {}),
+            items: rows.map((r) => ({
+              kode: r.assetCode,
+              nama: r.name,
+              kategori: r.category.name,
+              merekModel: [r.brand, r.model].filter(Boolean).join(" ") || "-",
+              departemen: r.department ?? "-",
+              pemegang: r.assignedUser?.name ?? "-",
+              kondisi: r.condition,
+              status: r.status,
+              ...("acquisitionCost" in r && r.acquisitionCost != null
+                ? { nilaiPerolehan: Number(r.acquisitionCost) }
+                : {}),
+              ...("bookValue" in r && r.bookValue != null
+                ? { nilaiBuku: Number(r.bookValue) }
                 : {}),
             })),
           },
