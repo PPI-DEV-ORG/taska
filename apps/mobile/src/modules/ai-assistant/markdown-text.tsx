@@ -1,7 +1,9 @@
 import * as React from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Platform, Pressable, ScrollView, Share, View } from "react-native";
 import { useRouter } from "expo-router";
+import { Check, Code2, Copy, Share2 } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
+import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 
 type InlineSegment =
@@ -75,13 +77,32 @@ function splitTableCells(line: string): string[] {
 
 type Block =
   | { type: "line"; raw: string }
-  | { type: "table"; headers: string[]; rows: string[][] };
+  | { type: "table"; headers: string[]; rows: string[][] }
+  | { type: "code"; lang: string; content: string };
 
 function groupBlocks(lines: string[]): Block[] {
   const blocks: Block[] = [];
   let i = 0;
   while (i < lines.length) {
     const cur = lines[i] ?? "";
+    const trimmed = cur.trim();
+
+    // Fenced code / plain text block (```text ... ```)
+    if (trimmed.startsWith("```")) {
+      const lang = trimmed.slice(3).trim() || "Plain text";
+      const codeLines: string[] = [];
+      i += 1;
+      while (i < lines.length && !(lines[i] ?? "").trim().startsWith("```")) {
+        codeLines.push(lines[i] ?? "");
+        i += 1;
+      }
+      if (i < lines.length && (lines[i] ?? "").trim().startsWith("```")) {
+        i += 1;
+      }
+      blocks.push({ type: "code", lang, content: codeLines.join("\n") });
+      continue;
+    }
+
     const next = lines[i + 1] ?? "";
     if (isTableRow(cur) && isTableSeparator(next)) {
       const headers = splitTableCells(cur);
@@ -98,6 +119,71 @@ function groupBlocks(lines: string[]): Block[] {
     i += 1;
   }
   return blocks;
+}
+
+function CodeBlockBox({ lang, content }: { lang: string; content: string }) {
+  const [copied, setCopied] = React.useState(false);
+
+  const label =
+    lang.toLowerCase() === "text" || lang.toLowerCase() === "txt" || lang.toLowerCase() === "plaintext"
+      ? "Plain text"
+      : lang;
+
+  const handleCopy = async () => {
+    try {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(content);
+      } else {
+        await Share.share({ message: content });
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Abaikan jika user membatalkan dialog share
+    }
+  };
+
+  return (
+    <View className="bg-card border-border/80 rounded-xl border overflow-hidden my-1.5 w-full">
+      <View className="bg-panel/90 border-border/70 flex-row items-center justify-between gap-2 border-b px-3 py-2">
+        <View className="flex-row items-center gap-1.5">
+          <Code2 size={13} color={colors.muted} />
+          <Text className="text-muted-foreground text-xs font-semibold">{label}</Text>
+        </View>
+        <Pressable
+          onPress={() => void handleCopy()}
+          hitSlop={8}
+          className="flex-row items-center gap-1 rounded-md px-2 py-1 hover:bg-card active:opacity-70"
+        >
+          {copied ? (
+            <Check size={13} color={colors.primary} />
+          ) : Platform.OS === "web" ? (
+            <Copy size={13} color={colors.muted} />
+          ) : (
+            <Share2 size={13} color={colors.muted} />
+          )}
+          <Text
+            className={cn(
+              "text-[11px] font-medium",
+              copied ? "text-primary" : "text-muted-foreground",
+            )}
+          >
+            {copied ? "Tersalin" : Platform.OS === "web" ? "Salin" : "Bagikan"}
+          </Text>
+        </Pressable>
+      </View>
+      <ScrollView
+        className="max-h-[280px]"
+        contentContainerClassName="p-3"
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={true}
+      >
+        <Text selectable className="font-mono text-xs leading-5 text-foreground">
+          {content}
+        </Text>
+      </ScrollView>
+    </View>
+  );
 }
 
 function stripMarkdownSyntax(s: string): string {
@@ -186,6 +272,10 @@ export function MarkdownText({
   return (
     <View className="gap-1.5">
       {blocks.map((block, idx) => {
+        if (block.type === "code") {
+          return <CodeBlockBox key={idx} lang={block.lang} content={block.content} />;
+        }
+
         if (block.type === "table") {
           const colWidths = computeColumnWidths(block.headers, block.rows);
           const colAlignRight = block.headers.map((_, cIdx) => {

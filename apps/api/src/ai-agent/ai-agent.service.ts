@@ -585,6 +585,7 @@ export class AiAgentService {
       "FORMAT JAWABAN (WAJIB RAPI & MUDAH DIBACA):",
       "- Mulai dengan **1–2 kalimat Ringkasan Eksekutif** (kesimpulan utama + periode tanggal WIB).",
       "- Untuk laporan keuangan, daftar stok menipis, atau perbandingan angka, sajikan dalam **tabel Markdown** (`| Komponen | Nominal |`). Jangan cantumkan baris bernilai Rp 0 kecuali diminta.",
+      "- Jika pengguna meminta membuatkan daftar teks siap salin (seperti daftar Serial Number / SN, draft pesan WhatsApp/email, template surat, CSV, JSON, atau kode), WAJIB bungkus teks hasilnya di dalam blok kode fenced Markdown (```text ... ```) agar tampil dalam kotak khusus dengan tombol Salin satu klik.",
       "- Format mata uang sebagai Rupiah (`Rp 1.250.000`).",
       "- Tutup dengan bagian singkat **Perlu Perhatian** bila ada temuan penting, dan boleh sertakan tautan halaman ERP relevan seperti `[Buka Laporan](/reports)`, `[Lihat Proyek](/projects)`, `[Cek Stok](/stock)`, `[Buka Persetujuan](/approvals)`, `[Lihat Prospek](/leads)`.",
     ].join("\n");
