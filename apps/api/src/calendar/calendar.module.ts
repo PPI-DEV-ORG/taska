@@ -21,5 +21,6 @@ import { WhatsappModule } from "../whatsapp/whatsapp.module.js";
   ],
   controllers: [CalendarController],
   providers: [CalendarService],
+  exports: [CalendarService],
 })
 export class CalendarModule {}

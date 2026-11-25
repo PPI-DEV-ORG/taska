@@ -549,13 +549,60 @@ export async function reopenFiscalYear(year: number, reopenReason: string) {
 
 // ─── AI Assistant (LLM Agent) ───
 
+export type AiPageContext = {
+  pathname?: string;
+  module?: string;
+  entityId?: string;
+};
+
+export type AiChatAttachment = {
+  fileId: number;
+  name: string;
+  mimeType?: string;
+};
+
+export type AiPendingActionItem = {
+  id: number;
+  sessionId: number;
+  entityType: string;
+  entityLabel: string;
+  title: string;
+  summary: Record<string, string>;
+  status: "PENDING" | "CONFIRMED" | "CANCELLED" | "FAILED";
+  resultEntityId: string | null;
+  resultHref: string | null;
+  errorMessage: string | null;
+  expiresAt: string;
+  createdAt: string;
+};
+
 export type AiCapabilities = {
   configured: boolean;
   model: string;
   providerLabel: string;
-  mode: "READ_ONLY";
+  mode: "READ_ONLY" | "READ_AND_DRAFT_CREATE";
+  canManageSettings?: boolean;
+  creatableEntities?: string[];
   allowedToolNames: string[];
   suggestedPrompts: string[];
+};
+
+export type AiLlmSettings = {
+  baseUrl: string;
+  model: string;
+  fallbackModels: string[];
+  timeoutMs: number;
+  hasApiKey: boolean;
+  source: "DB" | "ENV";
+  providerLabel: string;
+};
+
+export type AiTestConnectionResult = {
+  ok: boolean;
+  model: string;
+  providerLabel: string;
+  latencyMs: number;
+  reply: string;
 };
 
 export type AiChatSessionSummary = {
@@ -580,6 +627,7 @@ export type AiChatSessionDetail = {
   createdAt: string;
   updatedAt: string;
   messages: AiChatMessageItem[];
+  pendingActions?: AiPendingActionItem[];
 };
 
 export type AiChatReply = {
@@ -588,10 +636,30 @@ export type AiChatReply = {
   userMessage: AiChatMessageItem;
   assistantMessage: AiChatMessageItem;
   toolsUsed: string[];
+  pendingActions?: AiPendingActionItem[];
 };
 
 export async function fetchAiCapabilities() {
   return api<AiCapabilities>("GET", "/ai-agent/capabilities");
+}
+
+export async function fetchAiSettings() {
+  return api<AiLlmSettings>("GET", "/ai-agent/settings");
+}
+
+export async function updateAiSettings(data: {
+  baseUrl?: string;
+  model?: string;
+  fallbackModels?: string[];
+  timeoutMs?: number;
+  apiKey?: string;
+  clearApiKey?: boolean;
+}) {
+  return api<AiLlmSettings>("PUT", "/ai-agent/settings", data);
+}
+
+export async function testAiSettingsConnection() {
+  return api<AiTestConnectionResult>("POST", "/ai-agent/settings/test");
 }
 
 export async function fetchAiSessions() {
@@ -606,10 +674,33 @@ export async function deleteAiSession(id: number) {
   return api<{ deleted: boolean; id: number }>("DELETE", `/ai-agent/sessions/${id}`);
 }
 
-export async function sendAiChat(message: string, sessionId?: number) {
+export async function undoAiLastTurn(sessionId: number, messageId?: number) {
+  return api<{
+    restoredText: string;
+    deletedCount: number;
+    messages: AiChatMessageItem[];
+    pendingActions: AiPendingActionItem[];
+  }>("POST", `/ai-agent/sessions/${sessionId}/undo`, messageId ? { messageId } : {});
+}
+
+export async function confirmAiAction(actionId: number) {
+  return api<AiPendingActionItem>("POST", `/ai-agent/actions/${actionId}/confirm`);
+}
+
+export async function cancelAiAction(actionId: number) {
+  return api<AiPendingActionItem>("POST", `/ai-agent/actions/${actionId}/cancel`);
+}
+
+export async function sendAiChat(
+  message: string,
+  sessionId?: number,
+  extra?: { pageContext?: AiPageContext; attachments?: AiChatAttachment[] },
+) {
   return api<AiChatReply>("POST", "/ai-agent/chat", {
     message,
     ...(sessionId ? { sessionId } : {}),
+    ...(extra?.pageContext ? { pageContext: extra.pageContext } : {}),
+    ...(extra?.attachments?.length ? { attachments: extra.attachments } : {}),
   });
 }
 
@@ -620,10 +711,10 @@ export async function streamAiChat(
     onStatus?: (text: string) => void;
     onDelta?: (chunk: string) => void;
   },
+  extra?: { pageContext?: AiPageContext; attachments?: AiChatAttachment[] },
 ): Promise<AiChatReply> {
-  // Di native (Android/iOS), ReadableStream pada fetch tidak selalu stabil tanpa polyfill — gunakan endpoint standar.
   if (typeof window === "undefined" || typeof ReadableStream === "undefined") {
-    return sendAiChat(message, sessionId);
+    return sendAiChat(message, sessionId, extra);
   }
 
   await hydrateTokens();
@@ -637,6 +728,8 @@ export async function streamAiChat(
     body: JSON.stringify({
       message,
       ...(sessionId ? { sessionId } : {}),
+      ...(extra?.pageContext ? { pageContext: extra.pageContext } : {}),
+      ...(extra?.attachments?.length ? { attachments: extra.attachments } : {}),
     }),
   });
 

@@ -1,8 +1,18 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Res } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+  Res,
+} from "@nestjs/common";
 import type { Response } from "express";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { AiAgentService } from "./ai-agent.service.js";
-import { SendAiChatDto } from "./dto.js";
+import { SendAiChatDto, UpdateAiSettingsDto } from "./dto.js";
 
 @Controller("ai-agent")
 export class AiAgentController {
@@ -11,6 +21,21 @@ export class AiAgentController {
   @Get("capabilities")
   capabilities(@CurrentUser() user: RequestUser) {
     return this.service.getCapabilities(user);
+  }
+
+  @Get("settings")
+  getSettings(@CurrentUser() user: RequestUser) {
+    return this.service.getSettings(user);
+  }
+
+  @Put("settings")
+  updateSettings(@CurrentUser() user: RequestUser, @Body() dto: UpdateAiSettingsDto) {
+    return this.service.updateSettings(user, dto);
+  }
+
+  @Post("settings/test")
+  testSettings(@CurrentUser() user: RequestUser) {
+    return this.service.testSettingsConnection(user);
   }
 
   @Get("sessions")
@@ -26,6 +51,29 @@ export class AiAgentController {
   @Delete("sessions/:id")
   deleteSession(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
     return this.service.deleteSession(user, id);
+  }
+
+  @Post("sessions/:id/undo")
+  undoSession(
+    @CurrentUser() user: RequestUser,
+    @Param("id", ParseIntPipe) id: number,
+    @Body() body?: { messageId?: number },
+  ) {
+    const msgId =
+      body?.messageId != null && Number.isFinite(Number(body.messageId))
+        ? Number(body.messageId)
+        : undefined;
+    return this.service.undoLastTurn(user, id, msgId);
+  }
+
+  @Post("actions/:id/confirm")
+  confirmAction(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
+    return this.service.confirmAction(user, id);
+  }
+
+  @Post("actions/:id/cancel")
+  cancelAction(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
+    return this.service.cancelAction(user, id);
   }
 
   @Post("chat")

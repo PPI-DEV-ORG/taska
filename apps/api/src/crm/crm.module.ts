@@ -15,6 +15,6 @@ import { StockModule } from "../stock/stock.module.js";
   imports: [ApprovalsModule, UploadModule, StockModule],
   providers: [LeadsService, FollowUpsService, SurveysService, QuotationsService],
   controllers: [LeadsController, FollowUpsController, SurveysController, QuotationsController],
-  exports: [LeadsService, QuotationsService],
+  exports: [LeadsService, QuotationsService, FollowUpsService],
 })
 export class CrmModule {}

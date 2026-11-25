@@ -1,18 +1,30 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { ReportsService, type ReportQuery } from "../reports/reports.service.js";
 import { DashboardService } from "../dashboard/dashboard.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { can, hasMenu } from "../rbac/permissions.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import type { LlmToolDefinition } from "./llm-provider.service.js";
+import {
+  AiActionsService,
+  type AiPendingActionView,
+  type CreatableEntityType,
+} from "./ai-actions.service.js";
 
 const MAX_TOOL_ROWS = 50;
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+export interface ToolExecutionContext {
+  sessionId?: number;
+  pageContext?: { pathname?: string; module?: string; entityId?: string };
+  attachments?: Array<{ fileId: number; name: string; mimeType?: string }>;
+}
 
 export interface ToolExecutionResult {
   label: string;
   allowed: boolean;
   data: unknown;
+  pendingAction?: AiPendingActionView;
 }
 
 function getWibNow(): Date {
@@ -62,11 +74,59 @@ function resolvePeriodDates(period?: string): { from?: string; to?: string } {
         to: fmt(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
       };
     }
+    case "last_3_months": {
+      const start = new Date(Date.UTC(y, m - 2, 1));
+      return {
+        from: fmt(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+        to: fmt(y, m, d),
+      };
+    }
+    case "last_6_months": {
+      const start = new Date(Date.UTC(y, m - 5, 1));
+      return {
+        from: fmt(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+        to: fmt(y, m, d),
+      };
+    }
     case "this_year": {
       return { from: fmt(y, 0, 1), to: fmt(y, m, d) };
     }
-    default:
+    case "last_year": {
+      return { from: fmt(y - 1, 0, 1), to: fmt(y - 1, 11, 31) };
+    }
+    default: {
+      // Dukung format fleksibel: YYYY-MM (bulan tertentu), YYYY-Q1..Q4 (kuartal), atau YYYY (tahun)
+      const trimmed = period.trim().toUpperCase();
+      const ym = trimmed.match(/^(\d{4})-(\d{2})$/);
+      if (ym) {
+        const yr = Number(ym[1]);
+        const mo = Number(ym[2]) - 1;
+        if (mo >= 0 && mo <= 11) {
+          const end = new Date(Date.UTC(yr, mo + 1, 0));
+          return {
+            from: fmt(yr, mo, 1),
+            to: fmt(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
+          };
+        }
+      }
+      const yq = trimmed.match(/^(\d{4})-Q([1-4])$/);
+      if (yq) {
+        const yr = Number(yq[1]);
+        const q = Number(yq[2]);
+        const startMo = (q - 1) * 3;
+        const end = new Date(Date.UTC(yr, startMo + 3, 0));
+        return {
+          from: fmt(yr, startMo, 1),
+          to: fmt(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()),
+        };
+      }
+      const yrOnly = trimmed.match(/^(\d{4})$/);
+      if (yrOnly) {
+        const yr = Number(yrOnly[1]);
+        return { from: fmt(yr, 0, 1), to: fmt(yr, 11, 31) };
+      }
       return {};
+    }
   }
 }
 
@@ -264,11 +324,55 @@ export class AgentToolsService {
     private readonly reports: ReportsService,
     private readonly dashboard: DashboardService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly actions?: AiActionsService,
   ) {}
 
-  getAllowedTools(user: RequestUser): LlmToolDefinition[] {
+  getAllowedTools(
+    user: RequestUser,
+    pageContext?: { pathname?: string; module?: string; entityId?: string },
+  ): LlmToolDefinition[] {
     const tools: LlmToolDefinition[] = [];
     const role = user.role;
+
+    if (pageContext?.module && pageContext?.entityId) {
+      tools.push({
+        type: "function",
+        function: {
+          name: "get_current_document_detail",
+          description: `Membaca detail lengkap dokumen/data yang sedang dibuka pengguna saat ini (${pageContext.module} #${pageContext.entityId}). Gunakan tool ini setiap kali pengguna bertanya tentang "dokumen ini", "proyek ini", "lead ini", "faktur ini", atau detail data yang sedang dibuka.`,
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+        },
+      });
+    }
+
+    const creatable = this.actions?.getAllowedCreatableEntities(user) ?? [];
+    if (creatable.length > 0) {
+      tools.push({
+        type: "function",
+        function: {
+          name: "propose_create_record",
+          description:
+            "Menyiapkan DRAFT pembuatan data baru yang wajib dikonfirmasi pengguna lewat tombol Konfirmasi di UI (belum langsung tersimpan ke database). Jika pengguna melampirkan file, sertakan fileId lampiran pada field data (fileId untuk quotation/invoice/lead, receiptFileId untuk expense).",
+          parameters: {
+            type: "object",
+            properties: {
+              entityType: {
+                type: "string",
+                enum: creatable,
+                description: "Jenis data ERP yang akan dibuat draft-nya",
+              },
+              data: {
+                type: "object",
+                description:
+                  "Field data sesuai entitas — boleh isi nama relasi (projectName, customerName, leadName, supplierName, categoryName, assigneeName, attendeeNames) jika ID belum diketahui; sistem akan mencocokkannya otomatis ke database. Contoh: lead (name, customerName, contactName, need, estimatedValue), followup (leadName/leadId, date, nextDate, method, notes), quotation (leadName, customerName, total, note, fileId), invoice (customerName, projectName, total, date, dueDate, description, fileId), calendar_event (title, startDate, endDate, location, description, reminderMinutes (angka menit sebelum mulai, mis. 60 untuk 1 jam), priority, projectName, customerName, leadName, supplierName, assigneeName, attendeeNames), task (projectName/projectId, name, dueDate, description, assigneeName), customer (name, pic, phone, email, address), expense (description, amount, date, projectName, categoryName, receiptFileId), purchase_request (costType, procurementSource, projectName, note).",
+              },
+            },
+            required: ["entityType", "data"],
+            additionalProperties: false,
+          },
+        },
+      });
+    }
 
     tools.push({
       type: "function",
@@ -363,8 +467,8 @@ export class AgentToolsService {
               },
               period: {
                 type: "string",
-                enum: ["today", "this_week", "this_month", "last_month", "this_year"],
-                description: "Shortcut periode WIB (opsional)",
+                description:
+                  "Periode fleksibel WIB: today, this_week, this_month, last_month, last_3_months, last_6_months, this_year, last_year, YYYY-MM (mis. 2026-10), YYYY-Q1..Q4, atau YYYY (opsional)",
               },
               from: { type: "string", description: "Tanggal awal YYYY-MM-DD (opsional)" },
               to: { type: "string", description: "Tanggal akhir YYYY-MM-DD (opsional)" },
@@ -602,6 +706,7 @@ export class AgentToolsService {
     name: string,
     args: Record<string, unknown>,
     user: RequestUser,
+    ctx?: ToolExecutionContext,
   ): Promise<ToolExecutionResult> {
     const role = user.role;
     const str = (key: string): string | undefined => {
@@ -620,6 +725,59 @@ export class AgentToolsService {
     };
 
     switch (name) {
+      case "get_current_document_detail": {
+        return this.executeCurrentDocumentDetail(user, ctx?.pageContext);
+      }
+
+      case "propose_create_record": {
+        if (!this.actions || !ctx?.sessionId) {
+          return {
+            label: "Draft Pembuatan Data",
+            allowed: false,
+            data: { error: "Fitur draft pembuatan data sedang tidak tersedia." },
+          };
+        }
+        const entityType = str("entityType") as CreatableEntityType | undefined;
+        const payloadObj =
+          args.data && typeof args.data === "object" && !Array.isArray(args.data)
+            ? (args.data as Record<string, unknown>)
+            : {};
+        if (!entityType) {
+          return {
+            label: "Draft Pembuatan Data",
+            allowed: false,
+            data: { error: "Parameter entityType wajib diisi." },
+          };
+        }
+        try {
+          const pendingAction = await this.actions.proposeCreate(
+            user,
+            ctx.sessionId,
+            entityType,
+            payloadObj,
+            ctx.attachments ?? [],
+          );
+          return {
+            label: `Draft ${pendingAction.entityLabel}`,
+            allowed: true,
+            pendingAction,
+            data: {
+              status: "DRAFT_READY_FOR_CONFIRMATION",
+              actionId: pendingAction.id,
+              title: pendingAction.title,
+              summary: pendingAction.summary,
+              instruction:
+                "Draft sudah ditampilkan sebagai kartu konfirmasi kepada pengguna. Minta pengguna memeriksa detailnya lalu menekan tombol Konfirmasi & Simpan.",
+            },
+          };
+        } catch (err) {
+          return {
+            label: "Draft Pembuatan Data",
+            allowed: false,
+            data: { error: (err as Error)?.message || "Gagal menyiapkan draft." },
+          };
+        }
+      }
       case "get_dashboard_summary": {
         const data = await this.dashboard.summary(user);
         return { label: "Ringkasan Dashboard", allowed: true, data };
@@ -1193,5 +1351,256 @@ export class AgentToolsService {
           data: { error: `Tool "${name}" tidak dikenal.` },
         };
     }
+  }
+
+  private async executeCurrentDocumentDetail(
+    user: RequestUser,
+    pageContext?: { pathname?: string; module?: string; entityId?: string },
+  ): Promise<ToolExecutionResult> {
+    const mod = pageContext?.module?.toLowerCase();
+    const numId = Number(pageContext?.entityId);
+    if (!mod || !Number.isFinite(numId) || numId <= 0) {
+      return {
+        label: "Konteks Dokumen",
+        allowed: false,
+        data: { error: "Tidak ada dokumen detail yang sedang dibuka." },
+      };
+    }
+
+    const role = user.role;
+
+    if (mod === "projects") {
+      if (!hasMenu(role, "projects")) {
+        return { label: "Detail Proyek", allowed: false, data: { error: "Akses ditolak." } };
+      }
+      const p = await this.prisma.main.project.findUnique({
+        where: { id: numId },
+        include: {
+          customer: { select: { name: true, pic: true } },
+          pic: { select: { name: true } },
+          tasks: {
+            select: { id: true, name: true, status: true, dueDate: true, assignee: { select: { name: true } } },
+            take: 25,
+          },
+        },
+      });
+      if (!p) return { label: "Detail Proyek", allowed: false, data: { error: "Proyek tidak ditemukan." } };
+      return {
+        label: `Detail Proyek #${p.id}`,
+        allowed: true,
+        data: {
+          id: p.id,
+          nama: p.name,
+          pelanggan: p.customer?.name ?? "-",
+          pic: p.pic?.name ?? "-",
+          status: p.status,
+          progres: p.progress,
+          pembayaran: p.paymentStatus,
+          mulai: p.startDate ? getWibDateString(new Date(p.startDate)) : null,
+          selesai: p.endDate ? getWibDateString(new Date(p.endDate)) : null,
+          tugas: p.tasks.map((t) => ({
+            nama: t.name,
+            status: t.status,
+            pic: t.assignee?.name ?? "-",
+            deadline: t.dueDate ? getWibDateString(new Date(t.dueDate)) : null,
+          })),
+        },
+      };
+    }
+
+    if (mod === "leads") {
+      if (!hasMenu(role, "leads")) {
+        return { label: "Detail Prospek", allowed: false, data: { error: "Akses ditolak." } };
+      }
+      const l = await this.prisma.main.lead.findUnique({
+        where: { id: numId },
+        include: {
+          owner: { select: { name: true } },
+          customer: { select: { name: true } },
+          followUps: { orderBy: { date: "desc" }, take: 10 },
+        },
+      });
+      if (!l) return { label: "Detail Prospek", allowed: false, data: { error: "Prospek tidak ditemukan." } };
+      return {
+        label: `Detail Prospek #${l.id}`,
+        allowed: true,
+        data: {
+          id: l.id,
+          nama: l.name,
+          pelanggan: l.customer?.name ?? "-",
+          kontak: l.contactName ?? "-",
+          kebutuhan: l.need ?? "-",
+          stage: l.stage,
+          estimasi: l.estimatedValue ? Number(l.estimatedValue) : 0,
+          pemilik: l.owner?.name ?? "-",
+          followUpsTerakhir: l.followUps.map((f) => ({
+            tanggal: getWibDateString(new Date(f.date)),
+            status: f.status,
+            catatan: f.notes,
+          })),
+        },
+      };
+    }
+
+    if (mod === "invoices") {
+      if (!can(role, "invoices", "L") && !can(role, "accounting", "L")) {
+        return { label: "Detail Faktur", allowed: false, data: { error: "Akses ditolak." } };
+      }
+      const inv = await this.prisma.main.invoiceOut.findUnique({
+        where: { id: numId },
+        include: {
+          customer: { select: { name: true } },
+          project: { select: { name: true } },
+        },
+      });
+      if (!inv) return { label: "Detail Faktur", allowed: false, data: { error: "Faktur tidak ditemukan." } };
+      return {
+        label: `Detail Faktur ${inv.number}`,
+        allowed: true,
+        data: {
+          id: inv.id,
+          nomor: inv.number,
+          pelanggan: inv.customer?.name ?? "-",
+          proyek: inv.project?.name ?? "-",
+          tanggal: inv.date ? getWibDateString(new Date(inv.date)) : null,
+          jatuhTempo: inv.dueDate ? getWibDateString(new Date(inv.dueDate)) : null,
+          total: Number(inv.total || 0),
+          terbayar: Number(inv.paidAmount || 0),
+          sisaTagihan: Math.max(0, Number(inv.total || 0) - Number(inv.paidAmount || 0)),
+          status: inv.status,
+        },
+      };
+    }
+
+    if (mod === "quotations") {
+      if (!hasMenu(role, "quotations")) {
+        return { label: "Detail Penawaran", allowed: false, data: { error: "Akses ditolak." } };
+      }
+      const q = await this.prisma.main.quotation.findUnique({
+        where: { id: numId },
+        include: {
+          customer: { select: { name: true } },
+          lead: { select: { name: true } },
+        },
+      });
+      if (!q) return { label: "Detail Penawaran", allowed: false, data: { error: "Penawaran tidak ditemukan." } };
+      return {
+        label: `Detail Penawaran ${q.number}`,
+        allowed: true,
+        data: {
+          id: q.id,
+          nomor: q.number,
+          pelanggan: q.customer?.name ?? "-",
+          prospek: q.lead?.name ?? "-",
+          status: q.status,
+          total: Number(q.total || 0),
+          ppn: Number(q.ppn || 0),
+          grandTotal: Number(q.grandTotal || 0),
+        },
+      };
+    }
+
+    if (mod === "supplier-pos") {
+      if (!hasMenu(role, "supplier-pos")) {
+        return { label: "Detail PO Supplier", allowed: false, data: { error: "Akses ditolak." } };
+      }
+      const po = await this.prisma.main.supplierPO.findUnique({
+        where: { id: numId },
+        include: {
+          supplier: { select: { name: true } },
+          project: { select: { name: true } },
+        },
+      });
+      if (!po) return { label: "Detail PO Supplier", allowed: false, data: { error: "PO tidak ditemukan." } };
+      return {
+        label: `Detail PO ${po.number}`,
+        allowed: true,
+        data: {
+          id: po.id,
+          nomor: po.number,
+          pemasok: po.supplier.name,
+          proyek: po.project?.name ?? "-",
+          tanggal: getWibDateString(new Date(po.date)),
+          eta: po.eta ? getWibDateString(new Date(po.eta)) : null,
+          status: po.status,
+          pengiriman: po.shipmentStatus,
+          ...(can(role, "supplier-pos", "P") ? { total: Number(po.total || 0) } : {}),
+        },
+      };
+    }
+
+    if (mod === "customers") {
+      if (!hasMenu(role, "customers")) {
+        return { label: "Detail Pelanggan", allowed: false, data: { error: "Akses ditolak." } };
+      }
+      const c = await this.prisma.main.customer.findUnique({ where: { id: numId } });
+      if (!c) return { label: "Detail Pelanggan", allowed: false, data: { error: "Pelanggan tidak ditemukan." } };
+      return {
+        label: `Detail Pelanggan ${c.name}`,
+        allowed: true,
+        data: { id: c.id, nama: c.name, pic: c.pic, telepon: c.phone, email: c.email, alamat: c.address },
+      };
+    }
+
+    if (mod === "contracts") {
+      if (!hasMenu(role, "contracts")) {
+        return { label: "Detail Kontrak", allowed: false, data: { error: "Akses ditolak." } };
+      }
+      const c = await this.prisma.main.ctrContract.findUnique({ where: { id: numId } });
+      if (!c) return { label: "Detail Kontrak", allowed: false, data: { error: "Kontrak tidak ditemukan." } };
+      return {
+        label: `Detail Kontrak ${c.contractNumber}`,
+        allowed: true,
+        data: {
+          id: c.id,
+          nomor: c.contractNumber,
+          judul: c.title,
+          pihak: c.counterpartyName,
+          status: c.status,
+          mulai: getWibDateString(new Date(c.effectiveDate)),
+          berakhir: getWibDateString(new Date(c.expirationDate)),
+          ...(can(role, "contracts", "P") ? { nilai: Number(c.contractValue || 0) } : {}),
+        },
+      };
+    }
+
+    if (mod === "purchase-requests") {
+      if (!hasMenu(role, "purchase-requests") && !hasMenu(role, "requests")) {
+        return { label: "Detail Permintaan Barang", allowed: false, data: { error: "Akses ditolak." } };
+      }
+      const pr = await this.prisma.main.purchaseRequest.findUnique({
+        where: { id: numId },
+        include: {
+          requester: { select: { name: true } },
+          project: { select: { name: true } },
+          items: { include: { product: { select: { name: true, sku: true } } }, take: 25 },
+        },
+      });
+      if (!pr) return { label: "Detail Permintaan Barang", allowed: false, data: { error: "Permintaan barang tidak ditemukan." } };
+      return {
+        label: `Detail PR ${pr.number}`,
+        allowed: true,
+        data: {
+          id: pr.id,
+          nomor: pr.number,
+          pemohon: pr.requester?.name ?? "-",
+          proyek: pr.project?.name ?? "-",
+          tipeBiaya: pr.costType,
+          sumberPengadaan: pr.procurementSource,
+          status: pr.status,
+          item: pr.items.map((it) => ({
+            nama: it.product?.name ?? it.customName ?? "-",
+            sku: it.product?.sku ?? null,
+            qty: it.qty,
+          })),
+        },
+      };
+    }
+
+    return {
+      label: `Konteks ${mod} #${numId}`,
+      allowed: false,
+      data: { error: `Detail otomatis untuk modul "${mod}" belum didukung.` },
+    };
   }
 }

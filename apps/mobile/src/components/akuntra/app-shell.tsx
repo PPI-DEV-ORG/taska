@@ -10,6 +10,7 @@ import {
 } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { WhatsappDialog } from "@/components/akuntra/whatsapp-dialog";
+import { AiFloatingDrawer } from "@/modules/ai-assistant/ai-floating-drawer";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -855,6 +856,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <NotifDialog open={notif} onOpenChange={setNotif} />
       <AccountDialog open={account} onOpenChange={setAccount} />
       <WhatsappDialog open={whatsapp} onOpenChange={setWhatsapp} />
+      <AiFloatingDrawer />
     </View>
   );
 }

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { ConfigService } from "@nestjs/config";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { LlmProviderService } from "./llm-provider.service.js";
+import { AiSettingsService } from "./ai-settings.service.js";
 import { AgentToolsService } from "./agent-tools.service.js";
 import { AiAgentService } from "./ai-agent.service.js";
 
@@ -403,5 +404,72 @@ describe("AiAgentService", () => {
     expect(auditMock.log).toHaveBeenCalledTimes(1);
 
     await expect(svc.getSession(salesUser, 10)).rejects.toThrow(NotFoundException);
+  });
+
+  it("menolak undo jika giliran terakhir sudah menghasilkan dokumen ERP terkonfirmasi", async () => {
+    const prismaMock = {
+      main: {
+        aiChatSession: {
+          findFirst: vi.fn().mockResolvedValue({ id: 10 }),
+        },
+        aiChatMessage: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: 5,
+            role: "user",
+            content: "Buat lead baru",
+            createdAt: new Date("2026-11-25T02:00:00Z"),
+          }),
+        },
+        aiPendingAction: {
+          count: vi.fn().mockResolvedValue(1),
+        },
+      },
+    };
+    const svc = new AiAgentService(
+      prismaMock as never,
+      {} as never,
+      {} as never,
+      { log: vi.fn() } as never,
+    );
+    await expect(svc.undoLastTurn(superAdminUser, 10)).rejects.toThrow(BadRequestException);
+    await expect(svc.getSettings(salesUser)).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe("AiSettingsService Encryption", () => {
+  it("mengenkripsi API key dengan AES-256-GCM dan tidak pernah mengembalikannya di getPublicSettings", async () => {
+    const stored: Record<string, string> = {};
+    const prismaMock = {
+      main: {
+        systemSetting: {
+          findUnique: vi.fn().mockImplementation(async ({ where }) =>
+            stored[where.key] ? { key: where.key, value: stored[where.key] } : null,
+          ),
+          upsert: vi.fn().mockImplementation(async ({ where, create }) => {
+            stored[where.key] = create.value;
+            return { key: where.key, value: create.value };
+          }),
+        },
+      },
+    };
+    const auditMock = { log: vi.fn().mockResolvedValue(undefined) };
+    const svc = new AiSettingsService(
+      prismaMock as never,
+      makeConfig({ JWT_SECRET: "super-secret-jwt-key-for-test" }),
+      auditMock as never,
+    );
+
+    const enc = svc.encryptSecret("AIzaSy_SECRET_12345");
+    expect(enc).not.toContain("AIzaSy_SECRET_12345");
+    expect(svc.decryptSecret(enc)).toBe("AIzaSy_SECRET_12345");
+
+    const pub = await svc.updateSettings(
+      { model: "gemini-2.5-flash", apiKey: "AIzaSy_SECRET_12345" },
+      superAdminUser,
+    );
+    expect(pub.hasApiKey).toBe(true);
+    expect(JSON.stringify(pub)).not.toContain("AIzaSy_SECRET_12345");
+    const eff = await svc.getEffectiveConfig();
+    expect(eff.apiKey).toBe("AIzaSy_SECRET_12345");
   });
 });

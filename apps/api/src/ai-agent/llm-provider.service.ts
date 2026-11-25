@@ -1,5 +1,6 @@
-import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Injectable, Logger, Optional, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { AiSettingsService } from "./ai-settings.service.js";
 
 export type LlmRole = "system" | "user" | "assistant" | "tool";
 
@@ -52,7 +53,30 @@ const RETRY_DELAY_MS = 1200;
 export class LlmProviderService {
   private readonly logger = new Logger(LlmProviderService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() private readonly settings?: AiSettingsService,
+  ) {}
+
+  private async resolveRuntimeConfig() {
+    if (this.settings) {
+      const eff = await this.settings.getEffectiveConfig();
+      return {
+        baseUrl: eff.baseUrl,
+        apiKey: eff.apiKey,
+        model: eff.model,
+        fallbackModel: eff.fallbackModels[0] ?? null,
+        timeoutMs: eff.timeoutMs,
+      };
+    }
+    return {
+      baseUrl: this.getBaseUrl(),
+      apiKey: this.getApiKey(),
+      model: this.getModel(),
+      fallbackModel: this.getFallbackModel(),
+      timeoutMs: this.getTimeoutMs(),
+    };
+  }
 
   private getBaseUrl(): string {
     const raw = (this.config.get<string>("LLM_BASE_URL") || DEFAULT_BASE_URL).trim();
@@ -105,26 +129,69 @@ export class LlmProviderService {
     };
   }
 
+  async getStatusAsync(): Promise<LlmProviderStatus> {
+    const rt = await this.resolveRuntimeConfig();
+    const isLocal =
+      rt.baseUrl.includes("localhost") ||
+      rt.baseUrl.includes("127.0.0.1") ||
+      rt.baseUrl.includes(":11434") ||
+      rt.baseUrl.includes(":8000");
+
+    let providerLabel = "OpenAI-Compatible LLM";
+    if (rt.baseUrl.includes("generativelanguage.googleapis.com")) {
+      providerLabel = "Google Gemini API";
+    } else if (rt.baseUrl.includes("api.groq.com")) {
+      providerLabel = "Groq Cloud";
+    } else if (rt.baseUrl.includes("api.openai.com")) {
+      providerLabel = "OpenAI";
+    } else if (isLocal) {
+      providerLabel = "Local LLM (On-Premise)";
+    }
+
+    return {
+      configured: Boolean(rt.apiKey) || isLocal,
+      model: rt.model,
+      providerLabel,
+    };
+  }
+
+  async testConnection(): Promise<{ ok: boolean; model: string; providerLabel: string; latencyMs: number; reply: string }> {
+    const started = Date.now();
+    const status = await this.getStatusAsync();
+    const res = await this.complete(
+      [{ role: "user", content: "Jawab singkat: OK" }],
+      [],
+    );
+    return {
+      ok: true,
+      model: status.model,
+      providerLabel: status.providerLabel,
+      latencyMs: Date.now() - started,
+      reply: (res.content || "OK").slice(0, 120),
+    };
+  }
+
   async complete(
     messages: LlmChatMessage[],
     tools: LlmToolDefinition[],
   ): Promise<LlmCompletionResult> {
-    const status = this.getStatus();
+    const status = await this.getStatusAsync();
     if (!status.configured) {
       throw new ServiceUnavailableException(
-        "Asisten AI belum dikonfigurasi. Mohon isi LLM_API_KEY di konfigurasi server API.",
+        "Asisten AI belum dikonfigurasi. Mohon isi LLM_API_KEY di konfigurasi server API atau Pengaturan LLM.",
       );
     }
 
-    const primaryModel = this.getModel();
-    const fallbackModel = this.getFallbackModel();
+    const rt = await this.resolveRuntimeConfig();
+    const primaryModel = rt.model;
+    const fallbackModel = rt.fallbackModel;
     const attempts = [primaryModel, fallbackModel ?? primaryModel];
 
     let lastError: ServiceUnavailableException | null = null;
 
     for (let i = 0; i < attempts.length; i++) {
       const modelToUse = attempts[i] ?? primaryModel;
-      const result = await this.callOnce(modelToUse, messages, tools);
+      const result = await this.callOnce(modelToUse, messages, tools, rt);
       if (result.ok) {
         return result.data;
       }
@@ -148,13 +215,14 @@ export class LlmProviderService {
     model: string,
     messages: LlmChatMessage[],
     tools: LlmToolDefinition[],
+    rt?: { baseUrl: string; apiKey: string; timeoutMs: number },
   ): Promise<
     | { ok: true; data: LlmCompletionResult }
     | { ok: false; retryable: boolean; statusCode?: number; error: ServiceUnavailableException }
   > {
-    const baseUrl = this.getBaseUrl();
-    const apiKey = this.getApiKey();
-    const timeoutMs = this.getTimeoutMs();
+    const baseUrl = rt?.baseUrl ?? this.getBaseUrl();
+    const apiKey = rt?.apiKey ?? this.getApiKey();
+    const timeoutMs = rt?.timeoutMs ?? this.getTimeoutMs();
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -285,17 +353,18 @@ export class LlmProviderService {
     tools: LlmToolDefinition[],
     onDelta: (chunk: string) => void,
   ): Promise<LlmCompletionResult> {
-    const status = this.getStatus();
+    const status = await this.getStatusAsync();
     if (!status.configured) {
       throw new ServiceUnavailableException(
-        "Asisten AI belum dikonfigurasi. Mohon isi LLM_API_KEY di konfigurasi server API.",
+        "Asisten AI belum dikonfigurasi. Mohon isi LLM_API_KEY di konfigurasi server API atau Pengaturan LLM.",
       );
     }
 
-    const baseUrl = this.getBaseUrl();
-    const apiKey = this.getApiKey();
-    const model = this.getModel();
-    const timeoutMs = this.getTimeoutMs();
+    const rt = await this.resolveRuntimeConfig();
+    const baseUrl = rt.baseUrl;
+    const apiKey = rt.apiKey;
+    const model = rt.model;
+    const timeoutMs = rt.timeoutMs;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
