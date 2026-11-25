@@ -34,7 +34,7 @@ export function ProjectOverviewCard({
           </Button>
         ) : undefined
       }
-      className="flex-1"
+      className="w-full"
     >
       <View className="gap-3">
         {activeOnly.length === 0 ? (
@@ -45,7 +45,7 @@ export function ProjectOverviewCard({
           activeOnly.slice(0, 4).map((p) => {
             const content = (
               <>
-                <View className="flex-1 min-w-[180px]">
+                <View className="w-full md:flex-1 min-w-0">
                   <Text className="text-sm font-bold text-foreground" numberOfLines={1}>{p.nama}</Text>
                   <View className="flex-row items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                     <View className="flex-row items-center gap-1">
