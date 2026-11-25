@@ -175,7 +175,7 @@ export function SalesDashboard({ user, data, isMobile }: SalesDashboardProps) {
 
       <QuickActionsCard role={role} />
 
-      <View className="flex-row flex-wrap gap-4">
+      <View className={isMobile ? "gap-4" : "flex-row flex-wrap gap-4"}>
         <ChartCard title="Prospek per Sumber" subtitle="Asal kedatangan prospek">
           <HBarChart data={sources} />
         </ChartCard>

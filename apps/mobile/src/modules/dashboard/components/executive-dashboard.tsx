@@ -245,7 +245,7 @@ export function ExecutiveDashboard({
       </KpiRow>
 
       {/* Row 2: Wave Chart Tren Arus Kas & Donut Chart Kesehatan Proyek */}
-      <View className="flex-row flex-wrap gap-4">
+      <View className={isMobile ? "gap-4" : "flex-row flex-wrap gap-4"}>
         {seeFinance ? (
           <ChartCard
             title="Tren Arus Kas Masuk (Cash Inflow)"
@@ -285,7 +285,7 @@ export function ExecutiveDashboard({
       </View>
 
       {/* Row 3: Line Chart Performa Target & Donut Chart Pengeluaran */}
-      <View className="flex-row flex-wrap gap-4">
+      <View className={isMobile ? "gap-4" : "flex-row flex-wrap gap-4"}>
         {seeFinance ? (
           <ChartCard
             title="Performa Penjualan & Realisasi Faktur"
@@ -327,7 +327,7 @@ export function ExecutiveDashboard({
       </View>
 
       {/* Row 4: BarChart Pendapatan vs Faktur & Funnel Leads */}
-      <View className="flex-row flex-wrap gap-4">
+      <View className={isMobile ? "gap-4" : "flex-row flex-wrap gap-4"}>
         <ChartCard title="Funnel Konversi Penjualan" subtitle="Pergerakan dari Prospecting ke Won">
           <Funnel data={funnelData} />
         </ChartCard>
@@ -405,8 +405,12 @@ export function ExecutiveDashboard({
       <QuickActionsCard role={role} />
 
       {/* Risky Projects & Audit Log */}
-      <View className="flex-row flex-wrap gap-4">
-        <Panel title="Proyek Perhatian Khusus" subtitle="Terlambat atau belum lunas" className="flex-1 min-w-[300px]">
+      <View className={isMobile ? "gap-4" : "flex-row flex-wrap gap-4"}>
+        <Panel
+          title="Proyek Perhatian Khusus"
+          subtitle="Terlambat atau belum lunas"
+          className={isMobile ? "w-full" : "flex-1 min-w-[300px]"}
+        >
           {riskyProjects.length > 0 ? (
             riskyProjects.slice(0, 3).map((p: any) => (
               <Pressable
@@ -431,7 +435,11 @@ export function ExecutiveDashboard({
           )}
         </Panel>
 
-        <Panel title="Aktivitas Lintas Divisi" subtitle="Audit log sistem" className="flex-1 min-w-[300px]">
+        <Panel
+          title="Aktivitas Lintas Divisi"
+          subtitle="Audit log sistem"
+          className={isMobile ? "w-full" : "flex-1 min-w-[300px]"}
+        >
           {(data["audit-log"] ?? []).slice(0, 4).map((al: any) => {
             const text = formatAuditAction(al.aksi, al.detail);
             return (

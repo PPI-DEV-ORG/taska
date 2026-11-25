@@ -239,7 +239,7 @@ export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDas
 
       <QuickActionsCard role={role} />
 
-      <View className="flex-row flex-wrap gap-4">
+      <View className={isMobile ? "gap-4" : "flex-row flex-wrap gap-4"}>
         <ChartCard
           title="Tren Arus Kas Masuk (Cash Flow)"
           subtitle="Realisasi penerimaan pembayaran faktur 6 bulan terakhir (Juta Rp)"
@@ -253,7 +253,7 @@ export function FinanceDashboard({ user, data, approvals, isMobile }: FinanceDas
         </ChartCard>
       </View>
 
-      <View className="flex-row flex-wrap gap-4">
+      <View className={isMobile ? "gap-4" : "flex-row flex-wrap gap-4"}>
         <ChartCard title="Umur Piutang (Aging)" subtitle="Berdasarkan hari jatuh tempo (juta Rp)">
           <HBarChart data={agingData} format={(n) => `${n} jt`} />
         </ChartCard>

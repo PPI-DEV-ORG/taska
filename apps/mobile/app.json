@@ -3,6 +3,15 @@
     "name": "Akuntra - ERP",
     "slug": "akuntra",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/8a46c3c2-8f79-46d2-90da-04192e7d80a6",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "orientation": "portrait",
     "icon": "./assets/AKUNTRA.png",
     "scheme": "akuntra",
