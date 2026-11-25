@@ -557,6 +557,8 @@ export class AiAgentService {
     }
   }
 
+
+  //setting prompt untuk LLM agar bisa menyesuaikan jawaban dengan konteks ERP Akuntra, role user, dan halaman yang sedang dibuka user
   private buildSystemPrompt(
     user: RequestUser,
     pageContext?: { pathname?: string; module?: string; entityId?: string },
