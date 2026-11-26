@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import {
   CheckCircle2,
@@ -759,10 +759,13 @@ export function PurchaseRequestExtras({
       {/* ─── 1. STATUS & LANGKAH BERIKUTNYA ─── */}
       <Panel title="Status">
         <View className="gap-4">
-          {/* Tahapan */}
-          <View className="flex-row items-start">
+          {/* Tahapan: tampil penuh tanpa perlu slide horizontal */}
+          <View className="flex-row items-start w-full">
             {steps.map((st, idx) => {
+              const isFirst = idx === 0;
               const isLast = idx === steps.length - 1;
+              const prevDone = idx > 0 && Boolean(steps[idx - 1]?.done) && st.done;
+              const nextDone = !isLast && st.done && Boolean(steps[idx + 1]?.done);
               const dotClass = isDitolak
                 ? "bg-destructive/15 border-destructive/40"
                 : st.done
@@ -771,9 +774,14 @@ export function PurchaseRequestExtras({
                 ? "bg-primary border-primary"
                 : "bg-card border-border";
               return (
-                <React.Fragment key={st.label}>
-                  <View className="items-center" style={{ width: 64 }}>
-                    <View className={`h-6 w-6 rounded-full items-center justify-center border ${dotClass}`}>
+                <View key={st.label} className="flex-1 items-center min-w-0">
+                  <View className="w-full flex-row items-center">
+                    <View
+                      className={`h-[2px] flex-1 ${
+                        isFirst ? "bg-transparent" : prevDone ? "bg-emerald-600" : "bg-border"
+                      }`}
+                    />
+                    <View className={`h-6 w-6 rounded-full items-center justify-center border shrink-0 ${dotClass}`}>
                       {isDitolak ? (
                         <XCircle size={12} color={colors.danger} />
                       ) : st.done ? (
@@ -782,19 +790,21 @@ export function PurchaseRequestExtras({
                         <Text className={`text-[10px] font-bold ${st.current ? "text-white" : "text-muted-foreground"}`}>{idx + 1}</Text>
                       )}
                     </View>
-                    <Text
-                      className={`text-[10px] mt-1 text-center leading-tight ${
-                        st.current ? "text-primary font-bold" : st.done ? "text-foreground" : "text-muted-foreground"
+                    <View
+                      className={`h-[2px] flex-1 ${
+                        isLast ? "bg-transparent" : nextDone ? "bg-emerald-600" : "bg-border"
                       }`}
-                      numberOfLines={2}
-                    >
-                      {st.label}
-                    </Text>
+                    />
                   </View>
-                  {!isLast ? (
-                    <View className={`h-[2px] flex-1 mt-3 ${st.done && steps[idx + 1]?.done ? "bg-emerald-600" : "bg-border"}`} />
-                  ) : null}
-                </React.Fragment>
+                  <Text
+                    className={`text-[9px] sm:text-[10px] mt-1.5 px-0.5 text-center leading-tight ${
+                      st.current ? "text-primary font-bold" : st.done ? "text-foreground" : "text-muted-foreground"
+                    }`}
+                    numberOfLines={2}
+                  >
+                    {st.label}
+                  </Text>
+                </View>
               );
             })}
           </View>

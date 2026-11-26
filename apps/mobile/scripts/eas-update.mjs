@@ -31,9 +31,14 @@ const cmdArgs = [
   ...extraArgs,
 ];
 
-const res = spawnSync("npx", cmdArgs, {
+const isWin = process.platform === "win32";
+const safeArgs = isWin
+  ? cmdArgs.map((a) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a))
+  : cmdArgs;
+
+const res = spawnSync("npx", safeArgs, {
   stdio: "inherit",
-  shell: process.platform === "win32",
+  shell: isWin,
   env: {
     ...process.env,
     EXPO_PUBLIC_API_URL: target.apiUrl,

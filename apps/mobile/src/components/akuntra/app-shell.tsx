@@ -665,6 +665,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
 
 function MoreDialog({ open, onOpenChange, onNotif }: { open: boolean; onOpenChange: (v: boolean) => void; onNotif: () => void }) {
   const router = useRouter();
+  const { isMobile } = useBreakpoint();
   const { items, active } = useNav();
   const { theme, toggleTheme } = useApp();
   const allGroups = groupNav(items);
@@ -672,7 +673,11 @@ function MoreDialog({ open, onOpenChange, onNotif }: { open: boolean; onOpenChan
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader><DialogTitle>Semua Menu</DialogTitle></DialogHeader>
-        <ScrollView style={{ maxHeight: 460 }}>
+        <ScrollView
+          className={isMobile ? "flex-1" : "max-h-[70vh]"}
+          contentContainerClassName="pb-4"
+          showsVerticalScrollIndicator={false}
+        >
           {allGroups.map((g) => (
             <View key={g.title || "utama"} className="mb-2">
               {g.title ? (
