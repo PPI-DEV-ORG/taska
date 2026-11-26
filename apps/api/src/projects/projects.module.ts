@@ -11,6 +11,6 @@ import { UploadModule } from "../upload/upload.module.js";
   imports: [StockModule, UploadModule],
   providers: [ProjectsService, TasksService, ProjectCostService],
   controllers: [ProjectsController, ProjectTasksController, TasksController],
-  exports: [ProjectsService, ProjectCostService],
+  exports: [ProjectsService, ProjectCostService, TasksService],
 })
 export class ProjectsModule {}

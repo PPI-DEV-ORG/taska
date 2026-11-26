@@ -1353,7 +1353,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
         assignee: { select: { id: true, name: true, role: true } },
         attendees: { include: { user: { select: { id: true, name: true, role: true } } } },
         customer: { select: { id: true, name: true, company: true, pic: true, address: true } },
-        lead: { select: { id: true, company: true, pic: true } },
+        lead: { select: { id: true, name: true, contactName: true } },
         supplier: { select: { id: true, name: true } },
       },
     });

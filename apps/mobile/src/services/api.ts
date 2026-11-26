@@ -603,5 +603,246 @@ export async function reopenFiscalYear(year: number, reopenReason: string) {
   return api<any>("POST", `/accounting/fiscal-years/${year}/reopen`, { reopenReason });
 }
 
+// ─── AI Assistant (LLM Agent) ───
+
+export type AiPageContext = {
+  pathname?: string;
+  module?: string;
+  entityId?: string;
+};
+
+export type AiChatAttachment = {
+  fileId: number;
+  name: string;
+  mimeType?: string;
+};
+
+export type AiPendingActionItem = {
+  id: number;
+  sessionId: number;
+  entityType: string;
+  entityLabel: string;
+  title: string;
+  summary: Record<string, string>;
+  status: "PENDING" | "CONFIRMED" | "CANCELLED" | "FAILED";
+  resultEntityId: string | null;
+  resultHref: string | null;
+  errorMessage: string | null;
+  expiresAt: string;
+  createdAt: string;
+};
+
+export type AiCapabilities = {
+  configured: boolean;
+  model: string;
+  providerLabel: string;
+  mode: "READ_ONLY" | "READ_AND_DRAFT_CREATE";
+  canManageSettings?: boolean;
+  creatableEntities?: string[];
+  allowedToolNames: string[];
+  suggestedPrompts: string[];
+};
+
+export type AiLlmSettings = {
+  baseUrl: string;
+  model: string;
+  fallbackModels: string[];
+  timeoutMs: number;
+  hasApiKey: boolean;
+  source: "DB" | "ENV";
+  providerLabel: string;
+};
+
+export type AiTestConnectionResult = {
+  ok: boolean;
+  model: string;
+  providerLabel: string;
+  latencyMs: number;
+  reply: string;
+};
+
+export type AiChatSessionSummary = {
+  id: number;
+  title: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AiChatMessageItem = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  toolsUsed: string[];
+  attachments?: AiChatAttachment[];
+  createdAt: string;
+};
+
+export type AiChatSessionDetail = {
+  id: number;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: AiChatMessageItem[];
+  pendingActions?: AiPendingActionItem[];
+};
+
+export type AiChatReply = {
+  sessionId: number;
+  sessionTitle: string;
+  userMessage: AiChatMessageItem;
+  assistantMessage: AiChatMessageItem;
+  toolsUsed: string[];
+  pendingActions?: AiPendingActionItem[];
+};
+
+export async function fetchAiCapabilities() {
+  return api<AiCapabilities>("GET", "/ai-agent/capabilities");
+}
+
+export async function fetchAiSettings() {
+  return api<AiLlmSettings>("GET", "/ai-agent/settings");
+}
+
+export async function updateAiSettings(data: {
+  baseUrl?: string;
+  model?: string;
+  fallbackModels?: string[];
+  timeoutMs?: number;
+  apiKey?: string;
+  clearApiKey?: boolean;
+}) {
+  return api<AiLlmSettings>("PUT", "/ai-agent/settings", data);
+}
+
+export async function testAiSettingsConnection() {
+  return api<AiTestConnectionResult>("POST", "/ai-agent/settings/test");
+}
+
+export async function fetchAiSessions() {
+  return api<AiChatSessionSummary[]>("GET", "/ai-agent/sessions");
+}
+
+export async function fetchAiSession(id: number) {
+  return api<AiChatSessionDetail>("GET", `/ai-agent/sessions/${id}`);
+}
+
+export async function deleteAiSession(id: number) {
+  return api<{ deleted: boolean; id: number }>("DELETE", `/ai-agent/sessions/${id}`);
+}
+
+export async function undoAiLastTurn(sessionId: number, messageId?: number) {
+  return api<{
+    restoredText: string;
+    deletedCount: number;
+    messages: AiChatMessageItem[];
+    pendingActions: AiPendingActionItem[];
+  }>("POST", `/ai-agent/sessions/${sessionId}/undo`, messageId ? { messageId } : {});
+}
+
+export async function confirmAiAction(actionId: number) {
+  return api<AiPendingActionItem>("POST", `/ai-agent/actions/${actionId}/confirm`);
+}
+
+export async function cancelAiAction(actionId: number) {
+  return api<AiPendingActionItem>("POST", `/ai-agent/actions/${actionId}/cancel`);
+}
+
+export async function sendAiChat(
+  message: string,
+  sessionId?: number,
+  extra?: { pageContext?: AiPageContext; attachments?: AiChatAttachment[] },
+) {
+  return api<AiChatReply>("POST", "/ai-agent/chat", {
+    message,
+    ...(sessionId ? { sessionId } : {}),
+    ...(extra?.pageContext ? { pageContext: extra.pageContext } : {}),
+    ...(extra?.attachments?.length ? { attachments: extra.attachments } : {}),
+  });
+}
+
+export async function streamAiChat(
+  message: string,
+  sessionId: number | undefined,
+  handlers: {
+    onStatus?: (text: string) => void;
+    onDelta?: (chunk: string) => void;
+  },
+  extra?: { pageContext?: AiPageContext; attachments?: AiChatAttachment[] },
+): Promise<AiChatReply> {
+  if (typeof window === "undefined" || typeof ReadableStream === "undefined") {
+    return sendAiChat(message, sessionId, extra);
+  }
+
+  await hydrateTokens();
+  const token = getAccess();
+  const res = await fetch(`${apiBase()}/ai-agent/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      message,
+      ...(sessionId ? { sessionId } : {}),
+      ...(extra?.pageContext ? { pageContext: extra.pageContext } : {}),
+      ...(extra?.attachments?.length ? { attachments: extra.attachments } : {}),
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const errJson = (await res.json()) as { message?: string | string[] };
+      if (Array.isArray(errJson.message)) msg = errJson.message.join(", ");
+      else if (errJson.message) msg = errJson.message;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let donePayload: AiChatReply | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let nlIdx = buffer.indexOf("\n");
+    while (nlIdx >= 0) {
+      const rawLine = buffer.slice(0, nlIdx).trim();
+      buffer = buffer.slice(nlIdx + 1);
+      nlIdx = buffer.indexOf("\n");
+
+      if (!rawLine.startsWith("data:")) continue;
+      const dataStr = rawLine.slice(5).trim();
+      if (!dataStr) continue;
+
+      const ev = JSON.parse(dataStr) as
+        | { type: "status"; text: string }
+        | { type: "delta"; text: string }
+        | { type: "done"; payload: AiChatReply }
+        | { type: "error"; message: string };
+
+      if (ev.type === "status") {
+        handlers.onStatus?.(ev.text);
+      } else if (ev.type === "delta") {
+        handlers.onDelta?.(ev.text);
+      } else if (ev.type === "done") {
+        donePayload = ev.payload;
+      } else if (ev.type === "error") {
+        throw new Error(ev.message);
+      }
+    }
+  }
+
+  if (!donePayload) {
+    throw new Error("Streaming selesai tanpa payload jawaban akhir.");
+  }
+  return donePayload;
+}
+
 
 

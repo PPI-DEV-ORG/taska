@@ -454,6 +454,7 @@ model User {
   maintLaborItems        MaintLabor[]            @relation("MaintLaborTechnician")
   maintApprovals         MaintApproval[]         @relation("MaintApprovalUser")
   maintNotifications     MaintNotification[]     @relation("MaintNotificationRecipient")
+  aiChatSessions         AiChatSession[]
 
   @@index([role, status])
   @@index([warehouseId])
@@ -4411,4 +4412,56 @@ model DrivePermission {
   @@index([folderId, principalType, principalId])
   @@index([fileId, principalType, principalId])
   @@map("drive_permissions")
+}
+
+// ─────────────────────────────── AI Assistant (LLM Agent) ───────────────────────────────
+
+model AiChatSession {
+  id        Int               @id @default(autoincrement())
+  userId    Int
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String            @db.VarChar(191)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @default(now()) @updatedAt
+
+  messages       AiChatMessage[]
+  pendingActions AiPendingAction[]
+
+  @@index([userId, updatedAt])
+  @@map("ai_chat_sessions")
+}
+
+model AiChatMessage {
+  id            Int           @id @default(autoincrement())
+  sessionId     Int
+  session       AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role          String        @db.VarChar(24) // user | assistant
+  content       String        @db.LongText
+  toolsUsedJson String?       @db.LongText
+  createdAt     DateTime      @default(now())
+
+  @@index([sessionId, createdAt])
+  @@map("ai_chat_messages")
+}
+
+model AiPendingAction {
+  id             Int           @id @default(autoincrement())
+  sessionId      Int
+  session        AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId         Int
+  entityType     String        @db.VarChar(48)
+  title          String        @db.VarChar(191)
+  summaryJson    String        @db.LongText
+  payloadJson    String        @db.LongText
+  status         String        @default("PENDING") @db.VarChar(24) // PENDING | CONFIRMED | CANCELLED | FAILED
+  resultEntityId String?       @db.VarChar(64)
+  resultHref     String?       @db.VarChar(191)
+  errorMessage   String?       @db.Text
+  expiresAt      DateTime
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now()) @updatedAt
+
+  @@index([sessionId, status])
+  @@index([userId, status])
+  @@map("ai_pending_actions")
 }

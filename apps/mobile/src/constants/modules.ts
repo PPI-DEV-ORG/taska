@@ -35,6 +35,7 @@ import {
   RefreshCw,
   HardDrive,
   FolderOpen,
+  Sparkles,
 } from "lucide-react-native";
 
 export type Role =
@@ -1211,6 +1212,7 @@ export type NavItem = { key: string; label: string; short?: string; href: string
 
 const N = {
   dashboard: { key: "dashboard", label: "Beranda", href: "/dashboard", icon: LayoutDashboard },
+  aiAssistant: { key: "ai-assistant", label: "Asisten AI", short: "AI", href: "/ai-assistant", icon: Sparkles },
   calendar: { key: "calendar", label: "Kalender Kerja", short: "Kalender", href: "/calendar", icon: CalendarDays },
   approvals: { key: "approvals", label: "Persetujuan", href: "/approvals", icon: CheckSquare },
   leads: { key: "leads", label: "Prospek", href: "/leads", icon: Target },
@@ -1283,7 +1285,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
 export const CAN_APPROVE: Role[] = ["super_admin", "admin", "bos", "finance", "procurement"];
 
 const ALL_NAV_ORDERED: NavItem[] = [
-  N.dashboard, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
+  N.dashboard, N.aiAssistant, N.calendar, N.approvals, N.leads, N.quotations, N.surveys, N.pocReports, N.visitReports, N.maintenanceReports, N.customers,
   N.projects, N.tasks, N.requests, N.supplierPos, N.poClient, N.shipments, N.receiving,
   N.stock, N.fixedAssets, N.maintenance, N.subscriptions, N.contracts, N.fileManagement, N.generalFiles, N.opname, N.delivery, N.invoices, N.expenses, N.cashAdvances,
   N.accounting, N.damage, N.reports, N.hr, N.master, N.users, N.archive, N.audit,
@@ -1511,21 +1513,29 @@ export function canUserApprove(user: User | null | undefined): boolean {
 }
 
 export function getNavForUser(user: User | null | undefined): NavItem[] {
-  if (!user?.role) return NAV_BY_ROLE.sales;
+  if (!user?.role) return [N.dashboard, N.aiAssistant, ...NAV_BY_ROLE.sales.filter((i) => i.key !== "dashboard")];
   const roleLower = String(user.role).toLowerCase();
+  const withAi = (list: NavItem[]) => {
+    if (list.some((i) => i.key === "ai-assistant")) return list;
+    const dashIdx = list.findIndex((i) => i.key === "dashboard");
+    const next = [...list];
+    next.splice(dashIdx >= 0 ? dashIdx + 1 : 0, 0, N.aiAssistant);
+    return next;
+  };
   if (roleLower === "super_admin") {
-    return NAV_BY_ROLE[roleLower] ?? ALL_NAV_ORDERED;
+    return withAi(NAV_BY_ROLE[roleLower] ?? ALL_NAV_ORDERED);
   }
 
   const dyn = findRoleDefForUser(user);
   if (dyn && dyn.permissions && Object.keys(dyn.permissions).length > 0) {
     const filtered = ALL_NAV_ORDERED.filter((item) => {
+      if (item.key === "ai-assistant") return true;
       // Petty cash memakai izin modul Pengeluaran (sama dengan server)
       return hasUserPermission(user, item.key === "cash-advances" ? "expenses" : item.key, "M");
     });
-    return filtered;
+    return withAi(filtered);
   }
 
-  return NAV_BY_ROLE[roleLower] ?? [N.dashboard, N.calendar];
+  return withAi(NAV_BY_ROLE[roleLower] ?? [N.dashboard, N.calendar]);
 }
 

@@ -10,6 +10,7 @@ import {
 } from "lucide-react-native";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { WhatsappDialog } from "@/components/akuntra/whatsapp-dialog";
+import { AiFloatingDrawer } from "@/modules/ai-assistant/ai-floating-drawer";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,7 @@ const NOTIF_ICON = { approval: CheckSquare, stok: Boxes, pengiriman: Truck, lead
 
 /** Menu dikelompokkan sesuai alur kerja, supaya tidak berupa daftar panjang. */
 const NAV_GROUPS: { title: string; keys: string[] }[] = [
-  { title: "", keys: ["dashboard", "calendar", "approvals", "reports"] },
+  { title: "", keys: ["dashboard", "ai-assistant", "calendar", "approvals", "reports"] },
   { title: "Penjualan", keys: ["leads", "customers", "quotations", "poc-reports", "visit-reports", "po-client"] },
   { title: "Proyek", keys: ["surveys", "projects", "maintenance-reports", "tasks"] },
   { title: "Pembelian", keys: ["purchase-requests", "supplier-pos", "purchase-orders", "shipments"] },
@@ -860,6 +861,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <NotifDialog open={notif} onOpenChange={setNotif} />
       <AccountDialog open={account} onOpenChange={setAccount} />
       <WhatsappDialog open={whatsapp} onOpenChange={setWhatsapp} />
+      <AiFloatingDrawer />
     </View>
   );
 }
