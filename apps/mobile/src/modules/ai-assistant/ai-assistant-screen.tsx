@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   Bot,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Database,
   FileText,
@@ -457,7 +459,7 @@ export function AiAssistantScreen({
   const renderActionCard = (act: AiPendingActionItem) => (
     <View
       key={`act-${act.id}`}
-      className="bg-card border-primary/40 rounded-2xl border p-3.5 gap-2.5 mt-2 w-full"
+      className="bg-card border-primary/40 rounded-2xl border p-3.5 gap-2.5 mt-2 w-full overflow-hidden"
     >
       <View className="flex-row items-center justify-between gap-2">
         <Text className="text-sm font-bold text-foreground flex-1">{act.title}</Text>
@@ -493,12 +495,23 @@ export function AiAssistantScreen({
       </View>
 
       <View className="gap-1">
-        {Object.entries(act.summary).map(([k, v]) => (
-          <View key={k} className="flex-row justify-between gap-2">
-            <Text className="text-muted-foreground text-xs">{k}</Text>
-            <Text className="text-foreground text-xs font-semibold flex-1 text-right">{v}</Text>
-          </View>
-        ))}
+        {Object.entries(act.summary).map(([k, v]) => {
+          const isFileField = /lampiran|file/i.test(k);
+          return (
+            <View key={k} className="flex-row items-start justify-between gap-2 min-w-0">
+              <Text className="text-muted-foreground text-xs shrink-0">{k}</Text>
+              <View className="flex-1 min-w-0 items-end">
+                <Text
+                  className="text-foreground text-xs font-semibold text-right max-w-full"
+                  numberOfLines={isFileField ? 1 : undefined}
+                  ellipsizeMode={isFileField ? "tail" : undefined}
+                >
+                  {v}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
       </View>
 
       {act.errorMessage ? <Text className="text-danger text-xs">{act.errorMessage}</Text> : null}
@@ -542,19 +555,26 @@ export function AiAssistantScreen({
     </View>
   );
 
-  const renderSessionList = () => (
+  const activeSessionTitle = React.useMemo(() => {
+    if (!activeSessionId) return "Percakapan Baru";
+    return sessions.find((s) => s.id === activeSessionId)?.title || "Percakapan";
+  }, [activeSessionId, sessions]);
+
+  const renderSessionList = (maxHeightClass = "max-h-[420px]", showNewButton = true) => (
     <View className="gap-2">
-      <Button onPress={startNewChat} size="sm" className="w-full">
-        <MessageSquarePlus size={15} color="#ffffff" />
-        <Text className="text-xs font-semibold text-primary-foreground">Percakapan Baru</Text>
-      </Button>
+      {showNewButton ? (
+        <Button onPress={startNewChat} size="sm" className="w-full">
+          <MessageSquarePlus size={15} color="#ffffff" />
+          <Text className="text-xs font-semibold text-primary-foreground">Percakapan Baru</Text>
+        </Button>
+      ) : null}
 
       {sessions.length === 0 ? (
         <Text className="text-muted-foreground py-4 text-center text-xs">
           Belum ada riwayat percakapan.
         </Text>
       ) : (
-        <ScrollView className="max-h-[420px]" contentContainerClassName="gap-1.5" nestedScrollEnabled>
+        <ScrollView className={maxHeightClass} contentContainerClassName="gap-1.5" nestedScrollEnabled>
           {sessions.map((s) => {
             const active = s.id === activeSessionId;
             return (
@@ -642,15 +662,15 @@ export function AiAssistantScreen({
             </View>
 
             {contextualPrompts.length ? (
-              <View className="flex-row flex-wrap gap-2 justify-center">
+              <View className="flex-row flex-wrap gap-2 justify-center w-full">
                 {contextualPrompts.map((p) => (
                   <Pressable
                     key={p}
                     disabled={sending || !capabilities?.configured}
                     onPress={() => void handleSend(p)}
-                    className="bg-panel/80 border-border/80 hover:border-primary/50 active:opacity-80 rounded-xl border px-3 py-2"
+                    className="bg-panel/80 border-border/80 hover:border-primary/50 active:opacity-80 rounded-xl border px-3 py-2 max-w-full shrink"
                   >
-                    <Text className="text-foreground text-xs">{p}</Text>
+                    <Text className="text-foreground text-xs leading-snug text-center">{p}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -888,7 +908,52 @@ export function AiAssistantScreen({
   );
 
   if (compact) {
-    return chatCard;
+    return (
+      <View className="gap-2.5">
+        <View className="flex-row items-center justify-between gap-2">
+          <Pressable
+            onPress={() => setShowMobileHistory((v) => !v)}
+            accessibilityLabel="Pilih riwayat percakapan"
+            className={cn(
+              "flex-1 min-w-0 flex-row items-center gap-2 rounded-xl border px-3 py-2",
+              showMobileHistory
+                ? "bg-primary/10 border-primary/40"
+                : "bg-panel/80 border-border/80 hover:border-primary/40",
+            )}
+          >
+            <History size={14} color={showMobileHistory ? colors.primary : colors.muted} />
+            <Text
+              className={cn(
+                "flex-1 text-xs font-semibold",
+                showMobileHistory ? "text-primary" : "text-foreground",
+              )}
+              numberOfLines={1}
+            >
+              {activeSessionTitle}
+            </Text>
+            <Text className="text-muted-foreground text-[10px]">({sessions.length})</Text>
+            {showMobileHistory ? (
+              <ChevronUp size={14} color={colors.primary} />
+            ) : (
+              <ChevronDown size={14} color={colors.muted} />
+            )}
+          </Pressable>
+
+          <Button variant="outline" size="sm" className="h-9 shrink-0" onPress={startNewChat}>
+            <MessageSquarePlus size={14} color={colors.text} />
+            <Text className="text-xs">Baru</Text>
+          </Button>
+        </View>
+
+        {showMobileHistory ? (
+          <Panel title="Riwayat Percakapan" icon={History}>
+            {renderSessionList("max-h-[340px]", false)}
+          </Panel>
+        ) : (
+          chatCard
+        )}
+      </View>
+    );
   }
 
   return (
