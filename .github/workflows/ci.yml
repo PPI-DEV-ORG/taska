@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, staging, develop]
+  pull_request:
+    branches: [main, staging, develop]
+
+jobs:
+  api:
+    name: API Typecheck, Lint & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Prisma Client
+        working-directory: apps/api
+        run: pnpm run prisma:generate
+      - name: API Typecheck
+        working-directory: apps/api
+        run: npx tsc --noEmit
+      - name: API Lint (oxlint)
+        working-directory: apps/api
+        run: pnpm run lint
+      - name: API Unit Tests
+        working-directory: apps/api
+        run: pnpm run test
+
+  mobile:
+    name: Mobile Typecheck & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Mobile Typecheck
+        working-directory: apps/mobile
+        run: pnpm run check-types
+      - name: Mobile Lint (ESLint)
+        working-directory: apps/mobile
+        run: npx eslint src/services/api.ts src/components/akuntra/error-boundary.tsx src/components/akuntra/barcode-scanner-modal.tsx src/components/akuntra/scan-input.tsx src/lib/native-download.ts

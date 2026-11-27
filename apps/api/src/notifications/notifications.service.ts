@@ -76,7 +76,91 @@ export class NotificationsService {
       });
     }
     this.logger.debug(`notifikasi dikirim ke ${users.size} pengguna`);
+    void this.sendExpoPush([...users], { title, body: input.text, href: input.href, kind });
     return users.size;
+  }
+
+  async registerPushToken(userId: number, token: string, platform?: string, deviceName?: string) {
+    const clean = token.trim();
+    const normPlatform = (platform || "android").toLowerCase().slice(0, 32);
+    await this.prisma.main.userPushToken.upsert({
+      where: { token: clean },
+      create: {
+        userId,
+        token: clean,
+        platform: normPlatform,
+        deviceName: deviceName?.trim().slice(0, 120) || null,
+      },
+      update: {
+        userId,
+        platform: normPlatform,
+        deviceName: deviceName?.trim().slice(0, 120) || null,
+      },
+    });
+    return { ok: true };
+  }
+
+  async unregisterPushToken(userId: number, token: string) {
+    await this.prisma.main.userPushToken.deleteMany({
+      where: { userId, token: token.trim() },
+    });
+    return { ok: true };
+  }
+
+  private async sendExpoPush(
+    userIds: number[],
+    payload: { title: string; body: string; href: string; kind: string },
+  ): Promise<void> {
+    if (!userIds.length) return;
+    try {
+      const tokens = await this.prisma.main.userPushToken.findMany({
+        where: { userId: { in: userIds } },
+        select: { token: true },
+      });
+      const expoTokens = tokens
+        .map((t) => t.token)
+        .filter((t) => t.startsWith("ExponentPushToken[") || t.startsWith("ExpoPushToken["));
+      if (!expoTokens.length) return;
+
+      const messages = expoTokens.map((to) => ({
+        to,
+        sound: "default",
+        channelId: "akuntra-realtime",
+        title: payload.title,
+        body: payload.body,
+        data: { href: payload.href, kind: payload.kind },
+      }));
+
+      // Kirim dalam batch maksimal 100 sesuai batas Expo Push API
+      for (let idx = 0; idx < messages.length; idx += 100) {
+        const chunk = messages.slice(idx, idx + 100);
+        const res = await fetch("https://exp.host/--/api/v2/push/send", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Accept-Encoding": "gzip, deflate",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(chunk),
+        });
+        if (!res.ok) continue;
+        const json = (await res.json()) as { data?: Array<{ status?: string; details?: { error?: string } }> };
+        const invalidTokens: string[] = [];
+        json.data?.forEach((ticket, i) => {
+          if (ticket?.status === "error" && ticket?.details?.error === "DeviceNotRegistered") {
+            const bad = chunk[i]?.to;
+            if (bad) invalidTokens.push(bad);
+          }
+        });
+        if (invalidTokens.length) {
+          await this.prisma.main.userPushToken
+            .deleteMany({ where: { token: { in: invalidTokens } } })
+            .catch(() => {});
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`Gagal kirim Expo Push Notification: ${(err as Error)?.message ?? err}`);
+    }
   }
 
   /**

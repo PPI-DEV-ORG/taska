@@ -483,9 +483,17 @@ export async function downloadDocumentationPdf(
   kind: "survey" | "project" | "delivery-note" | "poc" | "visit" | "maintenance",
   entityId: string | number,
 ): Promise<boolean> {
-  if (typeof window === "undefined" || typeof document === "undefined") return false;
   await hydrateTokens();
   const token = getAccess();
+  if (Platform.OS !== "web" || typeof window === "undefined" || typeof document === "undefined") {
+    const { downloadAndShareUrl } = await import("@/lib/native-download");
+    return downloadAndShareUrl(
+      `${apiBase()}/documentation/${kind}/${entityId}/pdf`,
+      `dokumentasi-${kind}-${entityId}.pdf`,
+      token ? { Authorization: `Bearer ${token}` } : undefined,
+      "application/pdf",
+    );
+  }
   const res = await fetch(`${apiBase()}/documentation/${kind}/${entityId}/pdf`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
@@ -507,9 +515,18 @@ export async function downloadDocumentationPdf(
  * mode "print" membuka PDF di tab baru siap dicetak; "download" menyimpan file.
  */
 export async function openDeliveryNotePdf(id: string | number, number?: string, mode: "print" | "download" = "print"): Promise<boolean> {
-  if (typeof window === "undefined" || typeof document === "undefined") return false;
   await hydrateTokens();
   const token = getAccess();
+  const filename = `surat-jalan-${String(number || id).replace(/[^\w.-]+/g, "-")}.pdf`;
+  if (Platform.OS !== "web" || typeof window === "undefined" || typeof document === "undefined") {
+    const { downloadAndShareUrl } = await import("@/lib/native-download");
+    return downloadAndShareUrl(
+      `${apiBase()}/delivery-notes/${id}/pdf`,
+      filename,
+      token ? { Authorization: `Bearer ${token}` } : undefined,
+      "application/pdf",
+    );
+  }
   const res = await fetch(`${apiBase()}/delivery-notes/${id}/pdf`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
@@ -525,7 +542,7 @@ export async function openDeliveryNotePdf(id: string | number, number?: string, 
   }
   const link = document.createElement("a");
   link.href = url;
-  link.download = `surat-jalan-${String(number || id).replace(/[^\w.-]+/g, "-")}.pdf`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

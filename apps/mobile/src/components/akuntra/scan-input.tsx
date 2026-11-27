@@ -1,9 +1,10 @@
 import * as React from "react";
 import { Platform, TextInput, View } from "react-native";
-import { Trash2, ScanLine, WifiOff, CircleCheck, CircleAlert } from "lucide-react-native";
+import { Trash2, ScanLine, Camera, CircleCheck, CircleAlert } from "lucide-react-native";
 import { Pressable } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { BarcodeScannerModal } from "@/components/akuntra/barcode-scanner-modal";
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 
@@ -30,6 +31,7 @@ export function ScanInput({
   const { data } = useApp();
   const [value, setValue] = React.useState("");
   const [scans, setScans] = React.useState<Scan[]>([]);
+  const [cameraOpen, setCameraOpen] = React.useState(false);
   const ref = React.useRef<React.ComponentRef<typeof TextInput>>(null);
 
   function submit(raw?: string) {
@@ -86,6 +88,16 @@ export function ScanInput({
             style={{ flex: 1, color: colors.text, fontSize: 15, outlineStyle: "none" } as any}
           />
         </View>
+        {Platform.OS !== "web" ? (
+          <Button
+            size="default"
+            variant="outline"
+            className="h-12 px-3"
+            onPress={() => setCameraOpen(true)}
+          >
+            <Camera size={18} color={colors.primary} />
+          </Button>
+        ) : null}
         <Button
           size="default"
           className="h-12 px-4"
@@ -95,6 +107,13 @@ export function ScanInput({
           <Text>Scan / Tambah</Text>
         </Button>
       </View>
+      <BarcodeScannerModal
+        open={cameraOpen}
+        title="Scan Nomor Seri (SN)"
+        subtitle="Arahkan kamera ke barcode atau QR serial number barang"
+        onClose={() => setCameraOpen(false)}
+        onScanned={(code) => submit(code)}
+      />
       {scans.length ? (
         <View className="gap-2">
           <Text className="text-muted-foreground text-[13px]">{scans.filter((s) => s.ok).length} unit valid dari {scans.length} scan</Text>

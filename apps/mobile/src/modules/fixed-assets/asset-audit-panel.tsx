@@ -1,10 +1,12 @@
 import * as React from "react";
-import { View, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { View, TouchableOpacity, ScrollView, ActivityIndicator, Platform } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/akuntra/dialogs";
+import { BarcodeScannerModal } from "@/components/akuntra/barcode-scanner-modal";
 import {
+  Camera,
   ClipboardCheck,
   Plus,
   QrCode,
@@ -39,6 +41,7 @@ export function AssetAuditPanel({ locations }: Props) {
 
   // Scan Input State
   const [scanInput, setScanInput] = React.useState("");
+  const [cameraOpen, setCameraOpen] = React.useState(false);
   const [actualCondition, setActualCondition] = React.useState("GOOD");
   const [actualLocId, setActualLocId] = React.useState<number | undefined>(undefined);
   const [scanNotes, setScanNotes] = React.useState("");
@@ -363,14 +366,24 @@ export function AssetAuditPanel({ locations }: Props) {
                     </Text>
                   </View>
 
-                  <View className="flex-row gap-2 items-center">
+                  <View className="flex-row flex-wrap gap-2 items-center">
                     <Input
                       value={scanInput}
                       onChangeText={setScanInput}
                       placeholder="Scan payload QR atau ketik AST-2026-00001..."
                       onSubmitEditing={handleScanSubmit}
-                      className="flex-1 h-10 rounded-lg bg-card border-border/80 font-mono text-xs"
+                      className="flex-1 min-w-[180px] h-10 rounded-lg bg-card border-border/80 font-mono text-xs"
                     />
+                    {Platform.OS !== "web" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-10 px-3"
+                        onPress={() => setCameraOpen(true)}
+                      >
+                        <Camera size={16} className="text-primary" />
+                      </Button>
+                    ) : null}
 
                     <View className="w-44">
                       <SearchableSelect
@@ -405,6 +418,13 @@ export function AssetAuditPanel({ locations }: Props) {
                   {scanError ? (
                     <Text className="text-xs text-destructive font-semibold">{scanError}</Text>
                   ) : null}
+                  <BarcodeScannerModal
+                    open={cameraOpen}
+                    title="Scan QR Aset Tetap"
+                    subtitle="Arahkan kamera ke label QR aset tetap untuk verifikasi audit"
+                    onClose={() => setCameraOpen(false)}
+                    onScanned={(code) => setScanInput(code)}
+                  />
                 </View>
               )}
 

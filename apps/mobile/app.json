@@ -62,6 +62,12 @@
           "locationWhenInUsePermission": "Akuntra memerlukan akses lokasi GPS untuk mencatat koordinat presensi kehadiran Anda."
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Akuntra memerlukan akses kamera untuk memindai barcode/QR nomor seri barang, aset tetap, dan bukti dokumentasi."
+        }
+      ],
       "expo-secure-store",
       "expo-font",
       "expo-image",

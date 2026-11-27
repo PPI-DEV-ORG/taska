@@ -383,3 +383,55 @@ export async function showSystemNotification(opts: {
     } catch {}
   }
 }
+
+let registeredExpoPushToken: string | null = null;
+
+/**
+ * Daftarkan Expo Push Token perangkat (Android/iOS) ke server agar notifikasi tetap masuk saat app ditutup.
+ */
+export async function registerExpoPushToken(): Promise<string | null> {
+  if (Platform.OS === "web") return null;
+  try {
+    const Notifications = await ensureNativeHandler();
+    if (!Notifications) return null;
+    const granted = await ensureNotifPermission();
+    if (!granted) return null;
+
+    const Constants = await import("expo-constants");
+    const Device = await import("expo-device");
+    if (!Device.isDevice) return null;
+
+    const projectId =
+      (Constants.default.expoConfig?.extra as any)?.eas?.projectId ??
+      (Constants.default.easConfig as any)?.projectId ??
+      "8a46c3c2-8f79-46d2-90da-04192e7d80a6";
+
+    const tokenRes = await Notifications.getExpoPushTokenAsync({ projectId });
+    const token = tokenRes?.data?.trim();
+    if (!token) return null;
+
+    if (registeredExpoPushToken !== token) {
+      const { api } = await import("@/services/api");
+      await api.post("/notifications/push-token", {
+        token,
+        platform: Platform.OS,
+        deviceName: Device.modelName || Device.deviceName || undefined,
+      });
+      registeredExpoPushToken = token;
+    }
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+/** Cabut Expo Push Token perangkat saat logout agar akun lain tidak menerima notifikasi akun sebelumnya. */
+export async function unregisterExpoPushToken(): Promise<void> {
+  if (Platform.OS === "web" || !registeredExpoPushToken) return;
+  const token = registeredExpoPushToken;
+  registeredExpoPushToken = null;
+  try {
+    const { api } = await import("@/services/api");
+    await api("DELETE", "/notifications/push-token", { token });
+  } catch {}
+}

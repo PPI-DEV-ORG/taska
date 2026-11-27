@@ -247,15 +247,19 @@ export default function ProjectDetailScreen() {
       `Total Biaya & Beban,${totalCost},""`,
       `Laba Bersih Proyek,${netProfit},"Margin ${marginPct}%"`,
     ].join("\n");
+    const filename = `pnl-${(project?.nama || project?.name || "proyek").toLowerCase().replace(/[^a-z0-9]/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
     if (Platform.OS !== "web" || typeof document === "undefined" || typeof URL === "undefined") {
-      toast("Unduh CSV P&L saat ini tersedia di versi Web. Dukungan ekspor mobile akan hadir di pembaruan berikutnya.", "info");
+      void import("@/lib/native-download")
+        .then(({ saveAndShareTextFile }) => saveAndShareTextFile("\uFEFF" + header + summary, filename, "text/csv"))
+        .then(() => toast("Laporan Untung-Rugi (P&L) proyek siap disimpan/dibagikan"))
+        .catch((e: any) => toast(e?.message || "Gagal mengekspor P&L proyek", "danger"));
       return;
     }
     const blob = new Blob(["\uFEFF" + header + summary], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `pnl-${(project?.nama || project?.name || "proyek").toLowerCase().replace(/[^a-z0-9]/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

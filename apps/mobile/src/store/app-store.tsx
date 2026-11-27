@@ -27,6 +27,8 @@ import { connectSocket, type WsDataChange, type WsNotification } from "@/service
 import {
   JENIS_LABEL,
   ensureNotifPermission,
+  registerExpoPushToken,
+  unregisterExpoPushToken,
   initWebNotificationRuntime,
   playNotificationSound,
   showSystemNotification,
@@ -696,13 +698,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       settingsLoadedRef.current = false;
       await loadAll(getModulesForPath(), u);
       // minta izin notifikasi saat masih dalam gestur tap login (iOS perlu gesture)
-      void ensureNotifPermission();
+      void ensureNotifPermission().then(() => registerExpoPushToken());
     },
     [loadAll],
   );
 
   const logout = React.useCallback(() => {
-    void clearTokens();
+    void unregisterExpoPushToken().finally(() => {
+      void clearTokens();
+    });
     writeStorageJson(STORAGE_CACHE_USER_KEY, null);
     writeStorageJson(STORAGE_CACHE_APPROVALS_KEY, []);
     seenNotifIdsRef.current.clear();
@@ -820,7 +824,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         writeStorageJson(STORAGE_CACHE_USER_KEY, u);
         setOffline(false);
         await loadAll(getModulesForPath(), u);
-        void ensureNotifPermission();
+        void ensureNotifPermission().then(() => registerExpoPushToken());
       } catch (err: any) {
         if (isNetworkError(err)) {
           // Server sedang mati/down, pertahankan sesi lokal & aktifkan mode offline

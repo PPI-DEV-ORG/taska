@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from "@nestjs/common";
-import { IsArray, IsInt, IsOptional } from "class-validator";
+import { Body, Controller, Delete, Get, HttpCode, Post, Query } from "@nestjs/common";
+import { IsArray, IsInt, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { Type } from "class-transformer";
 import { NotificationsService } from "./notifications.service.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
@@ -10,6 +10,30 @@ class ReadDto {
   @Type(() => Number)
   @IsInt({ each: true })
   ids?: number[];
+}
+
+class RegisterPushTokenDto {
+  @IsString()
+  @MinLength(10, { message: "Push token tidak valid" })
+  @MaxLength(255)
+  token!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  platform?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  deviceName?: string;
+}
+
+class UnregisterPushTokenDto {
+  @IsString()
+  @MinLength(10, { message: "Push token tidak valid" })
+  @MaxLength(255)
+  token!: string;
 }
 
 @Controller("notifications")
@@ -45,5 +69,17 @@ export class NotificationsController {
   @HttpCode(200)
   readAll(@CurrentUser() user: RequestUser) {
     return this.notifications.markRead(user.id);
+  }
+
+  @Post("push-token")
+  @HttpCode(200)
+  registerPushToken(@CurrentUser() user: RequestUser, @Body() dto: RegisterPushTokenDto) {
+    return this.notifications.registerPushToken(user.id, dto.token, dto.platform, dto.deviceName);
+  }
+
+  @Delete("push-token")
+  @HttpCode(200)
+  unregisterPushToken(@CurrentUser() user: RequestUser, @Body() dto: UnregisterPushTokenDto) {
+    return this.notifications.unregisterPushToken(user.id, dto.token);
   }
 }

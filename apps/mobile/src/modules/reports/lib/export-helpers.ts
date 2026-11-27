@@ -1,4 +1,6 @@
-import { apiBase, getAccess } from "@/services/api";
+import { Platform } from "react-native";
+import { apiBase, getAccess, hydrateTokens } from "@/services/api";
+import { downloadAndShareUrl, saveAndShareBytesFile, saveAndShareTextFile } from "@/lib/native-download";
 import { generatePdfTable } from "@/lib/simple-pdf";
 import { buildEfakturCsv, buildEfakturMasukanCsv } from "@/lib/efaktur";
 import type { DownloadFormat } from "../types";
@@ -244,13 +246,12 @@ export async function downloadReport({
     toast("Akses ditolak: Laporan Keuangan hanya untuk Finance, Admin, Bos, dan Super Admin", "danger");
     return;
   }
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    toast(`Mengunduh ${title} (${format.toUpperCase()})`);
-    return;
-  }
-
   const safeName = title.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  const isNative = Platform.OS !== "web" || typeof window === "undefined" || typeof document === "undefined";
+
   try {
+    await hydrateTokens();
     const token = getAccess();
     const params = new URLSearchParams({ format });
     if (reportDate) {
@@ -258,25 +259,72 @@ export async function downloadReport({
       params.set("from", `${d}T00:00:00.000Z`);
       params.set("to", `${d}T23:59:59.999Z`);
     }
-    const res = await fetch(`${apiBase()}/reports/${type}/export?${params.toString()}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${safeName}-${new Date().toISOString().slice(0, 10)}.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      toast(`Laporan ${title} berhasil diunduh (.${format})`);
-      return;
+    const exportUrl = `${apiBase()}/reports/${type}/export?${params.toString()}`;
+    if (isNative) {
+      const mimeMap: Record<DownloadFormat, string> = {
+        xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        pdf: "application/pdf",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      };
+      const shared = await downloadAndShareUrl(
+        exportUrl,
+        `${safeName}-${dateStamp}.${format}`,
+        token ? { Authorization: `Bearer ${token}` } : undefined,
+        mimeMap[format],
+      );
+      if (shared) {
+        toast(`Laporan ${title} siap disimpan/dibagikan (.${format})`);
+        return;
+      }
+    } else {
+      const res = await fetch(exportUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${safeName}-${dateStamp}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast(`Laporan ${title} berhasil diunduh (.${format})`);
+        return;
+      }
     }
   } catch {}
 
   const csvData = generateCsvByType(type, title, fin, data, approvals);
+
+  if (isNative) {
+    try {
+      if (format === "pdf") {
+        const lines = csvData.trim().split("\n").filter((l) => l.trim().length > 0);
+        let foundHeader = false;
+        let cols: string[] = [];
+        const parsedRows: string[][] = [];
+        for (const line of lines) {
+          if (!foundHeader && line.includes(",")) {
+            foundHeader = true;
+            cols = line.split(",").map((c) => c.replace(/^"|"$/g, "").trim());
+          } else if (foundHeader) {
+            parsedRows.push(line.split('","').map((c) => c.replace(/^"|"$/g, "").trim()));
+          }
+        }
+        const pdfBytes = generatePdfTable({ title, columns: cols, rows: parsedRows });
+        await saveAndShareBytesFile(pdfBytes, `${safeName}-${dateStamp}.pdf`, "application/pdf");
+        toast(`Laporan ${title} siap disimpan/dibagikan (.pdf)`);
+      } else {
+        await saveAndShareTextFile("\uFEFF" + csvData, `${safeName}-${dateStamp}.csv`, "text/csv");
+        toast(`Laporan ${title} siap disimpan/dibagikan (.csv)`);
+      }
+    } catch (e: any) {
+      toast(e?.message || `Gagal mengekspor ${title}`, "danger");
+    }
+    return;
+  }
 
   if (format === "xlsx") {
     const blob = new Blob(["\uFEFF" + csvData], { type: "text/csv;charset=utf-8;" });
@@ -381,8 +429,15 @@ export function downloadEfakturCsv({
     toast("Akses ditolak: Ekspor E-Faktur hanya untuk Finance, Admin, Bos, dan Super Admin", "danger");
     return;
   }
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    toast("Mengunduh CSV E-Faktur DJP");
+  if (Platform.OS !== "web" || typeof window === "undefined" || typeof document === "undefined") {
+    const csvContent = buildEfakturCsv(data.invoices ?? [], data.customers ?? []);
+    void saveAndShareTextFile(
+      "\uFEFF" + csvContent,
+      `efaktur-pajak-keluaran-${new Date().toISOString().slice(0, 10)}.csv`,
+      "text/csv",
+    )
+      .then(() => toast("File CSV E-Faktur DJP siap disimpan/dibagikan!"))
+      .catch((e: any) => toast(e?.message ?? "Gagal mengekspor E-Faktur", "danger"));
     return;
   }
   try {
@@ -415,8 +470,19 @@ export function downloadEfakturMasukanCsv({
     toast("Akses ditolak: Ekspor E-Faktur hanya untuk Finance, Admin, Bos, dan Super Admin", "danger");
     return;
   }
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    toast("Mengunduh CSV E-Faktur DJP Pajak Masukan");
+  if (Platform.OS !== "web" || typeof window === "undefined" || typeof document === "undefined") {
+    const csvContent = buildEfakturMasukanCsv(
+      data["supplier-pos"] ?? [],
+      data["purchase-requests"] ?? [],
+      data.suppliers ?? [],
+    );
+    void saveAndShareTextFile(
+      "\uFEFF" + csvContent,
+      `efaktur-pajak-masukan-${new Date().toISOString().slice(0, 10)}.csv`,
+      "text/csv",
+    )
+      .then(() => toast("File CSV E-Faktur Pajak Masukan siap disimpan/dibagikan!"))
+      .catch((e: any) => toast(e?.message ?? "Gagal mengekspor E-Faktur Masukan", "danger"));
     return;
   }
   try {

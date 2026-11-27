@@ -455,6 +455,7 @@ model User {
   maintApprovals         MaintApproval[]         @relation("MaintApprovalUser")
   maintNotifications     MaintNotification[]     @relation("MaintNotificationRecipient")
   aiChatSessions         AiChatSession[]
+  pushTokens             UserPushToken[]
 
   @@index([role, status])
   @@index([warehouseId])
@@ -605,6 +606,20 @@ model Notification {
   @@index([userId, read])
   @@index([targetRole, read])
   @@index([createdAt])
+}
+
+model UserPushToken {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique @db.VarChar(255)
+  platform   String   @default("android") @db.VarChar(32)
+  deviceName String?  @db.VarChar(120)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@map("user_push_tokens")
 }
 
 model DocumentNumber {
