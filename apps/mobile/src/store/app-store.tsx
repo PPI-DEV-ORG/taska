@@ -142,6 +142,15 @@ const STORAGE_CACHE_COMPANY_KEY = "akuntra.offline.company.v1";
 const STORAGE_CACHE_DOC_FORMATS_KEY = "akuntra.offline.docFormats.v1";
 const STORAGE_CACHE_ROLES_KEY = "akuntra.offline.roles.v1";
 
+let cacheDbTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleCacheDbWrite(next: DB) {
+  if (cacheDbTimer) clearTimeout(cacheDbTimer);
+  cacheDbTimer = setTimeout(() => {
+    cacheDbTimer = null;
+    writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+  }, 1500);
+}
+
 const STORAGE_KEY_MAP: Record<string, string> = {
   [STORAGE_QUEUE_KEY]: "taska.offline.queue.v1",
   [STORAGE_CACHE_DB_KEY]: "taska.offline.db.v1",
@@ -664,7 +673,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const next = { ...prev };
       for (const [m, rows] of pairs) (next as any)[m] = rows;
       if (stockRes?.items) next.stockSummary = stockRes.items;
-      writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+      scheduleCacheDbWrite(next);
       withOfflineResult = overlayPendingAdds(next, offlineQueueRef.current);
       return withOfflineResult;
     });
@@ -1024,7 +1033,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const taskRows = await fetchTasks(projects);
       setData((d) => {
         const next = overlayPendingAdds({ ...d, projects, tasks: taskRows }, offlineQueueRef.current);
-        writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+        scheduleCacheDbWrite(next);
         return next;
       });
       return taskRows;
@@ -1050,7 +1059,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         [module]: rows,
         ...(extraStock ? { stockSummary: extraStock } : {}),
       }, offlineQueueRef.current);
-      writeStorageJson(STORAGE_CACHE_DB_KEY, next);
+      scheduleCacheDbWrite(next);
       return next;
     });
     return rows;

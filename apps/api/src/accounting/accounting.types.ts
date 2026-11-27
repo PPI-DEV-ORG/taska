@@ -27,5 +27,5 @@ export function round(amount: number): number {
   return Math.round((Number(amount) || 0) + Number.EPSILON);
 }
 
-// Cut-Off Date: Dokumen bertanggal sebelum tanggal ini tidak diposting ke jurnal
-export const CUTOFF_DATE = new Date("2026-01-01T00:00:00.000Z");
+// Cut-Off Date (WIB UTC+7): Dokumen bertanggal sebelum tanggal ini tidak diposting ke jurnal
+export const CUTOFF_DATE = new Date("2026-01-01T00:00:00.000+07:00");

@@ -9,6 +9,7 @@ import { ApprovalsService } from "../approvals/approvals.service.js";
 import { ReservationsService } from "../stock/reservations.service.js";
 import { paginate, type PageQuery } from "../common/dto/page-query.js";
 import { orderBy, pageSkip } from "../common/utils/query.js";
+import { toWibDateIso } from "../common/utils/wib.js";
 import type { InvoiceOut } from "../generated/prisma/client.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 import { ConvertProformaDto, InvoiceOutDto, PaymentDto } from "./dto.js";
@@ -273,21 +274,16 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (invEntry && !PostingService.sameLines(invEntry.lines, expectedInvLines)) {
-        await this.prisma.main.$transaction(async (tx) => {
-          await (tx as any).journalLine.deleteMany({ where: { entryId: invEntry.id } });
-          await (tx as any).journalLine.createMany({
-            data: expectedInvLines.map((line, idx) => ({
-              entryId: invEntry.id,
-              lineNo: idx + 1,
-              accountCode: line.accountCode,
-              debit: line.debit,
-              credit: line.credit,
-              memo: line.memo ? String(line.memo).slice(0, 190) : invEntry.memo,
-              projectId: line.projectId ?? inv.projectId,
-              partyType: line.partyType ?? null,
-              partyId: line.partyId ?? null,
-            })),
-          });
+        await this.postingService.repost({
+          date: invEntry.date,
+          source: invEntry.source || "INVOICE_OUT",
+          sourceType: "InvoiceOut",
+          sourceId: inv.id,
+          event: "issued",
+          memo: invEntry.memo || `Faktur penjualan ${inv.number}`,
+          refNo: invEntry.refNo ?? inv.number,
+          projectId: inv.projectId ?? undefined,
+          lines: expectedInvLines,
         });
       } else if (!invEntry && inv.status !== "DRAFT") {
         await this.postInvoiceJournalIfEligible(inv.id);
@@ -338,21 +334,16 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
           });
 
           if (payEntry && !PostingService.sameLines(payEntry.lines, expectedPayLines)) {
-            await this.prisma.main.$transaction(async (tx) => {
-              await (tx as any).journalLine.deleteMany({ where: { entryId: payEntry.id } });
-              await (tx as any).journalLine.createMany({
-                data: expectedPayLines.map((line, idx) => ({
-                  entryId: payEntry.id,
-                  lineNo: idx + 1,
-                  accountCode: line.accountCode,
-                  debit: line.debit,
-                  credit: line.credit,
-                  memo: line.memo ? String(line.memo).slice(0, 190) : payEntry.memo,
-                  projectId: line.projectId ?? inv.projectId,
-                  partyType: line.partyType ?? null,
-                  partyId: line.partyId ?? null,
-                })),
-              });
+            await this.postingService.repost({
+              date: payEntry.date,
+              source: payEntry.source || "PAYMENT",
+              sourceType: "Payment",
+              sourceId: pm.id,
+              event: "received",
+              memo: payEntry.memo || `Pembayaran invoice ${inv.number}`,
+              refNo: payEntry.refNo ?? inv.number,
+              projectId: inv.projectId ?? undefined,
+              lines: expectedPayLines,
             });
           }
         }
@@ -420,7 +411,6 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     q: PageQuery & { status?: string; customerId?: number; projectId?: number; clientPoId?: number; from?: string; to?: string },
     user?: RequestUser,
   ) {
-    await this.ensureTaxDataRepaired();
     let salesScope: any = {};
     if (user && user.role === "SALES") {
       const [auditLogs, salesLeads] = await Promise.all([
@@ -1761,7 +1751,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
         pph: pf.pph != null ? Number(pf.pph) : undefined,
         pphMode: pf.pphMode ?? undefined,
         tipePph: pf.tipePph ?? undefined,
-        date: dto.date ?? new Date().toISOString().slice(0, 10),
+        date: dto.date ?? toWibDateIso(),
         dueDate: dto.dueDate ?? pf.dueDate.toISOString().slice(0, 10),
         status: dto.send === false ? "DRAFT" : "SENT",
         items: Array.isArray(pf.items) ? (pf.items as any[]) : undefined,
@@ -2469,7 +2459,7 @@ export class InvoiceOutService implements OnModuleInit, OnModuleDestroy {
     const periodStr =
       query.year && query.month
         ? `${query.year}-${String(query.month).padStart(2, "0")}`
-        : new Date().toISOString().slice(0, 10);
+        : toWibDateIso();
     const filename = `efaktur-pajak-keluaran-${periodStr}.csv`;
     return { csv: lines.join("\r\n"), filename };
   }

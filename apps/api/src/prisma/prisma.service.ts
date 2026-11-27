@@ -3,9 +3,12 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import * as bcrypt from "bcryptjs";
 import { PrismaClient } from "../generated/prisma/client.js";
 
-function makeClient(urlEnv: string): PrismaClient {
-  const raw = process.env[urlEnv];
-  if (!raw) throw new Error(`${urlEnv} tidak di-set`);
+function makeClient(urlEnv: string, optional = false): PrismaClient | null {
+  const raw = process.env[urlEnv]?.trim();
+  if (!raw) {
+    if (optional) return null;
+    throw new Error(`${urlEnv} tidak di-set`);
+  }
   const u = new URL(raw);
   if (!u.searchParams.has("allowPublicKeyRetrieval")) {
     u.searchParams.set("allowPublicKeyRetrieval", "true");
@@ -13,21 +16,19 @@ function makeClient(urlEnv: string): PrismaClient {
   return new PrismaClient({ adapter: new PrismaMariaDb(u.toString()) });
 }
 
-const ROLE_ENUM_SQL = "ENUM('SUPER_ADMIN','ADMIN','BOS','SALES','PM','TEKNISI','PROCUREMENT','FINANCE','GUDANG','SE','HR')";
-
 /**
  * Dua instance Prisma dengan klien yang sama:
  *  - `main`   → database operasional (DATABASE_URL)
- *  - `archive`→ database arsip (ARCHIVE_DATABASE_URL), berumur > 2 tahun
+ *  - `archive`→ database arsip opsional (ARCHIVE_DATABASE_URL), null bila tidak dikonfigurasi
  */
 @Injectable()
 export class PrismaService implements OnModuleInit, OnApplicationShutdown {
   readonly main: PrismaClient;
-  readonly archive: PrismaClient;
+  readonly archive: PrismaClient | null;
 
   constructor() {
-    this.main = makeClient("DATABASE_URL");
-    this.archive = makeClient("ARCHIVE_DATABASE_URL");
+    this.main = makeClient("DATABASE_URL")!;
+    this.archive = makeClient("ARCHIVE_DATABASE_URL", true);
   }
 
   private async ensureRoleEnums(db: PrismaClient) {
@@ -134,15 +135,14 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
   }
 
   async onModuleInit() {
-    await Promise.allSettled([this.main.$connect(), this.archive.$connect()]);
-    const [mainOk, archiveOk] = await Promise.all([
-      this.canReach(this.main, "main"),
-      this.canReach(this.archive, "archive"),
-    ]);
     await Promise.allSettled([
-      mainOk ? this.ensureRoleEnums(this.main) : Promise.resolve(),
-      archiveOk ? this.ensureRoleEnums(this.archive) : Promise.resolve(),
+      this.main.$connect(),
+      ...(this.archive ? [this.archive.$connect()] : []),
     ]);
+    const mainOk = await this.canReach(this.main, "main");
+    if (mainOk) {
+      await this.ensureRoleEnums(this.main).catch(() => {});
+    }
     try {
       const existing = await this.main.user.findUnique({ where: { email: "superadmin@akuntra.co.id" } });
       if (!existing) {
@@ -323,6 +323,9 @@ export class PrismaService implements OnModuleInit, OnApplicationShutdown {
   }
 
   async onApplicationShutdown() {
-    await Promise.allSettled([this.main.$disconnect(), this.archive.$disconnect()]);
+    await Promise.allSettled([
+      this.main.$disconnect(),
+      ...(this.archive ? [this.archive.$disconnect()] : []),
+    ]);
   }
 }

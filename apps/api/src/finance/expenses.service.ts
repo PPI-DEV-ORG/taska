@@ -428,35 +428,44 @@ export class ExpensesService {
     if (dto.status === "DIBAYAR" && row.status === "DITOLAK") {
       throw new BadRequestException("Pengeluaran yang ditolak tidak bisa dibayar");
     }
-    // Disetujui lalu ditolak / dikembalikan: balik jurnal pengakuan beban agar beban & hutang tidak menggantung.
-    if (row.status === "DISETUJUI" && (dto.status === "DITOLAK" || dto.status === "DILAPORKAN")) {
-      await this.postingService.reverseAllForSource("Expense", id, `Pengeluaran ${dto.status === "DITOLAK" ? "ditolak" : "dikembalikan"}`, user.id);
-    }
-
     // Pemakaian petty cash: uangnya sudah dipegang karyawan, jadi "disetujui" = langsung selesai (tanpa pembayaran lagi).
     const isPettyCash = row.fundingSource === PETTY_CASH_SOURCE;
     const effStatus = isPettyCash && (dto.status === "DISETUJUI" || dto.status === "DIBAYAR") ? "DIBAYAR" : dto.status;
     const isPaid = Boolean(effStatus === "DIBAYAR");
-    const updated = await this.prisma.main.expense.update({
-      where: { id },
-      data: {
-        status: effStatus,
-        ...(dto.reason ? { rejectReason: dto.reason } : {}),
-        ...(dto.paidFileId ? { paidFileId: dto.paidFileId } : {}),
-        ...(isPaid
-          ? {
-              paidAt: new Date(),
-              paidById: user.id,
-              paidAmount: row.amount,
-              reimbursementStatus: row.fundingSource === "TALANGAN_PRIBADI" ? "DIBAYAR" : undefined,
-              ...(isPettyCash ? { paidAccountCode: null } : {}),
-            }
-          : {}),
-        ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
-        ...(dto.fundingSource && !isPettyCash ? { fundingSource: dto.fundingSource } : {}),
-        ...(dto.paidAccountCode && !isPettyCash ? { paidAccountCode: dto.paidAccountCode } : {}),
-      },
-      include: { reporter: { select: { id: true, name: true } } },
+    const shouldReverse = row.status === "DISETUJUI" && (dto.status === "DITOLAK" || dto.status === "DILAPORKAN");
+
+    // Bungkus pembalikan jurnal & update status dalam satu $transaction agar atomik (409 CLOSED membatalkan keduanya)
+    const updated = await this.prisma.main.$transaction(async (tx) => {
+      if (shouldReverse) {
+        await this.postingService.reverseAllForSource(
+          "Expense",
+          id,
+          `Pengeluaran ${dto.status === "DITOLAK" ? "ditolak" : "dikembalikan"}`,
+          user.id,
+          tx,
+        );
+      }
+      return tx.expense.update({
+        where: { id },
+        data: {
+          status: effStatus,
+          ...(dto.reason ? { rejectReason: dto.reason } : {}),
+          ...(dto.paidFileId ? { paidFileId: dto.paidFileId } : {}),
+          ...(isPaid
+            ? {
+                paidAt: new Date(),
+                paidById: user.id,
+                paidAmount: row.amount,
+                reimbursementStatus: row.fundingSource === "TALANGAN_PRIBADI" ? "DIBAYAR" : undefined,
+                ...(isPettyCash ? { paidAccountCode: null } : {}),
+              }
+            : {}),
+          ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
+          ...(dto.fundingSource && !isPettyCash ? { fundingSource: dto.fundingSource } : {}),
+          ...(dto.paidAccountCode && !isPettyCash ? { paidAccountCode: dto.paidAccountCode } : {}),
+        },
+        include: { reporter: { select: { id: true, name: true } } },
+      });
     });
 
     if (row.surveyId) {
@@ -720,44 +729,63 @@ export class ExpensesService {
     this.notifications.dataChange("expenses", "status", entityId);
   }
 
-  /** Ringkasan untuk Finance: per project / per orang / per bulan. */
+  /** Ringkasan untuk Finance: per project / per orang / per bulan (agregasi di DB). */
   async summary(user: RequestUser, from?: string, to?: string) {
     const role = (user.role || "").toUpperCase();
     const scope = ["SUPER_ADMIN", "FINANCE", "BOS", "ADMIN"].includes(role) ? {} : { reporterId: user.id };
-    const rows = await this.prisma.main.expense.findMany({
-      where: {
-        ...scope,
-        ...(from || to ? { date: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
-      },
-      select: {
-        amount: true,
-        status: true,
-        projectId: true,
-        reporterId: true,
-        date: true,
-        reporter: { select: { name: true } },
-        project: { select: { name: true } },
-      },
-    });
+    const where = {
+      ...scope,
+      ...(from || to ? { date: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
+    };
 
-    const byProject = new Map<string, number>();
-    const byPerson = new Map<string, number>();
+    const [byStatus, projectGroups, personGroups, dateGroups] = await Promise.all([
+      this.prisma.main.expense.groupBy({ by: ["status"], where, _sum: { amount: true } }),
+      this.prisma.main.expense.groupBy({ by: ["projectId"], where, _sum: { amount: true } }),
+      this.prisma.main.expense.groupBy({ by: ["reporterId"], where, _sum: { amount: true } }),
+      this.prisma.main.expense.groupBy({ by: ["date"], where, _sum: { amount: true } }),
+    ]);
+
+    const projectIds = projectGroups.map((g) => g.projectId).filter((id): id is number => id != null);
+    const reporterIds = personGroups.map((g) => g.reporterId);
+    const [projects, reporters] = await Promise.all([
+      projectIds.length
+        ? this.prisma.main.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+      reporterIds.length
+        ? this.prisma.main.user.findMany({ where: { id: { in: reporterIds } }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+    ]);
+    const projName = new Map(projects.map((p) => [p.id, p.name]));
+    const repName = new Map(reporters.map((u) => [u.id, u.name]));
+
+    let total = 0;
+    let approved = 0;
+    let pending = 0;
+    for (const s of byStatus) {
+      const amt = Number(s._sum.amount ?? 0);
+      total += amt;
+      if (s.status === "DISETUJUI" || s.status === "DIBAYAR") approved += amt;
+      if (s.status === "DILAPORKAN") pending += amt;
+    }
+
     const byMonth = new Map<string, number>();
-    for (const r of rows) {
-      const amount = Number(r.amount);
-      const p = r.project?.name ?? "Tanpa project";
-      byProject.set(p, (byProject.get(p) ?? 0) + amount);
-      byPerson.set(r.reporter.name, (byPerson.get(r.reporter.name) ?? 0) + amount);
-      const m = r.date.toISOString().slice(0, 7);
-      byMonth.set(m, (byMonth.get(m) ?? 0) + amount);
+    for (const d of dateGroups) {
+      const m = d.date.toISOString().slice(0, 7);
+      byMonth.set(m, (byMonth.get(m) ?? 0) + Number(d._sum.amount ?? 0));
     }
 
     return {
-      total: rows.reduce((s, r) => s + Number(r.amount), 0),
-      approved: rows.filter((r) => ["DISETUJUI", "DIBAYAR"].includes(r.status)).reduce((s, r) => s + Number(r.amount), 0),
-      pending: rows.filter((r) => r.status === "DILAPORKAN").reduce((s, r) => s + Number(r.amount), 0),
-      byProject: [...byProject].map(([name, amount]) => ({ name, amount })),
-      byPerson: [...byPerson].map(([name, amount]) => ({ name, amount })),
+      total,
+      approved,
+      pending,
+      byProject: projectGroups.map((g) => ({
+        name: g.projectId ? projName.get(g.projectId) ?? `Project #${g.projectId}` : "Tanpa project",
+        amount: Number(g._sum.amount ?? 0),
+      })),
+      byPerson: personGroups.map((g) => ({
+        name: repName.get(g.reporterId) ?? `User #${g.reporterId}`,
+        amount: Number(g._sum.amount ?? 0),
+      })),
       byMonth: [...byMonth].map(([month, amount]) => ({ month, amount })).sort((a, b) => a.month.localeCompare(b.month)),
     };
   }

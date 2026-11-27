@@ -1,0 +1,17 @@
+CREATE INDEX `File_deletedAt_idx` ON `File`(`deletedAt`);
+CREATE INDEX `Quotation_customerId_idx` ON `Quotation`(`customerId`);
+CREATE INDEX `InvoiceOut_date_idx` ON `InvoiceOut`(`date`);
+CREATE INDEX `InvoiceOut_createdAt_idx` ON `InvoiceOut`(`createdAt`);
+CREATE INDEX `InvoiceOut_clientPoId_idx` ON `InvoiceOut`(`clientPoId`);
+CREATE INDEX `InvoiceIn_date_idx` ON `InvoiceIn`(`date`);
+CREATE INDEX `InvoiceIn_supplierPoId_idx` ON `InvoiceIn`(`supplierPoId`);
+CREATE INDEX `Project_quotationId_idx` ON `Project`(`quotationId`);
+CREATE INDEX `SupplierPO_projectId_idx` ON `SupplierPO`(`projectId`);
+CREATE INDEX `SupplierPO_requestId_idx` ON `SupplierPO`(`requestId`);
+CREATE INDEX `SupplierPO_date_idx` ON `SupplierPO`(`date`);
+CREATE INDEX `Receiving_projectId_idx` ON `Receiving`(`projectId`);
+CREATE INDEX `Receiving_date_idx` ON `Receiving`(`date`);
+CREATE INDEX `StockMovement_projectId_idx` ON `StockMovement`(`projectId`);
+CREATE INDEX `StockMovement_receivingId_idx` ON `StockMovement`(`receivingId`);
+CREATE INDEX `DeliveryNote_warehouseId_idx` ON `DeliveryNote`(`warehouseId`);
+CREATE INDEX `JournalEntry_status_idx` ON `JournalEntry`(`status`);

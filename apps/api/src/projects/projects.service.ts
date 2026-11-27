@@ -17,6 +17,7 @@ import { StockService } from "../stock/stock.service.js";
 import { UploadService } from "../upload/upload.service.js";
 import { renderPdf } from "../common/pdf.js";
 import { cleanName } from "../common/utils/names.js";
+import { toWibDateIso } from "../common/utils/wib.js";
 import { syncProjectPaymentStatus } from "./project-payment.js";
 import { computeProjectPnl } from "./project-pnl.js";
 
@@ -206,13 +207,7 @@ export class ProjectsService {
       }),
       this.prisma.main.project.count({ where }),
     ]);
-    const rows = await Promise.all(items.map((r) => this.syncPayment(r.id)));
-    const statusById = new Map(rows.map((r) => [r.id, r.paymentStatus]));
-    return paginate(
-      items.map((r) => ({ ...r, paymentStatus: statusById.get(r.id) ?? r.paymentStatus })),
-      total,
-      q,
-    );
+    return paginate(items, total, q);
   }
 
   async get(id: number, user: RequestUser) {
@@ -442,7 +437,7 @@ export class ProjectsService {
       ? null
       : await this.prisma.main.user.findFirst({ where: { role: "PM", status: "AKTIF" }, orderBy: { id: "asc" }, select: { id: true } });
     const name = /^project/i.test(lead.name) ? lead.name : `Project ${lead.name}`;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toWibDateIso();
     return this.create(
       {
         name,
@@ -1486,8 +1481,8 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project tidak ditemukan");
     await this.access(project, user, true);
 
-    const docNumber = dto.number?.trim() || `BAST-${project.id}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
-    const docDate = dto.date ? new Date(dto.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const docNumber = dto.number?.trim() || `BAST-${project.id}-${toWibDateIso().replace(/-/g, "")}`;
+    const docDate = dto.date ? new Date(dto.date).toISOString().slice(0, 10) : toWibDateIso();
     const p1Comp = dto.party1Company?.trim() || "PT GHINA MULTI PRIMA";
     const p1Name = dto.party1Name?.trim() || project.pic?.name || user.name || "Project Manager";
     const p1Title = dto.party1Title?.trim() || "Project Manager";

@@ -718,6 +718,9 @@ export class ReportsService {
 
   async archiveList(q: { q?: string; year?: string; category?: string }) {
     const db = this.prisma.archive;
+    if (!db) {
+      return { items: [], total: 0, years: [] };
+    }
     const [leads, quotations, invoices, projects, movements, deliveryNotes, expenses] = await Promise.all([
       db.lead.findMany({ include: { customer: { select: { name: true } } }, take: 100, orderBy: { createdAt: "desc" } }).catch(() => []),
       db.quotation.findMany({ include: { customer: { select: { name: true } }, lead: { select: { name: true } } }, take: 100, orderBy: { createdAt: "desc" } }).catch(() => []),

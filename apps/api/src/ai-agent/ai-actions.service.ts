@@ -16,6 +16,7 @@ import { TasksService } from "../projects/tasks.service.js";
 import { CustomersService } from "../master/customers.service.js";
 import { RequestsService } from "../procurement/requests.service.js";
 import { can } from "../rbac/permissions.js";
+import { toWibDateIso } from "../common/utils/wib.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 
 export type CreatableEntityType =
@@ -784,7 +785,7 @@ export class AiActionsService {
         const res = await this.followUps.create(
           {
             leadId,
-            date: asStr(data.date) ?? new Date().toISOString().slice(0, 10),
+            date: asStr(data.date) ?? toWibDateIso(),
             nextDate: asStr(data.nextDate),
             method,
             notes: asStr(data.notes) ?? asStr(data.note) ?? "Follow-up dari Asisten AI",
@@ -822,7 +823,7 @@ export class AiActionsService {
             quotationId: asNum(data.quotationId),
             type: normalizeInvoiceType(data.type, asStr(data.description) ?? asStr(data.note)),
             isProforma: data.isProforma === true,
-            date: asStr(data.date) ?? new Date().toISOString().slice(0, 10),
+            date: asStr(data.date) ?? toWibDateIso(),
             dueDate: asStr(data.dueDate),
             amount: amt,
             discount: asNum(data.discount),
@@ -908,7 +909,7 @@ export class AiActionsService {
           {
             description: desc,
             amount: asNum(data.amount) ?? 0,
-            date: asStr(data.date) ?? new Date().toISOString().slice(0, 10),
+            date: asStr(data.date) ?? toWibDateIso(),
             fundingSource: funding,
             paymentMethod: asStr(data.paymentMethod),
             projectId: asNum(data.projectId),
