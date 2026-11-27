@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/icon";
 import { NativeOnlyAnimatedView } from "@/components/ui/native-only-animated-view";
+import { useKeyboardContainerOffset } from "@/hooks/use-keyboard-height";
 import { cn } from "@/lib/utils";
 import * as DialogPrimitive from "@rn-primitives/dialog";
 import { Maximize2, Minimize2, X } from "lucide-react-native";
@@ -39,10 +40,14 @@ function DialogOverlay({
   children,
   onPress,
   isDrawer = false,
+  keyboardOffset = 0,
+  onContainerLayout,
   ...props
 }: Omit<React.ComponentProps<typeof DialogPrimitive.Overlay>, "asChild"> & {
   children?: React.ReactNode;
   isDrawer?: boolean;
+  keyboardOffset?: number;
+  onContainerLayout?: ViewProps["onLayout"];
 }) {
   const { onOpenChange } = DialogPrimitive.useRootContext();
   function onOverlayPress(event: GestureResponderEvent) {
@@ -54,6 +59,8 @@ function DialogOverlay({
   return (
     <FullWindowOverlay>
       <View
+        onLayout={onContainerLayout}
+        style={keyboardOffset > 0 ? { paddingBottom: keyboardOffset } : undefined}
         className={cn(
           "absolute bottom-0 left-0 right-0 top-0 z-50 flex",
           isDrawer
@@ -127,6 +134,8 @@ function DialogContent({
   initialFullScreen?: boolean;
 }) {
   const { width, height } = useWindowDimensions();
+  const { keyboardHeight, effectiveOffset, containerHeight, onContainerLayout } =
+    useKeyboardContainerOffset();
   const safeInsets = React.useContext(SafeAreaInsetsContext) ?? {
     top: 0,
     bottom: 0,
@@ -204,7 +213,7 @@ function DialogContent({
           ? 44
           : 8;
     const topPadding = isExpanded ? Math.max(safeInsets.top, fallbackTop) : 0;
-    const bottomPadding = Math.max(safeInsets.bottom, 16);
+    const bottomPadding = keyboardHeight > 0 ? 12 : Math.max(safeInsets.bottom, 16);
 
     const base: Record<string, any> = {
       width: "100%",
@@ -238,7 +247,14 @@ function DialogContent({
         : "height 200ms ease, max-height 200ms ease, border-radius 200ms ease, transform 180ms ease";
     } else {
       // Di React Native (Yoga), child ScrollView dengan flex: 1 akan collapse ke 0px jika parent tidak punya height eksplisit.
-      if (isExpanded) {
+      const visibleHeight = Math.max(260, (containerHeight || height) - effectiveOffset);
+      const topGuard = Math.max(safeInsets.top, fallbackTop) + 8;
+      if (keyboardHeight > 0) {
+        const maxKbHeight = Math.max(240, visibleHeight - topGuard);
+        const target = isExpanded ? maxKbHeight : Math.min(Math.round(height * 0.82), maxKbHeight);
+        base.height = target;
+        base.maxHeight = maxKbHeight;
+      } else if (isExpanded) {
         base.height = height;
         base.maxHeight = height;
       } else {
@@ -253,11 +269,32 @@ function DialogContent({
     }
 
     return base;
-  }, [isDrawer, isExpanded, isDragging, dragOffset, height, safeInsets.top, safeInsets.bottom]);
+  }, [
+    isDrawer,
+    isExpanded,
+    isDragging,
+    dragOffset,
+    height,
+    containerHeight,
+    keyboardHeight,
+    effectiveOffset,
+    safeInsets.top,
+    safeInsets.bottom,
+  ]);
+
+  const modalKeyboardStyle = React.useMemo(() => {
+    if (isDrawer || Platform.OS === "web" || keyboardHeight <= 0) return undefined;
+    const visibleHeight = Math.max(240, (containerHeight || height) - effectiveOffset - 32);
+    return { maxHeight: visibleHeight };
+  }, [isDrawer, keyboardHeight, containerHeight, height, effectiveOffset]);
 
   return (
     <DialogPortal hostName={portalHost}>
-      <DialogOverlay isDrawer={isDrawer}>
+      <DialogOverlay
+        isDrawer={isDrawer}
+        keyboardOffset={effectiveOffset}
+        onContainerLayout={onContainerLayout}
+      >
         <DialogPrimitive.Content
           className={cn(
             "bg-background border-border z-50 mx-auto flex w-[92vw] max-w-[calc(100%-2rem)] max-h-[88vh] flex-col gap-4 rounded-2xl border p-5 sm:p-6 shadow-2xl shadow-black/40 sm:w-[560px] md:w-[680px] lg:w-[760px]",
@@ -281,6 +318,7 @@ function DialogContent({
               : undefined,
             style,
             drawerStyle,
+            modalKeyboardStyle,
           ]}
           {...props}
         >
