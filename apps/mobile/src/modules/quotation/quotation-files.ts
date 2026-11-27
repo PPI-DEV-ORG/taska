@@ -1,5 +1,5 @@
 import { Linking } from "react-native";
-import { apiBase, queryString } from "@/services/api";
+import { apiBase, appendAccessToken, queryString } from "@/services/api";
 
 export function downloadQuotationTemplate(info?: {
   quotationId?: string | number;
@@ -9,7 +9,7 @@ export function downloadQuotationTemplate(info?: {
   nomor?: string;
   signer?: string;
 }) {
-  const url = info?.quotationId
+  const rawUrl = info?.quotationId
     ? `${apiBase()}/quotations/${info.quotationId}/excel?t=${Date.now()}`
     : `${apiBase()}/quotations/template-excel${queryString({
         leadId: info?.leadId,
@@ -18,6 +18,7 @@ export function downloadQuotationTemplate(info?: {
         nomor: info?.nomor,
         signer: info?.signer,
       })}`;
+  const url = appendAccessToken(rawUrl);
 
   if (typeof window !== "undefined") {
     window.open(url, "_blank");
@@ -34,7 +35,7 @@ export function downloadQuotationPdf(info?: {
   nomor?: string;
   signer?: string;
 }) {
-  const url = info?.quotationId
+  const rawUrl = info?.quotationId
     ? `${apiBase()}/quotations/${info.quotationId}/pdf?t=${Date.now()}`
     : `${apiBase()}/quotations/template-pdf${queryString({
         leadId: info?.leadId,
@@ -43,6 +44,7 @@ export function downloadQuotationPdf(info?: {
         nomor: info?.nomor,
         signer: info?.signer,
       })}`;
+  const url = appendAccessToken(rawUrl);
 
   if (typeof window !== "undefined") {
     window.open(url, "_blank");

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/akuntra/basics";
 import { colors } from "@/tokens";
-import { api, apiBase } from "@/services/api";
+import { api, apiBase, authFileUrl } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import {
   HardDrive,
@@ -200,7 +200,7 @@ export function FileManagementScreen() {
   };
 
   const handleQuickPreview = (fileItem: FileItem) => {
-    const url = `${apiBase()}/files/${fileItem.id}`;
+    const url = authFileUrl(fileItem.id);
     if (typeof window !== "undefined") {
       window.open(url, "_blank");
     } else {

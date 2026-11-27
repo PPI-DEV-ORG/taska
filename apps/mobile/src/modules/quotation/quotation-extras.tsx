@@ -22,7 +22,7 @@ import { Panel } from "@/components/akuntra/basics";
 import { StatusBadge } from "@/components/akuntra/status-badge";
 import { FileUploader } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, uploadFile } from "@/services/api";
+import { api, apiBase, uploadFile, authFileUrl } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -851,7 +851,7 @@ export function QuotationExtras({
                     variant="outline"
                     size="sm"
                     onPress={() => {
-                      const url = `${apiBase()}/files/${activeManualFileId}`;
+                      const url = authFileUrl(activeManualFileId);
                       if (typeof window !== "undefined") {
                         window.open(url, "_blank");
                       } else {
@@ -994,7 +994,7 @@ export function QuotationExtras({
                     size="sm"
                     variant="outline"
                     onPress={() => {
-                      const url = `${apiBase()}/files/${ver.fileId}`;
+                      const url = authFileUrl(ver.fileId);
                       if (typeof window !== "undefined") {
                         window.open(url, "_blank");
                       } else {
@@ -1106,7 +1106,7 @@ export function QuotationExtras({
                 Daftar File PDF Terupload ({pdfFiles.length})
               </Text>
               {pdfFiles.map((f: any) => {
-                const fileUrl = `${apiBase()}/files/${f.id}`;
+                const fileUrl = authFileUrl(f.id);
                 return (
                   <View
                     key={f.id}

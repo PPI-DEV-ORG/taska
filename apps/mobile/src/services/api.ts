@@ -96,6 +96,21 @@ export function getRefresh(): string | null {
   return memory.get(KEY_REFRESH) ?? null;
 }
 
+/** Tambahkan query access_token pada URL unduhan/preview file agar tetap terautentikasi di <img>/window.open. */
+export function appendAccessToken(url: string): string {
+  if (!url) return "";
+  const token = getAccess();
+  if (!token || url.includes("access_token=")) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}access_token=${encodeURIComponent(token)}`;
+}
+
+/** Bangun URL terautentikasi untuk GET /api/files/:id. */
+export function authFileUrl(fileId?: number | string | null): string {
+  if (fileId === null || fileId === undefined || fileId === "") return "";
+  return appendAccessToken(`${apiBase()}/files/${fileId}`);
+}
+
 export async function setTokens(access?: string | null, refresh?: string | null): Promise<void> {
   await hydrateTokens();
   const next: [string, string | null][] = [
@@ -138,29 +153,48 @@ export function isNetworkError(err: any): boolean {
   );
 }
 
-async function tryRefresh(): Promise<boolean> {
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function doRefresh(): Promise<boolean> {
   await hydrateTokens();
   const r = getRefresh();
   if (!r) {
     await setTokens(null, null);
     return false;
   }
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 15_000) : null;
   try {
     const res = await fetch(`${apiBase()}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken: r }),
+      signal: controller?.signal,
     });
     if (!res.ok) {
       await setTokens(null, null);
       return false;
     }
     const data = await res.json();
-    setTokens(data?.accessToken ?? data?.access_token, data?.refreshToken ?? data?.refresh_token ?? r);
+    await setTokens(
+      data?.accessToken ?? data?.access_token,
+      data?.refreshToken ?? data?.refresh_token ?? r,
+    );
     return true;
   } catch {
     return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
+}
+
+async function tryRefresh(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
 }
 
 /**
@@ -172,10 +206,12 @@ function sendNativeFormData(
   url: string,
   headers: Record<string, string>,
   form: FormData,
+  timeoutMs = 60_000,
 ): Promise<{ status: number; ok: boolean; text: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(method, url);
+    xhr.timeout = timeoutMs;
     for (const [k, v] of Object.entries(headers)) {
       if (k.toLowerCase() === "content-type") continue;
       xhr.setRequestHeader(k, v);
@@ -235,12 +271,27 @@ async function once<T>(
       payload = JSON.stringify(body);
     }
     let res: Response;
+    const timeoutMs = form ? 60_000 : 30_000;
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
-      res = await fetch(`${apiBase()}${path}`, { method, headers, body: payload });
+      res = await fetch(`${apiBase()}${path}`, {
+        method,
+        headers,
+        body: payload,
+        signal: controller?.signal,
+      });
     } catch (e: any) {
-      const netErr: ApiError = new Error(e?.message || "Tidak dapat terhubung ke server (API Offline)");
+      const isAbort = e?.name === "AbortError";
+      const netErr: ApiError = new Error(
+        isAbort
+          ? "Permintaan ke server timeout, silakan coba lagi"
+          : e?.message || "Tidak dapat terhubung ke server (API Offline)",
+      );
       netErr.isNetworkError = true;
       throw netErr;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     status = res.status;
     ok = res.ok;

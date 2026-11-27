@@ -16,7 +16,7 @@ import { type Row } from "@/constants/modules";
 import { type QuotationItem } from "@/modules/quotation/types";
 import { QuotationPreviewModal } from "@/modules/quotation/quotation-preview-modal";
 import { FileUploader } from "@/components/akuntra/file-uploader";
-import { apiBase } from "@/services/api";
+import { apiBase, authFileUrl } from "@/services/api";
 import { downloadInvoiceExcel, downloadInvoicePdf } from "@/modules/invoice/invoice-files";
 import { useApp } from "@/store/app-store";
 import {
@@ -63,7 +63,7 @@ export function InvoiceTemplateGenerator({
       .join("\n");
   }, [companyProfile]);
   const defaultLogoFromProfile = React.useMemo(() => {
-    return companyProfile.logoFileId ? `${apiBase()}/files/${companyProfile.logoFileId}` : "";
+    return companyProfile.logoFileId ? authFileUrl(companyProfile.logoFileId) : "";
   }, [companyProfile.logoFileId]);
 
   const [previewOpen, setPreviewOpen] = React.useState(false);
@@ -434,7 +434,7 @@ export function InvoiceTemplateGenerator({
                   kind="foto"
                   category="kop-logo"
                   onUploaded={(fId) => {
-                    setKopLogoUrl(`${apiBase()}/files/${fId}`);
+                    setKopLogoUrl(authFileUrl(fId));
                   }}
                   autoFlush
                 />

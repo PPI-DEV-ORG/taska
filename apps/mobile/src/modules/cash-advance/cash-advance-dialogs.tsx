@@ -12,7 +12,7 @@ import { UserSelect } from "@/components/akuntra/document-select";
 import { FileUploader } from "@/components/akuntra/file-uploader";
 import { StatusBadge } from "@/components/akuntra/status-badge";
 import { useApp } from "@/store/app-store";
-import { api, apiBase } from "@/services/api";
+import { api, apiBase, authFileUrl } from "@/services/api";
 import { colors } from "@/tokens";
 import { formatThousands, rupiah, tanggal } from "@/lib/format";
 
@@ -158,7 +158,7 @@ function ChoiceRow<T extends string>({ value, onChange, options }: { value: T; o
 }
 
 function openFile(fileId: number) {
-  const url = `${apiBase()}/files/${fileId}`;
+  const url = authFileUrl(fileId);
   if (typeof window !== "undefined") window.open(url, "_blank");
   else Linking.openURL(url).catch(() => {});
 }

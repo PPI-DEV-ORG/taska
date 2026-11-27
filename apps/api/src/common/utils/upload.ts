@@ -71,3 +71,77 @@ export function validateUpload(
   if (sniffed.ext === "ole") return "doc";
   return sniffed.ext;
 }
+
+const SAFE_INLINE_MIMES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+  "text/plain",
+  "video/mp4",
+]);
+
+const BLOCKED_EXTENSIONS = new Set([
+  "html",
+  "htm",
+  "xhtml",
+  "svg",
+  "svgz",
+  "js",
+  "mjs",
+  "cjs",
+  "jsx",
+  "ts",
+  "tsx",
+  "php",
+  "phtml",
+  "exe",
+  "dll",
+  "bat",
+  "cmd",
+  "sh",
+  "ps1",
+  "vbs",
+  "scr",
+  "msi",
+]);
+
+const DANGEROUS_MIME_RE = /^(text\/html|application\/xhtml\+xml|image\/svg\+xml|text\/javascript|application\/javascript|application\/x-javascript|application\/x-httpd-php|application\/x-msdownload)/i;
+
+/** Apakah MIME aman ditampilkan inline di browser tanpa risiko Stored XSS. */
+export function isSafeInlineMime(mimeType: string | null | undefined): boolean {
+  const norm = (mimeType || "").split(";")[0]?.trim().toLowerCase() ?? "";
+  return SAFE_INLINE_MIMES.has(norm);
+}
+
+/**
+ * Validasi keamanan untuk upload umum (Drive / Replace File):
+ * menolak ekstensi/MIME skrip berbahaya (HTML/SVG/JS/EXE) dan mengembalikan MIME aman.
+ */
+export function assertSafeUploadedFile(
+  buffer: Buffer,
+  originalName: string,
+  clientMimeType?: string,
+): string {
+  const lowerName = (originalName || "").trim().toLowerCase();
+  const ext = lowerName.includes(".") ? lowerName.split(".").pop() || "" : "";
+  if (ext && BLOCKED_EXTENSIONS.has(ext)) {
+    throw new BadRequestException(`Tipe berkas .${ext} tidak diizinkan demi keamanan.`);
+  }
+  const normalizedMime = (clientMimeType || "").split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+  if (DANGEROUS_MIME_RE.test(normalizedMime)) {
+    throw new BadRequestException("Tipe MIME berkas tidak diizinkan demi keamanan.");
+  }
+  // Cek isi awal teks agar file HTML/SVG tidak menyamar dengan ekstensi lain
+  const head = buffer.subarray(0, Math.min(buffer.length, 512)).toString("utf8").trimStart().toLowerCase();
+  if (
+    head.startsWith("<!doctype html") ||
+    head.startsWith("<html") ||
+    head.startsWith("<script") ||
+    head.startsWith("<svg")
+  ) {
+    throw new BadRequestException("Konten HTML/SVG/skrip tidak diizinkan diunggah.");
+  }
+  return normalizedMime;
+}

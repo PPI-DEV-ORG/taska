@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/akuntra/status-badge";
 import { DatePicker, SearchableSelect, UserSelect } from "@/components/akuntra/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
-import { apiBase } from "@/services/api";
+import { apiBase, authFileUrl } from "@/services/api";
 import { tanggal } from "@/lib/format";
 import { colors } from "@/tokens";
 import { type Row } from "@/constants/modules";
@@ -278,7 +278,7 @@ export function TaskDetailDialog({
             </View>
             {(liveTask?.proofFileId || task.proofFileId || liveTask?.bastFileId || task.bastFileId || liveTask?.fileId || task.fileId) ? (() => {
               const fid = liveTask?.proofFileId || task.proofFileId || liveTask?.bastFileId || task.bastFileId || liveTask?.fileId || task.fileId;
-              const fileUrl = `${apiBase()}/files/${fid}`;
+              const fileUrl = authFileUrl(fid);
               return (
                 <View className="gap-1.5 p-3 rounded-xl border border-border bg-card">
                   <Text className="text-xs font-semibold text-foreground">Bukti Selesai Tugas (Lampiran)</Text>

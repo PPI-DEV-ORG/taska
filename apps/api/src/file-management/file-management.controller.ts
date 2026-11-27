@@ -23,6 +23,7 @@ import { FileMigrationService, type StartDriveMigrationDto, type StartMigrationD
 import { FileSchedulerService, type CreateScheduleDto } from "./scheduler.service.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
+import { isSafeInlineMime } from "../common/utils/upload.js";
 import { Public } from "../common/decorators/public.decorator.js";
 
 type Uploaded = { buffer: Buffer; originalname?: string; mimetype?: string };
@@ -306,15 +307,38 @@ export class FileShareController {
   @Get(":token")
   async accessShare(
     @Param("token") token: string,
-    @Query("password") password: string | undefined,
     @Headers("user-agent") userAgent: string | undefined,
     @Headers("x-forwarded-for") ip: string | undefined,
     @Res() res: Response,
   ) {
+    return this.serveSharedFile(token, undefined, ip, userAgent, res);
+  }
+
+  @Public()
+  @Post(":token")
+  async accessShareWithPassword(
+    @Param("token") token: string,
+    @Body("password") password: string | undefined,
+    @Headers("user-agent") userAgent: string | undefined,
+    @Headers("x-forwarded-for") ip: string | undefined,
+    @Res() res: Response,
+  ) {
+    return this.serveSharedFile(token, password, ip, userAgent, res);
+  }
+
+  private async serveSharedFile(
+    token: string,
+    password: string | undefined,
+    ip: string | undefined,
+    userAgent: string | undefined,
+    res: Response,
+  ) {
     const result = await this.service.accessSharedFile(token, password, ip, userAgent);
-    const disposition = result.permission === "DOWNLOAD" ? "attachment" : "inline";
+    const disposition =
+      result.permission === "DOWNLOAD" || !isSafeInlineMime(result.mimeType) ? "attachment" : "inline";
     res.setHeader("Content-Type", result.mimeType);
     res.setHeader("Content-Length", result.size);
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Disposition", `${disposition}; filename="${encodeURIComponent(result.fileName)}"`);
     res.end(result.buffer);
   }

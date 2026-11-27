@@ -1,7 +1,7 @@
 import { rupiah, tanggal } from "@/lib/format";
 import { getStorageItemWithMigration } from "@/lib/storage";
 import { DEFAULT_COMPANY_PROFILE, type CompanyProfile } from "@/constants/modules";
-import { apiBase } from "@/services/api";
+import { apiBase, authFileUrl } from "@/services/api";
 
 export function escapeHtml(str: unknown): string {
   return String(str ?? "")
@@ -66,7 +66,7 @@ export function printOrderDocument(opts: {
 
   const profile = readCachedCompanyProfile();
   // Kop surat: gambar kop dari Pengaturan (bila ada) atau disusun dari logo + identitas perusahaan
-  const letterheadUrl = profile.letterheadFileId ? `${apiBase()}/files/${profile.letterheadFileId}` : "";
+  const letterheadUrl = profile.letterheadFileId ? authFileUrl(profile.letterheadFileId) : "";
   // PO: penerbit = karyawan yang mencetak (bila dikirim), bukan penanda tangan default profil perusahaan
   const signatoryTitle = escapeHtml(opts.senderName ? opts.senderTitle || "" : profile.signatoryTitle || "");
   const poTermsHtml =
@@ -83,7 +83,7 @@ export function printOrderDocument(opts: {
   const compAddress = escapeHtml(opts.companyAddress ?? profile.address ?? "");
   const compPhone = escapeHtml(opts.companyPhone ?? profile.phone ?? "");
   const compSignatory = escapeHtml(opts.senderName || profile.signatoryName || profile.name || "PT Samtek");
-  const logoUrl = opts.companyLogoUrl || (profile.logoFileId ? `${apiBase()}/files/${profile.logoFileId}` : "");
+  const logoUrl = opts.companyLogoUrl || (profile.logoFileId ? authFileUrl(profile.logoFileId) : "");
 
   const isSo = opts.docType === "SO";
   const isDo = opts.docType === "DO";

@@ -207,12 +207,18 @@ export class AuthService {
       });
     }
     if (dto.avatarFileId) {
-      await this.prisma.main.file
-        .update({
-          where: { id: dto.avatarFileId },
-          data: { refType: "user-avatar", refId: String(user.id) },
-        })
-        .catch(() => {});
+      const targetFile = await this.prisma.main.file.findUnique({
+        where: { id: dto.avatarFileId },
+        select: { id: true, uploadedById: true },
+      });
+      if (targetFile && (targetFile.uploadedById === user.id || user.role === "SUPER_ADMIN")) {
+        await this.prisma.main.file
+          .update({
+            where: { id: dto.avatarFileId },
+            data: { refType: "user-avatar", refId: String(user.id) },
+          })
+          .catch(() => {});
+      }
     }
     return this.me(user);
   }
@@ -225,10 +231,16 @@ export class AuthService {
       throw new HttpException("Password lama tidak sesuai", HttpStatus.BAD_REQUEST);
     }
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    await this.prisma.main.user.update({
-      where: { id: user.id },
-      data: { passwordHash },
-    });
+    await this.prisma.main.$transaction([
+      this.prisma.main.user.update({
+        where: { id: user.id },
+        data: { passwordHash },
+      }),
+      this.prisma.main.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
     return { ok: true };
   }
 

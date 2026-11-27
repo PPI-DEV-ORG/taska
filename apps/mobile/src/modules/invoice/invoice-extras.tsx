@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/akuntra/status-badge";
 import { DatePicker, SearchableSelect } from "@/components/akuntra/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, uploadFile } from "@/services/api";
+import { api, apiBase, uploadFile, authFileUrl } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands } from "@/lib/format";
 import { buildEfakturCsv } from "@/lib/efaktur";
@@ -548,7 +548,7 @@ export function InvoiceExtras({
 
   function openFileUrl(fileId?: number | string | null) {
     if (!fileId) return;
-    const url = `${apiBase()}/files/${fileId}`;
+    const url = authFileUrl(fileId);
     if (typeof window !== "undefined") {
       window.open(url, "_blank");
     } else {

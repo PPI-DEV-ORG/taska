@@ -603,7 +603,7 @@ export function can(role: string, module: ModuleKey | string, action: Action): b
  * demi kompatibilitas menganggap "L" juga cukup — padahal "L" saja hanya untuk isi pilihan di form.
  */
 export function hasMenu(role: string, uiModule: string): boolean {
-  const norm = (role || "").toUpperCase().trim().replace(/[s-]+/g, "_");
+  const norm = (role || "").toUpperCase().trim().replace(/[\s-]+/g, "_");
   if (norm === "SUPER_ADMIN" || norm === "SUPERADMIN") return true;
   const dynRole = dynamicRolesStore.find((r) => r.code === norm);
   const raw = dynRole?.permissions?.[uiModule];

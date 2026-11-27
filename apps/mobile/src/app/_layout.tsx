@@ -12,6 +12,7 @@ import { configureReanimatedLogger, ReanimatedLogLevel } from "react-native-rean
 
 import { NAV_THEME } from "@/lib/theme";
 import { AppProvider, useApp } from "@/store/app-store";
+import { AppErrorBoundary } from "@/components/akuntra/error-boundary";
 
 try {
   configureReanimatedLogger({
@@ -61,9 +62,11 @@ function NavigationShell() {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AppProvider>
-        <NavigationShell />
-      </AppProvider>
+      <AppErrorBoundary>
+        <AppProvider>
+          <NavigationShell />
+        </AppProvider>
+      </AppErrorBoundary>
     </GestureHandlerRootView>
   );
 }

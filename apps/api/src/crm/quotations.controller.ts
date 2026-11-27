@@ -92,8 +92,8 @@ export class QuotationsController {
     res.end(buffer);
   }
 
-  @Public()
   @Get(":id/excel")
+  @Require("quotations", "L")
   async downloadExcel(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
     const { buffer, filename } = await this.service.exportExcel(id);
     res.setHeader(
@@ -105,8 +105,8 @@ export class QuotationsController {
     res.end(buffer);
   }
 
-  @Public()
   @Get(":id/pdf")
+  @Require("quotations", "L")
   async downloadPdf(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
     const { buffer, filename } = await this.service.exportPdf(id);
     res.setHeader("Content-Type", "application/pdf");

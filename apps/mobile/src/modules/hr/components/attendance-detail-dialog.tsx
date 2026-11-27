@@ -12,7 +12,7 @@ import {
   XCircle,
 } from "lucide-react-native";
 import { colors } from "@/tokens";
-import { apiBase } from "@/services/api";
+import { authFileUrl } from "@/services/api";
 import {
   formatDistanceLabel,
   formatLocationStatusLabel,
@@ -62,7 +62,7 @@ function EvidenceCard({
   address?: string | null;
   onPreview: (url: string) => void;
 }) {
-  const photoUrl = photoFileId ? `${apiBase()}/files/${photoFileId}` : null;
+  const photoUrl = photoFileId ? authFileUrl(photoFileId) : null;
   const loc = formatLocationStatusLabel(locationStatus);
   const toneClass =
     loc.tone === "success"

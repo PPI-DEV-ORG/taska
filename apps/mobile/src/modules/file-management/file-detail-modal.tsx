@@ -4,7 +4,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { colors } from "@/tokens";
-import { api, apiBase } from "@/services/api";
+import { api, apiBase, authFileUrl } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import {
   FileText,
@@ -129,7 +129,7 @@ export function FileDetailModal({
 
   const handleOpenPreview = () => {
     if (!file) return;
-    const url = `${apiBase()}/files/${file.id}`;
+    const url = authFileUrl(file.id);
     if (typeof window !== "undefined") {
       window.open(url, "_blank");
     } else {
@@ -139,7 +139,7 @@ export function FileDetailModal({
 
   const handleDownload = () => {
     if (!file) return;
-    const url = `${apiBase()}/files/${file.id}`;
+    const url = authFileUrl(file.id);
     if (typeof window !== "undefined") {
       const a = document.createElement("a");
       a.href = url;
@@ -234,7 +234,7 @@ export function FileDetailModal({
 
               {/* Pratinjau / Preview Berkas Interaktif */}
               {(() => {
-                const fileUrl = `${apiBase()}/files/${file.id}`;
+                const fileUrl = authFileUrl(file.id);
                 const ext = (file.extension || file.displayName?.split(".").pop() || "").toLowerCase();
                 const isImage = file.kind === "FOTO" || ["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(ext);
                 const isPdf = ext === "pdf" || file.mimeType === "application/pdf";

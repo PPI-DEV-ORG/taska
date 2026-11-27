@@ -25,7 +25,7 @@ import { StatusBadge } from "@/components/akuntra/status-badge";
 import { DatePicker, formatThousands, SearchableSelect, SupplierSelect } from "@/components/akuntra/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase } from "@/services/api";
+import { api, authFileUrl } from "@/services/api";
 import { adaptRow } from "@/services/adapters";
 import { useKasBankAccounts } from "@/lib/use-kas-bank";
 import { colors } from "@/tokens";
@@ -33,7 +33,7 @@ import { rupiah } from "@/lib/format";
 import { type Row } from "@/constants/modules";
 
 export function openDownloadFile(fileId: number | string) {
-  const url = `${apiBase()}/files/${fileId}`;
+  const url = authFileUrl(fileId);
   if (Platform.OS === "web" && typeof window !== "undefined") {
     window.open(url, "_blank");
   } else {

@@ -12,6 +12,7 @@ import { FileProviderService } from "../file-management/provider.service.js";
 import { getDynamicRoles } from "../rbac/permissions.js";
 import { DriveAccessService } from "./drive-access.service.js";
 import { buildDrivePreview, classifyFileType, getExtension } from "./drive-preview.util.js";
+import { assertSafeUploadedFile } from "../common/utils/upload.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 
 export type BrowseDriveQuery = {
@@ -676,10 +677,10 @@ export class DriveService {
           throw new Error("Berkas kosong.");
         }
         const ext = getExtension(origName);
+        const mimeType = assertSafeUploadedFile(f.buffer, origName, f.mimetype);
         const safeName = this.sanitizeSegment(origName);
         const uniqueToken = `${Date.now()}_${randomBytes(4).toString("hex")}`;
         const storageKey = `general-drive/${yyyy}/${mm}/${uniqueToken}_${safeName}`;
-        const mimeType = f.mimetype || "application/octet-stream";
         const checksum = createHash("sha256").update(f.buffer).digest("hex");
 
         await defaultProvider.adapter.upload(storageKey, f.buffer, { mimeType });

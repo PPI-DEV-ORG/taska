@@ -1,5 +1,5 @@
 import * as React from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Check,
@@ -247,6 +247,10 @@ export default function ProjectDetailScreen() {
       `Total Biaya & Beban,${totalCost},""`,
       `Laba Bersih Proyek,${netProfit},"Margin ${marginPct}%"`,
     ].join("\n");
+    if (Platform.OS !== "web" || typeof document === "undefined" || typeof URL === "undefined") {
+      toast("Unduh CSV P&L saat ini tersedia di versi Web. Dukungan ekspor mobile akan hadir di pembaruan berikutnya.", "info");
+      return;
+    }
     const blob = new Blob(["\uFEFF" + header + summary], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

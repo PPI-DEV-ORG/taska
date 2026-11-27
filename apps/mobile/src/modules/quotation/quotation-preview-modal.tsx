@@ -10,7 +10,7 @@ import { type QuotationItem } from "@/modules/quotation/types";
 import { itemDiscount, itemNet, sumItemDiscounts } from "@/modules/quotation/lib";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { useApp } from "@/store/app-store";
-import { apiBase } from "@/services/api";
+import { apiBase, authFileUrl } from "@/services/api";
 
 export function QuotationPreviewModal({
   open,
@@ -73,7 +73,7 @@ export function QuotationPreviewModal({
           "Garansi perangkat 1 Tahun Harddisk dan PSU 6 Bulan Instalasi 3 Bulan",
         ];
 
-  const defaultLogo = companyProfile?.logoFileId ? `${apiBase()}/files/${companyProfile.logoFileId}` : "";
+  const defaultLogo = companyProfile?.logoFileId ? authFileUrl(companyProfile.logoFileId) : "";
   const defaultKop = [companyProfile?.name, companyProfile?.tagline, companyProfile?.address].filter(Boolean).join("\n");
   const logoSource = kopLogoUrl || (row as any).kopLogoUrl || defaultLogo;
   const effectiveKopText = kopText || row.kopText || defaultKop || "KOP SURAT";

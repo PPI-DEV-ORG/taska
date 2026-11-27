@@ -12,7 +12,7 @@ import { statusText } from "@/lib/labels";
 import { DatePicker, SearchableSelect, formatThousands } from "@/components/akuntra/dialogs";
 import { FileUploader, FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase } from "@/services/api";
+import { api, apiBase, authFileUrl } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { ROLE_LABEL, type Row } from "@/constants/modules";
@@ -655,7 +655,7 @@ export function SupplierPoExtras({ row, onRefresh }: { row: Row; onRefresh?: () 
 
   const soNumber = row.nomorSoSupplier && row.nomorSoSupplier !== "-" ? String(row.nomorSoSupplier) : "";
   const openFile = (fileId: string | number) => {
-    const url = `${apiBase()}/files/${fileId}`;
+    const url = authFileUrl(fileId);
     if (typeof window !== "undefined") window.open(url, "_blank");
     else Linking.openURL(url).catch(() => {});
   };

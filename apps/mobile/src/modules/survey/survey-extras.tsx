@@ -11,7 +11,7 @@ import { Panel } from "@/components/akuntra/basics";
 import { DatePicker, formatThousands } from "@/components/akuntra/dialogs";
 import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, downloadDocumentationPdf } from "@/services/api";
+import { api, apiBase, downloadDocumentationPdf, authFileUrl } from "@/services/api";
 import { colors } from "@/tokens";
 import { rupiah, tanggal } from "@/lib/format";
 import { type Row } from "@/constants/modules";
@@ -570,7 +570,7 @@ export function SurveyExtras({
           {selectedExp
             ? (() => {
                 const fid = selectedExp.receiptFileId || selectedExp.fileId || (selectedExp.receiptFile as any)?.id;
-                const photoUrl = fid ? `${apiBase()}/files/${fid}` : null;
+                const photoUrl = fid ? authFileUrl(fid) : null;
                 const f = fundingOf(selectedExp);
                 return (
                   <ScrollView className="py-2">

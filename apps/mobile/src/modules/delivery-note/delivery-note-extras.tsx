@@ -12,7 +12,7 @@ import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file
 import { useApp } from "@/store/app-store";
 import { colors } from "@/tokens";
 import { tanggal } from "@/lib/format";
-import { apiBase, openDeliveryNotePdf } from "@/services/api";
+import { apiBase, openDeliveryNotePdf, authFileUrl } from "@/services/api";
 import { type Row } from "@/constants/modules";
 import { DocumentationPhotosPanel } from "@/modules/shared/documentation-photos-panel";
 import { printOrderDocument } from "@/lib/order-print";
@@ -384,7 +384,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
               const isPdf = mimeType === "application/pdf" || /\.pdf$/i.test(originalName);
               const isImage = !imgError && (mimeType.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif)$/i.test(originalName) || (!isPdf && !mimeType));
               const displayName = originalName || (isPdf ? `surat-jalan-${row.nomor || row.id}.pdf` : `bukti-tanda-terima-${row.id}.jpg`);
-              const fileUrl = `${apiBase()}/files/${fileId}`;
+              const fileUrl = authFileUrl(fileId);
 
               const handleOpenFile = () => {
                 if (typeof window !== "undefined") window.open(fileUrl, "_blank");
@@ -565,7 +565,7 @@ export function DeliveryNotesExtras({ row, onRefresh }: { row: Row; onRefresh?: 
         const originalName = (row as any).scanFileName || scanFile?.originalName || "";
         const isPdf = mimeType === "application/pdf" || /\.pdf$/i.test(originalName);
         const displayName = originalName || (isPdf ? `surat-jalan-${row.nomor || row.id}.pdf` : `bukti-tanda-terima-${row.id}.jpg`);
-        const fileUrl = `${apiBase()}/files/${fileId}`;
+        const fileUrl = authFileUrl(fileId);
 
         const handleOpenFile = () => {
           if (typeof window !== "undefined") window.open(fileUrl, "_blank");

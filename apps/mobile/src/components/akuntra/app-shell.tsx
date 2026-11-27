@@ -16,7 +16,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/akuntra/basics";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, uploadFile } from "@/services/api";
+import { api, apiBase, uploadFile, authFileUrl } from "@/services/api";
 import { subscribeNotificationTap } from "@/services/notify";
 import { getNavForUser, ROLE_LABEL, type NavItem } from "@/constants/modules";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
@@ -424,7 +424,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
           const uploadedId = await uploadFile(f, "foto", "foto-profil");
           if (uploadedId != null) {
             setAvatarFileId(uploadedId);
-            setAvatarUrl(`${apiBase()}/files/${uploadedId}`);
+            setAvatarUrl(authFileUrl(uploadedId));
           }
         } catch (e: any) {
           toast(e?.message ?? "Gagal mengunggah foto profil", "danger");
@@ -458,7 +458,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
       );
       if (uploadedId != null) {
         setAvatarFileId(uploadedId);
-        setAvatarUrl(`${apiBase()}/files/${uploadedId}`);
+        setAvatarUrl(authFileUrl(uploadedId));
       }
     } catch (e: any) {
       toast(e?.message ?? "Gagal mengunggah foto profil", "danger");

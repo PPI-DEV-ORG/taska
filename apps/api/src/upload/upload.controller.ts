@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Headers,
   Param,
@@ -15,8 +16,8 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { UploadService, type UploadKind } from "./upload.service.js";
-import { Public } from "../common/decorators/public.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
+import { isSafeInlineMime } from "../common/utils/upload.js";
 
 const KINDS: UploadKind[] = ["foto", "dokumen", "video"];
 
@@ -48,13 +49,14 @@ export class UploadController {
     return this.service.saveNamed(file.buffer, kind, name, user, refType, refId);
   }
 
-  @Public()
   @Get(":id")
   async download(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
     const file = await this.service.read(id);
+    const disposition = isSafeInlineMime(file.contentType) ? "inline" : "attachment";
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Length", file.size);
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(file.name)}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Disposition", `${disposition}; filename="${encodeURIComponent(file.name)}"`);
     res.end(file.buffer);
   }
 
@@ -64,8 +66,25 @@ export class UploadController {
   }
 
   @Delete(":id")
-  remove(@Param("id", ParseIntPipe) id: number, @Query("force") force?: string) {
-    if (force === "true") return this.service.remove(id);
+  async remove(
+    @Param("id", ParseIntPipe) id: number,
+    @Query("force") force: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    const ownerId = await this.service.getOwnerId(id);
+    if (ownerId === undefined) {
+      return { ok: true, reason: "already_deleted" };
+    }
+    if (!isSuperAdmin && ownerId !== user.id) {
+      throw new ForbiddenException("Hanya pengunggah file atau Super Admin yang dapat menghapus file ini.");
+    }
+    if (force === "true") {
+      if (!isSuperAdmin) {
+        throw new ForbiddenException("Hanya Super Admin yang dapat menghapus paksa file.");
+      }
+      return this.service.remove(id);
+    }
     return this.service.safeRemove(id);
   }
 }

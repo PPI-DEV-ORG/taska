@@ -164,11 +164,11 @@ function DetailContent({
   }, [subscriptionId, toast]);
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const timer = setTimeout(() => {
       void load();
     }, 0);
 
-    return () => window.clearTimeout(timer);
+    return () => clearTimeout(timer);
   }, [load]);
 
   async function runAction(key: string, fn: () => Promise<any>, successMessage: string) {

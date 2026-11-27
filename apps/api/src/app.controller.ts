@@ -8,7 +8,13 @@ export class AppController {
 
   @Public()
   @Get()
-  health() {
+  root() {
     return this.appService.health();
+  }
+
+  @Public()
+  @Get("health")
+  health() {
+    return this.appService.readiness();
   }
 }

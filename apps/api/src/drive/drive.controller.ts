@@ -18,6 +18,7 @@ import { FilesInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 import { Public } from "../common/decorators/public.decorator.js";
+import { isSafeInlineMime } from "../common/utils/upload.js";
 import {
   DriveService,
   type CreateFolderDto,
@@ -168,9 +169,22 @@ export class DriveController {
   @Get("share/:token")
   async accessShareLink(
     @Param("token") token: string,
-    @Query("password") password: string | undefined,
     @Res() res: Response,
   ) {
+    return this.handleShareLinkAccess(token, undefined, res);
+  }
+
+  @Public()
+  @Post("share/:token")
+  async accessShareLinkWithPassword(
+    @Param("token") token: string,
+    @Body("password") password: string | undefined,
+    @Res() res: Response,
+  ) {
+    return this.handleShareLinkAccess(token, password, res);
+  }
+
+  private async handleShareLinkAccess(token: string, password: string | undefined, res: Response) {
     const result = await this.service.accessShareLink(token, password);
     if (result.requiresPassword) {
       res.status(200).setHeader("Content-Type", "text/html; charset=utf-8");
@@ -182,17 +196,19 @@ export class DriveController {
 h1{font-size:16px;margin:0 0 8px;color:#0f172a}p{font-size:13px;color:#64748b;margin:0 0 16px}
 input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;margin-bottom:12px}
 button{width:100%;padding:10px;border:none;border-radius:10px;background:#00c094;color:#fff;font-weight:600;font-size:14px;cursor:pointer}</style>
-</head><body><form class="card" method="GET"><h1>Berkas Dilindungi Kata Sandi</h1>
+</head><body><form class="card" method="POST"><h1>Berkas Dilindungi Kata Sandi</h1>
 <p>Masukkan kata sandi untuk membuka atau mengunduh berkas ini.</p>
 <input type="password" name="password" placeholder="Kata sandi" required autofocus/>
 <button type="submit">Buka Berkas</button></form></body></html>`);
       return;
     }
+    const safeMode = result.mode === "inline" && isSafeInlineMime(result.mimeType) ? "inline" : "attachment";
     res.setHeader("Content-Type", result.mimeType);
     res.setHeader("Content-Length", result.size);
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader(
       "Content-Disposition",
-      `${result.mode}; filename="${encodeURIComponent(result.fileName)}"`,
+      `${safeMode}; filename="${encodeURIComponent(result.fileName)}"`,
     );
     res.setHeader("Cache-Control", "private, no-store");
     res.end(result.buffer);
@@ -207,11 +223,13 @@ button{width:100%;padding:10px;border:none;border-radius:10px;background:#00c094
   ) {
     const mode = download === "1" || download === "true" ? "attachment" : "inline";
     const result = await this.service.getFileContent(id, user, mode);
+    const safeMode = mode === "inline" && isSafeInlineMime(result.mimeType) ? "inline" : "attachment";
     res.setHeader("Content-Type", result.mimeType);
     res.setHeader("Content-Length", result.size);
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader(
       "Content-Disposition",
-      `${mode}; filename="${encodeURIComponent(result.fileName)}"`,
+      `${safeMode}; filename="${encodeURIComponent(result.fileName)}"`,
     );
     res.setHeader("Cache-Control", "private, max-age=60");
     res.end(result.buffer);
@@ -230,11 +248,13 @@ button{width:100%;padding:10px;border:none;border-radius:10px;background:#00c094
     if (!token) throw new BadRequestException("Token wajib disertakan.");
     const { mode } = this.service.verifyShortLivedToken(token, id);
     const result = await this.service.getFileContent(id, null, mode, true);
+    const safeMode = mode === "inline" && isSafeInlineMime(result.mimeType) ? "inline" : "attachment";
     res.setHeader("Content-Type", result.mimeType);
     res.setHeader("Content-Length", result.size);
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader(
       "Content-Disposition",
-      `${mode}; filename="${encodeURIComponent(result.fileName)}"`,
+      `${safeMode}; filename="${encodeURIComponent(result.fileName)}"`,
     );
     res.setHeader("Cache-Control", "private, no-store");
     res.end(result.buffer);

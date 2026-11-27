@@ -17,7 +17,7 @@ import { type QuotationItem } from "@/modules/quotation/types";
 import { downloadQuotationTemplate, downloadQuotationPdf } from "@/modules/quotation/quotation-files";
 import { QuotationPreviewModal } from "@/modules/quotation/quotation-preview-modal";
 import { FileUploader } from "@/components/akuntra/file-uploader";
-import { apiBase } from "@/services/api";
+import { apiBase, authFileUrl } from "@/services/api";
 import { useApp } from "@/store/app-store";
 import {
   type PphMode,
@@ -70,7 +70,7 @@ export function QuotationTemplateGenerator({
       .join("\n");
   }, [companyProfile]);
   const defaultLogoFromProfile = React.useMemo(() => {
-    return companyProfile.logoFileId ? `${apiBase()}/files/${companyProfile.logoFileId}` : "";
+    return companyProfile.logoFileId ? authFileUrl(companyProfile.logoFileId) : "";
   }, [companyProfile.logoFileId]);
 
   const [previewOpen, setPreviewOpen] = React.useState(false);
@@ -346,7 +346,7 @@ export function QuotationTemplateGenerator({
                   kind="foto"
                   category="kop-logo"
                   onUploaded={(fId) => {
-                    setKopLogoUrl(`${apiBase()}/files/${fId}`);
+                    setKopLogoUrl(authFileUrl(fId));
                   }}
                   autoFlush
                 />

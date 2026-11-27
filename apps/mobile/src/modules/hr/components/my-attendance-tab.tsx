@@ -32,7 +32,7 @@ import {
   reverseGeocodeAddress,
   type GpsSnapshot,
 } from "@/utils/gps-location";
-import { apiBase } from "@/services/api";
+import { authFileUrl } from "@/services/api";
 import { useApp } from "@/store/app-store";
 
 export interface AttendanceSubmitPayload {
@@ -57,7 +57,7 @@ interface MyAttendanceTabProps {
 
 function resolvePhotoUrl(fileId?: number | null): string | null {
   if (!fileId) return null;
-  return `${apiBase()}/files/${fileId}`;
+  return authFileUrl(fileId);
 }
 
 function LocationToneBadge({ status }: { status?: string | null }) {

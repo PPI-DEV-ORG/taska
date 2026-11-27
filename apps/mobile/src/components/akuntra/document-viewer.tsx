@@ -4,7 +4,7 @@ import { Eye, ExternalLink, Download, FileText, Image as ImageIcon, Clock, Uploa
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { apiBase } from "@/services/api";
+import { apiBase, authFileUrl } from "@/services/api";
 import { colors } from "@/tokens";
 import type { Row } from "@/constants/modules";
 import { FileUploader } from "@/components/akuntra/file-uploader";
@@ -478,7 +478,7 @@ export function DocumentViewerItem({
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [imgError, setImgError] = React.useState(false);
 
-  const fileUrl = item.fileId ? `${apiBase()}/files/${item.fileId}` : "";
+  const fileUrl = item.fileId ? authFileUrl(item.fileId) : "";
 
   const handleOpen = () => {
     if (!fileUrl) return;

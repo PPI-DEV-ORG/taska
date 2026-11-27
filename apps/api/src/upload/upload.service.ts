@@ -464,6 +464,15 @@ export class UploadService {
     return checks.some((c) => Boolean(c));
   }
 
+  async getOwnerId(id: number): Promise<number | null | undefined> {
+    const row = await this.prisma.main.file.findUnique({
+      where: { id },
+      select: { uploadedById: true },
+    });
+    if (!row) return undefined;
+    return row.uploadedById;
+  }
+
   async safeRemove(id: number) {
     if (!id || typeof id !== "number" || isNaN(id)) return { ok: false, reason: "invalid_id" };
     const row = await this.prisma.main.file.findUnique({ where: { id } });

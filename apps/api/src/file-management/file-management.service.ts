@@ -21,6 +21,7 @@ import {
   SUBFOLDER_METADATA,
 } from "./file-utils.js";
 import { can } from "../rbac/permissions.js";
+import { assertSafeUploadedFile } from "../common/utils/upload.js";
 import type { RequestUser } from "../common/decorators/current-user.decorator.js";
 
 export type ListFilesQuery = {
@@ -520,6 +521,7 @@ export class FileManagementService {
     const allowed = await this.accessService.canAccessFile(user, id, "EDIT");
     if (!allowed) throw new ForbiddenException("Kamu tidak memiliki hak akses untuk mengganti file ini.");
 
+    const safeMimeType = assertSafeUploadedFile(buffer, originalName, mimeType);
     const nextVerNum = (file.versions[0]?.versionNumber ?? 1) + 1;
     const checksum = createHash("sha256").update(buffer).digest("hex");
 
@@ -534,7 +536,7 @@ export class FileManagementService {
     const targetKey = `${subfolder}/${id}_v${nextVerNum}__${safeName}`;
 
     // Upload berkas baru ke adapter
-    const upRes = await adapter.upload(targetKey, buffer, { mimeType });
+    const upRes = await adapter.upload(targetKey, buffer, { mimeType: safeMimeType });
 
     // Update database dalam transaksi
     const result = await this.prisma.main.$transaction(async (tx) => {
@@ -545,7 +547,7 @@ export class FileManagementService {
           versionNumber: nextVerNum,
           fileName: safeName,
           fileSize: buffer.length,
-          mimeType,
+          mimeType: safeMimeType,
           checksumSha256: checksum,
           createdById: user.id,
           changeNotes: `Diunggah oleh ${user.name}`,

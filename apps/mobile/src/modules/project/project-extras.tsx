@@ -13,7 +13,7 @@ import { SupplierInvoiceDetailDialog } from "@/modules/supplier-po/supplier-invo
 import { RecordClientPoDialog } from "@/modules/project/record-client-po-dialog";
 import { SerialItemPickerModal } from "@/components/akuntra/serial-item-picker";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, downloadDocumentationPdf } from "@/services/api";
+import { api, apiBase, downloadDocumentationPdf, authFileUrl } from "@/services/api";
 import { FileUploader, type FileUploaderHandle } from "@/components/akuntra/file-uploader";
 import { colors } from "@/tokens";
 import { rupiah, formatThousands, tanggal } from "@/lib/format";
@@ -689,7 +689,7 @@ export function ProjectExtras({ row, section }: { row: Row; section?: "boq" | "d
         toast("Dokumen BAST resmi berhasil dibuat & tersimpan di Tab Dokumen!");
         setBastOpen(false);
         if (typeof window !== "undefined") {
-          window.open(`${apiBase()}/files/${res.fileId}`, "_blank");
+          window.open(authFileUrl(res.fileId), "_blank");
         }
         await reload();
       }
@@ -1733,7 +1733,7 @@ export function ProjectExtras({ row, section }: { row: Row; section?: "boq" | "d
                     {bastLogoFileId ? (
                       <View className="flex-row items-center gap-3 p-2 bg-muted/40 rounded-lg border border-border">
                         <Image
-                          source={{ uri: `${apiBase()}/files/${bastLogoFileId}` }}
+                          source={{ uri: authFileUrl(bastLogoFileId) }}
                           style={{ width: 64, height: 40 }}
                           resizeMode="contain"
                         />

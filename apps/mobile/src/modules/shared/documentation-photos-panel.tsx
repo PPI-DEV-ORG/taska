@@ -22,7 +22,7 @@ import { Panel } from "@/components/akuntra/basics";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { WebCameraModal } from "@/components/akuntra/camera-capture-modal";
 import { useApp } from "@/store/app-store";
-import { api, apiBase, uploadFile, downloadDocumentationPdf } from "@/services/api";
+import { api, apiBase, appendAccessToken, uploadFile, downloadDocumentationPdf } from "@/services/api";
 import { colors } from "@/tokens";
 
 export type DocPhotoItem = {
@@ -326,11 +326,12 @@ export function DocumentationPhotosPanel({
 
   function resolveFileUrl(p: DocPhotoItem) {
     const rawUrl = p.url || (p.fileId ? `/files/${p.fileId}` : "");
-    return rawUrl.startsWith("http")
+    const full = rawUrl.startsWith("http")
       ? rawUrl
       : rawUrl.startsWith("/api")
       ? `${apiBase()}${rawUrl.slice(4)}`
       : `${apiBase()}${rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`}`;
+    return full.includes("/files/") ? appendAccessToken(full) : full;
   }
 
   const pdfCount = photos.filter(isPdf).length;

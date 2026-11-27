@@ -4,7 +4,7 @@ import {
   type Role,
   type User,
 } from "@/constants/modules";
-import { apiBase } from "@/services/api";
+import { apiBase, authFileUrl } from "@/services/api";
 import type { ApiUser } from "./types";
 import { toLabel } from "./status-maps";
 
@@ -105,7 +105,7 @@ export function apiUserToRow(u: ApiUser): User {
     department: u.department ?? "",
     warehouseId: u.warehouseId ?? null,
     avatarFileId: u.avatarFileId ?? null,
-    avatarUrl: u.avatarFileId ? `${apiBase()}/files/${u.avatarFileId}` : "",
+    avatarUrl: u.avatarFileId ? authFileUrl(u.avatarFileId) : "",
     lastLoginAt: u.lastLoginAt ?? null,
   } as User;
 }

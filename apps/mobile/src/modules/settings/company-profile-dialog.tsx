@@ -9,7 +9,7 @@ import { Text } from "@/components/ui/text";
 import { FormField } from "@/components/akuntra/basics";
 import { FileUploader } from "@/components/akuntra/file-uploader";
 import { useApp } from "@/store/app-store";
-import { apiBase, uploadFile } from "@/services/api";
+import { apiBase, uploadFile, authFileUrl } from "@/services/api";
 import { colors } from "@/tokens";
 import { cn } from "@/lib/utils";
 import type { CompanyProfile } from "@/constants/modules";
@@ -160,8 +160,8 @@ export function CompanyProfileDialog({
     }
   }
 
-  const logoPreviewUrl = form.logoFileId ? `${apiBase()}/files/${form.logoFileId}` : "";
-  const letterheadPreviewUrl = form.letterheadFileId ? `${apiBase()}/files/${form.letterheadFileId}` : "";
+  const logoPreviewUrl = form.logoFileId ? authFileUrl(form.logoFileId) : "";
+  const letterheadPreviewUrl = form.letterheadFileId ? authFileUrl(form.letterheadFileId) : "";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

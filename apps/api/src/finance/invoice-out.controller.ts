@@ -5,7 +5,6 @@ import { IsIn } from "class-validator";
 import { InvoiceOutService } from "./invoice-out.service.js";
 import { ConvertProformaDto, FinanceListQuery, InvoiceOutDto, PaymentDto } from "./dto.js";
 import { Require } from "../common/decorators/require-permission.decorator.js";
-import { Public } from "../common/decorators/public.decorator.js";
 import { CurrentUser, type RequestUser } from "../common/decorators/current-user.decorator.js";
 
 class StatusOnlyDto {
@@ -82,8 +81,8 @@ export class InvoiceOutController {
     res?.end(csv);
   }
 
-  @Public()
   @Get(":id/excel")
+  @Require("financeOut", "L")
   async downloadExcel(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
     const { buffer, filename } = await this.service.exportExcel(id);
     res.setHeader(
@@ -95,8 +94,8 @@ export class InvoiceOutController {
     res.end(buffer);
   }
 
-  @Public()
   @Get(":id/pdf")
+  @Require("financeOut", "L")
   async downloadPdf(@Param("id", ParseIntPipe) id: number, @Res() res: Response) {
     const { buffer, filename } = await this.service.exportPdf(id);
     res.setHeader("Content-Type", "application/pdf");
